@@ -1,11 +1,11 @@
 export const settingsPageClass =
-  'space-y-8 rounded-[28px] border border-[#dbe4ee] bg-white px-6 py-7 shadow-[0_14px_34px_rgba(15,23,42,0.06)] lg:px-8'
-export const settingsCardClass = 'rounded-[20px] border border-[#e4ebf2] bg-[#fbfdff] p-5'
-export const settingsGridClass = 'grid gap-5 md:grid-cols-2'
-export const settingsFieldClass = 'grid gap-2.5'
+  'space-y-6'
+export const settingsCardClass = 'rounded-[16px] border border-[#e4ebf2] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]'
+export const settingsGridClass = 'grid gap-4 md:grid-cols-2'
+export const settingsFieldClass = 'grid gap-2 [&_.ui-input]:px-3.5 [&_.ui-input]:py-2.5 [&_.ui-select]:px-3.5 [&_.ui-select]:py-2.5 [&_.ui-textarea]:px-3.5 [&_.ui-textarea]:py-2.5'
 export const settingsFieldSpanClass = 'md:col-span-2'
-export const settingsActionRowClass = 'flex flex-wrap items-center justify-end gap-3 border-t border-[#e8eef5] pt-5'
-export const settingsTableClass = 'overflow-hidden rounded-[18px] border border-[#e3eaf2] bg-white'
+export const settingsActionRowClass = 'flex flex-wrap items-center justify-end gap-3 border-t border-[#e8eef5] pt-4'
+export const settingsTableClass = 'overflow-hidden rounded-[16px] border border-[#e3eaf2] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.04)]'
 
 function getAlertToneClasses(tone) {
   if (tone === 'success') {
@@ -21,12 +21,12 @@ function getAlertToneClasses(tone) {
 
 export function SettingsPageHeader({ kicker, title, description, actions }) {
   return (
-    <header className="flex flex-col gap-4 border-b border-[#e8eef5] pb-6 lg:flex-row lg:items-start lg:justify-between">
-      <div className="space-y-3">
-        {kicker ? <span className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-[#7b8da6]">{kicker}</span> : null}
-        <div className="space-y-2">
-          <h2 className="text-[1.9rem] font-semibold leading-tight text-[#162334]">{title}</h2>
-          {description ? <p className="max-w-3xl text-sm leading-6 text-[#6b7d93]">{description}</p> : null}
+    <header className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+      <div className="space-y-2">
+        {kicker ? <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7b8da6]">{kicker}</span> : null}
+        <div className="space-y-1.5">
+          <h2 className="text-[1.75rem] font-bold leading-tight text-[#121c2d]">{title}</h2>
+          {description ? <p className="max-w-3xl text-sm font-normal leading-6 text-[#607387]">{description}</p> : null}
         </div>
       </div>
       {actions ? <div className="flex shrink-0 items-center gap-3">{actions}</div> : null}
@@ -36,12 +36,12 @@ export function SettingsPageHeader({ kicker, title, description, actions }) {
 
 export function SettingsSectionCard({ title, description, actions, className = '', children }) {
   return (
-    <section className={`space-y-5 border-t border-[#e8eef5] pt-6 ${className}`.trim()}>
+    <section className={`space-y-5 rounded-[16px] border border-[#e4ebf2] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)] ${className}`.trim()}>
       {(title || description || actions) ? (
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-1">
-            {title ? <h3 className="text-base font-semibold uppercase tracking-[0.1em] text-[#2e4259]">{title}</h3> : null}
-            {description ? <p className="text-sm leading-6 text-[#6b7d93]">{description}</p> : null}
+            {title ? <h3 className="text-base font-semibold text-[#162334]">{title}</h3> : null}
+            {description ? <p className="text-sm font-normal leading-6 text-[#6b7d93]">{description}</p> : null}
           </div>
           {actions ? <div className="flex shrink-0 items-center gap-3">{actions}</div> : null}
         </div>
@@ -64,7 +64,7 @@ export function SettingsLoadingState({ label, compact = false }) {
     )
   }
 
-  return <div className={`${settingsPageClass} flex min-h-[220px] items-center justify-center text-sm font-medium text-[#6b7d93]`}>{label}</div>
+  return <div className="flex min-h-[220px] items-center justify-center rounded-[16px] border border-[#e3eaf2] bg-white text-sm font-medium text-[#6b7d93]">{label}</div>
 }
 
 export function SettingsEmptyState({ title, description, action }) {
@@ -94,5 +94,38 @@ export function SettingsToggleRow({ title, description, checked, disabled, onCha
         onChange={(event) => onChange(event.target.checked)}
       />
     </label>
+  )
+}
+
+export function SettingsStickySaveBar({ dirty = false, saving = false, onDiscard, onSave }) {
+  if (!dirty) return null
+
+  return (
+    <div className="sticky bottom-4 z-30 rounded-[16px] border border-[#dce7f1] bg-white/95 p-3 shadow-[0_18px_42px_rgba(15,23,42,0.14)] backdrop-blur">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-[#162334]">Unsaved changes</p>
+          <p className="text-sm font-normal text-[#607387]">Make sure to save your changes.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="inline-flex min-h-10 items-center justify-center rounded-[10px] border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc]"
+            onClick={onDiscard}
+            disabled={saving}
+          >
+            Discard changes
+          </button>
+          <button
+            type="button"
+            className="inline-flex min-h-10 items-center justify-center rounded-[10px] border border-[#0f7f4f] bg-[#0f7f4f] px-4 text-sm font-semibold text-white shadow-[0_8px_16px_rgba(15,127,79,0.2)] transition hover:bg-[#0d6f45] disabled:opacity-60"
+            onClick={onSave}
+            disabled={saving}
+          >
+            {saving ? 'Saving...' : 'Save changes'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

@@ -234,7 +234,7 @@ function getListingMandateReady(listing) {
   ]
   const mandateDoc = docs.find((doc) => ['mandate_to_sell', 'signed_mandate', 'mandate'].includes(normalizeKey(doc?.key || doc?.documentType || doc?.document_type || doc?.name)))
   const docStatus = normalizeKey(mandateDoc?.status || mandateDoc?.documentStatus || mandateDoc?.document_status)
-  return ['signed', 'approved', 'verified', 'completed'].includes(mandateStatus) ||
+  return ['signed', 'signed_uploaded', 'approved', 'verified', 'completed'].includes(mandateStatus) ||
     ['approved', 'verified', 'completed', 'signed'].includes(docStatus)
 }
 

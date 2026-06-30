@@ -12,7 +12,11 @@ const EMPTY_ORGANISATION_BRANDING = Object.freeze({
   hasCustomLogo: false,
 })
 
-const OrganisationContext = createContext(null)
+const ORGANISATION_CONTEXT_GLOBAL_KEY = '__arch9OrganisationContextV1'
+const OrganisationContext =
+  typeof globalThis !== 'undefined'
+    ? (globalThis[ORGANISATION_CONTEXT_GLOBAL_KEY] ||= createContext(null))
+    : createContext(null)
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -286,4 +290,8 @@ export function useOrganisation() {
     throw new Error('useOrganisation must be used within OrganisationProvider')
   }
   return context
+}
+
+export function useOptionalOrganisation() {
+  return useContext(OrganisationContext)
 }

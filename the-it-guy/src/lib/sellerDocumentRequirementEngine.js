@@ -22,7 +22,7 @@ import {
 const COMPLETED_REQUIREMENT_STATUSES = new Set(['approved', 'completed'])
 const ACTIVE_REQUIREMENT_STATUSES = new Set(['required', 'requested', 'uploaded', 'under_review', 'rejected'])
 
-const MANDATE_SIGNED_STATUSES = new Set(['signed'])
+const MANDATE_SIGNED_STATUSES = new Set(['signed', 'signed_uploaded'])
 const DOCUMENT_STATUSES = ['required', 'requested', 'uploaded', 'under_review', 'rejected', 'approved', 'completed', 'not_applicable']
 
 function normalizeText(value) {

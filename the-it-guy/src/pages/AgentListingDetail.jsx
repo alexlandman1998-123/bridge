@@ -1169,6 +1169,12 @@ function FollowUpActionCard({ action, loading = false, onAction, onUpload }) {
         </div>
         <h3 className="mt-4 text-sm font-semibold text-[#142132]">{action.title}</h3>
         <p className="mt-2 text-sm leading-5 text-[#607387]">{action.copy}</p>
+        {action.priorityLabel || action.dueLabel ? (
+          <div className="mt-3 flex flex-wrap gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">
+            {action.priorityLabel ? <span>{action.priorityLabel}</span> : null}
+            {action.dueLabel ? <span>{action.dueLabel}</span> : null}
+          </div>
+        ) : null}
       </div>
       {action.upload ? (
         <label className={`${buttonClass} mt-4 cursor-pointer ${loading ? 'pointer-events-none opacity-65' : ''}`}>
@@ -2711,12 +2717,12 @@ function AgentListingDetail() {
       }
       const localListing = patchListing((row) => ({
         ...row,
-        mandateStatus: 'signed',
+        mandateStatus: 'signed_uploaded',
         mandateSignedDate: signedAt.slice(0, 10),
         signedMandateUrl: documentUrl || row?.signedMandateUrl || '',
         mandate: {
           ...(row?.mandate || {}),
-          status: 'signed',
+          status: 'signed_uploaded',
           signedAt,
           signedUrl: documentUrl || row?.mandate?.signedUrl || '',
           updatedAt: signedAt,
@@ -2740,7 +2746,7 @@ function AgentListingDetail() {
       setMarketingDraft((previous) => ({ ...previous, mandateSignedDate: signedAt.slice(0, 10) }))
       if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
         const savedListing = await updatePrivateListing(listingRecord.id, {
-          mandateStatus: 'signed',
+          mandateStatus: 'signed_uploaded',
           listingStatus: normalizeKey(listingRecord?.listingStatus || listingRecord?.status) === 'active' ? 'active' : 'mandate_signed',
         })
         if (savedListing?.id) {
@@ -2772,6 +2778,14 @@ function AgentListingDetail() {
       openSellerWorkspaceSection('seller', 'Add the seller name, email, and phone in the seller workspace.')
       return
     }
+    if (action.key === 'add_seller_identity') {
+      openSellerWorkspaceSection('seller', 'Capture the seller ID, company registration, or trust registration number.')
+      return
+    }
+    if (action.key === 'add_seller_fica') {
+      openSellerWorkspaceSection('documents', 'Upload the seller ID and proof of address documents needed for FICA.')
+      return
+    }
     if (action.key === 'complete_seller_facts') {
       if (listingRecord?.sellerOnboarding?.link) {
         window.open(listingRecord.sellerOnboarding.link, '_blank', 'noopener,noreferrer')
@@ -2782,6 +2796,14 @@ function AgentListingDetail() {
     }
     if (action.key === 'add_commission') {
       openSellerWorkspaceSection('commission', 'Capture commission terms so the mandate and seller profile are complete.')
+      return
+    }
+    if (action.key === 'add_photos') {
+      openSellerWorkspaceSection('listing', 'Add listing photos so the property can be marketed cleanly.')
+      return
+    }
+    if (action.key === 'add_external_link') {
+      openSellerWorkspaceSection('listing', 'Add the Property24, Private Property, or external listing link for this property.')
     }
   }
 
@@ -3437,7 +3459,7 @@ function AgentListingDetail() {
       lastUpdated: firstDraftValue(mandate?.updatedAt, listingRecord?.updatedAt, listingRecord?.createdAt),
       signedUrl,
       viewUrl,
-      isSigned: ['signed', 'completed', 'fully_signed', 'uploaded_signed', 'mandate_signed'].includes(status) || Boolean(signedDate || signedUrl),
+      isSigned: ['signed', 'signed_uploaded', 'completed', 'fully_signed', 'uploaded_signed', 'mandate_signed'].includes(status) || Boolean(signedDate || signedUrl),
       isExpired: daysUntilExpiry !== null && daysUntilExpiry < 0,
     }
   }, [listingRecord, marketingDraft.expiryDate, marketingDraft.mandateSignedDate])
@@ -3735,6 +3757,7 @@ function AgentListingDetail() {
     const sellerEmail = resolveSellerEmailFromListing(listingRecord)
     const sellerPhone = resolveSellerPhoneFromListing(listingRecord)
     const sellerName = resolveSellerNameFromListing(listingRecord)
+    const seller = listingRecord?.seller || {}
     const hasSellerName = Boolean(sellerName)
     const hasSellerContact = isValidEmail(sellerEmail) || Boolean(formatSouthAfricanWhatsAppNumber(sellerPhone))
     const onboarding = listingRecord?.sellerOnboarding || {}
@@ -3745,8 +3768,37 @@ function AgentListingDetail() {
         ['sent', 'viewed', 'in_progress', 'submitted', 'under_review', 'completed'].includes(onboardingStatus),
     )
     const mandateStatus = normalizeKey(mandateWorkspace.status)
-    const mandatePrepared = mandateWorkspace.isSigned || ['ready', 'generated', 'sent', 'viewed'].includes(mandateStatus)
+    const mandatePrepared = mandateWorkspace.isSigned || ['ready', 'generated', 'sent', 'viewed', 'signed_external_pending_upload'].includes(mandateStatus)
     const sellerFactsComplete = sellerProfile.completionPercent >= 80
+    const sellerIdentityValue = firstDraftValue(
+      sellerFormData?.idNumber,
+      sellerFormData?.sellerIdNumber,
+      sellerFormData?.companyRegistrationNumber,
+      sellerFormData?.trustRegistrationNumber,
+      seller?.idNumber,
+      seller?.sellerIdNumber,
+      seller?.registrationNumber,
+      seller?.companyNumber,
+      seller?.companyRegistrationNumber,
+      seller?.trustNumber,
+      listingRecord?.sellerRegistrationNumber,
+      listingRecord?.seller_registration_number,
+    )
+    const hasSellerIdentityNumber = Boolean(toCleanText(sellerIdentityValue))
+    const isDocumentComplete = (document) => Boolean(
+      document?.uploaded ||
+        document?.url ||
+        document?.filePath ||
+        ['uploaded', 'under_review', 'approved', 'completed', 'verified'].includes(normalizeKey(document?.status)),
+    )
+    const sellerFicaRows = sellerDocumentTrackerRows.filter((document) =>
+      ['id_document', 'proof_of_address'].includes(normalizeKey(document?.key)),
+    )
+    const ficaStatus = normalizeKey(sellerFormData?.ficaStatus || seller?.ficaStatus || listingRecord?.ficaStatus)
+    const sellerFicaComplete = ['complete', 'completed', 'approved', 'verified'].includes(ficaStatus) ||
+      (sellerFicaRows.length > 0 && sellerFicaRows.every(isDocumentComplete))
+    const hasListingPhotos = Array.isArray(marketingDraft.galleryImages) && marketingDraft.galleryImages.length > 0
+    const hasExternalListingLink = normalizeExternalListingLinks(marketingDraft.externalLinks).some((link) => toCleanText(link.url))
     return [
       {
         key: 'send_onboarding',
@@ -3762,6 +3814,50 @@ function AgentListingDetail() {
         buttonIcon: Link2,
         buttonLabel: onboardingReady ? (hasSellerContact ? 'Resend Link' : 'Copy Link') : hasSellerContact ? 'Create & Send Link' : 'Add Contact',
         loadingLabel: 'Creating link...',
+        priorityLabel: hasSellerContact ? 'Priority: normal' : 'Blocked',
+        dueLabel: onboardingReady ? 'Link ready' : 'Next',
+      },
+      {
+        key: 'add_seller_contact',
+        title: 'Add seller contact',
+        copy: hasSellerName && hasSellerContact
+          ? 'Seller name and contact details are captured.'
+          : 'Capture seller name, surname, email, or phone without forcing the full onboarding journey.',
+        complete: hasSellerName && hasSellerContact,
+        statusLabel: 'Quick capture',
+        icon: UserRound,
+        buttonIcon: UserRound,
+        buttonLabel: hasSellerName && hasSellerContact ? 'Review Seller' : 'Add Seller',
+        priorityLabel: 'Priority: high',
+        dueLabel: 'Before mandate',
+      },
+      {
+        key: 'add_seller_identity',
+        title: 'Add seller ID / registration number',
+        copy: hasSellerIdentityNumber
+          ? 'Seller identity or registration number is captured.'
+          : 'Add the seller ID, company registration, or trust registration number for compliance checks.',
+        complete: hasSellerIdentityNumber,
+        statusLabel: 'Seller detail',
+        icon: UserRound,
+        buttonIcon: UserRound,
+        buttonLabel: hasSellerIdentityNumber ? 'Review Seller' : 'Add ID',
+        priorityLabel: 'Priority: high',
+        dueLabel: 'Before FICA',
+      },
+      {
+        key: 'add_seller_fica',
+        title: 'Add seller FICA',
+        copy: sellerFicaComplete
+          ? 'Seller FICA documents are captured or verified.'
+          : 'Upload seller ID and proof of address documents so compliance is not left behind.',
+        complete: sellerFicaComplete,
+        statusLabel: 'Compliance',
+        icon: ShieldCheck,
+        buttonIcon: Upload,
+        buttonLabel: sellerFicaComplete ? 'Review Documents' : 'Add FICA',
+        priorityLabel: 'Priority: high',
+        dueLabel: 'Before active',
       },
       {
         key: 'generate_mandate',
@@ -3775,6 +3871,8 @@ function AgentListingDetail() {
         buttonIcon: FileText,
         buttonLabel: mandatePrepared ? 'Review Mandate' : 'Mark Ready',
         loadingLabel: 'Preparing...',
+        priorityLabel: 'Priority: normal',
+        dueLabel: 'Before signature',
       },
       {
         key: 'upload_signed_mandate',
@@ -3787,18 +3885,8 @@ function AgentListingDetail() {
         icon: Upload,
         buttonLabel: mandateWorkspace.isSigned ? 'Replace File' : 'Upload Signed File',
         upload: true,
-      },
-      {
-        key: 'add_seller_contact',
-        title: 'Add seller contact',
-        copy: hasSellerName && hasSellerContact
-          ? 'Seller name and contact details are captured.'
-          : 'Capture seller name, surname, email, or phone without forcing the full onboarding journey.',
-        complete: hasSellerName && hasSellerContact,
-        statusLabel: 'Quick capture',
-        icon: UserRound,
-        buttonIcon: UserRound,
-        buttonLabel: hasSellerName && hasSellerContact ? 'Review Seller' : 'Add Seller',
+        priorityLabel: mandateStatus === 'signed_external_pending_upload' ? 'Priority: urgent' : 'Priority: high',
+        dueLabel: mandateStatus === 'signed_external_pending_upload' ? 'Signed manually' : 'Before active',
       },
       {
         key: 'complete_seller_facts',
@@ -3811,10 +3899,12 @@ function AgentListingDetail() {
         icon: ShieldCheck,
         buttonIcon: listingRecord?.sellerOnboarding?.link ? ExternalLink : ShieldCheck,
         buttonLabel: listingRecord?.sellerOnboarding?.link ? 'Open Portal' : 'Open Seller',
+        priorityLabel: 'Priority: normal',
+        dueLabel: 'Before publishing',
       },
       {
         key: 'add_commission',
-        title: 'Add commission',
+        title: 'Confirm commission',
         copy: commissionWorkspace.hasData
           ? 'Commission terms are available for the mandate workspace.'
           : 'Capture commission percentage, amount, VAT handling, and payment responsibility.',
@@ -3823,9 +3913,49 @@ function AgentListingDetail() {
         icon: HandCoins,
         buttonIcon: HandCoins,
         buttonLabel: commissionWorkspace.hasData ? 'Review Commission' : 'Add Commission',
+        priorityLabel: 'Priority: high',
+        dueLabel: 'Before mandate',
+      },
+      {
+        key: 'add_photos',
+        title: 'Add photos',
+        copy: hasListingPhotos
+          ? 'Listing photos are available for marketing.'
+          : 'Upload property photos so the listing can be marketed and shared confidently.',
+        complete: hasListingPhotos,
+        statusLabel: 'Marketing',
+        icon: Camera,
+        buttonIcon: Camera,
+        buttonLabel: hasListingPhotos ? 'Review Photos' : 'Add Photos',
+        priorityLabel: 'Priority: normal',
+        dueLabel: 'Before publishing',
+      },
+      {
+        key: 'add_external_link',
+        title: 'Add external listing link',
+        copy: hasExternalListingLink
+          ? 'An external listing link is connected.'
+          : 'Add the Property24, Private Property, or other external listing URL for cross-reference.',
+        complete: hasExternalListingLink,
+        statusLabel: 'Reference',
+        icon: ExternalLink,
+        buttonIcon: ExternalLink,
+        buttonLabel: hasExternalListingLink ? 'Review Link' : 'Add Link',
+        priorityLabel: 'Priority: normal',
+        dueLabel: 'When available',
       },
     ]
-  }, [commissionWorkspace.hasData, listingRecord, mandateWorkspace.isSigned, mandateWorkspace.status, sellerProfile.completionPercent])
+  }, [
+    commissionWorkspace.hasData,
+    listingRecord,
+    mandateWorkspace.isSigned,
+    mandateWorkspace.status,
+    marketingDraft.externalLinks,
+    marketingDraft.galleryImages,
+    sellerDocumentTrackerRows,
+    sellerFormData,
+    sellerProfile.completionPercent,
+  ])
   const completedFollowUpCount = followUpActions.filter((action) => action.complete).length
   const listingFollowUpsComplete = !followUpActions.length || followUpActions.every((action) => action.complete)
   const shouldShowListingFollowUps = sellerWorkspaceTab === 'overview' && !listingFollowUpsComplete

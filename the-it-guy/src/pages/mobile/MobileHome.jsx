@@ -11,7 +11,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
-import { useOrganisation } from '../../context/OrganisationContext'
+import { useOptionalOrganisation } from '../../context/OrganisationContext'
 import { MobileCard, MobileEmptyState, MobileErrorState, MobileLoadingState } from '../../components/mobile-shell/MobileShellStates'
 import { getMobileDashboardSnapshot, getMobileDashboardSnapshotAsync } from '../../services/mobileDashboardService'
 import { trackMobileMetric } from '../../services/observability/monitoring'
@@ -119,7 +119,9 @@ function ActivityRow({ item }) {
 
 export default function MobileHome() {
   const workspace = useWorkspace()
-  const { organisation, loading: organisationLoading } = useOrganisation()
+  const organisationContext = useOptionalOrganisation()
+  const organisation = organisationContext?.organisation || null
+  const organisationLoading = Boolean(organisationContext?.loading)
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [state, setState] = useState(() => {

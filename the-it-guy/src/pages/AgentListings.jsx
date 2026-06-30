@@ -1,9 +1,10 @@
-import { ArrowRight, Building2, CheckCircle2, CircleAlert, FolderKanban, Loader2, MoreVertical, Plus, Search, Share2, Trash2, UserRound, X } from 'lucide-react'
+import { ArrowRight, Building2, CheckCircle2, CircleAlert, Copy, FolderKanban, Loader2, MoreVertical, Plus, Search, Share2, Trash2, UserRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import SectionHeader from '../components/ui/SectionHeader'
+import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import { getTransactionScopeForRow } from '../core/transactions/transactionScope'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
@@ -57,6 +58,33 @@ const QUICK_ADD_STEPS = ['property', 'seller', 'mandate', 'assignment']
 const QUICK_LISTING_METADATA_PREFIX = 'BRIDGE_QUICK_ADD_METADATA:'
 const LISTING_ORIGINS = ['quick_add', 'guided_onboarding', 'imported_property24', 'manual_admin_capture', 'developer_unit']
 const LISTING_DOCUMENT_CATEGORIES = ['Mandate', 'Seller ID', 'Proof of Address', 'Property Photos', 'Rates and Taxes', 'Bond Statement', 'Title Deed', 'Other']
+const LISTING_FOLLOW_UP_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'attention', label: 'Needs Follow-Up' },
+  { key: 'active_warning', label: 'Active With Warning' },
+  { key: 'mandate_upload', label: 'Mandate Uploads' },
+  { key: 'seller_fica', label: 'Seller FICA' },
+  { key: 'photos', label: 'Photos' },
+  { key: 'commission', label: 'Commission' },
+  { key: 'onboarding', label: 'Onboarding' },
+]
+const LISTING_FOLLOW_UP_SLA_DAYS = {
+  send_onboarding: 1,
+  add_seller_contact: 1,
+  add_seller_identity: 2,
+  add_seller_fica: 2,
+  upload_signed_mandate: 1,
+  confirm_commission: 2,
+  add_photos: 5,
+  add_external_link: 5,
+}
+const QUICK_ADD_MANDATE_STATUS_OPTIONS = [
+  { value: 'not_started', label: 'Not started' },
+  { value: 'in_progress', label: 'Busy with seller' },
+  { value: 'signed_external_pending_upload', label: 'Signed manually, upload later' },
+  { value: 'signed_uploaded', label: 'Signed and uploaded' },
+  { value: 'expired', label: 'Expired' },
+]
 const CANONICAL_LISTING_STRUCTURE = [
   'listing',
   'property',
@@ -401,10 +429,13 @@ function getListingComplianceWarnings(listing = {}, completeness = null) {
       (Array.isArray(sellerFormData.imageGallery) && sellerFormData.imageGallery.length) ||
       normalizeText(listing.marketing?.mediaUrl || listing.coverImage?.url || listing.imageUrl || listing.image_url),
   )
+  const mandateSignedExternally = mandateStatus === 'signed_external_pending_upload'
   const hasMandate = ['signed', 'signed_uploaded', 'approved', 'verified', 'completed'].includes(mandateStatus) || listingHasDocumentSignal(listing, ['mandate', 'signed_mandate'])
   const warnings = []
-  if (!hasMandate || missingItems.has('signed mandate')) warnings.push('Mandate missing')
-  if (!seller.registrationNumber && !listingHasFicaDocuments(listing)) warnings.push('Seller FICA missing')
+  if (mandateSignedExternally) warnings.push('Signed mandate upload outstanding')
+  else if (!hasMandate || missingItems.has('signed mandate')) warnings.push('Mandate missing')
+  if (!seller.registrationNumber || missingItems.has('seller id / registration number')) warnings.push('Seller ID / registration number missing')
+  if (!listingHasFicaDocuments(listing) || missingItems.has('seller fica')) warnings.push('Seller FICA missing')
   if (!seller.email || !seller.phone) warnings.push('Seller contact incomplete')
   if (!hasCommission || missingItems.has('commission structure')) warnings.push('Commission missing')
   if (!hasPhotos || missingItems.has('property photos')) warnings.push('Photos missing')
@@ -432,6 +463,9 @@ function getInventoryStatus({ statusKey = '', lifecycleGroup = '', complianceWar
     return { key: 'draft', filterKey: 'draft', label: 'Draft' }
   }
   if (['active', 'listing_active', 'mandate_signed', 'under_offer'].includes(normalizedStatus) || ['active', 'under_offer'].includes(normalizedGroup)) {
+    if (hasAttention && normalizedStatus !== 'under_offer') {
+      return { key: 'live_warning', filterKey: 'live', label: 'Active With Warning' }
+    }
     return { key: 'live', filterKey: 'live', label: normalizedStatus === 'under_offer' ? 'Under Offer' : 'Active Mandate' }
   }
   if (hasAttention) {
@@ -445,6 +479,7 @@ function getInventoryStatus({ statusKey = '', lifecycleGroup = '', complianceWar
 
 function inventoryDotClass(statusKey) {
   if (statusKey === 'live' || statusKey === 'sold') return 'bg-[#2fb463]'
+  if (statusKey === 'live_warning') return 'bg-[#d78a16]'
   if (statusKey === 'needs_attention') return 'bg-[#d78a16]'
   if (statusKey === 'under_review') return 'bg-[#7d55d7]'
   if (statusKey === 'archived') return 'bg-[#8da0b5]'
@@ -461,6 +496,7 @@ function formatListingAttentionLine(card = {}) {
 
   if (allItems.some((item) => normalizeKey(item).includes('fica') || normalizeKey(item).includes('seller id'))) return 'Missing FICA'
   if (allItems.some((item) => normalizeKey(item).includes('photo'))) return 'Missing Photos'
+  if (allItems.some((item) => normalizeKey(item).includes('mandate') && normalizeKey(item).includes('upload'))) return 'Mandate Upload Outstanding'
   if (allItems.some((item) => normalizeKey(item).includes('mandate'))) return 'Missing Mandate'
   if (allItems.some((item) => normalizeKey(item).includes('commission'))) return 'Missing Commission'
   if (allItems.some((item) => normalizeKey(item).includes('contact'))) return 'Seller Contact Incomplete'
@@ -470,6 +506,185 @@ function formatListingAttentionLine(card = {}) {
   if (allItems.length > 1) return `${allItems.length} Requirements Outstanding`
   if (allItems.length === 1) return allItems[0]
   return ''
+}
+
+function buildListingFollowUpQueue(card = {}) {
+  const listing = card.listingRecord || {}
+  const seller = getListingSeller(listing)
+  const signals = [
+    ...(Array.isArray(card.complianceWarnings) ? card.complianceWarnings : []),
+    ...(Array.isArray(card.missingCompletenessItems) ? card.missingCompletenessItems : []),
+    ...(Array.isArray(listing.missingFollowUpItems) ? listing.missingFollowUpItems : []),
+  ].map((item) => normalizeKey(item)).filter(Boolean)
+  const hasSignal = (...patterns) => signals.some((signal) => patterns.some((pattern) => signal.includes(normalizeKey(pattern))))
+  const onboarding = listing?.sellerOnboarding || listing?.seller_onboarding || {}
+  const onboardingStatus = normalizeKey(onboarding?.status || listing?.sellerOnboardingStatus || listing?.seller_onboarding_status)
+  const onboardingReady = Boolean(
+    onboarding?.token ||
+      onboarding?.link ||
+      ['sent', 'viewed', 'in_progress', 'submitted', 'under_review', 'completed'].includes(onboardingStatus),
+  )
+  const queue = []
+  const add = (key, label, priority = 'normal') => {
+    if (!queue.some((item) => item.key === key)) queue.push({ key, label, priority })
+  }
+
+  if (!onboardingReady) add('send_onboarding', 'Send seller onboarding', seller.email || seller.phone ? 'normal' : 'blocked')
+  if (!seller.name || !seller.email || !seller.phone || hasSignal('seller contact')) add('add_seller_contact', 'Add seller contact', 'high')
+  if (!seller.registrationNumber || hasSignal('seller id', 'registration number')) add('add_seller_identity', 'Add seller ID / registration number', 'high')
+  if (!listingHasFicaDocuments(listing) || hasSignal('seller fica')) add('add_seller_fica', 'Add seller FICA', 'high')
+  if (hasSignal('mandate upload', 'mandate missing', 'signed mandate')) add('upload_signed_mandate', 'Upload signed mandate', hasSignal('mandate upload') ? 'urgent' : 'high')
+  if (hasSignal('commission')) add('confirm_commission', 'Confirm commission', 'high')
+  if (hasSignal('photo')) add('add_photos', 'Add photos', 'normal')
+  if (hasSignal('external listing link')) add('add_external_link', 'Add external listing link', 'normal')
+
+  return queue
+}
+
+function getListingFollowUpAgeDays(listing = {}, now = Date.now()) {
+  const sourceDate = normalizeText(
+    listing.createdAt ||
+      listing.created_at ||
+      listing.quickAddedAt ||
+      listing.quick_added_at ||
+      listing.sellerOnboarding?.createdAt ||
+      listing.sellerOnboarding?.created_at ||
+      listing.updatedAt ||
+      listing.updated_at,
+  )
+  if (!sourceDate) return 0
+  const timestamp = new Date(sourceDate).getTime()
+  if (!Number.isFinite(timestamp)) return 0
+  return Math.max(0, Math.floor((Number(now) - timestamp) / (1000 * 60 * 60 * 24)))
+}
+
+function getFollowUpReminderStatus(item = {}, listing = {}, now = Date.now()) {
+  const key = normalizeKey(item.key)
+  const slaDays = Number(item.slaDays ?? LISTING_FOLLOW_UP_SLA_DAYS[key] ?? 3)
+  const ageDays = getListingFollowUpAgeDays(listing, now)
+  const daysRemaining = slaDays - ageDays
+  if (daysRemaining < 0) {
+    return {
+      key: 'overdue',
+      label: `${Math.abs(daysRemaining)}d overdue`,
+      ageDays,
+      daysRemaining,
+      slaDays,
+    }
+  }
+  if (daysRemaining === 0 || item.priority === 'urgent') {
+    return {
+      key: 'due_today',
+      label: 'Due today',
+      ageDays,
+      daysRemaining: 0,
+      slaDays,
+    }
+  }
+  return {
+    key: 'scheduled',
+    label: `${daysRemaining}d left`,
+    ageDays,
+    daysRemaining,
+    slaDays,
+  }
+}
+
+function withFollowUpReminderStatus(card = {}, now = Date.now()) {
+  const listing = card.listingRecord || {}
+  const followUpQueue = (Array.isArray(card.followUpQueue) ? card.followUpQueue : []).map((item) => {
+    const reminder = getFollowUpReminderStatus(item, listing, now)
+    return {
+      ...item,
+      slaDays: reminder.slaDays,
+      reminderStatus: reminder.key,
+      reminderLabel: reminder.label,
+      ageDays: reminder.ageDays,
+      daysRemaining: reminder.daysRemaining,
+    }
+  })
+  return {
+    ...card,
+    followUpQueue,
+    followUpCount: followUpQueue.length,
+    overdueFollowUpCount: followUpQueue.filter((item) => item.reminderStatus === 'overdue').length,
+    dueTodayFollowUpCount: followUpQueue.filter((item) => item.reminderStatus === 'due_today').length,
+  }
+}
+
+function listingMatchesFollowUpFilter(card = {}, filterKey = 'all') {
+  const key = normalizeKey(filterKey || 'all')
+  const actionKeys = new Set((Array.isArray(card.followUpQueue) ? card.followUpQueue : []).map((item) => item.key))
+  if (key === 'all') return true
+  if (key === 'attention') return actionKeys.size > 0
+  if (key === 'active_warning') return card.inventoryStatusKey === 'live_warning'
+  if (key === 'mandate_upload') return actionKeys.has('upload_signed_mandate')
+  if (key === 'seller_fica') return actionKeys.has('add_seller_identity') || actionKeys.has('add_seller_fica')
+  if (key === 'photos') return actionKeys.has('add_photos')
+  if (key === 'commission') return actionKeys.has('confirm_commission')
+  if (key === 'onboarding') return actionKeys.has('send_onboarding')
+  return true
+}
+
+function buildListingFollowUpInsights(cards = []) {
+  const residentialCards = cards.filter((card) => ['residential', 'mixed_use', 'vacant_land'].includes(card.propertyCategory))
+  const withFollowUps = residentialCards.filter((card) => Number(card.followUpCount || 0) > 0)
+  const filterCounts = LISTING_FOLLOW_UP_FILTERS.reduce((counts, filter) => {
+    counts[filter.key] = filter.key === 'all'
+      ? residentialCards.length
+      : residentialCards.filter((card) => listingMatchesFollowUpFilter(card, filter.key)).length
+    return counts
+  }, {})
+  const agentMap = new Map()
+  for (const card of withFollowUps) {
+    const agentName = normalizeText(card.agentName || 'Unassigned')
+    const current = agentMap.get(agentName) || { name: agentName, listings: 0, followUps: 0 }
+    current.listings += 1
+    current.followUps += Number(card.followUpCount || 0)
+    agentMap.set(agentName, current)
+  }
+
+  return {
+    totalListings: residentialCards.length,
+    listingsNeedingFollowUp: withFollowUps.length,
+    activeWithWarning: filterCounts.active_warning || 0,
+    mandateUploads: filterCounts.mandate_upload || 0,
+    sellerFica: filterCounts.seller_fica || 0,
+    photos: filterCounts.photos || 0,
+    commission: filterCounts.commission || 0,
+    onboarding: filterCounts.onboarding || 0,
+    overdueFollowUps: residentialCards.reduce((sum, card) => sum + Number(card.overdueFollowUpCount || 0), 0),
+    dueTodayFollowUps: residentialCards.reduce((sum, card) => sum + Number(card.dueTodayFollowUpCount || 0), 0),
+    filterCounts,
+    topAgents: Array.from(agentMap.values())
+      .sort((left, right) => right.followUps - left.followUps || right.listings - left.listings || left.name.localeCompare(right.name))
+      .slice(0, 3),
+  }
+}
+
+function buildListingFollowUpEscalationSummary(cards = [], insights = {}) {
+  const rows = cards
+    .filter((card) => ['residential', 'mixed_use', 'vacant_land'].includes(card.propertyCategory))
+    .filter((card) => Number(card.followUpCount || 0) > 0)
+    .sort((left, right) =>
+      Number(right.overdueFollowUpCount || 0) - Number(left.overdueFollowUpCount || 0) ||
+      Number(right.dueTodayFollowUpCount || 0) - Number(left.dueTodayFollowUpCount || 0) ||
+      Number(right.followUpCount || 0) - Number(left.followUpCount || 0) ||
+      String(left.title || '').localeCompare(String(right.title || '')),
+    )
+  const header = [
+    'Manual listing follow-up chase list',
+    `${insights.listingsNeedingFollowUp || rows.length} listing${(insights.listingsNeedingFollowUp || rows.length) === 1 ? '' : 's'} need recovery work`,
+    `${insights.overdueFollowUps || 0} overdue, ${insights.dueTodayFollowUps || 0} due today`,
+  ]
+  const body = rows.slice(0, 25).map((card, index) => {
+    const tasks = (card.followUpQueue || [])
+      .map((item) => `${item.label}${item.reminderLabel ? ` (${item.reminderLabel})` : ''}`)
+      .join('; ')
+    return `${index + 1}. ${card.title} - ${card.agentName || 'Unassigned'} - ${card.inventoryStatusLabel || 'Listing'} - ${tasks}`
+  })
+  if (!body.length) return 'Manual listing follow-up chase list\nNo open follow-up items.'
+  return [...header, '', ...body].join('\n')
 }
 
 function mergePrivateListingRows(dbRows = [], runtimeRows = [], deletedIds = new Set()) {
@@ -577,7 +792,15 @@ function buildInitialListingLeadForm(profile, workspace) {
     sellerType: 'individual',
     sellerRegistrationNumber: '',
     propertyAddress: '',
+    propertyAddressValue: null,
+    formattedAddress: '',
+    streetAddress: '',
     suburb: '',
+    country: 'South Africa',
+    postalCode: '',
+    latitude: null,
+    longitude: null,
+    googlePlaceId: '',
     propertyType: 'House',
     listingType: 'sale',
     propertyStructureType: 'full_title',
@@ -611,6 +834,7 @@ function buildInitialListingLeadForm(profile, workspace) {
     mandateEndDate: '',
     commissionType: 'percentage',
     commissionValue: '',
+    manualMandateStatus: 'not_started',
     mandateDocumentCategory: 'Mandate',
     supportingDocumentCategory: 'Other',
     coAgents: '',
@@ -652,7 +876,7 @@ function parseQuickListingMetadata(value = '') {
 }
 
 function buildListingCompleteness({ form, mandateUploaded = false } = {}) {
-  const mandateSigned = Boolean(form?.mandateSigned)
+  const mandateSigned = normalizeKey(form?.manualMandateStatus) === 'signed_uploaded' || Boolean(form?.mandateSigned)
   const sellerHasContact = Boolean(normalizeText(form?.sellerEmail) || normalizeText(form?.sellerPhone))
   const commissionCaptured = Boolean(
     normalizeText(form?.commissionValue) ||
@@ -665,7 +889,8 @@ function buildListingCompleteness({ form, mandateUploaded = false } = {}) {
     { label: 'Seller name', complete: Boolean(normalizeText(form?.sellerName)) },
     { label: 'Seller contact details', complete: sellerHasContact },
     { label: 'Signed mandate', complete: mandateSigned && mandateUploaded },
-    { label: 'Seller FICA', complete: Boolean(normalizeText(form?.sellerRegistrationNumber)) },
+    { label: 'Seller ID / registration number', complete: Boolean(normalizeText(form?.sellerRegistrationNumber)) },
+    { label: 'Seller FICA', complete: false },
     { label: 'Commission structure', complete: commissionCaptured },
     { label: 'Property photos', complete: false },
     { label: 'External listing link', complete: Boolean(normalizeText(form?.externalListingLink)) },
@@ -693,11 +918,12 @@ function getListingCompleteness(listing = {}) {
 }
 
 function buildQuickListingNotes(form, completeness, mandateStatus) {
+  const mandateStatusLabel = getQuickListingMandateStatusLabel(mandateStatus)
   const humanNotes = [
     normalizeText(form.notes),
     `Seller Contact: ${normalizeText(form.sellerName)} · ${normalizeText(form.sellerEmail)} · ${normalizeText(form.sellerPhone)}`,
     `Quick Add Meta: Beds ${form.bedrooms || '-'} · Baths ${form.bathrooms || '-'} · Parking ${form.parkingCount || '-'} · Erf ${form.erfSize || '-'} · Floor ${form.floorSize || '-'}`,
-    `Mandate: ${mandateStatus} · ${form.mandateType || 'sole'} · ${form.mandateStartDate || '-'} → ${form.mandateEndDate || '-'}`,
+    `Mandate: ${mandateStatusLabel} · ${form.mandateType || 'sole'} · ${form.mandateStartDate || '-'} → ${form.mandateEndDate || '-'}`,
     `Commission: ${form.commissionType || 'percentage'} · ${form.commissionValue || 'Not captured'}`,
     `External link: ${normalizeText(form.externalListingLink) || 'None'}`,
   ].filter(Boolean)
@@ -705,6 +931,7 @@ function buildQuickListingNotes(form, completeness, mandateStatus) {
     origin: 'quick_add',
     canonicalStructure: CANONICAL_LISTING_STRUCTURE,
     mandateStatus,
+    mandateStatusLabel,
     completeness,
     source: 'quick_add',
     allowedOrigins: LISTING_ORIGINS,
@@ -736,11 +963,55 @@ function buildQuickListingNotes(form, completeness, mandateStatus) {
 }
 
 function hasQuickListingSignedMandate(form = {}) {
-  return Boolean(form?.mandateSigned && normalizeText(form?.manualMandateFileName))
+  return normalizeKey(form?.manualMandateStatus) === 'signed_uploaded' && normalizeText(form?.manualMandateFileName)
 }
 
 function getQuickListingMandateStatus(form = {}) {
-  return hasQuickListingSignedMandate(form) ? 'signed' : 'not_started'
+  const normalized = normalizeKey(form?.manualMandateStatus || (form?.mandateSigned ? 'signed_uploaded' : 'not_started'))
+  if (normalized === 'signed_uploaded') return hasQuickListingSignedMandate(form) ? 'signed_uploaded' : 'signed_external_pending_upload'
+  if (['not_started', 'in_progress', 'signed_external_pending_upload', 'expired'].includes(normalized)) return normalized
+  return 'not_started'
+}
+
+function getQuickListingMandateStatusLabel(value) {
+  const normalized = normalizeKey(value)
+  return QUICK_ADD_MANDATE_STATUS_OPTIONS.find((option) => option.value === normalized)?.label || 'Not started'
+}
+
+function isQuickListingSignedMandateStatus(value) {
+  return ['signed_uploaded', 'signed_external_pending_upload'].includes(normalizeKey(value))
+}
+
+function canQuickListingActivateWithMandateStatus(value) {
+  return ['signed_uploaded', 'signed_external_pending_upload'].includes(normalizeKey(value))
+}
+
+function getQuickListingActivationTier({ listingStatus = '', mandateStatus = '', complianceWarnings = [] } = {}) {
+  if (normalizeKey(listingStatus) !== 'active') {
+    return {
+      key: 'draft_review',
+      statusLabel: 'Draft / Review',
+      publicationLabel: 'Draft / Review',
+      workflowLabel: 'Draft / Review',
+    }
+  }
+
+  const hasWarnings = Array.isArray(complianceWarnings) && complianceWarnings.length > 0
+  if (normalizeKey(mandateStatus) === 'signed_uploaded' && !hasWarnings) {
+    return {
+      key: 'fully_compliant_active',
+      statusLabel: 'Fully Compliant Active',
+      publicationLabel: 'Fully Compliant Active',
+      workflowLabel: 'Fully Compliant Active',
+    }
+  }
+
+  return {
+    key: 'active_with_warning',
+    statusLabel: 'Active With Warning',
+    publicationLabel: 'Active With Warning',
+    workflowLabel: 'Active With Warning',
+  }
 }
 
 function resolveQuickListingStatus(form, { activationWarnings = [] } = {}) {
@@ -832,10 +1103,31 @@ function findQuickListingDuplicates({ form = {}, listings = [], transactions = [
   return matches
 }
 
+function buildListingAddressValueFromForm(form = {}) {
+  const formattedAddress = normalizeText(form.formattedAddress || form.propertyAddressValue?.formattedAddress || form.propertyAddress)
+  if (!formattedAddress) return null
+  return {
+    formattedAddress,
+    streetAddress: normalizeText(form.streetAddress || form.propertyAddressValue?.streetAddress || form.propertyAddress) || formattedAddress,
+    suburb: normalizeText(form.suburb || form.propertyAddressValue?.suburb),
+    city: normalizeText(form.city || form.propertyAddressValue?.city),
+    province: normalizeText(form.province || form.propertyAddressValue?.province),
+    country: normalizeText(form.country || form.propertyAddressValue?.country) || 'South Africa',
+    postalCode: normalizeText(form.postalCode || form.propertyAddressValue?.postalCode),
+    latitude: form.latitude ?? form.propertyAddressValue?.latitude ?? null,
+    longitude: form.longitude ?? form.propertyAddressValue?.longitude ?? null,
+    googlePlaceId: normalizeText(form.googlePlaceId || form.propertyAddressValue?.googlePlaceId || form.propertyAddressValue?.placeId),
+    placeId: normalizeText(form.googlePlaceId || form.propertyAddressValue?.placeId || form.propertyAddressValue?.googlePlaceId),
+    addressComponents: form.propertyAddressValue?.addressComponents,
+    rawGoogleResponse: form.propertyAddressValue?.rawGoogleResponse,
+  }
+}
+
 function validateQuickListingMinimumFields({ form, assignedAgentKey, requireAssignedAgent = true }) {
   const errors = []
-  if (!normalizeText(form.propertyAddress) && !normalizeText(form.listingTitle)) errors.push('Property address or listing title is required.')
+  if (!normalizeText(form.propertyAddress)) errors.push('Property address is required.')
   if (!normalizeText(form.sellerName)) errors.push('Seller display name is required.')
+  if (!normalizeText(form.sellerEmail) && !normalizeText(form.sellerPhone)) errors.push('Seller email or phone is required.')
   if (requireAssignedAgent && !normalizeText(assignedAgentKey)) errors.push('Assigned agent is required.')
   if (!['draft', 'active'].includes(normalizeKey(form.listingStatus))) errors.push('Listing status must be Draft or Active.')
   return errors
@@ -844,7 +1136,10 @@ function validateQuickListingMinimumFields({ form, assignedAgentKey, requireAssi
 function validateQuickListingActiveRules({ form, assignedAgentKey }) {
   if (normalizeKey(form.listingStatus) !== 'active') return []
   const errors = validateQuickListingMinimumFields({ form, assignedAgentKey, requireAssignedAgent: true })
-  if (!hasQuickListingSignedMandate(form)) errors.push('Upload the signed mandate before marking the listing Active.')
+  const mandateStatus = getQuickListingMandateStatus(form)
+  if (!canQuickListingActivateWithMandateStatus(mandateStatus)) {
+    errors.push('Capture a signed mandate status before marking the listing Active.')
+  }
   return [...new Set(errors)]
 }
 
@@ -882,6 +1177,7 @@ function AgentListings({ initialTab = null } = {}) {
   const [shareError, setShareError] = useState('')
   const [filters, setFilters] = useState({
     search: '',
+    followUp: 'all',
   })
   const [quickAddDuplicateMatches, setQuickAddDuplicateMatches] = useState([])
   const [quickAddDuplicateOverride, setQuickAddDuplicateOverride] = useState(false)
@@ -1021,6 +1317,56 @@ function AgentListings({ initialTab = null } = {}) {
     }
   }
 
+  function updatePropertyAddress(nextValue) {
+    setForm((previous) => {
+      const formattedAddress = normalizeText(nextValue?.formattedAddress)
+      const streetAddress = normalizeText(nextValue?.streetAddress || nextValue?.streetName || formattedAddress)
+      return {
+        ...previous,
+        propertyAddressValue: nextValue || null,
+        propertyAddress: streetAddress,
+        formattedAddress,
+        streetAddress,
+        suburb: normalizeText(nextValue?.suburb) || previous.suburb,
+        city: normalizeText(nextValue?.city) || previous.city,
+        province: normalizeText(nextValue?.province) || previous.province,
+        country: normalizeText(nextValue?.country) || previous.country || 'South Africa',
+        postalCode: normalizeText(nextValue?.postalCode) || previous.postalCode,
+        latitude: nextValue?.latitude ?? null,
+        longitude: nextValue?.longitude ?? null,
+        googlePlaceId: normalizeText(nextValue?.googlePlaceId || nextValue?.placeId),
+      }
+    })
+    setQuickAddDuplicateMatches([])
+    setQuickAddDuplicateOverride(false)
+  }
+
+  function updatePropertyAddressInput(nextText) {
+    const text = normalizeText(nextText)
+    setForm((previous) => ({
+      ...previous,
+      propertyAddressValue: text
+        ? {
+            formattedAddress: text,
+            streetAddress: text,
+            suburb: previous.suburb,
+            city: previous.city,
+            province: previous.province,
+            country: previous.country || 'South Africa',
+            postalCode: previous.postalCode,
+          }
+        : null,
+      propertyAddress: text,
+      formattedAddress: text,
+      streetAddress: text,
+      latitude: null,
+      longitude: null,
+      googlePlaceId: '',
+    }))
+    setQuickAddDuplicateMatches([])
+    setQuickAddDuplicateOverride(false)
+  }
+
   function resetForm() {
     setForm(buildInitialListingLeadForm(profile, workspace))
   }
@@ -1104,6 +1450,14 @@ function AgentListings({ initialTab = null } = {}) {
     const sellerEmail = form.sellerEmail.trim()
     const sellerPhone = form.sellerPhone.trim()
     const propertyAddress = form.propertyAddress.trim()
+    const propertyAddressValue = buildListingAddressValueFromForm(form)
+    const formattedAddress = normalizeText(propertyAddressValue?.formattedAddress || propertyAddress)
+    const streetAddress = normalizeText(propertyAddressValue?.streetAddress || propertyAddress)
+    const country = normalizeText(propertyAddressValue?.country || form.country) || 'South Africa'
+    const postalCode = normalizeText(propertyAddressValue?.postalCode || form.postalCode)
+    const googlePlaceId = normalizeText(propertyAddressValue?.googlePlaceId || propertyAddressValue?.placeId || form.googlePlaceId)
+    const latitude = propertyAddressValue?.latitude ?? form.latitude ?? null
+    const longitude = propertyAddressValue?.longitude ?? form.longitude ?? null
     const propertyType = form.propertyType.trim()
     const listingTitle = form.listingTitle.trim() || [propertyType, form.suburb.trim()].filter(Boolean).join(' - ') || propertyAddress
     const estimatedPrice = Number(form.estimatedAskingPrice || form.listingPrice || 0)
@@ -1120,6 +1474,7 @@ function AgentListings({ initialTab = null } = {}) {
       const normalizedStatus = normalizeKey(form.listingStatus || 'draft')
       const mandateUploaded = Boolean(normalizeText(form.manualMandateFileName))
       const mandateStatus = getQuickListingMandateStatus(form)
+      const initialMandateStatus = mandateStatus === 'signed_uploaded' ? 'signed_external_pending_upload' : mandateStatus
       const selectedAgent =
         assignableAgents.find((agent) => normalizeText(agent.userId || agent.id || agent.email) === normalizeText(form.assignedAgentId || form.assignedAgentEmail)) ||
         assignableAgents[0] ||
@@ -1169,6 +1524,11 @@ function AgentListings({ initialTab = null } = {}) {
         property24ListingUrl: form.externalListingLink,
         documents: mandateUploaded ? [{ document_type: normalizeDocumentCategoryKey(form.mandateDocumentCategory), status: 'uploaded' }] : [],
       }, completeness), ...activationWarnings])]
+      const activationTier = getQuickListingActivationTier({
+        listingStatus: resolvedListingStatus,
+        mandateStatus,
+        complianceWarnings,
+      })
       const quickNotes = buildQuickListingNotes(
         {
           ...form,
@@ -1203,6 +1563,7 @@ function AgentListings({ initialTab = null } = {}) {
           mobile: sellerPhone,
         }
         const sellerUpdatePayload = {
+          mandateStatus: initialMandateStatus,
           sellerCanonicalFacts,
           sellerCanonicalFactReadiness: {
             sellerName: Boolean(sellerDisplayName),
@@ -1217,7 +1578,7 @@ function AgentListings({ initialTab = null } = {}) {
           assignedAgentId: resolvedAssignedAgentId || null,
           listingStatus: resolvedListingIsActive ? 'listing_review' : resolvedListingStatus,
           sellerOnboardingStatus: 'not_started',
-          mandateStatus: 'not_started',
+          mandateStatus: initialMandateStatus,
           listingVisibility: resolveQuickListingVisibility(form.visibility, resolvedListingIsActive ? 'listing_review' : resolvedListingStatus),
           title: listingTitle,
           propertyCategory: normalizePropertyCategory(form.propertyCategory, { fallback: 'residential' }),
@@ -1228,9 +1589,16 @@ function AgentListings({ initialTab = null } = {}) {
           askingPrice: Number(form.listingPrice || 0) || estimatedPrice,
           estimatedValue: Number(form.listingPrice || 0) || estimatedPrice,
           addressLine1: propertyAddress,
+          formattedAddress,
+          streetAddress,
           suburb: form.suburb.trim(),
           city: form.city.trim(),
           province: form.province.trim(),
+          country,
+          postalCode,
+          latitude,
+          longitude,
+          googlePlaceId,
           description: quickNotes,
           internalListingNotes: quickNotes,
           listingPreviewDescription: form.notes.trim(),
@@ -1265,12 +1633,12 @@ function AgentListings({ initialTab = null } = {}) {
             window.dispatchEvent(new Event('itg:listings-updated'))
             return
           }
-          sellerUpdatePayload.mandateStatus = 'signed'
-          if (resolvedListingIsActive) {
-            sellerUpdatePayload.listingStatus = 'active'
-            sellerUpdatePayload.listingVisibility = 'active_market'
-            sellerUpdatePayload.isActive = true
-          }
+          sellerUpdatePayload.mandateStatus = 'signed_uploaded'
+        }
+        if (resolvedListingIsActive) {
+          sellerUpdatePayload.listingStatus = 'active'
+          sellerUpdatePayload.listingVisibility = 'active_market'
+          sellerUpdatePayload.isActive = true
         }
         await updatePrivateListing(created.listing.id, sellerUpdatePayload, { includeRequirementsAndDocuments: false }).catch(() => null)
         await createPrivateListingActivity({
@@ -1290,6 +1658,7 @@ function AgentListings({ initialTab = null } = {}) {
             mandateStatus,
             selectedListingStatus: normalizedStatus,
             resolvedListingStatus,
+            activationTier: activationTier.key,
             activationWarnings,
             documentUploaded: mandateUploaded,
             duplicateOverride: quickAddDuplicateOverride,
@@ -1318,9 +1687,16 @@ function AgentListings({ initialTab = null } = {}) {
           propertyStructureType: form.propertyStructureType,
           propertyAddress: [propertyAddress, form.suburb.trim(), form.city.trim()].filter(Boolean).join(', '),
           addressLine1: propertyAddress,
+          formattedAddress,
+          streetAddress,
           suburb: form.suburb.trim(),
           city: form.city.trim(),
           province: form.province.trim(),
+          country,
+          postalCode,
+          latitude,
+          longitude,
+          googlePlaceId,
           askingPrice: Number(form.listingPrice || 0) || estimatedPrice,
           bedrooms: Number(form.bedrooms || 0) || 0,
           bathrooms: Number(form.bathrooms || 0) || 0,
@@ -1353,6 +1729,7 @@ function AgentListings({ initialTab = null } = {}) {
             : [],
           requiredDocuments: [],
           listingCompleteness: completeness,
+          activationTier: activationTier.key,
           missingFollowUpItems: completeness.missingItems,
           complianceWarnings,
           internalListingNotes: quickNotes,
@@ -1372,6 +1749,7 @@ function AgentListings({ initialTab = null } = {}) {
               mandateStatus,
               selectedListingStatus: normalizedStatus,
               resolvedListingStatus,
+              activationTier: activationTier.key,
               activationWarnings,
               documentUploaded: mandateUploaded,
               duplicateOverride: quickAddDuplicateOverride,
@@ -1397,13 +1775,13 @@ function AgentListings({ initialTab = null } = {}) {
       setQuickAddSuccess({
         id: createdListingId,
         title: createdListingTitle,
-        statusLabel: complianceWarnings.length ? 'Needs Attention' : resolvedListingIsActive ? 'Live' : 'Draft',
+        statusLabel: activationTier.statusLabel,
         mandateStatus,
         complianceWarnings,
       })
       setWorkflowMessage(
-        `Quick Add Listing created as ${complianceWarnings.length ? 'Needs Attention' : resolvedListingIsActive ? 'Active' : 'Draft'}${
-          mandateStatus !== 'signed' ? '. Missing mandate still requires follow-up before activation.' : '. Signed mandate captured.'
+        `Quick Add Listing created as ${activationTier.workflowLabel}${
+          mandateStatus !== 'signed_uploaded' ? '. Mandate follow-up still requires attention before full activation.' : '. Signed mandate uploaded.'
         }`,
       )
       window.dispatchEvent(new Event('itg:listings-updated'))
@@ -1434,9 +1812,16 @@ function AgentListings({ initialTab = null } = {}) {
         askingPrice: estimatedPrice,
         estimatedValue: estimatedPrice,
         addressLine1: propertyAddress,
+        formattedAddress,
+        streetAddress,
         suburb: form.suburb.trim(),
         city: form.city.trim(),
         province: form.province.trim(),
+        country,
+        postalCode,
+        latitude,
+        longitude,
+        googlePlaceId,
         description: form.notes.trim(),
         sellerType: 'individual',
         source: 'guided_onboarding',
@@ -1471,9 +1856,17 @@ function AgentListings({ initialTab = null } = {}) {
         propertyData: {
           listingTitle,
           propertyAddress,
+          addressLine1: propertyAddress,
+          formattedAddress,
+          streetAddress,
           suburb: form.suburb.trim(),
           city: form.city.trim(),
           province: form.province.trim(),
+          country,
+          postalCode,
+          latitude,
+          longitude,
+          googlePlaceId,
         },
         rolePlayers: {
           transferAttorney: form.transferAttorney.trim(),
@@ -1758,14 +2151,20 @@ function AgentListings({ initialTab = null } = {}) {
         imageUrl: resolveListingImageUrl(listing),
         agentName,
       }
-    }).map((card) => ({
-      ...card,
-      attentionLine: formatListingAttentionLine(card),
-    }))
+    }).map((card) => {
+      const followUpQueue = buildListingFollowUpQueue(card)
+      return withFollowUpReminderStatus({
+        ...card,
+        attentionLine: formatListingAttentionLine(card),
+        followUpQueue,
+        followUpCount: followUpQueue.length,
+      })
+    })
   }, [deletedListingIds, privateListings, profile?.email, profile?.fullName, profile?.name])
 
   const categoryFilteredListingCards = useMemo(() => {
     const query = String(filters.search || '').trim().toLowerCase()
+    const followUpFilter = normalizeKey(filters.followUp || 'all')
     const tabCategoryMap = {
       residential: new Set(['residential', 'mixed_use', 'vacant_land']),
     }
@@ -1774,11 +2173,12 @@ function AgentListings({ initialTab = null } = {}) {
     return privateListingCards.filter((card) => {
       const categoryMatch = targetCategories.has(String(card.propertyCategory || 'residential').toLowerCase())
       const searchMatch = query
-        ? [card.title, card.suburb, card.typeLabel, card.agentName, card.originLabel].join(' ').toLowerCase().includes(query)
+        ? [card.title, card.suburb, card.typeLabel, card.agentName, card.originLabel, ...(card.followUpQueue || []).map((item) => item.label)].join(' ').toLowerCase().includes(query)
         : true
-      return categoryMatch && searchMatch
+      const followUpMatch = listingsTab === 'developments' ? true : listingMatchesFollowUpFilter(card, followUpFilter)
+      return categoryMatch && searchMatch && followUpMatch
     })
-  }, [filters.search, listingsTab, privateListingCards])
+  }, [filters.followUp, filters.search, listingsTab, privateListingCards])
 
   const developmentCards = useMemo(() => {
     const grouped = new Map()
@@ -1930,6 +2330,23 @@ function AgentListings({ initialTab = null } = {}) {
     }),
     [developmentCards.length, privateListingCards],
   )
+  const listingFollowUpInsights = useMemo(() => buildListingFollowUpInsights(privateListingCards), [privateListingCards])
+  const listingFollowUpEscalationSummary = useMemo(
+    () => buildListingFollowUpEscalationSummary(privateListingCards, listingFollowUpInsights),
+    [listingFollowUpInsights, privateListingCards],
+  )
+
+  async function handleCopyFollowUpEscalationSummary() {
+    setError('')
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(listingFollowUpEscalationSummary)
+      }
+      setWorkflowMessage('Manual listing chase list copied for follow-up.')
+    } catch {
+      setWorkflowMessage(listingFollowUpEscalationSummary)
+    }
+  }
 
   function handleOpenDevelopmentWorkspace(card) {
     const developmentId = card?.id
@@ -2062,6 +2479,85 @@ function AgentListings({ initialTab = null } = {}) {
           </div>
         </div>
 
+        {listingsTab !== 'developments' ? (
+          <div className="mb-5 rounded-[18px] border border-[#dbe6f2] bg-[#f8fbfe] p-4">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div>
+                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Follow-Up Oversight</p>
+                <h3 className="mt-1 text-base font-semibold text-[#142132]">
+                  {listingFollowUpInsights.listingsNeedingFollowUp} listing{listingFollowUpInsights.listingsNeedingFollowUp === 1 ? '' : 's'} need recovery work
+                </h3>
+                <p className="mt-1 text-sm text-[#607387]">
+                  Active manual listings stay visible here until mandate uploads, seller FICA, photos, commission, and onboarding are closed.
+                </p>
+              </div>
+              <div className="flex min-w-[240px] flex-col gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={handleCopyFollowUpEscalationSummary}
+                  disabled={!listingFollowUpInsights.listingsNeedingFollowUp}
+                >
+                  <Copy size={15} />
+                  Copy Chase List
+                </Button>
+                {listingFollowUpInsights.topAgents.length ? (
+                  <div className="rounded-[14px] border border-[#dce6f2] bg-white px-3 py-2">
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Owner Hotspots</p>
+                    <div className="mt-2 space-y-1.5">
+                      {listingFollowUpInsights.topAgents.map((agent) => (
+                        <div key={agent.name} className="flex items-center justify-between gap-3 text-[0.78rem] font-semibold text-[#35546c]">
+                          <span className="truncate">{agent.name}</span>
+                          <span>{agent.followUps} task{agent.followUps === 1 ? '' : 's'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+              {[
+                { label: 'Overdue', value: listingFollowUpInsights.overdueFollowUps },
+                { label: 'Due Today', value: listingFollowUpInsights.dueTodayFollowUps },
+                { label: 'Active With Warning', value: listingFollowUpInsights.activeWithWarning },
+                { label: 'Mandate Uploads', value: listingFollowUpInsights.mandateUploads },
+                { label: 'Seller FICA', value: listingFollowUpInsights.sellerFica },
+                { label: 'Photos / Commission', value: listingFollowUpInsights.photos + listingFollowUpInsights.commission },
+              ].map((item) => (
+                <div key={item.label} className="rounded-[14px] border border-[#dce6f2] bg-white px-3 py-2">
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{item.label}</p>
+                  <p className="mt-1 text-lg font-semibold text-[#142132]">{item.value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {LISTING_FOLLOW_UP_FILTERS.map((filter) => {
+                const active = normalizeKey(filters.followUp || 'all') === filter.key
+                const count = listingFollowUpInsights.filterCounts?.[filter.key] || 0
+                return (
+                  <button
+                    key={filter.key}
+                    type="button"
+                    onClick={() => setFilters((previous) => ({ ...previous, followUp: filter.key }))}
+                    className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3 py-1.5 text-[0.78rem] font-semibold transition ${
+                      active
+                        ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_8px_16px_rgba(31,79,120,0.18)]'
+                        : 'border-[#d8e3ef] bg-white text-[#35546c] hover:border-[#b7c8db] hover:bg-[#f6faff]'
+                    }`}
+                  >
+                    <span>{filter.label}</span>
+                    <span className={active ? 'text-white/82' : 'text-[#7b8ca2]'}>{count}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ) : null}
+
         {loading ? (
           <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-6 text-sm text-[#6c7f95]">Loading listings…</div>
         ) : null}
@@ -2152,6 +2648,37 @@ function AgentListings({ initialTab = null } = {}) {
                         <span>No attention required</span>
                       </div>
                     )}
+
+                    {card.followUpQueue?.length ? (
+                      <div className="border-t border-[#eef3f8] pt-3">
+                        <div className="mb-2 flex items-center justify-between gap-2 text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">
+                          <span>Listing follow-ups</span>
+                          <span>{card.followUpCount}</span>
+                        </div>
+                        <div className="space-y-1.5">
+                          {card.followUpQueue.slice(0, 3).map((item) => (
+                            <div key={item.key} className="flex items-center gap-2 text-[0.78rem] font-semibold text-[#35546c]">
+                              <span className={`h-2 w-2 shrink-0 rounded-full ${item.priority === 'urgent' ? 'bg-[#b84432]' : item.priority === 'high' ? 'bg-[#d78a16]' : item.priority === 'blocked' ? 'bg-[#8da0b5]' : 'bg-[#1f7d44]'}`} />
+                              <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                              {item.reminderLabel ? (
+                                <span className={`ml-auto shrink-0 rounded-full px-2 py-0.5 text-[0.66rem] ${
+                                  item.reminderStatus === 'overdue'
+                                    ? 'bg-[#fff1f0] text-[#b84432]'
+                                    : item.reminderStatus === 'due_today'
+                                      ? 'bg-[#fff8ea] text-[#8a5b16]'
+                                      : 'bg-[#eef5fb] text-[#607387]'
+                                }`}>
+                                  {item.reminderLabel}
+                                </span>
+                              ) : null}
+                            </div>
+                          ))}
+                          {card.followUpQueue.length > 3 ? (
+                            <p className="text-[0.76rem] font-semibold text-[#7b8ca2]">+{card.followUpQueue.length - 3} more in workspace</p>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
 
                     <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-[#eef3f8] pt-3 text-[0.82rem] text-[#53687f]">
                       <span className="inline-flex min-w-0 items-center gap-1.5 font-semibold">
@@ -2364,12 +2891,21 @@ function AgentListings({ initialTab = null } = {}) {
               }
               copy={
                 isManualListingFlow
-                  ? 'Create a listing quickly from the key information you already have.'
+                  ? 'Use this when the listing or mandate already exists outside Bridge. Capture the seller and property now, then complete mandate documents as follow-up.'
                   : isPrincipalListingMode
                     ? 'Capture lead setup, assign role players, and push onboarding through the agency workflow.'
                     : 'Capture core seller details and trigger onboarding quickly. The principal team can enrich the listing later.'
               }
             />
+
+            {isManualListingFlow ? (
+              <div className="mt-5 rounded-[16px] border border-[#d8e6f2] bg-[#f6fbff] px-4 py-3">
+                <p className="text-sm font-semibold text-[#22374d]">Quick Add is for manual or external listings.</p>
+                <p className="mt-1 text-xs text-[#60758c]">
+                  Required now: property address, seller name, seller phone or email, and assigned agent. Mandate uploads, FICA, photos, commission, and external links can be completed after save.
+                </p>
+              </div>
+            ) : null}
 
             {isManualListingFlow ? (
               <div className="mt-5 grid gap-2 md:grid-cols-4">
@@ -2446,7 +2982,7 @@ function AgentListings({ initialTab = null } = {}) {
                 <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Seller</h4>
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <label className="grid gap-2">
-                    <span className="text-sm font-semibold text-[#2d445e]">Seller name</span>
+                    <span className="text-sm font-semibold text-[#2d445e]">Seller name *</span>
                     <Field
                       value={form.sellerName}
                       onChange={(event) => updateForm('sellerName', event.target.value)}
@@ -2488,16 +3024,17 @@ function AgentListings({ initialTab = null } = {}) {
               <section className={`${isManualListingFlow && form.quickStep !== 'property' ? 'hidden' : ''} space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4`}>
                 <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Property</h4>
                 <div className={`grid gap-4 md:grid-cols-2 ${isManualListingFlow ? 'xl:grid-cols-4' : 'xl:grid-cols-4'}`}>
-                  {isManualListingFlow ? (
-                    <label className="grid gap-2 xl:col-span-2">
-                      <span className="text-sm font-semibold text-[#2d445e]">Listing title</span>
-                      <Field value={form.listingTitle} onChange={(event) => updateForm('listingTitle', event.target.value)} placeholder="House, Pretoria East" />
-                    </label>
-                  ) : null}
-                  <label className="grid gap-2 xl:col-span-2">
-                    <span className="text-sm font-semibold text-[#2d445e]">Property address</span>
-                    <Field value={form.propertyAddress} onChange={(event) => updateForm('propertyAddress', event.target.value)} placeholder="Street address" />
-                  </label>
+                  <div className="xl:col-span-2">
+                    <AddressAutocomplete
+                      label="Property address *"
+                      value={buildListingAddressValueFromForm(form)}
+                      onChange={updatePropertyAddress}
+                      onInputValueChange={updatePropertyAddressInput}
+                      predictionTypes={['address']}
+                      placeholder="Start typing the property address..."
+                      required
+                    />
+                  </div>
                   <label className="grid gap-2">
                     <span className="text-sm font-semibold text-[#2d445e]">Suburb / area</span>
                     <Field value={form.suburb} onChange={(event) => updateForm('suburb', event.target.value)} placeholder="Suburb" />
@@ -2653,14 +3190,16 @@ function AgentListings({ initialTab = null } = {}) {
                         </Field>
                       </label>
 	                      <label className="grid gap-2">
-	                        <span className="text-sm font-semibold text-[#2d445e]">Mandate signed?</span>
-	                        <Field as="select" value={form.mandateSigned ? 'yes' : form.mandateStatusCaptured ? 'no' : ''} onChange={(event) => {
-	                          updateForm('mandateSigned', event.target.value === 'yes')
-	                          updateForm('mandateStatusCaptured', Boolean(event.target.value))
+	                        <span className="text-sm font-semibold text-[#2d445e]">Mandate status</span>
+	                        <Field as="select" value={form.manualMandateStatus} onChange={(event) => {
+	                          const nextStatus = event.target.value
+	                          updateForm('manualMandateStatus', nextStatus)
+	                          updateForm('mandateSigned', isQuickListingSignedMandateStatus(nextStatus))
+	                          updateForm('mandateStatusCaptured', nextStatus !== 'not_started')
 	                        }}>
-	                          <option value="">Capture status</option>
-	                          <option value="yes">Yes</option>
-	                          <option value="no">No</option>
+	                          {QUICK_ADD_MANDATE_STATUS_OPTIONS.map((option) => (
+	                            <option key={option.value} value={option.value}>{option.label}</option>
+	                          ))}
 	                        </Field>
                       </label>
                       <label className="grid gap-2">
@@ -2733,7 +3272,7 @@ function AgentListings({ initialTab = null } = {}) {
                     Missing mandates do not block listing creation. They are shown as a listing attention item.
                   </p>
 	                  <div className="grid gap-4 md:grid-cols-2">
-	                    {form.mandateSigned ? (
+	                    {isQuickListingSignedMandateStatus(form.manualMandateStatus) ? (
 	                      <>
 	                        <label className="grid gap-2">
 	                          <span className="text-sm font-semibold text-[#2d445e]">Document category</span>
@@ -2752,15 +3291,30 @@ function AgentListings({ initialTab = null } = {}) {
 	                              const file = event.target.files?.[0] || null
 	                              updateForm('manualMandateFile', file)
 	                              updateForm('manualMandateFileName', file?.name || '')
+	                              if (file && normalizeKey(form.manualMandateStatus) === 'signed_external_pending_upload') {
+	                                updateForm('manualMandateStatus', 'signed_uploaded')
+	                              }
 	                            }}
 	                          />
-	                          <span className="text-xs text-[#6b7d93]">{form.manualMandateFileName ? `Selected: ${form.manualMandateFileName}` : 'Upload now if you have it, or leave it as a follow-up warning.'}</span>
+	                          <span className="text-xs text-[#6b7d93]">
+	                            {form.manualMandateFileName
+	                              ? `Selected: ${form.manualMandateFileName}`
+	                              : normalizeKey(form.manualMandateStatus) === 'signed_external_pending_upload'
+	                                ? 'The mandate is signed manually. Upload the document when it is available.'
+	                                : 'Upload the signed mandate to mark this listing activation-ready.'}
+	                          </span>
 	                        </label>
 	                      </>
 	                    ) : (
 	                      <div className="rounded-[14px] border border-[#dbe6f2] bg-white p-4">
-                        <p className="text-sm font-semibold text-[#2d445e]">Mandate missing</p>
-                        <p className="mt-1 text-xs text-[#6b7d93]">Create now and generate the mandate later from the listing workspace.</p>
+                        <p className="text-sm font-semibold text-[#2d445e]">{getQuickListingMandateStatusLabel(form.manualMandateStatus)}</p>
+                        <p className="mt-1 text-xs text-[#6b7d93]">
+                          {normalizeKey(form.manualMandateStatus) === 'in_progress'
+                            ? 'Create now and follow up while the seller completes the mandate.'
+                            : normalizeKey(form.manualMandateStatus) === 'expired'
+                              ? 'Create now and renew the mandate from the listing workspace.'
+                              : 'Create now and generate the mandate later from the listing workspace.'}
+                        </p>
                         <Button type="button" variant="secondary" className="mt-3" onClick={() => setWorkflowMessage('Mandate generation will be available from the listing workspace after save.')}>
                           Generate Mandate
                         </Button>
@@ -2858,16 +3412,31 @@ function AgentListings({ initialTab = null } = {}) {
                   </div>
                   {(() => {
                     const mandateUploaded = Boolean(normalizeText(form.manualMandateFileName))
+                    const mandateStatus = getQuickListingMandateStatus(form)
                     const completeness = buildListingCompleteness({ form, mandateUploaded })
                     const activeWarnings = validateQuickListingActiveRules({
                       form,
                       assignedAgentKey: normalizeText(form.assignedAgentId || form.assignedAgentEmail),
                     })
-                    const readinessLabel = completeness.missingItems.length || activeWarnings.length
-                      ? 'Needs Attention'
-                      : normalizeKey(form.listingStatus) === 'active'
-                        ? 'Live'
-                        : 'Ready To Publish'
+                    const complianceWarnings = [...new Set([...getListingComplianceWarnings({
+                      mandateStatus,
+                      seller: {
+                        name: form.sellerName,
+                        email: form.sellerEmail,
+                        phone: form.sellerPhone,
+                        registrationNumber: form.sellerRegistrationNumber,
+                      },
+                      commission: { type: form.commissionType, value: form.commissionValue },
+                      property24ListingUrl: form.externalListingLink,
+                      documents: mandateUploaded ? [{ document_type: normalizeDocumentCategoryKey(form.mandateDocumentCategory), status: 'uploaded' }] : [],
+                    }, completeness), ...activeWarnings])]
+                    const resolvedListingStatus = resolveQuickListingStatus(form, { activationWarnings: activeWarnings })
+                    const activationTier = getQuickListingActivationTier({
+                      listingStatus: resolvedListingStatus,
+                      mandateStatus,
+                      complianceWarnings,
+                    })
+                    const readinessLabel = activationTier.publicationLabel
                     return (
                       <div className="rounded-[14px] border border-[#dbe6f2] bg-white p-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2879,6 +3448,9 @@ function AgentListings({ initialTab = null } = {}) {
                             {activeWarnings.map((warning) => (
                               <p key={warning} className="mt-2 text-xs font-semibold text-[#9a5b13]">{warning}</p>
                             ))}
+                            {normalizeKey(form.listingStatus) === 'active' && activationTier.key === 'active_with_warning' && !activeWarnings.length ? (
+                              <p className="mt-2 text-xs font-semibold text-[#9a5b13]">This will be active immediately with compliance follow-up still visible.</p>
+                            ) : null}
                             {normalizeKey(form.listingStatus) === 'active' && activeWarnings.length ? (
                               <p className="mt-2 text-xs font-semibold text-[#1f4f78]">It will be created as Listing Review until these activation items are complete.</p>
                             ) : null}

@@ -46,7 +46,19 @@ const LISTING_STATUSES = PRIVATE_LISTING_LIFECYCLE.STATUSES
 
 const LISTING_VISIBILITY = ['internal', 'active_market', 'archived']
 const SELLER_ONBOARDING_STATUSES = ['not_started', 'sent', 'in_progress', 'completed', 'rejected']
-const MANDATE_STATUSES = ['not_started', 'ready', 'generated', 'sent', 'viewed', 'signed', 'rejected', 'expired']
+const MANDATE_STATUSES = [
+  'not_started',
+  'in_progress',
+  'ready',
+  'generated',
+  'sent',
+  'viewed',
+  'signed',
+  'signed_uploaded',
+  'signed_external_pending_upload',
+  'rejected',
+  'expired',
+]
 const DELETED_LISTING_STATUSES = new Set(['withdrawn', 'deleted', 'archived'])
 const DELETED_LISTING_VISIBILITIES = new Set(['archived', 'deleted'])
 const CANONICAL_ONBOARDING_RESOLVER_FLAG = 'VITE_CANONICAL_ONBOARDING_RESOLVER_ENABLED'
@@ -1484,13 +1496,13 @@ function mapPrivateListingSummaryRow(row = {}) {
         : {},
     completeness: {
       isDraft: false,
-      hasMandate: ['signed', 'approved', 'verified', 'completed'].includes(normalizeKey(row.mandate_status)),
+      hasMandate: ['signed', 'signed_uploaded', 'approved', 'verified', 'completed'].includes(normalizeKey(row.mandate_status)),
       hasSellerDocs: false,
       hasSellerOnboarding: false,
     },
     readinessSummary: {
       isDraft: false,
-      hasMandate: ['signed', 'approved', 'verified', 'completed'].includes(normalizeKey(row.mandate_status)),
+      hasMandate: ['signed', 'signed_uploaded', 'approved', 'verified', 'completed'].includes(normalizeKey(row.mandate_status)),
       hasSellerDocs: false,
       hasSellerOnboarding: false,
       missing: [],

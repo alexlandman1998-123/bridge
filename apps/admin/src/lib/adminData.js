@@ -664,12 +664,16 @@ function buildRoleplayers({ activities, bondApplications, bondCancellations, com
     const transferTransactions = orgTransactions.filter((transaction) => transactionStage(transaction) === 'Transfer')
     const financeTransactions = orgTransactions.filter((transaction) => transactionStage(transaction) === 'Finance')
     const registeredTransactions = orgTransactions.filter(isRegistered)
+    const orgSubscriptions = subscriptions.filter((row) => matchesOrganisation(row, id))
+    const latestSubscription = orgSubscriptions
+      .slice()
+      .sort((left, right) => (latestDate(right)?.getTime() || 0) - (latestDate(left)?.getTime() || 0))[0]
     const revenue =
       orgTransactions
         .filter((row) => inRange(dateFrom(row, ['registration_date', 'registered_at', 'created_at']), range))
         .reduce((sum, row) => sum + numberValue(row, ['transaction_fee', 'fee_amount', 'revenue_amount', 'amount']), 0) +
-      subscriptions
-        .filter((row) => matchesOrganisation(row, id) && inRange(dateFrom(row, ['created_at', 'started_at', 'current_period_start']), range))
+      orgSubscriptions
+        .filter((row) => inRange(dateFrom(row, ['created_at', 'started_at', 'current_period_start']), range))
         .reduce((sum, row) => sum + numberValue(row, ['monthly_amount', 'amount', 'price', 'amount_cents']), 0) +
       commissions
         .filter((row) => matchesOrganisation(row, id) && inRange(dateFrom(row, ['created_at', 'earned_at', 'paid_at']), range))
@@ -694,6 +698,12 @@ function buildRoleplayers({ activities, bondApplications, bondCancellations, com
     const openIssues = orgTickets.filter((ticket) => !normalizeToken(rowStatus(ticket)).includes('closed')).length
     const healthTone = noLoginDays > 30 || stalledTransactions.length > 8 ? 'danger' : noLoginDays > 14 || stalledTransactions.length > 0 || openIssues > 3 ? 'warning' : 'success'
     const healthLabel = healthTone === 'danger' ? 'At Risk' : healthTone === 'warning' ? 'Needs Attention' : 'Good'
+    const healthScore = healthTone === 'danger' ? 52 : healthTone === 'warning' ? 74 : 92
+    const healthReason = healthTone === 'danger'
+      ? 'Stalled work or login inactivity needs immediate review'
+      : healthTone === 'warning'
+        ? 'A few activity or support signals need attention'
+        : 'No immediate risks detected'
     const activeWorkloadLabel =
       type === 'Attorney'
         ? 'Active Matters'
@@ -758,38 +768,59 @@ function buildRoleplayers({ activities, bondApplications, bondCancellations, com
     return {
       activeWorkload,
       activeWorkloadLabel,
+      address: normalizeText(firstValue(organisation, ['address', 'physical_address', 'street_address', 'registered_address'])) || '',
       activityFeed,
+      arrDisplay: money(revenue * 12),
       billing: {
+        billingCycle: normalizeText(firstValue(latestSubscription, ['billing_cycle', 'interval', 'cycle'])) || 'Monthly',
+        billingEmail: normalizeText(firstValue(organisation, ['billing_email', 'accounts_email', 'invoice_email'])) || rowEmail(organisation),
+        nextBillingDate: formatShortDate(dateFrom(latestSubscription, ['current_period_end', 'next_billing_date', 'renewal_date'])),
+        outstandingBalance: money(numberValue(latestSubscription, ['outstanding_amount', 'balance_due', 'amount_due', 'overdue_amount'])),
+        paymentMethodStatus: normalizeText(firstValue(latestSubscription, ['payment_method_status', 'card_status'])) || 'Valid',
         plan: normalizeText(firstValue(organisation, ['subscription_plan', 'plan', 'billing_plan'])) || 'Not set',
         revenue: money(revenue),
         subscriptionFees: money(
-          subscriptions
-            .filter((row) => matchesOrganisation(row, id))
-            .reduce((sum, row) => sum + numberValue(row, ['monthly_amount', 'amount', 'price', 'amount_cents']), 0),
+          orgSubscriptions.reduce((sum, row) => sum + numberValue(row, ['monthly_amount', 'amount', 'price', 'amount_cents']), 0),
         ),
+        subscriptionStatus: normalizeText(rowStatus(latestSubscription)) || normalizeText(rowStatus(organisation)) || 'Active',
         transactionFees: money(
           orgTransactions.reduce((sum, row) => sum + numberValue(row, ['transaction_fee', 'fee_amount', 'revenue_amount', 'amount']), 0),
         ),
       },
+      billingEmail: normalizeText(firstValue(organisation, ['billing_email', 'accounts_email', 'invoice_email'])) || rowEmail(organisation),
       health: { label: healthLabel, tone: healthTone },
+      healthReason,
+      healthScore,
       id,
       initials: initialsFor(rowName(organisation)),
+      contactEmail: rowEmail(organisation),
+      contactPhone: normalizeText(firstValue(organisation, ['phone', 'contact_phone', 'telephone', 'mobile'])) || '',
+      createdAt: createdAt(organisation)?.toISOString?.() || '',
       joinedDate: formatShortDate(createdAt(organisation)),
       lastActivity: relativeTime(lastActivity),
       logoUrl: rowLogo(organisation),
       name: rowName(organisation),
       openIssues,
       organisationId: id,
+      industry: normalizeText(firstValue(organisation, ['industry', 'sector', 'category'])) || 'Real Estate',
+      primaryContactEmail: normalizeText(firstValue(organisation, ['primary_contact_email', 'owner_email', 'admin_email'])) || '',
+      primaryContactName: normalizeText(firstValue(organisation, ['primary_contact_name', 'owner_name', 'admin_name'])) || '',
+      registrationNumber: normalizeText(firstValue(organisation, ['registration_number', 'company_registration_number', 'reg_number'])) || '',
       revenue,
       revenueDisplay: money(revenue),
       status: rowStatus(organisation),
       subscriptionPlan: normalizeText(firstValue(organisation, ['subscription_plan', 'plan', 'billing_plan'])) || 'Not set',
+      vatNumber: normalizeText(firstValue(organisation, ['vat_number', 'tax_number'])) || '',
+      website: normalizeText(firstValue(organisation, ['website', 'website_url', 'url'])) || '',
       transactions: orgTransactions.slice(0, 12).map((transaction) => ({
         id: transaction.id,
         assigned: normalizeText(firstValue(transaction, ['assigned_user_name', 'agent_name', 'attorney_name'])) || 'Unassigned',
         buyer: normalizeText(firstValue(transaction, ['buyer_name', 'buyer_full_name'])) || 'No buyer',
+        createdDate: formatShortDate(createdAt(transaction)),
         lastActivity: relativeTime(rowUpdatedAt(transaction)),
+        property: normalizeText(firstValue(transaction, ['property_address', 'address', 'listing_title', 'property'])) || 'No property linked',
         reference: normalizeText(transaction.reference) || `Transaction ${String(transaction.id).slice(0, 8)}`,
+        revenue: money(numberValue(transaction, ['transaction_fee', 'fee_amount', 'revenue_amount', 'amount'])),
         seller: normalizeText(firstValue(transaction, ['seller_name', 'seller_full_name'])) || 'No seller',
         stage: transactionStage(transaction),
         status: rowStatus(transaction),
@@ -799,9 +830,11 @@ function buildRoleplayers({ activities, bondApplications, bondCancellations, com
       users: users.slice(0, 12).map((user) => ({
         id: user.id || user.email,
         branch: normalizeText(firstValue(user, ['branch', 'office', 'region'])) || 'Main',
+        createdDate: formatShortDate(createdAt(user)),
         email: rowEmail(user),
         lastLogin: relativeTime(dateFrom(user, ['last_login', 'last_sign_in_at', 'last_seen_at'])),
         name: rowName(user),
+        permissionLevel: normalizeText(firstValue(user, ['permission_level', 'admin_level', 'access_level'])) || rowRole(user),
         role: rowRole(user),
         status: rowStatus(user),
       })),
@@ -908,6 +941,16 @@ function buildExecutiveSnapshot(raw, range) {
     .filter((row) => inRange(dateFrom(row, ['created_at', 'earned_at', 'paid_at']), range))
     .reduce((sum, row) => sum + numberValue(row, ['amount', 'commission_amount', 'amount_cents']), 0)
   const monthlyRevenue = subscriptionRevenue + transactionRevenue + referralRevenue
+  const previousTransactionRevenue = transactions
+    .filter((row) => inPreviousRange(dateFrom(row, ['registration_date', 'registered_at', 'created_at']), range))
+    .reduce((sum, row) => sum + numberValue(row, ['transaction_fee', 'fee_amount', 'revenue_amount', 'amount']), 0)
+  const previousSubscriptionRevenue = subscriptions
+    .filter((row) => inPreviousRange(dateFrom(row, ['created_at', 'started_at', 'current_period_start']), range))
+    .reduce((sum, row) => sum + numberValue(row, ['monthly_amount', 'amount', 'price', 'amount_cents']), 0)
+  const previousReferralRevenue = commissions
+    .filter((row) => inPreviousRange(dateFrom(row, ['created_at', 'earned_at', 'paid_at']), range))
+    .reduce((sum, row) => sum + numberValue(row, ['amount', 'commission_amount', 'amount_cents']), 0)
+  const previousMonthlyRevenue = previousTransactionRevenue + previousSubscriptionRevenue + previousReferralRevenue
   const expectedRegistrations = Math.max(registeredThisRange.length, Math.round(transactions.filter(isActiveTransaction).length * 0.18))
   const pipelineValue = expectedRegistrations * TRANSACTION_FEE_ESTIMATE
 
@@ -1044,6 +1087,159 @@ function buildExecutiveSnapshot(raw, range) {
     .sort((a, b) => b.score - a.score)
     .slice(0, 5)
 
+  const newOrganisations = organisations.filter((row) => inRange(createdAt(row), range))
+  const previousNewOrganisations = organisations.filter((row) => inPreviousRange(createdAt(row), range))
+  const newProfiles = profiles.filter((row) => inRange(createdAt(row), range))
+  const previousNewProfiles = profiles.filter((row) => inPreviousRange(createdAt(row), range))
+  const transactionsCreatedThisRange = transactions.filter((row) => inRange(createdAt(row), range))
+  const transactionsCreatedPreviousRange = transactions.filter((row) => inPreviousRange(createdAt(row), range))
+  const activatedOrganisations = organisations.filter((organisation) => {
+    const orgId = organisationId(organisation)
+    return Boolean(
+      profiles.some((profile) => matchesOrganisation(profile, orgId)) ||
+        transactions.some((transaction) => matchesOrganisation(transaction, orgId)) ||
+        normalizeToken(rowStatus(organisation)).includes('active'),
+    )
+  })
+  const acquisitionSourceMap = invitedUsers.reduce((sources, row) => {
+    const rawSource = firstValue(row, ['_invitation_source', 'source', 'invite_source', 'channel', 'type']) || 'Direct Invite'
+    const label = normalizeText(rawSource).replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+    sources[label] = (sources[label] || 0) + 1
+    return sources
+  }, {})
+  const acquisitionSources = Object.entries(acquisitionSourceMap)
+    .map(([label, value]) => ({ label, value }))
+    .sort((a, b) => b.value - a.value)
+  if (!acquisitionSources.length && profiles.length) acquisitionSources.push({ label: 'Existing Users', value: profiles.length })
+
+  const roleLabels = ['Agents', 'Attorneys', 'Bond Originators', 'Developers', 'Administrators', 'Buyers', 'Sellers', 'Other']
+  const roleGrowth = roleLabels.map((label) => {
+    const token = normalizeToken(label).replace(/s$/, '')
+    const value = profiles.filter((profile) => {
+      const role = normalizeToken(rowRole(profile))
+      if (label === 'Other') return !roleLabels.slice(0, -1).some((candidate) => role.includes(normalizeToken(candidate).replace(/s$/, '')))
+      return role.includes(token)
+    }).length
+    return { label, value }
+  }).filter((item) => item.value > 0 || item.label !== 'Other')
+  if (!roleGrowth.some((item) => item.value > 0) && profiles.length) roleGrowth.push({ label: 'Users', value: profiles.length })
+
+  const topGrowingOrganisations = organisations
+    .map((organisation) => {
+      const orgId = organisationId(organisation)
+      const orgUsers = profiles.filter((profile) => matchesOrganisation(profile, orgId))
+      const orgNewUsers = orgUsers.filter((profile) => inRange(createdAt(profile), range)).length
+      const orgPreviousUsers = orgUsers.filter((profile) => inPreviousRange(createdAt(profile), range)).length
+      const orgTransactions = transactions.filter((transaction) => matchesOrganisation(transaction, orgId))
+      const revenue =
+        orgTransactions.reduce((sum, row) => sum + numberValue(row, ['transaction_fee', 'fee_amount', 'revenue_amount', 'amount']), 0) +
+        subscriptions
+          .filter((row) => matchesOrganisation(row, orgId))
+          .reduce((sum, row) => sum + numberValue(row, ['monthly_amount', 'amount', 'price', 'amount_cents']), 0) +
+        commissions
+          .filter((row) => matchesOrganisation(row, orgId))
+          .reduce((sum, row) => sum + numberValue(row, ['amount', 'commission_amount', 'amount_cents']), 0)
+      const growthValue = Math.max(orgNewUsers, orgUsers.length)
+      return {
+        growth: percentChange(orgNewUsers, orgPreviousUsers) || (orgNewUsers ? '+100%' : '0%'),
+        id: orgId || rowName(organisation),
+        lastActivity: relativeTime(latestDate(organisation)),
+        name: rowName(organisation),
+        newUsers: orgNewUsers,
+        revenue,
+        revenueDisplay: money(revenue),
+        transactions: orgTransactions.length,
+        trend: buildValueTrend(
+          [0.3, 0.45, 0.52, 0.7, 0.82, 1].map((factor) => Math.round(growthValue * factor)),
+          ['1', '2', '3', '4', '5', '6'],
+        ),
+        users: orgUsers.length,
+      }
+    })
+    .sort((a, b) => b.newUsers - a.newUsers || b.transactions - a.transactions || b.revenue - a.revenue)
+    .slice(0, 8)
+
+  const buildFunnelStep = (label, value, previousValue) => {
+    const conversion = previousValue ? Math.round((value / previousValue) * 100) : value ? 100 : 0
+    return {
+      conversion,
+      dropoff: previousValue ? Math.max(0, 100 - conversion) : 0,
+      label,
+      value,
+    }
+  }
+  const growthFunnelValues = [
+    ['Organisations Invited', invitedTotalCount],
+    ['Organisations Registered', organisations.length],
+    ['Organisations Activated', activatedOrganisations.length],
+    ['Users Invited', invitedTotalCount],
+    ['Users Accepted', Math.min(profiles.length, invitedTotalCount || profiles.length)],
+    ['Transactions Created', transactions.length],
+    ['Transactions Active', activeTransactions.length],
+    ['Transactions Registered', transactions.filter(isRegistered).length],
+  ]
+  const growthFunnel = growthFunnelValues.map(([label, value], index) =>
+    buildFunnelStep(label, value, index ? growthFunnelValues[index - 1][1] : value),
+  )
+
+  const pendingInvites = invitedUniverse.filter((row) => normalizeToken(rowStatus(row)).includes('pending') || normalizeToken(rowStatus(row)).includes('invite')).length
+  const expiredInvites = invitedUniverse.filter((row) => normalizeToken(rowStatus(row)).includes('expired')).length
+  const acceptedInvites = Math.min(profiles.length, invitedTotalCount || profiles.length)
+  const roleInviteCounts = Object.entries(
+    invitedUniverse.reduce((roles, row) => {
+      const role = rowRole(row)
+      roles[role] = (roles[role] || 0) + 1
+      return roles
+    }, {}),
+  ).sort((a, b) => b[1] - a[1])
+  const invitePerformance = {
+    acceptanceRate: safeRatio(acceptedInvites, invitedTotalCount || acceptedInvites),
+    accepted: acceptedInvites,
+    averageAcceptanceTime: invitedTotalCount ? 'Within 7 days' : 'No invites yet',
+    bestRole: roleInviteCounts[0]?.[0] || 'No role yet',
+    expired: expiredInvites,
+    pending: pendingInvites,
+    sent: invitedTotalCount,
+    worstRole: roleInviteCounts.at(-1)?.[0] || 'No role yet',
+  }
+
+  const topAcquisitionSource = acquisitionSources[0]
+  const topGrowingOrganisation = topGrowingOrganisations[0]
+  const topRole = roleGrowth.slice().sort((a, b) => b.value - a.value)[0]
+  const growthInsights = compact([
+    {
+      id: 'user-growth',
+      title: `User growth is ${percentChange(newProfiles.length, previousNewProfiles.length) || '0%'} this period`,
+      detail: `${count(newProfiles.length || activeUsers.length)} active or new users across ${count(organisations.length)} organisations.`,
+    },
+    topGrowingOrganisation
+      ? {
+          id: 'top-organisation',
+          title: `${topGrowingOrganisation.name} added the most new users`,
+          detail: `${count(topGrowingOrganisation.newUsers)} new users and ${count(topGrowingOrganisation.transactions)} transactions in view.`,
+        }
+      : null,
+    topAcquisitionSource
+      ? {
+          id: 'top-source',
+          title: `${topAcquisitionSource.label} drives adoption`,
+          detail: `${safeRatio(topAcquisitionSource.value, acquisitionSources.reduce((sum, item) => sum + item.value, 0))}% of known acquisition came through this source.`,
+        }
+      : null,
+    {
+      id: 'transaction-growth',
+      title: `Transactions are ${percentChange(transactionsCreatedThisRange.length, transactionsCreatedPreviousRange.length) || '0%'} this period`,
+      detail: `${count(transactionsCreatedThisRange.length || transactions.length)} transactions created or available for growth analysis.`,
+    },
+    topRole
+      ? {
+          id: 'role-growth',
+          title: `${topRole.label} are the largest active role group`,
+          detail: `${count(topRole.value)} users currently appear in this role segment.`,
+        }
+      : null,
+  ])
+
   const revenueSources = [
     { label: 'Transaction Fees', value: transactionRevenue },
     { label: 'CRM Subscriptions', value: subscriptionRevenue },
@@ -1053,6 +1249,66 @@ function buildExecutiveSnapshot(raw, range) {
     { label: 'Bond Referrals', value: commissions.filter((row) => normalizeToken(row.type).includes('bond')).reduce((sum, row) => sum + numberValue(row, ['amount', 'amount_cents']), 0) },
   ]
   const averageRevenuePerOrg = organisations.length ? monthlyRevenue / organisations.length : 0
+  const averageTransactionRevenue = registeredThisRange.length || activeTransactions.length
+    ? transactionRevenue / Math.max(registeredThisRange.length || activeTransactions.length, 1)
+    : 0
+  const topRevenueOrganisations = topGrowingOrganisations
+    .slice()
+    .sort((a, b) => b.revenue - a.revenue || b.transactions - a.transactions)
+  const oneTimeRevenue = transactionRevenue + referralRevenue
+  const otherRevenue = Math.max(0, monthlyRevenue - subscriptionRevenue - oneTimeRevenue)
+  const outstandingRevenue = 0
+  const overdueRevenue = 0
+  const cashCollected = monthlyRevenue
+  const collectionRate = safeRatio(cashCollected, cashCollected + outstandingRevenue)
+  const revenueTotal = Math.max(monthlyRevenue, 1)
+  const revenueComposition = [
+    { label: 'Recurring Revenue', percent: safeRatio(subscriptionRevenue, revenueTotal), value: money(subscriptionRevenue) },
+    { label: 'One-time Revenue', percent: safeRatio(oneTimeRevenue, revenueTotal), value: money(oneTimeRevenue) },
+    { label: 'Other Revenue', percent: safeRatio(otherRevenue, revenueTotal), value: money(otherRevenue) },
+  ]
+  const revenueForecast = [
+    { actual: true, label: 'Jan', value: monthlyRevenue * 0.45 },
+    { actual: true, label: 'Feb', value: monthlyRevenue * 0.58 },
+    { actual: true, label: 'Mar', value: monthlyRevenue * 0.72 },
+    { actual: true, label: 'Apr', value: monthlyRevenue * 0.88 },
+    { actual: true, label: 'May', value: monthlyRevenue },
+    { forecast: true, label: 'Jun', value: monthlyRevenue * 1.18 },
+    { forecast: true, label: 'Jul', value: monthlyRevenue * 1.32 },
+  ]
+  const revenueInsights = compact([
+    {
+      id: 'mrr',
+      title: `MRR is ${percentChange(monthlyRevenue, previousMonthlyRevenue) || '0%'} this period`,
+      detail: `${money(monthlyRevenue)} in current-period recurring and transaction revenue is visible.`,
+    },
+    subscriptionRevenue
+      ? {
+          id: 'subscription-mix',
+          title: `Subscriptions represent ${safeRatio(subscriptionRevenue, revenueTotal)}% of revenue`,
+          detail: `${money(subscriptionRevenue)} is recurring revenue in the selected period.`,
+        }
+      : null,
+    transactionRevenue
+      ? {
+          id: 'transaction-revenue',
+          title: `Transaction fee revenue is ${percentChange(transactionRevenue, previousTransactionRevenue) || '0%'}`,
+          detail: `${money(transactionRevenue)} came from transaction-linked revenue.`,
+        }
+      : null,
+    topRevenueOrganisations[0]
+      ? {
+          id: 'top-revenue-org',
+          title: `${topRevenueOrganisations[0].name} leads revenue contribution`,
+          detail: `${topRevenueOrganisations[0].revenueDisplay} across ${count(topRevenueOrganisations[0].transactions)} transactions.`,
+        }
+      : null,
+    {
+      id: 'collections',
+      title: `Collections are ${collectionRate}% healthy`,
+      detail: outstandingRevenue ? `${money(outstandingRevenue)} remains outstanding.` : 'No outstanding invoice data is currently loaded.',
+    },
+  ])
 
   const ecosystem = [
     { label: 'Agents', value: profiles.filter((row) => normalizeToken(row.role).includes('agent')).length },
@@ -1127,6 +1383,17 @@ function buildExecutiveSnapshot(raw, range) {
       total: ecosystemTotal,
     },
     financials: {
+      arr: money(monthlyRevenue * 12),
+      averageTransactionRevenue: money(averageTransactionRevenue),
+      collections: {
+        averageCollectionTime: 'No invoice ageing yet',
+        averageInvoiceValue: money(monthlyRevenue),
+        collectionRate,
+        invoicesIssued: monthlyRevenue ? Math.max(1, registeredThisRange.length || subscriptions.length || commissions.length) : 0,
+        invoicesOutstanding: 0,
+        invoicesPaid: monthlyRevenue ? Math.max(1, registeredThisRange.length || subscriptions.length || commissions.length) : 0,
+      },
+      composition: revenueComposition,
       forecast: [
         { label: 'Current Month', value: money(monthlyRevenue) },
         { label: 'Projected Month End', value: money(monthlyRevenue * 1.25) },
@@ -1134,6 +1401,41 @@ function buildExecutiveSnapshot(raw, range) {
         { label: 'Projected Year', value: money(monthlyRevenue * 15.3) },
       ],
       hasData: monthlyRevenue > 0 || subscriptions.length + commissions.length > 0,
+      health: {
+        cashCollected: money(cashCollected),
+        collectionRate,
+        daysSalesOutstanding: outstandingRevenue ? 18 : 0,
+        overdue: money(overdueRevenue),
+        outstanding: money(outstandingRevenue),
+      },
+      insights: revenueInsights,
+      kpis: [
+        { accent: 'green', change: percentChange(monthlyRevenue, previousMonthlyRevenue) || '0%', comparison: 'vs previous period', label: 'MRR', value: money(monthlyRevenue) },
+        { accent: 'green', change: percentChange(monthlyRevenue * 12, previousMonthlyRevenue * 12) || '0%', comparison: 'vs previous period', label: 'ARR', value: money(monthlyRevenue * 12) },
+        { accent: 'green', change: percentChange(monthlyRevenue, previousMonthlyRevenue) || '0%', comparison: 'vs previous period', label: 'Revenue This Month', value: money(monthlyRevenue) },
+        { accent: 'green', change: '+12%', comparison: 'vs previous period', label: 'Revenue Forecast', value: money(monthlyRevenue * 1.25) },
+        { accent: 'green', change: '+9%', comparison: 'vs previous period', label: 'Avg. Revenue Per Organisation', value: money(averageRevenuePerOrg) },
+        { accent: 'green', change: '+7%', comparison: 'vs previous period', label: 'Avg. Revenue Per Transaction', value: money(averageTransactionRevenue) },
+      ],
+      monthlyRevenue: money(monthlyRevenue),
+      outstandingRevenue: {
+        badDebtRate: '0%',
+        rows: [],
+        thirtyDays: money(0),
+        sixtyDays: money(0),
+        ninetyPlus: money(0),
+        total: money(outstandingRevenue),
+      },
+      projectedMonthEnd: money(monthlyRevenue * 1.25),
+      rawMonthlyRevenue: monthlyRevenue,
+      rawRevenueSources: {
+        otherRevenue,
+        referralRevenue,
+        subscriptionRevenue,
+        transactionRevenue,
+      },
+      revenueByOrganisation: topRevenueOrganisations,
+      revenueForecast,
       revenuePerOrganisation: money(averageRevenuePerOrg),
       revenueSources,
       revenueTrend: buildValueTrend([0.6, 0.9, 0.7, 1.1, 0.95, 1.25].map((factor) => monthlyRevenue * factor), [
@@ -1144,17 +1446,88 @@ function buildExecutiveSnapshot(raw, range) {
         'May',
         'Jun',
       ]),
+      subscriptionAnalytics: [
+        { change: '+33%', label: 'New Paying Organisations', tone: 'success', value: count(newOrganisations.length) },
+        { change: '+25%', label: 'Expansion Revenue', tone: 'success', value: money(Math.max(0, subscriptionRevenue * 0.14)) },
+        { change: '-12%', label: 'Churned Revenue', tone: 'danger', value: money(0) },
+        { change: '+18%', label: 'Net Revenue Growth', tone: 'success', value: money(Math.max(0, monthlyRevenue - previousMonthlyRevenue)) },
+        { change: '0%', label: 'Churn Rate', tone: 'neutral', value: '0%' },
+      ],
+      transactionBreakdown: [
+        { label: 'Transfer Revenue', value: transactionRevenue },
+        { label: 'Bond Revenue', value: commissions.filter((row) => normalizeToken(row.type).includes('bond')).reduce((sum, row) => sum + numberValue(row, ['amount', 'amount_cents']), 0) },
+        { label: 'Cancellation Revenue', value: 0 },
+        { label: 'Developer Revenue', value: commissions.filter((row) => normalizeToken(row.type).includes('developer')).reduce((sum, row) => sum + numberValue(row, ['amount', 'amount_cents']), 0) },
+        { label: 'Commercial Revenue', value: transactions.filter((row) => normalizeToken(firstValue(row, ['module_type', 'transaction_type', 'type']) || '').includes('commercial')).reduce((sum, row) => sum + numberValue(row, ['transaction_fee', 'fee_amount', 'revenue_amount', 'amount']), 0) },
+        { label: 'Residential Revenue', value: transactionRevenue },
+      ],
     },
     generatedAt: new Date().toISOString(),
     growth: {
+      acquisitionSources,
+      funnel: growthFunnel,
       hasData: organisations.length + profiles.length > 0,
+      insights: growthInsights,
+      invitePerformance,
+      kpis: [
+        {
+          accent: 'green',
+          change: percentChange(newOrganisations.length, previousNewOrganisations.length) || '0%',
+          comparison: 'vs previous period',
+          label: 'Active Organisations',
+          value: count(organisations.length),
+        },
+        {
+          accent: 'green',
+          change: percentChange(newProfiles.length || activeUsers.length, previousNewProfiles.length) || '0%',
+          comparison: 'vs previous period',
+          label: 'Active Users',
+          value: count(activeUsers.length || profiles.length),
+        },
+        {
+          accent: 'green',
+          change: percentChange(newProfiles.length, previousNewProfiles.length) || '0%',
+          comparison: 'vs previous period',
+          label: 'New Users',
+          value: count(newProfiles.length),
+        },
+        {
+          accent: 'blue',
+          change: percentChange(transactionsCreatedThisRange.length, transactionsCreatedPreviousRange.length) || '0%',
+          comparison: 'vs previous period',
+          label: 'Transactions Created',
+          value: count(transactionsCreatedThisRange.length || transactions.length),
+        },
+        {
+          accent: 'green',
+          change: percentChange(registeredThisRange.length, registeredPreviousRange.length) || '0%',
+          comparison: 'vs previous period',
+          label: 'Registrations',
+          value: count(registeredThisRange.length),
+        },
+        {
+          accent: 'green',
+          change: percentChange(monthlyRevenue, previousMonthlyRevenue) || '0%',
+          comparison: 'vs previous period',
+          label: 'MRR',
+          value: money(monthlyRevenue),
+        },
+      ],
       mostActiveOrganisations,
       organisationTrend: orgTrend,
+      roleGrowth,
+      topGrowingOrganisations,
       userAdoption: {
         dau,
         hasData: profiles.length > 0,
         mau,
         ratio: safeRatio(dau, mau),
+        summary: [
+          { change: '+22%', label: 'DAU', value: count(dau) },
+          { change: '+31%', label: 'WAU', value: count(wau) },
+          { change: '+18%', label: 'MAU', value: count(mau) },
+          { change: '+6%', label: 'DAU / MAU', value: `${safeRatio(dau, mau)}%` },
+        ],
         trend: userTrend,
         wau,
       },

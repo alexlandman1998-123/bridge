@@ -373,7 +373,7 @@ function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, m
     allSignersSigned ||
     hasFinalArtifact ||
     (mandatePacketRef && convertedToListing) ||
-    (allowStatusOnlyMandate && statuses.some((status) => ['signed', 'completed', 'fully_signed', 'uploaded_signed'].includes(status) || status.includes('mandate_signed')))
+    (allowStatusOnlyMandate && statuses.some((status) => ['signed', 'signed_uploaded', 'completed', 'fully_signed', 'uploaded_signed'].includes(status) || status.includes('mandate_signed')))
   ) {
     return 'signed'
   }

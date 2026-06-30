@@ -341,10 +341,12 @@ const Report = lazy(() => import('./pages/Report'))
 const RoleModuleOnboarding = lazy(() => import('./pages/RoleModuleOnboarding'))
 const SellerOnboarding = lazy(() => import('./pages/SellerOnboarding'))
 const SettingsAccountPage = lazy(() => import('./pages/settings/SettingsAccountPage'))
+const SettingsAuditLogPage = lazy(() => import('./pages/settings/SettingsAuditLogPage'))
 const SettingsBillingPage = lazy(() => import('./pages/settings/SettingsBillingPage'))
 const SettingsCommissionStructuresPage = lazy(() => import('./pages/settings/SettingsCommissionStructuresPage'))
 const SettingsCommunicationsTemplatesPage = lazy(() => import('./pages/settings/SettingsCommunicationsTemplatesPage'))
 const SettingsDevelopmentsPage = lazy(() => import('./pages/settings/SettingsDevelopmentsPage'))
+const SettingsIntegrationsPage = lazy(() => import('./pages/settings/SettingsIntegrationsPage'))
 const SettingsLanding = lazy(() => import('./pages/settings/SettingsLanding'))
 const SettingsLayout = lazy(() => import('./pages/settings/SettingsLayout'))
 const SettingsLeadCapturePage = lazy(() => import('./pages/settings/SettingsLeadCapturePage'))
@@ -2703,7 +2705,11 @@ function AppRoutes() {
               />
               <Route path="/settings" element={<ClientAwareSettingsLayout />}>
                 <Route index element={<SettingsLanding />} />
-                <Route path="account" element={<SettingsAccountPage />} />
+                <Route path="account" element={<SettingsAccountPage section="profile" />} />
+                <Route path="profile" element={<SettingsAccountPage section="profile" />} />
+                <Route path="security" element={<SettingsAccountPage section="security" />} />
+                <Route path="notifications" element={<SettingsAccountPage section="notifications" />} />
+                <Route path="preferences" element={<SettingsAccountPage section="preferences" />} />
                 <Route
                   path="organisation"
                   element={
@@ -2802,6 +2808,8 @@ function AppRoutes() {
                     </RoleRoute>
                   }
                 />
+                <Route path="integrations" element={<SettingsIntegrationsPage />} />
+                <Route path="audit-log" element={<SettingsAuditLogPage />} />
                 <Route
                   path="users"
                   element={

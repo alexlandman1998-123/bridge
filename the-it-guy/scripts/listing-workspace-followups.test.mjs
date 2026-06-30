@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const source = await readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
+const listingsSource = await readFile(new URL('../src/pages/AgentListings.jsx', import.meta.url), 'utf8')
 const packageJson = await readFile(new URL('../package.json', import.meta.url), 'utf8')
 
 assert.match(
@@ -27,11 +28,45 @@ for (const label of [
   'Generate mandate',
   'Upload signed mandate',
   'Add seller contact',
+  'Add seller ID / registration number',
+  'Add seller FICA',
   'Complete seller facts',
-  'Add commission',
+  'Confirm commission',
+  'Add photos',
+  'Add external listing link',
 ]) {
   assert.match(source, new RegExp(label), `Missing follow-up action: ${label}`)
 }
+
+for (const label of [
+  'Send seller onboarding',
+  'Upload signed mandate',
+  'Add seller ID / registration number',
+  'Add seller FICA',
+  'Confirm commission',
+  'Add photos',
+  'Add external listing link',
+]) {
+  assert.match(listingsSource, new RegExp(label), `Missing listing-card follow-up preview: ${label}`)
+}
+
+assert.match(
+  listingsSource,
+  /function buildListingFollowUpQueue\(card = \{\}\)/,
+  'Listing grid should derive a canonical follow-up preview for each card.',
+)
+
+assert.match(
+  listingsSource,
+  /card\.followUpQueue\.slice\(0, 3\)/,
+  'Listing cards should show a compact queue preview instead of hiding all skipped work.',
+)
+
+assert.match(
+  source,
+  /priorityLabel/,
+  'Listing workspace follow-ups should carry priority metadata.',
+)
 
 assert.match(
   source,
@@ -65,8 +100,8 @@ assert.match(
 
 assert.match(
   source,
-  /mandateStatus: 'signed'/,
-  'Signed mandate uploads should mark the listing mandate as signed.',
+  /mandateStatus: 'signed_uploaded'/,
+  'Signed mandate uploads should mark the listing mandate as signed and uploaded.',
 )
 
 assert.match(

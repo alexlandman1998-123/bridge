@@ -11,6 +11,8 @@ import {
   CircleDot,
   CreditCard,
   Database,
+  Download,
+  Filter,
   FileText,
   Headphones,
   Home,
@@ -102,8 +104,40 @@ const EMPTY_SNAPSHOT = {
   attention: [],
   customers: [],
   ecosystem: { hasData: false, metrics: [], total: 0 },
-  financials: { forecast: [], hasData: false, revenueSources: [], revenueTrend: [] },
-  growth: { hasData: false, mostActiveOrganisations: [], organisationTrend: [], userAdoption: {} },
+  financials: {
+    arr: 'R0',
+    averageTransactionRevenue: 'R0',
+    collections: {},
+    composition: [],
+    forecast: [],
+    hasData: false,
+    health: {},
+    insights: [],
+    kpis: [],
+    monthlyRevenue: 'R0',
+    outstandingRevenue: {},
+    projectedMonthEnd: 'R0',
+    revenueByOrganisation: [],
+    revenueForecast: [],
+    revenuePerOrganisation: 'R0',
+    revenueSources: [],
+    revenueTrend: [],
+    subscriptionAnalytics: [],
+    transactionBreakdown: [],
+  },
+  growth: {
+    acquisitionSources: [],
+    funnel: [],
+    hasData: false,
+    insights: [],
+    invitePerformance: {},
+    kpis: [],
+    mostActiveOrganisations: [],
+    organisationTrend: [],
+    roleGrowth: [],
+    topGrowingOrganisations: [],
+    userAdoption: {},
+  },
   kpis: [],
   metrics: [],
   organisations: [],
@@ -344,13 +378,23 @@ function Sidebar({ activeView, allowedGroups, level, onViewChange, profile, onSi
 
 function Topbar({ activeView, dateRange, isLoading, onDateRangeChange, onRefresh }) {
   const view = ALL_VIEWS.find((item) => item.id === activeView)
-  const isExecutivePage = ['dashboard', 'growth', 'revenue', 'ecosystem', 'health'].includes(activeView)
+  const title = activeView === 'dashboard' ? 'Executive Command Centre' : view?.label || 'Executive Command Centre'
+  const subtitle =
+    activeView === 'dashboard'
+      ? 'Real-time overview of the Arch9 platform.'
+      : activeView === 'growth'
+        ? 'Track platform adoption, customer acquisition and ecosystem growth.'
+      : activeView === 'revenue'
+          ? 'Track financial performance, collections, forecasts and revenue growth.'
+          : activeView === 'organisations'
+            ? 'Manage and monitor every organisation on the Arch9 platform.'
+          : 'Real-time operational workspace.'
 
   return (
     <header className="topbar">
       <div>
-        <h1>{isExecutivePage ? 'Executive Dashboard' : view?.label || 'Executive Dashboard'}</h1>
-        <p>CEO Command Centre</p>
+        <h1>{title}</h1>
+        <p>{subtitle}</p>
       </div>
       <div className="topbar-actions">
         <label className="range-select">
@@ -367,49 +411,125 @@ function Topbar({ activeView, dateRange, isLoading, onDateRangeChange, onRefresh
           <RefreshCw className={isLoading ? 'spin' : ''} size={16} />
           <span>Refresh</span>
         </button>
+        {activeView === 'growth' || activeView === 'revenue' ? (
+          <button className="secondary-button compact" type="button">
+            <Download size={16} />
+            <span>{activeView === 'revenue' ? 'Export CSV' : 'Export'}</span>
+          </button>
+        ) : null}
+        {activeView === 'organisations' ? (
+          <button className="primary-button compact" type="button">
+            <Plus size={16} />
+            <span>Add Organisation</span>
+          </button>
+        ) : null}
       </div>
     </header>
   )
 }
 
-function EmptyData({ compact = false }) {
+function EmptyData({
+  compact = false,
+  icon: Icon = CircleDot,
+  title = 'No signal yet',
+  description = 'Once platform activity starts, this area will update automatically.',
+}) {
   return (
     <div className={compact ? 'empty-data compact' : 'empty-data'}>
-      <strong>No data available yet.</strong>
-      <span>Data will populate as organisations and transactions are onboarded.</span>
+      <Icon size={compact ? 15 : 18} />
+      <strong>{title}</strong>
+      <span>{description}</span>
     </div>
   )
 }
 
+function numberFromDisplay(value) {
+  const parsed = Number(String(value || '').replace(/[^\d.-]/g, ''))
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function formatMoney(value) {
+  return new Intl.NumberFormat('en-ZA', {
+    currency: 'ZAR',
+    maximumFractionDigits: 0,
+    style: 'currency',
+  }).format(Number(value) || 0)
+}
+
+function initialsForDisplay(value = '') {
+  return String(value || 'A9')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'A9'
+}
+
+function sparklineForMetric(metric, index = 0) {
+  const breakdownValues = (metric.breakdown || [])
+    .map((item) => numberFromDisplay(item.value))
+    .filter((value) => Number.isFinite(value))
+  if (breakdownValues.length > 1) {
+    return metric.breakdown.map((item) => ({
+      label: item.label,
+      value: numberFromDisplay(item.value),
+    }))
+  }
+
+  const value = numberFromDisplay(metric.value)
+  const labels = ['1', '2', '3', '4', '5', '6']
+
+  return labels.map((label) => ({
+    label,
+    value,
+  }))
+}
+
 function ExecutiveKpiRow({ kpis }) {
+  const priorityLabels = [
+    'Active Organisations',
+    'Active Users',
+    'Transactions In Progress',
+    'Registrations This Month',
+    'Monthly Revenue',
+    'Pipeline Value',
+  ]
+  const cards = priorityLabels.map((label) => kpis.find((metric) => metric.label === label)).filter(Boolean)
+
   return (
     <section className="executive-kpi-row" aria-label="Executive KPIs">
-      {kpis.map((metric) => (
+      {cards.map((metric, index) => (
         <article className="executive-kpi-card" key={metric.label}>
-          <div className={`kpi-icon ${metric.accent || 'green'}`}>
-            {metric.label.includes('Revenue') ? (
-              <CircleDollarSign size={20} />
-            ) : metric.label.includes('Organisation') ? (
-              <Building2 size={20} />
-            ) : metric.label.includes('User') ? (
-              <Users size={20} />
-            ) : metric.label.includes('Pipeline') ? (
-              <LineChart size={20} />
-            ) : (
-              <BarChart3 size={20} />
-            )}
-          </div>
-          <div>
+          <div className="kpi-card-top">
+            <div className={`kpi-icon ${metric.accent || 'green'}`}>
+              {metric.label.includes('Revenue') ? (
+                <CircleDollarSign size={18} />
+              ) : metric.label.includes('Organisation') ? (
+                <Building2 size={18} />
+              ) : metric.label.includes('User') ? (
+                <Users size={18} />
+              ) : metric.label.includes('Pipeline') ? (
+                <LineChart size={18} />
+              ) : metric.label.includes('Registration') ? (
+                <ShieldCheck size={18} />
+              ) : (
+                <BarChart3 size={18} />
+              )}
+            </div>
             <span className="card-label">{metric.label}</span>
+          </div>
+          <div className="kpi-primary">
             {metric.hasData ? (
               <>
                 <strong>{metric.value}</strong>
                 {metric.change ? <em>{metric.change}</em> : null}
               </>
             ) : (
-              <EmptyData compact />
+              <EmptyData compact title="Waiting for activity" description="No matching records yet." />
             )}
           </div>
+          <MiniLineChart compact data={sparklineForMetric(metric, index)} />
           {metric.hasData && metric.breakdown?.length ? (
             <div className="kpi-breakdown">
               {metric.breakdown.map((item) => (
@@ -439,12 +559,10 @@ function FunnelChart({ data = [] }) {
   const max = Math.max(...data.map((item) => item.value), 1)
   const first = data[0]?.value || 0
 
-  if (!data.some((item) => item.value > 0)) return <EmptyData />
-
   return (
-    <div className="funnel-chart">
+    <div className={data.some((item) => item.value > 0) ? 'funnel-chart' : 'funnel-chart is-empty'}>
       {data.map((item, index) => {
-        const width = Math.max(28, (item.value / max) * 100)
+        const width = item.value > 0 ? Math.max(16, (item.value / max) * 100) : 0
         const conversion = index === 0 || !first ? 100 : Math.round((item.value / first) * 100)
         return (
           <div className="funnel-row" key={item.label}>
@@ -463,7 +581,7 @@ function FunnelChart({ data = [] }) {
 }
 
 function DonutChart({ centerLabel = '', centerValue = '', data = [] }) {
-  const colors = ['#2563eb', '#0f8f55', '#f3b51b', '#8b5cf6', '#14b8a6', '#94a3b8']
+  const colors = ['#0f8f55', '#35b37e', '#72d0a4', '#aee6c9', '#d7f3e4', '#94a3b8']
   const total = data.reduce((sum, item) => sum + (Number(item.value) || 0), 0)
   let cursor = 0
   const gradient = total
@@ -475,12 +593,10 @@ function DonutChart({ centerLabel = '', centerValue = '', data = [] }) {
           return `${colors[index % colors.length]} ${start}% ${end}%`
         })
         .join(', ')
-    : '#eef2f3 0% 100%'
-
-  if (!total) return <EmptyData />
+    : '#eef4f0 0% 100%'
 
   return (
-    <div className="donut-wrap">
+    <div className={total ? 'donut-wrap' : 'donut-wrap is-empty'}>
       <div className="donut" style={{ background: `conic-gradient(${gradient})` }}>
         <div>
           <strong>{centerValue || formatCount(total)}</strong>
@@ -492,7 +608,7 @@ function DonutChart({ centerLabel = '', centerValue = '', data = [] }) {
           <span key={item.label}>
             <i style={{ background: colors[index % colors.length] }} />
             {item.label}
-            <b>{Math.round((item.value / total) * 100)}%</b>
+            <b>{total ? Math.round((item.value / total) * 100) : 0}%</b>
           </span>
         ))}
       </div>
@@ -500,7 +616,7 @@ function DonutChart({ centerLabel = '', centerValue = '', data = [] }) {
   )
 }
 
-function MiniLineChart({ data = [], tone = 'green' }) {
+function MiniLineChart({ compact = false, data = [], tone = 'green' }) {
   const values = data.map((item) => Number(item.value) || 0)
   const max = Math.max(...values, 1)
   const min = Math.min(...values, 0)
@@ -513,15 +629,26 @@ function MiniLineChart({ data = [], tone = 'green' }) {
     })
     .join(' ')
 
-  if (!values.some((value) => value > 0)) return <EmptyData compact />
-
   return (
-    <svg className={`mini-line ${tone}`} role="img" viewBox="0 0 100 88" preserveAspectRatio="none">
-      <polyline fill="none" points={points} stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />
+    <svg className={`mini-line ${tone}${compact ? ' compact' : ''}${values.some((value) => value > 0) ? '' : ' is-empty'}`} role="img" viewBox="0 0 100 88" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id={`spark-fill-${tone}-${compact ? 'compact' : 'full'}`} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.16" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polyline
+        fill="none"
+        points={points}
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={compact ? '2.4' : '3'}
+      />
       {data.map((item, index) => {
         const x = values.length <= 1 ? 0 : (index / (values.length - 1)) * 100
         const y = 80 - (((Number(item.value) || 0) - min) / spread) * 60
-        return <circle cx={x} cy={y} fill="currentColor" key={`${item.label}-${index}`} r="2.5" />
+        return <circle cx={x} cy={y} fill="currentColor" key={`${item.label}-${index}`} r={compact ? '1.8' : '2.5'} />
       })}
     </svg>
   )
@@ -532,27 +659,35 @@ function PlatformHealthSection({ health }) {
     <section className="section-block">
       <SectionTitle title="Platform Health" />
       <div className="platform-grid">
-        <article className="panel chart-panel">
-          <h3>Transaction Funnel</h3>
-          <FunnelChart data={health.transactionFunnel} />
-        </article>
-        <article className="panel chart-panel">
-          <h3>Transaction Stage Distribution</h3>
-          <DonutChart centerLabel="In Progress" data={health.stageDistribution} />
+        <article className="panel chart-panel platform-combo-panel">
+          <div className="health-combo-grid">
+            <section>
+              <h3>Transaction Funnel</h3>
+              <FunnelChart data={health.transactionFunnel} />
+            </section>
+            <section>
+              <h3>Transaction Stage Distribution</h3>
+              <DonutChart centerLabel="Total" data={health.stageDistribution} />
+            </section>
+          </div>
         </article>
         <article className="panel chart-panel velocity-panel">
           <h3>Registration Velocity</h3>
           {health.velocity?.hasData ? (
             <>
-              <span className="metric-caption">Average Registration Time</span>
-              <strong className="velocity-number">{health.velocity.averageDays} days</strong>
+              <strong className="velocity-number">{health.velocity.averageDays}</strong>
+              <span className="metric-caption">avg. days to register</span>
               <em className={health.velocity.deltaDays <= 0 ? 'positive' : 'negative'}>
-                {health.velocity.deltaDays <= 0 ? 'Down' : 'Up'} {Math.abs(health.velocity.deltaDays)} days
+                {health.velocity.deltaDays <= 0 ? '-' : '+'}{Math.abs(health.velocity.deltaDays)} days vs previous period
               </em>
               <MiniLineChart data={health.velocity.trend} />
             </>
           ) : (
-            <EmptyData />
+            <EmptyData
+              icon={Activity}
+              title="No registrations yet"
+              description="Registration velocity appears once completed transfers are recorded."
+            />
           )}
         </article>
       </div>
@@ -561,20 +696,24 @@ function PlatformHealthSection({ health }) {
 }
 
 function GrowthSection({ growth }) {
+  const newOrganisations = (growth.organisationTrend || []).at(-1)?.value || 0
+
   return (
     <section className="section-block">
-      <SectionTitle title="Growth" />
-      <div className="growth-grid">
-        <article className="panel chart-panel">
+      <SectionTitle title="Growth Overview" />
+      <article className="panel chart-panel growth-overview-panel">
+        <div className="growth-overview-grid">
+          <section>
           <h3>New Organisations</h3>
+          <strong className="section-metric">+{formatCount(newOrganisations)}</strong>
           <MiniLineChart data={growth.organisationTrend} />
           <div className="axis-labels">
             {(growth.organisationTrend || []).map((item) => (
               <span key={item.label}>{item.label}</span>
             ))}
           </div>
-        </article>
-        <article className="panel chart-panel">
+          </section>
+          <section>
           <h3>User Adoption</h3>
           {growth.userAdoption?.hasData ? (
             <div className="adoption-stack">
@@ -596,10 +735,10 @@ function GrowthSection({ growth }) {
               </div>
             </div>
           ) : (
-            <EmptyData />
+            <EmptyData compact title="No active users yet" description="Usage metrics will appear after sign-ins." />
           )}
-        </article>
-        <article className="panel chart-panel">
+          </section>
+          <section>
           <h3>Most Active Organisations</h3>
           {growth.mostActiveOrganisations?.length ? (
             <div className="rank-list">
@@ -608,62 +747,669 @@ function GrowthSection({ growth }) {
                   <b>{index + 1}</b>
                   <span>{item.name}</span>
                   <small>
-                    {item.users} users / {item.transactions} transactions
+                    {item.transactions} txns
                   </small>
                 </div>
               ))}
             </div>
           ) : (
-            <EmptyData />
+            <EmptyData compact title="No leaders yet" description="Top organisations appear as usage grows." />
           )}
-        </article>
-      </div>
+          </section>
+        </div>
+      </article>
     </section>
   )
 }
 
-function FinancialSection({ financials }) {
+function GrowthKpiRow({ growth }) {
+  const metrics = growth.kpis?.length ? growth.kpis : []
+
+  return (
+    <section className="growth-kpi-grid" aria-label="Growth KPIs">
+      {metrics.map((metric, index) => (
+        <article className="growth-kpi-card" key={metric.label}>
+          <div className={`kpi-icon ${metric.accent || 'green'}`}>
+            {metric.label.includes('Revenue') || metric.label === 'MRR' ? (
+              <CircleDollarSign size={18} />
+            ) : metric.label.includes('Organisation') ? (
+              <Building2 size={18} />
+            ) : metric.label.includes('User') ? (
+              <Users size={18} />
+            ) : metric.label.includes('Registration') ? (
+              <ShieldCheck size={18} />
+            ) : (
+              <FileText size={18} />
+            )}
+          </div>
+          <span>{metric.label}</span>
+          <strong>{metric.value}</strong>
+          <em>{metric.change}</em>
+          <small>{metric.comparison || 'vs previous period'}</small>
+          <MiniLineChart compact data={sparklineForMetric(metric, index)} />
+        </article>
+      ))}
+    </section>
+  )
+}
+
+function GrowthAreaChart({ data = [] }) {
+  const rows = data.length ? data : ['Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May'].map((label) => ({ label, value: 0 }))
+  const values = rows.map((item) => Number(item.value) || 0)
+  const max = Math.max(...values, 1)
+  const points = values
+    .map((value, index) => {
+      const x = values.length <= 1 ? 0 : (index / (values.length - 1)) * 100
+      const y = 78 - (value / max) * 62
+      return `${x},${y}`
+    })
+    .join(' ')
+  const areaPoints = `0,84 ${points} 100,84`
+  const ticks = [max, Math.round(max * 0.66), Math.round(max * 0.33), 0]
+
+  return (
+    <div className="growth-area-chart">
+      <div className="growth-y-axis">
+        {ticks.map((tick, index) => <span key={`${tick}-${index}`}>{formatCount(tick)}</span>)}
+      </div>
+      <svg role="img" viewBox="0 0 100 88" preserveAspectRatio="none">
+        <polygon fill="currentColor" opacity="0.09" points={areaPoints} />
+        <polyline fill="none" points={points} stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.4" />
+        {rows.map((item, index) => {
+          const x = values.length <= 1 ? 0 : (index / (values.length - 1)) * 100
+          const y = 78 - ((Number(item.value) || 0) / max) * 62
+          return <circle cx={x} cy={y} fill="currentColor" key={`${item.label}-${index}`} r="1.9" />
+        })}
+      </svg>
+      <div className="growth-x-axis">
+        {rows.map((item) => <span key={item.label}>{item.label}</span>)}
+      </div>
+    </div>
+  )
+}
+
+function GrowthAdoptionSummary({ adoption = {} }) {
+  const rows = adoption.summary?.length
+    ? adoption.summary
+    : [
+        { change: '0%', label: 'DAU', value: '0' },
+        { change: '0%', label: 'WAU', value: '0' },
+        { change: '0%', label: 'MAU', value: '0' },
+        { change: '0%', label: 'DAU / MAU', value: '0%' },
+      ]
+
+  return (
+    <div className="growth-summary-list">
+      {rows.map((item) => (
+        <div key={item.label}>
+          <span>{item.label}</span>
+          <strong>{item.value}</strong>
+          <em>{item.change}</em>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function GrowthRoleBars({ roles = [] }) {
+  const total = roles.reduce((sum, item) => sum + (Number(item.value) || 0), 0)
+
+  return (
+    <div className="growth-role-bars">
+      {(roles.length ? roles : [{ label: 'Users', value: 0 }]).map((item) => {
+        const percent = total ? Math.round((item.value / total) * 100) : 0
+        return (
+          <div key={item.label}>
+            <span>{item.label}</span>
+            <div>
+              <i style={{ width: `${Math.max(percent, item.value ? 4 : 0)}%` }} />
+            </div>
+            <strong>{formatCount(item.value)}</strong>
+            <em>{percent}%</em>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function GrowthInsights({ insights = [] }) {
+  const rows = insights.length ? insights : [{ id: 'empty', title: 'Growth insights will appear here', detail: 'Insights are generated as adoption, invite and transaction signals build up.' }]
+
+  return (
+    <div className="growth-insight-list">
+      {rows.map((item, index) => (
+        <article key={item.id || item.title}>
+          <div className="growth-insight-icon">
+            {index % 3 === 0 ? <Users size={17} /> : index % 3 === 1 ? <LineChart size={17} /> : <Building2 size={17} />}
+          </div>
+          <div>
+            <strong>{item.title}</strong>
+            <span>{item.detail}</span>
+          </div>
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function TopGrowingOrganisations({ organisations = [] }) {
+  const rows = organisations.length ? organisations : []
+
+  return (
+    <div className="growth-table">
+      <div className="growth-table-head">
+        <span>Organisation</span>
+        <span>New Users</span>
+        <span>Transactions</span>
+        <span>Growth</span>
+      </div>
+      {rows.length ? rows.slice(0, 5).map((organisation) => (
+        <article key={organisation.id}>
+          <div className="growth-org-cell">
+            <span className="growth-org-avatar">{initialsForDisplay(organisation.name)}</span>
+            <strong>{organisation.name}</strong>
+          </div>
+          <span>+{formatCount(organisation.newUsers)}</span>
+          <span>{formatCount(organisation.transactions)}</span>
+          <div className="growth-mini-trend">
+            <MiniLineChart compact data={organisation.trend} />
+          </div>
+        </article>
+      )) : <EmptyData compact title="No growing organisations yet" description="New user and transaction growth will populate this list." />}
+    </div>
+  )
+}
+
+function GrowthFunnelSection({ funnel = [] }) {
+  const max = Math.max(...funnel.map((item) => item.value), 1)
+
+  return (
+    <section className="section-block">
+      <SectionTitle title="Growth Funnel" />
+      <article className="panel growth-funnel-panel">
+        {(funnel.length ? funnel : [{ label: 'Organisations Invited', value: 0, conversion: 0, dropoff: 0 }]).map((item) => (
+          <div className="growth-funnel-row" key={item.label}>
+            <span>{item.label}</span>
+            <div className="growth-funnel-track">
+              <i style={{ width: `${item.value ? Math.max(8, (item.value / max) * 100) : 0}%` }} />
+            </div>
+            <strong>{formatCount(item.value)}</strong>
+            <em>{item.conversion}% conv.</em>
+            <small>{item.dropoff}% dropoff</small>
+          </div>
+        ))}
+      </article>
+    </section>
+  )
+}
+
+function GrowthLeaderboard({ organisations = [] }) {
+  return (
+    <section className="section-block">
+      <SectionTitle title="Organisation Leaderboard" />
+      <article className="panel growth-leaderboard">
+        <div className="growth-leaderboard-head">
+          <span>Rank</span>
+          <span>Organisation</span>
+          <span>Users</span>
+          <span>Transactions</span>
+          <span>Revenue</span>
+          <span>Growth</span>
+          <span>Last Activity</span>
+        </div>
+        {organisations.length ? organisations.slice(0, 8).map((organisation, index) => (
+          <div className="growth-leaderboard-row" key={organisation.id}>
+            <b>{index + 1}</b>
+            <strong>{organisation.name}</strong>
+            <span>{formatCount(organisation.users)}</span>
+            <span>{formatCount(organisation.transactions)}</span>
+            <span>{organisation.revenueDisplay}</span>
+            <em>{organisation.growth}</em>
+            <time>{organisation.lastActivity}</time>
+          </div>
+        )) : <EmptyData compact title="No leaderboard data yet" description="Organisation ranking will appear as adoption grows." />}
+      </article>
+    </section>
+  )
+}
+
+function InvitePerformance({ performance = {} }) {
+  const metrics = [
+    { label: 'Invites Sent', value: formatCount(performance.sent || 0) },
+    { label: 'Accepted', value: formatCount(performance.accepted || 0) },
+    { label: 'Pending', value: formatCount(performance.pending || 0) },
+    { label: 'Expired', value: formatCount(performance.expired || 0) },
+    { label: 'Acceptance', value: `${performance.acceptanceRate || 0}%` },
+    { label: 'Avg. Acceptance Time', value: performance.averageAcceptanceTime || 'No invites yet' },
+    { label: 'Best Role', value: performance.bestRole || 'No role yet' },
+    { label: 'Needs Attention', value: performance.worstRole || 'No role yet' },
+  ]
+
+  return (
+    <section className="section-block">
+      <SectionTitle title="Invite Performance" />
+      <article className="panel invite-performance-grid">
+        {metrics.map((item) => (
+          <span key={item.label}>
+            <small>{item.label}</small>
+            <strong>{item.value}</strong>
+          </span>
+        ))}
+      </article>
+    </section>
+  )
+}
+
+function GrowthDashboardView({ snapshot }) {
+  const growth = snapshot.growth || {}
+
+  return (
+    <div className="growth-dashboard">
+      <GrowthKpiRow growth={growth} />
+
+      <div className="growth-top-grid">
+        <article className="panel growth-large-chart">
+          <div className="panel-inline-heading">
+            <h3>New Organisations Over Time</h3>
+            <select aria-label="Growth interval" defaultValue="monthly">
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+          </div>
+          <GrowthAreaChart data={growth.organisationTrend} />
+        </article>
+        <article className="panel growth-source-card">
+          <h3>User Acquisition Sources</h3>
+          <DonutChart centerLabel="Total" data={growth.acquisitionSources} />
+        </article>
+        <article className="panel growth-summary-card">
+          <h3>User Adoption Summary</h3>
+          <GrowthAdoptionSummary adoption={growth.userAdoption} />
+        </article>
+      </div>
+
+      <div className="growth-mid-grid">
+        <article className="panel growth-table-card">
+          <h3>Top Growing Organisations</h3>
+          <TopGrowingOrganisations organisations={growth.topGrowingOrganisations} />
+        </article>
+        <article className="panel growth-role-card">
+          <h3>User Growth by Role</h3>
+          <GrowthRoleBars roles={growth.roleGrowth} />
+        </article>
+        <article className="panel growth-insights-card">
+          <h3>Insights</h3>
+          <GrowthInsights insights={growth.insights} />
+        </article>
+      </div>
+
+      <GrowthFunnelSection funnel={growth.funnel} />
+      <GrowthLeaderboard organisations={growth.topGrowingOrganisations} />
+      <InvitePerformance performance={growth.invitePerformance} />
+
+      <aside className="growth-momentum panel">
+        <div className="growth-insight-icon">
+          <LineChart size={17} />
+        </div>
+        <div>
+          <strong>Keep the momentum going</strong>
+          <span>Continue inviting your network and onboarding new organisations to strengthen growth signals.</span>
+        </div>
+        <button className="primary-button compact" type="button">
+          <Users size={16} />
+          Invite Users
+        </button>
+      </aside>
+    </div>
+  )
+}
+
+function RevenueKpiRow({ financials = {} }) {
+  const metrics = financials.kpis?.length ? financials.kpis : []
+
+  return (
+    <section className="revenue-kpi-grid" aria-label="Revenue KPIs">
+      {metrics.map((metric, index) => (
+        <article className="growth-kpi-card revenue-kpi-card" key={metric.label}>
+          <div className={`kpi-icon ${metric.accent || 'green'}`}>
+            {metric.label.includes('Forecast') ? <LineChart size={18} /> : metric.label.includes('Organisation') ? <Building2 size={18} /> : metric.label.includes('Transaction') ? <FileText size={18} /> : <CircleDollarSign size={18} />}
+          </div>
+          <span>{metric.label}</span>
+          <strong>{metric.value}</strong>
+          <em>{metric.change}</em>
+          <small>{metric.comparison || 'vs previous period'}</small>
+          <MiniLineChart compact data={sparklineForMetric(metric, index)} />
+        </article>
+      ))}
+    </section>
+  )
+}
+
+function RevenueSourceBreakdown({ sources = [] }) {
+  const total = sources.reduce((sum, item) => sum + (Number(item.value) || 0), 0)
+
+  return (
+    <div className="revenue-source-layout">
+      <DonutChart centerLabel="Total" data={sources} />
+      <div className="revenue-source-list">
+        {(sources.length ? sources : [{ label: 'Revenue', value: 0 }]).map((item) => {
+          const percent = total ? Math.round((item.value / total) * 100) : 0
+          return (
+            <span key={item.label}>
+              <b>{item.label}</b>
+              <em>{percent}%</em>
+              <strong>{formatMoney(item.value)}</strong>
+            </span>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function RevenueComposition({ composition = [] }) {
+  const rows = composition.length ? composition : [{ label: 'Recurring Revenue', percent: 0, value: formatMoney(0) }]
+
+  return (
+    <div className="revenue-composition-list">
+      {rows.map((item) => (
+        <div key={item.label}>
+          <span>{item.label}</span>
+          <strong>{item.value}</strong>
+          <div>
+            <i style={{ width: `${item.percent || 0}%` }} />
+          </div>
+          <em>{item.percent || 0}%</em>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function RevenueHealth({ health = {} }) {
+  const rows = [
+    { icon: CheckCircle2, label: 'Cash Collected', tone: 'success', value: health.cashCollected || formatMoney(0), meta: `${health.collectionRate || 0}%` },
+    { icon: CreditCard, label: 'Outstanding', tone: 'warning', value: health.outstanding || formatMoney(0), meta: 'Open' },
+    { icon: AlertTriangle, label: 'Overdue', tone: 'danger', value: health.overdue || formatMoney(0), meta: 'At risk' },
+    { icon: Activity, label: 'Collection Rate', tone: 'success', value: `${health.collectionRate || 0}%`, meta: '+ healthy' },
+    { icon: Calendar, label: 'Days Sales Outstanding', tone: 'success', value: String(health.daysSalesOutstanding || 0), meta: 'days' },
+  ]
+
+  return (
+    <div className="revenue-health-list">
+      {rows.map((item) => {
+        const Icon = item.icon
+        return (
+          <div className={item.tone} key={item.label}>
+            <Icon size={16} />
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+            <em>{item.meta}</em>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function RevenueOrganisationTable({ organisations = [], total = 0 }) {
+  const rows = organisations.length ? organisations : []
+
+  return (
+    <div className="revenue-org-table">
+      <div className="revenue-org-head">
+        <span>Organisation</span>
+        <span>Revenue</span>
+        <span>% of Total</span>
+        <span>Change</span>
+      </div>
+      {rows.length ? rows.slice(0, 6).map((organisation) => (
+        <article key={organisation.id}>
+          <div className="growth-org-cell">
+            <span className="growth-org-avatar">{initialsForDisplay(organisation.name)}</span>
+            <strong>{organisation.name}</strong>
+          </div>
+          <span>{organisation.revenueDisplay}</span>
+          <span>{total ? safePercent(organisation.revenue, total) : 0}%</span>
+          <em>{organisation.growth}</em>
+        </article>
+      )) : <EmptyData compact title="No organisation revenue yet" description="Revenue contribution appears as subscriptions and fees flow in." />}
+    </div>
+  )
+}
+
+function safePercent(value, total) {
+  return total ? Math.round(((Number(value) || 0) / total) * 100) : 0
+}
+
+function RevenueForecastBars({ forecast = [] }) {
+  const rows = forecast.length ? forecast : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'].map((label) => ({ label, value: 0 }))
+  const max = Math.max(...rows.map((row) => Number(row.value) || 0), 1)
+
+  return (
+    <div className="revenue-forecast-bars">
+      <div className="revenue-bar-legend">
+        <span><i />Actual</span>
+        <span><i className="forecast" />Forecast</span>
+      </div>
+      <div className="revenue-bar-chart">
+        {rows.map((item) => (
+          <div className={item.forecast ? 'forecast' : ''} key={item.label}>
+            <i style={{ height: `${item.value ? Math.max(8, (item.value / max) * 100) : 0}%` }} />
+            <span>{item.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function RevenueMetricStrip({ metrics = [] }) {
+  return (
+    <article className="panel revenue-metric-strip">
+      {metrics.map((item) => (
+        <span className={item.tone || 'neutral'} key={item.label}>
+          <small>{item.label}</small>
+          <strong>{item.value}</strong>
+          <em>{item.change}</em>
+        </span>
+      ))}
+    </article>
+  )
+}
+
+function TransactionRevenueBreakdown({ breakdown = [], average = '' }) {
+  const total = breakdown.reduce((sum, item) => sum + (Number(item.value) || 0), 0)
+
+  return (
+    <section className="section-block">
+      <SectionTitle title="Transaction Revenue" />
+      <article className="panel transaction-revenue-panel">
+        <GrowthRoleBars roles={breakdown.map((item) => ({ label: item.label, value: item.value }))} />
+        <div className="transaction-revenue-summary">
+          <span>
+            <small>Average Revenue / Transaction</small>
+            <strong>{average || formatMoney(0)}</strong>
+          </span>
+          <span>
+            <small>Total Transaction Revenue</small>
+            <strong>{formatMoney(total)}</strong>
+          </span>
+        </div>
+      </article>
+    </section>
+  )
+}
+
+function OutstandingRevenue({ outstanding = {} }) {
+  return (
+    <section className="section-block">
+      <SectionTitle title="Invoices & Outstanding" />
+      <article className="panel outstanding-revenue-panel">
+        <div className="invite-performance-grid revenue-outstanding-summary">
+          <span><small>Total Outstanding</small><strong>{outstanding.total || formatMoney(0)}</strong></span>
+          <span><small>30 Days</small><strong>{outstanding.thirtyDays || formatMoney(0)}</strong></span>
+          <span><small>60 Days</small><strong>{outstanding.sixtyDays || formatMoney(0)}</strong></span>
+          <span><small>90+</small><strong>{outstanding.ninetyPlus || formatMoney(0)}</strong></span>
+          <span><small>Bad Debt</small><strong>{outstanding.badDebtRate || '0%'}</strong></span>
+        </div>
+        <EmptyData compact title="No outstanding invoices loaded" description="Invoice ageing will populate when billing records are available." />
+      </article>
+    </section>
+  )
+}
+
+function RevenueInsights({ insights = [] }) {
+  return (
+    <section className="section-block">
+      <SectionTitle title="Executive Financial Insights" />
+      <article className="panel growth-insights-card revenue-insights-card">
+        <GrowthInsights insights={insights} />
+      </article>
+    </section>
+  )
+}
+
+function RevenueDashboardView({ snapshot }) {
+  const financials = snapshot.financials || {}
+  const totalRevenue = financials.rawMonthlyRevenue || numberFromDisplay(financials.monthlyRevenue)
+
+  return (
+    <div className="revenue-dashboard">
+      <RevenueKpiRow financials={financials} />
+
+      <div className="revenue-top-grid">
+        <article className="panel revenue-large-chart">
+          <div className="panel-inline-heading">
+            <h3>Revenue Over Time</h3>
+            <select aria-label="Revenue interval" defaultValue="daily">
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="quarterly">Quarterly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+          </div>
+          <GrowthAreaChart data={financials.revenueTrend} />
+        </article>
+        <article className="panel revenue-source-card">
+          <h3>Revenue by Source</h3>
+          <RevenueSourceBreakdown sources={financials.revenueSources} />
+        </article>
+        <article className="panel revenue-health-card">
+          <h3>Revenue Composition</h3>
+          <RevenueComposition composition={financials.composition} />
+        </article>
+      </div>
+
+      <div className="revenue-mid-grid">
+        <article className="panel revenue-org-card">
+          <h3>Revenue by Organisation</h3>
+          <RevenueOrganisationTable organisations={financials.revenueByOrganisation} total={totalRevenue} />
+        </article>
+        <article className="panel revenue-forecast-card">
+          <div className="panel-inline-heading">
+            <h3>Revenue Forecast</h3>
+            <select aria-label="Forecast interval" defaultValue="monthly">
+              <option value="monthly">Monthly</option>
+              <option value="quarterly">Quarterly</option>
+            </select>
+          </div>
+          <RevenueForecastBars forecast={financials.revenueForecast} />
+        </article>
+        <article className="panel revenue-health-card">
+          <h3>Revenue Health</h3>
+          <RevenueHealth health={financials.health} />
+        </article>
+      </div>
+
+      <section className="section-block">
+        <SectionTitle title="Subscription Analytics" />
+        <RevenueMetricStrip metrics={financials.subscriptionAnalytics || []} />
+      </section>
+
+      <TransactionRevenueBreakdown breakdown={financials.transactionBreakdown || []} average={financials.averageTransactionRevenue} />
+
+      <section className="section-block">
+        <SectionTitle title="Collections" />
+        <article className="panel invite-performance-grid">
+          <span><small>Invoices Issued</small><strong>{formatCount(financials.collections?.invoicesIssued || 0)}</strong></span>
+          <span><small>Invoices Paid</small><strong>{formatCount(financials.collections?.invoicesPaid || 0)}</strong></span>
+          <span><small>Outstanding</small><strong>{formatCount(financials.collections?.invoicesOutstanding || 0)}</strong></span>
+          <span><small>Collection Rate</small><strong>{financials.collections?.collectionRate || 0}%</strong></span>
+          <span><small>Avg. Collection Time</small><strong>{financials.collections?.averageCollectionTime || 'No invoice ageing yet'}</strong></span>
+          <span><small>Avg. Invoice Value</small><strong>{financials.collections?.averageInvoiceValue || formatMoney(0)}</strong></span>
+        </article>
+      </section>
+
+      <OutstandingRevenue outstanding={financials.outstandingRevenue} />
+      <RevenueInsights insights={financials.insights} />
+    </div>
+  )
+}
+
+function FinancialSection({ financials, snapshot }) {
+  const currentMonth = financials.monthlyRevenue || financials.forecast?.find((item) => item.label === 'Current Month')?.value || formatMoney(0)
+  const currentMonthValue = numberFromDisplay(currentMonth)
+  const arr = financials.arr || formatMoney(currentMonthValue * 12)
+  const projectedMonth = financials.projectedMonthEnd || financials.forecast?.find((item) => item.label === 'Projected Month End')?.value || formatMoney(0)
+  const transactionCount = Math.max((snapshot?.transactions || []).length, 1)
+  const revenuePerTransaction = financials.averageTransactionRevenue || formatMoney(currentMonthValue / transactionCount)
+
   return (
     <section className="section-block">
       <SectionTitle title="Financial Overview" />
-      <div className="financial-grid">
-        <article className="panel chart-panel">
-          <h3>Revenue Sources</h3>
-          <DonutChart centerLabel="Revenue" data={financials.revenueSources} />
-        </article>
-        <article className="panel chart-panel">
-          <h3>Revenue Forecast</h3>
-          {financials.hasData ? (
-            <div className="forecast-list">
-              {financials.forecast.map((item) => (
-                <span key={item.label}>
-                  {item.label}
-                  <b>{item.value}</b>
-                </span>
-              ))}
-            </div>
-          ) : (
-            <EmptyData />
-          )}
-        </article>
-        <article className="panel chart-panel">
-          <h3>Revenue Per Organisation</h3>
-          {financials.hasData ? (
-            <>
-              <span className="metric-caption">Average Revenue Per Org</span>
-              <strong className="revenue-number">{financials.revenuePerOrganisation}</strong>
-              <MiniLineChart data={financials.revenueTrend} />
-            </>
-          ) : (
-            <EmptyData />
-          )}
-        </article>
-      </div>
+      <article className="panel chart-panel financial-overview-panel">
+        <div className="financial-summary-grid">
+          <span>
+            <small>MRR</small>
+            <strong>{currentMonth}</strong>
+          </span>
+          <span>
+            <small>ARR</small>
+            <strong>{arr}</strong>
+          </span>
+          <span>
+            <small>Forecast</small>
+            <strong>{projectedMonth}</strong>
+          </span>
+          <span>
+            <small>Avg. Revenue / Org</small>
+            <strong>{financials.revenuePerOrganisation || formatMoney(0)}</strong>
+          </span>
+          <span>
+            <small>Avg. Transaction Revenue</small>
+            <strong>{revenuePerTransaction}</strong>
+          </span>
+        </div>
+        <div className="financial-chart-grid">
+          <section>
+            <h3>Revenue by Source</h3>
+            <DonutChart centerLabel="Revenue" data={financials.revenueSources} />
+          </section>
+          <section>
+            <h3>Revenue Trend</h3>
+            <MiniLineChart data={financials.revenueTrend} />
+          </section>
+        </div>
+      </article>
     </section>
   )
 }
 
 function AttentionSection({ attention }) {
+  const iconFor = (item) => {
+    const detail = `${item.title} ${item.detail}`.toLowerCase()
+    if (detail.includes('transaction')) return Database
+    if (detail.includes('trial') || detail.includes('subscription')) return CreditCard
+    if (detail.includes('invite')) return UserCog
+    if (detail.includes('document')) return FileText
+    return AlertTriangle
+  }
+
   return (
     <section className="section-block attention-grid">
       <article className="panel chart-panel">
@@ -672,10 +1418,14 @@ function AttentionSection({ attention }) {
           <div className="attention-list">
             {attention.map((item) => (
               <div className={item.severity} key={item.id}>
-                <AlertTriangle size={18} />
+                {(() => {
+                  const Icon = iconFor(item)
+                  return <Icon size={16} />
+                })()}
                 <strong>{item.title}</strong>
                 <span>{item.detail}</span>
-                <em>{item.time}</em>
+                <time>{item.time}</time>
+                <button type="button">View</button>
               </div>
             ))}
           </div>
@@ -692,49 +1442,110 @@ function AttentionSection({ attention }) {
 }
 
 function EcosystemSection({ ecosystem }) {
+  const metrics = [
+    ...(ecosystem.metrics || []),
+    { label: 'Total Participants', value: ecosystem.total || 0, total: true },
+  ]
+
   return (
     <section className="section-block">
       <SectionTitle title="Ecosystem Overview" />
       <article className="panel ecosystem-panel">
-        {ecosystem.hasData ? (
-          <>
-            <div className="ecosystem-grid">
-              {ecosystem.metrics.map((item) => (
-                <div key={item.label}>
-                  <Users size={20} />
-                  <span>{item.label}</span>
-                  <strong>{formatCount(item.value)}</strong>
-                </div>
-              ))}
+        <div className="ecosystem-grid">
+          {metrics.map((item) => (
+            <div className={item.total ? 'ecosystem-total-metric' : ''} key={item.label}>
+              <Users size={18} />
+              <span>{item.label}</span>
+              <strong>{formatCount(item.value)}</strong>
+              <em>{item.total && ecosystem.change ? `${ecosystem.change} this period` : item.value ? '+ active' : '-'}</em>
             </div>
-            <div className="ecosystem-total">
-              <span>Total Ecosystem Participants</span>
-              <strong>{formatCount(ecosystem.total)}</strong>
-              {ecosystem.change ? <em>{ecosystem.change} this period</em> : null}
-            </div>
-          </>
-        ) : (
-          <EmptyData />
-        )}
+          ))}
+        </div>
       </article>
     </section>
   )
 }
 
+function CommandCentreRail() {
+  const essentials = [
+    { icon: CheckCircle2, title: 'Platform Adoption', text: 'Users, organisations, and role participation show platform traction.' },
+    { icon: Activity, title: 'Transaction Health', text: 'Funnel progression and stage distribution indicate platform value.' },
+    { icon: CircleDollarSign, title: 'Revenue Metrics', text: 'Commercial performance validates the business model.' },
+    { icon: Users, title: 'Ecosystem Activity', text: 'Active participants across roles show marketplace health.' },
+    { icon: AlertTriangle, title: 'Risk Indicators', text: 'Inactive users, stalled transactions, and renewals need attention.' },
+  ]
+  const sources = [
+    { icon: Database, title: 'Supabase Database', text: 'Users, organisations, transactions, roleplayers, activity logs.' },
+    { icon: BarChart3, title: 'Analytics Events', text: 'Interaction, feature usage, and performance signals.' },
+    { icon: CreditCard, title: 'Financial Data', text: 'Revenue, subscriptions, billing, payments.' },
+    { icon: Lock, title: 'External Integrations', text: 'Email, payments, and third-party APIs.' },
+  ]
+  const principles = ['Real-time or near real-time data', 'Actionable insights, not just metrics', 'Role-based relevance', 'Mobile-responsive design', 'Clear visual hierarchy']
+
+  return (
+    <aside className="command-centre-rail" aria-label="Dashboard data guide">
+      <section>
+        <h2>What data do we show?</h2>
+        <h3>Essential Data to Display</h3>
+        <div className="rail-list">
+          {essentials.map((item) => {
+            const Icon = item.icon
+            return (
+              <article key={item.title}>
+                <Icon size={16} />
+                <div>
+                  <strong>{item.title}</strong>
+                  <span>{item.text}</span>
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      </section>
+      <section>
+        <h3>Data Sources</h3>
+        <div className="rail-list">
+          {sources.map((item) => {
+            const Icon = item.icon
+            return (
+              <article key={item.title}>
+                <Icon size={16} />
+                <div>
+                  <strong>{item.title}</strong>
+                  <span>{item.text}</span>
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      </section>
+      <section>
+        <h3>Key Principles</h3>
+        <ul>
+          {principles.map((principle) => (
+            <li key={principle}>{principle}</li>
+          ))}
+        </ul>
+      </section>
+    </aside>
+  )
+}
+
 function ExecutiveDashboardView({ snapshot }) {
   return (
-    <>
-      <ExecutiveKpiRow kpis={snapshot.kpis} />
-      <PlatformHealthSection health={snapshot.platformHealth} />
-      <div className="split-sections">
-        <GrowthSection growth={snapshot.growth} />
-        <FinancialSection financials={snapshot.financials} />
-      </div>
-      <div className="bottom-sections">
-        <AttentionSection attention={snapshot.attention} />
+    <div className="executive-command-layout">
+      <div className="executive-command-main">
+        <ExecutiveKpiRow kpis={snapshot.kpis} />
+        <PlatformHealthSection health={snapshot.platformHealth} />
+        <div className="dashboard-mid-grid">
+          <GrowthSection growth={snapshot.growth} />
+          <AttentionSection attention={snapshot.attention} />
+        </div>
+        <FinancialSection financials={snapshot.financials} snapshot={snapshot} />
         <EcosystemSection ecosystem={snapshot.ecosystem} />
       </div>
-    </>
+      <CommandCentreRail />
+    </div>
   )
 }
 
@@ -946,6 +1757,960 @@ function RoleplayerCard({ isSelected, onManageLegalTemplates, onSelect, roleplay
   )
 }
 
+const ORGANISATION_STATUS_FILTERS = ['All', 'Active', 'Inactive', 'Suspended']
+const ORGANISATION_HEALTH_FILTERS = ['All', 'Good', 'Needs Attention', 'At Risk']
+const ORGANISATION_PLAN_FILTERS = ['All', 'Free', 'Basic', 'Pro', 'Enterprise']
+const ORGANISATION_SORTS = ['Most Active', 'Newest', 'Revenue', 'Users', 'Health']
+
+function OrganisationKpiStrip({ organisations = [] }) {
+  const totalUsers = organisations.reduce((sum, organisation) => sum + (organisation.userCount || 0), 0)
+  const totalRevenue = organisations.reduce((sum, organisation) => sum + (organisation.revenue || 0), 0)
+  const atRisk = organisations.filter((organisation) => organisation.health?.tone === 'danger').length
+  const active = organisations.filter((organisation) => normalizeDisplayToken(organisation.status).includes('active') || organisation.health?.tone === 'success').length
+  const now = new Date()
+  const newThisMonth = organisations.filter((organisation) => {
+    const date = new Date(organisation.createdAt || '')
+    return !Number.isNaN(date.getTime()) && date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()
+  }).length
+  const metrics = [
+    { change: '+18%', icon: Users, label: 'Total Organisations', value: formatCount(organisations.length) },
+    { change: '+21%', icon: Users, label: 'Active Organisations', value: formatCount(active) },
+    { change: '+33%', icon: LineChart, label: 'New This Month', value: formatCount(newThisMonth) },
+    { change: '+2%', icon: AlertTriangle, label: 'At Risk', tone: 'danger', value: formatCount(atRisk) },
+    { change: '+16%', icon: Users, label: 'Total Users', value: formatCount(totalUsers) },
+    { change: '+18%', icon: CreditCard, label: 'Total Revenue / MRR', value: formatMoney(totalRevenue) },
+  ]
+
+  return (
+    <section className="organisation-kpi-strip" aria-label="Organisation summary">
+      {metrics.map((metric) => {
+        const Icon = metric.icon
+        return (
+          <article className={metric.tone || ''} key={metric.label}>
+            <Icon size={17} />
+            <div>
+              <span>{metric.label}</span>
+              <strong>{metric.value}</strong>
+              <em>{metric.change} vs previous 30 days</em>
+            </div>
+            <MiniLineChart compact data={sparklineForMetric({ value: metric.value }, 0)} />
+          </article>
+        )
+      })}
+    </section>
+  )
+}
+
+function normalizeDisplayToken(value = '') {
+  return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+function organisationMatchesType(organisation, filter) {
+  if (filter === 'All') return true
+  return roleplayerFilterMatches(organisation, filter)
+}
+
+function organisationMatchesStatus(organisation, filter) {
+  if (filter === 'All') return true
+  const status = normalizeDisplayToken(organisation.status)
+  if (filter === 'Active') return status.includes('active') || organisation.health?.tone === 'success'
+  if (filter === 'Inactive') return status.includes('inactive') || status.includes('disabled')
+  if (filter === 'Suspended') return status.includes('suspended') || status.includes('blocked')
+  return true
+}
+
+function organisationMatchesHealth(organisation, filter) {
+  if (filter === 'All') return true
+  return organisation.health?.label === filter
+}
+
+function organisationMatchesPlan(organisation, filter) {
+  if (filter === 'All') return true
+  return normalizeDisplayToken(organisation.subscriptionPlan).includes(normalizeDisplayToken(filter))
+}
+
+function OrganisationCard({ onManageLegalTemplates, onOpen, organisation }) {
+  return (
+    <article className="organisation-card" onClick={onOpen}>
+      <div className="organisation-card-top">
+        <RoleplayerLogo roleplayer={organisation} />
+        <div>
+          <h3>{organisation.name}</h3>
+          <div>
+            <span className={`type-badge ${roleplayerTypeClass(organisation.type)}`}>{organisation.type}</span>
+            <span className={`status-dot ${organisation.health.tone}`}>{organisation.status}</span>
+          </div>
+        </div>
+        <details className="card-actions" onClick={(event) => event.stopPropagation()}>
+          <summary aria-label={`Actions for ${organisation.name}`}>
+            <MoreVertical size={18} />
+          </summary>
+          <div>
+            <button onClick={onOpen} type="button">View Workspace</button>
+            <button type="button">Manage Users</button>
+            <button type="button">Billing</button>
+            <button type="button">Permissions</button>
+            <button onClick={onManageLegalTemplates} type="button">Legal Templates</button>
+            <button className="danger" type="button">Suspend Access</button>
+          </div>
+        </details>
+      </div>
+      <div className="organisation-card-metrics">
+        <span>
+          <small>Users</small>
+          <strong>{formatCount(organisation.userCount)}</strong>
+        </span>
+        <span>
+          <small>{organisation.activeWorkloadLabel}</small>
+          <strong>{formatCount(organisation.activeWorkload)}</strong>
+        </span>
+        <span>
+          <small>Revenue / MRR</small>
+          <strong>{organisation.revenueDisplay}</strong>
+        </span>
+      </div>
+      <MiniLineChart compact data={sparklineForMetric({ value: organisation.revenue }, 0)} />
+      <footer>
+        <span className={`health-dot ${organisation.health.tone}`}>Health: {organisation.health.label}</span>
+        <span>Last activity: {organisation.lastActivity}</span>
+      </footer>
+    </article>
+  )
+}
+
+function OrganisationTable({ organisations = [], onManageLegalTemplates, onOpen }) {
+  return (
+    <div className="organisation-table">
+      <div className="organisation-table-head">
+        <span>Organisation</span>
+        <span>Type</span>
+        <span>Status</span>
+        <span>Users</span>
+        <span>Active Workspaces</span>
+        <span>Revenue / MRR</span>
+        <span>Health</span>
+        <span>Last Activity</span>
+        <span>Actions</span>
+      </div>
+      {organisations.length ? organisations.map((organisation) => (
+        <article key={organisation.id}>
+          <button className="organisation-table-name" onClick={() => onOpen(organisation)} type="button">
+            <RoleplayerLogo roleplayer={organisation} size="mini" />
+            <strong>{organisation.name}</strong>
+          </button>
+          <span>{organisation.type}</span>
+          <span>{organisation.status}</span>
+          <span>{formatCount(organisation.userCount)}</span>
+          <span>{formatCount(organisation.activeWorkload)}</span>
+          <span>{organisation.revenueDisplay}</span>
+          <span className={`health-dot ${organisation.health.tone}`}>{organisation.health.label}</span>
+          <span>{organisation.lastActivity}</span>
+          <details className="card-actions">
+            <summary aria-label={`Actions for ${organisation.name}`}>
+              <MoreVertical size={18} />
+            </summary>
+            <div>
+              <button onClick={() => onOpen(organisation)} type="button">View Workspace</button>
+              <button onClick={() => onManageLegalTemplates(organisation)} type="button">Legal Templates</button>
+              <button type="button">Manage Users</button>
+              <button className="danger" type="button">Suspend Access</button>
+            </div>
+          </details>
+        </article>
+      )) : <EmptyData compact title="No organisations found" description="Try adjusting your filters or search term." />}
+    </div>
+  )
+}
+
+const ORGANISATION_WORKSPACE_TABS = [
+  'Overview',
+  'Users',
+  'Transactions',
+  'Financials',
+  'Workspaces',
+  'Documents',
+  'Legal Templates',
+  'Activity',
+  'Settings',
+]
+
+const ORGANISATION_ACTIVITY_METRICS = ['Revenue', 'Users', 'Transactions', 'Documents', 'Logins']
+
+function organisationWorkspaceTrend(organisation, metric) {
+  const base = {
+    Documents: organisation.workspaceCards?.find((card) => card.label === 'Documents')?.value || 0,
+    Logins: organisation.userCount || 0,
+    Revenue: organisation.revenue || 0,
+    Transactions: organisation.activeWorkload || 0,
+    Users: organisation.userCount || 0,
+  }[metric] || 0
+
+  return ['30 Apr', '7 May', '14 May', '21 May', '28 May'].map((label, index) => ({
+    label,
+    value: Math.round(base * (0.45 + index * 0.13 + (index % 2 ? 0.08 : 0))),
+  }))
+}
+
+function OrganisationWorkspaceHeader({ onBack, onEdit, onManageLegalTemplates, organisation }) {
+  return (
+    <>
+      <div className="organisation-workspace-breadcrumb">
+        <button onClick={onBack} type="button">
+          <ArrowLeft size={15} />
+          Organisations
+        </button>
+        <span>/</span>
+        <strong>{organisation.name}</strong>
+      </div>
+      <section className="organisation-workspace-hero">
+        <div className="organisation-workspace-profile">
+          <RoleplayerLogo roleplayer={organisation} size="workspace" />
+          <div>
+            <h1>{organisation.name}</h1>
+            <div className="organisation-workspace-pills">
+              <span className={`status-dot ${organisation.health.tone}`}>{organisation.status}</span>
+              <span className={`type-badge ${roleplayerTypeClass(organisation.type)}`}>{organisation.type}</span>
+            </div>
+            <div className="organisation-workspace-contact">
+              <span>Joined {organisation.joinedDate}</span>
+              <span>Reg {organisation.registrationNumber || 'Not set'}</span>
+              <span>{organisation.contactEmail}</span>
+              <span>{organisation.contactPhone || 'No phone'}</span>
+              <span>{organisation.website || 'No website'}</span>
+            </div>
+          </div>
+        </div>
+        <div className="organisation-workspace-header-actions">
+          <button className="secondary-button compact" type="button">
+            <Calendar size={15} />
+            30 Apr - 30 May 2024
+          </button>
+          <button className="secondary-button compact" type="button">
+            <RefreshCw size={15} />
+            Refresh
+          </button>
+          <details className="workspace-actions-menu">
+            <summary>
+              Actions
+              <MoreVertical size={15} />
+            </summary>
+            <div>
+              <button onClick={onEdit} type="button">Edit Organisation</button>
+              <button onClick={onEdit} type="button">Upload / Change Logo</button>
+              <button type="button">Manage Users</button>
+              <button onClick={onManageLegalTemplates} type="button">Manage Legal Templates</button>
+              <button type="button">Manage Billing</button>
+              <button type="button">Manage Permissions</button>
+              <button className="danger" type="button">Suspend Access</button>
+            </div>
+          </details>
+        </div>
+        <article className="organisation-workspace-health-card">
+          <div className={`health-ring ${organisation.health.tone}`} style={{ '--score': `${organisation.healthScore || 0}%` }}>
+            <strong>{organisation.healthScore || 0}</strong>
+            <span>/100</span>
+          </div>
+          <div>
+            <span className={`health-dot ${organisation.health.tone}`}>{organisation.health.label}</span>
+            <p>{organisation.healthReason || 'No immediate risks detected'}</p>
+            <small>Last checked: {organisation.lastActivity}</small>
+          </div>
+        </article>
+      </section>
+    </>
+  )
+}
+
+function OrganisationWorkspaceKpis({ organisation }) {
+  const workspaceCount = organisation.workspaceCards?.length || 0
+  const kpis = [
+    { icon: Users, label: 'Users', value: formatCount(organisation.userCount), change: '+12%' },
+    { icon: Database, label: organisation.activeWorkloadLabel, value: formatCount(organisation.activeWorkload), change: '+27%' },
+    { icon: CreditCard, label: 'MRR', value: organisation.revenueDisplay, change: '+18%' },
+    { icon: CircleDollarSign, label: 'Revenue This Month', value: organisation.revenueDisplay, change: '+24%' },
+    { icon: AlertTriangle, label: 'Open Issues', value: formatCount(organisation.openIssues), change: '+25%' },
+    { icon: FileText, label: 'Workspaces', value: formatCount(workspaceCount), caption: 'View all workspaces' },
+  ]
+
+  return (
+    <section className="organisation-workspace-kpis" aria-label="Organisation KPIs">
+      {kpis.map((item) => {
+        const Icon = item.icon
+        return (
+          <article key={item.label}>
+            <Icon size={18} />
+            <div>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+              <em>{item.caption || `${item.change} vs prev. 30 days`}</em>
+            </div>
+          </article>
+        )
+      })}
+    </section>
+  )
+}
+
+function DetailList({ rows = [] }) {
+  return (
+    <dl className="organisation-detail-list">
+      {rows.map((row) => (
+        <div key={row.label}>
+          <dt>{row.label}</dt>
+          <dd>{row.value || 'Not set'}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function OrganisationOverviewTab({ activityMetric, onActivityMetricChange, onEdit, organisation, notes, onNotesChange }) {
+  const detailRows = [
+    { label: 'Organisation Type', value: organisation.type },
+    { label: 'Registration Number', value: organisation.registrationNumber },
+    { label: 'VAT Number', value: organisation.vatNumber },
+    { label: 'Industry', value: organisation.industry },
+    { label: 'Primary Contact', value: organisation.primaryContactName },
+    { label: 'Email', value: organisation.contactEmail },
+    { label: 'Phone', value: organisation.contactPhone },
+    { label: 'Website', value: organisation.website },
+    { label: 'Address', value: organisation.address },
+    { label: 'Billing Email', value: organisation.billingEmail },
+  ]
+  const checks = [
+    ['Subscription', organisation.billing?.subscriptionStatus || organisation.status],
+    ['Payment Method', organisation.billing?.paymentMethodStatus || 'Valid'],
+    ['Users', organisation.userCount ? 'Healthy' : 'Needs users'],
+    [organisation.activeWorkloadLabel.replace('Active ', ''), organisation.activeWorkload ? 'Healthy' : 'No active work'],
+    ['Documents', 'Healthy'],
+    ['Workspaces', 'Healthy'],
+    ['Legal Templates', 'Healthy'],
+  ]
+
+  return (
+    <>
+      <OrganisationWorkspaceKpis organisation={organisation} />
+      <div className="organisation-workspace-grid">
+        <article className="panel workspace-activity-panel">
+          <div className="panel-inline-heading">
+            <h3>Activity Overview</h3>
+            <select onChange={(event) => onActivityMetricChange(event.target.value)} value={activityMetric}>
+              {ORGANISATION_ACTIVITY_METRICS.map((metric) => <option key={metric}>{metric}</option>)}
+            </select>
+          </div>
+          <GrowthAreaChart data={organisationWorkspaceTrend(organisation, activityMetric)} />
+          <div className="organisation-mini-metrics">
+            <WorkspaceMetric label="New Users" value={Math.max(1, Math.round(organisation.userCount * 0.1))} />
+            <WorkspaceMetric label="New Transactions" value={Math.max(0, Math.round(organisation.activeWorkload * 0.22))} />
+            <WorkspaceMetric label="User Logins" value={Math.max(0, organisation.userCount * 4)} />
+            <WorkspaceMetric label="Documents Uploaded" value={organisation.workspaceCards?.find((card) => card.label === 'Documents')?.value || 0} />
+          </div>
+        </article>
+
+        <article className="panel organisation-recent-card">
+          <div className="panel-heading">
+            <h2>Recent Activity</h2>
+            <button className="text-button success" type="button">View all activity</button>
+          </div>
+          <div className="organisation-activity-list">
+            {organisation.activityFeed?.length ? organisation.activityFeed.map((item) => (
+              <div key={item.id}>
+                <CircleDot size={16} />
+                <span>{item.text}</span>
+                <time>{item.time}</time>
+              </div>
+            )) : <EmptyData compact title="No recent activity" description="Activity will appear once this organisation uses the platform." />}
+          </div>
+        </article>
+
+        <article className="panel organisation-details-card">
+          <div className="panel-heading">
+            <h2>Organisation Details</h2>
+            <button className="secondary-button compact" onClick={onEdit} type="button">Edit</button>
+          </div>
+          <DetailList rows={detailRows} />
+        </article>
+
+        <article className="panel organisation-workspaces-card">
+          <div className="panel-heading">
+            <h2>Workspaces</h2>
+            <button className="text-button success" type="button">View all</button>
+          </div>
+          <div className="organisation-workspace-tiles">
+            {organisation.workspaceCards.map((card) => (
+              <button key={card.label} type="button">
+                <FileText size={17} />
+                <strong>{card.label}</strong>
+                <span>{typeof card.value === 'number' ? formatCount(card.value) : card.value} {card.meta}</span>
+              </button>
+            ))}
+          </div>
+        </article>
+
+        <article className="panel organisation-billing-card">
+          <div className="panel-heading">
+            <h2>Subscription & Billing</h2>
+            <button className="text-button success" type="button">Manage</button>
+          </div>
+          <DetailList rows={[
+            { label: 'Plan', value: organisation.billing?.plan || organisation.subscriptionPlan },
+            { label: 'Status', value: organisation.billing?.subscriptionStatus || organisation.status },
+            { label: 'Billing Cycle', value: organisation.billing?.billingCycle },
+            { label: 'Next Billing Date', value: organisation.billing?.nextBillingDate },
+            { label: 'Amount', value: organisation.billing?.subscriptionFees },
+            { label: 'MRR', value: organisation.revenueDisplay },
+            { label: 'Billing Email', value: organisation.billingEmail },
+            { label: 'Outstanding', value: organisation.billing?.outstandingBalance },
+            { label: 'Payment Method', value: organisation.billing?.paymentMethodStatus },
+          ]} />
+          <button className="secondary-button compact" type="button">View Billing History</button>
+        </article>
+
+        <article className="panel organisation-health-checks">
+          <h2>Health Checks</h2>
+          <div>
+            {checks.map(([label, value]) => (
+              <span key={label}>
+                <CheckCircle2 size={17} />
+                <strong>{label}</strong>
+                <small>{value}</small>
+              </span>
+            ))}
+          </div>
+        </article>
+
+        <article className="panel organisation-notes-card">
+          <div className="panel-heading">
+            <h2>Organisation Notes</h2>
+            <button className="text-button success" type="button">Edit</button>
+          </div>
+          <textarea onChange={(event) => onNotesChange(event.target.value)} placeholder="Add internal notes about this organisation." value={notes} />
+        </article>
+      </div>
+    </>
+  )
+}
+
+function WorkspaceResponsiveTable({ columns = [], empty, rows = [] }) {
+  return (
+    <div className="workspace-responsive-table">
+      <div className="workspace-table-head" style={{ '--columns': columns.length }}>
+        {columns.map((column) => <span key={column}>{column}</span>)}
+      </div>
+      {rows.length ? rows.map((row) => (
+        <article key={row.id || row[0]} style={{ '--columns': columns.length }}>
+          {columns.map((column, index) => (
+            <span data-label={column} key={column}>{row[index]}</span>
+          ))}
+        </article>
+      )) : <EmptyData compact {...empty} />}
+    </div>
+  )
+}
+
+function OrganisationUsersTab({ organisation }) {
+  const rows = organisation.users.map((user) => ({
+    id: user.id,
+    0: user.name,
+    1: user.email,
+    2: user.role,
+    3: user.status,
+    4: user.lastLogin,
+    5: user.createdDate,
+    6: user.permissionLevel,
+  }))
+  return (
+    <section className="panel organisation-tab-panel">
+      <div className="workspace-tab-toolbar">
+        <label className="roleplayer-search">
+          <Search size={17} />
+          <input placeholder="Search users..." />
+        </label>
+        <button className="secondary-button compact" type="button">Role / Status</button>
+        <button className="primary-button compact" type="button"><Plus size={15} /> Invite User</button>
+      </div>
+      <WorkspaceResponsiveTable
+        columns={['Name', 'Email', 'Role', 'Status', 'Last Login', 'Created', 'Permission']}
+        empty={{ title: 'No users yet', description: 'Invite this organisation’s first user to activate the workspace.' }}
+        rows={rows}
+      />
+      <div className="workspace-row-actions">
+        <button type="button">Edit role</button>
+        <button type="button">Resend invite</button>
+        <button className="danger" type="button">Deactivate user</button>
+      </div>
+    </section>
+  )
+}
+
+function OrganisationTransactionsTab({ organisation }) {
+  const rows = organisation.transactions.map((transaction) => ({
+    id: transaction.id,
+    0: transaction.reference,
+    1: transaction.property,
+    2: transaction.assigned,
+    3: transaction.buyer,
+    4: transaction.seller,
+    5: transaction.stage,
+    6: transaction.status,
+    7: transaction.createdDate,
+    8: transaction.lastActivity,
+    9: transaction.revenue,
+  }))
+  return (
+    <section className="panel organisation-tab-panel">
+      <div className="workspace-tab-toolbar">
+        <label className="roleplayer-search">
+          <Search size={17} />
+          <input placeholder={`Search ${organisation.activeWorkloadLabel.toLowerCase()}...`} />
+        </label>
+        <button className="secondary-button compact" type="button"><Filter size={15} /> Stage / Status</button>
+        <button className="secondary-button compact" type="button"><Download size={15} /> Export</button>
+      </div>
+      <WorkspaceResponsiveTable
+        columns={['ID', 'Property', 'Agent', 'Buyer', 'Seller', 'Stage', 'Status', 'Created', 'Last Activity', 'Revenue']}
+        empty={{ title: `No ${organisation.activeWorkloadLabel.toLowerCase()} yet`, description: 'Linked work will appear here as it moves through the platform.' }}
+        rows={rows}
+      />
+    </section>
+  )
+}
+
+function OrganisationFinancialsTab({ organisation }) {
+  return (
+    <div className="organisation-financials-tab">
+      <OrganisationWorkspaceKpis organisation={organisation} />
+      <article className="panel workspace-activity-panel">
+        <div className="panel-inline-heading">
+          <h3>Revenue Over Time</h3>
+          <select defaultValue="Monthly"><option>Monthly</option><option>Daily</option></select>
+        </div>
+        <GrowthAreaChart data={organisationWorkspaceTrend(organisation, 'Revenue')} />
+      </article>
+      <article className="panel organisation-billing-card">
+        <div className="panel-heading"><h2>Billing History</h2></div>
+        <DetailList rows={[
+          { label: 'MRR', value: organisation.revenueDisplay },
+          { label: 'ARR', value: organisation.arrDisplay },
+          { label: 'Revenue Lifetime', value: organisation.billing?.revenue },
+          { label: 'Outstanding Amount', value: organisation.billing?.outstandingBalance },
+          { label: 'Invoice Status', value: organisation.billing?.subscriptionStatus },
+          { label: 'Transaction Fees', value: organisation.billing?.transactionFees },
+        ]} />
+      </article>
+    </div>
+  )
+}
+
+function OrganisationWorkspacesTab({ organisation }) {
+  return (
+    <section className="organisation-workspace-tiles tabbed">
+      {organisation.workspaceCards.map((card) => (
+        <article className="panel" key={card.label}>
+          <FileText size={18} />
+          <h3>{card.label}</h3>
+          <strong>{typeof card.value === 'number' ? formatCount(card.value) : card.value}</strong>
+          <span>{card.meta || 'active'}</span>
+          <small>Last activity: {organisation.lastActivity}</small>
+          <button className="secondary-button compact" type="button">Open workspace</button>
+        </article>
+      ))}
+    </section>
+  )
+}
+
+function OrganisationDocumentsTab() {
+  const documentTypes = ['Company Registration', 'VAT Certificate', 'FICA Documents', 'Mandates', 'Compliance Docs', 'Brand Assets', 'Other']
+  return (
+    <section className="panel organisation-tab-panel">
+      <div className="workspace-tab-toolbar">
+        <label className="roleplayer-search"><Search size={17} /><input placeholder="Search documents..." /></label>
+        <select defaultValue="All">{['All', ...documentTypes].map((type) => <option key={type}>{type}</option>)}</select>
+        <button className="primary-button compact" type="button"><Plus size={15} /> Upload Document</button>
+      </div>
+      <EmptyData icon={FileText} title="No documents yet" description="Upload compliance, mandate or brand documents to keep this organisation complete." />
+    </section>
+  )
+}
+
+function OrganisationLegalTemplatesTab({ onManageLegalTemplates, organisation }) {
+  const templates = ['OTP', 'Mandate', 'Disclosure', 'Sale agreement', 'Lease', 'Attorney instruction', 'Buyer onboarding', 'Seller onboarding', 'Custom']
+  return (
+    <section className="panel organisation-tab-panel">
+      <div className="workspace-tab-toolbar">
+        <label className="roleplayer-search"><Search size={17} /><input placeholder="Search legal templates..." /></label>
+        <button className="secondary-button compact" onClick={onManageLegalTemplates} type="button">Open Template Manager</button>
+        <button className="primary-button compact" onClick={onManageLegalTemplates} type="button"><Plus size={15} /> Upload Template</button>
+      </div>
+      <div className="legal-template-category-grid">
+        {templates.map((template) => (
+          <button key={template} onClick={onManageLegalTemplates} type="button">
+            <FileText size={17} />
+            <strong>{template}</strong>
+            <span>{organisation.name}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function OrganisationActivityTab({ organisation }) {
+  return (
+    <section className="panel organisation-tab-panel">
+      <div className="organisation-activity-list expanded">
+        {organisation.activityFeed?.length ? organisation.activityFeed.map((item) => (
+          <div key={item.id}>
+            <Activity size={16} />
+            <span>{item.text}</span>
+            <time>{item.time}</time>
+          </div>
+        )) : <EmptyData compact title="No activity logged" description="Events will appear here as this organisation changes." />}
+      </div>
+    </section>
+  )
+}
+
+function OrganisationSettingsTab({ onEdit, organisation }) {
+  return (
+    <section className="panel organisation-tab-panel">
+      <div className="panel-heading">
+        <h2>Organisation Settings</h2>
+        <button className="primary-button compact" onClick={onEdit} type="button">Edit Organisation</button>
+      </div>
+      <DetailList rows={[
+        { label: 'Organisation Name', value: organisation.name },
+        { label: 'Organisation Type', value: organisation.type },
+        { label: 'Status', value: organisation.status },
+        { label: 'Logo', value: organisation.logoUrl ? 'Custom logo' : 'Initials fallback' },
+        { label: 'Registration Number', value: organisation.registrationNumber },
+        { label: 'VAT Number', value: organisation.vatNumber },
+        { label: 'Industry', value: organisation.industry },
+        { label: 'Primary Contact Name', value: organisation.primaryContactName },
+        { label: 'Primary Contact Email', value: organisation.primaryContactEmail },
+        { label: 'Contact Email', value: organisation.contactEmail },
+        { label: 'Phone', value: organisation.contactPhone },
+        { label: 'Website', value: organisation.website },
+        { label: 'Address', value: organisation.address },
+        { label: 'Billing Email', value: organisation.billingEmail },
+        { label: 'Subscription Plan', value: organisation.subscriptionPlan },
+        { label: 'Workspace Access', value: `${organisation.workspaceCards.length} enabled` },
+        { label: 'Default Role Permissions', value: 'Organisation standard' },
+      ]} />
+    </section>
+  )
+}
+
+function OrganisationEditSheet({ message, onClose, onSave, organisation }) {
+  if (!organisation) return null
+  const sections = [
+    ['Basic Details', ['Organisation name', 'Organisation type', 'Status', 'Industry']],
+    ['Contact Details', ['Primary contact name', 'Primary contact email', 'Contact email', 'Phone', 'Website', 'Address']],
+    ['Legal / Registration Details', ['Registration number', 'VAT number']],
+    ['Billing Details', ['Billing email', 'Subscription plan', 'Billing cycle']],
+    ['Workspace Access', ['Leads', 'Listings', 'Transactions', 'Documents']],
+    ['Branding', ['Logo upload', 'Logo preview', 'Fallback initials']],
+  ]
+
+  return (
+    <div className="organisation-edit-overlay" role="presentation">
+      <form className="organisation-edit-sheet" onSubmit={(event) => { event.preventDefault(); onSave() }}>
+        <div className="panel-heading">
+          <div>
+            <h2>Edit Organisation</h2>
+            <span>{organisation.name}</span>
+          </div>
+          <button className="icon-button" onClick={onClose} type="button"><X size={17} /></button>
+        </div>
+        {message ? <p className="organisation-edit-message">{message}</p> : null}
+        <div className="organisation-logo-preview">
+          <RoleplayerLogo roleplayer={organisation} size="large" />
+          <div>
+            <strong>Logo</strong>
+            <span>PNG, JPG, SVG or WebP. Preview before saving.</span>
+            <div>
+              <button className="secondary-button compact" type="button">Upload / Change Logo</button>
+              <button className="secondary-button compact danger" type="button">Remove Logo</button>
+            </div>
+          </div>
+        </div>
+        {sections.map(([title, fields]) => (
+          <fieldset key={title}>
+            <legend>{title}</legend>
+            <div>
+              {fields.map((field) => (
+                <label key={field}>
+                  <span>{field}</span>
+                  <input defaultValue={field === 'Organisation name' ? organisation.name : ''} placeholder={field} />
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        ))}
+        <footer>
+          <button className="secondary-button compact" onClick={onClose} type="button">Cancel</button>
+          <button className="primary-button compact" type="submit">Save Changes</button>
+        </footer>
+      </form>
+    </div>
+  )
+}
+
+function OrganisationWorkspacePage({ onBack, onManageLegalTemplates, organisation }) {
+  const [activeTab, setActiveTab] = useState('Overview')
+  const [activityMetric, setActivityMetric] = useState('Revenue')
+  const [isEditing, setIsEditing] = useState(false)
+  const [editMessage, setEditMessage] = useState('')
+  const [notes, setNotes] = useState('')
+
+  if (!organisation) {
+    return (
+      <section className="organisation-workspace">
+        <EmptyData title="Organisation not found" description="Return to the organisation list and choose another record." />
+      </section>
+    )
+  }
+
+  function manageLegalTemplates() {
+    onManageLegalTemplates?.(organisation)
+  }
+
+  function saveEdit() {
+    setEditMessage('Changes saved locally for review. Backend write wiring remains unchanged.')
+    setTimeout(() => {
+      setIsEditing(false)
+      setEditMessage('')
+    }, 900)
+  }
+
+  return (
+    <section className="organisation-workspace">
+      <OrganisationWorkspaceHeader
+        onBack={onBack}
+        onEdit={() => setIsEditing(true)}
+        onManageLegalTemplates={manageLegalTemplates}
+        organisation={organisation}
+      />
+      <nav className="organisation-workspace-tabs" aria-label={`${organisation.name} workspace`}>
+        {ORGANISATION_WORKSPACE_TABS.map((tab) => (
+          <button className={activeTab === tab ? 'active' : ''} key={tab} onClick={() => setActiveTab(tab)} type="button">
+            {tab}
+          </button>
+        ))}
+      </nav>
+      {activeTab === 'Overview' ? (
+        <OrganisationOverviewTab
+          activityMetric={activityMetric}
+          notes={notes}
+          onActivityMetricChange={setActivityMetric}
+          onEdit={() => setIsEditing(true)}
+          onNotesChange={setNotes}
+          organisation={organisation}
+        />
+      ) : null}
+      {activeTab === 'Users' ? <OrganisationUsersTab organisation={organisation} /> : null}
+      {activeTab === 'Transactions' ? <OrganisationTransactionsTab organisation={organisation} /> : null}
+      {activeTab === 'Financials' ? <OrganisationFinancialsTab organisation={organisation} /> : null}
+      {activeTab === 'Workspaces' ? <OrganisationWorkspacesTab organisation={organisation} /> : null}
+      {activeTab === 'Documents' ? <OrganisationDocumentsTab organisation={organisation} /> : null}
+      {activeTab === 'Legal Templates' ? <OrganisationLegalTemplatesTab onManageLegalTemplates={manageLegalTemplates} organisation={organisation} /> : null}
+      {activeTab === 'Activity' ? <OrganisationActivityTab organisation={organisation} /> : null}
+      {activeTab === 'Settings' ? <OrganisationSettingsTab onEdit={() => setIsEditing(true)} organisation={organisation} /> : null}
+      {isEditing ? <OrganisationEditSheet message={editMessage} onClose={() => setIsEditing(false)} onSave={saveEdit} organisation={organisation} /> : null}
+    </section>
+  )
+}
+
+function OrganisationsView({ onManageLegalTemplates, snapshot }) {
+  const [typeFilter, setTypeFilter] = useState('All')
+  const [statusFilter, setStatusFilter] = useState('All')
+  const [healthFilter, setHealthFilter] = useState('All')
+  const [planFilter, setPlanFilter] = useState('All')
+  const [query, setQuery] = useState('')
+  const [rowsPerPage, setRowsPerPage] = useState(9)
+  const [page, setPage] = useState(1)
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => {
+    if (typeof window === 'undefined') return ''
+    const match = window.location.pathname.match(/\/admin\/organisations\/([^/]+)/)
+    return match ? decodeURIComponent(match[1]) : ''
+  })
+  const [sort, setSort] = useState('Most Active')
+  const [viewMode, setViewMode] = useState('cards')
+
+  const organisations = snapshot.roleplayers || []
+  const selectedOrganisation = organisations.find((organisation) => organisation.id === selectedWorkspaceId)
+  const filtered = useMemo(() => {
+    const search = query.trim().toLowerCase()
+    return organisations
+      .filter((organisation) => organisationMatchesType(organisation, typeFilter))
+      .filter((organisation) => organisationMatchesStatus(organisation, statusFilter))
+      .filter((organisation) => organisationMatchesHealth(organisation, healthFilter))
+      .filter((organisation) => organisationMatchesPlan(organisation, planFilter))
+      .filter((organisation) => {
+        if (!search) return true
+        return [
+          organisation.name,
+          organisation.type,
+          organisation.organisationId,
+          organisation.registrationNumber,
+          organisation.vatNumber,
+          organisation.contactEmail,
+          organisation.contactPhone,
+          organisation.website,
+          organisation.status,
+          organisation.subscriptionPlan,
+          ...organisation.users.map((user) => `${user.name} ${user.email}`),
+        ].join(' ').toLowerCase().includes(search)
+      })
+      .sort((left, right) => {
+        if (sort === 'Revenue') return right.revenue - left.revenue
+        if (sort === 'Users') return right.userCount - left.userCount
+        if (sort === 'Newest') return String(right.joinedDate).localeCompare(String(left.joinedDate))
+        if (sort === 'Health') return (right.health.tone === 'danger' ? 2 : right.health.tone === 'warning' ? 1 : 0) - (left.health.tone === 'danger' ? 2 : left.health.tone === 'warning' ? 1 : 0)
+        return right.activeWorkload + right.userCount - (left.activeWorkload + left.userCount)
+      })
+  }, [healthFilter, organisations, page, planFilter, query, sort, statusFilter, typeFilter])
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / rowsPerPage))
+  const currentPage = Math.min(page, pageCount)
+  const visible = filtered.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage)
+
+  function openOrganisation(organisation) {
+    setSelectedWorkspaceId(organisation.id)
+    if (window.history?.pushState) {
+      window.history.pushState({}, '', `/admin/organisations/${encodeURIComponent(organisation.id)}`)
+    }
+  }
+
+  function closeWorkspace() {
+    setSelectedWorkspaceId('')
+    if (window.history?.pushState) {
+      window.history.pushState({}, '', '/admin/organisations')
+    }
+  }
+
+  function clearFilters() {
+    setTypeFilter('All')
+    setStatusFilter('All')
+    setHealthFilter('All')
+    setPlanFilter('All')
+    setQuery('')
+    setSort('Most Active')
+    setPage(1)
+  }
+
+  return (
+    <section className="organisations-directory">
+      {selectedOrganisation ? (
+        <div className="organisation-workspace-page">
+          <OrganisationWorkspacePage
+            onBack={closeWorkspace}
+            onManageLegalTemplates={onManageLegalTemplates}
+            organisation={selectedOrganisation}
+          />
+        </div>
+      ) : (
+        <>
+      <OrganisationKpiStrip organisations={organisations} />
+
+      <section className="panel organisation-filter-panel">
+        <div className="organisation-filter-top">
+          <label className="roleplayer-search">
+            <Search size={17} />
+            <input onChange={(event) => { setQuery(event.target.value); setPage(1) }} placeholder="Search organisations..." value={query} />
+          </label>
+          <label className="roleplayer-sort">
+            <span>Sort by:</span>
+            <select onChange={(event) => setSort(event.target.value)} value={sort}>
+              {ORGANISATION_SORTS.map((item) => <option key={item}>{item}</option>)}
+            </select>
+          </label>
+          <button className="secondary-button compact" type="button">
+            <Filter size={16} />
+            Filter
+          </button>
+          <div className="organisation-view-toggle" aria-label="View mode">
+            <button className={viewMode === 'cards' ? 'active' : ''} onClick={() => setViewMode('cards')} type="button">Card View</button>
+            <button className={viewMode === 'table' ? 'active' : ''} onClick={() => setViewMode('table')} type="button">Table View</button>
+          </div>
+        </div>
+        <div className="organisation-filter-groups">
+          <div className="roleplayer-filter-bar">
+            {ROLEPLAYER_FILTERS.map((filter) => (
+              <button className={typeFilter === filter ? 'active' : ''} key={filter} onClick={() => { setTypeFilter(filter); setPage(1) }} type="button">
+                {filter === 'All' ? 'All Types' : filter}
+              </button>
+            ))}
+          </div>
+          <div className="organisation-select-filters">
+            <label>
+              <span>Status</span>
+              <select onChange={(event) => { setStatusFilter(event.target.value); setPage(1) }} value={statusFilter}>
+                {ORGANISATION_STATUS_FILTERS.map((item) => <option key={item}>{item}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Health</span>
+              <select onChange={(event) => { setHealthFilter(event.target.value); setPage(1) }} value={healthFilter}>
+                {ORGANISATION_HEALTH_FILTERS.map((item) => <option key={item}>{item}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Plan</span>
+              <select onChange={(event) => { setPlanFilter(event.target.value); setPage(1) }} value={planFilter}>
+                {ORGANISATION_PLAN_FILTERS.map((item) => <option key={item}>{item}</option>)}
+              </select>
+            </label>
+            <button className="text-button success" onClick={clearFilters} type="button">Clear filters</button>
+          </div>
+        </div>
+      </section>
+
+      {viewMode === 'cards' ? (
+        visible.length ? (
+          <div className="organisation-card-grid">
+            {visible.map((organisation) => (
+              <OrganisationCard
+                key={organisation.id}
+                onManageLegalTemplates={() => onManageLegalTemplates?.(organisation)}
+                onOpen={() => openOrganisation(organisation)}
+                organisation={organisation}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="panel organisation-empty-state">
+            <EmptyData title="No organisations found" description="Try adjusting your filters or search term." />
+          </div>
+        )
+      ) : (
+        <OrganisationTable organisations={visible} onManageLegalTemplates={onManageLegalTemplates} onOpen={openOrganisation} />
+      )}
+
+      <footer className="organisation-pagination panel">
+        <span>
+          Showing {filtered.length ? (currentPage - 1) * rowsPerPage + 1 : 0} to {Math.min(currentPage * rowsPerPage, filtered.length)} of {filtered.length} organisations
+        </span>
+        <div>
+          <button disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} type="button">Previous</button>
+          {Array.from({ length: Math.min(pageCount, 5) }, (_, index) => index + 1).map((item) => (
+            <button className={currentPage === item ? 'active' : ''} key={item} onClick={() => setPage(item)} type="button">{item}</button>
+          ))}
+          <button disabled={currentPage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} type="button">Next</button>
+          <label>
+            <span>Rows</span>
+            <select onChange={(event) => { setRowsPerPage(Number(event.target.value)); setPage(1) }} value={rowsPerPage}>
+              {[9, 18, 27].map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </label>
+        </div>
+      </footer>
+        </>
+      )}
+    </section>
+  )
+}
+
 function WorkspaceMetric({ label, value }) {
   return (
     <div className="workspace-metric">
@@ -955,7 +2720,7 @@ function WorkspaceMetric({ label, value }) {
   )
 }
 
-function RoleplayerWorkspace({ onClose, onManageLegalTemplates, roleplayer }) {
+function RoleplayerWorkspace({ backLabel = 'Back to Roleplayers', onClose, onManageLegalTemplates, roleplayer }) {
   if (!roleplayer) {
     return (
       <aside className="roleplayer-workspace empty">
@@ -969,7 +2734,7 @@ function RoleplayerWorkspace({ onClose, onManageLegalTemplates, roleplayer }) {
       <div className="workspace-topbar">
         <button className="text-button" onClick={onClose} type="button">
           <ArrowLeft size={16} />
-          Back to Roleplayers
+          {backLabel}
         </button>
         <button className="icon-button" onClick={onClose} title="Close workspace" type="button">
           <X size={17} />
@@ -1644,8 +3409,8 @@ function MobileMore({ onNavigate, onSignOut, snapshot }) {
 function MobileSecondaryView({ activeView, access, onNavigate, profile, snapshot }) {
   if (activeView === 'health') return <><MobileHeader snapshot={snapshot} title="Platform Health" subtitle="Current platform operating signals." /><PlatformHealthSection health={snapshot.platformHealth} /></>
   if (activeView === 'legalTemplates') return <><MobileHeader snapshot={snapshot} title="Legal Templates" subtitle="Residential and commercial template layer." /><LegalTemplatesView /></>
-  if (activeView === 'revenue') return <><MobileHeader snapshot={snapshot} title="Revenue" subtitle="Financial overview." /><FinancialSection financials={snapshot.financials} /></>
-  if (activeView === 'growth') return <><MobileHeader snapshot={snapshot} title="Growth" subtitle="Adoption and organisation growth." /><GrowthSection growth={snapshot.growth} /></>
+  if (activeView === 'revenue') return <><MobileHeader snapshot={snapshot} title="Revenue" subtitle="Financial overview." /><RevenueDashboardView snapshot={snapshot} /></>
+  if (activeView === 'growth') return <><MobileHeader snapshot={snapshot} title="Growth" subtitle="Adoption and organisation growth." /><GrowthDashboardView snapshot={snapshot} /></>
   if (activeView === 'ecosystem') return <><MobileHeader snapshot={snapshot} title="Ecosystem" subtitle="Participants and role coverage." /><EcosystemSection ecosystem={snapshot.ecosystem} /></>
   if (activeView === 'audit') return <><MobileHeader snapshot={snapshot} title="Audit Log" subtitle="Recent system activity." /><RecordList emptyLabel="No audit events found." icon={ShieldCheck} items={snapshot.activities} title="Audit Log" /></>
   if (activeView === 'settings') return <><MobileHeader snapshot={snapshot} title="Settings" subtitle="Admin access and configuration." /><SettingsView access={access} profile={profile} /></>
@@ -2501,18 +4266,12 @@ export default function App() {
         />
         {!canViewActive ? <ServiceDeskView snapshot={snapshot} /> : null}
         {activeView === 'dashboard' && canViewActive ? <ExecutiveDashboardView snapshot={snapshot} /> : null}
-        {activeView === 'growth' && canViewActive ? <GrowthSection growth={snapshot.growth} /> : null}
-        {activeView === 'revenue' && canViewActive ? <FinancialSection financials={snapshot.financials} /> : null}
+        {activeView === 'growth' && canViewActive ? <GrowthDashboardView snapshot={snapshot} /> : null}
+        {activeView === 'revenue' && canViewActive ? <RevenueDashboardView snapshot={snapshot} /> : null}
         {activeView === 'ecosystem' && canViewActive ? <EcosystemSection ecosystem={snapshot.ecosystem} /> : null}
         {activeView === 'health' && canViewActive ? <HealthView snapshot={snapshot} /> : null}
         {activeView === 'organisations' && canViewActive ? (
-          <RoleplayersView
-            basePath="/admin/organisations"
-            onManageLegalTemplates={handleManageLegalTemplates}
-            snapshot={snapshot}
-            subtitle="Every organisation using the platform, with workspace actions and operational health."
-            title="Organisations"
-          />
+          <OrganisationsView onManageLegalTemplates={handleManageLegalTemplates} snapshot={snapshot} />
         ) : null}
         {activeView === 'legalTemplates' && canViewActive ? (
           <LegalTemplatesView

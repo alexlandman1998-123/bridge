@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const source = await readFile(new URL('../src/pages/AgentListings.jsx', import.meta.url), 'utf8')
+const serviceSource = await readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
+const mandateStatusMigration = await readFile(new URL('../sql/20260630_private_listing_manual_mandate_statuses.sql', import.meta.url), 'utf8')
 
 assert.match(
   source,
@@ -11,8 +13,14 @@ assert.match(
 
 assert.match(
   source,
-  /Property address or listing title is required\./,
-  'Quick Add draft creation should allow property address or listing title as the location anchor.',
+  /Property address is required\./,
+  'Quick Add draft creation should require property address as the location anchor.',
+)
+
+assert.match(
+  source,
+  /Seller email or phone is required\./,
+  'Quick Add should require at least one seller contact method.',
 )
 
 assert.match(
@@ -29,8 +37,32 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /function getQuickListingMandateStatus\(form = \{\}\) \{\n\s+return hasQuickListingSignedMandate\(form\) \? 'signed' : 'not_started'/,
-  'Quick Add should persist only DB-safe mandate statuses.',
+  /QUICK_ADD_MANDATE_STATUS_OPTIONS = \[/,
+  'Quick Add should expose explicit manual mandate status options.',
+)
+
+for (const status of ['in_progress', 'signed_uploaded', 'signed_external_pending_upload', 'expired']) {
+  assert.match(
+    source,
+    new RegExp(status),
+    `Quick Add UI should support mandate status ${status}.`,
+  )
+  assert.match(
+    serviceSource,
+    new RegExp(`'${status}'`),
+    `Private listing service should allow mandate status ${status}.`,
+  )
+  assert.match(
+    mandateStatusMigration,
+    new RegExp(`'${status}'`),
+    `Manual mandate status migration should allow mandate status ${status}.`,
+  )
+}
+
+assert.match(
+  source,
+  /mandateStatus === 'signed_uploaded' \? 'signed_external_pending_upload' : mandateStatus/,
+  'Quick Add should keep signed-and-uploaded as pending upload until the document upload succeeds.',
 )
 
 assert.doesNotMatch(
@@ -48,13 +80,37 @@ assert.match(
 assert.match(
   source,
   /sellerUpdatePayload\.listingStatus = 'active'/,
-  'Quick Add should promote to active only after signed mandate upload succeeds.',
+  'Quick Add should promote controlled active listings after activation validation passes.',
 )
 
 assert.match(
   source,
-  /Upload the signed mandate before marking the listing Active\./,
-  'Active listing selection should remain guarded by signed mandate upload.',
+  /function canQuickListingActivateWithMandateStatus\(value\)/,
+  'Active listing selection should allow signed-uploaded and signed-external mandate states.',
+)
+
+assert.match(
+  source,
+  /Capture a signed mandate status before marking the listing Active\./,
+  'Active listing selection should still block listings without signed mandate authority.',
+)
+
+assert.match(
+  source,
+  /Active With Warning/,
+  'Quick Add should surface active listings with compliance gaps as Active With Warning.',
+)
+
+assert.match(
+  source,
+  /Signed mandate upload outstanding/,
+  'Signed external mandates should keep the upload follow-up visible.',
+)
+
+assert.match(
+  source,
+  /Use this when the listing or mandate already exists outside Bridge\./,
+  'Quick Add copy should explain the manual or external listing workaround.',
 )
 
 console.log('quick-add-listing-bypass tests passed')
