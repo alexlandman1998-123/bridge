@@ -51,7 +51,7 @@ try {
   assert.equal(can(PERMISSIONS.viewLeads, agencyContext), true)
   assert.equal(can(PERMISSIONS.viewSalesPipeline, agencyContext), false)
 
-  for (const workspaceRole of ['agent', 'agency_agent', 'estate agent', 'property_practitioner', 'broker']) {
+  for (const workspaceRole of ['agent', 'agency_agent', 'estate agent', 'property_practitioner', 'broker', 'consultant']) {
     const agentContext = context({ appRole: 'agent', workspaceType: 'agency', workspaceRole })
     const agentKeys = visibleKeys(filterNavigationItems(getRoleNavItems('agent'), agentContext))
     assert.equal(agentKeys.includes('agency_pipeline'), true, `${workspaceRole} should see agency pipeline navigation`)
