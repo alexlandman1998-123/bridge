@@ -6154,11 +6154,11 @@ function AgentLeadList() {
             <CreateLeadDropdown
               activeCategory={filters.category}
               onCreate={openCreateLead}
-              onImport={() => navigate('/pipeline/enquiries')}
+              onImport={() => navigate('/pipeline/enquiries?import=1')}
               className="w-full"
               buttonClassName="w-full"
             />
-            <button type="button" onClick={() => navigate('/pipeline/enquiries')} className="inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+            <button type="button" onClick={() => navigate('/pipeline/enquiries?import=1')} className="inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
               Import
             </button>
             <button type="button" onClick={loadRows} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
@@ -6320,7 +6320,7 @@ function AgentLeadList() {
             <div className="p-5">
                 <EmptyLeadResults
                   onCreate={openCreateLead}
-                  onImport={() => navigate('/pipeline/enquiries')}
+                  onImport={() => navigate('/pipeline/enquiries?import=1')}
                   onAdjustFilters={() => setFilters({ search: '', category: filters.category || 'buyer', stage: 'all', source: 'all', agent: 'all', dateAdded: '' })}
                 />
               </div>

@@ -20,6 +20,7 @@
     "test:lead-requirements": "node scripts/lead-requirements.test.mjs",
     "test:lead-matching": "node scripts/lead-matching.test.mjs",
     "test:lead-ingestion": "node scripts/lead-ingestion.test.mjs",
+    "test:residential-canvassing": "node scripts/residential-canvassing.test.mjs",
     "test:lead-email-capture": "node scripts/lead-email-capture.test.mjs",
     "test:lead-ingestion-review": "node scripts/lead-ingestion-review.test.mjs",
     "test:lead-source-connectors": "node scripts/lead-source-connectors.test.mjs",

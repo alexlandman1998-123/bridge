@@ -706,6 +706,7 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}
     !facts.property_disclosure?.digitally_complete && !facts.property_disclosure?.uploadedDocumentReviewed && !facts.property_disclosure?.uploaded_document_reviewed,
     'property_disclosure_missing',
     'Property Disclosure declaration is required before seller onboarding can be completed.',
+    'recommended',
   ))
   push(missingIf(!hasValue(facts.property?.address_details?.municipality || facts.property?.municipality), 'municipality_missing', 'Municipality helps determine readiness and compliance.', 'recommended'))
   push(missingIf(propertyBranch === 'sectional_title' && !hasValue(facts.property?.scheme?.name || facts.property?.scheme_name), 'sectional_scheme_missing', 'Scheme name should be captured for sectional title properties.', 'recommended'))

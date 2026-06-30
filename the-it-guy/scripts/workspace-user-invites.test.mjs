@@ -128,7 +128,7 @@ for (const marker of [
 }
 for (const marker of [
   'Workspace invitation',
-  'Powered by Bridge',
+  'Powered by Arch9',
   'linear-gradient',
   'Accept invite',
   'organisationLogoUrl',
@@ -142,7 +142,7 @@ for (const marker of [
   'onResendInvite={handleResendAgentInvite}',
   'onCopyInviteLink={handleCopyAgentInviteLink}',
   "onRevokeInvite={(agent) => openConfirm('revoke', agent)}",
-  'This agent already had a pending invite, so Bridge resent the existing onboarding link.',
+  'This agent already had a pending invite, so Arch9 resent the existing onboarding link.',
 ]) {
   includes(agentsPage, marker, `Agents page should keep canonical pending invite management wired: ${marker}`)
 }
@@ -302,7 +302,7 @@ for (const marker of [
   'loading && !inviteDrivenSignup',
   'readOnly={inviteDrivenSignup && Boolean(invitedEmail)}',
   'This invite is locked to {invitedEmail}.',
-  'Bridge will take you straight into the invited workspace.',
+  'Arch9 will take you straight into the invited workspace.',
   'This invite is for ${invitedEmail}. Sign in or create an account with that email address to continue.',
   'resolvePendingInvitePath(location) || (currentIntent ? resolveSignupIntentRoute(currentIntent) : \'/setup\')',
   'if (inviteTokenFromUrl && inviteTokenFromUrl !== storedInviteToken) return \'\'',

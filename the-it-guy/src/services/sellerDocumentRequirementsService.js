@@ -1,4 +1,4 @@
-import { generateSellerDocumentRequirements } from '../lib/privateListingRequirementEngine'
+import { generateSellerDocumentRequirements } from '../lib/privateListingRequirementEngine.js'
 
 function normalizeText(value) {
   return String(value ?? '').trim()

@@ -242,7 +242,7 @@ export function getSellerBlockers({ lead = {}, contact = {}, appointments = [], 
     blockers.push(blocker('mandate_not_signed', 'Mandate Not Signed', 'listing', 'check_signature_status', 'blocked', 'Your signed mandate is required before listing.'))
   }
 
-  if (resolvedJourney.mandateStatus === 'signed' && !resolvedJourney.listingCreated && !requiredDocumentsComplete(resolvedJourney)) {
+  if (resolvedJourney.mandateStatus === 'signed' && !resolvedJourney.listingCreated && !sellerDocumentsComplete(resolvedJourney, listing || {})) {
     blockers.push(blocker('required_documents_missing', 'Required Documents Missing', 'listing', 'open_documents', 'blocked', 'Some property documents are still outstanding.'))
   }
 
