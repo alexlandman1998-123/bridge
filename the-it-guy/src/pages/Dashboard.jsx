@@ -1366,11 +1366,15 @@ function DeveloperSparkline({ points = [], tone = 'blue' }) {
 function DeveloperLandingCommandCenter({ model, onNavigate = () => {} }) {
   if (!model) return null
 
+  const hasCommercialHealthData =
+    Number(model.summary?.developments || 0) > 0 ||
+    Number(model.summary?.activeTransactions || 0) > 0 ||
+    model.recentActivity.length > 0
+
   return (
     <section className="developer-command-page">
       <article className="developer-command-hero">
         <div className="developer-command-hero-copy">
-          <span className="developer-command-live-badge">Live Command Center</span>
           <div>
             <h1>{model.greeting}, {model.greetingName}</h1>
             <p>
@@ -1395,20 +1399,10 @@ function DeveloperLandingCommandCenter({ model, onNavigate = () => {} }) {
           </div>
         </div>
         <div className="developer-command-hero-actions">
-          <button type="button" className="developer-command-view-pill" onClick={() => onNavigate('/dashboard')}>
-            <span>View</span>
-            <strong>Developer</strong>
-          </button>
           <button type="button" className="developer-command-export" onClick={() => onNavigate('/reports')}>
             <Download size={16} />
             <span>Export Report</span>
           </button>
-        </div>
-        <div className="developer-command-building" aria-hidden="true">
-          <div className="developer-command-building-lines" />
-          <div className="developer-command-building-tower">
-            {Array.from({ length: 18 }, (_, index) => <span key={index} />)}
-          </div>
         </div>
       </article>
 
@@ -1539,7 +1533,7 @@ function DeveloperLandingCommandCenter({ model, onNavigate = () => {} }) {
               ))}
             </div>
           ) : (
-            <div className="developer-command-empty">Recent activity will appear when transactions or units are updated.</div>
+            <div className="developer-command-empty">No recent activity to show.</div>
           )}
         </article>
 
@@ -1551,22 +1545,26 @@ function DeveloperLandingCommandCenter({ model, onNavigate = () => {} }) {
             </div>
             <button type="button" onClick={() => onNavigate('/reports')}>View details</button>
           </header>
-          <div className="developer-command-health-body">
-            <div className="developer-command-health-score" style={{ '--health-score': `${model.commercialHealth.score}%` }}>
-              <div>
-                <strong>{model.commercialHealth.score}</strong>
-                <span>{model.commercialHealth.label}</span>
+          {hasCommercialHealthData ? (
+            <div className="developer-command-health-body">
+              <div className="developer-command-health-score" style={{ '--health-score': `${model.commercialHealth.score}%` }}>
+                <div>
+                  <strong>{model.commercialHealth.score}</strong>
+                  <span>{model.commercialHealth.label}</span>
+                </div>
+              </div>
+              <div className="developer-command-health-list">
+                {model.commercialHealth.bullets.map((item) => (
+                  <p key={item.key}>
+                    <span className={`developer-command-health-dot is-${item.tone}`} />
+                    {item.label}
+                  </p>
+                ))}
               </div>
             </div>
-            <div className="developer-command-health-list">
-              {model.commercialHealth.bullets.map((item) => (
-                <p key={item.key}>
-                  <span className={`developer-command-health-dot is-${item.tone}`} />
-                  {item.label}
-                </p>
-              ))}
-            </div>
-          </div>
+          ) : (
+            <div className="developer-command-empty">No health data available yet.</div>
+          )}
         </article>
       </div>
 
