@@ -510,6 +510,57 @@
     gap: 0.75rem;
   }
 
+  .ui-shell-dashboard-filters {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.625rem;
+    margin-right: auto;
+  }
+
+  .ui-shell-header-filter {
+    position: relative;
+    display: inline-flex;
+    height: 44px;
+    min-width: 168px;
+    max-width: 210px;
+    align-items: center;
+    gap: 0.5rem;
+    border: 1px solid rgba(206, 219, 232, 0.95);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.9);
+    padding: 0 0.75rem;
+    color: #24364b;
+    box-shadow: 0 12px 30px rgba(25, 46, 69, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.86);
+  }
+
+  .ui-shell-header-filter select {
+    min-width: 0;
+    flex: 1;
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: #24364b;
+    font-size: 0.9rem;
+    font-weight: 650;
+    outline: none;
+  }
+
+  @media (max-width: 1280px) {
+    .ui-shell-dashboard-filters {
+      gap: 0.5rem;
+    }
+
+    .ui-shell-header-filter {
+      min-width: 150px;
+      max-width: 180px;
+    }
+
+    .ui-shell-search-premium {
+      max-width: 420px;
+    }
+  }
+
   .dashboard-shell {
     @apply min-w-0 overflow-hidden;
   }

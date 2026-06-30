@@ -1,6 +1,8 @@
 const MOBILE_NAV_ITEMS = Object.freeze({
   home: { key: 'home', label: 'Home', to: '/mobile/home' },
   transactions: { key: 'transactions', label: 'Transactions', to: '/mobile/transactions' },
+  create: { key: 'create', label: 'Create', to: '/mobile/create' },
+  activity: { key: 'activity', label: 'Activity', to: '/mobile/activity' },
   leads: { key: 'leads', label: 'Leads', to: '/mobile/leads' },
   notifications: { key: 'notifications', label: 'Notifications', to: '/mobile/notifications' },
   more: { key: 'more', label: 'More', to: '/mobile/more' },
@@ -14,12 +16,12 @@ const MOBILE_NAV_ITEMS = Object.freeze({
 })
 
 const MOBILE_NAV_BY_CATEGORY = Object.freeze({
-  agent: ['home', 'transactions', 'leads', 'notifications', 'more'],
-  principal: ['home', 'transactions', 'leads', 'reports', 'more'],
-  attorney: ['home', 'matters', 'documents', 'notifications', 'more'],
-  bond_originator: ['home', 'applications', 'documents', 'notifications', 'more'],
-  commercial: ['home', 'pipeline', 'listings', 'deals', 'more'],
-  default: ['home', 'transactions', 'leads', 'notifications', 'more'],
+  agent: ['home', 'transactions', 'create', 'activity', 'more'],
+  principal: ['home', 'transactions', 'create', 'activity', 'more'],
+  attorney: ['home', 'transactions', 'create', 'activity', 'more'],
+  bond_originator: ['home', 'transactions', 'create', 'activity', 'more'],
+  commercial: ['home', 'transactions', 'create', 'activity', 'more'],
+  default: ['home', 'transactions', 'create', 'activity', 'more'],
 })
 
 const PRINCIPAL_ROLE_MARKERS = new Set([

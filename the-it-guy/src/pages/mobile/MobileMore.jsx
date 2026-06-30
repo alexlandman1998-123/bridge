@@ -1,4 +1,4 @@
-import { Building2, CircleHelp, FileText, Inbox, ListChecks, LogOut, Search, Settings, UserCircle } from 'lucide-react'
+import { Building2, CalendarDays, CircleHelp, FileText, Inbox, LogOut, Search, Settings, TrendingUp, UserCircle } from 'lucide-react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { MobileCard } from '../../components/mobile-shell/MobileShellStates'
@@ -9,12 +9,13 @@ import { setPreferDesktopOnMobile, userPrefersDesktopOnMobile } from '../../lib/
 import { trackMobileMetric } from '../../services/observability/monitoring'
 
 const MORE_ITEMS = [
+  { key: 'profile', label: 'Profile', icon: UserCircle, meta: 'Account and mobile preferences' },
+  { key: 'calendar', label: 'Calendar', icon: CalendarDays, meta: 'Appointments and follow-ups' },
+  { key: 'insights', label: 'Reports / Insights', icon: TrendingUp, meta: 'Pipeline, commission and team snapshot', to: '/mobile/reports' },
+  { key: 'documents', label: 'Documents', icon: FileText, meta: 'Upload and review', to: '/mobile/documents' },
   { key: 'search', label: 'Search', icon: Search, meta: 'Find work fast', to: '/mobile/search' },
   { key: 'inbox', label: 'Inbox', icon: Inbox, meta: 'Messages and notifications', to: '/mobile/inbox' },
-  { key: 'documents', label: 'Documents', icon: FileText, meta: 'Upload and review', to: '/mobile/documents' },
-  { key: 'tasks', label: 'Tasks', icon: ListChecks, meta: 'Complete mobile tasks', to: '/mobile/tasks' },
-  { key: 'profile', label: 'Profile', icon: UserCircle, meta: 'Account details' },
-  { key: 'organisation', label: 'Organisation', icon: Building2, meta: 'Workspace context' },
+  { key: 'organisation', label: 'Switch Workspace', icon: Building2, meta: 'Change branch or workspace' },
   { key: 'settings', label: 'Settings', icon: Settings, meta: 'Mobile-safe settings' },
   { key: 'help', label: 'Help', icon: CircleHelp, meta: 'Support and guidance' },
 ]
@@ -58,30 +59,31 @@ export default function MobileMore() {
   }
 
   return (
-    <div className="space-y-4">
-      <MobileCard className="bg-[#10243a] text-white">
+    <div className="space-y-6">
+      <MobileCard className="bg-[#10243a] text-white shadow-[0_18px_42px_rgba(15,23,42,0.20)]">
         <div className="flex items-center gap-3">
-          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/12 text-lg font-semibold text-white">
+          <span className="flex h-16 w-16 items-center justify-center rounded-[22px] bg-white/12 text-xl font-semibold text-white">
             {profileName.slice(0, 1).toUpperCase()}
           </span>
           <div className="min-w-0">
-            <h1 className="truncate text-[22px] font-semibold text-white">{profileName}</h1>
+            <p className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#9fe0bd]">Mobile workspace</p>
+            <h1 className="mt-1 truncate text-[26px] font-semibold text-white">{profileName}</h1>
             <p className="mt-1 truncate text-sm text-[#dce8f2]">{workspaceName}</p>
           </div>
         </div>
       </MobileCard>
 
-      <section className="space-y-2">
+      <section className="space-y-3">
         {MORE_ITEMS.map((item) => {
           const Icon = item.icon
           return (
             <button
               key={item.key}
               type="button"
-              className="flex min-h-[64px] w-full items-center gap-3 rounded-[20px] border border-[#e4ebf2] bg-white px-4 text-left shadow-[0_10px_24px_rgba(15,23,42,0.04)]"
+              className="flex min-h-[72px] w-full items-center gap-4 rounded-[24px] border border-white/80 bg-white px-4 text-left shadow-[0_10px_28px_rgba(15,23,42,0.06)]"
               onClick={item.to ? () => navigate(item.to) : undefined}
             >
-              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#edf8f2] text-[#1f7a5a]">
+              <span className="flex h-12 w-12 items-center justify-center rounded-[18px] bg-[#edf8f2] text-[#1f7a5a]">
                 <Icon className="h-5 w-5" />
               </span>
               <span className="min-w-0">

@@ -199,10 +199,10 @@ export default function SettingsLanding() {
         description="Manage your account, organisation and platform preferences."
       />
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
+      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_280px]">
         <div className="space-y-6">
           <section className="rounded-[18px] border border-[#e1e8f0] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.8fr)] lg:items-center">
+            <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_minmax(260px,0.72fr)] 2xl:items-center">
               <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
                 <div className="relative h-28 w-28 shrink-0">
                   <span className="grid h-28 w-28 place-items-center overflow-hidden rounded-full border border-[#dce6f2] bg-[#eef5fb] text-xl font-semibold text-[#1f4f78]">
@@ -216,36 +216,36 @@ export default function SettingsLanding() {
                     <Pencil size={15} />
                   </Link>
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-xl font-bold text-[#121c2d]">{fullName}</h3>
+                    <h3 className="min-w-0 text-xl font-bold text-[#121c2d]">{fullName}</h3>
                     <span className="rounded-full bg-[#dff3e8] px-3 py-1 text-xs font-semibold capitalize text-[#0f7f4f]">{roleLabel}</span>
                   </div>
                   <div className="mt-4 grid gap-2 text-sm font-normal text-[#42566d]">
-                    <p>{displayValue(account.email)}</p>
-                    <p>{displayValue(account.phoneNumber)}</p>
-                    <p>{displayValue(account.companyName || organisation.name, 'Organisation pending')}</p>
+                    <p className="break-words">{displayValue(account.email)}</p>
+                    <p className="break-words">{displayValue(account.phoneNumber)}</p>
+                    <p className="break-words">{displayValue(account.companyName || organisation.name, 'Organisation pending')}</p>
                     <p>Joined date unavailable</p>
                   </div>
                 </div>
               </div>
 
-              <div className="grid gap-4 border-t border-[#e8eef5] pt-5 sm:grid-cols-2 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
-                <div>
+              <div className="grid min-w-0 gap-4 border-t border-[#e8eef5] pt-5 sm:grid-cols-2 2xl:border-l 2xl:border-t-0 2xl:pl-6 2xl:pt-0">
+                <div className="min-w-0">
                   <p className="text-xs font-medium text-[#7b8ca2]">Last login</p>
-                  <p className="mt-1 text-sm font-semibold text-[#162334]">Not available</p>
+                  <p className="mt-1 break-words text-sm font-semibold text-[#162334]">Not available</p>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-xs font-medium text-[#7b8ca2]">Account status</p>
-                  <p className="mt-1 text-sm font-semibold text-[#0f7f4f]">Active</p>
+                  <p className="mt-1 break-words text-sm font-semibold text-[#0f7f4f]">Active</p>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-xs font-medium text-[#7b8ca2]">IP address</p>
-                  <p className="mt-1 text-sm font-semibold text-[#162334]">Not available</p>
+                  <p className="mt-1 break-words text-sm font-semibold text-[#162334]">Not available</p>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-xs font-medium text-[#7b8ca2]">Two-factor authentication</p>
-                  <p className="mt-1 text-sm font-semibold text-[#607387]">Not enabled</p>
+                  <p className="mt-1 break-words text-sm font-semibold text-[#607387]">Not enabled</p>
                 </div>
               </div>
             </div>
@@ -280,7 +280,7 @@ export default function SettingsLanding() {
           </section>
         </div>
 
-        <aside className="hidden xl:block">
+        <aside className="hidden 2xl:block">
           <div className="sticky top-4 overflow-hidden rounded-[16px] border border-[#e1e8f0] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
             <div className="border-b border-[#e8eef5] px-4 py-4">
               <h3 className="text-sm font-semibold text-[#121c2d]">Quick actions</h3>

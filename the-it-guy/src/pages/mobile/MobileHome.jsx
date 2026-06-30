@@ -1,10 +1,9 @@
 import {
-  Bell,
+  ArrowUpRight,
   ChevronRight,
-  Clock3,
-  FileText,
+  CircleCheck,
+  Home,
   ListChecks,
-  Plus,
   RefreshCw,
   Sparkles,
 } from 'lucide-react'
@@ -36,16 +35,51 @@ function formatMetric(value) {
   return String(value ?? '0')
 }
 
-function PriorityCard({ card }) {
+function getPriority(snapshot) {
+  const task = snapshot?.tasks?.[0]
+  if (task) {
+    return {
+      title: task.title,
+      body: task.related || 'Task due today',
+      meta: task.dueTime || task.due || 'Today',
+      to: '/mobile/tasks',
+    }
+  }
+  const work = snapshot?.activeWork?.[0]
+  if (work) {
+    return {
+      title: work.status || work.stage || 'Review next action',
+      body: work.title,
+      meta: work.meta || work.stage || 'In progress',
+      to: work.to || '/mobile/transactions',
+    }
+  }
+  const activity = snapshot?.recentActivity?.[0]
+  if (activity) {
+    return {
+      title: activity.title,
+      body: activity.body,
+      meta: activity.time,
+      to: '/mobile/activity',
+    }
+  }
+  return null
+}
+
+function KpiCard({ card }) {
+  const Icon = card.key === 'tasks' ? ListChecks : card.key === 'pipeline' ? Sparkles : card.key === 'listings' ? Home : CircleCheck
   return (
-    <MobileCard className="min-h-[122px] p-3.5">
+    <MobileCard className="min-h-[142px] p-4">
       <div className="flex items-start justify-between gap-3">
-        <span className={`flex h-10 w-10 items-center justify-center rounded-2xl ${CARD_TONES[card.tone] || CARD_TONES.blue}`}>
-          {card.key === 'tasks' ? <ListChecks className="h-5 w-5" /> : card.key === 'documents' ? <FileText className="h-5 w-5" /> : card.key === 'notifications' ? <Bell className="h-5 w-5" /> : <Sparkles className="h-5 w-5" />}
+        <span className={`flex h-11 w-11 items-center justify-center rounded-[17px] ${CARD_TONES[card.tone] || CARD_TONES.blue}`}>
+          <Icon className="h-5 w-5" />
         </span>
-        <strong className="text-[26px] font-semibold leading-none text-[#10243a]">{formatMetric(card.value)}</strong>
       </div>
-      <p className="mt-4 text-[13px] font-semibold leading-5 text-[#10243a]">{card.label}</p>
+      <strong className="mt-5 block text-[31px] font-bold leading-none text-[#10243a]">{formatMetric(card.value)}</strong>
+      <p className="mt-2 text-[15px] font-semibold leading-5 text-[#10243a]">{card.label}</p>
+      <p className={`mt-2 text-[12px] font-semibold ${card.key === 'tasks' && Number(card.value) > 0 ? 'text-[#b42318]' : 'text-[#1f7a5a]'}`}>
+        {card.supportingValue || (card.key === 'tasks' && Number(card.value) > 0 ? 'Needs attention' : 'Up to date')}
+      </p>
     </MobileCard>
   )
 }
@@ -53,9 +87,43 @@ function PriorityCard({ card }) {
 function SectionHeader({ title, actionTo = '', actionLabel = 'View All' }) {
   return (
     <div className="mb-3 flex items-center justify-between gap-3">
-      <h2 className="text-[19px] font-semibold text-[#10243a]">{title}</h2>
+      <h2 className="text-[22px] font-semibold text-[#10243a]">{title}</h2>
       {actionTo ? <Link to={actionTo} className="text-sm font-semibold text-[#1f7a5a]">{actionLabel}</Link> : null}
     </div>
+  )
+}
+
+function PriorityNowCard({ priority, onOpen }) {
+  if (!priority) return null
+  return (
+    <button
+      type="button"
+      className="flex w-full items-center gap-4 rounded-[28px] border border-[#dbece1] bg-[#edf8f2] p-4 text-left shadow-[0_14px_34px_rgba(31,122,90,0.12)]"
+      onClick={() => onOpen(priority.to)}
+    >
+      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[20px] bg-white text-[#1f7a5a] shadow-[0_8px_18px_rgba(31,122,90,0.10)]">
+        <ListChecks className="h-6 w-6" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[12px] font-semibold uppercase tracking-[0.04em] text-[#1f7a5a]">Priority Now</span>
+        <span className="mt-1 block truncate text-[17px] font-semibold text-[#10243a]">{priority.title}</span>
+        <span className="mt-1 block truncate text-[13px] text-[#60758d]">{priority.body}</span>
+        <span className="mt-1 block text-[12px] font-semibold text-[#b7791f]">{priority.meta}</span>
+      </span>
+      <ChevronRight className="h-5 w-5 shrink-0 text-[#1f7a5a]" />
+    </button>
+  )
+}
+
+function WorkThumbnail({ item }) {
+  const initial = String(item.title || 'A').slice(0, 1).toUpperCase()
+  return (
+    <span className="relative flex h-[86px] w-[86px] shrink-0 overflow-hidden rounded-[22px] bg-[#dce8f2]">
+      <span className="absolute inset-0 bg-[linear-gradient(135deg,#10243a_0%,#1f7a5a_52%,#e8f6ef_100%)]" />
+      <span className="absolute bottom-2 left-2 flex h-9 w-9 items-center justify-center rounded-full bg-white/88 text-sm font-bold text-[#10243a]">
+        {initial}
+      </span>
+    </span>
   )
 }
 
@@ -63,57 +131,66 @@ function ActiveWorkCard({ item, onOpen }) {
   return (
     <button
       type="button"
-      className="block w-full rounded-[22px] border border-[#e4ebf2] bg-white p-4 text-left shadow-[0_12px_28px_rgba(15,23,42,0.06)]"
+      className="flex w-full gap-4 rounded-[28px] border border-white/80 bg-white p-4 text-left shadow-[0_14px_34px_rgba(15,23,42,0.07)]"
       onClick={() => onOpen(item)}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-[12px] font-semibold uppercase text-[#60758d]">{item.eyebrow}</p>
-          <h3 className="mt-1 truncate text-[17px] font-semibold text-[#10243a]">{item.title}</h3>
-        </div>
-        <ChevronRight className="h-5 w-5 shrink-0 text-[#94a3b8]" />
-      </div>
-      <div className="mt-4 flex items-center justify-between gap-3 text-xs font-semibold text-[#60758d]">
-        <span>{item.stage}</span>
-        <span>{item.meta}</span>
-      </div>
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#edf3f8]">
-        <span className="block h-full rounded-full bg-[#1f7a5a]" style={{ width: `${Math.max(Math.min(item.progress || 0, 100), 4)}%` }} />
-      </div>
-      <div className="mt-3 flex items-center justify-between gap-3">
-        <span className="rounded-full bg-[#e8f6ef] px-3 py-1 text-xs font-semibold text-[#1f7a5a]">{item.status}</span>
-        {item.value ? <span className="text-sm font-semibold text-[#10243a]">{item.value}</span> : null}
-      </div>
+      <WorkThumbnail item={item} />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-start justify-between gap-3">
+          <span className="min-w-0">
+            <span className="block truncate text-[17px] font-semibold text-[#10243a]">{item.title}</span>
+            <span className="mt-1 block truncate text-[13px] text-[#60758d]">{item.eyebrow}</span>
+          </span>
+          <ChevronRight className="h-5 w-5 shrink-0 text-[#94a3b8]" />
+        </span>
+        <span className="mt-3 flex items-center justify-between gap-3">
+          <span className="rounded-full bg-[#e8f6ef] px-3 py-1 text-[12px] font-semibold text-[#1f7a5a]">{item.stage}</span>
+          <span className="text-[12px] font-semibold text-[#60758d]">{item.progress || 0}%</span>
+        </span>
+        <span className="mt-2 block h-2 overflow-hidden rounded-full bg-[#edf3f8]">
+          <span className="block h-full rounded-full bg-[#1f7a5a]" style={{ width: `${Math.max(Math.min(item.progress || 0, 100), 4)}%` }} />
+        </span>
+        <span className="mt-3 flex items-center justify-between gap-3">
+          <span className="min-w-0 truncate text-[13px] font-semibold text-[#10243a]">{item.status}</span>
+          {item.value ? <span className="shrink-0 text-[13px] font-semibold text-[#10243a]">{item.value}</span> : null}
+        </span>
+      </span>
     </button>
   )
 }
 
 function TaskRow({ item, onOpen }) {
   return (
-    <button type="button" className="flex w-full items-start gap-3 rounded-[20px] border border-[#e4ebf2] bg-white p-4 text-left" onClick={() => onOpen(item)}>
-      <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#fff6e5] text-[#b7791f]">
-        <Clock3 className="h-5 w-5" />
-      </span>
+    <button type="button" className="flex w-full items-start gap-3 rounded-[24px] border border-white/80 bg-white p-4 text-left shadow-[0_10px_24px_rgba(15,23,42,0.05)]" onClick={() => onOpen(item)}>
+      <span className="mt-1 h-5 w-5 shrink-0 rounded-full border-2 border-[#b9c5d2] bg-white" />
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-semibold text-[#10243a]">{item.title}</span>
-        <span className="mt-1 block truncate text-xs text-[#60758d]">{item.related}</span>
-        <span className="mt-2 inline-flex rounded-full bg-[#feecec] px-2.5 py-1 text-[11px] font-semibold text-[#b42318]">{item.priority}</span>
+        <span className="block text-[15px] font-semibold text-[#10243a]">{item.title}</span>
+        <span className="mt-1 block truncate text-[13px] text-[#60758d]">{item.related}</span>
       </span>
-      <span className="text-xs font-semibold text-[#60758d]">{item.dueTime}</span>
+      <span className="shrink-0 text-[12px] font-semibold text-[#b42318]">{item.dueTime || item.due || 'Today'}</span>
     </button>
   )
 }
 
-function ActivityRow({ item }) {
+function ActivityRow({ item, last = false }) {
   return (
-    <div className="flex items-start gap-3 rounded-[18px] bg-white px-3 py-3">
-      <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-[#1f7a5a]" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-[#10243a]">{item.title}</p>
-        <p className="mt-1 truncate text-xs text-[#60758d]">{item.body}</p>
+    <div className="flex items-start gap-3">
+      <span className="flex flex-col items-center">
+        <span className="mt-1 h-3 w-3 rounded-full bg-[#1f7a5a]" />
+        {!last ? <span className="mt-1 h-12 w-px bg-[#dfe7ef]" /> : null}
+      </span>
+      <div className="min-w-0 flex-1 pb-4">
+        <p className="truncate text-[15px] font-semibold text-[#10243a]">{item.title}</p>
+        <p className="mt-1 truncate text-[13px] text-[#60758d]">{item.body}</p>
       </div>
-      <span className="shrink-0 text-xs font-semibold text-[#94a3b8]">{item.time}</span>
+      <span className="shrink-0 text-[12px] font-semibold text-[#94a3b8]">{item.time}</span>
     </div>
+  )
+}
+
+function EmptyCompact({ title, body, actionLabel, onAction }) {
+  return (
+    <MobileEmptyState title={title} body={body} actionLabel={actionLabel} onAction={onAction} />
   )
 }
 
@@ -208,6 +285,7 @@ export default function MobileHome() {
 
   const snapshot = state.snapshot
   const workPath = useMemo(() => ROLE_WORK_PATH[snapshot?.category] || '/mobile/transactions', [snapshot?.category])
+  const priority = useMemo(() => getPriority(snapshot), [snapshot])
 
   function handleActiveWorkOpen(item) {
     void trackMobileMetric('transaction_card_clicked', {
@@ -228,14 +306,15 @@ export default function MobileHome() {
     })
   }
 
-  function handleNotificationOpen() {
-    void trackMobileMetric('notification_opened', {
+  function handlePriorityOpen(to = '') {
+    if (!to) return
+    void trackMobileMetric('priority_card_clicked', {
       userId: workspace.profile?.id || '',
       workspaceId: workspace.currentWorkspace?.id || workspace.workspace?.id || '',
       route: '/mobile/home',
-      metadata: { dashboardType: snapshot?.category || '', destinationRoute: '/mobile/notifications' },
+      metadata: { dashboardType: snapshot?.category || '', destinationRoute: to },
     })
-    navigate('/mobile/notifications')
+    navigate(to)
   }
 
   function handleQuickAction(action) {
@@ -252,20 +331,14 @@ export default function MobileHome() {
   if (state.error) return <MobileErrorState title="We couldn't load your dashboard." body={state.error} onRetry={load} />
 
   return (
-    <div className="space-y-5">
-      <section className="flex items-start justify-between gap-3">
+    <div className="space-y-8">
+      <section className="pt-2">
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-[#1f7a5a]">{snapshot.greeting}, {snapshot.displayName}</p>
-          <h1 className="mt-1 text-[28px] font-semibold leading-tight text-[#10243a]">Here&apos;s what&apos;s happening today.</h1>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <button type="button" className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-[#10243a] shadow-[0_10px_24px_rgba(15,23,42,0.08)]" onClick={handleNotificationOpen} aria-label="Open notifications">
-            <Bell className="h-5 w-5" />
-            <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#1f7a5a] px-1 text-[10px] font-bold text-white">{snapshot.notifications?.unreadCount || 0}</span>
-          </button>
-          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#10243a] text-sm font-semibold text-white">
-            {String(snapshot.displayName || 'A').slice(0, 1).toUpperCase()}
-          </span>
+          <p className="text-[17px] font-medium text-[#60758d]">{snapshot.greeting},</p>
+          <h1 className="mt-1 text-[38px] font-bold leading-[1.04] text-[#10243a]">{snapshot.displayName}</h1>
+          <p className="mt-3 max-w-[29ch] text-[17px] leading-7 text-[#60758d]">
+            {snapshot.category === 'principal' ? "Here's what's happening across your team." : "Here's what needs attention today."}
+          </p>
         </div>
       </section>
 
@@ -276,14 +349,16 @@ export default function MobileHome() {
         </MobileCard>
       ) : null}
 
+      <PriorityNowCard priority={priority} onOpen={handlePriorityOpen} />
+
       <section className="grid grid-cols-2 gap-3">
-        {snapshot.summaryCards.map((card) => <PriorityCard key={card.key} card={card} />)}
+        {snapshot.summaryCards.map((card) => <KpiCard key={card.key} card={card} />)}
       </section>
 
       {snapshot.insight ? (
-        <MobileCard className="bg-[#10243a] text-white">
-          <p className="text-[11px] font-semibold uppercase text-[#9fe0bd]">{snapshot.insight.label}</p>
-          <h2 className="mt-2 text-[24px] font-semibold text-white">{snapshot.insight.value}</h2>
+        <MobileCard className="bg-[#10243a] text-white shadow-[0_18px_42px_rgba(15,23,42,0.18)]">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#9fe0bd]">{snapshot.insight.label}</p>
+          <h2 className="mt-2 text-[30px] font-bold text-white">{snapshot.insight.value}</h2>
           <p className="mt-1 text-sm leading-6 text-[#dce8f2]">{snapshot.insight.body}</p>
         </MobileCard>
       ) : null}
@@ -292,50 +367,50 @@ export default function MobileHome() {
         <SectionHeader title={snapshot.copy.workTitle} actionTo={workPath} />
         {snapshot.activeWork.length ? (
           <div className="space-y-3">
-            {snapshot.activeWork.slice(0, 5).map((item) => <ActiveWorkCard key={item.id} item={item} onOpen={handleActiveWorkOpen} />)}
+            {snapshot.activeWork.slice(0, 4).map((item) => <ActiveWorkCard key={item.id} item={item} onOpen={handleActiveWorkOpen} />)}
           </div>
         ) : (
-          <MobileEmptyState title={snapshot.copy.workEmptyTitle} body={snapshot.copy.workEmptyBody} actionLabel={snapshot.quickActions[0]?.label || ''} onAction={snapshot.quickActions[0] ? () => handleQuickAction(snapshot.quickActions[0]) : null} />
+          <EmptyCompact title={snapshot.copy.workEmptyTitle} body={snapshot.copy.workEmptyBody} actionLabel={snapshot.quickActions[0]?.label || ''} onAction={snapshot.quickActions[0] ? () => handleQuickAction(snapshot.quickActions[0]) : null} />
         )}
       </section>
 
       <section>
-        <SectionHeader title="Tasks Due Today" />
+        <SectionHeader title="Tasks Due Today" actionTo="/mobile/tasks" />
         {snapshot.tasks.length ? (
           <div className="space-y-3">
-            {snapshot.tasks.slice(0, 5).map((item) => <TaskRow key={item.id} item={item} onOpen={handleTaskOpen} />)}
+            {snapshot.tasks.slice(0, 3).map((item) => <TaskRow key={item.id} item={item} onOpen={handleTaskOpen} />)}
           </div>
         ) : (
-          <MobileEmptyState title={snapshot.copy.taskEmptyTitle} body={snapshot.copy.taskEmptyBody} />
+          <EmptyCompact title={snapshot.copy.taskEmptyTitle} body={snapshot.copy.taskEmptyBody} />
         )}
       </section>
 
       <section>
-        <SectionHeader title="Recent Activity" />
+        <SectionHeader title="Recent Activity" actionTo="/mobile/activity" />
         {snapshot.recentActivity.length ? (
-          <div className="space-y-2 rounded-[22px] border border-[#e4ebf2] bg-[#f8fafc] p-2">
-            {snapshot.recentActivity.slice(0, 10).map((item) => <ActivityRow key={item.id} item={item} />)}
-          </div>
+          <MobileCard className="pb-1">
+            {snapshot.recentActivity.slice(0, 5).map((item, index, items) => <ActivityRow key={item.id} item={item} last={index === items.length - 1} />)}
+          </MobileCard>
         ) : (
-          <MobileEmptyState title={snapshot.copy.activityEmptyTitle} body={snapshot.copy.activityEmptyBody} />
+          <EmptyCompact title={snapshot.copy.activityEmptyTitle} body={snapshot.copy.activityEmptyBody} />
         )}
       </section>
 
       <section>
         <SectionHeader title="Quick Actions" />
         <div className="grid grid-cols-2 gap-3">
-          {snapshot.quickActions.map((action) => (
+          {snapshot.quickActions.slice(0, 4).map((action) => (
             <button
               key={action.key}
               type="button"
-              className="flex min-h-[58px] items-center justify-center gap-2 rounded-[20px] bg-white px-3 text-sm font-semibold text-[#10243a] shadow-[0_10px_24px_rgba(15,23,42,0.06)]"
+              className="flex min-h-[64px] items-center justify-center gap-2 rounded-[22px] bg-white px-3 text-sm font-semibold text-[#10243a] shadow-[0_10px_24px_rgba(15,23,42,0.06)]"
               onClick={() => handleQuickAction(action)}
             >
-              <Plus className="h-4 w-4 text-[#1f7a5a]" />
+              <ArrowUpRight className="h-4 w-4 text-[#1f7a5a]" />
               {action.label}
             </button>
           ))}
-          <button type="button" className="flex min-h-[58px] items-center justify-center gap-2 rounded-[20px] border border-[#d7e0ea] bg-[#f8fafc] px-3 text-sm font-semibold text-[#60758d]" onClick={load}>
+          <button type="button" className="flex min-h-[64px] items-center justify-center gap-2 rounded-[22px] border border-[#d7e0ea] bg-[#f8fafc] px-3 text-sm font-semibold text-[#60758d]" onClick={load}>
             <RefreshCw className="h-4 w-4" />
             Refresh
           </button>

@@ -2366,23 +2366,50 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
     if (Array.isArray(options) && options.length) return options.map((item) => ({ value: item.id, label: item.label || item.name || 'Workspace' }))
     return [{ value: 'all', label: 'All Branches' }]
   }, [data?.filters?.availableWorkspaces])
+  const dateOptions = useMemo(
+    () => PRINCIPAL_DASHBOARD_DATE_PRESETS.map((preset) => ({ value: preset.key, label: preset.label })),
+    [],
+  )
   const lastUpdated = useMemo(() => formatTimestamp(data?.meta?.lastUpdatedAt), [data?.meta?.lastUpdatedAt])
   const isInitialLoading = loading && !data
   const isRefreshing = loading && data
 
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('itg:principal-dashboard-header-controls', {
+      detail: {
+        visible: true,
+        selectedWorkspaceId,
+        workspaceOptions,
+        dateRange,
+        dateOptions,
+      },
+    }))
+
+    return () => {
+      window.dispatchEvent(new CustomEvent('itg:principal-dashboard-header-controls', { detail: null }))
+    }
+  }, [dateOptions, dateRange, selectedWorkspaceId, workspaceOptions])
+
+  useEffect(() => {
+    function handleHeaderFilterChange(event) {
+      const { key, value } = event.detail || {}
+      if (key === 'selectedWorkspaceId') {
+        setSelectedWorkspaceId(String(value || 'all').trim() || 'all')
+      }
+      if (key === 'dateRange') {
+        setDateRange(String(value || 'last_30_days').trim() || 'last_30_days')
+      }
+    }
+
+    window.addEventListener('itg:principal-dashboard-header-filter-change', handleHeaderFilterChange)
+    return () => {
+      window.removeEventListener('itg:principal-dashboard-header-filter-change', handleHeaderFilterChange)
+    }
+  }, [])
+
   return (
     <main className="principal-dashboard min-h-screen bg-[#f8fafc] text-[#101828]">
-      <div className="mx-auto flex w-full max-w-none flex-col gap-5 px-0 py-5">
-        <PrincipalDashboardHeader
-          dateRange={dateRange}
-          onDateRangeChange={setDateRange}
-          selectedWorkspaceId={selectedWorkspaceId}
-          onWorkspaceChange={setSelectedWorkspaceId}
-          workspaceOptions={workspaceOptions}
-          residentialMode={residentialMode}
-          onResidentialModeChange={setResidentialMode}
-        />
-
+      <div className="mx-auto flex w-full max-w-none flex-col gap-4 px-0 pb-5 pt-3">
         {error ? (
           <section className="rounded-[18px] border border-[#f7c9c9] bg-[#fff5f5] p-4 text-sm text-[#b42318]">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2395,7 +2422,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
         {isInitialLoading ? <DashboardSkeleton /> : null}
 
         {data ? (
-          <div className={`space-y-5 transition-opacity ${isRefreshing ? 'opacity-60' : 'opacity-100'}`} aria-busy={isRefreshing}>
+          <div className={`space-y-4 transition-opacity ${isRefreshing ? 'opacity-60' : 'opacity-100'}`} aria-busy={isRefreshing}>
             <PrincipalPremiumCommandCenter
               data={data}
               mode={residentialMode}

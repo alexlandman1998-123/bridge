@@ -64,17 +64,17 @@ function buildSparklinePath(points = []) {
 
 function TrendPill({ value, label = 'vs previous period', inverse = false }) {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) {
-    return <span className="text-[0.72rem] font-medium text-[#8a9aac]">No trend yet</span>
+    return <span className="text-[0.72rem] font-medium leading-4 text-[#8a9aac]">No trend yet</span>
   }
   const numeric = Number(value)
   const positive = numeric >= 0
   const good = inverse ? !positive : positive
   const Icon = positive ? TrendingUp : TrendingDown
   return (
-    <span className={`inline-flex min-w-0 items-center gap-1 text-[0.72rem] font-semibold ${good ? 'text-[#16894f]' : 'text-[#c83b36]'}`}>
-      <Icon size={12} />
-      <span>{Math.abs(Math.round(numeric))}%</span>
-      <span className="truncate font-medium text-[#7b8ca2]">{label}</span>
+    <span className={`inline-flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 text-[0.72rem] font-semibold leading-4 ${good ? 'text-[#16894f]' : 'text-[#c83b36]'}`}>
+      <Icon size={12} className="shrink-0" />
+      <span className="shrink-0">{Math.abs(Math.round(numeric))}%</span>
+      <span className="min-w-0 font-medium text-[#7b8ca2]">{label}</span>
     </span>
   )
 }
@@ -126,15 +126,15 @@ export function ResidentialKpiCard({ icon, label, value, trend, sparkline = [], 
   const { line, area, dots } = buildSparklinePath(sparkline)
   const gradientId = `spark-${label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`
   return (
-    <article className={`${cardClass} flex min-h-[172px] flex-col overflow-hidden p-4 sm:p-5`}>
+    <article className={`${cardClass} flex min-h-[196px] min-w-0 flex-col overflow-hidden p-4 sm:p-5`}>
       <div className="flex items-start gap-3">
         <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-[16px] ${style.bubble}`}>
           <IconComponent size={20} />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[0.86rem] font-semibold text-[#344054]">{label}</p>
-          <p className="mt-2 text-[1.9rem] font-semibold leading-none tracking-[-0.035em] text-[#101828] tabular-nums">{value}</p>
-          <div className="mt-2"><TrendPill value={trend} label="vs previous 30 days" /></div>
+          <p className="break-words text-[0.86rem] font-semibold leading-5 text-[#344054]">{label}</p>
+          <p className="mt-2 break-words text-[1.75rem] font-semibold leading-none tracking-[-0.02em] text-[#101828] tabular-nums sm:text-[1.9rem]">{value}</p>
+          <div className="mt-2 min-w-0"><TrendPill value={trend} label="vs previous 30 days" /></div>
         </div>
       </div>
       <div className="mt-4 min-w-0">
@@ -656,7 +656,7 @@ export function ResidentialCommandCenterGrid({
   const showTopPerformers = scope !== 'agent' && !model.topPerformers?.hidden
   return (
     <ResidentialDashboardShell>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))]">
         {model.kpis.map((item, index) => {
           const Icon = kpiIcons[index] || fallbackIcons[index] || FileText
           return (

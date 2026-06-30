@@ -1,4 +1,4 @@
-import { AlertTriangle, Bell, CheckCircle2, ChevronDown, FileText, Plus, RefreshCw, Search, UserRoundCheck, Users, XCircle } from 'lucide-react'
+import { AlertTriangle, Bell, CalendarDays, CheckCircle2, ChevronDown, FileText, LayoutGrid, Plus, RefreshCw, Search, UserRoundCheck, Users, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -74,6 +74,26 @@ function getPageTitle(pathname, stateTitle, role) {
   if (pathname === '/settings' || pathname.startsWith('/settings')) return ''
 
   return 'Workspace'
+}
+
+function HeaderFilterSelect({ icon: Icon, value, options = [], label, onChange }) {
+  return (
+    <label className="ui-shell-header-filter">
+      {Icon ? <Icon size={16} className="shrink-0 text-[#1769d1]" /> : null}
+      <select
+        value={value}
+        aria-label={label}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown size={14} className="pointer-events-none shrink-0 text-[#8a9aac]" />
+    </label>
+  )
 }
 
 function getUserInitials(user) {
@@ -401,8 +421,25 @@ function HeaderBar({ onLogout, user }) {
     loading: false,
     error: '',
   })
+  const [dashboardHeaderControls, setDashboardHeaderControls] = useState(null)
   const dropdownRef = useRef(null)
   const notificationsRef = useRef(null)
+
+  useEffect(() => {
+    function handleDashboardHeaderControls(event) {
+      setDashboardHeaderControls(event.detail || null)
+    }
+    window.addEventListener('itg:principal-dashboard-header-controls', handleDashboardHeaderControls)
+    return () => {
+      window.removeEventListener('itg:principal-dashboard-header-controls', handleDashboardHeaderControls)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (location.pathname !== '/dashboard' && location.pathname !== '/') {
+      setDashboardHeaderControls(null)
+    }
+  }, [location.pathname])
 
   const loadNotifications = useCallback(async ({ unreadOnly = false } = {}) => {
     setNotificationState((previous) => ({
@@ -476,6 +513,10 @@ function HeaderBar({ onLogout, user }) {
     )
   const isPremiumAttorneyOperations = role === 'attorney' && location.pathname === '/attorney/operations'
   const isPremiumWorkspace = isPremiumAgentWorkspace || isPremiumAttorneyOperations
+  const showPrincipalDashboardHeaderControls =
+    (role === 'principal' || role === 'headquarters') &&
+    (location.pathname === '/dashboard' || location.pathname === '/') &&
+    dashboardHeaderControls?.visible !== false
   const premiumHeaderTitle = isPremiumAttorneyOperations
     ? ''
     : location.pathname.startsWith('/pipeline/leads')
@@ -861,6 +902,33 @@ function HeaderBar({ onLogout, user }) {
                 ))}
               </select>
               {rolePreviewActive ? <em>Preview</em> : null}
+            </div>
+          ) : null}
+
+          {showPrincipalDashboardHeaderControls ? (
+            <div className="ui-shell-dashboard-filters" aria-label="Dashboard filters">
+              <HeaderFilterSelect
+                icon={LayoutGrid}
+                label="Filter dashboard by branch"
+                value={dashboardHeaderControls?.selectedWorkspaceId || 'all'}
+                options={dashboardHeaderControls?.workspaceOptions || [{ value: 'all', label: 'All Branches' }]}
+                onChange={(value) => {
+                  window.dispatchEvent(new CustomEvent('itg:principal-dashboard-header-filter-change', {
+                    detail: { key: 'selectedWorkspaceId', value },
+                  }))
+                }}
+              />
+              <HeaderFilterSelect
+                icon={CalendarDays}
+                label="Filter dashboard by date range"
+                value={dashboardHeaderControls?.dateRange || 'last_30_days'}
+                options={dashboardHeaderControls?.dateOptions || [{ value: 'last_30_days', label: 'Last 30 Days' }]}
+                onChange={(value) => {
+                  window.dispatchEvent(new CustomEvent('itg:principal-dashboard-header-filter-change', {
+                    detail: { key: 'dateRange', value },
+                  }))
+                }}
+              />
             </div>
           ) : null}
 

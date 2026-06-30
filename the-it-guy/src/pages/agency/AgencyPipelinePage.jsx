@@ -9838,7 +9838,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       <option value="all">All Leads ({leadCategoryCounts.all})</option>
                       <option value="buyer">Buyer Leads ({leadCategoryCounts.buyer})</option>
                       <option value="seller">Seller Leads ({leadCategoryCounts.seller})</option>
-                      <option value="other">Other ({leadCategoryCounts.other})</option>
                     </select>
                     <button
                       type="button"
@@ -10220,9 +10219,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             ? 'Create your first seller lead manually or convert a canvassing prospect when they are ready to sell.'
                             : leadTypeView === 'buyer'
                               ? 'Create your first buyer lead manually or connect listings to start capturing enquiries automatically.'
-                              : leadTypeView === 'other'
-                                ? 'Leads that cannot be classified as buyer or seller will appear here.'
-                                : 'Create your first lead manually or connect enquiry sources to start capturing leads automatically.'}
+                            : 'Create your first lead manually or connect enquiry sources to start capturing leads automatically.'}
                         </p>
                         <button
                           type="button"

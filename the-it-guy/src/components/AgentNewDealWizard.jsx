@@ -52,7 +52,7 @@ const OPTIONAL_PARTNER_ROLE_FIELD_OPTIONS = [
   { value: PARTNER_MODE_NONE, label: 'Not Assigned Yet' },
   ...PARTNER_ROLE_FIELD_OPTIONS,
 ]
-const CORE_ROUTING_ROLE_TYPES = ['transfer_attorney', 'bond_originator', 'bond_attorney', 'cancellation_attorney']
+const CORE_ROUTING_ROLE_TYPES = ['transfer_attorney', 'bond_originator', 'cancellation_attorney']
 const ROLE_FIELD_TO_ROLE_KEY = Object.freeze({
   transferPartnerMode: 'transfer_attorney',
   transferPreferredPartnerId: 'transfer_attorney',
@@ -68,13 +68,6 @@ const ROLE_FIELD_TO_ROLE_KEY = Object.freeze({
   bondOriginatorBuyerEmail: 'bond_originator',
   bondOriginatorBuyerPhone: 'bond_originator',
   bondOriginatorBuyerNotes: 'bond_originator',
-  bondAttorneyMode: 'bond_attorney',
-  bondAttorneyPreferredPartnerId: 'bond_attorney',
-  bondAttorneyBuyerCompanyName: 'bond_attorney',
-  bondAttorneyBuyerContactPerson: 'bond_attorney',
-  bondAttorneyBuyerEmail: 'bond_attorney',
-  bondAttorneyBuyerPhone: 'bond_attorney',
-  bondAttorneyBuyerNotes: 'bond_attorney',
 })
 
 function todayIso() {
@@ -646,10 +639,6 @@ function buildCompletenessSnapshot({ form, listing = null, propertyMode = PROPER
       complete: Boolean(form.importOtpUploaded),
     },
     {
-      label: 'Finance type',
-      complete: Boolean(normalizeFinanceTypeForApi(form.financeType)),
-    },
-    {
       label: 'Transfer attorney',
       complete: form.transferPartnerMode === PARTNER_MODE_AGENCY
         ? Boolean(form.transferPreferredPartnerId)
@@ -700,7 +689,6 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
   const [partnerSearch, setPartnerSearch] = useState({
     transferAttorney: '',
     bondOriginator: '',
-    bondAttorney: '',
   })
   const [form, setForm] = useState({
     propertyMode: PROPERTY_MODE_PRIVATE,
@@ -748,13 +736,6 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     bondOriginatorBuyerEmail: '',
     bondOriginatorBuyerPhone: '',
     bondOriginatorBuyerNotes: '',
-    bondAttorneyMode: PARTNER_MODE_NONE,
-    bondAttorneyPreferredPartnerId: '',
-    bondAttorneyBuyerCompanyName: '',
-    bondAttorneyBuyerContactPerson: '',
-    bondAttorneyBuyerEmail: '',
-    bondAttorneyBuyerPhone: '',
-    bondAttorneyBuyerNotes: '',
   })
 
   const loadPropertyPickerListings = useCallback(async () => {
@@ -834,7 +815,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     setRoutingRecommendationsLoading(false)
     setRoutingRecommendationChoices({})
     setRoleSelectionTouched({})
-    setPartnerSearch({ transferAttorney: '', bondOriginator: '', bondAttorney: '' })
+    setPartnerSearch({ transferAttorney: '', bondOriginator: '' })
     setPropertyOptionsError('')
     setIsLoadingPropertyOptions(true)
     setForm((previous) => ({
@@ -1042,15 +1023,6 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
       }),
     [activePreferredPartners, partnerSearch.bondOriginator],
   )
-  const bondAttorneyOptions = useMemo(
-    () =>
-      filterPreferredPartners(activePreferredPartners, {
-        type: 'bond_attorney',
-        query: partnerSearch.bondAttorney,
-        activeOnly: true,
-      }),
-    [activePreferredPartners, partnerSearch.bondAttorney],
-  )
   const selectedTransferPartner = useMemo(
     () => findPartnerById(activePreferredPartners, form.transferPreferredPartnerId),
     [activePreferredPartners, form.transferPreferredPartnerId],
@@ -1058,10 +1030,6 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
   const selectedBondOriginatorPartner = useMemo(
     () => findPartnerById(activePreferredPartners, form.bondOriginatorPreferredPartnerId),
     [activePreferredPartners, form.bondOriginatorPreferredPartnerId],
-  )
-  const selectedBondAttorneyPartner = useMemo(
-    () => findPartnerById(activePreferredPartners, form.bondAttorneyPreferredPartnerId),
-    [activePreferredPartners, form.bondAttorneyPreferredPartnerId],
   )
   const sourceOrganisationId = useMemo(
     () => normalizeText(workspace?.id),
@@ -1141,23 +1109,6 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
         : null
     }
 
-    if (roleType === 'bond_attorney') {
-      if (form.bondAttorneyMode === PARTNER_MODE_BUYER) {
-        return {
-          roleType,
-          label: String(form.bondAttorneyBuyerCompanyName || form.bondAttorneyBuyerContactPerson || '').trim(),
-          detail: 'Buyer-appointed partner',
-        }
-      }
-      return selectedBondAttorneyPartner
-        ? {
-            roleType,
-            label: selectedBondAttorneyPartner.companyName || selectedBondAttorneyPartner.contactPerson || '',
-            detail: 'Agency selection',
-          }
-        : null
-    }
-
     return null
   }, [
     form.transferPartnerMode,
@@ -1166,12 +1117,8 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     form.bondOriginatorMode,
     form.bondOriginatorBuyerCompanyName,
     form.bondOriginatorBuyerContactPerson,
-    form.bondAttorneyMode,
-    form.bondAttorneyBuyerCompanyName,
-    form.bondAttorneyBuyerContactPerson,
     selectedTransferPartner,
     selectedBondOriginatorPartner,
-    selectedBondAttorneyPartner,
   ])
 
   const defaultAttorney = useMemo(() => {
@@ -1187,8 +1134,6 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
 
     const defaultTransferPartner = getDefaultPreferredPartnerByType(activePreferredPartners, 'transfer_attorney')
     const defaultBondOriginatorPartner = getDefaultPreferredPartnerByType(activePreferredPartners, 'bond_originator')
-    const defaultBondAttorneyPartner = getDefaultPreferredPartnerByType(activePreferredPartners, 'bond_attorney')
-
     setForm((previous) => {
       const next = { ...previous }
       let changed = false
@@ -1207,12 +1152,6 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
         next.bondOriginatorMode = PARTNER_MODE_AGENCY
         changed = true
       }
-      if (defaultBondAttorneyPartner && !previous.bondAttorneyPreferredPartnerId && previous.bondAttorneyMode === PARTNER_MODE_NONE) {
-        next.bondAttorneyPreferredPartnerId = defaultBondAttorneyPartner.id
-        next.bondAttorneyMode = PARTNER_MODE_AGENCY
-        changed = true
-      }
-
       return changed ? next : previous
     })
   }, [activePreferredPartners, open])
@@ -1507,10 +1446,8 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     if (stepKey === 'attorney') {
       const transferChoice = routingRecommendationChoices.transfer_attorney || ''
       const bondOriginatorChoice = routingRecommendationChoices.bond_originator || ''
-      const bondAttorneyChoice = routingRecommendationChoices.bond_attorney || ''
       const transferRecommendation = routingRecommendationByRole.transfer_attorney || null
       const bondOriginatorRecommendation = routingRecommendationByRole.bond_originator || null
-      const bondAttorneyRecommendation = routingRecommendationByRole.bond_attorney || null
 
       if (
         transferChoice !== 'confirm'
@@ -1541,21 +1478,6 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
       if (bondOriginatorChoice !== 'confirm' && form.bondOriginatorMode === PARTNER_MODE_BUYER) {
         if (!String(form.bondOriginatorBuyerCompanyName || '').trim()) nextErrors.bondOriginatorBuyerCompanyName = 'Company name is required.'
         if (!String(form.bondOriginatorBuyerContactPerson || '').trim()) nextErrors.bondOriginatorBuyerContactPerson = 'Contact person is required.'
-      }
-
-      if (
-        normalizeFinanceTypeForApi(form.financeType)
-        && bondAttorneyRecommendation?.required
-        && bondAttorneyChoice !== 'confirm'
-        && form.bondAttorneyMode === PARTNER_MODE_AGENCY
-        && !String(form.bondAttorneyPreferredPartnerId || '').trim()
-      ) {
-        nextErrors.bondAttorneyPreferredPartnerId = 'Select a bond attorney partner or change mode.'
-      }
-
-      if (bondAttorneyChoice !== 'confirm' && form.bondAttorneyMode === PARTNER_MODE_BUYER) {
-        if (!String(form.bondAttorneyBuyerCompanyName || '').trim()) nextErrors.bondAttorneyBuyerCompanyName = 'Company name is required.'
-        if (!String(form.bondAttorneyBuyerContactPerson || '').trim()) nextErrors.bondAttorneyBuyerContactPerson = 'Contact person is required.'
       }
 
       if (
@@ -1713,35 +1635,6 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
             }
           : null
 
-    const bondAttorneySelection =
-      form.bondAttorneyMode === PARTNER_MODE_AGENCY
-        ? {
-            mode: PARTNER_MODE_AGENCY,
-            partnerId: selectedBondAttorneyPartner?.id || null,
-            companyName: selectedBondAttorneyPartner?.companyName || '',
-            contactPerson: selectedBondAttorneyPartner?.contactPerson || '',
-            email: selectedBondAttorneyPartner?.email || '',
-            phone: selectedBondAttorneyPartner?.phone || '',
-            website: selectedBondAttorneyPartner?.website || '',
-            physicalAddress: selectedBondAttorneyPartner?.physicalAddress || '',
-            province: selectedBondAttorneyPartner?.province || '',
-            notes: selectedBondAttorneyPartner?.notes || '',
-          }
-        : form.bondAttorneyMode === PARTNER_MODE_BUYER
-          ? {
-              mode: PARTNER_MODE_BUYER,
-              partnerId: null,
-              companyName: String(form.bondAttorneyBuyerCompanyName || '').trim(),
-              contactPerson: String(form.bondAttorneyBuyerContactPerson || '').trim(),
-              email: String(form.bondAttorneyBuyerEmail || '').trim(),
-              phone: String(form.bondAttorneyBuyerPhone || '').trim(),
-              website: '',
-              physicalAddress: '',
-              province: '',
-              notes: String(form.bondAttorneyBuyerNotes || '').trim(),
-            }
-          : null
-
     const manualRolePlayers = {
       transfer_attorney: {
         roleType: 'transfer_attorney',
@@ -1755,14 +1648,6 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
             source: bondOriginatorSelection.mode === PARTNER_MODE_AGENCY ? 'agency_preferred' : 'buyer_appointed',
             preferredPartnerId: bondOriginatorSelection.partnerId || null,
             partner: bondOriginatorSelection,
-          }
-        : null,
-      bond_attorney: bondAttorneySelection
-        ? {
-            roleType: 'bond_attorney',
-            source: bondAttorneySelection.mode === PARTNER_MODE_AGENCY ? 'agency_preferred' : 'buyer_appointed',
-            preferredPartnerId: bondAttorneySelection.partnerId || null,
-            partner: bondAttorneySelection,
           }
         : null,
       cancellation_attorney: null,
@@ -1827,7 +1712,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     const transferAttorneyEmail = transferAttorneyDisplay.email
     const bondOriginatorLabel = bondOriginatorDisplay.label
     const bondOriginatorEmail = bondOriginatorDisplay.email
-    const hasBuyerSelectedRolePlayer = [transferSelection, bondOriginatorSelection, bondAttorneySelection]
+    const hasBuyerSelectedRolePlayer = [transferSelection, bondOriginatorSelection]
       .filter(Boolean)
       .some((item) => item.mode === PARTNER_MODE_BUYER)
     const nextAction = hasBuyerSelectedRolePlayer
@@ -2242,27 +2127,6 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                   <Field label="Phone" error={errors.clientPhone}>
                     <input className={fieldClass()} value={form.clientPhone} onChange={(event) => updateField('clientPhone', event.target.value)} />
                   </Field>
-                  <Field label="Finance Type">
-                    <select className={fieldClass()} value={form.financeType} onChange={(event) => updateField('financeType', event.target.value)}>
-                      <option value="unknown">Select later</option>
-                      <option value="cash">Cash</option>
-                      <option value="bond">Bond</option>
-                      <option value="combination">Hybrid</option>
-                    </select>
-                  </Field>
-                  <div className="md:col-span-2 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-3 text-sm text-[#48627f]">
-                    <label className="flex items-center gap-2 font-semibold text-[#22374d]">
-                      <input
-                        type="checkbox"
-                        checked={form.hasExistingBondToCancel}
-                        onChange={(event) => updateField('hasExistingBondToCancel', event.target.checked)}
-                      />
-                      Existing bond to cancel
-                    </label>
-                    <p className="mt-2 text-xs text-[#5f748c]">
-                      Turn this on when the seller has an existing bond and a cancellation attorney should be recommended.
-                    </p>
-                  </div>
                 </div>
               </section>
             ) : null}
@@ -2271,7 +2135,9 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
               <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
                 <div className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-4">
                   <p className="text-[0.82rem] font-semibold uppercase tracking-[0.08em] text-[#6f8298]">Transaction Roles</p>
-                  <p className="mt-1 text-sm text-[#5f748c]">Assign role players from agency preferred partners, with buyer-appointed overrides when needed.</p>
+                  <p className="mt-1 text-sm text-[#5f748c]">
+                    Assign transfer and bond originator role players now. The transfer attorney can set the bond attorney after creation.
+                  </p>
                 </div>
 
                 <div className="mt-4 grid gap-4">
@@ -2442,82 +2308,6 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                     ) : null}
                   </article>
 
-                  <article className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                      <strong className="text-sm text-[#22374d]">Bond Attorney</strong>
-                      <span className="rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#5f748c]">
-                        Optional
-                      </span>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <Field label="Selection Mode">
-                        <select className={fieldClass()} value={form.bondAttorneyMode} onChange={(event) => updateField('bondAttorneyMode', event.target.value)}>
-                          {OPTIONAL_PARTNER_ROLE_FIELD_OPTIONS.map((item) => (
-                            <option key={item.value} value={item.value}>
-                              {item.label}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                      {form.bondAttorneyMode === PARTNER_MODE_AGENCY ? (
-                        <Field label="Search Partners">
-                          <input
-                            className={fieldClass()}
-                            value={partnerSearch.bondAttorney}
-                            onChange={(event) => updatePartnerSearchField('bondAttorney', event.target.value)}
-                            placeholder="Search company, contact, or email"
-                          />
-                        </Field>
-                      ) : null}
-                    </div>
-                    {form.bondAttorneyMode === PARTNER_MODE_AGENCY ? (
-                      <div className="mt-4">
-                        <Field label="Agency Preferred Bond Attorney" error={errors.bondAttorneyPreferredPartnerId}>
-                          <select className={fieldClass()} value={form.bondAttorneyPreferredPartnerId} onChange={(event) => updateField('bondAttorneyPreferredPartnerId', event.target.value)}>
-                            <option value="">Select bond attorney</option>
-                            {preferredPartnersLoading ? (
-                              <option disabled>Loading preferred bond attorneys...</option>
-                            ) : preferredPartnersError ? (
-                              <option disabled>Could not load agency preferred partners</option>
-                            ) : bondAttorneyOptions.length ? (
-                              bondAttorneyOptions.map((partner) => (
-                                <option key={partner.id} value={partner.id}>
-                                  {partner.companyName} • {partner.contactPerson || 'Contact pending'} • {partner.email || 'No email'}
-                                </option>
-                              ))
-                            ) : (
-                              <option disabled>No preferred bond attorneys found</option>
-                            )}
-                          </select>
-                        </Field>
-                        {preferredPartnersError ? (
-                          <p className="mt-1 text-sm text-[#b42318]">Could not load agency preferred partners. Try refreshing the page.</p>
-                        ) : null}
-                        {!bondAttorneyOptions.length && !preferredPartnersLoading && !preferredPartnersError ? (
-                          <p className="mt-1 text-sm text-[#5f748c]">Add one in Agency Settings → Preferred Partners.</p>
-                        ) : null}
-                      </div>
-                    ) : null}
-                    {form.bondAttorneyMode === PARTNER_MODE_BUYER ? (
-                      <div className="mt-4 grid gap-4 md:grid-cols-2">
-                        <Field label="Buyer Appointed Company" error={errors.bondAttorneyBuyerCompanyName}>
-                          <input className={fieldClass()} value={form.bondAttorneyBuyerCompanyName} onChange={(event) => updateField('bondAttorneyBuyerCompanyName', event.target.value)} />
-                        </Field>
-                        <Field label="Buyer Appointed Contact" error={errors.bondAttorneyBuyerContactPerson}>
-                          <input className={fieldClass()} value={form.bondAttorneyBuyerContactPerson} onChange={(event) => updateField('bondAttorneyBuyerContactPerson', event.target.value)} />
-                        </Field>
-                        <Field label="Email">
-                          <input className={fieldClass()} type="email" value={form.bondAttorneyBuyerEmail} onChange={(event) => updateField('bondAttorneyBuyerEmail', event.target.value)} />
-                        </Field>
-                        <Field label="Phone">
-                          <input className={fieldClass()} value={form.bondAttorneyBuyerPhone} onChange={(event) => updateField('bondAttorneyBuyerPhone', normalizePhoneInput(event.target.value))} />
-                        </Field>
-                        <Field label="Notes" fullWidth>
-                          <textarea className={fieldClass()} rows={3} value={form.bondAttorneyBuyerNotes} onChange={(event) => updateField('bondAttorneyBuyerNotes', event.target.value)} />
-                        </Field>
-                      </div>
-                    ) : null}
-                  </article>
                 </div>
               </section>
             ) : null}
@@ -2632,10 +2422,6 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                       <p className="mt-1">{form.clientEmail} • {form.clientPhone}</p>
                     </div>
                     <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Finance</p>
-                      <p className="mt-2 font-semibold capitalize text-[#22374d]">{form.financeType === 'combination' ? 'Hybrid' : form.financeType}</p>
-                    </div>
-                    <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                       <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Transfer Attorney</p>
                       <p className="mt-2 font-semibold text-[#22374d]">
                         {form.transferPartnerMode === PARTNER_MODE_AGENCY
@@ -2654,16 +2440,6 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                           : form.bondOriginatorMode === PARTNER_MODE_AGENCY
                             ? selectedBondOriginatorPartner?.companyName || selectedBondOriginatorPartner?.contactPerson || 'Pending selection'
                             : form.bondOriginatorBuyerCompanyName || form.bondOriginatorBuyerContactPerson || 'Buyer-appointed partner pending'}
-                      </p>
-                    </div>
-                    <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Bond Attorney</p>
-                      <p className="mt-2 font-semibold text-[#22374d]">
-                        {form.bondAttorneyMode === PARTNER_MODE_NONE
-                          ? 'Not assigned yet'
-                          : form.bondAttorneyMode === PARTNER_MODE_AGENCY
-                            ? selectedBondAttorneyPartner?.companyName || selectedBondAttorneyPartner?.contactPerson || 'Pending selection'
-                            : form.bondAttorneyBuyerCompanyName || form.bondAttorneyBuyerContactPerson || 'Buyer-appointed partner pending'}
                       </p>
                     </div>
                     <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">

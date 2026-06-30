@@ -216,7 +216,6 @@ const VIEWING_NEXT_STEP_OPTIONS = [
 const LEAD_CATEGORY_FILTERS = [
   { key: 'buyer', label: 'Buyer Leads' },
   { key: 'seller', label: 'Seller Leads' },
-  { key: 'other', label: 'Other' },
   { key: 'archived', label: 'Archived' },
 ]
 const LEAD_SOURCE_PILL_STYLES = {

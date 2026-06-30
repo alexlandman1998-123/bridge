@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
   Archive,
-  ArrowLeft,
   ArrowRight,
   BriefcaseBusiness,
   Building2,
@@ -21,7 +20,6 @@ import {
   Phone,
   Plus,
   Send,
-  Settings,
   ShieldCheck,
   Trash2,
   Trophy,
@@ -31,6 +29,7 @@ import {
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
+import AgentTransactionsTable from '../components/AgentTransactionsTable'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
@@ -92,12 +91,11 @@ const PIPELINE_STORAGE_KEY = 'itg:pipeline-leads:v1'
 
 const AGENT_WORKSPACE_TABS = [
   { key: 'overview', label: 'Overview', icon: Grid2X2 },
-  { key: 'deals', label: 'Deals', icon: BriefcaseBusiness },
+  { key: 'transactions', label: 'Transactions', icon: BriefcaseBusiness },
   { key: 'listings', label: 'Listings', icon: Building2 },
-  { key: 'clients', label: 'Clients', icon: Users },
+  { key: 'leads', label: 'Leads', icon: Users },
+  { key: 'prospecting', label: 'Prospecting', icon: Phone },
   { key: 'performance', label: 'Performance', icon: Trophy },
-  { key: 'calendar', label: 'Calendar', icon: CalendarDays },
-  { key: 'settings', label: 'Settings', icon: Settings },
 ]
 
 const ORGANISATION_ROLE_OPTIONS = [
@@ -3508,6 +3506,149 @@ function FinancialPerformanceCard({ rows }) {
   )
 }
 
+function AgentWorkspaceKpiCard({ label, value, helper = '', icon: Icon = Grid2X2, tone = 'bg-[#edf8f0] text-[#16894f]' }) {
+  return (
+    <article className="min-w-0 rounded-2xl border border-[#dfe7f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-[0.74rem] font-semibold text-[#526981]" title={label}>{label}</p>
+          <p className="mt-2 truncate text-[1.45rem] font-semibold tracking-[-0.035em] text-[#10243a]" title={String(value ?? '—')}>{value ?? '—'}</p>
+          {helper ? <p className="mt-1 truncate text-xs font-semibold text-[#60758d]" title={helper}>{helper}</p> : null}
+        </div>
+        <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${tone}`}>
+          <Icon size={18} />
+        </span>
+      </div>
+    </article>
+  )
+}
+
+function LockedAgentFilterChip({ label }) {
+  return (
+    <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-[#cfe3d7] bg-[#f2fbf5] px-3 py-1 text-xs font-semibold text-[#16894f]">
+      <ShieldCheck size={13} />
+      <span className="min-w-0 truncate">Agent: {label}</span>
+    </span>
+  )
+}
+
+function EmptyWorkspaceState({ children }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#647a92]">
+      {children}
+    </div>
+  )
+}
+
+function normalizeWorkspaceMatch(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function rowMatchesAgentContext(agent = {}, row = {}) {
+  const keys = [
+    agent.id,
+    agent.userId,
+    agent.organisationUserId,
+    agent.email,
+    agent.name,
+    agent.fullName,
+    agent.displayName,
+  ].map(normalizeWorkspaceMatch).filter(Boolean)
+
+  if (!keys.length) return false
+
+  const candidates = [
+    row.id,
+    row.userId,
+    row.user_id,
+    row.agentId,
+    row.agent_id,
+    row.assignedAgentId,
+    row.assigned_agent_id,
+    row.assignedUserId,
+    row.assigned_user_id,
+    row.createdBy,
+    row.created_by,
+    row.email,
+    row.agentEmail,
+    row.agent_email,
+    row.assignedAgentEmail,
+    row.assigned_agent_email,
+    row.agentName,
+    row.agent_name,
+    row.assignedAgentName,
+    row.assigned_agent_name,
+    row.assignedAgent,
+    row.assigned_agent,
+    row.listingAgentId,
+    row.listing_agent_id,
+    row.ownerAgentId,
+    row.owner_agent_id,
+    row?.transaction?.assigned_agent_id,
+    row?.transaction?.assigned_agent_email,
+    row?.transaction?.assigned_agent,
+  ].map(normalizeWorkspaceMatch).filter(Boolean)
+
+  return candidates.some((candidate) => keys.includes(candidate))
+}
+
+function getTransactionAmount(row = {}) {
+  return Number(
+    row?.transaction?.purchase_price ||
+      row?.transaction?.sales_price ||
+      row?.transaction?.cash_amount ||
+      row?.unit?.price ||
+      row?.price ||
+      0,
+  ) || 0
+}
+
+function getTransactionTitle(row = {}) {
+  return (
+    row?.development?.name ||
+    row?.transaction?.property_description ||
+    row?.transaction?.property_address_line_1 ||
+    row?.unit?.unit_number && `Unit ${row.unit.unit_number}` ||
+    'Transaction workspace'
+  )
+}
+
+function getLeadType(row = {}) {
+  const signal = [
+    row.leadType,
+    row.lead_type,
+    row.type,
+    row.clientType,
+    row.client_type,
+    row.intent,
+    row.stage,
+    row.status,
+    row.source,
+  ].join(' ').toLowerCase()
+  if (signal.includes('seller') || signal.includes('valuation') || signal.includes('mandate') || signal.includes('listing')) return 'Seller'
+  return 'Buyer'
+}
+
+function getLeadName(row = {}) {
+  return row.name || row.fullName || row.full_name || row.clientName || row.client_name || row.buyerName || row.sellerName || row.email || 'Lead'
+}
+
+function getLeadId(row = {}) {
+  return row.leadId || row.lead_id || row.id || ''
+}
+
+function getLeadLinkedProperty(row = {}) {
+  return row.listingTitle || row.listing_title || row.propertyTitle || row.property_title || row.propertyAddress || row.property_address || row.developmentName || row.development_name || 'No listing assigned'
+}
+
+function getTaskDueLabel(row = {}) {
+  return row.dueDate || row.due_date || row.followUpDate || row.follow_up_date || row.nextFollowUpDate || row.next_follow_up_date
+}
+
+function isTaskDone(row = {}) {
+  return String(row.status || '').toLowerCase().includes('complete')
+}
+
 function AgentWorkspace({ agent, canManageSettings = false, commissionStructures = [], workspaceSnapshot = {}, onRefresh }) {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('overview')
@@ -3764,34 +3905,92 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     setPendingAction(null)
   }
 
+  const agentTasks = tasks.filter((row) => rowMatchesAgentContext(agent, row))
+  const buyerLeadRows = (agent.pipelineRows || []).filter((row) => getLeadType(row) === 'Buyer')
+  const sellerLeadRows = (agent.pipelineRows || []).filter((row) => getLeadType(row) === 'Seller')
+  const activeTransactionRows = activeDeals.length ? activeDeals : agent.deals
+  const topTransactions = [...activeTransactionRows]
+    .sort((left, right) => getTransactionAmount(right) - getTransactionAmount(left))
+    .slice(0, 5)
+  const projectedCommission =
+    commandCentre?.existingCharts?.financialRows?.find(([label]) => label === 'Projected Commission')?.[1] ||
+    getAgentPipelineValue(agent) * 0.03
+  const compliancePercent = commandCentre?.followUpCompliance?.tasksCompletedPercent
+  const prospectingMetricMap = new Map((commandCentre?.prospectingActivity?.metrics || []).map((metric) => [metric.key, metric]))
+  const prospectingMetrics = [
+    { label: 'Calls Logged', value: prospectingMetricMap.get('callsLogged')?.value || 0, icon: Phone, helper: 'This month' },
+    { label: 'Valuations Booked', value: prospectingMetricMap.get('valuationsBooked')?.value || 0, icon: Building2, helper: 'This month' },
+    { label: 'Mandates Won', value: prospectingMetricMap.get('mandatesWon')?.value || 0, icon: CheckCircle2, helper: 'This month' },
+    { label: 'Follow Ups Due', value: prospectingMetricMap.get('followUpsDue')?.value || getNumericMetric(agent, 'followUpsDue'), icon: Clock3, helper: 'Open tasks' },
+    { label: 'Appointments', value: commandCentre?.calendarSummary?.upcomingItems?.length || 0, icon: CalendarDays, helper: 'Upcoming' },
+    { label: 'Compliance %', value: compliancePercent === null || compliancePercent === undefined ? '—' : `${compliancePercent}%`, icon: ShieldCheck, helper: 'Task completion' },
+  ]
+  const kpiCards = [
+    { label: 'Active Transactions', value: activeDeals.length, helper: 'Locked to agent', icon: BriefcaseBusiness },
+    { label: 'Active Listings', value: listingStatuses.find((item) => item.label === 'Active')?.count || allListings.length, helper: 'Current stock', icon: Building2 },
+    { label: 'Buyer Leads', value: buyerLeadRows.length, helper: 'Assigned leads', icon: Users },
+    { label: 'Seller Leads', value: sellerLeadRows.length, helper: 'Assigned leads', icon: Users },
+    { label: 'Pipeline Value', value: formatCompactCurrency(commandCentre?.pipelineHealth?.pipelineValue || getAgentPipelineValue(agent)), helper: 'Open value', icon: DollarSign },
+    { label: 'Projected Commission', value: formatCompactCurrency(projectedCommission), helper: 'Forecast', icon: Trophy },
+  ]
+  const performanceOverviewRows = [
+    ['Conversion Rate', conversionRate],
+    ['Listings to OTP', `${allListings.length}:${commandCentre?.pipelineHealth?.stages?.find((stage) => stage.key === 'otp')?.count || 0}`],
+    ['OTP to Registration', `${commandCentre?.pipelineHealth?.stages?.find((stage) => stage.key === 'otp')?.count || 0}:${commandCentre?.pipelineHealth?.stages?.find((stage) => stage.key === 'registration')?.count || 0}`],
+    ['Avg. Days to Register', getNumericMetric(agent, 'averageDealTime') ? `${getNumericMetric(agent, 'averageDealTime')} days` : '—'],
+    ['Commission Earned', formatCurrency(getNumericMetric(agent, 'commissionEarned'))],
+    ['Commission Forecast', formatCurrency(projectedCommission)],
+  ]
+
+  function handleWorkspaceAction(key) {
+    setEditMenuOpen(false)
+    if (key === 'calendar') {
+      navigate('/pipeline/calendar')
+      return
+    }
+    if (['transactions', 'listings', 'leads', 'prospecting', 'performance'].includes(key)) {
+      setActiveTab(key)
+      return
+    }
+    openPlaceholder(key)
+  }
+
+  function openTransaction(row) {
+    const unitId = row?.unit?.id || row?.transaction?.unit_id
+    if (unitId) {
+      navigate(`/units/${unitId}`)
+      return
+    }
+    const transactionId = row?.transaction?.id || row?.id
+    navigate(transactionId ? `/transactions/${transactionId}` : '/transactions')
+  }
+
   const actionItems = [
-    ['message', 'Message', MessageCircle, false],
-    ['calendar', 'View Calendar', CalendarDays, false],
-    ['assign-deal', 'Assign Deal', BriefcaseBusiness, false],
-    ['assign-listing', 'Assign Listing', Building2, false],
-    ['profile', 'Edit Profile', Edit3, false],
-    ['commission', 'Commission', DollarSign, false],
-    ['permissions', 'Permissions', ShieldCheck, false],
+    ['transactions', 'Open Transactions', BriefcaseBusiness],
+    ['listings', 'Open Listings', Building2],
+    ['leads', 'Open Leads', Users],
+    ['profile', 'Edit Profile', Edit3],
+    ['commission', 'Commission', DollarSign],
+    ['permissions', 'Permissions', ShieldCheck],
+    ['deactivate', 'Deactivate Agent', Archive],
   ]
 
   return (
-    <section className="min-w-0 space-y-4 overflow-hidden">
-      <button
-        type="button"
-        onClick={() => navigate('/agency/agents')}
-        className="inline-flex items-center gap-2 text-sm font-semibold text-[#4f6882] transition hover:text-[#0f2742]"
-      >
-        <ArrowLeft size={16} />
-        Back to Agents
-      </button>
-
+    <section className="min-w-0 space-y-5 overflow-hidden pb-6">
       {actionNotice ? (
         <div className="rounded-2xl border border-[#dbe6f4] bg-[#f4f8ff] px-4 py-3 text-sm font-semibold text-[#244e70]">
           {actionNotice}
         </div>
       ) : null}
 
-      <section className="min-w-0 rounded-3xl border border-[#dde6f1] bg-white p-4 shadow-[0_16px_36px_rgba(15,23,42,0.06)] sm:p-5 lg:p-6">
+      <section className="min-w-0 border-b border-[#dde6f1] bg-white px-4 py-5 sm:px-6 lg:px-8">
+        <div className="mb-4 flex min-w-0 flex-wrap items-center gap-2 text-xs font-semibold text-[#6f839a]">
+          <button type="button" className="hover:text-[#10243a]" onClick={() => navigate('/agency')}>Agency</button>
+          <span>/</span>
+          <button type="button" className="hover:text-[#10243a]" onClick={() => navigate('/agency/agents')}>Agents</button>
+          <span>/</span>
+          <span className="min-w-0 truncate text-[#10243a]">{agentDisplayName}</span>
+        </div>
         <div className="flex min-w-0 flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div className="flex min-w-0 items-center gap-3 2xl:gap-4">
             <span className="relative inline-flex h-16 w-16 shrink-0 sm:h-20 sm:w-20 2xl:h-24 2xl:w-24">
@@ -3831,49 +4030,37 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
                 Message
               </button>
             ) : null}
+            <button
+              type="button"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc] 2xl:px-4"
+              onClick={() => openPlaceholder('call')}
+            >
+              <Phone size={16} />
+              Call
+            </button>
             {headerActionPermissions.canViewCalendar ? (
               <button
                 type="button"
                 className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc] 2xl:px-4"
-                onClick={() => setActiveTab('calendar')}
+                onClick={() => navigate('/pipeline/calendar')}
               >
                 <CalendarDays size={16} />
                 View Calendar
               </button>
             ) : null}
-            {headerActionPermissions.canAssignDeal ? (
-              <button
-                type="button"
-                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#0f2742] px-3 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(15,39,66,0.18)] transition hover:bg-[#173a5e] 2xl:px-4"
-                onClick={() => openPlaceholder('assign-deal')}
-              >
-                <BriefcaseBusiness size={16} />
-                Assign Deal
-              </button>
-            ) : null}
-            {headerActionPermissions.canAssignListing ? (
-              <button
-                type="button"
-                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#173a5e] px-3 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(15,39,66,0.14)] transition hover:bg-[#204a74] 2xl:px-4"
-                onClick={() => openPlaceholder('assign-listing')}
-              >
-                <List size={16} />
-                Assign Listing
-              </button>
-            ) : null}
             <div className="relative w-full sm:w-auto">
               <button type="button" onClick={() => setEditMenuOpen((open) => !open)} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc] sm:w-auto">
-                More
                 <MoreHorizontal size={16} />
+                More
               </button>
               {editMenuOpen ? (
-                <div className="absolute right-0 top-[calc(100%+8px)] z-20 w-56 rounded-2xl border border-[#dce6f0] bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.15)]">
+                <div className="absolute right-0 top-[calc(100%+8px)] z-20 w-60 rounded-2xl border border-[#dce6f0] bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.15)]">
                   {actionItems.map(([key, label, icon]) => (
                     <button
                       key={key}
                       type="button"
-                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]"
-                      onClick={() => (key === 'calendar' ? setActiveTab('calendar') : openPlaceholder(key))}
+                      className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold hover:bg-[#f6f9fc] ${key === 'deactivate' ? 'text-[#b42318]' : 'text-[#1f3448]'}`}
+                      onClick={() => (key === 'deactivate' ? (setEditMenuOpen(false), setPendingAction('deactivate')) : handleWorkspaceAction(key))}
                     >
                       {createElement(icon, { size: 15 })}
                       {label}
@@ -3911,17 +4098,21 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
 
       {effectiveActiveTab === 'overview' ? (
         <section className="min-w-0 space-y-4">
+          <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+            {kpiCards.map((card) => (
+              <AgentWorkspaceKpiCard key={card.label} {...card} />
+            ))}
+          </div>
+
           <WorkspaceCard title="Prospecting Activity" actionLabel="This Month">
             {commandCentre?.prospectingActivity?.hasActivity ? (
-              <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-                {commandCentre.prospectingActivity.metrics.map((metric) => (
-                  <AgentMetricCard key={metric.key} label={metric.label} value={metric.value} helper="This month" />
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {prospectingMetrics.map((metric) => (
+                  <AgentMetricCard key={metric.label} label={metric.label} value={metric.value} helper={metric.helper} />
                 ))}
               </div>
             ) : (
-              <div className="rounded-2xl border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#647a92]">
-                No prospecting activity captured for this agent yet.
-              </div>
+              <EmptyWorkspaceState>No prospecting activity logged this month.</EmptyWorkspaceState>
             )}
           </WorkspaceCard>
 
@@ -3982,6 +4173,51 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
             <DealsByStageCard stages={dealStages} />
             <ListingsOverviewCard statuses={listingStatuses} total={allListings.length} />
             <FinancialPerformanceCard rows={financialRows} />
+          </div>
+
+          <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <WorkspaceCard title="Top Transactions" actionLabel="View all">
+              {topTransactions.length ? (
+                <div className="space-y-2">
+                  {topTransactions.map((row) => (
+                    <button
+                      key={row?.transaction?.id || row?.unit?.id || getTransactionTitle(row)}
+                      type="button"
+                      className="grid w-full min-w-0 gap-2 rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] px-4 py-3 text-left text-sm transition hover:border-[#cbd9e8] hover:bg-white sm:grid-cols-[minmax(0,1fr)_110px_130px] sm:items-center"
+                      onClick={() => openTransaction(row)}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate font-semibold text-[#10243a]">{getTransactionTitle(row)}</span>
+                        <span className="block truncate text-xs text-[#60758d]">{row?.buyer?.name || row?.seller?.name || 'Client pending'}</span>
+                      </span>
+                      <span className="truncate rounded-full bg-[#eef6ff] px-2.5 py-1 text-center text-xs font-semibold text-[#1769d1]">{row?.stage || row?.transaction?.status || 'Active'}</span>
+                      <span className="text-right font-semibold text-[#10243a]">{formatCurrency(getTransactionAmount(row))}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <EmptyWorkspaceState>No active transactions for this agent.</EmptyWorkspaceState>
+              )}
+            </WorkspaceCard>
+
+            <WorkspaceCard title="Tasks & Reminders" actionLabel="View all">
+              {agentTasks.length ? (
+                <div className="space-y-3">
+                  {agentTasks.slice(0, 6).map((task) => (
+                    <div key={task.id || task.taskId || task.title} className="flex min-w-0 items-start gap-3">
+                      <span className={`mt-0.5 h-5 w-5 shrink-0 rounded-full border ${isTaskDone(task) ? 'border-[#16894f] bg-[#16894f]' : 'border-[#c6d3e1] bg-white'}`} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-[#10243a]">{task.title || task.name || task.subject || 'Follow up'}</p>
+                        <p className="truncate text-xs text-[#60758d]">{task.relatedLabel || task.entityLabel || task.leadName || 'Linked record'}</p>
+                      </div>
+                      <span className="shrink-0 text-xs font-semibold text-[#b42318]">{getTaskDueLabel(task) ? formatDate(getTaskDueLabel(task)) : 'No date'}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyWorkspaceState>No tasks or reminders for this agent.</EmptyWorkspaceState>
+              )}
+            </WorkspaceCard>
           </div>
 
           <AppointmentDashboardSection
@@ -4049,28 +4285,133 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
         </PrincipalAgentTabShell>
       ) : null}
 
+      {effectiveActiveTab === 'transactions' ? (
+        <section className="min-w-0 space-y-4">
+          <LockedAgentFilterChip label={agentDisplayName} />
+          <AgentTransactionsTable
+            rows={activeTransactionRows}
+            title="Agent Transactions"
+            description="Locked to this agent's assigned transaction context."
+            isPrincipalView
+            compactLayout
+            onRowClick={openTransaction}
+            onCreateTransaction={() => openPlaceholder('assign-deal')}
+            onOpenPipeline={() => navigate('/pipeline')}
+          />
+        </section>
+      ) : null}
+
       {effectiveActiveTab === 'listings' ? (
-        <PrincipalAgentTabShell title="Listings" description="Listings assigned to this agent, with principal-level assignment context." actionLabel="Assign Listing" onAction={() => openPlaceholder('assign-listing')}>
-          <div className="mb-4 grid min-w-0 gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
-            <input className="h-10 min-w-0 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-2 focus:ring-[#1f4f78]/10" placeholder="Search listings..." />
-            <select className="h-10 min-w-0 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#294159]"><option>All Statuses</option></select>
-          </div>
-          <div className="space-y-2">
-            {allListings.length ? allListings.map((listing) => (
-              <div key={listing.id} className="grid min-w-0 gap-2 rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] px-4 py-3 text-sm 2xl:grid-cols-[minmax(0,1.4fr)_110px_120px_90px_90px_110px] 2xl:items-center">
-                <div className="min-w-0">
-                  <p className="truncate font-semibold text-[#10243a]">{listing.title}</p>
-                  <p className="truncate text-xs text-[#6f839a]">{listing.developmentName || listing.suburb || 'Property pending'}</p>
-                </div>
-                <span className="truncate">{listing.status || 'Active'}</span>
-                <span className="truncate font-semibold">{formatCurrency(listing.price)}</span>
-                <span className="truncate">{listing.enquiries || 0} enquiries</span>
-                <span className="truncate">{listing.viewings || 0} viewings</span>
-                <span className="truncate">{formatDate(listing.listedAt)}</span>
+        <section className="min-w-0 space-y-4">
+          <LockedAgentFilterChip label={agentDisplayName} />
+          <PrincipalAgentTabShell title="Listings" description="Listings assigned to this agent, with principal-level assignment context." actionLabel="Assign Listing" onAction={() => openPlaceholder('assign-listing')}>
+            {allListings.length ? (
+              <div className="overflow-x-auto rounded-2xl border border-[#e2eaf3]">
+                <table className="min-w-[980px] w-full text-left text-sm">
+                  <thead className="bg-[#f5f9fd] text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#70849d]">
+                    <tr>
+                      <th className="px-4 py-3">Listing</th>
+                      <th className="px-4 py-3">Address</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Mandate</th>
+                      <th className="px-4 py-3">Price</th>
+                      <th className="px-4 py-3">Leads</th>
+                      <th className="px-4 py-3">Viewings</th>
+                      <th className="px-4 py-3">Created</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#e8eef5] bg-white text-[#22384c]">
+                    {allListings.map((listing) => (
+                      <tr key={listing.id} className="cursor-pointer hover:bg-[#fbfcfe]" onClick={() => navigate(listing.id ? `/agent/listings/${listing.id}` : '/listings')}>
+                        <td className="px-4 py-3 font-semibold text-[#10243a]">{listing.title || listing.listingTitle || 'Listing'}</td>
+                        <td className="px-4 py-3">{listing.developmentName || listing.suburb || listing.address || 'Property pending'}</td>
+                        <td className="px-4 py-3">{listing.status || 'Active'}</td>
+                        <td className="px-4 py-3">{listing.mandateStatus || listing.mandateType || '—'}</td>
+                        <td className="px-4 py-3 font-semibold">{formatCurrency(listing.price || listing.askingPrice)}</td>
+                        <td className="px-4 py-3">{listing.enquiries || listing.leads || 0}</td>
+                        <td className="px-4 py-3">{listing.viewings || 0}</td>
+                        <td className="px-4 py-3">{formatDate(listing.listedAt || listing.createdAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            )) : <p className="rounded-xl bg-[#f8fbff] px-4 py-3 text-sm text-[#61778f]">No listings assigned to this agent yet.</p>}
-          </div>
-        </PrincipalAgentTabShell>
+            ) : (
+              <EmptyWorkspaceState>No listings assigned to this agent.</EmptyWorkspaceState>
+            )}
+          </PrincipalAgentTabShell>
+        </section>
+      ) : null}
+
+      {effectiveActiveTab === 'leads' ? (
+        <section className="min-w-0 space-y-4">
+          <LockedAgentFilterChip label={agentDisplayName} />
+          <PrincipalAgentTabShell title="Leads" description="Buyer and seller leads assigned to this agent.">
+            <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+              {[
+                ['Buyer Leads', buyerLeadRows],
+                ['Seller Leads', sellerLeadRows],
+              ].map(([title, rows]) => (
+                <WorkspaceCard key={title} title={title}>
+                  {rows.length ? (
+                    <div className="space-y-2">
+                      {rows.slice(0, 12).map((lead) => {
+                        const leadId = getLeadId(lead)
+                        return (
+                          <button
+                            key={leadId || getLeadName(lead)}
+                            type="button"
+                            className="grid w-full min-w-0 gap-2 rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] px-4 py-3 text-left text-sm transition hover:bg-white sm:grid-cols-[minmax(0,1fr)_120px_120px] sm:items-center"
+                            onClick={() => navigate(leadId ? `/pipeline/leads/${leadId}` : '/pipeline/leads')}
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate font-semibold text-[#10243a]">{getLeadName(lead)}</span>
+                              <span className="block truncate text-xs text-[#60758d]">{getLeadLinkedProperty(lead)}</span>
+                            </span>
+                            <span className="truncate text-[#526981]">{lead.status || lead.stage || 'Open'}</span>
+                            <span className="truncate text-right text-[#526981]">{formatDate(lead.updatedAt || lead.updated_at || lead.createdAt || lead.created_at)}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <EmptyWorkspaceState>No {title.toLowerCase()} assigned to this agent.</EmptyWorkspaceState>
+                  )}
+                </WorkspaceCard>
+              ))}
+            </div>
+          </PrincipalAgentTabShell>
+        </section>
+      ) : null}
+
+      {effectiveActiveTab === 'prospecting' ? (
+        <section className="min-w-0 space-y-4">
+          <LockedAgentFilterChip label={agentDisplayName} />
+          <PrincipalAgentTabShell title="Prospecting" description="Prospects, follow-ups, calls, valuations, mandates and appointments scoped to this agent.">
+            <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {prospectingMetrics.map((metric) => (
+                <AgentWorkspaceKpiCard key={metric.label} {...metric} />
+              ))}
+            </div>
+            <div className="mt-5">
+              <AppointmentDashboardSection
+                module="agent"
+                organisationId={String(agent?.organisationId || '').trim()}
+                appointmentRows={workspaceSnapshot?.appointments || []}
+                users={[agent].filter(Boolean)}
+                userId={agent?.userId || agent?.id || ''}
+                userEmail={agent?.email || ''}
+                includeAll={false}
+                onViewCalendar={() => navigate('/pipeline/calendar')}
+                onOpenCalendar={() => navigate('/pipeline/calendar')}
+                onManageAppointment={() => navigate('/pipeline/calendar')}
+                onOpenAppointment={() => navigate('/pipeline/calendar')}
+                onScheduleAppointment={() => navigate('/pipeline/calendar')}
+                refreshKey={`${(workspaceSnapshot?.appointments || []).length}:${agent?.id || agent?.email || ''}`}
+              />
+            </div>
+          </PrincipalAgentTabShell>
+        </section>
       ) : null}
 
       {effectiveActiveTab === 'clients' ? (
@@ -4085,18 +4426,39 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
       ) : null}
 
       {effectiveActiveTab === 'performance' ? (
-        <PrincipalAgentTabShell title="Performance" description="Operational performance indicators for this agent.">
-          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
-            <AgentMetricCard label="Pipeline Value" value={formatCurrency(getNumericMetric(agent, 'pipelineValue'))} helper="Open pipeline" />
-            <AgentMetricCard label="Sales Value" value={formatCurrency(getNumericMetric(agent, 'totalSalesValue'))} helper="Completed deals" />
-            <AgentMetricCard label="Conversion Rate" value={conversionRate} helper="Registered / all deals" />
-            <AgentMetricCard label="Average Deal Time" value={getNumericMetric(agent, 'averageDealTime') ? `${getNumericMetric(agent, 'averageDealTime')} days` : '—'} helper="Cycle time" />
-            <AgentMetricCard label="Monthly Activity" value={recentActivity.length} helper="Recent updates" />
-            <AgentMetricCard label="Listings to Deals" value={`${allListings.length}:${agent.deals.length}`} helper="Stock conversion" />
-            <AgentMetricCard label="Commission Earned" value={formatCurrency(getNumericMetric(agent, 'commissionEarned'))} helper="Estimated" />
-            <AgentMetricCard label="Follow-ups Due" value={getNumericMetric(agent, 'followUpsDue')} helper="Lead tasks" />
-          </div>
-        </PrincipalAgentTabShell>
+        <section className="min-w-0 space-y-4">
+          <LockedAgentFilterChip label={agentDisplayName} />
+          <PrincipalAgentTabShell title="Performance" description="Analytics, commission assignment and operational settings for this agent.">
+            <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {performanceOverviewRows.map(([label, value]) => (
+                <AgentWorkspaceKpiCard key={label} label={label} value={value} icon={Trophy} />
+              ))}
+            </div>
+            <div className="mt-5 grid min-w-0 gap-4 xl:grid-cols-3">
+              <AgentManagementCard title="Monthly Performance">
+                <div className="space-y-1">
+                  {monthSummary.map((metric) => (
+                    <DetailInfoRow key={metric.key || metric.label} label={metric.label} value={formatSummaryMetricValue(metric)} />
+                  ))}
+                </div>
+              </AgentManagementCard>
+              <AgentManagementCard title="Commission Structure" actionLabel="Manage" onAction={() => openPlaceholder('commission')}>
+                <div className="space-y-1">
+                  {commissionPlanRows.map(([label, value]) => (
+                    <DetailInfoRow key={label} label={label} value={value} />
+                  ))}
+                </div>
+              </AgentManagementCard>
+              <AgentManagementCard title="Profile & Permissions" actionLabel="Manage" onAction={() => openPlaceholder('permissions')}>
+                <div className="space-y-1">
+                  {[...contactRows.slice(0, 4), ...permissionRows.slice(0, 4), ...teamAllocationRows.slice(0, 3)].map(([label, value]) => (
+                    <DetailInfoRow key={label} label={label} value={value} />
+                  ))}
+                </div>
+              </AgentManagementCard>
+            </div>
+          </PrincipalAgentTabShell>
+        </section>
       ) : null}
 
       {effectiveActiveTab === 'calendar' ? (
@@ -5858,7 +6220,7 @@ export function AgentsPage() {
             >
               Add another agent
             </Button>
-            <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/agents')}>
+            <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/agency/agents')}>
               View agents
             </Button>
             {inviteSentContext.link ? (
@@ -6320,7 +6682,7 @@ export function AgentWorkspacePage() {
     return (
       <section className="space-y-4">
         <p className="rounded-[16px] border border-[#f2d7d7] bg-[#fff6f6] px-4 py-3 text-sm text-[#b42318]">{error || 'Agent not found.'}</p>
-        <Button type="button" variant="secondary" onClick={() => navigate('/agents')}>
+        <Button type="button" variant="secondary" onClick={() => navigate('/agency/agents')}>
           Back to Agents
         </Button>
       </section>
@@ -6328,16 +6690,13 @@ export function AgentWorkspacePage() {
   }
 
   return (
-    <section className="min-w-0 space-y-4 overflow-hidden">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
-        <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/agents')}>
-          Back to Agents
-        </Button>
-        <div className="inline-flex min-w-0 items-center gap-2 truncate text-xs text-[#647a92]">
+    <section className="min-w-0 overflow-hidden">
+      {hydratingSnapshot ? (
+        <div className="mb-3 inline-flex min-w-0 items-center gap-2 truncate rounded-full border border-[#dbe6f4] bg-[#f4f8ff] px-3 py-1 text-xs font-semibold text-[#244e70]">
           <ShieldCheck size={13} />
-          {hydratingSnapshot ? 'Refreshing performance snapshot…' : canManageSettings ? 'Principal Workspace' : 'Agent Workspace'}
+          Refreshing performance snapshot…
         </div>
-      </div>
+      ) : null}
       <AgentWorkspace
         agent={agent}
         canManageSettings={canManageSettings}
