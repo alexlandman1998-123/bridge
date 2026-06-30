@@ -35,6 +35,7 @@ import AppointmentDashboardSection from '../components/appointments/dashboard/Ap
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import AreaMultiSelect from '../components/location/AreaMultiSelect'
+import LeadImportModal from '../components/leads/LeadImportModal'
 import Modal from '../components/ui/Modal'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
@@ -4398,15 +4399,6 @@ function getCreateLeadButtonLabel(category = 'all') {
   return 'Create Lead'
 }
 
-function buildLeadImportPath(category = '') {
-  const normalizedCategory = normalizeCanonicalLeadCategory(category, '')
-  const params = new URLSearchParams({ import: '1' })
-  if (normalizedCategory === 'buyer' || normalizedCategory === 'seller') {
-    params.set('leadCategory', normalizedCategory)
-  }
-  return `/pipeline/enquiries?${params.toString()}`
-}
-
 function CreateLeadDropdown({ activeCategory = 'all', onCreate, onImport, className = '', buttonClassName = '' }) {
   const [open, setOpen] = useState(false)
   const defaultCategory = ['buyer', 'seller', 'other'].includes(activeCategory) ? activeCategory : ''
@@ -5991,6 +5983,8 @@ function AgentLeadList() {
   const [createForm, setCreateForm] = useState(EMPTY_LEAD_CREATE_FORM)
   const [creatingLead, setCreatingLead] = useState(false)
   const [createError, setCreateError] = useState('')
+  const [importOpen, setImportOpen] = useState(false)
+  const [importLeadCategory, setImportLeadCategory] = useState('')
 
   const loadRows = useCallback(async () => {
     if (!organisationId) {
@@ -6041,7 +6035,14 @@ function AgentLeadList() {
   }
 
   function openLeadImport() {
-    navigate(buildLeadImportPath(filters.category))
+    const normalizedCategory = normalizeCanonicalLeadCategory(filters.category, '')
+    setImportLeadCategory(normalizedCategory === 'buyer' || normalizedCategory === 'seller' ? normalizedCategory : '')
+    setImportOpen(true)
+  }
+
+  function closeLeadImport() {
+    setImportOpen(false)
+    setImportLeadCategory('')
   }
 
   function closeCreateLead() {
@@ -6339,6 +6340,14 @@ function AgentLeadList() {
         error={createError}
         onClose={closeCreateLead}
         onSubmit={submitCreateLead}
+      />
+      <LeadImportModal
+        open={importOpen}
+        organisationId={organisationId}
+        actor={actor}
+        defaultLeadCategory={importLeadCategory}
+        onClose={closeLeadImport}
+        onImported={loadRows}
       />
     </main>
   )
@@ -6759,11 +6768,13 @@ function getListingIdentity(listing = {}, fallback = '') {
 }
 
 function getListingTitle(listing = {}) {
-  return normalizeText(listing.title || listing.listingTitle || listing.listing_title || listing.propertyTitle || listing.property_title || listing.propertyAddress || listing.address) || 'Private property recommendation'
+  const source = listing && typeof listing === 'object' ? listing : {}
+  return normalizeText(source.title || source.listingTitle || source.listing_title || source.propertyTitle || source.property_title || source.propertyAddress || source.address) || 'Private property recommendation'
 }
 
 function getListingPrice(listing = {}) {
-  return toFiniteNumber(listing.price ?? listing.askingPrice ?? listing.asking_price ?? listing.estimatedValue ?? listing.estimated_value)
+  const source = listing && typeof listing === 'object' ? listing : {}
+  return toFiniteNumber(source.price ?? source.askingPrice ?? source.asking_price ?? source.estimatedValue ?? source.estimated_value)
 }
 
 function getMediaItemUrl(item) {
@@ -6773,24 +6784,25 @@ function getMediaItemUrl(item) {
 }
 
 function getListingMediaItems(listing = {}) {
-  const raw = listing.raw && typeof listing.raw === 'object' ? listing.raw : {}
-  const marketing = listing.marketing && typeof listing.marketing === 'object' ? listing.marketing : {}
+  const source = listing && typeof listing === 'object' ? listing : {}
+  const raw = source.raw && typeof source.raw === 'object' ? source.raw : {}
+  const marketing = source.marketing && typeof source.marketing === 'object' ? source.marketing : {}
   const rawMarketing = raw.marketing && typeof raw.marketing === 'object' ? raw.marketing : {}
-  const propertyDetails = listing.propertyDetails && typeof listing.propertyDetails === 'object' ? listing.propertyDetails : {}
+  const propertyDetails = source.propertyDetails && typeof source.propertyDetails === 'object' ? source.propertyDetails : {}
   const rawPropertyDetails = raw.propertyDetails && typeof raw.propertyDetails === 'object' ? raw.propertyDetails : {}
   const onboardingFormData = raw.onboarding?.formData && typeof raw.onboarding.formData === 'object' ? raw.onboarding.formData : {}
   return [
-    listing.coverImage,
-    listing.cover_image,
+    source.coverImage,
+    source.cover_image,
     marketing.coverImage,
     marketing.cover_image,
     rawMarketing.coverImage,
     rawMarketing.cover_image,
-    ...(Array.isArray(listing.galleryImages) ? listing.galleryImages : []),
-    ...(Array.isArray(listing.gallery_images) ? listing.gallery_images : []),
-    ...(Array.isArray(listing.images) ? listing.images : []),
-    ...(Array.isArray(listing.photos) ? listing.photos : []),
-    ...(Array.isArray(listing.media) ? listing.media : []),
+    ...(Array.isArray(source.galleryImages) ? source.galleryImages : []),
+    ...(Array.isArray(source.gallery_images) ? source.gallery_images : []),
+    ...(Array.isArray(source.images) ? source.images : []),
+    ...(Array.isArray(source.photos) ? source.photos : []),
+    ...(Array.isArray(source.media) ? source.media : []),
     ...(Array.isArray(marketing.imageGallery) ? marketing.imageGallery : []),
     ...(Array.isArray(marketing.image_gallery) ? marketing.image_gallery : []),
     ...(Array.isArray(marketing.galleryImages) ? marketing.galleryImages : []),
@@ -6806,24 +6818,25 @@ function getListingMediaItems(listing = {}) {
 }
 
 function getListingImageUrl(listing = {}) {
-  const raw = listing.raw && typeof listing.raw === 'object' ? listing.raw : {}
-  const marketing = listing.marketing && typeof listing.marketing === 'object' ? listing.marketing : {}
+  const source = listing && typeof listing === 'object' ? listing : {}
+  const raw = source.raw && typeof source.raw === 'object' ? source.raw : {}
+  const marketing = source.marketing && typeof source.marketing === 'object' ? source.marketing : {}
   const rawMarketing = raw.marketing && typeof raw.marketing === 'object' ? raw.marketing : {}
   return normalizeText(
-    listing.imageUrl ||
-      listing.image_url ||
-      listing.thumbnailUrl ||
-      listing.thumbnail_url ||
-      listing.coverImageUrl ||
-      listing.cover_image_url ||
-      listing.heroImageUrl ||
-      listing.hero_image_url ||
-      listing.primaryImageUrl ||
-      listing.primary_image_url ||
-      listing.mainImageUrl ||
-      listing.main_image_url ||
-      listing.photoUrl ||
-      listing.photo_url ||
+    source.imageUrl ||
+      source.image_url ||
+      source.thumbnailUrl ||
+      source.thumbnail_url ||
+      source.coverImageUrl ||
+      source.cover_image_url ||
+      source.heroImageUrl ||
+      source.hero_image_url ||
+      source.primaryImageUrl ||
+      source.primary_image_url ||
+      source.mainImageUrl ||
+      source.main_image_url ||
+      source.photoUrl ||
+      source.photo_url ||
       marketing.mediaUrl ||
       marketing.media_url ||
       rawMarketing.mediaUrl ||
@@ -6840,8 +6853,9 @@ function getCollectionExplicitScore(source = {}) {
 }
 
 function buildGeneratedMatchReasons(listing = {}, row = {}, requirement = getBuyerPrimaryRequirement(row)) {
+  const source = listing && typeof listing === 'object' ? listing : {}
   const reasons = []
-  const price = getListingPrice(listing)
+  const price = getListingPrice(source)
   const min = toFiniteNumber(requirement.budgetMin ?? requirement.budget_min)
   const max = toFiniteNumber(requirement.budgetMax ?? requirement.budget_max ?? row.budget)
   const areaLabel = getBuyerAreaLabel(row, requirement)
@@ -6849,21 +6863,21 @@ function buildGeneratedMatchReasons(listing = {}, row = {}, requirement = getBuy
   const bedroomsMin = toFiniteNumber(requirement.bedroomsMin ?? requirement.bedrooms_min ?? row.bedrooms)
   const bathroomsMin = toFiniteNumber(requirement.bathroomsMin ?? requirement.bathrooms_min ?? row.bathrooms)
   const listingHaystack = [
-    listing.title,
-    listing.address,
-    listing.suburb,
-    listing.city,
-    listing.description,
-    listing.propertyType,
-    listing.property_type,
-    listing.features,
+    source.title,
+    source.address,
+    source.suburb,
+    source.city,
+    source.description,
+    source.propertyType,
+    source.property_type,
+    source.features,
   ].flat().map(normalizeText).join(' ').toLowerCase()
 
   if (price && ((min && price >= min) || !min) && ((max && price <= max) || !max)) reasons.push('Within budget')
   if (areaLabel !== '—' && parseListInput(areaLabel).some((area) => listingHaystack.includes(area.toLowerCase()))) reasons.push(`Matches ${areaLabel.split(',')[0]}`)
   if (typeLabel !== '—' && listingHaystack.includes(typeLabel.toLowerCase())) reasons.push(`${typeLabel} property type`)
-  if (bedroomsMin && toFiniteNumber(listing.bedrooms) >= bedroomsMin) reasons.push(`${bedroomsMin}+ bedrooms`)
-  if (bathroomsMin && toFiniteNumber(listing.bathrooms) >= bathroomsMin) reasons.push(`${bathroomsMin}+ bathrooms`)
+  if (bedroomsMin && toFiniteNumber(source.bedrooms) >= bedroomsMin) reasons.push(`${bedroomsMin}+ bedrooms`)
+  if (bathroomsMin && toFiniteNumber(source.bathrooms) >= bathroomsMin) reasons.push(`${bathroomsMin}+ bathrooms`)
   if (/estate|security|gated|guard/.test(listingHaystack)) reasons.push('Security preference aligned')
   if (/pet|garden|yard/.test(listingHaystack)) reasons.push('Lifestyle features present')
   return reasons.slice(0, 5)
@@ -6884,10 +6898,11 @@ function buildBuyerCollectionProperties(row = {}, workspace = {}) {
   const primaryRequirement = requirements.find((requirement) => requirement.isPrimary || requirement.is_primary) || requirements[0] || getBuyerPrimaryRequirement(row)
 
   const addEntry = (listing = {}, meta = {}) => {
-    const id = getListingIdentity(listing, meta.listingId || meta.id)
-    if (!id && !getListingTitle(listing)) return
+    const sourceListing = listing && typeof listing === 'object' ? listing : {}
+    const id = getListingIdentity(sourceListing, meta.listingId || meta.id)
+    if (!id && !getListingTitle(sourceListing)) return
     const existingIndex = entries.findIndex((entry) => entry.id === id)
-    const explicitScore = getCollectionExplicitScore(meta) || getCollectionExplicitScore(listing)
+    const explicitScore = getCollectionExplicitScore(meta) || getCollectionExplicitScore(sourceListing)
     const fallbackScore = meta.source === 'Original enquiry'
       ? 96
       : meta.status === 'sent' || meta.sentAt
@@ -6900,17 +6915,17 @@ function buildBuyerCollectionProperties(row = {}, workspace = {}) {
     const score = Math.max(1, Math.min(100, Math.round(explicitScore || fallbackScore)))
     const item = {
       id: id || `${meta.source || 'match'}-${entries.length}`,
-      listing: { ...listing, id: id || listing.id },
+      listing: { ...sourceListing, id: id || sourceListing.id },
       source: meta.source || 'Collection match',
       status: meta.status || '',
       score,
-      reasons: normalizeCollectionReasons(meta.reasons || meta.matchReasons || listing.matchReasons || listing.reasons, listing, row),
+      reasons: normalizeCollectionReasons(meta.reasons || meta.matchReasons || sourceListing.matchReasons || sourceListing.reasons, sourceListing, row),
       requirementId: meta.requirementId || primaryRequirement?.requirementId || '',
       interestId: meta.interestId || '',
       suggestionId: meta.suggestionId || '',
       sentAt: meta.sentAt,
       viewedAt: meta.viewedAt,
-      updatedAt: meta.updatedAt || listing.updatedAt || listing.updated_at || listing.createdAt || listing.created_at,
+      updatedAt: meta.updatedAt || sourceListing.updatedAt || sourceListing.updated_at || sourceListing.createdAt || sourceListing.created_at,
     }
     if (existingIndex >= 0) {
       const existing = entries[existingIndex]
@@ -6928,7 +6943,7 @@ function buildBuyerCollectionProperties(row = {}, workspace = {}) {
     entries.push(item)
   }
 
-  ;[...(workspace.listingInterests || []), ...(row.listingInterests || [])].forEach((interest) => {
+  ;[...(workspace.listingInterests || []), ...(row.listingInterests || [])].filter(Boolean).forEach((interest) => {
     const listing = interest.listing || {
       id: interest.listingId || interest.listing_id,
       title: interest.listingTitle || interest.listing_title,
