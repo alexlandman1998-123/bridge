@@ -51,6 +51,24 @@ try {
   assert.equal(normal.workspaceRole, 'principal')
   assert.ok(normal.permissions.view_dashboard)
 
+  const joinedWorkspaceOnly = buildWorkspaceResolution({
+    user,
+    profile,
+    organisationRows: [],
+    organisationMembershipRows: [{
+      id: 'membership-joined-workspace',
+      organisations: organisation,
+      user_id: user.id,
+      role: 'principal',
+      status: 'active',
+    }],
+    requestedWorkspaceId: organisation.id,
+  })
+
+  assert.equal(joinedWorkspaceOnly.ok, true)
+  assert.equal(joinedWorkspaceOnly.currentWorkspace.id, organisation.id)
+  assert.equal(joinedWorkspaceOnly.currentMembership.workspaceId, organisation.id)
+
   const broken = buildWorkspaceResolution({
     user,
     profile,

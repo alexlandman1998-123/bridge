@@ -7,7 +7,11 @@ import { APP_ROLE_LABELS, DEFAULT_APP_ROLE, INTERNAL_APP_ROLES, normalizeAppRole
 import { can, canAll, canAny, createPermissionResolver, getPermissionScope } from '../auth/permissions/permissionResolver'
 import { completeOnboarding } from '../services/onboarding/onboardingEngine'
 
-const WorkspaceContext = createContext(null)
+const WORKSPACE_CONTEXT_GLOBAL_KEY = '__arch9WorkspaceContextV1'
+const WorkspaceContext =
+  typeof globalThis !== 'undefined'
+    ? (globalThis[WORKSPACE_CONTEXT_GLOBAL_KEY] ||= createContext(null))
+    : createContext(null)
 const AGENCY_WORKFLOW_MODE_STORAGE_KEY = 'itg:agency-workflow-mode:v1'
 const DEFAULT_AGENCY_WORKFLOW_MODE = 'agent'
 const UNRESOLVED_WORKSPACE = { id: '', name: 'Workspace setup required', type: '' }

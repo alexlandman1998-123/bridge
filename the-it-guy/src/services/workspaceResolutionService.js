@@ -183,11 +183,13 @@ function createMembershipRecord({
   const resolvedBranchScope = normalizeBranchScope(branchScope, getDefaultBranchScope(workspaceRole, { appRole, workspaceType: normalizedWorkspaceType }))
   const resolvedBranchId = branchId || primaryBranchId || null
   const resolvedWorkspace = workspace || null
+  const resolvedWorkspaceId = normalizeText(workspaceId || resolvedWorkspace?.id)
   return {
     id,
     source,
     userId,
-    workspaceId,
+    workspaceId: resolvedWorkspaceId || null,
+    workspace_id: resolvedWorkspaceId || null,
     workspace: resolvedWorkspace,
     workspaceType: normalizedWorkspaceType,
     appRole: normalizeCanonicalAppRole(appRole, ''),
@@ -221,9 +223,27 @@ function createMembershipRecord({
 function sortMemberships(left, right) {
   if (left.workspace && !right.workspace) return -1
   if (!left.workspace && right.workspace) return 1
-  const leftKey = `${left.workspaceType || ''}:${left.workspace?.name || ''}:${left.workspaceId || ''}:${left.id || ''}`
-  const rightKey = `${right.workspaceType || ''}:${right.workspace?.name || ''}:${right.workspaceId || ''}:${right.id || ''}`
+  const leftKey = `${left.workspaceType || ''}:${left.workspace?.name || ''}:${getMembershipWorkspaceId(left) || ''}:${left.id || ''}`
+  const rightKey = `${right.workspaceType || ''}:${right.workspace?.name || ''}:${getMembershipWorkspaceId(right) || ''}:${right.id || ''}`
   return leftKey.localeCompare(rightKey)
+}
+
+function getMembershipWorkspaceId(membership = null) {
+  return normalizeText(
+    membership?.workspaceId ||
+      membership?.workspace_id ||
+      membership?.workspace?.id ||
+      membership?.raw?.workspace_id ||
+      membership?.raw?.organisation_id ||
+      membership?.raw?.organization_id ||
+      membership?.raw?.firm_id,
+  )
+}
+
+function membershipMatchesWorkspaceId(membership = null, workspaceId = '') {
+  const resolvedWorkspaceId = getMembershipWorkspaceId(membership)
+  const requestedWorkspaceId = normalizeText(workspaceId)
+  return Boolean(requestedWorkspaceId && (resolvedWorkspaceId === requestedWorkspaceId || membership?.id === requestedWorkspaceId))
 }
 
 function isCommercialBrokerMembership(membership = {}) {
@@ -256,12 +276,12 @@ function getWorkspacePreferenceReason({
 }) {
   const requested = normalizeText(requestedWorkspaceId)
   const stored = normalizeText(storedWorkspaceId)
-  if (requested && selectedMembership?.workspaceId === requested) return 'requested_workspace'
-  if (stored && selectedMembership?.workspaceId === stored) return 'stored_preference'
-  if (requested && !activeMemberships.some((membership) => membership.workspaceId === requested || membership.id === requested)) {
+  if (requested && membershipMatchesWorkspaceId(selectedMembership, requested)) return 'requested_workspace'
+  if (stored && membershipMatchesWorkspaceId(selectedMembership, stored)) return 'stored_preference'
+  if (requested && !activeMemberships.some((membership) => membershipMatchesWorkspaceId(membership, requested))) {
     return 'requested_workspace_invalid'
   }
-  if (stored && !activeMemberships.some((membership) => membership.workspaceId === stored || membership.id === stored)) {
+  if (stored && !activeMemberships.some((membership) => membershipMatchesWorkspaceId(membership, stored))) {
     return 'stored_preference_invalid'
   }
   return selectedMembership ? 'first_active_membership' : 'none'
@@ -270,13 +290,13 @@ function getWorkspacePreferenceReason({
 function selectMembership(activeMemberships = [], { requestedWorkspaceId = '', storedWorkspaceId = '' } = {}) {
   const requested = normalizeText(requestedWorkspaceId)
   if (requested) {
-    const selected = activeMemberships.find((membership) => membership.workspace && (membership.workspaceId === requested || membership.id === requested))
+    const selected = activeMemberships.find((membership) => membership.workspace && membershipMatchesWorkspaceId(membership, requested))
     if (selected) return selected
   }
 
   const stored = normalizeText(storedWorkspaceId)
   if (stored) {
-    const selected = activeMemberships.find((membership) => membership.workspace && (membership.workspaceId === stored || membership.id === stored))
+    const selected = activeMemberships.find((membership) => membership.workspace && membershipMatchesWorkspaceId(membership, stored))
     if (selected) return selected
   }
 
@@ -314,7 +334,7 @@ function buildDiagnostics({
     systemRole: profile?.systemRole || '',
     requestedWorkspaceId: normalizeText(requestedWorkspaceId) || null,
     storedWorkspaceId: normalizeText(storedWorkspaceId) || null,
-    currentWorkspaceId: currentMembership?.workspaceId || null,
+    currentWorkspaceId: getMembershipWorkspaceId(currentMembership) || null,
     currentMembershipId: currentMembership?.id || null,
     membershipCounts: {
       total: memberships.length,

@@ -113,6 +113,19 @@ function buildBootstrapTimeoutMessage({ phase = '', diagnostics = [] } = {}) {
   return 'Authentication bootstrap timed out. Please retry.'
 }
 
+function getMembershipWorkspaceId(membership = null) {
+  return String(
+    membership?.workspaceId ||
+      membership?.workspace_id ||
+      membership?.workspace?.id ||
+      membership?.raw?.workspace_id ||
+      membership?.raw?.organisation_id ||
+      membership?.raw?.organization_id ||
+      membership?.raw?.firm_id ||
+      '',
+  ).trim()
+}
+
 async function withBootstrapTimeout(task, {
   timeoutMs = SESSION_BOOTSTRAP_TIMEOUT_MS,
   phase = '',
@@ -348,7 +361,7 @@ export function AuthSessionProvider({ children }) {
   const selectWorkspace = useCallback(
     (workspaceId) => {
       const id = String(workspaceId || '').trim()
-      const allowed = authState.activeMemberships.some((membership) => membership.workspaceId === id || membership.id === id)
+      const allowed = authState.activeMemberships.some((membership) => getMembershipWorkspaceId(membership) === id || membership.id === id)
       if (!allowed || !id || id === 'all') {
         console.warn('[AUTH] ignored workspace selection not present in active memberships', { workspaceId: id })
         return
