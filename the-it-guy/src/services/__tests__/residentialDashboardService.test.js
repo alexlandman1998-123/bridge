@@ -19,6 +19,7 @@ import {
         activeListings: 8,
         pipelineValue: 125400000,
         expectedCommission: 3120000,
+        newLeads: 5,
       },
       pipeline: {
         salesFunnel: {
@@ -63,6 +64,9 @@ import {
 
   assert.equal(model.kpis[0].label, 'Active Transactions', 'principal KPI labels should use agency scope')
   assert.equal(model.kpis[1].label, 'Active Listings / Mandates', 'principal KPI labels should include listings and mandates')
+  assert.equal(model.kpis.length, 5, 'principal dashboard should expose five KPI cards')
+  assert.equal(model.kpis[4].label, 'New Leads', 'principal dashboard should include agency-wide new leads')
+  assert.equal(model.kpis[4].value, '5', 'principal new leads KPI should use the provided lead count')
   assert.equal(model.transactionFlow.stages.length, 5, 'sales flow should expose five stages')
   assert.equal(model.transactionFlow.stages[0].label, 'Buyer Onboarding', 'transaction flow should start with buyer onboarding')
   assert.equal(model.transactionFlow.buyerOnboarding.count, 2, 'buyer onboarding stage should preserve count')
@@ -87,6 +91,7 @@ import {
   })
 
   assert.equal(model.kpis[0].label, 'My Active Transactions', 'agent KPI labels should be personal')
+  assert.equal(model.kpis[4].label, 'My New Leads', 'agent KPI labels should keep personal lead scope')
   assert.equal(model.transactionFlow.emptyState, true, 'leasing flow should safely render an empty state')
   assert.equal(model.transactionHealth.emptyState, true, 'leasing health should safely render an empty state')
   assert.equal(model.topPerformers.hidden, true, 'agent scope should not show top performers')

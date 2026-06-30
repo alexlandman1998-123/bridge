@@ -785,6 +785,76 @@ function leadMatchesAgentIdentity(lead, profileIdentitySet) {
   return candidates.some((candidate) => profileIdentitySet.has(candidate))
 }
 
+function getLeadListingIdentity(lead = {}) {
+  return toLookupText(
+    lead.listingId ||
+      lead.listing_id ||
+      lead.propertyId ||
+      lead.property_id ||
+      lead.unitId ||
+      lead.unit_id ||
+      lead.mandateListingId ||
+      lead.mandate_listing_id,
+  )
+}
+
+function getListingIdentityForLeadScope(listing = {}) {
+  return toLookupText(
+    listing.id ||
+      listing.listingId ||
+      listing.listing_id ||
+      listing.propertyId ||
+      listing.property_id ||
+      listing.unitId ||
+      listing.unit_id,
+  )
+}
+
+function isOpenDashboardLead(lead = {}) {
+  const status = toLookupText(`${lead.status} ${lead.stage} ${lead.lifecycle_state} ${lead.outcome}`)
+  return !(
+    lead.converted_transaction_id ||
+    lead.convertedTransactionId ||
+    lead.converted_at ||
+    lead.convertedAt ||
+    status.includes('converted') ||
+    status.includes('deal created') ||
+    status.includes('closed') ||
+    status.includes('lost') ||
+    status.includes('archived')
+  )
+}
+
+function getAgentDashboardLeadRows(sharedData = {}, profileIdentitySet = new Set()) {
+  const listingIds = new Set(
+    (Array.isArray(sharedData?.listings) ? sharedData.listings : [])
+      .map(getListingIdentityForLeadScope)
+      .filter(Boolean),
+  )
+  const rowsById = new Map()
+
+  const addLead = (lead, fallbackPrefix = 'lead') => {
+    if (!lead || typeof lead !== 'object' || !isOpenDashboardLead(lead)) return
+    const id = toLookupText(lead.lead_id || lead.leadId || lead.id || `${fallbackPrefix}-${rowsById.size}`)
+    if (!id) return
+    rowsById.set(id, lead)
+  }
+
+  for (const lead of Array.isArray(sharedData?.sellerLeads) ? sharedData.sellerLeads : []) {
+    addLead(lead, 'seller')
+  }
+
+  for (const lead of Array.isArray(sharedData?.pipelineLeads) ? sharedData.pipelineLeads : []) {
+    const listingId = getLeadListingIdentity(lead)
+    const matchesListing = listingId && listingIds.has(listingId)
+    if (matchesListing || leadMatchesAgentIdentity(lead, profileIdentitySet)) {
+      addLead(lead, 'pipeline')
+    }
+  }
+
+  return [...rowsById.values()]
+}
+
 function resolveLeadCategory(value) {
   const normalized = toLookupText(value)
   if (normalized.includes('seller') || normalized.includes('landlord')) return 'seller'
@@ -3715,6 +3785,7 @@ function Dashboard() {
     )
     const pipelineValue = transactionPipelineValue + privateListingMetrics.pipelineValue
     const expectedCommission = transactionCommissionForecast + privateListingMetrics.commissionForecast
+    const agentLeadRows = getAgentDashboardLeadRows(agentSharedData, profileIdentitySet)
     const forecastRows = privateListingMetrics.commissionForecast > 0
       ? privateListingMetrics.forecastRows
       : agentPremiumModel.forecastRows
@@ -3734,13 +3805,16 @@ function Dashboard() {
           mandates: activeListingCount,
           pipelineValue,
           expectedCommission,
+          newLeads: agentLeadRows.length,
           trends: {
             activeTransactions: null,
             activeListings: null,
             pipelineValue: null,
             expectedCommission: null,
+            newLeads: null,
           },
         },
+        leads: agentLeadRows,
         health: agentPremiumModel.health,
         performance: sellerStages,
         transactionFlow: agentPremiumModel.flow,
@@ -3768,7 +3842,7 @@ function Dashboard() {
         },
       },
     })
-  }, [AGENT_SUMMARY.activeTransactions, agentPerformanceMetrics.activeDealValue, agentPerformanceMetrics.commissionEarned, agentPerformanceMetrics.conversionFunnel?.seller, agentPerformanceMetrics.listingCount, agentPerformanceMetrics.openDeals, agentPremiumModel, agentPrivateListingRows, agentSharedData?.dashboard?.commissionEarned, agentSharedData?.dashboard?.estimatedCommission, agentSharedData?.dashboard?.listingCount, agentSharedData?.dashboard?.pipelineValue, appointmentSummary.rows, isAgentRole, isPrincipalAgentView, profile?.id, profile?.userId, residentialDateRange, residentialMode, workspace.id])
+  }, [AGENT_SUMMARY.activeTransactions, agentPerformanceMetrics.activeDealValue, agentPerformanceMetrics.commissionEarned, agentPerformanceMetrics.conversionFunnel?.seller, agentPerformanceMetrics.listingCount, agentPerformanceMetrics.openDeals, agentPremiumModel, agentPrivateListingRows, agentSharedData, appointmentSummary.rows, isAgentRole, isPrincipalAgentView, profile?.id, profile?.userId, profileIdentitySet, residentialDateRange, residentialMode, workspace.id])
   const sharedActivityViewPath = useMemo(() => {
     if (isAttorneyRole) return '/transactions'
     if (isBondRole) return '/bond/pipeline'
@@ -4549,7 +4623,7 @@ function renderActiveTransactionsBlock({
                       model={agentResidentialModel}
                       scope="agent"
                       mode={residentialMode}
-                      kpiIcons={[ArrowRightLeft, Building2, Banknote, TrendingUp]}
+                      kpiIcons={[ArrowRightLeft, Building2, Banknote, TrendingUp, Users]}
                       organisationId={organisationIdForAppointments}
                       userId={String(profile?.id || '').trim()}
                       userEmail={String(profile?.email || '').trim()}

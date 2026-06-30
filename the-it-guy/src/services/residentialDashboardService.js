@@ -444,6 +444,10 @@ function getCommissionLabel({ scope = 'principal' } = {}) {
   return `${getTitlePrefix(scope)}Commission Forecast`
 }
 
+function getNewLeadsLabel({ scope = 'principal' } = {}) {
+  return `${getTitlePrefix(scope)}New Leads`
+}
+
 function deriveListingsCount(source = {}) {
   return getFirstNumber(
     source.activeListings,
@@ -454,6 +458,35 @@ function deriveListingsCount(source = {}) {
     source.transactions?.flow?.find?.((item) => normalizeText(item?.key || item?.label).toLowerCase().includes('mandate'))?.count,
     source.kpis?.activeListings,
     source.kpis?.mandates,
+  )
+}
+
+function isOpenLead(row = {}) {
+  const status = normalizeKey(`${row.status} ${row.stage} ${row.lifecycle_state} ${row.outcome}`)
+  return !(
+    row.converted_transaction_id ||
+    row.convertedTransactionId ||
+    row.converted_at ||
+    row.convertedAt ||
+    status.includes('converted') ||
+    status.includes('deal created') ||
+    status.includes('closed') ||
+    status.includes('lost') ||
+    status.includes('archived')
+  )
+}
+
+function deriveNewLeadsCount(source = {}) {
+  const leadRows = getFirstArray(source.leads, source.leadRows, source.newLeadRows, source.pipelineLeads, source.sellerLeads, source.buyerLeads)
+  return getFirstNumber(
+    source.kpis?.newLeads,
+    source.kpis?.leads,
+    source.pipeline?.newLeads,
+    source.pipeline?.leadCount,
+    source.pipeline?.salesFunnel?.stages?.find?.((item) => normalizeKey(item?.key || item?.label).includes('lead'))?.count,
+    source.pipeline?.funnel?.find?.((item) => normalizeKey(item?.key || item?.label).includes('lead'))?.count,
+    leadRows.filter(isOpenLead).length,
+    leadRows.length,
   )
 }
 
@@ -790,6 +823,7 @@ export function deriveResidentialDashboardMetrics({
   const activeListings = deriveListingsCount(source)
   const pipelineValue = derivePipelineValue(source)
   const commissionForecast = deriveCommissionForecast(source)
+  const newLeads = deriveNewLeadsCount(source)
   const kpiTrends = source.kpis?.trends || source.trends || {}
 
   const kpis = [
@@ -828,6 +862,15 @@ export function deriveResidentialDashboardMetrics({
       trend: kpiTrends.expectedCommission ?? kpiTrends.forecastRevenue ?? deriveTrend(source, ['expectedCommission', 'forecastRevenue', 'likelyRevenue']),
       sparkline: normalizeSparklinePoints(getFirstArray(source.forecastValues, source.revenue?.forecastChart).map((row) => toNumber(row?.rawValue || row?.expectedCommission || row?.value || row))),
       tone: 'purple',
+    },
+    {
+      key: 'new_leads',
+      label: getNewLeadsLabel({ scope }),
+      value: emptyLeasing ? '0' : formatCount(newLeads),
+      compactValue: emptyLeasing ? '0' : formatCount(newLeads),
+      trend: kpiTrends.newLeads ?? deriveTrend(source, ['newLeads', 'leads']),
+      sparkline: normalizeSparklinePoints(getFirstArray(source.leadTrend, source.leadSeries, source.pipeline?.leadTrend).map((row) => toNumber(row?.count || row?.value || row))),
+      tone: 'slate',
     },
   ]
 

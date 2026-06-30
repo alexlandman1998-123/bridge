@@ -11,6 +11,7 @@ import {
   Sparkles,
   TrendingDown,
   TrendingUp,
+  Users,
 } from 'lucide-react'
 import AppointmentDashboardSection from '../appointments/dashboard/AppointmentDashboardSection'
 import ActivePipelineCarousel from '../pipeline/ActivePipelineCarousel'
@@ -651,11 +652,11 @@ export function ResidentialCommandCenterGrid({
   onScheduleAppointment,
 }) {
   if (!model) return null
-  const fallbackIcons = [ArrowRight, BriefcaseBusiness, LineChart, Landmark]
+  const fallbackIcons = [ArrowRight, BriefcaseBusiness, LineChart, Landmark, Users]
   const showTopPerformers = scope !== 'agent' && !model.topPerformers?.hidden
   return (
     <ResidentialDashboardShell>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {model.kpis.map((item, index) => {
           const Icon = kpiIcons[index] || fallbackIcons[index] || FileText
           return (
