@@ -4232,8 +4232,8 @@ function LeadTypeTabs({ activeCategory = 'buyer', rows = [], onChange }) {
   }, { active: 0, buyer: 0, seller: 0, other: 0, archived: 0 })
 
   return (
-    <div className="overflow-x-auto">
-      <div className="flex min-h-11 items-center gap-2" role="tablist" aria-label="Lead category tabs">
+    <div className="w-full overflow-visible">
+      <div className="flex min-h-12 flex-wrap items-center gap-x-4 gap-y-2" role="tablist" aria-label="Lead category tabs">
         {LEAD_CATEGORY_FILTERS.map((option) => {
           const active = activeCategory === option.key
           return (
@@ -4243,7 +4243,7 @@ function LeadTypeTabs({ activeCategory = 'buyer', rows = [], onChange }) {
               role="tab"
               aria-selected={active}
               onClick={() => onChange((previous) => ({ ...previous, category: option.key }))}
-              className={`relative inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl px-3 text-sm font-semibold transition ${active ? 'text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
+              className={`relative inline-flex min-h-10 items-center gap-2 whitespace-nowrap rounded-xl px-3 text-sm font-semibold transition ${active ? 'text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
             >
               {option.label}
               <span className={`inline-flex min-h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs ${active ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
@@ -4406,6 +4406,15 @@ function getCreateLeadButtonLabel(category = 'all') {
   if (category === 'seller') return 'Create Seller Lead'
   if (category === 'other') return 'Create Other Lead'
   return 'Create Lead'
+}
+
+function buildLeadImportPath(category = '') {
+  const normalizedCategory = normalizeCanonicalLeadCategory(category, '')
+  const params = new URLSearchParams({ import: '1' })
+  if (normalizedCategory === 'buyer' || normalizedCategory === 'seller') {
+    params.set('leadCategory', normalizedCategory)
+  }
+  return `/pipeline/enquiries?${params.toString()}`
 }
 
 function CreateLeadDropdown({ activeCategory = 'all', onCreate, onImport, className = '', buttonClassName = '' }) {
@@ -6041,6 +6050,10 @@ function AgentLeadList() {
     })
   }
 
+  function openLeadImport() {
+    navigate(buildLeadImportPath(filters.category))
+  }
+
   function closeCreateLead() {
     if (creatingLead) return
     setCreateCategory('')
@@ -6154,11 +6167,11 @@ function AgentLeadList() {
             <CreateLeadDropdown
               activeCategory={filters.category}
               onCreate={openCreateLead}
-              onImport={() => navigate('/pipeline/enquiries?import=1')}
+              onImport={openLeadImport}
               className="w-full"
               buttonClassName="w-full"
             />
-            <button type="button" onClick={() => navigate('/pipeline/enquiries?import=1')} className="inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+            <button type="button" onClick={openLeadImport} className="inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
               Import
             </button>
             <button type="button" onClick={loadRows} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
@@ -6320,7 +6333,7 @@ function AgentLeadList() {
             <div className="p-5">
                 <EmptyLeadResults
                   onCreate={openCreateLead}
-                  onImport={() => navigate('/pipeline/enquiries?import=1')}
+                  onImport={openLeadImport}
                   onAdjustFilters={() => setFilters({ search: '', category: filters.category || 'buyer', stage: 'all', source: 'all', agent: 'all', dateAdded: '' })}
                 />
               </div>

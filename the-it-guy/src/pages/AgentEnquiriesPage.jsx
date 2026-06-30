@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { leadCategoryLabel, normalizeLeadCategory } from '../lib/leadCategory'
 import { processManualImportPayload } from '../services/leadSourceConnectorService'
 import {
   linkLogToContact,
@@ -127,8 +128,18 @@ function parseCsvText(text = '') {
   return rows
 }
 
-function buildLeadImportTemplateCsv() {
-  return [LEAD_IMPORT_TEMPLATE_COLUMNS, ...LEAD_IMPORT_TEMPLATE_ROWS]
+function getLockedImportCategory(value = '') {
+  const category = normalizeLeadCategory(value, '')
+  return category === 'buyer' || category === 'seller' ? category : ''
+}
+
+function buildLeadImportTemplateCsv(defaultLeadCategory = '') {
+  const lockedCategory = getLockedImportCategory(defaultLeadCategory)
+  const categoryIndex = LEAD_IMPORT_TEMPLATE_COLUMNS.indexOf('Lead Category')
+  const rows = lockedCategory
+    ? LEAD_IMPORT_TEMPLATE_ROWS.filter((row) => normalizeLeadCategory(row[categoryIndex], '') === lockedCategory)
+    : LEAD_IMPORT_TEMPLATE_ROWS
+  return [LEAD_IMPORT_TEMPLATE_COLUMNS, ...rows]
     .map((row) => row.map(csvEscape).join(','))
     .join('\n')
 }
@@ -158,6 +169,16 @@ function mapCsvRowsToImportRows(csvRows = []) {
       __rowNumber: index + 2,
     }
   }).filter((row) => Object.entries(row).some(([key, value]) => key !== '__rowNumber' && normalizeText(value)))
+}
+
+function lockImportRowCategory(row = {}, defaultLeadCategory = '') {
+  const lockedCategory = getLockedImportCategory(defaultLeadCategory)
+  if (!lockedCategory) return row
+  return {
+    ...row,
+    'Lead Category': lockedCategory,
+    leadCategory: lockedCategory,
+  }
 }
 
 function getOrganisationId(workspaceContext = {}) {
@@ -590,12 +611,14 @@ function EnquiryDetailDrawer({ enquiry, organisationId, actor, onClose, onUpdate
   )
 }
 
-function LeadImportModal({ open, organisationId, actor, onClose, onImported }) {
+function LeadImportModal({ open, organisationId, actor, defaultLeadCategory = '', onClose, onImported }) {
   const [fileName, setFileName] = useState('')
   const [rows, setRows] = useState([])
   const [error, setError] = useState('')
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState(null)
+  const lockedLeadCategory = getLockedImportCategory(defaultLeadCategory)
+  const lockedLeadCategoryLabel = lockedLeadCategory ? leadCategoryLabel(lockedLeadCategory) : ''
 
   useEffect(() => {
     if (!open) {
@@ -621,7 +644,7 @@ function LeadImportModal({ open, organisationId, actor, onClose, onImported }) {
       const parsedRows = mapCsvRowsToImportRows(parseCsvText(text))
       if (!parsedRows.length) throw new Error('No lead rows found in this CSV.')
       setFileName(file.name)
-      setRows(parsedRows)
+      setRows(parsedRows.map((row) => lockImportRowCategory(row, lockedLeadCategory)))
     } catch (fileError) {
       setFileName(file.name || '')
       setRows([])
@@ -663,8 +686,12 @@ function LeadImportModal({ open, organisationId, actor, onClose, onImported }) {
         <header className="flex items-start justify-between gap-4 border-b border-slate-200 p-5">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Bulk Upload</p>
-            <h2 className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-slate-950">Import Leads</h2>
-            <p className="mt-2 max-w-2xl text-sm text-slate-500">Upload a CSV of buyer or seller leads. Imported rows appear in this enquiry review queue and create linked lead records where possible.</p>
+            <h2 className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-slate-950">{lockedLeadCategoryLabel ? `Import ${lockedLeadCategoryLabel} Leads` : 'Import Leads'}</h2>
+            <p className="mt-2 max-w-2xl text-sm text-slate-500">
+              {lockedLeadCategoryLabel
+                ? `Upload a CSV of ${lockedLeadCategoryLabel.toLowerCase()} leads. Rows in this upload will be imported as ${lockedLeadCategoryLabel.toLowerCase()} leads.`
+                : 'Upload a CSV of buyer or seller leads. Imported rows appear in this enquiry review queue and create linked lead records where possible.'}
+            </p>
           </div>
           <button type="button" onClick={onClose} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50" aria-label="Close import modal">
             <X size={18} />
@@ -683,14 +710,18 @@ function LeadImportModal({ open, organisationId, actor, onClose, onImported }) {
           <section className="grid gap-3 lg:grid-cols-[1fr_auto_auto] lg:items-center">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <p className="text-sm font-semibold text-slate-950">{fileName || 'No CSV selected'}</p>
-              <p className="mt-1 text-xs text-slate-500">{rows.length ? `${rows.length} rows ready to import` : 'Use the template columns for the cleanest import.'}</p>
+              <p className="mt-1 text-xs text-slate-500">
+                {rows.length
+                  ? `${rows.length} ${lockedLeadCategoryLabel ? `${lockedLeadCategoryLabel.toLowerCase()} ` : ''}rows ready to import`
+                  : 'Use the template columns for the cleanest import.'}
+              </p>
             </div>
             <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
               <FileUp size={16} />
               Choose CSV
               <input type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => void handleFileChange(event)} />
             </label>
-            <button type="button" onClick={() => downloadTextFile('arch9-lead-import-template.csv', buildLeadImportTemplateCsv())} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+            <button type="button" onClick={() => downloadTextFile('arch9-lead-import-template.csv', buildLeadImportTemplateCsv(lockedLeadCategory))} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
               <Download size={16} />
               Template
             </button>
@@ -761,6 +792,7 @@ export default function AgentEnquiriesPage() {
   const [rows, setRows] = useState([])
   const [selected, setSelected] = useState(null)
   const [importOpen, setImportOpen] = useState(false)
+  const [importLeadCategory, setImportLeadCategory] = useState('')
   const [filters, setFilters] = useState({
     search: '',
     source: 'all',
@@ -807,9 +839,12 @@ export default function AgentEnquiriesPage() {
 
   useEffect(() => {
     if (searchParams.get('import') !== '1') return
+    setImportLeadCategory(getLockedImportCategory(searchParams.get('leadCategory') || searchParams.get('category')))
     setImportOpen(true)
     const nextParams = new URLSearchParams(searchParams)
     nextParams.delete('import')
+    nextParams.delete('leadCategory')
+    nextParams.delete('category')
     setSearchParams(nextParams, { replace: true })
   }, [searchParams, setSearchParams])
 
@@ -835,7 +870,7 @@ export default function AgentEnquiriesPage() {
           <p className="mt-2 max-w-3xl text-sm text-slate-500">Operational review for external lead ingestion logs, duplicates, failures, unresolved listings, and safe retries.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => setImportOpen(true)} disabled={!organisationId} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:bg-slate-300">
+          <button type="button" onClick={() => { setImportLeadCategory(''); setImportOpen(true) }} disabled={!organisationId} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:bg-slate-300">
             <FileUp size={15} />
             Import Leads
           </button>
@@ -870,6 +905,7 @@ export default function AgentEnquiriesPage() {
         open={importOpen}
         organisationId={organisationId}
         actor={actor}
+        defaultLeadCategory={importLeadCategory}
         onClose={() => setImportOpen(false)}
         onImported={loadRows}
       />

@@ -70,9 +70,15 @@ assert.match(pageSource, /Original Enquiry Listing/)
 for (const copy of ['Create Lead', 'Buyer Lead', 'Seller Lead', 'Other Lead', 'Import Leads', 'Create Buyer Lead', 'Create Seller Lead']) {
   assert.match(pageSource, new RegExp(copy), `leads page should render ${copy}`)
 }
-for (const copy of ['Buyer / Requirement', 'Seller / Property', 'LeadViewSummary', 'Lead pipeline views']) {
-  assert.match(pageSource, new RegExp(copy), `leads page should keep buyer/seller split view copy for ${copy}`)
-}
+assert.match(pageSource, /buyer-lead-workspace/, 'buyer leads should keep the residential buyer workspace shell')
+assert.match(pageSource, /\{ key: 'requirements', label: 'Requirements' \}/, 'buyer workspace should retain internal requirement state for commands and qualification')
+assert.match(pageSource, /\{ key: 'property_match', label: 'Property Match' \}/, 'buyer workspace should expose Property Match as the residential matching surface')
+assert.match(pageSource, /\{ key: 'offers', label: 'Offers' \}/, 'buyer workspace should expose Offers as the residential deal progression surface')
+assert.match(pageSource, /tabs\.filter\(\(tab\) => !\['requirements', 'tasks'\]\.includes\(tab\.key\)\)/, 'visible buyer tabs should use the current simplified residential tab row')
+assert.match(pageSource, /<BuyerLeadOverview/, 'buyer overview should remain the primary buyer workspace entry point')
+assert.match(pageSource, /<BuyerPropertyMatchPanel/, 'buyer workspace should render the property match panel')
+assert.match(pageSource, /<LeadDealProgressionPanel/, 'buyer workspace should render the offers and transactions panel')
+assert.match(pageSource, /<BuyerLeadDocumentsTab/, 'buyer workspace should render buyer documents')
 for (const copy of ['Listing Journey', 'Readiness', 'Seller Actions', 'Seller leads progress toward a listing']) {
   assert.match(pageSource, new RegExp(copy), `seller leads workspace should render seller-specific workflow copy for ${copy}`)
 }
@@ -118,8 +124,14 @@ assert.match(pageSource, /normalizeCanonicalLeadCategory\(createCategory, 'other
 assert.match(pageSource, /leadCategory: category/)
 assert.match(pageSource, /sellerPropertyAddress: category === 'seller'/)
 assert.match(pageSource, /budget: category === 'buyer'/)
+assert.match(pageSource, /buildLeadImportPath\(filters\.category\)/, 'lead list import should carry the selected buyer or seller category into bulk upload')
 assert.doesNotMatch(pageSource, /<th[^>]*>\s*Next Action\s*<\/th>/)
 assert.equal(pageSource.includes('navigate(`/pipeline/leads/${createdLead.leadId}`)'), true)
+
+const enquiriesPageSource = await fs.readFile(new URL('../src/pages/AgentEnquiriesPage.jsx', import.meta.url), 'utf8')
+assert.match(enquiriesPageSource, /searchParams\.get\('leadCategory'\)/, 'enquiries page should read leadCategory import intent')
+assert.match(enquiriesPageSource, /lockImportRowCategory/, 'bulk upload should lock rows to the requested buyer or seller import category')
+assert.match(enquiriesPageSource, /Import \$\{lockedLeadCategoryLabel\} Leads/, 'bulk upload modal should show the selected buyer or seller import mode')
 
 const server = await createServer({
   root: process.cwd(),
