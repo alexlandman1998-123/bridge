@@ -67,7 +67,14 @@ export function resolveTransactionWorkspaceProfile({ transaction = {}, unit = {}
         contextLabel: 'DEVELOPMENT TRANSACTION',
       },
       menuAliases: {
-        cancellation: 'transfer',
+        activity: 'overview',
+        alterations: 'snags_alterations',
+        bond: 'workflows',
+        cancellation: 'workflows',
+        financials: 'workflows',
+        snags: 'snags_alterations',
+        tasks: 'workflows',
+        transfer: 'workflows',
         ...(normalizedRole === 'agent' ? { bond: 'financials' } : {}),
       },
       features: {
@@ -154,6 +161,29 @@ export function buildTransactionWorkspaceMenuItems(profile = {}, options = {}) {
       { id: 'activity', label: 'Activity', meta: `${activityCount}` },
       ...(hasDeveloperModules && alterationEnabled ? [{ id: 'alterations', label: 'Alterations', meta: `${alterationCount}` }] : []),
       ...(hasDeveloperModules && snagEnabled ? [{ id: 'snags', label: 'Snags', meta: `${snagCount}` }] : []),
+    ]
+  }
+
+  if (hasDeveloperModules) {
+    return [
+      {
+        id: 'overview',
+        label: 'Overview',
+        meta: isRegisteredUnit ? 'Unit summary' : labels.overviewMeta || 'Transaction summary',
+      },
+      {
+        id: 'workflows',
+        label: 'Workflows',
+        meta: mainStageLabel,
+      },
+      { id: 'onboarding', label: labels.onboardingTab || 'Buyer / Purchaser', meta: onboardingStatus },
+      { id: 'documents', label: 'Documents', meta: `${documentsCount} files` },
+      { id: 'handover', label: 'Handover', meta: handoverMeta },
+      {
+        id: 'snags_alterations',
+        label: 'Snags & Alterations',
+        meta: `${snagEnabled ? snagCount : 0} / ${alterationEnabled ? alterationCount : 0}`,
+      },
     ]
   }
 

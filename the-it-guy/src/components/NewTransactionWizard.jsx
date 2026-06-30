@@ -361,16 +361,35 @@ function getDevelopmentTeamDefaultOption({ development, roleType, partnerOptions
     return null
   }
 
+  const defaultRelationshipId =
+    roleType === 'agent'
+      ? defaults.defaultAgentRelationshipId || defaults.default_agent_relationship_id
+      : roleType === 'transfer_attorney'
+        ? defaults.defaultTransferAttorneyRelationshipId || defaults.default_transfer_attorney_relationship_id
+        : defaults.defaultBondOriginatorRelationshipId || defaults.default_bond_originator_relationship_id
+  const defaultPreferredPartnerId =
+    roleType === 'agent'
+      ? defaults.defaultAgentPreferredPartnerId || defaults.default_agent_preferred_partner_id
+      : roleType === 'transfer_attorney'
+        ? defaults.defaultTransferAttorneyPreferredPartnerId || defaults.default_transfer_attorney_preferred_partner_id
+        : defaults.defaultBondOriginatorPreferredPartnerId || defaults.default_bond_originator_preferred_partner_id
+
   const defaultOrganisationId = normalizeSearchKey(defaultMember.organisationId)
   const defaultEmail = normalizeSearchKey(defaultMember.email)
   const defaultCompanyName = normalizeSearchKey(defaultMember.companyName)
+  const defaultRelationshipKey = normalizeSearchKey(defaultRelationshipId)
+  const defaultPreferredPartnerKey = normalizeSearchKey(defaultPreferredPartnerId)
   const matchingConnectedPartner = partnerOptions.find((partner) => {
+    const partnerRelationshipId = normalizeSearchKey(partner.relationshipId || partner.partnerRelationshipId)
+    const preferredPartnerId = normalizeSearchKey(partner.preferredPartnerId || partner.preferred_partner_id)
     const partnerOrganisationId = normalizeSearchKey(
       partner.organisationId || partner.partnerOrganisationId || partner.partnerOrganizationId,
     )
     const partnerEmail = normalizeSearchKey(partner.email)
     const partnerCompanyName = normalizeSearchKey(partner.companyName)
     return (
+      (defaultRelationshipKey && partnerRelationshipId && defaultRelationshipKey === partnerRelationshipId) ||
+      (defaultPreferredPartnerKey && preferredPartnerId && defaultPreferredPartnerKey === preferredPartnerId) ||
       (defaultOrganisationId && partnerOrganisationId && defaultOrganisationId === partnerOrganisationId) ||
       (defaultEmail && partnerEmail && defaultEmail === partnerEmail) ||
       (defaultCompanyName && partnerCompanyName && defaultCompanyName === partnerCompanyName)
@@ -382,8 +401,15 @@ function getDevelopmentTeamDefaultOption({ development, roleType, partnerOptions
         ...matchingConnectedPartner,
         source: matchingConnectedPartner.source || 'connected_partner',
         defaultSource: 'development_default',
+        preferredPartnerId: defaultPreferredPartnerId || matchingConnectedPartner.preferredPartnerId || null,
+        relationshipId: defaultRelationshipId || matchingConnectedPartner.relationshipId || null,
       }
-    : defaultMember
+    : {
+        ...defaultMember,
+        preferredPartnerId: defaultPreferredPartnerId || null,
+        relationshipId: defaultRelationshipId || null,
+        defaultSource: source === 'developer_partner_default' ? 'developer_partner_default' : 'development_default',
+      }
 }
 
 function partnerOptionToRolePlayerSelection(roleType, partner, selectionSource = '') {
@@ -400,7 +426,7 @@ function partnerOptionToRolePlayerSelection(roleType, partner, selectionSource =
     roleType,
     source: resolvedSelectionSource,
     selectionSource: resolvedSelectionSource,
-    preferredPartnerId: null,
+    preferredPartnerId: partner.preferredPartnerId || partner.preferred_partner_id || null,
     partnerRelationshipId: partner.relationshipId || null,
     partnerConnectionId: partner.connectionId || null,
     partnerOrganisationId:

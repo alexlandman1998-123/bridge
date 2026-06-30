@@ -14,6 +14,11 @@ import {
   isWorkflowActionAllowedForRole,
 } from './workflowActionAvailabilityService.js'
 import {
+  getTransactionWorkflowGate,
+  isGateWorkflowAction,
+  isWorkflowGateSatisfied,
+} from '../workflows/transactionWorkflowGates.js'
+import {
   assertNoLegacyLifecycleFieldWrites,
 } from './transactionStageCompatibilityService.js'
 import { logTransactionWorkflowEvent } from './workflowEventService.js'
@@ -49,6 +54,18 @@ function buildActionErrorMessage(blockers = []) {
     .map((blocker) => normalizeText(blocker?.message))
     .filter(Boolean)
     .join(' ')
+}
+
+function buildOutOfSequenceWarning(incompletePredecessors = []) {
+  if (!incompletePredecessors.length) return null
+  return {
+    code: 'WORKFLOW_ACTION_OUT_OF_SEQUENCE',
+    message:
+      'This action is out of sequence. It will be recorded, but it will not move the transaction stage forward until the required gate is satisfied.',
+    severity: 'warning',
+    outOfSequence: true,
+    incompletePredecessors,
+  }
 }
 
 function validateRegistrationPayload(transaction = {}, payload = {}) {
@@ -89,7 +106,70 @@ function validateRegistrationPayload(transaction = {}, payload = {}) {
   return blockers
 }
 
-function validateWorkflowAction(descriptor, state = {}, rollup = {}, payload = {}, actorRole = 'system') {
+function buildStepPredecessorBlockers(descriptor = {}, state = {}) {
+  const workflowSteps = state.stepsByWorkflowKey?.[descriptor.workflowKey] || []
+  const targetStep = workflowSteps.find((step) => step.step_key === descriptor.stepKey) || null
+  if (!targetStep || descriptor.targetStatus !== 'complete') return []
+
+  const requiredStepKeys = new Set((descriptor.requires || []).map((stepKey) => normalizeText(stepKey)).filter(Boolean))
+  return workflowSteps
+    .filter((step) => {
+      const isExplicitRequirement = requiredStepKeys.has(step.step_key)
+      const isPriorBlockingStep =
+        Number(step.sort_order || 0) < Number(targetStep.sort_order || 0) &&
+        step.required !== false &&
+        step.blocking === true
+      return (isExplicitRequirement || isPriorBlockingStep) && !isCompleteStatus(step.status)
+    })
+    .map((step) =>
+      buildBlockerFromStep(
+        {
+          workflowKey: descriptor.workflowKey,
+          label: getTransactionWorkflowDefinition(descriptor.workflowKey)?.label || descriptor.workflowKey,
+        },
+        {
+          stepKey: step.step_key,
+          stepLabel: step.step_label,
+          ownerRole: step.owner_role,
+          requiredEvidence: [],
+        },
+      ),
+    )
+}
+
+function buildSoftGatePredecessorBlockers(descriptor = {}, state = {}, rollup = {}) {
+  return (descriptor.softPrerequisiteGates || [])
+    .filter((gateKey) =>
+      !isWorkflowGateSatisfied(gateKey, {
+        ...state,
+        rollup,
+        parentStage: rollup?.parentStage,
+      }),
+    )
+    .map((gateKey) => {
+      const gate = getTransactionWorkflowGate(gateKey)
+      return {
+        code: `GATE_${normalizeText(gateKey).toUpperCase()}_NOT_SATISFIED`,
+        message: `${gate?.label || gateKey} has not been satisfied yet.`,
+        severity: 'warning',
+        ownerRole: descriptor.ownerRole || 'system',
+        workflowKey: descriptor.workflowKey,
+        stepKey: descriptor.stepKey || undefined,
+        requiredEvidence: gate?.requiredEvidence || [],
+        gateKey,
+      }
+    })
+}
+
+function collectOutOfSequencePredecessors(descriptor = {}, state = {}, rollup = {}) {
+  return dedupeBlockers([
+    ...buildStepPredecessorBlockers(descriptor, state),
+    ...buildSoftGatePredecessorBlockers(descriptor, state, rollup),
+  ])
+}
+
+function validateWorkflowAction(descriptor, state = {}, rollup = {}, payload = {}, actorRole = 'system', options = {}) {
+  const gateAction = options.gateAction === true
   if (!descriptor) {
     return [
       {
@@ -173,6 +253,7 @@ function validateWorkflowAction(descriptor, state = {}, rollup = {}, payload = {
   }
 
   if (
+    gateAction &&
     descriptor.prerequisiteParentStage &&
     rollup?.parentStage === descriptor.prerequisiteParentStage &&
     Array.isArray(rollup.blockers) &&
@@ -190,29 +271,8 @@ function validateWorkflowAction(descriptor, state = {}, rollup = {}, payload = {
     }
   }
 
-  if (descriptor.targetStatus === 'complete') {
-    const blockers = workflowSteps
-      .filter((step) =>
-        Number(step.sort_order || 0) < Number(targetStep.sort_order || 0) &&
-        step.required !== false &&
-        step.blocking === true &&
-        !isCompleteStatus(step.status),
-      )
-      .map((step) =>
-        buildBlockerFromStep(
-          {
-            workflowKey: descriptor.workflowKey,
-            label: getTransactionWorkflowDefinition(descriptor.workflowKey)?.label || descriptor.workflowKey,
-          },
-          {
-            stepKey: step.step_key,
-            stepLabel: step.step_label,
-            ownerRole: step.owner_role,
-            requiredEvidence: [],
-          },
-        ),
-      )
-    return dedupeBlockers(blockers)
+  if (gateAction) {
+    return collectOutOfSequencePredecessors(descriptor, state, rollup)
   }
 
   return []
@@ -325,12 +385,20 @@ export async function runWorkflowAction({
     activeWorkflow: currentRollup?.workflows?.[currentRollup?.activeWorkflowKey] || null,
     workflows: currentRollup?.workflows || state.workflowMap,
   })
+  const gateAction = isGateWorkflowAction(descriptor)
+  const incompletePredecessors = descriptor
+    ? collectOutOfSequencePredecessors(descriptor, state, currentRollup)
+    : []
+  const outOfSequenceWarning = !gateAction
+    ? buildOutOfSequenceWarning(incompletePredecessors)
+    : null
   const blockers = validateWorkflowAction(
     descriptor,
     state,
     currentRollup,
     payload,
     normalizeRoleType(actorRole || 'developer'),
+    { gateAction },
   )
   if (blockers.length) {
     await logTransactionWorkflowEvent(
@@ -344,6 +412,7 @@ export async function runWorkflowAction({
         newStatus: currentRollup.parentStatus,
         payload: {
           blockers,
+          gateAction,
           source: payload.source || 'user_action',
         },
         source: payload.source || 'user_action',
@@ -436,6 +505,16 @@ export async function runWorkflowAction({
       newStatus: descriptor?.targetStatus || currentRollup.parentStatus,
       payload: {
         payload,
+        actorRole: normalizeRoleType(actorRole || 'developer'),
+        organisationId: state.transaction?.organisation_id || state.transaction?.organisationId || null,
+        out_of_sequence: Boolean(outOfSequenceWarning),
+        expected_predecessors: [
+          ...(descriptor?.expectedPredecessors || []),
+          ...incompletePredecessors.map((blocker) => blocker.stepLabel || blocker.message || blocker.gateKey).filter(Boolean),
+        ],
+        incomplete_predecessors: incompletePredecessors,
+        out_of_sequence_reason: normalizeText(payload.outOfSequenceReason || payload.out_of_sequence_reason || payload.reason) || null,
+        action_context: descriptor?.actionContext || (gateAction ? 'gate_action' : 'task_update'),
         source: payload.source || 'user_action',
       },
       source: payload.source || 'user_action',
@@ -461,6 +540,8 @@ export async function runWorkflowAction({
       actionKey: normalizeText(actionKey).toUpperCase(),
       workflowKey: descriptor?.workflowKey || null,
       stepKey: descriptor?.stepKey || null,
+      gateAction,
+      outOfSequence: Boolean(outOfSequenceWarning),
     },
   })
 
@@ -469,6 +550,9 @@ export async function runWorkflowAction({
     allowed: true,
     blocked: false,
     actionKey: normalizeText(actionKey).toUpperCase(),
+    warning: outOfSequenceWarning,
+    warnings: outOfSequenceWarning ? [outOfSequenceWarning] : [],
+    outOfSequence: Boolean(outOfSequenceWarning),
     rollup: recomputed.rollup,
     compatibility: recomputed.compatibility,
   }

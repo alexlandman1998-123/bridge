@@ -106,7 +106,7 @@ function TransactionWorkspaceHeader({
       <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-28 rounded-t-[28px] bg-[linear-gradient(180deg,rgba(53,84,108,0.08)_0%,rgba(53,84,108,0)_100%)]" />
 
       <div className="relative flex flex-col gap-4">
-        <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_auto] 2xl:items-start">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
           <div className="min-w-0">
             {contextLabel ? (
               <span className="inline-flex items-center rounded-full border border-[#d9e4ef] bg-white/90 px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#61758d] shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
@@ -136,7 +136,7 @@ function TransactionWorkspaceHeader({
           </div>
 
           {visibleActions.length ? (
-            <div className="no-print flex flex-wrap items-center gap-3 2xl:justify-end">
+            <div className="no-print flex flex-wrap items-center gap-3 lg:justify-end lg:self-start">
           {visibleActions.map((action) => {
             if (action.as === 'badge') {
               return (

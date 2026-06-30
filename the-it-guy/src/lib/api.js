@@ -431,12 +431,21 @@ const DEFAULT_DEVELOPMENT_SETTINGS = {
     conveyancers: [],
     bondOriginators: [],
     developers: [],
-    rolePlayerDefaults: {
-      defaultAgentSource: 'first_agent',
-      multipleAgentsAllowed: true,
+      rolePlayerDefaults: {
+        defaultAgentSource: 'first_agent',
+        defaultAgentRelationshipId: '',
+        defaultAgentPreferredPartnerId: '',
+        defaultAgentName: '',
+        multipleAgentsAllowed: true,
       developerSellingDirectly: false,
       defaultTransferAttorneySource: 'first_conveyancer',
       defaultBondOriginatorSource: 'first_bond_originator',
+      defaultTransferAttorneyRelationshipId: '',
+      defaultTransferAttorneyPreferredPartnerId: '',
+      defaultTransferAttorneyName: '',
+      defaultBondOriginatorRelationshipId: '',
+      defaultBondOriginatorPreferredPartnerId: '',
+      defaultBondOriginatorName: '',
       buyerAppointedBondOriginatorAllowed: true,
       buyerAppointedBondOriginatorRequiresApproval: true,
       autoInviteSelectedBondOriginator: false,
@@ -617,6 +626,31 @@ const DEFAULT_DEVELOPMENT_BOND_CONFIG = {
   requiredDocuments: BOND_CLOSEOUT_DOCUMENT_DEFINITIONS.map((item) => ({ ...item })),
 }
 
+const DEFAULT_DEVELOPMENT_SELLER_DETAILS = {
+  mode: 'custom',
+  entityType: 'company',
+  legalName: '',
+  tradingName: '',
+  registrationNumber: '',
+  vatNumber: '',
+  registeredAddress: '',
+  postalAddress: '',
+  email: '',
+  phone: '',
+  vatTreatment: '',
+  notes: '',
+  signatories: [
+    {
+      fullName: '',
+      role: '',
+      idNumber: '',
+      email: '',
+      phone: '',
+      signingCapacity: '',
+    },
+  ],
+}
+
 const DEFAULT_DEVELOPMENT_PROFILE = {
   code: '',
   location: '',
@@ -640,6 +674,7 @@ const DEFAULT_DEVELOPMENT_PROFILE = {
   sitePlans: [],
   imageLinks: [],
   supportingDocuments: [],
+  sellerDetails: DEFAULT_DEVELOPMENT_SELLER_DETAILS,
   marketingContent: {
     listingOverview: {
       listingTitle: '',
@@ -2120,7 +2155,43 @@ function normalizeDevelopmentProfile(rawProfile = {}) {
     sitePlans: normalizeListValue(rawProfile.sitePlans || rawProfile.site_plans),
     imageLinks: normalizeListValue(rawProfile.imageLinks || rawProfile.image_links),
     supportingDocuments: normalizeListValue(rawProfile.supportingDocuments || rawProfile.supporting_documents),
+    sellerDetails: normalizeDevelopmentSellerDetails(rawProfile.sellerDetails || rawProfile.seller_details),
     marketingContent: normalizeMarketingContent(rawProfile.marketingContent ?? rawProfile.marketing_content),
+  }
+}
+
+function normalizeDevelopmentSellerDetails(rawSellerDetails = {}) {
+  const source = rawSellerDetails && typeof rawSellerDetails === 'object' ? rawSellerDetails : {}
+  const rawSignatories = Array.isArray(source.signatories || source.authorisedSignatories || source.authorizedSignatories)
+    ? source.signatories || source.authorisedSignatories || source.authorizedSignatories
+    : []
+  const fallbackSignatory =
+    source.signatory && typeof source.signatory === 'object'
+      ? source.signatory
+      : rawSignatories[0] || DEFAULT_DEVELOPMENT_SELLER_DETAILS.signatories[0]
+  const signatories = (rawSignatories.length ? rawSignatories : [fallbackSignatory]).map((item = {}) => ({
+    fullName: normalizeTextValue(item.fullName || item.full_name || item.name),
+    role: normalizeTextValue(item.role || item.title),
+    idNumber: normalizeTextValue(item.idNumber || item.id_number || item.identityNumber || item.identity_number),
+    email: normalizeEmailAddress(item.email),
+    phone: normalizeTextValue(item.phone || item.mobile),
+    signingCapacity: normalizeTextValue(item.signingCapacity || item.signing_capacity || item.capacity),
+  }))
+
+  return {
+    mode: normalizeTextValue(source.mode) || DEFAULT_DEVELOPMENT_SELLER_DETAILS.mode,
+    entityType: normalizeTextValue(source.entityType || source.entity_type) || DEFAULT_DEVELOPMENT_SELLER_DETAILS.entityType,
+    legalName: normalizeTextValue(source.legalName || source.legal_name || source.name),
+    tradingName: normalizeTextValue(source.tradingName || source.trading_name),
+    registrationNumber: normalizeTextValue(source.registrationNumber || source.registration_number),
+    vatNumber: normalizeTextValue(source.vatNumber || source.vat_number),
+    registeredAddress: normalizeTextValue(source.registeredAddress || source.registered_address || source.address),
+    postalAddress: normalizeTextValue(source.postalAddress || source.postal_address),
+    email: normalizeEmailAddress(source.email),
+    phone: normalizeTextValue(source.phone || source.mobile),
+    vatTreatment: normalizeTextValue(source.vatTreatment || source.vat_treatment),
+    notes: normalizeTextValue(source.notes),
+    signatories: signatories.length ? signatories : [{ ...DEFAULT_DEVELOPMENT_SELLER_DETAILS.signatories[0] }],
   }
 }
 
@@ -2280,7 +2351,22 @@ const TRANSACTION_HANDOVER_SELECT = `
   updated_at
 `
 
-const DISCUSSION_VISIBILITY_VALUES = ['shared', 'internal', 'client_safe']
+const DISCUSSION_VISIBILITY_VALUES = [
+  'shared',
+  'internal',
+  'client_safe',
+  'shared_transaction',
+  'internal_only',
+  'client_visible',
+  'buyer_visible',
+  'attorney_visible',
+  'bond_originator_visible',
+  'developer_visible',
+]
+const TRANSACTION_DISCUSSION_COLUMNS =
+  'id, transaction_id, unit_id, development_id, organisation_id, author_user_id, author_name, author_role, author_organisation_name, visibility_scope, update_type, comment_text, related_entity_type, related_entity_id, attachment_ids, is_system_generated, created_at, updated_at'
+const TRANSACTION_DISCUSSION_LEGACY_COLUMNS =
+  'id, transaction_id, author_name, author_role, comment_text, created_at'
 
 function parseDiscussionMetadata(rawText) {
   const sourceText = String(rawText || '').trim()
@@ -2295,10 +2381,15 @@ function parseDiscussionMetadata(rawText) {
   const typeTags = new Set(DISCUSSION_TYPES)
   const visibilityMap = {
     shared: 'shared',
+    shared_transaction: 'shared_transaction',
     internal: 'internal',
     internal_only: 'internal',
     client_safe: 'client_safe',
     client_visible: 'client_safe',
+    buyer_visible: 'buyer_visible',
+    attorney_visible: 'attorney_visible',
+    bond_originator_visible: 'bond_originator_visible',
+    developer_visible: 'developer_visible',
   }
 
   let remaining = sourceText
@@ -2340,7 +2431,15 @@ function normalizeDiscussionVisibility(value, fallback = 'shared') {
   const normalized = String(value || '')
     .trim()
     .toLowerCase()
-  return DISCUSSION_VISIBILITY_VALUES.includes(normalized) ? normalized : fallback
+  if (!DISCUSSION_VISIBILITY_VALUES.includes(normalized)) {
+    return fallback
+  }
+  if (normalized === 'internal_only') return 'internal'
+  if (normalized === 'client_visible' || normalized === 'buyer_visible') return 'client_safe'
+  if (['shared_transaction', 'attorney_visible', 'bond_originator_visible', 'developer_visible'].includes(normalized)) {
+    return 'shared'
+  }
+  return normalized
 }
 
 function getDefaultTrustInvestmentForm({ developmentId = null, unitId = null, transaction = null, buyer = null } = {}) {
@@ -2699,10 +2798,20 @@ async function fetchDevelopmentProfile(client, developmentId) {
   let profileQuery = await client
     .from('development_profiles')
     .select(
-      'development_id, code, location, suburb, city, province, country, address, formatted_address, street_address, postal_code, latitude, longitude, google_place_id, description, status, developer_company, launch_date, expected_completion_date, plans, site_plans, image_links, supporting_documents, marketing_content',
+      'development_id, code, location, suburb, city, province, country, address, formatted_address, street_address, postal_code, latitude, longitude, google_place_id, description, status, developer_company, launch_date, expected_completion_date, plans, site_plans, image_links, supporting_documents, seller_details, marketing_content',
     )
     .eq('development_id', developmentId)
     .maybeSingle()
+
+  if (profileQuery.error && isMissingColumnError(profileQuery.error, 'seller_details')) {
+    profileQuery = await client
+      .from('development_profiles')
+      .select(
+        'development_id, code, location, suburb, city, province, country, address, formatted_address, street_address, postal_code, latitude, longitude, google_place_id, description, status, developer_company, launch_date, expected_completion_date, plans, site_plans, image_links, supporting_documents, marketing_content',
+      )
+      .eq('development_id', developmentId)
+      .maybeSingle()
+  }
 
   if (
     profileQuery.error &&
@@ -3628,7 +3737,7 @@ function normalizeDevelopmentRolePlayerDefaults(value = {}) {
     DEFAULT_DEVELOPMENT_SETTINGS.stakeholderTeams.rolePlayerDefaults.developerSellingDirectly
   const defaultAgentSource = normalizeDevelopmentSettingChoice(
     source.defaultAgentSource || source.default_agent_source,
-    ['first_agent', 'none'],
+    ['first_agent', 'developer_partner_default', 'none'],
     developerSellingDirectly
       ? 'none'
       : DEFAULT_DEVELOPMENT_SETTINGS.stakeholderTeams.rolePlayerDefaults.defaultAgentSource,
@@ -3639,12 +3748,12 @@ function normalizeDevelopmentRolePlayerDefaults(value = {}) {
     DEFAULT_DEVELOPMENT_SETTINGS.stakeholderTeams.rolePlayerDefaults.multipleAgentsAllowed
   const defaultTransferAttorneySource = normalizeDevelopmentSettingChoice(
     source.defaultTransferAttorneySource || source.default_transfer_attorney_source,
-    ['first_conveyancer', 'none'],
+    ['first_conveyancer', 'developer_partner_default', 'none'],
     DEFAULT_DEVELOPMENT_SETTINGS.stakeholderTeams.rolePlayerDefaults.defaultTransferAttorneySource,
   )
   const defaultBondOriginatorSource = normalizeDevelopmentSettingChoice(
     source.defaultBondOriginatorSource || source.default_bond_originator_source,
-    ['first_bond_originator', 'none'],
+    ['first_bond_originator', 'developer_partner_default', 'none'],
     DEFAULT_DEVELOPMENT_SETTINGS.stakeholderTeams.rolePlayerDefaults.defaultBondOriginatorSource,
   )
   const buyerAppointedBondOriginatorAllowed =
@@ -3662,10 +3771,35 @@ function normalizeDevelopmentRolePlayerDefaults(value = {}) {
 
   return {
     defaultAgentSource: developerSellingDirectly ? 'none' : defaultAgentSource,
+    defaultAgentRelationshipId: normalizeTextValue(
+      source.defaultAgentRelationshipId || source.default_agent_relationship_id,
+    ),
+    defaultAgentPreferredPartnerId: normalizeTextValue(
+      source.defaultAgentPreferredPartnerId || source.default_agent_preferred_partner_id,
+    ),
+    defaultAgentName: normalizeTextValue(source.defaultAgentName || source.default_agent_name),
     multipleAgentsAllowed: Boolean(multipleAgentsAllowed) && !developerSellingDirectly,
     developerSellingDirectly: Boolean(developerSellingDirectly),
     defaultTransferAttorneySource,
     defaultBondOriginatorSource,
+    defaultTransferAttorneyRelationshipId: normalizeTextValue(
+      source.defaultTransferAttorneyRelationshipId || source.default_transfer_attorney_relationship_id,
+    ),
+    defaultTransferAttorneyPreferredPartnerId: normalizeTextValue(
+      source.defaultTransferAttorneyPreferredPartnerId || source.default_transfer_attorney_preferred_partner_id,
+    ),
+    defaultTransferAttorneyName: normalizeTextValue(
+      source.defaultTransferAttorneyName || source.default_transfer_attorney_name,
+    ),
+    defaultBondOriginatorRelationshipId: normalizeTextValue(
+      source.defaultBondOriginatorRelationshipId || source.default_bond_originator_relationship_id,
+    ),
+    defaultBondOriginatorPreferredPartnerId: normalizeTextValue(
+      source.defaultBondOriginatorPreferredPartnerId || source.default_bond_originator_preferred_partner_id,
+    ),
+    defaultBondOriginatorName: normalizeTextValue(
+      source.defaultBondOriginatorName || source.default_bond_originator_name,
+    ),
     buyerAppointedBondOriginatorAllowed: Boolean(buyerAppointedBondOriginatorAllowed),
     buyerAppointedBondOriginatorRequiresApproval:
       Boolean(buyerAppointedBondOriginatorAllowed) &&
@@ -9095,23 +9229,36 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
 function normalizeTransactionCommentRow(row, options = {}) {
   const role = normalizeRoleType(row?.author_role || 'developer')
   const metadata = parseDiscussionMetadata(row?.comment_text || '')
-  const visibility = normalizeDiscussionVisibility(options.visibility, metadata.visibility)
+  const visibility = normalizeDiscussionVisibility(options.visibility || row?.visibility_scope, metadata.visibility)
+  const rowUpdateType = String(row?.update_type || '').trim().toLowerCase()
   const discussionType = DISCUSSION_TYPES.includes(options.discussionType)
     ? options.discussionType
+    : DISCUSSION_TYPES.includes(rowUpdateType)
+      ? rowUpdateType
     : metadata.discussionType
   const commentBody = String((options.commentBody ?? metadata.body ?? row?.comment_text) || '').trim()
 
   return {
     id: row?.id || null,
     transactionId: row?.transaction_id || null,
+    unitId: row?.unit_id || null,
+    developmentId: row?.development_id || null,
+    organisationId: row?.organisation_id || null,
+    authorUserId: row?.author_user_id || null,
     authorName: row?.author_name || 'Samlin Team',
     authorRole: role,
     authorRoleLabel: TRANSACTION_ROLE_LABELS[role] || role,
+    authorOrganisationName: row?.author_organisation_name || '',
     commentText: row?.comment_text || commentBody,
     commentBody: commentBody || row?.comment_text || '',
     discussionType,
     visibility,
+    relatedEntityType: row?.related_entity_type || null,
+    relatedEntityId: row?.related_entity_id || null,
+    attachmentIds: Array.isArray(row?.attachment_ids) ? row.attachment_ids : [],
+    isSystemGenerated: Boolean(row?.is_system_generated || discussionType === 'system'),
     createdAt: row?.created_at || null,
+    updatedAt: row?.updated_at || row?.created_at || null,
   }
 }
 
@@ -16865,6 +17012,7 @@ export async function saveDevelopmentDetails(developmentId, input = {}, { allowN
     site_plans: normalizeListValue(input.sitePlans),
     image_links: normalizeListValue(input.imageLinks),
     supporting_documents: normalizeListValue(input.supportingDocuments),
+    seller_details: normalizeDevelopmentSellerDetails(input.sellerDetails || input.seller_details),
   }
 
   if (input.marketingContent !== undefined) {
@@ -16875,6 +17023,15 @@ export async function saveDevelopmentDetails(developmentId, input = {}, { allowN
     table: 'development_profiles',
     payload: profilePayload,
   })
+
+  if (profileResult.error && isMissingColumnError(profileResult.error, 'seller_details')) {
+    const fallbackPayload = { ...profilePayload }
+    delete fallbackPayload.seller_details
+    profileResult = await upsertByDevelopmentIdWithFallback(client, {
+      table: 'development_profiles',
+      payload: fallbackPayload,
+    })
+  }
 
   const modernProfileColumns = [
     'address',
@@ -28259,6 +28416,35 @@ export async function fetchUnitDetail(unitId) {
     return null
   }
 
+  let developmentProfile = null
+  try {
+    developmentProfile = await fetchDevelopmentProfile(client, unit.development_id)
+  } catch (profileError) {
+    if (!isMissingTableError(profileError, 'development_profiles') && !isPermissionDeniedError(profileError)) {
+      throw profileError
+    }
+  }
+
+  if (developmentProfile) {
+    unit = {
+      ...unit,
+      development: {
+        ...(unit.development || {}),
+        profile: developmentProfile,
+        developer_company: developmentProfile.developerCompany || unit.development?.developer_company || '',
+        address: developmentProfile.address || unit.development?.address || '',
+        formatted_address: developmentProfile.formattedAddress || unit.development?.formatted_address || '',
+        street_address: developmentProfile.streetAddress || unit.development?.street_address || '',
+        suburb: developmentProfile.suburb || unit.development?.suburb || '',
+        city: developmentProfile.city || unit.development?.city || '',
+        province: developmentProfile.province || unit.development?.province || '',
+        country: developmentProfile.country || unit.development?.country || '',
+        sellerDetails: developmentProfile.sellerDetails || null,
+        seller_details: developmentProfile.sellerDetails || null,
+      },
+    }
+  }
+
   timer.mark('transaction_query_start')
   const transaction = await fetchActiveTransactionForUnit(client, resolvedUnitId)
   timer.mark('transaction_query_end', { hasTransaction: Boolean(transaction?.id) })
@@ -31067,12 +31253,37 @@ async function loadSharedDiscussion(
     return []
   }
 
-  const discussionQuery = await client
+  let discussionQuery = await client
     .from('transaction_comments')
-    .select('id, transaction_id, author_name, author_role, comment_text, created_at')
+    .select(TRANSACTION_DISCUSSION_COLUMNS)
     .eq('transaction_id', transactionId)
     .order('created_at', { ascending: false })
     .limit(limit || 250)
+
+  if (
+    discussionQuery.error &&
+    [
+      'unit_id',
+      'development_id',
+      'organisation_id',
+      'author_user_id',
+      'author_organisation_name',
+      'visibility_scope',
+      'update_type',
+      'related_entity_type',
+      'related_entity_id',
+      'attachment_ids',
+      'is_system_generated',
+      'updated_at',
+    ].some((column) => isMissingColumnError(discussionQuery.error, column))
+  ) {
+    discussionQuery = await client
+      .from('transaction_comments')
+      .select(TRANSACTION_DISCUSSION_LEGACY_COLUMNS)
+      .eq('transaction_id', transactionId)
+      .order('created_at', { ascending: false })
+      .limit(limit || 250)
+  }
 
   let rows = []
   if (discussionQuery.error) {
@@ -31115,8 +31326,18 @@ export async function addTransactionDiscussionComment({
   transactionId,
   authorName,
   authorRole = 'developer',
+  authorUserId = null,
+  authorOrganisationName = '',
   commentText,
   unitId = null,
+  developmentId = null,
+  organisationId = null,
+  visibilityScope = 'shared_transaction',
+  updateType = null,
+  relatedEntityType = null,
+  relatedEntityId = null,
+  attachmentIds = [],
+  isSystemGenerated = false,
   client: scopedClient = null,
 }) {
   const client = scopedClient || requireClient()
@@ -31128,17 +31349,65 @@ export async function addTransactionDiscussionComment({
 
   const normalizedRole = normalizeRoleType(authorRole)
   const normalizedAuthorName = normalizeNullableText(authorName) || TRANSACTION_ROLE_LABELS[normalizedRole] || 'Samlin Team'
+  const parsedDiscussion = parseDiscussionMetadata(normalizedText)
+  const normalizedUpdateType = DISCUSSION_TYPES.includes(String(updateType || '').trim().toLowerCase())
+    ? String(updateType || '').trim().toLowerCase()
+    : parsedDiscussion.discussionType || 'operational'
+  const normalizedVisibilityScope =
+    String(visibilityScope || '').trim().toLowerCase() || 'shared_transaction'
 
-  const insertResult = await client
+  const richPayload = {
+    transaction_id: transactionId,
+    unit_id: unitId || null,
+    development_id: developmentId || null,
+    organisation_id: organisationId || null,
+    author_user_id: authorUserId || null,
+    author_name: normalizedAuthorName,
+    author_role: normalizedRole,
+    author_organisation_name: normalizeNullableText(authorOrganisationName),
+    visibility_scope: normalizedVisibilityScope,
+    update_type: normalizedUpdateType,
+    comment_text: normalizedText,
+    related_entity_type: normalizeNullableText(relatedEntityType),
+    related_entity_id: relatedEntityId || null,
+    attachment_ids: Array.isArray(attachmentIds) ? attachmentIds : [],
+    is_system_generated: Boolean(isSystemGenerated || normalizedUpdateType === 'system'),
+  }
+  const legacyPayload = {
+    transaction_id: transactionId,
+    author_name: normalizedAuthorName,
+    author_role: normalizedRole,
+    comment_text: normalizedText,
+  }
+
+  let insertResult = await client
     .from('transaction_comments')
-    .insert({
-      transaction_id: transactionId,
-      author_name: normalizedAuthorName,
-      author_role: normalizedRole,
-      comment_text: normalizedText,
-    })
-    .select('id, transaction_id, author_name, author_role, comment_text, created_at')
+    .insert(richPayload)
+    .select(TRANSACTION_DISCUSSION_COLUMNS)
     .single()
+
+  if (
+    insertResult.error &&
+    [
+      'unit_id',
+      'development_id',
+      'organisation_id',
+      'author_user_id',
+      'author_organisation_name',
+      'visibility_scope',
+      'update_type',
+      'related_entity_type',
+      'related_entity_id',
+      'attachment_ids',
+      'is_system_generated',
+    ].some((column) => isMissingColumnError(insertResult.error, column))
+  ) {
+    insertResult = await client
+      .from('transaction_comments')
+      .insert(legacyPayload)
+      .select(TRANSACTION_DISCUSSION_LEGACY_COLUMNS)
+      .single()
+  }
 
   if (insertResult.error) {
     if (isMissingTableError(insertResult.error, 'transaction_comments')) {
@@ -40606,6 +40875,7 @@ export async function createDevelopment({ name, plannedUnits, profile = {} }) {
         site_plans: normalizedProfile.sitePlans,
         image_links: normalizedProfile.imageLinks,
         supporting_documents: normalizedProfile.supportingDocuments,
+        seller_details: normalizeDevelopmentSellerDetails(profile.sellerDetails || profile.seller_details),
         marketing_content: normalizeMarketingContent(profile.marketingContent),
       },
       { onConflict: 'development_id' },
@@ -40817,6 +41087,1157 @@ export async function createDevelopmentWorkspace({
     ...created,
     warnings,
   }
+}
+
+function normalizeDeveloperPartnerType(value = '') {
+  const normalized = normalizeTextValue(value).toLowerCase()
+  if (normalized === 'attorney' || normalized === 'attorney_firm' || normalized === 'transfer_attorney') return 'transfer_attorney'
+  if (normalized === 'bond' || normalized === 'bond_originator') return 'bond_originator'
+  if (normalized === 'agent' || normalized === 'agency' || normalized === 'selling_agent') return 'agency'
+  return normalized || 'agency'
+}
+
+function getDeveloperPartnerTypeLabel(value = '') {
+  const normalized = normalizeDeveloperPartnerType(value)
+  if (normalized === 'transfer_attorney') return 'Transfer Attorney'
+  if (normalized === 'bond_originator') return 'Bond Originator'
+  return 'Agency / Selling Agent'
+}
+
+function getDeveloperPartnerAgreementLabel(value = '') {
+  const normalized = normalizeTextValue(value).toLowerCase()
+  if (normalized === 'transfer_attorney_sla') return 'Transfer Attorney SLA'
+  if (normalized === 'bond_originator_sla') return 'Bond Originator SLA'
+  if (normalized === 'agency_mandate') return 'Agency Mandate'
+  return 'Agreement'
+}
+
+function normalizeDeveloperPartnerOrganisation(row = null) {
+  if (!row || typeof row !== 'object') return null
+  const name = normalizeTextValue(row.display_name || row.displayName || row.legal_name || row.legalName || row.name)
+  return {
+    id: normalizeTextValue(row.id),
+    name: name || 'Partner organisation',
+    displayName: name || 'Partner organisation',
+    legalName: normalizeTextValue(row.legal_name || row.legalName),
+    type: normalizeTextValue(row.type || row.workspace_type || row.workspaceType),
+    logoUrl: normalizeTextValue(row.logo_url || row.logoUrl),
+    status: normalizeTextValue(row.status),
+  }
+}
+
+function normalizeDeveloperPartnerAgreementTerm(row = null) {
+  if (!row || typeof row !== 'object') return null
+  return {
+    id: normalizeTextValue(row.id),
+    agreementId: normalizeTextValue(row.agreement_id || row.agreementId),
+    termsJson: row.terms_json && typeof row.terms_json === 'object' ? row.terms_json : {},
+    createdAt: row.created_at || row.createdAt || null,
+    updatedAt: row.updated_at || row.updatedAt || null,
+  }
+}
+
+function normalizeDeveloperPartnerAgreement(row = null, termsByAgreementId = new Map()) {
+  if (!row || typeof row !== 'object') return null
+  const agreementType = normalizeTextValue(row.agreement_type || row.agreementType)
+  const status = normalizeTextValue(row.status) || 'draft'
+  const id = normalizeTextValue(row.id)
+  return {
+    id,
+    relationshipId: normalizeTextValue(row.relationship_id || row.relationshipId),
+    agreementType,
+    agreementLabel: getDeveloperPartnerAgreementLabel(agreementType),
+    status,
+    templateKey: normalizeTextValue(row.template_key || row.templateKey),
+    generatedDocumentId: normalizeTextValue(row.generated_document_id || row.generatedDocumentId),
+    packetId: normalizeTextValue(row.packet_id || row.packetId),
+    effectiveDate: row.effective_date || row.effectiveDate || null,
+    expiryDate: row.expiry_date || row.expiryDate || null,
+    signedAt: row.signed_at || row.signedAt || null,
+    terminatedAt: row.terminated_at || row.terminatedAt || null,
+    waivedAt: row.waived_at || row.waivedAt || null,
+    metadataJson: row.metadata_json && typeof row.metadata_json === 'object' ? row.metadata_json : {},
+    createdBy: normalizeTextValue(row.created_by || row.createdBy),
+    createdAt: row.created_at || row.createdAt || null,
+    updatedAt: row.updated_at || row.updatedAt || null,
+    terms: termsByAgreementId.get(id) || null,
+  }
+}
+
+function getDeveloperPartnerAgreementTypeForRelationship(partnerType = '') {
+  const normalized = normalizeDeveloperPartnerType(partnerType)
+  if (normalized === 'transfer_attorney') return 'transfer_attorney_sla'
+  if (normalized === 'bond_originator') return 'bond_originator_sla'
+  return 'agency_mandate'
+}
+
+function getDeveloperPartnerAgreementTemplateKey(agreementType = '') {
+  const normalized = normalizeTextValue(agreementType).toLowerCase()
+  if (normalized === 'transfer_attorney_sla') return 'developer_transfer_attorney_sla_v1'
+  if (normalized === 'bond_originator_sla') return 'developer_bond_originator_sla_v1'
+  return 'developer_agency_mandate_v1'
+}
+
+function buildDeveloperPartnerInvitationUrl(token = '') {
+  const safeToken = normalizeTextValue(token)
+  if (!safeToken) return ''
+  const origin = typeof window !== 'undefined' && window.location?.origin
+    ? window.location.origin
+    : ''
+  return `${origin}/developer/partner-invite/${encodeURIComponent(safeToken)}`
+}
+
+function buildDeveloperPartnerAgreementTerms({ relationship = {}, agreementType = '' } = {}) {
+  const normalizedAgreementType = normalizeTextValue(agreementType).toLowerCase()
+  const baseTerms = {
+    version: 1,
+    agreementType: normalizedAgreementType,
+    partnerType: normalizeDeveloperPartnerType(relationship.partner_type || relationship.partnerType),
+    scopeType: normalizeDeveloperPartnerScopeType(relationship.scope_type || relationship.scopeType),
+    scopeJson: relationship.scope_json && typeof relationship.scope_json === 'object'
+      ? relationship.scope_json
+      : relationship.scopeJson && typeof relationship.scopeJson === 'object'
+        ? relationship.scopeJson
+        : {},
+    commercialTerms: {
+      status: 'to_be_confirmed',
+    },
+    escalation: {
+      primaryContact: '',
+      escalationContact: '',
+      reviewCadence: 'Monthly',
+    },
+  }
+
+  if (normalizedAgreementType === 'agency_mandate') {
+    return {
+      ...baseTerms,
+      mandate: {
+        developmentsCovered: baseTerms.scopeType,
+        commissionStructure: 'to_be_confirmed',
+        leadOwnership: 'developer_retains_master_record',
+        reservationProcess: 'arch9_transaction_flow',
+        marketingPermissions: 'subject_to_developer_approval',
+        reportingExpectations: 'weekly_sales_pipeline_update',
+      },
+    }
+  }
+
+  if (normalizedAgreementType === 'transfer_attorney_sla') {
+    return {
+      ...baseTerms,
+      serviceLevels: {
+        instructionAcceptanceTarget: '1 business day',
+        buyerDocumentReviewTarget: '2 business days',
+        weeklyStatusFeedback: true,
+        escalationAfterDays: 3,
+      },
+      responsibilities: {
+        transferWorkflow: true,
+        documentRequests: true,
+        registrationFeedback: true,
+      },
+    }
+  }
+
+  return {
+    ...baseTerms,
+    serviceLevels: {
+      buyerHandoffTarget: '1 business day',
+      prequalificationTarget: '2 business days',
+      bankSubmissionTarget: '3 business days after complete docs',
+      feedbackCadence: 'Twice weekly',
+    },
+    responsibilities: {
+      financeWorkflow: true,
+      bankSubmissions: true,
+      buyerFeedback: true,
+    },
+  }
+}
+
+function normalizeDeveloperPartnerInvitationContext(payload = {}) {
+  const source = payload && typeof payload === 'object' ? payload : {}
+  const relationship = source.relationship && typeof source.relationship === 'object' ? source.relationship : {}
+  const developer = source.developer && typeof source.developer === 'object' ? source.developer : {}
+  const partner = source.partner && typeof source.partner === 'object' ? source.partner : null
+  return {
+    ok: Boolean(source.ok),
+    reason: normalizeTextValue(source.reason),
+    relationship: {
+      id: normalizeTextValue(relationship.id),
+      partnerType: normalizeDeveloperPartnerType(relationship.partnerType || relationship.partner_type),
+      partnerTypeLabel: getDeveloperPartnerTypeLabel(relationship.partnerType || relationship.partner_type),
+      status: normalizeTextValue(relationship.status),
+      scopeType: normalizeDeveloperPartnerScopeType(relationship.scopeType || relationship.scope_type),
+      scopeJson: relationship.scopeJson && typeof relationship.scopeJson === 'object'
+        ? relationship.scopeJson
+        : relationship.scope_json && typeof relationship.scope_json === 'object'
+          ? relationship.scope_json
+          : {},
+      partnerDisplayName: normalizeTextValue(relationship.partnerDisplayName || relationship.partner_display_name),
+      partnerInvitationEmail: normalizeEmailAddress(relationship.partnerInvitationEmail || relationship.partner_invitation_email),
+      invitedAt: relationship.invitedAt || relationship.invited_at || null,
+      expiresAt: relationship.expiresAt || relationship.expires_at || null,
+    },
+    developer: {
+      id: normalizeTextValue(developer.id),
+      name: normalizeTextValue(developer.name || developer.displayName || developer.display_name) || 'Developer',
+    },
+    partner: partner ? {
+      id: normalizeTextValue(partner.id),
+      name: normalizeTextValue(partner.name || partner.displayName || partner.display_name) || 'Partner',
+    } : null,
+  }
+}
+
+function normalizeDeveloperPartnerRelationship(row = null, organisationsById = new Map(), agreementsByRelationshipId = new Map()) {
+  if (!row || typeof row !== 'object') return null
+  const partnerType = normalizeDeveloperPartnerType(row.partner_type || row.partnerType)
+  const partnerOrganisationId = normalizeTextValue(row.partner_organisation_id || row.partnerOrganisationId)
+  const organisation = organisationsById.get(partnerOrganisationId) || null
+  const displayName = normalizeTextValue(row.partner_display_name || row.partnerDisplayName)
+  const invitationEmail = normalizeTextValue(row.partner_invitation_email || row.partnerInvitationEmail)
+  const agreements = agreementsByRelationshipId.get(normalizeTextValue(row.id)) || []
+  const activeAgreement = agreements.find((agreement) => agreement.status === 'active' || agreement.status === 'signed') || agreements[0] || null
+  return {
+    id: normalizeTextValue(row.id),
+    developerOrganisationId: normalizeTextValue(row.developer_organisation_id || row.developerOrganisationId),
+    partnerOrganisationId,
+    partnerOrganisation: organisation,
+    partnerType,
+    partnerTypeLabel: getDeveloperPartnerTypeLabel(partnerType),
+    partnerName: organisation?.displayName || displayName || invitationEmail || 'Unnamed partner',
+    partnerInvitationEmail: invitationEmail,
+    status: normalizeTextValue(row.status) || 'invited',
+    scopeType: normalizeTextValue(row.scope_type || row.scopeType) || 'all_developments',
+    scopeJson: row.scope_json && typeof row.scope_json === 'object' ? row.scope_json : {},
+    invitedBy: normalizeTextValue(row.invited_by || row.invitedBy),
+    invitedAt: row.invited_at || row.invitedAt || null,
+    acceptedBy: normalizeTextValue(row.accepted_by || row.acceptedBy),
+    acceptedAt: row.accepted_at || row.acceptedAt || null,
+    suspendedAt: row.suspended_at || row.suspendedAt || null,
+    archivedAt: row.archived_at || row.archivedAt || null,
+    metadataJson: row.metadata_json && typeof row.metadata_json === 'object' ? row.metadata_json : {},
+    createdAt: row.created_at || row.createdAt || null,
+    updatedAt: row.updated_at || row.updatedAt || null,
+    agreements,
+    activeAgreement,
+    agreementStatus: activeAgreement?.status || 'not_started',
+  }
+}
+
+function buildDeveloperPartnerMetrics(relationships = [], agreements = []) {
+  const byPartnerType = relationships.reduce(
+    (accumulator, relationship) => {
+      const key = normalizeDeveloperPartnerType(relationship.partnerType)
+      accumulator[key] = (accumulator[key] || 0) + 1
+      return accumulator
+    },
+    { agency: 0, transfer_attorney: 0, bond_originator: 0 },
+  )
+
+  const activeStatuses = new Set(['agreement_active', 'accepted'])
+  const pendingAgreementStatuses = new Set(['agreement_pending', 'accepted'])
+  return {
+    total: relationships.length,
+    active: relationships.filter((relationship) => activeStatuses.has(relationship.status)).length,
+    pendingInvites: relationships.filter((relationship) => relationship.status === 'invited').length,
+    agreementPending: relationships.filter((relationship) => pendingAgreementStatuses.has(relationship.status) && relationship.agreementStatus !== 'active').length,
+    suspended: relationships.filter((relationship) => relationship.status === 'suspended').length,
+    activeAgreements: agreements.filter((agreement) => agreement.status === 'active' || agreement.status === 'signed').length,
+    byPartnerType,
+  }
+}
+
+function buildEmptyDeveloperPartnersWorkspace(schemaReady = true) {
+  return {
+    schemaReady,
+    relationships: [],
+    agreements: [],
+    terms: [],
+    defaults: [],
+    metrics: buildDeveloperPartnerMetrics([], []),
+  }
+}
+
+const DEVELOPER_PARTNER_PREFERRED_SELECT =
+  'id, organisation_id, partner_type, developer_partner_relationship_id, partner_organisation_id, source, scope_type, scope_json, company_name, contact_person, email_address, phone_number, website, physical_address, province, notes, is_active, is_preferred_default, created_at, updated_at'
+const DEVELOPER_PARTNER_PREFERRED_LEGACY_SELECT =
+  'id, organisation_id, partner_type, company_name, contact_person, email_address, phone_number, website, physical_address, province, notes, is_active, is_preferred_default, created_at, updated_at'
+
+function getPreferredPartnerTypeForDeveloperPartner(partnerType = '') {
+  const normalized = normalizeDeveloperPartnerType(partnerType)
+  if (normalized === 'bond_originator') return 'bond_originator'
+  if (normalized === 'transfer_attorney') return 'transfer_attorney'
+  return 'agency'
+}
+
+function normalizeDeveloperPartnerDefaultRow(row = null) {
+  if (!row || typeof row !== 'object') return null
+  const partnerType = normalizeTextValue(row.partner_type || row.partnerType)
+  return {
+    id: normalizeTextValue(row.id),
+    organisationId: normalizeTextValue(row.organisation_id || row.organisationId),
+    partnerType,
+    relationshipId: normalizeTextValue(row.developer_partner_relationship_id || row.developerPartnerRelationshipId),
+    partnerOrganisationId: normalizeTextValue(row.partner_organisation_id || row.partnerOrganisationId),
+    source: normalizeTextValue(row.source) || 'manual',
+    scopeType: normalizeDeveloperPartnerScopeType(row.scope_type || row.scopeType),
+    scopeJson: row.scope_json && typeof row.scope_json === 'object'
+      ? row.scope_json
+      : row.scopeJson && typeof row.scopeJson === 'object'
+        ? row.scopeJson
+        : {},
+    companyName: normalizeTextValue(row.company_name || row.companyName),
+    contactPerson: normalizeTextValue(row.contact_person || row.contactPerson),
+    email: normalizeEmailAddress(row.email_address || row.email),
+    phone: normalizeTextValue(row.phone_number || row.phone),
+    website: normalizeTextValue(row.website),
+    physicalAddress: normalizeTextValue(row.physical_address || row.physicalAddress),
+    province: normalizeTextValue(row.province),
+    notes: normalizeTextValue(row.notes),
+    isActive: row.is_active === undefined ? true : Boolean(row.is_active),
+    isPreferredDefault: Boolean(row.is_preferred_default || row.isPreferredDefault),
+    createdAt: row.created_at || row.createdAt || null,
+    updatedAt: row.updated_at || row.updatedAt || null,
+  }
+}
+
+function normalizeDeveloperPartnerScopeType(value = '') {
+  const normalized = normalizeTextValue(value).toLowerCase()
+  if (['specific_developments', 'specific_phases', 'specific_units'].includes(normalized)) return normalized
+  return 'all_developments'
+}
+
+async function getCurrentSupabaseUserId(client) {
+  try {
+    const result = await client.auth.getUser()
+    return normalizeNullableUuid(result?.data?.user?.id)
+  } catch {
+    return null
+  }
+}
+
+async function fetchDeveloperPartnerRelationshipById(client, relationshipId) {
+  const safeRelationshipId = normalizeNullableUuid(relationshipId)
+  if (!safeRelationshipId) throw new Error('Partner relationship is required.')
+
+  const result = await client
+    .from('developer_partner_relationships')
+    .select('id, developer_organisation_id, partner_organisation_id, partner_type, status, scope_type, scope_json, partner_display_name, partner_invitation_email, invited_by, invited_at, accepted_by, accepted_at, suspended_at, archived_at, metadata_json, created_at, updated_at')
+    .eq('id', safeRelationshipId)
+    .maybeSingle()
+
+  if (result.error) throw result.error
+  if (!result.data) throw new Error('Partner relationship was not found.')
+  return result.data
+}
+
+function normalizeDeveloperPartnerScopeJson(scopeType = 'all_developments', scopeJson = {}) {
+  const normalizedScopeType = normalizeDeveloperPartnerScopeType(scopeType)
+  const source = scopeJson && typeof scopeJson === 'object' ? scopeJson : {}
+  if (normalizedScopeType === 'specific_developments') {
+    return {
+      developmentIds: [...new Set((source.developmentIds || source.development_ids || []).map(normalizeNullableUuid).filter(Boolean))],
+    }
+  }
+  if (normalizedScopeType === 'specific_phases') {
+    return {
+      phaseIds: [...new Set((source.phaseIds || source.phase_ids || []).map(normalizeTextValue).filter(Boolean))],
+    }
+  }
+  if (normalizedScopeType === 'specific_units') {
+    return {
+      unitIds: [...new Set((source.unitIds || source.unit_ids || []).map(normalizeNullableUuid).filter(Boolean))],
+    }
+  }
+  return {}
+}
+
+function normalizeDeveloperPartnerInviteDevelopment(row = null) {
+  if (!row || typeof row !== 'object') return null
+  return {
+    id: normalizeTextValue(row.id),
+    name: normalizeTextValue(row.name) || 'Untitled development',
+    status: normalizeTextValue(row.status),
+    location: normalizeTextValue(row.location),
+  }
+}
+
+export async function fetchDeveloperPartnerInviteOptions({ organisationId } = {}) {
+  const developerOrganisationId = normalizeNullableUuid(organisationId)
+  if (!developerOrganisationId) {
+    return { organisations: [], developments: [] }
+  }
+
+  const client = requireClient()
+  let organisationsResult = await client
+    .from('organisations')
+    .select('id, name, display_name, legal_name, type, logo_url, status')
+    .neq('id', developerOrganisationId)
+    .order('display_name', { ascending: true })
+
+  if (organisationsResult.error && isMissingColumnError(organisationsResult.error)) {
+    organisationsResult = await client
+      .from('organisations')
+      .select('id, name, type')
+      .neq('id', developerOrganisationId)
+      .order('name', { ascending: true })
+  }
+
+  if (organisationsResult.error) {
+    if (!isMissingTableError(organisationsResult.error, 'organisations') && !isPermissionDeniedError(organisationsResult.error)) {
+      throw organisationsResult.error
+    }
+    organisationsResult = { data: [] }
+  }
+
+  let developmentsResult = await client
+    .from('developments')
+    .select('id, name, status, location, organisation_id')
+    .eq('organisation_id', developerOrganisationId)
+    .order('name', { ascending: true })
+
+  if (
+    developmentsResult.error &&
+    (isMissingColumnError(developmentsResult.error, 'status') || isMissingColumnError(developmentsResult.error, 'location'))
+  ) {
+    developmentsResult = await client
+      .from('developments')
+      .select('id, name, organisation_id')
+      .eq('organisation_id', developerOrganisationId)
+      .order('name', { ascending: true })
+  }
+
+  if (developmentsResult.error) {
+    if (
+      !isMissingTableError(developmentsResult.error, 'developments') &&
+      !isMissingColumnError(developmentsResult.error, 'organisation_id') &&
+      !isPermissionDeniedError(developmentsResult.error)
+    ) {
+      throw developmentsResult.error
+    }
+    developmentsResult = { data: [] }
+  }
+
+  return {
+    organisations: (organisationsResult.data || []).map((row) => normalizeDeveloperPartnerOrganisation(row)).filter(Boolean),
+    developments: (developmentsResult.data || []).map((row) => normalizeDeveloperPartnerInviteDevelopment(row)).filter(Boolean),
+  }
+}
+
+export async function fetchDeveloperPartnersWorkspace({ organisationId } = {}) {
+  const developerOrganisationId = normalizeNullableUuid(organisationId)
+  if (!developerOrganisationId) return buildEmptyDeveloperPartnersWorkspace()
+
+  const client = requireClient()
+  let relationshipsQuery = client
+    .from('developer_partner_relationships')
+    .select('id, developer_organisation_id, partner_organisation_id, partner_type, status, scope_type, scope_json, partner_display_name, partner_invitation_email, invited_by, invited_at, accepted_by, accepted_at, suspended_at, archived_at, metadata_json, created_at, updated_at')
+    .eq('developer_organisation_id', developerOrganisationId)
+    .order('updated_at', { ascending: false })
+
+  const relationshipsResult = await relationshipsQuery
+  if (relationshipsResult.error) {
+    if (
+      isMissingTableError(relationshipsResult.error, 'developer_partner_relationships') ||
+      isMissingSchemaError(relationshipsResult.error) ||
+      isPermissionDeniedError(relationshipsResult.error)
+    ) {
+      return buildEmptyDeveloperPartnersWorkspace(false)
+    }
+    throw relationshipsResult.error
+  }
+
+  const relationshipRows = Array.isArray(relationshipsResult.data) ? relationshipsResult.data : []
+  const relationshipIds = relationshipRows.map((row) => normalizeTextValue(row.id)).filter(Boolean)
+  const partnerOrganisationIds = [
+    ...new Set(relationshipRows.map((row) => normalizeNullableUuid(row.partner_organisation_id)).filter(Boolean)),
+  ]
+
+  let organisationsById = new Map()
+  if (partnerOrganisationIds.length) {
+    let organisationsResult = await client
+      .from('organisations')
+      .select('id, name, display_name, legal_name, type, logo_url, status')
+      .in('id', partnerOrganisationIds)
+
+    if (organisationsResult.error && isMissingColumnError(organisationsResult.error)) {
+      organisationsResult = await client
+        .from('organisations')
+        .select('id, name, type')
+        .in('id', partnerOrganisationIds)
+    }
+
+    if (organisationsResult.error && !isPermissionDeniedError(organisationsResult.error)) {
+      throw organisationsResult.error
+    }
+
+    organisationsById = new Map(
+      (Array.isArray(organisationsResult.data) ? organisationsResult.data : [])
+        .map((row) => normalizeDeveloperPartnerOrganisation(row))
+        .filter(Boolean)
+        .map((organisation) => [organisation.id, organisation]),
+    )
+  }
+
+  let agreementRows = []
+  if (relationshipIds.length) {
+    const agreementsResult = await client
+      .from('developer_partner_agreements')
+      .select('id, relationship_id, agreement_type, status, template_key, generated_document_id, packet_id, effective_date, expiry_date, signed_at, terminated_at, waived_at, metadata_json, created_by, created_at, updated_at')
+      .in('relationship_id', relationshipIds)
+      .order('updated_at', { ascending: false })
+
+    if (agreementsResult.error) {
+      if (
+        !isMissingTableError(agreementsResult.error, 'developer_partner_agreements') &&
+        !isMissingSchemaError(agreementsResult.error) &&
+        !isPermissionDeniedError(agreementsResult.error)
+      ) {
+        throw agreementsResult.error
+      }
+    } else {
+      agreementRows = Array.isArray(agreementsResult.data) ? agreementsResult.data : []
+    }
+  }
+
+  const agreementIds = agreementRows.map((row) => normalizeTextValue(row.id)).filter(Boolean)
+  let termRows = []
+  if (agreementIds.length) {
+    const termsResult = await client
+      .from('developer_partner_agreement_terms')
+      .select('id, agreement_id, terms_json, created_at, updated_at')
+      .in('agreement_id', agreementIds)
+
+    if (termsResult.error) {
+      if (
+        !isMissingTableError(termsResult.error, 'developer_partner_agreement_terms') &&
+        !isMissingSchemaError(termsResult.error) &&
+        !isPermissionDeniedError(termsResult.error)
+      ) {
+        throw termsResult.error
+      }
+    } else {
+      termRows = Array.isArray(termsResult.data) ? termsResult.data : []
+    }
+  }
+
+  const terms = termRows.map((row) => normalizeDeveloperPartnerAgreementTerm(row)).filter(Boolean)
+  const termsByAgreementId = new Map(terms.map((term) => [term.agreementId, term]))
+  const agreements = agreementRows
+    .map((row) => normalizeDeveloperPartnerAgreement(row, termsByAgreementId))
+    .filter(Boolean)
+  const agreementsByRelationshipId = agreements.reduce((accumulator, agreement) => {
+    const next = accumulator.get(agreement.relationshipId) || []
+    next.push(agreement)
+    accumulator.set(agreement.relationshipId, next)
+    return accumulator
+  }, new Map())
+  const relationships = relationshipRows
+    .map((row) => normalizeDeveloperPartnerRelationship(row, organisationsById, agreementsByRelationshipId))
+    .filter(Boolean)
+
+  let defaultRows = []
+  let defaultsResult = await client
+    .from('organisation_preferred_partners')
+    .select(DEVELOPER_PARTNER_PREFERRED_SELECT)
+    .eq('organisation_id', developerOrganisationId)
+    .in('partner_type', ['agency', 'transfer_attorney', 'bond_originator'])
+    .order('is_preferred_default', { ascending: false })
+    .order('company_name', { ascending: true })
+
+  if (
+    defaultsResult.error &&
+    [
+      'developer_partner_relationship_id',
+      'partner_organisation_id',
+      'source',
+      'scope_type',
+      'scope_json',
+    ].some((column) => isMissingColumnError(defaultsResult.error, column))
+  ) {
+    defaultsResult = await client
+      .from('organisation_preferred_partners')
+      .select(DEVELOPER_PARTNER_PREFERRED_LEGACY_SELECT)
+      .eq('organisation_id', developerOrganisationId)
+      .in('partner_type', ['transfer_attorney', 'bond_originator'])
+      .order('is_preferred_default', { ascending: false })
+      .order('company_name', { ascending: true })
+  }
+
+  if (defaultsResult.error) {
+    if (
+      !isMissingTableError(defaultsResult.error, 'organisation_preferred_partners') &&
+      !isMissingSchemaError(defaultsResult.error) &&
+      !isPermissionDeniedError(defaultsResult.error)
+    ) {
+      throw defaultsResult.error
+    }
+  } else {
+    defaultRows = Array.isArray(defaultsResult.data) ? defaultsResult.data : []
+  }
+
+  return {
+    schemaReady: true,
+    relationships,
+    agreements,
+    terms,
+    defaults: defaultRows.map((row) => normalizeDeveloperPartnerDefaultRow(row)).filter(Boolean),
+    metrics: buildDeveloperPartnerMetrics(relationships, agreements),
+  }
+}
+
+export async function createDeveloperPartnerInvite(input = {}) {
+  const developerOrganisationId = normalizeNullableUuid(input.developerOrganisationId || input.developer_organisation_id || input.organisationId)
+  if (!developerOrganisationId) {
+    throw new Error('Developer organisation is required.')
+  }
+
+  const partnerType = normalizeDeveloperPartnerType(input.partnerType || input.partner_type)
+  if (!['agency', 'transfer_attorney', 'bond_originator'].includes(partnerType)) {
+    throw new Error('Select a valid partner type.')
+  }
+
+  const partnerOrganisationId = normalizeNullableUuid(input.partnerOrganisationId || input.partner_organisation_id)
+  const invitationEmail = normalizeEmailAddress(input.partnerInvitationEmail || input.partner_invitation_email || input.email)
+  const partnerDisplayName = normalizeNullableText(input.partnerDisplayName || input.partner_display_name || input.organisationName)
+  if (!partnerOrganisationId && !invitationEmail) {
+    throw new Error('Select an organisation or enter an invitation email.')
+  }
+
+  const scopeType = normalizeDeveloperPartnerScopeType(input.scopeType || input.scope_type)
+  const scopeJson = normalizeDeveloperPartnerScopeJson(scopeType, input.scopeJson || input.scope_json)
+  if (scopeType === 'specific_developments' && !scopeJson.developmentIds.length) {
+    throw new Error('Select at least one development for this partner scope.')
+  }
+
+  const client = requireClient()
+  let duplicateQuery = client
+    .from('developer_partner_relationships')
+    .select('id, status')
+    .eq('developer_organisation_id', developerOrganisationId)
+    .eq('partner_type', partnerType)
+    .neq('status', 'archived')
+    .limit(1)
+
+  duplicateQuery = partnerOrganisationId
+    ? duplicateQuery.eq('partner_organisation_id', partnerOrganisationId)
+    : duplicateQuery.ilike('partner_invitation_email', invitationEmail)
+
+  const duplicateResult = await duplicateQuery
+  if (duplicateResult.error) {
+    if (
+      !isMissingTableError(duplicateResult.error, 'developer_partner_relationships') &&
+      !isMissingSchemaError(duplicateResult.error) &&
+      !isPermissionDeniedError(duplicateResult.error)
+    ) {
+      throw duplicateResult.error
+    }
+  } else if ((duplicateResult.data || []).length) {
+    throw new Error('This partner relationship already exists.')
+  }
+
+  const payload = {
+    developer_organisation_id: developerOrganisationId,
+    partner_organisation_id: partnerOrganisationId,
+    partner_type: partnerType,
+    status: 'invited',
+    scope_type: scopeType,
+    scope_json: scopeJson,
+    partner_display_name: partnerDisplayName,
+    partner_invitation_email: invitationEmail || null,
+    metadata_json: {
+      source: 'developer_partners_workspace',
+      inviteMode: partnerOrganisationId ? 'existing_organisation' : 'email_invite',
+    },
+  }
+
+  const insertResult = await client
+    .from('developer_partner_relationships')
+    .insert(payload)
+    .select('id, developer_organisation_id, partner_organisation_id, partner_type, status, scope_type, scope_json, partner_display_name, partner_invitation_email, invited_by, invited_at, accepted_by, accepted_at, suspended_at, archived_at, metadata_json, created_at, updated_at')
+    .single()
+
+  if (insertResult.error) {
+    if (insertResult.error.code === '23505') {
+      throw new Error('This partner relationship already exists.')
+    }
+    throw insertResult.error
+  }
+
+  const relationship = normalizeDeveloperPartnerRelationship(insertResult.data)
+  let invitationDelivery = null
+  if (input.sendEmail) {
+    try {
+      invitationDelivery = await sendDeveloperPartnerInvitation(relationship.id)
+    } catch (deliveryError) {
+      invitationDelivery = {
+        ok: false,
+        error: deliveryError?.message || 'Invite link was created, but delivery failed.',
+      }
+    }
+  }
+
+  return {
+    ...relationship,
+    invitationDelivery,
+  }
+}
+
+export async function sendDeveloperPartnerInvitation(relationshipId) {
+  const safeRelationshipId = normalizeNullableUuid(relationshipId)
+  if (!safeRelationshipId) throw new Error('Partner relationship is required.')
+
+  const client = requireClient()
+  const relationship = await fetchDeveloperPartnerRelationshipById(client, safeRelationshipId)
+  const prepareResult = await client.rpc('bridge_prepare_developer_partner_invitation', {
+    target_relationship_id: safeRelationshipId,
+  })
+
+  if (prepareResult.error) throw prepareResult.error
+  if (!prepareResult.data?.ok) {
+    throw new Error(prepareResult.data?.reason || 'Unable to create partner invite link.')
+  }
+
+  const token = normalizeTextValue(prepareResult.data.token)
+  const invitationUrl = buildDeveloperPartnerInvitationUrl(token)
+  const recipientEmail = normalizeEmailAddress(relationship.partner_invitation_email)
+  let emailResult = { sent: false, reason: recipientEmail ? 'not_sent' : 'missing_email' }
+
+  if (recipientEmail) {
+    const developerOrgResult = await client
+      .from('organisations')
+      .select('id, name, display_name, logo_url')
+      .eq('id', relationship.developer_organisation_id)
+      .maybeSingle()
+    if (developerOrgResult.error && !isPermissionDeniedError(developerOrgResult.error)) {
+      throw developerOrgResult.error
+    }
+    const developerName = normalizeTextValue(
+      developerOrgResult.data?.display_name ||
+      developerOrgResult.data?.name,
+    ) || 'Developer workspace'
+
+    const { data, error } = await invokeEdgeFunction('send-email', {
+      body: {
+        type: 'workspace_invite',
+        to: recipientEmail,
+        inviteLink: invitationUrl,
+        organisationName: developerName,
+        inviteeName: relationship.partner_display_name || recipientEmail,
+        inviterName: developerName,
+        workspaceRole: getDeveloperPartnerTypeLabel(relationship.partner_type),
+        organisationLogoUrl: developerOrgResult.data?.logo_url || '',
+        supportEmail: 'support@arch9.co.za',
+      },
+    })
+    emailResult = error ? { sent: false, error } : (data || { sent: true })
+  }
+
+  const emailError = emailResult?.error
+    ? normalizeTextValue(
+      emailResult.error?.message ||
+      (typeof emailResult.error === 'string' ? emailResult.error : JSON.stringify(emailResult.error)),
+    )
+    : null
+
+  const invitationStatusUpdate = await client
+    .from('developer_partner_relationships')
+    .update({
+      invitation_email_status: emailResult?.ok || emailResult?.sent ? 'sent' : emailResult.reason || 'failed',
+      invitation_email_error: emailError || null,
+    })
+    .eq('id', safeRelationshipId)
+  if (
+    invitationStatusUpdate.error &&
+    !isMissingColumnError(invitationStatusUpdate.error, 'invitation_email_status') &&
+    !isMissingColumnError(invitationStatusUpdate.error, 'invitation_email_error')
+  ) {
+    throw invitationStatusUpdate.error
+  }
+
+  return {
+    ok: true,
+    invitationUrl,
+    expiresAt: prepareResult.data.expiresAt || null,
+    emailResult,
+  }
+}
+
+export async function setDeveloperPartnerDefault(relationshipId) {
+  const safeRelationshipId = normalizeNullableUuid(relationshipId)
+  if (!safeRelationshipId) throw new Error('Partner relationship is required.')
+
+  const client = requireClient()
+  const relationship = await fetchDeveloperPartnerRelationshipById(client, safeRelationshipId)
+  const developerOrganisationId = normalizeNullableUuid(relationship.developer_organisation_id)
+  const partnerType = normalizeDeveloperPartnerType(relationship.partner_type)
+  const preferredPartnerType = getPreferredPartnerTypeForDeveloperPartner(partnerType)
+  if (!developerOrganisationId) throw new Error('Developer organisation is required.')
+  if (relationship.status !== 'agreement_active') {
+    throw new Error('Activate or waive the partner agreement before setting this partner as a default.')
+  }
+
+  const agreementResult = await client
+    .from('developer_partner_agreements')
+    .select('id, status')
+    .eq('relationship_id', safeRelationshipId)
+    .in('status', ['active', 'signed', 'waived'])
+    .limit(1)
+
+  if (agreementResult.error) {
+    if (
+      !isMissingTableError(agreementResult.error, 'developer_partner_agreements') &&
+      !isMissingSchemaError(agreementResult.error) &&
+      !isPermissionDeniedError(agreementResult.error)
+    ) {
+      throw agreementResult.error
+    }
+  } else if (!(agreementResult.data || []).length) {
+    throw new Error('This partner needs an active, signed or waived agreement before it can become a default.')
+  }
+
+  let partnerOrganisation = null
+  const partnerOrganisationId = normalizeNullableUuid(relationship.partner_organisation_id)
+  if (partnerOrganisationId) {
+    const organisationResult = await client
+      .from('organisations')
+      .select('id, name, display_name, legal_name, type, website, phone, email, province')
+      .eq('id', partnerOrganisationId)
+      .maybeSingle()
+    if (organisationResult.error && !isPermissionDeniedError(organisationResult.error)) {
+      if (isMissingColumnError(organisationResult.error)) {
+        const fallbackOrganisationResult = await client
+          .from('organisations')
+          .select('id, name, type')
+          .eq('id', partnerOrganisationId)
+          .maybeSingle()
+        if (fallbackOrganisationResult.error && !isPermissionDeniedError(fallbackOrganisationResult.error)) {
+          throw fallbackOrganisationResult.error
+        }
+        partnerOrganisation = fallbackOrganisationResult.data || null
+      } else {
+        throw organisationResult.error
+      }
+    } else {
+      partnerOrganisation = organisationResult.data || null
+    }
+  }
+
+  const companyName = normalizeTextValue(
+    partnerOrganisation?.display_name ||
+    partnerOrganisation?.legal_name ||
+    partnerOrganisation?.name ||
+    relationship.partner_display_name ||
+    relationship.partner_invitation_email,
+  )
+
+  if (!companyName) throw new Error('This partner needs a name before it can be used as a default.')
+
+  const clearDefaultResult = await client
+    .from('organisation_preferred_partners')
+    .update({ is_preferred_default: false, updated_at: new Date().toISOString() })
+    .eq('organisation_id', developerOrganisationId)
+    .eq('partner_type', preferredPartnerType)
+
+  if (clearDefaultResult.error) throw clearDefaultResult.error
+
+  const existingResult = await client
+    .from('organisation_preferred_partners')
+    .select(DEVELOPER_PARTNER_PREFERRED_SELECT)
+    .eq('developer_partner_relationship_id', safeRelationshipId)
+    .maybeSingle()
+
+  if (existingResult.error) throw existingResult.error
+
+  const payload = {
+    organisation_id: developerOrganisationId,
+    partner_type: preferredPartnerType,
+    developer_partner_relationship_id: safeRelationshipId,
+    partner_organisation_id: partnerOrganisationId || null,
+    source: 'developer_partner_relationship',
+    scope_type: normalizeDeveloperPartnerScopeType(relationship.scope_type),
+    scope_json: relationship.scope_json && typeof relationship.scope_json === 'object' ? relationship.scope_json : {},
+    company_name: companyName,
+    contact_person: normalizeNullableText(relationship.partner_display_name) || companyName,
+    email_address: normalizeEmailAddress(relationship.partner_invitation_email || partnerOrganisation?.email) || null,
+    phone_number: normalizeNullableText(partnerOrganisation?.phone),
+    website: normalizeNullableText(partnerOrganisation?.website),
+    province: normalizeNullableText(partnerOrganisation?.province),
+    notes: `${getDeveloperPartnerTypeLabel(partnerType)} synced from Developer Partners.`,
+    is_active: true,
+    is_preferred_default: true,
+    updated_at: new Date().toISOString(),
+  }
+
+  const writeQuery = existingResult.data?.id
+    ? client
+      .from('organisation_preferred_partners')
+      .update(payload)
+      .eq('id', existingResult.data.id)
+      .select(DEVELOPER_PARTNER_PREFERRED_SELECT)
+      .single()
+    : client
+      .from('organisation_preferred_partners')
+      .insert(payload)
+      .select(DEVELOPER_PARTNER_PREFERRED_SELECT)
+      .single()
+
+  const writeResult = await writeQuery
+  if (writeResult.error) throw writeResult.error
+  return normalizeDeveloperPartnerDefaultRow(writeResult.data)
+}
+
+export async function acceptDeveloperPartnerRelationship(relationshipId) {
+  const safeRelationshipId = normalizeNullableUuid(relationshipId)
+  if (!safeRelationshipId) throw new Error('Partner relationship is required.')
+
+  const client = requireClient()
+  const currentUserId = await getCurrentSupabaseUserId(client)
+  const payload = {
+    status: 'accepted',
+    accepted_at: new Date().toISOString(),
+  }
+  if (currentUserId) payload.accepted_by = currentUserId
+
+  const result = await client
+    .from('developer_partner_relationships')
+    .update(payload)
+    .eq('id', safeRelationshipId)
+    .select('id, developer_organisation_id, partner_organisation_id, partner_type, status, scope_type, scope_json, partner_display_name, partner_invitation_email, invited_by, invited_at, accepted_by, accepted_at, suspended_at, archived_at, metadata_json, created_at, updated_at')
+    .single()
+
+  if (result.error) throw result.error
+  return normalizeDeveloperPartnerRelationship(result.data)
+}
+
+export async function generateDeveloperPartnerAgreement(relationshipId) {
+  const safeRelationshipId = normalizeNullableUuid(relationshipId)
+  if (!safeRelationshipId) throw new Error('Partner relationship is required.')
+
+  const client = requireClient()
+  const relationship = await fetchDeveloperPartnerRelationshipById(client, safeRelationshipId)
+  const relationshipStatus = normalizeTextValue(relationship.status).toLowerCase()
+  if (relationshipStatus === 'archived' || relationshipStatus === 'suspended') {
+    throw new Error('This partner relationship is not available for agreement generation.')
+  }
+
+  const agreementType = getDeveloperPartnerAgreementTypeForRelationship(relationship.partner_type)
+  const existingAgreement = await client
+    .from('developer_partner_agreements')
+    .select('id, relationship_id, agreement_type, status, template_key, generated_document_id, packet_id, effective_date, expiry_date, signed_at, terminated_at, waived_at, metadata_json, created_by, created_at, updated_at')
+    .eq('relationship_id', safeRelationshipId)
+    .eq('agreement_type', agreementType)
+    .not('status', 'in', '(terminated,expired)')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+
+  if (existingAgreement.error) throw existingAgreement.error
+  if ((existingAgreement.data || []).length) {
+    return normalizeDeveloperPartnerAgreement(existingAgreement.data[0])
+  }
+
+  const currentUserId = await getCurrentSupabaseUserId(client)
+  const agreementPayload = {
+    relationship_id: safeRelationshipId,
+    agreement_type: agreementType,
+    status: 'generated',
+    template_key: getDeveloperPartnerAgreementTemplateKey(agreementType),
+    effective_date: new Date().toISOString().slice(0, 10),
+    metadata_json: {
+      source: 'developer_partners_workspace',
+      generationMode: 'manual_operational_record',
+    },
+  }
+  if (currentUserId) agreementPayload.created_by = currentUserId
+
+  const agreementResult = await client
+    .from('developer_partner_agreements')
+    .insert(agreementPayload)
+    .select('id, relationship_id, agreement_type, status, template_key, generated_document_id, packet_id, effective_date, expiry_date, signed_at, terminated_at, waived_at, metadata_json, created_by, created_at, updated_at')
+    .single()
+
+  if (agreementResult.error) throw agreementResult.error
+
+  const termsPayload = {
+    agreement_id: agreementResult.data.id,
+    terms_json: buildDeveloperPartnerAgreementTerms({ relationship, agreementType }),
+  }
+  const termsResult = await client
+    .from('developer_partner_agreement_terms')
+    .insert(termsPayload)
+    .select('id, agreement_id, terms_json, created_at, updated_at')
+    .single()
+
+  if (termsResult.error) throw termsResult.error
+
+  const relationshipUpdate = await client
+    .from('developer_partner_relationships')
+    .update({
+      status: 'agreement_pending',
+      accepted_at: relationship.accepted_at || new Date().toISOString(),
+      ...(currentUserId && !relationship.accepted_by ? { accepted_by: currentUserId } : {}),
+    })
+    .eq('id', safeRelationshipId)
+
+  if (relationshipUpdate.error) throw relationshipUpdate.error
+
+  return normalizeDeveloperPartnerAgreement(agreementResult.data, new Map([[termsResult.data.agreement_id, normalizeDeveloperPartnerAgreementTerm(termsResult.data)]]))
+}
+
+export async function activateDeveloperPartnerAgreement(agreementId) {
+  const safeAgreementId = normalizeNullableUuid(agreementId)
+  if (!safeAgreementId) throw new Error('Partner agreement is required.')
+
+  const client = requireClient()
+  const existing = await client
+    .from('developer_partner_agreements')
+    .select('id, relationship_id, agreement_type, status, template_key, generated_document_id, packet_id, effective_date, expiry_date, signed_at, terminated_at, waived_at, metadata_json, created_by, created_at, updated_at')
+    .eq('id', safeAgreementId)
+    .maybeSingle()
+
+  if (existing.error) throw existing.error
+  if (!existing.data) throw new Error('Partner agreement was not found.')
+
+  const now = new Date().toISOString()
+  const updateResult = await client
+    .from('developer_partner_agreements')
+    .update({
+      status: 'active',
+      signed_at: existing.data.signed_at || now,
+      effective_date: existing.data.effective_date || now.slice(0, 10),
+    })
+    .eq('id', safeAgreementId)
+    .select('id, relationship_id, agreement_type, status, template_key, generated_document_id, packet_id, effective_date, expiry_date, signed_at, terminated_at, waived_at, metadata_json, created_by, created_at, updated_at')
+    .single()
+
+  if (updateResult.error) throw updateResult.error
+
+  const relationshipUpdate = await client
+    .from('developer_partner_relationships')
+    .update({ status: 'agreement_active' })
+    .eq('id', updateResult.data.relationship_id)
+
+  if (relationshipUpdate.error) throw relationshipUpdate.error
+  return normalizeDeveloperPartnerAgreement(updateResult.data)
+}
+
+export async function waiveDeveloperPartnerAgreement(relationshipId) {
+  const safeRelationshipId = normalizeNullableUuid(relationshipId)
+  if (!safeRelationshipId) throw new Error('Partner relationship is required.')
+
+  const client = requireClient()
+  const relationship = await fetchDeveloperPartnerRelationshipById(client, safeRelationshipId)
+  const agreementType = getDeveloperPartnerAgreementTypeForRelationship(relationship.partner_type)
+  const currentUserId = await getCurrentSupabaseUserId(client)
+  const now = new Date().toISOString()
+
+  const existingAgreement = await client
+    .from('developer_partner_agreements')
+    .select('id, relationship_id, agreement_type, status, template_key, generated_document_id, packet_id, effective_date, expiry_date, signed_at, terminated_at, waived_at, metadata_json, created_by, created_at, updated_at')
+    .eq('relationship_id', safeRelationshipId)
+    .eq('agreement_type', agreementType)
+    .not('status', 'in', '(terminated,expired)')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+
+  if (existingAgreement.error) throw existingAgreement.error
+
+  let agreementResult
+  if ((existingAgreement.data || []).length) {
+    agreementResult = await client
+      .from('developer_partner_agreements')
+      .update({
+        status: 'waived',
+        waived_at: now,
+        effective_date: existingAgreement.data[0].effective_date || now.slice(0, 10),
+      })
+      .eq('id', existingAgreement.data[0].id)
+      .select('id, relationship_id, agreement_type, status, template_key, generated_document_id, packet_id, effective_date, expiry_date, signed_at, terminated_at, waived_at, metadata_json, created_by, created_at, updated_at')
+      .single()
+  } else {
+    const payload = {
+      relationship_id: safeRelationshipId,
+      agreement_type: agreementType,
+      status: 'waived',
+      template_key: getDeveloperPartnerAgreementTemplateKey(agreementType),
+      effective_date: now.slice(0, 10),
+      waived_at: now,
+      metadata_json: {
+        source: 'developer_partners_workspace',
+        waiverMode: 'manual',
+      },
+    }
+    if (currentUserId) payload.created_by = currentUserId
+    agreementResult = await client
+      .from('developer_partner_agreements')
+      .insert(payload)
+      .select('id, relationship_id, agreement_type, status, template_key, generated_document_id, packet_id, effective_date, expiry_date, signed_at, terminated_at, waived_at, metadata_json, created_by, created_at, updated_at')
+      .single()
+  }
+
+  if (agreementResult.error) throw agreementResult.error
+
+  const relationshipUpdate = await client
+    .from('developer_partner_relationships')
+    .update({
+      status: 'agreement_active',
+      accepted_at: relationship.accepted_at || now,
+      ...(currentUserId && !relationship.accepted_by ? { accepted_by: currentUserId } : {}),
+    })
+    .eq('id', safeRelationshipId)
+
+  if (relationshipUpdate.error) throw relationshipUpdate.error
+  return normalizeDeveloperPartnerAgreement(agreementResult.data)
+}
+
+export async function fetchDeveloperPartnerInvitation(token) {
+  const safeToken = normalizeTextValue(token)
+  if (!safeToken) throw new Error('Invite token is required.')
+  const client = requireClient()
+  const result = await client.rpc('bridge_get_developer_partner_invitation', { p_token: safeToken })
+  if (result.error) throw result.error
+  const context = normalizeDeveloperPartnerInvitationContext(result.data || {})
+  if (!context.ok) {
+    const reason = context.reason || 'invite_not_found'
+    const error = new Error(
+      reason === 'invite_expired'
+        ? 'This partner invite has expired.'
+        : reason === 'relationship_unavailable'
+          ? 'This partner relationship is no longer available.'
+          : 'This partner invite could not be found.',
+    )
+    error.reason = reason
+    throw error
+  }
+  return context
+}
+
+export async function acceptDeveloperPartnerInvitationByToken(token, input = {}) {
+  const safeToken = normalizeTextValue(token)
+  if (!safeToken) throw new Error('Invite token is required.')
+  const client = requireClient()
+  const result = await client.rpc('bridge_accept_developer_partner_invitation', {
+    p_token: safeToken,
+    p_partner_display_name: normalizeNullableText(input.partnerDisplayName || input.partner_display_name),
+    p_partner_email: normalizeEmailAddress(input.partnerEmail || input.partner_email || input.email) || null,
+  })
+  if (result.error) throw result.error
+  if (!result.data?.ok) {
+    const reason = normalizeTextValue(result.data?.reason) || 'accept_failed'
+    const error = new Error(
+      reason === 'invite_expired'
+        ? 'This partner invite has expired.'
+        : reason === 'relationship_unavailable'
+          ? 'This partner relationship is no longer available.'
+          : 'Unable to accept this partner invite.',
+    )
+    error.reason = reason
+    throw error
+  }
+  return result.data
 }
 
 export const EMPTY_STATE = {

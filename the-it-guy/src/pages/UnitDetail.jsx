@@ -144,7 +144,22 @@ const currency = new Intl.NumberFormat('en-ZA', {
 
 const PANEL_SHELL = 'rounded-[28px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]'
 const PANEL_COMPACT = 'rounded-[24px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-5 shadow-[0_16px_34px_rgba(15,23,42,0.05)]'
-const WORKSPACE_MENU_IDS = ['overview', 'transfer', 'bond', 'cancellation', 'onboarding', 'documents', 'financials', 'tasks', 'activity', 'handover', 'alterations', 'snags']
+const WORKSPACE_MENU_IDS = [
+  'overview',
+  'workflows',
+  'transfer',
+  'bond',
+  'cancellation',
+  'onboarding',
+  'documents',
+  'financials',
+  'tasks',
+  'activity',
+  'handover',
+  'alterations',
+  'snags',
+  'snags_alterations',
+]
 const FINANCE_TYPE_SELECT_OPTIONS = [
   { value: 'cash', label: 'Cash' },
   { value: 'bond', label: 'Bond' },
@@ -388,6 +403,64 @@ function normalizeDocumentMatcher(value) {
 
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function normalizeDevelopmentSellerSnapshot(value = {}) {
+  const source = value && typeof value === 'object' ? value : {}
+  const signatory =
+    (Array.isArray(source.signatories) ? source.signatories[0] : null) ||
+    source.defaultSignatory ||
+    source.default_signatory ||
+    {}
+
+  return {
+    entityType: source.entityType || source.entity_type || 'company',
+    legalName: source.legalName || source.legal_name || source.name || '',
+    tradingName: source.tradingName || source.trading_name || '',
+    registrationNumber: source.registrationNumber || source.registration_number || '',
+    vatNumber: source.vatNumber || source.vat_number || '',
+    registeredAddress: source.registeredAddress || source.registered_address || source.address || '',
+    postalAddress: source.postalAddress || source.postal_address || '',
+    email: source.email || '',
+    phone: source.phone || source.mobile || '',
+    vatTreatment: source.vatTreatment || source.vat_treatment || '',
+    notes: source.notes || '',
+    signatory: {
+      fullName: signatory.fullName || signatory.full_name || signatory.name || '',
+      role: signatory.role || signatory.title || '',
+      idNumber: signatory.idNumber || signatory.id_number || signatory.identityNumber || '',
+      email: signatory.email || '',
+      phone: signatory.phone || signatory.mobile || '',
+      signingCapacity: signatory.signingCapacity || signatory.signing_capacity || signatory.capacity || '',
+    },
+  }
+}
+
+function resolveUnitDevelopmentSellerSnapshot(unit = {}) {
+  return normalizeDevelopmentSellerSnapshot(
+    unit?.development?.sellerDetails ||
+      unit?.development?.seller_details ||
+      unit?.development?.profile?.sellerDetails ||
+      unit?.development?.profile?.seller_details ||
+      {},
+  )
+}
+
+function getDevelopmentSellerReadiness(snapshot = {}) {
+  const seller = normalizeDevelopmentSellerSnapshot(snapshot)
+  const signatory = seller.signatory || {}
+  const missing = []
+  if (!seller.legalName) missing.push('seller legal name')
+  if (!seller.registrationNumber) missing.push('registration number')
+  if (!signatory.fullName) missing.push('authorised signatory')
+  if (!(signatory.signingCapacity || signatory.role)) missing.push('signatory capacity')
+  return {
+    ready: missing.length === 0,
+    missing,
+    message: missing.length
+      ? `Complete seller details before generating or sending OTP documents: ${missing.join(', ')}.`
+      : '',
+  }
 }
 
 function normalizeDisplayName(value) {
@@ -2760,6 +2833,9 @@ function UnitDetail() {
   const [discussionBody, setDiscussionBody] = useState('')
   const [discussionType, setDiscussionType] = useState('operational')
   const [discussionFeedFilter, setDiscussionFeedFilter] = useState('all')
+  const [discussionSortDirection, setDiscussionSortDirection] = useState('newest')
+  const [activeWorkflowView, setActiveWorkflowView] = useState('sales')
+  const [activeSnagAlterationView, setActiveSnagAlterationView] = useState('snags')
   const [proxyUpdateModalOpen, setProxyUpdateModalOpen] = useState(false)
   const [proxyUpdateSaving, setProxyUpdateSaving] = useState(false)
   const [proxyUpdateForm, setProxyUpdateForm] = useState(() => ({ ...DEFAULT_PROXY_UPDATE_FORM }))
@@ -3246,6 +3322,11 @@ function UnitDetail() {
         authorRole: actingRole,
         commentText: buildSystemDiscussionComment(message),
         unitId: detail.unit.id,
+        developmentId: detail.transaction.development_id || detail.unit.development_id || detail.unit.development?.id || null,
+        organisationId: detail.transaction.organisation_id || detail.unit.development?.organisation_id || null,
+        visibilityScope: 'shared_transaction',
+        updateType: 'system',
+        isSystemGenerated: true,
       })
     }
   }
@@ -3747,6 +3828,10 @@ function UnitDetail() {
         authorRole: actingRole,
         commentText: prefixedDiscussion,
         unitId: detail.unit.id,
+        developmentId: detail.transaction.development_id || detail.unit.development_id || detail.unit.development?.id || null,
+        organisationId: detail.transaction.organisation_id || detail.unit.development?.organisation_id || null,
+        visibilityScope: 'shared_transaction',
+        updateType: discussionType,
       })
       setDiscussionBody('')
       await loadDetail()
@@ -4601,6 +4686,7 @@ function UnitDetail() {
           transaction,
           unit,
           buyer,
+          sellerDetails: developmentSellerSnapshot,
         })
 
         packet = await createDocumentPacket({
@@ -4670,6 +4756,11 @@ function UnitDetail() {
       setError('Transaction data is not available for OTP generation.')
       return false
     }
+    const sellerReadiness = getDevelopmentSellerReadiness(developmentSellerSnapshot)
+    if (!sellerReadiness.ready) {
+      setError(sellerReadiness.message)
+      return false
+    }
 
     try {
       setSalesActionLoading('generate_otp')
@@ -4723,6 +4814,9 @@ function UnitDetail() {
             transactionId: normalizeText(transaction?.id),
             unitId: normalizeText(unit?.id),
             developmentId: normalizeText(unit?.development_id || unit?.development?.id),
+            sellerDetails: developmentSellerSnapshot,
+            sellerLegalName: developmentSellerSnapshot.legalName || null,
+            sellerSignatoryName: developmentSellerSignatory.fullName || null,
             workflow: 'sales',
           },
         })
@@ -4741,6 +4835,7 @@ function UnitDetail() {
           transactionId: transaction.id,
           unit,
           buyer,
+          sellerDetails: developmentSellerSnapshot,
           onboardingFormData: onboardingFormData?.formData || {},
           generatedByRole: effectiveEditorRole || workspaceRole || 'agent',
           generatedByUserId: normalizeText(transaction?.assigned_user_id || transaction?.owner_user_id || ''),
@@ -4820,6 +4915,11 @@ function UnitDetail() {
   }
 
   async function handleReleaseOtpToClient() {
+    const sellerReadiness = getDevelopmentSellerReadiness(developmentSellerSnapshot)
+    if (!sellerReadiness.ready) {
+      setError(sellerReadiness.message)
+      return
+    }
     const generatedOtp = salesWorkflowSnapshot?.latestGeneratedOtpDocument
     if (!generatedOtp?.id) {
       setError('Generate and approve OTP before sharing it with the client.')
@@ -5608,6 +5708,10 @@ function UnitDetail() {
     unit,
     workspaceRole,
   })
+  const developmentSellerSnapshot = resolveUnitDevelopmentSellerSnapshot(unit)
+  const developmentSellerSignatory = developmentSellerSnapshot.signatory || {}
+  const developmentSellerReadiness = getDevelopmentSellerReadiness(developmentSellerSnapshot)
+  const developmentSellerConfigured = developmentSellerReadiness.ready
   const workspaceLabels = transactionWorkspaceProfile.labels
 
   const isAttorneyLens = workspaceRole === 'attorney' || actingRole === 'attorney'
@@ -5897,6 +6001,11 @@ function UnitDetail() {
     }
     return true
   })
+    .sort((left, right) => {
+      const leftTime = new Date(left?.createdAt || left?.created_at || 0).getTime()
+      const rightTime = new Date(right?.createdAt || right?.created_at || 0).getTime()
+      return discussionSortDirection === 'oldest' ? leftTime - rightTime : rightTime - leftTime
+    })
   const uploadedDocs = Number(detail.documentSummary?.uploadedCount || 0)
   const requiredDocs = Number(detail.documentSummary?.totalRequired || 0)
   const documentReadinessText = requiredDocs > 0 ? `${uploadedDocs}/${requiredDocs} uploaded` : 'Not configured'
@@ -7740,6 +7849,373 @@ function UnitDetail() {
     </div>
   ) : null
 
+  const discussionPanel = (
+    <WorkspacePanel
+      title="Comments & Updates"
+      copy="Shared transaction activity for system events, workflow movement, document updates, and manual notes."
+      className="no-print"
+    >
+      <div
+        ref={discussionPanelRef}
+        className="flex max-h-none min-h-[520px] flex-col gap-3 overflow-hidden lg:h-[620px]"
+      >
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+          <div className="inline-flex flex-wrap items-center gap-2">
+            {[
+              { key: 'all', label: 'All', count: (transactionDiscussion || []).length },
+              { key: 'system', label: 'System', count: systemDiscussionCount },
+              { key: 'manual', label: 'Manual', count: manualDiscussionCount },
+            ].map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                className={[
+                  'inline-flex min-h-[36px] items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-semibold transition duration-150 ease-out',
+                  discussionFeedFilter === option.key
+                    ? 'border-[#cfdceb] bg-white text-[#132131] shadow-[0_5px_14px_rgba(15,23,42,0.06)]'
+                    : 'border-[#e2e9f2] bg-[#f8fbff] text-[#647a93] hover:border-[#d2deea] hover:bg-white',
+                ].join(' ')}
+                onClick={() => setDiscussionFeedFilter(option.key)}
+              >
+                <span>{option.label}</span>
+                <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-[#edf3fa] px-1.5 text-[0.68rem] text-[#5d7289]">
+                  {option.count}
+                </span>
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="inline-flex min-h-[36px] items-center rounded-full border border-[#e0e8f1] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#6d8198] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd]"
+            onClick={() => setDiscussionSortDirection((value) => (value === 'newest' ? 'oldest' : 'newest'))}
+          >
+            {discussionSortDirection === 'newest' ? 'Newest first' : 'Oldest first'}
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+          <div className="space-y-2.5 pb-1">
+            {visibleDiscussionItems.map((comment) => {
+              const commentBody = sanitizeCommentBody(comment.commentBody || comment.commentText, comment, {
+                buyer,
+                transactionParticipants,
+              })
+              const commentType = comment.discussionType || 'operational'
+              const isSystemComment = commentType === SYSTEM_DISCUSSION_TYPE
+              const commentAuthorName = resolveCommentAuthorName(comment, { buyer, transactionParticipants })
+              const cardData = buildDiscussionCardData({
+                commentBody,
+                discussionType: commentType,
+              })
+
+              return (
+                <article
+                  key={comment.id}
+                  className={[
+                    'rounded-[16px] border px-4 py-3.5 shadow-[0_6px_16px_rgba(15,23,42,0.04)]',
+                    isSystemComment ? 'border-[#eadfce] bg-[#fffdf9]' : 'border-[#e3ebf4] bg-white',
+                  ].join(' ')}
+                >
+                  <header className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h4 className="text-[0.97rem] font-semibold tracking-[-0.02em] text-[#142132]">{cardData.title}</h4>
+                      <p className="mt-1 text-xs text-[#7c8ea4]">
+                        {commentAuthorName} • {comment.authorRoleLabel || TRANSACTION_ROLE_LABELS[comment.authorRole] || 'Participant'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={[
+                          'inline-flex items-center rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.08em]',
+                          isSystemComment
+                            ? 'border-[#f2ddc1] bg-[#fff4e7] text-[#9a5a1a]'
+                            : 'border-[#dce5ef] bg-[#f7f9fc] text-[#66758b]',
+                        ].join(' ')}
+                      >
+                        {toTitleLabel(commentType)}
+                      </span>
+                      <em className="text-xs not-italic text-[#7c8ea4]">{formatDateTime(comment.createdAt)}</em>
+                    </div>
+                  </header>
+
+                  <p className="mt-2.5 text-sm font-semibold leading-6 text-[#24384c]">{cardData.summary}</p>
+                  {cardData.detail && cardData.detail !== cardData.summary ? (
+                    <p className="mt-1.5 text-sm leading-6 text-[#2a3f53]">{cardData.detail}</p>
+                  ) : null}
+                </article>
+              )
+            })}
+            {!visibleDiscussionItems.length ? (
+              <p className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-5 py-6 text-sm text-[#6b7d93]">
+                No updates match the current filter.
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <form
+          onSubmit={handleAddDiscussion}
+          className="shrink-0 rounded-[16px] border border-[#dee7f1] bg-white px-4 py-4 shadow-[0_8px_20px_rgba(15,23,42,0.05)]"
+        >
+          <div className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)_auto] md:items-end">
+            <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+              <span>Update Type</span>
+              <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)}>
+                <option value="operational">Operational</option>
+                <option value="sales">Sales</option>
+                <option value="finance">Finance</option>
+                <option value="transfer">Transfer</option>
+                <option value="document">Document</option>
+                <option value="client">Buyer Communication</option>
+                <option value="blocker">Blocker</option>
+                <option value="decision">Decision</option>
+              </Field>
+            </label>
+            <div className="rounded-[14px] border border-[#e3ebf4] bg-[#f9fbff] p-3">
+              <Field
+                as="textarea"
+                rows={3}
+                value={discussionBody}
+                onChange={(event) => setDiscussionBody(event.target.value)}
+                placeholder="Write a concise update for the transaction..."
+              />
+            </div>
+            <div className="flex items-center justify-start gap-2 md:justify-end">
+              <button
+                type="button"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#dce6f0] bg-white text-[#60758d] transition hover:bg-[#f8fbfd]"
+                title="Attachments follow the existing document upload flow."
+                onClick={() => void openUploadDocumentModal({})}
+              >
+                <UploadCloud size={16} />
+              </button>
+              <Button type="submit" disabled={saving || !discussionBody.trim() || !canCommentInWorkspace}>
+                Post Update
+              </Button>
+            </div>
+          </div>
+          {!canCommentInWorkspace ? <p className="mt-3 text-sm text-[#6b7d93]">Your current role can view updates but cannot post comments.</p> : null}
+        </form>
+      </div>
+    </WorkspacePanel>
+  )
+
+  const transactionStructurePanel = (
+    <WorkspacePanel
+      title="Transaction Structure"
+      copy="The core roleplayers connected to this transaction."
+      actions={
+        <Button type="button" variant="ghost" size="sm" onClick={() => setWorkspaceMenu('onboarding')}>
+          View all
+        </Button>
+      }
+      className="no-print"
+    >
+      <div className="grid gap-2">
+        {[
+          { role: 'Developer', name: sellerDisplayName, detail: unit?.development?.organisation_name || unit?.development?.name || '', icon: Building2, active: true },
+          { role: 'Buyer / Purchaser', name: buyer?.name || 'Not assigned', detail: buyer?.email || purchaserEmailForOtp, icon: UserRound, active: Boolean(buyer?.name || buyer?.email) },
+          { role: 'Selling Agent', name: assignedAgentDisplayName, detail: stageForm.assigned_agent_email || transaction?.assigned_agent_email || '', icon: UserRound, active: assignedAgentDisplayName !== 'Not assigned' },
+          { role: 'Transfer Attorney', name: transferAttorneyDisplayName, detail: stageForm.assigned_attorney_email || transaction?.assigned_attorney_email || transferAttorneyStatusLabel, icon: Scale, active: transferAttorneyDisplayName !== 'Not assigned' },
+          { role: 'Bond Originator', name: bondAttorneyDisplayName, detail: stageForm.assigned_bond_originator_email || transaction?.assigned_bond_originator_email || bondOriginatorStatusLabel, icon: Landmark, active: bondAttorneyDisplayName !== 'Not assigned' },
+        ].map((item) => {
+          const Icon = item.icon
+          return (
+            <article key={item.role} className="flex min-w-0 items-center justify-between gap-3 rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-[#eef6f1] text-[#159447]">
+                  <Icon size={17} />
+                </span>
+                <div className="min-w-0">
+                  <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7c8ea4]">{item.role}</span>
+                  <strong className="mt-1 block truncate text-sm font-semibold text-[#142132]">{item.name}</strong>
+                  {item.detail ? <span className="mt-0.5 block truncate text-xs text-[#6b7d93]">{item.detail}</span> : null}
+                </div>
+              </div>
+              <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${item.active ? 'border-[#cfe8d8] bg-[#effaf3] text-[#197a45]' : 'border-[#dce6f0] bg-white text-[#7c8ea4]'}`}>
+                {item.active ? 'Active' : 'Pending'}
+              </span>
+            </article>
+          )
+        })}
+      </div>
+    </WorkspacePanel>
+  )
+
+  const operationalSnapshotPanel = (
+    <WorkspacePanel title="Operational Snapshot" copy="Compact status across the operational areas that usually need attention." className="no-print">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        {[
+          {
+            label: 'Reservation Deposit',
+            status: reservationRequired ? reservationStatusLabel : 'Not required',
+            icon: BadgeDollarSign,
+            onClick: () => setWorkspaceMenu('workflows'),
+          },
+          {
+            label: 'Buyer Onboarding',
+            status: onboardingStatus,
+            icon: UserRound,
+            onClick: () => setWorkspaceMenu('onboarding'),
+          },
+          {
+            label: 'Documents',
+            status: documentReadinessText,
+            icon: FilePlus2,
+            onClick: () => setWorkspaceMenu('documents'),
+          },
+          {
+            label: 'Handover',
+            status: developerOperationsSummary?.handover?.statusLabel || 'Not started',
+            icon: CalendarClock,
+            onClick: () => setWorkspaceMenu('handover'),
+          },
+          {
+            label: 'Snags & Alterations',
+            status: `${clientIssues?.length || 0} snags / ${alterationRequests?.length || 0} alterations`,
+            icon: StickyNote,
+            onClick: () => setWorkspaceMenu('snags_alterations'),
+          },
+        ].map((item) => {
+          const Icon = item.icon
+          return (
+            <button
+              key={item.label}
+              type="button"
+              className="group flex min-h-[92px] items-center justify-between gap-3 rounded-[18px] border border-[#dfe8f2] bg-white px-4 py-3 text-left shadow-[0_10px_22px_rgba(15,23,42,0.04)] transition hover:border-[#cbd8e6] hover:bg-[#fbfdff]"
+              onClick={item.onClick}
+            >
+              <span className="flex min-w-0 items-center gap-3">
+                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#eef6f1] text-[#159447]">
+                  <Icon size={18} />
+                </span>
+                <span className="min-w-0">
+                  <strong className="block truncate text-sm font-semibold text-[#142132]">{item.label}</strong>
+                  <span className="mt-1 block truncate text-xs text-[#6b7d93]">{item.status}</span>
+                </span>
+              </span>
+              <ChevronRight size={16} className="shrink-0 text-[#9aacbf] transition group-hover:translate-x-0.5 group-hover:text-[#35546c]" />
+            </button>
+          )
+        })}
+      </div>
+    </WorkspacePanel>
+  )
+
+  const workflowsPanel = (
+    <WorkspacePanel
+      title="Workflows"
+      copy="Sales, finance, and transfer workflow lanes for this transaction."
+      className="no-print"
+    >
+      <div className="mb-4 flex gap-2 overflow-x-auto rounded-[16px] border border-[#e2eaf3] bg-[#f8fbff] p-2">
+        {[
+          { key: 'sales', label: 'Sales' },
+          { key: 'finance', label: 'Finance' },
+          { key: 'transfer', label: 'Transfer' },
+        ].map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            className={[
+              'inline-flex min-h-[40px] shrink-0 items-center justify-center rounded-[12px] px-4 py-2 text-sm font-semibold transition',
+              activeWorkflowView === item.key
+                ? 'bg-[#132131] text-white shadow-[0_8px_18px_rgba(15,23,42,0.12)]'
+                : 'text-[#60758d] hover:bg-white hover:text-[#142132]',
+            ].join(' ')}
+            onClick={() => setActiveWorkflowView(item.key)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <div className="space-y-4">
+        {activeWorkflowView === 'sales' ? salesWorkflowSection : null}
+        {activeWorkflowView === 'finance' ? (
+          <>
+            {financeWorkflowSection}
+            {bondWorkflowSection}
+          </>
+        ) : null}
+        {activeWorkflowView === 'transfer' ? transferWorkflowSection : null}
+      </div>
+    </WorkspacePanel>
+  )
+
+  const snagsAlterationsPanel = (
+    <WorkspacePanel
+      title="Snags & Alterations"
+      copy="Snags and alterations stay separated internally, but live in one operational workspace."
+      className="no-print"
+    >
+      <div className="mb-4 flex gap-2 overflow-x-auto rounded-[16px] border border-[#e2eaf3] bg-[#f8fbff] p-2">
+        {[
+          { key: 'snags', label: 'Snags', meta: clientIssues?.length || 0 },
+          { key: 'alterations', label: 'Alterations', meta: alterationRequests?.length || 0 },
+        ].map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            className={[
+              'inline-flex min-h-[40px] shrink-0 items-center gap-2 rounded-[12px] px-4 py-2 text-sm font-semibold transition',
+              activeSnagAlterationView === item.key
+                ? 'bg-[#132131] text-white shadow-[0_8px_18px_rgba(15,23,42,0.12)]'
+                : 'text-[#60758d] hover:bg-white hover:text-[#142132]',
+            ].join(' ')}
+            onClick={() => setActiveSnagAlterationView(item.key)}
+          >
+            <span>{item.label}</span>
+            <span className={`rounded-full px-2 py-0.5 text-[0.68rem] ${activeSnagAlterationView === item.key ? 'bg-white/15 text-white/85' : 'bg-white text-[#7a8fa6]'}`}>
+              {item.meta}
+            </span>
+          </button>
+        ))}
+      </div>
+      {activeSnagAlterationView === 'snags' ? (
+        developmentSettings?.snag_reporting_enabled ? (
+          <ClientIssuesPanel
+            embedded
+            showHeader={false}
+            issues={clientIssues || []}
+            onUpdated={loadDetail}
+            saving={saving}
+            onSignOff={handleSignOffIssue}
+          />
+        ) : (
+          <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
+            Snag reporting is not enabled for this development.
+          </div>
+        )
+      ) : null}
+      {activeSnagAlterationView === 'alterations' ? (
+        developmentSettings?.alteration_requests_enabled ? (
+          <AlterationRequestsPanel
+            embedded
+            showHeader={false}
+            requests={alterationRequests || []}
+            onUpdated={loadDetail}
+            saving={saving}
+            onCreate={handleCreateAlteration}
+            creating={creatingAlteration}
+            creationError={alterationCreationError}
+            createDisabled={!transaction?.id}
+            totalAmount={alterationTotalAmount}
+            defaultChargeTreatment={
+              transaction?.alteration_charge_treatment ||
+              transaction?.alterationChargeTreatment ||
+              developmentSettings?.default_alteration_charge_treatment ||
+              'included_in_purchase_price'
+            }
+          />
+        ) : (
+          <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
+            Alteration requests are not enabled for this development.
+          </div>
+        )
+      ) : null}
+    </WorkspacePanel>
+  )
+
   const workspaceFallback = (
     <section className="space-y-4">
       <section className={PANEL_SHELL}>
@@ -8128,244 +8604,9 @@ function UnitDetail() {
             </div>
           ) : (
           <>
-            {developerRelationshipPanel}
-            {developerOperationsPanel}
-
-            {showReservationDepositOverviewCard ? (
-              <WorkspacePanel
-                title="Reservation Deposit"
-                copy="Track reservation payment instructions, proof of payment, and verification in one place."
-                className="no-print"
-              >
-                <div className="grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,0.55fr)]">
-                  <section className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Deposit Amount</p>
-                        <strong className="mt-1 block text-[1.02rem] font-semibold text-[#142132]">
-                          {reservationAmountValue !== null ? currency.format(reservationAmountValue) : 'Amount pending'}
-                        </strong>
-                      </div>
-                      <span className="inline-flex items-center rounded-full border border-[#d8e6f5] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#35546c]">
-                        {reservationStatusLabel}
-                      </span>
-                    </div>
-                    <div className="mt-3 grid gap-2 text-sm text-[#4f647a] sm:grid-cols-2">
-                      <span><strong className="font-semibold text-[#1f3448]">Account Holder:</strong> {reservationPaymentDetails.account_holder_name || '—'}</span>
-                      <span><strong className="font-semibold text-[#1f3448]">Bank:</strong> {reservationPaymentDetails.bank_name || '—'}</span>
-                      <span><strong className="font-semibold text-[#1f3448]">Account Number:</strong> {reservationPaymentDetails.account_number || '—'}</span>
-                      <span><strong className="font-semibold text-[#1f3448]">Branch Code:</strong> {reservationPaymentDetails.branch_code || '—'}</span>
-                      <span><strong className="font-semibold text-[#1f3448]">Account Type:</strong> {reservationPaymentDetails.account_type || '—'}</span>
-                      <span><strong className="font-semibold text-[#1f3448]">Reference:</strong> {reservationPaymentDetails.payment_reference_format || 'RES-{unit}-{txn}'}</span>
-                    </div>
-                    <div className="mt-3 grid gap-1 text-xs text-[#6b7d93] sm:grid-cols-2">
-                      <span>Requested: {transaction?.reservation_requested_at ? formatDateTime(transaction.reservation_requested_at) : 'Not requested yet'}</span>
-                      <span>Email sent: {transaction?.reservation_email_sent_at ? formatDateTime(transaction.reservation_email_sent_at) : 'Not sent yet'}</span>
-                    </div>
-                    {reservationPaymentDetails.payment_instructions ? (
-                      <p className="mt-3 text-sm leading-6 text-[#4f647a]">
-                        {reservationPaymentDetails.payment_instructions}
-                      </p>
-                    ) : null}
-                  </section>
-
-                  <section className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-4">
-                    <div className="grid gap-2.5">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() => void handleSendReservationDepositEmail({ forceResend: false })}
-                        disabled={!canEditCoreTransaction || reservationActionLoading === 'send_email' || reservationActionLoading === 'resend_email'}
-                      >
-                        {reservationActionLoading === 'send_email' ? 'Sending…' : 'Send Deposit Email'}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={() => void handleSendReservationDepositEmail({ forceResend: true })}
-                        disabled={!canEditCoreTransaction || reservationActionLoading === 'send_email' || reservationActionLoading === 'resend_email'}
-                      >
-                        {reservationActionLoading === 'resend_email' ? 'Resending…' : 'Resend Email'}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={() => void openWorkspaceDocument(reservationProofDocument, { download: false })}
-                        disabled={!canAccessReservationProof}
-                      >
-                        View Uploaded POP
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={() =>
-                          void openWorkspaceDocument(reservationProofDocument, {
-                            download: true,
-                            filename: reservationProofDocument?.name || 'reservation-deposit-proof-of-payment',
-                          })
-                        }
-                        disabled={!canAccessReservationProof}
-                      >
-                        Download POP
-                      </Button>
-                      {canEditCoreTransaction ? (
-                        <Button
-                          type="button"
-                          onClick={() => void handleReservationProofDecision('accepted')}
-                          disabled={!reservationRequirement?.key || reservationActionLoading === 'accepted'}
-                        >
-                          {reservationActionLoading === 'accepted' ? 'Marking…' : 'Payment Received'}
-                        </Button>
-                      ) : null}
-                    </div>
-                  </section>
-                </div>
-              </WorkspacePanel>
-            ) : null}
-
-            {salesWorkflowSection}
-            {financeWorkflowSection}
-            <div className="no-print">{transferWorkflowSection}</div>
-            {bondWorkflowSection}
-            {proxyUpdatesSummaryPanel}
-
-            <WorkspacePanel
-              title="Comments & Updates"
-              copy="Shared timeline for system events and manual transaction updates."
-              className="no-print"
-            >
-              <div
-                ref={discussionPanelRef}
-                className="flex h-[580px] min-h-[480px] flex-col gap-3 overflow-hidden"
-              >
-                <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
-                  <div className="inline-flex items-center gap-2">
-                    {[
-                      { key: 'all', label: 'All', count: (transactionDiscussion || []).length },
-                      { key: 'system', label: 'System', count: systemDiscussionCount },
-                      { key: 'manual', label: 'Manual', count: manualDiscussionCount },
-                    ].map((option) => (
-                      <button
-                        key={option.key}
-                        type="button"
-                        className={[
-                          'inline-flex min-h-[36px] items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-semibold transition duration-150 ease-out',
-                          discussionFeedFilter === option.key
-                            ? 'border-[#cfdceb] bg-white text-[#132131] shadow-[0_5px_14px_rgba(15,23,42,0.06)]'
-                            : 'border-[#e2e9f2] bg-[#f8fbff] text-[#647a93] hover:border-[#d2deea] hover:bg-white',
-                        ].join(' ')}
-                        onClick={() => setDiscussionFeedFilter(option.key)}
-                      >
-                        <span>{option.label}</span>
-                        <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-[#edf3fa] px-1.5 text-[0.68rem] text-[#5d7289]">
-                          {option.count}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                  <span className="inline-flex items-center rounded-full border border-[#e0e8f1] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#6d8198]">
-                    Activity timeline
-                  </span>
-                </div>
-
-                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                  <div className="space-y-2.5 pb-1">
-                    {visibleDiscussionItems.map((comment) => {
-                      const commentBody = sanitizeCommentBody(comment.commentBody || comment.commentText, comment, {
-                        buyer,
-                        transactionParticipants,
-                      })
-                      const commentType = comment.discussionType || 'operational'
-                      const isSystemComment = commentType === SYSTEM_DISCUSSION_TYPE
-                      const commentAuthorName = resolveCommentAuthorName(comment, { buyer, transactionParticipants })
-                      const cardData = buildDiscussionCardData({
-                        commentBody,
-                        discussionType: commentType,
-                      })
-
-                      return (
-                        <article
-                          key={comment.id}
-                          className={[
-                            'rounded-[16px] border px-4 py-3.5 shadow-[0_6px_16px_rgba(15,23,42,0.04)]',
-                            isSystemComment ? 'border-[#eadfce] bg-[#fffdf9]' : 'border-[#e3ebf4] bg-white',
-                          ].join(' ')}
-                        >
-                          <header className="flex flex-wrap items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <h4 className="text-[0.97rem] font-semibold tracking-[-0.02em] text-[#142132]">{cardData.title}</h4>
-                              <p className="mt-1 text-xs text-[#7c8ea4]">
-                                {commentAuthorName} • {comment.authorRoleLabel || TRANSACTION_ROLE_LABELS[comment.authorRole] || 'Participant'}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={[
-                                  'inline-flex items-center rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.08em]',
-                                  isSystemComment
-                                    ? 'border-[#f2ddc1] bg-[#fff4e7] text-[#9a5a1a]'
-                                    : 'border-[#dce5ef] bg-[#f7f9fc] text-[#66758b]',
-                                ].join(' ')}
-                              >
-                                {toTitleLabel(commentType)}
-                              </span>
-                              <em className="text-xs not-italic text-[#7c8ea4]">{formatDateTime(comment.createdAt)}</em>
-                            </div>
-                          </header>
-
-                          <p className="mt-2.5 text-sm font-semibold leading-6 text-[#24384c]">{cardData.summary}</p>
-                          {cardData.detail && cardData.detail !== cardData.summary ? (
-                            <p className="mt-1.5 text-sm leading-6 text-[#2a3f53]">{cardData.detail}</p>
-                          ) : null}
-                        </article>
-                      )
-                    })}
-                    {!visibleDiscussionItems.length ? (
-                      <p className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-5 py-6 text-sm text-[#6b7d93]">
-                        No updates match the current filter.
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-
-                <form
-                  onSubmit={handleAddDiscussion}
-                  className="shrink-0 rounded-[16px] border border-[#dee7f1] bg-white px-4 py-4 shadow-[0_8px_20px_rgba(15,23,42,0.05)]"
-                >
-                  <div className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)_auto] md:items-end">
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                      <span>Update Type</span>
-                      <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)}>
-                        <option value="operational">Operational</option>
-                        <option value="blocker">Blocker</option>
-                        <option value="document">Document</option>
-                        <option value="decision">Decision</option>
-                        <option value="client">Client</option>
-                      </Field>
-                    </label>
-                    <p className="text-sm leading-6 text-[#6b7d93]">
-                      Stage and workflow updates post into this feed automatically.
-                    </p>
-                    <div className="flex justify-start md:justify-end">
-                      <Button type="submit" disabled={saving || !discussionBody.trim() || !canCommentInWorkspace}>
-                        Post Update
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 rounded-[14px] border border-[#e3ebf4] bg-[#f9fbff] p-3">
-                    <Field
-                      as="textarea"
-                      rows={4}
-                      value={discussionBody}
-                      onChange={(event) => setDiscussionBody(event.target.value)}
-                      placeholder="Write a concise update for the activity feed..."
-                    />
-                  </div>
-                  {!canCommentInWorkspace ? <p className="mt-3 text-sm text-[#6b7d93]">Your current role can view updates but cannot post comments.</p> : null}
-                </form>
-              </div>
-            </WorkspacePanel>
+            {discussionPanel}
+            {transactionStructurePanel}
+            {operationalSnapshotPanel}
 
             {!isAttorneyLens ? (
               <WorkspacePanel
@@ -8574,6 +8815,13 @@ function UnitDetail() {
 
           </>
           )
+        ) : null}
+
+        {activeWorkspaceMenu === 'workflows' ? (
+          <div className="space-y-4">
+            {workflowsPanel}
+            {proxyUpdatesSummaryPanel}
+          </div>
         ) : null}
 
         {activeWorkspaceMenu === 'transfer' ? (
@@ -9667,61 +9915,7 @@ function UnitDetail() {
           </WorkspacePanel>
         ) : null}
 
-        {activeWorkspaceMenu === 'snags' ? (
-          <WorkspacePanel
-            title="Snags"
-            copy="Track post-registration defects, snag items, and resolution status for this unit."
-            className="no-print"
-          >
-            {developmentSettings?.snag_reporting_enabled ? (
-              <ClientIssuesPanel
-                embedded
-                showHeader={false}
-                issues={clientIssues || []}
-                onUpdated={loadDetail}
-                saving={saving}
-                onSignOff={handleSignOffIssue}
-              />
-            ) : (
-              <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
-                Snag reporting is not enabled for this development.
-              </div>
-            )}
-          </WorkspacePanel>
-        ) : null}
-
-        {activeWorkspaceMenu === 'alterations' ? (
-          <WorkspacePanel
-            title="Alterations"
-            copy="Manage owner change requests, review decisions, and supporting documents."
-            className="no-print"
-          >
-            {developmentSettings?.alteration_requests_enabled ? (
-              <AlterationRequestsPanel
-                embedded
-                showHeader={false}
-                requests={alterationRequests || []}
-                onUpdated={loadDetail}
-                saving={saving}
-                onCreate={handleCreateAlteration}
-                creating={creatingAlteration}
-                creationError={alterationCreationError}
-                createDisabled={!transaction?.id}
-                totalAmount={alterationTotalAmount}
-                defaultChargeTreatment={
-                  transaction?.alteration_charge_treatment ||
-                  transaction?.alterationChargeTreatment ||
-                  developmentSettings?.default_alteration_charge_treatment ||
-                  'included_in_purchase_price'
-                }
-              />
-            ) : (
-              <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
-                Alteration requests are not enabled for this development.
-              </div>
-            )}
-          </WorkspacePanel>
-        ) : null}
+        {activeWorkspaceMenu === 'snags_alterations' || activeWorkspaceMenu === 'snags' || activeWorkspaceMenu === 'alterations' ? snagsAlterationsPanel : null}
 
         {activeWorkspaceMenu === 'documents' ? (
           <section className="space-y-5">
@@ -10681,6 +10875,45 @@ function UnitDetail() {
           </section>
 
           <section className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+            <div className="flex items-start justify-between gap-3">
+              <h4 className="text-sm font-semibold text-[#142132]">Seller Details</h4>
+              <span
+                className={[
+                  'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold',
+                  developmentSellerConfigured
+                    ? 'border-[#cde8d8] bg-[#eef9f2] text-[#1c7d45]'
+                    : 'border-[#f2c9c3] bg-[#fff5f4] text-[#b42318]',
+                ].join(' ')}
+              >
+                {developmentSellerConfigured ? 'Configured' : 'Needs setup'}
+              </span>
+            </div>
+            <dl className="mt-3 space-y-2 text-sm">
+              <div className="flex items-start justify-between gap-3">
+                <dt className="text-[#6b7d93]">Legal Seller</dt>
+                <dd className="text-right font-medium text-[#142132]">{developmentSellerSnapshot.legalName || 'Not captured'}</dd>
+              </div>
+              <div className="flex items-start justify-between gap-3">
+                <dt className="text-[#6b7d93]">Registration</dt>
+                <dd className="text-right font-medium text-[#142132]">{developmentSellerSnapshot.registrationNumber || 'Not captured'}</dd>
+              </div>
+              <div className="flex items-start justify-between gap-3">
+                <dt className="text-[#6b7d93]">Signatory</dt>
+                <dd className="text-right font-medium text-[#142132]">{developmentSellerSignatory.fullName || 'Not captured'}</dd>
+              </div>
+              <div className="flex items-start justify-between gap-3">
+                <dt className="text-[#6b7d93]">Capacity</dt>
+                <dd className="text-right font-medium text-[#142132]">{developmentSellerSignatory.signingCapacity || developmentSellerSignatory.role || 'Not captured'}</dd>
+              </div>
+            </dl>
+            {!developmentSellerConfigured ? (
+              <p className="mt-3 rounded-[10px] border border-[#f2c9c3] bg-[#fff5f4] px-3 py-2 text-xs leading-5 text-[#8e1f15]">
+                Missing: {developmentSellerReadiness.missing.join(', ')}.
+              </p>
+            ) : null}
+          </section>
+
+          <section className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
             <h4 className="text-sm font-semibold text-[#142132]">Purchase Details</h4>
             <dl className="mt-3 space-y-2 text-sm">
               <div className="flex items-start justify-between gap-3">
@@ -10742,6 +10975,7 @@ function UnitDetail() {
             transaction,
             unit,
             buyer,
+            sellerDetails: developmentSellerSnapshot,
             onboardingFormData: onboardingFormData?.formData || {},
             specialConditions: otpSpecialConditions,
             generatedByRole: effectiveEditorRole,

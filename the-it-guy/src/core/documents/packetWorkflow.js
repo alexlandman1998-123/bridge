@@ -152,6 +152,28 @@ const OTP_SECTION_DEFINITIONS = [
     ],
   }),
   createPacketSection({
+    key: 'seller_entity_clause_company',
+    label: 'Seller Company Authority Clause',
+    required: false,
+    condition: ({ placeholders }) => ['company', 'close_corporation', 'cc'].includes(String(placeholders.seller_entity_type || placeholders['seller.entity_type_raw'] || '').toLowerCase()),
+    placeholders: [
+      ['seller_company_registration_number', 'Seller Registration Number'],
+      ['seller_representative_name', 'Authorised Seller Representative'],
+      ['seller_representative_capacity', 'Seller Representative Capacity'],
+    ],
+  }),
+  createPacketSection({
+    key: 'seller_entity_clause_trust',
+    label: 'Seller Trust Authority Clause',
+    required: false,
+    condition: ({ placeholders }) => String(placeholders.seller_entity_type || placeholders['seller.entity_type_raw'] || '').toLowerCase() === 'trust',
+    placeholders: [
+      ['seller_trust_registration_number', 'Trust Registration Number'],
+      ['seller_representative_name', 'Trustee Representative'],
+      ['seller_representative_capacity', 'Trustee Capacity'],
+    ],
+  }),
+  createPacketSection({
     key: 'commission_terms',
     label: 'Commission Terms',
     required: true,
@@ -295,15 +317,168 @@ function getSectionDefinitions(packetType) {
   return normalizedPacketType === 'mandate' ? MANDATE_SECTION_DEFINITIONS : OTP_SECTION_DEFINITIONS
 }
 
+function normalizeDevelopmentSellerDetails(value = {}) {
+  const source = value && typeof value === 'object' ? value : {}
+  const signatorySource =
+    (Array.isArray(source.signatories) ? source.signatories[0] : null) ||
+    source.defaultSignatory ||
+    source.default_signatory ||
+    {}
+
+  return {
+    mode: source.mode || '',
+    entityType: source.entityType || source.entity_type || '',
+    legalName: source.legalName || source.legal_name || source.name || '',
+    tradingName: source.tradingName || source.trading_name || '',
+    registrationNumber: source.registrationNumber || source.registration_number || source.companyRegistrationNumber || '',
+    vatNumber: source.vatNumber || source.vat_number || '',
+    registeredAddress: source.registeredAddress || source.registered_address || source.address || '',
+    postalAddress: source.postalAddress || source.postal_address || '',
+    email: source.email || '',
+    phone: source.phone || source.mobile || '',
+    vatTreatment: source.vatTreatment || source.vat_treatment || '',
+    notes: source.notes || '',
+    signatory: {
+      fullName: signatorySource?.fullName || signatorySource?.full_name || signatorySource?.name || '',
+      role: signatorySource?.role || signatorySource?.title || '',
+      idNumber: signatorySource?.idNumber || signatorySource?.id_number || signatorySource?.identityNumber || '',
+      email: signatorySource?.email || '',
+      phone: signatorySource?.phone || signatorySource?.mobile || '',
+      signingCapacity: signatorySource?.signingCapacity || signatorySource?.signing_capacity || signatorySource?.capacity || '',
+    },
+  }
+}
+
+function resolveDevelopmentSellerDetails({ unit = null, transaction = null, contextSellerDetails = null } = {}) {
+  return normalizeDevelopmentSellerDetails(
+    contextSellerDetails ||
+      unit?.development?.sellerDetails ||
+      unit?.development?.seller_details ||
+      unit?.development?.profile?.sellerDetails ||
+      unit?.development?.profile?.seller_details ||
+      transaction?.developmentSellerDetails ||
+      transaction?.development_seller_details ||
+      transaction?.sellerDetails ||
+      transaction?.seller_details ||
+      {},
+  )
+}
+
+function createSellerReadinessIssue({ sectionKey = 'seller_details', sectionLabel = 'Seller Details', placeholderKey = '', placeholderLabel = '', message = '', severity = 'critical' } = {}) {
+  return {
+    sectionKey,
+    sectionLabel,
+    placeholderKey,
+    placeholderLabel,
+    message,
+    severity,
+  }
+}
+
+export function validateSellerPartyReadiness({ packetType = 'otp', placeholders = {} } = {}) {
+  const normalizedPacketType = normalizeText(packetType).toLowerCase() || 'otp'
+  if (!['otp', 'mandate'].includes(normalizedPacketType)) {
+    return { critical: [], warnings: [], canProceed: true }
+  }
+
+  const normalizedPayload = normalizeMergeFieldPayload(placeholders, {
+    packetType: normalizedPacketType,
+    includeAliasKeys: true,
+  }).payload
+  const valueFor = (key) => normalizeText(resolvePlaceholderValue(normalizedPayload, key, normalizedPacketType))
+  const sellerName = valueFor('seller_full_name')
+  const sellerEmail = valueFor('seller_email')
+  const sellerIdNumber = valueFor('seller_id_number')
+  const sellerEntityType = normalizeText(valueFor('seller.entity_type_raw') || valueFor('seller_entity_type')).toLowerCase().replace(/\s+/g, '_')
+  const sellerIsCompany = ['company', 'close_corporation', 'cc'].includes(sellerEntityType)
+  const sellerIsTrust = sellerEntityType === 'trust'
+  const sellerIsLegalEntity = sellerIsCompany || sellerIsTrust
+  const representativeName = valueFor('seller_representative_name') || valueFor('representative_name')
+  const representativeCapacity = valueFor('seller_representative_capacity') || valueFor('representative_capacity')
+  const representativeEmail = valueFor('seller_representative_email') || valueFor('representative_email')
+  const registrationNumber =
+    (sellerIsTrust ? valueFor('seller_trust_registration_number') : valueFor('seller_company_registration_number')) ||
+    sellerIdNumber
+  const critical = []
+  const warnings = []
+
+  if (!sellerName) {
+    critical.push(createSellerReadinessIssue({
+      placeholderKey: 'seller_full_name',
+      placeholderLabel: 'Seller Legal Name',
+      message: 'Seller legal name is required before generating seller-side documents.',
+    }))
+  }
+
+  if (!registrationNumber) {
+    critical.push(createSellerReadinessIssue({
+      placeholderKey: sellerIsTrust ? 'seller_trust_registration_number' : 'seller_company_registration_number',
+      placeholderLabel: sellerIsTrust ? 'Trust Registration Number' : 'Seller Registration Number',
+      message: sellerIsTrust
+        ? 'Seller trust registration number is required before generating seller-side documents.'
+        : 'Seller registration number is required before generating seller-side documents.',
+    }))
+  }
+
+  if (sellerIsLegalEntity && !representativeName) {
+    critical.push(createSellerReadinessIssue({
+      sectionKey: sellerIsTrust ? 'seller_entity_clause_trust' : 'seller_entity_clause_company',
+      sectionLabel: sellerIsTrust ? 'Seller Trust Authority Clause' : 'Seller Company Authority Clause',
+      placeholderKey: 'seller_representative_name',
+      placeholderLabel: sellerIsTrust ? 'Trustee Representative' : 'Authorised Seller Representative',
+      message: 'Authorised seller representative is required for company, close corporation, and trust sellers.',
+    }))
+  }
+
+  if (sellerIsLegalEntity && !representativeCapacity) {
+    critical.push(createSellerReadinessIssue({
+      sectionKey: sellerIsTrust ? 'seller_entity_clause_trust' : 'seller_entity_clause_company',
+      sectionLabel: sellerIsTrust ? 'Seller Trust Authority Clause' : 'Seller Company Authority Clause',
+      placeholderKey: 'seller_representative_capacity',
+      placeholderLabel: sellerIsTrust ? 'Trustee Capacity' : 'Seller Representative Capacity',
+      message: 'Seller representative signing capacity is required before generating seller-side documents.',
+    }))
+  }
+
+  if (!sellerEmail && !representativeEmail) {
+    warnings.push(createSellerReadinessIssue({
+      placeholderKey: sellerIsLegalEntity ? 'seller_representative_email' : 'seller_email',
+      placeholderLabel: sellerIsLegalEntity ? 'Seller Representative Email' : 'Seller Email',
+      message: 'Seller signing email is not captured. Signing links may need to be completed manually.',
+      severity: 'warning',
+    }))
+  }
+
+  return {
+    critical,
+    warnings,
+    canProceed: critical.length === 0,
+  }
+}
+
 export function resolveOtpPacketPlaceholders({
   transaction = null,
   unit = null,
   buyer = null,
   onboardingFormData = null,
+  sellerDetails = null,
   specialConditions = '',
 } = {}) {
   const buyerEntityTypeRaw = normalizeText(transaction?.purchaser_type || onboardingFormData?.purchaserType || 'individual').toLowerCase()
-  const sellerName = normalizeText(unit?.development?.developer_company || unit?.development?.name || transaction?.matter_owner || 'Seller')
+  const developmentSeller = resolveDevelopmentSellerDetails({ unit, transaction, contextSellerDetails: sellerDetails })
+  const sellerSignatory = developmentSeller.signatory || {}
+  const sellerEntityTypeRaw = normalizeText(developmentSeller.entityType || transaction?.seller_type || 'company').toLowerCase()
+  const sellerRegistrationNumber =
+    normalizeNullableText(developmentSeller.registrationNumber) ||
+    normalizeNullableText(transaction?.seller_registration_number) ||
+    null
+  const sellerName = normalizeText(
+    developmentSeller.legalName ||
+      unit?.development?.developer_company ||
+      unit?.development?.name ||
+      transaction?.matter_owner ||
+      'Seller',
+  )
   const purchasePrice = normalizeOptionalNumber(transaction?.purchase_price) ?? normalizeOptionalNumber(transaction?.sales_price)
   const grossCommissionPercentage = normalizeOptionalNumber(transaction?.gross_commission_percentage)
   const grossCommissionAmount =
@@ -333,8 +508,28 @@ export function resolveOtpPacketPlaceholders({
       null,
 
     seller_full_name: sellerName || null,
-    seller_id_number: normalizeNullableText(transaction?.seller_registration_number) || null,
+    seller_id_number: sellerRegistrationNumber,
+    seller_email: normalizeNullableText(developmentSeller.email) || null,
+    seller_phone: normalizeNullableText(developmentSeller.phone) || null,
+    seller_entity_type: toTitleCase(sellerEntityTypeRaw || 'company'),
+    'seller.entity_type_raw': sellerEntityTypeRaw || 'company',
+    seller_representative_name: normalizeNullableText(sellerSignatory.fullName),
+    representative_name: normalizeNullableText(sellerSignatory.fullName),
+    seller_representative_email: normalizeNullableText(sellerSignatory.email),
+    representative_email: normalizeNullableText(sellerSignatory.email),
+    seller_representative_phone: normalizeNullableText(sellerSignatory.phone),
+    representative_phone: normalizeNullableText(sellerSignatory.phone),
+    seller_representative_capacity: normalizeNullableText(sellerSignatory.signingCapacity || sellerSignatory.role),
+    representative_capacity: normalizeNullableText(sellerSignatory.signingCapacity || sellerSignatory.role),
+    representative_id_number: normalizeNullableText(sellerSignatory.idNumber),
+    seller_company_registration_number: sellerEntityTypeRaw === 'trust' ? null : sellerRegistrationNumber,
+    seller_trust_registration_number: sellerEntityTypeRaw === 'trust' ? sellerRegistrationNumber : null,
+    seller_vat_number: normalizeNullableText(developmentSeller.vatNumber),
+    seller_registered_address: normalizeNullableText(developmentSeller.registeredAddress),
+    seller_postal_address: normalizeNullableText(developmentSeller.postalAddress),
     seller_domicilium_address:
+      normalizeNullableText(developmentSeller.registeredAddress) ||
+      normalizeNullableText(developmentSeller.postalAddress) ||
       normalizeNullableText(transaction?.property_address_line_1) ||
       normalizeNullableText(unit?.development?.address) ||
       null,
@@ -367,6 +562,8 @@ export function resolveOtpPacketPlaceholders({
     attorney_firm_name: normalizeNullableText(transaction?.attorney),
     conveyancer_email: normalizeNullableText(transaction?.assigned_attorney_email),
     developer_name: normalizeNullableText(unit?.development?.developer_company) || normalizeNullableText(unit?.development?.name),
+    developer_company_registration: sellerRegistrationNumber,
+    developer_representative: normalizeNullableText(sellerSignatory.fullName),
     developer_contact_email: normalizeNullableText(onboardingFormData?.developerEmail),
     contractor_company_name: normalizeNullableText(onboardingFormData?.buildingContractorName),
     contractor_registration_number: normalizeNullableText(onboardingFormData?.buildingContractorRegistrationNumber),

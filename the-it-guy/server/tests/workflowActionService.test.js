@@ -200,6 +200,7 @@ function buildMockClient(seed = {}) {
 try {
   const workflowModel = await server.ssrLoadModule('/server/services/transactionWorkflowModelService.js')
   const actionService = await server.ssrLoadModule('/server/services/workflowActionService.js')
+  const overrideService = await server.ssrLoadModule('/server/services/workflowOverrideService.js')
 
   const transaction = {
     id: 'tx-1',
@@ -224,6 +225,45 @@ try {
     client,
     transaction,
   })
+
+  const earlySignedOtp = await actionService.runWorkflowAction({
+    transactionId: 'tx-1',
+    actionKey: 'RECORD_SIGNED_OTP',
+    userId: 'agent-early',
+    actorRole: 'agent',
+    payload: {
+      source: 'test',
+      outOfSequenceReason: 'Signed OTP arrived by email before onboarding review was complete.',
+    },
+    client,
+  })
+
+  assert.equal(earlySignedOtp.allowed, true)
+  assert.equal(earlySignedOtp.outOfSequence, true)
+  assert.equal(earlySignedOtp.rollup.parentStage, 'SALES_OTP')
+  assert.equal(client.state.transactions[0].current_main_stage, 'OTP')
+  const signedOtpEvent = client.state.transaction_workflow_events.find((row) => row.action_key === 'RECORD_SIGNED_OTP')
+  assert.equal(signedOtpEvent?.payload_json?.out_of_sequence, true)
+  assert.equal(signedOtpEvent?.payload_json?.incomplete_predecessors?.length > 0, true)
+
+  const earlyAttorneyInstruction = await actionService.runWorkflowAction({
+    transactionId: 'tx-1',
+    actionKey: 'RECORD_ATTORNEY_INSTRUCTION',
+    userId: 'attorney-early',
+    actorRole: 'attorney',
+    payload: {
+      source: 'test',
+      outOfSequenceReason: 'Attorney was instructed outside Arch9 before finance was marked ready.',
+    },
+    client,
+  })
+
+  assert.equal(earlyAttorneyInstruction.allowed, true)
+  assert.equal(earlyAttorneyInstruction.outOfSequence, true)
+  assert.equal(earlyAttorneyInstruction.rollup.parentStage, 'SALES_OTP')
+  const attorneyInstructionEvent = client.state.transaction_workflow_events.find((row) => row.action_key === 'RECORD_ATTORNEY_INSTRUCTION')
+  assert.equal(attorneyInstructionEvent?.payload_json?.out_of_sequence, true)
+  assert.equal(attorneyInstructionEvent?.payload_json?.incomplete_predecessors?.some((item) => item.gateKey === 'finance_ready'), true)
 
   const blockedFinanceMove = await actionService.runWorkflowAction({
     transactionId: 'tx-1',
@@ -316,7 +356,38 @@ try {
     client: cashClient,
   })
   assert.equal(cashFinanceMove.allowed, true)
-  await workflowModel.updateWorkflowStepStatus('tx-2', 'finance_cash', 'proof_of_funds_received', 'complete', { client: cashClient, transaction: cashClient.state.transactions[0] })
+  const waivedProofOfFunds = await overrideService.applyWorkflowOverride({
+    transactionId: 'tx-2',
+    workflowKey: 'finance_cash',
+    stepKey: 'proof_of_funds_received',
+    overrideType: 'force_waive',
+    reason: 'Cash buyer proof of funds verified offline by developer admin.',
+    userId: 'developer-admin-1',
+    actorRole: 'developer_admin',
+    payload: {
+      attachmentId: 'doc-proof-waiver',
+      attachmentType: 'offline_confirmation',
+    },
+    client: cashClient,
+  })
+  assert.equal(waivedProofOfFunds.success, true)
+  assert.equal(waivedProofOfFunds.nextStatus, 'not_applicable')
+  assert.equal(cashClient.state.transaction_workflow_events.some((row) => row.payload_json?.overrideType === 'force_waive'), true)
+
+  await assert.rejects(
+    overrideService.applyWorkflowOverride({
+      transactionId: 'tx-2',
+      workflowKey: 'finance_cash',
+      stepKey: 'proof_of_funds_reviewed',
+      overrideType: 'force_complete',
+      reason: 'Buyer should not be able to override a finance gate.',
+      userId: 'buyer-1',
+      actorRole: 'buyer',
+      client: cashClient,
+    }),
+    /do not have permission/i,
+  )
+
   await workflowModel.updateWorkflowStepStatus('tx-2', 'finance_cash', 'proof_of_funds_reviewed', 'complete', { client: cashClient, transaction: cashClient.state.transactions[0] })
   await workflowModel.updateWorkflowStepStatus('tx-2', 'finance_cash', 'cash_confirmation_approved', 'complete', { client: cashClient, transaction: cashClient.state.transactions[0] })
   const cashTransferMove = await actionService.runWorkflowAction({

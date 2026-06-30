@@ -45,6 +45,20 @@ function firstText(...values) {
   return ''
 }
 
+function resolveDevelopmentSellerDetailsFromTransactionDetail(transactionDetail = {}) {
+  const unit = transactionDetail?.unit || {}
+  const source =
+    unit?.development?.sellerDetails ||
+    unit?.development?.seller_details ||
+    unit?.development?.profile?.sellerDetails ||
+    unit?.development?.profile?.seller_details ||
+    transactionDetail?.sellerDetails ||
+    transactionDetail?.seller_details ||
+    {}
+
+  return source && typeof source === 'object' ? source : {}
+}
+
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
@@ -635,6 +649,7 @@ function buildMandateGenerationContext({
     {}
   const mandateDraftContext = mandateDraft && typeof mandateDraft === 'object' ? mandateDraft : {}
   const privateListing = leadContext.privateListing || leadContext.listing || leadOnboarding?.listing || null
+  const sellerDetails = resolveDevelopmentSellerDetailsFromTransactionDetail(transactionDetail)
   const sellerFirstName = normalizeText(
     leadContext.contact?.firstName ||
       onboardingFormData?.sellerFirstName ||
@@ -709,6 +724,7 @@ function buildMandateGenerationContext({
     mandateDraft: mandateDraftContext,
     unit: transactionDetail?.unit || null,
     buyer: transactionDetail?.buyer || null,
+    sellerDetails,
     contact: leadContext.contact || null,
     onboardingFormData,
     generatedByRole: role || 'agent',

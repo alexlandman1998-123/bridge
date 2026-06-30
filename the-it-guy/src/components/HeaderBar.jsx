@@ -56,6 +56,7 @@ function getPageTitle(pathname, stateTitle, role) {
   if (pathname === '/bond/clients' || pathname.startsWith('/bond/clients/')) return ''
   if (pathname === '/bond/organisation' || pathname.startsWith('/bond/organisation/')) return ''
   if (pathname === '/bond/partners' || pathname === '/bond/reports') return ''
+  if (pathname === '/developer/partners' || pathname.startsWith('/developer/partners/')) return ''
   if (pathname === '/partners' || pathname.startsWith('/partners/')) return ''
   if (pathname === '/teams') return 'Teams'
   if (pathname === '/banks') return 'Banks'

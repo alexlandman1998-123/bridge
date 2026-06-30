@@ -81,6 +81,7 @@ export const APP_NAV_BY_ROLE = {
   developer: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
     { key: 'developments', label: 'Developments', to: '/developments' },
+    { key: 'developer_partners', label: 'Partners', to: '/developer/partners', activeMatch: ['/developer/partners'] },
     { key: 'transactions', label: 'Transactions', to: '/units' },
     { key: 'developer_pipeline', label: 'Pipeline', to: '/pipeline' },
     { key: 'developer_snags', label: 'Snags', to: '/snags' },

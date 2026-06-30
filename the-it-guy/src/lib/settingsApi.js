@@ -77,6 +77,64 @@ const DEFAULT_NOTIFICATION_PREFERENCES = {
   inAppNotifications: true,
 }
 
+export const DEFAULT_DEVELOPER_PROFILE_SETTINGS = {
+  entityType: 'company',
+  legalName: '',
+  tradingName: '',
+  registrationNumber: '',
+  vatNumber: '',
+  registeredAddress: '',
+  postalAddress: '',
+  email: '',
+  phone: '',
+  vatTreatment: '',
+  notes: '',
+  defaultSignatory: {
+    fullName: '',
+    role: '',
+    idNumber: '',
+    email: '',
+    phone: '',
+    signingCapacity: '',
+  },
+}
+
+export function normalizeOrganisationDeveloperProfile(profile = {}) {
+  const source = profile && typeof profile === 'object' ? profile : {}
+  const defaultSignatorySource =
+    source.defaultSignatory ||
+    source.default_signatory ||
+    source.authorisedSignatory ||
+    source.authorizedSignatory ||
+    source.signatory ||
+    (Array.isArray(source.signatories) ? source.signatories[0] : null) ||
+    {}
+
+  return {
+    ...DEFAULT_DEVELOPER_PROFILE_SETTINGS,
+    entityType: source.entityType || source.entity_type || DEFAULT_DEVELOPER_PROFILE_SETTINGS.entityType,
+    legalName: source.legalName || source.legal_name || source.name || '',
+    tradingName: source.tradingName || source.trading_name || source.displayName || source.display_name || '',
+    registrationNumber: source.registrationNumber || source.registration_number || source.companyRegistrationNumber || '',
+    vatNumber: source.vatNumber || source.vat_number || '',
+    registeredAddress: source.registeredAddress || source.registered_address || source.address || '',
+    postalAddress: source.postalAddress || source.postal_address || '',
+    email: source.email || source.companyEmail || source.company_email || '',
+    phone: source.phone || source.companyPhone || source.company_phone || source.mobile || '',
+    vatTreatment: source.vatTreatment || source.vat_treatment || '',
+    notes: source.notes || '',
+    defaultSignatory: {
+      ...DEFAULT_DEVELOPER_PROFILE_SETTINGS.defaultSignatory,
+      fullName: defaultSignatorySource.fullName || defaultSignatorySource.full_name || defaultSignatorySource.name || '',
+      role: defaultSignatorySource.role || defaultSignatorySource.title || '',
+      idNumber: defaultSignatorySource.idNumber || defaultSignatorySource.id_number || defaultSignatorySource.identityNumber || '',
+      email: defaultSignatorySource.email || '',
+      phone: defaultSignatorySource.phone || defaultSignatorySource.mobile || '',
+      signingCapacity: defaultSignatorySource.signingCapacity || defaultSignatorySource.signing_capacity || defaultSignatorySource.capacity || '',
+    },
+  }
+}
+
 const PROFILE_AVATAR_UPLOAD_CONTENT_TYPE = 'image/jpeg'
 const ORGANISATION_LOGO_MAX_BYTES = 5 * 1024 * 1024
 const ORGANISATION_LOGO_UPLOAD_TIMEOUT_MS = 30000
@@ -140,6 +198,7 @@ const DEFAULT_ORGANISATION_SETTINGS = {
       serviceDelivery: '',
     },
   },
+  developerProfile: DEFAULT_DEVELOPER_PROFILE_SETTINGS,
 }
 
 function readMockPartnerRoutingRules() {
@@ -669,6 +728,11 @@ function createLocalPartnerId() {
   return `local-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
+const ORGANISATION_PREFERRED_PARTNER_SELECT =
+  'id, partner_type, developer_partner_relationship_id, partner_organisation_id, source, scope_type, scope_json, company_name, contact_person, email_address, phone_number, website, physical_address, province, notes, is_active, is_preferred_default, created_at, updated_at'
+const ORGANISATION_PREFERRED_PARTNER_LEGACY_SELECT =
+  'id, partner_type, company_name, contact_person, email_address, phone_number, website, physical_address, province, notes, is_active, is_preferred_default, created_at, updated_at'
+
 function normalizePreferredPartnerRecord(input = {}, fallback = {}) {
   const partnerType = normalizePreferredPartnerType(input.partnerType || fallback.partnerType || 'transfer_attorney')
   const sourceId = String(input.id || fallback.id || '').trim()
@@ -677,6 +741,16 @@ function normalizePreferredPartnerRecord(input = {}, fallback = {}) {
   return {
     id: normalizedId,
     partnerType: PREFERRED_PARTNER_TYPE_VALUES.includes(partnerType) ? partnerType : 'transfer_attorney',
+    developerPartnerRelationshipId: normalizeText(input.developerPartnerRelationshipId || fallback.developerPartnerRelationshipId),
+    partnerOrganisationId: normalizeText(input.partnerOrganisationId || fallback.partnerOrganisationId),
+    source: normalizeText(input.source || fallback.source) || 'manual',
+    scopeType: normalizeText(input.scopeType || fallback.scopeType) || 'all_developments',
+    scopeJson:
+      input.scopeJson && typeof input.scopeJson === 'object'
+        ? input.scopeJson
+        : fallback.scopeJson && typeof fallback.scopeJson === 'object'
+          ? fallback.scopeJson
+          : {},
     companyName: normalizeText(input.companyName || fallback.companyName),
     contactPerson: normalizeText(input.contactPerson || fallback.contactPerson),
     email: normalizeText(input.email || fallback.email).toLowerCase(),
@@ -701,6 +775,11 @@ function normalizePreferredPartnerRow(row = {}) {
   return normalizePreferredPartnerRecord({
     id: row.id,
     partnerType: row.partner_type,
+    developerPartnerRelationshipId: row.developer_partner_relationship_id,
+    partnerOrganisationId: row.partner_organisation_id,
+    source: row.source,
+    scopeType: row.scope_type,
+    scopeJson: row.scope_json,
     companyName: row.company_name,
     contactPerson: row.contact_person,
     email: row.email_address,
@@ -721,6 +800,11 @@ function mapPreferredPartnerToRow(partner = {}, organisationId = '') {
     id: String(partner.id || '').trim() || undefined,
     organisation_id: organisationId || null,
     partner_type: normalizePreferredPartnerType(partner.partnerType),
+    developer_partner_relationship_id: normalizeNullableText(partner.developerPartnerRelationshipId) || null,
+    partner_organisation_id: normalizeNullableText(partner.partnerOrganisationId) || null,
+    source: normalizeNullableText(partner.source) || 'manual',
+    scope_type: normalizeNullableText(partner.scopeType) || 'all_developments',
+    scope_json: partner.scopeJson && typeof partner.scopeJson === 'object' ? partner.scopeJson : {},
     company_name: normalizeNullableText(partner.companyName),
     contact_person: normalizeNullableText(partner.contactPerson),
     email_address: normalizeNullableText(partner.email)?.toLowerCase() || null,
@@ -1275,7 +1359,9 @@ function buildDefaultOrganisation(profile = null) {
     supportEmail: profile?.email || '',
     supportPhone: profile?.phoneNumber || '',
     primaryContactPerson: profile?.fullName || '',
-    settingsJson: {},
+    settingsJson: {
+      developerProfile: DEFAULT_DEVELOPER_PROFILE_SETTINGS,
+    },
   }
 }
 
@@ -1323,7 +1409,13 @@ function normalizeOrganisationRow(row, profile = null) {
     supportEmail: normalizeText(row?.support_email) || fallback.supportEmail,
     supportPhone: normalizeText(row?.support_phone) || fallback.supportPhone,
     primaryContactPerson: normalizeText(row?.primary_contact_person) || fallback.primaryContactPerson,
-    settingsJson: safeJson(row?.settings_json, {}),
+    settingsJson: (() => {
+      const settingsJson = safeJson(row?.settings_json, {})
+      return {
+        ...settingsJson,
+        developerProfile: normalizeOrganisationDeveloperProfile(settingsJson.developerProfile),
+      }
+    })(),
   }
 }
 
@@ -3296,6 +3388,7 @@ export async function updateOrganisationSettings(input = {}) {
       return {
         ...existingSettingsJson,
         ...inputSettingsJson,
+        developerProfile: normalizeOrganisationDeveloperProfile(inputSettingsJson.developerProfile || existingSettingsJson.developerProfile),
         partnerProfileContent: {
           ...DEFAULT_ORGANISATION_SETTINGS.partnerProfileContent,
           ...existingProfileContent,
@@ -3578,13 +3671,28 @@ export async function listOrganisationPreferredPartners() {
     return readPreferredPartnersFromSettings(context.organisationSettings)
   }
 
-  const query = await client
+  let query = await client
     .from('organisation_preferred_partners')
-    .select(
-      'id, partner_type, company_name, contact_person, email_address, phone_number, website, physical_address, province, notes, is_active, is_preferred_default, created_at, updated_at',
-    )
+    .select(ORGANISATION_PREFERRED_PARTNER_SELECT)
     .eq('organisation_id', context.organisation.id)
     .order('company_name', { ascending: true })
+
+  if (
+    query.error &&
+    [
+      'developer_partner_relationship_id',
+      'partner_organisation_id',
+      'source',
+      'scope_type',
+      'scope_json',
+    ].some((column) => isMissingColumnError(query.error, column))
+  ) {
+    query = await client
+      .from('organisation_preferred_partners')
+      .select(ORGANISATION_PREFERRED_PARTNER_LEGACY_SELECT)
+      .eq('organisation_id', context.organisation.id)
+      .order('company_name', { ascending: true })
+  }
 
   if (!query.error) {
     return sortPreferredPartners((query.data || []).map(normalizePreferredPartnerRow))
@@ -3657,9 +3765,7 @@ export async function saveOrganisationPreferredPartner(input = {}) {
   const saveResult = await client
     .from('organisation_preferred_partners')
     .upsert(rowPayload, { onConflict: 'id' })
-    .select(
-      'id, partner_type, company_name, contact_person, email_address, phone_number, website, physical_address, province, notes, is_active, is_preferred_default, created_at, updated_at',
-    )
+    .select(ORGANISATION_PREFERRED_PARTNER_SELECT)
     .single()
 
   if (!saveResult.error) {
@@ -3669,6 +3775,11 @@ export async function saveOrganisationPreferredPartner(input = {}) {
   if (
     !isMissingTableError(saveResult.error, 'organisation_preferred_partners') &&
     !isMissingColumnError(saveResult.error, 'partner_type') &&
+    !isMissingColumnError(saveResult.error, 'developer_partner_relationship_id') &&
+    !isMissingColumnError(saveResult.error, 'partner_organisation_id') &&
+    !isMissingColumnError(saveResult.error, 'source') &&
+    !isMissingColumnError(saveResult.error, 'scope_type') &&
+    !isMissingColumnError(saveResult.error, 'scope_json') &&
     !isMissingColumnError(saveResult.error, 'is_preferred_default') &&
     !isOnConflictConstraintError(saveResult.error, 'id')
   ) {

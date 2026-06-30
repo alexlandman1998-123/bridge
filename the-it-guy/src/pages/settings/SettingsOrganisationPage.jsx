@@ -7,7 +7,12 @@ import { useWorkspace } from '../../context/WorkspaceContext'
 import { createAgencyBranchDraft } from '../../lib/agencyOnboarding'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import { upsertAreaFromAddress } from '../../lib/location/upsertArea'
-import { saveAgencyOnboardingDraft, updateOrganisationSettings, uploadOrganisationBrandingAsset } from '../../lib/settingsApi'
+import {
+  normalizeOrganisationDeveloperProfile,
+  saveAgencyOnboardingDraft,
+  updateOrganisationSettings,
+  uploadOrganisationBrandingAsset,
+} from '../../lib/settingsApi'
 import {
   SettingsBanner,
   SettingsLoadingState,
@@ -282,6 +287,10 @@ export default function SettingsOrganisationPage() {
   const form = useMemo(() => state?.organisation || null, [state])
   const onboarding = useMemo(() => state?.onboarding || null, [state])
   const organisationSettingsJson = useMemo(() => form?.settingsJson || {}, [form?.settingsJson])
+  const developerProfile = useMemo(
+    () => normalizeOrganisationDeveloperProfile(organisationSettingsJson.developerProfile),
+    [organisationSettingsJson.developerProfile],
+  )
   const partnerProfileContent = useMemo(
     () => normalizePartnerProfileContent(organisationSettingsJson.partnerProfileContent),
     [organisationSettingsJson.partnerProfileContent],
@@ -410,6 +419,47 @@ export default function SettingsOrganisationPage() {
         },
       },
     }))
+  }
+
+  function updateDeveloperProfileField(fieldKey, value) {
+    setState((previous) => {
+      const currentProfile = normalizeOrganisationDeveloperProfile(previous.organisation?.settingsJson?.developerProfile)
+      return {
+        ...previous,
+        organisation: {
+          ...(previous.organisation || {}),
+          settingsJson: {
+            ...((previous.organisation && previous.organisation.settingsJson) || {}),
+            developerProfile: {
+              ...currentProfile,
+              [fieldKey]: value,
+            },
+          },
+        },
+      }
+    })
+  }
+
+  function updateDeveloperProfileSignatoryField(fieldKey, value) {
+    setState((previous) => {
+      const currentProfile = normalizeOrganisationDeveloperProfile(previous.organisation?.settingsJson?.developerProfile)
+      return {
+        ...previous,
+        organisation: {
+          ...(previous.organisation || {}),
+          settingsJson: {
+            ...((previous.organisation && previous.organisation.settingsJson) || {}),
+            developerProfile: {
+              ...currentProfile,
+              defaultSignatory: {
+                ...currentProfile.defaultSignatory,
+                [fieldKey]: value,
+              },
+            },
+          },
+        },
+      }
+    })
   }
 
   function updateBrandColour(key, value) {
@@ -804,6 +854,101 @@ export default function SettingsOrganisationPage() {
             </label>
           </div>
         </SettingsSectionCard>
+
+        {isDeveloperCompany ? (
+          <SettingsSectionCard
+            title="Developer Profile"
+            description="Legal seller defaults used when developments need OTP and mandate seller details."
+          >
+            <div className={settingsGridClass}>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Seller entity type</span>
+                <Field
+                  as="select"
+                  value={developerProfile.entityType}
+                  disabled={!canEdit}
+                  onChange={(event) => updateDeveloperProfileField('entityType', event.target.value)}
+                >
+                  <option value="company">Company</option>
+                  <option value="individual">Individual</option>
+                  <option value="trust">Trust</option>
+                  <option value="close_corporation">Close Corporation</option>
+                  <option value="other">Other</option>
+                </Field>
+              </label>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Legal seller name</span>
+                <Field value={developerProfile.legalName} disabled={!canEdit} onChange={(event) => updateDeveloperProfileField('legalName', event.target.value)} />
+              </label>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Trading name</span>
+                <Field value={developerProfile.tradingName} disabled={!canEdit} onChange={(event) => updateDeveloperProfileField('tradingName', event.target.value)} />
+              </label>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Registration / Trust number</span>
+                <Field value={developerProfile.registrationNumber} disabled={!canEdit} onChange={(event) => updateDeveloperProfileField('registrationNumber', event.target.value)} />
+              </label>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">VAT number</span>
+                <Field value={developerProfile.vatNumber} disabled={!canEdit} onChange={(event) => updateDeveloperProfileField('vatNumber', event.target.value)} />
+              </label>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">VAT treatment</span>
+                <Field value={developerProfile.vatTreatment} disabled={!canEdit} onChange={(event) => updateDeveloperProfileField('vatTreatment', event.target.value)} placeholder="e.g. VAT inclusive" />
+              </label>
+              <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
+                <span className="text-sm font-medium text-[#51657b]">Registered address</span>
+                <Field value={developerProfile.registeredAddress} disabled={!canEdit} onChange={(event) => updateDeveloperProfileField('registeredAddress', event.target.value)} />
+              </label>
+              <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
+                <span className="text-sm font-medium text-[#51657b]">Postal address</span>
+                <Field value={developerProfile.postalAddress} disabled={!canEdit} onChange={(event) => updateDeveloperProfileField('postalAddress', event.target.value)} />
+              </label>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Seller email</span>
+                <Field type="email" value={developerProfile.email} disabled={!canEdit} onChange={(event) => updateDeveloperProfileField('email', event.target.value)} />
+              </label>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Seller phone</span>
+                <Field value={developerProfile.phone} disabled={!canEdit} onChange={(event) => updateDeveloperProfileField('phone', event.target.value)} />
+              </label>
+            </div>
+
+            <div className="mt-5 rounded-[18px] border border-[#dde6f0] bg-[#fbfdff] p-4">
+              <h4 className="text-sm font-semibold text-[#142132]">Default Authorised Signatory</h4>
+              <div className={`mt-4 ${settingsGridClass}`}>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">Full name</span>
+                  <Field value={developerProfile.defaultSignatory.fullName} disabled={!canEdit} onChange={(event) => updateDeveloperProfileSignatoryField('fullName', event.target.value)} />
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">Capacity / role</span>
+                  <Field value={developerProfile.defaultSignatory.signingCapacity} disabled={!canEdit} onChange={(event) => updateDeveloperProfileSignatoryField('signingCapacity', event.target.value)} placeholder="e.g. Director" />
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">Position</span>
+                  <Field value={developerProfile.defaultSignatory.role} disabled={!canEdit} onChange={(event) => updateDeveloperProfileSignatoryField('role', event.target.value)} />
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">ID number</span>
+                  <Field value={developerProfile.defaultSignatory.idNumber} disabled={!canEdit} onChange={(event) => updateDeveloperProfileSignatoryField('idNumber', event.target.value)} />
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">Email</span>
+                  <Field type="email" value={developerProfile.defaultSignatory.email} disabled={!canEdit} onChange={(event) => updateDeveloperProfileSignatoryField('email', event.target.value)} />
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">Phone</span>
+                  <Field value={developerProfile.defaultSignatory.phone} disabled={!canEdit} onChange={(event) => updateDeveloperProfileSignatoryField('phone', event.target.value)} />
+                </label>
+                <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
+                  <span className="text-sm font-medium text-[#51657b]">Internal notes</span>
+                  <Field as="textarea" value={developerProfile.notes} disabled={!canEdit} onChange={(event) => updateDeveloperProfileField('notes', event.target.value)} />
+                </label>
+              </div>
+            </div>
+          </SettingsSectionCard>
+        ) : null}
 
         <SettingsSectionCard
           title={copy.branchesSection.title}

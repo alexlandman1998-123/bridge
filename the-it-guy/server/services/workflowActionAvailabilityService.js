@@ -1,5 +1,6 @@
 import { normalizeRoleType } from '../../src/core/transactions/permissions.js'
 import { getTransactionWorkflowDefinition } from '../workflows/transactionWorkflowDefinitions.js'
+import { isGateWorkflowAction } from '../workflows/transactionWorkflowGates.js'
 import { resolveFinanceWorkflowKey } from './financeWorkflowResolver.js'
 
 const ACTION_GROUP_LABELS = Object.freeze({
@@ -97,6 +98,31 @@ function resolveFinanceActionOwnerRole(state = {}) {
 }
 
 const ACTION_DEFINITIONS = Object.freeze({
+  RECORD_SIGNED_OTP: {
+    label: 'Record Signed OTP',
+    groupKey: 'documents',
+    workflowKey: 'sales_otp',
+    stepKey: 'signed_otp_received',
+    ownerRole: 'agent',
+    allowedRoles: ['agent', 'developer', 'internal_admin'],
+    stages: ['SALES_OTP'],
+    requires: ['buyer_onboarding_complete', 'seller_onboarding_complete'],
+    targetStatus: 'complete',
+    actionContext: 'task_update',
+  },
+  RECORD_ATTORNEY_INSTRUCTION: {
+    label: 'Record Attorney Instruction',
+    groupKey: 'attorney',
+    workflowKey: 'attorney_transfer',
+    stepKey: 'instruction_received',
+    ownerRole: 'attorney',
+    allowedRoles: ['attorney', 'developer', 'internal_admin'],
+    stages: ['SALES_OTP', 'FINANCE', 'TRANSFER'],
+    targetStatus: 'complete',
+    softPrerequisiteGates: ['finance_ready'],
+    expectedPredecessors: ['Finance Ready gate'],
+    actionContext: 'task_update',
+  },
   REQUEST_BUYER_DETAILS: {
     label: 'Request buyer details',
     groupKey: 'client',
@@ -279,6 +305,11 @@ function resolveActionMetadata(definition = null, state = {}) {
     executionMode: normalizeText(definition.executionMode || 'workflow'),
     transactionOnly: definition.transactionOnly === true,
     hideWhenStepComplete: definition.hideWhenStepComplete === true,
+    gateAction: definition.gateAction === true,
+    gateKey: normalizeText(definition.gateKey),
+    softPrerequisiteGates: unique(definition.softPrerequisiteGates || []),
+    expectedPredecessors: unique(definition.expectedPredecessors || []),
+    actionContext: normalizeText(definition.actionContext),
     reason: definition.reason,
   }
 }
@@ -343,7 +374,7 @@ function resolveActionDisabledReason(descriptor = {}, state = {}) {
     if (customReason) return customReason
   }
 
-  if (descriptor.groupKey !== 'client') {
+  if (isGateWorkflowAction(descriptor) && descriptor.groupKey !== 'client') {
     const blockers = state.blockers || []
     const primaryBlockerMessage = blockers
       .map((blocker) => normalizeText(blocker?.message))
@@ -353,8 +384,9 @@ function resolveActionDisabledReason(descriptor = {}, state = {}) {
     }
   }
 
-  const missingRequirement = resolveActionRequirementStates(descriptor, state.workflows || {})
-    .find((item) => !item.complete)
+  const missingRequirement = isGateWorkflowAction(descriptor)
+    ? resolveActionRequirementStates(descriptor, state.workflows || {}).find((item) => !item.complete)
+    : null
   if (missingRequirement) {
     return buildMissingRequirementReason(missingRequirement, descriptor.label)
   }
@@ -384,6 +416,12 @@ export function resolveWorkflowAvailableActions(state = {}) {
         requires: descriptor.requires || [],
         requiredPermissions: descriptor.allowedRoles || [],
         requiredEvidence: descriptor.requiredEvidence || [],
+        warningReason: !isGateWorkflowAction(descriptor)
+          ? resolveActionRequirementStates(descriptor, state.workflows || {})
+            .filter((item) => !item.complete)
+            .map((item) => buildMissingRequirementReason(item, descriptor.label))
+            .find(Boolean) || null
+          : null,
       }
     })
     .sort((left, right) => {

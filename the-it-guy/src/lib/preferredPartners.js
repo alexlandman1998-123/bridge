@@ -1,4 +1,5 @@
 export const PREFERRED_PARTNER_TYPES = [
+  { value: 'agency', label: 'Agency / Selling Agent' },
   { value: 'bond_originator', label: 'Bond Originator' },
   { value: 'bond_attorney', label: 'Bond Attorney' },
   { value: 'transfer_attorney', label: 'Transfer Attorney' },
@@ -31,6 +32,10 @@ export function normalizePreferredPartnerType(value, fallback = 'transfer_attorn
 
   if (normalized === 'conveyancer' || normalized === 'transfer_conveyancer') {
     return 'transfer_attorney'
+  }
+
+  if (normalized === 'agent' || normalized === 'agency_network' || normalized === 'selling_agent') {
+    return 'agency'
   }
 
   if (normalized === 'bond' || normalized === 'bondoriginator') {

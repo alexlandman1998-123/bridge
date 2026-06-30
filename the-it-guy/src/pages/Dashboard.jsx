@@ -1,12 +1,19 @@
 import {
+  AlertTriangle,
   ArrowRight,
   ArrowRightLeft,
   Banknote,
   Building2,
   CalendarDays,
+  CheckCircle2,
+  CircleDollarSign,
+  Download,
   FileCheck2,
+  Home,
   LandPlot,
+  Layers3,
   PieChart,
+  ShieldCheck,
   TrendingUp,
   Users,
 } from 'lucide-react'
@@ -20,9 +27,12 @@ import BridgeCommandCenterDashboard from '../components/dashboard/BridgeCommandC
 import ActivePipelineCarousel from '../components/pipeline/ActivePipelineCarousel'
 import { PillToggle } from '../components/ui/FilterBar'
 import { ResidentialCommandCenterGrid } from '../components/residential/ResidentialDashboard'
+import '../styles/developerCommand.css'
 import {
   STAGE_AGING_BUCKETS,
   selectActiveTransactions,
+  selectDevelopmentPerformance,
+  selectPortfolioMetrics,
   selectStageAging,
 } from '../core/transactions/developerSelectors'
 import {
@@ -1104,6 +1114,488 @@ function buildPremiumAgentForecast(rows = []) {
   ]
 }
 
+function getGreetingName(profile = {}) {
+  const displayName = String(profile?.first_name || profile?.firstName || profile?.name || profile?.full_name || profile?.email || '').trim()
+  if (!displayName) return 'there'
+  if (displayName.includes('@')) return displayName.split('@')[0]
+  return displayName.split(/\s+/)[0] || displayName
+}
+
+function getDayGreeting() {
+  return 'Good morning'
+}
+
+function getRowValue(row = {}) {
+  const value = Number(
+    row?.transaction?.purchase_price ??
+      row?.transaction?.sales_price ??
+      row?.unit?.price ??
+      row?.unit?.list_price ??
+      row?.unit?.listPrice ??
+      0,
+  )
+  return Number.isFinite(value) ? value : 0
+}
+
+function getDevelopmentImage(row = {}) {
+  const candidates = [
+    row?.development?.cover_image_url,
+    row?.development?.image_url,
+    row?.development?.hero_image_url,
+    row?.unit?.cover_image_url,
+    row?.unit?.image_url,
+    row?.unit?.primary_image_url,
+    row?.transaction?.property_image_url,
+    row?.transaction?.listing_image_url,
+  ]
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      const first = candidate.find(Boolean)
+      if (typeof first === 'string' && first.trim()) return first.trim()
+      if (first?.url) return String(first.url).trim()
+    }
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim()
+    if (candidate?.url) return String(candidate.url).trim()
+  }
+
+  return ''
+}
+
+function isToday(value) {
+  const date = new Date(value || 0)
+  if (Number.isNaN(date.getTime())) return false
+  const now = new Date()
+  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate()
+}
+
+function buildDeveloperSparkline(seedValue = 0, length = 8) {
+  const base = Math.max(1, Number(seedValue || 0))
+  return Array.from({ length }, (_, index) => {
+    const modifier = 0.68 + (index % 3) * 0.12 + (index / Math.max(length - 1, 1)) * 0.28
+    return Math.max(0, Math.round(base * modifier))
+  })
+}
+
+function buildDeveloperCommandCenterModel({ rows = [], overview = {}, profile = {}, organisation = {} } = {}) {
+  const safeRows = Array.isArray(rows) ? rows : []
+  const portfolio = selectPortfolioMetrics(safeRows, {
+    totalDevelopmentsOverride: Number(overview?.metrics?.totalDevelopments || 0) || null,
+  })
+  const activeTransactions = selectActiveTransactions(safeRows)
+  const developmentPerformance = selectDevelopmentPerformance(safeRows)
+  const rowsByDevelopmentId = new Map()
+  for (const row of safeRows) {
+    const developmentId = row?.development?.id || row?.unit?.development_id || row?.development?.name || ''
+    if (developmentId && !rowsByDevelopmentId.has(developmentId)) rowsByDevelopmentId.set(developmentId, row)
+  }
+
+  const stageCounts = safeRows.reduce((accumulator, row) => {
+    const stage = getRowMainStage(row)
+    accumulator[stage] = (accumulator[stage] || 0) + 1
+    return accumulator
+  }, {})
+  const stockValue = safeRows.reduce((sum, row) => (getRowMainStage(row) === 'AVAIL' ? sum + getRowValue(row) : sum), 0)
+  const forecastRevenue = safeRows.reduce((sum, row) => sum + getRowValue(row), 0)
+  const progressedToday = activeTransactions.filter((item) => isToday(item.updatedAt)).length
+  const buyerOnboardingCount = activeTransactions.filter((item) => ['DEP', 'OTP'].includes(item.stageKey) || /buyer|onboarding|fica|document/i.test(item.nextAction || '')).length
+  const transfersWaitingCount = activeTransactions.filter((item) => ['ATTY', 'XFER'].includes(item.stageKey) || /guarantee|attorney|transfer/i.test(item.nextAction || '')).length
+
+  const attentionItems = activeTransactions
+    .map((item) => {
+      const days = (() => {
+        const updated = new Date(item.updatedAt || 0)
+        if (Number.isNaN(updated.getTime())) return 0
+        const diff = Date.now() - updated.getTime()
+        return diff > 0 ? Math.floor(diff / (1000 * 60 * 60 * 24)) : 0
+      })()
+      const reason = item.missingCount > 0
+        ? `${item.missingCount} document${item.missingCount === 1 ? '' : 's'} outstanding`
+        : item.nextAction || `${item.stageLabel} requires review`
+      const priority = item.readinessBlockersCount > 0 || days >= 10 ? 'critical' : item.readinessWarningsCount > 0 || days >= 5 ? 'warning' : 'info'
+      return {
+        id: item.id,
+        unitId: item.unitId,
+        developmentName: item.developmentName,
+        title: item.developmentName || 'Development',
+        subtitle: reason,
+        meta: days >= 1 ? `${days} day${days === 1 ? '' : 's'} since update` : item.readinessHealth || item.stageLabel,
+        priority,
+      }
+    })
+    .filter((item) => item.priority !== 'info' || attentionItemsShouldInclude(item))
+    .slice(0, 5)
+
+  if (!attentionItems.length) {
+    activeTransactions.slice(0, 3).forEach((item) => {
+      attentionItems.push({
+        id: `watch-${item.id}`,
+        unitId: item.unitId,
+        developmentName: item.developmentName,
+        title: item.developmentName || 'Development',
+        subtitle: item.nextAction || `${item.stageLabel} in progress`,
+        meta: item.stageLabel,
+        priority: 'info',
+      })
+    })
+  }
+
+  const developments = developmentPerformance.slice(0, 8).map((development) => {
+    const sourceRow = rowsByDevelopmentId.get(development.id) || rowsByDevelopmentId.get(development.name) || {}
+    return {
+      ...development,
+      imageUrl: getDevelopmentImage(sourceRow),
+      href: development.id ? `/developments/${development.id}` : '/developments',
+    }
+  })
+
+  const recentActivity = [...safeRows]
+    .filter((row) => row?.transaction || row?.unit)
+    .sort((left, right) => new Date(getRowUpdatedAt(right) || 0) - new Date(getRowUpdatedAt(left) || 0))
+    .slice(0, 5)
+    .map((row, index) => {
+      const stageLabel = MAIN_STAGE_LABELS[getRowMainStage(row)] || row?.stage || 'Updated'
+      const unitNumber = row?.unit?.unit_number || '-'
+      const developmentName = row?.development?.name || 'Development'
+      return {
+        id: row?.transaction?.id || row?.unit?.id || `activity-${index}`,
+        title: `${stageLabel} updated - Unit ${unitNumber}, ${developmentName}`,
+        time: formatRelativeTime(getRowUpdatedAt(row)),
+        tone: getRowMainStage(row) === 'REG' ? 'green' : getRowMainStage(row) === 'XFER' ? 'blue' : 'amber',
+      }
+    })
+
+  const belowTargetDevelopments = developmentPerformance.filter((item) => Number(item.sellThroughPercent || 0) < 35 && Number(item.totalUnits || 0) > 0).length
+  const attentionCount = attentionItems.filter((item) => item.priority !== 'info').length
+  const commercialScore = Math.max(54, Math.min(96, 92 - attentionCount * 4 - belowTargetDevelopments * 2 + (portfolio.unitsRegistered > 0 ? 4 : 0)))
+  const resolvedOrganisationName = String(organisation?.name || organisation?.display_name || profile?.organisation_name || '').trim()
+  const organisationName = !resolvedOrganisationName || /^dev\s+developer$/i.test(resolvedOrganisationName) || /^arch9 workspace$/i.test(resolvedOrganisationName)
+    ? 'Samlin Construction'
+    : resolvedOrganisationName
+
+  return {
+    greetingName: getGreetingName(profile),
+    greeting: getDayGreeting(),
+    organisationName,
+    summary: {
+      developments: portfolio.totalDevelopments,
+      activeTransactions: activeTransactions.length,
+      attentionCount,
+    },
+    focus: [
+      { key: 'buyer_onboarding', value: buyerOnboardingCount, label: 'Buyer onboardings outstanding', tone: 'amber', icon: Users },
+      { key: 'transfer_guarantees', value: transfersWaitingCount, label: 'Transfers waiting for guarantees', tone: 'orange', icon: FileCheck2 },
+      { key: 'progressed_today', value: progressedToday, label: 'Transactions progressed today', tone: 'green', icon: CheckCircle2 },
+    ],
+    kpis: [
+      { key: 'developments', label: 'Active Developments', value: formatKpiCount(portfolio.totalDevelopments), detail: 'vs last month', trend: null, icon: Building2, tone: 'blue' },
+      { key: 'transactions', label: 'Active Transactions', value: formatKpiCount(activeTransactions.length), detail: 'open and in progress', trend: null, icon: Layers3, tone: 'green' },
+      { key: 'pipeline', label: 'Pipeline Value', value: formatKpiCurrency(portfolio.pipelineValue), detail: 'active transaction value', trend: null, icon: Banknote, tone: 'purple' },
+      { key: 'revenue', label: 'Revenue Secured', value: formatKpiCurrency(portfolio.totalSalesValue), detail: 'registered value', trend: null, icon: CircleDollarSign, tone: 'orange' },
+      { key: 'available', label: 'Units Available', value: formatKpiCount(portfolio.unitsAvailable), detail: 'sellable stock', trend: null, icon: Home, tone: 'blue' },
+    ],
+    attentionItems,
+    developments,
+    snapshots: {
+      sales: [
+        { key: 'available', label: 'Units Available', value: formatKpiCount(portfolio.unitsAvailable), icon: Home, tone: 'blue' },
+        { key: 'reserved', label: 'Reserved', value: formatKpiCount((stageCounts.DEP || 0) + (stageCounts.OTP || 0)), icon: FileCheck2, tone: 'amber' },
+        { key: 'transferred', label: 'Transferred', value: formatKpiCount(stageCounts.XFER || 0), icon: ArrowRightLeft, tone: 'green' },
+        { key: 'registered', label: 'Registered', value: formatKpiCount(portfolio.unitsRegistered), icon: CheckCircle2, tone: 'blue' },
+      ],
+      revenue: [
+        { key: 'pipeline', label: 'Pipeline', value: formatKpiCurrency(portfolio.pipelineValue), icon: Banknote, tone: 'purple' },
+        { key: 'secured', label: 'Revenue Secured', value: formatKpiCurrency(portfolio.totalSalesValue), icon: CircleDollarSign, tone: 'orange' },
+        { key: 'stock', label: 'Stock Value', value: formatKpiCurrency(stockValue), icon: Layers3, tone: 'green' },
+        { key: 'forecast', label: 'Forecast Revenue', value: formatKpiCurrency(forecastRevenue), icon: TrendingUp, tone: 'blue' },
+      ],
+    },
+    recentActivity,
+    commercialHealth: {
+      score: commercialScore,
+      label: commercialScore >= 82 ? 'Good' : commercialScore >= 68 ? 'Stable' : 'Needs Attention',
+      bullets: [
+        { key: 'revenue', label: portfolio.pipelineValue || portfolio.totalSalesValue ? 'Revenue is on track' : 'Revenue data will build as transactions progress', tone: portfolio.pipelineValue || portfolio.totalSalesValue ? 'green' : 'amber' },
+        { key: 'stock', label: portfolio.unitsAvailable > 0 ? `Large stock remaining across ${formatKpiCount(portfolio.totalDevelopments)} developments` : 'Available stock is fully allocated', tone: portfolio.unitsAvailable > 0 ? 'amber' : 'green' },
+        { key: 'margin', label: 'Gross margin is healthy', tone: 'green' },
+        { key: 'pace', label: belowTargetDevelopments ? `${belowTargetDevelopments} developments below target pace` : 'Development pace is on target', tone: belowTargetDevelopments ? 'amber' : 'green' },
+      ],
+    },
+    performance: [
+      { key: 'transactions', label: 'Transactions', value: formatKpiCount(activeTransactions.filter((item) => isToday(item.updatedAt) || IS_DATE_IN_CURRENT_MONTH(item.updatedAt)).length || activeTransactions.length), trendLabel: 'this month', trend: null, points: buildDeveloperSparkline(activeTransactions.length), tone: 'blue' },
+      { key: 'revenue', label: 'Revenue Secured', value: formatKpiCurrency(portfolio.totalSalesValue), trendLabel: 'this month', trend: null, points: buildDeveloperSparkline(portfolio.totalSalesValue || portfolio.pipelineValue || 1), tone: 'green' },
+      { key: 'registrations', label: 'Registrations', value: formatKpiCount(portfolio.unitsRegistered), trendLabel: 'this month', trend: null, points: buildDeveloperSparkline(portfolio.unitsRegistered || 1), tone: 'purple' },
+    ],
+  }
+}
+
+function attentionItemsShouldInclude(item = {}) {
+  return /outstanding|required|overdue|waiting|guarantee|document|attorney|deposit|review/i.test(`${item.subtitle || ''} ${item.meta || ''}`)
+}
+
+function DeveloperTrendPill({ value, inverse = false }) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) {
+    return <span className="developer-command-trend is-neutral">Live</span>
+  }
+  const numeric = Number(value)
+  const positive = numeric >= 0
+  const good = inverse ? !positive : positive
+  return <span className={`developer-command-trend ${good ? 'is-positive' : 'is-negative'}`}>{positive ? '↑' : '↓'} {Math.abs(numeric)}%</span>
+}
+
+function DeveloperSparkline({ points = [], tone = 'blue' }) {
+  const values = points.map((point) => Number(point || 0))
+  const max = Math.max(1, ...values)
+  const polyline = values.map((value, index) => {
+    const x = values.length > 1 ? (index / (values.length - 1)) * 100 : 0
+    const y = 72 - (value / max) * 48
+    return `${x},${y}`
+  }).join(' ')
+  return (
+    <svg className={`developer-command-sparkline is-${tone}`} viewBox="0 0 100 82" role="img" aria-label="Monthly trend">
+      <polyline points={polyline} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+      {values.map((value, index) => {
+        const x = values.length > 1 ? (index / (values.length - 1)) * 100 : 0
+        const y = 72 - (value / max) * 48
+        return <circle key={`${index}-${value}`} cx={x} cy={y} r="2.4" fill="white" stroke="currentColor" strokeWidth="2" />
+      })}
+    </svg>
+  )
+}
+
+function DeveloperLandingCommandCenter({ model, onNavigate = () => {} }) {
+  if (!model) return null
+
+  return (
+    <section className="developer-command-page">
+      <article className="developer-command-hero">
+        <div className="developer-command-hero-copy">
+          <span className="developer-command-live-badge">Live Command Center</span>
+          <div>
+            <h1>{model.greeting}, {model.greetingName}</h1>
+            <p>
+              {model.organisationName} is tracking {formatKpiCount(model.summary.developments)} developments and {formatKpiCount(model.summary.activeTransactions)} active transactions.
+              {' '}{formatKpiCount(model.summary.attentionCount)} item{model.summary.attentionCount === 1 ? '' : 's'} require your attention today.
+            </p>
+          </div>
+          <div className="developer-command-focus">
+            <p>Today's Focus</p>
+            <div>
+              {model.focus.map((item) => {
+                const Icon = item.icon
+                return (
+                  <article key={item.key}>
+                    <span className={`developer-command-focus-icon is-${item.tone}`}><Icon size={16} /></span>
+                    <strong>{formatKpiCount(item.value)}</strong>
+                    <span>{item.label}</span>
+                  </article>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+        <div className="developer-command-hero-actions">
+          <button type="button" className="developer-command-view-pill" onClick={() => onNavigate('/dashboard')}>
+            <span>View</span>
+            <strong>Developer</strong>
+          </button>
+          <button type="button" className="developer-command-export" onClick={() => onNavigate('/reports')}>
+            <Download size={16} />
+            <span>Export Report</span>
+          </button>
+        </div>
+        <div className="developer-command-building" aria-hidden="true">
+          <div className="developer-command-building-lines" />
+          <div className="developer-command-building-tower">
+            {Array.from({ length: 18 }, (_, index) => <span key={index} />)}
+          </div>
+        </div>
+      </article>
+
+      <div className="developer-command-kpis">
+        {model.kpis.map((item) => {
+          const Icon = item.icon
+          return (
+            <article key={item.key} className="developer-command-kpi">
+              <div className="developer-command-kpi-head">
+                <span className={`developer-command-icon is-${item.tone}`}><Icon size={20} /></span>
+                <DeveloperTrendPill value={item.trend} inverse={item.key === 'available'} />
+              </div>
+              <p>{item.label}</p>
+              <strong>{item.value}</strong>
+              <small>{item.detail}</small>
+            </article>
+          )
+        })}
+      </div>
+
+      <div className="developer-command-primary-grid">
+        <article className="developer-command-card developer-command-attention-card">
+          <header className="developer-command-card-header">
+            <div>
+              <h2>Needs Attention</h2>
+              <span>{formatKpiCount(model.attentionItems.filter((item) => item.priority !== 'info').length)} priority items</span>
+            </div>
+            <button type="button" onClick={() => onNavigate('/transactions')}>View all</button>
+          </header>
+          {model.attentionItems.length ? (
+            <div className="developer-command-attention-list">
+              {model.attentionItems.slice(0, 5).map((item) => (
+                <article key={item.id} className={`developer-command-attention-item is-${item.priority}`}>
+                  <span className="developer-command-attention-icon">
+                    {item.priority === 'critical' ? <AlertTriangle size={20} /> : item.priority === 'warning' ? <FileCheck2 size={20} /> : <ShieldCheck size={20} />}
+                  </span>
+                  <div>
+                    <h3>{item.title}</h3>
+                    <p>{item.subtitle}</p>
+                    <small>{item.meta}</small>
+                  </div>
+                  <button type="button" onClick={() => onNavigate(item.unitId ? `/units/${item.unitId}` : '/transactions')}>
+                    Open <ArrowRight size={15} />
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="developer-command-empty">No priority work is flagged right now.</div>
+          )}
+        </article>
+
+        <article className="developer-command-card developer-command-developments-card">
+          <header className="developer-command-card-header">
+            <div>
+              <h2>My Developments</h2>
+              <span>{formatKpiCount(model.developments.length)} tracked projects</span>
+            </div>
+            <button type="button" onClick={() => onNavigate('/developments')}>View all</button>
+          </header>
+          {model.developments.length ? (
+            <div className="developer-command-development-strip">
+              {model.developments.map((development) => (
+                <article key={development.id || development.name} className="developer-command-development-card">
+                  <div className="developer-command-development-image">
+                    {development.imageUrl ? <img src={development.imageUrl} alt="" /> : <span>{String(development.name || 'D').slice(0, 1)}</span>}
+                  </div>
+                  <h3>{development.name}</h3>
+                  <div className="developer-command-development-metrics">
+                    <div><strong>{formatKpiCount(development.totalUnits)}</strong><span>Units</span></div>
+                    <div><strong>{formatPercent(development.sellThroughPercent || 0)}</strong><span>Sold</span></div>
+                    <div><strong>{formatKpiCount(development.unitsInProgress || 0)}</strong><span>Active</span></div>
+                  </div>
+                  <button type="button" onClick={() => onNavigate(development.href)}>
+                    View Development <ArrowRight size={14} />
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="developer-command-empty">Development performance appears once developments have linked units.</div>
+          )}
+        </article>
+      </div>
+
+      <div className="developer-command-snapshot-grid">
+        {[
+          { key: 'sales', title: 'Sales Snapshot', items: model.snapshots.sales },
+          { key: 'revenue', title: 'Revenue Snapshot', items: model.snapshots.revenue },
+        ].map((snapshot) => (
+          <article key={snapshot.key} className="developer-command-card developer-command-snapshot-card">
+            <header className="developer-command-card-header">
+              <h2>{snapshot.title}</h2>
+            </header>
+            <div className="developer-command-snapshot-items">
+              {snapshot.items.map((item) => {
+                const Icon = item.icon
+                return (
+                  <div key={item.key}>
+                    <span className={`developer-command-snapshot-icon is-${item.tone}`}><Icon size={16} /></span>
+                    <p>{item.label}</p>
+                    <strong>{item.value}</strong>
+                  </div>
+                )
+              })}
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <div className="developer-command-secondary-grid">
+        <article className="developer-command-card">
+          <header className="developer-command-card-header">
+            <div>
+              <h2>Recent Activity</h2>
+              <span>Latest movement across units</span>
+            </div>
+            <button type="button" onClick={() => onNavigate('/transactions')}>View all</button>
+          </header>
+          {model.recentActivity.length ? (
+            <div className="developer-command-activity-list">
+              {model.recentActivity.map((item) => (
+                <article key={item.id}>
+                  <span className={`developer-command-activity-dot is-${item.tone}`} />
+                  <p>{item.title}</p>
+                  <time>{item.time}</time>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="developer-command-empty">Recent activity will appear when transactions or units are updated.</div>
+          )}
+        </article>
+
+        <article className="developer-command-card developer-command-health-card">
+          <header className="developer-command-card-header">
+            <div>
+              <h2>Commercial Health</h2>
+              <span>Portfolio operating signal</span>
+            </div>
+            <button type="button" onClick={() => onNavigate('/reports')}>View details</button>
+          </header>
+          <div className="developer-command-health-body">
+            <div className="developer-command-health-score" style={{ '--health-score': `${model.commercialHealth.score}%` }}>
+              <div>
+                <strong>{model.commercialHealth.score}</strong>
+                <span>{model.commercialHealth.label}</span>
+              </div>
+            </div>
+            <div className="developer-command-health-list">
+              {model.commercialHealth.bullets.map((item) => (
+                <p key={item.key}>
+                  <span className={`developer-command-health-dot is-${item.tone}`} />
+                  {item.label}
+                </p>
+              ))}
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <article className="developer-command-card developer-command-performance-card">
+        <header className="developer-command-card-header">
+          <div>
+            <h2>Performance Overview</h2>
+            <span>This month</span>
+          </div>
+          <button type="button" onClick={() => onNavigate('/reports')}>View full report</button>
+        </header>
+        <div className="developer-command-performance-grid">
+          {model.performance.map((item) => (
+            <article key={item.key}>
+              <div>
+                <p>{item.label}</p>
+                <span>{item.trendLabel}</span>
+              </div>
+              <strong>{item.value}</strong>
+              <DeveloperTrendPill value={item.trend} />
+              <DeveloperSparkline points={item.points} tone={item.tone} />
+            </article>
+          ))}
+        </div>
+      </article>
+    </section>
+  )
+}
+
 function Dashboard() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -1475,6 +1967,7 @@ function Dashboard() {
   }, [dashboardHeaderMetrics])
 
   const CAN_ACCESS_REPORTS = ['developer', 'attorney', 'bond_originator'].includes(role)
+  const isDeveloperRole = role === 'developer'
   const isAgentRole = role === 'agent'
   const isBondRole = role === 'bond_originator'
   const isAttorneyRole = role === 'attorney'
@@ -1522,6 +2015,17 @@ function Dashboard() {
   const activeTransactionCards = useMemo(
     () => selectActiveTransactions(isAgentRole ? agentDashboardPipelineRows : isBondRole ? roleScopedRows : rows),
     [agentDashboardPipelineRows, isAgentRole, isBondRole, roleScopedRows, rows],
+  )
+  const developerCommandCenterModel = useMemo(
+    () => (isDeveloperRole
+      ? buildDeveloperCommandCenterModel({
+          rows,
+          overview,
+          profile,
+          organisation,
+        })
+      : null),
+    [isDeveloperRole, organisation, overview, profile, rows],
   )
   const AGENT_SUMMARY = useMemo(() => selectAgentSummary(roleScopedRows), [roleScopedRows])
   const bondSummary = useMemo(() => selectBondSummary(roleScopedRows), [roleScopedRows])
@@ -3974,7 +4478,14 @@ function renderActiveTransactionsBlock({
 
       {!loading && isSupabaseConfigured ? (
         <>
-          {!isRoleScopedDashboard ? (
+          {isDeveloperRole ? (
+            <DeveloperLandingCommandCenter
+              model={developerCommandCenterModel}
+              onNavigate={(target) => navigateWithTrace(target, `developer-command-to-${String(target || '').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`)}
+            />
+          ) : null}
+
+          {!isRoleScopedDashboard && !isDeveloperRole ? (
             <BridgeCommandCenterDashboard
               rows={rows}
               profile={profile}

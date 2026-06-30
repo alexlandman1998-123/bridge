@@ -1,7 +1,7 @@
 import { Plus, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { createDevelopmentWorkspace, fetchDeveloperAccessOptions } from '../lib/api'
+import { createDevelopmentWorkspace, fetchDeveloperAccessOptions, fetchDeveloperPartnersWorkspace } from '../lib/api'
 import { upsertAreaFromAddress } from '../lib/location/upsertArea'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
@@ -69,10 +69,19 @@ const DEFAULT_TRANSACTION_DEFAULTS = {
   reservationDepositAmountType: 'fixed',
   reservationDepositPayableTo: 'developer',
   defaultAgentSource: 'first_agent',
+  defaultAgentRelationshipId: '',
+  defaultAgentPreferredPartnerId: '',
+  defaultAgentName: '',
   multipleAgentsAllowed: true,
   developerSellingDirectly: false,
   defaultTransferAttorneySource: 'first_conveyancer',
+  defaultTransferAttorneyRelationshipId: '',
+  defaultTransferAttorneyPreferredPartnerId: '',
+  defaultTransferAttorneyName: '',
   defaultBondOriginatorSource: 'first_bond_originator',
+  defaultBondOriginatorRelationshipId: '',
+  defaultBondOriginatorPreferredPartnerId: '',
+  defaultBondOriginatorName: '',
   buyerAppointedBondOriginatorAllowed: true,
   buyerAppointedBondOriginatorRequiresApproval: true,
   autoInviteSelectedBondOriginator: false,
@@ -345,6 +354,85 @@ function mergeDevelopmentAddress(previous = {}, value = null) {
     latitude: value.latitude ?? null,
     longitude: value.longitude ?? null,
     googlePlaceId: value.placeId || '',
+  }
+}
+
+function getPreferredDeveloperPartnerDefault(defaults = [], partnerType = '') {
+  return (defaults || []).find((item) => item?.partnerType === partnerType && item?.isPreferredDefault) ||
+    (defaults || []).find((item) => item?.partnerType === partnerType) ||
+    null
+}
+
+function partnerDefaultName(defaultRecord = null, fallback = '') {
+  return String(defaultRecord?.companyName || defaultRecord?.contactPerson || defaultRecord?.email || fallback || '').trim()
+}
+
+function buildTransactionDefaultPatch(defaults = []) {
+  const agency = getPreferredDeveloperPartnerDefault(defaults, 'agency')
+  const transferAttorney = getPreferredDeveloperPartnerDefault(defaults, 'transfer_attorney')
+  const bondOriginator = getPreferredDeveloperPartnerDefault(defaults, 'bond_originator')
+
+  return {
+    ...(agency
+      ? {
+          defaultAgentSource: 'developer_partner_default',
+          defaultAgentRelationshipId: agency.relationshipId || '',
+          defaultAgentPreferredPartnerId: agency.id || '',
+          defaultAgentName: partnerDefaultName(agency),
+        }
+      : {}),
+    ...(transferAttorney
+      ? {
+          defaultTransferAttorneySource: 'developer_partner_default',
+          defaultTransferAttorneyRelationshipId: transferAttorney.relationshipId || '',
+          defaultTransferAttorneyPreferredPartnerId: transferAttorney.id || '',
+          defaultTransferAttorneyName: partnerDefaultName(transferAttorney),
+        }
+      : {}),
+    ...(bondOriginator
+      ? {
+          defaultBondOriginatorSource: 'developer_partner_default',
+          defaultBondOriginatorRelationshipId: bondOriginator.relationshipId || '',
+          defaultBondOriginatorPreferredPartnerId: bondOriginator.id || '',
+          defaultBondOriginatorName: partnerDefaultName(bondOriginator),
+        }
+      : {}),
+  }
+}
+
+function applyDeveloperPartnerDefaultsToLegal(previous = {}, defaults = []) {
+  const agency = getPreferredDeveloperPartnerDefault(defaults, 'agency')
+  const transferAttorney = getPreferredDeveloperPartnerDefault(defaults, 'transfer_attorney')
+  const bondOriginator = getPreferredDeveloperPartnerDefault(defaults, 'bond_originator')
+
+  return {
+    ...previous,
+    agents: agency
+      ? [{
+          ...buildEmptyAgent(),
+          name: agency.contactPerson || agency.companyName || '',
+          email: agency.email || '',
+          company: agency.companyName || '',
+        }]
+      : previous.agents,
+    conveyancers: transferAttorney
+      ? [{
+          ...buildEmptyConveyancer(),
+          firmName: transferAttorney.companyName || '',
+          contactName: transferAttorney.contactPerson || '',
+          email: transferAttorney.email || '',
+          phone: transferAttorney.phone || '',
+        }]
+      : previous.conveyancers,
+    bondOriginators: bondOriginator
+      ? [{
+          ...buildEmptyBondOriginator(),
+          name: bondOriginator.companyName || '',
+          contactName: bondOriginator.contactPerson || '',
+          email: bondOriginator.email || '',
+          phone: bondOriginator.phone || '',
+        }]
+      : previous.bondOriginators,
   }
 }
 
@@ -670,6 +758,9 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
   const [developerOptions, setDeveloperOptions] = useState([])
   const [developerOptionsLoading, setDeveloperOptionsLoading] = useState(false)
   const [developerOptionsError, setDeveloperOptionsError] = useState('')
+  const [partnerDefaults, setPartnerDefaults] = useState([])
+  const [partnerDefaultsLoading, setPartnerDefaultsLoading] = useState(false)
+  const [partnerDefaultsError, setPartnerDefaultsError] = useState('')
   const [units, setUnits] = useState([])
   const [documents, setDocuments] = useState([buildEmptyDocument()])
   const [developmentType, setDevelopmentType] = useState('residential')
@@ -702,6 +793,9 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     setDeveloperOptions([])
     setDeveloperOptionsLoading(false)
     setDeveloperOptionsError('')
+    setPartnerDefaults([])
+    setPartnerDefaultsLoading(false)
+    setPartnerDefaultsError('')
     setUnits([])
     setDocuments([buildEmptyDocument()])
     setDevelopmentType('residential')
@@ -718,6 +812,44 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     setSaving(false)
     setError('')
   }, [open, profile, workspace])
+
+  useEffect(() => {
+    if (!open || !isSupabaseConfigured) return
+    const workspaceId = String(workspace?.id || workspace?.organisation_id || workspace?.organisationId || '').trim()
+    if (!workspaceId) return
+
+    let cancelled = false
+
+    async function loadPartnerDefaults() {
+      try {
+        setPartnerDefaultsLoading(true)
+        setPartnerDefaultsError('')
+        const snapshot = await fetchDeveloperPartnersWorkspace({ organisationId: workspaceId })
+        if (cancelled) return
+        const defaults = (snapshot.defaults || []).filter((item) => item?.isActive && item?.isPreferredDefault)
+        setPartnerDefaults(defaults)
+        if (defaults.length) {
+          const defaultPatch = buildTransactionDefaultPatch(defaults)
+          setTransactionDefaults((previous) => ({ ...previous, ...defaultPatch }))
+          setLegal((previous) => applyDeveloperPartnerDefaultsToLegal(previous, defaults))
+        }
+      } catch (loadError) {
+        if (cancelled) return
+        setPartnerDefaults([])
+        setPartnerDefaultsError(loadError?.message || 'Unable to load partner defaults.')
+      } finally {
+        if (!cancelled) {
+          setPartnerDefaultsLoading(false)
+        }
+      }
+    }
+
+    void loadPartnerDefaults()
+
+    return () => {
+      cancelled = true
+    }
+  }, [open, workspace])
 
   useEffect(() => {
     if (!open || !isAgentContext) {
@@ -1137,6 +1269,26 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
             ? String(developerAccess.inviteCompanyName || '').trim()
             : String(developerAccess.selectedDeveloperCompany || '').trim()) || effectiveDetails.developerCompany
         : effectiveDetails.developerCompany
+      const rolePlayerDefaults = {
+        defaultAgentSource: transactionDefaults.defaultAgentSource,
+        defaultAgentRelationshipId: transactionDefaults.defaultAgentRelationshipId,
+        defaultAgentPreferredPartnerId: transactionDefaults.defaultAgentPreferredPartnerId,
+        defaultAgentName: transactionDefaults.defaultAgentName,
+        multipleAgentsAllowed: transactionDefaults.multipleAgentsAllowed,
+        developerSellingDirectly: transactionDefaults.developerSellingDirectly,
+        defaultTransferAttorneySource: transactionDefaults.defaultTransferAttorneySource,
+        defaultTransferAttorneyRelationshipId: transactionDefaults.defaultTransferAttorneyRelationshipId,
+        defaultTransferAttorneyPreferredPartnerId: transactionDefaults.defaultTransferAttorneyPreferredPartnerId,
+        defaultTransferAttorneyName: transactionDefaults.defaultTransferAttorneyName,
+        defaultBondOriginatorSource: transactionDefaults.defaultBondOriginatorSource,
+        defaultBondOriginatorRelationshipId: transactionDefaults.defaultBondOriginatorRelationshipId,
+        defaultBondOriginatorPreferredPartnerId: transactionDefaults.defaultBondOriginatorPreferredPartnerId,
+        defaultBondOriginatorName: transactionDefaults.defaultBondOriginatorName,
+        buyerAppointedBondOriginatorAllowed: transactionDefaults.buyerAppointedBondOriginatorAllowed,
+        buyerAppointedBondOriginatorRequiresApproval:
+          transactionDefaults.buyerAppointedBondOriginatorRequiresApproval,
+        autoInviteSelectedBondOriginator: transactionDefaults.autoInviteSelectedBondOriginator,
+      }
 
       const created = await createDevelopmentWorkspace({
         details: {
@@ -1183,34 +1335,14 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
             : null,
           reservation_deposit_amount_type: transactionDefaults.reservationDepositAmountType,
           reservation_deposit_payable_to: transactionDefaults.reservationDepositPayableTo,
-          rolePlayerDefaults: {
-            defaultAgentSource: transactionDefaults.defaultAgentSource,
-            multipleAgentsAllowed: transactionDefaults.multipleAgentsAllowed,
-            developerSellingDirectly: transactionDefaults.developerSellingDirectly,
-            defaultTransferAttorneySource: transactionDefaults.defaultTransferAttorneySource,
-            defaultBondOriginatorSource: transactionDefaults.defaultBondOriginatorSource,
-            buyerAppointedBondOriginatorAllowed: transactionDefaults.buyerAppointedBondOriginatorAllowed,
-            buyerAppointedBondOriginatorRequiresApproval:
-              transactionDefaults.buyerAppointedBondOriginatorRequiresApproval,
-            autoInviteSelectedBondOriginator: transactionDefaults.autoInviteSelectedBondOriginator,
-          },
+          rolePlayerDefaults,
           enabledModules: legal.enabledModules,
           stakeholderTeams: {
             agents: legal.agents.filter((item) => String(item.name || item.email || item.company || '').trim()),
             conveyancers: legal.conveyancers.filter((item) => String(item.firmName || item.contactName || item.email || '').trim()),
             bondOriginators: legal.bondOriginators.filter((item) => String(item.name || item.contactName || item.email || '').trim()),
             developers: developerTeam,
-            rolePlayerDefaults: {
-              defaultAgentSource: transactionDefaults.defaultAgentSource,
-              multipleAgentsAllowed: transactionDefaults.multipleAgentsAllowed,
-              developerSellingDirectly: transactionDefaults.developerSellingDirectly,
-              defaultTransferAttorneySource: transactionDefaults.defaultTransferAttorneySource,
-              defaultBondOriginatorSource: transactionDefaults.defaultBondOriginatorSource,
-              buyerAppointedBondOriginatorAllowed: transactionDefaults.buyerAppointedBondOriginatorAllowed,
-              buyerAppointedBondOriginatorRequiresApproval:
-                transactionDefaults.buyerAppointedBondOriginatorRequiresApproval,
-              autoInviteSelectedBondOriginator: transactionDefaults.autoInviteSelectedBondOriginator,
-            },
+            rolePlayerDefaults,
           },
         },
         units: units
@@ -1269,6 +1401,24 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
 
   const primaryConveyancer = legal.conveyancers.find((item) => String(item.firmName || item.contactName || item.email || '').trim())
   const primaryBondOriginator = legal.bondOriginators.find((item) => String(item.name || item.contactName || item.email || '').trim())
+  const defaultAgency = getPreferredDeveloperPartnerDefault(partnerDefaults, 'agency')
+  const defaultTransferAttorney = getPreferredDeveloperPartnerDefault(partnerDefaults, 'transfer_attorney')
+  const defaultBondOriginator = getPreferredDeveloperPartnerDefault(partnerDefaults, 'bond_originator')
+  const transferAttorneyDefaultName =
+    transactionDefaults.defaultTransferAttorneyName ||
+    partnerDefaultName(defaultTransferAttorney) ||
+    primaryConveyancer?.firmName ||
+    ''
+  const bondOriginatorDefaultName =
+    transactionDefaults.defaultBondOriginatorName ||
+    partnerDefaultName(defaultBondOriginator) ||
+    primaryBondOriginator?.name ||
+    ''
+  const agencyDefaultName =
+    transactionDefaults.defaultAgentName ||
+    partnerDefaultName(defaultAgency) ||
+    legal.agents.find((item) => String(item.company || item.name || item.email || '').trim())?.company ||
+    ''
   const summaryLocation = getResolvedDevelopmentLocation(details) || 'Not added'
   const plannedUnits = details.totalUnitsExpected || derivedTotals.unitCount || stockSummary.totalUnits || 0
   const basicsComplete = Boolean(details.name.trim() && (details.address.trim() || details.suburb.trim() || details.city.trim()))
@@ -1305,9 +1455,10 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
         <div className="mt-5 rounded-[18px] border border-[#edf2f7] bg-[#f8fbff] p-4">
           <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#8ba0b8]">Defaults</span>
           <div className="mt-3 space-y-2 text-sm text-[#35546c]">
-            <p>Transfer Attorney <strong className="float-right text-[#142132]">{primaryConveyancer?.firmName || (transactionDefaults.defaultTransferAttorneySource === 'none' ? '-' : 'Preferred')}</strong></p>
-            <p>Bond Originator <strong className="float-right text-[#142132]">{primaryBondOriginator?.name || (transactionDefaults.defaultBondOriginatorSource === 'none' ? '-' : 'Preferred')}</strong></p>
-            <p>Cancellation Attorney <strong className="float-right text-[#142132]">{primaryConveyancer?.firmName || 'Preferred'}</strong></p>
+            <p>Agency <strong className="float-right text-[#142132]">{agencyDefaultName || (transactionDefaults.defaultAgentSource === 'none' ? '-' : 'Preferred')}</strong></p>
+            <p>Transfer Attorney <strong className="float-right text-[#142132]">{transferAttorneyDefaultName || (transactionDefaults.defaultTransferAttorneySource === 'none' ? '-' : 'Preferred')}</strong></p>
+            <p>Bond Originator <strong className="float-right text-[#142132]">{bondOriginatorDefaultName || (transactionDefaults.defaultBondOriginatorSource === 'none' ? '-' : 'Preferred')}</strong></p>
+            <p>Cancellation Attorney <strong className="float-right text-[#142132]">{transferAttorneyDefaultName || 'Preferred'}</strong></p>
           </div>
         </div>
         <div className="mt-5 rounded-[18px] border border-[#d8e7dc] bg-[#f3fbf5] p-4">
@@ -1581,32 +1732,74 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
               <section className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
                 <div className="mb-4 space-y-1.5">
                   <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Transaction Defaults</h4>
+                  {partnerDefaultsLoading ? (
+                    <p className="text-sm text-[#6b7d93]">Loading Developer Partner defaults...</p>
+                  ) : partnerDefaultsError ? (
+                    <p className="text-sm text-[#b42318]">{partnerDefaultsError}</p>
+                  ) : partnerDefaults.length ? (
+                    <p className="text-sm text-[#6b7d93]">
+                      Defaults are pulled from Developer Partners and can be refined after setup.
+                    </p>
+                  ) : null}
                 </div>
                 <div className="grid gap-4 lg:grid-cols-3">
                   {[
                     {
                       title: 'Transfer Attorney',
                       value: transactionDefaults.defaultTransferAttorneySource,
-                      preferredValue: 'first_conveyancer',
+                      preferredValue: defaultTransferAttorney ? 'developer_partner_default' : 'first_conveyancer',
                       emptyValue: 'none',
-                      partnerName: primaryConveyancer?.firmName || 'Preferred conveyancer',
-                      onChange: (value) => setTransactionDefaults((previous) => ({ ...previous, defaultTransferAttorneySource: value })),
+                      partnerName: transferAttorneyDefaultName || 'Preferred conveyancer',
+                      defaultRecord: defaultTransferAttorney,
+                      onChange: (value) => setTransactionDefaults((previous) => ({
+                        ...previous,
+                        defaultTransferAttorneySource: value,
+                        ...(defaultTransferAttorney && value === 'developer_partner_default'
+                          ? {
+                              defaultTransferAttorneyRelationshipId: defaultTransferAttorney.relationshipId || '',
+                              defaultTransferAttorneyPreferredPartnerId: defaultTransferAttorney.id || '',
+                              defaultTransferAttorneyName: partnerDefaultName(defaultTransferAttorney),
+                            }
+                          : {}),
+                      })),
                     },
                     {
                       title: 'Bond Originator',
                       value: transactionDefaults.defaultBondOriginatorSource,
-                      preferredValue: 'first_bond_originator',
+                      preferredValue: defaultBondOriginator ? 'developer_partner_default' : 'first_bond_originator',
                       emptyValue: 'none',
-                      partnerName: primaryBondOriginator?.name || 'Preferred originator',
-                      onChange: (value) => setTransactionDefaults((previous) => ({ ...previous, defaultBondOriginatorSource: value })),
+                      partnerName: bondOriginatorDefaultName || 'Preferred originator',
+                      defaultRecord: defaultBondOriginator,
+                      onChange: (value) => setTransactionDefaults((previous) => ({
+                        ...previous,
+                        defaultBondOriginatorSource: value,
+                        ...(defaultBondOriginator && value === 'developer_partner_default'
+                          ? {
+                              defaultBondOriginatorRelationshipId: defaultBondOriginator.relationshipId || '',
+                              defaultBondOriginatorPreferredPartnerId: defaultBondOriginator.id || '',
+                              defaultBondOriginatorName: partnerDefaultName(defaultBondOriginator),
+                            }
+                          : {}),
+                      })),
                     },
                     {
                       title: 'Cancellation Attorney',
                       value: transactionDefaults.defaultTransferAttorneySource,
-                      preferredValue: 'first_conveyancer',
+                      preferredValue: defaultTransferAttorney ? 'developer_partner_default' : 'first_conveyancer',
                       emptyValue: 'none',
-                      partnerName: primaryConveyancer?.firmName || 'Preferred conveyancer',
-                      onChange: (value) => setTransactionDefaults((previous) => ({ ...previous, defaultTransferAttorneySource: value })),
+                      partnerName: transferAttorneyDefaultName || 'Preferred conveyancer',
+                      defaultRecord: defaultTransferAttorney,
+                      onChange: (value) => setTransactionDefaults((previous) => ({
+                        ...previous,
+                        defaultTransferAttorneySource: value,
+                        ...(defaultTransferAttorney && value === 'developer_partner_default'
+                          ? {
+                              defaultTransferAttorneyRelationshipId: defaultTransferAttorney.relationshipId || '',
+                              defaultTransferAttorneyPreferredPartnerId: defaultTransferAttorney.id || '',
+                              defaultTransferAttorneyName: partnerDefaultName(defaultTransferAttorney),
+                            }
+                          : {}),
+                      })),
                     },
                   ].map((card) => (
                     <article key={card.title} className="rounded-[18px] border border-[#dce5ef] bg-[#fbfdff] p-4">
@@ -1614,6 +1807,9 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                         <div>
                           <h5 className="text-sm font-semibold text-[#142132]">{card.title}</h5>
                           <p className="mt-1 text-sm text-[#6b7d93]">{card.value === card.emptyValue ? 'Not assigned' : card.partnerName}</p>
+                          {card.defaultRecord ? (
+                            <p className="mt-1 text-xs font-semibold text-[#1f7a5a]">Developer Partner default</p>
+                          ) : null}
                         </div>
                         <span className={`rounded-full px-2.5 py-1 text-[0.68rem] font-semibold ${card.value === card.emptyValue ? 'bg-[#f1f5f9] text-[#64748b]' : 'bg-[#e8f6ef] text-[#1f7a5a]'}`}>
                           {card.value === card.emptyValue ? 'Optional' : 'Preferred'}

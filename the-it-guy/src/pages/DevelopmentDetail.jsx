@@ -55,6 +55,7 @@ import {
   saveDevelopmentUnit,
   updateDevelopmentSettings,
 } from '../lib/api'
+import { fetchOrganisationSettings, normalizeOrganisationDeveloperProfile } from '../lib/settingsApi'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
 const currency = new Intl.NumberFormat('en-ZA', {
@@ -82,6 +83,31 @@ const DOCUMENT_TYPE_OPTIONS = [
   { value: 'specification', label: 'Specification / Finishes' },
   { value: 'other', label: 'Other' },
 ]
+
+const DEFAULT_SELLER_DETAILS_FORM = {
+  mode: 'custom',
+  entityType: 'company',
+  legalName: '',
+  tradingName: '',
+  registrationNumber: '',
+  vatNumber: '',
+  registeredAddress: '',
+  postalAddress: '',
+  email: '',
+  phone: '',
+  vatTreatment: '',
+  notes: '',
+  signatories: [
+    {
+      fullName: '',
+      role: '',
+      idNumber: '',
+      email: '',
+      phone: '',
+      signingCapacity: '',
+    },
+  ],
+}
 
 const DEFAULT_DETAILS_FORM = {
   name: '',
@@ -179,6 +205,7 @@ const DEFAULT_DETAILS_FORM = {
   snagTrackingEnabled: true,
   alterationsEnabled: false,
   onboardingEnabled: true,
+  sellerDetails: DEFAULT_SELLER_DETAILS_FORM,
 }
 
 const DEVELOPMENT_STATUS_OPTIONS = [
@@ -1038,6 +1065,38 @@ function resolveUnitStructureLabel(unit = {}, structureMode = 'none') {
   return ''
 }
 
+function normalizeSellerDetailsForm(value = {}) {
+  const source = value && typeof value === 'object' ? value : {}
+  const signatories = Array.isArray(source.signatories) && source.signatories.length
+    ? source.signatories
+    : DEFAULT_SELLER_DETAILS_FORM.signatories
+
+  return {
+    ...DEFAULT_SELLER_DETAILS_FORM,
+    mode: source.mode || DEFAULT_SELLER_DETAILS_FORM.mode,
+    entityType: source.entityType || source.entity_type || DEFAULT_SELLER_DETAILS_FORM.entityType,
+    legalName: source.legalName || source.legal_name || source.name || '',
+    tradingName: source.tradingName || source.trading_name || '',
+    registrationNumber: source.registrationNumber || source.registration_number || '',
+    vatNumber: source.vatNumber || source.vat_number || '',
+    registeredAddress: source.registeredAddress || source.registered_address || source.address || '',
+    postalAddress: source.postalAddress || source.postal_address || '',
+    email: source.email || '',
+    phone: source.phone || source.mobile || '',
+    vatTreatment: source.vatTreatment || source.vat_treatment || '',
+    notes: source.notes || '',
+    signatories: signatories.map((item = {}) => ({
+      ...DEFAULT_SELLER_DETAILS_FORM.signatories[0],
+      fullName: item.fullName || item.full_name || item.name || '',
+      role: item.role || item.title || '',
+      idNumber: item.idNumber || item.id_number || item.identityNumber || item.identity_number || '',
+      email: item.email || '',
+      phone: item.phone || item.mobile || '',
+      signingCapacity: item.signingCapacity || item.signing_capacity || item.capacity || '',
+    })),
+  }
+}
+
 function buildDetailsForm(data) {
   const development = data?.development || {}
   const profile = data?.profile || {}
@@ -1067,6 +1126,7 @@ function buildDetailsForm(data) {
     expectedCompletionDate: normalizeDateInput(profile.expectedCompletionDate || development.expected_completion_date),
     description: marketing.listingOverview.listingDescription || profile.description || development.description || '',
     marketing,
+    sellerDetails: normalizeSellerDetailsForm(profile.sellerDetails || profile.seller_details),
     handoverEnabled: development.handover_enabled ?? true,
     snagTrackingEnabled: development.snag_tracking_enabled ?? true,
     alterationsEnabled: development.alterations_enabled ?? false,
@@ -1254,6 +1314,7 @@ function DevelopmentDetail() {
   const [marketingEditorSection, setMarketingEditorSection] = useState('overview')
   const [selectedFloorplanId, setSelectedFloorplanId] = useState('')
   const [detailsForm, setDetailsForm] = useState(DEFAULT_DETAILS_FORM)
+  const [developerProfileDefaults, setDeveloperProfileDefaults] = useState(() => normalizeOrganisationDeveloperProfile())
   const [financialsForm, setFinancialsForm] = useState(DEFAULT_FINANCIALS_FORM)
   const [reservationSettingsForm, setReservationSettingsForm] = useState(
     DEFAULT_RESERVATION_SETTINGS_FORM,
@@ -1318,6 +1379,33 @@ function DevelopmentDetail() {
   useEffect(() => {
     void loadData()
   }, [loadData])
+
+  useEffect(() => {
+    let active = true
+
+    async function loadDeveloperProfileDefaults() {
+      try {
+        const response = await fetchOrganisationSettings()
+        const profile = normalizeOrganisationDeveloperProfile(
+          response?.organisation?.settingsJson?.developerProfile ||
+            response?.organisationSettings?.developerProfile ||
+            {},
+        )
+        if (active) {
+          setDeveloperProfileDefaults(profile)
+        }
+      } catch {
+        if (active) {
+          setDeveloperProfileDefaults(normalizeOrganisationDeveloperProfile())
+        }
+      }
+    }
+
+    void loadDeveloperProfileDefaults()
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => {
     function refreshDevelopment() {
@@ -1928,6 +2016,85 @@ function DevelopmentDetail() {
   const locationLine = [detailsForm.location, detailsForm.suburb || detailsForm.city || detailsForm.province].filter(Boolean).join(' • ')
   const detailsFieldClassName = isEditingDetailsSection ? '' : READ_ONLY_FIELD_CLASS
   const financialFieldClassName = isEditingFinancialsSection ? '' : READ_ONLY_FIELD_CLASS
+  const sellerDetailsForm = normalizeSellerDetailsForm(detailsForm.sellerDetails)
+  const primarySellerSignatory = sellerDetailsForm.signatories[0] || DEFAULT_SELLER_DETAILS_FORM.signatories[0]
+  const developerProfileHasSellerDefaults = Boolean(
+    developerProfileDefaults.legalName ||
+      developerProfileDefaults.tradingName ||
+      developerProfileDefaults.registeredAddress ||
+      developerProfileDefaults.email ||
+      developerProfileDefaults.defaultSignatory?.fullName,
+  )
+
+  function setSellerDetailsField(fieldKey, value) {
+    setDetailsForm((previous) => ({
+      ...previous,
+      sellerDetails: {
+        ...normalizeSellerDetailsForm(previous.sellerDetails),
+        [fieldKey]: value,
+      },
+    }))
+  }
+
+  function setSellerSignatoryField(fieldKey, value, index = 0) {
+    setDetailsForm((previous) => {
+      const normalizedSellerDetails = normalizeSellerDetailsForm(previous.sellerDetails)
+      const signatories = normalizedSellerDetails.signatories.length
+        ? [...normalizedSellerDetails.signatories]
+        : [{ ...DEFAULT_SELLER_DETAILS_FORM.signatories[0] }]
+      signatories[index] = {
+        ...(signatories[index] || DEFAULT_SELLER_DETAILS_FORM.signatories[0]),
+        [fieldKey]: value,
+      }
+
+      return {
+        ...previous,
+        sellerDetails: {
+          ...normalizedSellerDetails,
+          signatories,
+        },
+      }
+    })
+  }
+
+  function handleUseDeveloperCompanyAsSeller() {
+    const fallbackName = detailsForm.developerCompany || detailsForm.name || data?.development?.name || ''
+    const profile = normalizeOrganisationDeveloperProfile(developerProfileDefaults)
+    setDetailsForm((previous) => {
+      const normalizedSellerDetails = normalizeSellerDetailsForm(previous.sellerDetails)
+      const existingSignatory = normalizedSellerDetails.signatories[0] || DEFAULT_SELLER_DETAILS_FORM.signatories[0]
+      const profileSignatory = profile.defaultSignatory || {}
+      return {
+        ...previous,
+        sellerDetails: {
+          ...normalizedSellerDetails,
+          mode: 'developer_profile',
+          entityType: profile.entityType || normalizedSellerDetails.entityType,
+          legalName: profile.legalName || normalizedSellerDetails.legalName || fallbackName,
+          tradingName: profile.tradingName || normalizedSellerDetails.tradingName || previous.developerCompany || '',
+          registrationNumber: profile.registrationNumber || normalizedSellerDetails.registrationNumber,
+          vatNumber: profile.vatNumber || normalizedSellerDetails.vatNumber,
+          vatTreatment: profile.vatTreatment || normalizedSellerDetails.vatTreatment,
+          registeredAddress: profile.registeredAddress || normalizedSellerDetails.registeredAddress || previous.address || '',
+          postalAddress: profile.postalAddress || normalizedSellerDetails.postalAddress,
+          email: profile.email || normalizedSellerDetails.email || '',
+          phone: profile.phone || normalizedSellerDetails.phone || '',
+          notes: profile.notes || normalizedSellerDetails.notes,
+          signatories: [
+            {
+              ...existingSignatory,
+              fullName: profileSignatory.fullName || existingSignatory.fullName,
+              role: profileSignatory.role || existingSignatory.role,
+              idNumber: profileSignatory.idNumber || existingSignatory.idNumber,
+              email: profileSignatory.email || existingSignatory.email,
+              phone: profileSignatory.phone || existingSignatory.phone,
+              signingCapacity: profileSignatory.signingCapacity || existingSignatory.signingCapacity,
+            },
+          ],
+        },
+      }
+    })
+  }
 
   async function handleCopyMarketingValue(value, label = 'Content') {
     const normalized = String(value || '').trim()
@@ -2620,6 +2787,13 @@ function DevelopmentDetail() {
     const defaultsConfigured =
       reservationSettingsForm.defaultTransferAttorneySource !== 'none' &&
       reservationSettingsForm.defaultBondOriginatorSource !== 'none'
+    const sellerDetails = normalizeSellerDetailsForm(detailsForm.sellerDetails)
+    const primarySellerSignatory = sellerDetails.signatories[0] || {}
+    const sellerDetailsConfigured = Boolean(
+      String(sellerDetails.legalName || '').trim() &&
+        String(primarySellerSignatory.fullName || '').trim() &&
+        String(primarySellerSignatory.signingCapacity || primarySellerSignatory.role || '').trim(),
+    )
     const onboardingAttentionCount = rows.filter((row) => {
       if (!row?.transaction?.id) return false
       const status = String(row?.transaction?.onboarding_status || row?.onboarding?.status || '')
@@ -2642,6 +2816,13 @@ function DevelopmentDetail() {
         label: 'Transaction defaults',
         detail: defaultsConfigured ? 'Default partner routing is set' : 'Partner routing needs confirmation',
         tone: defaultsConfigured ? 'success' : 'warning',
+      },
+      {
+        label: 'Seller details configured',
+        detail: sellerDetailsConfigured
+          ? `${sellerDetails.legalName} is ready for OTP and mandate documents`
+          : 'Seller legal entity and signatory details are required',
+        tone: sellerDetailsConfigured ? 'success' : 'danger',
       },
       {
         label: 'Buyer onboarding',
@@ -2670,6 +2851,7 @@ function DevelopmentDetail() {
     data?.attorneyConfig?.attorneyFirmName,
     data?.bondConfig?.bondOriginatorName,
     detailsForm.address,
+    detailsForm.sellerDetails,
     locationLine,
     remainingPlannedUnits,
     reservationSettingsForm.defaultBondOriginatorSource,
@@ -2804,6 +2986,7 @@ function DevelopmentDetail() {
       imageLinks: marketingLegacyPayload.imageLinks,
       supportingDocuments: marketingLegacyPayload.supportingDocuments,
       marketingContent: marketingLegacyPayload.marketingContent,
+      sellerDetails: normalizeSellerDetailsForm(detailsForm.sellerDetails),
     }
   }
 
@@ -4112,6 +4295,189 @@ function DevelopmentDetail() {
                   ))}
                 </div>
               ) : null}
+
+              <section className="mt-5 rounded-[20px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h4 className="text-[1rem] font-semibold tracking-[-0.025em] text-[#142132]">Seller Details</h4>
+                    <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                      Legal seller and authorised signatory details used by OTP and mandate documents.
+                    </p>
+                    {isEditingDetailsSection ? (
+                      <p className="mt-1 text-xs font-medium text-[#7b8ca2]">
+                        {developerProfileHasSellerDefaults
+                          ? 'Organisation defaults are available from Settings.'
+                          : 'Add Developer Profile defaults in Settings to prefill this faster.'}
+                      </p>
+                    ) : null}
+                  </div>
+                  {isEditingDetailsSection ? (
+                    <Button type="button" variant="secondary" size="sm" onClick={handleUseDeveloperCompanyAsSeller}>
+                      Use Developer Profile
+                    </Button>
+                  ) : (
+                    <span
+                      className={[
+                        'inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold',
+                        sellerDetailsForm.legalName && primarySellerSignatory.fullName
+                          ? 'border-[#cde8d8] bg-[#eef9f2] text-[#1c7d45]'
+                          : 'border-[#f2c9c3] bg-[#fff5f4] text-[#b42318]',
+                      ].join(' ')}
+                    >
+                      {sellerDetailsForm.legalName && primarySellerSignatory.fullName ? 'Configured' : 'Missing Details'}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <DetailField label="Seller Entity Type">
+                    <Field
+                      as="select"
+                      value={sellerDetailsForm.entityType}
+                      disabled={!isEditingDetailsSection}
+                      className={detailsFieldClassName}
+                      onChange={(event) => setSellerDetailsField('entityType', event.target.value)}
+                    >
+                      <option value="company">Company</option>
+                      <option value="individual">Individual</option>
+                      <option value="trust">Trust</option>
+                      <option value="close_corporation">Close Corporation</option>
+                      <option value="other">Other</option>
+                    </Field>
+                  </DetailField>
+                  <DetailField label="Seller Legal Name">
+                    <Field
+                      value={sellerDetailsForm.legalName}
+                      disabled={!isEditingDetailsSection}
+                      className={detailsFieldClassName}
+                      onChange={(event) => setSellerDetailsField('legalName', event.target.value)}
+                      placeholder="e.g. Junoah Estate (Pty) Ltd"
+                    />
+                  </DetailField>
+                  <DetailField label="Trading Name">
+                    <Field
+                      value={sellerDetailsForm.tradingName}
+                      disabled={!isEditingDetailsSection}
+                      className={detailsFieldClassName}
+                      onChange={(event) => setSellerDetailsField('tradingName', event.target.value)}
+                    />
+                  </DetailField>
+                  <DetailField label="Registration / Trust Number">
+                    <Field
+                      value={sellerDetailsForm.registrationNumber}
+                      disabled={!isEditingDetailsSection}
+                      className={detailsFieldClassName}
+                      onChange={(event) => setSellerDetailsField('registrationNumber', event.target.value)}
+                    />
+                  </DetailField>
+                  <DetailField label="VAT Number">
+                    <Field
+                      value={sellerDetailsForm.vatNumber}
+                      disabled={!isEditingDetailsSection}
+                      className={detailsFieldClassName}
+                      onChange={(event) => setSellerDetailsField('vatNumber', event.target.value)}
+                    />
+                  </DetailField>
+                  <DetailField label="VAT Treatment">
+                    <Field
+                      value={sellerDetailsForm.vatTreatment}
+                      disabled={!isEditingDetailsSection}
+                      className={detailsFieldClassName}
+                      onChange={(event) => setSellerDetailsField('vatTreatment', event.target.value)}
+                      placeholder="e.g. VAT inclusive"
+                    />
+                  </DetailField>
+                  <DetailField label="Registered Address" className="md:col-span-2">
+                    <Field
+                      value={sellerDetailsForm.registeredAddress}
+                      disabled={!isEditingDetailsSection}
+                      className={detailsFieldClassName}
+                      onChange={(event) => setSellerDetailsField('registeredAddress', event.target.value)}
+                    />
+                  </DetailField>
+                  <DetailField label="Postal Address" className="md:col-span-2">
+                    <Field
+                      value={sellerDetailsForm.postalAddress}
+                      disabled={!isEditingDetailsSection}
+                      className={detailsFieldClassName}
+                      onChange={(event) => setSellerDetailsField('postalAddress', event.target.value)}
+                    />
+                  </DetailField>
+                  <DetailField label="Seller Email">
+                    <Field
+                      type="email"
+                      value={sellerDetailsForm.email}
+                      disabled={!isEditingDetailsSection}
+                      className={detailsFieldClassName}
+                      onChange={(event) => setSellerDetailsField('email', event.target.value)}
+                    />
+                  </DetailField>
+                  <DetailField label="Seller Phone">
+                    <Field
+                      value={sellerDetailsForm.phone}
+                      disabled={!isEditingDetailsSection}
+                      className={detailsFieldClassName}
+                      onChange={(event) => setSellerDetailsField('phone', event.target.value)}
+                    />
+                  </DetailField>
+                </div>
+
+                <div className="mt-5 rounded-[18px] border border-[#dde4ee] bg-white p-4">
+                  <h5 className="text-sm font-semibold text-[#142132]">Authorised Signatory</h5>
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <DetailField label="Full Name">
+                      <Field
+                        value={primarySellerSignatory.fullName}
+                        disabled={!isEditingDetailsSection}
+                        className={detailsFieldClassName}
+                        onChange={(event) => setSellerSignatoryField('fullName', event.target.value)}
+                      />
+                    </DetailField>
+                    <DetailField label="Capacity / Role">
+                      <Field
+                        value={primarySellerSignatory.signingCapacity}
+                        disabled={!isEditingDetailsSection}
+                        className={detailsFieldClassName}
+                        onChange={(event) => setSellerSignatoryField('signingCapacity', event.target.value)}
+                        placeholder="e.g. Director"
+                      />
+                    </DetailField>
+                    <DetailField label="ID Number">
+                      <Field
+                        value={primarySellerSignatory.idNumber}
+                        disabled={!isEditingDetailsSection}
+                        className={detailsFieldClassName}
+                        onChange={(event) => setSellerSignatoryField('idNumber', event.target.value)}
+                      />
+                    </DetailField>
+                    <DetailField label="Email">
+                      <Field
+                        type="email"
+                        value={primarySellerSignatory.email}
+                        disabled={!isEditingDetailsSection}
+                        className={detailsFieldClassName}
+                        onChange={(event) => setSellerSignatoryField('email', event.target.value)}
+                      />
+                    </DetailField>
+                    <DetailField label="Phone">
+                      <Field
+                        value={primarySellerSignatory.phone}
+                        disabled={!isEditingDetailsSection}
+                        className={detailsFieldClassName}
+                        onChange={(event) => setSellerSignatoryField('phone', event.target.value)}
+                      />
+                    </DetailField>
+                    <DetailField label="Internal Notes">
+                      <Field
+                        value={sellerDetailsForm.notes}
+                        disabled={!isEditingDetailsSection}
+                        className={detailsFieldClassName}
+                        onChange={(event) => setSellerDetailsField('notes', event.target.value)}
+                      />
+                    </DetailField>
+                  </div>
+                </div>
+              </section>
 
               {!isEditingDetailsSection ? (
                 <div className="mt-5 flex flex-col gap-3 border-t border-[#e6edf5] pt-4 sm:flex-row sm:items-center sm:justify-between">

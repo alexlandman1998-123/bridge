@@ -171,11 +171,16 @@ export function getSubprocessTypeLabel(value) {
 export function getWorkflowStatusLabel(value) {
   const normalized = normalizeKey(value)
   if (normalized === 'not_started') return 'Not Started'
+  if (normalized === 'waiting') return 'Waiting'
   if (normalized === 'in_progress') return 'In Progress'
+  if (normalized === 'complete') return 'Completed'
   if (normalized === 'completed') return 'Completed'
   if (normalized === 'blocked') return 'Blocked'
-  if (normalized === 'pending') return 'Pending'
+  if (normalized === 'pending') return 'Waiting'
+  if (normalized === 'skipped') return 'Skipped'
   if (normalized === 'waived') return 'Waived'
+  if (normalized === 'not_applicable') return 'Waived'
+  if (normalized === 'out_of_sequence') return 'Out of Sequence'
   if (normalized === 'requested') return 'Requested'
   if (normalized === 'uploaded') return 'Uploaded'
   if (normalized === 'under_review') return 'Under Review'
@@ -183,6 +188,19 @@ export function getWorkflowStatusLabel(value) {
   if (normalized === 'rejected') return 'Rejected'
   if (normalized === 'cancelled') return 'Cancelled'
   return 'Unknown'
+}
+
+export function normalizeWorkflowDisplayStatus(value, { waived = false, outOfSequence = false } = {}) {
+  if (outOfSequence) return 'out_of_sequence'
+  const normalized = normalizeKey(value)
+  if (normalized === 'pending') return 'waiting'
+  if (normalized === 'active') return 'in_progress'
+  if (normalized === 'complete') return 'completed'
+  if (normalized === 'not_applicable') return waived ? 'waived' : 'not_applicable'
+  if (['waiting', 'in_progress', 'completed', 'skipped', 'waived', 'blocked', 'not_started'].includes(normalized)) {
+    return normalized
+  }
+  return 'not_started'
 }
 
 export function getVisibilityLabel(value) {

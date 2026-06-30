@@ -30,6 +30,7 @@ import {
   renderPacketPreviewHtml,
   resolveMandatePacketPlaceholders,
   resolveOtpPacketPlaceholders,
+  validateSellerPartyReadiness,
   validatePacketPlaceholders,
 } from './packetWorkflow'
 import { normalizeMergeFieldPayload } from './mergeFieldRegistry'
@@ -722,7 +723,17 @@ function resolveSignerSeed({ role, placeholders = {}, context = {} } = {}) {
       ? context.onboardingFormData
       : {}),
   }
+  const sellerEntityType = normalizeText(
+    placeholders['seller.entity_type_raw'] ||
+      placeholders.seller_entity_type ||
+      onboarding?.seller_entity_type ||
+      onboarding?.entityType ||
+      onboarding?.entity_type,
+  ).toLowerCase()
+  const sellerIsLegalEntity = ['company', 'trust', 'close_corporation', 'cc'].includes(sellerEntityType)
   const sellerDisplayName = firstResolvedText(
+    sellerIsLegalEntity ? placeholders.seller_representative_name : '',
+    sellerIsLegalEntity ? placeholders.representative_name : '',
     placeholders.seller_full_name,
     placeholders['seller.display_name'],
     placeholders['seller.full_name'],
@@ -741,6 +752,8 @@ function resolveSignerSeed({ role, placeholders = {}, context = {} } = {}) {
     transaction?.seller_name,
   )
   const sellerEmail = firstResolvedText(
+    sellerIsLegalEntity ? placeholders.seller_representative_email : '',
+    sellerIsLegalEntity ? placeholders.representative_email : '',
     placeholders.seller_email,
     placeholders['seller.email'],
     onboarding?.email,
@@ -1154,6 +1167,7 @@ function resolvePacketTypeContext(packetType, context = {}) {
     unit: context?.unit || null,
     buyer: context?.buyer || null,
     onboardingFormData: context?.onboardingFormData || null,
+    sellerDetails: context?.sellerDetails || context?.seller_details || null,
     specialConditions: context?.specialConditions || '',
   })
 }
@@ -1259,6 +1273,10 @@ export async function validatePacket({
     placeholders,
     sectionManifest,
   })
+  const sellerValidation = validateSellerPartyReadiness({
+    packetType: normalizedPacketType,
+    placeholders,
+  })
   const mandateValidationAction = validationAction || context?.validationAction || 'preview'
   const isCommercialPacket = COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(normalizedPacketType)
   const allowMandateGenerationGaps = normalizedPacketType === 'mandate' && mandateValidationAction !== 'upload_signed'
@@ -1298,9 +1316,10 @@ export async function validatePacket({
     placeholders,
     sectionManifest: ruleValidation.sectionManifest,
     critical: allowMandateGenerationGaps
-      ? []
+      ? [...(sellerValidation.critical || [])]
       : [
           ...ruleValidation.critical,
+          ...(sellerValidation.critical || []),
           ...((mandateValidation?.blockingErrors || []).map((issue) => ({
             sectionKey: issue.groupKey || 'mandate_validation',
             sectionLabel: issue.group || 'Mandate Validation',
@@ -1311,6 +1330,7 @@ export async function validatePacket({
         ],
     warnings: [
       ...ruleValidation.warnings,
+      ...(sellerValidation.warnings || []),
       ...((mandateValidation?.warnings || []).map((issue) => ({
         sectionKey: issue.groupKey || 'mandate_validation',
         sectionLabel: issue.group || 'Mandate Validation',
@@ -1324,9 +1344,13 @@ export async function validatePacket({
     unknownFields: ruleValidation.unknownFields || [],
     isValidForGeneration: isCommercialPacket
       ? ruleValidation.isValidForGeneration
-      : allowMandateGenerationGaps || (ruleValidation.isValidForGeneration && (!mandateValidation || mandateValidation.canProceed)),
+      : (
+          sellerValidation.canProceed &&
+          (allowMandateGenerationGaps || (ruleValidation.isValidForGeneration && (!mandateValidation || mandateValidation.canProceed)))
+        ),
     registryValidation,
     mandateValidation,
+    sellerValidation,
     commercialValidation,
     branding: packetBranding,
   }

@@ -106,6 +106,7 @@ const ICON_BY_KEY = {
   intelligence_beta: BrainCircuit,
   documents: Files,
   partners: Handshake,
+  developer_partners: Handshake,
   organizations: Building2,
   attorney_matters: SwitchCamera,
   attorney_matters_all: Files,

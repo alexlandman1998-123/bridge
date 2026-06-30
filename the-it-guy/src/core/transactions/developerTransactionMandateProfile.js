@@ -33,6 +33,36 @@ function signerFromRow(row = {}, fallbackLabel = '') {
   }
 }
 
+function normalizeSellerDetails(value = {}) {
+  const source = value && typeof value === 'object' ? value : {}
+  const signatory =
+    (Array.isArray(source.signatories) ? source.signatories[0] : null) ||
+    source.defaultSignatory ||
+    source.default_signatory ||
+    source.signatory ||
+    {}
+
+  return {
+    entityType: source.entityType || source.entity_type || 'company',
+    legalName: source.legalName || source.legal_name || source.name || '',
+    tradingName: source.tradingName || source.trading_name || '',
+    registrationNumber: source.registrationNumber || source.registration_number || '',
+    vatNumber: source.vatNumber || source.vat_number || '',
+    registeredAddress: source.registeredAddress || source.registered_address || source.address || '',
+    postalAddress: source.postalAddress || source.postal_address || '',
+    email: source.email || '',
+    phone: source.phone || source.mobile || '',
+    signatory: {
+      fullName: signatory.fullName || signatory.full_name || signatory.name || '',
+      role: signatory.role || signatory.title || '',
+      idNumber: signatory.idNumber || signatory.id_number || signatory.identityNumber || '',
+      email: signatory.email || '',
+      phone: signatory.phone || signatory.mobile || '',
+      signingCapacity: signatory.signingCapacity || signatory.signing_capacity || signatory.capacity || '',
+    },
+  }
+}
+
 export function buildDeveloperTransactionMandateProfile({
   transaction = {},
   unit = {},
@@ -112,10 +142,23 @@ export function buildDeveloperAgentMandatePacketContext({
   transaction = {},
   unit = {},
   buyer = {},
+  sellerDetails = {},
 } = {}) {
   const developerSigner = (mandateProfile.requiredSigners || []).find((signer) => signer.role === 'developer_contact') || null
   const agentSigner = (mandateProfile.requiredSigners || []).find((signer) => signer.role === 'agent') || null
+  const sellerSnapshot = normalizeSellerDetails(
+    sellerDetails ||
+      unit?.development?.sellerDetails ||
+      unit?.development?.seller_details ||
+      unit?.development?.profile?.sellerDetails ||
+      {},
+  )
+  const sellerSignatory = sellerSnapshot.signatory || {}
   const developmentName = normalizeText(unit?.development?.name || transaction.developer_name || transaction.developer || developerSigner?.signerName)
+  const sellerLegalName = normalizeText(sellerSnapshot.legalName || developmentName || developerSigner?.signerName)
+  const sellerEmail = normalizeText(sellerSnapshot.email || sellerSignatory.email || developerSigner?.signerEmail).toLowerCase()
+  const sellerRepresentativeName = normalizeText(sellerSignatory.fullName || developerSigner?.signerName)
+  const sellerRepresentativeCapacity = normalizeText(sellerSignatory.signingCapacity || sellerSignatory.role)
   const unitLabel = normalizeText(unit?.unit_number ? `Unit ${unit.unit_number}` : unit?.name || '')
   const buyerName = normalizeText(buyer?.name || transaction.buyer_name)
 
@@ -139,8 +182,8 @@ export function buildDeveloperAgentMandatePacketContext({
         mandateType: mandateProfile.mandateType || 'developer_agent_mandate',
       },
       lead: {
-        sellerFullName: developerSigner?.signerName || developmentName,
-        sellerEmail: developerSigner?.signerEmail || '',
+        sellerFullName: sellerLegalName,
+        sellerEmail,
         assignedAgentName: agentSigner?.signerName || normalizeText(transaction.assigned_agent),
         assignedAgentEmail: agentSigner?.signerEmail || normalizeText(transaction.assigned_agent_email),
       },
@@ -158,17 +201,40 @@ export function buildDeveloperAgentMandatePacketContext({
         purchasePrice: transaction.purchase_price || transaction.sales_price || unit.price || null,
       },
       placeholders: {
-        seller_full_name: developerSigner?.signerName || developmentName,
-        seller_email: developerSigner?.signerEmail || '',
+        seller_full_name: sellerLegalName,
+        seller_id_number: sellerSnapshot.registrationNumber || '',
+        seller_email: sellerEmail,
+        seller_phone: sellerSnapshot.phone || sellerSignatory.phone || '',
+        seller_entity_type: sellerSnapshot.entityType || 'company',
+        'seller.entity_type_raw': sellerSnapshot.entityType || 'company',
+        seller_representative_name: sellerRepresentativeName,
+        representative_name: sellerRepresentativeName,
+        seller_representative_email: sellerSignatory.email || '',
+        representative_email: sellerSignatory.email || '',
+        seller_representative_phone: sellerSignatory.phone || '',
+        representative_phone: sellerSignatory.phone || '',
+        seller_representative_capacity: sellerRepresentativeCapacity,
+        representative_capacity: sellerRepresentativeCapacity,
+        representative_id_number: sellerSignatory.idNumber || '',
+        seller_company_registration_number: sellerSnapshot.entityType === 'trust' ? '' : sellerSnapshot.registrationNumber || '',
+        seller_trust_registration_number: sellerSnapshot.entityType === 'trust' ? sellerSnapshot.registrationNumber || '' : '',
+        seller_vat_number: sellerSnapshot.vatNumber || '',
+        seller_registered_address: sellerSnapshot.registeredAddress || '',
+        seller_postal_address: sellerSnapshot.postalAddress || '',
+        seller_domicilium_address: sellerSnapshot.registeredAddress || sellerSnapshot.postalAddress || '',
         agent_full_name: agentSigner?.signerName || normalizeText(transaction.assigned_agent),
         agent_email: agentSigner?.signerEmail || normalizeText(transaction.assigned_agent_email),
         property_address: [developmentName, unitLabel].filter(Boolean).join(' - '),
+        developer_name: sellerLegalName,
+        developer_company_registration: sellerSnapshot.registrationNumber || '',
+        developer_representative: sellerRepresentativeName,
       },
+      sellerDetails: sellerSnapshot,
       developerMandateProfile: mandateProfile.documentWorkspaceContext || {},
     },
     lead: {
-      sellerFullName: developerSigner?.signerName || developmentName,
-      sellerEmail: developerSigner?.signerEmail || '',
+      sellerFullName: sellerLegalName,
+      sellerEmail,
       assignedAgentName: agentSigner?.signerName || normalizeText(transaction.assigned_agent),
       assignedAgentEmail: agentSigner?.signerEmail || normalizeText(transaction.assigned_agent_email),
     },
@@ -177,7 +243,8 @@ export function buildDeveloperAgentMandatePacketContext({
       name: agentSigner?.signerName || normalizeText(transaction.assigned_agent),
       email: agentSigner?.signerEmail || normalizeText(transaction.assigned_agent_email),
     },
-    sellerEmail: developerSigner?.signerEmail || '',
+    sellerDetails: sellerSnapshot,
+    sellerEmail,
     requiredSigners: mandateProfile.requiredSigners || [],
   }
 }

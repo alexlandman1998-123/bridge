@@ -9,6 +9,7 @@ import { applyWorkflowStepStatus } from './workflowStepService.js'
 const OVERRIDE_TYPE_TO_STATUS = Object.freeze({
   force_complete: 'complete',
   force_skip: 'skipped',
+  force_waive: 'not_applicable',
   force_reopen: 'pending',
   force_block: 'blocked',
   force_not_applicable: 'not_applicable',
@@ -23,6 +24,10 @@ const ADMIN_OVERRIDE_ROLES = new Set([
   'agency_admin',
   'admin',
   'principal',
+  'developer_admin',
+  'attorney_admin',
+  'transaction_coordinator',
+  'arch9_admin',
   'senior_attorney',
 ])
 
@@ -190,8 +195,12 @@ export async function applyWorkflowOverride({
       payload: {
         overrideType: normalizedOverrideType,
         reason: normalizedReason,
+        actorRole: normalizedActorRole,
+        rawActorRole,
+        organisationId: ensured.state?.transaction?.organisation_id || ensured.state?.transaction?.organisationId || null,
         supportingNote: normalizeText(payload.supportingNote || payload.supporting_note) || null,
         attachmentId: normalizeText(payload.attachmentId || payload.attachment_id) || null,
+        attachmentType: normalizeText(payload.attachmentType || payload.attachment_type) || null,
         expiresAt: normalizeText(payload.expiresAt || payload.expires_at) || null,
         reopenTo: normalizeKey(payload.reopenTo || payload.reopen_to) || null,
       },
@@ -218,8 +227,12 @@ export async function applyWorkflowOverride({
       previousStatus: stepUpdate.previousStatus,
       newStatus: stepUpdate.nextStatus,
       reason: normalizedReason,
+      actorRole: normalizedActorRole,
+      rawActorRole,
+      organisationId: ensured.state?.transaction?.organisation_id || ensured.state?.transaction?.organisationId || null,
       supportingNote: normalizeText(payload.supportingNote || payload.supporting_note) || null,
       attachmentId: normalizeText(payload.attachmentId || payload.attachment_id) || null,
+      attachmentType: normalizeText(payload.attachmentType || payload.attachment_type) || null,
       expiresAt: normalizeText(payload.expiresAt || payload.expires_at) || null,
     },
     payload: {

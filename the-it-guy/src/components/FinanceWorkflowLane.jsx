@@ -26,6 +26,26 @@ const STATUS_META = {
     label: 'Waiting On Action',
     tone: 'text-[#b54708] bg-[#fff7ed] border-[#f6dec7]',
   },
+  skipped: {
+    icon: CheckCircle2,
+    label: 'Skipped',
+    tone: 'text-[#66758b] bg-[#f7f9fc] border-[#dde4ee]',
+  },
+  waived: {
+    icon: CheckCircle2,
+    label: 'Waived',
+    tone: 'text-[#66758b] bg-[#f7f9fc] border-[#dde4ee]',
+  },
+  not_applicable: {
+    icon: CheckCircle2,
+    label: 'Waived',
+    tone: 'text-[#66758b] bg-[#f7f9fc] border-[#dde4ee]',
+  },
+  out_of_sequence: {
+    icon: Clock3,
+    label: 'Out of Sequence',
+    tone: 'text-[#b54708] bg-[#fff7ed] border-[#f6dec7]',
+  },
 }
 
 function ActionButton({ action }) {
@@ -59,6 +79,7 @@ function FinanceWorkflowLane({
   }
   const totalStages = (snapshot.steps || []).length
   const completedStages = (snapshot.steps || []).filter((step) => step.status === 'completed').length
+  const laneBlocker = [...new Set((snapshot.blockers || []).filter(Boolean))][0] || ''
 
   return (
     <section className="rounded-[20px] border border-[#e1e8f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)] md:p-5">
@@ -79,6 +100,12 @@ function FinanceWorkflowLane({
         </div>
       </header>
 
+      {laneBlocker ? (
+        <div className="mt-4 rounded-[14px] border border-[#f6dec7] bg-[#fff7ed] px-4 py-3 text-sm font-medium text-[#9a5b13]">
+          {laneBlocker}
+        </div>
+      ) : null}
+
       <div className="mt-4 grid gap-2.5 xl:grid-cols-2">
         {(snapshot.steps || []).map((stage) => {
           const statusKey = STATUS_META[stage.status] ? stage.status : 'upcoming'
@@ -95,7 +122,7 @@ function FinanceWorkflowLane({
                     <strong className="text-sm font-semibold text-[#142132]">{stage.label}</strong>
                   </div>
                   <p className="mt-2 text-xs leading-5 text-[#6b7d93]">{stage.description}</p>
-                  {stage.blocker && stage.status !== 'completed' ? (
+                  {stage.blocker && stage.blocker !== laneBlocker && stage.status !== 'completed' ? (
                     <p className="mt-2 text-xs font-medium text-[#b54708]">{stage.blocker}</p>
                   ) : null}
                 </div>
