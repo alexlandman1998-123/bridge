@@ -77,6 +77,7 @@ import { buildSellerJourney, getSellerJourneyMetrics } from '../../services/sell
 import { buildSellerReadinessSummary } from '../../services/sellerReadinessService'
 import { generatePacketVersion, generateSigningLinks, prepareSigningFields, resolveActiveTemplate } from '../../core/documents/packetService'
 import { createDocumentPacket, fetchDocumentPacket, listDocumentPackets } from '../../lib/documentPacketsApi'
+import { listInboundLeadEmails } from '../../services/leadEmailCaptureService'
 import {
   mapSellerOnboardingToMandateData,
   normalizeSellerOnboardingStatus,
@@ -1195,6 +1196,53 @@ function splitPropertyLines(primary = '', secondary = '') {
   }
 }
 
+function extractFirstUrl(value = '') {
+  const text = normalizeText(value)
+  const bracketMatch = text.match(/<((?:https?:\/\/)[^>]+)>/i)
+  if (bracketMatch?.[1]) return bracketMatch[1]
+  return text.match(/https?:\/\/[^\s)>,]+/i)?.[0] || ''
+}
+
+function stripCapturedLinks(value = '') {
+  return normalizeText(value)
+    .replace(/<https?:\/\/[^>]+>/gi, '')
+    .replace(/https?:\/\/\S+/gi, '')
+    .replace(/\s{2,}/g, ' ')
+}
+
+function buildCapturedEnquirySummary(lead = null, capture = null) {
+  if (!lead || !capture) return null
+  const fields = capture.matchedFields && typeof capture.matchedFields === 'object' ? capture.matchedFields : {}
+  const listingReferenceRaw = normalizeText(fields.listingReference || fields.propertyReference || fields.webRef || capture.externalReference || lead.sourceReferenceId)
+  const propertyLink = extractFirstUrl(listingReferenceRaw || fields.propertyLink || fields.url || fields.link)
+  const webReference = stripCapturedLinks(listingReferenceRaw)
+  const propertyLabel = normalizeText(
+    fields.development ||
+    fields.propertyInterest ||
+    fields.propertyTitle ||
+    lead.enquiredPropertyTitle ||
+    lead.propertyInterest ||
+    lead.sellerPropertyAddress ||
+    lead.areaInterest,
+  )
+  const message = normalizeText(fields.message || fields.comments || lead.notes)
+  const sender = [capture.fromName, capture.fromEmail].map(normalizeText).filter(Boolean).join(' - ')
+  return {
+    source: normalizeText(capture.source || lead.leadSource) || 'Captured enquiry',
+    status: normalizeText(capture.status),
+    parserName: normalizeText(capture.parserName),
+    parseConfidence: capture.parseConfidence === null || capture.parseConfidence === undefined ? null : Number(capture.parseConfidence),
+    receivedAt: capture.receivedAt || capture.processedAt || lead.createdAt,
+    subject: normalizeText(capture.subject),
+    sender,
+    webReference,
+    propertyLabel,
+    propertyLink,
+    message,
+    warnings: Array.isArray(capture.parseWarnings) ? capture.parseWarnings.map(normalizeText).filter(Boolean) : [],
+  }
+}
+
 function getLeadStatusMeta(lead = {}, funnelStage = '') {
   const signal = normalizeText(`${funnelStage} ${lead?.stage || ''} ${lead?.status || ''} ${lead?.priority || ''}`).toLowerCase()
   if (signal.includes('lost') || signal.includes('archive')) {
@@ -2218,6 +2266,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     tasks: [],
     appointments: [],
     deals: [],
+    inboundLeadEmails: [],
   })
   const [canvassingStore, setCanvassingStore] = useState({ prospects: [], activities: [] })
   const reloadRequestRef = useRef(0)
@@ -2519,6 +2568,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         const sourceTasks = Array.isArray(sourceSnapshot?.tasks) ? sourceSnapshot.tasks : []
         const sourceActivities = Array.isArray(sourceSnapshot?.leadActivities) ? sourceSnapshot.leadActivities : []
         const sourceDeals = Array.isArray(sourceSnapshot?.deals) ? sourceSnapshot.deals : []
+        const sourceInboundEmails = Array.isArray(sourceSnapshot?.inboundLeadEmails) ? sourceSnapshot.inboundLeadEmails : []
         const sourceAppointments = Array.isArray(appointmentRows)
           ? appointmentRows
           : (Array.isArray(sourceSnapshot?.appointments) ? sourceSnapshot.appointments : [])
@@ -2536,6 +2586,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         })
         const scopedActivities = sourceActivities.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
         const scopedDeals = sourceDeals.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
+        const scopedInboundEmails = sourceInboundEmails.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
 
         setRecords({
           contacts: sourceContacts,
@@ -2544,6 +2595,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           tasks: scopedTasks,
           appointments: scopedAppointments,
           deals: scopedDeals,
+          inboundLeadEmails: scopedInboundEmails,
         })
       }
 
@@ -2552,11 +2604,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       if (isSupabaseConfigured && supabase && isUuidLike(orgId)) {
         try {
-          const crmSnapshot = await withPipelineTimeout(
-            listAgencyCrmLeadContacts(orgId),
-            'Lead data is taking too long to load.',
-            PIPELINE_CRM_RECORDS_TIMEOUT_MS,
-          )
+          const [crmSnapshot, inboundLeadEmails] = await Promise.all([
+            withPipelineTimeout(
+              listAgencyCrmLeadContacts(orgId),
+              'Lead data is taking too long to load.',
+              PIPELINE_CRM_RECORDS_TIMEOUT_MS,
+            ),
+            withPipelineTimeout(
+              listInboundLeadEmails(orgId, { limit: 200 }),
+              'Captured enquiry data is taking too long to load.',
+              PIPELINE_CRM_RECORDS_TIMEOUT_MS,
+            ).catch((captureLoadError) => {
+              console.warn('[PIPELINE] inbound lead email load failed; continuing without captured enquiry rows.', captureLoadError)
+              return []
+            }),
+          ])
 
           let privateListingFallbackContacts = []
           let privateListingFallbackLeads = []
@@ -2602,6 +2664,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             leads: mergeLeadRowsForReload(filteredLocalLeads, filteredSupabaseLeads),
             leadActivities: Array.isArray(crmSnapshot.leadActivities) ? crmSnapshot.leadActivities : [],
             tasks: Array.isArray(crmSnapshot.tasks) ? crmSnapshot.tasks : [],
+            inboundLeadEmails: Array.isArray(inboundLeadEmails) ? inboundLeadEmails : [],
           }
         } catch (dbLoadError) {
           console.warn('[PIPELINE] supabase lead/contact load failed; no local CRM fallback will be loaded.', dbLoadError)
@@ -3544,6 +3607,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!selectedLead) return ''
     return normalizeText(selectedLead.notes || selectedLead.internalNotes || selectedLead.nextFollowUpNote || '')
   }, [selectedLead])
+  const selectedLeadCapturedEmail = useMemo(() => {
+    if (!selectedLead) return null
+    const leadKey = normalizeLeadIdentityKey(selectedLead.leadId)
+    return (Array.isArray(records.inboundLeadEmails) ? records.inboundLeadEmails : [])
+      .filter((row) => normalizeLeadIdentityKey(row?.leadId) === leadKey)
+      .sort((left, right) => new Date(right?.receivedAt || right?.processedAt || 0).getTime() - new Date(left?.receivedAt || left?.processedAt || 0).getTime())[0] || null
+  }, [records.inboundLeadEmails, selectedLead])
+  const selectedLeadCapturedEnquiry = useMemo(
+    () => buildCapturedEnquirySummary(selectedLead, selectedLeadCapturedEmail),
+    [selectedLead, selectedLeadCapturedEmail],
+  )
   const selectedLeadNextStep = useMemo(() => resolveLeadNextStep(selectedLead, selectedLeadTasks), [selectedLead, selectedLeadTasks])
 
   useEffect(() => {
@@ -13485,6 +13559,61 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </div>
                       )}
                     </section>
+
+                    {selectedLeadCapturedEnquiry ? (
+                      <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Captured Enquiry</p>
+                            <p className="mt-2 text-sm font-semibold text-[#20364c]">{selectedLeadCapturedEnquiry.source}</p>
+                          </div>
+                          <span className="rounded-full bg-[#eef5ff] px-3 py-1 text-xs font-semibold text-[#2364a0]">
+                            {selectedLeadCapturedEnquiry.status || 'received'}
+                          </span>
+                        </div>
+                        <div className="mt-5 space-y-3 text-sm">
+                          {[
+                            ['Received', formatDateTime(selectedLeadCapturedEnquiry.receivedAt, 'Not captured')],
+                            ['Subject', selectedLeadCapturedEnquiry.subject],
+                            ['From', selectedLeadCapturedEnquiry.sender],
+                            ['Web Ref', selectedLeadCapturedEnquiry.webReference],
+                            ['Property', selectedLeadCapturedEnquiry.propertyLabel],
+                          ].filter(([, value]) => normalizeText(value)).map(([label, value]) => (
+                            <div key={label} className="flex items-start justify-between gap-4 border-b border-[#eef3f7] pb-3 last:border-b-0 last:pb-0">
+                              <span className="shrink-0 font-semibold text-[#8aa0b7]">{label}</span>
+                              <span className="min-w-0 text-right font-semibold text-[#20364c]">{value}</span>
+                            </div>
+                          ))}
+                          {selectedLeadCapturedEnquiry.propertyLink ? (
+                            <a
+                              href={selectedLeadCapturedEnquiry.propertyLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex min-h-10 items-center gap-2 rounded-[12px] border border-[#d2dfec] bg-white px-4 text-sm font-semibold text-[#20364c] transition hover:border-[#aebfd0]"
+                            >
+                              <Link2 className="h-4 w-4" />
+                              Open Property Link
+                            </a>
+                          ) : null}
+                          {selectedLeadCapturedEnquiry.message ? (
+                            <div className="rounded-[18px] bg-[#f8fbfd] p-4">
+                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">Message</p>
+                              <p className="mt-2 text-sm leading-6 text-[#5f7590]">{selectedLeadCapturedEnquiry.message}</p>
+                            </div>
+                          ) : null}
+                          {selectedLeadCapturedEnquiry.parseConfidence !== null || selectedLeadCapturedEnquiry.warnings.length ? (
+                            <div className="text-xs leading-5 text-[#7b8fa5]">
+                              {selectedLeadCapturedEnquiry.parseConfidence !== null ? (
+                                <span>Parser confidence: {Math.round(selectedLeadCapturedEnquiry.parseConfidence * 100)}%</span>
+                              ) : null}
+                              {selectedLeadCapturedEnquiry.warnings.length ? (
+                                <span>{selectedLeadCapturedEnquiry.parseConfidence !== null ? ' - ' : ''}{selectedLeadCapturedEnquiry.warnings.join(', ')}</span>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      </section>
+                    ) : null}
 
                     <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Notes / Comments</p>

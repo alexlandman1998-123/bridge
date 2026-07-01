@@ -75,7 +75,9 @@ function requireClient() {
 export function normalizeCaptureEmail(value = '') {
   const text = normalizeText(value)
   const bracketMatch = text.match(/<([^>]+)>/)
-  const candidate = normalizeLower(bracketMatch?.[1] || text).replace(/^mailto:/, '')
+  const candidate = normalizeLower(bracketMatch?.[1] || text)
+    .replace(/^mailto:/, '')
+    .replace(/%(?:09|0a|0d|20)/gi, ' ')
   const emailMatch = candidate.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i)
   return emailMatch?.[0] || candidate
 }
@@ -900,6 +902,8 @@ const KNOWN_LEAD_EMAIL_LABELS = [
   'contact name',
   'customer',
   'customer name',
+  'enquiry by',
+  'enquired by',
   'enquirer',
   'sender',
   'email address',
@@ -938,6 +942,7 @@ const KNOWN_LEAD_EMAIL_LABELS = [
   'location',
   'property type',
   'property interest',
+  'development',
 ]
 
 function trimAtNextKnownLabel(value = '') {
@@ -950,16 +955,17 @@ function trimAtNextKnownLabel(value = '') {
 function readLabelValue(text = '', labels = []) {
   const safeLabels = labels.map((label) => String(label).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
   if (!safeLabels.length) return ''
-  const pattern = new RegExp(`(?:^|\\n)\\s*(?:${safeLabels.join('|')})\\s*[:\\-]\\s*([^\\n\\r]+)`, 'i')
+  const pattern = new RegExp(`(?:^|\\n)\\s*(?:${safeLabels.join('|')})\\s*[:\\-]?\\s*(?:\\n\\s*)?([^\\n\\r]+)`, 'i')
   const raw = normalizeText(text.match(pattern)?.[1] || '')
     .replace(/\s*\(\s*mailto:[^)]+\)/gi, ' ')
+    .replace(/\s*<https?:\/\/[^>]+>/gi, ' ')
     .replace(/\bmailto:/gi, '')
   return trimAtNextKnownLabel(raw)
 }
 
 function extractEmailAddress(text = '') {
   return normalizeCaptureEmail(readLabelValue(text, ['email address', 'email', 'e-mail']) || pickFirstMatch(text, [
-    /(?:email|e-mail)\s*[:\-]\s*([^\s<>,;]+@[^\s<>,;]+)/i,
+    /(?:email|e-mail)\s*[:-]\s*([^\s<>,;]+@[^\s<>,;]+)/i,
     /([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i,
   ]))
 }
@@ -974,7 +980,7 @@ function extractPhone(text = '') {
 }
 
 function extractName(text = '', fromName = '') {
-  const labelled = readLabelValue(text, ['name', 'full name', 'contact name', 'customer', 'customer name', 'enquirer', 'sender'])
+  const labelled = readLabelValue(text, ['name', 'full name', 'contact name', 'customer', 'customer name', 'enquiry by', 'enquired by', 'enquirer', 'sender'])
   const candidate = labelled || fromName
   return normalizeText(candidate)
     .replace(/\s*<[^>]+>\s*/g, '')
@@ -999,8 +1005,8 @@ function extractListingReference(text = '') {
     'private property reference',
     'private property listing id',
   ]) || pickFirstMatch(text, [
-    /(?:listing|property|web)\s*(?:id|ref|reference|number)\s*[:#\-]\s*([a-z0-9/_-]+)/i,
-    /(?:property24|private property)\s*(?:id|ref|reference)\s*[:#\-]\s*([a-z0-9/_-]+)/i,
+    /(?:listing|property|web)\s*(?:id|ref|reference|number)\s*[:#-]\s*([a-z0-9/_-]+)/i,
+    /(?:property24|private property)\s*(?:id|ref|reference)\s*[:#-]\s*([a-z0-9/_-]+)/i,
     /property24\.com\/(?:[^/\s]+\/)*(\d{5,})/i,
     /privateproperty\.co\.za\/(?:[^/\s]+\/)*([a-z0-9-]*\d{5,}[a-z0-9-]*)/i,
   ])
@@ -1013,7 +1019,7 @@ function extractMessage(text = '') {
     .split('\n')
     .map((line) => normalizeText(line))
     .filter(Boolean)
-  const messageStart = lines.findIndex((line) => /^(message|comments|comment|enquiry|notes)\s*[:\-]?$/i.test(line))
+  const messageStart = lines.findIndex((line) => /^(message|comments|comment|enquiry|notes)\s*[:-]?$/i.test(line))
   if (messageStart >= 0) return lines.slice(messageStart + 1, messageStart + 4).join('\n')
   return ''
 }
@@ -1099,13 +1105,13 @@ function parseProperty24Email(context = {}) {
     parserName: 'property24_email',
     source: 'Property24',
     fields: {
-      name: readLabelValue(body, ['name', 'contact name', 'customer name']) || extractName(body, context.fromName),
+      name: readLabelValue(body, ['enquiry by', 'enquired by', 'name', 'contact name', 'customer name']) || extractName(body, context.fromName),
       email: normalizeCaptureEmail(readLabelValue(body, ['email', 'email address'])),
       phone: (readLabelValue(body, ['telephone', 'phone', 'mobile', 'contact number']) || extractPhone(body)).replace(/[^\d+]/g, ''),
       listingReference: extractListingReference(`${context.subject}\n${body}`),
       message: readLabelValue(body, ['message', 'comments', 'enquiry']) || extractMessage(body),
       areaInterest: readLabelValue(body, ['suburb', 'area']),
-      propertyInterest: readLabelValue(body, ['property type']),
+      propertyInterest: readLabelValue(body, ['property type', 'development']),
       budget: extractBudget(body),
     },
   })

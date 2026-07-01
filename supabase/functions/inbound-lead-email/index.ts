@@ -71,7 +71,9 @@ function normalizeLower(value: unknown) {
 function normalizeEmail(value: unknown) {
   const text = normalizeText(value);
   const bracketMatch = text.match(/<([^>]+)>/);
-  const candidate = normalizeLower(bracketMatch?.[1] || text).replace(/^mailto:/, "");
+  const candidate = normalizeLower(bracketMatch?.[1] || text)
+    .replace(/^mailto:/, "")
+    .replace(/%(?:09|0a|0d|20)/gi, " ");
   const emailMatch = candidate.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
   return emailMatch?.[0] || candidate;
 }
@@ -294,6 +296,8 @@ const KNOWN_LEAD_EMAIL_LABELS = [
   "contact name",
   "customer",
   "customer name",
+  "enquiry by",
+  "enquired by",
   "enquirer",
   "sender",
   "email address",
@@ -332,6 +336,7 @@ const KNOWN_LEAD_EMAIL_LABELS = [
   "location",
   "property type",
   "property interest",
+  "development",
 ];
 
 function trimAtNextKnownLabel(value: string) {
@@ -344,9 +349,10 @@ function trimAtNextKnownLabel(value: string) {
 function readLabelValue(text: string, labels: string[]) {
   const safeLabels = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   if (!safeLabels.length) return "";
-  const pattern = new RegExp(`(?:^|\\n)\\s*(?:${safeLabels.join("|")})\\s*[:\\-]\\s*([^\\n\\r]+)`, "i");
+  const pattern = new RegExp(`(?:^|\\n)\\s*(?:${safeLabels.join("|")})\\s*[:\\-]?\\s*(?:\\n\\s*)?([^\\n\\r]+)`, "i");
   const raw = normalizeText(text.match(pattern)?.[1] || "")
     .replace(/\s*\(\s*mailto:[^)]+\)/gi, " ")
+    .replace(/\s*<https?:\/\/[^>]+>/gi, " ")
     .replace(/\bmailto:/gi, "");
   return trimAtNextKnownLabel(raw);
 }
@@ -368,7 +374,7 @@ function extractPhone(text: string) {
 }
 
 function extractName(text: string, fromName = "") {
-  return normalizeText(readLabelValue(text, ["name", "full name", "contact name", "customer", "customer name", "enquirer", "sender"]) || fromName)
+  return normalizeText(readLabelValue(text, ["name", "full name", "contact name", "customer", "customer name", "enquiry by", "enquired by", "enquirer", "sender"]) || fromName)
     .replace(/\s*<[^>]+>\s*/g, "")
     .replace(/\s+\b(?:legend|fieldset|label)\b\s*$/i, "");
 }
@@ -518,13 +524,13 @@ function parseLeadEmailBySource(context: {
       parserName: "property24_email",
       source: "Property24",
       fields: {
-        name: readLabelValue(context.body, ["name", "contact name", "customer name"]) || extractName(context.body, context.fromName),
+        name: readLabelValue(context.body, ["enquiry by", "enquired by", "name", "contact name", "customer name"]) || extractName(context.body, context.fromName),
         email: normalizeEmail(readLabelValue(context.body, ["email", "email address"])),
         phone: (readLabelValue(context.body, ["telephone", "phone", "mobile", "contact number"]) || extractPhone(context.body)).replace(/[^\d+]/g, ""),
         listingReference: extractListingReference(`${context.subject}\n${context.body}`),
         message: readLabelValue(context.body, ["message", "comments", "enquiry"]) || extractMessage(context.body),
         areaInterest: readLabelValue(context.body, ["suburb", "area"]),
-        propertyInterest: readLabelValue(context.body, ["property type"]),
+        propertyInterest: readLabelValue(context.body, ["property type", "development"]),
         budget: extractBudget(context.body),
       },
     });
