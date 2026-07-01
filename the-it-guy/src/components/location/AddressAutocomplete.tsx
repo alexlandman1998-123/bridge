@@ -441,6 +441,10 @@ export default function AddressAutocomplete({
 
   function handleSelect(prediction: Prediction) {
     if (!prediction?.place_id) return
+    requestIdRef.current += 1
+    setPredictions([])
+    setIsOpen(false)
+    setActiveIndex(-1)
     setIsFetching(true)
 
     if (prediction.source === 'modern' && prediction.placePrediction?.toPlace) {

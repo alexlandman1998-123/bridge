@@ -156,6 +156,447 @@ const TEMPLATE_RENDER_MODE_OPTIONS = [
   { key: TEMPLATE_RENDER_MODES.LEGACY_DOCX, label: 'Legacy DOCX' },
 ]
 
+const OTP_DEFAULT_LEGAL_TEXT = {
+  buyer_details: `PURCHASER DETAILS
+
+Purchaser Name
+{{buyer_full_name}}
+
+Identity Number
+{{buyer_id_number}}
+
+Email
+{{buyer_email}}
+
+Phone
+{{buyer_phone}}
+
+Marital Status
+{{buyer_marital_status}}
+
+Entity Type
+{{buyer_entity_type}}
+
+Representative
+{{buyer_representative_name}}
+
+Representative Capacity
+{{buyer_representative_capacity}}
+
+Trust Registration
+{{buyer_trust_registration_number}}
+
+Domicilium Address
+{{buyer_domicilium_address}}
+
+The Purchaser warrants that the above information is true and correct and that the Purchaser has the necessary legal capacity and authority to enter into this Agreement.`,
+  seller_details: `SELLER DETAILS
+
+Seller Name
+{{seller_full_name}}
+
+Identity / Registration
+{{seller_id_number}}
+
+Entity Type
+{{seller_entity_type}}
+
+Representative
+{{seller_representative_name}}
+
+Domicilium
+{{seller_domicilium_address}}
+
+The Seller warrants that the Seller is the lawful owner of the Property or is duly authorised to dispose of the Property.`,
+  property_details: `PROPERTY DETAILS
+
+Development
+{{development_name}}
+
+Property Address
+{{property_address}}
+
+Display Address
+{{property_display_address}}
+
+Suburb
+{{property_suburb}}
+
+City
+{{property_city}}
+
+Property Type
+{{property_type}}
+
+Unit Number
+{{unit_number}}
+
+ERF Number
+{{erf_number}}
+
+Section Number
+{{property_section_number}}
+
+Sectional Title Number
+{{sectional_title_number}}
+
+Complex
+{{property_complex_name}}
+
+Estate
+{{property_estate_name}}
+
+Parking Bay
+{{parking_bay}}
+
+Storeroom
+{{storeroom}}
+
+NHBRC Certificate
+{{property_nhbrc_certificate_number}}
+
+The Property is sold together with all permanent fixtures and fittings unless specifically excluded in writing.`,
+  purchase_terms: `PURCHASE PRICE & FINANCE
+
+Purchase Price
+{{purchase_price}}
+
+Deposit
+{{deposit_amount}}
+
+Finance Type
+{{finance_type}}
+
+Bond Amount
+{{bond_amount}}
+
+Cash Contribution
+{{cash_amount}}
+
+Additional Costs Note
+{{additional_costs_note}}
+
+The Purchaser agrees to purchase the Property for the Purchase Price stated above.
+
+Payment shall be made in accordance with the terms of this Agreement and the requirements of the appointed conveyancer.`,
+  occupation_transfer: `OCCUPATION & TRANSFER
+
+Occupation Date
+{{occupation_date}}
+
+Transfer Date
+{{transfer_date}}
+
+Occupation shall be given on the agreed Occupation Date.
+
+Ownership shall pass upon registration in the Deeds Office.
+
+Risk shall pass in accordance with South African law and the terms of this Agreement.`,
+  suspensive_conditions: `SUSPENSIVE CONDITIONS
+
+Suspensive Conditions
+
+{{suspensive_conditions}}
+
+Where this Agreement is subject to suspensive conditions, the sale shall become unconditional only once all suspensive conditions have been fulfilled or validly waived.
+
+Failure to fulfil a suspensive condition within the prescribed period shall have the consequences provided for by law or by this Agreement.`,
+  seller_warranties: `PROPERTY & SELLER WARRANTIES
+
+The Seller warrants that:
+
+- the Seller has authority to sell the Property;
+- the Seller will cooperate in signing transfer documentation;
+- all information supplied is materially correct; and
+- all known defects required by law have been disclosed.
+
+Unless otherwise agreed, the Property is sold voetstoots subject to applicable South African law.`,
+  commission_terms: `COMMISSION
+
+Gross Commission %
+{{gross_commission_percentage}}
+
+Gross Commission Amount
+{{gross_commission_amount}}
+
+Agency Commission
+{{agency_commission_amount}}
+
+Agent Commission
+{{agent_commission_amount}}
+
+Agency
+{{organisation_name}}
+
+Agent
+{{agent_full_name}}
+
+The Seller acknowledges that commission shall become payable in accordance with the commission agreement and applicable law.`,
+  costs_transfer: `COSTS & TRANSFER
+
+Conveyancing Firm
+{{attorney_firm_name}}
+
+Conveyancer
+{{conveyancer_name}}
+
+Email
+{{conveyancer_email}}
+
+Reference
+{{conveyancer_reference}}
+
+Transfer shall be attended to by the appointed conveyancer.
+
+Transfer costs, bond costs, duties and registration expenses shall be payable by the party responsible in terms of this Agreement and applicable legislation.`,
+  special_conditions: `SPECIAL CONDITIONS
+
+Special Conditions
+
+{{special_conditions}}
+
+The Special Conditions recorded above form part of this Agreement.
+
+Should there be any inconsistency between the Special Conditions and the standard provisions of this Agreement, the Special Conditions shall prevail.`,
+  general_legal_provisions: `GENERAL LEGAL PROVISIONS
+
+Entire Agreement:
+This Agreement contains the full agreement between the parties regarding the sale of the Property.
+
+Non-Variation:
+No amendment, cancellation or waiver shall be valid unless recorded in writing and accepted by the parties.
+
+Breach:
+If either party breaches this Agreement and fails to remedy the breach after written notice, the innocent party may exercise the remedies available in law.
+
+Domicilium:
+The parties choose their recorded addresses and contact details for notices and legal communication.
+
+Electronic Communication:
+The parties agree that notices and transaction communications may be sent electronically where permitted by law.
+
+POPIA Consent:
+The parties consent to the processing of personal information reasonably required for this transaction, including verification, conveyancing, finance, record keeping and communication.
+
+FICA Compliance:
+The parties shall provide all documents and information reasonably required for FICA, verification and transaction administration.
+
+Governing Law:
+This Agreement is governed by the laws of the Republic of South Africa.
+
+Severability:
+If any provision is unenforceable, the remaining provisions shall continue to apply.
+
+Costs:
+Each party shall be responsible for the costs allocated to that party in terms of this Agreement and applicable law.
+
+Jurisdiction:
+The parties consent to the jurisdiction of the competent South African courts for disputes arising from this Agreement.`,
+  signature_pages: `SIGNATURE PAGES
+
+Purchaser
+{{buyer_full_name}}
+
+Signature
+{{buyer_signature}}
+
+Initials
+{{buyer_initials}}
+
+Date
+{{signed_date}}
+
+Seller
+{{seller_full_name}}
+
+Signature
+{{seller_signature}}
+
+Initials
+{{seller_initials}}
+
+Date
+{{signed_date}}
+
+Witness
+{{witness_signature}}
+
+Agency
+{{organisation_name}}
+
+Agent
+{{agent_full_name}}
+
+FFC Number
+{{agent_ffc_number}}
+
+DOCUMENT METADATA
+
+Document Reference
+{{document_reference}}
+
+Transaction Reference
+{{transaction_reference}}
+
+Generated
+{{generated_date}}
+
+Template Version
+{{template_version}}
+
+Annexures
+{{annexures_list}}`,
+}
+
+const SALES_MANDATE_DEFAULT_LEGAL_TEXT = {
+  introduction_purpose: `APPOINTMENT OF ESTATE AGENT
+
+This Sales Mandate Agreement is entered into between the Seller and the Agency for the purpose of authorising the Agency to market the Property and procure a willing and able purchaser.
+
+Seller:
+{{seller_full_name}}
+Identity / Registration Number: {{seller_id_number}}
+Entity Type: {{seller_entity_type}}
+Representative: {{seller_representative_name}}
+Representative Capacity: {{seller_representative_capacity}}
+Domicilium Address: {{seller_domicilium_address}}
+
+Agency:
+{{agency_legal_name}}
+Trading as: {{organisation_name}}
+Registration Number: {{agency_registration_number}}
+VAT Number: {{agency_vat_number}}
+FSP Number: {{agency_fsp_number}}
+Address: {{agency_address}}
+
+Agent:
+{{agent_full_name}}
+Email: {{agent_email}}
+Phone: {{agent_phone}}
+FFC Number: {{agent_ffc_number}}
+
+The Seller hereby appoints the Agency to market and procure a purchaser for the Property described in this Agreement upon the terms and conditions contained herein.
+
+The parties agree that this document constitutes a legally binding estate agency mandate, subject to applicable South African law.`,
+  parties: `SELLER DETAILS
+
+Seller Full Name: {{seller_full_name}}
+ID / Registration Number: {{seller_id_number}}
+Email: {{seller_email}}
+Phone: {{seller_phone}}
+Entity Type: {{seller_entity_type}}
+Representative Name: {{seller_representative_name}}
+Representative Capacity: {{seller_representative_capacity}}
+Trust Registration Number: {{seller_trust_registration_number}}
+Domicilium Address: {{seller_domicilium_address}}
+
+The Seller confirms that the information supplied to the Agency is true and correct to the best of the Seller's knowledge.`,
+  property_details: `PROPERTY DETAILS
+
+Property Address: {{property_address}}
+Display Address: {{property_display_address}}
+Suburb: {{property_suburb}}
+City: {{property_city}}
+Property Type: {{property_type}}
+Unit Number: {{property_unit_number}}
+Section Number: {{property_section_number}}
+Sectional Title Number: {{sectional_title_number}}
+Complex / Scheme Name: {{property_complex_name}}
+Estate Name: {{property_estate_name}}
+
+The Seller warrants that the Seller is duly authorised to mandate the marketing of the Property.
+
+The Seller shall disclose to the Agency any material facts, defects, restrictions, servitudes, disputes, body corporate issues, estate rules, or other matters which may reasonably affect the marketing, sale, transfer, or value of the Property.`,
+  mandate_terms: `MANDATE TERMS
+
+Mandate Type: {{mandate_type}}
+Mandate Start Date: {{mandate_start_date}}
+Mandate End Date: {{mandate_end_date}}
+
+Mandate Purpose:
+{{mandate_introduction_purpose}}
+
+Authority Granted:
+{{mandate_authority_granted}}
+
+Access Instructions:
+{{mandate_access_instructions}}
+
+The Seller authorises the Agency to advertise the Property, introduce prospective purchasers, arrange viewings, receive and present offers, negotiate terms subject to the Seller's final approval, and communicate with relevant service providers where reasonably required.
+
+The Agency shall use reasonable commercial efforts to market the Property during the mandate period.
+
+The Seller undertakes to cooperate with the Agency and to provide all information and documents reasonably required for the proper performance of this mandate.`,
+  commission_terms: `COMMISSION TERMS
+
+Asking Price: {{asking_price}}
+Commission Structure: {{commission_structure}}
+Commission Percentage: {{mandate_commission_percent}}
+Commission Amount: {{mandate_commission_amount}}
+VAT Handling: {{vat_handling}}
+
+Commission shall become due and payable to the Agency upon the conclusion of a valid and binding agreement of sale between the Seller and a purchaser introduced by the Agency, or where the Agency was the effective cause of the sale.
+
+Where VAT is applicable, VAT shall be charged in accordance with prevailing South African tax legislation.
+
+The Seller acknowledges that commission may be recorded in the Offer to Purchase or sale agreement and may be recovered in accordance with the applicable transaction documents.`,
+  marketing_listing_terms: `MARKETING / LISTING AUTHORITY
+
+Marketing Permissions:
+{{mandate_marketing_permissions}}
+
+The Seller authorises the Agency to market the Property using lawful marketing channels, including property portals, agency websites, social media, email marketing, buyer databases, printed marketing material, signage, photography, video, and other reasonable advertising channels.
+
+The Seller grants permission for the Agency to create and use photographs, videos, floor plans, drone footage, descriptions, and other marketing material relating to the Property for the purpose of marketing the Property.
+
+The Agency shall take reasonable care to ensure that marketing material is accurate and not misleading, based on the information supplied by the Seller.`,
+  special_conditions: `SPECIAL CONDITIONS
+
+Special Conditions:
+{{special_conditions}}
+
+Annexures:
+{{annexures_list}}
+
+Any special conditions recorded above shall form part of this mandate.
+
+If there is any conflict between the special conditions and the standard terms of this mandate, the special conditions shall prevail to the extent of the conflict.
+
+POPIA:
+The Seller consents to the processing of personal information reasonably required for the performance of this mandate, including marketing, communication, verification, record keeping, and transaction administration.
+
+Confidentiality:
+The parties agree to treat confidential transaction information with reasonable care and not to disclose such information except where required for the performance of this mandate, by law, or with the consent of the relevant party.
+
+Entire Agreement:
+This mandate constitutes the entire agreement between the parties regarding the appointment of the Agency. No amendment shall be valid unless reduced to writing and accepted by the parties.
+
+Governing Law:
+This mandate shall be governed by the laws of the Republic of South Africa.`,
+  signature_pages: `SIGNATURE PAGES
+
+Seller:
+{{seller_full_name}}
+Signature: {{seller_signature}}
+Initials: {{seller_initials}}
+Date: {{signed_date}}
+
+Agent:
+{{agent_full_name}}
+Agency: {{organisation_name}}
+FFC Number: {{agent_ffc_number}}
+Signature: __________________________
+Date: {{signed_date}}
+
+Witness:
+Signature: {{witness_signature}}
+
+Document Reference: {{document_reference}}
+Transaction Reference: {{transaction_reference}}
+Generated Date: {{generated_date}}
+Template Version: {{template_version}}`,
+}
+
 function getDefaultRenderMode(packetType = 'otp') {
   const normalized = normalizeText(packetType).toLowerCase()
   return normalized === 'mandate' || normalized.startsWith('commercial_')
@@ -175,8 +616,8 @@ function createStarterSections(packetType = 'otp') {
         sectionKey: 'introduction_purpose',
         sectionLabel: 'Introduction and Purpose',
         sectionType: 'legal_text',
-        legalText: '{{mandate_introduction_purpose}}',
-        placeholderKeysText: 'mandate_introduction_purpose',
+        legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.introduction_purpose,
+        placeholderKeysText: 'seller_full_name, seller_id_number, seller_entity_type, seller_representative_name, seller_representative_capacity, seller_domicilium_address, agency_legal_name, organisation_name, agency_registration_number, agency_vat_number, agency_fsp_number, agency_address, agent_full_name, agent_email, agent_phone, agent_ffc_number',
         isRequired: true,
         sortOrder: 0,
       },
@@ -184,8 +625,8 @@ function createStarterSections(packetType = 'otp') {
         sectionKey: 'parties',
         sectionLabel: 'Parties',
         sectionType: 'dynamic_fields',
-        legalText: 'Seller: {{seller_full_name}}\nSeller ID: {{seller_id_number}}\nOrganisation: {{organisation_name}}\nAgent: {{agent_full_name}}',
-        placeholderKeysText: 'seller_full_name, seller_id_number, organisation_name, agent_full_name, seller_email, seller_phone',
+        legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.parties,
+        placeholderKeysText: 'seller_full_name, seller_id_number, seller_email, seller_phone, seller_entity_type, seller_representative_name, seller_representative_capacity, seller_trust_registration_number, seller_domicilium_address',
         isRequired: true,
         sortOrder: 1,
       },
@@ -193,8 +634,8 @@ function createStarterSections(packetType = 'otp') {
         sectionKey: 'property_details',
         sectionLabel: 'Property Details',
         sectionType: 'dynamic_fields',
-        legalText: 'Property address: {{property_display_address}}\nUnit: {{property_unit_number}}\nComplex / scheme: {{property_complex_name}}\nEstate: {{property_estate_name}}\nStreet address: {{property_address}}\nSuburb: {{property_suburb}}\nCity: {{property_city}}\nProperty type: {{property_type}}\nAsking price: {{asking_price}}',
-        placeholderKeysText: 'property_display_address, property_unit_number, property_section_number, property_complex_name, property_estate_name, property_address, property_suburb, property_city, property_type, asking_price, purchase_price',
+        legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.property_details,
+        placeholderKeysText: 'property_address, property_display_address, property_suburb, property_city, property_type, property_unit_number, property_section_number, sectional_title_number, property_complex_name, property_estate_name',
         isRequired: true,
         sortOrder: 2,
       },
@@ -202,8 +643,8 @@ function createStarterSections(packetType = 'otp') {
         sectionKey: 'mandate_terms',
         sectionLabel: 'Mandate Terms',
         sectionType: 'legal_text',
-        legalText: 'Mandate type: {{mandate_type}}\nStart date: {{mandate_start_date}}\nEnd date: {{mandate_end_date}}\nCommission structure: {{commission_structure}}\nVAT handling: {{vat_handling}}\nAuthority: {{mandate_authority_granted}}',
-        placeholderKeysText: 'mandate_type, mandate_start_date, mandate_end_date, commission_structure, vat_handling, mandate_authority_granted, mandate_commission_percent',
+        legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.mandate_terms,
+        placeholderKeysText: 'mandate_type, mandate_start_date, mandate_end_date, mandate_introduction_purpose, mandate_authority_granted, mandate_access_instructions',
         isRequired: true,
         sortOrder: 3,
       },
@@ -211,7 +652,7 @@ function createStarterSections(packetType = 'otp') {
         sectionKey: 'commission_terms',
         sectionLabel: 'Commission Terms',
         sectionType: 'dynamic_fields',
-        legalText: 'Commission structure: {{commission_structure}}\nCommission percentage: {{mandate_commission_percent}}\nCommission amount: {{mandate_commission_amount}}\nVAT handling: {{vat_handling}}\nAsking price: {{asking_price}}',
+        legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.commission_terms,
         placeholderKeysText: 'commission_structure, mandate_commission_percent, mandate_commission_amount, vat_handling, asking_price',
         isRequired: true,
         sortOrder: 4,
@@ -220,8 +661,8 @@ function createStarterSections(packetType = 'otp') {
         sectionKey: 'marketing_listing_terms',
         sectionLabel: 'Marketing / Listing Terms',
         sectionType: 'dynamic_fields',
-        legalText: 'Listing price: {{asking_price}}\nMarketing permissions: {{mandate_marketing_permissions}}\nViewing / access arrangements: {{mandate_access_instructions}}',
-        placeholderKeysText: 'asking_price, mandate_marketing_permissions, mandate_access_instructions',
+        legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.marketing_listing_terms,
+        placeholderKeysText: 'mandate_marketing_permissions',
         isRequired: false,
         sortOrder: 5,
       },
@@ -229,8 +670,8 @@ function createStarterSections(packetType = 'otp') {
         sectionKey: 'special_conditions',
         sectionLabel: 'Special Conditions',
         sectionType: 'legal_text',
-        legalText: '{{special_conditions}}',
-        placeholderKeysText: 'special_conditions',
+        legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.special_conditions,
+        placeholderKeysText: 'special_conditions, annexures_list',
         isRequired: false,
         sortOrder: 6,
       },
@@ -238,8 +679,8 @@ function createStarterSections(packetType = 'otp') {
         sectionKey: 'signature_pages',
         sectionLabel: 'Signature Pages',
         sectionType: 'signature_zone',
-        legalText: 'Signed by {{seller_full_name}} and {{agent_full_name}} on behalf of {{organisation_name}}.',
-        placeholderKeysText: 'seller_full_name, agent_full_name, organisation_name',
+        legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.signature_pages,
+        placeholderKeysText: 'seller_full_name, seller_signature, seller_initials, signed_date, agent_full_name, organisation_name, agent_ffc_number, witness_signature, document_reference, transaction_reference, generated_date, template_version',
         isRequired: true,
         sortOrder: 7,
       },
@@ -300,10 +741,10 @@ function createStarterSections(packetType = 'otp') {
   return [
     {
       sectionKey: 'buyer_details',
-      sectionLabel: 'Buyer Details',
+      sectionLabel: 'Purchaser Details',
       sectionType: 'dynamic_fields',
-      legalText: 'The purchaser is {{buyer_full_name}}, identity number {{buyer_id_number}}, with email address {{buyer_email}}.',
-      placeholderKeysText: 'buyer_full_name, buyer_id_number, buyer_email',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.buyer_details,
+      placeholderKeysText: 'buyer_full_name, buyer_id_number, buyer_email, buyer_phone, buyer_marital_status, buyer_entity_type, buyer_representative_name, buyer_representative_capacity, buyer_trust_registration_number, buyer_domicilium_address',
       isRequired: true,
       sortOrder: 0,
     },
@@ -311,55 +752,100 @@ function createStarterSections(packetType = 'otp') {
       sectionKey: 'seller_details',
       sectionLabel: 'Seller Details',
       sectionType: 'dynamic_fields',
-      legalText: 'The seller is {{seller_full_name}}, identity number {{seller_id_number}}.',
-      placeholderKeysText: 'seller_full_name, seller_id_number',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.seller_details,
+      placeholderKeysText: 'seller_full_name, seller_id_number, seller_entity_type, seller_representative_name, seller_domicilium_address',
       isRequired: true,
       sortOrder: 1,
     },
     {
       sectionKey: 'property_details',
-      sectionLabel: 'Property',
+      sectionLabel: 'Property Details',
       sectionType: 'dynamic_fields',
-      legalText: 'The property being sold is {{property_address}}, {{property_suburb}}.\nUnit number: {{unit_number}}.',
-      placeholderKeysText: 'unit_number, property_address, property_suburb',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.property_details,
+      placeholderKeysText: 'development_name, property_address, property_display_address, property_suburb, property_city, property_type, unit_number, erf_number, property_section_number, sectional_title_number, property_complex_name, property_estate_name, parking_bay, storeroom, property_nhbrc_certificate_number',
       isRequired: true,
       sortOrder: 2,
     },
     {
       sectionKey: 'purchase_terms',
-      sectionLabel: 'Purchase Terms',
+      sectionLabel: 'Purchase Price & Finance',
       sectionType: 'dynamic_fields',
-      legalText: 'The purchase price is {{purchase_price}}.\nDeposit payable: {{deposit_amount}}.\nFinance type: {{finance_type}}.',
-      placeholderKeysText: 'purchase_price, deposit_amount, finance_type',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.purchase_terms,
+      placeholderKeysText: 'purchase_price, deposit_amount, finance_type, bond_amount, cash_amount, additional_costs_note',
       isRequired: true,
       sortOrder: 3,
     },
     {
-      sectionKey: 'commission_terms',
-      sectionLabel: 'Commission Terms',
+      sectionKey: 'occupation_transfer',
+      sectionLabel: 'Occupation & Transfer',
       sectionType: 'dynamic_fields',
-      legalText: 'Commission is recorded as {{gross_commission_percentage}} of the purchase price.\nGross commission amount: {{gross_commission_amount}}.\nAgent commission amount: {{agent_commission_amount}}.\nAgency commission amount: {{agency_commission_amount}}.',
-      placeholderKeysText: 'gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.occupation_transfer,
+      placeholderKeysText: 'occupation_date, transfer_date',
       isRequired: true,
       sortOrder: 4,
+    },
+    {
+      sectionKey: 'suspensive_conditions',
+      sectionLabel: 'Suspensive Conditions',
+      sectionType: 'legal_text',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.suspensive_conditions,
+      placeholderKeysText: 'suspensive_conditions',
+      isRequired: false,
+      sortOrder: 5,
+    },
+    {
+      sectionKey: 'seller_warranties',
+      sectionLabel: 'Property & Seller Warranties',
+      sectionType: 'legal_text',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.seller_warranties,
+      placeholderKeysText: '',
+      isRequired: true,
+      sortOrder: 6,
+    },
+    {
+      sectionKey: 'commission_terms',
+      sectionLabel: 'Commission',
+      sectionType: 'dynamic_fields',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.commission_terms,
+      placeholderKeysText: 'gross_commission_percentage, gross_commission_amount, agency_commission_amount, agent_commission_amount, organisation_name, agent_full_name',
+      isRequired: true,
+      sortOrder: 7,
+    },
+    {
+      sectionKey: 'costs_transfer',
+      sectionLabel: 'Costs & Transfer',
+      sectionType: 'dynamic_fields',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.costs_transfer,
+      placeholderKeysText: 'attorney_firm_name, conveyancer_name, conveyancer_email, conveyancer_reference',
+      isRequired: true,
+      sortOrder: 8,
     },
     {
       sectionKey: 'special_conditions',
       sectionLabel: 'Special Conditions',
       sectionType: 'dynamic_fields',
-      legalText: '{{special_conditions}}',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.special_conditions,
       placeholderKeysText: 'special_conditions',
       isRequired: false,
-      sortOrder: 5,
+      sortOrder: 9,
+    },
+    {
+      sectionKey: 'general_legal_provisions',
+      sectionLabel: 'General Legal Provisions',
+      sectionType: 'legal_text',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.general_legal_provisions,
+      placeholderKeysText: '',
+      isRequired: true,
+      sortOrder: 10,
     },
     {
       sectionKey: 'signature_pages',
-      sectionLabel: 'Signatures',
+      sectionLabel: 'Signature Pages',
       sectionType: 'signature_zone',
-      legalText: 'Signed by {{buyer_full_name}} and {{seller_full_name}}',
-      placeholderKeysText: 'buyer_full_name, seller_full_name',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.signature_pages,
+      placeholderKeysText: 'buyer_full_name, buyer_signature, buyer_initials, signed_date, seller_full_name, seller_signature, seller_initials, witness_signature, organisation_name, agent_full_name, agent_ffc_number, document_reference, transaction_reference, generated_date, template_version, annexures_list',
       isRequired: true,
-      sortOrder: 6,
+      sortOrder: 11,
     },
   ]
 }
@@ -424,27 +910,32 @@ function getDefaultSectionLegalText(packetType = 'otp', section = {}) {
   const lookupKey = sectionKey || sectionLabel
 
   const otpDefaults = {
-    buyer_details: 'The purchaser is {{buyer_full_name}}, identity number {{buyer_id_number}}, with email address {{buyer_email}}.',
-    seller_details: 'The seller is {{seller_full_name}}, identity number {{seller_id_number}}.',
-    property_details: 'The property being sold is {{property_address}}, {{property_suburb}}.\nUnit number: {{unit_number}}.',
-    purchase_terms: 'The purchase price is {{purchase_price}}.\nDeposit payable: {{deposit_amount}}.\nFinance type: {{finance_type}}.',
-    commission_terms: 'Commission is recorded as {{gross_commission_percentage}} of the purchase price.\nGross commission amount: {{gross_commission_amount}}.\nAgent commission amount: {{agent_commission_amount}}.\nAgency commission amount: {{agency_commission_amount}}.',
-    special_conditions: '{{special_conditions}}',
-    signature_pages: 'Signed by {{buyer_full_name}} and {{seller_full_name}}.',
-    parties: 'Buyer: {{buyer_full_name}}\nSeller: {{seller_full_name}}.',
-    terms: 'Purchase price: {{purchase_price}}.',
-    signatures: 'Signed by {{buyer_full_name}} and {{seller_full_name}}.',
+    buyer_details: OTP_DEFAULT_LEGAL_TEXT.buyer_details,
+    seller_details: OTP_DEFAULT_LEGAL_TEXT.seller_details,
+    property_details: OTP_DEFAULT_LEGAL_TEXT.property_details,
+    purchase_terms: OTP_DEFAULT_LEGAL_TEXT.purchase_terms,
+    occupation_transfer: OTP_DEFAULT_LEGAL_TEXT.occupation_transfer,
+    suspensive_conditions: OTP_DEFAULT_LEGAL_TEXT.suspensive_conditions,
+    seller_warranties: OTP_DEFAULT_LEGAL_TEXT.seller_warranties,
+    commission_terms: OTP_DEFAULT_LEGAL_TEXT.commission_terms,
+    costs_transfer: OTP_DEFAULT_LEGAL_TEXT.costs_transfer,
+    special_conditions: OTP_DEFAULT_LEGAL_TEXT.special_conditions,
+    general_legal_provisions: OTP_DEFAULT_LEGAL_TEXT.general_legal_provisions,
+    signature_pages: OTP_DEFAULT_LEGAL_TEXT.signature_pages,
+    parties: OTP_DEFAULT_LEGAL_TEXT.buyer_details,
+    terms: OTP_DEFAULT_LEGAL_TEXT.purchase_terms,
+    signatures: OTP_DEFAULT_LEGAL_TEXT.signature_pages,
   }
 
   const mandateDefaults = {
-    introduction_purpose: '{{mandate_introduction_purpose}}',
-    parties: 'Seller: {{seller_full_name}}\nSeller ID: {{seller_id_number}}\nSeller email: {{seller_email}}\nOrganisation: {{organisation_name}}\nAgent: {{agent_full_name}}',
-    property_details: 'Property address: {{property_display_address}}\nUnit: {{property_unit_number}}\nComplex / scheme: {{property_complex_name}}\nEstate: {{property_estate_name}}\nStreet address: {{property_address}}\nSuburb: {{property_suburb}}\nCity: {{property_city}}\nProperty type: {{property_type}}\nAsking price: {{asking_price}}',
-    mandate_terms: 'Mandate type: {{mandate_type}}\nStart date: {{mandate_start_date}}\nEnd date: {{mandate_end_date}}\nAuthority granted: {{mandate_authority_granted}}',
-    commission_terms: 'Commission structure: {{commission_structure}}\nCommission percentage: {{mandate_commission_percent}}\nCommission amount: {{mandate_commission_amount}}\nVAT handling: {{vat_handling}}\nAsking price: {{asking_price}}',
-    marketing_listing_terms: 'Listing price: {{asking_price}}\nMarketing permissions: {{mandate_marketing_permissions}}\nViewing / access arrangements: {{mandate_access_instructions}}',
-    special_conditions: '{{special_conditions}}',
-    signature_pages: 'Signed by {{seller_full_name}} and {{agent_full_name}} on behalf of {{organisation_name}}.',
+    introduction_purpose: SALES_MANDATE_DEFAULT_LEGAL_TEXT.introduction_purpose,
+    parties: SALES_MANDATE_DEFAULT_LEGAL_TEXT.parties,
+    property_details: SALES_MANDATE_DEFAULT_LEGAL_TEXT.property_details,
+    mandate_terms: SALES_MANDATE_DEFAULT_LEGAL_TEXT.mandate_terms,
+    commission_terms: SALES_MANDATE_DEFAULT_LEGAL_TEXT.commission_terms,
+    marketing_listing_terms: SALES_MANDATE_DEFAULT_LEGAL_TEXT.marketing_listing_terms,
+    special_conditions: SALES_MANDATE_DEFAULT_LEGAL_TEXT.special_conditions,
+    signature_pages: SALES_MANDATE_DEFAULT_LEGAL_TEXT.signature_pages,
   }
 
   const defaults = normalizedPacketType === 'mandate' ? mandateDefaults : otpDefaults
