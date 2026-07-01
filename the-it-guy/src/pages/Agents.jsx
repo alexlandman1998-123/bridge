@@ -3506,7 +3506,7 @@ function FinancialPerformanceCard({ rows }) {
   )
 }
 
-function AgentWorkspaceKpiCard({ label, value, helper = '', icon: Icon = Grid2X2, tone = 'bg-[#edf8f0] text-[#16894f]' }) {
+function AgentWorkspaceKpiCard({ label, value, helper = '', icon = Grid2X2, tone = 'bg-[#edf8f0] text-[#16894f]' }) {
   return (
     <article className="min-w-0 rounded-2xl border border-[#dfe7f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
       <div className="flex min-w-0 items-start justify-between gap-3">
@@ -3516,7 +3516,7 @@ function AgentWorkspaceKpiCard({ label, value, helper = '', icon: Icon = Grid2X2
           {helper ? <p className="mt-1 truncate text-xs font-semibold text-[#60758d]" title={helper}>{helper}</p> : null}
         </div>
         <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${tone}`}>
-          <Icon size={18} />
+          {createElement(icon, { size: 18 })}
         </span>
       </div>
     </article>
@@ -5055,8 +5055,22 @@ function AgentMemberWorkspace({
 export function AgentsPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { role, baseRole, profile } = useWorkspace()
-  const [membershipRole, setMembershipRole] = useState('viewer')
+  const { role, baseRole, profile, workspaceReady, profileLoading, currentMembership, workspaceRole, workspaceType } = useWorkspace()
+  const contextMembershipRole = useMemo(
+    () => normalizeOrganisationMembershipRole(
+      currentMembership?.role ||
+        currentMembership?.workspaceRole ||
+        workspaceRole ||
+        profile?.workspaceRole ||
+        profile?.workspace_role ||
+        profile?.organisationRole ||
+        profile?.organisation_role,
+      { appRole: role || baseRole, workspaceType: currentMembership?.workspaceType || workspaceType },
+    ),
+    [baseRole, currentMembership?.role, currentMembership?.workspaceRole, currentMembership?.workspaceType, profile?.organisationRole, profile?.organisation_role, profile?.workspaceRole, profile?.workspace_role, role, workspaceRole, workspaceType],
+  )
+  const [membershipRole, setMembershipRole] = useState(contextMembershipRole)
+  const [membershipRoleLoaded, setMembershipRoleLoaded] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [actionError, setActionError] = useState('')
@@ -5111,6 +5125,12 @@ export function AgentsPage() {
 
   const canAccess = canAccessAgentsModule({ role, baseRole, profile, membershipRole })
   const canManageDirectory = canManageAgentOrganisations({ role, baseRole, profile, membershipRole })
+  const permissionCheckPending = profileLoading || !workspaceReady || (!canAccess && !membershipRoleLoaded)
+
+  useEffect(() => {
+    if (membershipRoleLoaded) return
+    setMembershipRole(contextMembershipRole)
+  }, [contextMembershipRole, membershipRoleLoaded])
 
   useEffect(() => {
     let active = true
@@ -5121,16 +5141,23 @@ export function AgentsPage() {
         setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole))
       } catch {
         if (!active) return
-        setMembershipRole('viewer')
+        setMembershipRole(contextMembershipRole)
+      } finally {
+        if (active) setMembershipRoleLoaded(true)
       }
     }
     void loadMembershipRole()
     return () => {
       active = false
     }
-  }, [])
+  }, [contextMembershipRole])
 
   const loadData = useCallback(async () => {
+    if (permissionCheckPending) {
+      setLoading(true)
+      return
+    }
+
     if (!canAccess) {
       setAgents([])
       setTransactionRows([])
@@ -5307,7 +5334,7 @@ export function AgentsPage() {
     } finally {
       setLoading(false)
     }
-  }, [canAccess, canManageDirectory, profile, role])
+  }, [canAccess, canManageDirectory, permissionCheckPending, profile, role])
 
   useEffect(() => {
     void loadData()
@@ -6050,6 +6077,10 @@ export function AgentsPage() {
     }
   }
 
+  if (permissionCheckPending) {
+    return <div className="rounded-[20px] border border-[#dde4ee] bg-white px-5 py-6 text-sm text-[#647a92]">Loading agents…</div>
+  }
+
   if (!canAccess) {
     return (
       <section className="space-y-5">
@@ -6478,8 +6509,22 @@ export function AgentsPage() {
 export function AgentWorkspacePage() {
   const navigate = useNavigate()
   const { agentId } = useParams()
-  const { role, baseRole, profile } = useWorkspace()
-  const [membershipRole, setMembershipRole] = useState('viewer')
+  const { role, baseRole, profile, workspaceReady, profileLoading, currentMembership, workspaceRole, workspaceType } = useWorkspace()
+  const contextMembershipRole = useMemo(
+    () => normalizeOrganisationMembershipRole(
+      currentMembership?.role ||
+        currentMembership?.workspaceRole ||
+        workspaceRole ||
+        profile?.workspaceRole ||
+        profile?.workspace_role ||
+        profile?.organisationRole ||
+        profile?.organisation_role,
+      { appRole: role || baseRole, workspaceType: currentMembership?.workspaceType || workspaceType },
+    ),
+    [baseRole, currentMembership?.role, currentMembership?.workspaceRole, currentMembership?.workspaceType, profile?.organisationRole, profile?.organisation_role, profile?.workspaceRole, profile?.workspace_role, role, workspaceRole, workspaceType],
+  )
+  const [membershipRole, setMembershipRole] = useState(contextMembershipRole)
+  const [membershipRoleLoaded, setMembershipRoleLoaded] = useState(false)
   const [loading, setLoading] = useState(true)
   const [hydratingSnapshot, setHydratingSnapshot] = useState(false)
   const [error, setError] = useState('')
@@ -6489,6 +6534,12 @@ export function AgentWorkspacePage() {
 
   const canAccess = canAccessAgentsModule({ role, baseRole, profile, membershipRole })
   const canManageSettings = canManageAgentOrganisations({ role, baseRole, profile, membershipRole })
+  const permissionCheckPending = profileLoading || !workspaceReady || (!canAccess && !membershipRoleLoaded)
+
+  useEffect(() => {
+    if (membershipRoleLoaded) return
+    setMembershipRole(contextMembershipRole)
+  }, [contextMembershipRole, membershipRoleLoaded])
 
   useEffect(() => {
     let active = true
@@ -6499,16 +6550,23 @@ export function AgentWorkspacePage() {
         setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole))
       } catch {
         if (!active) return
-        setMembershipRole('viewer')
+        setMembershipRole(contextMembershipRole)
+      } finally {
+        if (active) setMembershipRoleLoaded(true)
       }
     }
     void loadMembershipRole()
     return () => {
       active = false
     }
-  }, [])
+  }, [contextMembershipRole])
 
   const loadFullWorkspace = useCallback(async ({ blockInitialRender = false } = {}) => {
+    if (permissionCheckPending) {
+      if (blockInitialRender) setLoading(true)
+      return
+    }
+
     if (!canAccess) {
       if (blockInitialRender) setLoading(false)
       return
@@ -6596,9 +6654,14 @@ export function AgentWorkspacePage() {
         setHydratingSnapshot(false)
       }
     }
-  }, [agentId, canAccess, canManageSettings, profile, role])
+  }, [agentId, canAccess, canManageSettings, permissionCheckPending, profile, role])
 
   const loadWorkspace = useCallback(async () => {
+    if (permissionCheckPending) {
+      setLoading(true)
+      return
+    }
+
     if (!canAccess) {
       setLoading(false)
       return
@@ -6658,11 +6721,15 @@ export function AgentWorkspacePage() {
       setWorkspaceSnapshot(createEmptyAgentWorkspaceSnapshot())
       setLoading(false)
     }
-  }, [agentId, canAccess, canManageSettings, loadFullWorkspace])
+  }, [agentId, canAccess, canManageSettings, loadFullWorkspace, permissionCheckPending])
 
   useEffect(() => {
     void loadWorkspace()
   }, [loadWorkspace])
+
+  if (permissionCheckPending) {
+    return <div className="rounded-[20px] border border-[#dde4ee] bg-white px-5 py-6 text-sm text-[#647a92]">Loading agent workspace…</div>
+  }
 
   if (!canAccess) {
     return (

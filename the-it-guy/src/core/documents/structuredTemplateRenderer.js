@@ -102,6 +102,51 @@ function renderLegalTextBlocks(value = '', placeholders = {}) {
   return blocks.join('\n')
 }
 
+function getSectionSigningMetadata(section = {}) {
+  const metadata = section?.metadata && typeof section.metadata === 'object' ? section.metadata : {}
+  return metadata.signing && typeof metadata.signing === 'object' ? metadata.signing : metadata
+}
+
+function getSectionSigningRequirement(section = {}) {
+  const signing = getSectionSigningMetadata(section)
+  const requirement = normalizeText(signing.signing_requirement || signing.signingRequirement).toLowerCase()
+  if (requirement === 'client_signature') return 'client_signature'
+  if (requirement === 'client_initial') return 'client_initial'
+  if (signing.requires_signature || signing.requiresSignature) return 'client_signature'
+  if (signing.requires_initial || signing.requiresInitial) return 'client_initial'
+  return 'none'
+}
+
+function getDefaultClientSigningPlaceholderKey(packetType = 'otp', requirement = 'client_initial') {
+  const partyPrefix = normalizeText(packetType).toLowerCase() === 'mandate' ? 'seller' : 'buyer'
+  return requirement === 'client_signature' ? `${partyPrefix}_signature` : `${partyPrefix}_initials`
+}
+
+function renderSectionSigningRequirement(section = {}, placeholders = {}, packetType = 'otp') {
+  const requirement = getSectionSigningRequirement(section)
+  if (requirement === 'none') return ''
+  const signing = getSectionSigningMetadata(section)
+  const placeholderKey = normalizeText(
+    requirement === 'client_signature'
+      ? signing.signature_placeholder_key || signing.signaturePlaceholderKey
+      : signing.initial_placeholder_key || signing.initialPlaceholderKey,
+  ) || getDefaultClientSigningPlaceholderKey(packetType, requirement)
+  const label = requirement === 'client_signature' ? 'Client signature' : 'Client initials'
+  return `
+    <div class="legal-section-signing-requirement">
+      <span class="legal-section-signing-label">${escapeHtml(label)}</span>
+      <span class="legal-section-signing-line">${renderLegalTextWithPlaceholders(`{{${placeholderKey}}}`, placeholders)}</span>
+    </div>
+  `
+}
+
+function appendSectionSigningRequirement(content = '', section = {}, placeholders = {}, packetType = 'otp') {
+  return [
+    content,
+    renderSectionSigningRequirement(section, placeholders, packetType),
+  ].filter(Boolean).join('\n')
+}
+
 function compactJoin(values = [], separator = ', ') {
   return values.map((value) => normalizeText(value)).filter(Boolean).join(separator)
 }
@@ -594,15 +639,17 @@ function renderStructuredFieldRows(section, placeholders, packetType = 'otp') {
 function renderLegalClauseRows(section, placeholders, sectionIndex, packetType = 'mandate') {
   if (section.key === 'parties') {
     const partyContent = renderPartyCardGrid(getPartyGroupsForSection(section, placeholders, packetType), { compact: true })
-    if (partyContent) return partyContent
+    if (partyContent) return appendSectionSigningRequirement(partyContent, section, placeholders, packetType)
   }
 
-  if (section.legalText) return renderLegalTextBlocks(section.legalText, placeholders)
+  if (section.legalText) {
+    return appendSectionSigningRequirement(renderLegalTextBlocks(section.legalText, placeholders), section, placeholders, packetType)
+  }
 
   if (section.key === 'signature_pages') {
     const seller = getPreviewField(placeholders, 'seller_full_name', 'Seller Full Name')
     const agent = getPreviewField(placeholders, 'agent_full_name', 'Agent / Agency Representative')
-    return `
+    return appendSectionSigningRequirement(`
       <div class="legal-signature-grid">
         <div class="legal-signature-block">
           <span class="legal-signature-line"></span>
@@ -617,10 +664,10 @@ function renderLegalClauseRows(section, placeholders, sectionIndex, packetType =
           <small>Date: ____________________</small>
         </div>
       </div>
-    `
+    `, section, placeholders, packetType)
   }
 
-  return `
+  return appendSectionSigningRequirement(`
     <ol class="legal-clause-list">
       ${(section.placeholders || [])
         .map(([placeholderKey, placeholderLabel], rowIndex) => {
@@ -635,7 +682,7 @@ function renderLegalClauseRows(section, placeholders, sectionIndex, packetType =
         })
         .join('\n')}
     </ol>
-  `
+  `, section, placeholders, packetType)
 }
 
 function renderMandateSectionHtml(section, placeholders, index, packetType = 'mandate') {
@@ -749,6 +796,9 @@ export function renderStructuredTemplate({
           .legal-preview-table { width: 100%; border-collapse: collapse; color: #1f2937; font-size: 12px; line-height: 1.45; }
           .legal-preview-table th, .legal-preview-table td { border: 1px solid #d7d7d7; padding: 2.5mm 3mm; text-align: left; vertical-align: top; }
           .legal-preview-table th { background: #f6f7f8; color: #111827; font-weight: 700; }
+          .legal-section-signing-requirement { display: grid; grid-template-columns: minmax(34mm, 0.3fr) minmax(0, 1fr); gap: 4mm; align-items: end; margin-top: 5mm; color: #1f2937; font-size: 12px; break-inside: avoid; page-break-inside: avoid; }
+          .legal-section-signing-label { color: #3f4a56; font-weight: 700; }
+          .legal-section-signing-line { min-height: 8mm; border-bottom: 1px solid #111827; padding-bottom: 1.5mm; }
           .legal-clause-list { display: grid; gap: 3mm; margin: 0; padding: 0; list-style: none; }
           .legal-clause-list li { display: grid; grid-template-columns: 30px minmax(130px, 0.38fr) minmax(0, 1fr); gap: 8px; color: #1f2937; font-size: 12.5px; line-height: 1.55; }
           .legal-clause-number, .legal-clause-label { color: #3f4a56; font-weight: 700; }

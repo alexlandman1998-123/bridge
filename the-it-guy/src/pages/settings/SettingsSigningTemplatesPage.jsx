@@ -161,114 +161,149 @@ const TEMPLATE_RENDER_MODE_OPTIONS = [
   { key: TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED, label: 'Native Structured' },
   { key: TEMPLATE_RENDER_MODES.LEGACY_DOCX, label: 'Legacy DOCX' },
 ]
+const SECTION_SIGNING_REQUIREMENT_OPTIONS = [
+  { key: 'none', label: 'No client action', description: 'This section does not need a section-level signing mark.' },
+  { key: 'client_initial', label: 'Client initials', description: 'The client must initial this section.' },
+  { key: 'client_signature', label: 'Client signature', description: 'The client must sign this section.' },
+]
 
 const OTP_DEFAULT_LEGAL_TEXT = {
-  buyer_details: `PURCHASER DETAILS
-
-Purchaser Name
-{{buyer_full_name}}
-
-Identity Number
-{{buyer_id_number}}
-
-Email
-{{buyer_email}}
-
-Phone
-{{buyer_phone}}
-
-Marital Status
-{{buyer_marital_status}}
-
-Entity Type
-{{buyer_entity_type}}
-
-Representative
-{{buyer_representative_name}}
-
-Representative Capacity
-{{buyer_representative_capacity}}
-
-Trust Registration
-{{buyer_trust_registration_number}}
-
-Domicilium Address
-{{buyer_domicilium_address}}
-
-The Purchaser warrants that the above information is true and correct and that the Purchaser has the necessary legal capacity and authority to enter into this Agreement.`,
-  seller_details: `SELLER DETAILS
-
-Seller Name
-{{seller_full_name}}
-
-Identity / Registration
-{{seller_id_number}}
-
-Entity Type
-{{seller_entity_type}}
-
-Representative
-{{seller_representative_name}}
-
-Domicilium
-{{seller_domicilium_address}}
-
-The Seller warrants that the Seller is the lawful owner of the Property or is duly authorised to dispose of the Property.`,
-  property_details: `PROPERTY DETAILS
-
-Development
-{{development_name}}
+  cover_page: `OFFER TO PURCHASE
 
 Property Address
 {{property_address}}
 
-Display Address
-{{property_display_address}}
+Agent
+{{agent_full_name}}
 
-Suburb
-{{property_suburb}}
+Agency
+{{organisation_name}}
 
-City
-{{property_city}}
+Document Reference
+{{document_reference}}
 
-Property Type
-{{property_type}}
+Transaction Reference
+{{transaction_reference}}
 
-Unit Number
-{{property_unit_number}}
+This Offer to Purchase becomes a deed of sale when accepted by the Seller in writing. The schedules, definitions, standard terms, special conditions and annexures form one agreement.`,
+  schedule_1: `SCHEDULE 1 - TRANSACTION PARTICULARS
 
-ERF Number
-{{erf_number}}
+1.1 Purchaser Details
 
-Section Number
-{{property_section_number}}
+| Field | Details |
+| --- | --- |
+| Purchaser | {{buyer_full_name}} |
+| Identity / Registration Number | {{buyer_id_number}} |
+| Current / Domicilium Address | {{buyer_domicilium_address}} |
+| Email | {{buyer_email}} |
+| Telephone | {{buyer_phone}} |
+| Marital Status | {{buyer_marital_status}} |
+| Entity Type | {{buyer_entity_type}} |
+| Representative | {{buyer_representative_name}} |
+| Representative Capacity | {{buyer_representative_capacity}} |
+| Trust Registration Number | {{buyer_trust_registration_number}} |
 
-Sectional Title Number
-{{sectional_title_number}}
+The Purchaser warrants that the information supplied in this schedule is true and correct and that the Purchaser has the necessary legal capacity and authority to enter into this Agreement.
 
-Complex
-{{property_complex_name}}
+1.2 The Property
 
-Estate
-{{property_estate_name}}
+| Field | Details |
+| --- | --- |
+| Physical Address | {{property_address}} |
+| Display Address | {{property_display_address}} |
+| Suburb / Township | {{property_suburb}} |
+| City | {{property_city}} |
+| Property Type | {{property_type}} |
+| Erf Number | {{erf_number}} |
+| Unit Number | {{property_unit_number}} |
+| Section Number | {{property_section_number}} |
+| Sectional Title Number | {{sectional_title_number}} |
+| Complex / Scheme | {{property_complex_name}} |
+| Estate | {{property_estate_name}} |
+| Parking Bay | {{parking_bay}} |
+| Storeroom | {{storeroom}} |
+| NHBRC Certificate | {{property_nhbrc_certificate_number}} |
 
-Parking Bay
-{{parking_bay}}
+1.3 Offer and Finance
 
-Storeroom
-{{storeroom}}
+| Field | Details |
+| --- | --- |
+| Purchase Price | {{purchase_price}} |
+| Deposit due within 7 days of acceptance | {{deposit_amount}} |
+| Finance Type | {{finance_type}} |
+| Bond Finance Amount | {{bond_amount}} |
+| Cash Contribution | {{cash_amount}} |
+| Additional Costs Note | {{additional_costs_note}} |
 
-NHBRC Certificate
-{{property_nhbrc_certificate_number}}
+1.4 Suspensive Conditions
 
-The Property is sold together with all permanent fixtures and fittings unless specifically excluded in writing.`,
-  purchase_terms: `PURCHASE PRICE & FINANCE
+Bond finance and other suspensive conditions are recorded below and are interpreted with clause 12.
 
-Purchase Price
-{{purchase_price}}
+{{suspensive_conditions}}
 
-Deposit
-{{deposit_amount}}
+1.5 Occupation, Occupational Rental and Guarantees
+
+| Field | Details |
+| --- | --- |
+| Occupation Date | {{occupation_date}} |
+| Expected Transfer Date | {{transfer_date}} |
+| Guarantee / Payment Delivery Period | As recorded by the conveyancer or transaction administrator |
+
+1.6 Fixtures and Fittings
+
+The Property is sold together with all fixtures and fittings of a permanent nature, including fixtures ordinarily attached to or used with the Property, unless expressly excluded in the Special Conditions or an annexure. Included or excluded items should be recorded in Special Conditions where applicable.
+
+1.7 The Agent
+
+| Field | Details |
+| --- | --- |
+| Agency | {{organisation_name}} |
+| Agency Legal Name | {{agency_legal_name}} |
+| Agency Registration Number | {{agency_registration_number}} |
+| Agency VAT Number | {{agency_vat_number}} |
+| Agency Address | {{agency_address}} |
+| Agent | {{agent_full_name}} |
+| Agent Email | {{agent_email}} |
+| Agent Phone | {{agent_phone}} |
+| Agent FFC Number | {{agent_ffc_number}} |
+
+1.8 The Seller
+
+| Field | Details |
+| --- | --- |
+| Seller | {{seller_full_name}} |
+| Identity / Registration Number | {{seller_id_number}} |
+| Entity Type | {{seller_entity_type}} |
+| Representative | {{seller_representative_name}} |
+| Representative Capacity | {{seller_representative_capacity}} |
+| Domicilium Address | {{seller_domicilium_address}} |
+| Email | {{seller_email}} |
+| Telephone | {{seller_phone}} |
+
+The Seller warrants that the Seller is the lawful owner of the Property or is duly authorised to dispose of the Property.
+
+1.9 Conveyancing Attorneys
+
+| Field | Details |
+| --- | --- |
+| Firm | {{attorney_firm_name}} |
+| Conveyancer | {{conveyancer_name}} |
+| Email | {{conveyancer_email}} |
+| Reference | {{conveyancer_reference}} |`,
+  schedule_2: `SCHEDULE 2 - PURCHASER ACKNOWLEDGEMENTS AND BOND REQUIREMENTS
+
+2.1 Purchaser Acknowledgement
+
+The Purchaser acknowledges that transfer costs, bond costs, transfer duty or VAT where applicable, registration expenses and other transaction costs may be payable in addition to the Purchase Price. The Purchaser confirms that these costs have been explained or disclosed sufficiently for the Purchaser to proceed with this offer.
+
+Initials
+{{buyer_initials}}
+
+2.2 Bond Requirements
+
+Where this Agreement is subject to bond finance, the Purchaser agrees to provide all applicable bond documentation to the bond originator, bank, conveyancer or transaction administrator within 5 working days of acceptance, or such other period as may be required by the transaction process.
+
+Typical bond documents may include identity documents, proof of income, bank statements, employment confirmation, company or trust statutory documents, tax documents, financial statements, accountant or auditor letters, and any other documents reasonably required by the bond originator or lender.
 
 Finance Type
 {{finance_type}}
@@ -276,50 +311,188 @@ Finance Type
 Bond Amount
 {{bond_amount}}
 
+2.3 FICA and Verification
+
+The parties shall provide all documents and information reasonably required for FICA, identity verification, source-of-funds verification, conveyancing, finance, record keeping and transaction administration.`,
+  definitions: `DEFINITIONS
+
+In this Agreement, unless the context indicates otherwise:
+
+"Agent" means the estate agent or agency representative recorded in Schedule 1.
+
+"Agent's Commission" means the commission payable to the Agent or Agency as contemplated in clause 15.
+
+"Agreement" means this Offer to Purchase, which constitutes a deed of sale when duly accepted by the Seller, together with all schedules and annexures attached to it.
+
+"Consumption Charges" means charges payable for utilities supplied to the Property, including electricity, water, sewage, refuse and similar municipal or body corporate consumption charges.
+
+"Conveyancing Attorneys" means the attorneys recorded in Schedule 1 or such other attorneys nominated or agreed to by the Seller.
+
+"CPA" means the Consumer Protection Act 68 of 2008, as amended.
+
+"Deposit" means the deposit recorded in Schedule 1.
+
+"FICA" means the Financial Intelligence Centre Act 38 of 2001, as amended.
+
+"Fixtures" means fixtures and fittings of a permanent nature included with the Property unless expressly excluded.
+
+"Guarantee Delivery Period" means the period by which acceptable guarantees or cash undertakings must be delivered to the Conveyancing Attorneys.
+
+"Home Owners Association" means the relevant homeowners association, body corporate or managing entity for the Property, if applicable.
+
+"Occupation Date" means the date on which occupation is given to the Purchaser as recorded in Schedule 1 or otherwise agreed in writing.
+
+"Occupational Rental" means the occupational rental payable where occupation and transfer do not occur on the same date.
+
+"Purchase Price" means the purchase price recorded in Schedule 1, exclusive of VAT unless otherwise recorded.
+
+"Property" means the immovable property described in Schedule 1, including Fixtures unless excluded.
+
+"Purchaser" means the party or parties recorded as purchaser in Schedule 1.
+
+"Seller" means the party or parties recorded as seller in Schedule 1.
+
+"Special Conditions" means the conditions recorded in Schedule 1 or clause 23.
+
+"Suspensive Conditions" means the conditions recorded in Schedule 1 and clause 12.
+
+"VAT" means value-added tax in terms of the VAT Act.
+
+"VAT Act" means the Value-Added Tax Act 89 of 1991, as amended.`,
+  interpretation: `INTERPRETATION
+
+Unless the contrary appears from the context:
+
+1. Words importing natural persons include legal persons and vice versa.
+2. Words importing one gender include every other gender.
+3. Words importing the singular include the plural and vice versa.
+4. Attachments, schedules and annexures are incorporated into this Agreement.
+5. References to a party include that party's successors and lawful assigns.
+6. References to legislation include that legislation as amended or replaced from time to time.
+7. If a due date falls on a Saturday, Sunday or public holiday, the due date is the next business day.
+8. When a number of days is prescribed, the first day is excluded and the last day is included unless the last day is not a business day.
+9. Headings are for reference only and do not affect interpretation.
+10. If a definition contains a substantive right or obligation, it is given effect as a substantive provision.
+11. Words defined in this Agreement have the same meaning in attachments and annexures.
+12. Where figures are written in numerals and words, the words prevail if there is a conflict.
+13. No rule of interpretation applies against a party merely because that party or its representative prepared this Agreement.`,
+  sale_acceptance: `SALE AND ACCEPTANCE
+
+5. Sale
+
+The Seller sells to the Purchaser, who purchases from the Seller, the Property on the terms and conditions set out in this Agreement.
+
+6. Acceptance
+
+6.1 This Offer to Purchase becomes a final and binding sale agreement upon written acceptance by the Seller.
+
+6.2 If an irrevocable offer date is recorded in Schedule 1, the offer is irrevocable until midnight on that date and then lapses automatically if not accepted.
+
+6.3 If no irrevocable offer date is recorded, the Purchaser may withdraw the offer by written notice delivered to the Seller before acceptance.`,
+  purchase_price: `PURCHASE PRICE
+
+7.1 The Purchase Price is payable as follows:
+
+7.1.1 The Deposit is payable into trust with the Conveyancing Attorneys within 7 days of acceptance by the Seller. The Deposit is to be held in a special interest-bearing account for the benefit of the Purchaser until registration of transfer, with interest accruing to the Purchaser unless otherwise agreed.
+
+7.1.2 The balance of the Purchase Price, after deduction of the Deposit, is payable on registration of transfer and must be secured by acceptable bank or financial institution guarantees, or by cash, to the satisfaction of the Seller and Conveyancing Attorneys.
+
+7.1.3 Guarantees, cash payments or undertakings must be delivered within the Guarantee Delivery Period calculated from acceptance or fulfilment of all Suspensive Conditions, whichever occurs last.
+
+7.2 If VAT is payable on the sale of the Property instead of transfer duty, the Purchase Price is exclusive of VAT unless otherwise recorded, and VAT is payable by the Purchaser on demand.
+
+Purchase Price
+{{purchase_price}}
+
+Deposit
+{{deposit_amount}}
+
+Bond Amount
+{{bond_amount}}
+
 Cash Contribution
-{{cash_amount}}
+{{cash_amount}}`,
+  property_risk_transfer: `THE PROPERTY, RISK AND TRANSFER
 
-Additional Costs Note
-{{additional_costs_note}}
+8. The Property
 
-The Purchaser agrees to purchase the Property for the Purchase Price stated above.
+The Property is sold inclusive of Fixtures and fittings of a permanent nature, including those recorded in Schedule 1, but excluding items expressly excluded in Special Conditions or annexures. The Seller warrants that included Fixtures will be fully paid for as at the date of transfer.
 
-Payment shall be made in accordance with the terms of this Agreement and the requirements of the appointed conveyancer.`,
-  occupation_transfer: `OCCUPATION & TRANSFER
+9. Risk
+
+Risk in and to the Property passes to the Purchaser from the Occupation Date or the date of registration of transfer, whichever occurs first, unless otherwise agreed in writing. From that date the Purchaser receives the benefits of the Property and is responsible for rates, taxes, levies, Consumption Charges and other charges attributable to occupation or ownership as applicable.
+
+10. Transfer
+
+10.1 Transfer shall be effected by the Conveyancing Attorneys.
+
+10.2 Transfer costs, conveyancing fees, transfer duty, bond costs, registration expenses, estimated rates and taxes, levies and costs incidental to transfer are payable by the party responsible in terms of this Agreement and applicable law, on demand.
+
+10.3 The Seller and Purchaser must sign all documents required by the Conveyancing Attorneys for registration of transfer and related bond registration.`,
+  occupation: `OCCUPATION
+
+11.1 Occupation is given on the Occupation Date, subject to compliance with this Agreement and, where applicable:
+
+1. payment of the Deposit;
+2. delivery of required guarantees or cash undertakings;
+3. payment of the first month's Occupational Rental;
+4. signature of transfer and bond documents and payment of required costs; and
+5. the Purchaser not being in breach.
+
+11.2 If occupation and transfer do not occur on the same date, the party in occupation must pay Occupational Rental monthly in advance, together with water, electricity and other Consumption Charges where applicable.
+
+11.3 If no Occupational Rental amount is recorded, Occupational Rental is calculated at 1% of the Purchase Price per month unless otherwise agreed in writing.
+
+11.4 If occupation is given before transfer, the Purchaser may not make alterations or additions without written consent and must vacate and restore the Property if this Agreement lapses or is cancelled.
+
+11.5 Occupation before transfer does not create a tenancy.
 
 Occupation Date
-{{occupation_date}}
-
-Transfer Date
-{{transfer_date}}
-
-Occupation shall be given on the agreed Occupation Date.
-
-Ownership shall pass upon registration in the Deeds Office.
-
-Risk shall pass in accordance with South African law and the terms of this Agreement.`,
+{{occupation_date}}`,
   suspensive_conditions: `SUSPENSIVE CONDITIONS
 
+12.1 This Agreement may be subject to the Suspensive Conditions recorded in Schedule 1, including:
+
+12.1.1 Bond finance approval for the Purchaser in an amount not less than the bond amount recorded in Schedule 1. The ordinary fulfilment period is 21 working days from acceptance unless extended by the Seller or Agent, up to a maximum of 60 working days where appropriate. This condition is for the benefit of the Purchaser and may be waived by the Purchaser before expiry.
+
+12.1.2 Sale of the Purchaser's existing property, where applicable, within the period and at the minimum purchase price recorded in Schedule 1. The Purchaser must take reasonable steps to market that property and to link the conveyancing and finance process where necessary.
+
+12.1.3 Any other suspensive condition recorded in Schedule 1 or below.
+
+12.2 If a Suspensive Condition is not fulfilled or waived by the required date, this Agreement lapses and is of no further force or effect unless the parties agree otherwise in writing.
+
 Suspensive Conditions
+{{suspensive_conditions}}`,
+  warranties_capacity: `WARRANTIES, NOMINATION AND CAPACITY OF PARTIES
 
-{{suspensive_conditions}}
+13. Warranties
 
-Where this Agreement is subject to suspensive conditions, the sale shall become unconditional only once all suspensive conditions have been fulfilled or validly waived.
+13.1 Except for warranties expressly recorded in this Agreement, the Seller gives no warranty regarding the Property, improvements, rights attaching to it or any other matter. The Property is sold voetstoots, subject to applicable South African law, title deed conditions, servitudes and any lease or occupancy rights disclosed.
 
-Failure to fulfil a suspensive condition within the prescribed period shall have the consequences provided for by law or by this Agreement.`,
-  seller_warranties: `PROPERTY & SELLER WARRANTIES
+13.2 The Purchaser acknowledges having inspected the Property to the Purchaser's satisfaction and confirms that no representation, guarantee or warranty has been relied upon unless recorded in writing.
 
-The Seller warrants that:
+13.3 The Seller does not warrant vacant occupation unless expressly recorded.
 
-- the Seller has authority to sell the Property;
-- the Seller will cooperate in signing transfer documentation;
-- all information supplied is materially correct; and
-- all known defects required by law have been disclosed.
+13.4 The Seller warrants that historical municipal rates and taxes owed in respect of the Property have been paid or will be attended to as required for transfer.
 
-Unless otherwise agreed, the Property is sold voetstoots subject to applicable South African law.`,
-  commission_terms: `COMMISSION
+14. Nomination and Capacity
 
-Gross Commission %
+14.1 Where a party is a company, close corporation, trust, principal represented by an agent, trustee for an entity to be formed, or other juristic person, the signatory warrants authority and, where required, binds himself or herself as surety and co-principal debtor for the obligations of that party.
+
+14.2 A person signing for a company or close corporation to be formed remains personally liable unless the entity is formed and adopts this Agreement within the required period.
+
+14.3 The Purchaser undertakes to supply all FICA requirements and warrants that all information supplied is true and correct.`,
+  commission_certificates: `COMMISSION AND CERTIFICATES
+
+15. Commission
+
+15.1 The Seller shall pay the Agent's Commission as agreed, deemed earned upon signature by both Seller and Purchaser and fulfilment or waiver of any condition precedent, and payable upon registration of transfer unless otherwise agreed.
+
+15.2 If this Agreement is cancelled by mutual agreement, breach or default, commission consequences are determined by the commission agreement and applicable law.
+
+15.3 The Purchaser warrants that the Agent recorded in Schedule 1 is the only estate agent who introduced the Purchaser to the Property and indemnifies the Seller against competing agent claims arising from the Purchaser.
+
+Gross Commission Percentage
 {{gross_commission_percentage}}
 
 Gross Commission Amount
@@ -331,74 +504,110 @@ Agency Commission
 Agent Commission
 {{agent_commission_amount}}
 
-Agency
-{{organisation_name}}
+16. Certificates
 
-Agent
-{{agent_full_name}}
+16.1 The Seller must, before transfer and at the Seller's cost where legally required, provide valid certificates of compliance for electrical installations and electric fencing where applicable.
 
-The Seller acknowledges that commission shall become payable in accordance with the commission agreement and applicable law.`,
-  costs_transfer: `COSTS & TRANSFER
+16.2 If the Property is newly built, the Seller must provide an occupation certificate issued by the relevant local authority where required.
 
-Conveyancing Firm
-{{attorney_firm_name}}
+16.3 Where gas, electrical, electric fence, beetle, plumbing, water installation or other statutory certificates are required by law, lender, municipality or agreed transaction process, the responsible party must obtain them within the required time and attend to defects necessary for issue of those certificates.
 
-Conveyancer
-{{conveyancer_name}}
+16.4 The Purchaser must obtain any certificate required by the Purchaser's bank unless the defect or compliance obligation is one that the Seller must legally remedy.`,
+  rates_breach_cooling: `RATES, TAXES, CONSUMPTION CHARGES, BREACH AND COOLING OFF
 
-Email
-{{conveyancer_email}}
+17. Rates, Taxes and Consumption Charges
 
-Reference
-{{conveyancer_reference}}
+17.1 The Seller is responsible for arrear levies, municipal rates, taxes and Consumption Charges due up to registration of transfer.
 
-Transfer shall be attended to by the appointed conveyancer.
+17.2 The Purchaser is responsible for Consumption Charges from occupation to transfer if occupation occurs before transfer.
 
-Transfer costs, bond costs, duties and registration expenses shall be payable by the party responsible in terms of this Agreement and applicable legislation.`,
+17.3 The Seller must provide proof reasonably required that arrear levies, municipal rates, taxes and Consumption Charges have been settled or are sufficiently provided for.
+
+18. Breach
+
+18.1 If the Purchaser breaches a material term and fails to remedy the breach within 7 days after written notice, the Seller may cancel and claim damages or sue for the Purchase Price, interest and damages, without prejudice to other rights.
+
+18.2 If the Seller breaches a material term and fails to remedy the breach within 7 days after written notice, the Purchaser may sue for specific performance and damages or cancel and claim damages, without prejudice to other rights.
+
+19. Cooling Off
+
+If the Purchaser is a natural person and the sale qualifies for a statutory cooling-off right under section 29A of the Alienation of Land Act 68 of 1981, the Purchaser may revoke the offer or terminate the sale agreement within the statutory period by written notice complying with that Act.`,
+  notices_jurisdiction_marital: `DOMICILIA, JURISDICTION AND MARITAL STATUS
+
+20. Domicilia and Notices
+
+20.1 The parties choose the addresses and electronic contact details recorded in Schedule 1 as their domicilia and addresses for notices, legal process and transaction communication.
+
+20.2 Notices are deemed delivered:
+
+1. within 7 days after prepaid registered post;
+2. on successful electronic transmission to the recorded email address;
+3. on delivery by hand to the physical address; or
+4. as otherwise permitted by law.
+
+20.3 A party may change its address by written notice, provided the new physical address is within the Republic of South Africa.
+
+21. Consent to Jurisdiction
+
+21.1 Either party may institute proceedings in any Magistrates' Court having jurisdiction over the other party, even if the claim would otherwise exceed that court's monetary jurisdiction.
+
+21.2 A foreign party consents to the jurisdiction of the High Court with jurisdiction over the Property.
+
+22. Marital Status of Purchaser
+
+The Purchaser warrants that the marital status recorded in Schedule 1 is true and correct.
+
+Purchaser Marital Status
+{{buyer_marital_status}}`,
   special_conditions: `SPECIAL CONDITIONS
 
-Special Conditions
+23. Special Conditions
 
-{{special_conditions}}
+Special Conditions must be recorded below or in Schedule 1. Unless expressly stated to be suspensive or resolutive, they are not suspensive or resolutive.
 
-The Special Conditions recorded above form part of this Agreement.
+No other conditions are binding unless reduced to writing and signed by the parties.
 
-Should there be any inconsistency between the Special Conditions and the standard provisions of this Agreement, the Special Conditions shall prevail.`,
-  general_legal_provisions: `GENERAL LEGAL PROVISIONS
+If Special Conditions conflict with standard provisions, the Special Conditions prevail to the extent of the conflict.
 
-Entire Agreement:
-This Agreement contains the full agreement between the parties regarding the sale of the Property.
+{{special_conditions}}`,
+  costs_general_terms: `COSTS AND GENERAL LEGAL PROVISIONS
 
-Non-Variation:
-No amendment, cancellation or waiver shall be valid unless recorded in writing and accepted by the parties.
+24. Costs
 
-Breach:
-If either party breaches this Agreement and fails to remedy the breach after written notice, the innocent party may exercise the remedies available in law.
+24.1 If either party takes legal action because of the other party's breach, the defaulting party is liable for legal costs on the attorney and own client scale, including collection costs, tracing costs and counsel's fees where applicable.
 
-Domicilium:
-The parties choose their recorded addresses and contact details for notices and legal communication.
+24.2 If a party fails to do something required at that party's cost, the other party may attend to it and recover the reasonable cost on demand.
 
-Electronic Communication:
-The parties agree that notices and transaction communications may be sent electronically where permitted by law.
+25. Sale Board
 
-POPIA Consent:
-The parties consent to the processing of personal information reasonably required for this transaction, including verification, conveyancing, finance, record keeping and communication.
+The parties consent to the Agent affixing a sold board or notice to the Property from acceptance until 2 months after registration of transfer, unless prohibited by applicable estate, body corporate, municipal or other rules.
 
-FICA Compliance:
-The parties shall provide all documents and information reasonably required for FICA, verification and transaction administration.
+26. Whole Agreement
 
-Governing Law:
-This Agreement is governed by the laws of the Republic of South Africa.
+This Agreement constitutes the whole agreement between the parties regarding the sale of the Property.
 
-Severability:
-If any provision is unenforceable, the remaining provisions shall continue to apply.
+27. Non-Variation
 
-Costs:
-Each party shall be responsible for the costs allocated to that party in terms of this Agreement and applicable law.
+No amendment, alteration, deletion, addition, renewal, extension, cancellation or mutual termination is valid unless reduced to writing and signed by the Seller and Purchaser.
 
-Jurisdiction:
-The parties consent to the jurisdiction of the competent South African courts for disputes arising from this Agreement.`,
-  signature_pages: `SIGNATURE PAGES
+28. Non-Waiver
+
+No latitude, indulgence, waiver or extension of time prejudices a party's rights or creates an expectation that it will be repeated.
+
+29. Severability
+
+Each provision is separate. If any provision is illegal, invalid or unenforceable, it is ineffective only to that extent and the remaining provisions continue in force.
+
+30. Applicable Law
+
+This Agreement is governed by and interpreted in accordance with the laws of the Republic of South Africa.
+
+POPIA Consent
+
+The parties consent to the processing of personal information reasonably required for this transaction, including verification, conveyancing, finance, record keeping and communication.`,
+  signature_pages: `SIGNATORIES
+
+SIGNED AND DATED BY THE PURCHASER at the place and on the date below, in the presence of the witness, the signatory being duly authorised.
 
 Purchaser
 {{buyer_full_name}}
@@ -411,6 +620,11 @@ Initials
 
 Date
 {{signed_date}}
+
+Witness
+{{witness_signature}}
+
+SIGNED AND DATED BY THE SELLER at the place and on the date below, in the presence of the witness, the signatory being duly authorised.
 
 Seller
 {{seller_full_name}}
@@ -427,6 +641,8 @@ Date
 Witness
 {{witness_signature}}
 
+SIGNED AND DATED BY THE AGENT, who accepts the benefits of this Agreement on the terms contained herein.
+
 Agency
 {{organisation_name}}
 
@@ -435,6 +651,14 @@ Agent
 
 FFC Number
 {{agent_ffc_number}}
+
+CONTACT FORM
+
+| Party | Telephone | Email |
+| --- | --- | --- |
+| Purchaser | {{buyer_phone}} | {{buyer_email}} |
+| Seller | {{seller_phone}} | {{seller_email}} |
+| Agent | {{agent_phone}} | {{agent_email}} |
 
 DOCUMENT METADATA
 
@@ -452,6 +676,88 @@ Template Version
 
 Annexures
 {{annexures_list}}`,
+  buyer_details: `PURCHASER DETAILS
+
+Purchaser
+{{buyer_full_name}}
+
+Identity / Registration Number
+{{buyer_id_number}}
+
+Email
+{{buyer_email}}
+
+Phone
+{{buyer_phone}}
+
+Domicilium Address
+{{buyer_domicilium_address}}`,
+  seller_details: `SELLER DETAILS
+
+Seller
+{{seller_full_name}}
+
+Identity / Registration Number
+{{seller_id_number}}
+
+Email
+{{seller_email}}
+
+Phone
+{{seller_phone}}
+
+Domicilium Address
+{{seller_domicilium_address}}`,
+  property_details: `PROPERTY DETAILS
+
+Property Address
+{{property_address}}
+
+Erf Number
+{{erf_number}}
+
+Property Type
+{{property_type}}`,
+  purchase_terms: `PURCHASE PRICE AND FINANCE
+
+Purchase Price
+{{purchase_price}}
+
+Deposit
+{{deposit_amount}}
+
+Bond Amount
+{{bond_amount}}
+
+Cash Contribution
+{{cash_amount}}`,
+  occupation_transfer: `OCCUPATION AND TRANSFER
+
+Occupation Date
+{{occupation_date}}
+
+Transfer Date
+{{transfer_date}}`,
+  seller_warranties: `WARRANTIES
+
+The Seller and Purchaser give the warranties recorded in the full OTP warranty, voetstoots, capacity and disclosure clauses.`,
+  commission_terms: `COMMISSION
+
+Gross Commission Percentage
+{{gross_commission_percentage}}
+
+Gross Commission Amount
+{{gross_commission_amount}}`,
+  costs_transfer: `COSTS AND TRANSFER
+
+Conveyancing Firm
+{{attorney_firm_name}}
+
+Conveyancer
+{{conveyancer_name}}`,
+  general_legal_provisions: `GENERAL LEGAL PROVISIONS
+
+The full OTP provisions include breach, notices, jurisdiction, costs, whole agreement, non-variation, non-waiver, severability, applicable law, POPIA and FICA clauses.`,
 }
 
 const SALES_MANDATE_DEFAULT_LEGAL_TEXT = {
@@ -746,85 +1052,130 @@ function createStarterSections(packetType = 'otp') {
 
   return [
     {
-      sectionKey: 'buyer_details',
-      sectionLabel: 'Purchaser Details',
-      sectionType: 'dynamic_fields',
-      legalText: OTP_DEFAULT_LEGAL_TEXT.buyer_details,
-      placeholderKeysText: 'buyer_full_name, buyer_id_number, buyer_email, buyer_phone, buyer_marital_status, buyer_entity_type, buyer_representative_name, buyer_representative_capacity, buyer_trust_registration_number, buyer_domicilium_address',
+      sectionKey: 'cover_page',
+      sectionLabel: 'Cover Page',
+      sectionType: 'legal_text',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.cover_page,
+      placeholderKeysText: 'property_address, agent_full_name, organisation_name, document_reference, transaction_reference',
       isRequired: true,
       sortOrder: 0,
     },
     {
-      sectionKey: 'seller_details',
-      sectionLabel: 'Seller Details',
+      sectionKey: 'schedule_1',
+      sectionLabel: 'Schedule 1 - Transaction Particulars',
       sectionType: 'dynamic_fields',
-      legalText: OTP_DEFAULT_LEGAL_TEXT.seller_details,
-      placeholderKeysText: 'seller_full_name, seller_id_number, seller_entity_type, seller_representative_name, seller_domicilium_address',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.schedule_1,
+      placeholderKeysText: 'buyer_full_name, buyer_id_number, buyer_domicilium_address, buyer_email, buyer_phone, buyer_marital_status, buyer_entity_type, buyer_representative_name, buyer_representative_capacity, buyer_trust_registration_number, property_address, property_display_address, property_suburb, property_city, property_type, erf_number, property_unit_number, property_section_number, sectional_title_number, property_complex_name, property_estate_name, parking_bay, storeroom, property_nhbrc_certificate_number, purchase_price, deposit_amount, finance_type, bond_amount, cash_amount, additional_costs_note, suspensive_conditions, occupation_date, transfer_date, organisation_name, agency_legal_name, agency_registration_number, agency_vat_number, agency_address, agent_full_name, agent_email, agent_phone, agent_ffc_number, seller_full_name, seller_id_number, seller_entity_type, seller_representative_name, seller_representative_capacity, seller_domicilium_address, seller_email, seller_phone, attorney_firm_name, conveyancer_name, conveyancer_email, conveyancer_reference',
       isRequired: true,
       sortOrder: 1,
     },
     {
-      sectionKey: 'property_details',
-      sectionLabel: 'Property Details',
+      sectionKey: 'schedule_2',
+      sectionLabel: 'Schedule 2 - Bond Requirements',
       sectionType: 'dynamic_fields',
-      legalText: OTP_DEFAULT_LEGAL_TEXT.property_details,
-      placeholderKeysText: 'development_name, property_address, property_display_address, property_suburb, property_city, property_type, property_unit_number, erf_number, property_section_number, sectional_title_number, property_complex_name, property_estate_name, parking_bay, storeroom, property_nhbrc_certificate_number',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.schedule_2,
+      placeholderKeysText: 'buyer_initials, finance_type, bond_amount',
       isRequired: true,
       sortOrder: 2,
     },
     {
-      sectionKey: 'purchase_terms',
-      sectionLabel: 'Purchase Price & Finance',
-      sectionType: 'dynamic_fields',
-      legalText: OTP_DEFAULT_LEGAL_TEXT.purchase_terms,
-      placeholderKeysText: 'purchase_price, deposit_amount, finance_type, bond_amount, cash_amount, additional_costs_note',
+      sectionKey: 'definitions',
+      sectionLabel: 'Definitions',
+      sectionType: 'legal_text',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.definitions,
+      placeholderKeysText: '',
       isRequired: true,
       sortOrder: 3,
     },
     {
-      sectionKey: 'occupation_transfer',
-      sectionLabel: 'Occupation & Transfer',
-      sectionType: 'dynamic_fields',
-      legalText: OTP_DEFAULT_LEGAL_TEXT.occupation_transfer,
-      placeholderKeysText: 'occupation_date, transfer_date',
+      sectionKey: 'interpretation',
+      sectionLabel: 'Interpretation',
+      sectionType: 'legal_text',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.interpretation,
+      placeholderKeysText: '',
       isRequired: true,
       sortOrder: 4,
     },
     {
-      sectionKey: 'suspensive_conditions',
-      sectionLabel: 'Suspensive Conditions',
+      sectionKey: 'sale_acceptance',
+      sectionLabel: 'Sale and Acceptance',
       sectionType: 'legal_text',
-      legalText: OTP_DEFAULT_LEGAL_TEXT.suspensive_conditions,
-      placeholderKeysText: 'suspensive_conditions',
-      isRequired: false,
+      legalText: OTP_DEFAULT_LEGAL_TEXT.sale_acceptance,
+      placeholderKeysText: '',
+      isRequired: true,
       sortOrder: 5,
     },
     {
-      sectionKey: 'seller_warranties',
-      sectionLabel: 'Property & Seller Warranties',
-      sectionType: 'legal_text',
-      legalText: OTP_DEFAULT_LEGAL_TEXT.seller_warranties,
-      placeholderKeysText: '',
+      sectionKey: 'purchase_price',
+      sectionLabel: 'Purchase Price',
+      sectionType: 'dynamic_fields',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.purchase_price,
+      placeholderKeysText: 'purchase_price, deposit_amount, bond_amount, cash_amount',
       isRequired: true,
       sortOrder: 6,
     },
     {
-      sectionKey: 'commission_terms',
-      sectionLabel: 'Commission',
-      sectionType: 'dynamic_fields',
-      legalText: OTP_DEFAULT_LEGAL_TEXT.commission_terms,
-      placeholderKeysText: 'gross_commission_percentage, gross_commission_amount, agency_commission_amount, agent_commission_amount, organisation_name, agent_full_name',
+      sectionKey: 'property_risk_transfer',
+      sectionLabel: 'Property, Risk and Transfer',
+      sectionType: 'legal_text',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.property_risk_transfer,
+      placeholderKeysText: '',
       isRequired: true,
       sortOrder: 7,
     },
     {
-      sectionKey: 'costs_transfer',
-      sectionLabel: 'Costs & Transfer',
+      sectionKey: 'occupation',
+      sectionLabel: 'Occupation',
       sectionType: 'dynamic_fields',
-      legalText: OTP_DEFAULT_LEGAL_TEXT.costs_transfer,
-      placeholderKeysText: 'attorney_firm_name, conveyancer_name, conveyancer_email, conveyancer_reference',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.occupation,
+      placeholderKeysText: 'occupation_date',
       isRequired: true,
       sortOrder: 8,
+    },
+    {
+      sectionKey: 'suspensive_conditions',
+      sectionLabel: 'Suspensive Conditions',
+      sectionType: 'dynamic_fields',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.suspensive_conditions,
+      placeholderKeysText: 'suspensive_conditions',
+      isRequired: true,
+      sortOrder: 9,
+    },
+    {
+      sectionKey: 'warranties_capacity',
+      sectionLabel: 'Warranties and Capacity',
+      sectionType: 'legal_text',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.warranties_capacity,
+      placeholderKeysText: '',
+      isRequired: true,
+      sortOrder: 10,
+    },
+    {
+      sectionKey: 'commission_certificates',
+      sectionLabel: 'Commission and Certificates',
+      sectionType: 'dynamic_fields',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.commission_certificates,
+      placeholderKeysText: 'gross_commission_percentage, gross_commission_amount, agency_commission_amount, agent_commission_amount',
+      isRequired: true,
+      sortOrder: 11,
+    },
+    {
+      sectionKey: 'rates_breach_cooling',
+      sectionLabel: 'Rates, Breach and Cooling Off',
+      sectionType: 'legal_text',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.rates_breach_cooling,
+      placeholderKeysText: '',
+      isRequired: true,
+      sortOrder: 12,
+    },
+    {
+      sectionKey: 'notices_jurisdiction_marital',
+      sectionLabel: 'Notices, Jurisdiction and Marital Status',
+      sectionType: 'dynamic_fields',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.notices_jurisdiction_marital,
+      placeholderKeysText: 'buyer_marital_status',
+      isRequired: true,
+      sortOrder: 13,
     },
     {
       sectionKey: 'special_conditions',
@@ -833,25 +1184,25 @@ function createStarterSections(packetType = 'otp') {
       legalText: OTP_DEFAULT_LEGAL_TEXT.special_conditions,
       placeholderKeysText: 'special_conditions',
       isRequired: false,
-      sortOrder: 9,
+      sortOrder: 14,
     },
     {
-      sectionKey: 'general_legal_provisions',
-      sectionLabel: 'General Legal Provisions',
+      sectionKey: 'costs_general_terms',
+      sectionLabel: 'Costs and General Terms',
       sectionType: 'legal_text',
-      legalText: OTP_DEFAULT_LEGAL_TEXT.general_legal_provisions,
+      legalText: OTP_DEFAULT_LEGAL_TEXT.costs_general_terms,
       placeholderKeysText: '',
       isRequired: true,
-      sortOrder: 10,
+      sortOrder: 15,
     },
     {
       sectionKey: 'signature_pages',
       sectionLabel: 'Signature Pages',
       sectionType: 'signature_zone',
       legalText: OTP_DEFAULT_LEGAL_TEXT.signature_pages,
-      placeholderKeysText: 'buyer_full_name, buyer_signature, buyer_initials, signed_date, seller_full_name, seller_signature, seller_initials, witness_signature, organisation_name, agent_full_name, agent_ffc_number, document_reference, transaction_reference, generated_date, template_version, annexures_list',
+      placeholderKeysText: 'buyer_full_name, buyer_signature, buyer_initials, signed_date, witness_signature, seller_full_name, seller_signature, seller_initials, organisation_name, agent_full_name, agent_ffc_number, buyer_phone, buyer_email, seller_phone, seller_email, agent_phone, agent_email, document_reference, transaction_reference, generated_date, template_version, annexures_list',
       isRequired: true,
-      sortOrder: 11,
+      sortOrder: 16,
     },
   ]
 }
@@ -902,6 +1253,21 @@ function normalizeTemplateTokenKey(value = '') {
   return TEMPLATE_TOKEN_REPLACEMENTS[key] || key
 }
 
+function normalizeSectionSigningRequirement(value = '', { requiresInitial = false, requiresSignature = false } = {}) {
+  const key = normalizeText(value).toLowerCase()
+  if (key === 'client_signature' || key === 'signature' || key === 'full_signature') return 'client_signature'
+  if (key === 'client_initial' || key === 'initial' || key === 'initials') return 'client_initial'
+  if (requiresSignature) return 'client_signature'
+  if (requiresInitial) return 'client_initial'
+  return 'none'
+}
+
+function getDefaultClientSigningPlaceholderKey(packetType = 'otp', requirement = 'client_initial') {
+  const normalizedPacketType = normalizeText(packetType).toLowerCase()
+  const partyPrefix = normalizedPacketType === 'mandate' ? 'seller' : 'buyer'
+  return requirement === 'client_signature' ? `${partyPrefix}_signature` : `${partyPrefix}_initials`
+}
+
 function normalizeTemplateLegalText(value = '') {
   return String(value || '').replace(/{{\s*([^{}]+?)\s*}}/g, (match, token) => {
     const normalizedToken = normalizeTemplateTokenKey(token)
@@ -916,6 +1282,20 @@ function getDefaultSectionLegalText(packetType = 'otp', section = {}) {
   const lookupKey = sectionKey || sectionLabel
 
   const otpDefaults = {
+    cover_page: OTP_DEFAULT_LEGAL_TEXT.cover_page,
+    schedule_1: OTP_DEFAULT_LEGAL_TEXT.schedule_1,
+    schedule_2: OTP_DEFAULT_LEGAL_TEXT.schedule_2,
+    definitions: OTP_DEFAULT_LEGAL_TEXT.definitions,
+    interpretation: OTP_DEFAULT_LEGAL_TEXT.interpretation,
+    sale_acceptance: OTP_DEFAULT_LEGAL_TEXT.sale_acceptance,
+    purchase_price: OTP_DEFAULT_LEGAL_TEXT.purchase_price,
+    property_risk_transfer: OTP_DEFAULT_LEGAL_TEXT.property_risk_transfer,
+    occupation: OTP_DEFAULT_LEGAL_TEXT.occupation,
+    warranties_capacity: OTP_DEFAULT_LEGAL_TEXT.warranties_capacity,
+    commission_certificates: OTP_DEFAULT_LEGAL_TEXT.commission_certificates,
+    rates_breach_cooling: OTP_DEFAULT_LEGAL_TEXT.rates_breach_cooling,
+    notices_jurisdiction_marital: OTP_DEFAULT_LEGAL_TEXT.notices_jurisdiction_marital,
+    costs_general_terms: OTP_DEFAULT_LEGAL_TEXT.costs_general_terms,
     buyer_details: OTP_DEFAULT_LEGAL_TEXT.buyer_details,
     seller_details: OTP_DEFAULT_LEGAL_TEXT.seller_details,
     property_details: OTP_DEFAULT_LEGAL_TEXT.property_details,
@@ -1014,6 +1394,13 @@ function sectionsFromTemplate(template = null) {
       ]),
     )
 
+    const requiresInitial = Boolean(section.requiresInitial ?? section.requires_initial ?? metadata.requiresInitial ?? metadata.requires_initial ?? signingMetadata.requiresInitial ?? signingMetadata.requires_initial)
+    const requiresSignature = Boolean(section.requiresSignature ?? section.requires_signature ?? metadata.requiresSignature ?? metadata.requires_signature ?? signingMetadata.requiresSignature ?? signingMetadata.requires_signature)
+    const signingRequirement = normalizeSectionSigningRequirement(
+      section.signingRequirement || section.signing_requirement || metadata.signingRequirement || metadata.signing_requirement || signingMetadata.signingRequirement || signingMetadata.signing_requirement,
+      { requiresInitial, requiresSignature },
+    )
+
     return {
       id: section.id || null,
       sectionKey: normalizeText(section.section_key || section.sectionKey || `section_${index + 1}`),
@@ -1023,8 +1410,12 @@ function sectionsFromTemplate(template = null) {
       placeholderKeys: allPlaceholderKeys,
       placeholderKeysText: allPlaceholderKeys.join(', '),
       isRequired: section.is_required === undefined ? true : Boolean(section.is_required),
-      requiresInitial: Boolean(section.requiresInitial ?? section.requires_initial ?? metadata.requiresInitial ?? metadata.requires_initial ?? signingMetadata.requiresInitial ?? signingMetadata.requires_initial),
+      signingRequirement,
+      requiresInitial: signingRequirement === 'client_initial',
+      requiresSignature: signingRequirement === 'client_signature',
+      signingRole: normalizeText(section.signingRole || section.signing_role || metadata.signingRole || metadata.signing_role || signingMetadata.signingRole || signingMetadata.signing_role || 'client') || 'client',
       initialPlaceholderKey: normalizeText(section.initialPlaceholderKey || section.initial_placeholder_key || metadata.initialPlaceholderKey || metadata.initial_placeholder_key || signingMetadata.initialPlaceholderKey || signingMetadata.initial_placeholder_key),
+      signaturePlaceholderKey: normalizeText(section.signaturePlaceholderKey || section.signature_placeholder_key || metadata.signaturePlaceholderKey || metadata.signature_placeholder_key || signingMetadata.signaturePlaceholderKey || signingMetadata.signature_placeholder_key),
       metadataJson: metadata,
       sortOrder: Number.isFinite(Number(section.sort_order)) ? Number(section.sort_order) : index,
     }
@@ -1058,13 +1449,21 @@ function toTemplateForm(template = null) {
   }
 }
 
-function mapSectionForSave(section = {}, index = 0) {
+function mapSectionForSave(section = {}, index = 0, packetType = 'otp') {
   const placeholderKeys = String(section.placeholderKeysText || '')
     .split(',')
     .map((item) => normalizeText(item))
     .filter(Boolean)
   const metadataJson = section.metadataJson && typeof section.metadataJson === 'object' ? section.metadataJson : {}
-  const initialPlaceholderKey = normalizeText(section.initialPlaceholderKey)
+  const signingRequirement = normalizeSectionSigningRequirement(section.signingRequirement, {
+    requiresInitial: Boolean(section.requiresInitial),
+    requiresSignature: Boolean(section.requiresSignature),
+  })
+  const requiresInitial = signingRequirement === 'client_initial'
+  const requiresSignature = signingRequirement === 'client_signature'
+  const initialPlaceholderKey = normalizeText(section.initialPlaceholderKey) || (requiresInitial ? getDefaultClientSigningPlaceholderKey(packetType, 'client_initial') : '')
+  const signaturePlaceholderKey = normalizeText(section.signaturePlaceholderKey) || (requiresSignature ? getDefaultClientSigningPlaceholderKey(packetType, 'client_signature') : '')
+  const signingRole = normalizeText(section.signingRole || 'client') || 'client'
 
   return {
     sectionKey: normalizeText(section.sectionKey || `section_${index + 1}`),
@@ -1077,18 +1476,26 @@ function mapSectionForSave(section = {}, index = 0) {
       ...metadataJson,
       signing: {
         ...(metadataJson.signing && typeof metadataJson.signing === 'object' ? metadataJson.signing : {}),
-        requires_initial: Boolean(section.requiresInitial),
+        signing_requirement: signingRequirement,
+        signing_role: signingRole,
+        requires_initial: requiresInitial,
         initial_placeholder_key: initialPlaceholderKey,
+        requires_signature: requiresSignature,
+        signature_placeholder_key: signaturePlaceholderKey,
       },
-      requires_initial: Boolean(section.requiresInitial),
+      signing_requirement: signingRequirement,
+      signing_role: signingRole,
+      requires_initial: requiresInitial,
       initial_placeholder_key: initialPlaceholderKey,
+      requires_signature: requiresSignature,
+      signature_placeholder_key: signaturePlaceholderKey,
     },
     sortOrder: Number.isFinite(Number(section.sortOrder)) ? Number(section.sortOrder) : index,
   }
 }
 
-function mapSectionForPreview(section = {}, index = 0) {
-  const savedSection = mapSectionForSave(section, index)
+function mapSectionForPreview(section = {}, index = 0, packetType = 'otp') {
+  const savedSection = mapSectionForSave(section, index, packetType)
   return {
     ...savedSection,
     id: section.id || null,
@@ -1136,7 +1543,7 @@ function buildPreviewTemplateFromForm({
     metadataJson,
     is_active: form.isActive === undefined ? Boolean(baseTemplate.is_active) : Boolean(form.isActive),
     is_default: form.isDefault === undefined ? Boolean(baseTemplate.is_default) : Boolean(form.isDefault),
-    sections: (form.sections || []).map((section, index) => mapSectionForPreview(section, index)),
+    sections: (form.sections || []).map((section, index) => mapSectionForPreview(section, index, packetType)),
   }
 }
 
@@ -2235,7 +2642,7 @@ export default function SettingsSigningTemplatesPage({
           render_mode: renderMode,
           native_renderer_version: renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? NATIVE_RENDERER_VERSION : null,
         },
-        sections: createStarterSections(packetType).map((section, index) => mapSectionForSave(section, index)),
+        sections: createStarterSections(packetType).map((section, index) => mapSectionForSave(section, index, packetType)),
       })
 
       await refreshAll()
@@ -2281,7 +2688,7 @@ export default function SettingsSigningTemplatesPage({
           placeholderKeysText: Array.isArray(section.placeholder_keys) ? section.placeholder_keys.join(', ') : '',
           isRequired: section.is_required,
           sortOrder: section.sort_order ?? index,
-        }, index)),
+        }, index, packetType)),
       })
 
       await refreshAll()
@@ -2319,7 +2726,7 @@ export default function SettingsSigningTemplatesPage({
         isDefault: false,
         isActive: false,
         metadataJson: buildTemplateMetadata({ ...form, templateStatus: 'draft', validationSummary }, form.metadataJson || {}, null),
-        sections: (form.sections || []).map((section, index) => mapSectionForSave(section, index)),
+        sections: (form.sections || []).map((section, index) => mapSectionForSave(section, index, packetType)),
       })
 
       await refreshAll()
@@ -2492,7 +2899,7 @@ export default function SettingsSigningTemplatesPage({
         isActive: form.isActive,
         isDefault: form.isDefault,
         metadataJson,
-        sections: (form.sections || []).map((section, index) => mapSectionForSave(section, index)),
+        sections: (form.sections || []).map((section, index) => mapSectionForSave(section, index, packetType)),
       })
 
       if (form.isDefault) {
@@ -2538,7 +2945,7 @@ export default function SettingsSigningTemplatesPage({
         isActive: true,
         isDefault: true,
         metadataJson,
-        sections: (form.sections || []).map((section, index) => mapSectionForSave(section, index)),
+        sections: (form.sections || []).map((section, index) => mapSectionForSave(section, index, packetType)),
       })
 
       const orgTemplates = (templatesByType[packetType] || []).filter((row) => row.organisation_id)
@@ -2653,7 +3060,7 @@ export default function SettingsSigningTemplatesPage({
         isDefault: false,
         isActive: false,
         metadataJson: buildTemplateMetadata({ ...draftForm, validationSummary }, form.metadataJson || {}, null),
-        sections: (form.sections || []).map((section, index) => mapSectionForSave(section, index)),
+        sections: (form.sections || []).map((section, index) => mapSectionForSave(section, index, packetType)),
       })
 
       await refreshAll()
@@ -3658,26 +4065,54 @@ export default function SettingsSigningTemplatesPage({
                           </label>
 
                           <div className="rounded-[18px] border border-[#dbe7f3] bg-[#f8fbff] p-4 md:col-span-2">
-                            <label className="flex items-start gap-3 text-sm font-semibold text-[#102033]">
-                              <input
-                                type="checkbox"
-                                className="mt-1 h-4 w-4 rounded border-[#c9d8e8] text-[#0a66ff]"
-                                checked={Boolean(selectedSection.requiresInitial)}
-                                disabled={!canEdit || !selectedIsOrgOwned}
-                                onChange={(event) => updateSection(selectedSectionIndex, {
-                                  requiresInitial: event.target.checked,
-                                  initialPlaceholderKey: event.target.checked
-                                    ? selectedSection.initialPlaceholderKey || `${selectedSection.sectionKey || `section_${selectedSectionIndex + 1}`}_initials`
-                                    : selectedSection.initialPlaceholderKey,
-                                })}
-                              />
-                              <span>
-                                Initial required in this section
-                                <span className="mt-1 block font-normal leading-5 text-[#6b7c93]">
-                                  This records the section anchor for template-driven signing fields.
-                                </span>
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                              <div>
+                                <p className="text-sm font-semibold text-[#102033]">Client signing requirement</p>
+                                <p className="mt-1 text-sm leading-5 text-[#6b7c93]">
+                                  Choose whether this section needs a client initial or full signature marker.
+                                </p>
+                              </div>
+                              <span className="rounded-full bg-white px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#607387]">
+                                Section-level
                               </span>
-                            </label>
+                            </div>
+
+                            <div className="mt-4 grid gap-2 md:grid-cols-3">
+                              {SECTION_SIGNING_REQUIREMENT_OPTIONS.map((option) => {
+                                const active = normalizeSectionSigningRequirement(selectedSection.signingRequirement, {
+                                  requiresInitial: selectedSection.requiresInitial,
+                                  requiresSignature: selectedSection.requiresSignature,
+                                }) === option.key
+                                return (
+                                  <button
+                                    key={option.key}
+                                    type="button"
+                                    disabled={!canEdit || !selectedIsOrgOwned}
+                                    onClick={() => updateSection(selectedSectionIndex, {
+                                      signingRequirement: option.key,
+                                      requiresInitial: option.key === 'client_initial',
+                                      requiresSignature: option.key === 'client_signature',
+                                      signingRole: selectedSection.signingRole || 'client',
+                                      initialPlaceholderKey: option.key === 'client_initial'
+                                        ? selectedSection.initialPlaceholderKey || getDefaultClientSigningPlaceholderKey(packetType, 'client_initial')
+                                        : selectedSection.initialPlaceholderKey,
+                                      signaturePlaceholderKey: option.key === 'client_signature'
+                                        ? selectedSection.signaturePlaceholderKey || getDefaultClientSigningPlaceholderKey(packetType, 'client_signature')
+                                        : selectedSection.signaturePlaceholderKey,
+                                    })}
+                                    className={`rounded-[14px] border px-3 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                                      active
+                                        ? 'border-[#96d7ad] bg-white shadow-[0_10px_24px_rgba(18,134,66,0.10)]'
+                                        : 'border-[#dbe7f3] bg-[#fbfdff] hover:border-[#b8d8c4] hover:bg-white'
+                                    }`}
+                                  >
+                                    <span className="block text-sm font-semibold text-[#102033]">{option.label}</span>
+                                    <span className="mt-1 block text-xs leading-5 text-[#6b7c93]">{option.description}</span>
+                                  </button>
+                                )
+                              })}
+                            </div>
+
                             {selectedSection.requiresInitial ? (
                               <label className={`${settingsFieldClass} mt-4`}>
                                 Initial field key
@@ -3686,7 +4121,20 @@ export default function SettingsSigningTemplatesPage({
                                   value={selectedSection.initialPlaceholderKey || ''}
                                   disabled={!canEdit || !selectedIsOrgOwned}
                                   onChange={(event) => updateSection(selectedSectionIndex, { initialPlaceholderKey: event.target.value })}
-                                  placeholder="seller_initials"
+                                  placeholder="buyer_initials"
+                                />
+                              </label>
+                            ) : null}
+
+                            {selectedSection.requiresSignature ? (
+                              <label className={`${settingsFieldClass} mt-4`}>
+                                Signature field key
+                                <input
+                                  type="text"
+                                  value={selectedSection.signaturePlaceholderKey || ''}
+                                  disabled={!canEdit || !selectedIsOrgOwned}
+                                  onChange={(event) => updateSection(selectedSectionIndex, { signaturePlaceholderKey: event.target.value })}
+                                  placeholder="buyer_signature"
                                 />
                               </label>
                             ) : null}
