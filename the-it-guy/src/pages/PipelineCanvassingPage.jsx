@@ -723,19 +723,6 @@ function buildCanvassingAddressValue(form = {}) {
   }
 }
 
-function buildCanvassingAreaValue(form = {}) {
-  const area = normalizeText(form.areaSuburb || form.area)
-  if (!area) return null
-  return {
-    formattedAddress: area,
-    suburb: area,
-    city: normalizeText(form.city),
-    province: normalizeText(form.province),
-    country: normalizeText(form.country),
-    placeId: normalizeText(form.areaSuburbPlaceId),
-  }
-}
-
 function mergeAddressIntoProspectDraft(previous = {}, value = null) {
   if (!value) {
     return {
@@ -764,19 +751,6 @@ function mergeAddressIntoProspectDraft(previous = {}, value = null) {
     latitude: value.latitude ?? null,
     longitude: value.longitude ?? null,
     googlePlaceId: normalizeText(value.placeId),
-  }
-}
-
-function mergeAreaIntoProspectDraft(previous = {}, value = null, inputValue = '') {
-  const area = normalizeText(value?.suburb || value?.city || inputValue || value?.formattedAddress)
-  return {
-    ...previous,
-    area,
-    areaSuburb: area,
-    areaSuburbPlaceId: normalizeText(value?.placeId),
-    city: normalizeText(value?.city || previous.city),
-    province: normalizeText(value?.province || previous.province),
-    country: normalizeText(value?.country || previous.country),
   }
 }
 
@@ -1076,11 +1050,8 @@ function PipelineCanvassingPage() {
     search: '',
     method: 'all',
     area: 'all',
-    buyerBudget: 'all',
-    buyerStatus: 'all',
     financeStatus: 'all',
     sellingIntent: 'all',
-    lastContactOutcome: 'all',
     status: 'all',
     assigned: 'all',
     sort: 'newest',
@@ -1573,21 +1544,12 @@ function PipelineCanvassingPage() {
       const areaMatch = filters.area === 'all'
         ? true
         : normalizeKey(prospectView === 'buyer' ? prospect?.resolvedAreaOfInterest : prospect?.resolvedAreaSuburb) === normalizeKey(filters.area)
-      const buyerBudgetMatch = filters.buyerBudget === 'all'
-        ? true
-        : normalizeKey(prospect?.resolvedBudgetRange) === normalizeKey(filters.buyerBudget)
-      const buyerStatusMatch = filters.buyerStatus === 'all'
-        ? true
-        : normalizeKey(prospect?.resolvedBuyerStatus) === normalizeKey(filters.buyerStatus)
       const financeStatusMatch = filters.financeStatus === 'all'
         ? true
         : normalizeKey(prospect?.resolvedFinanceStatus) === normalizeKey(filters.financeStatus)
       const sellingIntentMatch = filters.sellingIntent === 'all'
         ? true
         : normalizeKey(prospect?.resolvedSellingIntent) === normalizeKey(filters.sellingIntent)
-      const lastContactOutcomeMatch = filters.lastContactOutcome === 'all'
-        ? true
-        : normalizeKey(prospect?.resolvedLastContactOutcome) === normalizeKey(filters.lastContactOutcome)
       const prospectStatus = normalizeText(prospect?.status)
       const prospectStatusKey = normalizeKey(prospectStatus)
       const convertedWithoutLead = prospectStatusKey === 'converted to lead' && !normalizeText(prospect?.convertedLeadId)
@@ -1600,7 +1562,7 @@ function PipelineCanvassingPage() {
           ? prospect.assignedProfile?.isUnassigned
           : normalizeText(prospect.assignedProfile?.id) === filters.assigned ||
             normalizeText(prospect.assignedProfile?.email) === filters.assigned
-      return audienceMatch && searchMatch && methodMatch && areaMatch && buyerBudgetMatch && buyerStatusMatch && financeStatusMatch && sellingIntentMatch && lastContactOutcomeMatch && statusMatch && assignedMatch
+      return audienceMatch && searchMatch && methodMatch && areaMatch && financeStatusMatch && sellingIntentMatch && statusMatch && assignedMatch
     })
 
     return rows.sort((left, right) => {
@@ -1616,7 +1578,7 @@ function PipelineCanvassingPage() {
       const rightTime = new Date(right?.createdAt || 0).getTime()
       return rightTime - leftTime
     })
-    }, [filters.area, filters.assigned, filters.buyerBudget, filters.buyerStatus, filters.financeStatus, filters.lastContactOutcome, filters.method, filters.search, filters.sellingIntent, filters.sort, filters.status, prospectView, prospectRows])
+    }, [filters.area, filters.assigned, filters.financeStatus, filters.method, filters.search, filters.sellingIntent, filters.sort, filters.status, prospectView, prospectRows])
 
   const availableSourceOptions = useMemo(() => {
     const list = Array.from(new Set(prospectRows.map((prospect) => prospect?.resolvedSourceKey || 'unknown')))
@@ -1649,16 +1611,6 @@ function PipelineCanvassingPage() {
       .sort((left, right) => left.localeCompare(right))
   }, [prospectRows, prospectView])
 
-  const buyerBudgetFilterOptions = useMemo(() => {
-    return Array.from(new Set(prospectRows.map((prospect) => normalizeText(prospect?.resolvedBudgetRange)).filter(Boolean)))
-      .sort((left, right) => left.localeCompare(right))
-  }, [prospectRows])
-
-  const buyerStatusFilterOptions = useMemo(() => {
-    return Array.from(new Set(prospectRows.map((prospect) => normalizeText(prospect?.resolvedBuyerStatus)).filter(Boolean)))
-      .sort((left, right) => left.localeCompare(right))
-  }, [prospectRows])
-
   const financeStatusFilterOptions = useMemo(() => {
     return Array.from(new Set(prospectRows.map((prospect) => normalizeText(prospect?.resolvedFinanceStatus)).filter(Boolean)))
       .sort((left, right) => left.localeCompare(right))
@@ -1666,11 +1618,6 @@ function PipelineCanvassingPage() {
 
   const sellingIntentFilterOptions = useMemo(() => {
     return Array.from(new Set(prospectRows.map((prospect) => normalizeText(prospect?.resolvedSellingIntent)).filter(Boolean)))
-      .sort((left, right) => left.localeCompare(right))
-  }, [prospectRows])
-
-  const lastContactOutcomeFilterOptions = useMemo(() => {
-    return Array.from(new Set(prospectRows.map((prospect) => normalizeText(prospect?.resolvedLastContactOutcome)).filter(Boolean)))
       .sort((left, right) => left.localeCompare(right))
   }, [prospectRows])
 
@@ -2539,32 +2486,6 @@ function PipelineCanvassingPage() {
                   <Field
                     as="select"
                     className={CANVASSING_FILTER_SELECT_CLASS}
-                    value={filters.buyerBudget}
-                    onChange={(event) => setFilters((previous) => ({ ...previous, buyerBudget: event.target.value }))}
-                  >
-                    <option value="all">Budget</option>
-                    {buyerBudgetFilterOptions.map((budget) => (
-                      <option key={budget} value={budget}>
-                        {budget}
-                      </option>
-                    ))}
-                  </Field>
-                  <Field
-                    as="select"
-                    className={CANVASSING_FILTER_SELECT_CLASS}
-                    value={filters.buyerStatus}
-                    onChange={(event) => setFilters((previous) => ({ ...previous, buyerStatus: event.target.value }))}
-                  >
-                    <option value="all">Buyer Status</option>
-                    {buyerStatusFilterOptions.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
-                  </Field>
-                  <Field
-                    as="select"
-                    className={CANVASSING_FILTER_SELECT_CLASS}
                     value={filters.financeStatus}
                     onChange={(event) => setFilters((previous) => ({ ...previous, financeStatus: event.target.value }))}
                   >
@@ -2577,34 +2498,19 @@ function PipelineCanvassingPage() {
                   </Field>
                 </>
               ) : (
-                <>
-                  <Field
-                    as="select"
-                    className={CANVASSING_FILTER_SELECT_CLASS}
-                    value={filters.sellingIntent}
-                    onChange={(event) => setFilters((previous) => ({ ...previous, sellingIntent: event.target.value }))}
-                  >
-                    <option value="all">Selling Intent</option>
-                    {sellingIntentFilterOptions.map((intent) => (
-                      <option key={intent} value={intent}>
-                        {intent}
-                      </option>
-                    ))}
-                  </Field>
-                  <Field
-                    as="select"
-                    className={CANVASSING_FILTER_SELECT_CLASS}
-                    value={filters.lastContactOutcome}
-                    onChange={(event) => setFilters((previous) => ({ ...previous, lastContactOutcome: event.target.value }))}
-                  >
-                    <option value="all">Last Outcome</option>
-                    {lastContactOutcomeFilterOptions.map((outcome) => (
-                      <option key={outcome} value={outcome}>
-                        {outcome}
-                      </option>
-                    ))}
-                  </Field>
-                </>
+                <Field
+                  as="select"
+                  className={CANVASSING_FILTER_SELECT_CLASS}
+                  value={filters.sellingIntent}
+                  onChange={(event) => setFilters((previous) => ({ ...previous, sellingIntent: event.target.value }))}
+                >
+                  <option value="all">Selling Intent</option>
+                  {sellingIntentFilterOptions.map((intent) => (
+                    <option key={intent} value={intent}>
+                      {intent}
+                    </option>
+                  ))}
+                </Field>
               )}
               <Field
                 as="select"
@@ -3068,138 +2974,6 @@ function PipelineCanvassingPage() {
                   </Field>
                 </div>
               </div>
-
-              <div className="rounded-[14px] border border-[#dbe4ee] bg-white p-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Buyer Requirements</p>
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <AddressAutocomplete
-                    label=""
-                    placeholder="Area of interest"
-                    description=""
-                    predictionTypes={AREA_AUTOCOMPLETE_TYPES}
-                    value={prospectForm.areaOfInterest ? {
-                      formattedAddress: prospectForm.areaOfInterest,
-                      suburb: prospectForm.areaOfInterest,
-                      city: prospectForm.city,
-                      province: prospectForm.province,
-                      country: prospectForm.country,
-                      placeId: prospectForm.areaOfInterestPlaceId,
-                    } : null}
-                    onInputValueChange={(nextValue) => setProspectForm((previous) => ({
-                      ...previous,
-                      areaOfInterest: nextValue,
-                      area: nextValue,
-                      areaSuburb: nextValue,
-                    }))}
-                    onChange={(value) => setProspectForm((previous) => {
-                      const area = normalizeText(value?.suburb || value?.city || value?.formattedAddress)
-                      return {
-                        ...previous,
-                        areaOfInterest: area,
-                        area,
-                        areaSuburb: area,
-                        areaOfInterestPlaceId: normalizeText(value?.placeId),
-                        areaSuburbPlaceId: normalizeText(value?.placeId),
-                        city: normalizeText(value?.city || previous.city),
-                        province: normalizeText(value?.province || previous.province),
-                        country: normalizeText(value?.country || previous.country),
-                      }
-                    })}
-                  />
-                  <Field
-                    as="select"
-                    className="h-12 rounded-[16px]"
-                    value={prospectForm.preferredPropertyType || prospectForm.propertyType}
-                    onChange={(event) => setProspectForm((previous) => ({ ...previous, preferredPropertyType: event.target.value, propertyType: event.target.value }))}
-                  >
-                    <option value="">Preferred property type (optional)</option>
-                    {BUYER_PROPERTY_TYPE_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </Field>
-                  <Field
-                    as="select"
-                    className="h-12 rounded-[16px]"
-                    value={prospectForm.budgetRange || prospectForm.estimatedPropertyValue}
-                    onChange={(event) => setProspectForm((previous) => ({ ...previous, budgetRange: event.target.value, estimatedPropertyValue: event.target.value }))}
-                  >
-                    <option value="">Budget range (optional)</option>
-                    {ESTIMATED_PROPERTY_VALUE_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </Field>
-                  <Field
-                    as="select"
-                    className="h-12 rounded-[16px]"
-                    value={prospectForm.bedrooms}
-                    onChange={(event) => setProspectForm((previous) => ({ ...previous, bedrooms: event.target.value }))}
-                  >
-                    <option value="">Bedrooms (optional)</option>
-                    {BUYER_BEDROOM_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </Field>
-                </div>
-              </div>
-
-              <div className="rounded-[14px] border border-[#dbe4ee] bg-white p-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Buyer Readiness</p>
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <Field
-                    as="select"
-                    className="h-12 rounded-[16px]"
-                    value={prospectForm.financeStatus}
-                    onChange={(event) => setProspectForm((previous) => ({ ...previous, financeStatus: event.target.value }))}
-                  >
-                    <option value="">Finance status (optional)</option>
-                    {FINANCE_STATUS_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </Field>
-                  <Field
-                    as="select"
-                    className="h-12 rounded-[16px]"
-                    value={prospectForm.timeframe}
-                    onChange={(event) => setProspectForm((previous) => ({ ...previous, timeframe: event.target.value }))}
-                  >
-                    <option value="">Timeframe (optional)</option>
-                    {BUYER_TIMEFRAME_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </Field>
-                  <Field
-                    as="select"
-                    className="h-12 rounded-[16px]"
-                    value={prospectForm.subjectToSale}
-                    onChange={(event) => setProspectForm((previous) => ({ ...previous, subjectToSale: event.target.value }))}
-                  >
-                    <option value="">Subject to sale (optional)</option>
-                    {SUBJECT_TO_SALE_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </Field>
-                  <Field
-                    as="textarea"
-                    className="!min-h-[76px] max-h-[88px] rounded-[16px]"
-                    rows={3}
-                    placeholder="Notes (optional)"
-                    value={prospectForm.notes}
-                    onChange={(event) => setProspectForm((previous) => ({ ...previous, notes: event.target.value }))}
-                  />
-                </div>
-              </div>
             </>
           ) : (
             <>
@@ -3221,16 +2995,7 @@ function PipelineCanvassingPage() {
                   </Field>
                   <AddressAutocomplete
                     label=""
-                    placeholder="Area / suburb"
-                    description=""
-                    predictionTypes={AREA_AUTOCOMPLETE_TYPES}
-                    value={buildCanvassingAreaValue(prospectForm)}
-                    onInputValueChange={(nextValue) => setProspectForm((previous) => mergeAreaIntoProspectDraft(previous, null, nextValue))}
-                    onChange={(value) => setProspectForm((previous) => mergeAreaIntoProspectDraft(previous, value, value?.formattedAddress))}
-                  />
-                  <AddressAutocomplete
-                    label=""
-                    placeholder="Street address (optional)"
+                    placeholder="Property address (optional)"
                     description=""
                     value={buildCanvassingAddressValue(prospectForm)}
                     onInputValueChange={(nextValue) => setProspectForm((previous) => ({ ...previous, streetAddress: nextValue, formattedAddress: nextValue }))}
@@ -3310,32 +3075,6 @@ function PipelineCanvassingPage() {
                 </div>
               </div>
 
-              <div className="rounded-[14px] border border-[#dbe4ee] bg-white p-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Additional Information</p>
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <Field
-                    as="select"
-                    className="h-12 rounded-[16px]"
-                    value={prospectForm.propertyOccupancy}
-                    onChange={(event) => setProspectForm((previous) => ({ ...previous, propertyOccupancy: event.target.value }))}
-                  >
-                    <option value="">Property occupancy (optional)</option>
-                    {PROPERTY_OCCUPANCY_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </Field>
-                  <Field
-                    as="textarea"
-                    className="!min-h-[76px] max-h-[88px] rounded-[16px]"
-                    rows={3}
-                    placeholder="Notes (optional)"
-                    value={prospectForm.notes}
-                    onChange={(event) => setProspectForm((previous) => ({ ...previous, notes: event.target.value }))}
-                  />
-                </div>
-              </div>
             </>
           )}
           </div>
