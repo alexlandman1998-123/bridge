@@ -24,6 +24,7 @@ import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
+import AreaAutocomplete from '../components/location/AreaAutocomplete'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { createAgencyCrmLeadActivity, createAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
 import { leadCategoryLabel, normalizeLeadCategory } from '../lib/leadCategory'
@@ -1342,6 +1343,8 @@ function PipelineCanvassingPage() {
   const [convertLeadType, setConvertLeadType] = useState('buyer')
   const [activeProspectTab, setActiveProspectTab] = useState('overview')
   const [areaDraftInput, setAreaDraftInput] = useState('')
+  const [isProspectSaving, setIsProspectSaving] = useState(false)
+  const [prospectSaveNotice, setProspectSaveNotice] = useState('')
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -1887,6 +1890,12 @@ function PipelineCanvassingPage() {
     setAreaDraftInput('')
   }, [selectedProspect?.id])
 
+  useEffect(() => {
+    if (!prospectSaveNotice) return undefined
+    const timeout = window.setTimeout(() => setProspectSaveNotice(''), 4000)
+    return () => window.clearTimeout(timeout)
+  }, [prospectSaveNotice])
+
   const openActionProspect = useMemo(() => {
     if (!openActionMenuId) return null
     return prospectRows.find((prospect) => normalizeText(prospect?.id) === openActionMenuId) || null
@@ -2271,17 +2280,23 @@ function PipelineCanvassingPage() {
       notes: normalizeText(selectedProspect.notes),
     }
 
+    setIsProspectSaving(true)
+    setProspectSaveNotice('')
     try {
       const updated = await updateCanvassingProspect(organisationId, selectedProspect.id, payload)
       setProspects((previous) => previous.map((row) => normalizeText(row?.id) === normalizeText(selectedProspect.id) ? (updated || payload) : row))
+      setProspectSaveNotice('Prospect saved successfully.')
       setMessage('Prospect updated.')
       setError('')
     } catch (saveError) {
       setError(saveError?.message || 'Unable to update prospect.')
+    } finally {
+      setIsProspectSaving(false)
     }
   }
 
   function handleUpdateSelectedProspect(field, value) {
+    setProspectSaveNotice('')
     if (field === 'prospectType') {
       setConvertLeadType(resolveDefaultLeadCategory({ ...selectedProspect, prospectType: value }))
     }
@@ -2297,6 +2312,7 @@ function PipelineCanvassingPage() {
   }
 
   function handleUpdateSelectedProspectAssignment(value) {
+    setProspectSaveNotice('')
     const assignedAgent = resolveAgentById(value)
     setProspects((previous) =>
       previous.map((row) => {
@@ -2314,6 +2330,7 @@ function PipelineCanvassingPage() {
   }
 
   function handleUpdateSelectedProspectBudgetRange(field, value) {
+    setProspectSaveNotice('')
     const current = parseCanvassingBudgetRange(selectedProspect?.budgetRange || selectedProspect?.estimatedPropertyValue)
     const nextRange = composeCanvassingBudgetRange(
       field === 'min' ? value : current.min,
@@ -2332,6 +2349,7 @@ function PipelineCanvassingPage() {
   }
 
   function handleUpdateSelectedProspectNoteField(label, value) {
+    setProspectSaveNotice('')
     setProspects((previous) =>
       previous.map((row) => {
         if (normalizeText(row?.id) !== normalizeText(selectedProspectId)) return row
@@ -2344,6 +2362,7 @@ function PipelineCanvassingPage() {
   }
 
   function updateSelectedProspectAreas(nextAreas = []) {
+    setProspectSaveNotice('')
     const targetProspectId = normalizeText(selectedProspect?.id || selectedProspectId)
     const dedupedAreas = []
     const seenAreas = new Set()
@@ -2368,22 +2387,24 @@ function PipelineCanvassingPage() {
     )
   }
 
-  function handleAddSelectedProspectArea() {
-    const draftAreas = splitCanvassingListValue(areaDraftInput)
+  function handleAddSelectedProspectArea(value = areaDraftInput) {
+    const draftAreas = splitCanvassingListValue(value)
     if (!draftAreas.length) return
     updateSelectedProspectAreas([...selectedProspectAreas, ...draftAreas])
     setAreaDraftInput('')
   }
 
+  function handleAreaSuggestionChange(value, area = null) {
+    const nextValue = normalizeText(area?.name || value)
+    setAreaDraftInput(nextValue)
+    if (area?.name) {
+      handleAddSelectedProspectArea(nextValue)
+    }
+  }
+
   function handleRemoveSelectedProspectArea(area) {
     const areaKey = normalizeKey(area)
     updateSelectedProspectAreas(selectedProspectAreas.filter((candidate) => normalizeKey(candidate) !== areaKey))
-  }
-
-  function handleAreaDraftKeyDown(event) {
-    if (event.key !== 'Enter' && event.key !== ',') return
-    event.preventDefault()
-    handleAddSelectedProspectArea()
   }
 
   async function handleLogActivity(event) {
@@ -2784,9 +2805,19 @@ function PipelineCanvassingPage() {
 	                </div>
 	              </div>
 	
-	              <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_390px]">
-	                <form className="space-y-5 p-4 sm:p-6" onSubmit={handleSaveProspectDetail}>
-	                  {activeProspectTab === 'overview' ? (
+		              <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_390px]">
+		                <form className="space-y-5 p-4 sm:p-6" onSubmit={handleSaveProspectDetail}>
+	                  {prospectSaveNotice ? (
+	                    <div className="rounded-[18px] border border-[#cfe9d8] bg-[#effaf2] px-4 py-3 text-sm font-semibold text-[#1f7a41]">
+	                      {prospectSaveNotice}
+	                    </div>
+	                  ) : null}
+	                  {isProspectWorkspaceRoute && error ? (
+	                    <div className="rounded-[18px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm font-semibold text-[#9f1d1d]">
+	                      {error}
+	                    </div>
+	                  ) : null}
+		                  {activeProspectTab === 'overview' ? (
 	                  <section className="rounded-[18px] border border-[#dfe8f3] bg-white p-4 shadow-[0_12px_30px_rgba(15,35,55,0.04)]">
                     <div className="mb-4 flex items-center justify-between gap-3">
                       <div>
@@ -2964,13 +2995,15 @@ function PipelineCanvassingPage() {
 	                                )}
 	                              </div>
 	                              <div className="mt-2 flex gap-2">
-	                                <input
-	                                  value={areaDraftInput}
-	                                  onChange={(event) => setAreaDraftInput(event.target.value)}
-	                                  onKeyDown={handleAreaDraftKeyDown}
-	                                  placeholder="Add area or suburb"
-	                                  className="min-h-10 min-w-0 flex-1 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-sm font-semibold text-[#17263a] outline-none transition focus:border-[#9fb7d0] focus:ring-2 focus:ring-[#d7e6f4]"
-	                                />
+	                                <div className="min-w-0 flex-1">
+	                                  <AreaAutocomplete
+	                                    value={areaDraftInput}
+	                                    onChange={handleAreaSuggestionChange}
+	                                    placeholder="Add area or suburb"
+	                                    description=""
+	                                    allowFreeText
+	                                  />
+	                                </div>
 	                                <button
 	                                  type="button"
 	                                  className="inline-flex min-h-10 items-center justify-center rounded-[12px] bg-[#214c6e] px-4 text-sm font-semibold text-white transition hover:bg-[#183a56]"
@@ -3212,9 +3245,9 @@ function PipelineCanvassingPage() {
                           {selectedProspect.convertedLeadId || 'Not converted yet'}
                         </p>
                       </div>
-                      <Button type="submit" className="h-full min-h-[56px] w-full">
-                        Save Prospect
-                      </Button>
+	                      <Button type="submit" className="h-full min-h-[56px] w-full" disabled={isProspectSaving}>
+	                        {isProspectSaving ? 'Saving...' : prospectSaveNotice ? 'Saved' : 'Save Prospect'}
+	                      </Button>
                     </div>
 		                  </section>
 		                  ) : null}
