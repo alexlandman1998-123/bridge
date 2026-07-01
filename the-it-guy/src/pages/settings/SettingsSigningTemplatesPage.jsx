@@ -299,31 +299,67 @@ function createStarterSections(packetType = 'otp') {
 
   return [
     {
-      sectionKey: 'parties',
-      sectionLabel: 'Parties',
+      sectionKey: 'buyer_details',
+      sectionLabel: 'Buyer Details',
       sectionType: 'dynamic_fields',
-      legalText: 'Buyer: {{buyer_full_name}}\nSeller: {{seller_full_name}}',
-      placeholderKeysText: 'buyer_full_name, seller_full_name',
+      legalText: 'The purchaser is {{buyer_full_name}}, identity number {{buyer_id_number}}, with email address {{buyer_email}}.',
+      placeholderKeysText: 'buyer_full_name, buyer_id_number, buyer_email',
       isRequired: true,
       sortOrder: 0,
     },
     {
-      sectionKey: 'terms',
-      sectionLabel: 'Purchase Terms',
-      sectionType: 'legal_text',
-      legalText: 'Purchase price: {{purchase_price}}',
-      placeholderKeysText: 'purchase_price',
+      sectionKey: 'seller_details',
+      sectionLabel: 'Seller Details',
+      sectionType: 'dynamic_fields',
+      legalText: 'The seller is {{seller_full_name}}, identity number {{seller_id_number}}.',
+      placeholderKeysText: 'seller_full_name, seller_id_number',
       isRequired: true,
       sortOrder: 1,
     },
     {
-      sectionKey: 'signatures',
+      sectionKey: 'property_details',
+      sectionLabel: 'Property',
+      sectionType: 'dynamic_fields',
+      legalText: 'The property being sold is {{property_address}}, {{property_suburb}}.\nUnit number: {{unit_number}}.',
+      placeholderKeysText: 'unit_number, property_address, property_suburb',
+      isRequired: true,
+      sortOrder: 2,
+    },
+    {
+      sectionKey: 'purchase_terms',
+      sectionLabel: 'Purchase Terms',
+      sectionType: 'dynamic_fields',
+      legalText: 'The purchase price is {{purchase_price}}.\nDeposit payable: {{deposit_amount}}.\nFinance type: {{finance_type}}.',
+      placeholderKeysText: 'purchase_price, deposit_amount, finance_type',
+      isRequired: true,
+      sortOrder: 3,
+    },
+    {
+      sectionKey: 'commission_terms',
+      sectionLabel: 'Commission Terms',
+      sectionType: 'dynamic_fields',
+      legalText: 'Commission is recorded as {{gross_commission_percentage}} of the purchase price.\nGross commission amount: {{gross_commission_amount}}.\nAgent commission amount: {{agent_commission_amount}}.\nAgency commission amount: {{agency_commission_amount}}.',
+      placeholderKeysText: 'gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount',
+      isRequired: true,
+      sortOrder: 4,
+    },
+    {
+      sectionKey: 'special_conditions',
+      sectionLabel: 'Special Conditions',
+      sectionType: 'dynamic_fields',
+      legalText: '{{special_conditions}}',
+      placeholderKeysText: 'special_conditions',
+      isRequired: false,
+      sortOrder: 5,
+    },
+    {
+      sectionKey: 'signature_pages',
       sectionLabel: 'Signatures',
       sectionType: 'signature_zone',
       legalText: 'Signed by {{buyer_full_name}} and {{seller_full_name}}',
       placeholderKeysText: 'buyer_full_name, seller_full_name',
       isRequired: true,
-      sortOrder: 2,
+      sortOrder: 6,
     },
   ]
 }
@@ -381,6 +417,40 @@ function normalizeTemplateLegalText(value = '') {
   })
 }
 
+function getDefaultSectionLegalText(packetType = 'otp', section = {}) {
+  const normalizedPacketType = normalizeText(packetType).toLowerCase()
+  const sectionKey = normalizeText(section.section_key || section.sectionKey || section.key).toLowerCase()
+  const sectionLabel = normalizeText(section.section_label || section.sectionLabel || section.label).toLowerCase()
+  const lookupKey = sectionKey || sectionLabel
+
+  const otpDefaults = {
+    buyer_details: 'The purchaser is {{buyer_full_name}}, identity number {{buyer_id_number}}, with email address {{buyer_email}}.',
+    seller_details: 'The seller is {{seller_full_name}}, identity number {{seller_id_number}}.',
+    property_details: 'The property being sold is {{property_address}}, {{property_suburb}}.\nUnit number: {{unit_number}}.',
+    purchase_terms: 'The purchase price is {{purchase_price}}.\nDeposit payable: {{deposit_amount}}.\nFinance type: {{finance_type}}.',
+    commission_terms: 'Commission is recorded as {{gross_commission_percentage}} of the purchase price.\nGross commission amount: {{gross_commission_amount}}.\nAgent commission amount: {{agent_commission_amount}}.\nAgency commission amount: {{agency_commission_amount}}.',
+    special_conditions: '{{special_conditions}}',
+    signature_pages: 'Signed by {{buyer_full_name}} and {{seller_full_name}}.',
+    parties: 'Buyer: {{buyer_full_name}}\nSeller: {{seller_full_name}}.',
+    terms: 'Purchase price: {{purchase_price}}.',
+    signatures: 'Signed by {{buyer_full_name}} and {{seller_full_name}}.',
+  }
+
+  const mandateDefaults = {
+    introduction_purpose: '{{mandate_introduction_purpose}}',
+    parties: 'Seller: {{seller_full_name}}\nSeller ID: {{seller_id_number}}\nSeller email: {{seller_email}}\nOrganisation: {{organisation_name}}\nAgent: {{agent_full_name}}',
+    property_details: 'Property address: {{property_display_address}}\nUnit: {{property_unit_number}}\nComplex / scheme: {{property_complex_name}}\nEstate: {{property_estate_name}}\nStreet address: {{property_address}}\nSuburb: {{property_suburb}}\nCity: {{property_city}}\nProperty type: {{property_type}}\nAsking price: {{asking_price}}',
+    mandate_terms: 'Mandate type: {{mandate_type}}\nStart date: {{mandate_start_date}}\nEnd date: {{mandate_end_date}}\nAuthority granted: {{mandate_authority_granted}}',
+    commission_terms: 'Commission structure: {{commission_structure}}\nCommission percentage: {{mandate_commission_percent}}\nCommission amount: {{mandate_commission_amount}}\nVAT handling: {{vat_handling}}\nAsking price: {{asking_price}}',
+    marketing_listing_terms: 'Listing price: {{asking_price}}\nMarketing permissions: {{mandate_marketing_permissions}}\nViewing / access arrangements: {{mandate_access_instructions}}',
+    special_conditions: '{{special_conditions}}',
+    signature_pages: 'Signed by {{seller_full_name}} and {{agent_full_name}} on behalf of {{organisation_name}}.',
+  }
+
+  const defaults = normalizedPacketType === 'mandate' ? mandateDefaults : otpDefaults
+  return defaults[lookupKey] || defaults[sectionLabel] || ''
+}
+
 function normalizeNullableText(value) {
   const text = normalizeText(value)
   return text || null
@@ -423,8 +493,10 @@ function detectTemplateTokenIssues(text = '') {
 
 function sectionsFromTemplate(template = null) {
   const sections = Array.isArray(template?.sections) ? template.sections : []
+  const packetType = normalizeText(template?.packet_type || template?.packetType || template?.metadata_json?.packet_type || template?.metadata_json?.packetType || 'otp')
   return sections.map((section, index) => {
-    const legalText = normalizeTemplateLegalText(section.legal_text || section.legalText || '')
+    const savedLegalText = normalizeTemplateLegalText(section.legal_text || section.legalText || '')
+    const legalText = savedLegalText || normalizeTemplateLegalText(getDefaultSectionLegalText(packetType, section))
     const metadata = section?.metadata_json && typeof section.metadata_json === 'object'
       ? section.metadata_json
       : section?.metadataJson && typeof section.metadataJson === 'object'
@@ -2186,7 +2258,7 @@ export default function SettingsSigningTemplatesPage({
   }
 
   return (
-    <div className={`space-y-6 pb-44 ${selectedTemplate && activeTab === 'template' ? 'xl:pb-40' : ''}`}>
+    <div className="space-y-6 pb-10">
       <header className="space-y-6 rounded-[28px] border border-[#dbe7f3] bg-white p-5 shadow-[0_18px_42px_rgba(15,23,42,0.05)] sm:p-6">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-3">
@@ -2290,15 +2362,15 @@ export default function SettingsSigningTemplatesPage({
       {activeTab === 'template' ? (
         selectedTemplate ? (
           <>
-            <form onSubmit={handleSaveDraftAction} className="grid gap-5 xl:grid-cols-[260px_minmax(0,1fr)_300px] xl:items-start">
-              <aside className="rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)] xl:sticky xl:top-4">
+            <form onSubmit={handleSaveDraftAction} className="grid gap-5 xl:h-[calc(100vh-220px)] xl:max-h-[760px] xl:min-h-[560px] xl:grid-cols-[260px_minmax(0,1fr)_300px] xl:items-stretch">
+              <aside className="rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)] xl:flex xl:min-h-0 xl:flex-col xl:self-stretch xl:overflow-hidden">
                 <div className="mb-4">
                   <h2 className="text-base font-semibold text-[#102033]">Document Outline</h2>
                   <p className="mt-1 text-sm leading-6 text-[#607387]">Click a section to edit that part of the document.</p>
                 </div>
 
                 {(form.sections || []).length ? (
-                  <div className="space-y-2">
+                  <div className="min-h-0 space-y-2 xl:flex-1 xl:overflow-y-auto xl:pr-1">
                     {(form.sections || []).map((section, index) => {
                       const active = selectedSectionIndex === index
                       const label = getFriendlySectionLabel(section, index)
@@ -2358,9 +2430,9 @@ export default function SettingsSigningTemplatesPage({
                 </button>
               </aside>
 
-              <main className="rounded-[20px] border border-[#dbe7f3] bg-white p-5 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
+              <main className="rounded-[20px] border border-[#dbe7f3] bg-white p-5 shadow-[0_16px_34px_rgba(15,23,42,0.05)] xl:flex xl:min-h-0 xl:flex-col xl:self-stretch">
                 {selectedSection ? (
-                  <div className="space-y-5">
+                  <div className="flex min-h-0 flex-1 flex-col gap-5">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                       <div className="min-w-0 flex-1">
                         <label className="grid gap-1.5 text-sm font-semibold text-[#102033]">
@@ -2424,7 +2496,7 @@ export default function SettingsSigningTemplatesPage({
                       </SettingsBanner>
                     ) : null}
 
-                    <div className="overflow-hidden rounded-[18px] border border-[#dbe7f3] bg-white">
+                    <div className="overflow-hidden rounded-[18px] border border-[#dbe7f3] bg-white xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
                       <div className="flex flex-wrap items-center gap-1 border-b border-[#e7eef6] bg-[#fbfdff] px-4 py-2.5">
                         <button type="button" className={studioQuietButtonClass}>Paragraph <ChevronDown size={14} /></button>
                         {[
@@ -2462,7 +2534,7 @@ export default function SettingsSigningTemplatesPage({
                         disabled={!canEdit}
                         onChange={(event) => updateSection(selectedSectionIndex, { legalText: event.target.value })}
                         placeholder="Write the wording for this section. Use variables like {{buyer_full_name}} where Arch9 should fill in transaction details."
-                        className="min-h-[430px] w-full resize-y border-0 bg-white px-5 py-5 text-[15px] leading-8 text-[#102033] outline-none disabled:bg-[#f8fbff] disabled:text-[#7b8da6]"
+                        className="min-h-[430px] w-full resize-y border-0 bg-white px-5 py-5 text-[15px] leading-8 text-[#102033] outline-none disabled:bg-[#f8fbff] disabled:text-[#7b8da6] xl:min-h-0 xl:flex-1 xl:resize-none xl:overflow-y-auto"
                       />
 
                       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e7eef6] bg-[#fbfdff] px-5 py-3 text-sm text-[#607387]">
@@ -2497,7 +2569,7 @@ export default function SettingsSigningTemplatesPage({
                 )}
               </main>
 
-              <aside className="space-y-4 xl:sticky xl:top-4">
+              <aside className="space-y-4 xl:min-h-0 xl:self-stretch xl:overflow-y-auto xl:pr-1">
                 <section className="rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
                   <h2 className="text-base font-semibold text-[#102033]">Insert variable</h2>
                   <label className="relative mt-4 block">
