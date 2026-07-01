@@ -693,8 +693,8 @@ function buildCanonicalPayload(inbound: ReturnType<typeof normalizeInboundPayloa
   });
   const parsedFields = (parseResult.fields || {}) as JsonRecord;
   const listingReference = normalizeText(parsedFields.listingReference);
-  const propertyInterest = normalizeText(parsedFields.propertyInterest);
   const propertyAddress = normalizeText(parsedFields.propertyAddress);
+  const propertyInterest = normalizeText(parsedFields.propertyInterest) || propertyAddress;
   const propertyTitle = normalizeText(parsedFields.propertyTitle) || [propertyInterest, listingReference].filter(Boolean).join(" - ");
   const propertyPrice = Number(parsedFields.propertyPrice || 0) || 0;
   return {

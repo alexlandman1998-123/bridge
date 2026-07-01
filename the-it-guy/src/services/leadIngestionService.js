@@ -111,8 +111,8 @@ export function normalizeEnquiryPayload(payload = {}, defaultSource = 'Other') {
   const phone = normalizePhone(payload.phone || contact.phone || payload.mobile || payload.fromPhone)
   const externalReference = normalizeText(payload.externalReference || payload.external_reference || payload.enquiryId || payload.enquiry_id || payload.id || payload.reference)
   const listingReference = normalizeText(payload.listingReference || payload.listing_reference || payload.externalListingReference || payload.external_listing_reference || payload.property24ListingId || payload.privatePropertyListingId)
-  const enquiredPropertyTitle = normalizeText(payload.enquiredPropertyTitle || payload.enquired_property_title || payload.propertyTitle || payload.property_title)
   const enquiredPropertyAddress = normalizeText(payload.enquiredPropertyAddress || payload.enquired_property_address || payload.propertyAddress || payload.property_address)
+  const enquiredPropertyTitle = normalizeText(payload.enquiredPropertyTitle || payload.enquired_property_title || payload.propertyTitle || payload.property_title)
   const enquiredPropertyPrice = payload.enquiredPropertyPrice ?? payload.enquired_property_price ?? payload.propertyPrice ?? payload.property_price
   return {
     organisationId: normalizeText(payload.organisationId || payload.organisation_id),
@@ -139,7 +139,7 @@ export function normalizeEnquiryPayload(payload = {}, defaultSource = 'Other') {
       priority: normalizeText(lead.priority || payload.priority) || 'Medium',
       budget: Number(lead.budget || payload.budget || payload.budgetMax || 0) || 0,
       areaInterest: normalizeText(lead.areaInterest || payload.areaInterest || payload.area || payload.suburb),
-      propertyInterest: normalizeText(lead.propertyInterest || payload.propertyInterest || payload.propertyType || payload.property_type),
+      propertyInterest: normalizeText(lead.propertyInterest || payload.propertyInterest || payload.propertyType || payload.property_type || enquiredPropertyAddress || enquiredPropertyTitle),
       listingId: normalizeText(lead.listingId || payload.listingId || payload.listing_id),
       enquiredPropertyTitle,
       enquiredPropertyAddress,

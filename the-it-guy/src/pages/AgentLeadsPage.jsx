@@ -229,6 +229,18 @@ const LEAD_SOURCE_PILL_STYLES = {
   unknown: { tone: 'slate', label: 'Unknown' },
 }
 const LEAD_SOURCE_PILL_FALLBACK = LEAD_SOURCE_PILL_STYLES.unknown
+const LEAD_SOURCE_LOGOS = {
+  property24: {
+    src: '/lead-sources/property24.png',
+    alt: 'Property24',
+    imageClassName: 'h-5 max-w-[88px]',
+  },
+  privateProperty: {
+    src: '/lead-sources/private-property.jpeg',
+    alt: 'Private Property',
+    imageClassName: 'h-6 max-w-[106px]',
+  },
+}
 const LEAD_SOURCE_PILL_ORDER = ['property24', 'privateProperty', 'whatsapp', 'call', 'website', 'referral', 'walkIn', 'unknown']
 const LEAD_SOURCE_OPTIONS = [
   'Property24',
@@ -4205,6 +4217,22 @@ function getLeadInitials(name = '') {
 
 function LeadSourcePill({ source = '' }) {
   const sourceKey = normalizeLeadSourceForPill(source)
+  const sourceLogo = LEAD_SOURCE_LOGOS[sourceKey]
+  if (sourceLogo) {
+    return (
+      <span
+        className="inline-flex h-8 min-w-[104px] max-w-[124px] items-center justify-center rounded-full border border-slate-200 bg-white px-3 shadow-sm"
+        title={sourceLogo.alt}
+      >
+        <img
+          src={sourceLogo.src}
+          alt={sourceLogo.alt}
+          className={`${sourceLogo.imageClassName} w-auto object-contain`}
+          loading="lazy"
+        />
+      </span>
+    )
+  }
   const sourceStyle = LEAD_SOURCE_PILL_STYLES[sourceKey] || LEAD_SOURCE_PILL_FALLBACK
   return <StatusPill tone={sourceStyle.tone}>{sourceStyle.label}</StatusPill>
 }
@@ -4535,7 +4563,6 @@ function LeadCreateModal({ open, category = 'buyer', form, setForm, saving, erro
                     formattedAddress: nextValue,
                   }))}
                   placeholder="116 Ridge Road"
-                  description="Start typing and select the real property address."
                 />
               </div>
               <label className="grid gap-1.5 text-sm font-semibold text-slate-600">

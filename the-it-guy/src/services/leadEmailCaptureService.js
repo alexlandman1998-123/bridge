@@ -1213,8 +1213,8 @@ export function parseInboundLeadEmail(input = {}, alias = {}) {
   const parsedFields = parseResult.fields || {}
   const externalReference = normalizeText(input.providerMessageId || input.provider_message_id || input.messageId || input.message_id || input.externalReference)
   const listingReference = normalizeText(parsedFields.listingReference)
-  const propertyInterest = normalizeText(parsedFields.propertyInterest)
   const propertyAddress = normalizeText(parsedFields.propertyAddress)
+  const propertyInterest = normalizeText(parsedFields.propertyInterest) || propertyAddress
   const propertyTitle = normalizeText(parsedFields.propertyTitle) || [propertyInterest, listingReference].filter(Boolean).join(' ')
 
   return {

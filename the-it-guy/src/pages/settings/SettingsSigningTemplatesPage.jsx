@@ -208,13 +208,40 @@ function createStarterSections(packetType = 'otp') {
         sortOrder: 3,
       },
       {
+        sectionKey: 'commission_terms',
+        sectionLabel: 'Commission Terms',
+        sectionType: 'dynamic_fields',
+        legalText: 'Commission structure: {{commission_structure}}\nCommission percentage: {{mandate_commission_percent}}\nCommission amount: {{mandate_commission_amount}}\nVAT handling: {{vat_handling}}\nAsking price: {{asking_price}}',
+        placeholderKeysText: 'commission_structure, mandate_commission_percent, mandate_commission_amount, vat_handling, asking_price',
+        isRequired: true,
+        sortOrder: 4,
+      },
+      {
+        sectionKey: 'marketing_listing_terms',
+        sectionLabel: 'Marketing / Listing Terms',
+        sectionType: 'dynamic_fields',
+        legalText: 'Listing price: {{asking_price}}\nMarketing permissions: {{mandate_marketing_permissions}}\nViewing / access arrangements: {{mandate_access_instructions}}',
+        placeholderKeysText: 'asking_price, mandate_marketing_permissions, mandate_access_instructions',
+        isRequired: false,
+        sortOrder: 5,
+      },
+      {
+        sectionKey: 'special_conditions',
+        sectionLabel: 'Special Conditions',
+        sectionType: 'legal_text',
+        legalText: '{{special_conditions}}',
+        placeholderKeysText: 'special_conditions',
+        isRequired: false,
+        sortOrder: 6,
+      },
+      {
         sectionKey: 'signature_pages',
         sectionLabel: 'Signature Pages',
         sectionType: 'signature_zone',
-        legalText: 'Signed by {{seller_full_name}} and {{agent_full_name}}',
-        placeholderKeysText: 'seller_full_name, agent_full_name',
+        legalText: 'Signed by {{seller_full_name}} and {{agent_full_name}} on behalf of {{organisation_name}}.',
+        placeholderKeysText: 'seller_full_name, agent_full_name, organisation_name',
         isRequired: true,
-        sortOrder: 4,
+        sortOrder: 7,
       },
     ]
   }
@@ -1139,7 +1166,9 @@ export default function SettingsSigningTemplatesPage({
   const [activeTab, setActiveTab] = useState('template')
   const [selectedSectionIndex, setSelectedSectionIndex] = useState(0)
   const [showPublishConfirm, setShowPublishConfirm] = useState(false)
+  const [pendingSectionTitleFocus, setPendingSectionTitleFocus] = useState(false)
   const clauseTextareaRef = useRef(null)
+  const sectionTitleInputRef = useRef(null)
 
   const administratorLabel = getWorkspaceAdministratorLabel({ appRole: role, workspaceType: resolvedWorkspaceType })
   const canEdit = canManageOrganisationSettings({ appRole: role, membershipRole, workspaceType: resolvedWorkspaceType })
@@ -1392,7 +1421,16 @@ export default function SettingsSigningTemplatesPage({
     () => (Array.isArray(form.sections) ? form.sections[selectedSectionIndex] || null : null),
     [form.sections, selectedSectionIndex],
   )
-  const selectedSectionLabel = selectedSection ? getFriendlySectionLabel(selectedSection, selectedSectionIndex) : ''
+
+  useEffect(() => {
+    if (!pendingSectionTitleFocus || !selectedSection) return
+    requestAnimationFrame(() => {
+      sectionTitleInputRef.current?.focus?.()
+      sectionTitleInputRef.current?.select?.()
+    })
+    setPendingSectionTitleFocus(false)
+  }, [pendingSectionTitleFocus, selectedSection])
+
   const selectedSectionDescription = selectedSection ? getSectionDescription(selectedSection, selectedSectionIndex) : ''
   const selectedSectionText = String(selectedSection?.legalText || '')
   const selectedSectionWordCount = selectedSectionText.trim() ? selectedSectionText.trim().split(/\s+/).length : 0
@@ -1729,6 +1767,7 @@ export default function SettingsSigningTemplatesPage({
       ],
     }))
     setSelectedSectionIndex(nextIndex)
+    setPendingSectionTitleFocus(true)
   }
 
   function updateSection(index, patch) {
@@ -2323,9 +2362,20 @@ export default function SettingsSigningTemplatesPage({
                 {selectedSection ? (
                   <div className="space-y-5">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                      <div>
-                        <h2 className="text-lg font-semibold text-[#102033]">{selectedSectionIndex + 1}. {selectedSectionLabel}</h2>
-                        <p className="mt-1 text-sm leading-6 text-[#607387]">{selectedSectionDescription}</p>
+                      <div className="min-w-0 flex-1">
+                        <label className="grid gap-1.5 text-sm font-semibold text-[#102033]">
+                          Section title
+                          <input
+                            ref={sectionTitleInputRef}
+                            type="text"
+                            value={selectedSection.sectionLabel}
+                            disabled={!canEdit}
+                            onChange={(event) => updateSection(selectedSectionIndex, { sectionLabel: event.target.value })}
+                            className="min-h-11 w-full rounded-[12px] border border-[#dbe7f3] bg-white px-3 text-base font-semibold text-[#102033] outline-none transition placeholder:text-[#9aabba] focus:border-[#96d7ad] focus:ring-4 focus:ring-[#e7f6ed] disabled:bg-[#f8fbff] disabled:text-[#7b8da6]"
+                            placeholder={`Section ${selectedSectionIndex + 1}`}
+                          />
+                        </label>
+                        <p className="mt-2 text-sm leading-6 text-[#607387]">{selectedSectionDescription}</p>
                       </div>
                       <details className="relative">
                         <summary className={`${studioSecondaryButtonClass} list-none cursor-pointer`}>
@@ -2514,8 +2564,8 @@ export default function SettingsSigningTemplatesPage({
               </aside>
             </form>
 
-            <div className="fixed inset-x-4 bottom-4 z-40 md:inset-x-6 lg:left-[calc(268px+1.5rem)] lg:right-6 xl:left-[calc(268px+2rem)] xl:right-8">
-              <div className="rounded-[20px] border border-[#dbe7f3] bg-white/95 p-4 shadow-[0_24px_50px_rgba(15,23,42,0.16)] backdrop-blur">
+            <div className="mt-5">
+              <div className="rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
                 <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)_auto] xl:items-center">
                   <button
                     type="button"
@@ -2789,6 +2839,7 @@ export default function SettingsSigningTemplatesPage({
                           <label className={settingsFieldClass}>
                             Section title
                             <input
+                              ref={sectionTitleInputRef}
                               type="text"
                               value={selectedSection.sectionLabel}
                               disabled={!canEdit || !selectedIsOrgOwned}
@@ -3130,8 +3181,8 @@ export default function SettingsSigningTemplatesPage({
               </div>
             </form>
 
-            <div className="sticky bottom-4 z-20">
-              <div className="rounded-[30px] border border-[#dbe7f3] bg-white/95 p-5 shadow-[0_26px_54px_rgba(15,23,42,0.14)] backdrop-blur">
+            <div className="mt-6">
+              <div className="rounded-[30px] border border-[#dbe7f3] bg-white p-5 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
                 <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
                   <div className="rounded-[22px] border border-[#dbe7f3] bg-[#f8fbff] px-4 py-4">
                     <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Next Step</p>
