@@ -11,6 +11,7 @@ import {
   logOnboardingSubmittedEmailSideEffects,
   notifyOwnerOnOnboardingSubmitted,
 } from "../services/onboardingSubmittedLogging.ts";
+import { ensureCanonicalClientInvite } from "../services/canonicalClientInvite.ts";
 import {
   markEmailDeliveryFailed,
   markEmailDeliverySent,
@@ -24,7 +25,7 @@ import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
 import { resolveAppBaseUrl } from "../utils/url.ts";
 
-const AUTH_MODEL = "token_scoped_client_portal_link";
+const AUTH_MODEL = "canonical_client_invite_with_token_portal_fallback";
 
 function normalizeUuidText(value: unknown) {
   const normalized = normalizeText(value).toLowerCase();
@@ -232,7 +233,26 @@ export async function handleOnboardingSubmittedEmail(
     });
   }
 
-  const clientPortalLink = `${appBaseUrl}/client/${clientPortalToken}`;
+  const legacyClientPortalLink = `${appBaseUrl}/client/${clientPortalToken}`;
+  const canonicalClientInvite: any = await ensureCanonicalClientInvite(supabase, {
+    email: buyerEmail,
+    clientRole: "buyer",
+    transactionId: transaction.id,
+    appBaseUrl,
+    legacyPortalLink: legacyClientPortalLink,
+    portalRedirectPath: `/client/${clientPortalToken}`,
+    metadata: {
+      source: "client_onboarding_submitted",
+      transaction_id: transaction.id,
+      buyer_id: buyerId || null,
+      client_portal_token: clientPortalToken,
+      client_portal_link_id: portalLinkQuery.data?.id || null,
+    },
+  }).catch((inviteError) => {
+    console.error("[onboarding_submitted] canonical client invite creation failed", inviteError);
+    return { ok: false, reason: "canonical_client_invite_error", inviteLink: "", legacyPortalLink: legacyClientPortalLink };
+  });
+  const clientPortalLink = canonicalClientInvite.inviteLink || legacyClientPortalLink;
 
   const payloadModel = buildOnboardingSubmittedEmailPayload({
     buyerName,
@@ -287,6 +307,10 @@ export async function handleOnboardingSubmittedEmail(
       transactionId: resolvedTransactionId,
       metadata: {
         clientPortalToken,
+        canonicalInviteId: canonicalClientInvite.inviteId || null,
+        canonicalInviteToken: canonicalClientInvite.token || null,
+        canonicalInviteLink: canonicalClientInvite.inviteLink || null,
+        legacyClientPortalLink,
         portalBuyerAligned,
       },
     },
@@ -342,6 +366,9 @@ export async function handleOnboardingSubmittedEmail(
     transactionId: transaction.id,
     recipientEmail: buyerEmail,
     clientPortalLink,
+    canonicalInviteLink: canonicalClientInvite.inviteLink || null,
+    canonicalInviteId: canonicalClientInvite.inviteId || null,
+    legacyClientPortalLink,
     transactionReference,
     authModel: AUTH_MODEL,
     authProfileExists,

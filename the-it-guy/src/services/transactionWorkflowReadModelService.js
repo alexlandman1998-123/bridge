@@ -20,7 +20,7 @@ import {
   isMissingTableError,
   requireClient,
 } from './attorneyFirmServiceShared'
-import { resolveTransactionRole } from './roleResolutionService'
+import { resolveTransactionParticipantShape } from './roleResolutionService'
 
 const READ_MODEL_WARNING_PREFIX = '[workflow-read-model]'
 const ATTORNEY_ASSIGNMENTS_MIGRATION_HINT = 'transaction_attorney_assignments table missing. Run migration 202605090011_transaction_attorney_assignments_foundation.sql.'
@@ -208,22 +208,25 @@ function mapDocumentRequestRows(rows = []) {
 }
 
 function mapParticipantRows(rows = []) {
-  return (rows || []).map((row) => ({
-    id: row.id,
-    transactionId: row.transaction_id,
-    userId: row.user_id || null,
-    roleType: toLower(row.role_type) || 'unknown',
-    legalRole: toLower(row.legal_role) || 'none',
-    transactionRole: resolveTransactionRole(row),
-    status: toLower(row.status) || 'draft',
-    visibility: normalizeVisibilityScope(row.visibility_scope || 'shared_role_players', 'shared_role_players'),
-    participantName: row.participant_name || null,
-    participantEmail: row.participant_email || null,
-    firmId: row.firm_id || null,
-    acceptedAt: row.accepted_at || null,
-    updatedAt: row.updated_at || null,
-    createdAt: row.created_at || null,
-  }))
+  return (rows || []).map((row) => {
+    const shape = resolveTransactionParticipantShape(row)
+    return {
+      id: row.id,
+      transactionId: row.transaction_id,
+      userId: row.user_id || null,
+      roleType: shape.roleType || 'unknown',
+      legalRole: shape.legalRole || 'none',
+      transactionRole: shape.transactionRole,
+      status: toLower(row.status) || 'draft',
+      visibility: normalizeVisibilityScope(row.visibility_scope || 'shared_role_players', 'shared_role_players'),
+      participantName: row.participant_name || null,
+      participantEmail: row.participant_email || null,
+      firmId: row.firm_id || null,
+      acceptedAt: row.accepted_at || null,
+      updatedAt: row.updated_at || null,
+      createdAt: row.created_at || null,
+    }
+  })
 }
 
 function mapEventRows(rows = []) {

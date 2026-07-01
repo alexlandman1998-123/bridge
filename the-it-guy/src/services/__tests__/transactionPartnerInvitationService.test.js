@@ -26,6 +26,8 @@ try {
   {
     assert.equal(normalizeTransactionPartnerInvitationRole('attorney'), 'transfer_attorney')
     assert.equal(normalizeTransactionPartnerInvitationRole('Conveyancer'), 'transfer_attorney')
+    assert.equal(normalizeTransactionPartnerInvitationRole('bond attorney'), 'bond_attorney')
+    assert.equal(normalizeTransactionPartnerInvitationRole('bond cancellation attorney'), 'cancellation_attorney')
     assert.equal(normalizeTransactionPartnerInvitationRole('bond originator'), 'bond_originator')
     assert.equal(normalizeTransactionPartnerInvitationRole('developer_contact'), 'developer')
     assert.equal(normalizeTransactionPartnerInvitationRole('unexpected'), 'other')
@@ -77,12 +79,16 @@ try {
 
   {
     assert.equal(getTransactionPartnerRoleLabel('transfer_attorney'), 'Transfer Attorney')
+    assert.equal(getTransactionPartnerRoleLabel('bond_attorney'), 'Bond Attorney')
+    assert.equal(getTransactionPartnerRoleLabel('cancellation_attorney'), 'Cancellation Attorney')
     assert.equal(getTransactionPartnerRoleLabel('bond_originator'), 'Bond Originator')
     assert.equal(getTransactionPartnerRoleLabel('developer'), 'Developer')
   }
 
   {
     assert.equal(normalizePartnerProspectRole('transfer_attorney'), 'attorney')
+    assert.equal(normalizePartnerProspectRole('bond_attorney'), 'attorney')
+    assert.equal(normalizePartnerProspectRole('cancellation_attorney'), 'attorney')
     assert.equal(normalizePartnerProspectRole('bond originator'), 'bond_originator')
     assert.equal(normalizePartnerProspectRole('developer_contact'), 'developer')
     assert.equal(normalizePartnerProspectRole('mystery'), 'other')
@@ -116,22 +122,26 @@ try {
     const invitation = normalizeTransactionPartnerInvitation({
       id: 'invite-1',
       transaction_id: 'transaction-1',
-      role_type: 'bond_originator',
+      role_type: 'bond_attorney',
       company_name: 'BetterBond',
       contact_name: 'Michael Naidoo',
       email: ' MICHAEL@BETTERBOND.CO.ZA ',
       status: 'pending',
       metadata: {
+        canonicalInviteToken: 'canon-token-1',
+        canonicalInviteUrl: 'https://app.arch9.co.za/invite/canon-token-1',
         emailDeliveryCount: 2,
         linkCopyCount: 1,
         lastLinkCopiedAt: '2026-06-26T08:00:00.000Z',
       },
     })
 
-    assert.equal(invitation.roleLabel, 'Bond Originator')
+    assert.equal(invitation.roleLabel, 'Bond Attorney')
     assert.equal(invitation.statusLabel, 'Pending')
     assert.equal(invitation.email, 'michael@betterbond.co.za')
     assert.equal(invitation.isExpired, false)
+    assert.equal(invitation.canonicalInviteToken, 'canon-token-1')
+    assert.equal(invitation.invitationLink, 'https://app.arch9.co.za/invite/canon-token-1')
     assert.equal(invitation.emailDeliveryCount, 2)
     assert.equal(invitation.linkCopyCount, 1)
     assert.equal(invitation.lastLinkCopiedAt, '2026-06-26T08:00:00.000Z')

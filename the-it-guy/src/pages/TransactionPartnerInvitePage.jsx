@@ -13,6 +13,7 @@ import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 const PROFESSIONAL_ROLE_OPTIONS = [
   { value: 'attorney', professionalRole: 'transfer_attorney', label: 'Transfer Attorney' },
   { value: 'attorney', professionalRole: 'bond_attorney', label: 'Bond Attorney' },
+  { value: 'attorney', professionalRole: 'cancellation_attorney', label: 'Cancellation Attorney' },
   { value: 'attorney', professionalRole: 'conveyancing_secretary', label: 'Conveyancing Secretary' },
   { value: 'bond_originator', professionalRole: 'bond_originator', label: 'Bond Originator' },
   { value: 'agent', professionalRole: 'estate_agent', label: 'Estate Agent' },
@@ -25,7 +26,7 @@ function normalizeText(value) {
 }
 
 function defaultAppRoleForInvitation(roleType) {
-  if (roleType === 'transfer_attorney') return 'attorney'
+  if (roleType === 'transfer_attorney' || roleType === 'bond_attorney' || roleType === 'cancellation_attorney') return 'attorney'
   if (roleType === 'bond_originator') return 'bond_originator'
   if (roleType === 'developer') return 'developer'
   return 'viewer'

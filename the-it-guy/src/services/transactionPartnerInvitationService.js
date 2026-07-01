@@ -1,7 +1,10 @@
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { createInvite, INVITE_TYPES } from './inviteService'
 
 export const TRANSACTION_PARTNER_INVITATION_ROLES = Object.freeze({
   transferAttorney: 'transfer_attorney',
+  bondAttorney: 'bond_attorney',
+  cancellationAttorney: 'cancellation_attorney',
   bondOriginator: 'bond_originator',
   developer: 'developer',
   other: 'other',
@@ -9,6 +12,8 @@ export const TRANSACTION_PARTNER_INVITATION_ROLES = Object.freeze({
 
 export const TRANSACTION_PARTNER_ROLE_LABELS = Object.freeze({
   transfer_attorney: 'Transfer Attorney',
+  bond_attorney: 'Bond Attorney',
+  cancellation_attorney: 'Cancellation Attorney',
   bond_originator: 'Bond Originator',
   developer: 'Developer',
   other: 'Transaction Partner',
@@ -16,6 +21,8 @@ export const TRANSACTION_PARTNER_ROLE_LABELS = Object.freeze({
 
 const ROLE_PLAYER_ROLE_TYPE = Object.freeze({
   transfer_attorney: 'transfer_attorney',
+  bond_attorney: 'bond_attorney',
+  cancellation_attorney: 'cancellation_attorney',
   bond_originator: 'bond_originator',
   developer: 'developer_contact',
   other: 'other',
@@ -23,6 +30,8 @@ const ROLE_PLAYER_ROLE_TYPE = Object.freeze({
 
 const PARTICIPANT_ROLE_SHAPE = Object.freeze({
   transfer_attorney: { roleType: 'attorney', legalRole: 'transfer', transactionRole: 'transfer_attorney' },
+  bond_attorney: { roleType: 'attorney', legalRole: 'bond', transactionRole: 'bond_attorney' },
+  cancellation_attorney: { roleType: 'attorney', legalRole: 'cancellation', transactionRole: 'cancellation_attorney' },
   bond_originator: { roleType: 'bond_originator', legalRole: 'none', transactionRole: 'bond_originator' },
   developer: { roleType: 'developer', legalRole: 'none', transactionRole: 'developer_contact' },
   other: { roleType: 'external_collaborator', legalRole: 'none', transactionRole: 'external_collaborator' },
@@ -44,6 +53,8 @@ const INVITATION_STATUS_LABELS = Object.freeze({
   expired: 'Expired',
 })
 
+const ATTORNEY_WORKFLOW_INVITATION_ROLES = new Set(['transfer_attorney', 'bond_attorney', 'cancellation_attorney'])
+const CANONICAL_TRANSACTION_INVITE_ROLES = new Set(['transfer_attorney', 'bond_originator'])
 const INVITATION_EXPIRY_SOON_MS = 3 * 24 * 60 * 60 * 1000
 
 function normalizeText(value) {
@@ -58,6 +69,8 @@ export function normalizeTransactionPartnerInvitationRole(value) {
   const normalized = normalizeText(value).toLowerCase()
   const compact = normalized.replace(/[\s-]+/g, '_')
   if (normalized === 'attorney' || normalized === 'conveyancer' || normalized === 'transfer') return 'transfer_attorney'
+  if (compact === 'bond_attorney' || compact === 'bond_registration_attorney' || compact === 'registration_attorney') return 'bond_attorney'
+  if (compact === 'cancellation_attorney' || compact === 'bond_cancellation_attorney' || compact === 'cancellation') return 'cancellation_attorney'
   if (compact === 'bond' || compact === 'originator' || compact === 'bondoriginator' || compact === 'bond_originator') return 'bond_originator'
   if (compact === 'developer_contact') return 'developer'
   if (Object.values(TRANSACTION_PARTNER_INVITATION_ROLES).includes(compact)) return compact
@@ -70,7 +83,7 @@ export function getTransactionPartnerRoleLabel(roleType) {
 
 export function normalizePartnerProspectRole(value) {
   const roleType = normalizeTransactionPartnerInvitationRole(value)
-  if (roleType === 'transfer_attorney') return 'attorney'
+  if (roleType === 'transfer_attorney' || roleType === 'bond_attorney' || roleType === 'cancellation_attorney') return 'attorney'
   if (roleType === 'bond_originator') return 'bond_originator'
   if (roleType === 'developer') return 'developer'
   return 'other'
@@ -120,6 +133,8 @@ export function normalizeTransactionPartnerInvitation(row = {}) {
   const emailDeliveryCount = Number(metadata.emailDeliveryCount || metadata.email_delivery_count || 0)
   const linkCopyCount = Number(metadata.linkCopyCount || metadata.link_copy_count || 0)
   const invitationToken = normalizeText(row.invitation_token || row.invitationToken)
+  const canonicalInviteToken = normalizeText(metadata.canonicalInviteToken || metadata.canonical_invite_token)
+  const canonicalInviteUrl = normalizeText(metadata.canonicalInviteUrl || metadata.canonical_invite_url) || canonicalInvitationUrlForToken(canonicalInviteToken)
   const expiresAt = row.expires_at || row.expiresAt || null
   const expiryTime = expiresAt ? new Date(expiresAt).getTime() : NaN
   const msUntilExpiry = Number.isNaN(expiryTime) ? null : expiryTime - Date.now()
@@ -142,7 +157,9 @@ export function normalizeTransactionPartnerInvitation(row = {}) {
     expiresSoon: status === 'pending' && msUntilExpiry !== null && msUntilExpiry > 0 && msUntilExpiry <= INVITATION_EXPIRY_SOON_MS,
     daysUntilExpiry: msUntilExpiry === null ? null : Math.max(0, Math.ceil(msUntilExpiry / (24 * 60 * 60 * 1000))),
     invitationToken,
-    invitationLink: isExpired ? '' : invitationUrlForToken(invitationToken),
+    canonicalInviteToken,
+    canonicalInviteUrl,
+    invitationLink: isExpired ? '' : canonicalInviteUrl || invitationUrlForToken(invitationToken),
     expiresAt,
     viewedAt: row.viewed_at || row.viewedAt || null,
     declinedAt: row.declined_at || row.declinedAt || null,
@@ -247,6 +264,11 @@ function getConfiguredInviteOrigin() {
 function invitationUrlForToken(token) {
   const origin = getConfiguredInviteOrigin()
   return token ? `${origin}/transaction-invite/${token}` : ''
+}
+
+function canonicalInvitationUrlForToken(token) {
+  const origin = getConfiguredInviteOrigin()
+  return token ? `${origin}/invite/${token}` : ''
 }
 
 export function buildTransactionPartnerInvitationLink(token) {
@@ -467,7 +489,7 @@ async function upsertInvitedParticipant(client, { transactionId, invitation, act
     can_comment: true,
     can_upload_documents: true,
     can_edit_finance_workflow: roleType === 'bond_originator',
-    can_edit_attorney_workflow: roleType === 'transfer_attorney',
+    can_edit_attorney_workflow: ATTORNEY_WORKFLOW_INVITATION_ROLES.has(roleType),
     can_edit_core_transaction: false,
     updated_at: nowIso,
   }
@@ -529,6 +551,135 @@ async function recordInvitationDelivery(client, { invitationId, emailResult, del
     return result.data || null
   } catch {
     return null
+  }
+}
+
+function getCanonicalTargetTransactionRole(roleType) {
+  const normalized = normalizeTransactionPartnerInvitationRole(roleType)
+  if (normalized === 'transfer_attorney') return 'attorney'
+  if (normalized === 'bond_originator') return 'bond_originator'
+  return normalized
+}
+
+function shouldCreateCanonicalTransactionInvite(roleType) {
+  return CANONICAL_TRANSACTION_INVITE_ROLES.has(normalizeTransactionPartnerInvitationRole(roleType))
+}
+
+async function findExistingCanonicalPartnerInvite(client, { transactionId, invitation, roleType }) {
+  const invitationId = normalizeText(invitation.id || invitation.invitation_id)
+  const email = normalizeText(invitation.email).toLowerCase()
+  if (!transactionId || !invitationId || !email) return null
+
+  try {
+    const result = await client
+      .from('invites')
+      .select('id, token, invite_type, status, target_transaction_id, target_transaction_role, email, metadata, created_at')
+      .eq('target_transaction_id', transactionId)
+      .eq('email', email)
+      .eq('invite_type', INVITE_TYPES.transaction)
+      .in('status', ['pending'])
+      .contains('metadata', { transaction_partner_invitation_id: invitationId })
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (result.error) return null
+    if (!result.data?.token) return null
+    return {
+      inviteId: result.data.id,
+      token: result.data.token,
+      inviteType: result.data.invite_type,
+      targetTransactionRole: result.data.target_transaction_role || getCanonicalTargetTransactionRole(roleType),
+      inviteUrl: canonicalInvitationUrlForToken(result.data.token),
+      reused: true,
+    }
+  } catch {
+    return null
+  }
+}
+
+async function persistCanonicalPartnerInviteReference(client, { invitationId, canonicalInvite }) {
+  if (!normalizeText(invitationId) || !canonicalInvite?.token) return null
+  try {
+    const existing = await client
+      .from('transaction_partner_invitations')
+      .select('metadata')
+      .eq('id', invitationId)
+      .maybeSingle()
+    const existingMetadata = existing.data?.metadata && typeof existing.data.metadata === 'object' ? existing.data.metadata : {}
+    const result = await client
+      .from('transaction_partner_invitations')
+      .update({
+        metadata: {
+          ...existingMetadata,
+          canonicalInviteId: canonicalInvite.inviteId || null,
+          canonicalInviteToken: canonicalInvite.token,
+          canonicalInviteType: canonicalInvite.inviteType || INVITE_TYPES.transaction,
+          canonicalInviteUrl: canonicalInvite.inviteUrl,
+          canonicalInviteUpdatedAt: new Date().toISOString(),
+        },
+      })
+      .eq('id', invitationId)
+      .select('id')
+      .maybeSingle()
+    if (result.error) return null
+    return result.data || null
+  } catch {
+    return null
+  }
+}
+
+async function ensureCanonicalTransactionPartnerInvite({ client, transactionId, invitation, roleType, actorUserId, metadata = {} }) {
+  const normalizedRoleType = normalizeTransactionPartnerInvitationRole(roleType)
+  if (!shouldCreateCanonicalTransactionInvite(normalizedRoleType)) return null
+
+  const invitationId = normalizeText(invitation.id || invitation.invitation_id)
+  const email = normalizeText(invitation.email).toLowerCase()
+  if (!transactionId || !invitationId || !email) return null
+
+  const existing = await findExistingCanonicalPartnerInvite(client, { transactionId, invitation, roleType: normalizedRoleType })
+  if (existing) {
+    await persistCanonicalPartnerInviteReference(client, { invitationId, canonicalInvite: existing })
+    return existing
+  }
+
+  const payload = {
+    invite_type: INVITE_TYPES.transaction,
+    target_transaction_id: transactionId,
+    target_transaction_role: getCanonicalTargetTransactionRole(normalizedRoleType),
+    email,
+    phone: invitation.phone || null,
+    expires_at: invitation.expires_at || invitation.expiresAt || null,
+    metadata: {
+      source: 'transaction_partner_invitations',
+      transaction_partner_invitation_id: invitationId,
+      partner_prospect_id: invitation.partner_prospect_id || invitation.partnerProspectId || null,
+      transaction_partner_role_type: normalizedRoleType,
+      professional_role: normalizedRoleType,
+      company_name: invitation.company_name || invitation.companyName || '',
+      contact_name: invitation.contact_name || invitation.contactName || '',
+      invited_by_user_id: actorUserId || null,
+      ...metadata,
+    },
+  }
+
+  try {
+    const result = await createInvite(payload)
+    const canonicalInvite = {
+      inviteId: result.invite_id || result.id || null,
+      token: result.token || '',
+      inviteType: result.invite_type || INVITE_TYPES.transaction,
+      targetTransactionRole: payload.target_transaction_role,
+      inviteUrl: canonicalInvitationUrlForToken(result.token),
+      reused: Boolean(result.idempotent),
+    }
+    await persistCanonicalPartnerInviteReference(client, { invitationId, canonicalInvite })
+    return canonicalInvite
+  } catch (error) {
+    return {
+      error,
+      failed: true,
+      message: error?.message || 'Unable to create canonical transaction invite.',
+    }
   }
 }
 
@@ -636,7 +787,18 @@ export async function createTransactionPartnerInvitation(input = {}) {
     invitation,
   })
 
-  const invitationUrl = invitationUrlForToken(invitation.invitation_token || token)
+  const canonicalInvite = await ensureCanonicalTransactionPartnerInvite({
+    client,
+    transactionId,
+    invitation,
+    roleType: validation.draft.roleType,
+    actorUserId,
+    metadata: {
+      delivery_source: input.metadata?.source || 'transaction_partner_invitation',
+    },
+  })
+  const legacyInvitationUrl = invitationUrlForToken(invitation.invitation_token || token)
+  const invitationUrl = canonicalInvite?.inviteUrl || legacyInvitationUrl
   const emailResult = await sendInvitationEmail({ transactionId, invitation, invitationUrl })
   const deliveryResult = await recordInvitationDelivery(client, {
     invitationId: invitation.id,
@@ -647,6 +809,8 @@ export async function createTransactionPartnerInvitation(input = {}) {
   return {
     invitation,
     partnerProspect,
+    canonicalInvite,
+    legacyInvitationUrl,
     invitationUrl,
     emailResult,
     deliveryResult,
@@ -818,7 +982,6 @@ export async function resendTransactionPartnerInvitation(invitationId) {
   if (result.error) throw result.error
   if (!result.data?.success) throw buildInvitationResendError(result.data)
 
-  const invitationUrl = invitationUrlForToken(result.data.token)
   const invitation = result.data.invitation || {
     id: result.data.invitationId || invitationId,
     transaction_id: result.data.transactionId,
@@ -833,8 +996,22 @@ export async function resendTransactionPartnerInvitation(invitationId) {
     partner_prospect_id: result.data.partnerProspectId || null,
     partnerProspectId: result.data.partnerProspectId || null,
   }
+  const transactionId = result.data.transactionId || invitation.transaction_id || invitation.transactionId
+  const roleType = invitation.role_type || invitation.roleType
+  const canonicalInvite = await ensureCanonicalTransactionPartnerInvite({
+    client,
+    transactionId,
+    invitation,
+    roleType,
+    actorUserId: null,
+    metadata: {
+      delivery_source: 'transaction_partner_invitation_resend',
+    },
+  })
+  const legacyInvitationUrl = invitationUrlForToken(result.data.token)
+  const invitationUrl = canonicalInvite?.inviteUrl || legacyInvitationUrl
   const emailResult = await sendInvitationEmail({
-    transactionId: result.data.transactionId || invitation.transaction_id || invitation.transactionId,
+    transactionId,
     invitation,
     invitationUrl,
     deliveryKind: 'resend',
@@ -847,6 +1024,8 @@ export async function resendTransactionPartnerInvitation(invitationId) {
 
   return {
     ...result.data,
+    canonicalInvite,
+    legacyInvitationUrl,
     invitationUrl,
     emailResult,
     deliveryResult,

@@ -14,6 +14,8 @@ function resolveRoleLabel(payload: SendTransactionPartnerInvitationPayload) {
   if (explicit) return explicit;
   const roleType = normalizeText(payload.roleType ?? payload.role_type);
   if (roleType === "transfer_attorney") return "Transfer Attorney";
+  if (roleType === "bond_attorney") return "Bond Attorney";
+  if (roleType === "cancellation_attorney") return "Cancellation Attorney";
   if (roleType === "bond_originator") return "Bond Originator";
   if (roleType === "developer") return "Developer";
   return "Transaction Partner";

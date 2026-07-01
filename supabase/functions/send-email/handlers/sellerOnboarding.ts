@@ -12,6 +12,7 @@ import {
   prepareEmailDelivery,
 } from "../services/communicationDeliveryLogging.ts";
 import { sendViaResendApi } from "../services/resend.ts";
+import { ensureCanonicalClientInvite } from "../services/canonicalClientInvite.ts";
 import { jsonResponse } from "../utils/http.ts";
 import {
   isMissingColumnError,
@@ -24,6 +25,19 @@ function toRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function extractSellerPortalToken(link: string) {
+  const normalized = normalizeText(link);
+  if (!normalized) return "";
+  try {
+    const parsed = new URL(normalized);
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    return parts[0] === "client" && parts[1] && parts[2] === "selling" ? parts[1] : "";
+  } catch {
+    const parts = normalized.split("?")[0].split("#")[0].split("/").filter(Boolean);
+    return parts[0] === "client" && parts[1] && parts[2] === "selling" ? parts[1] : "";
+  }
 }
 
 async function resolveSenderOrganisationBranding(
@@ -154,9 +168,10 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
   const emailKind = normalizeText(payload.emailKind) || "onboarding";
   const portalDocumentsMode = emailKind.toLowerCase() === "portal_documents" ||
     normalizeText(payload.type).toLowerCase() === "seller_portal_link";
-  const onboardingLink = portalDocumentsMode
+  let onboardingLink = portalDocumentsMode
     ? normalizeText(payload.portalLink) || normalizeText(payload.onboardingLink)
     : normalizeText(payload.onboardingLink);
+  const legacyOnboardingLink = onboardingLink;
   const agentName = normalizeText(payload.agentName);
   const organisationName = normalizeText(payload.organisationName) || "Arch9";
   const organisationId = normalizeText(payload.organisationId);
@@ -166,14 +181,38 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
     return jsonResponse(400, { error: "Missing required field: onboardingLink" });
   }
 
+  const supabase = supabaseUrl && serviceRoleKey
+    ? createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+    : null;
+  let canonicalClientInvite: any = null;
+  if (portalDocumentsMode && supabase) {
+    canonicalClientInvite = await ensureCanonicalClientInvite(supabase, {
+      email: to,
+      clientRole: "seller",
+      legacyPortalLink: legacyOnboardingLink,
+      metadata: {
+        source: "seller_portal_documents_ready",
+        organisation_id: organisationId || null,
+        listing_id: normalizeText(payload.listingId) || null,
+        lead_id: normalizeText(payload.leadId) || null,
+        seller_workspace_token: extractSellerPortalToken(legacyOnboardingLink) || null,
+      },
+    }).catch((inviteError) => {
+      console.error("[seller_onboarding] canonical seller invite creation failed", inviteError);
+      return null;
+    });
+    if (normalizeText(canonicalClientInvite?.inviteLink)) {
+      onboardingLink = normalizeText(canonicalClientInvite?.inviteLink);
+    }
+  }
+
   let templateOverrides = null;
   let senderOrganisationName = organisationName;
   let senderOrganisationLogoUrl = "";
-  if (organisationId && supabaseUrl && serviceRoleKey) {
+  if (organisationId && supabase) {
     try {
-      const supabase = createClient(supabaseUrl, serviceRoleKey, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
       const resolvedOrganisation = await resolveSenderOrganisationBranding(
         supabase,
         organisationId,
@@ -250,6 +289,10 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
         emailKind,
         portalDocumentsMode,
         onboardingLink,
+        canonicalInviteId: canonicalClientInvite?.inviteId || null,
+        canonicalInviteToken: canonicalClientInvite?.token || null,
+        canonicalInviteLink: canonicalClientInvite?.inviteLink || null,
+        legacyOnboardingLink,
         emailPurpose: communicationType,
       },
     },
@@ -285,6 +328,9 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
     type: portalDocumentsMode ? "seller_portal_link" : "seller_onboarding",
     emailId: emailResult.data?.id || null,
     deliveryId: delivery?.id || null,
+    canonicalInviteId: canonicalClientInvite?.inviteId || null,
+    canonicalInviteLink: canonicalClientInvite?.inviteLink || null,
+    legacyOnboardingLink: portalDocumentsMode ? legacyOnboardingLink : null,
     communicationType,
   });
 }

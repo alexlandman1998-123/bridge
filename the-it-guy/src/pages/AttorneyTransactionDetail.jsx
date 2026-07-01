@@ -114,6 +114,7 @@ import {
 } from '../services/transactionRoutingDiagnosticsService'
 import {
   buildTransactionPartnerInvitationLink,
+  createTransactionPartnerInvitation,
   getTransactionPartnerRoleLabel,
   listTransactionPartnerInvitations,
   recordTransactionPartnerInvitationLinkCopied,
@@ -3638,17 +3639,37 @@ function getPartnerInviteLifecycleRows(invitation = {}) {
   ].filter(Boolean)
 }
 
+const LEGAL_PARTNER_INVITE_ROLE_OPTIONS = [
+  { value: 'bond_attorney', label: 'Bond Attorney' },
+  { value: 'cancellation_attorney', label: 'Cancellation Attorney' },
+]
+
+function createInitialLegalPartnerInviteDraft() {
+  return {
+    roleType: 'bond_attorney',
+    companyName: '',
+    contactName: '',
+    email: '',
+    phone: '',
+  }
+}
+
 function PartnerInvitesSidePanel({
   invitations = [],
   loading = false,
   busyId = '',
   message = '',
   error = '',
+  canCreateLegalInvite = false,
+  createDraft = createInitialLegalPartnerInviteDraft(),
+  createBusy = false,
+  onCreateDraftChange,
+  onCreateSubmit,
   onRefresh,
   onResend,
   onCopy,
 }) {
-  if (!loading && !invitations.length && !message && !error) return null
+  if (!loading && !invitations.length && !message && !error && !canCreateLegalInvite) return null
 
   return (
     <OverviewSidePanel title="Partner Invites">
@@ -3669,6 +3690,56 @@ function PartnerInvitesSidePanel({
         <p className="mt-3 rounded-[12px] border border-warning/25 bg-warningSoft px-3 py-2 text-xs font-semibold text-warning">
           {error}
         </p>
+      ) : null}
+      {canCreateLegalInvite ? (
+        <form className="mt-3 rounded-[14px] border border-borderSoft bg-surfaceAlt p-3" onSubmit={onCreateSubmit}>
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">Invite Legal Partner</h4>
+          </div>
+          <div className="mt-3 grid gap-2">
+            <Field
+              as="select"
+              value={createDraft.roleType}
+              onChange={(event) => onCreateDraftChange?.({ ...createDraft, roleType: event.target.value })}
+              disabled={createBusy}
+            >
+              {LEGAL_PARTNER_INVITE_ROLE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Field>
+            <Field
+              value={createDraft.companyName}
+              onChange={(event) => onCreateDraftChange?.({ ...createDraft, companyName: event.target.value })}
+              placeholder="Firm or company"
+              disabled={createBusy}
+            />
+            <Field
+              value={createDraft.contactName}
+              onChange={(event) => onCreateDraftChange?.({ ...createDraft, contactName: event.target.value })}
+              placeholder="Contact person"
+              disabled={createBusy}
+            />
+            <Field
+              type="email"
+              value={createDraft.email}
+              onChange={(event) => onCreateDraftChange?.({ ...createDraft, email: event.target.value })}
+              placeholder="Email address"
+              disabled={createBusy}
+            />
+            <Field
+              value={createDraft.phone}
+              onChange={(event) => onCreateDraftChange?.({ ...createDraft, phone: event.target.value })}
+              placeholder="Phone optional"
+              disabled={createBusy}
+            />
+            <Button type="submit" size="sm" disabled={createBusy}>
+              <Send size={13} />
+              {createBusy ? 'Inviting' : 'Send Invite'}
+            </Button>
+          </div>
+        </form>
       ) : null}
       <div className="mt-3 space-y-3">
         {loading && !invitations.length ? (
@@ -4262,6 +4333,8 @@ function AttorneyTransactionDetail() {
   const [partnerInvitationBusyId, setPartnerInvitationBusyId] = useState('')
   const [partnerInvitationMessage, setPartnerInvitationMessage] = useState('')
   const [partnerInvitationError, setPartnerInvitationError] = useState('')
+  const [legalPartnerInviteDraft, setLegalPartnerInviteDraft] = useState(createInitialLegalPartnerInviteDraft)
+  const [legalPartnerInviteBusy, setLegalPartnerInviteBusy] = useState(false)
   const [roleplayerForm, setRoleplayerForm] = useState({
     buyerName: '',
     buyerEmail: '',
@@ -4579,6 +4652,8 @@ function AttorneyTransactionDetail() {
   )
   const activeLegalWorkflowDetailKey = normalizeLegalWorkflowDetailKey(workflowDetailKey)
   const canManageTransactionRoleplayers = ['agent', 'agency_admin', 'principal', 'admin', 'internal_admin', 'developer'].includes(String(workspaceRole || '').toLowerCase())
+  const canCreateLegalPartnerInvites = workspaceRole === 'attorney'
+  const canViewPartnerInvitations = canManageTransactionRoleplayers || canCreateLegalPartnerInvites
   const canRequestTransactionDocuments =
     workspaceRole === 'bond_originator' ||
     workspaceRole === 'attorney' ||
@@ -4602,7 +4677,7 @@ function AttorneyTransactionDetail() {
   const activeWorkspaceMenu = availableWorkspaceTabs.some((tab) => tab.id === requestedWorkspaceMenu) ? requestedWorkspaceMenu : 'overview'
 
   const loadPartnerInvitations = useCallback(async () => {
-    if (!transaction?.id || !canManageTransactionRoleplayers) {
+    if (!transaction?.id || !canViewPartnerInvitations) {
       setPartnerInvitations([])
       setPartnerInvitationLoading(false)
       setPartnerInvitationError('')
@@ -4620,7 +4695,7 @@ function AttorneyTransactionDetail() {
     } finally {
       setPartnerInvitationLoading(false)
     }
-  }, [canManageTransactionRoleplayers, transaction?.id])
+  }, [canViewPartnerInvitations, transaction?.id])
 
   useEffect(() => {
     setPartnerInvitationBusyId('')
@@ -4672,6 +4747,54 @@ function AttorneyTransactionDetail() {
       await loadPartnerInvitations()
     } catch {
       setPartnerInvitationError('Unable to copy the invite link from this browser.')
+    }
+  }
+
+  async function handleCreateLegalPartnerInvite(event) {
+    event.preventDefault()
+    if (!transaction?.id || !canCreateLegalPartnerInvites) return
+
+    const draft = {
+      roleType: legalPartnerInviteDraft.roleType,
+      companyName: String(legalPartnerInviteDraft.companyName || '').trim(),
+      contactName: String(legalPartnerInviteDraft.contactName || '').trim(),
+      email: String(legalPartnerInviteDraft.email || '').trim().toLowerCase(),
+      phone: String(legalPartnerInviteDraft.phone || '').trim(),
+    }
+
+    if (!LEGAL_PARTNER_INVITE_ROLE_OPTIONS.some((option) => option.value === draft.roleType)) {
+      setPartnerInvitationError('Choose a valid legal partner role.')
+      return
+    }
+    if (!draft.companyName || !draft.contactName || !draft.email) {
+      setPartnerInvitationError('Firm, contact, and email are required.')
+      return
+    }
+
+    try {
+      setLegalPartnerInviteBusy(true)
+      setPartnerInvitationMessage('')
+      setPartnerInvitationError('')
+      const result = await createTransactionPartnerInvitation({
+        transactionId: transaction.id,
+        ...draft,
+        metadata: {
+          source: 'attorney_transaction_detail_legal_partner_invite',
+          invitedByRole: workspaceRole,
+        },
+      })
+      const sent = result?.emailResult?.sent === true || result?.emailResult?.ok === true
+      setLegalPartnerInviteDraft(createInitialLegalPartnerInviteDraft())
+      setPartnerInvitationMessage(
+        sent
+          ? `${getTransactionPartnerRoleLabel(draft.roleType)} invite sent to ${draft.email}.`
+          : `${getTransactionPartnerRoleLabel(draft.roleType)} invite saved, but email delivery needs attention.`,
+      )
+      await loadPartnerInvitations()
+    } catch (inviteError) {
+      setPartnerInvitationError(inviteError?.message || 'Unable to create this legal partner invite.')
+    } finally {
+      setLegalPartnerInviteBusy(false)
     }
   }
 
@@ -8553,13 +8676,18 @@ function AttorneyTransactionDetail() {
                       ))}
                     </div>
                   </OverviewSidePanel>
-                  {canManageTransactionRoleplayers ? (
+                  {canViewPartnerInvitations ? (
                     <PartnerInvitesSidePanel
                       invitations={partnerInvitations}
                       loading={partnerInvitationLoading}
                       busyId={partnerInvitationBusyId}
                       message={partnerInvitationMessage}
                       error={partnerInvitationError}
+                      canCreateLegalInvite={canCreateLegalPartnerInvites}
+                      createDraft={legalPartnerInviteDraft}
+                      createBusy={legalPartnerInviteBusy}
+                      onCreateDraftChange={setLegalPartnerInviteDraft}
+                      onCreateSubmit={handleCreateLegalPartnerInvite}
                       onRefresh={loadPartnerInvitations}
                       onResend={handleResendPartnerInvitation}
                       onCopy={handleCopyPartnerInvitation}

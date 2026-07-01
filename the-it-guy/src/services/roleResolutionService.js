@@ -117,6 +117,96 @@ export function resolveTransactionRole(participant = {}) {
   return normalizeTransactionRole(roleType, TRANSACTION_ROLES.externalCollaborator)
 }
 
+export function resolveTransactionParticipantShape(participant = {}) {
+  const explicitTransactionRole = normalizeTransactionRole(participant?.transaction_role || participant?.transactionRole, '')
+  const rawRoleType = normalizeKey(
+    participant?.role_type ||
+      participant?.roleType ||
+      participant?.participant_role ||
+      participant?.participantRole ||
+      participant?.target_transaction_role ||
+      participant?.targetTransactionRole,
+  )
+  const rawLegalRole = normalizeKey(participant?.legal_role || participant?.legalRole)
+
+  let roleType = rawRoleType
+  let legalRole = rawLegalRole || 'none'
+  let transactionRole = explicitTransactionRole
+
+  if (transactionRole) {
+    if (transactionRole === TRANSACTION_ROLES.transferAttorney) {
+      roleType = 'attorney'
+      legalRole = 'transfer'
+    } else if (transactionRole === TRANSACTION_ROLES.bondAttorney) {
+      roleType = 'attorney'
+      legalRole = 'bond'
+    } else if (transactionRole === TRANSACTION_ROLES.cancellationAttorney) {
+      roleType = 'attorney'
+      legalRole = 'cancellation'
+    } else if (transactionRole === TRANSACTION_ROLES.listingAgent || transactionRole === TRANSACTION_ROLES.sellingAgent) {
+      roleType = 'agent'
+      legalRole = 'none'
+    } else if (transactionRole === TRANSACTION_ROLES.bondOriginator) {
+      roleType = 'bond_originator'
+      legalRole = 'none'
+    } else if (transactionRole === TRANSACTION_ROLES.developerContact) {
+      roleType = 'developer'
+      legalRole = 'none'
+    } else if (transactionRole === TRANSACTION_ROLES.buyer) {
+      roleType = rawRoleType === 'client' ? 'client' : 'buyer'
+      legalRole = 'none'
+    } else if (transactionRole === TRANSACTION_ROLES.seller) {
+      roleType = 'seller'
+      legalRole = 'none'
+    } else if (transactionRole === TRANSACTION_ROLES.externalCollaborator) {
+      roleType = rawRoleType || 'client'
+      legalRole = 'none'
+    }
+  } else {
+    if (['transfer_attorney', 'conveyancer', 'attorney'].includes(roleType)) {
+      roleType = 'attorney'
+      legalRole = legalRole === 'bond' || legalRole === 'cancellation' ? legalRole : 'transfer'
+    } else if (roleType === 'bond_attorney') {
+      roleType = 'attorney'
+      legalRole = 'bond'
+    } else if (roleType === 'cancellation_attorney') {
+      roleType = 'attorney'
+      legalRole = 'cancellation'
+    } else if (roleType === 'listing_agent' || roleType === 'selling_agent' || roleType === 'sales_agent' || roleType === 'estate_agent') {
+      roleType = 'agent'
+      legalRole = 'none'
+    } else if (roleType === 'bondoriginator') {
+      roleType = 'bond_originator'
+      legalRole = 'none'
+    } else if (roleType === 'developer_contact' || roleType === 'developer_rep') {
+      roleType = 'developer'
+      legalRole = 'none'
+    } else if (roleType === 'client') {
+      legalRole = 'none'
+    } else if (!roleType) {
+      roleType = 'client'
+      legalRole = 'none'
+    } else if (roleType !== 'attorney') {
+      legalRole = 'none'
+    }
+    transactionRole = resolveTransactionRole({ role_type: roleType, legal_role: legalRole })
+  }
+
+  if (roleType === 'attorney') {
+    legalRole = ['transfer', 'bond', 'cancellation'].includes(legalRole) ? legalRole : 'transfer'
+  } else {
+    legalRole = 'none'
+  }
+
+  transactionRole = normalizeTransactionRole(transactionRole, resolveTransactionRole({ role_type: roleType, legal_role: legalRole }))
+
+  return {
+    roleType,
+    legalRole,
+    transactionRole,
+  }
+}
+
 export function getLegacyAppRoleForWorkspace(workspaceType = '', workspaceRole = '') {
   const normalizedWorkspaceType = normalizeWorkspaceType(workspaceType)
   if (normalizedWorkspaceType === 'agency') return APP_ROLES.agent

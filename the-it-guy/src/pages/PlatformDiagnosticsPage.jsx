@@ -15,6 +15,7 @@ import { getDemoEnvironmentSummary, resetDemoEnvironment } from '../services/dem
 import { calculateLaunchReadiness } from '../services/release/launchReadiness'
 import { getUniversalPartnerRoutingDiagnosticsSnapshot } from '../services/universalPartnerRoutingService'
 import { getUniversalAssignmentDiagnosticsSnapshot } from '../services/universalAssignmentService'
+import { applyCanonicalInviteReconciliation, getCanonicalInviteHealth, reconcileCanonicalInvites } from '../services/inviteOperationsService'
 
 function StatCard({ label, value, tone = 'neutral' }) {
   const toneClass =
@@ -63,6 +64,10 @@ function IssueList({ issues = [] }) {
   )
 }
 
+function sumActionCounts(actions = []) {
+  return (Array.isArray(actions) ? actions : []).reduce((total, action) => total + Number(action?.count || 0), 0)
+}
+
 export default function PlatformDiagnosticsPage() {
   const { authState } = useAuthSession()
   const { currentWorkspace } = useWorkspace()
@@ -81,6 +86,11 @@ export default function PlatformDiagnosticsPage() {
   const [routingLoading, setRoutingLoading] = useState(false)
   const [assignmentDiagnostics, setAssignmentDiagnostics] = useState(null)
   const [assignmentLoading, setAssignmentLoading] = useState(false)
+  const [inviteHealth, setInviteHealth] = useState(null)
+  const [inviteReconciliation, setInviteReconciliation] = useState(null)
+  const [inviteLoading, setInviteLoading] = useState(false)
+  const [inviteApplyLoading, setInviteApplyLoading] = useState(false)
+  const [inviteApplyResult, setInviteApplyResult] = useState(null)
 
   useEffect(() => {
     if (entityType === 'user') setEntityId(authState.user?.id || '')
@@ -89,6 +99,8 @@ export default function PlatformDiagnosticsPage() {
 
   const summary = useMemo(() => result?.summary || result || {}, [result])
   const issues = result?.issues || []
+  const inviteReconciliationActionCount = sumActionCounts(inviteReconciliation?.actions)
+  const inviteAppliedActionCount = sumActionCounts(inviteApplyResult?.actions)
 
   async function loadOperationsCenter() {
     try {
@@ -169,6 +181,48 @@ export default function PlatformDiagnosticsPage() {
       setError(assignmentError?.message || 'Assignment diagnostics failed.')
     } finally {
       setAssignmentLoading(false)
+    }
+  }
+
+  async function loadInviteDiagnostics() {
+    try {
+      setInviteLoading(true)
+      setError('')
+      setInviteApplyResult(null)
+      const [health, reconciliation] = await Promise.all([
+        getCanonicalInviteHealth(),
+        reconcileCanonicalInvites({ dryRun: true }),
+      ])
+      setInviteHealth(health)
+      setInviteReconciliation(reconciliation)
+    } catch (inviteError) {
+      setError(inviteError?.message || 'Canonical invite diagnostics failed.')
+    } finally {
+      setInviteLoading(false)
+    }
+  }
+
+  async function applyInviteReconciliation() {
+    const pendingActionCount = sumActionCounts(inviteReconciliation?.actions)
+    if (!pendingActionCount) return
+    const confirmed = window.confirm(`Apply ${pendingActionCount} canonical invite reconciliation update${pendingActionCount === 1 ? '' : 's'}? This writes audit events and repair logs.`)
+    if (!confirmed) return
+
+    try {
+      setInviteApplyLoading(true)
+      setError('')
+      const applied = await applyCanonicalInviteReconciliation()
+      const [health, reconciliation] = await Promise.all([
+        getCanonicalInviteHealth(),
+        reconcileCanonicalInvites({ dryRun: true }),
+      ])
+      setInviteApplyResult(applied)
+      setInviteHealth(health)
+      setInviteReconciliation(reconciliation)
+    } catch (inviteError) {
+      setError(inviteError?.message || 'Canonical invite reconciliation failed.')
+    } finally {
+      setInviteApplyLoading(false)
     }
   }
 
@@ -357,6 +411,89 @@ export default function PlatformDiagnosticsPage() {
                     </ul>
                   ) : (
                     <p className="mt-3 text-sm text-[#60758d]">No recent routing events recorded.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-white p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Canonical invite diagnostics</h2>
+              <p className="mt-2 text-sm text-[#60758d]">
+                Monitor partner, buyer, and seller invite activation sync across canonical invites, participants, and portal records.
+              </p>
+            </div>
+            <button type="button" className="header-secondary-cta" onClick={loadInviteDiagnostics} disabled={inviteLoading}>
+              {inviteLoading ? 'Checking invites...' : 'Run invite diagnostics'}
+            </button>
+          </div>
+
+          {inviteHealth ? (
+            <div className="grid gap-4">
+              <div className="grid gap-3 md:grid-cols-4">
+                <StatCard label="Invite health" value={inviteHealth.status || 'unknown'} tone={inviteHealth.status === 'critical' ? 'critical' : inviteHealth.status === 'warning' ? 'warning' : 'success'} />
+                <StatCard label="Pending partners" value={inviteHealth.totals?.pendingPartnerInvites || 0} />
+                <StatCard label="Pending clients" value={inviteHealth.totals?.pendingClientInvites || 0} />
+                <StatCard label="Stale pending" value={inviteHealth.totals?.stalePendingInvites || 0} tone={inviteHealth.totals?.stalePendingInvites ? 'warning' : 'success'} />
+              </div>
+              <div className="grid gap-3 md:grid-cols-4">
+                <StatCard label="Partner gaps" value={inviteHealth.totals?.partnerSyncGaps || 0} tone={inviteHealth.totals?.partnerSyncGaps ? 'critical' : 'success'} />
+                <StatCard label="Buyer participant gaps" value={inviteHealth.totals?.buyerParticipantSyncGaps || 0} tone={inviteHealth.totals?.buyerParticipantSyncGaps ? 'critical' : 'success'} />
+                <StatCard label="Portal gaps" value={(inviteHealth.totals?.buyerPortalSyncGaps || 0) + (inviteHealth.totals?.sellerPortalSyncGaps || 0)} tone={(inviteHealth.totals?.buyerPortalSyncGaps || inviteHealth.totals?.sellerPortalSyncGaps) ? 'warning' : 'success'} />
+                <StatCard label="Duplicate pending" value={inviteHealth.totals?.duplicatePendingInvites || 0} tone={inviteHealth.totals?.duplicatePendingInvites ? 'warning' : 'success'} />
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Invite issues</h3>
+                  {inviteHealth.issues?.length ? (
+                    <ul className="mt-3 space-y-2 text-sm text-[#60758d]">
+                      {inviteHealth.issues.map((issue) => (
+                        <li key={issue.code} className="flex items-start justify-between gap-3 border-b border-[#edf1f6] py-2 last:border-0">
+                          <span>{String(issue.code || '').replace(/_/g, ' ')}</span>
+                          <span className="font-semibold text-[#31485e]">{issue.count || 0}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-sm text-[#60758d]">No canonical invite issues detected.</p>
+                  )}
+                </div>
+                <div className="rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Dry-run reconciliation</h3>
+                  {inviteReconciliation?.actions?.length ? (
+                    <>
+                      <ul className="mt-3 space-y-2 text-sm text-[#60758d]">
+                        {inviteReconciliation.actions.map((action) => (
+                          <li key={action.code} className="flex items-center justify-between gap-3 border-b border-[#edf1f6] py-2 last:border-0">
+                            <span>{String(action.code || '').replace(/_/g, ' ')}</span>
+                            <span className="font-semibold text-[#31485e]">{action.count || 0}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-[#dde4ee] bg-white p-3">
+                        <p className="text-sm text-[#60758d]">
+                          {inviteReconciliationActionCount ? `${inviteReconciliationActionCount} update${inviteReconciliationActionCount === 1 ? '' : 's'} ready to apply.` : 'No reconciliation updates are currently needed.'}
+                        </p>
+                        <button
+                          type="button"
+                          className="header-primary-cta"
+                          onClick={applyInviteReconciliation}
+                          disabled={inviteApplyLoading || inviteLoading || !inviteReconciliationActionCount}
+                        >
+                          {inviteApplyLoading ? 'Applying...' : 'Apply reconciliation'}
+                        </button>
+                      </div>
+                      {inviteApplyResult ? (
+                        <div className="mt-3 rounded-[12px] border border-[#cfe8d8] bg-[#effaf3] p-3 text-sm text-[#236340]">
+                          Applied {inviteAppliedActionCount} reconciliation update{inviteAppliedActionCount === 1 ? '' : 's'} and refreshed invite health.
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="mt-3 text-sm text-[#60758d]">Run diagnostics to preview reconciliation work.</p>
                   )}
                 </div>
               </div>

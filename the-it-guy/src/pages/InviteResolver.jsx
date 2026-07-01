@@ -145,6 +145,8 @@ function isCommercialInvite(invite = {}) {
 }
 
 function getRedirectTarget(result = {}) {
+  const portalRedirect = getInvitePortalRedirect(result.invite)
+  if (portalRedirect) return portalRedirect
   if (isPrincipalClaimInvite(result.invite)) return '/onboarding/profile'
   if (isCommercialInvite(result.invite)) return '/commercial'
   if (result.redirect_to) return result.redirect_to
@@ -153,10 +155,36 @@ function getRedirectTarget(result = {}) {
 }
 
 function getInviteTarget(invite = {}) {
+  const portalRedirect = getInvitePortalRedirect(invite)
+  if (portalRedirect) return portalRedirect
   if (isPrincipalClaimInvite(invite)) return '/onboarding/profile'
   if (isCommercialInvite(invite)) return '/commercial'
   if (invite.targetTransactionId) return `/transactions/${invite.targetTransactionId}`
   return '/dashboard'
+}
+
+function getInvitePortalRedirect(invite = {}) {
+  const metadata = invite?.metadata && typeof invite.metadata === 'object' ? invite.metadata : {}
+  const inviteType = invite?.inviteType || invite?.invite_type || ''
+  if (inviteType !== INVITE_TYPES.client) return ''
+  const redirect = normalizeText(
+    metadata.portal_redirect_path ||
+      metadata.portalRedirectPath ||
+      metadata.client_portal_path ||
+      metadata.clientPortalPath ||
+      metadata.seller_portal_path ||
+      metadata.sellerPortalPath,
+  )
+  if (redirect.startsWith('/')) return redirect
+  try {
+    const parsed = new URL(redirect)
+    if (typeof window !== 'undefined' && parsed.origin === window.location.origin) {
+      return `${parsed.pathname}${parsed.search}${parsed.hash}`
+    }
+  } catch {
+    return ''
+  }
+  return ''
 }
 
 function clearPendingInviteToken() {
@@ -486,7 +514,7 @@ export default function InviteResolver() {
     } finally {
       setSaving(false)
     }
-  }, [invitedEmail, navigate, sessionEmail, token])
+  }, [invite, invitedEmail, navigate, sessionEmail, token])
 
   useEffect(() => {
     const safeToken = normalizeText(token)

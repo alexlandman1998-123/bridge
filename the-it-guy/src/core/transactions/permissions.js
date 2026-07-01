@@ -7,11 +7,16 @@ export function normalizeRoleType(value) {
   const normalized = String(value || '')
     .trim()
     .toLowerCase()
+    .replace(/[\s-]+/g, '_')
 
   if (
     [
       'conveyancer',
       'transfer_conveyancer',
+      'transfer_attorney',
+      'bond_attorney',
+      'cancellation_attorney',
+      'conveyancing_secretary',
       'buyer_attorney',
       'seller_attorney',
       'tuckers',
@@ -20,11 +25,19 @@ export function normalizeRoleType(value) {
     return 'attorney'
   }
 
-  if (['bondoriginator', 'bond originator'].includes(normalized)) {
+  if (['bondoriginator', 'bond_originator'].includes(normalized)) {
     return 'bond_originator'
   }
 
-  if (['internal admin', 'internal-admin'].includes(normalized)) {
+  if (['listing_agent', 'selling_agent', 'estate_agent', 'sales_agent'].includes(normalized)) {
+    return 'agent'
+  }
+
+  if (['developer_contact', 'developer_rep'].includes(normalized)) {
+    return 'developer'
+  }
+
+  if (['internal_admin'].includes(normalized)) {
     return 'internal_admin'
   }
 

@@ -143,7 +143,7 @@ import { resolveTransactionRollup } from '../../server/services/transactionWorkf
 import { resolveLegalDocumentRequirements } from '../services/attorneyWorkflow/attorneyDocumentRequirementsResolver'
 import { normalizePropertyCategory, PROPERTY_CATEGORIES } from './propertyTaxonomy'
 import { getSuggestedRescheduleSlots } from './appointmentAvailabilityEngine'
-import { resolveSystemRole, resolveTransactionRole } from '../services/roleResolutionService'
+import { resolveSystemRole, resolveTransactionParticipantShape } from '../services/roleResolutionService'
 import { assertWorkspaceEntitlementLimit } from '../services/workspaceEntitlementsService'
 import {
   BOND_NOTIFICATION_EVENTS,
@@ -8182,10 +8182,11 @@ async function buildLiveTransactionChecklistData(
 }
 
 function normalizeTransactionParticipantRow(row) {
-  const roleType = normalizeRoleType(row?.role_type)
-  const transactionRole = resolveTransactionRole(row)
+  const shape = resolveTransactionParticipantShape(row)
+  const roleType = normalizeRoleType(shape.roleType)
+  const transactionRole = shape.transactionRole
   const fallbackPermissions = getRolePermissions({ role: roleType, financeManagedBy: 'bond_originator' })
-  const legalRole = normalizeAttorneyLegalRole(row?.legal_role, roleType === 'attorney' ? 'transfer' : 'none')
+  const legalRole = normalizeAttorneyLegalRole(shape.legalRole, roleType === 'attorney' ? 'transfer' : 'none')
   const stakeholderStatus = normalizeStakeholderStatus(row?.status, row?.removed_at ? 'removed' : 'active')
   const participantScope = String(row?.participant_scope || '')
     .trim()
@@ -25564,11 +25565,16 @@ export async function addStakeholder({
     throw new Error('Transaction is required.')
   }
 
-  const normalizedRoleType = normalizeRoleType(roleType)
+  const participantShape = resolveTransactionParticipantShape({
+    role_type: roleType,
+    legal_role: legalRole,
+  })
+  const normalizedRoleType = normalizeRoleType(participantShape.roleType)
   const normalizedLegalRole =
     normalizedRoleType === 'attorney'
-      ? normalizeAttorneyLegalRole(legalRole, 'transfer')
+      ? normalizeAttorneyLegalRole(participantShape.legalRole, 'transfer')
       : 'none'
+  const normalizedTransactionRole = participantShape.transactionRole
   const actorProfile = await resolveActiveProfileContext(client)
   const transaction = await fetchTransactionAccessControlRow(client, transactionId)
   if (!transaction) {
@@ -25613,7 +25619,7 @@ export async function addStakeholder({
     transaction_id: transactionId,
     role_type: normalizedRoleType,
     legal_role: normalizedLegalRole,
-    transaction_role: resolveTransactionRole({ role_type: normalizedRoleType, legal_role: normalizedLegalRole }),
+    transaction_role: normalizedTransactionRole,
     status: normalizedStatus,
     user_id: resolvedUserId,
     participant_name: normalizeNullableText(participantName),
@@ -25825,7 +25831,7 @@ export async function inviteStakeholder({
     invitation_expires_at: expiresAt,
     invited_at: new Date().toISOString(),
     accepted_at: null,
-    transaction_role: resolveTransactionRole({ role_type: normalizeRoleType(roleType), legal_role: legalRole }),
+    transaction_role: resolveTransactionParticipantShape({ role_type: roleType, legal_role: legalRole }).transactionRole,
     status: 'invited',
   }
 
