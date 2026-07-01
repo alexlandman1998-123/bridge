@@ -248,6 +248,7 @@ function buildOwnerFacts(form = {}) {
 }
 
 function buildPropertyAddressFacts(form = {}, listing = {}) {
+  const listingSource = listing && typeof listing === 'object' ? listing : {}
   const addressSource = {
     ...form,
     propertyAddressDetails: form.propertyAddressDetails || form.property_address_details || form.addressDetails || form.address_details || {},
@@ -261,21 +262,22 @@ function buildPropertyAddressFacts(form = {}, listing = {}) {
     municipality: form.municipality || form.property_municipality || '',
     country: form.country || form.property_country || '',
   }
-  return normalizePropertyAddress(addressSource, listing, {
-    line1: listing.addressLine1 || listing.address_line_1 || '',
-    line2: listing.addressLine2 || listing.address_line_2 || '',
-    suburb: listing.suburb || '',
-    city: listing.city || '',
-    province: listing.province || '',
-    postalCode: listing.postalCode || listing.postal_code || '',
-    municipality: listing.municipality || listing.city || '',
-    country: listing.country || 'South Africa',
-    source: listing.addressLine1 || listing.address_line_1 ? 'listing' : 'manual',
+  return normalizePropertyAddress(addressSource, listingSource, {
+    line1: listingSource.addressLine1 || listingSource.address_line_1 || '',
+    line2: listingSource.addressLine2 || listingSource.address_line_2 || '',
+    suburb: listingSource.suburb || '',
+    city: listingSource.city || '',
+    province: listingSource.province || '',
+    postalCode: listingSource.postalCode || listingSource.postal_code || '',
+    municipality: listingSource.municipality || listingSource.city || '',
+    country: listingSource.country || 'South Africa',
+    source: listingSource.addressLine1 || listingSource.address_line_1 ? 'listing' : 'manual',
   })
 }
 
 export function transformSellerOnboardingToFacts(form = {}, listing = {}, options = {}) {
-  const flow = resolveSellerOnboardingFlow(form, listing)
+  const listingSource = listing && typeof listing === 'object' ? listing : {}
+  const flow = resolveSellerOnboardingFlow(form, listingSource)
   const sellerLegalType = normalizeSellerLegalType(form)
   const maritalRegime = normalizeMaritalRegime(form)
   const propertyType = normalizeCanonicalPropertyType(form)
@@ -343,7 +345,7 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
     },
     { defaultRoleTitle: 'Representative' },
   )
-  const propertyAddress = buildPropertyAddressFacts(form, listing)
+  const propertyAddress = buildPropertyAddressFacts(form, listingSource)
   const propertyAddressDisplay = formatPropertyAddress(propertyAddress)
   const sectionIdentifier = normalizeText(form.sectionNumber || form.unitNumber)
   const unitIdentifier = normalizeText(form.unitNumber || form.sectionNumber)
@@ -472,9 +474,9 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       branch_label: flow.property_branch_label,
       legacy_type: flow.property_legacy_type,
       property_type: propertyType,
-      property_category: normalizePropertyCategory(form.propertyCategory || listing.propertyCategory || listing.property_category, { fallback: 'residential' }),
-      property_category_label: getPropertyCategoryLabel(form.propertyCategory || listing.propertyCategory || listing.property_category),
-      property_structure_type: normalizePropertyStructureType(form.propertyStructureType || listing.propertyStructureType || listing.property_structure_type, { fallback: 'other' }),
+      property_category: normalizePropertyCategory(form.propertyCategory || listingSource.propertyCategory || listingSource.property_category, { fallback: 'residential' }),
+      property_category_label: getPropertyCategoryLabel(form.propertyCategory || listingSource.propertyCategory || listingSource.property_category),
+      property_structure_type: normalizePropertyStructureType(form.propertyStructureType || listingSource.propertyStructureType || listingSource.property_structure_type, { fallback: 'other' }),
       sectional_title: sectionalTitle,
       share_block: shareBlock,
       estate_or_hoa: estateOrHoa,
@@ -601,23 +603,23 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       status: getPropertyDisclosureStatus(propertyDisclosure),
       digitally_complete: isPropertyDisclosureDigitallyComplete(propertyDisclosure),
       generated_document: propertyDisclosure.generatedDocument || buildPropertyDisclosureDocument(propertyDisclosure, {
-        sellerId: form.sellerId || listing.sellerId || listing.seller_id,
-        propertyId: form.propertyId || listing.propertyId || listing.property_id,
-        listingId: options.listingId || listing.id,
-        transactionId: form.transactionId || listing.transactionId || listing.transaction_id,
+        sellerId: form.sellerId || listingSource.sellerId || listingSource.seller_id,
+        propertyId: form.propertyId || listingSource.propertyId || listingSource.property_id,
+        listingId: options.listingId || listingSource.id,
+        transactionId: form.transactionId || listingSource.transactionId || listingSource.transaction_id,
         kind: disclosureKind,
       }),
     },
     transaction: {
-      asking_price: normalizeNumber(form.askingPrice || listing.askingPrice),
+      asking_price: normalizeNumber(form.askingPrice || listingSource.askingPrice),
       selling_timeline: normalizeKey(form.sellingTimeline),
       selling_reason: normalizeKey(form.sellingReason),
-      mandate_type: normalizeKey(form.mandateType || listing.mandateType),
+      mandate_type: normalizeKey(form.mandateType || listingSource.mandateType),
     },
     context: {
       type: options.contextType || 'private_listing',
-      id: options.contextId || listing.id || null,
-      listing_id: options.listingId || listing.id || null,
+      id: options.contextId || listingSource.id || null,
+      listing_id: options.listingId || listingSource.id || null,
       source: options.source || 'seller_onboarding',
       facts_version: CANONICAL_SELLER_FACTS_VERSION,
     },

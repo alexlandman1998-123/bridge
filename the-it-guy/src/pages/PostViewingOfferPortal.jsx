@@ -53,7 +53,7 @@ function formatDateTime(value) {
 }
 
 function propertyLabel(item = {}) {
-  const listing = item.listing || {}
+  const listing = item?.listing && typeof item.listing === 'object' ? item.listing : {}
   return [listing.listingTitle, listing.propertyAddress, listing.suburb || listing.city]
     .map((part) => String(part || '').trim())
     .filter(Boolean)

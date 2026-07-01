@@ -21,28 +21,29 @@ export function normalizePortalStatus(value) {
 }
 
 export function mapSellerOnboardingToListingDetails(listing = {}) {
+  const listingSource = listing && typeof listing === 'object' ? listing : {}
   const onboarding =
-    listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
-      ? listing.sellerOnboarding.formData
+    listingSource?.sellerOnboarding?.formData && typeof listingSource.sellerOnboarding.formData === 'object'
+      ? listingSource.sellerOnboarding.formData
       : {}
-  const details = listing?.propertyDetails && typeof listing.propertyDetails === 'object' ? listing.propertyDetails : {}
+  const details = listingSource?.propertyDetails && typeof listingSource.propertyDetails === 'object' ? listingSource.propertyDetails : {}
 
   return {
-    headline: toText(firstValue(details.headline, listing.listingTitle, listing.title, onboarding.propertyAddress)),
-    propertyType: toText(firstValue(details.propertyType, listing.propertyType, onboarding.propertyType)),
-    addressLine1: toText(firstValue(details.addressLine1, listing.addressLine1, onboarding.propertyAddress, onboarding.residentialAddress)),
-    suburb: toText(firstValue(details.suburb, listing.suburb, onboarding.suburb)),
-    city: toText(firstValue(details.city, listing.city, onboarding.city)),
-    province: toText(firstValue(details.province, listing.province, onboarding.province)),
-    bedrooms: firstValue(details.bedrooms, listing.bedrooms, onboarding.bedrooms),
-    bathrooms: firstValue(details.bathrooms, listing.bathrooms, onboarding.bathrooms),
-    garages: firstValue(details.garages, listing.garages, onboarding.garages),
-    erfSize: firstValue(details.erfSize, listing.erfSize, onboarding.erfSize),
-    floorSize: firstValue(details.floorSize, listing.floorSize, onboarding.floorSize),
-    askingPrice: firstValue(details.price, listing.askingPrice, onboarding.askingPrice),
-    publicDescription: toText(firstValue(details.description, listing.description, onboarding.propertyNotes)),
-    previewDescription: toText(firstValue(details.listingPreviewDescription, listing.listingPreviewDescription, onboarding.listingPreviewDescription)),
-    internalNotes: toText(firstValue(details.notes, listing.internalListingNotes, onboarding.internalNotes)),
+    headline: toText(firstValue(details.headline, listingSource.listingTitle, listingSource.title, onboarding.propertyAddress)),
+    propertyType: toText(firstValue(details.propertyType, listingSource.propertyType, onboarding.propertyType)),
+    addressLine1: toText(firstValue(details.addressLine1, listingSource.addressLine1, onboarding.propertyAddress, onboarding.residentialAddress)),
+    suburb: toText(firstValue(details.suburb, listingSource.suburb, onboarding.suburb)),
+    city: toText(firstValue(details.city, listingSource.city, onboarding.city)),
+    province: toText(firstValue(details.province, listingSource.province, onboarding.province)),
+    bedrooms: firstValue(details.bedrooms, listingSource.bedrooms, onboarding.bedrooms),
+    bathrooms: firstValue(details.bathrooms, listingSource.bathrooms, onboarding.bathrooms),
+    garages: firstValue(details.garages, listingSource.garages, onboarding.garages),
+    erfSize: firstValue(details.erfSize, listingSource.erfSize, onboarding.erfSize),
+    floorSize: firstValue(details.floorSize, listingSource.floorSize, onboarding.floorSize),
+    askingPrice: firstValue(details.price, listingSource.askingPrice, onboarding.askingPrice),
+    publicDescription: toText(firstValue(details.description, listingSource.description, onboarding.propertyNotes)),
+    previewDescription: toText(firstValue(details.listingPreviewDescription, listingSource.listingPreviewDescription, onboarding.listingPreviewDescription)),
+    internalNotes: toText(firstValue(details.notes, listingSource.internalListingNotes, onboarding.internalNotes)),
   }
 }
 

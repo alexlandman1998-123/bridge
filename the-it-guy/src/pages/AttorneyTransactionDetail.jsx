@@ -515,13 +515,6 @@ function getDocumentPriorityLabel(requirement = {}) {
   return 'Medium'
 }
 
-function getDocumentPriorityTone(priority = '') {
-  const normalized = String(priority || '').trim().toLowerCase()
-  if (normalized === 'high') return 'border-red-100 bg-red-50 text-red-700'
-  if (normalized === 'low') return 'border-slate-200 bg-slate-50 text-slate-600'
-  return 'border-orange-100 bg-orange-50 text-orange-700'
-}
-
 function getAdditionalRequestStatusLabel(status = '') {
   const normalized = String(status || '').trim().toLowerCase()
   if (normalized === 'uploaded') return 'Uploaded'
@@ -576,14 +569,6 @@ function getUploadCategoryForLibraryFilter(filterKey = '') {
   if (normalized === 'cancellation') return 'Clearance Documents'
   if (normalized === 'internal') return 'Internal Working Documents'
   return ATTORNEY_DOCUMENT_CATEGORIES[0]
-}
-
-function isDocumentActivityEntry(entry = {}) {
-  const filterKeys = new Set(Array.isArray(entry?.filterKeys) ? entry.filterKeys : [])
-  const messageType = String(entry?.messageType || '').trim().toLowerCase()
-  const title = String(entry?.title || '').trim().toLowerCase()
-  const body = String(entry?.body || '').trim().toLowerCase()
-  return filterKeys.has('documents') || messageType.includes('document') || title.includes('document') || body.includes('document') || Boolean(entry?.attachmentName)
 }
 
 function resolveUploadedByLabel(document = {}, participants = []) {
@@ -2486,14 +2471,6 @@ function getConversationTypeLabel(value = '') {
   return 'Comment'
 }
 
-function getNextActionStatusClasses(status = '') {
-  const normalized = normalizeDetailKey(status)
-  if (normalized === 'blocked') return 'border-danger/20 bg-dangerSoft text-danger'
-  if (normalized === 'ready') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
-  if (normalized === 'complete') return 'border-borderSoft bg-surfaceAlt text-textMuted'
-  return 'border-warning/25 bg-warningSoft text-warning'
-}
-
 function buildMatterPreviewShell(matterPreview, transactionId) {
   if (!matterPreview || !transactionId || matterPreview.matterId !== transactionId) {
     return null
@@ -4283,7 +4260,6 @@ function AttorneyTransactionDetail() {
   const [discussionVisibility, setDiscussionVisibility] = useState('shared')
   const [activeDocumentLibraryCategory, setActiveDocumentLibraryCategory] = useState('all')
   const [documentLibrarySearch, setDocumentLibrarySearch] = useState('')
-  const [showAllRequiredDocuments, setShowAllRequiredDocuments] = useState(false)
   const [uploadInputVersion, setUploadInputVersion] = useState(0)
   const [uploadDocumentModalOpen, setUploadDocumentModalOpen] = useState(false)
   const [requestDocumentModalOpen, setRequestDocumentModalOpen] = useState(false)
@@ -4398,7 +4374,7 @@ function AttorneyTransactionDetail() {
   const [, setWorkflowLoading] = useState(false)
   const [, setWorkflowError] = useState('')
   const [transactionRollup, setTransactionRollup] = useState(null)
-  const [transactionRollupError, setTransactionRollupError] = useState('')
+  const [, setTransactionRollupError] = useState('')
   const [workflowDrawerLaneKey, setWorkflowDrawerLaneKey] = useState('')
   const [workflowStepDraft, setWorkflowStepDraft] = useState(null)
   const [workflowNoteDraft, setWorkflowNoteDraft] = useState(null)
@@ -4654,11 +4630,6 @@ function AttorneyTransactionDetail() {
   const canManageTransactionRoleplayers = ['agent', 'agency_admin', 'principal', 'admin', 'internal_admin', 'developer'].includes(String(workspaceRole || '').toLowerCase())
   const canCreateLegalPartnerInvites = workspaceRole === 'attorney'
   const canViewPartnerInvitations = canManageTransactionRoleplayers || canCreateLegalPartnerInvites
-  const canRequestTransactionDocuments =
-    workspaceRole === 'bond_originator' ||
-    workspaceRole === 'attorney' ||
-    canPostSharedDiscussion ||
-    canManageTransactionRoleplayers
   const requestedWorkspaceMenu = useMemo(() => {
     if (activeLegalWorkflowDetailKey) return 'transfer'
     if (workspaceRole === 'bond_originator' && (workspaceMenu === 'finance' || workspaceMenu === 'bond')) return 'banks_quotes'
@@ -5160,17 +5131,6 @@ function AttorneyTransactionDetail() {
       }),
     [requiredDocumentChecklist, requirementDocumentLookup, transaction?.id],
   )
-  const displayedRequiredDocumentRows = useMemo(
-    () => (showAllRequiredDocuments ? requiredDocumentRows : requiredDocumentRows.slice(0, 5)),
-    [requiredDocumentRows, showAllRequiredDocuments],
-  )
-  const documentHealthSummary = useMemo(() => {
-    const totalRequired = requiredDocumentRows.length
-    const received = requiredDocumentRows.filter((row) => ['uploaded', 'pending_review', 'verified', 'generated'].includes(row.status)).length
-    const missing = requiredDocumentRows.filter((row) => ['missing', 'requested', 'rejected', 'expired'].includes(row.status)).length
-    const pendingReview = requiredDocumentRows.filter((row) => row.status === 'pending_review').length
-    return { totalRequired, received, missing, pendingReview }
-  }, [requiredDocumentRows])
   const allDocumentLibraryRows = useMemo(
     () =>
       uniqueDocumentsByRenderKey(documents)
@@ -5320,10 +5280,6 @@ function AttorneyTransactionDetail() {
         ...visibleTransactionDiscussion.map((comment) => humanizeDiscussionActivity(comment)),
       ].sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime()),
     [transactionEvents, visibleTransactionDiscussion],
-  )
-  const documentRecentActivity = useMemo(
-    () => activityFeed.filter((entry) => isDocumentActivityEntry(entry)).slice(0, 4),
-    [activityFeed],
   )
   const overviewConversationEntries = useMemo(() => activityFeed.slice(0, 8), [activityFeed])
   const lifecycleProgressState = useMemo(
@@ -5730,7 +5686,6 @@ function AttorneyTransactionDetail() {
     )
   }, [
     activeDocumentLibraryCategory,
-    additionalDocumentRequests,
     allDocumentLibraryRows,
     documentLibrarySearch,
     documentReadiness,
@@ -5995,20 +5950,6 @@ function AttorneyTransactionDetail() {
       await loadData({ background: true })
     } catch (workflowActionError) {
       setError(workflowActionError?.message || 'Unable to approve finance quote.')
-    } finally {
-      setBondHybridFinanceActionLoading('')
-    }
-  }
-
-  async function handleDeclineBondHybridQuote(quoteId) {
-    try {
-      setBondHybridFinanceActionLoading(quoteId)
-      setError('')
-      const result = await declineBondQuote(quoteId, { actorRole: workspaceRole })
-      await refreshBondHybridFinanceWorkflow(result)
-      await loadData({ background: true })
-    } catch (workflowActionError) {
-      setError(workflowActionError?.message || 'Unable to decline finance quote.')
     } finally {
       setBondHybridFinanceActionLoading('')
     }
@@ -9410,7 +9351,7 @@ function AttorneyTransactionDetail() {
                     value={uploadDraft.satisfiesRequiredDocument}
                     onChange={(event) => setUploadDraft((previous) => ({ ...previous, satisfiesRequiredDocument: event.target.value }))}
                   >
-                    <option value="no">No</option>
+                    <option value="no">General upload - do not satisfy a requirement</option>
                     <option value="yes">Yes</option>
                   </Field>
                 </label>

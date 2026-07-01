@@ -453,16 +453,17 @@ function normalizePublicListingSlugPart(value = '') {
 }
 
 function buildArch9PublicListingSlug(draft = {}, listing = {}) {
+  const listingSource = listing && typeof listing === 'object' ? listing : {}
   const base = [
-    draft.headline || listing.listingTitle || listing.title,
-    draft.suburb || listing.suburb,
-    draft.province || listing.province,
+    draft.headline || listingSource.listingTitle || listingSource.title,
+    draft.suburb || listingSource.suburb,
+    draft.province || listingSource.province,
   ]
     .map(normalizePublicListingSlugPart)
     .filter(Boolean)
     .join('-')
 
-  const id = String(listing.id || '').trim()
+  const id = String(listingSource.id || '').trim()
   const suffix = id ? id.replace(/-/g, '').slice(0, 8).toLowerCase() : ''
 
   return [base || 'listing', suffix].filter(Boolean).join('-')

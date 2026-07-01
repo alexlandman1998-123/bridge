@@ -145,12 +145,12 @@ const MANDATE_TYPE_OPTIONS = [
   { value: 'exclusive', label: 'Exclusive mandate' },
 ]
 
-const PAGE_CONTAINER_CLASS = 'mx-auto w-full max-w-[1184px]'
-const PAGE_STACK_CLASS = 'space-y-5 sm:space-y-6 lg:space-y-8'
+const PAGE_CONTAINER_CLASS = 'mx-auto w-full max-w-[560px] lg:max-w-[1184px]'
+const PAGE_STACK_CLASS = 'space-y-4 sm:space-y-6 lg:space-y-8'
 const SECTION_CARD_CLASS =
-  'rounded-[24px] border border-[#d8e2ec] bg-white/88 p-4 shadow-[0_20px_44px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:rounded-[28px] sm:p-5 lg:rounded-[32px] lg:p-6 lg:shadow-[0_26px_60px_rgba(15,23,42,0.08)]'
+  'rounded-[20px] border border-[#d8e2ec] bg-white/90 p-3 shadow-[0_14px_34px_rgba(15,23,42,0.05)] backdrop-blur-xl sm:rounded-[28px] sm:p-5 lg:rounded-[32px] lg:p-6 lg:shadow-[0_26px_60px_rgba(15,23,42,0.08)]'
 const INNER_PANEL_CLASS =
-  'rounded-[22px] border border-[#dce6ef] bg-white/90 p-4 shadow-[0_16px_36px_rgba(15,23,42,0.05)] backdrop-blur-xl sm:p-5 lg:rounded-[26px] lg:p-7'
+  'rounded-[18px] border border-[#dce6ef] bg-white/92 p-3 shadow-[0_12px_28px_rgba(15,23,42,0.04)] backdrop-blur-xl sm:rounded-[22px] sm:p-5 lg:rounded-[26px] lg:p-7'
 const DETAIL_INPUT_CLASS =
   'w-full min-h-[50px] rounded-[14px] border border-[#d7e2ed] bg-white px-4 py-3 text-base text-[#142334] outline-none transition duration-150 ease-out placeholder:text-[#93a4b8] focus:border-[#35546c]/40 focus:ring-2 focus:ring-[#35546c]/10'
 const SELLER_ONBOARDING_NOTIFICATION_TIMEOUT_MS = 8000
@@ -263,7 +263,7 @@ async function notifyAssignedAgentOfSellerOnboarding(updated = {}, form = {}) {
 }
 
 function choiceCardClass(isActive) {
-  return `w-full rounded-[20px] border px-4 py-4 text-left transition duration-150 ease-out sm:px-5 sm:py-5 ${
+  return `w-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out sm:rounded-[20px] sm:px-5 sm:py-5 ${
     isActive
       ? 'border-[#35546c]/60 bg-[#f5f8fc] shadow-[0_12px_28px_rgba(53,84,108,0.10)]'
       : 'border-[#d8e2ec] bg-white hover:border-[#bccddd] hover:bg-[#fbfcfe]'
@@ -1134,18 +1134,18 @@ function normalizeFormData(listing) {
 function AgencyMark({ brand, tone = 'dark' }) {
   if (brand?.logoUrl) {
     return (
-      <span className={`inline-flex h-16 min-w-16 max-w-[260px] items-center justify-center rounded-[18px] px-3 py-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)] ${tone === 'light' ? 'border border-[#dbe5ef] bg-white' : 'border border-white/15 bg-white/5'}`}>
+      <span className={`inline-flex h-11 min-w-11 max-w-[190px] items-center justify-center rounded-[14px] px-2 py-1.5 shadow-[0_12px_30px_rgba(0,0,0,0.18)] sm:h-16 sm:min-w-16 sm:max-w-[260px] sm:rounded-[18px] sm:px-3 sm:py-2 ${tone === 'light' ? 'border border-[#dbe5ef] bg-white' : 'border border-white/15 bg-white/5'}`}>
         <img
           src={brand.logoUrl}
           alt={`${brand?.name || 'Agency'} logo`}
-          className="max-h-12 w-auto max-w-[230px] object-contain"
+          className="max-h-8 w-auto max-w-[170px] object-contain sm:max-h-12 sm:max-w-[230px]"
         />
       </span>
     )
   }
 
   return (
-    <span className={`inline-flex h-12 w-12 items-center justify-center rounded-[16px] text-sm font-semibold shadow-[0_12px_30px_rgba(0,0,0,0.18)] sm:h-16 sm:w-16 sm:rounded-[18px] sm:text-base ${tone === 'light' ? 'border border-[#dbe5ef] bg-[#172334] text-white' : 'border border-white/15 bg-white/10 text-white'}`}>
+    <span className={`inline-flex h-10 w-10 items-center justify-center rounded-[14px] text-xs font-semibold shadow-[0_12px_30px_rgba(0,0,0,0.18)] sm:h-16 sm:w-16 sm:rounded-[18px] sm:text-base ${tone === 'light' ? 'border border-[#dbe5ef] bg-[#172334] text-white' : 'border border-white/15 bg-white/10 text-white'}`}>
       {brand?.initials || 'AG'}
     </span>
   )
@@ -1153,13 +1153,13 @@ function AgencyMark({ brand, tone = 'dark' }) {
 
 function SellerBrandBar({ brand }) {
   return (
-    <div className="flex flex-col gap-3 border-b border-white/8 pb-4 sm:flex-row sm:items-center sm:justify-between sm:pb-5">
+    <div className="flex items-center justify-between gap-3 border-b border-white/8 pb-3 sm:pb-5">
       <div className="flex min-w-0 items-center gap-3">
         <AgencyMark brand={brand} />
       </div>
-      <div className="flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/6 px-3 py-1.5 text-[11px] font-semibold text-white/75 sm:gap-3 sm:py-2 sm:text-xs">
+      <div className="flex w-fit shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/6 px-2.5 py-1.5 text-[10px] font-semibold text-white/75 sm:gap-3 sm:px-3 sm:py-2 sm:text-xs">
         <span>Powered by</span>
-        <span className="rounded-full bg-white px-2.5 py-1 text-[#101827]">arch9</span>
+        <span className="rounded-full bg-white px-2 py-0.5 text-[#101827] sm:px-2.5 sm:py-1">arch9</span>
       </div>
     </div>
   )
@@ -1171,25 +1171,25 @@ function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
   const agentName = resolveAgentName(listing)
 
   return (
-    <section className="overflow-hidden rounded-[28px] border border-[#18263a]/90 bg-[linear-gradient(135deg,#0b1626_0%,#12253b_54%,#18354d_100%)] p-5 text-white shadow-[0_24px_60px_rgba(15,23,42,0.18)] sm:rounded-[32px] sm:p-6 lg:rounded-[36px] lg:p-8 lg:shadow-[0_32px_80px_rgba(15,23,42,0.22)]">
+    <section className="overflow-hidden rounded-[22px] border border-[#18263a]/90 bg-[linear-gradient(135deg,#0b1626_0%,#12253b_54%,#18354d_100%)] p-4 text-white shadow-[0_18px_44px_rgba(15,23,42,0.16)] sm:rounded-[32px] sm:p-6 lg:rounded-[36px] lg:p-8 lg:shadow-[0_32px_80px_rgba(15,23,42,0.22)]">
       <SellerBrandBar brand={brand} />
-      <div className="mt-5 grid gap-5 sm:mt-6 lg:mt-7 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
+      <div className="mt-4 grid gap-4 sm:mt-6 sm:gap-5 lg:mt-7 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
         <div>
-          <h1 className="max-w-3xl text-3xl font-semibold leading-[1.05] tracking-[-0.03em] text-white sm:text-4xl lg:text-5xl lg:tracking-[-0.04em]">
+          <h1 className="max-w-3xl text-[1.75rem] font-semibold leading-[1.08] tracking-normal text-white sm:text-4xl lg:text-5xl">
             Complete your seller onboarding
           </h1>
-          <p className="mt-4 max-w-2xl text-sm leading-6 text-[#c8d4e3] sm:text-base lg:text-[1.05rem]">
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-[#c8d4e3] sm:mt-4 sm:text-base lg:text-[1.05rem]">
             A guided intake for your seller, property, compliance, and mandate details. We’ll only ask what matters next.
           </p>
         </div>
-        <div className="rounded-[22px] border border-white/10 bg-white/8 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl sm:rounded-[24px] sm:p-5 lg:rounded-[26px]">
-          <div className="grid gap-3">
+        <div className="rounded-[18px] border border-white/10 bg-white/8 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl sm:rounded-[24px] sm:p-5 lg:rounded-[26px]">
+          <div className="grid gap-2.5 sm:gap-3">
             <article>
-              <p className="text-[11px] uppercase tracking-[0.14em] text-white/45 sm:text-xs">Seller</p>
+              <p className="text-[10px] uppercase tracking-[0.12em] text-white/45 sm:text-xs">Seller</p>
               <p className="mt-1 break-words text-sm font-semibold text-white">{sellerName}</p>
             </article>
             <article>
-              <p className="text-[11px] uppercase tracking-[0.14em] text-white/45 sm:text-xs">Property</p>
+              <p className="text-[10px] uppercase tracking-[0.12em] text-white/45 sm:text-xs">Property</p>
               <p className="mt-1 break-words text-sm font-semibold leading-5 text-white">{propertyAddress}</p>
             </article>
             <div className="grid gap-2 pt-1 sm:grid-cols-2">
@@ -1203,9 +1203,9 @@ function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
           </div>
         </div>
       </div>
-      <div className="mt-5 flex flex-wrap gap-2 sm:mt-6 lg:mt-7">
+      <div className="mt-4 flex flex-wrap gap-2 sm:mt-6 lg:mt-7">
         {['Guided onboarding', 'Takes 3-5 minutes', 'Bank-grade care'].map((item) => (
-          <span key={item} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/8 px-2.5 py-1.5 text-[11px] font-semibold text-white/70 sm:gap-2 sm:px-3 sm:text-xs">
+          <span key={item} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/8 px-2.5 py-1.5 text-[10px] font-semibold text-white/70 sm:gap-2 sm:px-3 sm:text-xs">
             <BadgeCheck size={13} />
             {item}
           </span>
@@ -1217,15 +1217,15 @@ function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
 
 function SellerStepProgress({ currentStep, progress }) {
   return (
-    <section className="rounded-[24px] border border-[#dce6ef] bg-white/88 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.05)] backdrop-blur-xl sm:rounded-[28px] sm:p-5 lg:rounded-[30px] lg:p-6 lg:shadow-[0_22px_50px_rgba(15,23,42,0.06)]">
+    <section className="rounded-[18px] border border-[#dce6ef] bg-white/90 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.04)] backdrop-blur-xl sm:rounded-[28px] sm:p-5 lg:rounded-[30px] lg:p-6 lg:shadow-[0_22px_50px_rgba(15,23,42,0.06)]">
       <div className="flex items-start justify-between gap-3 sm:hidden">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6f8298]">Step {currentStep + 1} of {STEPS.length}</p>
-          <h2 className="mt-1 break-words text-lg font-semibold tracking-[-0.02em] text-[#142132]">{STEP_META[currentStep]?.label}</h2>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6f8298]">Step {currentStep + 1} of {STEPS.length}</p>
+          <h2 className="mt-1 break-words text-base font-semibold tracking-normal text-[#142132]">{STEP_META[currentStep]?.label}</h2>
         </div>
         <span className="shrink-0 rounded-full bg-[#f2f6fb] px-3 py-1.5 text-xs font-semibold text-[#35546c]">{progress}%</span>
       </div>
-      <p className="mt-2 text-sm leading-5 text-[#6b7d93] sm:hidden">{STEP_META[currentStep]?.helper}</p>
+      <p className="mt-2 text-[13px] leading-5 text-[#6b7d93] sm:hidden">{STEP_META[currentStep]?.helper}</p>
 
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#eef3f8] sm:hidden">
         <span
@@ -1237,7 +1237,7 @@ function SellerStepProgress({ currentStep, progress }) {
         {STEP_META.map((step, index) => (
           <span
             key={step.label}
-            className={`h-2 rounded-full transition-all ${index <= currentStep ? 'w-6 bg-[#35546c]' : 'w-2 bg-[#d8e2ee]'}`}
+            className={`h-1.5 rounded-full transition-all ${index <= currentStep ? 'w-5 bg-[#35546c]' : 'w-1.5 bg-[#d8e2ee]'}`}
           />
         ))}
       </div>
@@ -1249,7 +1249,7 @@ function SellerStepProgress({ currentStep, progress }) {
         </div>
         <span className="rounded-full bg-[#f2f6fb] px-3 py-1 text-xs font-semibold text-[#35546c]">{progress}% complete</span>
       </div>
-      <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#eef3f8]">
+      <div className="mt-4 hidden h-2 overflow-hidden rounded-full bg-[#eef3f8] sm:block">
         <span
           className="block h-full rounded-full bg-gradient-to-r from-[#172334] via-[#35546c] to-[#2f8f86] transition-[width] duration-300"
           style={{ width: `${progress}%` }}
@@ -1293,12 +1293,12 @@ function SellerStepProgress({ currentStep, progress }) {
 function StepShell({ eyebrow, title, description, children }) {
   return (
     <section className={INNER_PANEL_CLASS}>
-      <header className="mb-5 sm:mb-6">
-        <p className="inline-flex rounded-full border border-[#dbe6f2] bg-[#f3f7fb] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#637589]">
+      <header className="mb-4 sm:mb-6">
+        <p className="inline-flex rounded-full border border-[#dbe6f2] bg-[#f3f7fb] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#637589] sm:px-3 sm:text-[11px]">
           {eyebrow}
         </p>
-        <h2 className="mt-3 text-[1.45rem] font-semibold tracking-[-0.03em] text-[#162435] sm:text-3xl">{title}</h2>
-        {description ? <p className="mt-3 max-w-3xl text-sm leading-6 text-[#60748b] sm:text-[15px]">{description}</p> : null}
+        <h2 className="mt-2 text-xl font-semibold tracking-normal text-[#162435] sm:mt-3 sm:text-3xl">{title}</h2>
+        {description ? <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60748b] sm:mt-3 sm:text-[15px]">{description}</p> : null}
       </header>
       {children}
     </section>
@@ -1308,26 +1308,26 @@ function StepShell({ eyebrow, title, description, children }) {
 function FormSection({ icon, title, description, children }) {
   const SectionIcon = icon || Circle
   return (
-    <section className="rounded-[22px] border border-[#dfe7f1] bg-[#fbfcfe] p-4 sm:p-5 lg:rounded-[24px] lg:p-6">
+    <section className="rounded-[18px] border border-[#dfe7f1] bg-[#fbfcfe] p-3 sm:rounded-[22px] sm:p-5 lg:rounded-[24px] lg:p-6">
       <div className="flex items-start gap-3">
-        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-[#dbe5ef] bg-white text-[#35546c] shadow-[0_10px_22px_rgba(15,23,42,0.05)] sm:h-11 sm:w-11 sm:rounded-[16px]">
-          <SectionIcon size={18} />
+        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white text-[#35546c] shadow-[0_10px_22px_rgba(15,23,42,0.05)] sm:h-11 sm:w-11 sm:rounded-[16px]">
+          <SectionIcon size={17} />
         </span>
         <div>
-          <h3 className="text-[1.05rem] font-semibold text-[#162435] sm:text-[1.1rem]">{title}</h3>
+          <h3 className="text-base font-semibold text-[#162435] sm:text-[1.1rem]">{title}</h3>
           {description ? <p className="mt-1.5 text-sm leading-5 text-[#6b7d93]">{description}</p> : null}
         </div>
       </div>
-      <div className="mt-5">{children}</div>
+      <div className="mt-4 sm:mt-5">{children}</div>
     </section>
   )
 }
 
 function ChoiceCard({ active, title, description, onClick }) {
   return (
-    <button type="button" onClick={onClick} className={`${choiceCardClass(active)} min-h-[92px]`}>
-      <span className={`block text-[15px] font-semibold ${active ? 'text-[#132033]' : 'text-[#35546c]'}`}>{title}</span>
-      {description ? <span className="mt-1.5 block text-xs leading-5 text-[#6b7d93]">{description}</span> : null}
+    <button type="button" onClick={onClick} className={`${choiceCardClass(active)} min-h-[74px] sm:min-h-[92px]`}>
+      <span className={`block text-sm font-semibold sm:text-[15px] ${active ? 'text-[#132033]' : 'text-[#35546c]'}`}>{title}</span>
+      {description ? <span className="mt-1 block text-xs leading-5 text-[#6b7d93] sm:mt-1.5">{description}</span> : null}
     </button>
   )
 }
@@ -2562,11 +2562,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         {error ? <p className="mt-4 rounded-[14px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm text-[#b42318]">{error}</p> : null}
         {success ? <p className="mt-4 whitespace-pre-line rounded-[14px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-3 text-sm text-[#1f7d44]">{success}</p> : null}
 
-        <div className="mt-5 space-y-5 sm:mt-6 sm:space-y-6">
+        <div className="mt-4 space-y-4 sm:mt-6 sm:space-y-6">
           {currentStep === 0 ? (
             <>
               <FormSection icon={Landmark} title="Who owns this property?" description="Choose the ownership structure first. We’ll show the right follow-up fields from here.">
-                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:mt-4 sm:grid-cols-2 lg:grid-cols-3">
                   {OWNERSHIP_TYPES.map((item) => {
                     const active = form.ownershipType === item.value
                     return (
@@ -2581,15 +2581,15 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   })}
                 </div>
 
-                <div className="mt-4 rounded-[14px] border border-[#dbe6f2] bg-[#f7fbff] px-4 py-3 text-sm leading-6 text-[#4f6378]">
-                  <div className="flex items-start gap-3">
-                    <span className="inline-flex shrink-0 items-center rounded-full border border-[#d6e1ee] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]">
+                <div className="mt-3 rounded-[14px] border border-[#dbe6f2] bg-[#f7fbff] px-3 py-3 text-sm leading-6 text-[#4f6378] sm:mt-4 sm:px-4">
+                  <div className="flex items-start gap-2.5 sm:gap-3">
+                    <span className="inline-flex shrink-0 items-center rounded-full border border-[#d6e1ee] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#35546c] sm:px-3 sm:text-xs">
                       {getOwnershipBranchLabel(form.ownershipType)}
                     </span>
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-[#22364a]">{selectedOwnership.label}</p>
                       <p className="mt-1 text-sm leading-5 text-[#60748b]">{selectedOwnership.description}</p>
-                      <p className="mt-2 text-xs font-medium text-[#35546c]">
+                      <p className="mt-2 hidden text-xs font-medium text-[#35546c] sm:block">
                         {isMarriedOwnership
                           ? 'Marital regime is derived from your ownership choice and kept internal. We’ll only ask for the spouse details that are actually needed.'
                           : 'We’ll only show the next questions that fit this ownership structure.'}
@@ -3869,7 +3869,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }
 
   return (
-    <main className="relative min-h-screen overflow-x-hidden bg-[#e4ebf3] px-4 py-4 pb-32 font-sans antialiased text-[#132033] sm:px-5 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8 lg:pb-10">
+    <main className="relative min-h-screen overflow-x-hidden bg-[#e4ebf3] px-3 py-3 pb-24 font-sans antialiased text-[#132033] sm:px-5 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8 lg:pb-10">
       <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -left-24 top-10 h-72 w-72 rounded-full bg-white/40 blur-3xl" />
         <div className="absolute right-[-7rem] top-28 h-96 w-96 rounded-full bg-[#d7e2ee]/60 blur-3xl" />
@@ -3878,32 +3878,38 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       <div className={PAGE_CONTAINER_CLASS}>
         {content}
       </div>
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/70 bg-white/88 px-4 py-3 shadow-[0_-14px_40px_rgba(15,23,42,0.08)] backdrop-blur-xl md:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/70 bg-white/90 px-3 py-2 shadow-[0_-12px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl md:hidden">
         <div className={PAGE_CONTAINER_CLASS}>
-          <div className="grid gap-2">
-            <div className={`grid gap-2 ${currentStep > 0 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-              {currentStep > 0 ? (
-                <Button type="button" variant="secondary" onClick={handleBack} disabled={saving || submitting} className="min-h-[50px] w-full">
-                  <ChevronLeft size={14} />
-                  Back
-                </Button>
-              ) : null}
-              {currentStep < FINAL_STEP_INDEX ? (
-                <Button type="button" onClick={handleNext} disabled={saving || submitting} className="min-h-[50px] w-full">
-                  {saving ? 'Saving...' : 'Save & Continue'}
-                  <ChevronRight size={14} />
-                </Button>
-              ) : null}
-              {currentStep === FINAL_STEP_INDEX && !isCompleted ? (
-                <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[50px] w-full">
-                  {submitting ? 'Submitting...' : 'Submit Seller Information'}
-                  <CheckCircle2 size={14} />
-                </Button>
-              ) : null}
-            </div>
+          <div className="grid gap-1.5 pb-[max(4px,env(safe-area-inset-bottom))]">
+            {(currentStep > 0 || currentStep < FINAL_STEP_INDEX) ? (
+              <div className="flex items-center justify-between gap-2">
+                {currentStep < FINAL_STEP_INDEX ? (
+                  <Button type="button" variant="ghost" onClick={() => saveDraft(currentStep)} disabled={saving || submitting} className="min-h-[38px] px-3">
+                    {saving ? 'Saving...' : 'Save Draft'}
+                  </Button>
+                ) : (
+                  <span />
+                )}
+                {currentStep > 0 ? (
+                  <Button type="button" variant="secondary" onClick={handleBack} disabled={saving || submitting} className="min-h-[38px] px-3">
+                    <ChevronLeft size={14} />
+                    Back
+                  </Button>
+                ) : (
+                  <span />
+                )}
+              </div>
+            ) : null}
             {currentStep < FINAL_STEP_INDEX ? (
-              <Button type="button" variant="ghost" onClick={() => saveDraft(currentStep)} disabled={saving || submitting} className="min-h-[44px] w-full">
-                {saving ? 'Saving...' : 'Save Draft'}
+              <Button type="button" onClick={handleNext} disabled={saving || submitting} className="min-h-[48px] w-full">
+                {saving ? 'Saving...' : 'Save & Continue'}
+                <ChevronRight size={14} />
+              </Button>
+            ) : null}
+            {currentStep === FINAL_STEP_INDEX && !isCompleted ? (
+              <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[48px] w-full">
+                {submitting ? 'Submitting...' : 'Submit Seller Information'}
+                <CheckCircle2 size={14} />
               </Button>
             ) : null}
           </div>

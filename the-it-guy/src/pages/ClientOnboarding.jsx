@@ -35,21 +35,21 @@ const currency = new Intl.NumberFormat('en-ZA', {
 })
 
 const SECTION_CARD_CLASS =
-  'rounded-[32px] border border-[#dbe5ef] bg-white/95 p-5 shadow-[0_20px_46px_rgba(15,23,42,0.07)] backdrop-blur md:p-7'
+  'rounded-[20px] border border-[#dbe5ef] bg-white/95 p-3 shadow-[0_14px_34px_rgba(15,23,42,0.05)] backdrop-blur md:rounded-[32px] md:p-7'
 const INNER_PANEL_CLASS =
-  'rounded-[24px] border border-[#dfe8f2] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)] md:p-6'
+  'rounded-[18px] border border-[#dfe8f2] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)] md:rounded-[24px] md:p-6'
 const MUTED_TEXT_CLASS = 'text-sm leading-6 text-[#6b7d93]'
 const DETAIL_FLOW_WRAP_CLASS =
-  'mx-auto w-full max-w-[1120px] space-y-6'
-const PAGE_CONTAINER_CLASS = 'mx-auto w-full max-w-[430px] md:max-w-[1120px]'
+  'mx-auto w-full max-w-[1120px] space-y-4 md:space-y-6'
+const PAGE_CONTAINER_CLASS = 'mx-auto w-full max-w-[560px] md:max-w-[1120px]'
 const DETAIL_INPUT_CLASS =
   'w-full min-h-[52px] rounded-[12px] border border-[#d9e2ee] bg-white px-4 py-3 text-base text-[#162334] outline-none transition duration-150 ease-out placeholder:text-[#8aa0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12'
 const HERO_SECTION_CLASS =
-  'overflow-hidden rounded-[32px] border border-[#dbe4ee] bg-[linear-gradient(180deg,#ffffff_0%,#f7fbff_100%)] shadow-[0_22px_48px_rgba(15,23,42,0.08)]'
+  'overflow-hidden rounded-[22px] border border-[#dbe4ee] bg-[linear-gradient(180deg,#ffffff_0%,#f7fbff_100%)] shadow-[0_16px_38px_rgba(15,23,42,0.06)] md:rounded-[32px] md:shadow-[0_22px_48px_rgba(15,23,42,0.08)]'
 const HERO_SUMMARY_CLASS =
-  'rounded-[28px] border border-[#d9e4ee] bg-white/92 p-5 shadow-[0_16px_34px_rgba(15,23,42,0.06)] backdrop-blur'
+  'rounded-[18px] border border-[#d9e4ee] bg-white/92 p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)] backdrop-blur md:rounded-[28px] md:p-5 md:shadow-[0_16px_34px_rgba(15,23,42,0.06)]'
 const STEP_OVERVIEW_CARD_CLASS =
-  'h-full rounded-[22px] border px-4 py-4 text-left transition duration-150 ease-out md:px-5 md:py-5'
+  'h-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out md:rounded-[22px] md:px-5 md:py-5'
 const STEP_OVERVIEW_ACTIVE_CLASS =
   'border-[#35546c] bg-[#f5f9ff] shadow-[0_12px_28px_rgba(53,84,108,0.12)]'
 const STEP_OVERVIEW_INACTIVE_CLASS =
@@ -577,7 +577,7 @@ const CLIENT_CONTROLLED_REMOVED_KEYS = new Set([
 ])
 
 function choiceCardClass(active) {
-  return `h-full rounded-[20px] border px-5 py-5 text-left transition duration-150 ease-out ${
+  return `h-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out md:rounded-[20px] md:px-5 md:py-5 ${
     active
       ? 'border-[#35546c] bg-[#f4f8fd] text-[#142132] shadow-[0_14px_30px_rgba(53,84,108,0.12)]'
       : 'border-[#dde4ee] bg-white text-[#142132] shadow-[0_12px_28px_rgba(15,23,42,0.04)] hover:border-[#c8d6e5] hover:bg-[#fbfdff]'
@@ -2959,21 +2959,21 @@ function ClientOnboarding() {
     if (isNaturalPersonPurchase) {
       return (
         <div className={DETAIL_FLOW_WRAP_CLASS}>
-          <section className="rounded-[20px] border border-[#e2eaf3] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-            <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">
+          <section className="rounded-[18px] border border-[#e2eaf3] bg-white p-3 shadow-[0_10px_22px_rgba(15,23,42,0.04)] md:rounded-[20px] md:p-4">
+            <h4 className="text-base font-semibold tracking-normal text-[#142132] md:text-lg">
               Are you purchasing this unit alone or with a co-purchaser?
             </h4>
             <p className="mt-2 text-sm leading-6 text-[#6b7d93]">
               This is used to prepare your sale agreement and matching compliance requirements.
             </p>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="mt-3 grid gap-2 md:mt-4 md:grid-cols-2 md:gap-3">
               {NATURAL_PURCHASER_MODE_OPTIONS.map((option) => {
                 const active = naturalPersonPurchaseMode === option.value
                 return (
                   <button
                     key={option.value}
                     type="button"
-                    className={`w-full rounded-[16px] border px-4 py-4 text-left transition duration-150 ease-out ${
+                    className={`w-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out md:px-4 md:py-4 ${
                       active
                         ? 'border-[#35546c] bg-[#f3f8ff] shadow-[0_10px_24px_rgba(53,84,108,0.14)]'
                         : 'border-[#dbe5ef] bg-white hover:border-[#b6c9de] hover:bg-[#fafcff]'
@@ -2984,7 +2984,7 @@ function ClientOnboarding() {
                     }}
                   >
                     <strong className="block text-sm font-semibold text-[#142132]">{option.title}</strong>
-                    <span className="mt-1 block text-sm leading-6 text-[#6b7d93]">{option.description}</span>
+                    <span className="mt-1 block text-xs leading-5 text-[#6b7d93] md:text-sm md:leading-6">{option.description}</span>
                   </button>
                 )
               })}
@@ -3020,7 +3020,7 @@ function ClientOnboarding() {
       return (
         <section className={INNER_PANEL_CLASS}>
           <p className={MUTED_TEXT_CLASS}>Choose the purchaser type first. We will only ask the questions relevant to that structure.</p>
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <div className="mt-4 grid gap-2 md:mt-5 md:grid-cols-2 md:gap-3">
             {PURCHASER_ENTITY_OPTIONS.map((option) => (
               <button
                 key={option.value}
@@ -3028,8 +3028,8 @@ function ClientOnboarding() {
                 className={choiceCardClass(purchaserEntityType === option.value)}
                 onClick={() => updatePurchaserEntityType(option.value)}
               >
-                <strong className="block text-base font-semibold">{option.label}</strong>
-                <span className={`mt-3 block text-sm leading-6 ${purchaserEntityType === option.value ? 'text-[#4e6278]' : 'text-[#6b7d93]'}`}>{option.caption}</span>
+                <strong className="block text-sm font-semibold md:text-base">{option.label}</strong>
+                <span className={`mt-1.5 block text-xs leading-5 md:mt-3 md:text-sm md:leading-6 ${purchaserEntityType === option.value ? 'text-[#4e6278]' : 'text-[#6b7d93]'}`}>{option.caption}</span>
               </button>
             ))}
           </div>
@@ -3043,7 +3043,7 @@ function ClientOnboarding() {
           <p className="mb-3 text-sm leading-6 text-[#6b7d93]">
             Select your finance structure so we can request the right supporting information.
           </p>
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-2 md:grid-cols-3 md:gap-3">
             {[
               { value: 'bond', label: 'Bond', caption: 'Mortgage finance with bank / lender workflow' },
               { value: 'cash', label: 'Cash', caption: 'Cash-funded purchase with proof-of-funds requirement' },
@@ -3060,14 +3060,14 @@ function ClientOnboarding() {
                   }
                 }}
               >
-                <strong className="block text-base font-semibold">{option.label}</strong>
-                <span className={`mt-3 block text-sm leading-6 ${normalizedFinanceType === option.value ? 'text-[#4e6278]' : 'text-[#6b7d93]'}`}>{option.caption}</span>
+                <strong className="block text-sm font-semibold md:text-base">{option.label}</strong>
+                <span className={`mt-1.5 block text-xs leading-5 md:mt-3 md:text-sm md:leading-6 ${normalizedFinanceType === option.value ? 'text-[#4e6278]' : 'text-[#6b7d93]'}`}>{option.caption}</span>
               </button>
             ))}
           </div>
 
           {['bond', 'combination'].includes(normalizedFinanceType) ? (
-            <div className="mt-5 rounded-[20px] border border-[#dde4ee] bg-[#f8fbff] p-5">
+            <div className="mt-4 rounded-[18px] border border-[#dde4ee] bg-[#f8fbff] p-3 md:mt-5 md:rounded-[20px] md:p-5">
               <h5 className="text-base font-semibold text-[#142132]">What happens next</h5>
               <p className={`mt-2 ${MUTED_TEXT_CLASS}`}>
                 In the next step we’ll ask for the bond bank, affordability confirmation, and originator assistance details if needed.
@@ -3128,8 +3128,8 @@ function ClientOnboarding() {
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f9fbfd_0%,#eef4fb_44%,#e7eef7_100%)] px-4 py-5 pb-32 md:pb-12">
-      <div className={`${PAGE_CONTAINER_CLASS} space-y-5`}>
+    <main className="min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f9fbfd_0%,#eef4fb_44%,#e7eef7_100%)] px-3 py-3 pb-24 md:px-4 md:py-5 md:pb-12">
+      <div className={`${PAGE_CONTAINER_CLASS} space-y-4 md:space-y-5`}>
         {submissionComplete ? (
           <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-5 py-8 text-center shadow-[0_20px_44px_rgba(15,23,42,0.08)]">
             <div className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-full border border-[#cfe8da] bg-[#effaf3] text-[#22824d]">
@@ -3151,15 +3151,15 @@ function ClientOnboarding() {
           <>
             <section className={HERO_SECTION_CLASS}>
               <div className="grid gap-0 md:grid-cols-[1.25fr_0.95fr]">
-                <div className="p-6 md:p-8">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#6a7f96]">Buyer onboarding</p>
-                  <h1 className="mt-4 max-w-2xl text-3xl font-semibold tracking-[-0.05em] text-[#132033] md:text-5xl">
+                <div className="p-4 md:p-8">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6a7f96] md:text-xs md:tracking-[0.2em]">Buyer onboarding</p>
+                  <h1 className="mt-3 max-w-2xl text-[1.75rem] font-semibold leading-[1.08] tracking-normal text-[#132033] md:mt-4 md:text-5xl">
                     Complete your buyer onboarding
                   </h1>
-                  <p className="mt-4 max-w-2xl text-[1.02rem] leading-7 text-[#556679]">
+                  <p className="mt-3 max-w-2xl text-sm leading-6 text-[#556679] md:mt-4 md:text-[1.02rem] md:leading-7">
                     A calm guided flow for your identity, finance, and transaction details. We only ask for the information that matters to your purchase.
                   </p>
-                  <div className="mt-6 flex flex-wrap gap-3">
+                  <div className="mt-4 flex flex-wrap gap-2 md:mt-6 md:gap-3">
                     {[
                       '3 guided steps',
                       'Save & continue later',
@@ -3167,7 +3167,7 @@ function ClientOnboarding() {
                     ].map((chip) => (
                       <span
                         key={chip}
-                        className="inline-flex min-h-[38px] items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-medium text-[#42566b] shadow-[0_8px_18px_rgba(15,23,42,0.04)]"
+                        className="inline-flex min-h-[30px] items-center rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-medium text-[#42566b] shadow-[0_8px_18px_rgba(15,23,42,0.04)] md:min-h-[38px] md:px-4 md:py-2 md:text-sm"
                       >
                         {chip}
                       </span>
@@ -3176,33 +3176,33 @@ function ClientOnboarding() {
                 </div>
 
                 <aside className={HERO_SUMMARY_CLASS}>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6a7f96]">At a glance</p>
-                  <div className="mt-4 space-y-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6a7f96] md:text-xs md:tracking-[0.18em]">At a glance</p>
+                  <div className="mt-3 grid gap-2 md:mt-4 md:block md:space-y-3">
                     {buyerFlowSummaryItems.map((item) => (
-                      <div key={item.label} className="flex items-start justify-between gap-4 rounded-[18px] border border-[#e6edf5] bg-[#fbfdff] px-4 py-3">
-                        <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">{item.label}</span>
-                        <span className="max-w-[60%] text-right text-sm font-semibold leading-6 text-[#132033]">{item.value}</span>
+                      <div key={item.label} className="flex items-start justify-between gap-3 rounded-[14px] border border-[#e6edf5] bg-[#fbfdff] px-3 py-2.5 md:rounded-[18px] md:px-4 md:py-3">
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2] md:text-xs md:tracking-[0.14em]">{item.label}</span>
+                        <span className="max-w-[60%] text-right text-xs font-semibold leading-5 text-[#132033] md:text-sm md:leading-6">{item.value}</span>
                       </div>
                     ))}
                   </div>
 
                   {activeStep ? (
-                    <div className="mt-5 rounded-[22px] bg-[#f6f9fd] p-4">
+                    <div className="mt-3 rounded-[16px] bg-[#f6f9fd] p-3 md:mt-5 md:rounded-[22px] md:p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6a7f96]">Current focus</p>
-                      <h2 className="mt-2 text-lg font-semibold tracking-[-0.02em] text-[#132033]">{activeStep.title}</h2>
-                      <p className="mt-2 text-sm leading-6 text-[#556679]">{activeStep.description}</p>
+                      <h2 className="mt-2 text-base font-semibold tracking-normal text-[#132033] md:text-lg">{activeStep.title}</h2>
+                      <p className="mt-1.5 text-sm leading-6 text-[#556679] md:mt-2">{activeStep.description}</p>
                     </div>
                   ) : null}
                 </aside>
               </div>
             </section>
 
-            <section className="rounded-[28px] border border-[#dbe5ef] bg-white/92 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.07)] backdrop-blur md:p-5">
+            <section className="rounded-[18px] border border-[#dbe5ef] bg-white/92 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.05)] backdrop-blur md:rounded-[28px] md:p-5 md:shadow-[0_18px_40px_rgba(15,23,42,0.07)]">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6a7f96]">Progress</p>
-                  <h2 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#132033]">One guided flow</h2>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-[#5f738a]">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6a7f96] md:text-xs md:tracking-[0.18em]">Progress</p>
+                  <h2 className="mt-1 text-base font-semibold tracking-normal text-[#132033] md:text-lg">One guided flow</h2>
+                  <p className="mt-1.5 max-w-2xl text-sm leading-6 text-[#5f738a] md:mt-2">
                     Each step reveals only the fields that apply to your purchase structure.
                   </p>
                 </div>
@@ -3210,13 +3210,13 @@ function ClientOnboarding() {
                   {mobileStepLabel}
                 </span>
               </div>
-              <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-[#eef3f8]" aria-hidden="true">
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#eef3f8] md:mt-4 md:h-2.5" aria-hidden="true">
                 <span
                   className="block h-full rounded-full transition-[width] duration-300"
                   style={{ width: `${mobileProgressPercent}%`, backgroundImage: 'linear-gradient(90deg,#35546c 0%,#2f8f86 100%)' }}
                 />
               </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div className="mt-3 grid gap-2 md:mt-4 md:grid-cols-3 md:gap-3">
                 {journeySteps.map((step, index) => {
                   const isActive = index === activeStepIndex
                   const isComplete = index < activeStepIndex
@@ -3241,8 +3241,8 @@ function ClientOnboarding() {
                           </span>
                         ) : null}
                       </div>
-                      <h3 className="mt-4 text-base font-semibold tracking-[-0.02em] text-[#132033]">{step.shortLabel}</h3>
-                      <p className="mt-2 text-sm leading-6 text-[#5f738a]">{step.description}</p>
+                      <h3 className="mt-3 text-sm font-semibold tracking-normal text-[#132033] md:mt-4 md:text-base">{step.shortLabel}</h3>
+                      <p className="mt-1.5 text-xs leading-5 text-[#5f738a] md:mt-2 md:text-sm md:leading-6">{step.description}</p>
                     </article>
                   )
                 })}
@@ -3253,8 +3253,8 @@ function ClientOnboarding() {
 
             <section className={SECTION_CARD_CLASS}>
               {activeStep ? (
-                <div className="mb-4 space-y-2">
-                  <h3 className="text-xl font-semibold tracking-[-0.02em] text-[#142132]">{activeStep.title}</h3>
+                <div className="mb-4 space-y-1.5 md:space-y-2">
+                  <h3 className="text-lg font-semibold tracking-normal text-[#142132] md:text-xl">{activeStep.title}</h3>
                   <p className={MUTED_TEXT_CLASS}>{activeStep.description}</p>
                 </div>
               ) : null}
@@ -3267,14 +3267,14 @@ function ClientOnboarding() {
 
       {!submissionComplete ? (
         <div className="fixed inset-x-0 bottom-0 z-40 bg-[linear-gradient(180deg,rgba(249,251,253,0)_0%,rgba(255,255,255,0.92)_20%,rgba(255,255,255,0.98)_100%)] backdrop-blur-xl md:static md:mt-5 md:bg-transparent md:backdrop-blur-0">
-          <div className={`${PAGE_CONTAINER_CLASS} px-4 pt-3 pb-[max(14px,env(safe-area-inset-bottom))] md:px-0 md:pt-0 md:pb-0`}>
-            <div className="rounded-t-[24px] border border-[#dbe5ef] bg-white/95 px-4 py-3 shadow-[0_-14px_32px_rgba(15,23,42,0.08)] md:rounded-none md:border-0 md:bg-transparent md:px-0 md:py-0 md:shadow-none">
+          <div className={`${PAGE_CONTAINER_CLASS} px-3 pt-2 pb-[max(8px,env(safe-area-inset-bottom))] md:px-0 md:pt-0 md:pb-0`}>
+            <div className="rounded-t-[20px] border border-[#dbe5ef] bg-white/95 px-3 py-2 shadow-[0_-12px_28px_rgba(15,23,42,0.08)] md:rounded-none md:border-0 md:bg-transparent md:px-0 md:py-0 md:shadow-none">
               <div className="flex items-center justify-between gap-2 md:justify-start md:gap-3">
-                <Button type="button" variant="ghost" onClick={() => void handleSaveDraft()} disabled={saving} className="min-h-[50px]">
+                <Button type="button" variant="ghost" onClick={() => void handleSaveDraft()} disabled={saving} className="min-h-[38px] md:min-h-[50px]">
                   Save Draft
                 </Button>
                 {activeStepIndex > 0 ? (
-                  <Button type="button" variant="ghost" onClick={handlePreviousStep} className="min-h-[50px]">
+                  <Button type="button" variant="ghost" onClick={handlePreviousStep} className="min-h-[38px] md:min-h-[50px]">
                     <ChevronLeft size={14} /> Back
                   </Button>
                 ) : (
@@ -3294,7 +3294,7 @@ function ClientOnboarding() {
                   handleNextStep()
                 }}
                 disabled={saving}
-                className="mt-3 w-full min-h-[54px] md:max-w-[320px]"
+                className="mt-2 w-full min-h-[46px] md:mt-3 md:min-h-[54px] md:max-w-[320px]"
               >
                 {isLastStep ? 'Submit Onboarding' : 'Next Step'}
                 {isLastStep ? null : <ChevronRight size={14} />}
