@@ -1,5 +1,6 @@
 import { Download, FileUp, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { csvEscape, mapCsvRowsToImportRows, parseCsvText, pickImportValue } from '../../lib/csvImport'
 import { leadCategoryLabel, normalizeLeadCategory } from '../../lib/leadCategory'
 import { processManualImportPayload } from '../../services/leadSourceConnectorService'
 
@@ -29,54 +30,6 @@ function normalizeText(value) {
   return String(value ?? '').trim()
 }
 
-function csvEscape(value = '') {
-  const text = normalizeText(value)
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
-}
-
-function parseCsvText(text = '') {
-  const rows = []
-  let current = []
-  let cell = ''
-  let quoted = false
-
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index]
-    const next = text[index + 1]
-
-    if (char === '"') {
-      if (quoted && next === '"') {
-        cell += '"'
-        index += 1
-      } else {
-        quoted = !quoted
-      }
-      continue
-    }
-
-    if (char === ',' && !quoted) {
-      current.push(cell)
-      cell = ''
-      continue
-    }
-
-    if ((char === '\n' || char === '\r') && !quoted) {
-      if (char === '\r' && next === '\n') index += 1
-      current.push(cell)
-      if (current.some((entry) => normalizeText(entry))) rows.push(current)
-      current = []
-      cell = ''
-      continue
-    }
-
-    cell += char
-  }
-
-  current.push(cell)
-  if (current.some((entry) => normalizeText(entry))) rows.push(current)
-  return rows
-}
-
 function getLockedImportCategory(value = '') {
   const category = normalizeLeadCategory(value, '')
   return category === 'buyer' || category === 'seller' ? category : ''
@@ -101,23 +54,6 @@ function downloadTextFile(fileName, text) {
   link.download = fileName
   link.click()
   URL.revokeObjectURL(link.href)
-}
-
-function mapCsvRowsToImportRows(csvRows = []) {
-  const [headers = [], ...bodyRows] = csvRows
-  const cleanHeaders = headers.map(normalizeText)
-  if (!cleanHeaders.some(Boolean)) throw new Error('The CSV needs a header row.')
-
-  return bodyRows.map((cells, index) => {
-    const row = {}
-    cleanHeaders.forEach((header, cellIndex) => {
-      if (header) row[header] = normalizeText(cells[cellIndex])
-    })
-    return {
-      ...row,
-      __rowNumber: index + 2,
-    }
-  }).filter((row) => Object.entries(row).some(([key, value]) => key !== '__rowNumber' && normalizeText(value)))
 }
 
 function lockImportRowCategory(row = {}, defaultLeadCategory = '') {
@@ -262,12 +198,12 @@ export default function LeadImportModal({ open, organisationId, actor, defaultLe
                     {previewRows.map((row) => (
                       <tr key={row.__rowNumber}>
                         <td className="px-4 py-3 text-slate-500">{row.__rowNumber}</td>
-                        <td className="px-4 py-3 font-semibold text-slate-950">{row.Name || row.name || '—'}</td>
-                        <td className="px-4 py-3 text-slate-600">{row.Phone || row.phone || '—'}</td>
-                        <td className="px-4 py-3 text-slate-600">{row.Email || row.email || '—'}</td>
-                        <td className="px-4 py-3 text-slate-600">{row['Lead Category'] || row.leadCategory || row.category || '—'}</td>
-                        <td className="px-4 py-3 text-slate-600">{row.Source || row.source || 'Manual Import'}</td>
-                        <td className="px-4 py-3 text-slate-600">{row.Area || row.area || row.Suburb || '—'}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-950">{pickImportValue(row, ['Name', 'name', 'Full Name', 'fullName']) || '—'}</td>
+                        <td className="px-4 py-3 text-slate-600">{pickImportValue(row, ['Phone', 'phone', 'Mobile', 'mobile']) || '—'}</td>
+                        <td className="px-4 py-3 text-slate-600">{pickImportValue(row, ['Email', 'email']) || '—'}</td>
+                        <td className="px-4 py-3 text-slate-600">{pickImportValue(row, ['Lead Category', 'leadCategory', 'category']) || '—'}</td>
+                        <td className="px-4 py-3 text-slate-600">{pickImportValue(row, ['Source', 'source']) || 'Manual Import'}</td>
+                        <td className="px-4 py-3 text-slate-600">{pickImportValue(row, ['Area', 'area', 'Suburb', 'suburb']) || '—'}</td>
                       </tr>
                     ))}
                   </tbody>

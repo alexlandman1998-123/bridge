@@ -1,5 +1,6 @@
 import { createOrUpdateLeadFromEnquiry, normalizeLeadSource, recordLeadIngestionFailure } from './leadIngestionService'
 import { getOrganisationPrivateListings } from './privateListingService'
+import { pickImportValue } from '../lib/csvImport'
 import { inferLeadCategoryFromSource, normalizeLeadCategory } from '../lib/leadCategory'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -260,29 +261,30 @@ export function mapWhatsAppPayload(payload = {}) {
 }
 
 export function mapManualImportRow(row = {}) {
+  const pickRow = (keys) => pickImportValue(row, keys)
   return buildCanonicalLeadPayload({
-    source: pickFirst(row, ['Source', 'source']) || 'Manual Import',
-    organisationId: pickFirst(row, ['Organisation ID', 'organisation_id', 'organisationId']),
-    externalReference: buildExternalReference(pickFirst(row, ['External Reference', 'external_reference', 'externalReference', 'Reference', 'reference', 'ID', 'id']), 'IMPORT'),
-    name: pickFirst(row, ['Name', 'name', 'Full Name', 'full_name', 'fullName']),
-    phone: pickFirst(row, ['Phone', 'phone', 'Mobile', 'mobile']),
-    email: pickFirst(row, ['Email', 'email']),
-    message: pickFirst(row, ['Message', 'message', 'Notes', 'notes']),
-    leadCategory: pickFirst(row, ['Lead Category', 'lead_category', 'leadCategory', 'Category', 'category', 'Type', 'type']),
-    listingReference: pickFirst(row, ['Listing Reference', 'listing_reference', 'listingReference']),
-    budget: pickFirst(row, ['Budget', 'budget', 'Budget Max', 'budget_max', 'budgetMax']),
-    budgetMin: pickFirst(row, ['Budget Min', 'budget_min', 'budgetMin', 'Minimum Budget', 'minimum_budget']),
-    bedroomsMin: pickFirst(row, ['Bedrooms', 'bedrooms', 'Bedrooms Min', 'bedrooms_min', 'bedroomsMin']),
-    bathroomsMin: pickFirst(row, ['Bathrooms', 'bathrooms', 'Bathrooms Min', 'bathrooms_min', 'bathroomsMin']),
-    area: pickFirst(row, ['Area', 'area', 'Suburb', 'suburb']),
-    suburb: pickFirst(row, ['Suburb', 'suburb']),
-    city: pickFirst(row, ['City', 'city']),
-    province: pickFirst(row, ['Province', 'province']),
-    propertyType: pickFirst(row, ['Property Type', 'property_type', 'propertyType']),
-    timeline: pickFirst(row, ['Timeline', 'timeline', 'Move Date', 'move_date']),
-    urgency: pickFirst(row, ['Urgency', 'urgency', 'Priority', 'priority']),
+    source: pickRow(['Source', 'source']) || 'Manual Import',
+    organisationId: pickRow(['Organisation ID', 'organisation_id', 'organisationId']),
+    externalReference: buildExternalReference(pickRow(['External Reference', 'external_reference', 'externalReference', 'Reference', 'reference', 'ID', 'id']), 'IMPORT'),
+    name: pickRow(['Name', 'name', 'Full Name', 'full_name', 'fullName']),
+    phone: pickRow(['Phone', 'phone', 'Mobile', 'mobile']),
+    email: pickRow(['Email', 'email']),
+    message: pickRow(['Message', 'message', 'Notes', 'notes']),
+    leadCategory: pickRow(['Lead Category', 'lead_category', 'leadCategory', 'Category', 'category', 'Type', 'type']),
+    listingReference: pickRow(['Listing Reference', 'listing_reference', 'listingReference']),
+    budget: pickRow(['Budget', 'budget', 'Budget Max', 'budget_max', 'budgetMax']),
+    budgetMin: pickRow(['Budget Min', 'budget_min', 'budgetMin', 'Minimum Budget', 'minimum_budget']),
+    bedroomsMin: pickRow(['Bedrooms', 'bedrooms', 'Bedrooms Min', 'bedrooms_min', 'bedroomsMin']),
+    bathroomsMin: pickRow(['Bathrooms', 'bathrooms', 'Bathrooms Min', 'bathrooms_min', 'bathroomsMin']),
+    area: pickRow(['Area', 'area', 'Suburb', 'suburb']),
+    suburb: pickRow(['Suburb', 'suburb']),
+    city: pickRow(['City', 'city']),
+    province: pickRow(['Province', 'province']),
+    propertyType: pickRow(['Property Type', 'property_type', 'propertyType']),
+    timeline: pickRow(['Timeline', 'timeline', 'Move Date', 'move_date']),
+    urgency: pickRow(['Urgency', 'urgency', 'Priority', 'priority']),
     rawPayload: row,
-  }, pickFirst(row, ['Source', 'source']) || 'Manual Import')
+  }, pickRow(['Source', 'source']) || 'Manual Import')
 }
 
 export function mapGenericSourcePayload(payload = {}) {

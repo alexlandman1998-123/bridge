@@ -27,9 +27,7 @@ import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import AreaAutocomplete from '../components/location/AreaAutocomplete'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { createAgencyCrmLeadActivity, createAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
-import { leadCategoryLabel, normalizeLeadCategory } from '../lib/leadCategory'
 import { readAgentPrivateListings } from '../lib/agentListingStorage'
-import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import {
   createCanvassingActivity,
   createCanvassingProspect,
@@ -37,6 +35,9 @@ import {
   listCanvassingWorkspace,
   updateCanvassingProspect,
 } from '../lib/canvassingRepository'
+import { csvEscape, mapCsvRowsToImportRows as mapCsvRowsToCanvassingRows, parseCsvText, pickImportValue } from '../lib/csvImport'
+import { leadCategoryLabel, normalizeLeadCategory } from '../lib/leadCategory'
+import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../lib/settingsApi'
 import { getAgentPrivateListings } from '../services/privateListingService'
 import { createLeadRequirement, listLeadRequirements } from '../services/leadRequirementService'
@@ -291,73 +292,6 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
 
-function csvEscape(value = '') {
-  const text = normalizeText(value)
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
-}
-
-function parseCsvText(text = '') {
-  const rows = []
-  let current = []
-  let cell = ''
-  let quoted = false
-
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index]
-    const next = text[index + 1]
-
-    if (char === '"') {
-      if (quoted && next === '"') {
-        cell += '"'
-        index += 1
-      } else {
-        quoted = !quoted
-      }
-      continue
-    }
-
-    if (char === ',' && !quoted) {
-      current.push(cell)
-      cell = ''
-      continue
-    }
-
-    if ((char === '\n' || char === '\r') && !quoted) {
-      if (char === '\r' && next === '\n') index += 1
-      current.push(cell)
-      if (current.some((entry) => normalizeText(entry))) rows.push(current)
-      current = []
-      cell = ''
-      continue
-    }
-
-    cell += char
-  }
-
-  current.push(cell)
-  if (current.some((entry) => normalizeText(entry))) rows.push(current)
-  return rows
-}
-
-function mapCsvRowsToCanvassingRows(csvRows = []) {
-  const [headers = [], ...bodyRows] = csvRows
-  const cleanHeaders = headers.map(normalizeText)
-  if (!cleanHeaders.some(Boolean)) throw new Error('The CSV needs a header row.')
-
-  return bodyRows
-    .map((cells, index) => {
-      const row = {}
-      cleanHeaders.forEach((header, cellIndex) => {
-        if (header) row[header] = normalizeText(cells[cellIndex])
-      })
-      return {
-        ...row,
-        __rowNumber: index + 2,
-      }
-    })
-    .filter((row) => Object.entries(row).some(([key, value]) => key !== '__rowNumber' && normalizeText(value)))
-}
-
 function buildCanvassingImportTemplateCsv(audience = 'seller') {
   const key = audience === 'buyer' ? 'buyer' : 'seller'
   return [CANVASSING_IMPORT_TEMPLATE_COLUMNS, ...(CANVASSING_IMPORT_TEMPLATE_ROWS[key] || [])]
@@ -373,14 +307,6 @@ function downloadTextFile(fileName, text) {
   link.download = fileName
   link.click()
   URL.revokeObjectURL(link.href)
-}
-
-function pickImportValue(row = {}, keys = []) {
-  for (const key of keys) {
-    const value = row[key]
-    if (normalizeText(value)) return normalizeText(value)
-  }
-  return ''
 }
 
 function splitImportName(row = {}) {

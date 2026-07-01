@@ -3,6 +3,7 @@ import fs from 'node:fs/promises'
 
 const canvassingPageSource = await fs.readFile(new URL('../src/pages/PipelineCanvassingPage.jsx', import.meta.url), 'utf8')
 const appSource = await fs.readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
+const csvImportSource = await fs.readFile(new URL('../src/lib/csvImport.js', import.meta.url), 'utf8')
 
 assert.match(appSource, /path="\/pipeline\/canvassing\/prospects\/:prospectId"/, 'residential canvassing prospects should have a routed workspace page')
 assert.match(canvassingPageSource, /createAgencyCrmLeadRecord/, 'residential canvassing should create CRM lead records when converting prospects')
@@ -44,6 +45,11 @@ assert.doesNotMatch(canvassingPageSource, /BRIDGE9_PRINCIPAL_DEMO_AGENT_EMAIL/, 
 assert.match(canvassingPageSource, /CanvassingImportModal/, 'residential canvassing should expose a standalone bulk upload module')
 assert.match(canvassingPageSource, /audience=\{prospectView\}/, 'canvassing import should lock to the selected buyer or seller prospect view')
 assert.match(canvassingPageSource, /buildCanvassingImportPayload/, 'canvassing import should map CSV rows into canvassing prospect payloads')
+assert.match(canvassingPageSource, /from '..\/lib\/csvImport'/, 'canvassing import should use the shared CSV parser and field lookup')
+assert.match(csvImportSource, /function detectCsvDelimiter\(text = ''\)/, 'shared CSV import should detect Excel CSV delimiters before parsing rows')
+assert.match(csvImportSource, /const delimiterCandidates = \[',', ';', '\\t'\]/, 'shared CSV import should accept comma, semicolon and tab-delimited CSV files')
+assert.match(csvImportSource, /function normalizeImportHeaderKey\(value\)/, 'shared CSV import should normalize CSV headers before field lookup')
+assert.match(csvImportSource, /aliases = new Set\(keys\.map\(normalizeImportHeaderKey\)/, 'shared CSV import field lookup should tolerate template header variants')
 assert.match(canvassingPageSource, /createCanvassingProspect\(organisationId, payload\)/, 'canvassing import should create canvassing prospects directly')
 assert.match(canvassingPageSource, /normalizedAudience === 'buyer' \? 'Buyer' : 'Seller'/, 'canvassing bulk upload should support buyer and seller-specific import copy')
 assert.match(canvassingPageSource, /Import \$\{audienceLabel\} Prospects/, 'canvassing bulk upload should label the selected import mode')

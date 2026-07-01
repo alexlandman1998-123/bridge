@@ -38,6 +38,9 @@ assert.match(migrationSql, /lead_ingestion_logs_insert_member/i)
 assert.match(migrationSql, /bridge_is_active_member\(organisation_id\)/i)
 
 const serviceSource = await fs.readFile(new URL('../src/services/leadIngestionService.js', import.meta.url), 'utf8')
+const connectorSource = await fs.readFile(new URL('../src/services/leadSourceConnectorService.js', import.meta.url), 'utf8')
+const leadImportModalSource = await fs.readFile(new URL('../src/components/leads/LeadImportModal.jsx', import.meta.url), 'utf8')
+const csvImportSource = await fs.readFile(new URL('../src/lib/csvImport.js', import.meta.url), 'utf8')
 for (const method of [
   'ingestProperty24Lead',
   'ingestPrivatePropertyLead',
@@ -124,7 +127,8 @@ assert.match(pageSource, /normalizeCanonicalLeadCategory\(createCategory, 'other
 assert.match(pageSource, /leadCategory: category/)
 assert.match(pageSource, /sellerPropertyAddress: category === 'seller'/)
 assert.match(pageSource, /budget: category === 'buyer'/)
-assert.match(pageSource, /buildLeadImportPath\(filters\.category\)/, 'lead list import should carry the selected buyer or seller category into bulk upload')
+assert.match(pageSource, /setImportLeadCategory\(normalizedCategory === 'buyer' \|\| normalizedCategory === 'seller' \? normalizedCategory : ''\)/, 'lead list import should carry the selected buyer or seller category into bulk upload')
+assert.match(pageSource, /defaultLeadCategory=\{importLeadCategory\}/, 'lead list import modal should receive the selected buyer or seller category')
 assert.doesNotMatch(pageSource, /<th[^>]*>\s*Next Action\s*<\/th>/)
 assert.equal(pageSource.includes('navigate(`/pipeline/leads/${createdLead.leadId}`)'), true)
 
@@ -132,6 +136,11 @@ const enquiriesPageSource = await fs.readFile(new URL('../src/pages/AgentEnquiri
 assert.match(enquiriesPageSource, /searchParams\.get\('leadCategory'\)/, 'enquiries page should read leadCategory import intent')
 assert.match(enquiriesPageSource, /lockImportRowCategory/, 'bulk upload should lock rows to the requested buyer or seller import category')
 assert.match(enquiriesPageSource, /Import \$\{lockedLeadCategoryLabel\} Leads/, 'bulk upload modal should show the selected buyer or seller import mode')
+assert.match(enquiriesPageSource, /from '..\/lib\/csvImport'/, 'enquiries bulk upload should use the shared CSV parser and field lookup')
+assert.match(leadImportModalSource, /from '..\/..\/lib\/csvImport'/, 'lead bulk upload modal should use the shared CSV parser and field lookup')
+assert.match(connectorSource, /pickImportValue/, 'manual lead import mapping should use normalized CSV field lookup for every imported field')
+assert.match(csvImportSource, /const delimiterCandidates = \[',', ';', '\\t'\]/, 'shared CSV import should support Excel comma, semicolon and tab-delimited files')
+assert.match(csvImportSource, /\.replace\(\/\[\^a-z0-9\]\/g, ''\)/, 'shared CSV import should match header variants across spaces, underscores and punctuation')
 
 const server = await createServer({
   root: process.cwd(),
