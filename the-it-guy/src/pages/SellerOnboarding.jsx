@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Circle,
   ClipboardCheck,
+  Download,
   FileCheck2,
   Home,
   Landmark,
@@ -56,10 +57,11 @@ import {
   normalizePropertyAddress,
 } from '../lib/sellerPropertyAddress'
 import {
-  PROPERTY_DISCLOSURE_DECISION,
+  PROPERTY_DISCLOSURE_ANSWER,
+  PROPERTY_DISCLOSURE_QUESTIONS,
+  buildPropertyDisclosureDocumentMarkup,
   buildPropertyDisclosureDocument,
-  createBlankDisclosureIssue,
-  getDisclosureCategories,
+  getPropertyDisclosureAnswerSummary,
   getPropertyDisclosureStatus,
   getPropertyDisclosureStatusLabel,
   isPropertyDisclosureDigitallyComplete,
@@ -348,19 +350,8 @@ function todayInputValue() {
 function getPropertyDisclosureMissingItems(disclosure = {}) {
   const normalized = normalizePropertyDisclosure(disclosure, { kind: disclosure.kind || 'residential' })
   const missing = []
-  if (!normalized.decision) missing.push('choose a disclosure answer')
-  if (normalized.decision === PROPERTY_DISCLOSURE_DECISION.disclose) {
-    const hasCompleteIssue = normalized.issues.some((issue) =>
-      String(issue.categoryKey || '').trim() &&
-      String(issue.issueType || '').trim() &&
-      String(issue.description || '').trim() &&
-      String(issue.dateFirstIdentified || '').trim() &&
-      String(issue.currentStatus || '').trim(),
-    )
-    if (!hasCompleteIssue && !String(normalized.otherDisclosure || '').trim()) {
-      missing.push('add at least one known issue or use Other known issues')
-    }
-  }
+  const unanswered = PROPERTY_DISCLOSURE_QUESTIONS.filter((question) => !normalized.responses?.[question.key]?.answer)
+  if (unanswered.length) missing.push(`answer all Annexure A questions (${unanswered.length} remaining)`)
   if (!normalized.declarationAccepted) missing.push('accept the seller declaration')
   if (!normalized.signature) missing.push('enter a signature')
   if (!normalized.signedAt) missing.push('select a signature date')
@@ -1292,138 +1283,96 @@ function PropertyDisclosureSection({
   disclosure,
   disclosureKind = 'residential',
   sellerName = '',
-  onDecisionChange,
-  onAddIssue,
-  onUpdateIssue,
-  onRemoveIssue,
+  onAnswerChange,
+  onDownload,
   onDisclosureChange,
 }) {
   const normalized = normalizePropertyDisclosure(disclosure, { kind: disclosureKind })
-  const categories = getDisclosureCategories(disclosureKind)
   const statusLabel = getPropertyDisclosureStatusLabel(getPropertyDisclosureStatus(normalized))
-  const hasKnownIssues = normalized.decision === PROPERTY_DISCLOSURE_DECISION.disclose
+  const answerSummary = getPropertyDisclosureAnswerSummary(normalized)
+  const answerOptions = [
+    { key: PROPERTY_DISCLOSURE_ANSWER.yes, label: 'Yes' },
+    { key: PROPERTY_DISCLOSURE_ANSWER.no, label: 'No' },
+    { key: PROPERTY_DISCLOSURE_ANSWER.unsure, label: 'Unsure' },
+  ]
 
   return (
     <StepShell
       eyebrow="Property Disclosure"
-      title="Help buyers and agents understand known property matters"
-      description="This declaration captures any known defects, disputes, risks, or material facts in a structured format. If there are no known issues, you only need to sign the declaration."
+      title="Declaration by Seller - Annexure A"
+      description="Complete the disclosure in the same structure as the mandate annexure. It can be downloaded as its own PDF afterwards."
     >
       <div className="space-y-5">
         <FormSection
           icon={ShieldCheck}
-          title="Disclosure question"
-          description="Are you aware of any defects, issues, disputes or material facts relating to the property that should be disclosed?"
+          title="Annexure A questions"
+          description="Answer each item Yes, No, or Unsure. Use the comments section for explanations where needed."
         >
-          <div className="grid gap-3 md:grid-cols-2">
-            <ChoiceCard
-              active={normalized.decision === PROPERTY_DISCLOSURE_DECISION.none}
-              title="No known defects or issues"
-              description="I am not aware of any known material issue that should be disclosed."
-              onClick={() => onDecisionChange(PROPERTY_DISCLOSURE_DECISION.none)}
-            />
-            <ChoiceCard
-              active={normalized.decision === PROPERTY_DISCLOSURE_DECISION.disclose}
-              title="Yes, there are matters to disclose"
-              description="I need to provide structured details about known issues."
-              onClick={() => onDecisionChange(PROPERTY_DISCLOSURE_DECISION.disclose)}
-            />
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-[14px] border border-[#dbe6f2] bg-white px-4 py-3 text-sm leading-6 text-[#4f6378]">
+            <span>Status: <strong className="text-[#22364a]">{statusLabel}</strong></span>
+            <span>{answerSummary.answered} / {answerSummary.total} answered</span>
           </div>
-          <div className="mt-4 rounded-[14px] border border-[#dbe6f2] bg-white px-4 py-3 text-sm leading-6 text-[#4f6378]">
-            Status: <strong className="text-[#22364a]">{statusLabel}</strong>
+          <div className="overflow-hidden rounded-[18px] border border-[#1f2937] bg-white">
+            <table className="w-full border-collapse text-left text-sm text-[#172334]">
+              <thead>
+                <tr className="bg-[#d9dde2]">
+                  <th className="border-b border-r border-[#1f2937] px-3 py-2 font-semibold">Question</th>
+                  {answerOptions.map((option) => (
+                    <th key={option.key} className="w-[78px] border-b border-r border-[#1f2937] px-2 py-2 text-center font-semibold last:border-r-0">{option.label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {PROPERTY_DISCLOSURE_QUESTIONS.map((question) => {
+                  const response = normalized.responses?.[question.key] || {}
+                  return (
+                    <tr key={question.key}>
+                      <td className="border-r border-t border-[#1f2937] px-3 py-2 align-top leading-6">
+                        <span className="font-semibold">{question.number}.</span> {question.text}
+                        {question.extraLabel ? (
+                          <label className="mt-2 grid max-w-[320px] gap-1 text-xs font-semibold text-[#4f6378]">
+                            {question.extraLabel}
+                            <input
+                              className="min-h-10 rounded-[10px] border border-[#d7e2ed] bg-white px-3 text-sm text-[#142334] outline-none focus:border-[#35546c]/40 focus:ring-2 focus:ring-[#35546c]/10"
+                              value={normalized.remoteControlsQuantity}
+                              onChange={(event) => onDisclosureChange('remoteControlsQuantity', event.target.value)}
+                              placeholder="e.g. 2 gate remotes, 1 garage remote"
+                            />
+                          </label>
+                        ) : null}
+                      </td>
+                      {answerOptions.map((option) => (
+                        <td key={option.key} className="border-r border-t border-[#1f2937] px-2 py-2 text-center align-middle last:border-r-0">
+                          <label className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-[#cbd7e4] bg-white">
+                            <input
+                              type="radio"
+                              className="h-4 w-4 accent-[#172334]"
+                              name={`disclosure-${question.key}`}
+                              checked={response.answer === option.key}
+                              onChange={() => onAnswerChange(question.key, option.key)}
+                            />
+                            <span className="sr-only">{option.label}</span>
+                          </label>
+                        </td>
+                      ))}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
+          <label className="mt-4 grid gap-2 text-sm font-medium text-[#2a4057]">
+            21. Comments or explanation for any of the above
+            <textarea
+              className={`${DETAIL_INPUT_CLASS} min-h-[150px] resize-y`}
+              value={normalized.comments}
+              onChange={(event) => onDisclosureChange({ comments: event.target.value, otherDisclosure: event.target.value })}
+              placeholder="Explain any yes or unsure answers, or add any other relevant disclosure."
+            />
+          </label>
         </FormSection>
 
-        {hasKnownIssues ? (
-          <FormSection
-            icon={ClipboardCheck}
-            title="Disclosure categories"
-            description="Add one row for each category that needs detail. Supporting document names or notes are optional here; file uploads stay available in the document step."
-          >
-            <div className="space-y-3">
-              {categories.map((category) => {
-                const categoryIssues = normalized.issues.filter((issue) => issue.categoryKey === category.key)
-                return (
-                  <details key={category.key} className="rounded-[18px] border border-[#dfe8f2] bg-white p-4" open={categoryIssues.length > 0 || category.key === 'structural'}>
-                    <summary className="cursor-pointer list-none">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-[#172334]">{category.label}</p>
-                          <p className="mt-1 text-xs leading-5 text-[#60748b]">{category.issueTypes.join(', ')}</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.preventDefault()
-                            onAddIssue(category.key)
-                          }}
-                          className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 text-xs font-semibold text-[#35546c]"
-                        >
-                          <Plus size={13} />
-                          Add
-                        </button>
-                      </div>
-                    </summary>
-                    <div className="mt-4 space-y-3">
-                      {categoryIssues.length ? categoryIssues.map((issue) => (
-                        <article key={issue.id} className="rounded-[16px] border border-[#dbe6f2] bg-[#fbfcfe] p-4">
-                          <div className="mb-3 flex items-center justify-between gap-3">
-                            <p className="text-sm font-semibold text-[#22364a]">Disclosure item</p>
-                            <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#ffd2d2] bg-white text-[#9f1239]" onClick={() => onRemoveIssue(issue.id)}>
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                          <div className="grid gap-3 md:grid-cols-2">
-                            <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                              Issue Type
-                              <select className={DETAIL_INPUT_CLASS} value={issue.issueType} onChange={(event) => onUpdateIssue(issue.id, 'issueType', event.target.value)}>
-                                <option value="">Select issue type</option>
-                                {category.issueTypes.map((issueType) => (
-                                  <option key={issueType} value={issueType}>{issueType}</option>
-                                ))}
-                              </select>
-                            </label>
-                            <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                              Date first identified
-                              <input className={DETAIL_INPUT_CLASS} value={issue.dateFirstIdentified} onChange={(event) => onUpdateIssue(issue.id, 'dateFirstIdentified', event.target.value)} placeholder="January 2026" />
-                            </label>
-                            <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
-                              Description
-                              <textarea className={`${DETAIL_INPUT_CLASS} min-h-[110px] resize-y`} value={issue.description} onChange={(event) => onUpdateIssue(issue.id, 'description', event.target.value)} placeholder="Describe the known issue clearly." />
-                            </label>
-                            <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                              Current status
-                              <input className={DETAIL_INPUT_CLASS} value={issue.currentStatus} onChange={(event) => onUpdateIssue(issue.id, 'currentStatus', event.target.value)} placeholder="Temporary repair completed" />
-                            </label>
-                            <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                              Supporting documents
-                              <input className={DETAIL_INPUT_CLASS} value={issue.supportingDocuments} onChange={(event) => onUpdateIssue(issue.id, 'supportingDocuments', event.target.value)} placeholder="Roof invoice, engineer report, photos" />
-                            </label>
-                          </div>
-                        </article>
-                      )) : (
-                        <p className="rounded-[14px] border border-dashed border-[#dbe6f2] bg-[#fbfcfe] px-4 py-3 text-sm text-[#60748b]">
-                          No disclosure items added for {category.label}.
-                        </p>
-                      )}
-                    </div>
-                  </details>
-                )
-              })}
-            </div>
-            <label className="mt-4 grid gap-2 text-sm font-medium text-[#2a4057]">
-              Other known issues
-              <textarea
-                className={`${DETAIL_INPUT_CLASS} min-h-[120px] resize-y`}
-                value={normalized.otherDisclosure}
-                onChange={(event) => onDisclosureChange('otherDisclosure', event.target.value)}
-                placeholder="Please disclose any other known issue that may affect a buyer's decision."
-              />
-            </label>
-          </FormSection>
-        ) : null}
-
-        {normalized.decision ? (
+        {answerSummary.answered ? (
           <FormSection
             icon={FileCheck2}
             title="Seller Declaration"
@@ -1445,7 +1394,20 @@ function PropertyDisclosureSection({
                 Date
                 <input className={DETAIL_INPUT_CLASS} type="date" value={normalized.signedAt} onChange={(event) => onDisclosureChange('signedAt', event.target.value)} />
               </label>
+              <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                Signed at
+                <input className={DETAIL_INPUT_CLASS} value={normalized.signedPlace} onChange={(event) => onDisclosureChange('signedPlace', event.target.value)} placeholder="Place of signature" />
+              </label>
             </div>
+            <button
+              type="button"
+              onClick={onDownload}
+              disabled={!isPropertyDisclosureDigitallyComplete(normalized)}
+              className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-[14px] border border-[#dbe5ef] bg-white px-4 text-sm font-semibold text-[#35546c] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Download size={15} />
+              Download Disclosure PDF
+            </button>
           </FormSection>
         ) : null}
       </div>
@@ -1453,7 +1415,7 @@ function PropertyDisclosureSection({
   )
 }
 
-function SellerCompletedState({ token, listing, form, brand }) {
+function SellerCompletedState({ token, listing, form, brand, onDownloadDisclosure }) {
   const clientSellingPath = `/client/${token}/selling/documents`
   const mandateTypeLabel = MANDATE_TYPE_OPTIONS.find((item) => item.value === form.mandateType)?.label || 'Not selected'
 
@@ -1480,6 +1442,16 @@ function SellerCompletedState({ token, listing, form, brand }) {
             <Link to={clientSellingPath} className="inline-flex min-h-[50px] w-full items-center justify-center rounded-[16px] bg-[#172334] px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] sm:w-auto">
               Open Seller Portal
             </Link>
+            {isPropertyDisclosureDigitallyComplete(form?.propertyDisclosure || {}) ? (
+              <button
+                type="button"
+                onClick={onDownloadDisclosure}
+                className="inline-flex min-h-[50px] w-full items-center justify-center gap-2 rounded-[16px] border border-[#b7dfc3] bg-white px-4 py-3 text-sm font-semibold text-[#14532d] sm:w-auto"
+              >
+                <Download size={15} />
+                Download Disclosure
+              </button>
+            ) : null}
             <Link to="/" className="inline-flex min-h-[50px] w-full items-center justify-center rounded-[16px] border border-[#b7dfc3] bg-white px-4 py-3 text-sm font-semibold text-[#14532d] sm:w-auto">
               Return to Arch9
             </Link>
@@ -1881,19 +1853,20 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     })
   }
 
-  function handleDisclosureDecisionChange(decision) {
+  function handleDisclosureAnswerChange(questionKey, answer) {
     setForm((previous) => {
       const current = normalizePropertyDisclosure(previous?.propertyDisclosure || {}, {
         kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
       })
       const next = normalizePropertyDisclosure({
         ...current,
-        decision,
-        issues: decision === PROPERTY_DISCLOSURE_DECISION.none ? [] : current.issues,
-        otherDisclosure: decision === PROPERTY_DISCLOSURE_DECISION.none ? '' : current.otherDisclosure,
-        declarationAccepted: false,
-        signature: '',
-        signedAt: '',
+        responses: {
+          ...(current.responses || {}),
+          [questionKey]: {
+            ...(current.responses?.[questionKey] || {}),
+            answer,
+          },
+        },
       }, { kind: current.kind })
       return {
         ...(previous || {}),
@@ -1903,56 +1876,49 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     })
   }
 
-  function addDisclosureIssue(categoryKey) {
-    setForm((previous) => {
-      const current = normalizePropertyDisclosure(previous?.propertyDisclosure || {}, {
+  async function handleDownloadDisclosurePdf() {
+    if (!form?.propertyDisclosure) return
+    let pdfRoot = null
+    try {
+      setError('')
+      const normalizedDisclosure = normalizePropertyDisclosure(form.propertyDisclosure || {}, {
         kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
       })
-      const next = normalizePropertyDisclosure({
-        ...current,
-        decision: PROPERTY_DISCLOSURE_DECISION.disclose,
-        issues: [...current.issues, createBlankDisclosureIssue(categoryKey)],
-      }, { kind: current.kind })
-      return {
-        ...(previous || {}),
-        propertyDisclosure: next,
-        propertyDisclosureStatus: getPropertyDisclosureStatus(next),
+      if (!isPropertyDisclosureDigitallyComplete(normalizedDisclosure)) {
+        setError('Complete and sign the disclosure before downloading it.')
+        return
       }
-    })
-  }
-
-  function updateDisclosureIssue(issueId, key, value) {
-    setForm((previous) => {
-      const current = normalizePropertyDisclosure(previous?.propertyDisclosure || {}, {
-        kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
-      })
-      const next = normalizePropertyDisclosure({
-        ...current,
-        issues: current.issues.map((issue) => issue.id === issueId ? { ...issue, [key]: value } : issue),
-      }, { kind: current.kind })
-      return {
-        ...(previous || {}),
-        propertyDisclosure: next,
-        propertyDisclosureStatus: getPropertyDisclosureStatus(next),
-      }
-    })
-  }
-
-  function removeDisclosureIssue(issueId) {
-    setForm((previous) => {
-      const current = normalizePropertyDisclosure(previous?.propertyDisclosure || {}, {
-        kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
-      })
-      const next = normalizePropertyDisclosure({
-        ...current,
-        issues: current.issues.filter((issue) => issue.id !== issueId),
-      }, { kind: current.kind })
-      return {
-        ...(previous || {}),
-        propertyDisclosure: next,
-        propertyDisclosureStatus: getPropertyDisclosureStatus(next),
-      }
-    })
+      const { default: html2pdf } = await import('html2pdf.js/src/index.js')
+      const pdfDocument = new window.DOMParser().parseFromString(buildPropertyDisclosureDocumentMarkup(normalizedDisclosure, {
+        sellerName: getSellerDisplayName(listing, form),
+        propertyAddress: getPropertyDisplayAddress(listing, form),
+        listingId: String(listing?.id || '').trim(),
+      }), 'text/html')
+      const documentBody = pdfDocument.body
+      pdfRoot = document.createElement('div')
+      const style = pdfDocument.head.querySelector('style')
+      if (style) pdfRoot.appendChild(style.cloneNode(true))
+      Array.from(documentBody.children).forEach((child) => pdfRoot.appendChild(child.cloneNode(true)))
+      pdfRoot.style.position = 'fixed'
+      pdfRoot.style.left = '-10000px'
+      pdfRoot.style.top = '0'
+      document.body.appendChild(pdfRoot)
+      await html2pdf()
+        .set({
+          margin: 0,
+          filename: 'seller-disclosure-annexure-a.pdf',
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+          jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
+          pagebreak: { mode: ['css', 'legacy'] },
+        })
+        .from(pdfRoot)
+        .save()
+    } catch (downloadError) {
+      setError(downloadError?.message || 'Unable to download the disclosure PDF right now.')
+    } finally {
+      pdfRoot?.remove()
+    }
   }
 
   function updateCollectionItem(collectionKey, itemId, key, value) {
@@ -2438,7 +2404,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       <SellerOnboardingHero brand={agencyBrand} listing={listing} form={form} statusLabel={statusLabel} />
 
       {isCompleted ? (
-        <SellerCompletedState token={token} listing={listing} form={form} brand={agencyBrand} />
+        <SellerCompletedState token={token} listing={listing} form={form} brand={agencyBrand} onDownloadDisclosure={handleDownloadDisclosurePdf} />
       ) : (
         <section className={SECTION_CARD_CLASS}>
         <SellerStepProgress currentStep={currentStep} progress={progress} />
@@ -3546,10 +3512,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               disclosure={form.propertyDisclosure}
               disclosureKind={propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential'}
               sellerName={getSellerDisplayName(listing, form)}
-              onDecisionChange={handleDisclosureDecisionChange}
-              onAddIssue={addDisclosureIssue}
-              onUpdateIssue={updateDisclosureIssue}
-              onRemoveIssue={removeDisclosureIssue}
+              onAnswerChange={handleDisclosureAnswerChange}
+              onDownload={handleDownloadDisclosurePdf}
               onDisclosureChange={patchPropertyDisclosure}
             />
           ) : null}
@@ -3677,7 +3641,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   collapsible
                   items={[
                     { label: 'Disclosure Status', value: getPropertyDisclosureStatusLabel(getPropertyDisclosureStatus(form.propertyDisclosure || {})) },
-                    { label: 'Known Issues', value: form.propertyDisclosure?.decision === PROPERTY_DISCLOSURE_DECISION.disclose ? `${form.propertyDisclosure?.issues?.length || 0} item${(form.propertyDisclosure?.issues?.length || 0) === 1 ? '' : 's'} captured` : 'No known defects or issues declared' },
+                    { label: 'Annexure A Answers', value: `${getPropertyDisclosureAnswerSummary(form.propertyDisclosure || {}).answered} / ${getPropertyDisclosureAnswerSummary(form.propertyDisclosure || {}).total} answered` },
                     { label: 'Declaration', value: form.propertyDisclosure?.declarationAccepted ? 'Signed' : 'Not signed' },
                   ]}
                 />

@@ -106,8 +106,7 @@ const SUPPORTED_PACKET_TYPE_KEYS = new Set(SUPPORTED_PACKET_TYPES.map((item) => 
 
 const AGENCY_DOCUMENT_TABS = [
   { key: 'otp', packetType: 'otp', label: 'Offer to Purchase (OTP)', icon: FileSignature },
-  { key: 'sole_mandate', packetType: 'mandate', label: 'Sole Mandate', icon: FileText },
-  { key: 'dual_mandate', packetType: 'mandate', label: 'Dual Mandate', icon: FileText },
+  { key: 'sales_mandate', packetType: 'mandate', label: 'Sales Mandate', icon: FileText },
   { key: 'rental_mandate', packetType: 'mandate', label: 'Rental Mandate', icon: FileText },
   { key: 'disclosure_forms', packetType: 'mandate', label: 'Disclosure Forms', icon: FileText },
   { key: 'agency_documents', packetType: 'mandate', label: 'Agency Documents', icon: FileText },
@@ -2133,7 +2132,7 @@ export default function SettingsSigningTemplatesPage({
   }
 
   return (
-    <div className={`space-y-6 pb-28 ${selectedTemplate && activeTab === 'template' ? 'xl:pb-32' : ''}`}>
+    <div className={`space-y-6 pb-44 ${selectedTemplate && activeTab === 'template' ? 'xl:pb-40' : ''}`}>
       <header className="space-y-6 rounded-[28px] border border-[#dbe7f3] bg-white p-5 shadow-[0_18px_42px_rgba(15,23,42,0.05)] sm:p-6">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-3">
@@ -2482,7 +2481,7 @@ export default function SettingsSigningTemplatesPage({
               </aside>
             </form>
 
-            <div className="sticky bottom-4 z-20">
+            <div className="fixed inset-x-4 bottom-4 z-40 md:inset-x-6 lg:left-[calc(268px+1.5rem)] lg:right-6 xl:left-[calc(268px+2rem)] xl:right-8">
               <div className="rounded-[20px] border border-[#dbe7f3] bg-white/95 p-4 shadow-[0_24px_50px_rgba(15,23,42,0.16)] backdrop-blur">
                 <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)_auto] xl:items-center">
                   <button

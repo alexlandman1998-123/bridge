@@ -996,6 +996,15 @@ function resolveSellerOnboardingSnapshot({
   const sourceContextOnboardingFormData = asRecord(sourceContext.onboardingFormData || sourceContext.onboarding_form_data);
   const sourceContextSellerFormData = asRecord(sourceContextSellerOnboarding.formData || sourceContextSellerOnboarding.form_data);
   const sourceLeadSellerFormData = asRecord(sourceLeadSellerOnboarding.formData || sourceLeadSellerOnboarding.form_data);
+  const sourceSnapshot = asRecord(generatedSnapshot.sourceSnapshot || generatedSnapshot.source_snapshot);
+  const propertyDisclosureAnnexure = asRecord(
+    sourceContext.propertyDisclosureAnnexure ||
+      sourceContext.property_disclosure_annexure ||
+      generatedSnapshot.propertyDisclosureAnnexure ||
+      generatedSnapshot.property_disclosure_annexure ||
+      sourceSnapshot.propertyDisclosureAnnexure ||
+      sourceSnapshot.property_disclosure_annexure,
+  );
 
   const formData = {
     ...sourceContextOnboardingFormData,
@@ -1030,6 +1039,7 @@ function resolveSellerOnboardingSnapshot({
     sellerType: firstValue(generatedOnboarding.ownershipType, generatedOnboarding.sellerType, formData.ownershipType, formData.sellerType),
     ownershipStructure: firstValue(generatedOnboarding.ownershipType, formData.ownershipType),
     maritalRegime: firstValue(generatedOnboarding.maritalRegime, generatedOnboarding.marriageRegime, formData.maritalRegime, formData.marriageRegime),
+    propertyDisclosureAnnexure,
   };
 }
 
@@ -1037,10 +1047,12 @@ async function ensureSellerOnboardingSnapshotForListing({
   supabase,
   listingId,
   snapshot,
+  lockContext = {},
 }: {
   supabase: any;
   listingId: string;
   snapshot: ReturnType<typeof resolveSellerOnboardingSnapshot>;
+  lockContext?: Record<string, unknown>;
 }) {
   if (!listingId || !snapshot || (!Object.keys(snapshot.formData || {}).length && !snapshot.token)) return null;
 
@@ -1063,6 +1075,25 @@ async function ensureSellerOnboardingSnapshotForListing({
     ...(snapshot.formData || {}),
     ...existingFormData,
   };
+  const disclosure = asRecord(nextFormData.propertyDisclosure || nextFormData.property_disclosure);
+  if (Object.keys(disclosure).length) {
+    const existingLock = asRecord(disclosure.lockedSnapshot || disclosure.locked_snapshot);
+    const annexureSnapshot = asRecord(snapshot.propertyDisclosureAnnexure);
+    nextFormData.propertyDisclosure = {
+      ...disclosure,
+      lockedSnapshot: Object.keys(existingLock).length
+        ? existingLock
+        : {
+          ...annexureSnapshot,
+          sourceDisclosure: disclosure,
+          lockedAt: firstValue(lockContext.lockedAt) || new Date().toISOString(),
+          lockedByPacketId: firstValue(lockContext.packetId),
+          lockedByPacketVersionId: firstValue(lockContext.packetVersionId),
+          finalSignedFilePath: firstValue(lockContext.finalArtifactPath),
+          lockReason: "mandate_final_signed",
+        },
+    };
+  }
   const status = lower(snapshot.status) === "completed" || lower(existing.data?.status) === "completed"
     ? "completed"
     : firstValue(existing.data?.status, snapshot.status) || "not_started";
@@ -1341,6 +1372,12 @@ async function ensureListingFromSignedMandate({
     supabase,
     listingId,
     snapshot: sellerOnboardingSnapshot,
+    lockContext: {
+      packetId: normalizeText(packet.id),
+      packetVersionId: normalizeText(version.id),
+      finalArtifactPath: finalArtifactPath || null,
+      lockedAt: new Date().toISOString(),
+    },
   });
 
   await syncListingPublicationDraftFromSellerOnboarding({

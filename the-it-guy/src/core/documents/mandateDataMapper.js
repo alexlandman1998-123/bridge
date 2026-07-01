@@ -1,3 +1,9 @@
+import {
+  buildPropertyDisclosureAnnexureSnapshot,
+  isPropertyDisclosureDigitallyComplete,
+  normalizePropertyDisclosure,
+} from '../../lib/propertyDisclosure.js'
+
 const ZAR_CURRENCY = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
   currency: 'ZAR',
@@ -9,7 +15,7 @@ export {
   MANDATE_FIELD_GROUP_LABELS,
   MANDATE_FIELD_LABELS,
   validateMandateGenerationData,
-} from './mandateValidation'
+} from './mandateValidation.js'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -410,6 +416,35 @@ function resolveMandateProfile(onboarding = {}, lead = {}, agency = {}, organisa
   }
 }
 
+function resolvePropertyDisclosureAnnexure(onboarding = {}, privateListing = {}, transaction = {}) {
+  const source =
+    onboarding.propertyDisclosure ||
+    onboarding.property_disclosure ||
+    onboarding.disclosure ||
+    onboarding.generatedDocument?.disclosure ||
+    onboarding.propertyDisclosureDocument?.disclosure ||
+    {}
+  const normalized = normalizePropertyDisclosure(source, {
+    kind: onboarding.propertyBranch === 'commercial' || onboarding.property_branch === 'commercial' ? 'commercial' : 'residential',
+  })
+  if (!isPropertyDisclosureDigitallyComplete(normalized)) return null
+  return buildPropertyDisclosureAnnexureSnapshot(normalized, {
+    listingId: privateListing?.id || onboarding.listingId || onboarding.listing_id,
+    propertyId: privateListing?.property_profile_id || onboarding.propertyId || onboarding.property_id,
+    transactionId: transaction?.id || onboarding.transactionId || onboarding.transaction_id,
+    generatedAt: onboarding.generatedDocument?.generatedAt || onboarding.propertyDisclosure?.generatedDocument?.generatedAt,
+  })
+}
+
+function appendAnnexureLabel(current = '', label = '') {
+  const nextLabel = normalizeText(label)
+  if (!nextLabel) return normalizeText(current)
+  const existing = normalizeText(current)
+  if (!existing) return nextLabel
+  if (existing.toLowerCase().includes(nextLabel.toLowerCase())) return existing
+  return `${existing}; ${nextLabel}`
+}
+
 function resolveAgencyProfile(agency = {}, organisation = {}, lead = {}) {
   const legalName = firstText(agency.legalName, agency.legal_name, organisation.legalName, organisation.legal_name, agency.name, agency.organisationName, organisation.displayName, organisation.display_name, organisation.name, lead.agencyName)
   return {
@@ -468,6 +503,10 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
   const seller = resolveSellerProfile(onboarding, lead, contact)
   const property = resolvePropertyProfile(onboarding, lead, privateListing, transaction)
   const mandate = resolveMandateProfile(onboarding, lead, agency, organisation, privateListing, transaction, mandateDraft)
+  const propertyDisclosureAnnexure = resolvePropertyDisclosureAnnexure(onboarding, privateListing, transaction)
+  if (propertyDisclosureAnnexure) {
+    mandate.annexuresList = appendAnnexureLabel(mandate.annexuresList, propertyDisclosureAnnexure.title)
+  }
   const agencyProfile = resolveAgencyProfile(agency, organisation, lead)
   const agentProfile = resolveAgentProfile(agent, lead)
   const onboardingStatus = firstText(
@@ -487,6 +526,10 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
   })
   const warnings = []
   const sourceContext = resolveSourceContext({ onboarding, lead, privateListing, agency, organisation, agent, transaction })
+  if (propertyDisclosureAnnexure) {
+    sourceContext.propertyDisclosureAnnexure = propertyDisclosureAnnexure
+    sourceContext.property_disclosure_annexure = propertyDisclosureAnnexure
+  }
 
   if (['company', 'trust'].includes(seller.entityType) && !seller.representativeName) {
     warnings.push(`${toTitleCase(seller.entityType)} representative name is missing.`)
@@ -553,6 +596,9 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     mandate_marketing_permissions: safePlaceholder(mandate.marketingPermissions),
     mandate_access_instructions: safePlaceholder(mandate.accessInstructions),
     annexures_list: safePlaceholder(mandate.annexuresList),
+    property_disclosure_annexure: propertyDisclosureAnnexure ? safePlaceholder(propertyDisclosureAnnexure.title) : '',
+    property_disclosure_status: propertyDisclosureAnnexure ? safePlaceholder(propertyDisclosureAnnexure.status) : '',
+    property_disclosure_comments: propertyDisclosureAnnexure ? safePlaceholder(propertyDisclosureAnnexure.comments) : '',
     special_conditions: safePlaceholder(mandate.specialConditions),
 
     agency: safePlaceholder(agencyProfile.tradingName || agencyProfile.legalName),
@@ -597,6 +643,7 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     },
     placeholders,
     sourceContext,
+    propertyDisclosureAnnexure,
     warnings,
     sourceSnapshot: {
       onboarding,
@@ -606,6 +653,7 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
       agent: agentProfile,
       organisation,
       transaction,
+      propertyDisclosureAnnexure,
       sourceContext,
       generatedAt: new Date().toISOString(),
     },
