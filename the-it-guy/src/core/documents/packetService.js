@@ -1211,6 +1211,16 @@ function resolvePacketTypeContext(packetType, context = {}) {
     buyer: context?.buyer || null,
     onboardingFormData: context?.onboardingFormData || null,
     sellerDetails: context?.sellerDetails || context?.seller_details || null,
+    agency: context?.agency || context?.organisation || null,
+    organisation: context?.organisation || null,
+    agent: context?.agent || {
+      fullName: context?.generatedByName,
+      email: context?.agentEmail || context?.generatedByUserEmail,
+      phone: context?.agentPhone,
+      ffcNumber: context?.agentFfcNumber,
+    },
+    listing: context?.listing || null,
+    privateListing: context?.privateListing || context?.private_listing || null,
     propertyDisclosureAnnexure:
       context?.propertyDisclosureAnnexure ||
       context?.property_disclosure_annexure ||

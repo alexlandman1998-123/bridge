@@ -46,6 +46,43 @@ function appendAnnexureLabel(current = '', label = '') {
   return `${existing}; ${nextLabel}`
 }
 
+function firstRecordText(records = [], keys = []) {
+  const rows = Array.isArray(records) ? records : [records]
+  for (const row of rows) {
+    const record = asRecord(row)
+    if (!Object.keys(record).length) continue
+    for (const key of keys) {
+      const text = normalizeText(record?.[key])
+      if (text) return text
+    }
+  }
+  return ''
+}
+
+function compactUniqueJoin(values = [], separator = ', ') {
+  const seen = new Set()
+  const parts = []
+  for (const value of values) {
+    const text = normalizeText(value)
+    if (!text) continue
+    const key = text.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    parts.push(text)
+  }
+  return parts.join(separator)
+}
+
+function normalizeClauseText(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeText(item)).filter(Boolean).join('\n')
+  }
+  if (value && typeof value === 'object') {
+    return Object.values(value).map((item) => normalizeText(item)).filter(Boolean).join('\n')
+  }
+  return normalizeText(value)
+}
+
 function resolvePropertyDisclosureAnnexureFromSource(source = {}) {
   const payload = asRecord(source)
   const sourceContext = asRecord(payload.sourceContext || payload.source_context)
@@ -829,11 +866,61 @@ export function resolveOtpPacketPlaceholders({
   buyer = null,
   onboardingFormData = null,
   sellerDetails = null,
+  agency = null,
+  organisation = null,
+  agent = null,
+  listing = null,
+  privateListing = null,
   propertyDisclosureAnnexure = null,
   sourceContext = null,
   specialConditions = '',
 } = {}) {
-  const buyerEntityTypeRaw = normalizeText(transaction?.purchaser_type || onboardingFormData?.purchaserType || 'individual').toLowerCase()
+  const onboarding = asRecord(onboardingFormData)
+  const source = asRecord(sourceContext)
+  const sourceProperty = asRecord(
+    source.property ||
+      source.propertyFacts ||
+      source.property_facts ||
+      source.canonicalPropertyFacts ||
+      source.canonical_property_facts,
+  )
+  const sourceSeller = asRecord(source.seller || source.sellerFacts || source.seller_facts || source.canonicalSellerFacts || source.canonical_seller_facts)
+  const sourceListing = asRecord(listing || privateListing || source.listing || source.privateListing || source.private_listing || source.canonicalListing || source.canonical_listing)
+  const transactionMetadata = asRecord(transaction?.metadata_json || transaction?.metadata)
+  const unitMetadata = asRecord(unit?.metadata_json || unit?.metadata || unit?.property || unit?.property_facts)
+  const addressDetails = asRecord(
+    onboarding.addressDetails ||
+      onboarding.address_details ||
+      onboarding.propertyAddressDetails ||
+      onboarding.property_address_details ||
+      onboarding.property ||
+      onboarding.propertyFacts ||
+      onboarding.property_facts,
+  )
+  const offer = asRecord(source.offer || source.canonicalOffer || source.canonical_offer || source.acceptedOffer || source.accepted_offer || transaction?.offer)
+  const offerConditions = asRecord(
+    offer.conditions ||
+      offer.condition_json ||
+      offer.conditions_json ||
+      source.conditions ||
+      source.offerConditions ||
+      source.offer_conditions ||
+      onboarding.conditions ||
+      onboarding.offerConditions,
+  )
+  const propertyRecords = [
+    onboarding,
+    addressDetails,
+    sourceProperty,
+    sourceSeller,
+    sourceListing,
+    unitMetadata,
+    unit,
+    transaction,
+    transactionMetadata,
+    source,
+  ]
+  const buyerEntityTypeRaw = normalizeText(transaction?.purchaser_type || onboarding.purchaserType || onboarding.purchaser_type || 'individual').toLowerCase()
   const developmentSeller = resolveDevelopmentSellerDetails({ unit, transaction, contextSellerDetails: sellerDetails })
   const sellerSignatory = developmentSeller.signatory || {}
   const sellerEntityTypeRaw = normalizeText(developmentSeller.entityType || transaction?.seller_type || 'company').toLowerCase()
@@ -857,11 +944,11 @@ export function resolveOtpPacketPlaceholders({
       : null)
   const disclosureAnnexure = normalizePropertyDisclosureAnnexureForOtp(
     propertyDisclosureAnnexure ||
-      resolvePropertyDisclosureAnnexureFromSource(onboardingFormData) ||
+      resolvePropertyDisclosureAnnexureFromSource(onboarding) ||
       resolvePropertyDisclosureAnnexureFromSource(sourceContext),
   )
-  const annexuresList = appendAnnexureLabel(onboardingFormData?.annexuresList, disclosureAnnexure?.title)
-  const buyerParties = buildBuyerParties({ buyer, onboardingFormData })
+  const annexuresList = appendAnnexureLabel(onboarding.annexuresList || onboarding.annexures_list, disclosureAnnexure?.title)
+  const buyerParties = buildBuyerParties({ buyer, onboardingFormData: onboarding })
   const sellerParties = buildOtpSellerParties({
     sellerName,
     sellerRegistrationNumber,
@@ -870,27 +957,71 @@ export function resolveOtpPacketPlaceholders({
   })
   const primaryBuyer = buyerParties[0] || {}
   const primarySeller = sellerParties[0] || {}
+  const propertyUnitNumber = firstText(
+    firstRecordText(propertyRecords, ['property_unit_number', 'unitNumber', 'unit_number', 'unit', 'unitLabel', 'unit_label']),
+    unit?.unit_number ? `Unit ${unit.unit_number}` : '',
+  )
+  const propertySectionNumber = firstRecordText(propertyRecords, ['property_section_number', 'sectionNumber', 'section_number'])
+  const propertyComplexName = firstRecordText(propertyRecords, ['property_complex_name', 'complexName', 'complex_name', 'schemeName', 'scheme_name', 'estateComplexName', 'estate_complex_name'])
+  const propertyEstateName = firstRecordText(propertyRecords, ['property_estate_name', 'estateName', 'estate_name', 'estateComplexName', 'estate_complex_name'])
+  const sectionalTitleNumber = firstRecordText(propertyRecords, ['sectional_title_number', 'sectionalTitleNumber', 'sectionalTitleScheme', 'property_sectional_title_scheme', 'schemeNumber', 'scheme_number'])
+  const propertyAddress = firstText(
+    transaction?.property_address_line_1,
+    transaction?.property_address,
+    onboarding.propertyAddress,
+    onboarding.property_address,
+    sourceListing.address,
+    sourceListing.property_address,
+    sourceProperty.address,
+    sourceProperty.property_address,
+    unit?.development?.address,
+  )
+  const propertyCity = firstText(
+    transaction?.city,
+    onboarding.city,
+    onboarding.propertyCity,
+    onboarding.property_city,
+    addressDetails.city,
+    sourceListing.city,
+    sourceProperty.city,
+    unit?.development?.city,
+  )
+  const cashAmount =
+    normalizeOptionalNumber(transaction?.cash_amount) ??
+    normalizeOptionalNumber(onboarding.cash_amount) ??
+    normalizeOptionalNumber(onboarding.cashAmount) ??
+    normalizeOptionalNumber(onboarding?.finance?.cash_amount) ??
+    normalizeOptionalNumber(onboarding?.finance?.cashAmount) ??
+    normalizeOptionalNumber(offer.cash_amount) ??
+    normalizeOptionalNumber(offer.cashAmount) ??
+    normalizeOptionalNumber(offer.cashComponent)
+  const agencyProfile = asRecord(agency)
+  const organisationProfile = asRecord(organisation)
+  const agentProfile = asRecord(agent)
+  const agencyMetadata = asRecord(agencyProfile.metadata_json || agencyProfile.metadata || organisationProfile.metadata_json || organisationProfile.metadata)
 
   return {
     buyer_parties: buyerParties,
-    buyer_full_name: normalizeNullableText(primaryBuyer.name) || normalizeNullableText(buyer?.name) || normalizeNullableText(onboardingFormData?.firstName) || null,
+    buyer_full_name: normalizeNullableText(primaryBuyer.name) || normalizeNullableText(buyer?.name) || normalizeNullableText(onboarding.firstName) || null,
     buyer_id_number:
       normalizeNullableText(primaryBuyer.idNumber) ||
-      normalizeNullableText(onboardingFormData?.idNumber) ||
-      normalizeNullableText(onboardingFormData?.companyRegistrationNumber) ||
-      normalizeNullableText(onboardingFormData?.trustRegistrationNumber) ||
+      normalizeNullableText(onboarding.idNumber) ||
+      normalizeNullableText(onboarding.companyRegistrationNumber) ||
+      normalizeNullableText(onboarding.trustRegistrationNumber) ||
       null,
     buyer_email: normalizeNullableText(primaryBuyer.email) || normalizeNullableText(buyer?.email) || null,
     buyer_phone: normalizeNullableText(primaryBuyer.phone) || normalizeNullableText(buyer?.phone) || null,
+    buyer_marital_status: normalizeNullableText(onboarding.maritalStatus || onboarding.marital_status),
+    buyer_spouse_name: normalizeNullableText(onboarding.spouseName || onboarding.spouse_name),
     buyer_entity_type: toTitleCase(buyerEntityTypeRaw || 'individual'),
     'buyer.entity_type_raw': buyerEntityTypeRaw || 'individual',
-    buyer_representative_name: normalizeNullableText(onboardingFormData?.authorizedRepresentativeName),
-    buyer_representative_capacity: normalizeNullableText(onboardingFormData?.authorizedRepresentativeCapacity),
-    buyer_trust_registration_number: normalizeNullableText(onboardingFormData?.trustRegistrationNumber),
-    buyer_marketing_opt_in: normalizeNullableText(onboardingFormData?.marketingConsent),
+    buyer_representative_name: normalizeNullableText(onboarding.authorizedRepresentativeName || onboarding.authorisedRepresentativeName),
+    buyer_representative_capacity: normalizeNullableText(onboarding.authorizedRepresentativeCapacity || onboarding.authorisedRepresentativeCapacity),
+    buyer_trust_registration_number: normalizeNullableText(onboarding.trustRegistrationNumber),
+    buyer_marketing_opt_in: normalizeNullableText(onboarding.marketingConsent),
     buyer_domicilium_address:
-      normalizeNullableText(onboardingFormData?.residentialAddress) ||
-      normalizeNullableText(onboardingFormData?.physicalAddress) ||
+      normalizeNullableText(onboarding.residentialAddress) ||
+      normalizeNullableText(onboarding.physicalAddress) ||
       null,
 
     seller_parties: sellerParties,
@@ -921,22 +1052,41 @@ export function resolveOtpPacketPlaceholders({
       normalizeNullableText(unit?.development?.address) ||
       null,
 
-    unit_number: normalizeNullableText(unit?.unit_number ? `Unit ${unit.unit_number}` : null),
-    property_address:
-      normalizeNullableText(transaction?.property_address_line_1) ||
-      normalizeNullableText(onboardingFormData?.propertyAddress) ||
-      normalizeNullableText(unit?.development?.address) ||
-      null,
-    property_suburb: normalizeNullableText(transaction?.suburb) || normalizeNullableText(unit?.development?.suburb),
+    unit_number: normalizeNullableText(propertyUnitNumber),
+    erf_number: normalizeNullableText(firstRecordText(propertyRecords, ['erf_number', 'erfNumber', 'erf', 'lot_number', 'lotNumber'])),
+    property_address: normalizeNullableText(propertyAddress),
+    property_display_address:
+      normalizeNullableText(firstRecordText(propertyRecords, ['property_display_address', 'displayAddress', 'display_address', 'fullDisplayAddress', 'full_display_address'])) ||
+      normalizeNullableText(compactUniqueJoin([propertyUnitNumber, propertyComplexName, propertyEstateName, propertyAddress])),
+    property_suburb: normalizeNullableText(transaction?.suburb) || normalizeNullableText(onboarding.suburb || onboarding.propertySuburb || onboarding.property_suburb) || normalizeNullableText(unit?.development?.suburb),
+    property_city: normalizeNullableText(propertyCity),
     property_type: normalizeNullableText(transaction?.property_type) || normalizeNullableText(unit?.property_type),
-    property_nhbrc_certificate_number: normalizeNullableText(onboardingFormData?.nhbrcCertificateNumber),
+    property_unit_number: normalizeNullableText(propertyUnitNumber),
+    property_section_number: normalizeNullableText(propertySectionNumber),
+    property_complex_name: normalizeNullableText(propertyComplexName),
+    property_estate_name: normalizeNullableText(propertyEstateName),
+    sectional_title_number: normalizeNullableText(sectionalTitleNumber),
+    property_nhbrc_certificate_number: normalizeNullableText(onboarding.nhbrcCertificateNumber),
+    parking_bay: normalizeNullableText(firstRecordText(propertyRecords, ['parking_bay', 'parkingBay', 'parking', 'parking_bays', 'parkingBays'])),
+    storeroom: normalizeNullableText(firstRecordText(propertyRecords, ['storeroom', 'storeRoom', 'store_room', 'storageRoom', 'storage_room'])),
 
     purchase_price: formatCurrency(purchasePrice),
     deposit_amount: formatCurrency(transaction?.deposit_amount),
     finance_type: toTitleCase(String(transaction?.finance_type || 'cash').replace('combination', 'hybrid')),
     'transaction.finance_type_raw': normalizeText(transaction?.finance_type || 'cash').toLowerCase(),
     bond_amount: formatCurrency(transaction?.bond_amount),
-    additional_costs_note: normalizeNullableText(onboardingFormData?.additionalCostsNote),
+    cash_amount: formatCurrency(cashAmount),
+    occupation_date: normalizeNullableText(firstText(offerConditions.occupationDate, offerConditions.occupation_date, offer.occupationDate, offer.occupation_date, onboarding.occupationDate, onboarding.occupation_date)),
+    transfer_date: normalizeNullableText(firstText(transaction?.expected_transfer_date, transaction?.target_registration_date, onboarding.transferDate, onboarding.transfer_date, offer.transferDate, offer.transfer_date)),
+    suspensive_conditions: normalizeNullableText(firstText(
+      normalizeClauseText(offerConditions.suspensiveConditions),
+      normalizeClauseText(offerConditions.suspensive_conditions),
+      normalizeClauseText(offer.suspensiveConditions),
+      normalizeClauseText(offer.suspensive_conditions),
+      normalizeClauseText(onboarding.suspensiveConditions),
+      normalizeClauseText(onboarding.suspensive_conditions),
+    )),
+    additional_costs_note: normalizeNullableText(onboarding.additionalCostsNote),
 
     gross_commission_percentage:
       Number.isFinite(grossCommissionPercentage) ? `${Number(grossCommissionPercentage).toFixed(2)}%` : null,
@@ -944,16 +1094,27 @@ export function resolveOtpPacketPlaceholders({
     agent_commission_amount: formatCurrency(transaction?.agent_commission_amount),
     agency_commission_amount: formatCurrency(transaction?.agency_commission_amount),
 
-    agent_full_name: normalizeNullableText(transaction?.assigned_agent),
-    agent_email: normalizeNullableText(transaction?.assigned_agent_email),
+    agent_full_name: normalizeNullableText(transaction?.assigned_agent) || normalizeNullableText(agentProfile.fullName || agentProfile.full_name || agentProfile.name),
+    agent_email: normalizeNullableText(transaction?.assigned_agent_email) || normalizeNullableText(agentProfile.email),
+    agent_phone: normalizeNullableText(agentProfile.phone || agentProfile.mobile || source.agentPhone || source.agent_phone),
+    agent_ffc_number: normalizeNullableText(agentProfile.ffcNumber || agentProfile.ffc_number || agentProfile.fidelityFundCertificateNumber || source.agentFfcNumber || source.agent_ffc_number),
+    organisation_name: normalizeNullableText(organisationProfile.displayName || organisationProfile.display_name || organisationProfile.name || agencyProfile.name),
+    agency_legal_name: normalizeNullableText(agencyProfile.legalName || agencyProfile.legal_name || organisationProfile.legalName || organisationProfile.legal_name),
+    agency_registration_number: normalizeNullableText(agencyProfile.registrationNumber || agencyProfile.registration_number || agencyProfile.companyRegistrationNumber || organisationProfile.registrationNumber || organisationProfile.registration_number || organisationProfile.companyRegistrationNumber),
+    agency_vat_number: normalizeNullableText(agencyProfile.vatNumber || agencyProfile.vat_number || organisationProfile.vatNumber || organisationProfile.vat_number),
+    agency_address: normalizeNullableText(agencyProfile.address || agencyProfile.physicalAddress || agencyProfile.physical_address || organisationProfile.address || organisationProfile.physicalAddress || organisationProfile.physical_address),
+    branch_name: normalizeNullableText(agencyProfile.branchName || agencyProfile.branch_name || organisationProfile.branchName || organisationProfile.branch_name),
+    agency_fsp_number: normalizeNullableText(agencyProfile.fspNumber || agencyProfile.fsp_number || organisationProfile.fspNumber || organisationProfile.fsp_number || agencyMetadata.fspNumber || agencyMetadata.fsp_number),
     attorney_firm_name: normalizeNullableText(transaction?.attorney),
+    conveyancer_name: normalizeNullableText(transaction?.conveyancer_name || transaction?.assigned_attorney_name || transaction?.attorney_contact_name || source.conveyancerName || source.conveyancer_name),
     conveyancer_email: normalizeNullableText(transaction?.assigned_attorney_email),
+    conveyancer_reference: normalizeNullableText(transaction?.conveyancer_reference || transaction?.attorney_reference || transaction?.matter_number || source.conveyancerReference || source.conveyancer_reference),
     developer_name: normalizeNullableText(unit?.development?.developer_company) || normalizeNullableText(unit?.development?.name),
     developer_company_registration: sellerRegistrationNumber,
     developer_representative: normalizeNullableText(sellerSignatory.fullName),
-    developer_contact_email: normalizeNullableText(onboardingFormData?.developerEmail),
-    contractor_company_name: normalizeNullableText(onboardingFormData?.buildingContractorName),
-    contractor_registration_number: normalizeNullableText(onboardingFormData?.buildingContractorRegistrationNumber),
+    developer_contact_email: normalizeNullableText(onboarding.developerEmail),
+    contractor_company_name: normalizeNullableText(onboarding.buildingContractorName),
+    contractor_registration_number: normalizeNullableText(onboarding.buildingContractorRegistrationNumber),
     annexures_list: normalizeNullableText(annexuresList),
     property_disclosure_annexure: normalizeNullableText(disclosureAnnexure?.title),
     property_disclosure_status: normalizeNullableText(disclosureAnnexure?.status),

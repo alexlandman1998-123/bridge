@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import Button from '../components/ui/Button'
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
 import { getEdgeFunctionInvokeError, invokeEdgeFunction } from '../lib/supabaseClient'
@@ -428,6 +429,93 @@ function parsePropertyAddressQuery(query = '', fallback = {}) {
   }
 }
 
+function buildPropertyAddressAutocompleteValue(address = {}) {
+  const formattedAddress = formatPropertyAddress(address)
+  if (!formattedAddress) return null
+  return {
+    formattedAddress,
+    streetAddress: String(address.line1 || '').trim(),
+    suburb: String(address.suburb || '').trim(),
+    city: String(address.city || '').trim(),
+    province: String(address.province || '').trim(),
+    country: String(address.country || 'South Africa').trim() || 'South Africa',
+    postalCode: String(address.postalCode || '').trim(),
+    placeId: String(address.placeId || '').trim(),
+    googlePlaceId: String(address.placeId || '').trim(),
+  }
+}
+
+function mapGoogleAddressToPropertyAddress(value = null, fallback = {}) {
+  if (!value) return createBlankPropertyAddress()
+  const line1 = String(value.streetAddress || value.formattedAddress || '').trim()
+  const nextAddress = {
+    ...createBlankPropertyAddress(),
+    ...fallback,
+    query: String(value.formattedAddress || line1 || '').trim(),
+    line1,
+    line2: '',
+    suburb: String(value.suburb || '').trim(),
+    city: String(value.city || '').trim(),
+    province: String(value.province || '').trim(),
+    postalCode: String(value.postalCode || '').trim(),
+    municipality: String(value.city || fallback.municipality || '').trim(),
+    country: String(value.country || 'South Africa').trim() || 'South Africa',
+    placeId: String(value.placeId || value.googlePlaceId || '').trim(),
+    source: 'google_places',
+  }
+  nextAddress.formatted = formatPropertyAddress(nextAddress) || String(value.formattedAddress || '').trim()
+  return nextAddress
+}
+
+function buildResidentialAddressAutocompleteValue(form = {}) {
+  const details = form.residentialAddressDetails && typeof form.residentialAddressDetails === 'object'
+    ? form.residentialAddressDetails
+    : {}
+  const formattedAddress = String(
+    details.formattedAddress ||
+      details.formatted ||
+      form.residentialAddress ||
+      '',
+  ).trim()
+  if (!formattedAddress) return null
+  return {
+    formattedAddress,
+    streetAddress: String(details.streetAddress || details.line1 || formattedAddress).trim(),
+    suburb: String(details.suburb || '').trim(),
+    city: String(details.city || '').trim(),
+    province: String(details.province || '').trim(),
+    country: String(details.country || 'South Africa').trim() || 'South Africa',
+    postalCode: String(details.postalCode || details.postal_code || '').trim(),
+    placeId: String(details.placeId || details.googlePlaceId || details.place_id || '').trim(),
+    googlePlaceId: String(details.googlePlaceId || details.placeId || details.place_id || '').trim(),
+  }
+}
+
+function buildResidentialAddressPatch(value = null) {
+  if (!value) {
+    return {
+      residentialAddress: '',
+      residentialAddressDetails: {},
+    }
+  }
+  const formattedAddress = String(value.formattedAddress || value.streetAddress || '').trim()
+  return {
+    residentialAddress: formattedAddress,
+    residentialAddressDetails: {
+      formattedAddress,
+      streetAddress: String(value.streetAddress || formattedAddress).trim(),
+      suburb: String(value.suburb || '').trim(),
+      city: String(value.city || '').trim(),
+      province: String(value.province || '').trim(),
+      country: String(value.country || 'South Africa').trim() || 'South Africa',
+      postalCode: String(value.postalCode || '').trim(),
+      placeId: String(value.placeId || value.googlePlaceId || '').trim(),
+      googlePlaceId: String(value.googlePlaceId || value.placeId || '').trim(),
+      source: 'google_places',
+    },
+  }
+}
+
 function buildComplianceDocuments(listing = {}, fallbackRequirements = []) {
   const rows = [
     ...(Array.isArray(listing?.documentRequirements) ? listing.documentRequirements : []),
@@ -570,6 +658,18 @@ function getOwnershipBranch(value = '') {
   const normalized = String(value || '').toLowerCase()
   if (['married_cop', 'married_anc', 'married'].includes(normalized)) return 'married'
   return normalized || 'individual'
+}
+
+function resolveSellerResidentialAddress(form = {}) {
+  return String(
+    form.residentialAddress ||
+      form.sellerResidentialAddress ||
+      form.physicalAddress ||
+      form.domiciliumAddress ||
+      form.domicilium_address ||
+      form.address ||
+      '',
+  ).trim()
 }
 
 function normalizePersonRecordForForm(entry = {}, index = 0, roleTitle = 'Person') {
@@ -758,7 +858,7 @@ function normalizeFormData(listing) {
   const resolveAddress = () => {
     if (sellerBranch === 'company') return canonicalFacts?.seller?.company?.registered_address || canonicalFacts?.seller?.residential_address || existing.residentialAddress || ''
     if (sellerBranch === 'trust') return canonicalFacts?.seller?.trust?.registered_address || canonicalFacts?.seller?.residential_address || existing.residentialAddress || ''
-    return canonicalFacts?.seller?.residential_address || existing.residentialAddress || ''
+    return canonicalFacts?.seller?.residential_address || resolveSellerResidentialAddress(existing)
   }
   const ownershipFieldLabels = getOwnershipFieldLabels(flow?.seller_branch || existing.ownershipType || '')
   const resolvedPropertyCategory = normalizePropertyCategory(
@@ -817,6 +917,19 @@ function normalizeFormData(listing) {
   const ownershipType = normalizeOwnershipType(existing, canonicalFacts, flow)
   const ownershipBranch = getOwnershipBranch(ownershipType)
   const isVatEligibleOwnership = ['company', 'trust'].includes(ownershipBranch)
+  const resolvedSectionNumber =
+    existing.sectionNumber ||
+    canonicalFacts?.property?.section_number ||
+    canonicalFacts?.property?.scheme?.section_number ||
+    existing.unitNumber ||
+    canonicalFacts?.property?.unit_number ||
+    canonicalFacts?.property?.scheme?.unit_number ||
+    ''
+  const resolvedUnitNumber =
+    existing.unitNumber ||
+    canonicalFacts?.property?.unit_number ||
+    canonicalFacts?.property?.scheme?.unit_number ||
+    resolvedSectionNumber
 
   return {
     sellerFirstName: existing.sellerFirstName || canonicalFacts?.seller?.first_name || split.firstName,
@@ -825,6 +938,7 @@ function normalizeFormData(listing) {
     email: existing.email || canonicalFacts?.seller?.email || seller.email || '',
     phone: existing.phone || canonicalFacts?.seller?.phone || seller.phone || '',
     residentialAddress: resolveAddress(),
+    residentialAddressDetails: existing.residentialAddressDetails || existing.sellerResidentialAddressDetails || {},
 
     ownershipType,
     sellerLegalType: ownershipType,
@@ -924,9 +1038,9 @@ function normalizeFormData(listing) {
     schemeManagingAgentPhone: existing.schemeManagingAgentPhone || canonicalFacts?.property?.scheme?.managing_agent?.phone || '',
     schemeLevies: existing.schemeLevies || canonicalFacts?.property?.scheme?.levies || '',
     schemeRulesAvailable: Boolean(existing.schemeRulesAvailable || canonicalFacts?.property?.scheme?.rules),
-    unitNumber: existing.unitNumber || canonicalFacts?.property?.unit_number || '',
-    sectionNumber: existing.sectionNumber || canonicalFacts?.property?.section_number || '',
-    schemeName: existing.schemeName || canonicalFacts?.property?.scheme_name || '',
+    unitNumber: resolvedUnitNumber,
+    sectionNumber: resolvedSectionNumber,
+    schemeName: existing.schemeName || canonicalFacts?.property?.scheme_name || canonicalFacts?.property?.scheme?.name || '',
     hoaContactName: existing.hoaContactName || canonicalFacts?.property?.estate?.hoa_contact?.name || '',
     hoaContactEmail: existing.hoaContactEmail || canonicalFacts?.property?.estate?.hoa_contact?.email || '',
     hoaContactPhone: existing.hoaContactPhone || canonicalFacts?.property?.estate?.hoa_contact?.phone || '',
@@ -1774,6 +1888,38 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     })
   }
 
+  function handlePropertyGoogleAddressChange(value = null) {
+    handlePropertyAddressUpdate(mapGoogleAddressToPropertyAddress(value, propertyAddressDetails))
+  }
+
+  function handleResidentialAddressChange(value = null) {
+    const patch = buildResidentialAddressPatch(value)
+    setForm((previous) => ({
+      ...(previous || {}),
+      ...patch,
+    }))
+  }
+
+  function handleResidentialAddressInputChange(value = '') {
+    setForm((previous) => ({
+      ...(previous || {}),
+      residentialAddress: value,
+      residentialAddressDetails: {
+        ...((previous?.residentialAddressDetails && typeof previous.residentialAddressDetails === 'object') ? previous.residentialAddressDetails : {}),
+        formattedAddress: value,
+        source: 'manual',
+      },
+    }))
+  }
+
+  function handleSectionalIdentifierChange(value = '') {
+    setForm((previous) => ({
+      ...(previous || {}),
+      sectionNumber: value,
+      unitNumber: value,
+    }))
+  }
+
   function handlePropertyCategoryChange(value) {
     setForm((previous) => {
       const next = { ...(previous || {}), propertyCategory: value }
@@ -2033,6 +2179,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         if (!form.idNumber) {
           return 'Please provide ID number / passport details.'
         }
+        if (!resolveSellerResidentialAddress(form)) {
+          return 'Please provide the seller residential address.'
+        }
       }
 
       if (ownershipBranch === 'married' && (!form.spouseName || !form.spouseIdNumber)) {
@@ -2111,8 +2260,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       if (!address.line1 || !address.suburb || !address.city || !address.province) {
         return 'Please complete the property address, suburb, city, and province.'
       }
-      if ((propertyBranch === 'sectional_title') && (!form.schemeName || !form.unitNumber || !form.sectionNumber || !form.schemeManagingAgentName)) {
-        return 'Scheme name, unit number, section number, and managing agent details are required for sectional title properties.'
+      const sectionalIdentifier = form.sectionNumber || form.unitNumber
+      if ((propertyBranch === 'sectional_title') && (!form.schemeName || !sectionalIdentifier || !form.schemeManagingAgentName)) {
+        return 'Scheme name, unit / section number, and managing agent details are required for sectional title properties.'
       }
       if (propertyBranch === 'estate_hoa' && (!form.estateName || !form.hoaContactName)) {
         return 'Estate / HOA name and HOA contact details are required for estate properties.'
@@ -2378,12 +2528,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     !propertyAddressDetails.city && 'City',
     !propertyAddressDetails.province && 'Province',
   ].filter(Boolean)
-  const sectionSummaryValue = [form.schemeName, form.unitNumber, form.sectionNumber].filter(Boolean).join(' / ')
+  const sectionSummaryValue = [form.schemeName, form.sectionNumber || form.unitNumber].filter(Boolean).join(' / ')
   const estateSummaryValue = [form.estateName || form.estateComplexName, form.hoaContactName].filter(Boolean).join(' / ')
   const propertySummaryLabel = showSectionalTitleDetails && showEstateDetails
     ? 'Scheme / estate'
     : showSectionalTitleDetails
-      ? 'Scheme / Unit'
+      ? 'Scheme / Section'
       : showEstateDetails
         ? 'Estate / HOA'
         : showCommercialDetails
@@ -2469,16 +2619,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   </label>
 
                   {!['company', 'trust', 'deceased_estate', 'power_of_attorney', 'multiple_owners'].includes(ownershipBranch) ? (
-                    <>
-                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        {ownershipFieldLabels.idNumber}
-                        <input className={DETAIL_INPUT_CLASS} value={form.idNumber} onChange={(event) => handleFormUpdate('idNumber', event.target.value)} />
-                      </label>
-                      <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
-                        {ownershipFieldLabels.address}
-                        <input className={DETAIL_INPUT_CLASS} value={form.residentialAddress} onChange={(event) => handleFormUpdate('residentialAddress', event.target.value)} />
-                      </label>
-                    </>
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      {ownershipFieldLabels.idNumber}
+                      <input className={DETAIL_INPUT_CLASS} value={form.idNumber} onChange={(event) => handleFormUpdate('idNumber', event.target.value)} />
+                    </label>
                   ) : null}
 
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
@@ -2878,6 +3022,22 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 ) : null}
               </FormSection>
 
+              {!['company', 'trust', 'deceased_estate', 'power_of_attorney', 'multiple_owners'].includes(ownershipBranch) ? (
+                <FormSection
+                  icon={Home}
+                  title="Residential address"
+                  description="Start typing and choose the matching Google address for the seller's residential address."
+                >
+                  <AddressAutocomplete
+                    label="Residential address"
+                    value={buildResidentialAddressAutocompleteValue(form)}
+                    onChange={handleResidentialAddressChange}
+                    onInputValueChange={handleResidentialAddressInputChange}
+                    placeholder="Start typing the residential address"
+                  />
+                </FormSection>
+              ) : null}
+
               <FormSection icon={Building2} title="Selling Context" description="Light qualification details help your agent prepare the next step.">
                 <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
@@ -3008,15 +3168,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   description="This becomes the source of truth for the listing, mandate, and documents."
                 >
                   <div className="grid gap-3">
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Search address
-                      <input
-                        className={DETAIL_INPUT_CLASS}
-                        value={propertyAddressDetails.query}
-                        onChange={(event) => handlePropertyAddressQueryChange(event.target.value)}
-                        placeholder="Start with the street, complex, suburb, or estate name"
-                      />
-                    </label>
+                    <AddressAutocomplete
+                      label="Search address"
+                      value={buildPropertyAddressAutocompleteValue(propertyAddressDetails)}
+                      onChange={handlePropertyGoogleAddressChange}
+                      onInputValueChange={handlePropertyAddressQueryChange}
+                      placeholder="Start with the street, complex, suburb, or estate name"
+                    />
                     <div className="grid gap-2 md:grid-cols-2">
                       {addressSuggestions.map((suggestion) => (
                         <button
@@ -3086,12 +3244,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         <input className={DETAIL_INPUT_CLASS} value={form.schemeName} onChange={(event) => handleFormUpdate('schemeName', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Unit number
-                        <input className={DETAIL_INPUT_CLASS} value={form.unitNumber} onChange={(event) => handleFormUpdate('unitNumber', event.target.value)} />
-                      </label>
-                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Section number
-                        <input className={DETAIL_INPUT_CLASS} value={form.sectionNumber} onChange={(event) => handleFormUpdate('sectionNumber', event.target.value)} />
+                        Unit / section number
+                        <input
+                          className={DETAIL_INPUT_CLASS}
+                          value={form.sectionNumber || form.unitNumber}
+                          onChange={(event) => handleSectionalIdentifierChange(event.target.value)}
+                        />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Body corporate name

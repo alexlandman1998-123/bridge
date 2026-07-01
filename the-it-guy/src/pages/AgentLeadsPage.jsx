@@ -6155,14 +6155,23 @@ function AgentLeadList() {
         },
         { actor },
       )
-      if (category === 'seller') {
-        await upsertAreaFromAddress(buildCreateLeadAddressValue(createForm), { incrementListingCount: false })
-      }
-      await loadRows()
+      const addressValue = category === 'seller' ? buildCreateLeadAddressValue(createForm) : null
       setCreateCategory('')
       setCreateError('')
       setCreateForm(EMPTY_LEAD_CREATE_FORM)
       if (createdLead?.leadId) navigate(`/pipeline/leads/${createdLead.leadId}`)
+      void (async () => {
+        try {
+          if (addressValue) {
+            await upsertAreaFromAddress(addressValue, { incrementListingCount: false })
+          }
+          if (!createdLead?.leadId) {
+            await loadRows()
+          }
+        } catch (postCreateError) {
+          console.warn('[AgentLeadsPage] Lead post-create refresh failed.', postCreateError)
+        }
+      })()
     } catch (createLeadError) {
       setCreateError(createLeadError?.message || 'Unable to create this lead right now.')
     } finally {
@@ -15808,6 +15817,9 @@ function AgentLeadWorkspace() {
       const onboarding = await sendSellerOnboarding(listingId, {
         sellerContactEmail: sellerEmail,
         sellerContactPhone: normalizeText(row.phone || row.contact?.phone),
+        includePortalBranding: false,
+        deferStatusTransition: true,
+        performedBy: normalizeText(actor.userId || actor.id),
       })
       setSellerActionMessage('Sending seller onboarding email...')
       const onboardingEmail = await withActionTimeout(
@@ -15831,7 +15843,6 @@ function AgentLeadWorkspace() {
             'Seller onboarding email could not be sent.',
         )
       }
-      setSellerActionMessage('Updating seller lead...')
       const sentLeadPatch = {
         stage: 'Seller Onboarding Sent',
         status: 'Sent',
@@ -15840,16 +15851,6 @@ function AgentLeadWorkspace() {
         sellerOnboardingStatus: 'sent',
         listingId,
       }
-      await updateAgencyCrmLeadRecord(organisationId, row.leadId, {
-        ...sentLeadPatch,
-      })
-      await createAgencyCrmLeadActivity(organisationId, row.leadId, {
-        agent: { id: actor.id, name: actor.fullName || actor.name, email: actor.email },
-        activityType: 'Seller Onboarding Sent',
-        activityNote: `Seller onboarding was sent to ${row.name || 'Seller'}.`,
-        outcome: 'Onboarding link sent',
-        activityDate: new Date().toISOString(),
-      }, { actor })
       setData((previous) => {
         if (!previous?.row) return previous
         return {
@@ -15861,7 +15862,23 @@ function AgentLeadWorkspace() {
         }
       })
       setSellerActionMessage('Seller onboarding email sent.')
-      void loadWorkspace({ silent: true })
+      void (async () => {
+        try {
+          await updateAgencyCrmLeadRecord(organisationId, row.leadId, {
+            ...sentLeadPatch,
+          })
+          await createAgencyCrmLeadActivity(organisationId, row.leadId, {
+            agent: { id: actor.id, name: actor.fullName || actor.name, email: actor.email },
+            activityType: 'Seller Onboarding Sent',
+            activityNote: `Seller onboarding was sent to ${row.name || 'Seller'}.`,
+            outcome: 'Onboarding link sent',
+            activityDate: new Date().toISOString(),
+          }, { actor })
+          await loadWorkspace({ silent: true })
+        } catch (postSendError) {
+          console.warn('[AgentLeadsPage] Seller onboarding post-send sync failed.', postSendError)
+        }
+      })()
     } catch (actionError) {
       setSellerActionError(actionError?.message || 'Unable to send seller onboarding right now.')
     } finally {
@@ -15890,19 +15907,23 @@ function AgentLeadWorkspace() {
     try {
       setSendingSellerPortalLink(true)
       setSellerActionError('')
-      setSellerActionMessage('')
-      const portalEmail = await invokeEdgeFunction('send-email', {
-        body: buildSellerOnboardingEmailPayload({
-          row,
-          listing: linkedSellerListing,
-          onboarding: { portalLink },
-          portalLink,
-          organisationId,
-          actor,
-          workspaceName,
-          emailKind: 'portal_documents',
+      setSellerActionMessage('Sending seller portal link...')
+      const portalEmail = await withActionTimeout(
+        invokeEdgeFunction('send-email', {
+          body: buildSellerOnboardingEmailPayload({
+            row,
+            listing: linkedSellerListing,
+            onboarding: { portalLink },
+            portalLink,
+            organisationId,
+            actor,
+            workspaceName,
+            emailKind: 'portal_documents',
+          }),
         }),
-      })
+        'Seller portal email is taking too long. Please try again in a moment.',
+        SELLER_ONBOARDING_EMAIL_TIMEOUT_MS,
+      )
       if (portalEmail?.error || portalEmail?.data?.error) {
         throw new Error(
           portalEmail?.error?.message ||
@@ -15910,14 +15931,16 @@ function AgentLeadWorkspace() {
             'Seller portal email could not be sent.',
         )
       }
-      await createAgencyCrmLeadActivity(organisationId, row.leadId, {
+      setSellerActionMessage('Seller portal link resent.')
+      void createAgencyCrmLeadActivity(organisationId, row.leadId, {
         agent: { id: actor.id, name: actor.fullName || actor.name, email: actor.email },
         activityType: 'Seller Portal Link Resent',
         activityNote: `Seller portal link was resent to ${row.name || 'Seller'}.`,
         outcome: 'Seller portal link resent',
         activityDate: new Date().toISOString(),
-      }, { actor }).catch(() => {})
-      setSellerActionMessage('Seller portal link resent.')
+      }, { actor }).catch((postResendError) => {
+        console.warn('[AgentLeadsPage] Seller portal resend activity sync failed.', postResendError)
+      })
     } catch (actionError) {
       setSellerActionError(actionError?.message || 'Unable to resend the seller portal link right now.')
     } finally {

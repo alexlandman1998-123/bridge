@@ -3367,10 +3367,24 @@ export async function syncPrivateListingRequirements(listingOrId, { emitActivity
 
 export async function sendSellerOnboarding(
   listingId,
-  { expiresInDays = 14, sellerType = null, ownershipStructure = null, maritalRegime = null, sellerContactEmail = '', sellerContactPhone = '' } = {},
+  {
+    expiresInDays = 14,
+    sellerType = null,
+    ownershipStructure = null,
+    maritalRegime = null,
+    sellerContactEmail = '',
+    sellerContactPhone = '',
+    includePortalBranding = true,
+    deferStatusTransition = false,
+    performedBy = '',
+  } = {},
 ) {
   const client = requireClient()
-  const user = await getCurrentUser(client)
+  let performedByUserId = normalizeText(performedBy)
+  if (!performedByUserId && !deferStatusTransition) {
+    const user = await getCurrentUser(client)
+    performedByUserId = normalizeText(user?.id)
+  }
   const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
   if (!listing?.id) throw new Error('Private listing not found.')
 
@@ -3388,7 +3402,9 @@ export async function sendSellerOnboarding(
   const existingFormData = existingQuery.data?.form_data && typeof existingQuery.data.form_data === 'object'
     ? existingQuery.data.form_data
     : {}
-  const portalBranding = await fetchOrganisationBrandingSnapshot(client, listing.organisationId)
+  const portalBranding = includePortalBranding
+    ? await fetchOrganisationBrandingSnapshot(client, listing.organisationId)
+    : null
   const payload = {
     private_listing_id: listing.id,
     token,
@@ -3422,19 +3438,33 @@ export async function sendSellerOnboarding(
 
   const currentLifecycle = getPrivateListingLifecycleState(listing)
   if (currentLifecycle === 'seller_lead') {
-    await transitionPrivateListingStatus(listing.id, 'onboarding_sent', {
-      metadata: {
-        onboardingToken: token,
-        sellerContactEmail,
-        sellerContactPhone,
-      },
-      performedBy: user.id,
-      patch: {
-        sellerOnboardingStatus: 'sent',
-      },
-      allowOverride: false,
-      includeRequirementsAndDocuments: false,
-    })
+    const transitionSellerLead = async () => {
+      let transitionPerformedBy = performedByUserId
+      if (!transitionPerformedBy) {
+        const user = await getCurrentUser(client)
+        transitionPerformedBy = normalizeText(user?.id)
+      }
+      return transitionPrivateListingStatus(listing.id, 'onboarding_sent', {
+        metadata: {
+          onboardingToken: token,
+          sellerContactEmail,
+          sellerContactPhone,
+        },
+        performedBy: transitionPerformedBy,
+        patch: {
+          sellerOnboardingStatus: 'sent',
+        },
+        allowOverride: false,
+        includeRequirementsAndDocuments: false,
+      })
+    }
+    if (deferStatusTransition) {
+      void transitionSellerLead().catch((transitionError) => {
+        console.warn('[Private Listings] seller onboarding status transition deferred after link creation', transitionError)
+      })
+    } else {
+      await transitionSellerLead()
+    }
   }
 
   const leadOrganisationId = normalizeText(listing?.organisationId)

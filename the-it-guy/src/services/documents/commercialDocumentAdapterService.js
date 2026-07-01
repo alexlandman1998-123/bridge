@@ -157,6 +157,7 @@ function resolveCommercialPropertyFields(context = {}, assetCategory = '') {
     availability_date: firstText(vacancy.availability_date, listing.available_from),
     lease_term: pickNumber(listing.lease_term_months, property.lease_term_months),
     escalation: pickNumber(property.escalation_percentage, listing.escalation_percentage),
+    escalation_percentage: pickNumber(property.escalation_percentage, listing.escalation_percentage),
   }
 
   const industrialFields = {
@@ -195,6 +196,7 @@ function resolveCommercialPropertyFields(context = {}, assetCategory = '') {
     availability_date: firstText(vacancy.availability_date, listing.available_from),
     lease_term: pickNumber(listing.lease_term_months, property.lease_term_months),
     escalation: pickNumber(property.escalation_percentage, listing.escalation_percentage),
+    escalation_percentage: pickNumber(property.escalation_percentage, listing.escalation_percentage),
   }
 
   const agriculturalFields = {
@@ -262,10 +264,7 @@ export function resolveCommercialDocumentContext({ packetType = 'commercial_leas
   return {
     ...documentContext,
     documentTitle: resolveCommercialDocumentTitle(packetType, documentContext),
-    placeholders: resolveCommercialDocumentPlaceholders({
-      packetType,
-      context: documentContext,
-    }),
+    placeholders: resolveCommercialPropertyFields(documentContext, assetCategory),
   }
 }
 

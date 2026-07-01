@@ -159,6 +159,17 @@ function normalizePersonRecord(entry = {}, index = 0, { defaultRoleTitle = '' } 
   return record
 }
 
+function resolveSellerResidentialAddress(form = {}) {
+  return normalizeText(
+    form.residentialAddress ||
+      form.sellerResidentialAddress ||
+      form.physicalAddress ||
+      form.domiciliumAddress ||
+      form.domicilium_address ||
+      form.address,
+  )
+}
+
 function normalizePeopleCollection(entries = [], fallback = null, options = {}) {
   const source = Array.isArray(entries) ? entries : []
   const mapped = source
@@ -334,6 +345,8 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
   )
   const propertyAddress = buildPropertyAddressFacts(form, listing)
   const propertyAddressDisplay = formatPropertyAddress(propertyAddress)
+  const sectionIdentifier = normalizeText(form.sectionNumber || form.unitNumber)
+  const unitIdentifier = normalizeText(form.unitNumber || form.sectionNumber)
   const schemeManagingAgent = {
     name: normalizeText(form.schemeManagingAgentName || form.schemeManagementContact),
     email: normalizeText(form.schemeManagingAgentEmail),
@@ -371,7 +384,7 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       email: normalizeText(form.email),
       phone: normalizeText(form.phone),
       id_number: normalizeText(form.idNumber),
-      residential_address: normalizeText(form.residentialAddress),
+      residential_address: resolveSellerResidentialAddress(form),
       authorised_representative: normalizeText(form.authorisedRepresentative || form.companyDirectorName || form.trusteeName),
       tax_number: normalizeText(form.sellerTaxNumber),
       vat_registered: vatEligibleSeller ? normalizeBoolean(form.vatRegistered, false) : false,
@@ -469,13 +482,13 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       body_corporate: bodyCorporate,
       commercial_property: commercialProperty,
       erf_number: normalizeText(form.erfNumber),
-      unit_number: normalizeText(form.unitNumber),
-      section_number: normalizeText(form.sectionNumber),
+      unit_number: unitIdentifier,
+      section_number: sectionIdentifier,
       scheme_name: normalizeText(form.schemeName || form.estateComplexName),
       scheme: {
         name: normalizeText(form.schemeName || form.estateComplexName),
-        unit_number: normalizeText(form.unitNumber),
-        section_number: normalizeText(form.sectionNumber),
+        unit_number: unitIdentifier,
+        section_number: sectionIdentifier,
         body_corporate_name: normalizeText(form.schemeBodyCorporateName),
         managing_agent: schemeManagingAgent,
         levies: normalizeNumber(form.schemeLevies || form.levies),
@@ -710,8 +723,13 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}
   ))
   push(missingIf(!hasValue(facts.property?.address_details?.municipality || facts.property?.municipality), 'municipality_missing', 'Municipality helps determine readiness and compliance.', 'recommended'))
   push(missingIf(propertyBranch === 'sectional_title' && !hasValue(facts.property?.scheme?.name || facts.property?.scheme_name), 'sectional_scheme_missing', 'Scheme name should be captured for sectional title properties.', 'recommended'))
-  push(missingIf(propertyBranch === 'sectional_title' && !hasValue(facts.property?.scheme?.unit_number || facts.property?.unit_number), 'sectional_unit_missing', 'Section or unit number should be captured for sectional title properties.', 'recommended'))
-  push(missingIf(propertyBranch === 'sectional_title' && !hasValue(facts.property?.scheme?.section_number || facts.property?.section_number), 'sectional_section_missing', 'Section number should be captured for sectional title properties.', 'recommended'))
+  push(missingIf(
+    propertyBranch === 'sectional_title' &&
+      !hasValue(facts.property?.scheme?.section_number || facts.property?.section_number || facts.property?.scheme?.unit_number || facts.property?.unit_number),
+    'sectional_identifier_missing',
+    'Unit / section number should be captured for sectional title properties.',
+    'recommended',
+  ))
   push(missingIf(propertyBranch === 'sectional_title' && !hasValue(facts.property?.scheme?.managing_agent?.name), 'sectional_managing_agent_missing', 'Managing agent details should be captured for sectional title properties.', 'recommended'))
   push(missingIf(propertyBranch === 'estate_hoa' && !hasValue(facts.property?.estate?.name || facts.property?.estate_name), 'estate_name_missing', 'Estate / HOA name should be captured for estate properties.', 'recommended'))
   push(missingIf(propertyBranch === 'estate_hoa' && !hasValue(facts.property?.estate?.hoa_contact?.name), 'estate_hoa_contact_missing', 'HOA contact details should be captured for estate properties.', 'recommended'))

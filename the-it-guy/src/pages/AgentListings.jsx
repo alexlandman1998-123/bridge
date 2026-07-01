@@ -54,7 +54,6 @@ import {
 const LISTINGS_VIEW_STORAGE_KEY = 'itg:agent-listings:view-mode:v1'
 const ACTIVE_LISTING_TABS = ['residential', 'developments']
 const MANUAL_LISTING_STATUSES = ['draft', 'mandate_signed', 'active', 'under_offer', 'sold']
-const QUICK_ADD_STEPS = ['property', 'seller', 'mandate', 'assignment']
 const QUICK_LISTING_METADATA_PREFIX = 'BRIDGE_QUICK_ADD_METADATA:'
 const LISTING_ORIGINS = ['quick_add', 'guided_onboarding', 'imported_property24', 'manual_admin_capture', 'developer_unit']
 const LISTING_DOCUMENT_CATEGORIES = ['Mandate', 'Seller ID', 'Proof of Address', 'Property Photos', 'Rates and Taxes', 'Bond Statement', 'Title Deed', 'Other']
@@ -1686,7 +1685,7 @@ function AgentListings({ initialTab = null } = {}) {
 
         const canUseDbFirstPrivateListings = !MOCK_DATA_ENABLED && Boolean(resolvedOrganisationId && profile?.id)
         if (canUseDbFirstPrivateListings) {
-          const agentAssignmentIds = resolveAgentAssignmentIds(profile, userRows)
+          const agentAssignmentIds = resolveAgentAssignmentIds({ id: profile?.id, email: profile?.email }, userRows)
           dbPrivateListings = await getAgentPrivateListings(profile.id, {
             organisationId: resolvedOrganisationId,
             assignedAgentEmail: profile?.email || '',
@@ -1861,6 +1860,10 @@ function AgentListings({ initialTab = null } = {}) {
   const isPrincipalListingMode = listingModalMode === 'principal'
   const isQuickAddListingFlow = listingModalFlow === 'quick_add' || listingModalFlow === 'manual'
   const isManualListingFlow = isQuickAddListingFlow
+  const activeQuickAddIntent = getQuickAddIntentOption(form.quickAddIntent)
+  const quickAddMandatePanelOpen =
+    isManualListingFlow &&
+    (form.quickStep === 'mandate' || isQuickListingMandatePackExpected(form, form.manualMandateStatus))
 
   const currentBranchId = normalizeText(currentMembership?.branchId || currentMembership?.branch_id)
   const currentMembershipRole = normalizeKey(currentMembership?.workspaceRole || currentMembership?.role || currentMembership?.organisationRole || currentMembership?.organisation_role)
@@ -3916,68 +3919,51 @@ function AgentListings({ initialTab = null } = {}) {
             ) : null}
 
             {isManualListingFlow ? (
-              <div className="mt-5 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-                  <div>
-                    <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">What are you adding?</p>
-                    <p className="mt-1 text-sm text-[#60758c]">Choose the real-world status first so Quick Add can open the right capture path.</p>
+              <div className="mt-5 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Listing status</p>
+                    <p className="mt-1 text-sm text-[#60758c]">{activeQuickAddIntent.description}</p>
                   </div>
-                  <p className="text-xs font-semibold text-[#6b7d93]">Status-led quick capture</p>
-                </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  {QUICK_ADD_INTENT_OPTIONS.map((intent) => {
-                    const active = form.quickAddIntent === intent.value
-                    return (
-                      <button
-                        key={intent.value}
-                        type="button"
-                        onClick={() => applyQuickAddIntent(intent.value)}
-                        className={`min-h-[132px] rounded-[16px] border p-4 text-left transition ${
-                          active
-                            ? 'border-[#1f7d44] bg-[#f2fbf5] shadow-[0_12px_24px_rgba(31,125,68,0.14)]'
-                            : 'border-[#dce6f2] bg-white hover:border-[#b7c8db]'
-                        }`}
-                      >
-                        <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full border text-xs font-bold ${
-                          active ? 'border-[#b7e2c6] bg-white text-[#1f7d44]' : 'border-[#d6e2ee] bg-[#f8fbfe] text-[#60758c]'
-                        }`}>
+                  <div className="flex flex-wrap gap-2">
+                    {QUICK_ADD_INTENT_OPTIONS.map((intent) => {
+                      const active = form.quickAddIntent === intent.value
+                      return (
+                        <button
+                          key={intent.value}
+                          type="button"
+                          onClick={() => applyQuickAddIntent(intent.value)}
+                          className={`inline-flex min-h-10 items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-semibold transition ${
+                            active
+                              ? 'border-[#1f7d44] bg-[#edf8f0] text-[#1f7d44] shadow-[0_8px_18px_rgba(31,125,68,0.12)]'
+                              : 'border-[#d6e2ee] bg-white text-[#3b5774] hover:border-[#b7c8db]'
+                          }`}
+                        >
                           {active ? <CheckCircle2 size={15} /> : <CircleAlert size={14} />}
-                        </span>
-                        <span className="mt-3 block text-sm font-semibold text-[#22374d]">{intent.label}</span>
-                        <span className="mt-1 block text-xs leading-5 text-[#60758c]">{intent.description}</span>
-                        <span className="mt-3 block text-[0.72rem] font-semibold uppercase tracking-[0.06em] text-[#3b5774]">{intent.requiredNow}</span>
-                      </button>
-                    )
-                  })}
+                          <span>{intent.label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
+                <p className="mt-3 text-xs font-semibold uppercase tracking-[0.06em] text-[#3b5774]">Smart focus: {activeQuickAddIntent.requiredNow}</p>
               </div>
             ) : null}
 
             {isManualListingFlow ? (
-              <div className="mt-5 grid gap-2 md:grid-cols-4">
-                {[
-                  { key: 'property', label: 'Property Details' },
-                  { key: 'seller', label: 'Seller Details' },
-                  { key: 'mandate', label: 'Mandate & Commission' },
-                  { key: 'assignment', label: 'Assignment' },
-                ].map((step, index) => {
-                  const active = form.quickStep === step.key
-                  return (
-                    <button
-                      key={step.key}
-                      type="button"
-                      onClick={() => updateForm('quickStep', step.key)}
-                      className={`rounded-[14px] border px-3 py-2 text-left text-sm font-semibold transition ${
-                        active
-                          ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_10px_20px_rgba(31,79,120,0.18)]'
-                          : 'border-[#dce6f2] bg-[#fbfdff] text-[#35546c] hover:border-[#b7c8db]'
-                      }`}
-                    >
-                      <span className="mr-2 inline-flex h-6 w-6 items-center justify-center rounded-full border border-current/30 text-[0.75rem]">{index + 1}</span>
-                      {step.label}
-                    </button>
-                  )
-                })}
+              <div className="mt-4 flex flex-col gap-3 rounded-[16px] border border-[#dce6f2] bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-[#22374d]">Required capture stays on one page.</p>
+                  <p className="mt-1 text-xs text-[#60758c]">Mandate, commission, and document details can be added now or completed from the listing workspace.</p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={quickAddMandatePanelOpen ? 'primary' : 'secondary'}
+                  onClick={() => updateForm('quickStep', quickAddMandatePanelOpen ? 'property' : 'mandate')}
+                >
+                  {quickAddMandatePanelOpen ? 'Hide mandate details' : 'Add mandate details'}
+                </Button>
               </div>
             ) : null}
 
@@ -4028,7 +4014,7 @@ function AgentListings({ initialTab = null } = {}) {
             ) : null}
 
             <form className="mt-5 space-y-6" onSubmit={handleSaveListing}>
-              <section className={`${isManualListingFlow && form.quickStep !== 'seller' ? 'hidden' : ''} space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4`}>
+              <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                 <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Seller</h4>
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <label className="grid gap-2">
@@ -4071,7 +4057,7 @@ function AgentListings({ initialTab = null } = {}) {
                 </div>
               </section>
 
-              <section className={`${isManualListingFlow && form.quickStep !== 'property' ? 'hidden' : ''} space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4`}>
+              <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                 <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Property</h4>
                 <div className={`grid gap-4 md:grid-cols-2 ${isManualListingFlow ? 'xl:grid-cols-4' : 'xl:grid-cols-4'}`}>
                   <div className="xl:col-span-2">
@@ -4200,7 +4186,7 @@ function AgentListings({ initialTab = null } = {}) {
                 </div>
               </section>
 
-              <section className={`${isManualListingFlow && form.quickStep !== 'mandate' ? 'hidden' : ''} space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4`}>
+              <section className={`${isManualListingFlow && !quickAddMandatePanelOpen ? 'hidden' : ''} space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4`}>
                 <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">
                   {isManualListingFlow ? 'Mandate & Commission' : 'Lead Routing'}
                 </h4>
@@ -4339,7 +4325,7 @@ function AgentListings({ initialTab = null } = {}) {
                 </div>
               </section>
 
-              {isManualListingFlow && form.quickStep === 'mandate' ? (
+              {isManualListingFlow && quickAddMandatePanelOpen ? (
                 <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                   <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Mandate & Documents</h4>
                   <p className="rounded-[12px] border border-[#f3d7a8] bg-[#fff8ea] px-3 py-2 text-xs text-[#88531a]">
@@ -4463,7 +4449,7 @@ function AgentListings({ initialTab = null } = {}) {
                 </section>
               ) : null}
 
-              {isManualListingFlow && form.quickStep === 'assignment' ? (
+              {isManualListingFlow ? (
                 <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                   <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Assignment</h4>
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -4603,20 +4589,18 @@ function AgentListings({ initialTab = null } = {}) {
                 <Button type="button" variant="secondary" onClick={() => setShowNewListingModal(false)}>
                   Cancel
                 </Button>
-                {isManualListingFlow && QUICK_ADD_STEPS.indexOf(form.quickStep) > 0 ? (
-                  <Button type="button" variant="secondary" onClick={() => updateForm('quickStep', QUICK_ADD_STEPS[Math.max(0, QUICK_ADD_STEPS.indexOf(form.quickStep) - 1)])}>
-                    Back
+                {isManualListingFlow ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => updateForm('quickStep', quickAddMandatePanelOpen ? 'property' : 'mandate')}
+                  >
+                    {quickAddMandatePanelOpen ? 'Hide mandate details' : 'Add mandate details'}
                   </Button>
                 ) : null}
-                {isManualListingFlow && form.quickStep !== 'assignment' ? (
-                  <Button type="button" onClick={() => updateForm('quickStep', QUICK_ADD_STEPS[Math.min(QUICK_ADD_STEPS.length - 1, QUICK_ADD_STEPS.indexOf(form.quickStep) + 1)])}>
-                    Continue
-                  </Button>
-                ) : (
-                  <Button type="submit">
-                    {isManualListingFlow ? 'Create Listing' : 'Save Seller Lead & Send Onboarding'}
-                  </Button>
-                )}
+                <Button type="submit">
+                  {isManualListingFlow ? 'Create Listing' : 'Save Seller Lead & Send Onboarding'}
+                </Button>
               </div>
             </form>
           </div>

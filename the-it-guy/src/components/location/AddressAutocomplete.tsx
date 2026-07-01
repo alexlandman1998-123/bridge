@@ -171,6 +171,7 @@ export default function AddressAutocomplete({
   const [isOpen, setIsOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
   const [googleApi, setGoogleApi] = useState<any>(null)
+  const [shouldLoadMaps, setShouldLoadMaps] = useState(false)
   const autocompleteServiceRef = useRef<any>(null)
   const placesServiceRef = useRef<any>(null)
   const placesLibraryRef = useRef<any>(null)
@@ -181,7 +182,7 @@ export default function AddressAutocomplete({
   const suppressNextSearchRef = useRef(Boolean(value?.formattedAddress))
 
   const isApiKeyAvailable = hasGoogleMapsApiKey()
-  const canSearchGoogle = !disabled && isApiKeyAvailable && !loadError && !isAutocompleteUnavailable
+  const canSearchGoogle = shouldLoadMaps && !disabled && isApiKeyAvailable && !loadError && !isAutocompleteUnavailable
   const isDisabled = disabled
 
   useEffect(() => {
@@ -198,7 +199,7 @@ export default function AddressAutocomplete({
   }, [value?.formattedAddress])
 
   useEffect(() => {
-    if (disabled || !isApiKeyAvailable) {
+    if (!shouldLoadMaps || disabled || !isApiKeyAvailable) {
       if (!isApiKeyAvailable) {
         console.warn('[Google Maps] Missing VITE_GOOGLE_MAPS_API_KEY. Address autocomplete is disabled.')
       }
@@ -242,7 +243,7 @@ export default function AddressAutocomplete({
     return () => {
       cancelled = true
     }
-  }, [disabled, isApiKeyAvailable])
+  }, [disabled, isApiKeyAvailable, shouldLoadMaps])
 
   useEffect(() => {
     if (suppressNextSearchRef.current) {
@@ -514,6 +515,9 @@ export default function AddressAutocomplete({
             setLoadError('')
             if (!isAutocompleteUnavailable) setNoticeText('')
             onInputValueChange?.(nextValue)
+            if (nextValue.trim().length >= 3) {
+              setShouldLoadMaps(true)
+            }
             if (!nextValue.trim()) {
               requestIdRef.current += 1
               setPredictions([])
@@ -523,6 +527,7 @@ export default function AddressAutocomplete({
             }
           }}
           onFocus={() => {
+            setShouldLoadMaps(true)
             if (predictions.length || inputValue.trim().length >= 3) setIsOpen(true)
           }}
           onKeyDown={handleKeyDown}
