@@ -1341,6 +1341,7 @@ function PipelineCanvassingPage() {
   const [activityForm, setActivityForm] = useState({ activityType: 'Call', activityNote: '', outcome: '' })
   const [convertLeadType, setConvertLeadType] = useState('buyer')
   const [activeProspectTab, setActiveProspectTab] = useState('overview')
+  const [areaDraftInput, setAreaDraftInput] = useState('')
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -1868,6 +1869,11 @@ function PipelineCanvassingPage() {
       .sort((a, b) => new Date(b?.activityDate || b?.createdAt || 0) - new Date(a?.activityDate || a?.createdAt || 0))
   }, [scopedActivities, selectedProspect])
 
+  const selectedProspectAreas = useMemo(() => {
+    if (!selectedProspect) return []
+    return splitCanvassingListValue(selectedProspect.areaOfInterest || selectedProspect.areaSuburb || selectedProspect.area)
+  }, [selectedProspect])
+
   useEffect(() => {
     if (!isProspectWorkspaceRoute || !selectedProspect) return
     if (normalizeText(selectedProspectId) !== normalizeText(selectedProspect.id)) {
@@ -1876,6 +1882,10 @@ function PipelineCanvassingPage() {
     setConvertLeadType(resolveDefaultLeadCategory(selectedProspect))
     setProspectView(resolveProspectAudience(selectedProspect))
   }, [isProspectWorkspaceRoute, selectedProspect, selectedProspectId])
+
+  useEffect(() => {
+    setAreaDraftInput('')
+  }, [selectedProspect?.id])
 
   const openActionProspect = useMemo(() => {
     if (!openActionMenuId) return null
@@ -2331,6 +2341,49 @@ function PipelineCanvassingPage() {
         }
       }),
     )
+  }
+
+  function updateSelectedProspectAreas(nextAreas = []) {
+    const targetProspectId = normalizeText(selectedProspect?.id || selectedProspectId)
+    const dedupedAreas = []
+    const seenAreas = new Set()
+    for (const area of nextAreas) {
+      const normalizedArea = normalizeText(area)
+      const areaKey = normalizeKey(normalizedArea)
+      if (!normalizedArea || seenAreas.has(areaKey)) continue
+      seenAreas.add(areaKey)
+      dedupedAreas.push(normalizedArea)
+    }
+    const nextValue = dedupedAreas.join(', ')
+    setProspects((previous) =>
+      previous.map((row) => {
+        if (normalizeText(row?.id) !== targetProspectId) return row
+        return {
+          ...row,
+          areaOfInterest: nextValue,
+          areaSuburb: nextValue,
+          area: nextValue,
+        }
+      }),
+    )
+  }
+
+  function handleAddSelectedProspectArea() {
+    const draftAreas = splitCanvassingListValue(areaDraftInput)
+    if (!draftAreas.length) return
+    updateSelectedProspectAreas([...selectedProspectAreas, ...draftAreas])
+    setAreaDraftInput('')
+  }
+
+  function handleRemoveSelectedProspectArea(area) {
+    const areaKey = normalizeKey(area)
+    updateSelectedProspectAreas(selectedProspectAreas.filter((candidate) => normalizeKey(candidate) !== areaKey))
+  }
+
+  function handleAreaDraftKeyDown(event) {
+    if (event.key !== 'Enter' && event.key !== ',') return
+    event.preventDefault()
+    handleAddSelectedProspectArea()
   }
 
   async function handleLogActivity(event) {
@@ -2890,17 +2943,44 @@ function PipelineCanvassingPage() {
                     {resolveProspectAudience(selectedProspect) === 'buyer' ? (
                       <>
                         <div className="grid gap-4 md:grid-cols-2">
-                          <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
-                            Areas
-                            <Field
-                              value={selectedProspect.areaOfInterest || selectedProspect.areaSuburb || selectedProspect.area || ''}
-                              onChange={(event) => {
-                                handleUpdateSelectedProspect('areaOfInterest', event.target.value)
-                                handleUpdateSelectedProspect('areaSuburb', event.target.value)
-                                handleUpdateSelectedProspect('area', event.target.value)
-                              }}
-                            />
-                          </label>
+	                          <div className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+	                            <span>Areas</span>
+	                            <div className="rounded-[16px] border border-[#dbe4ee] bg-white p-2">
+	                              <div className="flex flex-wrap gap-2">
+	                                {selectedProspectAreas.length ? (
+	                                  selectedProspectAreas.map((area) => (
+	                                    <button
+	                                      key={area}
+	                                      type="button"
+	                                      className="inline-flex min-h-8 items-center gap-2 rounded-full border border-[#cfe0f0] bg-[#f6faff] px-3 text-xs font-semibold text-[#29435d] transition hover:border-[#a9bed3] hover:bg-white"
+	                                      onClick={() => handleRemoveSelectedProspectArea(area)}
+	                                    >
+	                                      {area}
+	                                      <span className="text-[#8fa2b7]">×</span>
+	                                    </button>
+	                                  ))
+	                                ) : (
+	                                  <span className="flex min-h-8 items-center px-2 text-sm font-medium text-[#8fa2b7]">No areas added</span>
+	                                )}
+	                              </div>
+	                              <div className="mt-2 flex gap-2">
+	                                <input
+	                                  value={areaDraftInput}
+	                                  onChange={(event) => setAreaDraftInput(event.target.value)}
+	                                  onKeyDown={handleAreaDraftKeyDown}
+	                                  placeholder="Add area or suburb"
+	                                  className="min-h-10 min-w-0 flex-1 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-sm font-semibold text-[#17263a] outline-none transition focus:border-[#9fb7d0] focus:ring-2 focus:ring-[#d7e6f4]"
+	                                />
+	                                <button
+	                                  type="button"
+	                                  className="inline-flex min-h-10 items-center justify-center rounded-[12px] bg-[#214c6e] px-4 text-sm font-semibold text-white transition hover:bg-[#183a56]"
+	                                  onClick={handleAddSelectedProspectArea}
+	                                >
+	                                  Add
+	                                </button>
+	                              </div>
+	                            </div>
+	                          </div>
                           <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
                             Property type
                             <Field
@@ -3265,12 +3345,12 @@ function PipelineCanvassingPage() {
                     <section className="rounded-[18px] border border-[#dfe8f3] bg-white p-4 shadow-[0_12px_30px_rgba(15,35,55,0.04)]">
                       <div>
                         <p className="text-sm font-semibold text-[#17263a]">Actions</p>
-                        <p className="mt-0.5 text-xs text-[#6d839b]">Quick log, archive or delete.</p>
+	                        <p className="mt-0.5 text-xs text-[#6d839b]">Quick log, convert, archive or delete.</p>
                       </div>
-                      <div className="mt-4 grid grid-cols-3 gap-2 xl:grid-cols-1">
-                        <button
-                          type="button"
-                          aria-label="Log call"
+	                      <div className="mt-4 grid grid-cols-3 gap-2 xl:grid-cols-1">
+	                        <button
+	                          type="button"
+	                          aria-label="Log call"
                           className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[12px] border border-[#dce6f2] bg-white px-3 py-2 text-sm font-semibold text-[#35546c] transition hover:-translate-y-0.5 hover:border-[#b8c9dc] hover:bg-[#f8fbff]"
                           onClick={() => handleQuickLogActivity(selectedProspect, 'Call')}
                         >
@@ -3293,10 +3373,14 @@ function PipelineCanvassingPage() {
                           onClick={() => handleQuickLogActivity(selectedProspect, 'Email')}
                         >
                           <Mail size={15} />
-                          <span className="hidden sm:inline xl:inline">Email</span>
-                        </button>
-                      </div>
-                      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+	                          <span className="hidden sm:inline xl:inline">Email</span>
+	                        </button>
+	                      </div>
+	                      <Button type="button" onClick={() => handleConvertProspectToLead()} className="mt-3 w-full">
+	                        <UserPlus size={16} />
+	                        Convert to Lead
+	                      </Button>
+	                      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
                         <button
                           type="button"
                           className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[12px] border border-[#ead5d2] bg-[#fffaf8] px-3 py-2 text-sm font-semibold text-[#8a3a33] transition hover:-translate-y-0.5"
@@ -3405,17 +3489,6 @@ function PipelineCanvassingPage() {
   if (isProspectWorkspaceRoute) {
     return (
       <section className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Canvassing Prospect</p>
-            <h2 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-slate-950">
-              {selectedProspect ? getProspectDisplayName(selectedProspect) : 'Prospect workspace'}
-            </h2>
-          </div>
-          <Button type="button" variant="secondary" onClick={() => navigate('/pipeline/canvassing')}>
-            Back to Canvassing
-          </Button>
-        </div>
         {prospectDetailContent}
         {prospectRecordModals}
       </section>

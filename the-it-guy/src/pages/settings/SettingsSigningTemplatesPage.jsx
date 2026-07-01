@@ -88,6 +88,9 @@ const SUPPORTED_PACKET_TYPES = [
   },
 ]
 
+const DEFAULT_ALLOWED_PACKET_TYPES = ['otp', 'mandate']
+const SUPPORTED_PACKET_TYPE_KEYS = new Set(SUPPORTED_PACKET_TYPES.map((item) => item.key))
+
 const TEMPLATE_STATUS_OPTIONS = [
   { key: 'draft', label: 'Draft' },
   { key: 'in_review', label: 'In Review' },
@@ -941,13 +944,42 @@ function TemplateStudioTabButton({ active, label, onClick }) {
 
 export default function SettingsSigningTemplatesPage({
   templateModuleType = 'agency',
-  allowedPacketTypes = ['otp', 'mandate'],
+  allowedPacketTypes = DEFAULT_ALLOWED_PACKET_TYPES,
   title = 'Legal Templates',
   eyebrow = 'Settings / Legal Templates',
   description = 'Manage mandate, OTP and legal document templates, including defaults, merge fields, previews and publishing.',
 } = {}) {
-  const { role, currentWorkspace, workspaceType } = useWorkspace()
+  const { role, currentMembership, currentWorkspace, workspaceType } = useWorkspace()
   const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
+  const workspaceMembershipRole = useMemo(() => {
+    const rawRole = normalizeText(
+      currentMembership?.workspaceRole ||
+        currentMembership?.workspace_role ||
+        currentMembership?.organisationRole ||
+        currentMembership?.organisation_role ||
+        currentMembership?.role ||
+        currentMembership?.membershipRole,
+    )
+    return rawRole
+      ? normalizeOrganisationMembershipRole(rawRole, {
+          appRole: role,
+          workspaceType: resolvedWorkspaceType,
+        })
+      : ''
+  }, [currentMembership, resolvedWorkspaceType, role])
+  const allowedPacketTypesKey = (
+    Array.isArray(allowedPacketTypes) && allowedPacketTypes.length
+      ? allowedPacketTypes
+      : DEFAULT_ALLOWED_PACKET_TYPES
+  )
+    .map((type) => normalizeText(type).toLowerCase())
+    .filter((type, index, list) => type && SUPPORTED_PACKET_TYPE_KEYS.has(type) && list.indexOf(type) === index)
+    .join('|')
+  const stableAllowedPacketTypes = useMemo(
+    () => (allowedPacketTypesKey ? allowedPacketTypesKey.split('|') : DEFAULT_ALLOWED_PACKET_TYPES),
+    [allowedPacketTypesKey],
+  )
+  const defaultPacketType = stableAllowedPacketTypes[0] || 'otp'
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [cloning, setCloning] = useState(false)
@@ -960,7 +992,7 @@ export default function SettingsSigningTemplatesPage({
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [membershipRole, setMembershipRole] = useState('viewer')
-  const [packetType, setPacketType] = useState(allowedPacketTypes[0] || 'otp')
+  const [packetType, setPacketType] = useState(defaultPacketType)
   const [templatesByType, setTemplatesByType] = useState({})
   const [placeholdersByType, setPlaceholdersByType] = useState({})
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
@@ -985,14 +1017,14 @@ export default function SettingsSigningTemplatesPage({
 
   const administratorLabel = getWorkspaceAdministratorLabel({ appRole: role, workspaceType: resolvedWorkspaceType })
   const canEdit = canManageOrganisationSettings({ appRole: role, membershipRole, workspaceType: resolvedWorkspaceType })
-  const visiblePacketTypes = useMemo(() => SUPPORTED_PACKET_TYPES.filter((item) => allowedPacketTypes.includes(item.key)), [allowedPacketTypes])
+  const visiblePacketTypes = useMemo(() => SUPPORTED_PACKET_TYPES.filter((item) => stableAllowedPacketTypes.includes(item.key)), [stableAllowedPacketTypes])
   const normalizedModuleType = normalizeText(templateModuleType || 'agency').toLowerCase() || 'agency'
 
   const loadTemplatesAndRegistry = useCallback(async ({
-    targetPacketType = allowedPacketTypes[0] || 'otp',
+    targetPacketType = defaultPacketType,
     preferredTemplateId = '',
   } = {}) => {
-    const templateRows = await Promise.all(allowedPacketTypes.map(async (type) => ([
+    const templateRows = await Promise.all(stableAllowedPacketTypes.map(async (type) => ([
       type,
       await listDocumentPacketTemplates({
         packetType: type,
@@ -1000,7 +1032,7 @@ export default function SettingsSigningTemplatesPage({
         includeInactive: true,
       }),
     ])))
-    const placeholderRows = await Promise.all(allowedPacketTypes.map(async (type) => ([
+    const placeholderRows = await Promise.all(stableAllowedPacketTypes.map(async (type) => ([
       type,
       await listDocumentPlaceholderDefinitions({
         packetType: type,
@@ -1029,7 +1061,13 @@ export default function SettingsSigningTemplatesPage({
 
     const currentStillExists = selectedList.some((item) => item.id === preferredTemplateId)
     setSelectedTemplateId(currentStillExists ? preferredTemplateId : selectedList[0].id)
-  }, [allowedPacketTypes, normalizedModuleType])
+  }, [defaultPacketType, normalizedModuleType, stableAllowedPacketTypes])
+
+  useEffect(() => {
+    if (!stableAllowedPacketTypes.includes(packetType)) {
+      setPacketType(defaultPacketType)
+    }
+  }, [defaultPacketType, packetType, stableAllowedPacketTypes])
 
   useEffect(() => {
     let active = true
@@ -1038,14 +1076,18 @@ export default function SettingsSigningTemplatesPage({
       try {
         setLoading(true)
         setError('')
-        const context = await fetchOrganisationSettings()
-        if (!active) return
-        setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole, {
-          appRole: role,
-          workspaceType: context?.organisation?.type || resolvedWorkspaceType,
-        }))
+        if (workspaceMembershipRole) {
+          setMembershipRole(workspaceMembershipRole)
+        } else {
+          const context = await fetchOrganisationSettings()
+          if (!active) return
+          setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole, {
+            appRole: role,
+            workspaceType: context?.organisation?.type || resolvedWorkspaceType,
+          }))
+        }
         await loadTemplatesAndRegistry({
-          targetPacketType: allowedPacketTypes[0] || 'otp',
+          targetPacketType: defaultPacketType,
           preferredTemplateId: '',
         })
       } catch (loadError) {
@@ -1062,7 +1104,7 @@ export default function SettingsSigningTemplatesPage({
     return () => {
       active = false
     }
-  }, [allowedPacketTypes, loadTemplatesAndRegistry, resolvedWorkspaceType, role])
+  }, [defaultPacketType, loadTemplatesAndRegistry, resolvedWorkspaceType, role, workspaceMembershipRole])
 
   useEffect(() => {
     const selectedList = templatesByType[packetType] || []

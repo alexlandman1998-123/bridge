@@ -63,6 +63,18 @@ assert.match(
 )
 
 assert.match(
+  legalTemplates,
+  /DEFAULT_ALLOWED_PACKET_TYPES[\s\S]*stableAllowedPacketTypes[\s\S]*useEffect\(\(\) => \{[\s\S]*loadTemplatesAndRegistry[\s\S]*\}, \[defaultPacketType, loadTemplatesAndRegistry, resolvedWorkspaceType, role, workspaceMembershipRole\]\)/,
+  'Legal template loading should use a stable packet-type dependency so normal renders do not restart the library load.',
+)
+
+assert.match(
+  legalTemplates,
+  /const \{ role, currentMembership, currentWorkspace, workspaceType \} = useWorkspace\(\)[\s\S]*workspaceMembershipRole[\s\S]*if \(workspaceMembershipRole\) \{[\s\S]*setMembershipRole\(workspaceMembershipRole\)[\s\S]*\} else \{[\s\S]*fetchOrganisationSettings\(\)/,
+  'Legal template loading should use the already-resolved workspace membership role before falling back to organisation settings.',
+)
+
+assert.match(
   documentPacketsApi,
   /TEMPLATE_SELECT_PLAN_CACHE_KEY[\s\S]*sessionStorage[\s\S]*rememberDocumentPacketTemplateSelectPlanIndex\(Math\.min\(planIndex \+ 1/,
   'Legal template loading should cache schema-compatible select plans after missing-column fallbacks.',
