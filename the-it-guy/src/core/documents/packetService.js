@@ -990,7 +990,7 @@ function withSystemPlaceholders(placeholders = {}, context = {}, branding = null
     normalizeText(context?.organisation?.name) ||
     normalizeText(context?.agency?.organisationName) ||
     normalizeText(context?.agency?.name) ||
-    'Arch9 Workspace'
+    'Organisation'
   const logoLightUrl =
     normalizeNullableText(branding?.logoLightUrl) ||
     normalizeNullableText(branding?.organisationLogoUrl) ||
@@ -1009,26 +1009,59 @@ function withSystemPlaceholders(placeholders = {}, context = {}, branding = null
     normalizeNullableText(context?.organisation?.logoDarkUrl) ||
     normalizeNullableText(context?.agency?.logoDarkUrl) ||
     logoLightUrl
-  const bridgeLabel = normalizeText(branding?.bridgeLegalName || branding?.bridgeLogoLabel) || 'Arch9 Legal'
-  const bridgeLogoLightUrl = resolvePublicAssetUrl(branding?.bridgeLogoLightUrl || '/brand/bridge_9_white_background.png')
-  const bridgeLogoDarkUrl = resolvePublicAssetUrl(branding?.bridgeLogoDarkUrl || '/brand/bridge_9_dark_background.png')
+  const organisationWebsite =
+    normalizeNullableText(branding?.website) ||
+    normalizeNullableText(branding?.organisationWebsite) ||
+    normalizeNullableText(branding?.organisation_website) ||
+    normalizeNullableText(context?.organisation?.website) ||
+    normalizeNullableText(context?.agency?.website)
+  const organisationEmail =
+    normalizeNullableText(branding?.email) ||
+    normalizeNullableText(branding?.organisationEmail) ||
+    normalizeNullableText(branding?.organisation_email) ||
+    normalizeNullableText(context?.organisation?.email) ||
+    normalizeNullableText(context?.agency?.email)
+  const organisationPhysicalAddress =
+    normalizeNullableText(branding?.physicalAddress) ||
+    normalizeNullableText(branding?.physical_address) ||
+    normalizeNullableText(branding?.organisationPhysicalAddress) ||
+    normalizeNullableText(branding?.organisation_physical_address) ||
+    normalizeNullableText(branding?.address) ||
+    normalizeNullableText(context?.organisation?.physicalAddress) ||
+    normalizeNullableText(context?.organisation?.physical_address) ||
+    normalizeNullableText(context?.agency?.physicalAddress) ||
+    normalizeNullableText(context?.agency?.address)
+  const organisationPhone =
+    normalizeNullableText(branding?.telephone) ||
+    normalizeNullableText(branding?.phoneNumber) ||
+    normalizeNullableText(branding?.phone_number) ||
+    normalizeNullableText(branding?.phone) ||
+    normalizeNullableText(branding?.organisationPhone) ||
+    normalizeNullableText(branding?.organisation_phone) ||
+    normalizeNullableText(context?.organisation?.telephone) ||
+    normalizeNullableText(context?.organisation?.phoneNumber) ||
+    normalizeNullableText(context?.organisation?.phone_number) ||
+    normalizeNullableText(context?.agency?.phone)
 
   merged.organisation_name = merged.organisation_name || organisationName
   merged.organisation_logo_url = merged.organisation_logo_url || resolvePublicAssetUrl(logoLightUrl) || ''
   merged.organisation_logo_dark_url = merged.organisation_logo_dark_url || resolvePublicAssetUrl(logoDarkUrl) || ''
   merged.agency_logo_url = merged.agency_logo_url || merged.organisation_logo_url
-  merged.bridge_legal_name = merged.bridge_legal_name || bridgeLabel
-  merged.bridge_legal_logo_light_url = merged.bridge_legal_logo_light_url || bridgeLogoLightUrl
-  merged.bridge_legal_logo_dark_url = merged.bridge_legal_logo_dark_url || bridgeLogoDarkUrl
+  merged.organisation_website = merged.organisation_website || organisationWebsite || ''
+  merged.organisation_email = merged.organisation_email || organisationEmail || ''
+  merged.organisation_physical_address = merged.organisation_physical_address || organisationPhysicalAddress || ''
+  merged.organisation_phone = merged.organisation_phone || organisationPhone || ''
+  merged.organisation_telephone = merged.organisation_telephone || organisationPhone || ''
 
   merged['organisation.name'] = merged['organisation.name'] || merged.organisation_name
-  merged['organisation.logo_url'] = merged['organisation.logo_url'] || merged.organisation_logo_url || bridgeLogoLightUrl
-  merged['organisation.logo_light_url'] = merged['organisation.logo_light_url'] || merged.organisation_logo_url || bridgeLogoLightUrl
-  merged['organisation.logo_dark_url'] = merged['organisation.logo_dark_url'] || merged.organisation_logo_dark_url || bridgeLogoDarkUrl
+  merged['organisation.logo_url'] = merged['organisation.logo_url'] || merged.organisation_logo_url || ''
+  merged['organisation.logo_light_url'] = merged['organisation.logo_light_url'] || merged.organisation_logo_url || ''
+  merged['organisation.logo_dark_url'] = merged['organisation.logo_dark_url'] || merged.organisation_logo_dark_url || ''
+  merged['organisation.website'] = merged['organisation.website'] || merged.organisation_website
+  merged['organisation.email'] = merged['organisation.email'] || merged.organisation_email
+  merged['organisation.physical_address'] = merged['organisation.physical_address'] || merged.organisation_physical_address
+  merged['organisation.phone'] = merged['organisation.phone'] || merged.organisation_phone
   merged['agency.logo_url'] = merged['agency.logo_url'] || merged.agency_logo_url || merged.organisation_logo_url
-  merged['bridge.name'] = merged['bridge.name'] || merged.bridge_legal_name
-  merged['bridge.logo_light_url'] = merged['bridge.logo_light_url'] || merged.bridge_legal_logo_light_url
-  merged['bridge.logo_dark_url'] = merged['bridge.logo_dark_url'] || merged.bridge_legal_logo_dark_url
   return merged
 }
 

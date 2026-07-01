@@ -107,9 +107,6 @@ const SUPPORTED_PACKET_TYPE_KEYS = new Set(SUPPORTED_PACKET_TYPES.map((item) => 
 const AGENCY_DOCUMENT_TABS = [
   { key: 'otp', packetType: 'otp', label: 'Offer to Purchase (OTP)', icon: FileSignature },
   { key: 'sales_mandate', packetType: 'mandate', label: 'Sales Mandate', icon: FileText },
-  { key: 'rental_mandate', packetType: 'mandate', label: 'Rental Mandate', icon: FileText },
-  { key: 'disclosure_forms', packetType: 'mandate', label: 'Disclosure Forms', icon: FileText },
-  { key: 'agency_documents', packetType: 'mandate', label: 'Agency Documents', icon: FileText },
 ]
 
 const SIMPLE_SECTION_LABELS = [
@@ -150,6 +147,9 @@ const TEMPLATE_STATUS_OPTIONS = [
 ]
 
 const PLACEHOLDER_KEY_PATTERN = /^[a-z0-9_.-]+$/i
+const TEMPLATE_TOKEN_REPLACEMENTS = {
+  agency_name: 'organisation_name',
+}
 
 const TEMPLATE_RENDER_MODE_OPTIONS = [
   { key: TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED, label: 'Native Structured' },
@@ -193,8 +193,8 @@ function createStarterSections(packetType = 'otp') {
         sectionKey: 'property_details',
         sectionLabel: 'Property Details',
         sectionType: 'dynamic_fields',
-        legalText: 'Property address: {{property_address}}\nSuburb: {{property_suburb}}\nCity: {{property_city}}\nProperty type: {{property_type}}\nAsking price: {{asking_price}}',
-        placeholderKeysText: 'property_address, property_suburb, property_city, property_type, asking_price, purchase_price',
+        legalText: 'Property address: {{property_display_address}}\nUnit: {{property_unit_number}}\nComplex / scheme: {{property_complex_name}}\nEstate: {{property_estate_name}}\nStreet address: {{property_address}}\nSuburb: {{property_suburb}}\nCity: {{property_city}}\nProperty type: {{property_type}}\nAsking price: {{asking_price}}',
+        placeholderKeysText: 'property_display_address, property_unit_number, property_section_number, property_complex_name, property_estate_name, property_address, property_suburb, property_city, property_type, asking_price, purchase_price',
         isRequired: true,
         sortOrder: 2,
       },
@@ -342,6 +342,18 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function normalizeTemplateTokenKey(value = '') {
+  const key = normalizeText(value)
+  return TEMPLATE_TOKEN_REPLACEMENTS[key] || key
+}
+
+function normalizeTemplateLegalText(value = '') {
+  return String(value || '').replace(/{{\s*([^{}]+?)\s*}}/g, (match, token) => {
+    const normalizedToken = normalizeTemplateTokenKey(token)
+    return normalizedToken ? `{{${normalizedToken}}}` : match
+  })
+}
+
 function normalizeNullableText(value) {
   const text = normalizeText(value)
   return text || null
@@ -385,7 +397,7 @@ function detectTemplateTokenIssues(text = '') {
 function sectionsFromTemplate(template = null) {
   const sections = Array.isArray(template?.sections) ? template.sections : []
   return sections.map((section, index) => {
-    const legalText = String(section.legal_text || section.legalText || '')
+    const legalText = normalizeTemplateLegalText(section.legal_text || section.legalText || '')
     const metadata = section?.metadata_json && typeof section.metadata_json === 'object'
       ? section.metadata_json
       : section?.metadataJson && typeof section.metadataJson === 'object'
@@ -400,7 +412,10 @@ function sectionsFromTemplate(template = null) {
         : []
 
     const allPlaceholderKeys = Array.from(
-      new Set([...placeholderKeysFromSection.map((item) => normalizeText(item)).filter(Boolean), ...tokenScan.tokens]),
+      new Set([
+        ...placeholderKeysFromSection.map((item) => normalizeTemplateTokenKey(item)).filter(Boolean),
+        ...tokenScan.tokens.map((item) => normalizeTemplateTokenKey(item)).filter(Boolean),
+      ]),
     )
 
     return {
@@ -2249,22 +2264,40 @@ export default function SettingsSigningTemplatesPage({
                       const active = selectedSectionIndex === index
                       const label = getFriendlySectionLabel(section, index)
                       return (
-                        <button
+                        <div
                           key={`${section.sectionKey}-${index}`}
-                          type="button"
-                          onClick={() => setSelectedSectionIndex(index)}
                           className={[
-                            'flex w-full items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left text-sm transition',
+                            'group flex w-full items-center gap-2 rounded-[10px] border px-2 py-2 text-sm transition',
                             active
                               ? 'border-[#96d7ad] bg-[#eef9f1] text-[#0f7438] shadow-[0_8px_18px_rgba(18,134,66,0.08)]'
                               : 'border-[#e4ebf2] bg-white text-[#42566d] hover:border-[#cbdceb] hover:bg-[#f8fbff]',
                           ].join(' ')}
                         >
-                          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-[#dbe7f3] bg-white text-xs font-semibold">
-                            {index + 1}
-                          </span>
-                          <span className="min-w-0 truncate font-semibold">{label}</span>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedSectionIndex(index)}
+                            className="flex min-w-0 flex-1 items-center gap-3 rounded-[8px] px-1 py-0.5 text-left"
+                          >
+                            <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-[#dbe7f3] bg-white text-xs font-semibold">
+                              {index + 1}
+                            </span>
+                            <span className="min-w-0 truncate font-semibold">{label}</span>
+                          </button>
+                          {canEdit ? (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                removeSection(index)
+                              }}
+                              className="grid h-8 w-8 shrink-0 place-items-center rounded-[8px] border border-transparent text-[#9c5a50] opacity-0 transition hover:border-[#f1d2cb] hover:bg-[#fff6f4] hover:text-[#ba3f2d] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-[#f1d2cb] group-hover:opacity-100"
+                              aria-label={`Remove ${label}`}
+                              title={`Remove ${label}`}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          ) : null}
+                        </div>
                       )
                     })}
                   </div>
@@ -2643,27 +2676,46 @@ export default function SettingsSigningTemplatesPage({
                       {(form.sections || []).map((section, index) => {
                         const state = sectionStatuses[index]
                         const active = selectedSectionIndex === index
+                        const label = section.sectionLabel || `Section ${index + 1}`
                         return (
-                          <button
+                          <div
                             key={`${section.sectionKey}-${index}`}
-                            type="button"
-                            onClick={() => setSelectedSectionIndex(index)}
                             className={[
-                              'flex w-full items-center gap-3 rounded-[18px] px-3 py-3 text-left transition',
+                              'group flex w-full items-center gap-2 rounded-[18px] px-2 py-2 text-left transition',
                               active
                                 ? 'border border-[#bcd6ff] bg-[#eef5ff] shadow-[inset_0_0_0_1px_rgba(10,102,255,0.08)]'
                                 : 'border border-transparent bg-white hover:border-[#dbe7f3] hover:bg-[#fbfdff]',
                             ].join(' ')}
                           >
-                            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-sm font-semibold text-[#0a66ff] shadow-[0_6px_16px_rgba(15,23,42,0.06)]">
-                              {index + 1}
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-semibold text-[#102033]">{section.sectionLabel || `Section ${index + 1}`}</span>
-                              <span className="block text-xs text-[#6b7c93]">{state.label}</span>
-                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedSectionIndex(index)}
+                              className="flex min-w-0 flex-1 items-center gap-3 rounded-[14px] px-1 py-1 text-left"
+                            >
+                              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-sm font-semibold text-[#0a66ff] shadow-[0_6px_16px_rgba(15,23,42,0.06)]">
+                                {index + 1}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-semibold text-[#102033]">{label}</span>
+                                <span className="block text-xs text-[#6b7c93]">{state.label}</span>
+                              </span>
+                            </button>
                             <span className="shrink-0">{state.icon}</span>
-                          </button>
+                            {canEdit && selectedIsOrgOwned ? (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  removeSection(index)
+                                }}
+                                className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] border border-transparent text-[#9c5a50] opacity-0 transition hover:border-[#f1d2cb] hover:bg-[#fff6f4] hover:text-[#ba3f2d] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-[#f1d2cb] group-hover:opacity-100"
+                                aria-label={`Remove ${label}`}
+                                title={`Remove ${label}`}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            ) : null}
+                          </div>
                         )
                       })}
                     </div>

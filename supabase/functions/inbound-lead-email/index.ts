@@ -71,7 +71,9 @@ function normalizeLower(value: unknown) {
 function normalizeEmail(value: unknown) {
   const text = normalizeText(value);
   const bracketMatch = text.match(/<([^>]+)>/);
-  return normalizeLower(bracketMatch?.[1] || text).replace(/^mailto:/, "");
+  const candidate = normalizeLower(bracketMatch?.[1] || text).replace(/^mailto:/, "");
+  const emailMatch = candidate.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
+  return emailMatch?.[0] || candidate;
 }
 
 function isUuidLike(value: unknown) {
@@ -263,11 +265,67 @@ function normalizeBodyText(value: unknown) {
     .replace(/\n{3,}/g, "\n\n");
 }
 
+const KNOWN_LEAD_EMAIL_LABELS = [
+  "name",
+  "full name",
+  "contact name",
+  "customer",
+  "customer name",
+  "enquirer",
+  "sender",
+  "email address",
+  "email",
+  "e-mail",
+  "phone",
+  "mobile",
+  "cell",
+  "cellphone",
+  "telephone",
+  "contact number",
+  "message",
+  "comments",
+  "comment",
+  "enquiry",
+  "enquiry message",
+  "buyer message",
+  "notes",
+  "listing reference",
+  "listing ref",
+  "listing id",
+  "listing number",
+  "property reference",
+  "property ref",
+  "property id",
+  "property number",
+  "web reference",
+  "web ref",
+  "web id",
+  "budget",
+  "max budget",
+  "price",
+  "asking price",
+  "area",
+  "suburb",
+  "location",
+  "property type",
+  "property interest",
+];
+
+function trimAtNextKnownLabel(value: string) {
+  const safeLabels = KNOWN_LEAD_EMAIL_LABELS.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const nextLabelPattern = new RegExp(`\\s+(?:legend\\s+)?(?:${safeLabels.join("|")})\\s*[:\\-]`, "i");
+  const match = value.match(nextLabelPattern);
+  return normalizeText(match?.index === undefined ? value : value.slice(0, match.index));
+}
+
 function readLabelValue(text: string, labels: string[]) {
   const safeLabels = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   if (!safeLabels.length) return "";
   const pattern = new RegExp(`(?:^|\\n)\\s*(?:${safeLabels.join("|")})\\s*[:\\-]\\s*([^\\n\\r]+)`, "i");
-  return normalizeText(text.match(pattern)?.[1] || "");
+  const raw = normalizeText(text.match(pattern)?.[1] || "")
+    .replace(/\s*\(\s*mailto:[^)]+\)/gi, " ")
+    .replace(/\bmailto:/gi, "");
+  return trimAtNextKnownLabel(raw);
 }
 
 function extractEmailAddress(text: string) {
@@ -287,7 +345,9 @@ function extractPhone(text: string) {
 }
 
 function extractName(text: string, fromName = "") {
-  return normalizeText(readLabelValue(text, ["name", "full name", "contact name", "customer", "customer name", "enquirer", "sender"]) || fromName).replace(/\s*<[^>]+>\s*/g, "");
+  return normalizeText(readLabelValue(text, ["name", "full name", "contact name", "customer", "customer name", "enquirer", "sender"]) || fromName)
+    .replace(/\s*<[^>]+>\s*/g, "")
+    .replace(/\s+\b(?:legend|fieldset|label)\b\s*$/i, "");
 }
 
 function extractListingReference(text: string) {

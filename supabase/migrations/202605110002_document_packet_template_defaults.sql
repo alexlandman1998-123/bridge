@@ -123,8 +123,8 @@ cross join (
       2,
       true,
       '{}'::jsonb,
-      array['seller_full_name', 'seller_id_number', 'seller_email', 'agent_full_name', 'agency_name']::text[],
-      jsonb_build_object('section_title', 'Parties', 'section_order', 2, 'required_placeholders', array['seller_full_name', 'agent_full_name', 'agency_name'], 'editable_by', array['principal', 'super_admin', 'admin', 'agent'])
+      array['seller_full_name', 'seller_id_number', 'seller_email', 'agent_full_name', 'organisation_name']::text[],
+      jsonb_build_object('section_title', 'Parties', 'section_order', 2, 'required_placeholders', array['seller_full_name', 'agent_full_name', 'organisation_name'], 'editable_by', array['principal', 'super_admin', 'admin', 'agent'])
     ),
     (
       'property_details',

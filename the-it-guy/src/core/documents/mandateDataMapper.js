@@ -75,6 +75,36 @@ function firstNumberWithSource(candidates = []) {
   return { value: null, source: '' }
 }
 
+function joinAddressParts(...values) {
+  return values.map((value) => normalizeText(value)).filter(Boolean).join(', ')
+}
+
+function joinUniqueAddressParts(...values) {
+  const seen = new Set()
+  const parts = []
+  for (const value of values) {
+    const text = normalizeText(value)
+    if (!text) continue
+    const key = text.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    parts.push(text)
+  }
+  return parts.join(', ')
+}
+
+function formatUnitNumber(value = '') {
+  const text = normalizeText(value)
+  if (!text) return ''
+  return /^unit\s+/i.test(text) ? text : `Unit ${text}`
+}
+
+function formatOwnershipShare(value = '') {
+  const text = normalizeText(value)
+  if (!text) return ''
+  return text.includes('%') ? text : `${text}%`
+}
+
 function toTitleCase(value) {
   return normalizeText(value)
     .replace(/_/g, ' ')
@@ -284,7 +314,79 @@ function resolveSellerProfile(onboarding = {}, lead = {}, contact = {}) {
   }
 }
 
+function normalizeSellerOwnerParty(owner = {}, index = 0) {
+  const payload = normalizeObject(owner)
+  const name = firstText(
+    payload.fullName,
+    payload.full_name,
+    payload.displayName,
+    payload.display_name,
+    [payload.firstName || payload.first_name || payload.name, payload.lastName || payload.last_name || payload.surname].filter(Boolean).join(' '),
+    payload.name,
+  )
+  const idNumber = firstText(
+    payload.idNumber,
+    payload.id_number,
+    payload.identityNumber,
+    payload.identity_number,
+    payload.passportNumber,
+    payload.passport_number,
+    payload.registrationNumber,
+    payload.registration_number,
+  )
+  const party = {
+    role: 'Seller',
+    title: firstText(payload.roleTitle, payload.role_title, `Seller ${index + 1}`),
+    name,
+    idNumber,
+    email: firstText(payload.email, payload.emailAddress, payload.email_address),
+    phone: firstText(payload.phone, payload.mobile, payload.mobileNumber, payload.mobile_number),
+    capacity: firstText(payload.capacity, payload.signingCapacity, payload.signing_capacity, payload.roleTitle, payload.role_title),
+    ownershipShare: formatOwnershipShare(firstText(payload.ownershipShare, payload.ownership_share, payload.share)),
+  }
+  return [party.name, party.idNumber, party.email, party.phone, party.capacity, party.ownershipShare].some((value) => normalizeText(value)) ? party : null
+}
+
+function buildSellerParties(seller = {}) {
+  const owners = Array.isArray(seller.multipleOwners) ? seller.multipleOwners : []
+  const ownerParties = owners
+    .map((owner, index) => normalizeSellerOwnerParty(owner, index))
+    .filter(Boolean)
+  if (ownerParties.length) return ownerParties
+
+  const primarySeller = {
+    role: 'Seller',
+    title: 'Seller',
+    name: seller.fullName,
+    idNumber: seller.identityNumber,
+    email: seller.email,
+    phone: seller.phone,
+    capacity: seller.representativeCapacity,
+  }
+  const spouse = {
+    role: 'Seller',
+    title: 'Spouse / Co-seller',
+    name: seller.spouseName,
+    idNumber: seller.spouseIdNumber,
+    email: seller.spouseEmail,
+  }
+  return [primarySeller, spouse].filter((party) => [party.name, party.idNumber, party.email, party.phone, party.capacity].some((value) => normalizeText(value)))
+}
+
 function resolvePropertyProfile(onboarding = {}, lead = {}, privateListing = {}, transaction = {}) {
+  const addressDetails = onboarding.propertyAddressDetails || onboarding.property_address_details || onboarding.addressDetails || onboarding.address_details || {}
+  const unitNumber = firstText(onboarding.unitNumber, onboarding.unit_number, addressDetails.unitNumber, addressDetails.unit_number, privateListing.unitNumber, privateListing.unit_number, lead.unitNumber, transaction.unit_number)
+  const sectionNumber = firstText(onboarding.sectionNumber, onboarding.section_number, addressDetails.sectionNumber, addressDetails.section_number, privateListing.sectionNumber, privateListing.section_number, lead.sectionNumber, transaction.section_number)
+  const complexName = firstText(onboarding.complexName, onboarding.complex_name, onboarding.schemeName, onboarding.scheme_name, onboarding.estateComplexName, addressDetails.complexName, addressDetails.complex_name, addressDetails.schemeName, addressDetails.scheme_name, lead.complexName, lead.estateComplexName)
+  const estateName = firstText(onboarding.estateName, onboarding.estate_name, onboarding.estateComplexName, addressDetails.estateName, addressDetails.estate_name, lead.estateName, lead.estateComplexName)
+  const sectionalTitleScheme = firstText(onboarding.sectionalTitleScheme, onboarding.property_sectional_title_scheme, onboarding.sectionalTitleNumber, onboarding.schemeName, onboarding.scheme_name, addressDetails.sectionalTitleScheme, addressDetails.schemeName, lead.sectionalTitleScheme, transaction.sectional_title_number)
+  const structuredOnboardingAddress = firstText(
+    addressDetails.formatted,
+    addressDetails.fullAddress,
+    addressDetails.address,
+    joinAddressParts(addressDetails.line1, addressDetails.line2, addressDetails.suburb, addressDetails.city, addressDetails.province, addressDetails.postalCode || addressDetails.postal_code),
+    joinAddressParts(onboarding.propertyAddressLine1 || onboarding.property_address_line_1 || onboarding.addressLine1, onboarding.propertyAddressLine2 || onboarding.property_address_line_2 || onboarding.addressLine2, onboarding.suburb || onboarding.property_suburb, onboarding.city || onboarding.property_city, onboarding.province || onboarding.property_province, onboarding.postalCode || onboarding.postal_code),
+  )
   const askingPrice = firstNumber(
     onboarding.askingPrice,
     onboarding.marketingPrice,
@@ -300,8 +402,10 @@ function resolvePropertyProfile(onboarding = {}, lead = {}, privateListing = {},
   )
   const address = firstText(
     onboarding.propertyAddress,
+    onboarding.property_address,
     onboarding.address,
     onboarding.streetAddress,
+    structuredOnboardingAddress,
     privateListing.propertyAddress,
     privateListing.addressLine1,
     privateListing.address_line_1,
@@ -313,8 +417,10 @@ function resolvePropertyProfile(onboarding = {}, lead = {}, privateListing = {},
     transaction.property_address_line_1,
     lead.propertyInterest,
   )
+  const displayAddress = joinUniqueAddressParts(formatUnitNumber(unitNumber), complexName, estateName, address)
   return {
     fullAddress: address,
+    displayAddress: displayAddress || address,
     address,
     type: firstText(onboarding.propertyType, onboarding.propertyStructureType, privateListing.propertyType, lead.propertyType, transaction.property_type, lead.propertyInterest),
     propertyType: firstText(onboarding.propertyType, onboarding.propertyStructureType, privateListing.propertyType, lead.propertyType, transaction.property_type, lead.propertyInterest),
@@ -323,9 +429,12 @@ function resolvePropertyProfile(onboarding = {}, lead = {}, privateListing = {},
     province: firstText(onboarding.province, privateListing.province, lead.province, transaction.province),
     postalCode: firstText(onboarding.postalCode, privateListing.postalCode, privateListing.postal_code, lead.postalCode, transaction.postal_code),
     erfNumber: firstText(onboarding.erfNumber, onboarding.erf, lead.erfNumber, privateListing.erfNumber, transaction.erf_number),
-    sectionalTitleScheme: firstText(onboarding.sectionalTitleScheme, onboarding.sectionalTitleNumber, lead.sectionalTitleScheme, transaction.sectional_title_number),
-    estateComplexName: firstText(onboarding.estateComplexName, lead.estateComplexName),
-    unitNumber: firstText(onboarding.unitNumber, privateListing.unitNumber, lead.unitNumber, transaction.unit_number),
+    sectionalTitleScheme,
+    estateComplexName: firstText(complexName, estateName),
+    complexName,
+    estateName,
+    unitNumber,
+    sectionNumber,
     erfSize: firstText(onboarding.erfSize, lead.erfSize),
     floorSize: firstText(onboarding.floorSize, lead.floorSize),
     bedrooms: firstText(onboarding.bedrooms, lead.bedrooms),
@@ -501,6 +610,7 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
   } = buildMapperInput(input, legacyLead, legacyAgency, legacyAgent)
   const onboarding = onboardingSubmission && typeof onboardingSubmission === 'object' ? onboardingSubmission : {}
   const seller = resolveSellerProfile(onboarding, lead, contact)
+  const sellerParties = buildSellerParties(seller)
   const property = resolvePropertyProfile(onboarding, lead, privateListing, transaction)
   const mandate = resolveMandateProfile(onboarding, lead, agency, organisation, privateListing, transaction, mandateDraft)
   const propertyDisclosureAnnexure = resolvePropertyDisclosureAnnexure(onboarding, privateListing, transaction)
@@ -543,6 +653,7 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
       mandate.introductionPurpose,
       'This Mandate Agreement records the appointment of the Agent by the Seller to market the property described in this agreement and to perform the related services set out herein. The purpose of this document is to confirm the parties, the property, the mandate terms, commission arrangements, and any special conditions applicable to the marketing and sale of the property.',
     ),
+    seller_parties: sellerParties,
     seller_full_name: safePlaceholder(seller.fullName),
     seller_id_number: safePlaceholder(seller.identityNumber),
     seller_email: safePlaceholder(seller.email),
@@ -570,8 +681,14 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     property_postal_code: safePlaceholder(property.postalCode),
     property_erf_number: safePlaceholder(property.erfNumber),
     erf_number: safePlaceholder(property.erfNumber),
+    property_display_address: safePlaceholder(property.displayAddress),
     property_unit_number: safePlaceholder(property.unitNumber),
     unit_number: safePlaceholder(property.unitNumber),
+    property_section_number: safePlaceholder(property.sectionNumber),
+    section_number: safePlaceholder(property.sectionNumber),
+    property_complex_name: safePlaceholder(property.complexName),
+    property_estate_name: safePlaceholder(property.estateName),
+    property_estate_complex_name: safePlaceholder(property.estateComplexName),
     property_sectional_title_scheme: safePlaceholder(property.sectionalTitleScheme),
     sectional_title_number: safePlaceholder(property.sectionalTitleScheme),
     property_asking_price: safePlaceholder(formatCurrency(property.askingPrice)),

@@ -375,16 +375,76 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     aliases: ['property.property_type'],
   },
   {
+    key: 'property_unit_number',
+    label: 'Unit Number',
+    category: 'Property Details',
+    description: 'Unit or door number for sectional title, complex, or estate properties.',
+    dataSource: 'seller onboarding unitNumber OR listing unit number',
+    required: false,
+    packetTypes: ['mandate', 'otp'],
+    sampleValue: 'Unit 12',
+    validationRule: 'text_or_empty',
+    aliases: ['property.unit_number', 'unit_number', 'unitNumber'],
+  },
+  {
+    key: 'property_section_number',
+    label: 'Section Number',
+    category: 'Property Details',
+    description: 'Registered sectional title section number where captured.',
+    dataSource: 'seller onboarding sectionNumber OR canonical property facts',
+    required: false,
+    packetTypes: ['mandate', 'otp'],
+    sampleValue: 'Section 12',
+    validationRule: 'text_or_empty',
+    aliases: ['property.section_number', 'section_number', 'sectionNumber'],
+  },
+  {
+    key: 'property_complex_name',
+    label: 'Complex / Scheme Name',
+    category: 'Property Details',
+    description: 'Complex, scheme, or building name for sectional title properties.',
+    dataSource: 'seller onboarding schemeName OR estateComplexName',
+    required: false,
+    packetTypes: ['mandate', 'otp'],
+    sampleValue: 'Sample Heights',
+    validationRule: 'text_or_empty',
+    aliases: ['property.complex_name', 'property.scheme_name', 'scheme_name', 'complex_name', 'estateComplexName'],
+  },
+  {
+    key: 'property_estate_name',
+    label: 'Estate Name',
+    category: 'Property Details',
+    description: 'Estate or HOA name where the property sits inside an estate.',
+    dataSource: 'seller onboarding estateName OR estateComplexName',
+    required: false,
+    packetTypes: ['mandate', 'otp'],
+    sampleValue: 'Sample Estate',
+    validationRule: 'text_or_empty',
+    aliases: ['property.estate_name', 'estate_name', 'estateName'],
+  },
+  {
+    key: 'property_display_address',
+    label: 'Property Display Address',
+    category: 'Property Details',
+    description: 'Display address including unit, complex, estate, and physical address where available.',
+    dataSource: 'seller onboarding property address plus sectional title / estate details',
+    required: false,
+    packetTypes: ['mandate', 'otp'],
+    sampleValue: 'Unit 12, Sample Heights, Sample Estate, 12 Sample Street, Benoni',
+    validationRule: 'text_or_empty',
+    aliases: ['property.display_address', 'property.full_display_address'],
+  },
+  {
     key: 'sectional_title_number',
     label: 'Sectional Title Number',
     category: 'Property Details',
     description: 'Sectional title reference if applicable.',
-    dataSource: 'unit metadata',
+    dataSource: 'unit metadata or seller onboarding scheme details',
     required: false,
-    packetTypes: ['otp'],
+    packetTypes: ['mandate', 'otp'],
     sampleValue: 'SS 238/2022',
     validationRule: 'text_or_empty',
-    aliases: ['property.sectional_title_number'],
+    aliases: ['property.sectional_title_number', 'property_sectional_title_scheme'],
   },
   {
     key: 'property_nhbrc_certificate_number',
@@ -1933,16 +1993,46 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
 ]
 
 const CANONICAL_FIELD_BY_KEY = new Map()
+const CANONICAL_FIELDS_BY_KEY = new Map()
 const ALIAS_TO_CANONICAL = new Map()
+
+function normalizeCanonicalDefinition(definition = {}) {
+  return {
+    ...definition,
+    key: normalizeUnderscoreKey(definition.key),
+    aliases: Array.from(new Set((definition.aliases || []).map((item) => normalizeText(item)).filter(Boolean))),
+  }
+}
+
+function definitionSupportsPacketType(definition = {}, packetType = '') {
+  const normalizedPacketType = normalizeText(packetType).toLowerCase()
+  if (!normalizedPacketType) return true
+  return Array.isArray(definition.packetTypes) ? definition.packetTypes.includes(normalizedPacketType) : true
+}
+
+function getCanonicalDefinitionsForKey(rawKey = '') {
+  const canonicalKey = normalizeUnderscoreKey(rawKey)
+  return CANONICAL_FIELDS_BY_KEY.get(canonicalKey) || []
+}
+
+function pickCanonicalDefinition(rawKey = '', { packetType = null } = {}) {
+  const definitions = getCanonicalDefinitionsForKey(rawKey)
+  if (!definitions.length) return null
+  const normalizedPacketType = normalizeText(packetType).toLowerCase()
+  if (!normalizedPacketType) return definitions[0]
+  return definitions.find((definition) => definitionSupportsPacketType(definition, normalizedPacketType)) || null
+}
 
 for (const definition of CANONICAL_MERGE_FIELD_DEFINITIONS) {
   const canonicalKey = normalizeUnderscoreKey(definition.key)
-  const normalizedDefinition = {
-    ...definition,
-    key: canonicalKey,
-    aliases: Array.from(new Set((definition.aliases || []).map((item) => normalizeText(item)).filter(Boolean))),
+  const normalizedDefinition = normalizeCanonicalDefinition(definition)
+  if (!CANONICAL_FIELD_BY_KEY.has(canonicalKey)) {
+    CANONICAL_FIELD_BY_KEY.set(canonicalKey, normalizedDefinition)
   }
-  CANONICAL_FIELD_BY_KEY.set(canonicalKey, normalizedDefinition)
+  CANONICAL_FIELDS_BY_KEY.set(canonicalKey, [
+    ...(CANONICAL_FIELDS_BY_KEY.get(canonicalKey) || []),
+    normalizedDefinition,
+  ])
 
   const candidates = [
     canonicalKey,
@@ -1962,12 +2052,9 @@ for (const definition of CANONICAL_MERGE_FIELD_DEFINITIONS) {
 export function listCanonicalMergeFields({ packetType = null } = {}) {
   const normalizedPacketType = normalizeText(packetType).toLowerCase()
   return CANONICAL_MERGE_FIELD_DEFINITIONS
-    .map((definition) => CANONICAL_FIELD_BY_KEY.get(normalizeUnderscoreKey(definition.key)))
+    .map((definition) => normalizeCanonicalDefinition(definition))
     .filter(Boolean)
-    .filter((definition) => {
-      if (!normalizedPacketType) return true
-      return Array.isArray(definition.packetTypes) ? definition.packetTypes.includes(normalizedPacketType) : true
-    })
+    .filter((definition) => definitionSupportsPacketType(definition, normalizedPacketType))
 }
 
 export function resolveCanonicalMergeFieldKey(rawKey = '', { packetType = null } = {}) {
@@ -1986,12 +2073,7 @@ export function resolveCanonicalMergeFieldKey(rawKey = '', { packetType = null }
 
 export function getCanonicalMergeFieldDefinition(rawKey = '', { packetType = null } = {}) {
   const resolvedKey = resolveCanonicalMergeFieldKey(rawKey, { packetType }) || normalizeUnderscoreKey(rawKey)
-  const definition = CANONICAL_FIELD_BY_KEY.get(resolvedKey)
-  if (!definition) return null
-  if (!packetType) return definition
-  const normalizedPacketType = normalizeText(packetType).toLowerCase()
-  if (Array.isArray(definition.packetTypes) && !definition.packetTypes.includes(normalizedPacketType)) return null
-  return definition
+  return pickCanonicalDefinition(resolvedKey, { packetType })
 }
 
 export function suggestCanonicalMergeFieldKey(rawKey = '', { packetType = null } = {}) {

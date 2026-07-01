@@ -2,12 +2,13 @@ import { PARTNER_ROUTING_MODES, PARTNER_ROUTING_ROLE_TYPES, PARTNER_ROUTING_SOUR
 import { listOrganisationPartnerRoutingRules } from '../lib/settingsApi'
 import { readAuditEvents, recordAuditEvent } from '../lib/activityAudit'
 import { recordSecurityAuditEvent } from './auditLogService'
-import { listPartnerConnections } from './partnerNetworkService'
+import { listPartnerConnections, partnerConnectionSupportsRoleType } from './partnerNetworkService'
 import { getBondPartnerPeople } from './bondPartnerProfileService'
 
 const DEFAULT_SCOPE_PRIORITY = [
   PARTNER_ROUTING_SOURCE_TYPES.user,
   PARTNER_ROUTING_SOURCE_TYPES.agent,
+  PARTNER_ROUTING_SOURCE_TYPES.development,
   PARTNER_ROUTING_SOURCE_TYPES.team,
   PARTNER_ROUTING_SOURCE_TYPES.branch,
   PARTNER_ROUTING_SOURCE_TYPES.region,
@@ -654,6 +655,10 @@ export async function universalPartnerRoutingResolver(input = {}) {
       connectionFailureReason = 'This organisation is not connected as a partner yet.'
       continue
     }
+    if (connection && !partnerConnectionSupportsRoleType(connection, targetRoleType)) {
+      connectionFailureReason = 'This connected partner does not offer the requested service.'
+      continue
+    }
 
     const peopleCache = normalizedInput.partnerPeopleByRelationshipId || {}
     const relationshipId = normalizeText(connection?.id || connection?.relationshipId || rule?.relationshipId || rule?.relationship_id || '')
@@ -664,18 +669,14 @@ export async function universalPartnerRoutingResolver(input = {}) {
         : null
     const peopleLookup = peoplePayload ? mapPartnerPeopleToLookup(peoplePayload) : new Map()
     const resolvedPerson = targetIdentifiers.targetUserId ? peopleLookup.get(targetIdentifiers.targetUserId) || null : null
+    const canUseTargetPerson =
+      targetIdentifiers.targetUserId &&
+      resolvedPerson &&
+      resolvedPerson.isActive !== false &&
+      personMatchesTargetRole(resolvedPerson, targetRoleType)
     const scopeName = getResolutionScopeForRule(rule)
 
-    if (
-      targetIdentifiers.targetUserId &&
-      (
-        !resolvedPerson ||
-        (
-          resolvedPerson.isActive !== false &&
-          personMatchesTargetRole(resolvedPerson, targetRoleType)
-        )
-      )
-    ) {
+    if (canUseTargetPerson) {
       const decision = {
         ...buildDirectDecision({ rule, input: normalizedInput, relationshipId, resolvedPerson }),
         targetOrganisationId: targetIdentifiers.targetOrganisationId,
@@ -711,7 +712,7 @@ export async function universalPartnerRoutingResolver(input = {}) {
     }
 
     const fallbackReason = targetIdentifiers.targetUserId
-      ? 'Preferred person is unavailable, so the work falls back to the partner organisation queue.'
+      ? 'Preferred person could not be validated as active for this service, so the work falls back to the partner organisation queue.'
       : 'No preferred person selected, so the work falls back to the partner organisation queue.'
     const decision = {
       ...buildFallbackDecision({

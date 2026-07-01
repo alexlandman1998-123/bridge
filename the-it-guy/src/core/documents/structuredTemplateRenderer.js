@@ -22,6 +22,61 @@ function renderInlineText(value) {
   return escapeHtml(value).replace(/\n/g, '<br />')
 }
 
+function compactJoin(values = [], separator = ', ') {
+  return values.map((value) => normalizeText(value)).filter(Boolean).join(separator)
+}
+
+function renderContactIcon(type = '') {
+  const common = 'aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"'
+  if (type === 'website') {
+    return `<svg ${common}><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3c2.2 2.4 3.4 5.4 3.4 9s-1.2 6.6-3.4 9"></path><path d="M12 3c-2.2 2.4-3.4 5.4-3.4 9s1.2 6.6 3.4 9"></path></svg>`
+  }
+  if (type === 'email') {
+    return `<svg ${common}><rect x="3.5" y="5.5" width="17" height="13" rx="2"></rect><path d="m4 7 8 6 8-6"></path></svg>`
+  }
+  if (type === 'address') {
+    return `<svg ${common}><path d="M12 21s7-5.2 7-11a7 7 0 0 0-14 0c0 5.8 7 11 7 11z"></path><circle cx="12" cy="10" r="2.4"></circle></svg>`
+  }
+  return `<svg ${common}><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.4 19.4 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.5 2.1L8 9.6a16 16 0 0 0 6.4 6.4l1.2-1.2a2 2 0 0 1 2.1-.5c.8.3 1.7.5 2.6.6A2 2 0 0 1 22 16.9z"></path></svg>`
+}
+
+function resolveDocumentContactItems(branding = {}, placeholders = {}) {
+  const address = firstText(
+    branding.physicalAddress,
+    branding.physical_address,
+    branding.organisationPhysicalAddress,
+    branding.organisation_physical_address,
+    branding.address,
+    compactJoin([branding.addressLine1, branding.addressLine2, branding.city, branding.province, branding.postalCode]),
+    placeholders.organisation_physical_address,
+    placeholders['organisation.physical_address'],
+    placeholders.agency_address,
+  )
+  const items = [
+    ['website', firstText(branding.website, branding.organisationWebsite, branding.organisation_website, branding.companyWebsite, placeholders.organisation_website, placeholders['organisation.website'], placeholders.agency_website)],
+    ['email', firstText(branding.email, branding.organisationEmail, branding.organisation_email, branding.contactEmail, branding.companyEmail, placeholders.organisation_email, placeholders['organisation.email'], placeholders.agency_email)],
+    ['address', address],
+    ['phone', firstText(branding.telephone, branding.phoneNumber, branding.phone_number, branding.phone, branding.telephoneNumber, branding.contactPhone, branding.organisationPhone, branding.organisation_phone, placeholders.organisation_phone, placeholders.organisation_telephone, placeholders['organisation.phone'], placeholders.agency_phone)],
+  ]
+  return items
+    .map(([type, value]) => ({ type, value: normalizeText(value) }))
+    .filter((item) => item.value)
+}
+
+function renderDocumentContactRow(items = []) {
+  if (!items.length) return ''
+  return `
+    <div class="document-contact-row">
+      ${items.map((item) => `
+        <span class="document-contact-item">
+          <span class="document-contact-icon">${renderContactIcon(item.type)}</span>
+          <span class="document-contact-value">${renderInlineText(item.value)}</span>
+        </span>
+      `).join('\n')}
+    </div>
+  `
+}
+
 function resolveTemplateMetadata(template = null) {
   return template?.metadata_json && typeof template.metadata_json === 'object'
     ? template.metadata_json
@@ -44,6 +99,84 @@ function toTitleCase(value) {
     .replace(/_/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/\b\w/g, (character) => character.toUpperCase())
+}
+
+function firstText(...values) {
+  for (const value of values) {
+    const text = normalizeText(value)
+    if (text) return text
+  }
+  return ''
+}
+
+function asRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
+function formatOwnershipShare(value = '') {
+  const text = normalizeText(value)
+  if (!text) return ''
+  return text.includes('%') ? text : `${text}%`
+}
+
+function combineName(...values) {
+  return values.map((value) => normalizeText(value)).filter(Boolean).join(' ')
+}
+
+function normalizePartyRecord(source = {}, { role = 'Party', title = '' } = {}) {
+  const payload = asRecord(source)
+  const partyRole = firstText(payload.role, role)
+  const name = firstText(
+    payload.fullName,
+    payload.full_name,
+    payload.displayName,
+    payload.display_name,
+    payload.name,
+    payload.legalName,
+    payload.legal_name,
+    combineName(payload.firstName, payload.lastName),
+    combineName(payload.first_name, payload.last_name),
+    combineName(payload.name, payload.surname),
+  )
+  const idNumber = firstText(
+    payload.idNumber,
+    payload.id_number,
+    payload.identityNumber,
+    payload.identity_number,
+    payload.registrationNumber,
+    payload.registration_number,
+    payload.companyRegistrationNumber,
+    payload.company_registration_number,
+    payload.trustRegistrationNumber,
+    payload.trust_registration_number,
+    payload.passportNumber,
+    payload.passport_number,
+  )
+  const normalized = {
+    role: partyRole,
+    title: firstText(payload.title, payload.label, title, partyRole),
+    name,
+    idNumber,
+    email: firstText(payload.email, payload.emailAddress, payload.email_address),
+    phone: firstText(payload.phone, payload.mobile, payload.mobileNumber, payload.mobile_number),
+    capacity: firstText(payload.capacity, payload.signingCapacity, payload.signing_capacity, payload.roleTitle, payload.role_title),
+    ownershipShare: formatOwnershipShare(firstText(payload.ownershipShare, payload.ownership_share, payload.share)),
+    organisationName: firstText(payload.organisationName, payload.organisation_name, payload.organizationName, payload.agencyName),
+    ffcNumber: firstText(payload.ffcNumber, payload.ffc_number, payload.fidelityFundCertificateNumber),
+  }
+  return [name, idNumber, normalized.email, normalized.phone, normalized.capacity, normalized.ownershipShare, normalized.organisationName, normalized.ffcNumber].some((value) => normalizeText(value)) ? normalized : null
+}
+
+function dedupePartyRecords(parties = []) {
+  const seen = new Set()
+  return parties.filter((party) => {
+    if (!party) return false
+    const key = [party.name, party.idNumber, party.email].map((value) => normalizeText(value).toLowerCase()).filter(Boolean).join('|')
+    if (!key) return true
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 function buildMissingToken(label) {
@@ -228,7 +361,137 @@ function getPreviewField(placeholders, key, label) {
   }
 }
 
-function renderStructuredFieldRows(section, placeholders) {
+function normalizePlaceholderParties(value = []) {
+  return Array.isArray(value)
+    ? dedupePartyRecords(value.map((party, index) => normalizePartyRecord(party, {
+        role: party?.role || 'Party',
+        title: party?.title || party?.label || `Party ${index + 1}`,
+      })))
+    : []
+}
+
+function buildPartyField(label, value, { required = false } = {}) {
+  const resolved = normalizeText(value)
+  const missing = required && !resolved
+  if (!resolved && !required) return null
+  return {
+    label,
+    value: missing ? buildMissingToken(label) : resolved,
+    missing,
+  }
+}
+
+function renderPartyCardGrid(groups = [], { compact = false } = {}) {
+  const normalizedGroups = groups
+    .map((group) => ({
+      label: normalizeText(group.label),
+      parties: Array.isArray(group.parties) ? group.parties.filter(Boolean) : [],
+    }))
+    .filter((group) => group.parties.length)
+  if (!normalizedGroups.length) return ''
+
+  return normalizedGroups.map((group) => `
+    <div class="party-card-group">
+      ${group.label ? `<h4>${escapeHtml(group.label)}</h4>` : ''}
+      <div class="party-card-grid ${compact ? 'party-card-grid-compact' : ''}">
+        ${group.parties.map((party, index) => {
+          const fields = [
+            buildPartyField('Name', party.name, { required: true }),
+            buildPartyField('ID / Registration', party.idNumber, { required: party.role !== 'Agent' }),
+            buildPartyField('Email', party.email, { required: party.role !== 'Agent' }),
+            buildPartyField('Phone', party.phone),
+            buildPartyField('Capacity', party.capacity),
+            buildPartyField('Ownership', party.ownershipShare),
+            buildPartyField('Organisation', party.organisationName),
+            buildPartyField('FFC number', party.ffcNumber),
+          ].filter(Boolean)
+          return `
+            <article class="party-card">
+              <h5>${escapeHtml(party.title || party.role || `Party ${index + 1}`)}</h5>
+              <dl>
+                ${fields.map((field) => `
+                  <div class="party-card-row">
+                    <dt>${escapeHtml(field.label)}</dt>
+                    <dd class="${field.missing ? 'packet-preview-missing' : ''}">${renderInlineText(field.value)}</dd>
+                  </div>
+                `).join('\n')}
+              </dl>
+            </article>
+          `
+        }).join('\n')}
+      </div>
+    </div>
+  `).join('\n')
+}
+
+function getPartyGroupsForSection(section, placeholders = {}, packetType = 'mandate') {
+  const sectionKey = normalizeText(section?.key)
+  const normalizedPacketType = normalizeText(packetType).toLowerCase() || 'mandate'
+  if (normalizedPacketType !== 'mandate' && sectionKey === 'buyer_details') {
+    const buyerParties = normalizePlaceholderParties(placeholders.buyer_parties)
+    const fallbackBuyer = normalizePartyRecord({
+      title: 'Buyer',
+      name: placeholders.buyer_full_name,
+      idNumber: placeholders.buyer_id_number,
+      email: placeholders.buyer_email,
+      phone: placeholders.buyer_phone,
+    }, { role: 'Buyer', title: 'Buyer' })
+    const parties = buyerParties.length ? buyerParties : [fallbackBuyer].filter(Boolean)
+    return parties.length ? [{ label: '', parties }] : []
+  }
+  if (normalizedPacketType !== 'mandate' && sectionKey === 'seller_details') {
+    const sellerParties = normalizePlaceholderParties(placeholders.seller_parties)
+    const fallbackSeller = normalizePartyRecord({
+      title: 'Seller',
+      name: placeholders.seller_full_name,
+      idNumber: placeholders.seller_id_number,
+      email: placeholders.seller_email,
+      phone: placeholders.seller_phone,
+    }, { role: 'Seller', title: 'Seller' })
+    const parties = sellerParties.length ? sellerParties : [fallbackSeller].filter(Boolean)
+    return parties.length ? [{ label: '', parties }] : []
+  }
+  if (normalizedPacketType === 'mandate' && sectionKey === 'parties') {
+    const sellerParties = normalizePlaceholderParties(placeholders.seller_parties)
+    const fallbackSeller = normalizePartyRecord({
+      title: 'Seller',
+      name: placeholders.seller_full_name,
+      idNumber: placeholders.seller_id_number,
+      email: placeholders.seller_email,
+      phone: placeholders.seller_phone,
+    }, { role: 'Seller', title: 'Seller' })
+    const sellers = sellerParties.length ? sellerParties : [fallbackSeller].filter(Boolean)
+    const agentParty = normalizePartyRecord({
+      role: 'Agent',
+      title: 'Agent / Agency',
+      name: placeholders.agent_full_name,
+      email: placeholders.agent_email,
+      phone: placeholders.agent_phone,
+      organisationName: placeholders.organisation_name || placeholders.organisation_display_name || placeholders.agency_display_name,
+      ffcNumber: placeholders.agent_ffc_number,
+    }, {
+      role: 'Agent',
+      title: 'Agent / Agency',
+    })
+    return [
+      sellers.length ? { label: 'Sellers', parties: sellers } : null,
+      agentParty ? { label: 'Agency', parties: [agentParty] } : null,
+    ].filter(Boolean)
+  }
+  return []
+}
+
+function renderStructuredFieldRows(section, placeholders, packetType = 'otp') {
+  const partyContent = renderPartyCardGrid(getPartyGroupsForSection(section, placeholders, packetType))
+  if (partyContent) {
+    return `
+      <section class="packet-preview-section" data-section-key="${escapeHtml(section.key)}">
+        <h3>${escapeHtml(section.label)}</h3>
+        ${partyContent}
+      </section>
+    `
+  }
+
   const rows = (section.placeholders || []).map(([placeholderKey, placeholderLabel]) => {
     const resolvedValue = safeValueOrMissing(placeholders, placeholderKey, placeholderLabel)
     const missing = resolvedValue.startsWith('[MISSING:')
@@ -248,7 +511,12 @@ function renderStructuredFieldRows(section, placeholders) {
   `
 }
 
-function renderLegalClauseRows(section, placeholders, sectionIndex) {
+function renderLegalClauseRows(section, placeholders, sectionIndex, packetType = 'mandate') {
+  if (section.key === 'parties') {
+    const partyContent = renderPartyCardGrid(getPartyGroupsForSection(section, placeholders, packetType), { compact: true })
+    if (partyContent) return partyContent
+  }
+
   if (section.legalText) {
     return `<p class="legal-preview-paragraph">${renderInlineText(section.legalText)}</p>`
   }
@@ -292,12 +560,12 @@ function renderLegalClauseRows(section, placeholders, sectionIndex) {
   `
 }
 
-function renderMandateSectionHtml(section, placeholders, index) {
+function renderMandateSectionHtml(section, placeholders, index, packetType = 'mandate') {
   const sectionIndex = index + 1
   return `
     <section class="legal-preview-section" data-section-key="${escapeHtml(section.key)}">
       <h2><span>${sectionIndex}.</span> ${escapeHtml(section.label)}</h2>
-      ${renderLegalClauseRows(section, placeholders, sectionIndex)}
+      ${renderLegalClauseRows(section, placeholders, sectionIndex, packetType)}
     </section>
   `
 }
@@ -323,21 +591,20 @@ export function renderStructuredTemplate({
   }
 
   const safeTitle = normalizeText(title) || `${toTitleCase(packetType)} Document`
-  const orgName = normalizeText(branding?.organisationName || branding?.organisation_name) || 'Arch9 Workspace'
+  const orgName = normalizeText(branding?.organisationName || branding?.organisation_name) || 'Organisation'
   const organisationLogo = resolvePublicAssetUrl(
     normalizeText(branding?.logoLightUrl || branding?.organisationLogoUrl || branding?.logoDarkUrl || branding?.logoHighContrastUrl || branding?.organisationLogoDarkUrl || branding?.organisationLogoHighContrastUrl || branding?.organisation_high_contrast_logo_url || ''),
     assetBaseUrl,
   )
-  const bridgeLogoLabel = normalizeText(branding?.bridgeLogoLabel || '') || 'Arch9'
-  const bridgeLogoUrl = resolvePublicAssetUrl(branding?.bridgeLogoLightUrl || '/brand/bridge_9_white_background.png', assetBaseUrl)
+  const contactItems = resolveDocumentContactItems(branding, placeholders)
   const documentReference =
     normalizeText(placeholders.document_reference || placeholders.transaction_reference || placeholders.packet_reference) ||
     safeTitle ||
     'Preview reference pending'
   const isMandatePreview = normalizedPacketType === 'mandate'
   const renderedSections = isMandatePreview
-    ? normalizedSections.map((section, index) => renderMandateSectionHtml(section, placeholders, index)).join('\n')
-    : normalizedSections.map((section) => renderStructuredFieldRows(section, placeholders)).join('\n')
+    ? normalizedSections.map((section, index) => renderMandateSectionHtml(section, placeholders, index, normalizedPacketType)).join('\n')
+    : normalizedSections.map((section) => renderStructuredFieldRows(section, placeholders, normalizedPacketType)).join('\n')
   const legalPreviewClass = isMandatePreview ? 'packet-preview-shell legal-document-preview-shell' : 'packet-preview-shell'
   const legalBodyClass = isMandatePreview ? 'legal-document-preview-body' : ''
 
@@ -356,8 +623,11 @@ export function renderStructuredTemplate({
           .packet-preview-brand-left { display: flex; align-items: center; gap: 12px; }
           .packet-preview-logo { width: 44px; height: 44px; border: 1px solid #d7e4f2; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; background: #fff; overflow: hidden; }
           .packet-preview-logo img { max-width: 100%; max-height: 100%; object-fit: contain; }
-          .packet-preview-bridge { display: inline-flex; flex-direction: row; align-items: flex-end; gap: 0; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #607991; }
-          .packet-preview-bridge img { max-width: 128px; max-height: 28px; object-fit: contain; }
+          .document-contact-row { display: inline-flex; align-items: center; justify-content: flex-end; gap: 14px; min-width: 0; color: #13263a; font-size: 0.76rem; line-height: 1.35; }
+          .document-contact-item { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 260px; }
+          .document-contact-icon { display: inline-flex; width: 15px; height: 15px; flex: 0 0 15px; color: #111827; }
+          .document-contact-icon svg { width: 15px; height: 15px; }
+          .document-contact-value { min-width: 0; overflow-wrap: anywhere; }
           .packet-preview-title { padding: 18px 20px 4px; }
           .packet-preview-title h1 { margin: 0; font-size: 1.35rem; letter-spacing: 0; }
           .packet-preview-title p { margin: 6px 0 0; color: #58708a; font-size: 0.92rem; }
@@ -368,14 +638,27 @@ export function renderStructuredTemplate({
           .packet-preview-row { display: grid; grid-template-columns: minmax(140px, 220px) 1fr; gap: 12px; }
           .packet-preview-row dt { font-size: 0.82rem; color: #6b8198; }
           .packet-preview-row dd { margin: 0; font-size: 0.9rem; color: #13263a; font-weight: 550; }
+          .party-card-group { display: grid; gap: 8px; }
+          .party-card-group + .party-card-group { margin-top: 12px; }
+          .party-card-group h4 { margin: 0; color: #3f4a56; font-size: 0.82rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+          .party-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+          .party-card { border: 1px solid #d9e5f1; border-radius: 10px; background: #ffffff; padding: 10px 12px; break-inside: avoid; page-break-inside: avoid; }
+          .party-card h5 { margin: 0 0 8px; color: #13263a; font-size: 0.9rem; font-weight: 750; }
+          .party-card dl { display: grid; gap: 5px; margin: 0; }
+          .party-card-row { display: grid; grid-template-columns: minmax(92px, 0.42fr) minmax(0, 1fr); gap: 8px; align-items: start; }
+          .party-card-row dt { color: #6b8198; font-size: 0.78rem; }
+          .party-card-row dd { margin: 0; color: #13263a; font-size: 0.84rem; font-weight: 650; overflow-wrap: anywhere; }
           .packet-preview-missing { color: #8a3b15 !important; background: #fff6df; box-shadow: inset 0 -0.45em 0 rgba(255, 214, 120, 0.32); font-weight: 700 !important; }
           .packet-preview-missing-block, .packet-preview-missing-inline { color: #8a3b15 !important; }
           .legal-document-preview-shell { max-width: 210mm; min-height: 286mm; border-radius: 4px; border-color: #d7d7d7; box-shadow: 0 22px 60px rgba(15, 23, 42, 0.12); }
           .legal-document-preview-shell .packet-preview-header { padding: 18mm 18mm 8mm; border-bottom: 1px solid #d8d8d8; background: #ffffff; }
-          .legal-document-preview-shell .packet-preview-logo { width: 34mm; height: 13mm; border: 0; border-radius: 0; }
-          .legal-document-preview-shell .packet-preview-logo img { max-width: 34mm; max-height: 13mm; }
-          .legal-document-preview-shell .packet-preview-bridge { color: #555; letter-spacing: 0.06em; }
-          .legal-document-preview-shell .packet-preview-bridge img { max-width: 36mm; max-height: 12mm; }
+          .legal-document-preview-shell .packet-preview-brand-left { min-width: 0; flex: 0 0 auto; }
+          .legal-document-preview-shell .packet-preview-logo { width: auto; min-width: 34mm; max-width: 48mm; height: 15mm; border: 0; border-radius: 0; }
+          .legal-document-preview-shell .packet-preview-logo img { max-width: 48mm; max-height: 15mm; }
+          .legal-document-preview-shell .packet-preview-logo strong { color: #111827; font-size: 15px; line-height: 1.15; }
+          .legal-document-preview-shell .document-contact-row { flex: 1 1 auto; gap: 5mm; font-size: 10.5px; }
+          .legal-document-preview-shell .document-contact-item { max-width: 42mm; gap: 2mm; }
+          .legal-document-preview-shell .document-contact-icon, .legal-document-preview-shell .document-contact-icon svg { width: 4mm; height: 4mm; }
           .legal-document-preview-shell .packet-preview-title { padding: 9mm 18mm 6mm; text-align: center; border-bottom: 1px solid #e4e4e4; }
           .legal-document-preview-shell .packet-preview-title h1 { color: #111827; font-size: 24px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
           .legal-document-preview-shell .packet-preview-title p { margin-top: 7px; color: #5c6670; font-size: 12px; line-height: 1.45; }
@@ -388,30 +671,34 @@ export function renderStructuredTemplate({
           .legal-clause-list li { display: grid; grid-template-columns: 30px minmax(130px, 0.38fr) minmax(0, 1fr); gap: 8px; color: #1f2937; font-size: 12.5px; line-height: 1.55; }
           .legal-clause-number, .legal-clause-label { color: #3f4a56; font-weight: 700; }
           .legal-clause-value { color: #111827; }
+          .legal-document-preview-shell .party-card-group { gap: 3mm; }
+          .legal-document-preview-shell .party-card-group + .party-card-group { margin-top: 5mm; }
+          .legal-document-preview-shell .party-card-group h4 { color: #3f4a56; font-size: 11px; }
+          .legal-document-preview-shell .party-card-grid { gap: 3mm; }
+          .legal-document-preview-shell .party-card { border-color: #d7d7d7; border-radius: 2mm; padding: 3mm; }
+          .legal-document-preview-shell .party-card h5 { font-size: 12px; margin-bottom: 2mm; }
+          .legal-document-preview-shell .party-card dl { gap: 1.5mm; }
+          .legal-document-preview-shell .party-card-row { grid-template-columns: minmax(28mm, 0.42fr) minmax(0, 1fr); gap: 2mm; }
+          .legal-document-preview-shell .party-card-row dt, .legal-document-preview-shell .party-card-row dd { font-size: 11px; line-height: 1.4; }
           .legal-signature-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12mm 10mm; margin-top: 13mm; }
           .legal-signature-block { min-height: 34mm; color: #1f2937; font-size: 12px; }
           .legal-signature-line { display: block; border-top: 1px solid #111827; margin-bottom: 3mm; }
           .legal-signature-block strong, .legal-signature-block p, .legal-signature-block small { display: block; margin: 0 0 2mm; }
           .legal-preview-footer { display: flex; align-items: center; justify-content: space-between; gap: 8mm; padding: 5mm 18mm 7mm; border-top: 1px solid #d8d8d8; color: #606a75; font-size: 10.5px; }
-          .legal-preview-footer-brand, .legal-preview-footer-bridge { display: inline-flex; align-items: center; min-width: 34mm; max-width: 44mm; }
-          .legal-preview-footer-bridge { justify-content: flex-end; }
+          .legal-preview-footer-brand, .legal-preview-footer-spacer { display: inline-flex; align-items: center; min-width: 34mm; max-width: 44mm; }
           .legal-preview-footer img { max-width: 34mm; max-height: 9mm; object-fit: contain; }
           .legal-preview-page-number { flex: 1; text-align: center; font-weight: 700; }
           @media print { body { padding: 0; background: #ffffff; } .legal-document-preview-shell { width: 210mm; min-height: 297mm; border: 0; box-shadow: none; } }
+          @media (max-width: 780px) { .packet-preview-header { flex-wrap: wrap; } .document-contact-row { justify-content: flex-start; flex-wrap: wrap; gap: 8px 12px; width: 100%; } .document-contact-item { max-width: 100%; } .party-card-grid { grid-template-columns: 1fr; } .party-card-row { grid-template-columns: 1fr; gap: 3px; } }
         </style>
       </head>
       <body>
         <article class="${legalPreviewClass}">
           <header class="packet-preview-header">
             <div class="packet-preview-brand-left">
-              <span class="packet-preview-logo">${organisationLogo ? `<img src="${escapeHtml(organisationLogo)}" alt="${escapeHtml(orgName)}" />` : escapeHtml(orgName.slice(0, 1) || 'B')}</span>
-              <div>
-                <strong>${escapeHtml(orgName)}</strong>
-                <div class="packet-preview-bridge">
-                  ${bridgeLogoUrl ? `<img src="${escapeHtml(bridgeLogoUrl)}" alt="${escapeHtml(bridgeLogoLabel)}" />` : escapeHtml(bridgeLogoLabel)}
-                </div>
-              </div>
+              <span class="packet-preview-logo">${organisationLogo ? `<img src="${escapeHtml(organisationLogo)}" alt="${escapeHtml(orgName)}" />` : `<strong>${escapeHtml(orgName)}</strong>`}</span>
             </div>
+            ${renderDocumentContactRow(contactItems)}
           </header>
           <div class="packet-preview-title">
             <h1>${escapeHtml(safeTitle)}</h1>
@@ -423,7 +710,7 @@ export function renderStructuredTemplate({
           <footer class="legal-preview-footer">
             <span class="legal-preview-footer-brand">${organisationLogo ? `<img src="${escapeHtml(organisationLogo)}" alt="${escapeHtml(orgName)}" />` : escapeHtml(orgName)}</span>
             <span class="legal-preview-page-number">${escapeHtml(documentReference)}</span>
-            <span class="legal-preview-footer-bridge">${bridgeLogoUrl ? `<img src="${escapeHtml(bridgeLogoUrl)}" alt="${escapeHtml(bridgeLogoLabel)}" />` : escapeHtml(bridgeLogoLabel)}</span>
+            <span class="legal-preview-footer-spacer"></span>
           </footer>
         </article>
       </body>

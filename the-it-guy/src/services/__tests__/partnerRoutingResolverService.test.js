@@ -107,6 +107,12 @@ try {
       {
         id: 'rel-1',
         partnerOrganizationId: 'org-partner',
+        partnerRoleType: 'bond_originator',
+        partnerRoleTypes: ['bond_originator', 'transfer_attorney'],
+        services: [
+          { key: 'bond_origination', label: 'Bond Origination', isActive: true },
+          { key: 'property_transfers', label: 'Property Transfers', isActive: true },
+        ],
         status: 'connected',
       },
     ],
@@ -170,6 +176,22 @@ try {
   assert.equal(inactiveFallback.targetUserId, null)
   assert.equal(inactiveFallback.assignmentMode, 'organisation_queue')
   assert.match(inactiveFallback.fallbackReason, /falls back to the partner organisation queue/i)
+
+  const unresolvedPersonFallback = await service.universalPartnerRoutingResolver({
+    ...baseInput,
+    routingRules: [
+      {
+        ...routingRules[4],
+        targetUserId: 'user-not-loaded',
+      },
+    ],
+    partnerConnections,
+    partnerPeopleByRelationshipId: {},
+    targetRoleType: 'bond_originator',
+  })
+  assert.equal(unresolvedPersonFallback.targetUserId, null)
+  assert.equal(unresolvedPersonFallback.assignmentMode, 'organisation_queue')
+  assert.match(unresolvedPersonFallback.fallbackReason, /could not be validated/i)
 
   const selections = await service.resolvePartnerRoutingSelections({
     ...baseInput,

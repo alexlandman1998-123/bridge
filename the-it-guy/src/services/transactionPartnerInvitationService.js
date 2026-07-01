@@ -54,7 +54,7 @@ const INVITATION_STATUS_LABELS = Object.freeze({
 })
 
 const ATTORNEY_WORKFLOW_INVITATION_ROLES = new Set(['transfer_attorney', 'bond_attorney', 'cancellation_attorney'])
-const CANONICAL_TRANSACTION_INVITE_ROLES = new Set(['transfer_attorney', 'bond_originator'])
+const CANONICAL_TRANSACTION_INVITE_ROLES = new Set(['transfer_attorney', 'bond_attorney', 'cancellation_attorney', 'bond_originator', 'developer'])
 const INVITATION_EXPIRY_SOON_MS = 3 * 24 * 60 * 60 * 1000
 
 function normalizeText(value) {
@@ -557,6 +557,7 @@ async function recordInvitationDelivery(client, { invitationId, emailResult, del
 function getCanonicalTargetTransactionRole(roleType) {
   const normalized = normalizeTransactionPartnerInvitationRole(roleType)
   if (normalized === 'transfer_attorney') return 'attorney'
+  if (normalized === 'developer') return 'developer_contact'
   if (normalized === 'bond_originator') return 'bond_originator'
   return normalized
 }

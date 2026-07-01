@@ -1908,11 +1908,18 @@ export async function resolveDocumentPacketBranding({ organisationId = null } = 
   const client = requireClient()
   const context = await resolvePacketContext(client, { organisationId })
 
-  const orgResult = await client
+  let orgResult = await client
     .from('organisations')
-    .select('id, name, display_name, logo_url')
+    .select('id, name, display_name, logo_url, website, email, phone, phone_number, telephone, physical_address, address_line_1, address_line_2, city, province, postal_code')
     .eq('id', context.organisationId)
     .maybeSingle()
+  if (orgResult.error && isMissingColumnError(orgResult.error)) {
+    orgResult = await client
+      .from('organisations')
+      .select('id, name, display_name, logo_url')
+      .eq('id', context.organisationId)
+      .maybeSingle()
+  }
   if (orgResult.error) throw orgResult.error
 
   let brandingData = null
@@ -1960,6 +1967,11 @@ export async function resolveDocumentPacketBranding({ organisationId = null } = 
     : settings.branding && typeof settings.branding === 'object'
       ? settings.branding
       : {}
+  const agencyInfo = onboarding.agencyInformation && typeof onboarding.agencyInformation === 'object'
+    ? onboarding.agencyInformation
+    : onboarding.agency_information && typeof onboarding.agency_information === 'object'
+      ? onboarding.agency_information
+      : {}
   const resolveBrandingUrl = async ({ bucket = '', path = '', fallbackUrl = '' } = {}) => {
     const safeBucket = normalizeText(bucket)
     const safePath = normalizeText(path)
@@ -1990,19 +2002,51 @@ export async function resolveDocumentPacketBranding({ organisationId = null } = 
     normalizeNullableText(settingsLogoDark) ||
     normalizeNullableText(brandingData?.logo_dark_url) ||
     logoLightUrl
+  const physicalAddress =
+    normalizeNullableText(orgResult.data?.physical_address) ||
+    normalizeNullableText(agencyInfo.physicalAddress) ||
+    normalizeNullableText(agencyInfo.physical_address) ||
+    [orgResult.data?.address_line_1, orgResult.data?.address_line_2, orgResult.data?.city, orgResult.data?.province, orgResult.data?.postal_code]
+      .map((value) => normalizeText(value))
+      .filter(Boolean)
+      .join(', ')
+  const phoneNumber =
+    normalizeNullableText(orgResult.data?.telephone) ||
+    normalizeNullableText(orgResult.data?.phone_number) ||
+    normalizeNullableText(orgResult.data?.phone) ||
+    normalizeNullableText(agencyInfo.mainOfficeNumber) ||
+    normalizeNullableText(agencyInfo.main_office_number) ||
+    normalizeNullableText(agencyInfo.telephone) ||
+    normalizeNullableText(agencyInfo.phoneNumber) ||
+    normalizeNullableText(agencyInfo.phone_number)
+  const email =
+    normalizeNullableText(orgResult.data?.email) ||
+    normalizeNullableText(agencyInfo.mainEmailAddress) ||
+    normalizeNullableText(agencyInfo.main_email_address) ||
+    normalizeNullableText(agencyInfo.email) ||
+    normalizeNullableText(agencyInfo.emailAddress) ||
+    normalizeNullableText(agencyInfo.email_address)
+  const website =
+    normalizeNullableText(orgResult.data?.website) ||
+    normalizeNullableText(agencyInfo.website)
 
   return {
     organisationId: context.organisationId,
-    organisationName: normalizeText(orgResult.data?.display_name || orgResult.data?.name || 'Arch9 Workspace'),
+    organisationName: normalizeText(orgResult.data?.display_name || orgResult.data?.name || 'Organisation'),
     logoLightUrl,
     logoDarkUrl,
     logoHighContrastUrl: normalizeNullableText(brandingData?.logo_high_contrast_url) || logoDarkUrl,
     organisationLogoUrl: logoLightUrl,
     organisationLogoDarkUrl: logoDarkUrl,
-    bridgeLegalName: 'Arch9 Legal',
-    bridgeLogoLabel: 'Powered by Arch9',
-    bridgeLogoLightUrl: '/brand/bridge_9_white_background.png',
-    bridgeLogoDarkUrl: '/brand/bridge_9_dark_background.png',
+    website,
+    organisationWebsite: website,
+    email,
+    organisationEmail: email,
+    physicalAddress,
+    organisationPhysicalAddress: physicalAddress,
+    telephone: phoneNumber,
+    phoneNumber,
+    organisationPhone: phoneNumber,
   }
 }
 

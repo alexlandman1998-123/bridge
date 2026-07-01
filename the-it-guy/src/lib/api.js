@@ -23232,7 +23232,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         },
         targetRoleTypes: autoRoutingRoleTypes,
         routingRules: Array.isArray(options?.routingRules) ? options.routingRules : undefined,
-        partnerConnections: Array.isArray(options?.partnerConnections) ? options.partnerConnections : undefined,
+        partnerConnections: options?.partnerConnections !== undefined ? options.partnerConnections : undefined,
         partnerPeopleByRelationshipId: options?.partnerPeopleByRelationshipId || undefined,
         transactionOverride: options?.transactionOverride || null,
       })
