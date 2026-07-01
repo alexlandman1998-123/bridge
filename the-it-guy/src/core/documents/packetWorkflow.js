@@ -118,6 +118,74 @@ function renderLegalTextWithPlaceholders(value = '', placeholders = {}, packetTy
     .replace(/\n/g, '<br />')
 }
 
+function isMarkdownTableLine(line = '') {
+  return /^\s*\|.*\|\s*$/.test(String(line || ''))
+}
+
+function getMarkdownTableCells(line = '') {
+  return String(line || '')
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.trim())
+}
+
+function isMarkdownTableSeparator(line = '') {
+  const cells = getMarkdownTableCells(line)
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell))
+}
+
+function renderMarkdownTable(rows = [], placeholders = {}, packetType = 'otp') {
+  if (!rows.length) return ''
+  const [header = [], ...bodyRows] = rows
+  return `
+    <table class="legal-preview-table">
+      <thead>
+        <tr>${header.map((cell) => `<th>${renderLegalTextWithPlaceholders(cell, placeholders, packetType)}</th>`).join('')}</tr>
+      </thead>
+      <tbody>
+        ${bodyRows.map((row) => `<tr>${row.map((cell) => `<td>${renderLegalTextWithPlaceholders(cell, placeholders, packetType)}</td>`).join('')}</tr>`).join('\n')}
+      </tbody>
+    </table>
+  `
+}
+
+function renderLegalTextBlocks(value = '', placeholders = {}, packetType = 'otp') {
+  const lines = String(value || '').split(/\r?\n/)
+  const blocks = []
+  let paragraphLines = []
+  const flushParagraph = () => {
+    if (!paragraphLines.length) return
+    const paragraphText = paragraphLines.join('\n').trim()
+    if (paragraphText) {
+      blocks.push(`<p class="legal-preview-paragraph">${renderLegalTextWithPlaceholders(paragraphText, placeholders, packetType)}</p>`)
+    }
+    paragraphLines = []
+  }
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+    const nextLine = lines[index + 1]
+    if (isMarkdownTableLine(line) && isMarkdownTableSeparator(nextLine)) {
+      flushParagraph()
+      const tableRows = [getMarkdownTableCells(line)]
+      index += 2
+      while (index < lines.length && isMarkdownTableLine(lines[index])) {
+        tableRows.push(getMarkdownTableCells(lines[index]))
+        index += 1
+      }
+      index -= 1
+      blocks.push(renderMarkdownTable(tableRows, placeholders, packetType))
+      continue
+    }
+    paragraphLines.push(line)
+  }
+
+  flushParagraph()
+  return blocks.join('\n')
+}
+
 function renderContactIcon(type = '') {
   const common = 'aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"'
   if (type === 'website') {
@@ -1171,7 +1239,7 @@ function getPreviewField(placeholders, key, label, packetType = 'mandate') {
 
 function renderLegalClauseRows(section, placeholders, packetType, sectionIndex) {
   if (normalizeText(section.legalText)) {
-    return `<p class="legal-preview-paragraph">${renderLegalTextWithPlaceholders(section.legalText, placeholders, packetType)}</p>`
+    return renderLegalTextBlocks(section.legalText, placeholders, packetType)
   }
 
   if (section.key === 'introduction_purpose') {
@@ -1569,6 +1637,29 @@ export function renderPacketPreviewHtml({
             color: #1f2937;
             font-size: 13px;
             line-height: 1.72;
+          }
+          .legal-preview-paragraph + .legal-preview-table,
+          .legal-preview-table + .legal-preview-paragraph {
+            margin-top: 4mm;
+          }
+          .legal-preview-table {
+            width: 100%;
+            border-collapse: collapse;
+            color: #1f2937;
+            font-size: 12px;
+            line-height: 1.45;
+          }
+          .legal-preview-table th,
+          .legal-preview-table td {
+            border: 1px solid #d7d7d7;
+            padding: 2.5mm 3mm;
+            text-align: left;
+            vertical-align: top;
+          }
+          .legal-preview-table th {
+            background: #f6f7f8;
+            color: #111827;
+            font-weight: 700;
           }
           .legal-clause-list {
             display: grid;

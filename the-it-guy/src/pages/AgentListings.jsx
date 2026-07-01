@@ -53,7 +53,7 @@ import {
 
 const LISTINGS_VIEW_STORAGE_KEY = 'itg:agent-listings:view-mode:v1'
 const ACTIVE_LISTING_TABS = ['residential', 'developments']
-const MANUAL_LISTING_STATUSES = ['draft', 'active', 'under_offer', 'sold', 'archived']
+const MANUAL_LISTING_STATUSES = ['draft', 'mandate_signed', 'active', 'under_offer', 'sold']
 const QUICK_ADD_STEPS = ['property', 'seller', 'mandate', 'assignment']
 const QUICK_LISTING_METADATA_PREFIX = 'BRIDGE_QUICK_ADD_METADATA:'
 const LISTING_ORIGINS = ['quick_add', 'guided_onboarding', 'imported_property24', 'manual_admin_capture', 'developer_unit']
@@ -67,6 +67,7 @@ const LISTING_FOLLOW_UP_FILTERS = [
   { key: 'photos', label: 'Photos' },
   { key: 'commission', label: 'Commission' },
   { key: 'onboarding', label: 'Onboarding' },
+  { key: 'quick_add', label: 'Quick Add' },
 ]
 const LISTING_FOLLOW_UP_SLA_DAYS = {
   send_onboarding: 1,
@@ -78,6 +79,17 @@ const LISTING_FOLLOW_UP_SLA_DAYS = {
   add_photos: 5,
   add_external_link: 5,
 }
+const QUICK_ADD_FOLLOW_UP_TAB_BY_KEY = {
+  send_onboarding: 'seller',
+  add_seller_contact: 'seller',
+  add_seller_identity: 'seller',
+  add_seller_fica: 'documents',
+  upload_signed_mandate: 'documents',
+  confirm_commission: 'commission',
+  add_photos: 'listing',
+  add_external_link: 'listing',
+  create_deal: 'offers',
+}
 const QUICK_ADD_MANDATE_STATUS_OPTIONS = [
   { value: 'not_started', label: 'Not started' },
   { value: 'in_progress', label: 'Busy with seller' },
@@ -85,6 +97,171 @@ const QUICK_ADD_MANDATE_STATUS_OPTIONS = [
   { value: 'signed_uploaded', label: 'Signed and uploaded' },
   { value: 'expired', label: 'Expired' },
 ]
+const QUICK_ADD_INTENT_OPTIONS = [
+  {
+    value: 'draft',
+    label: 'Draft listing',
+    description: 'Capture the essentials now and complete mandate/compliance later.',
+    listingStatus: 'draft',
+    mandateStatus: 'not_started',
+    nextStep: 'property',
+    requiredNow: 'Address, seller contact, assigned agent',
+  },
+  {
+    value: 'signed_mandate',
+    label: 'Signed mandate exists',
+    description: 'Use this when the seller has already signed and you need to upload or record it.',
+    listingStatus: 'mandate_signed',
+    mandateStatus: 'signed_external_pending_upload',
+    nextStep: 'mandate',
+    requiredNow: 'Mandate dates, commission, signed mandate upload',
+  },
+  {
+    value: 'active_listing',
+    label: 'Active listing already live',
+    description: 'Capture a live listing from Property24, Private Property, or another system.',
+    listingStatus: 'active',
+    mandateStatus: 'signed_external_pending_upload',
+    nextStep: 'property',
+    requiredNow: 'Address, price, seller contact, mandate status, assigned agent',
+  },
+  {
+    value: 'under_offer',
+    label: 'Under offer / historical',
+    description: 'Back-capture a listing that already has offer or transaction history.',
+    listingStatus: 'under_offer',
+    mandateStatus: 'signed_external_pending_upload',
+    nextStep: 'property',
+    requiredNow: 'Address, seller contact, price, status context',
+  },
+]
+
+function getQuickAddIntentOption(value) {
+  const normalized = normalizeKey(value)
+  return QUICK_ADD_INTENT_OPTIONS.find((option) => option.value === normalized) || QUICK_ADD_INTENT_OPTIONS[0]
+}
+
+function isQuickListingMandatePackExpected(form = {}, mandateStatus = '') {
+  const quickIntent = normalizeKey(form.quickAddIntent)
+  const listingStatus = normalizeKey(form.listingStatus)
+  return (
+    ['signed_mandate', 'active_listing', 'under_offer'].includes(quickIntent) ||
+    ['mandate_signed', 'active', 'under_offer', 'sold'].includes(listingStatus) ||
+    isQuickListingSignedMandateStatus(mandateStatus || form.manualMandateStatus)
+  )
+}
+
+function getQuickListingMandateDateState(form = {}) {
+  const startDate = normalizeText(form.mandateStartDate)
+  const endDate = normalizeText(form.mandateEndDate)
+  if (!startDate && !endDate) return { key: 'missing', label: 'Dates not captured', daysRemaining: null }
+  if (!startDate || !endDate) return { key: 'partial', label: 'Date range incomplete', daysRemaining: null }
+
+  const endTime = new Date(`${endDate}T23:59:59`).getTime()
+  if (!Number.isFinite(endTime)) return { key: 'invalid', label: 'Expiry date invalid', daysRemaining: null }
+
+  const daysRemaining = Math.ceil((endTime - Date.now()) / (1000 * 60 * 60 * 24))
+  if (daysRemaining < 0) return { key: 'expired', label: 'Mandate expired', daysRemaining }
+  if (daysRemaining <= 14) return { key: 'expiring_soon', label: `Expires in ${daysRemaining} day${daysRemaining === 1 ? '' : 's'}`, daysRemaining }
+  return { key: 'active', label: 'Dates captured', daysRemaining }
+}
+
+function buildQuickListingMandatePack(form = {}, mandateStatusValue = '') {
+  const mandateStatus = mandateStatusValue || getQuickListingMandateStatus(form)
+  const dateState = getQuickListingMandateDateState(form)
+  const supportingDocumentNames = Array.isArray(form.supportingDocumentNames)
+    ? form.supportingDocumentNames.map(normalizeText).filter(Boolean)
+    : []
+  const commissionValue = normalizeText(form.commissionValue || form.commissionPercentage || form.commissionAmount)
+  const commissionType = normalizeText(form.commissionType) || 'percentage'
+
+  return {
+    expected: isQuickListingMandatePackExpected(form, mandateStatus),
+    status: mandateStatus,
+    statusLabel: getQuickListingMandateStatusLabel(mandateStatus),
+    type: normalizeText(form.mandateType) || 'sole',
+    startDate: normalizeText(form.mandateStartDate),
+    endDate: normalizeText(form.mandateEndDate),
+    dateState: dateState.key,
+    dateStateLabel: dateState.label,
+    daysRemaining: dateState.daysRemaining,
+    signed: isQuickListingSignedMandateStatus(mandateStatus),
+    uploadStatus: normalizeText(form.manualMandateFileName)
+      ? 'uploaded'
+      : isQuickListingSignedMandateStatus(mandateStatus)
+        ? 'pending_upload'
+        : 'not_required',
+    document: {
+      category: normalizeText(form.mandateDocumentCategory) || 'Mandate',
+      name: normalizeText(form.manualMandateFileName),
+      type: normalizeDocumentCategoryKey(form.mandateDocumentCategory || 'Mandate'),
+    },
+    supportingDocuments: supportingDocumentNames.map((name) => ({
+      category: normalizeText(form.supportingDocumentCategory) || 'Other',
+      name,
+      type: normalizeDocumentCategoryKey(form.supportingDocumentCategory || 'Other'),
+    })),
+    commission: {
+      type: commissionType,
+      value: commissionValue,
+      status: commissionValue ? 'captured' : 'missing',
+    },
+  }
+}
+
+function getQuickListingMandateCaptureWarnings(form = {}, mandateStatusValue = '') {
+  const mandatePack = buildQuickListingMandatePack(form, mandateStatusValue)
+  if (!mandatePack.expected) return []
+  const warnings = []
+  if (mandatePack.uploadStatus === 'pending_upload') warnings.push('Signed mandate upload outstanding')
+  if (!mandatePack.startDate || !mandatePack.endDate) warnings.push('Mandate dates missing')
+  if (mandatePack.dateState === 'expired') warnings.push('Mandate expired')
+  if (mandatePack.commission.status === 'missing') warnings.push('Commission missing')
+  return [...new Set(warnings)]
+}
+
+function buildQuickAddDocumentUploadQueue(form = {}) {
+  const supportingDocumentFiles = Array.isArray(form.supportingDocumentFiles) ? form.supportingDocumentFiles.filter(Boolean) : []
+  return [
+    ...(form.manualMandateFile
+      ? [{
+          kind: 'mandate',
+          file: form.manualMandateFile,
+          documentType: normalizeDocumentCategoryKey(form.mandateDocumentCategory),
+          documentCategory: form.mandateDocumentCategory,
+          documentName: form.manualMandateFileName || form.manualMandateFile.name,
+        }]
+      : []),
+    ...supportingDocumentFiles.map((file) => ({
+      kind: 'supporting',
+      file,
+      documentType: normalizeDocumentCategoryKey(form.supportingDocumentCategory),
+      documentCategory: form.supportingDocumentCategory,
+      documentName: file.name,
+    })),
+  ]
+}
+
+function getMergedQuickListingStatus(existingStatus = '', proposedStatus = '') {
+  const rank = {
+    seller_lead: 0,
+    draft: 0,
+    listing_review: 1,
+    mandate_ready: 2,
+    mandate_sent: 3,
+    mandate_signed: 4,
+    active: 5,
+    under_offer: 6,
+    transaction_created: 7,
+    sold: 8,
+    withdrawn: 9,
+  }
+  const existing = normalizeKey(existingStatus)
+  const proposed = normalizeKey(proposedStatus)
+  if (!existing) return proposed || 'listing_review'
+  if (!proposed) return existing
+  return (rank[proposed] ?? 0) >= (rank[existing] ?? 0) ? proposed : existing
+}
 const CANONICAL_LISTING_STRUCTURE = [
   'listing',
   'property',
@@ -594,6 +771,179 @@ function buildListingFollowUpQueue(card = {}) {
   return queue
 }
 
+function getQuickAddFollowUpHref(listingId = '', actionKey = '') {
+  const encodedId = encodeURIComponent(normalizeText(listingId))
+  const tab = QUICK_ADD_FOLLOW_UP_TAB_BY_KEY[actionKey] || 'seller'
+  return encodedId ? `/agent/listings/${encodedId}?tab=${encodeURIComponent(tab)}` : '/agent/listings'
+}
+
+function buildQuickAddHandoffPlan({
+  listingId = '',
+  listingTitle = '',
+  form = {},
+  mandateStatus = '',
+  listingStatus = '',
+  complianceWarnings = [],
+  completeness = {},
+  uploadedDocuments = [],
+  failedDocumentUploads = [],
+} = {}) {
+  const sellerName = normalizeText([form.sellerName, form.sellerSurname].filter(Boolean).join(' ')) || normalizeText(form.sellerName)
+  const listingRecord = {
+    id: listingId,
+    listingTitle,
+    status: listingStatus,
+    listingStatus,
+    mandateStatus,
+    missingFollowUpItems: Array.isArray(completeness?.missingItems) ? completeness.missingItems : [],
+    seller: {
+      name: sellerName,
+      email: normalizeText(form.sellerEmail),
+      phone: normalizeText(form.sellerPhone),
+      registrationNumber: normalizeText(form.sellerRegistrationNumber),
+    },
+    documents: (Array.isArray(uploadedDocuments) ? uploadedDocuments : []).map((document) => ({
+      document_type: document.type,
+      document_name: document.name,
+      category: document.category,
+      status: document.status,
+    })),
+  }
+  const baseQueue = buildListingFollowUpQueue({
+    listingRecord,
+    complianceWarnings,
+    missingCompletenessItems: completeness?.missingItems || [],
+  })
+  const queue = [...baseQueue]
+  const add = (key, label, priority = 'normal') => {
+    if (!queue.some((item) => item.key === key)) queue.push({ key, label, priority })
+  }
+
+  if (normalizeKey(listingStatus) === 'under_offer') add('create_deal', 'Create deal / transaction', 'urgent')
+  if ((failedDocumentUploads || []).length) add('upload_signed_mandate', 'Retry document upload', 'urgent')
+
+  const priorityRank = { urgent: 0, high: 1, normal: 2, blocked: 3 }
+  const actions = queue
+    .map((item) => ({
+      ...item,
+      tab: QUICK_ADD_FOLLOW_UP_TAB_BY_KEY[item.key] || 'seller',
+      href: getQuickAddFollowUpHref(listingId, item.key),
+      dueInDays: LISTING_FOLLOW_UP_SLA_DAYS[item.key] ?? null,
+    }))
+    .sort((a, b) => (priorityRank[a.priority] ?? 9) - (priorityRank[b.priority] ?? 9))
+
+  return {
+    primaryAction: actions[0] || null,
+    actions,
+    actionCount: actions.length,
+    summary: actions.length ? `${actions.length} follow-up action${actions.length === 1 ? '' : 's'} queued` : 'No immediate follow-up actions',
+  }
+}
+
+function normalizeQuickAddHandoffActions(listingId = '', plan = null) {
+  const actions = Array.isArray(plan?.actions) ? plan.actions : []
+  return actions
+    .map((action) => {
+      const key = normalizeKey(action?.key || action?.label)
+      if (!key) return null
+      return {
+        key,
+        label: normalizeText(action?.label) || key.replace(/_/g, ' '),
+        priority: normalizeKey(action?.priority) || 'normal',
+        source: 'quick_add_handoff',
+        tab: normalizeText(action?.tab) || QUICK_ADD_FOLLOW_UP_TAB_BY_KEY[key] || 'seller',
+        href: normalizeText(action?.href) || getQuickAddFollowUpHref(listingId, key),
+        dueInDays: action?.dueInDays ?? LISTING_FOLLOW_UP_SLA_DAYS[key] ?? null,
+        slaDays: action?.dueInDays ?? LISTING_FOLLOW_UP_SLA_DAYS[key] ?? undefined,
+      }
+    })
+    .filter(Boolean)
+}
+
+function getQuickAddHandoffPlanFromListing(listing = {}, quickMetadata = null) {
+  if (quickMetadata?.handoffPlan) return quickMetadata.handoffPlan
+  if (listing?.handoffPlan) return listing.handoffPlan
+  const activityRows = Array.isArray(listing?.activityLog)
+    ? listing.activityLog
+    : Array.isArray(listing?.activity_log)
+      ? listing.activity_log
+      : []
+  for (let index = activityRows.length - 1; index >= 0; index -= 1) {
+    const activity = activityRows[index]
+    if (activity?.handoffPlan) return activity.handoffPlan
+    if (activity?.metadata?.handoffPlan) return activity.metadata.handoffPlan
+  }
+  return null
+}
+
+function mergeFollowUpQueues(baseQueue = [], quickAddQueue = []) {
+  const merged = []
+  const seen = new Set()
+  for (const item of [...quickAddQueue, ...baseQueue]) {
+    const key = normalizeKey(item?.key || item?.label)
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    merged.push(item)
+  }
+  return merged
+}
+
+function listingHasTransactionRecord(listing = {}, statusKey = '') {
+  const normalizedStatus = normalizeKey(statusKey || listing.status || listing.listingStatus || listing.listing_status)
+  return Boolean(
+    listing.transactionId ||
+      listing.transaction_id ||
+      listing.dealId ||
+      listing.deal_id ||
+      listing.offerId ||
+      listing.offer_id ||
+      listing.acceptedOfferId ||
+      listing.accepted_offer_id ||
+      listing.acceptedOfferTransactionId ||
+      listing.accepted_offer_transaction_id ||
+      listing.transactionCreatedAt ||
+      listing.transaction_created_at ||
+      ['transaction_created', 'sold'].includes(normalizedStatus),
+  )
+}
+
+function reconcileQuickAddHandoffActions(card = {}, baseQueue = [], quickAddActions = []) {
+  const dynamicActionKeys = new Set(
+    (Array.isArray(baseQueue) ? baseQueue : [])
+      .map((item) => normalizeKey(item?.key || item?.label))
+      .filter(Boolean),
+  )
+  const listing = card.listingRecord || {}
+  const statusKey = normalizeKey(card.listingStatusKey || listing.status || listing.listingStatus || listing.listing_status)
+
+  return (Array.isArray(quickAddActions) ? quickAddActions : []).filter((action) => {
+    const key = normalizeKey(action?.key || action?.label)
+    if (!key) return false
+    if (dynamicActionKeys.has(key)) return true
+    if (key === 'create_deal') return statusKey === 'under_offer' && !listingHasTransactionRecord(listing, statusKey)
+    return false
+  })
+}
+
+function getQuickAddHandoffCompletion(originalActions = [], openActions = []) {
+  const originalKeys = (Array.isArray(originalActions) ? originalActions : [])
+    .map((action) => normalizeKey(action?.key || action?.label))
+    .filter(Boolean)
+  const openKeys = new Set(
+    (Array.isArray(openActions) ? openActions : [])
+      .map((action) => normalizeKey(action?.key || action?.label))
+      .filter(Boolean),
+  )
+  const completedKeys = [...new Set(originalKeys.filter((key) => !openKeys.has(key)))]
+
+  return {
+    totalCount: new Set(originalKeys).size,
+    openCount: openKeys.size,
+    completedCount: completedKeys.length,
+    completedKeys,
+  }
+}
+
 function getListingFollowUpAgeDays(listing = {}, now = Date.now()) {
   const sourceDate = normalizeText(
     listing.createdAt ||
@@ -676,6 +1026,7 @@ function listingMatchesFollowUpFilter(card = {}, filterKey = 'all') {
   if (key === 'photos') return actionKeys.has('add_photos')
   if (key === 'commission') return actionKeys.has('confirm_commission')
   if (key === 'onboarding') return actionKeys.has('send_onboarding')
+  if (key === 'quick_add') return Number(card.quickAddOpenActionCount || 0) > 0
   return true
 }
 
@@ -706,6 +1057,7 @@ function buildListingFollowUpInsights(cards = []) {
     photos: filterCounts.photos || 0,
     commission: filterCounts.commission || 0,
     onboarding: filterCounts.onboarding || 0,
+    quickAdd: filterCounts.quick_add || 0,
     overdueFollowUps: residentialCards.reduce((sum, card) => sum + Number(card.overdueFollowUpCount || 0), 0),
     dueTodayFollowUps: residentialCards.reduce((sum, card) => sum + Number(card.dueTodayFollowUpCount || 0), 0),
     filterCounts,
@@ -838,6 +1190,7 @@ function formatRelativeDate(value) {
 function buildInitialListingLeadForm(profile, workspace) {
   return {
     quickStep: 'property',
+    quickAddIntent: 'draft',
     sellerName: '',
     sellerSurname: '',
     sellerEmail: '',
@@ -904,16 +1257,17 @@ function buildInitialListingLeadForm(profile, workspace) {
     notes: '',
     manualMandateFile: null,
     manualMandateFileName: '',
+    supportingDocumentFiles: [],
     supportingDocumentNames: [],
   }
 }
 
 function getStatusLabelFromManualSelection(value) {
   const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'mandate_signed') return 'Mandate Signed'
   if (normalized === 'active') return 'Active'
   if (normalized === 'under_offer') return 'Under Offer'
   if (normalized === 'sold') return 'Sold'
-  if (normalized === 'archived') return 'Archived'
   return 'Draft'
 }
 
@@ -933,7 +1287,19 @@ function parseQuickListingMetadata(value = '') {
   }
 }
 
+function mergeQuickListingMetadataInNotes(value = '', patch = {}) {
+  const text = String(value || '')
+  const markerIndex = text.indexOf(QUICK_LISTING_METADATA_PREFIX)
+  const existing = parseQuickListingMetadata(text) || {}
+  const nextMetadata = { ...existing, ...(patch && typeof patch === 'object' ? patch : {}) }
+  const nextSerialized = serializeQuickListingMetadata(nextMetadata)
+  if (markerIndex < 0) return [text, nextSerialized].filter(Boolean).join('\n')
+  return `${text.slice(0, markerIndex).trimEnd()}\n${nextSerialized}`
+}
+
 function buildListingCompleteness({ form, mandateUploaded = false } = {}) {
+  const mandateStatus = getQuickListingMandateStatus(form)
+  const mandatePackExpected = isQuickListingMandatePackExpected(form, mandateStatus)
   const mandateSigned = normalizeKey(form?.manualMandateStatus) === 'signed_uploaded' || Boolean(form?.mandateSigned)
   const sellerHasContact = Boolean(normalizeText(form?.sellerEmail) || normalizeText(form?.sellerPhone))
   const commissionCaptured = Boolean(
@@ -941,12 +1307,14 @@ function buildListingCompleteness({ form, mandateUploaded = false } = {}) {
       normalizeText(form?.commissionPercentage) ||
       normalizeText(form?.commissionAmount),
   )
+  const mandateDatesCaptured = Boolean(normalizeText(form?.mandateStartDate) && normalizeText(form?.mandateEndDate))
   const checks = [
     { label: 'Property address', complete: Boolean(normalizeText(form?.propertyAddress)) },
     { label: 'Listing price', complete: Number(form?.listingPrice || form?.estimatedAskingPrice || 0) > 0 },
     { label: 'Seller name', complete: Boolean(normalizeText(form?.sellerName)) },
     { label: 'Seller contact details', complete: sellerHasContact },
     { label: 'Signed mandate', complete: mandateSigned && mandateUploaded },
+    ...(mandatePackExpected ? [{ label: 'Mandate dates', complete: mandateDatesCaptured }] : []),
     { label: 'Seller ID / registration number', complete: Boolean(normalizeText(form?.sellerRegistrationNumber)) },
     { label: 'Seller FICA', complete: false },
     { label: 'Commission structure', complete: commissionCaptured },
@@ -976,25 +1344,32 @@ function getListingCompleteness(listing = {}) {
 }
 
 function buildQuickListingNotes(form, completeness, mandateStatus) {
+  const quickAddIntent = getQuickAddIntentOption(form.quickAddIntent)
+  const mandatePack = buildQuickListingMandatePack(form, mandateStatus)
   const mandateStatusLabel = getQuickListingMandateStatusLabel(mandateStatus)
   const humanNotes = [
     normalizeText(form.notes),
+    `Capture type: ${quickAddIntent.label}`,
     `Seller Contact: ${normalizeText(form.sellerName)} · ${normalizeText(form.sellerEmail)} · ${normalizeText(form.sellerPhone)}`,
     `Quick Add Meta: Beds ${form.bedrooms || '-'} · Baths ${form.bathrooms || '-'} · Parking ${form.parkingCount || '-'} · Erf ${form.erfSize || '-'} · Floor ${form.floorSize || '-'}`,
-    `Mandate: ${mandateStatusLabel} · ${form.mandateType || 'sole'} · ${form.mandateStartDate || '-'} → ${form.mandateEndDate || '-'}`,
-    `Commission: ${form.commissionType || 'percentage'} · ${form.commissionValue || 'Not captured'}`,
+    `Mandate: ${mandateStatusLabel} · ${mandatePack.type} · ${mandatePack.startDate || '-'} → ${mandatePack.endDate || '-'} · ${mandatePack.dateStateLabel}`,
+    `Commission: ${mandatePack.commission.type} · ${mandatePack.commission.value || 'Not captured'}`,
     `External link: ${normalizeText(form.externalListingLink) || 'None'}`,
   ].filter(Boolean)
   const metadata = {
     origin: 'quick_add',
+    quickAddIntent: quickAddIntent.value,
+    quickAddIntentLabel: quickAddIntent.label,
     canonicalStructure: CANONICAL_LISTING_STRUCTURE,
     mandateStatus,
     mandateStatusLabel,
+    mandate: mandatePack,
     completeness,
     source: 'quick_add',
     allowedOrigins: LISTING_ORIGINS,
     complianceWarnings: Array.isArray(form.complianceWarnings) ? form.complianceWarnings : [],
     property: {
+      quickAddIntent: quickAddIntent.value,
       listingType: normalizeText(form.listingType),
       bedrooms: normalizeText(form.bedrooms),
       bathrooms: normalizeText(form.bathrooms),
@@ -1003,11 +1378,7 @@ function buildQuickListingNotes(form, completeness, mandateStatus) {
       propertySize: normalizeText(form.floorSize),
       externalListingLink: normalizeText(form.externalListingLink),
     },
-    commission: {
-      type: normalizeText(form.commissionType),
-      value: normalizeText(form.commissionValue),
-      status: normalizeText(form.commissionValue) ? 'captured' : 'missing',
-    },
+    commission: mandatePack.commission,
     assignment: {
       assignedAgentId: normalizeText(form.assignedAgentId),
       assignedAgent: normalizeText(form.assignedAgent),
@@ -1045,7 +1416,32 @@ function canQuickListingActivateWithMandateStatus(value) {
 }
 
 function getQuickListingActivationTier({ listingStatus = '', mandateStatus = '', complianceWarnings = [] } = {}) {
-  if (normalizeKey(listingStatus) !== 'active') {
+  const normalizedListingStatus = normalizeKey(listingStatus)
+  if (normalizedListingStatus === 'mandate_signed') {
+    return {
+      key: 'mandate_signed',
+      statusLabel: 'Mandate Signed',
+      publicationLabel: 'Mandate Signed',
+      workflowLabel: 'Mandate Signed',
+    }
+  }
+  if (normalizedListingStatus === 'under_offer') {
+    return {
+      key: 'under_offer',
+      statusLabel: 'Under Offer',
+      publicationLabel: 'Under Offer',
+      workflowLabel: 'Under Offer',
+    }
+  }
+  if (normalizedListingStatus === 'sold') {
+    return {
+      key: 'sold',
+      statusLabel: 'Sold / Historical',
+      publicationLabel: 'Sold / Historical',
+      workflowLabel: 'Sold / Historical',
+    }
+  }
+  if (normalizedListingStatus !== 'active') {
     return {
       key: 'draft_review',
       statusLabel: 'Draft / Review',
@@ -1073,7 +1469,10 @@ function getQuickListingActivationTier({ listingStatus = '', mandateStatus = '',
 }
 
 function resolveQuickListingStatus(form, { activationWarnings = [] } = {}) {
-  return normalizeKey(form.listingStatus) === 'active' && !activationWarnings.length ? 'active' : 'listing_review'
+  const normalized = normalizeKey(form.listingStatus)
+  if (normalized === 'active') return activationWarnings.length ? 'listing_review' : 'active'
+  if (['mandate_signed', 'under_offer', 'sold'].includes(normalized)) return normalized
+  return 'listing_review'
 }
 
 function resolveQuickListingVisibility(value, listingStatus = '') {
@@ -1191,7 +1590,7 @@ function validateQuickListingMinimumFields({ form, assignedAgentKey, requireAssi
   if (!normalizeText(form.sellerName)) errors.push('Seller display name is required.')
   if (!normalizeText(form.sellerEmail) && !normalizeText(form.sellerPhone)) errors.push('Seller email or phone is required.')
   if (requireAssignedAgent && !normalizeText(assignedAgentKey)) errors.push('Assigned agent is required.')
-  if (!['draft', 'active'].includes(normalizeKey(form.listingStatus))) errors.push('Listing status must be Draft or Active.')
+  if (!MANUAL_LISTING_STATUSES.includes(normalizeKey(form.listingStatus))) errors.push('Listing status must be Draft, Mandate Signed, Active, Under Offer, or Sold.')
   return errors
 }
 
@@ -1243,6 +1642,7 @@ function AgentListings({ initialTab = null } = {}) {
   })
   const [quickAddDuplicateMatches, setQuickAddDuplicateMatches] = useState([])
   const [quickAddDuplicateOverride, setQuickAddDuplicateOverride] = useState(false)
+  const [quickAddDuplicateAction, setQuickAddDuplicateAction] = useState('')
   const [quickAddSuccess, setQuickAddSuccess] = useState(null)
 
   const [form, setForm] = useState(() => buildInitialListingLeadForm(profile, workspace))
@@ -1382,7 +1782,24 @@ function AgentListings({ initialTab = null } = {}) {
     if (['propertyAddress', 'sellerEmail', 'sellerPhone', 'listingStatus'].includes(key)) {
       setQuickAddDuplicateMatches([])
       setQuickAddDuplicateOverride(false)
+      setQuickAddDuplicateAction('')
     }
+  }
+
+  function applyQuickAddIntent(intentValue) {
+    const intent = QUICK_ADD_INTENT_OPTIONS.find((option) => option.value === intentValue) || QUICK_ADD_INTENT_OPTIONS[0]
+    setForm((previous) => ({
+      ...previous,
+      quickAddIntent: intent.value,
+      quickStep: intent.nextStep,
+      listingStatus: intent.listingStatus,
+      manualMandateStatus: intent.mandateStatus,
+      mandateSigned: isQuickListingSignedMandateStatus(intent.mandateStatus),
+      mandateStatusCaptured: intent.mandateStatus !== 'not_started',
+    }))
+    setQuickAddDuplicateMatches([])
+    setQuickAddDuplicateOverride(false)
+    setQuickAddDuplicateAction('')
   }
 
   function updatePropertyAddress(nextValue) {
@@ -1407,6 +1824,7 @@ function AgentListings({ initialTab = null } = {}) {
     })
     setQuickAddDuplicateMatches([])
     setQuickAddDuplicateOverride(false)
+    setQuickAddDuplicateAction('')
   }
 
   function updatePropertyAddressInput(nextText) {
@@ -1433,6 +1851,7 @@ function AgentListings({ initialTab = null } = {}) {
     }))
     setQuickAddDuplicateMatches([])
     setQuickAddDuplicateOverride(false)
+    setQuickAddDuplicateAction('')
   }
 
   function resetForm() {
@@ -1491,6 +1910,7 @@ function AgentListings({ initialTab = null } = {}) {
     setShowNewListingModal(true)
     setQuickAddDuplicateMatches([])
     setQuickAddDuplicateOverride(false)
+    setQuickAddDuplicateAction('')
     setQuickAddSuccess(null)
     setError('')
   }
@@ -1502,12 +1922,349 @@ function AgentListings({ initialTab = null } = {}) {
     setShowNewListingModal(true)
     setQuickAddDuplicateMatches([])
     setQuickAddDuplicateOverride(false)
+    setQuickAddDuplicateAction('')
     setQuickAddSuccess(null)
     setError('')
   }
 
   function openManualListingModal() {
     openQuickAddListingModal()
+  }
+
+  function openQuickAddHandoffAction(action = null, listingId = '') {
+    const normalizedListingId = normalizeText(listingId)
+    if (action?.key === 'create_deal') {
+      window.dispatchEvent(new CustomEvent('itg:open-new-transaction', { detail: { listingId: normalizedListingId } }))
+      return
+    }
+    navigate(action?.href || (normalizedListingId ? `/agent/listings/${encodeURIComponent(normalizedListingId)}` : '/agent/listings'))
+  }
+
+  async function uploadQuickAddDocumentsForListing(listingId, documentUploadQueue) {
+    const uploadedDocuments = []
+    const failedDocumentUploads = []
+    for (const documentUpload of documentUploadQueue) {
+      const uploadedDocument = await uploadPrivateListingDocument(listingId, documentUpload.file, {
+        documentType: documentUpload.documentType,
+        documentCategory: documentUpload.documentCategory,
+        documentName: documentUpload.documentName,
+        visibility: 'internal',
+        status: 'uploaded',
+      }).catch((uploadError) => {
+        console.warn('[Listings] quick add document upload failed', uploadError)
+        return null
+      })
+      if (uploadedDocument) {
+        uploadedDocuments.push({
+          kind: documentUpload.kind,
+          id: uploadedDocument.id,
+          category: uploadedDocument.category || documentUpload.documentCategory,
+          name: uploadedDocument.document_name || documentUpload.documentName,
+          type: uploadedDocument.document_type || documentUpload.documentType,
+          status: uploadedDocument.status || 'uploaded',
+        })
+      } else {
+        failedDocumentUploads.push({
+          kind: documentUpload.kind,
+          category: documentUpload.documentCategory,
+          name: documentUpload.documentName,
+        })
+      }
+    }
+    return { uploadedDocuments, failedDocumentUploads }
+  }
+
+  async function handleMergeQuickAddIntoExistingListing(match = null) {
+    const listingMatch = match || quickAddDuplicateMatches.find((item) => item.type === 'listing')
+    if (!listingMatch?.id) {
+      setError('Select an existing listing to update.')
+      return
+    }
+
+    const existingListing = privateListings.find((listing) => normalizeText(listing.id || listing.listingId || listing.listing_id) === normalizeText(listingMatch.id)) || null
+    if (!existingListing) {
+      setError('The existing listing could not be found. Reload and try again.')
+      return
+    }
+
+    setQuickAddDuplicateAction(listingMatch.id)
+    setError('')
+    try {
+      const sellerName = form.sellerName.trim()
+      const sellerSurname = form.sellerSurname.trim()
+      const sellerEmail = form.sellerEmail.trim()
+      const sellerPhone = form.sellerPhone.trim()
+      const propertyAddress = form.propertyAddress.trim()
+      const propertyAddressValue = buildListingAddressValueFromForm(form)
+      const formattedAddress = normalizeText(propertyAddressValue?.formattedAddress || propertyAddress)
+      const streetAddress = normalizeText(propertyAddressValue?.streetAddress || propertyAddress)
+      const country = normalizeText(propertyAddressValue?.country || form.country) || 'South Africa'
+      const postalCode = normalizeText(propertyAddressValue?.postalCode || form.postalCode)
+      const googlePlaceId = normalizeText(propertyAddressValue?.googlePlaceId || propertyAddressValue?.placeId || form.googlePlaceId)
+      const latitude = propertyAddressValue?.latitude ?? form.latitude ?? null
+      const longitude = propertyAddressValue?.longitude ?? form.longitude ?? null
+      const addressLine2 = buildSectionalTitleAddressLine(form)
+      const listingPropertyCanonicalFacts = buildListingPropertyCanonicalFacts(form)
+      const sellerDisplayName = [sellerName, sellerSurname].filter(Boolean).join(' ').trim() || sellerName
+      const selectedQuickAddIntent = getQuickAddIntentOption(form.quickAddIntent)
+      const mandateStatus = getQuickListingMandateStatus(form)
+      const mandatePack = buildQuickListingMandatePack(form, mandateStatus)
+      const mandateUploaded = Boolean(normalizeText(form.manualMandateFileName))
+      const documentUploadQueue = buildQuickAddDocumentUploadQueue(form)
+      const activationWarnings = validateQuickListingActiveRules({
+        form,
+        assignedAgentKey: normalizeText(form.assignedAgentId || form.assignedAgentEmail || existingListing.assignedAgentId || existingListing.assigned_agent_id),
+      })
+      const proposedListingStatus = resolveQuickListingStatus(form, { activationWarnings })
+      const mergedListingStatus = getMergedQuickListingStatus(
+        existingListing.listingStatus || existingListing.listing_status || existingListing.status,
+        proposedListingStatus,
+      )
+      const existingNotes = normalizeText(existingListing.internalListingNotes || existingListing.internal_listing_notes || existingListing.description || existingListing.notes)
+      const completeness = buildListingCompleteness({ form, mandateUploaded })
+      const complianceWarnings = [...new Set([...getListingComplianceWarnings({
+        mandateStatus,
+        seller: { name: sellerName, email: sellerEmail, phone: sellerPhone, registrationNumber: form.sellerRegistrationNumber },
+        commission: { type: form.commissionType, value: form.commissionValue },
+        property24ListingUrl: form.externalListingLink,
+        documents: mandateUploaded ? [{ document_type: normalizeDocumentCategoryKey(form.mandateDocumentCategory), status: 'uploaded' }] : [],
+      }, completeness), ...getQuickListingMandateCaptureWarnings(form, mandateStatus), ...activationWarnings])]
+      const selectedAgent =
+        assignableAgents.find((agent) => normalizeText(agent.userId || agent.id || agent.email) === normalizeText(form.assignedAgentId || form.assignedAgentEmail)) ||
+        null
+      const selectedBranch =
+        effectiveBranchOptions.find((branch) => normalizeText(branch.id || branch.name) === normalizeText(form.branchId || form.branchName)) ||
+        null
+      const resolvedAssignedAgentId = normalizeText(selectedAgent?.userId || selectedAgent?.id || form.assignedAgentId || existingListing.assignedAgentId || existingListing.assigned_agent_id)
+      const resolvedAssignedAgentName = normalizeText(selectedAgent?.fullName || form.assignedAgent || existingListing.assignedAgentName || existingListing.assigned_agent_name)
+      const resolvedAssignedAgentEmail = normalizeText(selectedAgent?.email || form.assignedAgentEmail || existingListing.assignedAgentEmail || existingListing.assigned_agent_email)
+      const resolvedBranchId = normalizeText(selectedBranch?.id || form.branchId || existingListing.branchId || existingListing.branch_id)
+      const resolvedBranchName = normalizeText(selectedBranch?.name || form.branchName || existingListing.branchName || existingListing.branch_name)
+      const quickNotes = buildQuickListingNotes(
+        {
+          ...form,
+          assignedAgentId: resolvedAssignedAgentId,
+          assignedAgent: resolvedAssignedAgentName,
+          assignedAgentEmail: resolvedAssignedAgentEmail,
+          branchId: resolvedBranchId,
+          branchName: resolvedBranchName,
+          complianceWarnings,
+        },
+        completeness,
+        mandateStatus,
+      )
+      const mergedNotes = [quickNotes, existingNotes ? `Previous listing notes:\n${existingNotes}` : ''].filter(Boolean).join('\n\n')
+      const sellerCanonicalFacts = {
+        ...(existingListing.sellerCanonicalFacts || existingListing.seller_canonical_facts_json || {}),
+        sellerName: sellerDisplayName || undefined,
+        name: sellerDisplayName || undefined,
+        fullName: sellerDisplayName || undefined,
+        firstName: sellerName || undefined,
+        lastName: sellerSurname || undefined,
+        email: sellerEmail || undefined,
+        sellerEmail: sellerEmail || undefined,
+        phone: sellerPhone || undefined,
+        mobile: sellerPhone || undefined,
+        ...listingPropertyCanonicalFacts,
+      }
+      Object.keys(sellerCanonicalFacts).forEach((key) => {
+        if (sellerCanonicalFacts[key] === undefined || sellerCanonicalFacts[key] === '') delete sellerCanonicalFacts[key]
+      })
+      const sellerCanonicalFactReadiness = {
+        ...(existingListing.sellerCanonicalFactReadiness || existingListing.seller_canonical_fact_readiness_json || {}),
+        sellerName: Boolean(sellerCanonicalFacts.sellerName || sellerCanonicalFacts.name),
+        sellerEmail: Boolean(sellerCanonicalFacts.sellerEmail || sellerCanonicalFacts.email),
+        sellerPhone: Boolean(sellerCanonicalFacts.sellerPhone || sellerCanonicalFacts.phone),
+        propertyUnitNumber: Boolean(listingPropertyCanonicalFacts.unitNumber),
+        propertyComplexName: Boolean(listingPropertyCanonicalFacts.complexName),
+      }
+
+      let uploadedDocuments = []
+      let failedDocumentUploads = []
+      let handoffPlan = null
+      if (isSupabaseConfigured && !MOCK_DATA_ENABLED) {
+        const uploadResult = documentUploadQueue.length
+          ? await uploadQuickAddDocumentsForListing(listingMatch.id, documentUploadQueue)
+          : { uploadedDocuments: [], failedDocumentUploads: [] }
+        uploadedDocuments = uploadResult.uploadedDocuments
+        failedDocumentUploads = uploadResult.failedDocumentUploads
+        const finalMandateStatus = uploadedDocuments.some((documentUpload) => documentUpload.kind === 'mandate')
+          ? 'signed_uploaded'
+          : mandateStatus === 'signed_uploaded'
+            ? 'signed_external_pending_upload'
+            : mandateStatus
+        const patch = {
+          listingStatus: mergedListingStatus,
+          listingVisibility: resolveQuickListingVisibility(form.visibility, mergedListingStatus),
+          isActive: mergedListingStatus === 'active',
+          mandateStatus: finalMandateStatus,
+          sellerType: form.sellerType,
+          mandateType: form.mandateType.trim() || 'sole',
+          property24ListingUrl: form.externalListingLink,
+          internalListingNotes: mergedNotes,
+          listingPreviewDescription: form.notes.trim(),
+          assignedAgentId: resolvedAssignedAgentId || undefined,
+          assignedAgentEmail: resolvedAssignedAgentEmail || undefined,
+          branchId: resolvedBranchId || undefined,
+          sellerCanonicalFacts,
+          sellerCanonicalFactReadiness,
+          sellerCanonicalFactsUpdatedAt: new Date().toISOString(),
+        }
+        if (propertyAddress) {
+          Object.assign(patch, {
+            addressLine1: propertyAddress,
+            addressLine2,
+            formattedAddress,
+            streetAddress,
+            suburb: form.suburb.trim(),
+            city: form.city.trim(),
+            province: form.province.trim(),
+            country,
+            postalCode,
+            latitude,
+            longitude,
+            googlePlaceId,
+          })
+        }
+        if (form.propertyType) patch.propertyType = form.propertyType
+        if (form.propertyCategory) patch.propertyCategory = normalizePropertyCategory(form.propertyCategory, { fallback: 'residential' })
+        if (form.propertyStructureType) patch.propertyStructureType = normalizePropertyStructureType(form.propertyStructureType, { fallback: 'other' })
+        if (Number(form.listingPrice || form.estimatedAskingPrice || 0) > 0) {
+          patch.askingPrice = Number(form.listingPrice || form.estimatedAskingPrice || 0)
+          patch.estimatedValue = Number(form.listingPrice || form.estimatedAskingPrice || 0)
+        }
+        if (form.listingTitle.trim()) patch.title = form.listingTitle.trim()
+        handoffPlan = buildQuickAddHandoffPlan({
+          listingId: listingMatch.id,
+          listingTitle: existingListing.listingTitle || existingListing.title || listingMatch.label || 'Existing listing',
+          form,
+          mandateStatus: finalMandateStatus,
+          listingStatus: mergedListingStatus,
+          complianceWarnings,
+          completeness,
+          uploadedDocuments,
+          failedDocumentUploads,
+        })
+        patch.internalListingNotes = mergeQuickListingMetadataInNotes(mergedNotes, { handoffPlan })
+        await updatePrivateListing(listingMatch.id, patch, { includeRequirementsAndDocuments: false })
+        await createPrivateListingActivity({
+          privateListingId: listingMatch.id,
+          activityType: 'quick_add_merged_into_existing_listing',
+          activityTitle: 'Quick Add merged into existing listing',
+          activityDescription: 'Quick Add capture was merged into this existing listing.',
+          performedBy: profile?.id || null,
+          visibility: 'internal',
+          metadata: {
+            origin: 'quick_add',
+            quickAddIntent: selectedQuickAddIntent.value,
+            quickAddIntentLabel: selectedQuickAddIntent.label,
+            duplicateMatch: listingMatch,
+            proposedListingStatus,
+            mergedListingStatus,
+            mandate: mandatePack,
+            documentsUploaded: uploadedDocuments,
+            documentUploadFailures: failedDocumentUploads,
+            missingComplianceItems: complianceWarnings,
+            missingFollowUpItems: completeness.missingItems,
+            handoffPlan,
+            mergedAt: new Date().toISOString(),
+          },
+        }).catch(() => null)
+      } else {
+        uploadedDocuments = documentUploadQueue.map((documentUpload) => ({
+          kind: documentUpload.kind,
+          id: generateId('document'),
+          category: documentUpload.documentCategory,
+          name: documentUpload.documentName,
+          type: documentUpload.documentType,
+          status: 'uploaded',
+        }))
+        const localMandateStatus = uploadedDocuments.some((documentUpload) => documentUpload.kind === 'mandate') ? 'signed_uploaded' : mandateStatus
+        handoffPlan = buildQuickAddHandoffPlan({
+          listingId: listingMatch.id,
+          listingTitle: existingListing.listingTitle || existingListing.title || listingMatch.label || 'Existing listing',
+          form,
+          mandateStatus: localMandateStatus,
+          listingStatus: mergedListingStatus,
+          complianceWarnings,
+          completeness,
+          uploadedDocuments,
+          failedDocumentUploads,
+        })
+        const localMergedNotes = mergeQuickListingMetadataInNotes(mergedNotes, { handoffPlan })
+        const localListings = readAgentPrivateListings()
+        const localIndex = localListings.findIndex((listing) => normalizeText(listing.id || listing.listingId || listing.listing_id) === normalizeText(listingMatch.id))
+        if (localIndex >= 0) {
+          const existingLocal = localListings[localIndex]
+          localListings[localIndex] = {
+            ...existingLocal,
+            updatedAt: new Date().toISOString(),
+            listingStatus: mergedListingStatus,
+            status: mergedListingStatus,
+            mandateStatus: uploadedDocuments.some((documentUpload) => documentUpload.kind === 'mandate') ? 'signed_uploaded' : mandateStatus,
+            internalListingNotes: localMergedNotes,
+            notes: localMergedNotes,
+            sellerCanonicalFacts,
+            sellerCanonicalFactReadiness,
+            documents: [
+              ...(Array.isArray(existingLocal.documents) ? existingLocal.documents : []),
+              ...uploadedDocuments.map((documentUpload) => ({
+                id: documentUpload.id,
+                category: documentUpload.category,
+                document_type: documentUpload.type,
+                document_name: documentUpload.name,
+                status: documentUpload.status,
+                uploaded_at: new Date().toISOString(),
+              })),
+            ],
+            activityLog: [
+              ...(Array.isArray(existingLocal.activityLog) ? existingLocal.activityLog : []),
+              {
+                type: 'quick_add_merged_into_existing_listing',
+                title: 'Quick Add merged into existing listing',
+                quickAddIntent: selectedQuickAddIntent.value,
+                quickAddIntentLabel: selectedQuickAddIntent.label,
+                proposedListingStatus,
+                mergedListingStatus,
+                mandate: mandatePack,
+                documentsUploaded: uploadedDocuments,
+                missingComplianceItems: complianceWarnings,
+                missingFollowUpItems: completeness.missingItems,
+                handoffPlan,
+                createdAt: new Date().toISOString(),
+              },
+            ],
+          }
+          writeAgentPrivateListings(localListings)
+        }
+      }
+
+      setShowNewListingModal(false)
+      resetForm()
+      setQuickAddDuplicateMatches([])
+      setQuickAddDuplicateOverride(false)
+      setQuickAddDuplicateAction('')
+      setQuickAddSuccess({
+        id: listingMatch.id,
+        title: existingListing.listingTitle || existingListing.title || listingMatch.label || 'Existing listing',
+        statusLabel: getStatusLabelFromManualSelection(mergedListingStatus),
+        mandateStatus,
+        complianceWarnings,
+        documentsUploaded: uploadedDocuments.length,
+        documentUploadFailures: failedDocumentUploads,
+        handoffPlan,
+      })
+      setWorkflowMessage(
+        `Quick Add details merged into existing listing.${failedDocumentUploads.length ? ` ${failedDocumentUploads.length} document upload${failedDocumentUploads.length === 1 ? '' : 's'} need to be retried.` : ''}`,
+      )
+      window.dispatchEvent(new Event('itg:listings-updated'))
+      await loadData({ showLoading: false }).catch(() => null)
+    } catch (mergeError) {
+      console.error('[Listings] quick add merge failed', mergeError)
+      setError(mergeError?.message || 'Unable to merge Quick Add details into the existing listing.')
+    } finally {
+      setQuickAddDuplicateAction('')
+    }
   }
 
   async function handleSaveListing(event) {
@@ -1546,8 +2303,11 @@ function AgentListings({ initialTab = null } = {}) {
 
     if (isManualListingFlow) {
       const normalizedStatus = normalizeKey(form.listingStatus || 'draft')
-      const mandateUploaded = Boolean(normalizeText(form.manualMandateFileName))
+      const selectedQuickAddIntent = getQuickAddIntentOption(form.quickAddIntent)
       const mandateStatus = getQuickListingMandateStatus(form)
+      const mandatePack = buildQuickListingMandatePack(form, mandateStatus)
+      const mandateUploaded = Boolean(normalizeText(form.manualMandateFileName))
+      const documentUploadQueue = buildQuickAddDocumentUploadQueue(form)
       const initialMandateStatus = mandateStatus === 'signed_uploaded' ? 'signed_external_pending_upload' : mandateStatus
       const selectedAgent =
         assignableAgents.find((agent) => normalizeText(agent.userId || agent.id || agent.email) === normalizeText(form.assignedAgentId || form.assignedAgentEmail)) ||
@@ -1591,13 +2351,15 @@ function AgentListings({ initialTab = null } = {}) {
       }
 
       const completeness = buildListingCompleteness({ form, mandateUploaded })
+      let uploadedDocuments = []
+      let failedDocumentUploads = []
       const complianceWarnings = [...new Set([...getListingComplianceWarnings({
         mandateStatus,
         seller: { name: sellerName, email: sellerEmail, phone: sellerPhone, registrationNumber: form.sellerRegistrationNumber },
         commission: { type: form.commissionType, value: form.commissionValue },
         property24ListingUrl: form.externalListingLink,
         documents: mandateUploaded ? [{ document_type: normalizeDocumentCategoryKey(form.mandateDocumentCategory), status: 'uploaded' }] : [],
-      }, completeness), ...activationWarnings])]
+      }, completeness), ...getQuickListingMandateCaptureWarnings(form, mandateStatus), ...activationWarnings])]
       const activationTier = getQuickListingActivationTier({
         listingStatus: resolvedListingStatus,
         mandateStatus,
@@ -1618,6 +2380,7 @@ function AgentListings({ initialTab = null } = {}) {
       )
       let createdListingId = ''
       let createdListingTitle = listingTitle
+      let handoffPlan = null
       const sellerDisplayName = [sellerName, sellerSurname].filter(Boolean).join(' ').trim()
       const sellerCanonicalFacts = {
         sellerName: sellerDisplayName,
@@ -1698,23 +2461,43 @@ function AgentListings({ initialTab = null } = {}) {
         }
         createdListingId = created.listing.id
         createdListingTitle = created.listing.listingTitle || created.listing.title || listingTitle
-        if (mandateUploaded && form.manualMandateFile) {
-          const uploadedMandate = await uploadPrivateListingDocument(created.listing.id, form.manualMandateFile, {
-            documentType: normalizeDocumentCategoryKey(form.mandateDocumentCategory),
-            documentCategory: form.mandateDocumentCategory,
-            documentName: form.manualMandateFileName,
-            visibility: 'internal',
-            status: 'uploaded',
-          }).catch((uploadError) => {
-            console.warn('[Listings] quick add mandate upload failed', uploadError)
-            return null
-          })
-          if (!uploadedMandate) {
+        if (documentUploadQueue.length) {
+          for (const documentUpload of documentUploadQueue) {
+            const uploadedDocument = await uploadPrivateListingDocument(created.listing.id, documentUpload.file, {
+              documentType: documentUpload.documentType,
+              documentCategory: documentUpload.documentCategory,
+              documentName: documentUpload.documentName,
+              visibility: 'internal',
+              status: 'uploaded',
+            }).catch((uploadError) => {
+              console.warn('[Listings] quick add document upload failed', uploadError)
+              return null
+            })
+            if (uploadedDocument) {
+              uploadedDocuments.push({
+                kind: documentUpload.kind,
+                id: uploadedDocument.id,
+                category: uploadedDocument.category || documentUpload.documentCategory,
+                name: uploadedDocument.document_name || documentUpload.documentName,
+                type: uploadedDocument.document_type || documentUpload.documentType,
+                status: uploadedDocument.status || 'uploaded',
+              })
+            } else {
+              failedDocumentUploads.push({
+                kind: documentUpload.kind,
+                category: documentUpload.documentCategory,
+                name: documentUpload.documentName,
+              })
+            }
+          }
+          if (failedDocumentUploads.some((documentUpload) => documentUpload.kind === 'mandate')) {
             await updatePrivateListing(created.listing.id, sellerUpdatePayload, { includeRequirementsAndDocuments: false }).catch(() => null)
             setError('Listing was created, but the signed mandate upload failed. Open the listing and upload the mandate again.')
             window.dispatchEvent(new Event('itg:listings-updated'))
             return
           }
+        }
+        if (uploadedDocuments.some((documentUpload) => documentUpload.kind === 'mandate')) {
           sellerUpdatePayload.mandateStatus = 'signed_uploaded'
         }
         if (resolvedListingIsActive) {
@@ -1722,6 +2505,18 @@ function AgentListings({ initialTab = null } = {}) {
           sellerUpdatePayload.listingVisibility = 'active_market'
           sellerUpdatePayload.isActive = true
         }
+        handoffPlan = buildQuickAddHandoffPlan({
+          listingId: created.listing.id,
+          listingTitle: createdListingTitle,
+          form,
+          mandateStatus: sellerUpdatePayload.mandateStatus || mandateStatus,
+          listingStatus: sellerUpdatePayload.listingStatus || resolvedListingStatus,
+          complianceWarnings,
+          completeness,
+          uploadedDocuments,
+          failedDocumentUploads,
+        })
+        sellerUpdatePayload.internalListingNotes = mergeQuickListingMetadataInNotes(quickNotes, { handoffPlan })
         await updatePrivateListing(created.listing.id, sellerUpdatePayload, { includeRequirementsAndDocuments: false }).catch(() => null)
         await createPrivateListingActivity({
           privateListingId: created.listing.id,
@@ -1732,6 +2527,8 @@ function AgentListings({ initialTab = null } = {}) {
           visibility: 'internal',
           metadata: {
             origin: 'quick_add',
+            quickAddIntent: selectedQuickAddIntent.value,
+            quickAddIntentLabel: selectedQuickAddIntent.label,
             assignedAgentId: resolvedAssignedAgentId,
             assignedAgent: resolvedAssignedAgentName,
             assignedAgentEmail: resolvedAssignedAgentEmail,
@@ -1744,18 +2541,44 @@ function AgentListings({ initialTab = null } = {}) {
             activationWarnings,
             documentUploaded: mandateUploaded,
             duplicateOverride: quickAddDuplicateOverride,
-            documentsUploaded: mandateUploaded ? [{ category: form.mandateDocumentCategory, name: form.manualMandateFileName }] : [],
+            documentsUploaded: uploadedDocuments,
+            documentUploadFailures: failedDocumentUploads,
             missingComplianceItems: complianceWarnings,
             missingFollowUpItems: completeness.missingItems,
+            mandate: mandatePack,
+            handoffPlan,
             canonicalStructure: CANONICAL_LISTING_STRUCTURE,
             createdAt: new Date().toISOString(),
           },
         }).catch(() => null)
       } else {
+        uploadedDocuments = documentUploadQueue.map((documentUpload) => ({
+          kind: documentUpload.kind,
+          id: generateId('document'),
+          category: documentUpload.documentCategory,
+          name: documentUpload.documentName,
+          type: documentUpload.documentType,
+          status: 'uploaded',
+        }))
+        const quickListingId = generateId('listing')
+        handoffPlan = buildQuickAddHandoffPlan({
+          listingId: quickListingId,
+          listingTitle,
+          form,
+          mandateStatus,
+          listingStatus: resolvedListingStatus,
+          complianceWarnings,
+          completeness,
+          uploadedDocuments,
+          failedDocumentUploads,
+        })
+        const quickListingNotesWithHandoff = mergeQuickListingMetadataInNotes(quickNotes, { handoffPlan })
         const quickListing = {
-          id: generateId('listing'),
+          id: quickListingId,
           listingCode: `QL-${Date.now().toString().slice(-6)}`,
           origin: 'quick_add',
+          quickAddIntent: selectedQuickAddIntent.value,
+          quickAddIntentLabel: selectedQuickAddIntent.label,
           source: 'quick_add',
           canonicalStructure: CANONICAL_LISTING_STRUCTURE,
           createdAt: new Date().toISOString(),
@@ -1814,16 +2637,21 @@ function AgentListings({ initialTab = null } = {}) {
             completedAt: null,
             captureMethod: 'agent_captured',
           },
-          documents: mandateUploaded
-            ? [{ id: generateId('document'), category: form.mandateDocumentCategory, document_type: normalizeDocumentCategoryKey(form.mandateDocumentCategory), document_name: form.manualMandateFileName, status: 'uploaded', uploaded_at: new Date().toISOString() }]
-            : [],
+          documents: uploadedDocuments.map((documentUpload) => ({
+            id: documentUpload.id,
+            category: documentUpload.category,
+            document_type: documentUpload.type,
+            document_name: documentUpload.name,
+            status: documentUpload.status,
+            uploaded_at: new Date().toISOString(),
+          })),
           requiredDocuments: [],
           listingCompleteness: completeness,
           activationTier: activationTier.key,
           missingFollowUpItems: completeness.missingItems,
           complianceWarnings,
-          internalListingNotes: quickNotes,
-          notes: quickNotes,
+          internalListingNotes: quickListingNotesWithHandoff,
+          notes: quickListingNotesWithHandoff,
           assignedAgentId: resolvedAssignedAgentId,
           assignedAgentName: resolvedAssignedAgentName,
           assignedAgentEmail: resolvedAssignedAgentEmail,
@@ -1835,6 +2663,8 @@ function AgentListings({ initialTab = null } = {}) {
               type: 'quick_add_listing_created',
               title: 'Listing created via Quick Add',
               createdBy: profile?.id || null,
+              quickAddIntent: selectedQuickAddIntent.value,
+              quickAddIntentLabel: selectedQuickAddIntent.label,
               assignedAgent: resolvedAssignedAgentName,
               mandateStatus,
               selectedListingStatus: normalizedStatus,
@@ -1843,14 +2673,17 @@ function AgentListings({ initialTab = null } = {}) {
               activationWarnings,
               documentUploaded: mandateUploaded,
               duplicateOverride: quickAddDuplicateOverride,
-              documentsUploaded: mandateUploaded ? [{ category: form.mandateDocumentCategory, name: form.manualMandateFileName }] : [],
+              documentsUploaded: uploadedDocuments,
+              documentUploadFailures: failedDocumentUploads,
               missingComplianceItems: complianceWarnings,
               missingFollowUpItems: completeness.missingItems,
+              mandate: mandatePack,
+              handoffPlan,
               createdAt: new Date().toISOString(),
             },
           ],
-          status: resolvedListingIsActive ? LISTING_STATUS.LISTING_ACTIVE : LISTING_STATUS.MANDATE_READY,
-          listingStatus: resolvedListingIsActive ? LISTING_STATUS.LISTING_ACTIVE : LISTING_STATUS.MANDATE_READY,
+          status: resolvedListingStatus,
+          listingStatus: resolvedListingStatus,
         }
         createdListingId = quickListing.id
         createdListingTitle = quickListing.listingTitle
@@ -1868,11 +2701,14 @@ function AgentListings({ initialTab = null } = {}) {
         statusLabel: activationTier.statusLabel,
         mandateStatus,
         complianceWarnings,
+        documentsUploaded: uploadedDocuments.length,
+        documentUploadFailures: failedDocumentUploads,
+        handoffPlan,
       })
       setWorkflowMessage(
         `Quick Add Listing created as ${activationTier.workflowLabel}${
           mandateStatus !== 'signed_uploaded' ? '. Mandate follow-up still requires attention before full activation.' : '. Signed mandate uploaded.'
-        }`,
+        }${failedDocumentUploads.length ? ` ${failedDocumentUploads.length} supporting document upload${failedDocumentUploads.length === 1 ? '' : 's'} need to be retried.` : ''}`,
       )
       window.dispatchEvent(new Event('itg:listings-updated'))
       return
@@ -2230,6 +3066,8 @@ function AgentListings({ initialTab = null } = {}) {
         readinessState: String(listing?.readinessSummary?.readinessState || ''),
       })
       const identityKeys = getListingIdentityKeys(listing)
+      const quickAddHandoffPlan = getQuickAddHandoffPlanFromListing(listing, quickMetadata)
+      const quickAddHandoffActions = normalizeQuickAddHandoffActions(identityKeys[0] || String(listing.id || ''), quickAddHandoffPlan)
       return {
         id: identityKeys[0] || String(listing.id || ''),
         identityKeys,
@@ -2258,6 +3096,9 @@ function AgentListings({ initialTab = null } = {}) {
         inventoryFilterKey: inventoryStatus.filterKey,
         inventoryStatusLabel: inventoryStatus.label,
         attentionLine: '',
+        quickAddHandoffPlan,
+        quickAddHandoffActions,
+        quickAddPrimaryAction: quickAddHandoffActions[0] || null,
         mandateStatusLabel: getMandateStatus(listing),
         completenessScore: completeness.score,
         missingCompletenessItems: completeness.missingItems || [],
@@ -2274,9 +3115,17 @@ function AgentListings({ initialTab = null } = {}) {
         agentName,
       }
     }).map((card) => {
-      const followUpQueue = buildListingFollowUpQueue(card)
+      const baseFollowUpQueue = buildListingFollowUpQueue(card)
+      const quickAddHandoffActions = reconcileQuickAddHandoffActions(card, baseFollowUpQueue, card.quickAddHandoffActions)
+      const quickAddCompletion = getQuickAddHandoffCompletion(card.quickAddHandoffActions, quickAddHandoffActions)
+      const followUpQueue = mergeFollowUpQueues(baseFollowUpQueue, quickAddHandoffActions)
       return withFollowUpReminderStatus({
         ...card,
+        quickAddHandoffActions,
+        quickAddPrimaryAction: quickAddHandoffActions[0] || null,
+        quickAddOpenActionCount: quickAddHandoffActions.length,
+        quickAddCompletedActionCount: quickAddCompletion.completedCount,
+        quickAddCompletedActionKeys: quickAddCompletion.completedKeys,
         attentionLine: formatListingAttentionLine(card),
         followUpQueue,
         followUpCount: followUpQueue.length,
@@ -2527,13 +3376,28 @@ function AgentListings({ initialTab = null } = {}) {
               <div>
                 <p className="text-sm font-semibold text-[#1f7d44]">Listing created successfully. What would you like to do next?</p>
                 <p className="mt-1 text-xs text-[#4d6a59]">{quickAddSuccess.title} · {quickAddSuccess.statusLabel || 'Draft'}</p>
+                {quickAddSuccess.handoffPlan?.summary ? (
+                  <p className="mt-1 text-xs font-semibold text-[#4d6a59]">{quickAddSuccess.handoffPlan.summary}</p>
+                ) : null}
+                {Number(quickAddSuccess.documentsUploaded || 0) > 0 ? (
+                  <p className="mt-1 text-xs text-[#4d6a59]">{quickAddSuccess.documentsUploaded} document{quickAddSuccess.documentsUploaded === 1 ? '' : 's'} attached.</p>
+                ) : null}
+                {quickAddSuccess.documentUploadFailures?.length ? (
+                  <p className="mt-1 text-xs font-semibold text-[#9a5b13]">{quickAddSuccess.documentUploadFailures.length} supporting document upload{quickAddSuccess.documentUploadFailures.length === 1 ? '' : 's'} need to be retried.</p>
+                ) : null}
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button type="button" size="sm" onClick={() => navigate(`/agent/listings/${encodeURIComponent(quickAddSuccess.id)}`)}>Open Listing</Button>
-                <Button type="button" size="sm" variant="secondary" onClick={() => setWorkflowMessage('Mandate generation will be available from the listing workspace.')}>Generate Mandate</Button>
-                <Button type="button" size="sm" variant="secondary" onClick={() => navigate(`/agent/listings/${encodeURIComponent(quickAddSuccess.id)}?tab=listing`)}>Add Photos</Button>
-                <Button type="button" size="sm" variant="secondary" onClick={() => navigate(`/agent/listings/${encodeURIComponent(quickAddSuccess.id)}`)}>Add Seller Documents</Button>
-                <Button type="button" size="sm" variant="secondary" onClick={() => window.dispatchEvent(new CustomEvent('itg:open-new-transaction', { detail: { listingId: quickAddSuccess.id } }))}>Create Deal</Button>
+                {quickAddSuccess.handoffPlan?.primaryAction ? (
+                  <Button type="button" size="sm" onClick={() => openQuickAddHandoffAction(quickAddSuccess.handoffPlan.primaryAction, quickAddSuccess.id)}>
+                    {quickAddSuccess.handoffPlan.primaryAction.label}
+                  </Button>
+                ) : null}
+                {(quickAddSuccess.handoffPlan?.actions || []).slice(quickAddSuccess.handoffPlan?.primaryAction ? 1 : 0, 4).map((action) => (
+                  <Button key={action.key} type="button" size="sm" variant="secondary" onClick={() => openQuickAddHandoffAction(action, quickAddSuccess.id)}>
+                    {action.label}
+                  </Button>
+                ))}
+                <Button type="button" size="sm" variant={quickAddSuccess.handoffPlan?.primaryAction ? 'secondary' : 'primary'} onClick={() => navigate(`/agent/listings/${encodeURIComponent(quickAddSuccess.id)}`)}>Open Listing</Button>
               </div>
             </div>
           </div>
@@ -2640,7 +3504,7 @@ function AgentListings({ initialTab = null } = {}) {
               </div>
             </div>
 
-            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
               {[
                 { label: 'Overdue', value: listingFollowUpInsights.overdueFollowUps },
                 { label: 'Due Today', value: listingFollowUpInsights.dueTodayFollowUps },
@@ -2648,6 +3512,7 @@ function AgentListings({ initialTab = null } = {}) {
                 { label: 'Mandate Uploads', value: listingFollowUpInsights.mandateUploads },
                 { label: 'Seller FICA', value: listingFollowUpInsights.sellerFica },
                 { label: 'Photos / Commission', value: listingFollowUpInsights.photos + listingFollowUpInsights.commission },
+                { label: 'Quick Add Handoff', value: listingFollowUpInsights.quickAdd },
               ].map((item) => (
                 <div key={item.label} className="rounded-[14px] border border-[#dce6f2] bg-white px-3 py-2">
                   <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{item.label}</p>
@@ -2770,6 +3635,27 @@ function AgentListings({ initialTab = null } = {}) {
                         <span>No attention required</span>
                       </div>
                     )}
+
+                    {card.quickAddPrimaryAction ? (
+                      <div className="rounded-[12px] border border-[#cfe4d8] bg-[#f4fbf7] px-3 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#4d8060]">Quick Add handoff</p>
+                            <p className="mt-1 truncate text-[0.82rem] font-semibold text-[#24583a]">{card.quickAddPrimaryAction.label}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              openQuickAddHandoffAction(card.quickAddPrimaryAction, card.id)
+                            }}
+                            className="shrink-0 rounded-full border border-[#b9dec8] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#1f7d44] transition hover:border-[#8bcaa4] hover:bg-[#edf8f1]"
+                          >
+                            Open
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
 
                     {card.followUpQueue?.length ? (
                       <div className="border-t border-[#eef3f8] pt-3">
@@ -3030,6 +3916,44 @@ function AgentListings({ initialTab = null } = {}) {
             ) : null}
 
             {isManualListingFlow ? (
+              <div className="mt-5 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">What are you adding?</p>
+                    <p className="mt-1 text-sm text-[#60758c]">Choose the real-world status first so Quick Add can open the right capture path.</p>
+                  </div>
+                  <p className="text-xs font-semibold text-[#6b7d93]">Status-led quick capture</p>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  {QUICK_ADD_INTENT_OPTIONS.map((intent) => {
+                    const active = form.quickAddIntent === intent.value
+                    return (
+                      <button
+                        key={intent.value}
+                        type="button"
+                        onClick={() => applyQuickAddIntent(intent.value)}
+                        className={`min-h-[132px] rounded-[16px] border p-4 text-left transition ${
+                          active
+                            ? 'border-[#1f7d44] bg-[#f2fbf5] shadow-[0_12px_24px_rgba(31,125,68,0.14)]'
+                            : 'border-[#dce6f2] bg-white hover:border-[#b7c8db]'
+                        }`}
+                      >
+                        <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full border text-xs font-bold ${
+                          active ? 'border-[#b7e2c6] bg-white text-[#1f7d44]' : 'border-[#d6e2ee] bg-[#f8fbfe] text-[#60758c]'
+                        }`}>
+                          {active ? <CheckCircle2 size={15} /> : <CircleAlert size={14} />}
+                        </span>
+                        <span className="mt-3 block text-sm font-semibold text-[#22374d]">{intent.label}</span>
+                        <span className="mt-1 block text-xs leading-5 text-[#60758c]">{intent.description}</span>
+                        <span className="mt-3 block text-[0.72rem] font-semibold uppercase tracking-[0.06em] text-[#3b5774]">{intent.requiredNow}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            {isManualListingFlow ? (
               <div className="mt-5 grid gap-2 md:grid-cols-4">
                 {[
                   { key: 'property', label: 'Property Details' },
@@ -3080,10 +4004,14 @@ function AgentListings({ initialTab = null } = {}) {
                     {quickAddDuplicateMatches.some((match) => match.type === 'listing') ? (
                       <Button type="button" size="sm" variant="secondary" onClick={() => {
                         const listingMatch = quickAddDuplicateMatches.find((match) => match.type === 'listing')
-                        setShowNewListingModal(false)
-                        navigate(listingMatch?.path || '/listings')
-                      }}>
-                        Link to existing listing
+                        handleMergeQuickAddIntoExistingListing(listingMatch)
+                      }} disabled={Boolean(quickAddDuplicateAction)}>
+                        {quickAddDuplicateAction ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />
+                            Updating
+                          </>
+                        ) : 'Update existing listing'}
                       </Button>
                     ) : null}
                     <Button type="button" size="sm" onClick={() => {
@@ -3335,18 +4263,18 @@ function AgentListings({ initialTab = null } = {}) {
                           ))}
                         </Field>
                       </label>
-	                      <label className="grid gap-2">
-	                        <span className="text-sm font-semibold text-[#2d445e]">Mandate status</span>
-	                        <Field as="select" value={form.manualMandateStatus} onChange={(event) => {
-	                          const nextStatus = event.target.value
-	                          updateForm('manualMandateStatus', nextStatus)
-	                          updateForm('mandateSigned', isQuickListingSignedMandateStatus(nextStatus))
-	                          updateForm('mandateStatusCaptured', nextStatus !== 'not_started')
-	                        }}>
-	                          {QUICK_ADD_MANDATE_STATUS_OPTIONS.map((option) => (
-	                            <option key={option.value} value={option.value}>{option.label}</option>
-	                          ))}
-	                        </Field>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Mandate status</span>
+                        <Field as="select" value={form.manualMandateStatus} onChange={(event) => {
+                          const nextStatus = event.target.value
+                          updateForm('manualMandateStatus', nextStatus)
+                          updateForm('mandateSigned', isQuickListingSignedMandateStatus(nextStatus))
+                          updateForm('mandateStatusCaptured', nextStatus !== 'not_started')
+                        }}>
+                          {QUICK_ADD_MANDATE_STATUS_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </Field>
                       </label>
                       <label className="grid gap-2">
                         <span className="text-sm font-semibold text-[#2d445e]">Mandate type</span>
@@ -3417,42 +4345,82 @@ function AgentListings({ initialTab = null } = {}) {
                   <p className="rounded-[12px] border border-[#f3d7a8] bg-[#fff8ea] px-3 py-2 text-xs text-[#88531a]">
                     Missing mandates do not block listing creation. They are shown as a listing attention item.
                   </p>
-	                  <div className="grid gap-4 md:grid-cols-2">
-	                    {isQuickListingSignedMandateStatus(form.manualMandateStatus) ? (
-	                      <>
-	                        <label className="grid gap-2">
-	                          <span className="text-sm font-semibold text-[#2d445e]">Document category</span>
-	                          <Field as="select" value={form.mandateDocumentCategory} onChange={(event) => updateForm('mandateDocumentCategory', event.target.value)}>
-	                            {LISTING_DOCUMENT_CATEGORIES.map((category) => (
-	                              <option key={category} value={category}>{category}</option>
-	                            ))}
-	                          </Field>
-	                        </label>
-	                        <label className="grid gap-2">
-	                          <span className="text-sm font-semibold text-[#2d445e]">Signed mandate document</span>
-	                          <Field
-	                            type="file"
-	                            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-	                            onChange={(event) => {
-	                              const file = event.target.files?.[0] || null
-	                              updateForm('manualMandateFile', file)
-	                              updateForm('manualMandateFileName', file?.name || '')
-	                              if (file && normalizeKey(form.manualMandateStatus) === 'signed_external_pending_upload') {
-	                                updateForm('manualMandateStatus', 'signed_uploaded')
-	                              }
-	                            }}
-	                          />
-	                          <span className="text-xs text-[#6b7d93]">
-	                            {form.manualMandateFileName
-	                              ? `Selected: ${form.manualMandateFileName}`
-	                              : normalizeKey(form.manualMandateStatus) === 'signed_external_pending_upload'
-	                                ? 'The mandate is signed manually. Upload the document when it is available.'
-	                                : 'Upload the signed mandate to mark this listing activation-ready.'}
-	                          </span>
-	                        </label>
-	                      </>
-	                    ) : (
-	                      <div className="rounded-[14px] border border-[#dbe6f2] bg-white p-4">
+                  {(() => {
+                    const mandateStatus = getQuickListingMandateStatus(form)
+                    const mandatePack = buildQuickListingMandatePack(form, mandateStatus)
+                    const mandateWarnings = getQuickListingMandateCaptureWarnings(form, mandateStatus)
+                    return (
+                      <div className="rounded-[14px] border border-[#dbe6f2] bg-white p-4">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-[#22374d]">Mandate capture pack</p>
+                            <p className="mt-1 text-xs text-[#60758c]">
+                              {mandatePack.statusLabel} · {mandatePack.type} · {mandatePack.dateStateLabel}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                            <span className={`rounded-full px-2.5 py-1 ${mandatePack.uploadStatus === 'uploaded' ? 'bg-[#edf8f0] text-[#1f7d44]' : 'bg-[#fff8ea] text-[#9a5b13]'}`}>
+                              {mandatePack.uploadStatus === 'uploaded' ? 'Mandate selected' : mandatePack.uploadStatus === 'pending_upload' ? 'Upload outstanding' : 'Upload optional'}
+                            </span>
+                            <span className={`rounded-full px-2.5 py-1 ${mandatePack.commission.status === 'captured' ? 'bg-[#edf8f0] text-[#1f7d44]' : 'bg-[#fff8ea] text-[#9a5b13]'}`}>
+                              {mandatePack.commission.status === 'captured' ? 'Commission captured' : 'Commission missing'}
+                            </span>
+                          </div>
+                        </div>
+                        {mandateWarnings.length ? (
+                          <div className="mt-3 grid gap-2 md:grid-cols-2">
+                            {mandateWarnings.map((warning) => (
+                              <p key={warning} className="flex items-center gap-2 rounded-[10px] bg-[#fff8ea] px-3 py-2 text-xs font-semibold text-[#88531a]">
+                                <CircleAlert size={14} />
+                                {warning}
+                              </p>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#1f7d44]">
+                            <CheckCircle2 size={14} />
+                            Mandate pack ready for Quick Add.
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })()}
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {isQuickListingSignedMandateStatus(form.manualMandateStatus) ? (
+                      <>
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Document category</span>
+                          <Field as="select" value={form.mandateDocumentCategory} onChange={(event) => updateForm('mandateDocumentCategory', event.target.value)}>
+                            {LISTING_DOCUMENT_CATEGORIES.map((category) => (
+                              <option key={category} value={category}>{category}</option>
+                            ))}
+                          </Field>
+                        </label>
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Signed mandate document</span>
+                          <Field
+                            type="file"
+                            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                            onChange={(event) => {
+                              const file = event.target.files?.[0] || null
+                              updateForm('manualMandateFile', file)
+                              updateForm('manualMandateFileName', file?.name || '')
+                              if (file && normalizeKey(form.manualMandateStatus) === 'signed_external_pending_upload') {
+                                updateForm('manualMandateStatus', 'signed_uploaded')
+                              }
+                            }}
+                          />
+                          <span className="text-xs text-[#6b7d93]">
+                            {form.manualMandateFileName
+                              ? `Selected: ${form.manualMandateFileName}. It will upload when you save the listing.`
+                              : normalizeKey(form.manualMandateStatus) === 'signed_external_pending_upload'
+                                ? 'The mandate is signed manually. Upload the document when it is available.'
+                                : 'Upload the signed mandate to mark this listing activation-ready.'}
+                          </span>
+                        </label>
+                      </>
+                    ) : (
+                      <div className="rounded-[14px] border border-[#dbe6f2] bg-white p-4">
                         <p className="text-sm font-semibold text-[#2d445e]">{getQuickListingMandateStatusLabel(form.manualMandateStatus)}</p>
                         <p className="mt-1 text-xs text-[#6b7d93]">
                           {normalizeKey(form.manualMandateStatus) === 'in_progress'
@@ -3465,28 +4433,29 @@ function AgentListings({ initialTab = null } = {}) {
                           Generate Mandate
                         </Button>
                       </div>
-	                    )}
-	                    <label className="grid gap-2">
-	                      <span className="text-sm font-semibold text-[#2d445e]">Supporting document category</span>
-	                      <Field as="select" value={form.supportingDocumentCategory} onChange={(event) => updateForm('supportingDocumentCategory', event.target.value)}>
-	                        {LISTING_DOCUMENT_CATEGORIES.map((category) => (
-	                          <option key={category} value={category}>{category}</option>
-	                        ))}
-	                      </Field>
-	                    </label>
-	                    <label className="grid gap-2">
-	                      <span className="text-sm font-semibold text-[#2d445e]">Supporting documents (optional)</span>
+                    )}
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Supporting document category</span>
+                      <Field as="select" value={form.supportingDocumentCategory} onChange={(event) => updateForm('supportingDocumentCategory', event.target.value)}>
+                        {LISTING_DOCUMENT_CATEGORIES.map((category) => (
+                          <option key={category} value={category}>{category}</option>
+                        ))}
+                      </Field>
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Supporting documents (optional)</span>
                       <Field
                         type="file"
                         multiple
                         onChange={(event) => {
-                          const files = Array.from(event.target.files || []).map((file) => file.name)
-                          updateForm('supportingDocumentNames', files)
+                          const files = Array.from(event.target.files || [])
+                          updateForm('supportingDocumentFiles', files)
+                          updateForm('supportingDocumentNames', files.map((file) => file.name))
                         }}
                       />
                       <span className="text-xs text-[#6b7d93]">
                         {form.supportingDocumentNames.length
-                          ? `Selected: ${form.supportingDocumentNames.join(', ')}`
+                          ? `Selected: ${form.supportingDocumentNames.join(', ')}. These will upload when you save the listing.`
                           : 'No supporting documents selected.'}
                       </span>
                     </label>
@@ -3551,14 +4520,18 @@ function AgentListings({ initialTab = null } = {}) {
                     <label className="grid gap-2">
                       <span className="text-sm font-semibold text-[#2d445e]">Listing status</span>
                       <Field as="select" value={form.listingStatus} onChange={(event) => updateForm('listingStatus', event.target.value)}>
-                        <option value="draft">Draft</option>
-                        <option value="active">Active</option>
+                        {MANUAL_LISTING_STATUSES.map((status) => (
+                          <option key={status} value={status}>
+                            {getStatusLabelFromManualSelection(status)}
+                          </option>
+                        ))}
                       </Field>
                     </label>
                   </div>
                   {(() => {
                     const mandateUploaded = Boolean(normalizeText(form.manualMandateFileName))
                     const mandateStatus = getQuickListingMandateStatus(form)
+                    const mandateWarnings = getQuickListingMandateCaptureWarnings(form, mandateStatus)
                     const completeness = buildListingCompleteness({ form, mandateUploaded })
                     const activeWarnings = validateQuickListingActiveRules({
                       form,
@@ -3575,7 +4548,8 @@ function AgentListings({ initialTab = null } = {}) {
                       commission: { type: form.commissionType, value: form.commissionValue },
                       property24ListingUrl: form.externalListingLink,
                       documents: mandateUploaded ? [{ document_type: normalizeDocumentCategoryKey(form.mandateDocumentCategory), status: 'uploaded' }] : [],
-                    }, completeness), ...activeWarnings])]
+                    }, completeness), ...mandateWarnings, ...activeWarnings])]
+                    const summaryWarnings = [...new Set([...mandateWarnings, ...activeWarnings])]
                     const resolvedListingStatus = resolveQuickListingStatus(form, { activationWarnings: activeWarnings })
                     const activationTier = getQuickListingActivationTier({
                       listingStatus: resolvedListingStatus,
@@ -3591,7 +4565,7 @@ function AgentListings({ initialTab = null } = {}) {
                             <p className="mt-1 text-xs text-[#6b7d93]">
                               {completeness.missingItems.length ? `Missing: ${completeness.missingItems.join(', ')}` : 'No immediate follow-up items.'}
                             </p>
-                            {activeWarnings.map((warning) => (
+                            {summaryWarnings.map((warning) => (
                               <p key={warning} className="mt-2 text-xs font-semibold text-[#9a5b13]">{warning}</p>
                             ))}
                             {normalizeKey(form.listingStatus) === 'active' && activationTier.key === 'active_with_warning' && !activeWarnings.length ? (

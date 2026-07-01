@@ -1,17 +1,9 @@
 import {
   Bell,
   Building2,
-  ClipboardList,
-  FileSignature,
-  Handshake,
-  KeyRound,
   Mail,
-  PlugZap,
-  SlidersHorizontal,
   Shield,
-  User,
   UserCircle2,
-  Workflow,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
@@ -32,23 +24,12 @@ const SETTINGS_NAV_GROUPS = [
     label: 'Organisation',
     items: [
       { to: '/settings/organisation', label: 'Organisation', icon: Building2 },
-      { to: '/settings/legal-templates', label: 'Legal Templates', icon: FileSignature },
-      { to: '/settings/preferred-partners', label: 'Preferred Partners', icon: Handshake },
     ],
   },
   {
     label: 'Platform',
     items: [
       { to: '/settings/lead-capture', label: 'Lead Capture', icon: Mail },
-      { to: '/settings/workflows', label: 'Workflows & Rules', icon: Workflow },
-      { to: '/settings/communications/templates', label: 'Communications Templates', icon: Mail },
-    ],
-  },
-  {
-    label: 'System',
-    items: [
-      { to: '/settings/integrations', label: 'Integrations', icon: PlugZap },
-      { to: '/settings/audit-log', label: 'Audit Log', icon: ClipboardList },
     ],
   },
 ]
@@ -70,16 +51,7 @@ const BOND_SETTINGS_NAV_GROUPS = [
   },
   {
     label: 'Platform',
-    items: [
-      { to: '/settings/automation', label: 'Automation & Rules', icon: SlidersHorizontal },
-    ],
-  },
-  {
-    label: 'System',
-    items: [
-      { to: '/settings/integrations', label: 'Integrations', icon: PlugZap },
-      { to: '/settings/audit-log', label: 'Audit Log', icon: ClipboardList },
-    ],
+    items: [],
   },
 ]
 

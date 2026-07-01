@@ -120,10 +120,9 @@ export function buildDefaultLeadCaptureAliasRequests({
   organisationId = '',
   agentUserId = '',
   branchId = '',
-  sources = LEAD_CAPTURE_SOURCES,
   aliasDomain = DEFAULT_LEAD_CAPTURE_DOMAIN,
 } = {}) {
-  const requests = [{
+  return [{
     organisationId,
     agentUserId: agentUserId || null,
     branchId: branchId || null,
@@ -131,21 +130,18 @@ export function buildDefaultLeadCaptureAliasRequests({
     routingLevel: agentUserId ? 'agent' : 'agency',
     aliasDomain,
   }]
+}
 
-  for (const source of sources) {
-    const normalizedSource = normalizeLeadSource(source)
-    if (!normalizedSource || normalizedSource === 'Other' || normalizedSource === 'General') continue
-    requests.push({
-      organisationId,
-      agentUserId: agentUserId || null,
-      branchId: branchId || null,
-      source: normalizedSource,
-      routingLevel: agentUserId ? 'agent_source' : 'agency',
-      aliasDomain,
-    })
-  }
+export function isPrimaryLeadCaptureAlias(alias = {}) {
+  const source = normalizeLeadSource(alias.source || 'General')
+  const routingLevel = normalizeLower(alias.routingLevel || alias.routing_level)
+  return source === 'General' || routingLevel === 'agent' || routingLevel === 'agency'
+}
 
-  return requests
+export function getPrimaryLeadCaptureAliases(aliases = []) {
+  const activeAliases = (Array.isArray(aliases) ? aliases : []).filter((alias) => alias.status === 'active')
+  const primaryAliases = activeAliases.filter(isPrimaryLeadCaptureAlias)
+  return primaryAliases.length ? primaryAliases : activeAliases.slice(0, 1)
 }
 
 export function getLeadCaptureSetupStatus({ aliases = [], lastInboundEmail = null } = {}) {
@@ -322,7 +318,6 @@ export async function ensureLeadCaptureAliasesForUsers({
   organisationId = '',
   users = [],
   aliasDomain = DEFAULT_LEAD_CAPTURE_DOMAIN,
-  sources = LEAD_CAPTURE_SOURCES,
 } = {}) {
   const normalizedOrganisationId = normalizeText(organisationId)
   if (!isUuidLike(normalizedOrganisationId)) {
@@ -338,7 +333,6 @@ export async function ensureLeadCaptureAliasesForUsers({
       agentUserId: userId,
       branchId: isUuidLike(branchId) ? branchId : '',
       aliasDomain,
-      sources,
     })
     aliases.push(...created)
   }
@@ -1291,8 +1285,10 @@ export const __leadEmailCaptureServiceTestUtils = {
   buildDefaultLeadCaptureAliasRequests,
   buildLeadCaptureAliasLocalPart,
   buildLeadCaptureEmail,
+  getPrimaryLeadCaptureAliases,
   extractListingReference,
   getLeadCaptureSetupStatus,
+  isPrimaryLeadCaptureAlias,
   normalizeCaptureEmail,
   parseLeadEmailBySource,
   parseInboundLeadEmail,

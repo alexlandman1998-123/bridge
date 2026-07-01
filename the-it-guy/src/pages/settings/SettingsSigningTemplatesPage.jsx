@@ -103,6 +103,12 @@ const SUPPORTED_PACKET_TYPES = [
 
 const DEFAULT_ALLOWED_PACKET_TYPES = ['otp', 'mandate']
 const SUPPORTED_PACKET_TYPE_KEYS = new Set(SUPPORTED_PACKET_TYPES.map((item) => item.key))
+const LEGAL_TEMPLATE_TABLE_SNIPPET = [
+  '| Detail | Value |',
+  '| --- | --- |',
+  '| Property address | {{property_address}} |',
+  '| Purchase price / mandate value | {{purchase_price}} |',
+].join('\n')
 
 const AGENCY_DOCUMENT_TABS = [
   { key: 'otp', packetType: 'otp', label: 'Offer to Purchase (OTP)', icon: FileSignature },
@@ -2759,28 +2765,37 @@ export default function SettingsSigningTemplatesPage({
     void handleCreateEditableCopy()
   }
 
-  function handleInsertVariableToken(token = '') {
-    const normalizedToken = normalizeText(token)
-    if (!normalizedToken || !selectedSection || !canEdit) return
+  function insertTextIntoSelectedSection(rawText = '', { block = false } = {}) {
+    const insertion = String(rawText || '')
+    if (!insertion || !selectedSection || !canEdit) return
 
-    const rawToken = `{{${normalizedToken}}}`
     const textarea = clauseTextareaRef.current
     const currentValue = String(selectedSection.legalText || '')
-    let nextValue = rawToken
-    let cursorPosition = rawToken.length
+    let nextValue = insertion
+    let cursorPosition = insertion.length
 
     if (textarea && typeof textarea.selectionStart === 'number' && typeof textarea.selectionEnd === 'number') {
       const start = textarea.selectionStart
       const end = textarea.selectionEnd
-      nextValue = `${currentValue.slice(0, start)}${rawToken}${currentValue.slice(end)}`
-      cursorPosition = start + rawToken.length
+      const beforeText = currentValue.slice(0, start)
+      const afterText = currentValue.slice(end)
+      const prefix = block && beforeText && !/\n\s*$/.test(beforeText) ? '\n\n' : ''
+      const suffix = block && afterText && !/^\s*\n/.test(afterText) ? '\n\n' : ''
+      nextValue = `${beforeText}${prefix}${insertion}${suffix}${afterText}`
+      cursorPosition = start + prefix.length + insertion.length
     } else {
-      const prefix = currentValue && !/\s$/.test(currentValue) ? ' ' : ''
-      nextValue = `${currentValue}${prefix}${rawToken}`
+      const prefix = block
+        ? currentValue && !/\n\s*$/.test(currentValue) ? '\n\n' : ''
+        : currentValue && !/\s$/.test(currentValue) ? ' ' : ''
+      nextValue = `${currentValue}${prefix}${insertion}`
       cursorPosition = nextValue.length
     }
 
-    const nextPlaceholderKeys = Array.from(new Set([...(selectedSection.placeholderKeys || []), normalizedToken]))
+    const tokenScan = detectTemplateTokenIssues(nextValue)
+    const nextPlaceholderKeys = Array.from(new Set([
+      ...(selectedSection.placeholderKeys || []),
+      ...tokenScan.tokens.map((item) => normalizeTemplateTokenKey(item)).filter(Boolean),
+    ]))
     updateSection(selectedSectionIndex, {
       legalText: nextValue,
       placeholderKeysText: nextPlaceholderKeys.join(', '),
@@ -2793,6 +2808,16 @@ export default function SettingsSigningTemplatesPage({
         textarea.setSelectionRange(cursorPosition, cursorPosition)
       }
     })
+  }
+
+  function handleInsertVariableToken(token = '') {
+    const normalizedToken = normalizeText(token)
+    if (!normalizedToken) return
+    insertTextIntoSelectedSection(`{{${normalizedToken}}}`)
+  }
+
+  function handleInsertTable() {
+    insertTextIntoSelectedSection(LEGAL_TEMPLATE_TABLE_SNIPPET, { block: true })
   }
 
   function openPublishDialog() {
@@ -3061,7 +3086,7 @@ export default function SettingsSigningTemplatesPage({
                           { icon: AlignCenter, label: 'Align center' },
                           { icon: AlignRight, label: 'Align right' },
                           { icon: Link, label: 'Link' },
-                          { icon: Table2, label: 'Insert table' },
+                          { icon: Table2, label: 'Insert table', onClick: handleInsertTable },
                           { icon: Undo2, label: 'Undo' },
                           { icon: Redo2, label: 'Redo' },
                         ].map((item) => {
@@ -3071,6 +3096,8 @@ export default function SettingsSigningTemplatesPage({
                               key={item.label}
                               type="button"
                               title={item.label}
+                              onClick={item.onClick}
+                              disabled={!item.onClick || !canEdit || !selectedSection}
                               className="grid h-9 w-9 place-items-center rounded-[10px] text-[#233246] transition hover:bg-white hover:shadow-[0_8px_16px_rgba(15,23,42,0.06)]"
                             >
                               <Icon size={16} />

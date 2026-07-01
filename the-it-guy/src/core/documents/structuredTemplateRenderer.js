@@ -34,6 +34,74 @@ function renderLegalTextWithPlaceholders(value = '', placeholders = {}) {
     .replace(/\n/g, '<br />')
 }
 
+function isMarkdownTableLine(line = '') {
+  return /^\s*\|.*\|\s*$/.test(String(line || ''))
+}
+
+function getMarkdownTableCells(line = '') {
+  return String(line || '')
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.trim())
+}
+
+function isMarkdownTableSeparator(line = '') {
+  const cells = getMarkdownTableCells(line)
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell))
+}
+
+function renderMarkdownTable(rows = [], placeholders = {}) {
+  if (!rows.length) return ''
+  const [header = [], ...bodyRows] = rows
+  return `
+    <table class="legal-preview-table">
+      <thead>
+        <tr>${header.map((cell) => `<th>${renderLegalTextWithPlaceholders(cell, placeholders)}</th>`).join('')}</tr>
+      </thead>
+      <tbody>
+        ${bodyRows.map((row) => `<tr>${row.map((cell) => `<td>${renderLegalTextWithPlaceholders(cell, placeholders)}</td>`).join('')}</tr>`).join('\n')}
+      </tbody>
+    </table>
+  `
+}
+
+function renderLegalTextBlocks(value = '', placeholders = {}) {
+  const lines = String(value || '').split(/\r?\n/)
+  const blocks = []
+  let paragraphLines = []
+  const flushParagraph = () => {
+    if (!paragraphLines.length) return
+    const paragraphText = paragraphLines.join('\n').trim()
+    if (paragraphText) {
+      blocks.push(`<p class="legal-preview-paragraph">${renderLegalTextWithPlaceholders(paragraphText, placeholders)}</p>`)
+    }
+    paragraphLines = []
+  }
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+    const nextLine = lines[index + 1]
+    if (isMarkdownTableLine(line) && isMarkdownTableSeparator(nextLine)) {
+      flushParagraph()
+      const tableRows = [getMarkdownTableCells(line)]
+      index += 2
+      while (index < lines.length && isMarkdownTableLine(lines[index])) {
+        tableRows.push(getMarkdownTableCells(lines[index]))
+        index += 1
+      }
+      index -= 1
+      blocks.push(renderMarkdownTable(tableRows, placeholders))
+      continue
+    }
+    paragraphLines.push(line)
+  }
+
+  flushParagraph()
+  return blocks.join('\n')
+}
+
 function compactJoin(values = [], separator = ', ') {
   return values.map((value) => normalizeText(value)).filter(Boolean).join(separator)
 }
@@ -529,9 +597,7 @@ function renderLegalClauseRows(section, placeholders, sectionIndex, packetType =
     if (partyContent) return partyContent
   }
 
-  if (section.legalText) {
-    return `<p class="legal-preview-paragraph">${renderLegalTextWithPlaceholders(section.legalText, placeholders)}</p>`
-  }
+  if (section.legalText) return renderLegalTextBlocks(section.legalText, placeholders)
 
   if (section.key === 'signature_pages') {
     const seller = getPreviewField(placeholders, 'seller_full_name', 'Seller Full Name')
@@ -679,6 +745,10 @@ export function renderStructuredTemplate({
           .legal-preview-section h2 { margin: 0 0 4mm; padding: 0 0 2mm; border-bottom: 1px solid #d7d7d7; color: #111827; font-size: 13px; font-weight: 700; letter-spacing: 0.04em; line-height: 1.35; text-transform: uppercase; }
           .legal-preview-section h2 span { display: inline-block; min-width: 22px; }
           .legal-preview-paragraph { margin: 0; color: #1f2937; font-size: 13px; line-height: 1.72; }
+          .legal-preview-paragraph + .legal-preview-table, .legal-preview-table + .legal-preview-paragraph { margin-top: 4mm; }
+          .legal-preview-table { width: 100%; border-collapse: collapse; color: #1f2937; font-size: 12px; line-height: 1.45; }
+          .legal-preview-table th, .legal-preview-table td { border: 1px solid #d7d7d7; padding: 2.5mm 3mm; text-align: left; vertical-align: top; }
+          .legal-preview-table th { background: #f6f7f8; color: #111827; font-weight: 700; }
           .legal-clause-list { display: grid; gap: 3mm; margin: 0; padding: 0; list-style: none; }
           .legal-clause-list li { display: grid; grid-template-columns: 30px minmax(130px, 0.38fr) minmax(0, 1fr); gap: 8px; color: #1f2937; font-size: 12.5px; line-height: 1.55; }
           .legal-clause-number, .legal-clause-label { color: #3f4a56; font-weight: 700; }

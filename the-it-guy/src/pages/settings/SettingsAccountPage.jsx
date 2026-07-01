@@ -6,7 +6,6 @@ import { changePassword, fetchAccountSettings, updateAccountSettings, uploadAcco
 import {
   SettingsBanner,
   SettingsLoadingState,
-  SettingsPageHeader,
   SettingsSectionCard,
   SettingsStickySaveBar,
   SettingsToggleRow,
@@ -98,29 +97,6 @@ async function createProfileAvatarFile(file) {
   }
 
   throw new Error('Arch9 resized the image, but it is still too large. Try a simpler JPG or PNG file.')
-}
-
-const PAGE_COPY = {
-  profile: {
-    kicker: 'Account',
-    title: 'Profile',
-    description: 'Manage your personal information, employment details and local account defaults.',
-  },
-  security: {
-    kicker: 'Account',
-    title: 'Security',
-    description: 'Manage your password, two-factor authentication, active sessions and connected devices.',
-  },
-  notifications: {
-    kicker: 'Account',
-    title: 'Notifications',
-    description: 'Choose how Arch9 should notify you across email, push, SMS and critical system alerts.',
-  },
-  preferences: {
-    kicker: 'Account',
-    title: 'Preferences',
-    description: 'Set timezone, language, date format, number format and regional defaults.',
-  },
 }
 
 export default function SettingsAccountPage({ section = 'profile' }) {
@@ -280,7 +256,6 @@ export default function SettingsAccountPage({ section = 'profile' }) {
     return <SettingsLoadingState label="Loading account settings…" />
   }
 
-  const activeCopy = PAGE_COPY[section] || PAGE_COPY.profile
   const hasUnsavedChanges = JSON.stringify(form || {}) !== JSON.stringify(initialForm || {})
   const profileName = [form.firstName, form.lastName].filter(Boolean).join(' ') || form.email || 'Arch9 User'
   const showProfile = section === 'profile'
@@ -290,11 +265,6 @@ export default function SettingsAccountPage({ section = 'profile' }) {
 
   return (
     <div className={settingsPageClass}>
-      <SettingsPageHeader
-        kicker={activeCopy.kicker}
-        title={activeCopy.title}
-        description={activeCopy.description}
-      />
       {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
       {message ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}
 

@@ -27,7 +27,9 @@ import {
   ensureLeadCaptureAliasesForUsers,
   filterLeadCaptureReviewQueueRows,
   getLeadCaptureSetupStatus,
+  getPrimaryLeadCaptureAliases,
   ignoreLeadCaptureReviewItem,
+  isPrimaryLeadCaptureAlias,
   LEAD_CAPTURE_CONFIDENCE_FILTERS,
   LEAD_CAPTURE_PRODUCTION_CHECKLIST,
   LEAD_CAPTURE_PRODUCTION_ENV_VARS,
@@ -151,7 +153,7 @@ function AliasAddressRow({ alias, onCopy }) {
 }
 
 function AgentStatusRow({ row, onCopy }) {
-  const primaryAlias = row.aliases.find((alias) => alias.source === 'General') || row.aliases[0] || null
+  const primaryAlias = getPrimaryLeadCaptureAliases(row.aliases)[0] || row.aliases[0] || null
   return (
     <tr className="border-t border-[#e8eef5] align-top">
       <td className="px-4 py-4">
@@ -603,7 +605,7 @@ export default function SettingsLeadCapturePage() {
   const currentUserLatestEmail = inboundEmails.find((email) => currentUserAliases.some((alias) => alias.aliasId === email.captureAliasId)) || null
   const currentUserStatus = getLeadCaptureSetupStatus({ aliases: currentUserAliases, lastInboundEmail: currentUserLatestEmail })
 
-  const generatedCount = aliases.filter((alias) => alias.status === 'active').length
+  const generatedCount = aliases.filter((alias) => alias.status === 'active' && isPrimaryLeadCaptureAlias(alias)).length
   const activeAgentCount = rows.filter((row) => row.status === 'active').length
   const receivedCount = inboundEmails.length
   const failureCount = reviewItemsWithAssignment.filter((item) => item.status === 'open').length
@@ -632,9 +634,8 @@ export default function SettingsLeadCapturePage() {
         organisationId,
         agentUserId: profileId,
         branchId: currentUser.branchId,
-        sources: LEAD_CAPTURE_SOURCES,
       })
-      setNotice('Lead capture addresses generated.')
+      setNotice('Lead capture address generated.')
       await load()
     } catch (generateError) {
       setError(generateError?.message || 'Lead capture addresses could not be generated.')
@@ -650,12 +651,10 @@ export default function SettingsLeadCapturePage() {
     try {
       await ensureDefaultLeadCaptureAliases({
         organisationId,
-        sources: LEAD_CAPTURE_SOURCES,
       })
       await ensureLeadCaptureAliasesForUsers({
         organisationId,
         users,
-        sources: LEAD_CAPTURE_SOURCES,
       })
       setNotice('Agency lead capture addresses generated.')
       await load()
@@ -734,7 +733,7 @@ export default function SettingsLeadCapturePage() {
   }
 
   const myAliases = canManage ? aliases.filter((alias) => alias.agentUserId === profileId) : currentUserAliases
-  const visibleMyAliases = myAliases.length ? myAliases : aliases.filter((alias) => !alias.agentUserId).slice(0, 1)
+  const visibleMyAliases = getPrimaryLeadCaptureAliases(myAliases.length ? myAliases : aliases.filter((alias) => !alias.agentUserId))
 
   return (
     <div className={settingsPageClass}>
@@ -748,7 +747,7 @@ export default function SettingsLeadCapturePage() {
             {canManage ? (
               <PrimaryButton icon={Mail} onClick={generateAgencyAddresses} disabled={saving || !organisationId}>Generate Agency Addresses</PrimaryButton>
             ) : (
-              <PrimaryButton icon={Mail} onClick={generateMyAddresses} disabled={saving || !organisationId || !profileId}>Generate My Addresses</PrimaryButton>
+              <PrimaryButton icon={Mail} onClick={generateMyAddresses} disabled={saving || !organisationId || !profileId}>Generate My Address</PrimaryButton>
             )}
           </>
         }
@@ -765,7 +764,7 @@ export default function SettingsLeadCapturePage() {
       </section>
 
       <SettingsSectionCard
-        title="My Capture Addresses"
+        title="My Capture Address"
         description={`Status: ${STATUS_META[currentUserStatus]?.label || STATUS_META.not_started.label}`}
         actions={!visibleMyAliases.length ? <SecondaryButton icon={Mail} onClick={generateMyAddresses} disabled={saving || !organisationId || !profileId}>Generate</SecondaryButton> : null}
       >
@@ -778,7 +777,7 @@ export default function SettingsLeadCapturePage() {
         ) : (
           <SettingsEmptyState
             title="No lead capture addresses yet"
-            description="Generate addresses before routing portal enquiries into Arch9."
+            description="Generate an address before routing portal enquiries into Arch9."
           />
         )}
       </SettingsSectionCard>
