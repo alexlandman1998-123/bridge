@@ -67,18 +67,18 @@ const SETTINGS_CATEGORIES = [
     icon: PlugZap,
   },
   {
+    to: '/settings/legal-templates',
+    title: 'Legal Templates',
+    description: 'Manage mandate, OTP and legal document defaults.',
+    cta: 'Manage legal templates',
+    icon: FileSignature,
+  },
+  {
     to: '/settings/preferred-partners',
     title: 'Preferred Partners',
     description: 'Manage preferred attorneys, bond originators and service providers.',
     cta: 'Manage partners',
     icon: Handshake,
-  },
-  {
-    to: '/settings/legal-templates',
-    title: 'Legal Templates',
-    description: 'Manage organisation legal templates and defaults.',
-    cta: 'Manage templates',
-    icon: FileSignature,
   },
   {
     to: '/settings/workflows',

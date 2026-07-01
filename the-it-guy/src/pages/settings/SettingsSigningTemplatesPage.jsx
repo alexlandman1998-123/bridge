@@ -942,9 +942,9 @@ function TemplateStudioTabButton({ active, label, onClick }) {
 export default function SettingsSigningTemplatesPage({
   templateModuleType = 'agency',
   allowedPacketTypes = ['otp', 'mandate'],
-  title = 'Template Studio',
+  title = 'Legal Templates',
   eyebrow = 'Settings / Legal Templates',
-  description = 'Manage document templates, versions, merge fields, previews, and publishing.',
+  description = 'Manage mandate, OTP and legal document templates, including defaults, merge fields, previews and publishing.',
 } = {}) {
   const { role, currentWorkspace, workspaceType } = useWorkspace()
   const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''

@@ -52,8 +52,12 @@ let cachedPacketAuthUserAt = 0
 let pendingPacketAuthUserPromise = null
 const PACKET_AUTH_USER_CACHE_TTL_MS = 10 * 1000
 const PACKET_CONTEXT_CACHE_TTL_MS = 10 * 1000
+const TEMPLATE_SELECT_PLAN_CACHE_TTL_MS = 10 * 60 * 1000
+const TEMPLATE_SELECT_PLAN_CACHE_KEY = 'arch9:document-packet-template-select-plan:v1'
 const cachedPacketContexts = new Map()
 const pendingPacketContextPromises = new Map()
+let documentPacketTemplateSelectPlanIndex = 0
+let documentPacketTemplateSelectPlanCachedAt = 0
 
 const ALLOWED_PACKET_STATUS_TRANSITIONS = {
   draft: ['ready_for_generation', 'generated', 'voided', 'archived'],
@@ -499,6 +503,73 @@ const DOCUMENT_PACKET_TEMPLATE_SELECT_NO_IS_ACTIVE =
 const DOCUMENT_PACKET_TEMPLATE_SELECT_LEGACY =
   'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, is_default, metadata_json, created_by, created_at, updated_at'
 
+const DOCUMENT_PACKET_TEMPLATE_QUERY_PLANS = [
+  {
+    select: DOCUMENT_PACKET_TEMPLATE_SELECT_PHASE2,
+    activeFilter: ({ includeInactive }) => !includeInactive,
+  },
+  {
+    select: DOCUMENT_PACKET_TEMPLATE_SELECT,
+    activeFilter: ({ includeInactive }) => !includeInactive,
+  },
+  {
+    select: DOCUMENT_PACKET_TEMPLATE_SELECT_NO_IS_ACTIVE,
+    activeFilter: () => false,
+  },
+  {
+    select: DOCUMENT_PACKET_TEMPLATE_SELECT_LEGACY,
+    activeFilter: () => false,
+  },
+]
+
+function readDocumentPacketTemplateSelectPlanIndex() {
+  if (typeof window === 'undefined') return documentPacketTemplateSelectPlanIndex
+  const now = Date.now()
+  if (
+    documentPacketTemplateSelectPlanCachedAt &&
+    now - documentPacketTemplateSelectPlanCachedAt < TEMPLATE_SELECT_PLAN_CACHE_TTL_MS
+  ) {
+    return documentPacketTemplateSelectPlanIndex
+  }
+
+  try {
+    const cached = JSON.parse(window.sessionStorage.getItem(TEMPLATE_SELECT_PLAN_CACHE_KEY) || 'null')
+    const cachedIndex = Number(cached?.index)
+    const cachedAt = Number(cached?.cachedAt || 0)
+    if (
+      Number.isInteger(cachedIndex) &&
+      cachedIndex >= 0 &&
+      cachedIndex < DOCUMENT_PACKET_TEMPLATE_QUERY_PLANS.length &&
+      cachedAt &&
+      now - cachedAt < TEMPLATE_SELECT_PLAN_CACHE_TTL_MS
+    ) {
+      documentPacketTemplateSelectPlanIndex = cachedIndex
+      documentPacketTemplateSelectPlanCachedAt = cachedAt
+      return documentPacketTemplateSelectPlanIndex
+    }
+  } catch {
+    // Ignore invalid session cache entries and probe from the newest select shape.
+  }
+
+  documentPacketTemplateSelectPlanIndex = 0
+  documentPacketTemplateSelectPlanCachedAt = now
+  return documentPacketTemplateSelectPlanIndex
+}
+
+function rememberDocumentPacketTemplateSelectPlanIndex(index) {
+  if (!Number.isInteger(index) || index < 0 || index >= DOCUMENT_PACKET_TEMPLATE_QUERY_PLANS.length) return
+  const now = Date.now()
+  documentPacketTemplateSelectPlanIndex = index
+  documentPacketTemplateSelectPlanCachedAt = now
+  if (typeof window === 'undefined') return
+
+  try {
+    window.sessionStorage.setItem(TEMPLATE_SELECT_PLAN_CACHE_KEY, JSON.stringify({ index, cachedAt: now }))
+  } catch {
+    // Session storage can be unavailable in restricted browser modes.
+  }
+}
+
 async function queryDocumentPacketTemplatesWithFallback(client, {
   packetType = null,
   moduleType = null,
@@ -508,27 +579,13 @@ async function queryDocumentPacketTemplatesWithFallback(client, {
   templateId = null,
 } = {}) {
   const context = await resolvePacketContext(client, { organisationId })
-  const queryPlans = [
-    {
-      select: DOCUMENT_PACKET_TEMPLATE_SELECT_PHASE2,
-      activeFilter: !includeInactive,
-    },
-    {
-      select: DOCUMENT_PACKET_TEMPLATE_SELECT,
-      activeFilter: !includeInactive,
-    },
-    {
-      select: DOCUMENT_PACKET_TEMPLATE_SELECT_NO_IS_ACTIVE,
-      activeFilter: false,
-    },
-    {
-      select: DOCUMENT_PACKET_TEMPLATE_SELECT_LEGACY,
-      activeFilter: false,
-    },
-  ]
+  const preferredPlanIndex = readDocumentPacketTemplateSelectPlanIndex()
+  const queryPlans = DOCUMENT_PACKET_TEMPLATE_QUERY_PLANS.slice(preferredPlanIndex)
 
   let lastError = null
-  for (const plan of queryPlans) {
+  for (let index = 0; index < queryPlans.length; index += 1) {
+    const plan = queryPlans[index]
+    const planIndex = preferredPlanIndex + index
     let query = client
       .from('document_packet_templates')
       .select(plan.select)
@@ -542,12 +599,13 @@ async function queryDocumentPacketTemplatesWithFallback(client, {
         .order('updated_at', { ascending: false })
       if (packetType) query = query.eq('packet_type', assertPacketType(packetType))
       if (moduleType) query = query.eq('module_type', normalizeText(moduleType).toLowerCase())
-      if (plan.activeFilter) query = query.eq('is_active', true)
+      if (plan.activeFilter({ includeInactive })) query = query.eq('is_active', true)
       if (Number.isFinite(Number(limit)) && Number(limit) > 0) query = query.limit(Number(limit))
     }
 
     const result = templateId ? await query.maybeSingle() : await query
     if (!result.error) {
+      rememberDocumentPacketTemplateSelectPlanIndex(planIndex)
       if (templateId) return result.data ? hydrateTemplateRecord(result.data) : null
       return (result.data || []).map((template) => hydrateTemplateRecord(template))
     }
@@ -564,6 +622,7 @@ async function queryDocumentPacketTemplatesWithFallback(client, {
     if (!compatibleMissingColumn) {
       throw result.error
     }
+    rememberDocumentPacketTemplateSelectPlanIndex(Math.min(planIndex + 1, DOCUMENT_PACKET_TEMPLATE_QUERY_PLANS.length - 1))
   }
 
   throw lastError || new Error('Unable to load document packet templates.')

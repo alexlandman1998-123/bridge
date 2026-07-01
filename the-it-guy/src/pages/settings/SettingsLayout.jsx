@@ -32,8 +32,8 @@ const SETTINGS_NAV_GROUPS = [
     label: 'Organisation',
     items: [
       { to: '/settings/organisation', label: 'Organisation', icon: Building2 },
-      { to: '/settings/preferred-partners', label: 'Preferred Partners', icon: Handshake },
       { to: '/settings/legal-templates', label: 'Legal Templates', icon: FileSignature },
+      { to: '/settings/preferred-partners', label: 'Preferred Partners', icon: Handshake },
     ],
   },
   {
@@ -134,7 +134,7 @@ export default function SettingsLayout() {
     .map((group) => ({
       ...group,
       items: group.items.filter((item) => {
-        if (!canManage && ['/settings/users', '/settings/billing', '/settings/commission-structures', '/settings/developments', '/settings/partner-routing-rules'].includes(item.to)) {
+        if (!canManage && ['/settings/users', '/settings/billing', '/settings/commission-structures', '/settings/developments', '/settings/partner-routing-rules', '/settings/legal-templates'].includes(item.to)) {
           return false
         }
         return true

@@ -466,7 +466,12 @@ function AppLayout({ onLogout, session = null, user }) {
     /^\/pipeline\/leads\/[^/]+\/legal\/[^/]+/.test(location.pathname)
   const isCommercialRoute = location.pathname.startsWith('/commercial')
   const isBondRoute = location.pathname.startsWith('/bond')
-  const routeContentKey = isBondRoute ? location.pathname : `${location.pathname}${location.search}`
+  const isSettingsRoute = location.pathname === '/settings' || location.pathname.startsWith('/settings/')
+  const routeContentKey = isSettingsRoute
+    ? '/settings'
+    : isBondRoute
+      ? location.pathname
+      : `${location.pathname}${location.search}`
   const hideSharedHeader =
     isLegalWorkspaceRoute ||
     location.pathname === '/command-center' ||
@@ -2411,6 +2416,14 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/pipeline/canvassing/prospects/:prospectId"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <PipelineCanvassingPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/pipeline/calendar"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
@@ -2749,17 +2762,21 @@ function AppRoutes() {
                 <Route
                   path="legal-templates"
                   element={
-                    <RoleRoute allowedRoles={['developer', 'agent']}>
-                      <SettingsSigningTemplatesPage />
-                    </RoleRoute>
+                    <OrganisationSettingsManageRoute>
+                      <RoleRoute allowedRoles={['developer', 'agent']}>
+                        <SettingsSigningTemplatesPage />
+                      </RoleRoute>
+                    </OrganisationSettingsManageRoute>
                   }
                 />
                 <Route
                   path="signing-templates"
                   element={
-                    <RoleRoute allowedRoles={['developer', 'agent']}>
-                      <SettingsSigningTemplatesPage />
-                    </RoleRoute>
+                    <OrganisationSettingsManageRoute>
+                      <RoleRoute allowedRoles={['developer', 'agent']}>
+                        <SettingsSigningTemplatesPage />
+                      </RoleRoute>
+                    </OrganisationSettingsManageRoute>
                   }
                 />
                 <Route
