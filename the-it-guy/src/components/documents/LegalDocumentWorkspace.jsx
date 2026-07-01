@@ -200,7 +200,7 @@ function buildMergeChecklistRows({ packetType = 'mandate', placeholders = {} } =
     'seller_id_number',
     'seller_email',
     'property_address',
-    'unit_number',
+    'property_unit_number',
     'purchase_price',
     'finance_type',
     'mandate_type',

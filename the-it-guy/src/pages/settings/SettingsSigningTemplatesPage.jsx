@@ -229,7 +229,7 @@ Property Type
 {{property_type}}
 
 Unit Number
-{{unit_number}}
+{{property_unit_number}}
 
 ERF Number
 {{erf_number}}
@@ -762,7 +762,7 @@ function createStarterSections(packetType = 'otp') {
       sectionLabel: 'Property Details',
       sectionType: 'dynamic_fields',
       legalText: OTP_DEFAULT_LEGAL_TEXT.property_details,
-      placeholderKeysText: 'development_name, property_address, property_display_address, property_suburb, property_city, property_type, unit_number, erf_number, property_section_number, sectional_title_number, property_complex_name, property_estate_name, parking_bay, storeroom, property_nhbrc_certificate_number',
+      placeholderKeysText: 'development_name, property_address, property_display_address, property_suburb, property_city, property_type, property_unit_number, erf_number, property_section_number, sectional_title_number, property_complex_name, property_estate_name, parking_bay, storeroom, property_nhbrc_certificate_number',
       isRequired: true,
       sortOrder: 2,
     },
@@ -1078,6 +1078,59 @@ function mapSectionForSave(section = {}, index = 0) {
       initial_placeholder_key: initialPlaceholderKey,
     },
     sortOrder: Number.isFinite(Number(section.sortOrder)) ? Number(section.sortOrder) : index,
+  }
+}
+
+function mapSectionForPreview(section = {}, index = 0) {
+  const savedSection = mapSectionForSave(section, index)
+  return {
+    ...savedSection,
+    id: section.id || null,
+    section_key: savedSection.sectionKey,
+    section_label: savedSection.sectionLabel,
+    section_type: savedSection.sectionType,
+    legal_text: savedSection.legalText,
+    placeholder_keys: savedSection.placeholderKeys,
+    is_required: savedSection.isRequired,
+    metadata_json: savedSection.metadataJson,
+    sort_order: savedSection.sortOrder,
+    condition_json: section.conditionJson || section.condition_json || null,
+  }
+}
+
+function buildPreviewTemplateFromForm({
+  selectedTemplate = null,
+  templateDetail = null,
+  form = {},
+  packetType = 'otp',
+  moduleType = 'agency',
+  validationSummary = null,
+} = {}) {
+  const baseTemplate = templateDetail || selectedTemplate || {}
+  const metadataJson = buildTemplateMetadata({ ...form, validationSummary }, form.metadataJson || {}, null)
+  const renderMode = normalizeText(form.renderMode || TEMPLATE_RENDER_MODES.LEGACY_DOCX) || TEMPLATE_RENDER_MODES.LEGACY_DOCX
+  return {
+    ...baseTemplate,
+    id: baseTemplate.id || selectedTemplate?.id || `preview-${packetType}`,
+    packet_type: packetType,
+    packetType,
+    module_type: moduleType,
+    moduleType,
+    template_label: normalizeText(form.templateLabel || baseTemplate.template_label || baseTemplate.templateLabel),
+    templateLabel: normalizeText(form.templateLabel || baseTemplate.template_label || baseTemplate.templateLabel),
+    description: String(form.description || baseTemplate.description || ''),
+    version_tag: normalizeText(form.versionTag || baseTemplate.version_tag || baseTemplate.versionTag || 'v1') || 'v1',
+    versionTag: normalizeText(form.versionTag || baseTemplate.version_tag || baseTemplate.versionTag || 'v1') || 'v1',
+    template_status: normalizeText(form.templateStatus || baseTemplate.template_status || baseTemplate.status || 'draft') || 'draft',
+    template_format: getTemplateFormatForMode(renderMode),
+    template_storage_bucket: normalizeText(form.templateStorageBucket || baseTemplate.template_storage_bucket),
+    template_storage_path: normalizeText(form.templateStoragePath || baseTemplate.template_storage_path),
+    template_file_name: normalizeText(form.templateFileName || baseTemplate.template_file_name),
+    metadata_json: metadataJson,
+    metadataJson,
+    is_active: form.isActive === undefined ? Boolean(baseTemplate.is_active) : Boolean(form.isActive),
+    is_default: form.isDefault === undefined ? Boolean(baseTemplate.is_default) : Boolean(form.isDefault),
+    sections: (form.sections || []).map((section, index) => mapSectionForPreview(section, index)),
   }
 }
 
@@ -2504,18 +2557,26 @@ export default function SettingsSigningTemplatesPage({
   }
 
   async function handleTestGenerate() {
-    if (!templateDetail) return
+    if (!templateDetail && !selectedTemplate) return
 
     try {
       setTestingTemplate(true)
       setError('')
       setMessage('')
       setPreviewState({ loading: true, html: '', warnings: [], critical: [], error: '' })
+      const previewTemplate = buildPreviewTemplateFromForm({
+        selectedTemplate,
+        templateDetail,
+        form,
+        packetType,
+        moduleType: normalizedModuleType,
+        validationSummary,
+      })
 
       const preview = await renderPacketPreview({
         packetType,
         context: buildSamplePreviewContext(packetType),
-        template: templateDetail,
+        template: previewTemplate,
         title: `${templateTypeConfig.shortLabel} template validation preview`,
       })
 
@@ -2530,7 +2591,7 @@ export default function SettingsSigningTemplatesPage({
       if (preview?.critical?.length) {
         setMessage('Template preview generated with validation blockers. Review the checklist before activation.')
       } else {
-        setMessage('Template preview generated using sample data.')
+        setMessage('Template preview generated from the current edits using sample data.')
       }
     } catch (previewError) {
       setPreviewState({
@@ -3628,7 +3689,7 @@ export default function SettingsSigningTemplatesPage({
                 <TemplateStudioPanel
                   eyebrow="Preview"
                   title="Live Preview"
-                  description="Sample data preview of the current saved template version."
+                  description="Sample data preview of the current edited template version."
                   actions={
                     <button
                       type="button"
@@ -3643,7 +3704,7 @@ export default function SettingsSigningTemplatesPage({
                   <div className="rounded-[24px] border border-[#dbe7f3] bg-[#f5f7fb] p-4">
                     <div className="flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">
                       <span>Sample Preview</span>
-                      <span>{previewState.html ? 'Saved template preview' : 'Run Test Generate'}</span>
+                      <span>{previewState.html ? 'Current edits preview' : 'Run Test Generate'}</span>
                     </div>
                     <div className="mt-4 flex min-h-[420px] items-start justify-center overflow-auto rounded-[22px] border border-[#e7eef6] bg-[radial-gradient(circle_at_top,_#ffffff_0%,_#f5f7fb_100%)] p-4">
                       <div className="w-full max-w-[320px] rounded-[18px] border border-[#e2eaf3] bg-white p-6 shadow-[0_24px_40px_rgba(15,23,42,0.12)]">
@@ -3664,7 +3725,7 @@ export default function SettingsSigningTemplatesPage({
                         ) : (
                           <SettingsEmptyState
                             title="Sample Preview"
-                            description="Run Test Generate to render this template with safe sample data."
+                            description="Run Test Generate to render the current edits with safe sample data."
                           />
                         )}
                       </div>
@@ -4334,7 +4395,7 @@ export default function SettingsSigningTemplatesPage({
             <TemplateStudioPanel
               eyebrow="Preview"
               title="Sample Preview"
-              description="Validate the current saved template with safe sample data before publishing."
+              description="Validate the current edits with safe sample data before publishing."
               actions={
                 <button
                   type="button"
@@ -4367,7 +4428,7 @@ export default function SettingsSigningTemplatesPage({
                     ) : (
                       <SettingsEmptyState
                         title="Preview not generated yet"
-                        description="Preview this document with sample data without affecting live transactions."
+                        description="Preview the current edited document with sample data without affecting live transactions."
                       />
                     )}
                   </div>

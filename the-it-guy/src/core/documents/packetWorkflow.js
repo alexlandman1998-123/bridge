@@ -106,6 +106,18 @@ function renderInlineText(value) {
   return escapeHtml(value).replace(/\n/g, '<br />')
 }
 
+function renderLegalTextWithPlaceholders(value = '', placeholders = {}, packetType = 'otp') {
+  return escapeHtml(value)
+    .replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_match, token) => {
+      const placeholderKey = normalizeText(token)
+      if (!placeholderKey) return ''
+      const resolvedValue = safeValueOrMissing(placeholders, placeholderKey, placeholderKey, packetType)
+      const missing = resolvedValue.startsWith('[MISSING:')
+      return `<span class="${missing ? 'packet-preview-missing' : ''}">${escapeHtml(resolvedValue)}</span>`
+    })
+    .replace(/\n/g, '<br />')
+}
+
 function renderContactIcon(type = '') {
   const common = 'aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"'
   if (type === 'website') {
@@ -1158,6 +1170,10 @@ function getPreviewField(placeholders, key, label, packetType = 'mandate') {
 }
 
 function renderLegalClauseRows(section, placeholders, packetType, sectionIndex) {
+  if (normalizeText(section.legalText)) {
+    return `<p class="legal-preview-paragraph">${renderLegalTextWithPlaceholders(section.legalText, placeholders, packetType)}</p>`
+  }
+
   if (section.key === 'introduction_purpose') {
     const intro = getPreviewField(placeholders, 'mandate_introduction_purpose', 'Introduction and Purpose', packetType)
     return `<p class="legal-preview-paragraph ${intro.missing ? 'packet-preview-missing-block' : ''}">${intro.html}</p>`
@@ -1238,18 +1254,23 @@ export function renderPacketPreviewHtml({
     '',
   )
   const contactItems = resolveDocumentContactItems(branding, placeholders)
-  const isMandatePreview = normalizedPacketType === 'mandate'
+  const isLegalDocumentPreview = ['mandate', 'otp'].includes(normalizedPacketType)
+  const legalDocumentTitle = normalizedPacketType === 'mandate'
+    ? 'Mandate Agreement'
+    : normalizedPacketType === 'otp'
+      ? 'Offer to Purchase'
+      : safeTitle
   const documentReference =
     normalizeText(placeholders.document_reference || placeholders.transaction_reference || placeholders.packet_reference) ||
     normalizeText(title) ||
     'Preview reference pending'
 
-  const renderedSections = isMandatePreview
+  const renderedSections = isLegalDocumentPreview
     ? sectionManifest.map((section, index) => renderMandateSectionHtml(section, placeholders, packetType, index)).join('\n')
     : sectionManifest.map((section) => renderSectionHtml(section, placeholders, packetType)).join('\n')
 
-  const legalPreviewClass = isMandatePreview ? 'packet-preview-shell legal-document-preview-shell' : 'packet-preview-shell'
-  const legalBodyClass = isMandatePreview ? 'legal-document-preview-body' : ''
+  const legalPreviewClass = isLegalDocumentPreview ? 'packet-preview-shell legal-document-preview-shell' : 'packet-preview-shell'
+  const legalBodyClass = isLegalDocumentPreview ? 'legal-document-preview-body' : ''
 
   return `
     <!doctype html>
@@ -1731,16 +1752,16 @@ export function renderPacketPreviewHtml({
             ${renderDocumentContactRow(contactItems)}
           </header>
           <div class="packet-preview-title">
-            <h1>${escapeHtml(isMandatePreview ? 'Mandate Agreement' : safeTitle)}</h1>
+            <h1>${escapeHtml(legalDocumentTitle)}</h1>
             <p>
-              ${isMandatePreview ? `Document reference: ${escapeHtml(documentReference)}` : 'Generated preview'}
-              ${isMandatePreview ? '<br />Preview pagination is illustrative; final PDF pagination is calculated during document export.' : ' • Missing values are highlighted in red.'}
+              ${isLegalDocumentPreview ? `Document reference: ${escapeHtml(documentReference)}` : 'Generated preview'}
+              ${isLegalDocumentPreview ? '<br />Preview pagination is illustrative; final PDF pagination is calculated during document export.' : ' • Missing values are highlighted in red.'}
             </p>
           </div>
           <main class="packet-preview-content ${legalBodyClass}">
             ${renderedSections}
           </main>
-          ${isMandatePreview ? `
+          ${isLegalDocumentPreview ? `
             <footer class="legal-preview-footer">
               <span class="legal-preview-footer-brand">
                 ${organisationLogo ? `<img src="${escapeHtml(organisationLogo)}" alt="${escapeHtml(orgName)} logo" />` : escapeHtml(orgName)}

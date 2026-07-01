@@ -1179,6 +1179,14 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     updated_by: pickFirstText(onboardingFormData.commissionUpdatedBy),
     source: pickFirstText(onboardingFormData.commissionSource),
   }
+  const canonicalPropertyFacts = canonicalSellerFacts.property && typeof canonicalSellerFacts.property === 'object'
+    ? canonicalSellerFacts.property
+    : {}
+  const unitNumber = pickFirstText(canonicalPropertyFacts.unitNumber, canonicalPropertyFacts.unit_number, canonicalSellerFacts.unitNumber, canonicalSellerFacts.unit_number, canonicalSellerFacts.property_unit_number)
+  const sectionNumber = pickFirstText(canonicalPropertyFacts.sectionNumber, canonicalPropertyFacts.section_number, canonicalSellerFacts.sectionNumber, canonicalSellerFacts.section_number, canonicalSellerFacts.property_section_number)
+  const complexName = pickFirstText(canonicalPropertyFacts.complexName, canonicalPropertyFacts.complex_name, canonicalPropertyFacts.schemeName, canonicalPropertyFacts.scheme_name, canonicalSellerFacts.complexName, canonicalSellerFacts.complex_name, canonicalSellerFacts.property_complex_name)
+  const estateName = pickFirstText(canonicalPropertyFacts.estateName, canonicalPropertyFacts.estate_name, canonicalSellerFacts.estateName, canonicalSellerFacts.estate_name, canonicalSellerFacts.property_estate_name)
+  const sectionalTitleNumber = pickFirstText(canonicalPropertyFacts.sectionalTitleNumber, canonicalPropertyFacts.sectional_title_number, canonicalPropertyFacts.sectionalTitleScheme, canonicalSellerFacts.sectionalTitleNumber, canonicalSellerFacts.sectional_title_number)
 
   const mapped = {
     id: row.id,
@@ -1214,6 +1222,17 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     latitude: row.latitude === null || row.latitude === undefined ? null : Number(row.latitude),
     longitude: row.longitude === null || row.longitude === undefined ? null : Number(row.longitude),
     googlePlaceId: row.google_place_id || '',
+    unitNumber,
+    unit_number: unitNumber,
+    sectionNumber,
+    section_number: sectionNumber,
+    complexName,
+    complex_name: complexName,
+    estateName,
+    estate_name: estateName,
+    sectionalTitleNumber,
+    sectional_title_number: sectionalTitleNumber,
+    sectionalTitleScheme: sectionalTitleNumber,
     sellerType: row.seller_type || '',
     financeContext: row.finance_context || '',
     mandateType: row.mandate_type || 'sole',
@@ -1412,6 +1431,14 @@ function mapPrivateListingSummaryRow(row = {}) {
   const listingStatus = mapLegacyListingStatusToCanonicalStatus(row.listing_status || row.status)
   const addressLine1 = row.address_line_1 || ''
   const addressLine2 = row.address_line_2 || ''
+  const canonicalPropertyFacts = canonicalSellerFacts.property && typeof canonicalSellerFacts.property === 'object'
+    ? canonicalSellerFacts.property
+    : {}
+  const unitNumber = pickFirstText(canonicalPropertyFacts.unitNumber, canonicalPropertyFacts.unit_number, canonicalSellerFacts.unitNumber, canonicalSellerFacts.unit_number, canonicalSellerFacts.property_unit_number)
+  const sectionNumber = pickFirstText(canonicalPropertyFacts.sectionNumber, canonicalPropertyFacts.section_number, canonicalSellerFacts.sectionNumber, canonicalSellerFacts.section_number, canonicalSellerFacts.property_section_number)
+  const complexName = pickFirstText(canonicalPropertyFacts.complexName, canonicalPropertyFacts.complex_name, canonicalPropertyFacts.schemeName, canonicalPropertyFacts.scheme_name, canonicalSellerFacts.complexName, canonicalSellerFacts.complex_name, canonicalSellerFacts.property_complex_name)
+  const estateName = pickFirstText(canonicalPropertyFacts.estateName, canonicalPropertyFacts.estate_name, canonicalSellerFacts.estateName, canonicalSellerFacts.estate_name, canonicalSellerFacts.property_estate_name)
+  const sectionalTitleNumber = pickFirstText(canonicalPropertyFacts.sectionalTitleNumber, canonicalPropertyFacts.sectional_title_number, canonicalPropertyFacts.sectionalTitleScheme, canonicalSellerFacts.sectionalTitleNumber, canonicalSellerFacts.sectional_title_number)
 
   return {
     id: row.id,
@@ -1440,6 +1467,17 @@ function mapPrivateListingSummaryRow(row = {}) {
     city: row.city || '',
     province: row.province || '',
     postalCode: row.postal_code || '',
+    unitNumber,
+    unit_number: unitNumber,
+    sectionNumber,
+    section_number: sectionNumber,
+    complexName,
+    complex_name: complexName,
+    estateName,
+    estate_name: estateName,
+    sectionalTitleNumber,
+    sectional_title_number: sectionalTitleNumber,
+    sectionalTitleScheme: sectionalTitleNumber,
     sellerType: row.seller_type || '',
     financeContext: row.finance_context || '',
     mandateType: row.mandate_type || 'sole',
@@ -2047,6 +2085,17 @@ function buildPrivateListingPayload(payload = {}, userId = null) {
     bridge_listing_public_url: normalizeNullableText(payload.bridgeListingPublicUrl),
     listing_preview_description: normalizeNullableText(payload.listingPreviewDescription),
     internal_listing_notes: normalizeNullableText(payload.internalListingNotes),
+    ...(payload.sellerCanonicalFacts !== undefined
+      ? {
+          seller_canonical_facts_json: payload.sellerCanonicalFacts && typeof payload.sellerCanonicalFacts === 'object'
+            ? payload.sellerCanonicalFacts
+            : null,
+          seller_canonical_fact_readiness_json: payload.sellerCanonicalFactReadiness && typeof payload.sellerCanonicalFactReadiness === 'object'
+            ? payload.sellerCanonicalFactReadiness
+            : {},
+          seller_canonical_facts_updated_at: payload.sellerCanonicalFactsUpdatedAt || null,
+        }
+      : {}),
   }
 }
 
@@ -2085,11 +2134,17 @@ export async function createPrivateListing(payload = {}, options = {}) {
     isMissingColumnError(insert.error, 'listing_source') ||
     isMissingColumnError(insert.error, 'property_structure_type') ||
     isMissingColumnError(insert.error, 'assigned_agent_email') ||
+    isMissingColumnError(insert.error, 'seller_canonical_facts_json') ||
+    isMissingColumnError(insert.error, 'seller_canonical_fact_readiness_json') ||
+    isMissingColumnError(insert.error, 'seller_canonical_facts_updated_at') ||
     hasMissingPrivateListingLocationColumn(insert.error) ||
     hasMissingPrivateListingPortalColumn(insert.error)
   )) {
     const fallbackPayload = { ...listingPayload }
     if (isMissingColumnError(insert.error, 'assigned_agent_email')) delete fallbackPayload.assigned_agent_email
+    if (isMissingColumnError(insert.error, 'seller_canonical_facts_json')) delete fallbackPayload.seller_canonical_facts_json
+    if (isMissingColumnError(insert.error, 'seller_canonical_fact_readiness_json')) delete fallbackPayload.seller_canonical_fact_readiness_json
+    if (isMissingColumnError(insert.error, 'seller_canonical_facts_updated_at')) delete fallbackPayload.seller_canonical_facts_updated_at
     const shouldStripBranchId = isMissingColumnError(insert.error, 'branch_id')
     insert = await client
       .from('private_listings')

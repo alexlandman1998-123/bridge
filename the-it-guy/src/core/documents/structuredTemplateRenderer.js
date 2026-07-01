@@ -22,6 +22,18 @@ function renderInlineText(value) {
   return escapeHtml(value).replace(/\n/g, '<br />')
 }
 
+function renderLegalTextWithPlaceholders(value = '', placeholders = {}) {
+  return escapeHtml(value)
+    .replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_match, token) => {
+      const placeholderKey = normalizeText(token)
+      if (!placeholderKey) return ''
+      const resolvedValue = safeValueOrMissing(placeholders, placeholderKey, placeholderKey)
+      const missing = resolvedValue.startsWith('[MISSING:')
+      return `<span class="${missing ? 'packet-preview-missing' : ''}">${escapeHtml(resolvedValue)}</span>`
+    })
+    .replace(/\n/g, '<br />')
+}
+
 function compactJoin(values = [], separator = ', ') {
   return values.map((value) => normalizeText(value)).filter(Boolean).join(separator)
 }
@@ -518,7 +530,7 @@ function renderLegalClauseRows(section, placeholders, sectionIndex, packetType =
   }
 
   if (section.legalText) {
-    return `<p class="legal-preview-paragraph">${renderInlineText(section.legalText)}</p>`
+    return `<p class="legal-preview-paragraph">${renderLegalTextWithPlaceholders(section.legalText, placeholders)}</p>`
   }
 
   if (section.key === 'signature_pages') {
@@ -601,12 +613,12 @@ export function renderStructuredTemplate({
     normalizeText(placeholders.document_reference || placeholders.transaction_reference || placeholders.packet_reference) ||
     safeTitle ||
     'Preview reference pending'
-  const isMandatePreview = normalizedPacketType === 'mandate'
-  const renderedSections = isMandatePreview
+  const isLegalDocumentPreview = ['mandate', 'otp'].includes(normalizedPacketType)
+  const renderedSections = isLegalDocumentPreview
     ? normalizedSections.map((section, index) => renderMandateSectionHtml(section, placeholders, index, normalizedPacketType)).join('\n')
     : normalizedSections.map((section) => renderStructuredFieldRows(section, placeholders, normalizedPacketType)).join('\n')
-  const legalPreviewClass = isMandatePreview ? 'packet-preview-shell legal-document-preview-shell' : 'packet-preview-shell'
-  const legalBodyClass = isMandatePreview ? 'legal-document-preview-body' : ''
+  const legalPreviewClass = isLegalDocumentPreview ? 'packet-preview-shell legal-document-preview-shell' : 'packet-preview-shell'
+  const legalBodyClass = isLegalDocumentPreview ? 'legal-document-preview-body' : ''
 
   const html = `
     <!doctype html>

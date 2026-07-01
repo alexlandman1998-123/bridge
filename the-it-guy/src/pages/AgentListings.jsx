@@ -240,6 +240,59 @@ function resolvePropertyStructureType(listing = {}) {
   )
 }
 
+function isSectionalTitleProperty(form = {}) {
+  return normalizePropertyStructureType(form?.propertyStructureType || form?.propertyType, { fallback: '' }) === 'sectional_title' ||
+    normalizeKey(form?.propertyType).includes('sectional')
+}
+
+function buildSectionalTitleAddressLine(form = {}) {
+  if (!isSectionalTitleProperty(form)) return ''
+  const unitNumber = normalizeText(form?.unitNumber)
+  return [
+    unitNumber ? `Unit ${unitNumber}` : '',
+    normalizeText(form?.complexName),
+    normalizeText(form?.estateName),
+  ].filter(Boolean).join(', ')
+}
+
+function buildListingPropertyCanonicalFacts(form = {}) {
+  const unitNumber = normalizeText(form?.unitNumber)
+  const sectionNumber = normalizeText(form?.sectionNumber)
+  const complexName = normalizeText(form?.complexName)
+  const estateName = normalizeText(form?.estateName)
+  const sectionalTitleNumber = normalizeText(form?.sectionalTitleNumber)
+  const isSectionalTitle = isSectionalTitleProperty(form)
+  return {
+    property: {
+      property_structure_type: normalizePropertyStructureType(form?.propertyStructureType || form?.propertyType, { fallback: 'other' }),
+      sectional_title: isSectionalTitle,
+      unitNumber,
+      unit_number: unitNumber,
+      sectionNumber,
+      section_number: sectionNumber,
+      complexName,
+      complex_name: complexName,
+      schemeName: complexName,
+      scheme_name: complexName,
+      estateName,
+      estate_name: estateName,
+      sectionalTitleNumber,
+      sectional_title_number: sectionalTitleNumber,
+      sectionalTitleScheme: sectionalTitleNumber,
+    },
+    unitNumber,
+    sectionNumber,
+    complexName,
+    estateName,
+    sectionalTitleNumber,
+    property_unit_number: unitNumber,
+    property_section_number: sectionNumber,
+    property_complex_name: complexName,
+    property_estate_name: estateName,
+    sectional_title_number: sectionalTitleNumber,
+  }
+}
+
 function resolveListingTypeLabel(listing = {}) {
   const listingType = String(listing?.listingCategory || listing?.listingType || '').trim().toLowerCase()
   const mandateType = String(listing?.mandateType || '').trim().toLowerCase()
@@ -804,6 +857,11 @@ function buildInitialListingLeadForm(profile, workspace) {
     propertyType: 'House',
     listingType: 'sale',
     propertyStructureType: 'full_title',
+    unitNumber: '',
+    sectionNumber: '',
+    complexName: '',
+    estateName: '',
+    sectionalTitleNumber: '',
     leadSource: 'Referral',
     assignedAgent: String(profile?.fullName || profile?.name || profile?.email || '').trim(),
     assignedAgentId: String(profile?.id || '').trim(),
@@ -1126,6 +1184,10 @@ function buildListingAddressValueFromForm(form = {}) {
 function validateQuickListingMinimumFields({ form, assignedAgentKey, requireAssignedAgent = true }) {
   const errors = []
   if (!normalizeText(form.propertyAddress)) errors.push('Property address is required.')
+  if (isSectionalTitleProperty(form)) {
+    if (!normalizeText(form.unitNumber)) errors.push('Unit number is required for sectional title listings.')
+    if (!normalizeText(form.complexName)) errors.push('Complex / scheme name is required for sectional title listings.')
+  }
   if (!normalizeText(form.sellerName)) errors.push('Seller display name is required.')
   if (!normalizeText(form.sellerEmail) && !normalizeText(form.sellerPhone)) errors.push('Seller email or phone is required.')
   if (requireAssignedAgent && !normalizeText(assignedAgentKey)) errors.push('Assigned agent is required.')
@@ -1310,7 +1372,13 @@ function AgentListings({ initialTab = null } = {}) {
   }, [location.pathname, location.state, navigate])
 
   function updateForm(key, value) {
-    setForm((previous) => ({ ...previous, [key]: value }))
+    setForm((previous) => {
+      const next = { ...previous, [key]: value }
+      if (key === 'propertyType' && normalizePropertyStructureType(value, { fallback: '' }) === 'sectional_title') {
+        next.propertyStructureType = 'sectional_title'
+      }
+      return next
+    })
     if (['propertyAddress', 'sellerEmail', 'sellerPhone', 'listingStatus'].includes(key)) {
       setQuickAddDuplicateMatches([])
       setQuickAddDuplicateOverride(false)
@@ -1458,6 +1526,8 @@ function AgentListings({ initialTab = null } = {}) {
     const googlePlaceId = normalizeText(propertyAddressValue?.googlePlaceId || propertyAddressValue?.placeId || form.googlePlaceId)
     const latitude = propertyAddressValue?.latitude ?? form.latitude ?? null
     const longitude = propertyAddressValue?.longitude ?? form.longitude ?? null
+    const addressLine2 = buildSectionalTitleAddressLine(form)
+    const listingPropertyCanonicalFacts = buildListingPropertyCanonicalFacts(form)
     const propertyType = form.propertyType.trim()
     const listingTitle = form.listingTitle.trim() || [propertyType, form.suburb.trim()].filter(Boolean).join(' - ') || propertyAddress
     const estimatedPrice = Number(form.estimatedAskingPrice || form.listingPrice || 0)
@@ -1467,6 +1537,10 @@ function AgentListings({ initialTab = null } = {}) {
       setError(
         'Seller name, surname, email, phone, property address, and property type are required.',
       )
+      return
+    }
+    if (!isQuickAddListingFlow && isSectionalTitleProperty(form) && (!normalizeText(form.unitNumber) || !normalizeText(form.complexName))) {
+      setError('Unit number and complex / scheme name are required for sectional title listings.')
       return
     }
 
@@ -1544,32 +1618,36 @@ function AgentListings({ initialTab = null } = {}) {
       )
       let createdListingId = ''
       let createdListingTitle = listingTitle
+      const sellerDisplayName = [sellerName, sellerSurname].filter(Boolean).join(' ').trim()
+      const sellerCanonicalFacts = {
+        sellerName: sellerDisplayName,
+        name: sellerDisplayName,
+        fullName: sellerDisplayName,
+        firstName: sellerName,
+        lastName: sellerSurname,
+        email: sellerEmail,
+        sellerEmail: sellerEmail,
+        phone: sellerPhone,
+        mobile: sellerPhone,
+        ...listingPropertyCanonicalFacts,
+      }
+      const sellerCanonicalFactReadiness = {
+        sellerName: Boolean(sellerDisplayName),
+        sellerEmail: Boolean(sellerEmail),
+        sellerPhone: Boolean(sellerPhone),
+        propertyUnitNumber: Boolean(listingPropertyCanonicalFacts.unitNumber),
+        propertyComplexName: Boolean(listingPropertyCanonicalFacts.complexName),
+      }
 
       if (useDbFirstListingPersistence) {
         if (!organisationId) {
           setError('Organisation context is missing. Reload and try again.')
           return
         }
-        const sellerDisplayName = [sellerName, sellerSurname].filter(Boolean).join(' ').trim()
-        const sellerCanonicalFacts = {
-          sellerName: sellerDisplayName,
-          name: sellerDisplayName,
-          fullName: sellerDisplayName,
-          firstName: sellerName,
-          lastName: sellerSurname,
-          email: sellerEmail,
-          sellerEmail: sellerEmail,
-          phone: sellerPhone,
-          mobile: sellerPhone,
-        }
         const sellerUpdatePayload = {
           mandateStatus: initialMandateStatus,
           sellerCanonicalFacts,
-          sellerCanonicalFactReadiness: {
-            sellerName: Boolean(sellerDisplayName),
-            sellerEmail: Boolean(sellerEmail),
-            sellerPhone: Boolean(sellerPhone),
-          },
+          sellerCanonicalFactReadiness,
           sellerCanonicalFactsUpdatedAt: new Date().toISOString(),
         }
         const created = await createPrivateListing({
@@ -1589,6 +1667,7 @@ function AgentListings({ initialTab = null } = {}) {
           askingPrice: Number(form.listingPrice || 0) || estimatedPrice,
           estimatedValue: Number(form.listingPrice || 0) || estimatedPrice,
           addressLine1: propertyAddress,
+          addressLine2,
           formattedAddress,
           streetAddress,
           suburb: form.suburb.trim(),
@@ -1608,6 +1687,9 @@ function AgentListings({ initialTab = null } = {}) {
           source: 'quick_add',
           origin: 'quick_add',
           captureMethod: 'agent_captured',
+          sellerCanonicalFacts,
+          sellerCanonicalFactReadiness,
+          sellerCanonicalFactsUpdatedAt: new Date().toISOString(),
           completeness,
           canonicalStructure: CANONICAL_LISTING_STRUCTURE,
         })
@@ -1685,8 +1767,9 @@ function AgentListings({ initialTab = null } = {}) {
           listingSource: 'private_listing',
           listingCategory: form.listingType === 'rental' ? 'rental' : 'private_sale',
           propertyStructureType: form.propertyStructureType,
-          propertyAddress: [propertyAddress, form.suburb.trim(), form.city.trim()].filter(Boolean).join(', '),
+          propertyAddress: [addressLine2, propertyAddress, form.suburb.trim(), form.city.trim()].filter(Boolean).join(', '),
           addressLine1: propertyAddress,
+          addressLine2,
           formattedAddress,
           streetAddress,
           suburb: form.suburb.trim(),
@@ -1708,6 +1791,13 @@ function AgentListings({ initialTab = null } = {}) {
           mandateStatus,
           mandateStartDate: form.mandateStartDate || null,
           mandateEndDate: form.mandateEndDate || null,
+          unitNumber: listingPropertyCanonicalFacts.unitNumber,
+          sectionNumber: listingPropertyCanonicalFacts.sectionNumber,
+          complexName: listingPropertyCanonicalFacts.complexName,
+          estateName: listingPropertyCanonicalFacts.estateName,
+          sectionalTitleNumber: listingPropertyCanonicalFacts.sectionalTitleNumber,
+          sellerCanonicalFacts,
+          sellerCanonicalFactReadiness,
           sellerType: form.sellerType,
           seller: {
             name: [sellerName, sellerSurname].filter(Boolean).join(' ').trim() || sellerName,
@@ -1789,6 +1879,26 @@ function AgentListings({ initialTab = null } = {}) {
     }
 
     let onboardingLink = ''
+    const guidedSellerDisplayName = [sellerName, sellerSurname].filter(Boolean).join(' ').trim()
+    const guidedSellerCanonicalFacts = {
+      sellerName: guidedSellerDisplayName,
+      name: guidedSellerDisplayName,
+      fullName: guidedSellerDisplayName,
+      firstName: sellerName,
+      lastName: sellerSurname,
+      email: sellerEmail,
+      sellerEmail,
+      phone: sellerPhone,
+      mobile: sellerPhone,
+      ...listingPropertyCanonicalFacts,
+    }
+    const guidedSellerCanonicalFactReadiness = {
+      sellerName: Boolean(guidedSellerDisplayName),
+      sellerEmail: Boolean(sellerEmail),
+      sellerPhone: Boolean(sellerPhone),
+      propertyUnitNumber: Boolean(listingPropertyCanonicalFacts.unitNumber),
+      propertyComplexName: Boolean(listingPropertyCanonicalFacts.complexName),
+    }
 
     if (useDbFirstListingPersistence) {
       if (!organisationId) {
@@ -1812,6 +1922,7 @@ function AgentListings({ initialTab = null } = {}) {
         askingPrice: estimatedPrice,
         estimatedValue: estimatedPrice,
         addressLine1: propertyAddress,
+        addressLine2,
         formattedAddress,
         streetAddress,
         suburb: form.suburb.trim(),
@@ -1824,6 +1935,9 @@ function AgentListings({ initialTab = null } = {}) {
         googlePlaceId,
         description: form.notes.trim(),
         sellerType: 'individual',
+        sellerCanonicalFacts: guidedSellerCanonicalFacts,
+        sellerCanonicalFactReadiness: guidedSellerCanonicalFactReadiness,
+        sellerCanonicalFactsUpdatedAt: new Date().toISOString(),
         source: 'guided_onboarding',
         origin: 'guided_onboarding',
       })
@@ -1839,7 +1953,7 @@ function AgentListings({ initialTab = null } = {}) {
         sellerSurname,
         sellerEmail,
         sellerPhone,
-        propertyAddress: [propertyAddress, form.suburb.trim()].filter(Boolean).join(', '),
+        propertyAddress: [addressLine2, propertyAddress, form.suburb.trim()].filter(Boolean).join(', '),
         propertyType: form.propertyType,
         estimatedPrice,
         leadSource: form.leadSource.trim() || 'Referral',
@@ -1853,10 +1967,13 @@ function AgentListings({ initialTab = null } = {}) {
         propertyCategory: form.propertyCategory,
         listingSource: 'private_listing',
         propertyStructureType: form.propertyStructureType,
+        sellerCanonicalFacts: guidedSellerCanonicalFacts,
+        sellerCanonicalFactReadiness: guidedSellerCanonicalFactReadiness,
         propertyData: {
           listingTitle,
-          propertyAddress,
+          propertyAddress: [addressLine2, propertyAddress].filter(Boolean).join(', '),
           addressLine1: propertyAddress,
+          addressLine2,
           formattedAddress,
           streetAddress,
           suburb: form.suburb.trim(),
@@ -1867,6 +1984,11 @@ function AgentListings({ initialTab = null } = {}) {
           latitude,
           longitude,
           googlePlaceId,
+          unitNumber: listingPropertyCanonicalFacts.unitNumber,
+          sectionNumber: listingPropertyCanonicalFacts.sectionNumber,
+          complexName: listingPropertyCanonicalFacts.complexName,
+          estateName: listingPropertyCanonicalFacts.estateName,
+          sectionalTitleNumber: listingPropertyCanonicalFacts.sectionalTitleNumber,
         },
         rolePlayers: {
           transferAttorney: form.transferAttorney.trim(),
@@ -3091,6 +3213,30 @@ function AgentListings({ initialTab = null } = {}) {
                       ))}
                     </Field>
                   </label>
+                  {isSectionalTitleProperty(form) ? (
+                    <>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Unit number *</span>
+                        <Field value={form.unitNumber} onChange={(event) => updateForm('unitNumber', event.target.value)} placeholder="12" />
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Section number</span>
+                        <Field value={form.sectionNumber} onChange={(event) => updateForm('sectionNumber', event.target.value)} placeholder="Section 12" />
+                      </label>
+                      <label className="grid gap-2 xl:col-span-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Complex / scheme name *</span>
+                        <Field value={form.complexName} onChange={(event) => updateForm('complexName', event.target.value)} placeholder="Complex or scheme name" />
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Estate / HOA name</span>
+                        <Field value={form.estateName} onChange={(event) => updateForm('estateName', event.target.value)} placeholder="Optional" />
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Sectional title number</span>
+                        <Field value={form.sectionalTitleNumber} onChange={(event) => updateForm('sectionalTitleNumber', event.target.value)} placeholder="SS 238/2022" />
+                      </label>
+                    </>
+                  ) : null}
                   {isManualListingFlow ? (
                     <>
                       <label className="grid gap-2">
