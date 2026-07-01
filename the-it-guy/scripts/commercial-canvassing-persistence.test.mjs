@@ -41,6 +41,7 @@ for (const requiredToken of [
 for (const requiredToken of [
   'PROSPECT_IMPORT_COLUMNS',
   'parseCsvText',
+  "from '../../../lib/csvImport'",
   'arch9-prospect-import-template.csv',
   'handleProspectImportFileChange',
   'handleCommitProspectImport',

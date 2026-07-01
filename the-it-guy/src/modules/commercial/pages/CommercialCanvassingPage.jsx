@@ -31,6 +31,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { csvEscape, parseCsvText } from '../../../lib/csvImport'
 import { fetchOrganisationSettings } from '../../../lib/settingsApi'
 import CommercialEmptyState from '../components/CommercialEmptyState'
 import { formatDate, titleize } from '../commercialFormatters'
@@ -338,54 +339,6 @@ function normalizeImportDate(value = '') {
     return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
   }
   return ''
-}
-
-function csvEscape(value = '') {
-  const text = normalizeText(value)
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
-}
-
-function parseCsvText(text = '') {
-  const rows = []
-  let current = []
-  let cell = ''
-  let quoted = false
-
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index]
-    const next = text[index + 1]
-
-    if (char === '"') {
-      if (quoted && next === '"') {
-        cell += '"'
-        index += 1
-      } else {
-        quoted = !quoted
-      }
-      continue
-    }
-
-    if (char === ',' && !quoted) {
-      current.push(cell)
-      cell = ''
-      continue
-    }
-
-    if ((char === '\n' || char === '\r') && !quoted) {
-      if (char === '\r' && next === '\n') index += 1
-      current.push(cell)
-      if (current.some((entry) => normalizeText(entry))) rows.push(current)
-      current = []
-      cell = ''
-      continue
-    }
-
-    cell += char
-  }
-
-  current.push(cell)
-  if (current.some((entry) => normalizeText(entry))) rows.push(current)
-  return rows
 }
 
 const PROSPECT_IMPORT_COLUMNS = [
