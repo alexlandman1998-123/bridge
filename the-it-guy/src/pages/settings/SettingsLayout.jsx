@@ -14,7 +14,7 @@ import {
   Workflow,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import { fetchOrganisationSettings } from '../../lib/settingsApi'
@@ -94,6 +94,7 @@ function getInitials(name = '') {
 
 export default function SettingsLayout() {
   const { role, currentWorkspace, workspaceType, profile } = useWorkspace()
+  const location = useLocation()
   const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
   const [membershipRole, setMembershipRole] = useState('viewer')
 
@@ -143,57 +144,60 @@ export default function SettingsLayout() {
     .filter((group) => group.items.length)
   const displayName = [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') || profile?.fullName || profile?.name || profile?.email || 'Arch9 User'
   const roleLabel = String(membershipRole || role || 'Member').replace(/_/g, ' ')
+  const isLegalTemplateRoute = ['/settings/legal-templates', '/settings/signing-templates'].some((path) => location.pathname.startsWith(path))
 
   return (
-    <section className="grid min-h-[calc(100vh-96px)] gap-6 xl:grid-cols-[268px_minmax(0,1fr)]">
-      <aside className="h-full rounded-[20px] border border-[#dbe4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)] xl:self-stretch">
-        <NavLink
-          to="/settings"
-          end
-          className={({ isActive }) =>
-            [
-              'mb-5 flex items-center gap-3 rounded-[14px] border px-3 py-3 transition duration-150 ease-out',
-              isActive ? 'border-[#bcd8ca] bg-[#eef8f2]' : 'border-[#e4ebf2] bg-white hover:bg-[#f8fbff]',
-            ].join(' ')
-          }
-        >
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#178657] text-sm font-semibold text-white">
-            {getInitials(displayName)}
-          </span>
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-semibold text-[#162334]">{displayName}</span>
-            <span className="block truncate text-xs font-normal capitalize text-[#607387]">{roleLabel}</span>
-          </span>
-        </NavLink>
+    <section className={isLegalTemplateRoute ? 'min-h-[calc(100vh-96px)]' : 'grid min-h-[calc(100vh-96px)] gap-6 xl:grid-cols-[268px_minmax(0,1fr)]'}>
+      {isLegalTemplateRoute ? null : (
+        <aside className="h-full rounded-[20px] border border-[#dbe4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)] xl:self-stretch">
+          <NavLink
+            to="/settings"
+            end
+            className={({ isActive }) =>
+              [
+                'mb-5 flex items-center gap-3 rounded-[14px] border px-3 py-3 transition duration-150 ease-out',
+                isActive ? 'border-[#bcd8ca] bg-[#eef8f2]' : 'border-[#e4ebf2] bg-white hover:bg-[#f8fbff]',
+              ].join(' ')
+            }
+          >
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#178657] text-sm font-semibold text-white">
+              {getInitials(displayName)}
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold text-[#162334]">{displayName}</span>
+              <span className="block truncate text-xs font-normal capitalize text-[#607387]">{roleLabel}</span>
+            </span>
+          </NavLink>
 
-        <nav className="grid gap-6">
-          {navGroups.map((group) => (
-            <div key={group.label} className="grid gap-1.5">
-              <p className="px-2 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b8da6]">{group.label}</p>
-              {group.items.map((item) => {
-                const Icon = item.icon
-                return (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    className={({ isActive }) =>
-                      [
-                        'flex items-center gap-3 rounded-[12px] px-3 py-2.5 text-sm font-medium transition duration-150 ease-out',
-                        isActive
-                          ? 'bg-[#eaf7ef] text-[#0f7f4f]'
-                          : 'text-[#42566d] hover:bg-[#f7fbff] hover:text-[#162334]',
-                      ].join(' ')
-                    }
-                  >
-                    <Icon size={16} strokeWidth={1.8} />
-                    <span>{item.label}</span>
-                  </NavLink>
-                )
-              })}
-            </div>
-          ))}
-        </nav>
-      </aside>
+          <nav className="grid gap-6">
+            {navGroups.map((group) => (
+              <div key={group.label} className="grid gap-1.5">
+                <p className="px-2 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b8da6]">{group.label}</p>
+                {group.items.map((item) => {
+                  const Icon = item.icon
+                  return (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      className={({ isActive }) =>
+                        [
+                          'flex items-center gap-3 rounded-[12px] px-3 py-2.5 text-sm font-medium transition duration-150 ease-out',
+                          isActive
+                            ? 'bg-[#eaf7ef] text-[#0f7f4f]'
+                            : 'text-[#42566d] hover:bg-[#f7fbff] hover:text-[#162334]',
+                        ].join(' ')
+                      }
+                    >
+                      <Icon size={16} strokeWidth={1.8} />
+                      <span>{item.label}</span>
+                    </NavLink>
+                  )
+                })}
+              </div>
+            ))}
+          </nav>
+        </aside>
+      )}
 
       <div className="min-w-0">
         <Outlet />

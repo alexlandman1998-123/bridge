@@ -1369,12 +1369,6 @@ export default function SettingsSigningTemplatesPage({
     }
     return items
   }, [selectedTemplate])
-  const stickyStatusLabel = useMemo(() => {
-    if (!selectedTemplate) return 'No template selected'
-    if (selectedTemplate.is_default) return `Live ${form.versionTag || selectedTemplate.version_tag || 'v1'}`
-    if (selectedClassification.key === 'legacy_docx_only') return `Legacy ${form.versionTag || selectedTemplate.version_tag || 'v1'}`
-    return `${TEMPLATE_STATUS_OPTIONS.find((item) => item.key === normalizeTemplateStatus(selectedTemplate))?.label || 'Draft'} ${form.versionTag || selectedTemplate.version_tag || 'v1'}`
-  }, [form.versionTag, selectedClassification.key, selectedTemplate])
   const stickyNextStep = useMemo(() => {
     if (!selectedTemplate) {
       return {
@@ -2695,14 +2689,7 @@ export default function SettingsSigningTemplatesPage({
 
             <div className="sticky bottom-4 z-20">
               <div className="rounded-[30px] border border-[#dbe7f3] bg-white/95 p-5 shadow-[0_26px_54px_rgba(15,23,42,0.14)] backdrop-blur">
-                <div className="grid gap-5 xl:grid-cols-[260px_minmax(0,1fr)_auto] xl:items-center">
-                  <div className="space-y-2">
-                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Template Status</p>
-                    <p className="text-lg font-semibold text-[#102033]">{stickyStatusLabel}</p>
-                    <p className="text-sm text-[#6b7c93]">Last published: {formatDateTime(selectedTemplate?.is_default ? selectedTemplate.updated_at : liveTemplate?.updated_at)}</p>
-                    <p className="text-sm text-[#6b7c93]">Published by: {selectedTemplate?.is_default ? getTemplateActorLabel(selectedTemplate) : getTemplateActorLabel(liveTemplate)}</p>
-                  </div>
-
+                <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
                   <div className="rounded-[22px] border border-[#dbe7f3] bg-[#f8fbff] px-4 py-4">
                     <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Next Step</p>
                     <p className="mt-2 text-lg font-semibold text-[#102033]">{stickyNextStep.title}</p>

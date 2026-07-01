@@ -234,7 +234,6 @@ const CANVASSING_SOURCE_PILL_ORDER = ['coldCall', 'doorKnock', 'referral', 'soci
 const CANVASSING_PROSPECT_VIEW_STORAGE_KEY = 'itg:canvassing:prospectView'
 const CANVASSING_FILTER_SELECT_CLASS = 'min-h-11 min-w-0 py-2.5 text-sm leading-5'
 const CANVASSING_IMPORT_TEMPLATE_COLUMNS = [
-  'Name',
   'First Name',
   'Last Name',
   'Phone',
@@ -258,10 +257,10 @@ const CANVASSING_IMPORT_TEMPLATE_COLUMNS = [
 ]
 const CANVASSING_IMPORT_TEMPLATE_ROWS = {
   buyer: [
-    ['Lerato Mokoena', 'Lerato', 'Mokoena', '082 555 0181', 'lerato@example.com', 'Website', 'Waterkloof Glen', '', 'Apartment', 'R1m - R2m', '2', '1', 'Needs Bond', 'Medium', 'No', 'Renting', '', '', '', '2026-07-10', 'Looking for a secure apartment close to schools.'],
+    ['Lerato', 'Mokoena', '082 555 0181', 'lerato@example.com', 'Website', 'Waterkloof Glen', '', 'Apartment', 'R1m - R2m', '2', '1', 'Needs Bond', 'Medium', 'No', 'Renting', '', '', '', '2026-07-10', 'Looking for a secure apartment close to schools.'],
   ],
   seller: [
-    ['Pieter Botha', 'Pieter', 'Botha', '083 555 0182', 'pieter@example.com', 'Cold Call', 'Boksburg', '12 Park Street, Boksburg', 'House', '', '', '', '', '', '', '', 'Ready For Valuation', 'Interested', '2200000', '2026-07-12', 'Owner requested a valuation follow-up.'],
+    ['Pieter', 'Botha', '083 555 0182', 'pieter@example.com', 'Cold Call', 'Boksburg', '12 Park Street, Boksburg', 'House', '', '', '', '', '', '', '', 'Ready For Valuation', 'Interested', '2200000', '2026-07-12', 'Owner requested a valuation follow-up.'],
   ],
 }
 
@@ -322,6 +321,14 @@ function splitImportName(row = {}) {
     firstName: parts[0],
     lastName: parts.slice(1).join(' '),
   }
+}
+
+function getImportPreviewName(row = {}) {
+  return [pickImportValue(row, ['First Name', 'firstName']), pickImportValue(row, ['Last Name', 'lastName'])]
+    .filter(Boolean)
+    .join(' ') ||
+    pickImportValue(row, ['Name', 'name', 'Full Name', 'fullName']) ||
+    '—'
 }
 
 function buildCanvassingImportPayload(row = {}, { audience = 'seller', assignedAgent = {}, currentAgentForWrites = {}, currentAgent = {}, organisationId = '' } = {}) {
@@ -1128,7 +1135,7 @@ function CanvassingImportModal({ open, audience = 'seller', importing = false, r
                     {previewRows.map((row) => (
                       <tr key={row.__rowNumber}>
                         <td className="px-4 py-3 text-slate-500">{row.__rowNumber}</td>
-                        <td className="px-4 py-3 font-semibold text-slate-950">{pickImportValue(row, ['Name', 'name']) || [pickImportValue(row, ['First Name', 'firstName']), pickImportValue(row, ['Last Name', 'lastName'])].filter(Boolean).join(' ') || '—'}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-950">{getImportPreviewName(row)}</td>
                         <td className="px-4 py-3 text-slate-600">{pickImportValue(row, ['Phone', 'phone', 'Mobile', 'mobile']) || '—'}</td>
                         <td className="px-4 py-3 text-slate-600">{pickImportValue(row, ['Email', 'email']) || '—'}</td>
                         <td className="px-4 py-3 text-slate-600">{pickImportValue(row, ['Source', 'source']) || (normalizedAudience === 'buyer' ? 'Website' : 'Cold Call')}</td>
