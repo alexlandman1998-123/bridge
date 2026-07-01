@@ -20,6 +20,9 @@ type GenerateOtpRequest = {
   template_filename?: string;
   outputBucket?: string;
   output_bucket?: string;
+  placeholders?: JsonRecord;
+  sourceContext?: JsonRecord;
+  source_context?: JsonRecord;
   generatedByUserId?: string;
   generated_by_user_id?: string;
   generatedByRole?: string;
@@ -43,6 +46,10 @@ function jsonResponse(status: number, body: JsonRecord) {
 
 function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function asRecord(value: unknown): JsonRecord {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
 }
 
 function normalizeNumber(value: unknown) {
@@ -95,6 +102,51 @@ function firstNonEmpty(...values: unknown[]) {
   return "";
 }
 
+function appendAnnexureLabel(current = "", label = "") {
+  const nextLabel = normalizeText(label);
+  if (!nextLabel) return normalizeText(current);
+  const existing = normalizeText(current);
+  if (!existing) return nextLabel;
+  if (existing.toLowerCase().includes(nextLabel.toLowerCase())) return existing;
+  return `${existing}; ${nextLabel}`;
+}
+
+function resolvePropertyDisclosureAnnexure(sourceContext: JsonRecord, placeholders: JsonRecord) {
+  const nestedSourceContext = asRecord(sourceContext.sourceContext || sourceContext.source_context);
+  const disclosure = asRecord(sourceContext.propertyDisclosure || sourceContext.property_disclosure);
+  const lockedSnapshot = asRecord(disclosure.lockedSnapshot || disclosure.locked_snapshot);
+  const candidates = [
+    sourceContext.propertyDisclosureAnnexure,
+    sourceContext.property_disclosure_annexure,
+    sourceContext.lockedPropertyDisclosureAnnexure,
+    sourceContext.locked_property_disclosure_annexure,
+    nestedSourceContext.propertyDisclosureAnnexure,
+    nestedSourceContext.property_disclosure_annexure,
+    lockedSnapshot,
+  ];
+
+  const snapshot = candidates
+    .map((candidate) => asRecord(candidate))
+    .find((candidate) => Object.keys(candidate).length) || {};
+  const title = firstNonEmpty(
+    snapshot?.title,
+    snapshot?.annexureTitle,
+    snapshot?.annexure_title,
+    placeholders.property_disclosure_annexure,
+  );
+  const hasSnapshot = Object.keys(snapshot).length > 0;
+  if (!hasSnapshot && !title) return null;
+  return {
+    ...snapshot,
+    type: firstNonEmpty(snapshot?.type, "property_disclosure_annexure_a"),
+    title: title || "Declaration by Seller - Annexure A",
+    annexureLabel: firstNonEmpty(snapshot?.annexureLabel, snapshot?.annexure_label, "Annexure A"),
+    status: firstNonEmpty(snapshot?.status, placeholders.property_disclosure_status, "complete"),
+    readOnly: true,
+    reuseTarget: "otp_annexure",
+  };
+}
+
 function inferTemplateFileName(path: string) {
   const normalized = normalizeText(path);
   if (!normalized) return "otp-template.docx";
@@ -141,6 +193,7 @@ function buildPlaceholderMap({
   unit,
   development,
   onboardingFormData,
+  propertyDisclosureAnnexure,
   specialConditions,
 }: {
   transaction: Record<string, unknown>;
@@ -148,6 +201,7 @@ function buildPlaceholderMap({
   unit: Record<string, unknown>;
   development: Record<string, unknown>;
   onboardingFormData: Record<string, unknown>;
+  propertyDisclosureAnnexure: JsonRecord | null;
   specialConditions: string;
 }) {
   const onboarding = onboardingFormData || {};
@@ -178,6 +232,8 @@ function buildPlaceholderMap({
     transaction?.seller_registration_number,
     pickOnboardingValue(onboarding, ["seller_registration_number", "seller_id_number"]),
   );
+  const annexureTitle = firstNonEmpty(propertyDisclosureAnnexure?.title);
+  const annexuresList = appendAnnexureLabel(pickOnboardingValue(onboarding, ["annexuresList", "annexures_list"]), annexureTitle);
 
   const maritalStatus = firstNonEmpty(
     pickOnboardingValue(onboarding, ["marital_status", "purchase_marital_status"]),
@@ -220,6 +276,13 @@ function buildPlaceholderMap({
     bond_amount: bondAmount ? String(bondAmount) : "",
     bond_amount_formatted: bondAmount ? toCurrency(bondAmount) : "",
     bank_name: firstNonEmpty(transaction?.bank, pickOnboardingValue(onboarding, ["bank", "bank_name"])),
+    annexures_list: annexuresList,
+    property_disclosure_annexure: annexureTitle,
+    property_disclosure_status: firstNonEmpty(propertyDisclosureAnnexure?.status),
+    property_disclosure_comments: firstNonEmpty(propertyDisclosureAnnexure?.comments),
+    property_disclosure_locked_at: firstNonEmpty(propertyDisclosureAnnexure?.lockedAt, propertyDisclosureAnnexure?.locked_at),
+    property_disclosure_source_packet_id: firstNonEmpty(propertyDisclosureAnnexure?.lockedByPacketId, propertyDisclosureAnnexure?.locked_by_packet_id),
+    property_disclosure_final_signed_file_path: firstNonEmpty(propertyDisclosureAnnexure?.finalSignedFilePath, propertyDisclosureAnnexure?.final_signed_file_path),
     special_conditions: normalizeText(specialConditions),
   } as Record<string, string>;
 
@@ -233,7 +296,7 @@ async function downloadTemplateBytes({
   templatePath,
   bucketCandidates,
 }: {
-  supabase: ReturnType<typeof createClient>;
+  supabase: any;
   templateBase64: string;
   templateBucket: string;
   templatePath: string;
@@ -273,7 +336,7 @@ async function insertSalesDocumentRecord({
   generatedByRole,
   generatedByUserId,
 }: {
-  supabase: ReturnType<typeof createClient>;
+  supabase: any;
   transactionId: string;
   fileName: string;
   filePath: string;
@@ -383,6 +446,8 @@ Deno.serve(async (req: Request) => {
     const templateBase64 = normalizeText(payload.templateBase64 || payload.template_base64);
     const templateFilename = normalizeText(payload.templateFilename || payload.template_filename || inferTemplateFileName(templatePath));
     const outputBucket = normalizeText(payload.outputBucket || payload.output_bucket || Deno.env.get("OTP_OUTPUT_BUCKET"));
+    const sourceContext = asRecord(payload.sourceContext || payload.source_context);
+    const placeholderOverrides = asRecord(payload.placeholders);
     const generatedByRole = normalizeText(payload.generatedByRole || payload.generated_by_role) || "developer";
     const generatedByUserId = normalizeText(payload.generatedByUserId || payload.generated_by_user_id) || null;
     const clientVisible = Boolean(payload.clientVisible ?? payload.client_visible ?? false);
@@ -485,15 +550,24 @@ Deno.serve(async (req: Request) => {
       onboardingQuery.error || !onboardingQuery.data || typeof onboardingQuery.data.form_data !== "object"
         ? {}
         : (onboardingQuery.data.form_data as Record<string, unknown>);
+    const propertyDisclosureAnnexure = resolvePropertyDisclosureAnnexure(sourceContext, placeholderOverrides);
 
-    const placeholders = buildPlaceholderMap({
-      transaction,
-      buyer,
-      unit,
-      development,
-      onboardingFormData,
-      specialConditions,
-    });
+    const placeholders = {
+      ...buildPlaceholderMap({
+        transaction,
+        buyer,
+        unit,
+        development,
+        onboardingFormData,
+        propertyDisclosureAnnexure,
+        specialConditions,
+      }),
+      ...Object.fromEntries(
+        Object.entries(placeholderOverrides)
+          .filter(([key, value]) => normalizeText(key) && value !== null && value !== undefined)
+          .map(([key, value]) => [key, typeof value === "string" ? value : String(value)]),
+      ),
+    };
 
     const templateBytes = await downloadTemplateBytes({
       supabase,
@@ -576,6 +650,7 @@ Deno.serve(async (req: Request) => {
         table: inserted.sourceTable,
         data: inserted.record,
       },
+      annexures: propertyDisclosureAnnexure ? [propertyDisclosureAnnexure] : [],
       placeholdersUsed: placeholders,
     });
   } catch (error) {

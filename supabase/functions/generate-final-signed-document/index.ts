@@ -1076,23 +1076,32 @@ async function ensureSellerOnboardingSnapshotForListing({
     ...existingFormData,
   };
   const disclosure = asRecord(nextFormData.propertyDisclosure || nextFormData.property_disclosure);
-  if (Object.keys(disclosure).length) {
+  const annexureSnapshot = asRecord(snapshot.propertyDisclosureAnnexure);
+  if (Object.keys(disclosure).length || Object.keys(annexureSnapshot).length) {
     const existingLock = asRecord(disclosure.lockedSnapshot || disclosure.locked_snapshot);
-    const annexureSnapshot = asRecord(snapshot.propertyDisclosureAnnexure);
-    nextFormData.propertyDisclosure = {
+    const lockedSnapshot = Object.keys(existingLock).length
+      ? existingLock
+      : {
+        ...annexureSnapshot,
+        sourceDisclosure: disclosure,
+        immutable: true,
+        readOnly: true,
+        lockedAt: firstValue(lockContext.lockedAt) || new Date().toISOString(),
+        lockedByPacketId: firstValue(lockContext.packetId),
+        lockedByPacketVersionId: firstValue(lockContext.packetVersionId),
+        finalSignedFilePath: firstValue(lockContext.finalArtifactPath),
+        lockReason: "mandate_final_signed",
+        lockSource: "generate-final-signed-document",
+      };
+    const normalizedDisclosure = {
       ...disclosure,
-      lockedSnapshot: Object.keys(existingLock).length
-        ? existingLock
-        : {
-          ...annexureSnapshot,
-          sourceDisclosure: disclosure,
-          lockedAt: firstValue(lockContext.lockedAt) || new Date().toISOString(),
-          lockedByPacketId: firstValue(lockContext.packetId),
-          lockedByPacketVersionId: firstValue(lockContext.packetVersionId),
-          finalSignedFilePath: firstValue(lockContext.finalArtifactPath),
-          lockReason: "mandate_final_signed",
-        },
+      locked: true,
+      lockStatus: "locked",
+      lockedSnapshot,
+      locked_snapshot: lockedSnapshot,
     };
+    nextFormData.propertyDisclosure = normalizedDisclosure;
+    nextFormData.property_disclosure = normalizedDisclosure;
   }
   const status = lower(snapshot.status) === "completed" || lower(existing.data?.status) === "completed"
     ? "completed"

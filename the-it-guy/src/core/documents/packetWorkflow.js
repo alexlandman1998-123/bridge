@@ -21,6 +21,52 @@ function normalizeNullableText(value) {
   return text || null
 }
 
+function asRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
+function appendAnnexureLabel(current = '', label = '') {
+  const nextLabel = normalizeText(label)
+  if (!nextLabel) return normalizeText(current)
+  const existing = normalizeText(current)
+  if (!existing) return nextLabel
+  if (existing.toLowerCase().includes(nextLabel.toLowerCase())) return existing
+  return `${existing}; ${nextLabel}`
+}
+
+function resolvePropertyDisclosureAnnexureFromSource(source = {}) {
+  const payload = asRecord(source)
+  const sourceContext = asRecord(payload.sourceContext || payload.source_context)
+  const disclosure = asRecord(payload.propertyDisclosure || payload.property_disclosure)
+  const lockedSnapshot = asRecord(disclosure.lockedSnapshot || disclosure.locked_snapshot)
+  const candidates = [
+    payload.propertyDisclosureAnnexure,
+    payload.property_disclosure_annexure,
+    payload.lockedPropertyDisclosureAnnexure,
+    payload.locked_property_disclosure_annexure,
+    sourceContext.propertyDisclosureAnnexure,
+    sourceContext.property_disclosure_annexure,
+    lockedSnapshot,
+  ]
+
+  return candidates.find((candidate) => Object.keys(asRecord(candidate)).length) || null
+}
+
+function normalizePropertyDisclosureAnnexureForOtp(source = {}) {
+  const snapshot = asRecord(source)
+  if (!Object.keys(snapshot).length) return null
+  const title = normalizeText(snapshot.title || snapshot.annexureTitle || snapshot.annexure_title) || 'Declaration by Seller - Annexure A'
+  return {
+    ...snapshot,
+    type: normalizeText(snapshot.type) || 'property_disclosure_annexure_a',
+    title,
+    annexureLabel: normalizeText(snapshot.annexureLabel || snapshot.annexure_label) || 'Annexure A',
+    status: normalizeText(snapshot.status) || 'complete',
+    readOnly: true,
+    reuseTarget: 'otp_annexure',
+  }
+}
+
 function resolvePublicAssetUrl(value = '') {
   const raw = normalizeText(value)
   if (!raw) return ''
@@ -462,6 +508,8 @@ export function resolveOtpPacketPlaceholders({
   buyer = null,
   onboardingFormData = null,
   sellerDetails = null,
+  propertyDisclosureAnnexure = null,
+  sourceContext = null,
   specialConditions = '',
 } = {}) {
   const buyerEntityTypeRaw = normalizeText(transaction?.purchaser_type || onboardingFormData?.purchaserType || 'individual').toLowerCase()
@@ -486,6 +534,12 @@ export function resolveOtpPacketPlaceholders({
     (Number.isFinite(purchasePrice) && Number.isFinite(grossCommissionPercentage)
       ? Number(((purchasePrice * grossCommissionPercentage) / 100).toFixed(2))
       : null)
+  const disclosureAnnexure = normalizePropertyDisclosureAnnexureForOtp(
+    propertyDisclosureAnnexure ||
+      resolvePropertyDisclosureAnnexureFromSource(onboardingFormData) ||
+      resolvePropertyDisclosureAnnexureFromSource(sourceContext),
+  )
+  const annexuresList = appendAnnexureLabel(onboardingFormData?.annexuresList, disclosureAnnexure?.title)
 
   return {
     buyer_full_name: normalizeNullableText(buyer?.name) || normalizeNullableText(onboardingFormData?.firstName) || null,
@@ -567,7 +621,13 @@ export function resolveOtpPacketPlaceholders({
     developer_contact_email: normalizeNullableText(onboardingFormData?.developerEmail),
     contractor_company_name: normalizeNullableText(onboardingFormData?.buildingContractorName),
     contractor_registration_number: normalizeNullableText(onboardingFormData?.buildingContractorRegistrationNumber),
-    annexures_list: normalizeNullableText(onboardingFormData?.annexuresList),
+    annexures_list: normalizeNullableText(annexuresList),
+    property_disclosure_annexure: normalizeNullableText(disclosureAnnexure?.title),
+    property_disclosure_status: normalizeNullableText(disclosureAnnexure?.status),
+    property_disclosure_comments: normalizeNullableText(disclosureAnnexure?.comments),
+    property_disclosure_locked_at: normalizeNullableText(disclosureAnnexure?.lockedAt || disclosureAnnexure?.locked_at),
+    property_disclosure_source_packet_id: normalizeNullableText(disclosureAnnexure?.lockedByPacketId || disclosureAnnexure?.locked_by_packet_id),
+    property_disclosure_final_signed_file_path: normalizeNullableText(disclosureAnnexure?.finalSignedFilePath || disclosureAnnexure?.final_signed_file_path),
 
     special_conditions: normalizeNullableText(specialConditions) || null,
   }

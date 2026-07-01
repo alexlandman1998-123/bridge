@@ -176,6 +176,16 @@ function buildGenerationPayload({ packet = null, context = {}, validation = {}, 
   }
 }
 
+function resolveReadOnlyAnnexures(sourceContext = null) {
+  const context = sourceContext && typeof sourceContext === 'object' ? sourceContext : {}
+  if (Array.isArray(context.readOnlyAnnexures)) return context.readOnlyAnnexures
+  if (Array.isArray(context.read_only_annexures)) return context.read_only_annexures
+  if (Array.isArray(context.otpAnnexures)) return context.otpAnnexures
+  if (Array.isArray(context.otp_annexures)) return context.otp_annexures
+  const disclosureAnnexure = context.propertyDisclosureAnnexure || context.property_disclosure_annexure
+  return disclosureAnnexure && typeof disclosureAnnexure === 'object' ? [disclosureAnnexure] : []
+}
+
 function buildRenderProvenance({
   packetType = '',
   template = null,
@@ -1168,6 +1178,13 @@ function resolvePacketTypeContext(packetType, context = {}) {
     buyer: context?.buyer || null,
     onboardingFormData: context?.onboardingFormData || null,
     sellerDetails: context?.sellerDetails || context?.seller_details || null,
+    propertyDisclosureAnnexure:
+      context?.propertyDisclosureAnnexure ||
+      context?.property_disclosure_annexure ||
+      context?.sourceContext?.propertyDisclosureAnnexure ||
+      context?.sourceContext?.property_disclosure_annexure ||
+      null,
+    sourceContext: context?.sourceContext || null,
     specialConditions: context?.specialConditions || '',
   })
 }
@@ -1580,6 +1597,7 @@ export async function generatePacketVersion({
   const pdfPlaceholders = sanitizeTemplatePlaceholders(validation.placeholders || {})
   const templateVersion = resolveTemplateVersion(effectiveTemplate)
   const sourceContextSnapshot = context?.mandateData?.sourceContext || context?.sourceContext || null
+  const readOnlyAnnexures = resolveReadOnlyAnnexures(sourceContextSnapshot)
   await addPacketEvent({
     packetId: packet.id,
     organisationId: packet.organisation_id,
@@ -1620,6 +1638,8 @@ export async function generatePacketVersion({
       const otpResult = await withPacketRetries(() => generateOtpDocumentFromTemplate({
         transactionId: context?.transaction?.id || context?.transactionId,
         specialConditions: context?.specialConditions || '',
+        placeholders: pdfPlaceholders,
+        sourceContext: sourceContextSnapshot,
         generatedByRole: context?.generatedByRole || '',
         generatedByUserId: context?.generatedByUserId || '',
         clientVisible: false,
@@ -1771,6 +1791,8 @@ export async function generatePacketVersion({
       missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
       warningsSnapshot: context?.mandateValidation?.warnings || validation.warnings || [],
       sourceContext: sourceContextSnapshot,
+      readOnlyAnnexures,
+      annexures: readOnlyAnnexures,
     },
     generatedBy: context?.generatedByUserId || null,
     generatedAt,
@@ -1791,6 +1813,8 @@ export async function generatePacketVersion({
       missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
       warningsSnapshot: context?.mandateValidation?.warnings || validation.warnings || [],
       sourceContext: sourceContextSnapshot,
+      readOnlyAnnexures,
+      annexures: readOnlyAnnexures,
     },
     brandingSnapshotJson: validation.branding || {},
   })

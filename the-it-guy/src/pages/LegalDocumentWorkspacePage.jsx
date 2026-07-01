@@ -75,6 +75,19 @@ function normalizeLeadUuid(value) {
   return isUuidLike(withoutPrefix) ? withoutPrefix : ''
 }
 
+function asRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
+function appendAnnexureLabel(current = '', label = '') {
+  const nextLabel = normalizeText(label)
+  if (!nextLabel) return normalizeText(current)
+  const existing = normalizeText(current)
+  if (!existing) return nextLabel
+  if (existing.toLowerCase().includes(nextLabel.toLowerCase())) return existing
+  return `${existing}; ${nextLabel}`
+}
+
 function resolveModeFromQuery(mode = '') {
   const key = normalizeKey(mode)
   if (['generate', 'edit', 'send', 'signed', 'view'].includes(key)) return key
@@ -434,6 +447,139 @@ async function hydrateLeadContextWithSellerOnboarding(leadContext = {}) {
   } catch {
     return leadContext
   }
+}
+
+function normalizeLockedDisclosureAnnexure(snapshot = {}, metadata = {}) {
+  const source = asRecord(snapshot)
+  if (!Object.keys(source).length) return null
+  const title = normalizeText(source.title || source.annexureTitle || source.annexure_title) || 'Declaration by Seller - Annexure A'
+  return {
+    ...source,
+    type: normalizeText(source.type) || 'property_disclosure_annexure_a',
+    title,
+    annexureLabel: normalizeText(source.annexureLabel || source.annexure_label) || 'Annexure A',
+    status: normalizeText(source.status) || 'complete',
+    lockedAt: normalizeText(source.lockedAt || source.locked_at || metadata.lockedAt),
+    lockedByPacketId: normalizeText(source.lockedByPacketId || source.locked_by_packet_id || metadata.lockedByPacketId),
+    lockedByPacketVersionId: normalizeText(source.lockedByPacketVersionId || source.locked_by_packet_version_id || metadata.lockedByPacketVersionId),
+    finalSignedFilePath: normalizeText(source.finalSignedFilePath || source.final_signed_file_path || metadata.finalSignedFilePath),
+    source: normalizeText(metadata.source || source.source) || 'seller_disclosure_locked_snapshot',
+    readOnly: true,
+    immutable: true,
+    reuseTarget: 'otp_annexure',
+  }
+}
+
+function resolveLockedDisclosureFromFormData(formData = {}) {
+  const payload = asRecord(formData)
+  const disclosure = asRecord(payload.propertyDisclosure || payload.property_disclosure)
+  const lockedSnapshot = asRecord(disclosure.lockedSnapshot || disclosure.locked_snapshot)
+  return normalizeLockedDisclosureAnnexure(lockedSnapshot, {
+    source: 'seller_onboarding_locked_snapshot',
+  })
+}
+
+function resolveDisclosureAnnexureFromPacket(packet = null) {
+  const packetSource = asRecord(packet?.source_context_json)
+  const packetGenerated = asRecord(packetSource.generatedDataSnapshot || packetSource.generated_data_snapshot)
+  const packetNestedSource = asRecord(packetSource.sourceContext || packetSource.source_context)
+  const candidates = [
+    packetSource.propertyDisclosureAnnexure,
+    packetSource.property_disclosure_annexure,
+    packetNestedSource.propertyDisclosureAnnexure,
+    packetNestedSource.property_disclosure_annexure,
+    packetGenerated.propertyDisclosureAnnexure,
+    packetGenerated.property_disclosure_annexure,
+  ]
+
+  const versions = Array.isArray(packet?.versions) ? packet.versions : []
+  versions.forEach((version) => {
+    const summary = asRecord(version?.validation_summary_json)
+    const generated = asRecord(summary.generatedDataSnapshot || summary.generated_data_snapshot)
+    const nestedSource = asRecord(summary.sourceContext || summary.source_context)
+    candidates.push(
+      summary.propertyDisclosureAnnexure,
+      summary.property_disclosure_annexure,
+      generated.propertyDisclosureAnnexure,
+      generated.property_disclosure_annexure,
+      nestedSource.propertyDisclosureAnnexure,
+      nestedSource.property_disclosure_annexure,
+    )
+  })
+
+  const snapshot = candidates.map(asRecord).find((candidate) => Object.keys(candidate).length)
+  return normalizeLockedDisclosureAnnexure(snapshot, {
+    source: 'signed_mandate_packet_context',
+    lockedByPacketId: normalizeText(packet?.id),
+  })
+}
+
+async function fetchLockedDisclosureAnnexureFromListing(listingId = '') {
+  const normalizedListingId = normalizeText(listingId)
+  if (!normalizedListingId || !isSupabaseConfigured || !supabase) return null
+  try {
+    const { data, error } = await supabase
+      .from('private_listing_seller_onboarding')
+      .select('id, private_listing_id, token, status, submitted_at, updated_at, form_data')
+      .eq('private_listing_id', normalizedListingId)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (error || !data) return null
+    return resolveLockedDisclosureFromFormData(asRecord(data.form_data))
+  } catch {
+    return null
+  }
+}
+
+async function fetchDisclosureAnnexureFromMandatePacket(packetId = '') {
+  const normalizedPacketId = normalizeText(packetId)
+  if (!normalizedPacketId || !isUuidLike(normalizedPacketId)) return null
+  try {
+    const packet = await fetchDocumentPacket(normalizedPacketId, { includeVersions: true, includeEvents: false })
+    return resolveDisclosureAnnexureFromPacket(packet)
+  } catch {
+    return null
+  }
+}
+
+async function resolveOtpPropertyDisclosureAnnexure({
+  leadContext = {},
+  transactionDetail = null,
+  existingPacketSourceContext = {},
+} = {}) {
+  const existingAnnexure = normalizeLockedDisclosureAnnexure(
+    existingPacketSourceContext.propertyDisclosureAnnexure ||
+      existingPacketSourceContext.property_disclosure_annexure ||
+      existingPacketSourceContext.lockedPropertyDisclosureAnnexure ||
+      existingPacketSourceContext.locked_property_disclosure_annexure,
+    {
+      source: 'existing_otp_packet_context',
+    },
+  )
+  if (existingAnnexure) return existingAnnexure
+
+  const leadOnboardingFormData = asRecord(leadContext?.lead?.sellerOnboarding?.formData)
+  const localLocked = resolveLockedDisclosureFromFormData(leadOnboardingFormData)
+  if (localLocked) return localLocked
+
+  const listingId = normalizeText(
+    transactionDetail?.transaction?.listing_id ||
+      leadContext?.lead?.listingId ||
+      leadContext?.privateListing?.id ||
+      leadContext?.listing?.id,
+  )
+  const listingLocked = await fetchLockedDisclosureAnnexureFromListing(listingId)
+  if (listingLocked) return listingLocked
+
+  const mandatePacketId = normalizeText(
+    leadContext?.lead?.mandatePacketId ||
+      leadContext?.privateListing?.mandatePacketId ||
+      leadContext?.privateListing?.mandate_packet_id ||
+      leadContext?.listing?.mandatePacketId ||
+      leadContext?.listing?.mandate_packet_id,
+  )
+  return fetchDisclosureAnnexureFromMandatePacket(mandatePacketId)
 }
 
 function createRuntimeDefaultTemplate(packetType = 'mandate') {
@@ -1622,6 +1768,42 @@ export default function LegalDocumentWorkspacePage() {
       branding: workspaceBranding,
       settings: workspaceSettings,
     })
+    if (packetType === 'otp') {
+      onProgress?.('Checking signed seller disclosure...')
+      const propertyDisclosureAnnexure = await resolveOtpPropertyDisclosureAnnexure({
+        leadContext,
+        transactionDetail,
+        existingPacketSourceContext,
+      })
+      if (propertyDisclosureAnnexure) {
+        const annexuresList = appendAnnexureLabel(generationContext.onboardingFormData?.annexuresList, propertyDisclosureAnnexure.title)
+        generationContext.propertyDisclosureAnnexure = propertyDisclosureAnnexure
+        generationContext.property_disclosure_annexure = propertyDisclosureAnnexure
+        generationContext.readOnlyAnnexures = [propertyDisclosureAnnexure]
+        generationContext.otpAnnexures = [propertyDisclosureAnnexure]
+        generationContext.onboardingFormData = {
+          ...(generationContext.onboardingFormData || {}),
+          annexuresList,
+          annexures_list: annexuresList,
+          propertyDisclosureAnnexure,
+          property_disclosure_annexure: propertyDisclosureAnnexure,
+        }
+        generationContext.sourceContext = {
+          ...(existingPacketSourceContext || {}),
+          ...(generationContext.sourceContext || {}),
+          packetType: 'otp',
+          contextType: 'transaction',
+          transactionId: transactionId || null,
+          leadId: normalizeLeadUuid(routeLeadId) || null,
+          propertyDisclosureAnnexure,
+          property_disclosure_annexure: propertyDisclosureAnnexure,
+          lockedPropertyDisclosureAnnexure: propertyDisclosureAnnexure,
+          readOnlyAnnexures: [propertyDisclosureAnnexure],
+          otpAnnexures: [propertyDisclosureAnnexure],
+          annexuresList,
+        }
+      }
+    }
     if (packetType === 'mandate') {
       const mandateData = isDeveloperAgentMandatePacket && existingPacketSourceContext.generatedDataSnapshot && typeof existingPacketSourceContext.generatedDataSnapshot === 'object'
         ? {
