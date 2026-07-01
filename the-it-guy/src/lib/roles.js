@@ -518,22 +518,21 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
     },
     {
       key: 'agency',
-      label: 'Agency',
+      label: 'Organisation',
       to: '/agency/branches',
-      activeMatch: ['/agency', '/agents/reporting'],
+      activeMatch: ['/agency', '/partners', '/settings/legal-templates'],
       children: [
         { key: 'agency_branches', label: 'Branches', to: '/agency/branches' },
         ...(!isBranchManager
           ? [
               { key: 'agency_agents', label: 'Agents', to: '/agency/agents' },
-              { key: 'agency_analytics', label: 'Analytics', to: '/agency/analytics' },
-              { key: 'agents_reporting', label: 'Reports', to: '/agents/reporting' },
+              { key: 'partners', label: 'Partners', to: '/partners' },
+              { key: 'agency_legal_templates', label: 'Legal Templates', to: '/settings/legal-templates' },
             ]
           : []),
       ],
     },
     { key: 'clients', label: 'Clients', to: '/clients' },
-    { key: 'partners', label: 'Partners', to: '/partners' },
     { key: 'reports', label: 'Reports', to: '/reports' },
   ], hqContext)
 

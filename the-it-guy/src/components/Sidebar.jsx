@@ -73,6 +73,7 @@ const ICON_BY_KEY = {
   agency_branches: Building2,
   agency_agents: Users,
   agency_analytics: FileText,
+  agency_legal_templates: FileText,
   teams: ShieldUser,
   teams_consultants: Users,
   teams_processors: ShieldUser,
@@ -239,7 +240,7 @@ function isParentNavActive(item, location) {
     childActive ||
     customActive ||
     (item.key === 'agents' && routeMatches(pathname, '/agents')) ||
-    (item.key === 'agency' && (routeMatches(pathname, '/agency') || routeMatches(pathname, '/agents/reporting')))
+    (item.key === 'agency' && routeMatches(pathname, '/agency'))
   )
 }
 
