@@ -18,6 +18,10 @@ const OPTIONAL_LEAD_COLUMNS = [
   "created_by",
   "assigned_agent_email",
   "listing_id",
+  "enquired_listing_id",
+  "enquired_property_title",
+  "enquired_property_address",
+  "enquired_property_price",
   "source_reference_id",
   "raw_enquiry_payload",
 ];
@@ -75,7 +79,7 @@ function normalizeEmail(value: unknown) {
     .replace(/^mailto:/, "")
     .replace(/%(?:09|0a|0d|20)/gi, " ");
   const emailMatch = candidate.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
-  return emailMatch?.[0] || candidate;
+  return emailMatch?.[0] || "";
 }
 
 function isUuidLike(value: unknown) {
@@ -327,6 +331,8 @@ const KNOWN_LEAD_EMAIL_LABELS = [
   "web reference",
   "web ref",
   "web id",
+  "property address",
+  "address",
   "budget",
   "max budget",
   "price",
@@ -347,9 +353,11 @@ function trimAtNextKnownLabel(value: string) {
 }
 
 function readLabelValue(text: string, labels: string[]) {
-  const safeLabels = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const safeLabels = [...labels]
+    .sort((left, right) => right.length - left.length)
+    .map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   if (!safeLabels.length) return "";
-  const pattern = new RegExp(`(?:^|\\n)\\s*(?:${safeLabels.join("|")})\\s*[:\\-]?\\s*(?:\\n\\s*)?([^\\n\\r]+)`, "i");
+  const pattern = new RegExp(`(?:^|\\n)\\s*(?:${safeLabels.join("|")})(?:\\s*[:\\-]\\s*|\\s*\\n\\s*)([^\\n\\r]+)`, "i");
   const raw = normalizeText(text.match(pattern)?.[1] || "")
     .replace(/\s*\(\s*mailto:[^)]+\)/gi, " ")
     .replace(/\s*<https?:\/\/[^>]+>/gi, " ")
@@ -402,6 +410,26 @@ function extractListingReference(text: string) {
     /property24\.com\/(?:[^/\s]+\/)*(\d{5,})/i,
     /privateproperty\.co\.za\/(?:[^/\s]+\/)*([a-z0-9-]*\d{5,}[a-z0-9-]*)/i,
   ]);
+}
+
+function extractFirstUrl(text: string) {
+  const value = normalizeText(text);
+  const bracketMatch = value.match(/<((?:https?:\/\/)[^>]+)>/i);
+  if (bracketMatch?.[1]) return bracketMatch[1];
+  return value.match(/https?:\/\/[^\s)>,]+/i)?.[0] || "";
+}
+
+function extractPropertyAddress(text: string) {
+  return readLabelValue(text, ["property address", "address"]);
+}
+
+function extractPropertyPrice(text: string) {
+  const labelled = readLabelValue(text, ["price", "asking price"]);
+  const fallback = labelled || pickFirstMatch(text, [
+    /(?:^|\s)R\s*([0-9][0-9\s.,]{4,})\b/i,
+  ]);
+  const amount = Number(String(fallback).replace(/[^0-9.]/g, ""));
+  return Number.isFinite(amount) && amount > 0 ? amount : 0;
 }
 
 function extractMessage(text: string) {
@@ -484,6 +512,9 @@ function buildParseResult({
     budget: extractBudget(body),
     areaInterest: readLabelValue(body, ["area", "suburb", "location"]),
     propertyInterest: readLabelValue(body, ["property type", "property interest"]),
+    propertyAddress: extractPropertyAddress(body),
+    propertyLink: extractFirstUrl(`${subject}\n${body}`),
+    propertyPrice: extractPropertyPrice(body),
   };
   const cleanFields = Object.fromEntries(Object.entries(fields).filter(([, value]) => {
     if (typeof value === "number") return value > 0;
@@ -531,6 +562,9 @@ function parseLeadEmailBySource(context: {
         message: readLabelValue(context.body, ["message", "comments", "enquiry"]) || extractMessage(context.body),
         areaInterest: readLabelValue(context.body, ["suburb", "area"]),
         propertyInterest: readLabelValue(context.body, ["property type", "development"]),
+        propertyAddress: extractPropertyAddress(context.body),
+        propertyLink: extractFirstUrl(`${context.subject}\n${context.body}`),
+        propertyPrice: extractPropertyPrice(context.body),
         budget: extractBudget(context.body),
       },
     });
@@ -548,6 +582,9 @@ function parseLeadEmailBySource(context: {
         message: readLabelValue(context.body, ["message", "enquiry", "comment"]) || extractMessage(context.body),
         areaInterest: readLabelValue(context.body, ["suburb", "area"]),
         propertyInterest: readLabelValue(context.body, ["property type"]),
+        propertyAddress: extractPropertyAddress(context.body),
+        propertyLink: extractFirstUrl(`${context.subject}\n${context.body}`),
+        propertyPrice: extractPropertyPrice(context.body),
         budget: extractBudget(context.body),
       },
     });
@@ -567,6 +604,9 @@ function parseLeadEmailBySource(context: {
         message: readLabelValue(context.body, ["message", "comments", "enquiry", "notes"]) || extractMessage(context.body),
         areaInterest: readLabelValue(context.body, ["area", "suburb", "location"]),
         propertyInterest: readLabelValue(context.body, ["property type", "property interest"]),
+        propertyAddress: extractPropertyAddress(context.body),
+        propertyLink: extractFirstUrl(`${context.subject}\n${context.body}`),
+        propertyPrice: extractPropertyPrice(context.body),
         budget: extractBudget(context.body),
       },
     });
@@ -651,7 +691,12 @@ function buildCanonicalPayload(inbound: ReturnType<typeof normalizeInboundPayloa
     source,
     input: inbound as unknown as JsonRecord,
   });
-  const parsedFields = parseResult.fields || {};
+  const parsedFields = (parseResult.fields || {}) as JsonRecord;
+  const listingReference = normalizeText(parsedFields.listingReference);
+  const propertyInterest = normalizeText(parsedFields.propertyInterest);
+  const propertyAddress = normalizeText(parsedFields.propertyAddress);
+  const propertyTitle = normalizeText(parsedFields.propertyTitle) || [propertyInterest, listingReference].filter(Boolean).join(" - ");
+  const propertyPrice = Number(parsedFields.propertyPrice || 0) || 0;
   return {
     organisationId: normalizeText(alias.organisation_id),
     source: normalizeText(parseResult.source) || source,
@@ -661,10 +706,15 @@ function buildCanonicalPayload(inbound: ReturnType<typeof normalizeInboundPayloa
     phone: normalizeText(parsedFields.phone),
     message: normalizeText(parsedFields.message) || body || inbound.subject,
     listingId: normalizeText(alias.listing_id),
-    listingReference: normalizeText(parsedFields.listingReference),
+    listingReference,
     budget: Number(parsedFields.budget || 0) || 0,
     areaInterest: normalizeText(parsedFields.areaInterest),
-    propertyInterest: normalizeText(parsedFields.propertyInterest),
+    propertyInterest,
+    propertyAddress,
+    enquiredPropertyTitle: propertyTitle,
+    enquiredPropertyAddress: propertyAddress,
+    enquiredPropertyPrice: propertyPrice,
+    sourceReferenceId: listingReference,
     assignedAgentId: normalizeText(alias.agent_user_id),
     branchId: normalizeText(alias.branch_id),
     parserName: parseResult.parserName,
@@ -797,7 +847,11 @@ async function createLeadFromEmail(client: SupabaseClientLike, canonical: JsonRe
     area_interest: normalizeText(canonical.areaInterest) || null,
     property_interest: normalizeText(canonical.propertyInterest) || null,
     listing_id: isUuidLike(canonical.listingId) ? canonical.listingId : null,
-    source_reference_id: normalizeText(canonical.externalReference) || null,
+    enquired_listing_id: isUuidLike(canonical.listingId) ? canonical.listingId : null,
+    enquired_property_title: normalizeText(canonical.enquiredPropertyTitle) || null,
+    enquired_property_address: normalizeText(canonical.enquiredPropertyAddress) || null,
+    enquired_property_price: Number(canonical.enquiredPropertyPrice || 0) || null,
+    source_reference_id: normalizeText(canonical.sourceReferenceId) || normalizeText(canonical.externalReference) || null,
     raw_enquiry_payload: canonical.rawPayload || {},
     notes: normalizeText(canonical.message) || null,
     updated_at: now,

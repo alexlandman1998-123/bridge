@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import {
   addPartnerComment,
+  activatePartnerPortalOnboarding,
   createPartnerSupportTicket,
   getPartnerActivity,
   getPartnerApplication,
@@ -90,7 +91,8 @@ function EmptyState({ title = '', description = '' }) {
   )
 }
 
-function PartnerPortalShell({ view = 'dashboard', setView = () => {}, dashboard = null, children = null }) {
+function PartnerPortalShell({ view = 'dashboard', setView = () => {}, dashboard = null, accepting = false, onAcceptOnboarding = () => {}, children = null }) {
+  const pendingOnboarding = normalizeText(dashboard?.assignment?.assignmentStatus).toLowerCase() === 'pending_onboarding'
   return (
     <main className="min-h-screen bg-[#f4f8fb] text-[#142132]">
       <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-[#dbe5f0] bg-white px-4 py-5 lg:block">
@@ -122,10 +124,17 @@ function PartnerPortalShell({ view = 'dashboard', setView = () => {}, dashboard 
               <h1 className="mt-1 text-2xl font-semibold tracking-[-0.02em] text-[#142132]">{dashboard?.greeting || 'Partner Portal'}</h1>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-[#60758d]">Submit buyers, track finance progress, upload requested documents, and communicate with the assigned consultant.</p>
             </div>
-            <div className="rounded-[16px] border border-[#dbe5f0] bg-[#fbfdff] px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#71869d]">Assigned Consultant</p>
-              <p className="mt-1 text-sm font-semibold text-[#142132]">{dashboard?.consultantContact?.name || 'Assigned Consultant'}</p>
-              <p className="mt-1 text-xs text-[#60758d]">{dashboard?.consultantContact?.email || 'Contact appears once an application is assigned'}</p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              {pendingOnboarding ? (
+                <button type="button" onClick={onAcceptOnboarding} disabled={accepting} className="inline-flex items-center justify-center gap-2 rounded-[12px] border border-[#143250] bg-[#143250] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">
+                  <CheckCircle2 size={16} /> {accepting ? 'Accepting' : 'Accept assignment'}
+                </button>
+              ) : null}
+              <div className="rounded-[16px] border border-[#dbe5f0] bg-[#fbfdff] px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#71869d]">Assigned Consultant</p>
+                <p className="mt-1 text-sm font-semibold text-[#142132]">{dashboard?.consultantContact?.name || 'Assigned Consultant'}</p>
+                <p className="mt-1 text-xs text-[#60758d]">{dashboard?.consultantContact?.email || 'Contact appears once an application is assigned'}</p>
+              </div>
             </div>
           </div>
           <div className="mt-5 flex gap-2 overflow-x-auto lg:hidden">
@@ -403,20 +412,27 @@ export default function PartnerPortalPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [state, setState] = useState({ loading: true, error: '', dashboard: null, applications: [], activity: [], selectedApplication: null, notice: '' })
   const [filter, setFilter] = useState('all')
+  const [accepting, setAccepting] = useState(false)
   const view = normalizeText(searchParams.get('view') || 'dashboard')
   const context = useMemo(() => ({ token }), [token])
   const options = useMemo(() => ({ token, workspaceId: 'partner-portal' }), [token])
 
-  const loadPortal = useCallback(() => {
+  const loadPortal = useCallback(async () => {
     try {
-      const dashboard = getPartnerDashboard(context, options)
-      const applications = getPartnerApplications(context, { ...options, filter })
-      const activity = getPartnerActivity(context, options)
-      setState((previous) => ({ ...previous, loading: false, error: '', dashboard, applications, activity }))
+      const [dashboard, applications, activity] = await Promise.all([
+        getPartnerDashboard(context, options),
+        getPartnerApplications(context, { ...options, filter }),
+        getPartnerActivity(context, options),
+      ])
+      const selectedApplicationId = normalizeText(searchParams.get('applicationId'))
+      const selectedApplication = selectedApplicationId
+        ? await getPartnerApplication(selectedApplicationId, context, options).catch(() => null)
+        : null
+      setState((previous) => ({ ...previous, loading: false, error: '', dashboard, applications, activity, selectedApplication }))
     } catch (error) {
       setState((previous) => ({ ...previous, loading: false, error: String(error?.message || 'Partner portal could not be loaded.') }))
     }
-  }, [context, filter, options])
+  }, [context, filter, options, searchParams])
 
   useEffect(() => {
     loadPortal()
@@ -426,9 +442,9 @@ export default function PartnerPortalPage() {
     setSearchParams({ view: nextView })
   }
 
-  function openApplication(applicationId = '') {
+  async function openApplication(applicationId = '') {
     try {
-      const selectedApplication = getPartnerApplication(applicationId, context, options)
+      const selectedApplication = await getPartnerApplication(applicationId, context, options)
       setState((previous) => ({ ...previous, selectedApplication }))
       setSearchParams({ view: 'application', applicationId })
     } catch (error) {
@@ -436,28 +452,53 @@ export default function PartnerPortalPage() {
     }
   }
 
-  function handleUpload(applicationId = '', request = {}) {
-    uploadPartnerDocument(applicationId, {
-      name: request.documentName || 'Uploaded document',
-      documentType: request.documentName || 'document',
-      requestId: request.id,
-    }, context, options)
-    setState((previous) => ({ ...previous, notice: 'Document uploaded and consultant notified.' }))
-    openApplication(applicationId)
-    loadPortal()
+  async function handleUpload(applicationId = '', request = {}) {
+    try {
+      await uploadPartnerDocument(applicationId, {
+        name: request.documentName || 'Uploaded document',
+        documentType: request.documentName || 'document',
+        requestId: request.id,
+      }, context, options)
+      setState((previous) => ({ ...previous, notice: 'Document uploaded and consultant notified.' }))
+      await openApplication(applicationId)
+      await loadPortal()
+    } catch (error) {
+      setState((previous) => ({ ...previous, notice: String(error?.message || 'Document could not be uploaded.') }))
+    }
   }
 
-  function handleComment(applicationId = '', message = '') {
+  async function handleComment(applicationId = '', message = '') {
     if (!normalizeText(message)) return
-    addPartnerComment(applicationId, { message }, context, options)
-    setState((previous) => ({ ...previous, notice: 'Comment added to the secure thread.' }))
-    openApplication(applicationId)
+    try {
+      await addPartnerComment(applicationId, { message }, context, options)
+      setState((previous) => ({ ...previous, notice: 'Comment added to the secure thread.' }))
+      await openApplication(applicationId)
+    } catch (error) {
+      setState((previous) => ({ ...previous, notice: String(error?.message || 'Comment could not be added.') }))
+    }
   }
 
-  function handleSupport(values = {}) {
-    createPartnerSupportTicket(values, context, options)
-    setState((previous) => ({ ...previous, notice: 'Support ticket created.' }))
-    loadPortal()
+  async function handleSupport(values = {}) {
+    try {
+      await createPartnerSupportTicket(values, context, options)
+      setState((previous) => ({ ...previous, notice: 'Support ticket created.' }))
+      await loadPortal()
+    } catch (error) {
+      setState((previous) => ({ ...previous, notice: String(error?.message || 'Support ticket could not be created.') }))
+    }
+  }
+
+  async function handleAcceptOnboarding() {
+    setAccepting(true)
+    try {
+      await activatePartnerPortalOnboarding({ token }, options)
+      setState((previous) => ({ ...previous, notice: 'Assignment accepted.' }))
+      await loadPortal()
+    } catch (error) {
+      setState((previous) => ({ ...previous, notice: String(error?.message || 'Assignment could not be accepted.') }))
+    } finally {
+      setAccepting(false)
+    }
   }
 
   if (state.loading) {
@@ -476,11 +517,11 @@ export default function PartnerPortalPage() {
   }
 
   return (
-    <PartnerPortalShell view={view} setView={setView} dashboard={state.dashboard}>
+    <PartnerPortalShell view={view} setView={setView} dashboard={state.dashboard} accepting={accepting} onAcceptOnboarding={handleAcceptOnboarding}>
       {state.notice ? <div className="rounded-[14px] border border-[#bbedd0] bg-[#ecfdf3] px-4 py-3 text-sm font-semibold text-[#1f7a4d]">{state.notice}</div> : null}
       {view === 'dashboard' ? <DashboardView dashboard={state.dashboard} applications={state.applications} openApplication={openApplication} /> : null}
       {view === 'applications' ? <ApplicationsView applications={state.applications} filter={filter} setFilter={setFilter} openApplication={openApplication} /> : null}
-      {view === 'application' ? <ApplicationWorkspace application={state.selectedApplication || (normalizeText(searchParams.get('applicationId')) ? getPartnerApplication(searchParams.get('applicationId'), context, options) : null)} onUpload={handleUpload} onComment={handleComment} /> : null}
+      {view === 'application' ? <ApplicationWorkspace application={state.selectedApplication} onUpload={handleUpload} onComment={handleComment} /> : null}
       {view === 'documents' ? <DocumentsView applications={state.applications} openApplication={openApplication} /> : null}
       {view === 'activity' ? <ActivityView rows={state.activity} /> : null}
       {view === 'support' ? <SupportView onCreate={handleSupport} /> : null}

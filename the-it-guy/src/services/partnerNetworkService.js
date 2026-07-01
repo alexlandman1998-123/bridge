@@ -43,11 +43,23 @@ export const PARTNER_WORK_DELIVERY_TYPES = Object.freeze({
   attorneyInstruction: 'attorney_instruction',
   bondApplicationRequest: 'bond_application_request',
   developmentCollaboration: 'development_collaboration',
+  manualExternalContact: 'manual_external_contact',
 })
 
 export const TRANSACTION_PARTNER_ASSIGNMENT_STATUSES = Object.freeze({
-  active: 'active',
   pendingOnboarding: 'pending_onboarding',
+  active: 'active',
+  declined: 'declined',
+  cancelled: 'cancelled',
+  completed: 'completed',
+})
+
+export const TRANSACTION_PARTNER_ASSIGNMENT_SOURCES = Object.freeze({
+  routing: 'routing',
+  manual: 'manual',
+  override: 'override',
+  import: 'import',
+  fallback: 'fallback',
 })
 
 const PARTNER_SERVICE_LABELS = Object.freeze({
@@ -277,6 +289,53 @@ function getConnectionQueueId(input = {}) {
   return normalizeText(input.queueId || input.targetQueueId || input.target_queue_id || input.assignedQueueId || input.assigned_queue_id)
 }
 
+function normalizeAssignmentStatus(value = '', fallback = TRANSACTION_PARTNER_ASSIGNMENT_STATUSES.active) {
+  const normalized = normalizeLower(value).replace(/[\s-]+/g, '_')
+  return Object.values(TRANSACTION_PARTNER_ASSIGNMENT_STATUSES).includes(normalized) ? normalized : fallback
+}
+
+function normalizeAssignmentSource(value = '') {
+  const normalized = normalizeLower(value).replace(/[\s-]+/g, '_')
+  return Object.values(TRANSACTION_PARTNER_ASSIGNMENT_SOURCES).includes(normalized) ? normalized : TRANSACTION_PARTNER_ASSIGNMENT_SOURCES.manual
+}
+
+function buildTransactionPartnerAssignment({
+  input = {},
+  connection = null,
+  roleType = '',
+  serviceType = '',
+  deliveryType = '',
+  status = TRANSACTION_PARTNER_ASSIGNMENT_STATUSES.active,
+  pendingWorkDelivery = null,
+} = {}) {
+  const partnerOrganisationId = normalizeText(
+    input.partnerOrganisationId ||
+    input.partnerOrganizationId ||
+    (connection ? getConnectionOrganisationId(connection) : ''),
+  )
+  return {
+    transaction_id: normalizeText(input.transactionId || input.transaction_id),
+    agency_organisation_id: normalizeText(input.agencyOrganisationId || input.agencyOrganizationId || input.agency_organisation_id || input.agency_organization_id || input.sourceOrganisationId || input.source_organisation_id),
+    partner_organisation_id: partnerOrganisationId || null,
+    partner_connection_id: normalizeText(input.partnerConnectionId || input.partner_connection_id || connection?.id || connection?.connectionId || connection?.connection_id) || null,
+    partner_service_type: serviceType,
+    partner_role: roleType,
+    assigned_person_id: getConnectionPersonId(input) || null,
+    assigned_queue_id: getConnectionQueueId(input) || null,
+    delivery_type: deliveryType || PARTNER_WORK_DELIVERY_TYPES.manualExternalContact,
+    assignment_status: normalizeAssignmentStatus(input.assignmentStatus || input.assignment_status, status),
+    onboarding_invite_id: normalizeText(input.onboardingInviteId || input.onboarding_invite_id || input.inviteId || input.invite_id) || null,
+    work_item_id: normalizeText(input.workItemId || input.work_item_id) || null,
+    source: normalizeAssignmentSource(input.source || input.assignmentSource || input.assignment_source),
+    routing_rule_id: normalizeText(input.routingRuleId || input.routing_rule_id) || null,
+    created_by: normalizeText(input.createdBy || input.created_by || input.actorUserId || input.actor_user_id) || null,
+    accepted_at: input.acceptedAt || input.accepted_at || null,
+    activated_at: input.activatedAt || input.activated_at || null,
+    cancelled_at: input.cancelledAt || input.cancelled_at || null,
+    ...(pendingWorkDelivery ? { pending_work_delivery: pendingWorkDelivery } : {}),
+  }
+}
+
 export function resolvePartnerDeliveryWorkflow(input = {}) {
   const roleType = normalizeRoleType(input.roleType || input.targetRoleType || input.role_type || input.target_role_type)
   const workDelivery = getPartnerWorkDeliveryForRoleType(roleType)
@@ -290,15 +349,7 @@ export function resolvePartnerDeliveryWorkflow(input = {}) {
     normalizedConnection &&
     normalizeConnectionStatus(normalizedConnection.status || normalizedConnection.connectionStatus) === PARTNER_CONNECTION_STATUSES.connected &&
     partnerConnectionSupportsRoleType(normalizedConnection, roleType)
-  const partnerOrganisationId = normalizeText(
-    input.partnerOrganisationId ||
-    input.partnerOrganizationId ||
-    (normalizedConnection ? getConnectionOrganisationId(normalizedConnection) : ''),
-  )
   const selectedServiceType = normalizeServiceKey(input.serviceType || input.service_type) || workDelivery.serviceType
-  const personId = getConnectionPersonId(input)
-  const queueId = getConnectionQueueId(input)
-  const transactionId = normalizeText(input.transactionId || input.transaction_id)
   const deliveryPayload =
     input.deliveryPayload && typeof input.deliveryPayload === 'object'
       ? input.deliveryPayload
@@ -310,17 +361,14 @@ export function resolvePartnerDeliveryWorkflow(input = {}) {
     return {
       path: PARTNER_DELIVERY_PATHS.existingConnectedPartner,
       requiresPlatformInvite: false,
-      assignment: {
-        transactionId,
-        partnerOrganisationId,
-        partnerOrganizationId: partnerOrganisationId,
-        partnerConnectionId: normalizeText(normalizedConnection.id || normalizedConnection.connectionId),
+      assignment: buildTransactionPartnerAssignment({
+        input,
+        connection: normalizedConnection,
         roleType,
         serviceType: selectedServiceType,
-        personId: personId || null,
-        queueId: queueId || null,
+        deliveryType: workDelivery.deliveryType,
         status: TRANSACTION_PARTNER_ASSIGNMENT_STATUSES.active,
-      },
+      }),
       workDelivery: {
         ...workDelivery,
         serviceType: selectedServiceType,
@@ -335,24 +383,21 @@ export function resolvePartnerDeliveryWorkflow(input = {}) {
   }
 
   return {
-    path: PARTNER_DELIVERY_PATHS.externalPartnerOnboarding,
-    requiresPlatformInvite: true,
-    assignment: {
-      transactionId,
-      partnerOrganisationId: partnerOrganisationId || null,
-      partnerOrganizationId: partnerOrganisationId || null,
-      partnerConnectionId: normalizedConnection?.id || null,
+      path: PARTNER_DELIVERY_PATHS.externalPartnerOnboarding,
+      requiresPlatformInvite: true,
+    assignment: buildTransactionPartnerAssignment({
+      input,
+      connection: normalizedConnection,
       roleType,
       serviceType: selectedServiceType,
-      personId: personId || null,
-      queueId: queueId || null,
+      deliveryType: workDelivery.deliveryType,
       status: TRANSACTION_PARTNER_ASSIGNMENT_STATUSES.pendingOnboarding,
       pendingWorkDelivery: {
         ...workDelivery,
         serviceType: selectedServiceType,
         payload: deliveryPayload,
       },
-    },
+    }),
     workDelivery: {
       ...workDelivery,
       serviceType: selectedServiceType,

@@ -28,6 +28,52 @@ Use these terms consistently:
 
 Do not call work delivery to an existing connected partner an invite.
 
+## Transaction Partner Assignment Contract
+
+Every partner delivery path returns the same canonical assignment shape:
+
+- `transaction_id`
+- `agency_organisation_id`
+- `partner_organisation_id`
+- `partner_connection_id`
+- `partner_service_type`
+- `partner_role`
+- `assigned_person_id`
+- `assigned_queue_id`
+- `delivery_type`
+- `assignment_status`
+- `onboarding_invite_id`
+- `work_item_id`
+- `source`
+- `routing_rule_id`
+- `created_by`
+- `accepted_at`
+- `activated_at`
+- `cancelled_at`
+
+Assignment statuses:
+
+- `pending_onboarding`
+- `active`
+- `declined`
+- `cancelled`
+- `completed`
+
+Delivery types:
+
+- `attorney_instruction`
+- `bond_application_request`
+- `development_collaboration`
+- `manual_external_contact`
+
+Source values:
+
+- `routing`
+- `manual`
+- `override`
+- `import`
+- `fallback`
+
 ## Partner Organisation Lifecycle
 
 Partner organisations can be:

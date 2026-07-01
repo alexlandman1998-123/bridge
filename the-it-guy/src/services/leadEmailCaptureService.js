@@ -79,7 +79,7 @@ export function normalizeCaptureEmail(value = '') {
     .replace(/^mailto:/, '')
     .replace(/%(?:09|0a|0d|20)/gi, ' ')
   const emailMatch = candidate.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i)
-  return emailMatch?.[0] || candidate
+  return emailMatch?.[0] || ''
 }
 
 export function slugifyCapturePart(value = '', fallback = 'lead') {
@@ -933,6 +933,8 @@ const KNOWN_LEAD_EMAIL_LABELS = [
   'web reference',
   'web ref',
   'web id',
+  'property address',
+  'address',
   'budget',
   'max budget',
   'price',
@@ -953,9 +955,11 @@ function trimAtNextKnownLabel(value = '') {
 }
 
 function readLabelValue(text = '', labels = []) {
-  const safeLabels = labels.map((label) => String(label).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  const safeLabels = [...labels]
+    .sort((left, right) => String(right).length - String(left).length)
+    .map((label) => String(label).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
   if (!safeLabels.length) return ''
-  const pattern = new RegExp(`(?:^|\\n)\\s*(?:${safeLabels.join('|')})\\s*[:\\-]?\\s*(?:\\n\\s*)?([^\\n\\r]+)`, 'i')
+  const pattern = new RegExp(`(?:^|\\n)\\s*(?:${safeLabels.join('|')})(?:\\s*[:\\-]\\s*|\\s*\\n\\s*)([^\\n\\r]+)`, 'i')
   const raw = normalizeText(text.match(pattern)?.[1] || '')
     .replace(/\s*\(\s*mailto:[^)]+\)/gi, ' ')
     .replace(/\s*<https?:\/\/[^>]+>/gi, ' ')
@@ -1010,6 +1014,26 @@ function extractListingReference(text = '') {
     /property24\.com\/(?:[^/\s]+\/)*(\d{5,})/i,
     /privateproperty\.co\.za\/(?:[^/\s]+\/)*([a-z0-9-]*\d{5,}[a-z0-9-]*)/i,
   ])
+}
+
+function extractFirstUrl(text = '') {
+  const value = normalizeText(text)
+  const bracketMatch = value.match(/<((?:https?:\/\/)[^>]+)>/i)
+  if (bracketMatch?.[1]) return bracketMatch[1]
+  return value.match(/https?:\/\/[^\s)>,]+/i)?.[0] || ''
+}
+
+function extractPropertyAddress(text = '') {
+  return readLabelValue(text, ['property address', 'address'])
+}
+
+function extractPropertyPrice(text = '') {
+  const labelled = readLabelValue(text, ['price', 'asking price'])
+  const fallback = labelled || pickFirstMatch(text, [
+    /(?:^|\s)R\s*([0-9][0-9\s.,]{4,})\b/i,
+  ])
+  const amount = Number(String(fallback).replace(/[^0-9.]/g, ''))
+  return Number.isFinite(amount) && amount > 0 ? amount : 0
 }
 
 function extractMessage(text = '') {
@@ -1073,6 +1097,9 @@ function buildParseResult({
     budget: extractBudget(body),
     areaInterest: readLabelValue(body, ['area', 'suburb', 'location']),
     propertyInterest: readLabelValue(body, ['property type', 'property interest']),
+    propertyAddress: extractPropertyAddress(body),
+    propertyLink: extractFirstUrl(`${subject}\n${body}`),
+    propertyPrice: extractPropertyPrice(body),
   }
   const cleanFields = Object.fromEntries(Object.entries(fields).filter(([, value]) => {
     if (typeof value === 'number') return value > 0
@@ -1112,6 +1139,9 @@ function parseProperty24Email(context = {}) {
       message: readLabelValue(body, ['message', 'comments', 'enquiry']) || extractMessage(body),
       areaInterest: readLabelValue(body, ['suburb', 'area']),
       propertyInterest: readLabelValue(body, ['property type', 'development']),
+      propertyAddress: extractPropertyAddress(body),
+      propertyLink: extractFirstUrl(`${context.subject}\n${body}`),
+      propertyPrice: extractPropertyPrice(body),
       budget: extractBudget(body),
     },
   })
@@ -1131,6 +1161,9 @@ function parsePrivatePropertyEmail(context = {}) {
       message: readLabelValue(body, ['message', 'enquiry', 'comment']) || extractMessage(body),
       areaInterest: readLabelValue(body, ['suburb', 'area']),
       propertyInterest: readLabelValue(body, ['property type']),
+      propertyAddress: extractPropertyAddress(body),
+      propertyLink: extractFirstUrl(`${context.subject}\n${body}`),
+      propertyPrice: extractPropertyPrice(body),
       budget: extractBudget(body),
     },
   })
@@ -1152,6 +1185,9 @@ function parseWebsiteEmail(context = {}) {
       message: readLabelValue(body, ['message', 'comments', 'enquiry', 'notes']) || extractMessage(body),
       areaInterest: readLabelValue(body, ['area', 'suburb', 'location']),
       propertyInterest: readLabelValue(body, ['property type', 'property interest']),
+      propertyAddress: extractPropertyAddress(body),
+      propertyLink: extractFirstUrl(`${context.subject}\n${body}`),
+      propertyPrice: extractPropertyPrice(body),
       budget: extractBudget(body),
     },
   })
@@ -1176,6 +1212,10 @@ export function parseInboundLeadEmail(input = {}, alias = {}) {
   const parseResult = parseLeadEmailBySource({ alias, fromEmail, fromName, subject, body, source, input })
   const parsedFields = parseResult.fields || {}
   const externalReference = normalizeText(input.providerMessageId || input.provider_message_id || input.messageId || input.message_id || input.externalReference)
+  const listingReference = normalizeText(parsedFields.listingReference)
+  const propertyInterest = normalizeText(parsedFields.propertyInterest)
+  const propertyAddress = normalizeText(parsedFields.propertyAddress)
+  const propertyTitle = normalizeText(parsedFields.propertyTitle) || [propertyInterest, listingReference].filter(Boolean).join(' ')
 
   return {
     organisationId: normalizeText(alias.organisationId || alias.organisation_id || input.organisationId || input.organisation_id),
@@ -1186,11 +1226,17 @@ export function parseInboundLeadEmail(input = {}, alias = {}) {
     phone: parsedFields.phone,
     message: parsedFields.message || body || subject,
     listingId: normalizeText(alias.listingId || alias.listing_id),
-    listingReference: parsedFields.listingReference,
+    listingReference,
     budget: parsedFields.budget,
     area: parsedFields.areaInterest,
     areaInterest: parsedFields.areaInterest,
-    propertyType: parsedFields.propertyInterest,
+    propertyType: propertyInterest,
+    propertyInterest,
+    propertyAddress,
+    enquiredPropertyTitle: propertyTitle,
+    enquiredPropertyAddress: propertyAddress,
+    enquiredPropertyPrice: Number(parsedFields.propertyPrice || 0) || null,
+    sourceReferenceId: listingReference,
     assignedAgent: alias.agentUserId || alias.agent_user_id
       ? {
         id: normalizeText(alias.agentUserId || alias.agent_user_id),

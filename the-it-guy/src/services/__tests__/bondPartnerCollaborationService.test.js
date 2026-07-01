@@ -44,9 +44,7 @@ function makeContext({
 }
 
 try {
-  const portal = await server.ssrLoadModule('/src/services/bondPartnerPortalService.js')
   const collaboration = await server.ssrLoadModule('/src/services/bondPartnerCollaborationService.js')
-  portal.__bondPartnerPortalServiceTestUtils.clearStores()
   collaboration.__bondPartnerCollaborationServiceTestUtils.clearStores()
 
   const workspaceId = 'workspace-partner-collaboration'
@@ -91,24 +89,40 @@ try {
   const documentRequests = [
     { id: 'request-payslip', applicationId: 'app-agency-1', documentName: 'Payslip', requestedBy: 'Sarah Jacobs', status: 'requested' },
   ]
-  const commonOptions = { workspaceId, partners, portalUsers, applications, documentRequests }
-  const agencyContext = { token: 'agency-token' }
+  const documents = [
+    {
+      id: 'uploaded-payslip',
+      applicationId: 'app-agency-1',
+      name: 'Payslip',
+      documentType: 'payslip',
+      requestId: 'request-payslip',
+      status: 'received',
+      uploadedAt: '2026-06-01T09:00:00.000Z',
+    },
+  ]
+  const comments = [
+    {
+      id: 'comment-1',
+      applicationId: 'app-agency-1',
+      partnerId: 'partner-agency',
+      message: 'Buyer has uploaded the requested payslip.',
+      createdAt: '2026-06-01T09:10:00.000Z',
+    },
+  ]
+  const supportTickets = [
+    {
+      id: 'support-1',
+      applicationId: 'app-agency-1',
+      partnerId: 'partner-agency',
+      type: 'Application Query',
+      subject: 'Status update',
+      message: 'Can we confirm bank submission?',
+      status: 'open',
+      createdAt: '2026-06-01T09:20:00.000Z',
+    },
+  ]
+  const commonOptions = { workspaceId, partners, portalUsers, applications, documentRequests, documents, comments, supportTickets }
   const hqContext = makeContext({ workspaceId })
-
-  portal.uploadPartnerDocument('app-agency-1', {
-    id: 'uploaded-payslip',
-    name: 'Payslip',
-    documentType: 'payslip',
-    requestId: 'request-payslip',
-  }, agencyContext, commonOptions)
-  portal.addPartnerComment('app-agency-1', { id: 'comment-1', message: 'Buyer has uploaded the requested payslip.' }, agencyContext, commonOptions)
-  portal.createPartnerSupportTicket({
-    id: 'support-1',
-    type: 'Application Query',
-    applicationId: 'app-agency-1',
-    subject: 'Status update',
-    message: 'Can we confirm bank submission?',
-  }, agencyContext, commonOptions)
 
   const requests = collaboration.getPartnerRequests(hqContext, commonOptions)
   assert.ok(requests.some((row) => row.sourceKey === 'document:uploaded-payslip'), 'partner upload creates review item')
@@ -136,8 +150,7 @@ try {
 
   const internalNote = collaboration.addInternalNote(assigned.id, { note: 'Watch SLA for this agency relationship.' }, hqContext, commonOptions)
   assert.equal(internalNote.visibleToPartner, false)
-  const partnerWorkspace = portal.getPartnerApplication('app-agency-1', agencyContext, commonOptions)
-  assert.ok(!partnerWorkspace.comments.some((row) => row.note === internalNote.note), 'internal notes are hidden externally')
+  assert.ok(!comments.some((row) => row.note === internalNote.note), 'internal notes are hidden externally')
 
   const breachedSla = collaboration.calculatePartnerSLA({
     requestType: 'document_review',

@@ -15,6 +15,7 @@ try {
   const {
     PARTNER_DELIVERY_PATHS,
     PARTNER_WORK_DELIVERY_TYPES,
+    TRANSACTION_PARTNER_ASSIGNMENT_SOURCES,
     TRANSACTION_PARTNER_ASSIGNMENT_STATUSES,
     __partnerNetworkServiceTestUtils,
     getPartnerRoleTypeForOrganizationType,
@@ -70,6 +71,7 @@ try {
   {
     const workflow = __partnerNetworkServiceTestUtils.resolvePartnerDeliveryWorkflow({
       transactionId: 'tx-1',
+      agencyOrganisationId: 'agency-1',
       roleType: 'transfer_attorney',
       connection: {
         id: 'connection-1',
@@ -80,14 +82,52 @@ try {
         status: 'connected',
       },
       targetUserId: 'user-attorney-1',
+      source: 'routing',
+      routingRuleId: 'rule-transfer-default',
+      createdBy: 'user-agent-1',
       deliveryPayload: { matterNumber: 'A123' },
     })
 
     assert.equal(workflow.path, PARTNER_DELIVERY_PATHS.existingConnectedPartner)
     assert.equal(workflow.requiresPlatformInvite, false)
-    assert.equal(workflow.assignment.status, TRANSACTION_PARTNER_ASSIGNMENT_STATUSES.active)
-    assert.equal(workflow.assignment.partnerOrganisationId, 'org-tucker')
-    assert.equal(workflow.assignment.personId, 'user-attorney-1')
+    assert.deepEqual(Object.keys(workflow.assignment), [
+      'transaction_id',
+      'agency_organisation_id',
+      'partner_organisation_id',
+      'partner_connection_id',
+      'partner_service_type',
+      'partner_role',
+      'assigned_person_id',
+      'assigned_queue_id',
+      'delivery_type',
+      'assignment_status',
+      'onboarding_invite_id',
+      'work_item_id',
+      'source',
+      'routing_rule_id',
+      'created_by',
+      'accepted_at',
+      'activated_at',
+      'cancelled_at',
+    ])
+    assert.equal(workflow.assignment.transaction_id, 'tx-1')
+    assert.equal(workflow.assignment.agency_organisation_id, 'agency-1')
+    assert.equal(workflow.assignment.assignment_status, TRANSACTION_PARTNER_ASSIGNMENT_STATUSES.active)
+    assert.equal(workflow.assignment.partner_organisation_id, 'org-tucker')
+    assert.equal(workflow.assignment.partner_connection_id, 'connection-1')
+    assert.equal(workflow.assignment.partner_service_type, 'property_transfers')
+    assert.equal(workflow.assignment.partner_role, 'transfer_attorney')
+    assert.equal(workflow.assignment.assigned_person_id, 'user-attorney-1')
+    assert.equal(workflow.assignment.assigned_queue_id, null)
+    assert.equal(workflow.assignment.delivery_type, PARTNER_WORK_DELIVERY_TYPES.attorneyInstruction)
+    assert.equal(workflow.assignment.onboarding_invite_id, null)
+    assert.equal(workflow.assignment.work_item_id, null)
+    assert.equal(workflow.assignment.source, TRANSACTION_PARTNER_ASSIGNMENT_SOURCES.routing)
+    assert.equal(workflow.assignment.routing_rule_id, 'rule-transfer-default')
+    assert.equal(workflow.assignment.created_by, 'user-agent-1')
+    assert.equal(workflow.assignment.accepted_at, null)
+    assert.equal(workflow.assignment.activated_at, null)
+    assert.equal(workflow.assignment.cancelled_at, null)
     assert.equal(workflow.workDelivery.deliveryType, PARTNER_WORK_DELIVERY_TYPES.attorneyInstruction)
     assert.equal(workflow.workDelivery.createImmediately, true)
     assert.equal(workflow.onboarding.createInvite, false)
@@ -96,16 +136,30 @@ try {
   {
     const workflow = __partnerNetworkServiceTestUtils.resolvePartnerDeliveryWorkflow({
       transactionId: 'tx-2',
+      agencyOrganisationId: 'agency-1',
       roleType: 'bond_originator',
       partnerOrganisationId: 'org-pending-bond',
+      assignedQueueId: 'queue-bond-applications',
+      source: 'manual',
       deliveryPayload: { financeType: 'bond' },
     })
 
     assert.equal(workflow.path, PARTNER_DELIVERY_PATHS.externalPartnerOnboarding)
     assert.equal(workflow.requiresPlatformInvite, true)
-    assert.equal(workflow.assignment.status, TRANSACTION_PARTNER_ASSIGNMENT_STATUSES.pendingOnboarding)
-    assert.equal(workflow.assignment.partnerOrganisationId, 'org-pending-bond')
-    assert.equal(workflow.assignment.pendingWorkDelivery.deliveryType, PARTNER_WORK_DELIVERY_TYPES.bondApplicationRequest)
+    assert.equal(workflow.assignment.transaction_id, 'tx-2')
+    assert.equal(workflow.assignment.agency_organisation_id, 'agency-1')
+    assert.equal(workflow.assignment.assignment_status, TRANSACTION_PARTNER_ASSIGNMENT_STATUSES.pendingOnboarding)
+    assert.equal(workflow.assignment.partner_organisation_id, 'org-pending-bond')
+    assert.equal(workflow.assignment.partner_connection_id, null)
+    assert.equal(workflow.assignment.partner_service_type, 'bond_origination')
+    assert.equal(workflow.assignment.partner_role, 'bond_originator')
+    assert.equal(workflow.assignment.assigned_person_id, null)
+    assert.equal(workflow.assignment.assigned_queue_id, 'queue-bond-applications')
+    assert.equal(workflow.assignment.delivery_type, PARTNER_WORK_DELIVERY_TYPES.bondApplicationRequest)
+    assert.equal(workflow.assignment.onboarding_invite_id, null)
+    assert.equal(workflow.assignment.work_item_id, null)
+    assert.equal(workflow.assignment.source, TRANSACTION_PARTNER_ASSIGNMENT_SOURCES.manual)
+    assert.equal(workflow.assignment.pending_work_delivery.deliveryType, PARTNER_WORK_DELIVERY_TYPES.bondApplicationRequest)
     assert.equal(workflow.workDelivery.createImmediately, false)
     assert.equal(workflow.onboarding.createInvite, true)
   }

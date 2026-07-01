@@ -4299,16 +4299,22 @@ function getLeadTableTypeLabel(category = 'buyer') {
 }
 
 function getBuyerPropertyEnquiry(row = {}) {
-  const title = normalizeText(row.enquiredPropertyTitle)
-  const address = normalizeText(row.enquiredPropertyAddress)
-  const price = row.enquiredPropertyPrice
+  const matchedFields = row.rawEnquiryPayload?.parser?.matchedFields && typeof row.rawEnquiryPayload.parser.matchedFields === 'object'
+    ? row.rawEnquiryPayload.parser.matchedFields
+    : {}
+  const reference = normalizeText(row.sourceReferenceId || row.source_reference_id || matchedFields.listingReference || matchedFields.webRef)
+  const propertyInterest = normalizeText(row.propertyInterest || row.property_interest || matchedFields.propertyInterest || matchedFields.development)
+  const title = normalizeText(row.enquiredPropertyTitle || row.enquired_property_title || matchedFields.propertyTitle) ||
+    [propertyInterest, reference].filter(Boolean).join(' - ')
+  const address = normalizeText(row.enquiredPropertyAddress || row.enquired_property_address || matchedFields.propertyAddress || row.areaInterest || row.area_interest)
+  const price = row.enquiredPropertyPrice ?? row.enquired_property_price ?? matchedFields.propertyPrice
   const hasData = title || address || normalizeText(price)
   if (!hasData) {
     return { title: 'No property linked', address: '—', price: '—' }
   }
   const formattedPrice = price === null || price === undefined || price === '' ? '—' : formatCurrency(price)
   return {
-    title,
+    title: title || reference || 'Property enquiry',
     address: address || '—',
     price: formattedPrice,
   }

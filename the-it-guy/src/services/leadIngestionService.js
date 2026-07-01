@@ -110,6 +110,10 @@ export function normalizeEnquiryPayload(payload = {}, defaultSource = 'Other') {
   const email = normalizeEmail(payload.email || contact.email || payload.fromEmail)
   const phone = normalizePhone(payload.phone || contact.phone || payload.mobile || payload.fromPhone)
   const externalReference = normalizeText(payload.externalReference || payload.external_reference || payload.enquiryId || payload.enquiry_id || payload.id || payload.reference)
+  const listingReference = normalizeText(payload.listingReference || payload.listing_reference || payload.externalListingReference || payload.external_listing_reference || payload.property24ListingId || payload.privatePropertyListingId)
+  const enquiredPropertyTitle = normalizeText(payload.enquiredPropertyTitle || payload.enquired_property_title || payload.propertyTitle || payload.property_title)
+  const enquiredPropertyAddress = normalizeText(payload.enquiredPropertyAddress || payload.enquired_property_address || payload.propertyAddress || payload.property_address)
+  const enquiredPropertyPrice = payload.enquiredPropertyPrice ?? payload.enquired_property_price ?? payload.propertyPrice ?? payload.property_price
   return {
     organisationId: normalizeText(payload.organisationId || payload.organisation_id),
     source,
@@ -137,10 +141,14 @@ export function normalizeEnquiryPayload(payload = {}, defaultSource = 'Other') {
       areaInterest: normalizeText(lead.areaInterest || payload.areaInterest || payload.area || payload.suburb),
       propertyInterest: normalizeText(lead.propertyInterest || payload.propertyInterest || payload.propertyType || payload.property_type),
       listingId: normalizeText(lead.listingId || payload.listingId || payload.listing_id),
+      enquiredPropertyTitle,
+      enquiredPropertyAddress,
+      enquiredPropertyPrice: enquiredPropertyPrice === undefined || enquiredPropertyPrice === null || enquiredPropertyPrice === '' ? null : Number(enquiredPropertyPrice) || null,
+      sourceReferenceId: normalizeText(payload.sourceReferenceId || payload.source_reference_id || listingReference),
       notes: normalizeText(lead.notes || payload.leadNotes),
     },
     listingId: normalizeText(payload.listingId || payload.listing_id || payload.privateListingId || payload.private_listing_id || lead.listingId),
-    listingReference: normalizeText(payload.listingReference || payload.listing_reference || payload.externalListingReference || payload.external_listing_reference || payload.property24ListingId || payload.privatePropertyListingId),
+    listingReference,
     assignedAgent: payload.assignedAgent && typeof payload.assignedAgent === 'object' ? payload.assignedAgent : null,
     requirement: payload.requirement && typeof payload.requirement === 'object' ? payload.requirement : null,
     raw: payload,
@@ -412,6 +420,10 @@ async function createOrReuseLead({ enquiry, contact, listing, actor }) {
         areaInterest: enquiry.lead.areaInterest,
         propertyInterest: enquiry.lead.propertyInterest,
         listingId: listing?.id || enquiry.lead.listingId,
+        enquiredPropertyTitle: enquiry.lead.enquiredPropertyTitle,
+        enquiredPropertyAddress: enquiry.lead.enquiredPropertyAddress,
+        enquiredPropertyPrice: enquiry.lead.enquiredPropertyPrice,
+        sourceReferenceId: enquiry.lead.sourceReferenceId,
         notes: [enquiry.lead.notes, enquiry.message].filter(Boolean).join('\n'),
       },
     },

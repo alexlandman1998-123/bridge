@@ -1214,13 +1214,15 @@ function buildCapturedEnquirySummary(lead = null, capture = null) {
   if (!lead || !capture) return null
   const fields = capture.matchedFields && typeof capture.matchedFields === 'object' ? capture.matchedFields : {}
   const listingReferenceRaw = normalizeText(fields.listingReference || fields.propertyReference || fields.webRef || capture.externalReference || lead.sourceReferenceId)
-  const propertyLink = extractFirstUrl(listingReferenceRaw || fields.propertyLink || fields.url || fields.link)
+  const propertyLink = extractFirstUrl(fields.propertyLink || fields.url || fields.link || listingReferenceRaw)
   const webReference = stripCapturedLinks(listingReferenceRaw)
   const propertyLabel = normalizeText(
     fields.development ||
     fields.propertyInterest ||
     fields.propertyTitle ||
     lead.enquiredPropertyTitle ||
+    lead.enquiredPropertyAddress ||
+    fields.propertyAddress ||
     lead.propertyInterest ||
     lead.sellerPropertyAddress ||
     lead.areaInterest,
@@ -3370,7 +3372,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const selectedLeadPropertyLabel = useMemo(() => {
     if (!selectedLead) return 'No property linked'
-    return normalizeText(selectedLead?.sellerPropertyAddress || selectedLead?.propertyInterest || selectedLead?.areaInterest || selectedLead?.listingId) ||
+    return normalizeText(
+      selectedLead?.sellerPropertyAddress ||
+      selectedLead?.enquiredPropertyTitle ||
+      selectedLead?.enquiredPropertyAddress ||
+      selectedLead?.sourceReferenceId ||
+      selectedLead?.propertyInterest ||
+      selectedLead?.areaInterest ||
+      selectedLead?.listingId,
+    ) ||
       'No property linked'
   }, [selectedLead])
 
