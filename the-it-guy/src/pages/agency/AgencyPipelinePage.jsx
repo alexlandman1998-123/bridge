@@ -2239,6 +2239,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [selectedAgentId, setSelectedAgentId] = useState('')
   const [selectedLeadId, setSelectedLeadId] = useState('')
   const [leadActionsMenuOpen, setLeadActionsMenuOpen] = useState(false)
+  const [leadListActionsMenuId, setLeadListActionsMenuId] = useState('')
   const [leadArchiveModal, setLeadArchiveModal] = useState({
     open: false,
     leadId: '',
@@ -2981,6 +2982,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   useEffect(() => {
     setLeadActionsMenuOpen(false)
+    setLeadListActionsMenuId('')
   }, [selectedLeadId])
 
   useEffect(() => {
@@ -10189,14 +10191,46 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   Open
                                   <ArrowUpRight size={15} />
                                 </button>
-                                <button
-                                  type="button"
-                                  className="inline-flex h-[44px] w-[44px] items-center justify-center rounded-[14px] border border-[#dbe4ee] bg-white text-[#5b7289] transition hover:border-[#c7d6e5] hover:bg-[#f8fbfe] hover:text-[#20364c]"
-                                  aria-label={`More actions for ${leadName}`}
-                                  onClick={() => openArchiveLeadModal(lead.leadId)}
-                                >
-                                  <MoreHorizontal size={18} />
-                                </button>
+                                <div className="relative">
+                                  <button
+                                    type="button"
+                                    className="inline-flex h-[44px] w-[44px] items-center justify-center rounded-[14px] border border-[#dbe4ee] bg-white text-[#5b7289] transition hover:border-[#c7d6e5] hover:bg-[#f8fbfe] hover:text-[#20364c]"
+                                    aria-label={`More actions for ${leadName}`}
+                                    aria-haspopup="menu"
+                                    aria-expanded={leadListActionsMenuId === leadId}
+                                    onClick={() => setLeadListActionsMenuId((value) => (value === leadId ? '' : leadId))}
+                                  >
+                                    <MoreHorizontal size={18} />
+                                  </button>
+                                  {leadListActionsMenuId === leadId ? (
+                                    <div className="absolute right-0 z-30 mt-2 w-52 overflow-hidden rounded-[16px] border border-[#dbe7f2] bg-white py-2 shadow-[0_18px_40px_rgba(18,44,68,0.16)]" role="menu">
+                                      <button
+                                        type="button"
+                                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold text-[#29435d] transition hover:bg-[#f5f9fc]"
+                                        onClick={() => {
+                                          setLeadListActionsMenuId('')
+                                          openArchiveLeadModal(lead.leadId)
+                                        }}
+                                        role="menuitem"
+                                      >
+                                        <X className="h-4 w-4" />
+                                        Archive Lead
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold text-[#b42318] transition hover:bg-[#fff5f3]"
+                                        onClick={() => {
+                                          setLeadListActionsMenuId('')
+                                          openDeleteLeadModal(lead.leadId)
+                                        }}
+                                        role="menuitem"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                        Delete Lead
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </div>
                               </div>
                             </div>
                           </article>
@@ -10348,14 +10382,46 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 Open
                                 <ArrowUpRight size={14} />
                               </button>
-                              <button
-                                type="button"
-                                className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-[14px] border border-[#dbe4ee] bg-white text-[#5b7289]"
-                                aria-label={`More actions for ${leadName}`}
-                                onClick={() => openArchiveLeadModal(lead.leadId)}
-                              >
-                                <MoreHorizontal size={17} />
-                              </button>
+                              <div className="relative">
+                                <button
+                                  type="button"
+                                  className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-[14px] border border-[#dbe4ee] bg-white text-[#5b7289]"
+                                  aria-label={`More actions for ${leadName}`}
+                                  aria-haspopup="menu"
+                                  aria-expanded={leadListActionsMenuId === leadId}
+                                  onClick={() => setLeadListActionsMenuId((value) => (value === leadId ? '' : leadId))}
+                                >
+                                  <MoreHorizontal size={17} />
+                                </button>
+                                {leadListActionsMenuId === leadId ? (
+                                  <div className="absolute right-0 z-30 mt-2 w-52 overflow-hidden rounded-[16px] border border-[#dbe7f2] bg-white py-2 shadow-[0_18px_40px_rgba(18,44,68,0.16)]" role="menu">
+                                    <button
+                                      type="button"
+                                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold text-[#29435d] transition hover:bg-[#f5f9fc]"
+                                      onClick={() => {
+                                        setLeadListActionsMenuId('')
+                                        openArchiveLeadModal(lead.leadId)
+                                      }}
+                                      role="menuitem"
+                                    >
+                                      <X className="h-4 w-4" />
+                                      Archive Lead
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold text-[#b42318] transition hover:bg-[#fff5f3]"
+                                      onClick={() => {
+                                        setLeadListActionsMenuId('')
+                                        openDeleteLeadModal(lead.leadId)
+                                      }}
+                                      role="menuitem"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                      Delete Lead
+                                    </button>
+                                  </div>
+                                ) : null}
+                              </div>
                             </div>
                           </div>
                         </div>

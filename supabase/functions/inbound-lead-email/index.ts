@@ -90,6 +90,29 @@ function isMissingColumnError(error: unknown) {
   return code === "42703" || code === "PGRST204" || message.includes("column") && message.includes("does not exist");
 }
 
+function missingColumnName(error: unknown, allowedColumns: string[]) {
+  const message = normalizeLower((error as { message?: string; details?: string })?.message || (error as { details?: string })?.details);
+  return allowedColumns.find((column) => {
+    const lowerColumn = column.toLowerCase();
+    return message.includes(`'${lowerColumn}'`) || message.includes(`"${lowerColumn}"`) || message.includes(` ${lowerColumn} `);
+  }) || "";
+}
+
+function normalizeTimestamp(value: unknown, fallback = "") {
+  const text = normalizeText(value);
+  if (!text) return fallback;
+  if (/^\d+(\.\d+)?$/.test(text)) {
+    const numeric = Number(text);
+    if (Number.isFinite(numeric)) {
+      const milliseconds = numeric < 100000000000 ? numeric * 1000 : numeric;
+      const date = new Date(milliseconds);
+      if (!Number.isNaN(date.getTime())) return date.toISOString();
+    }
+  }
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? fallback : date.toISOString();
+}
+
 function stripHtml(value: unknown) {
   return normalizeText(value)
     .replace(/<br\s*\/?>/gi, "\n")
@@ -587,7 +610,7 @@ function normalizeInboundPayload(payload: JsonRecord, headers: Headers, webhookR
     "id",
   ]));
   const providerEventId = normalizeText(pickFirst(normalizedPayload, ["providerEventId", "eventId", "event_id", "id"]));
-  const providerReceivedAt = normalizeText(pickFirst(normalizedPayload, ["receivedAt", "received_at", "Date", "date", "timestamp"]));
+  const providerReceivedAt = normalizeTimestamp(pickFirst(normalizedPayload, ["receivedAt", "received_at", "Date", "date", "timestamp"]));
 
   return {
     provider: normalizeProviderName(normalizedPayload.provider || payload.provider),
@@ -657,11 +680,16 @@ function buildCanonicalPayload(inbound: ReturnType<typeof normalizeInboundPayloa
 
 async function insertWithColumnFallback(client: SupabaseClientLike, table: string, payload: JsonRecord, optionalColumns: string[]) {
   const workingPayload = { ...payload };
+  const remainingOptionalColumns = new Set(optionalColumns);
   for (let attempt = 0; attempt <= optionalColumns.length; attempt += 1) {
     const result = await client.from(table).insert(workingPayload).select("*").single();
     if (!result.error) return result.data as JsonRecord;
     if (!isMissingColumnError(result.error) || attempt === optionalColumns.length) throw result.error;
-    delete workingPayload[optionalColumns[attempt]];
+    const missingColumn = missingColumnName(result.error, [...remainingOptionalColumns]);
+    const columnToRemove = missingColumn || [...remainingOptionalColumns].find((column) => column in workingPayload) || "";
+    if (!columnToRemove) throw result.error;
+    delete workingPayload[columnToRemove];
+    remainingOptionalColumns.delete(columnToRemove);
   }
   throw new Error(`Unable to insert ${table}.`);
 }
@@ -729,6 +757,16 @@ async function createLeadFromEmail(client: SupabaseClientLike, canonical: JsonRe
       updated_at: new Date().toISOString(),
     };
     const contactResult = await client.from("contacts").insert(contactPayload);
+    if (contactResult.error) throw contactResult.error;
+  } else if (nameParts.length) {
+    const contactResult = await client
+      .from("contacts")
+      .update({
+        first_name: nameParts[0] || "Lead",
+        last_name: nameParts.slice(1).join(" ") || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("contact_id", contactId);
     if (contactResult.error) throw contactResult.error;
   }
 
