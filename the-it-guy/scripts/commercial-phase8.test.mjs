@@ -39,9 +39,6 @@ for (const marker of [
   'Search Validation',
   'Activity Validation',
   'Notification Validation',
-  'Seed Data Saturation',
-  'Demo Environment',
-  'Executive Demo Mode',
   'Performance Testing',
   'Mobile Validation',
   'Production Hardening',
@@ -53,40 +50,6 @@ for (const marker of [
 ]) {
   assert.match(docSource, new RegExp(marker), `Phase 8 launch readiness doc should include ${marker}`)
 }
-
-const seedSource = await read('../../supabase/seed/seed-commercial-launch-readiness-demo-data.sql')
-for (const marker of [
-  'commercial_launch_uuid',
-  'commercial_launch_readiness_demo',
-  'large brokerage',
-  'medium brokerage',
-  'independent broker',
-  'corporate landlord',
-  'corporate tenant',
-  'industrial',
-  'retail',
-  'office',
-  'mixed_use',
-  'logistics',
-  'business_park',
-  'warehouse',
-  'landlords 50, tenants 100, properties 50, vacancies 150, requirements 100, deals 75, HOTs 50, leases 100',
-]) {
-  assert.match(seedSource, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `Phase 8 seed should include ${marker}`)
-}
-
-assert.match(seedSource, /for v_i in 1\.\.50 loop[\s\S]*commercial_landlords/, 'launch seed should create 50+ landlords')
-assert.match(seedSource, /for v_i in 1\.\.100 loop[\s\S]*commercial_tenants/, 'launch seed should create 100+ tenants')
-assert.match(seedSource, /for v_i in 1\.\.50 loop[\s\S]*commercial_properties/, 'launch seed should create 50+ properties')
-assert.match(seedSource, /for v_i in 1\.\.150 loop[\s\S]*commercial_vacancies/, 'launch seed should create 150+ vacancies')
-assert.match(seedSource, /for v_i in 1\.\.100 loop[\s\S]*commercial_requirements/, 'launch seed should create 100+ requirements')
-assert.match(seedSource, /for v_i in 1\.\.75 loop[\s\S]*commercial_deals/, 'launch seed should create 75+ deals')
-assert.match(seedSource, /for v_i in 1\.\.50 loop[\s\S]*commercial_heads_of_terms/, 'launch seed should create 50+ HOTs')
-assert.match(seedSource, /for v_i in 1\.\.100 loop[\s\S]*commercial_leases/, 'launch seed should create 100+ leases')
-assert.match(seedSource, /for v_i in 1\.\.220 loop[\s\S]*commercial_documents/, 'launch seed should create a large document library')
-assert.match(seedSource, /for v_i in 1\.\.160 loop[\s\S]*commercial_document_requests/, 'launch seed should create compliance requests')
-assert.match(seedSource, /for v_i in 1\.\.320 loop[\s\S]*commercial_activity/, 'launch seed should create large activity histories')
-assert.match(seedSource, /commercial_portal_access/, 'launch seed should include portal access demo records')
 
 const saturation = buildCommercialSeedSaturationStatus(COMMERCIAL_LAUNCH_MINIMUMS)
 assert.equal(saturation.every((item) => item.status === 'pass'), true, 'commercial launch minimums should satisfy themselves')

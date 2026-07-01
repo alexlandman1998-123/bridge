@@ -1593,6 +1593,8 @@ function Units() {
     }
   }
 
+  const showInitialTransactionsLoading = loading && rows.length === 0
+
   return (
     <section className="flex flex-col gap-6">
       {isDeveloperRole || isAttorneyRole || isBondRole || isAgentRole ? null : (
@@ -1913,11 +1915,11 @@ function Units() {
       {error ? (
         <p className="rounded-[16px] border border-danger bg-dangerSoft px-5 py-4 text-sm text-danger">{error}</p>
       ) : null}
-      {loading ? (
+      {showInitialTransactionsLoading ? (
         <LoadingSkeleton lines={8} className="rounded-[24px] border border-borderDefault bg-surface shadow-panel" />
       ) : null}
 
-      {!loading && isSupabaseConfigured ? (
+      {!showInitialTransactionsLoading && isSupabaseConfigured ? (
         isBondRole ? (
           <BondApplicationsTable
             rows={rows}
@@ -1980,6 +1982,7 @@ function Units() {
         ) : isAgentRole ? (
           <AgentTransactionsTable
             rows={rows}
+            loading={loading}
             title="Transactions"
             description="Manage active deals, transfer progress, registrations, and blocked transactions."
             isPrincipalView={isPrincipalAgentView}

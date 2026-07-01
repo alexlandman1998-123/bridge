@@ -74,14 +74,6 @@ for (const marker of [
   includes(hierarchyMigration, marker, `Commercial hierarchy migration should enforce module-scoped RLS: ${marker}`)
 }
 
-const commercialSeed = await read('../../supabase/seed/seed-commercial-demo-data.sql')
-for (const marker of [
-  "module_context = 'commercial'",
-  "workspace_role = coalesce(workspace_role, 'commercial_hq_admin')",
-]) {
-  includes(commercialSeed, marker, `Commercial seed should explicitly assign commercial module context: ${marker}`)
-}
-
 const privateListings = await read('../src/services/privateListingService.js')
 for (const marker of [
   ".from('private_listings')",

@@ -9,28 +9,24 @@ const appSource = await read('../src/App.jsx')
 const viteConfig = await read('../vite.config.js')
 const agentDataService = await read('../src/lib/agentDataService.js')
 const attorneyMockData = await read('../src/core/transactions/attorneyMockData.js')
+const mockData = await read('../src/lib/mockData.js')
 const attorneyTransactionDetail = await read('../src/pages/AttorneyTransactionDetail.jsx')
 
 assert.match(
-  appSource,
-  /import\('\.\/lib\/agentDemoSeed'\)/,
-  'App should keep the bulky agent demo seed module behind lazy imports.',
+  mockData,
+  /MOCK_DATA_ENABLED\s*=\s*false/,
+  'Mock data should remain disabled after removing seed payloads.',
 )
 assert.doesNotMatch(
   appSource,
-  /from '\.\/lib\/agentDemoSeed'/,
-  'App should not statically import agentDemoSeed into the entry bundle.',
+  /agentDemoSeed/,
+  'App should not import removed agent demo seed data.',
 )
 
 for (const [label, source] of [
   ['agent data service', agentDataService],
   ['attorney mock data', attorneyMockData],
 ]) {
-  assert.match(
-    source,
-    /agentDemoTransactionStorage/,
-    `${label} should use the small transaction storage helper instead of the full seed module.`,
-  )
   assert.doesNotMatch(
     source,
     /agentDemoSeed/,

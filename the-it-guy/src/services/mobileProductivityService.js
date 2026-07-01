@@ -127,78 +127,19 @@ export function getMobileDocumentCentre() {
 
   return {
     filters: ['All', 'Transaction', 'Matter', 'Application', 'Deal'],
-    recent: [
-      ...uploadedDocs.slice(0, 5),
-      { id: 'recent-otp', title: 'Signed OTP', related: 'Transaction', module: 'transaction', status: 'Uploaded', date: 'Today', actions: ['View', 'Download', 'Share'] },
-      { id: 'recent-fica', title: 'Buyer FICA', related: 'Transaction', module: 'transaction', status: 'Uploaded', date: 'Yesterday', actions: ['View', 'Download', 'Share'] },
-    ],
-    outstanding: [
-      { id: 'outstanding-id', title: 'Buyer ID', related: 'Transaction', module: 'transaction', status: 'Outstanding', date: 'Due today', actions: ['Upload'] },
-      { id: 'outstanding-bank', title: 'Bank Requirement', related: 'Application', module: 'application', status: 'Requested', date: 'Due tomorrow', actions: ['Upload'] },
-    ],
-    requested: [
-      { id: 'requested-fica', title: 'FICA documents', related: 'Matter', module: 'matter', status: 'Requested', date: 'Today', actions: ['Upload'] },
-      { id: 'requested-hot', title: 'HOT signature page', related: 'Deal', module: 'deal', status: 'Requested', date: 'Today', actions: ['Upload'] },
-    ],
+    recent: uploadedDocs.slice(0, 5),
+    outstanding: [],
+    requested: [],
     uploaded: uploadedDocs,
   }
 }
 
-export function getMobileNotifications(workspace = {}) {
-  const category = roleCategory(workspace)
-  const shared = [
-    { id: 'notification-transaction', title: 'Document uploaded', body: 'Buyer uploaded ID', time: 'Now', module: 'transaction', to: '/mobile/transaction/demo-transaction', unread: true },
-    { id: 'notification-registration', title: 'Registration complete', body: 'Transfer reached registration', time: '18m', module: 'matter', to: '/mobile/matter/demo-matter', unread: true },
-  ]
-  if (category === 'attorney') {
-    return [
-      { id: 'notification-instruction', title: 'New instruction received', body: 'Open the matter and update the milestone.', time: 'Now', module: 'matter', to: '/mobile/matter/demo-matter', unread: true },
-      ...shared,
-    ]
-  }
-  if (category === 'bond_originator') {
-    return [
-      { id: 'notification-bank-offer', title: 'Bank offer received', body: 'Review the offer and update application status.', time: 'Now', module: 'application', to: '/mobile/application/demo-application', unread: true },
-      ...shared,
-    ]
-  }
-  if (category === 'commercial') {
-    return [
-      { id: 'notification-viewing', title: 'Viewing scheduled', body: 'Confirm attendance for the deal.', time: 'Now', module: 'deal', to: '/mobile/deal/demo-deal', unread: true },
-      { id: 'notification-hot', title: 'HOT signed', body: 'Upload the signed commercial document.', time: '22m', module: 'deal', to: '/mobile/deal/demo-deal', unread: false },
-    ]
-  }
-  return [
-    { id: 'notification-bond', title: 'Bond approved', body: 'Finance can move to the next stage.', time: 'Now', module: 'transaction', to: '/mobile/transaction/demo-transaction', unread: true },
-    { id: 'notification-lodged', title: 'Transfer lodged', body: 'Attorney updated the matter.', time: '14m', module: 'matter', to: '/mobile/matter/demo-matter', unread: true },
-    ...shared,
-  ]
+export function getMobileNotifications() {
+  return []
 }
 
 export function getMobileInboxThreads() {
-  return [
-    {
-      id: 'thread-transaction',
-      title: '12 Oak Street',
-      subtitle: 'Transaction timeline',
-      module: 'transaction',
-      to: '/mobile/transaction/demo-transaction',
-      messages: [
-        { id: 'msg-1', type: 'System Message', author: 'Arch9', time: 'Now', body: 'Document Requested: Buyer FICA' },
-        { id: 'msg-2', type: 'Internal Note', author: 'Agent', time: '24m', body: 'Attorney asked for buyer confirmation before lodgement.' },
-      ],
-    },
-    {
-      id: 'thread-application',
-      title: 'Bond Application',
-      subtitle: 'Originator updates',
-      module: 'application',
-      to: '/mobile/application/demo-application',
-      messages: [
-        { id: 'msg-3', type: 'System Message', author: 'Bank Queue', time: '1h', body: 'Bank offer received and ready for review.' },
-      ],
-    },
-  ]
+  return []
 }
 
 export function getSmartActionsForWorkspace(workspace = {}, workspaceContext = {}) {
@@ -279,38 +220,8 @@ export function setNotificationPreference(enabled) {
   window.localStorage.setItem(STORAGE_KEYS.notificationsEnabled, enabled ? 'true' : 'false')
 }
 
-export function getSearchIndex(workspace = {}) {
-  const category = roleCategory(workspace)
-  const common = [
-    { id: 'client-buyer', title: 'Buyer Client', type: 'Clients', description: 'Residential buyer', to: '/mobile/lead/demo-lead' },
-    { id: 'property-oak', title: '12 Oak Street', type: 'Properties', description: 'Active property workspace', to: '/mobile/transaction/demo-transaction' },
-  ]
-  if (category === 'attorney') {
-    return [
-      { id: 'matter-transfer', title: 'Transfer Matter', type: 'Matters', description: 'FICA milestone', to: '/mobile/matter/demo-matter' },
-      ...common,
-    ]
-  }
-  if (category === 'bond_originator') {
-    return [
-      { id: 'application-bond', title: 'Bond Application', type: 'Applications', description: 'Banks stage', to: '/mobile/application/demo-application' },
-      { id: 'applicant-main', title: 'Applicant', type: 'Applicants', description: 'Finance readiness', to: '/mobile/application/demo-application' },
-      ...common,
-    ]
-  }
-  if (category === 'commercial') {
-    return [
-      { id: 'deal-lease', title: 'Commercial Deal', type: 'Deals', description: 'Viewing stage', to: '/mobile/deal/demo-deal' },
-      { id: 'listing-office', title: 'Office Listing', type: 'Properties', description: 'Active commercial listing', to: '/mobile/listing/demo-listing' },
-      { id: 'tenant-contact', title: 'Tenant Contact', type: 'Tenants', description: 'Commercial lead', to: '/mobile/commercial-lead/demo-commercial-lead' },
-    ]
-  }
-  return [
-    { id: 'transaction-oak', title: '12 Oak Street', type: 'Transactions', description: 'Finance stage', to: '/mobile/transaction/demo-transaction' },
-    { id: 'lead-buyer', title: 'New Buyer Lead', type: 'Leads', description: 'Website lead', to: '/mobile/lead/demo-lead' },
-    { id: 'listing-sale', title: 'Residential Listing', type: 'Listings', description: 'Seller onboarding', to: '/mobile/listing/demo-listing' },
-    ...common,
-  ]
+export function getSearchIndex() {
+  return []
 }
 
 export function searchMobile(query = '', workspace = {}) {

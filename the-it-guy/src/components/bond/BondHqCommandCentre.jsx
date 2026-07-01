@@ -346,15 +346,7 @@ function buildAttentionItems({ alerts = [], priorityActions = [], operationalRis
     .sort((left, right) => right.value - left.value)
 }
 
-const DEMO_REGIONAL_ROWS = [
-  { key: 'seed-gauteng-north', region: 'Gauteng North', activeApplications: 28, approvalRate: 68, slaCompliance: 82, healthScore: 78, projectedCommissionLabel: 'R92k', monthlyTrendLabel: '+12% vs last month', href: '/bond/organisation?view=regions&region=Gauteng%20North' },
-  { key: 'seed-gauteng-south', region: 'Gauteng South', activeApplications: 24, approvalRate: 62, slaCompliance: 76, healthScore: 72, projectedCommissionLabel: 'R84k', monthlyTrendLabel: '+8% vs last month', href: '/bond/organisation?view=regions&region=Gauteng%20South' },
-  { key: 'seed-western-cape', region: 'Western Cape', activeApplications: 19, approvalRate: 71, slaCompliance: 88, healthScore: 84, projectedCommissionLabel: 'R76k', monthlyTrendLabel: '+15% vs last month', href: '/bond/organisation?view=regions&region=Western%20Cape' },
-  { key: 'seed-kwazulu-natal', region: 'KwaZulu-Natal', activeApplications: 14, approvalRate: 58, slaCompliance: 74, healthScore: 69, projectedCommissionLabel: 'R51k', monthlyTrendLabel: '+4% vs last month', href: '/bond/organisation?view=regions&region=KwaZulu-Natal' },
-  { key: 'seed-eastern-cape', region: 'Eastern Cape', activeApplications: 9, approvalRate: 53, slaCompliance: 79, healthScore: 66, projectedCommissionLabel: 'R33k', monthlyTrendLabel: '-3% vs last month', href: '/bond/organisation?view=regions&region=Eastern%20Cape' },
-  { key: 'seed-free-state', region: 'Free State', activeApplications: 7, approvalRate: 64, slaCompliance: 86, healthScore: 73, projectedCommissionLabel: 'R28k', monthlyTrendLabel: '+6% vs last month', href: '/bond/organisation?view=regions&region=Free%20State' },
-  { key: 'seed-mpumalanga', region: 'Mpumalanga', activeApplications: 6, approvalRate: 57, slaCompliance: 81, healthScore: 70, projectedCommissionLabel: 'R24k', monthlyTrendLabel: '+2% vs last month', href: '/bond/organisation?view=regions&region=Mpumalanga' },
-]
+const DEMO_REGIONAL_ROWS = []
 
 function buildRegionalStripRows(rows = []) {
   const rawRows = (rows || []).filter((row) => normalizeText(getRegionalName(row)))

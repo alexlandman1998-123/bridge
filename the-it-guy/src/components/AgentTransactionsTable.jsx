@@ -5,6 +5,7 @@ import { buildDeveloperTransactionReadinessProfileFromRow } from '../core/transa
 import { calculateApprovalProbability, calculateOperationalRisk, calculateTransactionVelocity } from '../services/financeIntelligenceService'
 import Button from './ui/Button'
 import DataTable, { DataTableInner } from './ui/DataTable'
+import LoadingSkeleton from './LoadingSkeleton'
 import SearchInput from './ui/SearchInput'
 import StatusBadge from './ui/StatusBadge'
 
@@ -229,6 +230,7 @@ function AgentTransactionsTable({
   compactLayout = false,
   searchValue = '',
   onSearchChange = null,
+  loading = false,
 }) {
   const [page, setPage] = useState(1)
   const [quickFilter, setQuickFilter] = useState('all')
@@ -308,7 +310,9 @@ function AgentTransactionsTable({
         </div>
       ) : null}
 
-      {filteredRows.length === 0 ? (
+      {loading ? (
+        <LoadingSkeleton lines={6} className="rounded-[18px] border border-borderDefault bg-surface" />
+      ) : filteredRows.length === 0 ? (
         <div className={`agent-transactions-empty-state ${hasAnyRows ? 'is-filtered' : 'is-first-run'}`.trim()}>
           <span className="agent-transactions-empty-icon">
             {hasAnyRows ? <Search size={22} /> : <BriefcaseBusiness size={24} />}
@@ -406,8 +410,8 @@ function AgentTransactionsTable({
                 >
                   <td className="agent-transactions-sticky-first" data-label="Listing / Development">
                     <div className="transaction-list-cell">
-                      <strong className="transaction-cell-primary" title={developmentLabel}>{developmentLabel}</strong>
-                      <small className="transaction-cell-secondary" title={propertyLabel}>{propertyLabel}</small>
+                      <strong className="transaction-cell-primary" title={propertyLabel}>{propertyLabel}</strong>
+                      <small className="transaction-cell-secondary" title={developmentLabel}>{developmentLabel}</small>
                       {transactionReference ? (
                         <small className="transaction-cell-meta" title={transactionReference}>Ref {transactionReference}</small>
                       ) : null}
@@ -484,7 +488,7 @@ function AgentTransactionsTable({
         </DataTableInner>
       )}
 
-      {filteredRows.length > pageSize ? (
+      {!loading && filteredRows.length > pageSize ? (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-borderDefault pt-4">
           <p className="text-sm text-textMuted">Page {currentPage} of {totalPages}</p>
           <div className="flex items-center gap-2">

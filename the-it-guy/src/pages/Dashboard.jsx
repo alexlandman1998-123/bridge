@@ -17,7 +17,7 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react'
-import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import QuickCreateDropdown from '../components/QuickCreateDropdown'
@@ -691,6 +691,38 @@ function resolveDashboardAgentAssignmentIds(profile = {}, organisationUsers = []
   }
 
   return Array.from(ids)
+}
+
+async function fetchAgentDashboardPrivateListings({ profile = {}, organisationId = '' } = {}) {
+  if (!profile?.id || !organisationId) return []
+
+  try {
+    const organisationUsers = await listOrganisationUsers()
+    const assignmentIds = resolveDashboardAgentAssignmentIds(profile, organisationUsers)
+    const [byAgentId, byAgentEmail] = await Promise.all([
+      getAgentPrivateListings(profile.id, {
+        organisationId,
+        assignedAgentEmail: '',
+        assignedAgentIds: assignmentIds,
+      }).catch((listingError) => {
+        console.warn('[dashboard] Unable to load agent private listings by assignment id.', listingError)
+        return []
+      }),
+      profile?.email
+        ? getAgentPrivateListings('', {
+            organisationId,
+            assignedAgentEmail: profile.email,
+          }).catch((listingError) => {
+            console.warn('[dashboard] Unable to load agent private listings by email.', listingError)
+            return []
+          })
+        : Promise.resolve([]),
+    ])
+    return mergeDashboardListingRows(byAgentId, byAgentEmail)
+  } catch (listingError) {
+    console.warn('[dashboard] Unable to load agent private listings for KPI cards.', listingError)
+    return []
+  }
 }
 
 function getAppointmentDateValue(appointment = {}) {
@@ -1711,6 +1743,9 @@ function Dashboard() {
   const [agentPrivateListingRows, setAgentPrivateListingRows] = useState([])
   const [principalCrmSnapshot, setPrincipalCrmSnapshot] = useState({ leads: [], leadActivities: [] })
   const [principalCanvassingSnapshot, setPrincipalCanvassingSnapshot] = useState({ prospects: [], activities: [] })
+  const dashboardHasLoadedRef = useRef(false)
+  const dashboardLoadKeyRef = useRef('')
+  const agentPrivateListingLoadRef = useRef(0)
 
   const navigateWithTrace = useCallback(
     (to, label = 'dashboard-navigation') => {
@@ -1748,24 +1783,45 @@ function Dashboard() {
   }, [currentOrganisationId, hydratedMembershipRole, organisationLoading, role])
 
   const loadDashboard = useCallback(async () => {
+    const dashboardLoadKey = [
+      role,
+      workspace.id,
+      currentOrganisationId,
+      developerDashboardOrganisationId || '',
+      profile?.id || '',
+      isPrincipalAgentView ? 'principal' : 'standard',
+    ].join('|')
+    const canReuseDashboardShell = dashboardHasLoadedRef.current && dashboardLoadKeyRef.current === dashboardLoadKey
+
     if (isPrincipalAgentView) {
+      dashboardHasLoadedRef.current = false
+      dashboardLoadKeyRef.current = ''
+      agentPrivateListingLoadRef.current += 1
       setAgentPrivateListingRows([])
       setLoading(false)
       return
     }
 
     if (!isSupabaseConfigured) {
+      dashboardHasLoadedRef.current = false
+      dashboardLoadKeyRef.current = ''
+      agentPrivateListingLoadRef.current += 1
       setAgentPrivateListingRows([])
       setLoading(false)
       return
     }
 
     if ((role === 'agent' || role === 'developer') && organisationLoading) {
-      setLoading(true)
+      if (!canReuseDashboardShell) {
+        setLoading(true)
+      }
       return
     }
 
     if ((role === 'agent' || role === 'developer') && !currentOrganisationId) {
+      dashboardHasLoadedRef.current = false
+      dashboardLoadKeyRef.current = ''
+      agentPrivateListingLoadRef.current += 1
       setAgentPrivateListingRows([])
       setOverview({
         metrics: {
@@ -1785,11 +1841,13 @@ function Dashboard() {
 
     try {
       setError('')
-      setLoading(true)
+      if (!canReuseDashboardShell) {
+        setLoading(true)
+      }
       if (role === 'agent' || role === 'bond_originator' || role === 'attorney') {
         const roleType = role === 'bond_originator' ? 'bond_originator' : role === 'attorney' ? 'attorney' : 'agent'
         let participantRows = []
-        let privateListingRows = []
+        let shouldLoadAgentPrivateListings = false
         if (role === 'agent' && isPrincipalAgentView) {
           participantRows = await fetchTransactionsListSummary({
             developmentId: workspace.id === 'all' ? null : workspace.id,
@@ -1797,47 +1855,21 @@ function Dashboard() {
             organisationId: currentOrganisationId,
           })
         } else if (profile?.id) {
-          const [participantRowsResult, privateListingRowsResult] = await Promise.all([
-            fetchTransactionsByParticipantSummary({
-              userId: profile.id,
-              roleType,
-              organisationId: role === 'agent' ? currentOrganisationId : '',
-            }),
-            role === 'agent' && currentOrganisationId
-              ? listOrganisationUsers()
-                  .then((organisationUsers) => {
-                    const assignmentIds = resolveDashboardAgentAssignmentIds(profile, organisationUsers)
-                    return Promise.all([
-                      getAgentPrivateListings(profile.id, {
-                        organisationId: currentOrganisationId,
-                        assignedAgentEmail: '',
-                        assignedAgentIds: assignmentIds,
-                      }).catch((listingError) => {
-                        console.warn('[dashboard] Unable to load agent private listings by assignment id.', listingError)
-                        return []
-                      }),
-                      profile?.email
-                        ? getAgentPrivateListings('', {
-                            organisationId: currentOrganisationId,
-                            assignedAgentEmail: profile.email,
-                          }).catch((listingError) => {
-                            console.warn('[dashboard] Unable to load agent private listings by email.', listingError)
-                            return []
-                          })
-                        : Promise.resolve([]),
-                    ])
-                  })
-                  .then(([byAgentId, byAgentEmail]) => mergeDashboardListingRows(byAgentId, byAgentEmail))
-                  .catch((listingError) => {
-                    console.warn('[dashboard] Unable to load agent private listings for KPI cards.', listingError)
-                    return []
-                  })
-              : Promise.resolve([]),
-          ])
-          participantRows = participantRowsResult
-          privateListingRows = Array.isArray(privateListingRowsResult) ? privateListingRowsResult : []
+          participantRows = await fetchTransactionsByParticipantSummary({
+            userId: profile.id,
+            roleType,
+            organisationId: role === 'agent' ? currentOrganisationId : '',
+          })
+          shouldLoadAgentPrivateListings = role === 'agent' && Boolean(currentOrganisationId)
         }
-        setAgentPrivateListingRows(role === 'agent' ? privateListingRows : [])
+        if (role === 'agent' && shouldLoadAgentPrivateListings && !canReuseDashboardShell) {
+          agentPrivateListingLoadRef.current += 1
+          setAgentPrivateListingRows([])
+        }
+        if (role !== 'agent') {
+          agentPrivateListingLoadRef.current += 1
+          setAgentPrivateListingRows([])
+        }
         const scopedRows =
           role === 'attorney'
             ? buildAttorneyDemoRows(participantRows || [])
@@ -1880,16 +1912,38 @@ function Dashboard() {
           developmentSummaries: [],
           rows: filteredRows,
         })
+        dashboardHasLoadedRef.current = true
+        dashboardLoadKeyRef.current = dashboardLoadKey
+        if (shouldLoadAgentPrivateListings) {
+          const privateListingLoadId = agentPrivateListingLoadRef.current + 1
+          agentPrivateListingLoadRef.current = privateListingLoadId
+          void fetchAgentDashboardPrivateListings({
+            profile: {
+              id: profile?.id,
+              userId: profile?.userId,
+              email: profile?.email,
+            },
+            organisationId: currentOrganisationId,
+          }).then((listingRows) => {
+            if (agentPrivateListingLoadRef.current === privateListingLoadId) {
+              setAgentPrivateListingRows(listingRows)
+            }
+          })
+        }
       } else {
+        agentPrivateListingLoadRef.current += 1
         setAgentPrivateListingRows([])
         const data = await fetchDashboardOverview({
           developmentId: workspace.id === 'all' ? null : workspace.id,
           organisationId: role === 'developer' ? developerDashboardOrganisationId : null,
         })
         setOverview(data)
+        dashboardHasLoadedRef.current = true
+        dashboardLoadKeyRef.current = dashboardLoadKey
       }
     } catch (loadError) {
       if (role === 'agent') {
+        agentPrivateListingLoadRef.current += 1
         setAgentPrivateListingRows([])
       }
       setError(loadError.message)

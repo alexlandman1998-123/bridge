@@ -11,7 +11,6 @@ import { WorkspaceProvider } from './context/WorkspaceContext'
 import { useWorkspace } from './context/WorkspaceContext'
 import { APP_ROLE_LABELS } from './lib/roles'
 import { FEATURE_FLAGS, SHOW_INTELLIGENCE_BETA } from './lib/featureFlags'
-import { MOCK_DATA_ENABLED } from './lib/mockData'
 import {
   isSupabaseConfigured,
 } from './lib/supabaseClient'
@@ -600,43 +599,6 @@ function AppLayout({ onLogout, session = null, user }) {
       window.removeEventListener('itg:open-new-development', openNewDevelopment)
     }
   }, [defaultDevelopmentId])
-
-  useEffect(() => {
-    if (MOCK_DATA_ENABLED) return
-    let active = true
-    import('./lib/agentDemoSeed').then(({ clearLegacyAgentDemoSeedData }) => {
-      if (!active) return
-      const didCleanup = clearLegacyAgentDemoSeedData()
-      if (didCleanup && typeof window !== 'undefined') {
-        window.dispatchEvent(new Event('itg:transaction-updated'))
-        window.dispatchEvent(new Event('itg:transaction-created'))
-        window.dispatchEvent(new Event('itg:pipeline-updated'))
-        window.dispatchEvent(new Event('itg:listings-updated'))
-      }
-    })
-    return () => {
-      active = false
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!MOCK_DATA_ENABLED) return
-    let active = true
-    const profileEmail = String(profile?.email || user?.email || '').trim().toLowerCase()
-    import('./lib/agentDemoSeed').then(({ ensureAgentModuleDemoSeed }) => {
-      if (!active) return
-      const didSeed = ensureAgentModuleDemoSeed({ profileEmail })
-      if (didSeed && typeof window !== 'undefined') {
-        window.dispatchEvent(new Event('itg:transaction-updated'))
-        window.dispatchEvent(new Event('itg:transaction-created'))
-        window.dispatchEvent(new Event('itg:pipeline-updated'))
-        window.dispatchEvent(new Event('itg:listings-updated'))
-      }
-    })
-    return () => {
-      active = false
-    }
-  }, [profile?.email, user?.email])
 
   useEffect(() => {
     markRouteRendered(location.pathname)

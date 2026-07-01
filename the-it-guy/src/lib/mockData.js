@@ -1,8 +1,4 @@
-import { getUnsafeEnvironmentFlags, isUnsafeFallbackAllowed } from './envValidation'
-
-const unsafeFlags = getUnsafeEnvironmentFlags()
-
-export const MOCK_DATA_ENABLED = Boolean(isUnsafeFallbackAllowed() && (unsafeFlags.enableMockData || unsafeFlags.enableDemoMode))
+export const MOCK_DATA_ENABLED = false
 
 export function sortByNewest(items = [], ...dateKeys) {
   const normalizedItems = Array.isArray(items) ? items.filter(Boolean) : []

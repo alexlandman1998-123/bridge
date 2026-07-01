@@ -18,11 +18,6 @@ for (const entityType of ['commercial_landlord', 'commercial_tenant', 'commercia
   assert.match(documentConstants, new RegExp(entityType), `commercial documents should support ${entityType}`)
 }
 
-const seedSource = await fs.readFile(new URL('../../supabase/seed/seed-commercial-demo-data.sql', import.meta.url), 'utf8')
-for (const marker of ['1..20 loop', '1..24 loop', '1..15 loop', '1..45 loop', '1..30 loop', '1..25 loop']) {
-  assert.match(seedSource, new RegExp(marker.replace(/\./g, '\\.')), `commercial seed should include volume marker ${marker}`)
-}
-
 const server = await createServer({
   root: process.cwd(),
   logLevel: 'silent',

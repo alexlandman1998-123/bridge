@@ -18,7 +18,7 @@ import ActivePipelineCarousel from '../pipeline/ActivePipelineCarousel'
 import { formatCurrencyCompactZAR } from '../../services/residentialDashboardService'
 
 const shellClass = 'space-y-5 lg:space-y-6'
-const cardClass = 'rounded-[20px] border border-[#dfe7f0] bg-white shadow-[0_18px_44px_rgba(15,23,42,0.06)]'
+const cardClass = 'rounded-[16px] border border-[#dfe7f0] bg-white shadow-[0_10px_28px_rgba(15,23,42,0.045)]'
 const sectionClass = 'rounded-[20px] border border-[#dfe7f0] bg-white shadow-[0_18px_44px_rgba(15,23,42,0.06)]'
 const countFormat = new Intl.NumberFormat('en-ZA')
 
@@ -64,17 +64,17 @@ function buildSparklinePath(points = []) {
 
 function TrendPill({ value, label = 'vs previous period', inverse = false }) {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) {
-    return <span className="text-[0.72rem] font-medium leading-4 text-[#8a9aac]">No trend yet</span>
+    return <span className="block truncate text-[0.7rem] font-medium leading-4 text-[#8a9aac]">No trend yet</span>
   }
   const numeric = Number(value)
   const positive = numeric >= 0
   const good = inverse ? !positive : positive
   const Icon = positive ? TrendingUp : TrendingDown
   return (
-    <span className={`inline-flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 text-[0.72rem] font-semibold leading-4 ${good ? 'text-[#16894f]' : 'text-[#c83b36]'}`}>
+    <span className={`inline-flex max-w-full min-w-0 items-center gap-1 overflow-hidden text-[0.7rem] font-semibold leading-4 ${good ? 'text-[#16894f]' : 'text-[#c83b36]'}`}>
       <Icon size={12} className="shrink-0" />
       <span className="shrink-0">{Math.abs(Math.round(numeric))}%</span>
-      <span className="min-w-0 font-medium text-[#7b8ca2]">{label}</span>
+      <span className="min-w-0 truncate font-medium text-[#7b8ca2]">{label}</span>
     </span>
   )
 }
@@ -126,36 +126,41 @@ export function ResidentialKpiCard({ icon, label, value, trend, sparkline = [], 
   const { line, area, dots } = buildSparklinePath(sparkline)
   const gradientId = `spark-${label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`
   return (
-    <article className={`${cardClass} flex min-h-[168px] min-w-0 flex-col overflow-hidden p-3 xl:p-4`}>
-      <div className="flex min-w-0 items-start gap-2.5">
-        <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[14px] ${style.bubble}`}>
-          <IconComponent size={18} />
+    <article className={`${cardClass} grid h-[184px] min-w-0 grid-rows-[44px_50px_24px_1fr] overflow-hidden p-3`}>
+      <div className="grid min-w-0 grid-cols-[38px_minmax(0,1fr)] items-start gap-2.5">
+        <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-[13px] ${style.bubble}`}>
+          <IconComponent size={17} />
         </span>
-        <div className="min-w-0 flex-1">
-          <p className="break-words text-[0.82rem] font-semibold leading-4 text-[#344054]">{label}</p>
-          <p className="mt-2 break-words text-[1.55rem] font-semibold leading-none text-[#101828] tabular-nums xl:text-[1.72rem]">{value}</p>
-          <div className="mt-2 min-w-0"><TrendPill value={trend} label="vs previous 30 days" /></div>
-        </div>
+        <p className="line-clamp-2 min-h-[34px] text-[0.78rem] font-semibold leading-[1.08rem] text-[#344054]">{label}</p>
       </div>
-      <div className="mt-3 min-w-0">
-        {emptyCopy ? <p className="mt-1 text-[0.74rem] text-[#7b8ca2]">{emptyCopy}</p> : null}
+
+      <div className="flex min-w-0 items-start">
+        <p className="min-w-0 truncate text-[1.7rem] font-semibold leading-none text-[#101828] tabular-nums xl:text-[1.85rem]">{value}</p>
+      </div>
+
+      <div className="min-w-0">
+        <TrendPill value={trend} label="vs previous 30 days" />
+      </div>
+
+      <div className="min-w-0 border-t border-[#edf2f7] pt-2">
+        {emptyCopy ? <p className="text-[0.7rem] text-[#7b8ca2]">{emptyCopy}</p> : null}
         {line ? (
-          <svg viewBox="0 0 100 84" preserveAspectRatio="none" className="h-[52px] w-full overflow-visible" role="img" aria-label={`${label} trend sparkline`}>
+          <svg viewBox="0 0 100 84" preserveAspectRatio="none" className="h-[42px] w-full overflow-visible" role="img" aria-label={`${label} trend sparkline`}>
             <defs>
               <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor={style.stroke} stopOpacity="0.18" />
+                <stop offset="0%" stopColor={style.stroke} stopOpacity="0.12" />
                 <stop offset="100%" stopColor={style.stroke} stopOpacity="0" />
               </linearGradient>
             </defs>
-            <line x1="4" x2="96" y1="78" y2="78" stroke="#e8eef5" strokeWidth="1" />
-            <path d={area} fill={`url(#${gradientId})`} opacity="0.95" />
-            <path d={line} fill="none" stroke={style.stroke} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+            <line x1="4" x2="96" y1="78" y2="78" stroke="#edf2f7" strokeWidth="1" />
+            <path d={area} fill={`url(#${gradientId})`} opacity="0.72" />
+            <path d={line} fill="none" stroke={style.stroke} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
             {dots.length ? (
-              <circle cx={dots[dots.length - 1].x} cy={dots[dots.length - 1].y} r="2.1" fill="#ffffff" stroke={style.stroke} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+              <circle cx={dots[dots.length - 1].x} cy={dots[dots.length - 1].y} r="1.8" fill="#ffffff" stroke={style.stroke} strokeWidth="1.25" vectorEffect="non-scaling-stroke" />
             ) : null}
           </svg>
         ) : (
-          <div className="flex h-[52px] items-center justify-center rounded-[14px] bg-[#f8fafc] text-[0.72rem] text-[#8a9aac]">No trend yet</div>
+          <div className="flex h-[42px] items-center justify-center rounded-[12px] bg-[#f8fafc] text-[0.7rem] text-[#8a9aac]">No trend yet</div>
         )}
       </div>
     </article>
@@ -656,7 +661,7 @@ export function ResidentialCommandCenterGrid({
   const showTopPerformers = scope !== 'agent' && !model.topPerformers?.hidden
   return (
     <ResidentialDashboardShell>
-      <div className="grid min-w-0 grid-cols-5 gap-3 xl:gap-4">
+      <div className="grid min-w-0 grid-flow-col auto-cols-[minmax(208px,78vw)] gap-3 overflow-x-auto pb-1 md:grid-flow-row md:grid-cols-2 md:overflow-visible lg:grid-cols-3 xl:grid-cols-5">
         {model.kpis.map((item, index) => {
           const Icon = kpiIcons[index] || fallbackIcons[index] || FileText
           return (

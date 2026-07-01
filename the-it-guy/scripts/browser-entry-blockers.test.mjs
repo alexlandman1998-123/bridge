@@ -5,7 +5,6 @@ import path from 'node:path'
 const root = process.cwd()
 const statusSharePath = path.join(root, 'src/pages/TransactionStatusShare.jsx')
 const migrationPath = path.join(root, '../supabase/migrations/202605250013_browser_verification_entry_blockers.sql')
-const fixtureScriptPath = path.join(root, 'scripts/create-staging-client-portal-fixture.mjs')
 
 const statusShare = fs.readFileSync(statusSharePath, 'utf8')
 assert.match(statusShare, /getClientStageExplainer/, 'TransactionStatusShare must import/use getClientStageExplainer')
@@ -19,9 +18,5 @@ assert.match(migration, /appt\.related_entity_id::text\s*=\s*v_listing\.id::text
 assert.match(migration, /bridge_create_staging_client_portal_fixture/, 'migration must add explicit staging client portal fixture helper')
 assert.match(migration, /confirm_staging_browser_verification_fixture/, 'fixture helper must require explicit staging confirmation phrase')
 assert.match(migration, /revoke all on function public\.bridge_create_staging_client_portal_fixture/, 'fixture helper must not be executable by public roles')
-
-const fixtureScript = fs.readFileSync(fixtureScriptPath, 'utf8')
-assert.match(fixtureScript, /CANONICAL_STAGING_CLIENT_PORTAL_FIXTURE_WRITE/, 'fixture script must require explicit write env flag')
-assert.match(fixtureScript, /--confirm-staging/, 'fixture script must require --confirm-staging for writes')
 
 console.log('browser-entry-blockers tests passed')
