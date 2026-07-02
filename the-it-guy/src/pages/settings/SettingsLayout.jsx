@@ -1,4 +1,5 @@
 import {
+  BadgePercent,
   Bell,
   Building2,
   Mail,
@@ -24,6 +25,7 @@ const SETTINGS_NAV_GROUPS = [
     label: 'Organisation',
     items: [
       { to: '/settings/organisation', label: 'Organisation', icon: Building2 },
+      { to: '/settings/commission-structures', label: 'Commission Structures', icon: BadgePercent },
     ],
   },
   {

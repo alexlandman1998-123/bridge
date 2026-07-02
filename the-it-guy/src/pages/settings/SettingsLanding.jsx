@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  BadgePercent,
   Bell,
   Building2,
   FileText,
@@ -28,6 +29,15 @@ const SETTINGS_CATEGORIES = [
     description: 'Manage organisation details, branding and members.',
     cta: 'Manage organisation',
     icon: Building2,
+    requiresManage: true,
+  },
+  {
+    to: '/settings/commission-structures',
+    title: 'Commission Structures',
+    description: 'Create agency commission templates and default payout rules.',
+    cta: 'Manage commissions',
+    icon: BadgePercent,
+    requiresManage: true,
   },
   {
     to: '/settings/security',
@@ -127,7 +137,7 @@ export default function SettingsLanding() {
   const fullName = displayValue([account.firstName, account.lastName].filter(Boolean).join(' '), 'Arch9 User')
   const roleLabel = displayValue(membershipRole || account.role || role, 'Member').replace(/_/g, ' ')
   const visibleCategories = SETTINGS_CATEGORIES.filter((card) => {
-    if (!canManage && card.title === 'Organisation') {
+    if (card.requiresManage && !canManage) {
       return false
     }
     return true
