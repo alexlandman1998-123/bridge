@@ -430,8 +430,10 @@ const SIGNER_ROLE_BLUEPRINT = {
   ],
 }
 
-const BRIDGE_LOGO_LIGHT_URL = '/brand/bridge_9_white_background.png'
-const BRIDGE_LOGO_DARK_URL = '/brand/bridge_9_dark_background.png'
+function isLegacyBridgeLogoUrl(value) {
+  const text = normalizeText(value).toLowerCase()
+  return text.includes('/brand/bridge_9') || text.includes('bridge_9_') || text.includes('bridge9')
+}
 
 function resolveSignerBlueprint(packetType = 'mandate', options = {}) {
   const key = normalizeKey(packetType)
@@ -821,8 +823,9 @@ function renderEditablePreviewHtml({
     normalizeText(branding?.logoHighContrastUrl) ||
     normalizeText(branding?.organisationLogoDarkUrl) ||
     normalizeText(branding?.organisationLogoHighContrastUrl)
-  const bridgeLogo = normalizeText(branding?.bridgeLogoLightUrl) || BRIDGE_LOGO_LIGHT_URL
-  const bridgeFallbackLabel = 'Arch9'
+  const bridgeLogoCandidate = normalizeText(branding?.bridgeLogoLightUrl)
+  const bridgeLogo = bridgeLogoCandidate && !isLegacyBridgeLogoUrl(bridgeLogoCandidate) ? bridgeLogoCandidate : ''
+  const platformWordmarkHtml = '<span class="platform-wordmark"><strong>arch</strong><em>9</em></span>'
   const renderClauseText = (value) =>
     escapeHtml(value)
       .replace(/{{\s*([a-zA-Z0-9._-]+)\s*}}/g, '<span class="merge-missing">{{$1}}</span>')
@@ -873,6 +876,9 @@ function renderEditablePreviewHtml({
           .agency-brand img { max-width: 42mm; max-height: 15mm; object-fit: contain; }
           .bridge-brand { justify-content: flex-end; color: #68727d; }
           .bridge-brand img { max-width: 36mm; max-height: 12mm; object-fit: contain; }
+          .platform-wordmark { display: inline-flex; align-items: baseline; gap: 1px; color: #142132; font-size: 32px; font-weight: 800; letter-spacing: 0; text-transform: lowercase; }
+          .platform-wordmark strong { font: inherit; color: #142132; }
+          .platform-wordmark em { font: inherit; font-style: normal; color: #31d08a; }
           .doc-title { padding: 9mm 18mm 6mm; text-align: center; border-bottom: 1px solid #e4e4e4; }
           .doc-title h1 { margin: 0; color: #111827; font-size: 24px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
           .doc-title p { margin: 7px 0 0; color: #5c6670; font-size: 12px; line-height: 1.45; }
@@ -887,6 +893,7 @@ function renderEditablePreviewHtml({
           .footer-brand, .footer-bridge { display: inline-flex; align-items: center; min-width: 34mm; max-width: 44mm; }
           .footer-bridge { justify-content: flex-end; }
           .doc-footer img { max-width: 34mm; max-height: 9mm; object-fit: contain; }
+          .doc-footer .platform-wordmark { font-size: 20px; }
           .page-no { flex: 1; text-align: center; font-weight: 700; }
           @media print {
             body { padding: 0; background: #fff; }
@@ -904,7 +911,7 @@ function renderEditablePreviewHtml({
         <main class="page">
           <header class="doc-header">
             <span class="agency-brand">${agencyLogo ? `<img src="${escapeHtml(agencyLogo)}" alt="${escapeHtml(orgName)} logo" />` : escapeHtml(orgName)}</span>
-            <span class="bridge-brand">${bridgeLogo ? `<img src="${escapeHtml(bridgeLogo)}" alt="Arch9" />` : escapeHtml(bridgeFallbackLabel)}</span>
+            <span class="bridge-brand">${bridgeLogo ? `<img src="${escapeHtml(bridgeLogo)}" alt="Arch9" />` : platformWordmarkHtml}</span>
           </header>
           <section class="doc-title">
             <h1>${escapeHtml(title)}</h1>
@@ -916,7 +923,7 @@ function renderEditablePreviewHtml({
           <footer class="doc-footer">
             <span class="footer-brand">${agencyLogo ? `<img src="${escapeHtml(agencyLogo)}" alt="${escapeHtml(orgName)} logo" />` : escapeHtml(orgName)}</span>
             <span class="page-no">Page 1 of 1 (preview)</span>
-            <span class="footer-bridge">${bridgeLogo ? `<img src="${escapeHtml(bridgeLogo)}" alt="Arch9" />` : escapeHtml(bridgeFallbackLabel)}</span>
+            <span class="footer-bridge">${bridgeLogo ? `<img src="${escapeHtml(bridgeLogo)}" alt="Arch9" />` : platformWordmarkHtml}</span>
           </footer>
         </main>
       </body>
@@ -1040,8 +1047,12 @@ function resolveWorkspaceBranding({
     ]),
     bridgeLegalName: normalizeText(merged.bridgeLegalName) || normalizeText(merged.bridge_legal_name) || 'Arch9 Legal',
     bridgeLogoLabel: normalizeText(merged.bridgeLogoLabel) || 'Arch9',
-    bridgeLogoLightUrl: normalizeText(merged.bridgeLogoLightUrl) || normalizeText(merged.bridge_legal_logo_light_url) || BRIDGE_LOGO_LIGHT_URL,
-    bridgeLogoDarkUrl: normalizeText(merged.bridgeLogoDarkUrl) || normalizeText(merged.bridge_legal_logo_dark_url) || BRIDGE_LOGO_DARK_URL,
+    bridgeLogoLightUrl: isLegacyBridgeLogoUrl(merged.bridgeLogoLightUrl || merged.bridge_legal_logo_light_url)
+      ? ''
+      : normalizeText(merged.bridgeLogoLightUrl) || normalizeText(merged.bridge_legal_logo_light_url),
+    bridgeLogoDarkUrl: isLegacyBridgeLogoUrl(merged.bridgeLogoDarkUrl || merged.bridge_legal_logo_dark_url)
+      ? ''
+      : normalizeText(merged.bridgeLogoDarkUrl) || normalizeText(merged.bridge_legal_logo_dark_url),
     transactionReference: normalizeText(transactionReference),
   }
 }
@@ -2188,7 +2199,7 @@ function ActivityPanel({
   })()
 
   return (
-    <section className={`flex flex-col rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)] ${className}`}>
+    <section className={`flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)] ${className}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h4 className="text-[1rem] font-semibold text-[#102033]">Activity</h4>
@@ -4924,7 +4935,7 @@ export default function LegalDocumentWorkspace({
   const desktopWorkspaceRailHeightClassName = 'xl:h-[clamp(700px,calc(100vh-14rem),880px)]'
   const mainGridClassName = `grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)] xl:items-stretch 2xl:grid-cols-[340px_minmax(0,1fr)] ${desktopWorkspaceRailHeightClassName}`
   const secondaryGridClassName = 'mt-6 grid gap-5 xl:grid-cols-[minmax(500px,1.05fr)_minmax(340px,0.95fr)] xl:items-stretch 2xl:grid-cols-[minmax(560px,1.1fr)_minmax(380px,0.9fr)]'
-  const reviewRailPanelClassName = 'xl:min-h-[470px]'
+  const reviewRailPanelClassName = 'xl:h-[470px]'
 
   return (
     <>

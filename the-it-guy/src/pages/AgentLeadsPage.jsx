@@ -11374,7 +11374,8 @@ function getSellerOnboardingToken(row = {}, listing = null) {
 
 function getSellerPortalLink(row = {}, listing = null) {
   const token = getSellerOnboardingToken(row, listing)
-  const portalLink = buildSellerClientPortalLink(token)
+  const portalBaseLink = buildSellerClientPortalLink(token)
+  const portalLink = portalBaseLink ? `${portalBaseLink}/documents` : ''
   if (portalLink) return portalLink
 
   const directLink = normalizeText(
@@ -11387,7 +11388,10 @@ function getSellerPortalLink(row = {}, listing = null) {
   )
   if (directLink.includes('/client/')) return directLink
   const onboardingToken = directLink.match(/\/seller\/onboarding\/([^/?#]+)/i)?.[1]
-  if (onboardingToken) return buildSellerClientPortalLink(decodeURIComponent(onboardingToken))
+  if (onboardingToken) {
+    const resolvedPortalBaseLink = buildSellerClientPortalLink(decodeURIComponent(onboardingToken))
+    return resolvedPortalBaseLink ? `${resolvedPortalBaseLink}/documents` : ''
+  }
   if (directLink) return directLink
   return ''
 }

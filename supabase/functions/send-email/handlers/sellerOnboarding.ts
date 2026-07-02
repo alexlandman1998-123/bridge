@@ -203,9 +203,6 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
       console.error("[seller_onboarding] canonical seller invite creation failed", inviteError);
       return null;
     });
-    if (normalizeText(canonicalClientInvite?.inviteLink)) {
-      onboardingLink = normalizeText(canonicalClientInvite?.inviteLink);
-    }
   }
 
   let templateOverrides = null;
@@ -229,7 +226,7 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
       templateOverrides = await fetchOrganisationEmailTemplateOverride(
         supabase,
         organisationId,
-        "seller_onboarding",
+        portalDocumentsMode ? "seller_portal_link" : "seller_onboarding",
       );
     } catch (error) {
       console.error("[seller_onboarding] template override lookup failed", error);

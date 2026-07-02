@@ -1759,7 +1759,7 @@ function buildSellerPortalDocumentsEmailPayload({ listing = {}, onboarding = {},
   )
 
   return {
-    type: 'seller_onboarding_link',
+    type: 'seller_portal_link',
     emailKind: 'portal_documents',
     to,
     organisationId: normalizeText(listing?.organisationId || listing?.organisation_id),

@@ -1,4 +1,4 @@
-import { ArrowRight, Building2, CheckCircle2, CircleAlert, Copy, FolderKanban, Loader2, MoreVertical, Plus, Search, Share2, Trash2, UserRound, X } from 'lucide-react'
+import { ArrowRight, Building2, CheckCircle2, CircleAlert, FolderKanban, Loader2, MoreVertical, Plus, Search, Share2, Trash2, UserRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -57,17 +57,6 @@ const MANUAL_LISTING_STATUSES = ['draft', 'mandate_signed', 'active', 'under_off
 const QUICK_LISTING_METADATA_PREFIX = 'BRIDGE_QUICK_ADD_METADATA:'
 const LISTING_ORIGINS = ['quick_add', 'guided_onboarding', 'imported_property24', 'manual_admin_capture', 'developer_unit']
 const LISTING_DOCUMENT_CATEGORIES = ['Mandate', 'Seller ID', 'Proof of Address', 'Property Photos', 'Rates and Taxes', 'Bond Statement', 'Title Deed', 'Other']
-const LISTING_FOLLOW_UP_FILTERS = [
-  { key: 'all', label: 'All' },
-  { key: 'attention', label: 'Needs Follow-Up' },
-  { key: 'active_warning', label: 'Active With Warning' },
-  { key: 'mandate_upload', label: 'Mandate Uploads' },
-  { key: 'seller_fica', label: 'Seller FICA' },
-  { key: 'photos', label: 'Photos' },
-  { key: 'commission', label: 'Commission' },
-  { key: 'onboarding', label: 'Onboarding' },
-  { key: 'quick_add', label: 'Quick Add' },
-]
 const LISTING_FOLLOW_UP_SLA_DAYS = {
   send_onboarding: 1,
   add_seller_contact: 1,
@@ -1014,83 +1003,6 @@ function withFollowUpReminderStatus(card = {}, now = Date.now()) {
   }
 }
 
-function listingMatchesFollowUpFilter(card = {}, filterKey = 'all') {
-  const key = normalizeKey(filterKey || 'all')
-  const actionKeys = new Set((Array.isArray(card.followUpQueue) ? card.followUpQueue : []).map((item) => item.key))
-  if (key === 'all') return true
-  if (key === 'attention') return actionKeys.size > 0
-  if (key === 'active_warning') return card.inventoryStatusKey === 'live_warning'
-  if (key === 'mandate_upload') return actionKeys.has('upload_signed_mandate')
-  if (key === 'seller_fica') return actionKeys.has('add_seller_identity') || actionKeys.has('add_seller_fica')
-  if (key === 'photos') return actionKeys.has('add_photos')
-  if (key === 'commission') return actionKeys.has('confirm_commission')
-  if (key === 'onboarding') return actionKeys.has('send_onboarding')
-  if (key === 'quick_add') return Number(card.quickAddOpenActionCount || 0) > 0
-  return true
-}
-
-function buildListingFollowUpInsights(cards = []) {
-  const residentialCards = cards.filter((card) => ['residential', 'mixed_use', 'vacant_land'].includes(card.propertyCategory))
-  const withFollowUps = residentialCards.filter((card) => Number(card.followUpCount || 0) > 0)
-  const filterCounts = LISTING_FOLLOW_UP_FILTERS.reduce((counts, filter) => {
-    counts[filter.key] = filter.key === 'all'
-      ? residentialCards.length
-      : residentialCards.filter((card) => listingMatchesFollowUpFilter(card, filter.key)).length
-    return counts
-  }, {})
-  const agentMap = new Map()
-  for (const card of withFollowUps) {
-    const agentName = normalizeText(card.agentName || 'Unassigned')
-    const current = agentMap.get(agentName) || { name: agentName, listings: 0, followUps: 0 }
-    current.listings += 1
-    current.followUps += Number(card.followUpCount || 0)
-    agentMap.set(agentName, current)
-  }
-
-  return {
-    totalListings: residentialCards.length,
-    listingsNeedingFollowUp: withFollowUps.length,
-    activeWithWarning: filterCounts.active_warning || 0,
-    mandateUploads: filterCounts.mandate_upload || 0,
-    sellerFica: filterCounts.seller_fica || 0,
-    photos: filterCounts.photos || 0,
-    commission: filterCounts.commission || 0,
-    onboarding: filterCounts.onboarding || 0,
-    quickAdd: filterCounts.quick_add || 0,
-    overdueFollowUps: residentialCards.reduce((sum, card) => sum + Number(card.overdueFollowUpCount || 0), 0),
-    dueTodayFollowUps: residentialCards.reduce((sum, card) => sum + Number(card.dueTodayFollowUpCount || 0), 0),
-    filterCounts,
-    topAgents: Array.from(agentMap.values())
-      .sort((left, right) => right.followUps - left.followUps || right.listings - left.listings || left.name.localeCompare(right.name))
-      .slice(0, 3),
-  }
-}
-
-function buildListingFollowUpEscalationSummary(cards = [], insights = {}) {
-  const rows = cards
-    .filter((card) => ['residential', 'mixed_use', 'vacant_land'].includes(card.propertyCategory))
-    .filter((card) => Number(card.followUpCount || 0) > 0)
-    .sort((left, right) =>
-      Number(right.overdueFollowUpCount || 0) - Number(left.overdueFollowUpCount || 0) ||
-      Number(right.dueTodayFollowUpCount || 0) - Number(left.dueTodayFollowUpCount || 0) ||
-      Number(right.followUpCount || 0) - Number(left.followUpCount || 0) ||
-      String(left.title || '').localeCompare(String(right.title || '')),
-    )
-  const header = [
-    'Manual listing follow-up chase list',
-    `${insights.listingsNeedingFollowUp || rows.length} listing${(insights.listingsNeedingFollowUp || rows.length) === 1 ? '' : 's'} need recovery work`,
-    `${insights.overdueFollowUps || 0} overdue, ${insights.dueTodayFollowUps || 0} due today`,
-  ]
-  const body = rows.slice(0, 25).map((card, index) => {
-    const tasks = (card.followUpQueue || [])
-      .map((item) => `${item.label}${item.reminderLabel ? ` (${item.reminderLabel})` : ''}`)
-      .join('; ')
-    return `${index + 1}. ${card.title} - ${card.agentName || 'Unassigned'} - ${card.inventoryStatusLabel || 'Listing'} - ${tasks}`
-  })
-  if (!body.length) return 'Manual listing follow-up chase list\nNo open follow-up items.'
-  return [...header, '', ...body].join('\n')
-}
-
 function mergePrivateListingRows(dbRows = [], runtimeRows = [], deletedIds = new Set()) {
   const map = new Map()
   const seenKeys = new Set()
@@ -1637,7 +1549,6 @@ function AgentListings({ initialTab = null } = {}) {
   const [shareError, setShareError] = useState('')
   const [filters, setFilters] = useState({
     search: '',
-    followUp: 'all',
   })
   const [quickAddDuplicateMatches, setQuickAddDuplicateMatches] = useState([])
   const [quickAddDuplicateOverride, setQuickAddDuplicateOverride] = useState(false)
@@ -3138,7 +3049,6 @@ function AgentListings({ initialTab = null } = {}) {
 
   const categoryFilteredListingCards = useMemo(() => {
     const query = String(filters.search || '').trim().toLowerCase()
-    const followUpFilter = normalizeKey(filters.followUp || 'all')
     const tabCategoryMap = {
       residential: new Set(['residential', 'mixed_use', 'vacant_land']),
     }
@@ -3149,10 +3059,9 @@ function AgentListings({ initialTab = null } = {}) {
       const searchMatch = query
         ? [card.title, card.suburb, card.typeLabel, card.agentName, card.originLabel, ...(card.followUpQueue || []).map((item) => item.label)].join(' ').toLowerCase().includes(query)
         : true
-      const followUpMatch = listingsTab === 'developments' ? true : listingMatchesFollowUpFilter(card, followUpFilter)
-      return categoryMatch && searchMatch && followUpMatch
+      return categoryMatch && searchMatch
     })
-  }, [filters.followUp, filters.search, listingsTab, privateListingCards])
+  }, [filters.search, listingsTab, privateListingCards])
 
   const developmentCards = useMemo(() => {
     const grouped = new Map()
@@ -3304,24 +3213,6 @@ function AgentListings({ initialTab = null } = {}) {
     }),
     [developmentCards.length, privateListingCards],
   )
-  const listingFollowUpInsights = useMemo(() => buildListingFollowUpInsights(privateListingCards), [privateListingCards])
-  const listingFollowUpEscalationSummary = useMemo(
-    () => buildListingFollowUpEscalationSummary(privateListingCards, listingFollowUpInsights),
-    [listingFollowUpInsights, privateListingCards],
-  )
-
-  async function handleCopyFollowUpEscalationSummary() {
-    setError('')
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(listingFollowUpEscalationSummary)
-      }
-      setWorkflowMessage('Manual listing chase list copied for follow-up.')
-    } catch {
-      setWorkflowMessage(listingFollowUpEscalationSummary)
-    }
-  }
-
   function handleOpenDevelopmentWorkspace(card) {
     const developmentId = card?.id
     if (!developmentId) return
@@ -3467,86 +3358,6 @@ function AgentListings({ initialTab = null } = {}) {
             })}
           </div>
         </div>
-
-        {listingsTab !== 'developments' ? (
-          <div className="mb-5 rounded-[18px] border border-[#dbe6f2] bg-[#f8fbfe] p-4">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-              <div>
-                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Follow-Up Oversight</p>
-                <h3 className="mt-1 text-base font-semibold text-[#142132]">
-                  {listingFollowUpInsights.listingsNeedingFollowUp} listing{listingFollowUpInsights.listingsNeedingFollowUp === 1 ? '' : 's'} need recovery work
-                </h3>
-                <p className="mt-1 text-sm text-[#607387]">
-                  Active manual listings stay visible here until mandate uploads, seller FICA, photos, commission, and onboarding are closed.
-                </p>
-              </div>
-              <div className="flex min-w-[240px] flex-col gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  onClick={handleCopyFollowUpEscalationSummary}
-                  disabled={!listingFollowUpInsights.listingsNeedingFollowUp}
-                >
-                  <Copy size={15} />
-                  Copy Chase List
-                </Button>
-                {listingFollowUpInsights.topAgents.length ? (
-                  <div className="rounded-[14px] border border-[#dce6f2] bg-white px-3 py-2">
-                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Owner Hotspots</p>
-                    <div className="mt-2 space-y-1.5">
-                      {listingFollowUpInsights.topAgents.map((agent) => (
-                        <div key={agent.name} className="flex items-center justify-between gap-3 text-[0.78rem] font-semibold text-[#35546c]">
-                          <span className="truncate">{agent.name}</span>
-                          <span>{agent.followUps} task{agent.followUps === 1 ? '' : 's'}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
-              {[
-                { label: 'Overdue', value: listingFollowUpInsights.overdueFollowUps },
-                { label: 'Due Today', value: listingFollowUpInsights.dueTodayFollowUps },
-                { label: 'Active With Warning', value: listingFollowUpInsights.activeWithWarning },
-                { label: 'Mandate Uploads', value: listingFollowUpInsights.mandateUploads },
-                { label: 'Seller FICA', value: listingFollowUpInsights.sellerFica },
-                { label: 'Photos / Commission', value: listingFollowUpInsights.photos + listingFollowUpInsights.commission },
-                { label: 'Quick Add Handoff', value: listingFollowUpInsights.quickAdd },
-              ].map((item) => (
-                <div key={item.label} className="rounded-[14px] border border-[#dce6f2] bg-white px-3 py-2">
-                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{item.label}</p>
-                  <p className="mt-1 text-lg font-semibold text-[#142132]">{item.value}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              {LISTING_FOLLOW_UP_FILTERS.map((filter) => {
-                const active = normalizeKey(filters.followUp || 'all') === filter.key
-                const count = listingFollowUpInsights.filterCounts?.[filter.key] || 0
-                return (
-                  <button
-                    key={filter.key}
-                    type="button"
-                    onClick={() => setFilters((previous) => ({ ...previous, followUp: filter.key }))}
-                    className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3 py-1.5 text-[0.78rem] font-semibold transition ${
-                      active
-                        ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_8px_16px_rgba(31,79,120,0.18)]'
-                        : 'border-[#d8e3ef] bg-white text-[#35546c] hover:border-[#b7c8db] hover:bg-[#f6faff]'
-                    }`}
-                  >
-                    <span>{filter.label}</span>
-                    <span className={active ? 'text-white/82' : 'text-[#7b8ca2]'}>{count}</span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        ) : null}
 
         {loading ? (
           <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-6 text-sm text-[#6c7f95]">Loading listings…</div>

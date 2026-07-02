@@ -2024,7 +2024,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
   async function handleDownloadDisclosurePdf() {
     if (!form?.propertyDisclosure) return
-    let pdfRoot = null
     try {
       setError('')
       const normalizedDisclosure = normalizePropertyDisclosure(form.propertyDisclosure || {}, {
@@ -2035,35 +2034,34 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         return
       }
       const { default: html2pdf } = await import('html2pdf.js/src/index.js')
-      const pdfDocument = new window.DOMParser().parseFromString(buildPropertyDisclosureDocumentMarkup(normalizedDisclosure, {
+      const markup = buildPropertyDisclosureDocumentMarkup(normalizedDisclosure, {
         sellerName: getSellerDisplayName(listing, form),
         propertyAddress: getPropertyDisplayAddress(listing, form),
         listingId: String(listing?.id || '').trim(),
-      }), 'text/html')
+      })
+      const pdfDocument = new window.DOMParser().parseFromString(markup, 'text/html')
       const documentBody = pdfDocument.body
-      pdfRoot = document.createElement('div')
       const style = pdfDocument.head.querySelector('style')
-      if (style) pdfRoot.appendChild(style.cloneNode(true))
-      Array.from(documentBody.children).forEach((child) => pdfRoot.appendChild(child.cloneNode(true)))
-      pdfRoot.style.position = 'fixed'
-      pdfRoot.style.left = '-10000px'
-      pdfRoot.style.top = '0'
-      document.body.appendChild(pdfRoot)
+      const printableMarkup = `${style?.outerHTML || ''}${documentBody.innerHTML}`
       await html2pdf()
         .set({
           margin: 0,
           filename: 'seller-disclosure-annexure-a.pdf',
           image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            backgroundColor: '#ffffff',
+            windowWidth: 816,
+            windowHeight: 1056,
+          },
           jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
           pagebreak: { mode: ['css', 'legacy'] },
         })
-        .from(pdfRoot)
+        .from(printableMarkup, 'string')
         .save()
     } catch (downloadError) {
       setError(downloadError?.message || 'Unable to download the disclosure PDF right now.')
-    } finally {
-      pdfRoot?.remove()
     }
   }
 

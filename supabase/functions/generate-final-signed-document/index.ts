@@ -1521,12 +1521,13 @@ async function buildFallbackMandatePdfBytes({
     .find((candidate) => candidate.value && !isBridgeAssetUrl(candidate.value)) || { value: "", needsDarkPlate: false };
   const agencyLogoUrl = agencyLogoChoice.value;
   const bridgeLogoUrl = firstPdfText(
-    branding.bridgeLogoLightUrl,
-    placeholders.bridgeLogoLightUrl,
-    placeholders["bridge.logo_light_url"],
-    placeholders.bridge_legal_logo_light_url,
-    placeholders["bridge_legal_logo_light_url"],
-    "/brand/bridge_9_white_background.png",
+    ...[
+      branding.bridgeLogoLightUrl,
+      placeholders.bridgeLogoLightUrl,
+      placeholders["bridge.logo_light_url"],
+      placeholders.bridge_legal_logo_light_url,
+      placeholders["bridge_legal_logo_light_url"],
+    ].filter((candidate) => !isBridgeAssetUrl(candidate)),
   );
   const agencyLogo = await embedImageAsset(pdf, agencyLogoUrl);
   const bridgeLogo = await embedImageAsset(pdf, bridgeLogoUrl);
