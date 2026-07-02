@@ -48,15 +48,15 @@ export const WORKSPACE_PLAN_CATALOG = Object.freeze({
     description: 'Starter trial for validating the workspace before billing is activated.',
     monthlyAmount: 0,
     entitlements: Object.freeze({
-      [ENTITLEMENT_KEYS.maxUsers]: 3,
+      [ENTITLEMENT_KEYS.maxUsers]: null,
       [ENTITLEMENT_KEYS.maxBranches]: null,
-      [ENTITLEMENT_KEYS.monthlyBondApplications]: 25,
-      [ENTITLEMENT_KEYS.reportingLevel]: REPORTING_LEVELS.basic,
-      [ENTITLEMENT_KEYS.integrations]: false,
-      [ENTITLEMENT_KEYS.customBranding]: false,
-      [ENTITLEMENT_KEYS.apiAccess]: false,
-      [ENTITLEMENT_KEYS.whiteLabel]: false,
-      [ENTITLEMENT_KEYS.supportLevel]: SUPPORT_LEVELS.selfServe,
+      [ENTITLEMENT_KEYS.monthlyBondApplications]: null,
+      [ENTITLEMENT_KEYS.reportingLevel]: REPORTING_LEVELS.enterprise,
+      [ENTITLEMENT_KEYS.integrations]: true,
+      [ENTITLEMENT_KEYS.customBranding]: true,
+      [ENTITLEMENT_KEYS.apiAccess]: true,
+      [ENTITLEMENT_KEYS.whiteLabel]: true,
+      [ENTITLEMENT_KEYS.supportLevel]: SUPPORT_LEVELS.dedicated,
     }),
   }),
   [WORKSPACE_PLAN_KEYS.solo]: Object.freeze({
@@ -159,4 +159,3 @@ export function formatEntitlementValue(value) {
   if (value === false) return 'Not included'
   return String(value).replace(/_/g, ' ')
 }
-
