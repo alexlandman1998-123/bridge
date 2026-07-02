@@ -1076,6 +1076,7 @@ function buildMandateDraftDefaults({ leadContext = {}, initialStatus = null, tra
 const LEGAL_WORKSPACE_ROUTE_TIMEOUT_MS = 3500
 const LEGAL_WORKSPACE_GENERATION_TIMEOUT_MS = 65000
 const LEGAL_WORKSPACE_PACKET_SAVE_TIMEOUT_MS = 18000
+const LEGAL_WORKSPACE_SIGNING_EMAIL_TIMEOUT_MS = 20000
 
 function withLegalWorkspaceTimeout(task, message, timeoutMs = LEGAL_WORKSPACE_ROUTE_TIMEOUT_MS) {
   let timeoutId = null
@@ -2006,29 +2007,39 @@ export default function LegalDocumentWorkspacePage() {
       const recipientName = signerRole === 'agent'
         ? normalizeText(activeSigner?.signer_name || agentName)
         : normalizeText(activeSigner?.signer_name || (signerRole === 'seller' ? sellerName : recipientLabel))
+      let emailDelivery = null
       if (!signingLink) {
         const linkError = new Error(`The ${recipientLabelLower} signing link could not be created. Confirm the ${recipientLabelLower} has an email address, then try again.`)
         linkError.code = 'SIGNING_LINK_FAILED'
         throw linkError
       }
       if (isSupabaseConfigured && recipientEmail) {
-        const emailResponse = await invokeEdgeFunction('send-mandate-signing-email', {
-          body: {
-            type: 'seller_mandate_sent',
-            to: recipientEmail,
-            organisationId,
-            packetId: normalizeText(status?.packet?.id || latestVersion?.packet_id || sentPacketId),
-            recipientRole: signerRole === 'agent' ? 'agent' : 'seller',
-            recipientName,
-            sellerName,
-            propertyTitle: normalizeText(leadContext?.lead?.propertyAddress || leadContext?.lead?.listingTitle || transactionReference || 'your property'),
-            mandateType: 'Mandate',
-            portalLink: signingLink,
-            agentName,
-            resend: Boolean(resend),
-          },
-        })
+        const emailResponse = await withLegalWorkspaceTimeout(
+          invokeEdgeFunction('send-mandate-signing-email', {
+            body: {
+              type: 'seller_mandate_sent',
+              to: recipientEmail,
+              organisationId,
+              packetId: normalizeText(status?.packet?.id || latestVersion?.packet_id || sentPacketId),
+              recipientRole: signerRole === 'agent' ? 'agent' : 'seller',
+              recipientName,
+              sellerName,
+              propertyTitle: normalizeText(leadContext?.lead?.propertyAddress || leadContext?.lead?.listingTitle || transactionReference || 'your property'),
+              mandateType: 'Mandate',
+              portalLink: signingLink,
+              agentName,
+              resend: Boolean(resend),
+            },
+          }),
+          `The mandate signing email to the ${recipientLabelLower} timed out before the email provider confirmed delivery. The signing link is prepared; use Resend from this page if no email arrives.`,
+          LEGAL_WORKSPACE_SIGNING_EMAIL_TIMEOUT_MS,
+        )
         assertEdgeFunctionSuccess(emailResponse, `The mandate signing email could not be sent to the ${recipientLabelLower}.`)
+        emailDelivery = {
+          emailDeliveryId: normalizeText(emailResponse?.data?.emailId),
+          recipientRole: signerRole === 'agent' ? 'agent' : 'seller',
+          recipientEmail,
+        }
       }
       const nextMandateStatus = normalizeText(signingStatus) || (signerRole === 'agent' ? 'sent_to_agent' : signerRole === 'seller' ? 'sent_to_seller' : 'sent_for_signature')
       void syncLeadMandateState({
@@ -2080,6 +2091,12 @@ export default function LegalDocumentWorkspacePage() {
           : `Mandate was sent to the ${recipientLabelLower} for digital signing.`,
         outcome: resend ? `Signing link resent to ${recipientLabelLower}` : `Sent to ${recipientLabelLower} for digital signing`,
       })
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      return {
+        ...emailDelivery,
+        recipientRole: emailDelivery?.recipientRole || (signerRole === 'agent' ? 'agent' : 'seller'),
+        recipientEmail: emailDelivery?.recipientEmail || recipientEmail,
+      }
     }
     window.dispatchEvent(new Event('itg:transaction-updated'))
   }, [actor, leadContext, organisationId, packetType, profile, recordLeadMandateActivity, resolveCurrentStatus, syncLeadMandateState, transactionReference])

@@ -12,6 +12,8 @@ import { fetchOrganisationEmailTemplateOverride } from "../services/emailTemplat
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
 
+const MANDATE_SIGNING_EMAIL_PROVIDER_TIMEOUT_MS = 20000;
+
 export async function handleSellerMandateSentEmail(payload: SendSellerMandateSentPayload) {
   const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
@@ -169,6 +171,7 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
     subject,
     html,
     text,
+    timeoutMs: MANDATE_SIGNING_EMAIL_PROVIDER_TIMEOUT_MS,
   });
 
   if (!emailResult.ok) {

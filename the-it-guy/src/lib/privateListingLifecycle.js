@@ -44,7 +44,7 @@ const PRIVATE_LISTING_STATUS_DESCRIPTIONS = {
   listing_review: 'Listing details are under internal review before mandate readiness.',
   mandate_ready: 'Listing has enough detail for mandate preparation.',
   mandate_sent: 'Mandate has been sent to seller and is awaiting signature.',
-  mandate_signed: 'Mandate is signed. Listing can be activated to market.',
+  mandate_signed: 'Mandate is signed. Listing is live with any remaining requirements tracked as warnings.',
   active: 'Listing is active and market-ready.',
   under_offer: 'Listing currently has an accepted/pending offer flow.',
   transaction_created: 'A transaction has been created from this listing.',
@@ -117,11 +117,11 @@ const PRIVATE_LISTING_STATUS_SIDE_EFFECTS = {
   },
   mandate_signed: {
     mandateStatus: 'signed',
-    listingVisibility: 'internal',
-    isActive: false,
+    listingVisibility: 'active_market',
+    isActive: true,
     activityType: 'mandate_signed',
     activityTitle: 'Mandate signed',
-    activityDescription: 'Mandate has been signed.',
+    activityDescription: 'Mandate has been signed and the listing is live.',
   },
   active: {
     listingVisibility: 'active_market',
@@ -413,7 +413,7 @@ export function getPrivateListingLifecycleNextAction(listing = {}) {
   if (status === 'listing_review') return 'Finalize review and move to mandate ready'
   if (status === 'mandate_ready') return 'Generate and send mandate'
   if (status === 'mandate_sent') return 'Await mandate signature'
-  if (status === 'mandate_signed') return 'Activate listing to market'
+  if (status === 'mandate_signed') return 'Resolve listing warnings'
   if (status === 'active') return 'Manage viewings and offers'
   if (status === 'under_offer') return 'Progress offer and transaction setup'
   if (status === 'transaction_created') return 'Track transaction to completion'

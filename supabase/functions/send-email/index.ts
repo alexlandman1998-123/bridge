@@ -21,6 +21,7 @@ import { handleBondOriginatorBuyerIntroEmail } from "./handlers/bondOriginatorBu
 import { handleCommercialAccessNotificationEmail } from "./handlers/commercialAccessNotification.ts";
 import { handleCommercialLandlordOnboardingEmail } from "./handlers/commercialLandlordOnboarding.ts";
 import { handleOfferDecisionNotificationEmail } from "./handlers/offerDecisionNotification.ts";
+import { handleOrganisationPartnerInvitationEmail } from "./handlers/organisationPartnerInvitation.ts";
 import { handleSellerOfferReviewEmail } from "./handlers/sellerOfferReview.ts";
 import {
   handleTransactionRoleplayerHandoffEmail,
@@ -41,6 +42,7 @@ import type {
   SendLegacyTestPayload,
   SendLeadPropertySharePayload,
   SendOfferDecisionNotificationPayload,
+  SendOrganisationPartnerInvitationPayload,
   SendOnboardingSubmittedPayload,
   SendReservationDepositPayload,
   SendReservationDepositReceivedPayload,
@@ -381,6 +383,24 @@ Deno.serve(async (req: Request) => {
       return await handleCommercialAccessNotificationEmail({
         ...(payload as SendCommercialAccessNotificationPayload),
         type: "commercial_access_notification",
+      });
+    }
+
+    if (
+      [
+        "organisation_partner_invitation",
+        "organization_partner_invitation",
+        "partner_organisation_invitation",
+        "partner_organization_invitation",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "organisation_partner_invitation",
+        recipient: recipient || null,
+      });
+      return await handleOrganisationPartnerInvitationEmail({
+        ...(payload as SendOrganisationPartnerInvitationPayload),
+        type: "organisation_partner_invitation",
       });
     }
 

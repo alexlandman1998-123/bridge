@@ -209,6 +209,27 @@ export type SendTransactionPartnerInvitationPayload = {
   delivery_kind?: string;
 };
 
+export type SendOrganisationPartnerInvitationPayload = {
+  type: "organisation_partner_invitation" | "organization_partner_invitation" | "partner_organisation_invitation" | "partner_organization_invitation";
+  to: string;
+  invitationLink?: string;
+  invitation_link?: string;
+  invitedByOrganisation?: string;
+  invited_by_organisation?: string;
+  partnerOrganisationName?: string;
+  partner_organisation_name?: string;
+  partnerType?: string;
+  partner_type?: string;
+  relationshipType?: string;
+  relationship_type?: string;
+  scopeType?: string;
+  scope_type?: string;
+  scopeName?: string;
+  scope_name?: string;
+  preferred?: boolean;
+  message?: string;
+};
+
 export type SendSellerOnboardingPayload = {
   type: "seller_onboarding" | "seller_onboarding_link" | "seller_portal_link";
   to: string;

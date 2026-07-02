@@ -471,7 +471,7 @@ function AppLayout({ onLogout, session = null, user }) {
     ? '/settings'
     : isBondRoute
       ? location.pathname
-      : `${location.pathname}${location.search}`
+      : location.pathname
   const hideSharedHeader =
     isLegalWorkspaceRoute ||
     location.pathname === '/command-center' ||

@@ -1,4 +1,4 @@
-import { isSupabaseConfigured, supabase } from './supabaseClient'
+import { invokeEdgeFunction, isSupabaseConfigured, supabase } from './supabaseClient'
 
 const PARTNER_DEMO_STORAGE_KEY = 'itg:partners-demo:v1'
 const PARTNERS_DEMO_MODE = false
@@ -798,6 +798,44 @@ function resolveRecipientEmailForStorage(recipientEmail = '', recipientOrganisat
   return `organisation-${organisationId}@bridge.internal`
 }
 
+function getPartnerInvitationBaseUrl() {
+  const origin = normalizeText(globalThis?.location?.origin)
+  return origin || 'https://app.arch9.co.za'
+}
+
+function buildPartnerInvitationLink(invitationId = '') {
+  const id = encodeURIComponent(normalizeText(invitationId))
+  const url = new URL('/partners', getPartnerInvitationBaseUrl())
+  url.searchParams.set('tab', 'invitations')
+  if (id) url.searchParams.set('invitation', id)
+  return url.toString()
+}
+
+async function sendPartnerInvitationEmail(invitation = {}) {
+  const recipientEmail = normalizeText(invitation.invitedEmail || invitation.recipientEmail).toLowerCase()
+  if (!recipientEmail || recipientEmail.endsWith('@bridge.internal')) {
+    return { sent: false, reason: 'missing_external_email' }
+  }
+
+  const { data, error } = await invokeEdgeFunction('send-email', {
+    body: {
+      type: 'organisation_partner_invitation',
+      to: recipientEmail,
+      invitationLink: buildPartnerInvitationLink(invitation.id),
+      invitedByOrganisation: invitation.fromOrganisationName,
+      partnerOrganisationName: invitation.toOrganisationName || recipientEmail,
+      partnerType: invitation.toWorkspaceType,
+      relationshipType: invitation.relationshipType,
+      scopeType: invitation.scopeType,
+      scopeName: invitation.scopeName,
+      preferred: Boolean(invitation.preferred),
+      message: invitation.message,
+    },
+  })
+  if (error) throw new Error(error.message || 'Partner invitation email could not be sent.')
+  return data || { sent: true }
+}
+
 async function fetchInvitationRows(scopedOrganisationId) {
   try {
     const baseResult = await supabase
@@ -1233,7 +1271,11 @@ export async function createPartnerInvitation({
     .limit(1)
     .maybeSingle()
 
-  if (existingResult.data) return mapInvitation(existingResult.data)
+  if (existingResult.data) {
+    const existingInvitation = mapInvitation(existingResult.data)
+    await sendPartnerInvitationEmail(existingInvitation)
+    return existingInvitation
+  }
   if (existingResult.error && !isRecoverablePartnerSchemaError(existingResult.error)) throw existingResult.error
 
   const payload = buildInvitePayloadBase({
@@ -1274,18 +1316,22 @@ export async function createPartnerInvitation({
         .single()
 
       if (fallbackResult.error) throw fallbackResult.error
-      return {
+      const fallbackInvitation = {
         ...mapInvitation(fallbackResult.data, new Map()),
         fromOrganisationName: normalizeText(organisationName) || 'Current Organisation',
         toOrganisationName: recipientOrganisationName || email,
         fromWorkspaceType: normalizeOrganisationType(workspaceType),
         toWorkspaceType: fallbackType,
       }
+      await sendPartnerInvitationEmail(fallbackInvitation)
+      return fallbackInvitation
     }
     throw result.error
   }
 
-  return mapInvitation(result.data)
+  const invitation = mapInvitation(result.data)
+  await sendPartnerInvitationEmail(invitation)
+  return invitation
 }
 
 async function ensureOrganisationRelationship({

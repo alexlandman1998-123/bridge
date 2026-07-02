@@ -4166,8 +4166,9 @@ export default function LegalDocumentWorkspace({
     })
 
     setActionProgressMessage(resend ? 'Sending resend notifications…' : 'Sending signer notifications…')
+    let sendResult = null
     try {
-      await onSend?.({
+      sendResult = await onSend?.({
         resend,
         signerLinks: linkSigners,
         packetId: currentPacketId,
@@ -4201,6 +4202,10 @@ export default function LegalDocumentWorkspace({
         signerCount: signerEmails.length,
         signingStatus: workflowSigningStatus,
         sentAt: nowIso,
+        emailDeliveryId: normalizeText(sendResult?.emailDeliveryId) || null,
+        emailConfirmed: Boolean(sendResult?.emailDeliveryId || sendResult?.recipientEmail),
+        recipientRole: normalizeText(sendResult?.recipientRole || linkRecipientRole) || null,
+        recipientEmailPresent: Boolean(normalizeText(sendResult?.recipientEmail)),
       },
     })
   }

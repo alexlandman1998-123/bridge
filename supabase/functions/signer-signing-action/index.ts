@@ -594,8 +594,8 @@ function buildSignedMandateListingPayload({
     seller_lead_id: leadId || null,
     originating_crm_lead_id: leadId || null,
     listing_reference: createListingReference(),
-    listing_status: "mandate_signed",
-    listing_visibility: "internal",
+    listing_status: "active",
+    listing_visibility: "active_market",
     property_category: "residential",
     listing_source: "private_listing",
     property_structure_type: "other",
@@ -617,7 +617,7 @@ function buildSignedMandateListingPayload({
     mandate_status: "signed",
     mandate_packet_id: packetId,
     seller_onboarding_status: firstText(lead.seller_onboarding_status, sellerOnboarding.status, sourceContext.sellerOnboardingStatus, "completed").toLowerCase().includes("complete") ? "completed" : firstText(lead.seller_onboarding_status, sellerOnboarding.status, sourceContext.sellerOnboardingStatus, "completed"),
-    is_active: false,
+    is_active: true,
     created_by: assignedAgentId,
     property24_status: "not_published",
     private_property_status: "not_published",
@@ -706,6 +706,9 @@ async function syncSellerMandateCompletion({
   const syncedListingStatuses = new Map<string, { status: string; visibility: string; isActive: boolean }>();
 
   const listingPatch = {
+    listing_status: "active",
+    listing_visibility: "active_market",
+    is_active: true,
     mandate_status: "signed",
     mandate_packet_id: packetId,
     updated_at: nowIso,

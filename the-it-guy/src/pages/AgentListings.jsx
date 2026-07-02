@@ -99,7 +99,7 @@ const QUICK_ADD_INTENT_OPTIONS = [
     value: 'signed_mandate',
     label: 'Signed mandate exists',
     description: 'Use this when the seller has already signed and you need to upload or record it.',
-    listingStatus: 'mandate_signed',
+    listingStatus: 'active',
     mandateStatus: 'signed_external_pending_upload',
     nextStep: 'mandate',
     requiredNow: 'Mandate dates, commission, signed mandate upload',
@@ -1379,9 +1379,9 @@ function getQuickListingActivationTier({ listingStatus = '', mandateStatus = '',
   }
 }
 
-function resolveQuickListingStatus(form, { activationWarnings = [] } = {}) {
+function resolveQuickListingStatus(form) {
   const normalized = normalizeKey(form.listingStatus)
-  if (normalized === 'active') return activationWarnings.length ? 'listing_review' : 'active'
+  if (normalized === 'active') return 'active'
   if (['mandate_signed', 'under_offer', 'sold'].includes(normalized)) return normalized
   return 'listing_review'
 }
@@ -2331,10 +2331,10 @@ function AgentListings({ initialTab = null } = {}) {
           organisationId,
           branchId: resolvedBranchId || null,
           assignedAgentId: resolvedAssignedAgentId || null,
-          listingStatus: resolvedListingIsActive ? 'listing_review' : resolvedListingStatus,
+          listingStatus: resolvedListingStatus,
           sellerOnboardingStatus: 'not_started',
           mandateStatus: initialMandateStatus,
-          listingVisibility: resolveQuickListingVisibility(form.visibility, resolvedListingIsActive ? 'listing_review' : resolvedListingStatus),
+          listingVisibility: resolveQuickListingVisibility(form.visibility, resolvedListingStatus),
           title: listingTitle,
           propertyCategory: normalizePropertyCategory(form.propertyCategory, { fallback: 'residential' }),
           listingSource: 'private_listing',

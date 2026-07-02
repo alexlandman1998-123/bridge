@@ -137,6 +137,7 @@ const PIPELINE_CONTEXT_TIMEOUT_MS = 3500
 const PIPELINE_RECORDS_TIMEOUT_MS = 3500
 const PIPELINE_CRM_RECORDS_TIMEOUT_MS = 10000
 const PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS = 15000
+const PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS = 20000
 const SELLER_ONBOARDING_COMPLETION_POLL_MS = 7000
 const LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS = 2500
 const LEAD_WORKSPACE_HYDRATION_RETRY_MS = 900
@@ -7958,24 +7959,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       if (isSupabaseConfigured) {
         try {
-          const emailResponse = await invokeEdgeFunction('send-mandate-signing-email', {
-            body: {
-              type: 'seller_mandate_sent',
-              to: recipientEmail,
-              organisationId,
-              packetId: mandatePacketId,
-              recipientRole,
-              recipientName,
-              sellerName,
-              propertyTitle,
-              mandateType: 'Mandate',
-              mandateStartDate: '',
-              mandateEndDate: '',
-              askingPrice: formatCurrency(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
-              portalLink: outboundMandateLink,
-              agentName: agentRecipientName,
-            },
-          })
+          const emailResponse = await withPipelineTimeout(
+            invokeEdgeFunction('send-mandate-signing-email', {
+              body: {
+                type: 'seller_mandate_sent',
+                to: recipientEmail,
+                organisationId,
+                packetId: mandatePacketId,
+                recipientRole,
+                recipientName,
+                sellerName,
+                propertyTitle,
+                mandateType: 'Mandate',
+                mandateStartDate: '',
+                mandateEndDate: '',
+                askingPrice: formatCurrency(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
+                portalLink: outboundMandateLink,
+                agentName: agentRecipientName,
+              },
+            }),
+            'Mandate signing email timed out before the email provider confirmed delivery. The signing packet is prepared, but the recipient may not have been notified.',
+            PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS,
+          )
           assertEdgeFunctionSuccess(emailResponse, 'Mandate signing email could not be sent.')
         } catch (emailError) {
           signingEmailFailed = true
