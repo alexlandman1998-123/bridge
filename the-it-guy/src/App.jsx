@@ -2864,10 +2864,10 @@ function AppRoutes() {
           <Route path="/seller/:token/appointments" element={<SellerLegacyRedirect />} />
           <Route path="/client/:token/documents" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/otp-signing" element={<TokenRouteGate><AppErrorBoundary scope="client-otp-route" title="OTP signing failed to load"><ClientOtpSigning /></AppErrorBoundary></TokenRouteGate>} />
-          <Route path="/client/offer/:token" element={<BuyerOfferSubmission />} />
-          <Route path="/offers/session/:token" element={<PostViewingOfferPortal />} />
-          <Route path="/offers/:token" element={<BuyerOfferSubmission />} />
-          <Route path="/seller/offers/review/:token" element={<SellerOfferReviewPage />} />
+          <Route path="/client/offer/:token" element={<AppErrorBoundary scope="buyer-offer-route" title="Offer link failed to load"><BuyerOfferSubmission /></AppErrorBoundary>} />
+          <Route path="/offers/session/:token" element={<AppErrorBoundary scope="post-viewing-offer-route" title="Offer portal failed to load"><PostViewingOfferPortal /></AppErrorBoundary>} />
+          <Route path="/offers/:token" element={<AppErrorBoundary scope="buyer-offer-route" title="Offer link failed to load"><BuyerOfferSubmission /></AppErrorBoundary>} />
+          <Route path="/seller/offers/review/:token" element={<AppErrorBoundary scope="seller-offer-review-route" title="Seller offer review failed to load"><SellerOfferReviewPage /></AppErrorBoundary>} />
           <Route path="/transaction-invite/:token" element={<TokenRouteGate><TransactionPartnerInvitePage /></TokenRouteGate>} />
           <Route path="/invite/:token" element={<TokenRouteGate><InviteResolver /></TokenRouteGate>} />
           <Route

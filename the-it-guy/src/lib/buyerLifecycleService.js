@@ -1225,7 +1225,7 @@ function statusToEvent(status) {
   return ''
 }
 
-export async function createCanonicalOffer(payload = {}, { actor = null } = {}) {
+export async function createCanonicalOffer(payload = {}, { actor = null, waitForLifecycle = true } = {}) {
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Offer creation requires the canonical Supabase offers table.')
   }
@@ -1281,13 +1281,15 @@ export async function createCanonicalOffer(payload = {}, { actor = null } = {}) 
 
   const event = statusToEvent(activeInsertPayload.status)
   if (event && activeInsertPayload.buyer_lead_id) {
-    await applyBuyerLifecycleEvent({
+    const lifecycleUpdate = applyBuyerLifecycleEvent({
       organisationId: activeInsertPayload.organisation_id,
       leadId: activeInsertPayload.buyer_lead_id,
       event,
       offerId: data?.id,
       actor,
     }).catch(() => null)
+    if (waitForLifecycle) await lifecycleUpdate
+    else void lifecycleUpdate
   }
 
   return mapOfferDbRow(data)

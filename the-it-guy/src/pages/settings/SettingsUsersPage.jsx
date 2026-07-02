@@ -304,6 +304,7 @@ export default function SettingsUsersPage() {
     try {
       setSaving(true)
       setError('')
+      setMessage('')
       const selectedCommissionStructure =
         commissionStructureById.get(String(inviteForm.commissionStructureId || '').trim()) ||
         defaultCommissionStructure ||

@@ -13,7 +13,7 @@ import {
   ShieldCheck,
   UserRound,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { createElement, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import {
   getCanonicalOfferInviteContext,
@@ -80,15 +80,16 @@ function getMediaUrl(item) {
 }
 
 function getListingImageUrl(listing = {}) {
-  const marketing = listing?.marketing && typeof listing.marketing === 'object' ? listing.marketing : {}
-  const propertyDetails = listing?.propertyDetails && typeof listing.propertyDetails === 'object' ? listing.propertyDetails : {}
-  const raw = listing?.raw && typeof listing.raw === 'object' ? listing.raw : {}
+  const safeListing = listing && typeof listing === 'object' ? listing : {}
+  const marketing = safeListing.marketing && typeof safeListing.marketing === 'object' ? safeListing.marketing : {}
+  const propertyDetails = safeListing.propertyDetails && typeof safeListing.propertyDetails === 'object' ? safeListing.propertyDetails : {}
+  const raw = safeListing.raw && typeof safeListing.raw === 'object' ? safeListing.raw : {}
   const rawMarketing = raw?.marketing && typeof raw.marketing === 'object' ? raw.marketing : {}
   const onboardingFormData = raw?.onboarding?.formData && typeof raw.onboarding.formData === 'object' ? raw.onboarding.formData : {}
   const galleries = [
-    ...(Array.isArray(listing.galleryImages) ? listing.galleryImages : []),
-    ...(Array.isArray(listing.images) ? listing.images : []),
-    ...(Array.isArray(listing.photos) ? listing.photos : []),
+    ...(Array.isArray(safeListing.galleryImages) ? safeListing.galleryImages : []),
+    ...(Array.isArray(safeListing.images) ? safeListing.images : []),
+    ...(Array.isArray(safeListing.photos) ? safeListing.photos : []),
     ...(Array.isArray(marketing.imageGallery) ? marketing.imageGallery : []),
     ...(Array.isArray(marketing.image_gallery) ? marketing.image_gallery : []),
     ...(Array.isArray(rawMarketing.imageGallery) ? rawMarketing.imageGallery : []),
@@ -96,12 +97,12 @@ function getListingImageUrl(listing = {}) {
     ...(Array.isArray(onboardingFormData.imageGallery) ? onboardingFormData.imageGallery : []),
   ]
   return firstText(
-    listing.imageUrl,
-    listing.image_url,
-    listing.heroImageUrl,
-    listing.primaryImageUrl,
-    listing.coverImageUrl,
-    listing.thumbnailUrl,
+    safeListing.imageUrl,
+    safeListing.image_url,
+    safeListing.heroImageUrl,
+    safeListing.primaryImageUrl,
+    safeListing.coverImageUrl,
+    safeListing.thumbnailUrl,
     marketing.mediaUrl,
     marketing.media_url,
     rawMarketing.mediaUrl,
@@ -110,22 +111,26 @@ function getListingImageUrl(listing = {}) {
 }
 
 function getListingTitle(listing = {}) {
-  return firstText(listing.listingTitle, listing.title, listing.propertyAddress, listing.addressLine1, listing.address) || 'Selected Property'
+  const safeListing = listing && typeof listing === 'object' ? listing : {}
+  return firstText(safeListing.listingTitle, safeListing.title, safeListing.propertyAddress, safeListing.addressLine1, safeListing.address) || 'Selected Property'
 }
 
 function getListingAddress(listing = {}) {
-  return [listing.propertyAddress, listing.addressLine1, listing.address, listing.suburb, listing.city]
+  const safeListing = listing && typeof listing === 'object' ? listing : {}
+  return [safeListing.propertyAddress, safeListing.addressLine1, safeListing.address, safeListing.suburb, safeListing.city]
     .map(normalizeText)
     .filter(Boolean)
     .join(', ') || 'Address pending'
 }
 
 function getListingPrice(listing = {}) {
-  return moneyNumber(listing.askingPrice || listing.asking_price || listing.price || listing.estimatedValue || listing.estimated_value)
+  const safeListing = listing && typeof listing === 'object' ? listing : {}
+  return moneyNumber(safeListing.askingPrice || safeListing.asking_price || safeListing.price || safeListing.estimatedValue || safeListing.estimated_value)
 }
 
 function getListingType(listing = {}) {
-  return firstText(listing.propertyType, listing.property_type, listing.propertyStructureType, listing.listingCategory) || 'Residential Property'
+  const safeListing = listing && typeof listing === 'object' ? listing : {}
+  return firstText(safeListing.propertyType, safeListing.property_type, safeListing.propertyStructureType, safeListing.listingCategory) || 'Residential Property'
 }
 
 function calculateMonthlyRepayment(loanAmount = 0) {
@@ -166,11 +171,11 @@ function SelectInput({ label, value, onChange, children }) {
   )
 }
 
-function PropertyFeature({ icon: Icon, label, value }) {
+function PropertyFeature({ icon, label, value }) {
   if (!value) return null
   return (
     <div className="flex items-center gap-2 rounded-[16px] bg-[#F5F5F2] px-3 py-2 text-sm font-semibold text-[#374151]">
-      <Icon size={16} />
+      {createElement(icon, { size: 16 })}
       <span>{value} {label}</span>
     </div>
   )
@@ -687,9 +692,9 @@ function BuyerOfferSubmission() {
                   [ShieldCheck, 'Secure Token Active'],
                   [LockKeyhole, 'Encrypted'],
                   [Clock3, 'Time Stamped'],
-                ].map(([Icon, label]) => (
+                ].map(([icon, label]) => (
                   <div key={label} className="inline-flex items-center gap-2 rounded-full border border-[#E5E7EB] bg-[#FAFAF8] px-3 py-2 text-xs font-bold text-[#374151]">
-                    <Icon size={14} color={ARCH_GREEN} />
+                    {createElement(icon, { size: 14, color: ARCH_GREEN })}
                     {label}
                   </div>
                 ))}

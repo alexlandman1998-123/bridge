@@ -601,6 +601,99 @@ function isMissingPrivateListingActivityError(error) {
   return isMissingTableError(error, 'private_listing_activity')
 }
 
+function isRecoverableDeleteSchemaError(error, tableName = '', columnName = '') {
+  return isMissingTableError(error, tableName) || isMissingColumnError(error, columnName)
+}
+
+async function deleteRowsByColumn(client, tableName, columnName, value) {
+  const normalizedValue = normalizeText(value)
+  if (!normalizedValue) return { skipped: true, reason: 'missing_value' }
+
+  const result = await client.from(tableName).delete().eq(columnName, normalizedValue)
+  if (result.error) {
+    if (isRecoverableDeleteSchemaError(result.error, tableName, columnName)) {
+      return { skipped: true, reason: 'missing_schema' }
+    }
+    throw result.error
+  }
+  return { skipped: false }
+}
+
+async function deleteRowsInColumn(client, tableName, columnName, values = []) {
+  const normalizedValues = [...new Set((Array.isArray(values) ? values : []).map(normalizeText).filter(Boolean))]
+  if (!normalizedValues.length) return { skipped: true, reason: 'missing_values' }
+
+  const result = await client.from(tableName).delete().in(columnName, normalizedValues)
+  if (result.error) {
+    if (isRecoverableDeleteSchemaError(result.error, tableName, columnName)) {
+      return { skipped: true, reason: 'missing_schema' }
+    }
+    throw result.error
+  }
+  return { skipped: false }
+}
+
+async function updateRowsByColumn(client, tableName, columnName, value, patch = {}) {
+  const normalizedValue = normalizeText(value)
+  if (!normalizedValue || !patch || !Object.keys(patch).length) return { skipped: true, reason: 'missing_input' }
+
+  const result = await client.from(tableName).update(patch).eq(columnName, normalizedValue)
+  if (result.error) {
+    if (isRecoverableDeleteSchemaError(result.error, tableName, columnName)) {
+      return { skipped: true, reason: 'missing_schema' }
+    }
+    throw result.error
+  }
+  return { skipped: false }
+}
+
+async function deletePrivateListingRelatedRows(client, listing = {}, listingId = '') {
+  const normalizedId = normalizeUuid(listingId || listing?.id)
+  if (!normalizedId) return
+
+  const sellerLeadIds = [
+    listing?.seller_lead_id,
+    listing?.sellerLeadId,
+    listing?.originating_crm_lead_id,
+    listing?.originatingCrmLeadId,
+  ].map(normalizeText).filter(Boolean)
+
+  await Promise.all([
+    deleteRowsByColumn(client, 'listing_publication_data', 'listing_id', normalizedId),
+    deleteRowsByColumn(client, 'listing_media', 'listing_id', normalizedId),
+    deleteRowsByColumn(client, 'listing_external_links', 'listing_id', normalizedId),
+    deleteRowsByColumn(client, 'listing_finance_profiles', 'listing_id', normalizedId),
+    deleteRowsByColumn(client, 'lead_listing_suggestions', 'listing_id', normalizedId),
+    deleteRowsByColumn(client, 'lead_listing_interests', 'listing_id', normalizedId),
+    deleteRowsByColumn(client, 'appointment_viewed_listings', 'listing_id', normalizedId),
+    deleteRowsByColumn(client, 'private_listing_activity', 'private_listing_id', normalizedId),
+    deleteRowsByColumn(client, 'private_listing_documents', 'private_listing_id', normalizedId),
+    deleteRowsByColumn(client, 'private_listing_document_requirements', 'private_listing_id', normalizedId),
+    deleteRowsByColumn(client, 'private_listing_seller_onboarding', 'private_listing_id', normalizedId),
+    updateRowsByColumn(client, 'transactions', 'listing_id', normalizedId, { listing_id: null }),
+    updateRowsByColumn(client, 'leads', 'listing_id', normalizedId, { listing_id: null }),
+    updateRowsByColumn(client, 'leads', 'private_listing_id', normalizedId, { private_listing_id: null }),
+    updateRowsByColumn(client, 'lead_capture_aliases', 'listing_id', normalizedId, { listing_id: null }),
+    updateRowsByColumn(client, 'lead_communication_preferences', 'listing_id', normalizedId, { listing_id: null }),
+    updateRowsByColumn(client, 'partner_campaigns', 'listing_id', normalizedId, { listing_id: null, is_active: false, status: 'archived' }),
+    updateRowsByColumn(client, 'partner_campaign_links', 'listing_id', normalizedId, { listing_id: null }),
+    updateRowsByColumn(client, 'attribution_events', 'listing_id', normalizedId, { listing_id: null }),
+    updateRowsByColumn(client, 'application_attribution', 'listing_id', normalizedId, { listing_id: null }),
+    updateRowsByColumn(client, 'document_packets', 'private_listing_id', normalizedId, { private_listing_id: null }),
+  ])
+
+  if (sellerLeadIds.length) {
+    await Promise.all([
+      deleteRowsInColumn(client, 'lead_activities', 'lead_id', sellerLeadIds),
+      deleteRowsInColumn(client, 'lead_requirements', 'lead_id', sellerLeadIds),
+      deleteRowsInColumn(client, 'lead_recommendations', 'lead_id', sellerLeadIds),
+      deleteRowsInColumn(client, 'lead_saved_searches', 'lead_id', sellerLeadIds),
+      deleteRowsInColumn(client, 'lead_communication_events', 'lead_id', sellerLeadIds),
+      deleteRowsInColumn(client, 'leads', 'lead_id', sellerLeadIds),
+    ])
+  }
+}
+
 function isStorageBucketNotFoundError(error) {
   if (!error) return false
   const status = Number(error.status || error.statusCode || 0)
@@ -2343,7 +2436,33 @@ export async function deletePrivateListing(listingId, { organisationId = null } 
   const normalizedOrgId = normalizeUuid(organisationId)
   if (!normalizedId) throw new Error('Listing id is required.')
 
-  let hardDeleteError = null
+  let existingQuery = client
+    .from('private_listings')
+    .select('id, organisation_id, seller_lead_id, originating_crm_lead_id, listing_reference, title')
+    .eq('id', normalizedId)
+
+  if (normalizedOrgId) {
+    existingQuery = existingQuery.eq('organisation_id', normalizedOrgId)
+  }
+
+  const existing = await existingQuery.maybeSingle()
+  if (existing.error) {
+    if (isMissingTableError(existing.error, 'private_listings')) {
+      throw new Error('Private listings table is unavailable in this Supabase project.')
+    }
+    throw existing.error
+  }
+
+  if (!existing.data?.id) {
+    return {
+      deleted: true,
+      mode: 'already_removed',
+      listing: { id: normalizedId },
+    }
+  }
+
+  await deletePrivateListingRelatedRows(client, existing.data, normalizedId)
+
   let hardDeleteQuery = client
     .from('private_listings')
     .delete()
@@ -2361,53 +2480,17 @@ export async function deletePrivateListing(listingId, { organisationId = null } 
     if (isMissingTableError(result.error, 'private_listings')) {
       throw new Error('Private listings table is unavailable in this Supabase project.')
     }
-    hardDeleteError = result.error
+    throw result.error
   }
 
-  if (result.data?.id) {
-    return {
-      deleted: true,
-      mode: 'hard',
-      listing: result.data,
-    }
-  }
-
-  const softDeletePayload = {
-    listing_status: 'withdrawn',
-    listing_visibility: 'archived',
-    is_active: false,
-  }
-  let softDeleteQuery = client
-    .from('private_listings')
-    .update(softDeletePayload)
-    .eq('id', normalizedId)
-
-  if (normalizedOrgId) {
-    softDeleteQuery = softDeleteQuery.eq('organisation_id', normalizedOrgId)
-  }
-
-  const softDelete = await softDeleteQuery
-    .select('id, organisation_id, seller_lead_id, originating_crm_lead_id, listing_reference, title, listing_status, listing_visibility')
-    .maybeSingle()
-
-  if (softDelete.error) {
-    if (isMissingTableError(softDelete.error, 'private_listings')) {
-      throw new Error('Private listings table is unavailable in this Supabase project.')
-    }
-    throw softDelete.error
-  }
-
-  if (!softDelete.data?.id) {
-    const message = hardDeleteError?.message
-      ? `Could not delete listing. ${hardDeleteError.message}`
-      : 'Could not delete listing. It may already be removed or you may not have permission.'
-    throw new Error(message)
+  if (!result.data?.id) {
+    throw new Error('Could not delete listing. It may already be removed or you may not have permission.')
   }
 
   return {
     deleted: true,
-    mode: 'soft',
-    listing: softDelete.data,
+    mode: 'hard',
+    listing: result.data,
   }
 }
 

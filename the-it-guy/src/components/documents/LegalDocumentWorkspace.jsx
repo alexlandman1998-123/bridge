@@ -1924,6 +1924,9 @@ function SigningMethodPanel({
   lockedReason = '',
   onSelect = null,
   onOpenSignaturePrep = null,
+  canResend = false,
+  onResend = null,
+  resendSummary = '',
   signaturePrepSummary = null,
   busy = false,
   className = '',
@@ -2035,7 +2038,27 @@ function SigningMethodPanel({
           ) : !canChange ? (
             <p className="mt-3 text-sm text-[#6b7c93]">Generate the mandate before choosing a signing method.</p>
           ) : null}
-          <div className="mt-3 flex flex-wrap gap-2">
+          {canResend ? (
+            <div className="mt-3 rounded-[16px] border border-[#dbe8f6] bg-white px-4 py-3">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-[#102033]">Resend signing links</p>
+                  <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
+                    {resendSummary || 'Refresh and resend links to outstanding signers without changing the mandate.'}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <Button type="button" size="sm" variant="secondary" onClick={() => onResend?.()} disabled={busy}>
+                    {busy ? 'Working…' : 'Resend Links'}
+                  </Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => onOpenSignaturePrep?.()} disabled={busy}>
+                    Choose Recipient
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+          <div className="mt-4 flex flex-wrap gap-2">
             <Button type="button" size="sm" className="w-full" onClick={() => onOpenSignaturePrep?.()} disabled={busy}>
               Open Signature Prep
             </Button>
@@ -2559,6 +2582,26 @@ export default function LegalDocumentWorkspace({
       return 'This mandate has already been sent for digital signature. The signing method can no longer be changed.'
     }
     return ''
+  })()
+  const currentSigningStatusForActions = normalizeKey(statusState?.signingStatus || sourceContext.signing_status || sourceContext.signingStatus || sourceContext.mandateStatus)
+  const canResendSignatureLinks =
+    isMandatePacket &&
+    signingMethod === 'digital' &&
+    legalPermissions.canResend &&
+    !hasFinalArtifact &&
+    !manualSignedUploaded &&
+    (
+      ['sent', 'partially_signed'].includes(normalizedLifecycleState) ||
+      ['sent_for_signature', 'sent_to_agent', 'agent_signed', 'sent_to_seller', 'viewed', 'failed'].includes(currentSigningStatusForActions)
+    )
+  const resendSignatureSummary = (() => {
+    if (!canResendSignatureLinks) return ''
+    if (currentSigningStatusForActions === 'sent_to_agent') return 'Refresh the agent signing link if the first signer did not receive it.'
+    if (['agent_signed', 'sent_to_seller', 'viewed'].includes(currentSigningStatusForActions)) {
+      return 'Refresh seller-side signing links for outstanding recipients.'
+    }
+    if (currentSigningStatusForActions === 'failed') return 'Retry delivery after checking the signer details.'
+    return 'Refresh and resend links to outstanding signers without changing the mandate.'
   })()
   const canChangeSigningMethod =
     isMandatePacket &&
@@ -4940,7 +4983,7 @@ export default function LegalDocumentWorkspace({
   const desktopWorkspaceRailHeightClassName = 'xl:h-[clamp(700px,calc(100vh-14rem),880px)]'
   const mainGridClassName = `grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)] xl:items-stretch 2xl:grid-cols-[340px_minmax(0,1fr)] ${desktopWorkspaceRailHeightClassName}`
   const secondaryGridClassName = 'mt-6 grid gap-5 xl:grid-cols-[minmax(500px,1.05fr)_minmax(340px,0.95fr)] xl:items-stretch 2xl:grid-cols-[minmax(560px,1.1fr)_minmax(380px,0.9fr)]'
-  const reviewRailPanelClassName = 'xl:h-[470px]'
+  const reviewRailPanelClassName = 'min-h-[470px]'
 
   return (
     <>
@@ -5335,6 +5378,9 @@ export default function LegalDocumentWorkspace({
                     lockedReason={signingMethodLockedReason}
                     onSelect={handleSelectSigningMethod}
                     onOpenSignaturePrep={() => setSignerPrepOpen(true)}
+                    canResend={canResendSignatureLinks}
+                    onResend={() => runReviewAction('resend_signature')}
+                    resendSummary={resendSignatureSummary}
                     signaturePrepSummary={signaturePrepSummary}
                     busy={actionBusy || loading}
                     className={reviewRailPanelClassName}

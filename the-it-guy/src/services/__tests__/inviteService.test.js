@@ -49,7 +49,7 @@ const inviteRow = {
   invite_type: 'workspace_invite',
   status: 'pending',
   token: 'token-123',
-  expires_at: '2026-07-01T00:00:00.000Z',
+  expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
   target_workspace_id: 'workspace-1',
   target_workspace_role: 'agent',
   target_branch_id: null,
