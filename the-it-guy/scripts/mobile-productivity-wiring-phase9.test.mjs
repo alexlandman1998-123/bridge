@@ -39,6 +39,8 @@ const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8
 const productivitySource = readFileSync(new URL('../src/components/mobile-shell/MobileProductivity.jsx', import.meta.url), 'utf8')
 const workspacePageSource = readFileSync(new URL('../src/pages/mobile/MobileWorkspacePage.jsx', import.meta.url), 'utf8')
 const bottomNavSource = readFileSync(new URL('../src/components/mobile-shell/MobileBottomNav.jsx', import.meta.url), 'utf8')
+const demoLayoutSource = readFileSync(new URL('../src/components/mobile-shell/MobileDemoLayout.jsx', import.meta.url), 'utf8')
+const mobileSearchSource = readFileSync(new URL('../src/pages/mobile/MobileSearchPage.jsx', import.meta.url), 'utf8')
 
 const routePatterns = [
   /^\/mobile\/home$/,
@@ -164,6 +166,25 @@ for (const route of [
 ]) {
   assert.ok(appSource.includes(`path="${route}"`), `App route table should declare ${route}`)
 }
+
+for (const route of [
+  '/mobile-demo/search',
+  '/mobile-demo/transaction/:workspaceId',
+  '/mobile-demo/lead/:workspaceId',
+  '/mobile-demo/matter/:workspaceId',
+  '/mobile-demo/application/:workspaceId',
+  '/mobile-demo/deal/:workspaceId',
+  '/mobile-demo/commercial-lead/:workspaceId',
+  '/mobile-demo/listing/:workspaceId',
+]) {
+  assert.ok(appSource.includes(`path="${route}"`), `App route table should declare public demo route ${route}`)
+}
+
+assert.ok(appSource.includes('MobileDemoLayout'), 'App route table should mount the public mobile demo layout before AuthGate')
+assert.ok(demoLayoutSource.includes('data-mobile-demo-shell'), 'Mobile demo shell should expose a stable verification marker')
+assert.ok(demoLayoutSource.includes('/mobile-demo/transaction/demo-transaction'), 'Mobile demo shell should keep bottom navigation inside public demo routes')
+assert.ok(mobileSearchSource.includes('routePrefix = \'/mobile\''), 'Mobile search should preserve protected mobile routing by default')
+assert.ok(mobileSearchSource.includes("replace(/^\\/mobile(?=\\/|$)/, '/mobile-demo')"), 'Mobile search should rewrite results for public demo routing')
 
 const markerComponentPairs = [
   ['data-phase5-field-mode', 'MobileFieldModePanel'],

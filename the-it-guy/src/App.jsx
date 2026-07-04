@@ -309,6 +309,7 @@ const ExecutiveSnapshot = lazy(() => import('./pages/ExecutiveSnapshot'))
 const ExternalTransactionPortal = lazy(() => import('./pages/ExternalTransactionPortal'))
 const Financials = lazy(() => import('./pages/Financials'))
 const LegalDocumentWorkspacePage = lazy(() => import('./pages/LegalDocumentWorkspacePage'))
+const MobileDemoLayout = lazy(() => import('./components/mobile-shell/MobileDemoLayout'))
 const MobileLayout = lazy(() => import('./components/mobile-shell/MobileLayout'))
 const MobileDevelopmentDetailPage = lazy(() => import('./pages/mobile/MobileDevelopmentDetailPage'))
 const MobileDevelopmentsPage = lazy(() => import('./pages/mobile/MobileDevelopmentsPage'))
@@ -1410,6 +1411,18 @@ function AppRoutes() {
             <Route path="/m/developments" element={<MobileDevelopmentsPage />} />
             <Route path="/m/developments/:developmentId" element={<MobileDevelopmentDetailPage />} />
             <Route path="/m/transactions/:transactionId" element={<MobileTransactionDetailPage />} />
+          </Route>
+          <Route element={<MobileDemoLayout />}>
+            <Route path="/mobile-demo" element={<Navigate to="/mobile-demo/transaction/demo-transaction" replace />} />
+            <Route path="/mobile-demo/search" element={<AppErrorBoundary scope="mobile-demo-search" title="Mobile demo search failed to load"><MobileSearchPage routePrefix="/mobile-demo" /></AppErrorBoundary>} />
+            <Route path="/mobile-demo/transaction/:workspaceId" element={<AppErrorBoundary scope="mobile-demo-transaction-workspace" title="Mobile demo transaction failed to load"><MobileWorkspacePage workspaceType="transaction" /></AppErrorBoundary>} />
+            <Route path="/mobile-demo/lead/:workspaceId" element={<AppErrorBoundary scope="mobile-demo-lead-workspace" title="Mobile demo lead failed to load"><MobileWorkspacePage workspaceType="lead" /></AppErrorBoundary>} />
+            <Route path="/mobile-demo/matter/:workspaceId" element={<AppErrorBoundary scope="mobile-demo-matter-workspace" title="Mobile demo matter failed to load"><MobileWorkspacePage workspaceType="matter" /></AppErrorBoundary>} />
+            <Route path="/mobile-demo/application/:workspaceId" element={<AppErrorBoundary scope="mobile-demo-application-workspace" title="Mobile demo application failed to load"><MobileWorkspacePage workspaceType="application" /></AppErrorBoundary>} />
+            <Route path="/mobile-demo/deal/:workspaceId" element={<AppErrorBoundary scope="mobile-demo-deal-workspace" title="Mobile demo deal failed to load"><MobileWorkspacePage workspaceType="deal" /></AppErrorBoundary>} />
+            <Route path="/mobile-demo/commercial-lead/:workspaceId" element={<AppErrorBoundary scope="mobile-demo-commercial-lead-workspace" title="Mobile demo commercial lead failed to load"><MobileWorkspacePage workspaceType="commercialLead" /></AppErrorBoundary>} />
+            <Route path="/mobile-demo/listing/:workspaceId" element={<AppErrorBoundary scope="mobile-demo-listing-workspace" title="Mobile demo listing failed to load"><MobileWorkspacePage workspaceType="listing" /></AppErrorBoundary>} />
+            <Route path="/mobile-demo/*" element={<Navigate to="/mobile-demo/transaction/demo-transaction" replace />} />
           </Route>
           <Route
             element={

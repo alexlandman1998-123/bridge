@@ -6,7 +6,12 @@ import { useWorkspace } from '../../context/WorkspaceContext'
 import { getRecentSearches, saveRecentSearch, searchMobile } from '../../services/mobileProductivityService'
 import { trackMobileMetric } from '../../services/observability/monitoring'
 
-export default function MobileSearchPage() {
+function mapSearchDestination(to, routePrefix) {
+  if (routePrefix === '/mobile-demo') return String(to || '').replace(/^\/mobile(?=\/|$)/, '/mobile-demo')
+  return to
+}
+
+export default function MobileSearchPage({ routePrefix = '/mobile' }) {
   const workspace = useWorkspace()
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
@@ -14,19 +19,20 @@ export default function MobileSearchPage() {
   const results = useMemo(() => searchMobile(query, workspace), [query, workspace])
 
   function openResult(item) {
+    const destinationRoute = mapSearchDestination(item.to, routePrefix)
     const nextRecents = saveRecentSearch(query || item.title)
     setRecentSearches(nextRecents)
     void trackMobileMetric('search_used', {
-      route: '/mobile/search',
-      metadata: { query: query || item.title, resultType: item.type, destinationRoute: item.to },
+      route: `${routePrefix}/search`,
+      metadata: { query: query || item.title, resultType: item.type, destinationRoute },
     })
-    navigate(item.to)
+    navigate(destinationRoute)
   }
 
   function handleRecentSearch(value) {
     setQuery(value)
     void trackMobileMetric('search_used', {
-      route: '/mobile/search',
+      route: `${routePrefix}/search`,
       metadata: { query: value, source: 'recent' },
     })
   }
