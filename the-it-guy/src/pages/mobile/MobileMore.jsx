@@ -1,6 +1,7 @@
 import { Building2, CalendarDays, CircleHelp, FileText, Inbox, LogOut, Search, Settings, TrendingUp, UserCircle } from 'lucide-react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
+import { MobileFieldModePanel } from '../../components/mobile-shell/MobileProductivity'
 import { MobileCard } from '../../components/mobile-shell/MobileShellStates'
 import { FEATURE_FLAGS } from '../../lib/featureFlags'
 import { getDeviceType } from '../../lib/deviceDetection'
@@ -72,6 +73,14 @@ export default function MobileMore() {
           </div>
         </div>
       </MobileCard>
+
+      <MobileFieldModePanel
+        workspace={{ module: 'more' }}
+        tasks={[]}
+        documents={[]}
+        priorityActions={[]}
+        onOpenDocuments={() => navigate('/mobile/documents')}
+      />
 
       <section className="space-y-3">
         {MORE_ITEMS.map((item) => {

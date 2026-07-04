@@ -1,8 +1,8 @@
 import { AlertCircle, Archive, RefreshCw, Search, SlidersHorizontal } from 'lucide-react'
 
-export function MobileCard({ children, className = '' }) {
+export function MobileCard({ children, className = '', ...props }) {
   return (
-    <div className={`rounded-[26px] border border-white/80 bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ${className}`.trim()}>
+    <div {...props} className={`rounded-[26px] border border-white/80 bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ${className}`.trim()}>
       {children}
     </div>
   )
@@ -115,7 +115,7 @@ export function MobileFilterChips({ items = [], active = '', onChange = null }) 
           <button
             key={value}
             type="button"
-            className={`min-h-10 shrink-0 rounded-full px-4 text-[13px] font-semibold transition ${selected ? 'bg-[#1f7a5a] text-white shadow-[0_10px_22px_rgba(31,122,90,0.24)]' : 'bg-white text-[#60758d] shadow-[0_8px_18px_rgba(15,23,42,0.05)]'}`}
+            className={`min-h-11 shrink-0 rounded-full px-4 text-[13px] font-semibold transition ${selected ? 'bg-[#1f7a5a] text-white shadow-[0_10px_22px_rgba(31,122,90,0.24)]' : 'bg-white text-[#60758d] shadow-[0_8px_18px_rgba(15,23,42,0.05)]'}`}
             onClick={() => onChange?.(value)}
           >
             {label}

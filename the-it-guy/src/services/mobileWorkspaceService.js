@@ -1,4 +1,4 @@
-import { getAgentDemoTransactionRowsFromStorage } from '../lib/agentDemoTransactionStorage'
+import { getAgentDemoTransactionRowsFromStorage } from '../lib/agentDemoTransactionStorage.js'
 
 function normalizeText(value = '', fallback = '') {
   const text = String(value || '').trim()
@@ -44,8 +44,8 @@ function baseNotes(module, id) {
 
 function baseActivity(module, title) {
   return [
-    { id: `${module}-activity-1`, title: 'Workspace updated', body: title, time: 'Now' },
-    { id: `${module}-activity-2`, title: 'Status checked', body: 'Mobile snapshot prepared', time: '1h ago' },
+    { id: `${module}-activity-1`, module, title: 'Workspace updated', body: title, time: 'Now', actor: 'Arch9', tone: 'green' },
+    { id: `${module}-activity-2`, module, title: 'Status checked', body: 'Mobile snapshot prepared', time: '1h ago', actor: 'Mobile', tone: 'blue' },
   ]
 }
 
@@ -58,8 +58,21 @@ function baseTasks(module, title) {
       due: 'Today',
       priority: 'High',
       tone: 'red',
+      module,
+      owner: 'You',
     },
   ]
+}
+
+function buildWorkspaceMeta(module, label, owner = 'You', nextAction = 'Confirm next action') {
+  return {
+    moduleLabel: label,
+    owner,
+    nextAction,
+    blocker: 'No hard blocker',
+    sla: 'Due today',
+    syncStatus: 'Live mobile snapshot',
+  }
 }
 
 function buildTransactionWorkspace(id) {
@@ -69,6 +82,7 @@ function buildTransactionWorkspace(id) {
   const stage = normalizeText(transaction.current_main_stage || transaction.stage, 'Finance Stage')
   const daysActive = getDaysSince(transaction.created_at || row?.created_at)
   return {
+    ...buildWorkspaceMeta('transaction', 'Residential Transaction', normalizeText(transaction.assigned_agent, 'Assigned Agent'), 'Upload outstanding buyer documents'),
     module: 'transaction',
     title,
     reference: normalizeText(transaction.transaction_reference || transaction.matter_number || id, `TXN-${String(id).slice(0, 8)}`),
@@ -81,8 +95,8 @@ function buildTransactionWorkspace(id) {
     stages: ['Offer', 'OTP', 'Buyer Onboarding', 'Finance', 'Transfer', 'Registration'],
     currentStage: stage,
     priorityActions: [
-      { id: 'buyer-id', title: 'Buyer ID Outstanding', body: 'Request the missing identity document.', tone: 'red' },
-      { id: 'fica', title: 'FICA Documents Missing', body: 'Follow up before finance can progress.', tone: 'amber' },
+      { id: 'buyer-id', title: 'Buyer ID Outstanding', body: 'Request the missing identity document.', tone: 'red', due: 'Today', owner: 'Buyer' },
+      { id: 'fica', title: 'FICA Documents Missing', body: 'Follow up before finance can progress.', tone: 'amber', due: 'Tomorrow', owner: 'Agent' },
     ],
     participants: [
       buildParticipant(id, 'Agent', normalizeText(transaction.assigned_agent, 'Assigned Agent')),
@@ -107,6 +121,7 @@ function buildTransactionWorkspace(id) {
 function buildLeadWorkspace(id, commercial = false) {
   const title = commercial ? 'Commercial Lead' : 'Residential Lead'
   return {
+    ...buildWorkspaceMeta(commercial ? 'commercial_lead' : 'lead', commercial ? 'Commercial Lead' : 'Residential Lead', commercial ? 'Assigned Broker' : 'Assigned Agent', commercial ? 'Qualify lead requirement' : 'Follow up with lead'),
     module: commercial ? 'commercial_lead' : 'lead',
     title,
     reference: `LEAD-${String(id).slice(0, 8)}`,
@@ -124,7 +139,7 @@ function buildLeadWorkspace(id, commercial = false) {
         ],
     stages: commercial ? ['Captured', 'Qualified', 'Requirement', 'Viewing', 'Deal'] : ['Captured', 'Contacted', 'Qualified', 'Viewing', 'Offer'],
     currentStage: commercial ? 'Qualified' : 'Contacted',
-    priorityActions: [{ id: 'follow-up', title: 'Follow up required', body: 'Contact this lead today.', tone: 'amber' }],
+    priorityActions: [{ id: 'follow-up', title: 'Follow up required', body: 'Contact this lead today.', tone: 'amber', due: 'Today', owner: commercial ? 'Broker' : 'Agent' }],
     participants: [
       buildParticipant(id, commercial ? 'Broker' : 'Agent', commercial ? 'Assigned Broker' : 'Assigned Agent'),
       buildParticipant(id, 'Lead', commercial ? 'Commercial Contact' : 'Lead Contact'),
@@ -141,6 +156,7 @@ function buildLeadWorkspace(id, commercial = false) {
 function buildMatterWorkspace(id) {
   const title = 'Matter Workspace'
   return {
+    ...buildWorkspaceMeta('matter', 'Attorney Matter', 'Attorney', 'Review FICA milestone'),
     module: 'matter',
     title,
     reference: `MAT-${String(id).slice(0, 8)}`,
@@ -152,7 +168,7 @@ function buildMatterWorkspace(id) {
     ],
     stages: ['Instruction', 'FICA', 'Drafting', 'Lodgement', 'Registration'],
     currentStage: 'FICA',
-    priorityActions: [{ id: 'fica-review', title: 'FICA Review Required', body: 'Review uploaded client documents.', tone: 'amber' }],
+    priorityActions: [{ id: 'fica-review', title: 'FICA Review Required', body: 'Review uploaded client documents.', tone: 'amber', due: 'Today', owner: 'Attorney' }],
     participants: ['Buyer', 'Seller', 'Agent', 'Attorney', 'Originator'].map((role) => buildParticipant(id, role, role)),
     documents: [
       { label: 'Uploaded Documents', value: 0 },
@@ -169,6 +185,7 @@ function buildMatterWorkspace(id) {
 function buildApplicationWorkspace(id) {
   const title = 'Bond Application'
   return {
+    ...buildWorkspaceMeta('application', 'Bond Application', 'Bond Originator', 'Follow up bank responses'),
     module: 'application',
     title,
     reference: `APP-${String(id).slice(0, 8)}`,
@@ -180,7 +197,7 @@ function buildApplicationWorkspace(id) {
     ],
     stages: ['Submitted', 'Banks', 'Offers', 'Accepted', 'Instructed', 'Registered'],
     currentStage: 'Banks',
-    priorityActions: [{ id: 'bank-follow-up', title: 'Bank Responses Pending', body: 'Follow up on outstanding bank feedback.', tone: 'amber' }],
+    priorityActions: [{ id: 'bank-follow-up', title: 'Bank Responses Pending', body: 'Follow up on outstanding bank feedback.', tone: 'amber', due: 'Today', owner: 'Originator' }],
     participants: ['Applicant', 'Agent', 'Originator', 'Bank Consultant'].map((role) => buildParticipant(id, role, role)),
     documents: [
       { label: 'Banks Submitted', value: 3 },
@@ -197,6 +214,7 @@ function buildApplicationWorkspace(id) {
 function buildDealWorkspace(id) {
   const title = 'Commercial Deal'
   return {
+    ...buildWorkspaceMeta('deal', 'Commercial Deal', 'Assigned Broker', 'Confirm heads of terms path'),
     module: 'deal',
     title,
     reference: `DEAL-${String(id).slice(0, 8)}`,
@@ -208,7 +226,7 @@ function buildDealWorkspace(id) {
     ],
     stages: ['Lead', 'Requirement', 'Viewing', 'HOT', 'Lease', 'Occupied'],
     currentStage: 'Viewing',
-    priorityActions: [{ id: 'hot-follow-up', title: 'Heads of Terms Follow-up', body: 'Confirm next commercial deal step.', tone: 'amber' }],
+    priorityActions: [{ id: 'hot-follow-up', title: 'Heads of Terms Follow-up', body: 'Confirm next commercial deal step.', tone: 'amber', due: 'Today', owner: 'Broker' }],
     participants: ['Landlord', 'Tenant', 'Broker', 'Attorney'].map((role) => buildParticipant(id, role, role)),
     documents: [
       { label: 'Uploaded Documents', value: 0 },
@@ -225,6 +243,7 @@ function buildDealWorkspace(id) {
 function buildListingWorkspace(id) {
   const title = 'Commercial Listing'
   return {
+    ...buildWorkspaceMeta('listing', 'Commercial Listing', 'Assigned Broker', 'Review new listing interest'),
     module: 'listing',
     title,
     reference: `LIST-${String(id).slice(0, 8)}`,
@@ -236,7 +255,7 @@ function buildListingWorkspace(id) {
     ],
     stages: ['Draft', 'Active', 'Leads', 'Viewings', 'Offers'],
     currentStage: 'Active',
-    priorityActions: [{ id: 'listing-follow-up', title: 'Listing Follow-up', body: 'Review new listing interest.', tone: 'green' }],
+    priorityActions: [{ id: 'listing-follow-up', title: 'Listing Follow-up', body: 'Review new listing interest.', tone: 'green', due: 'This week', owner: 'Broker' }],
     participants: ['Landlord', 'Broker', 'Viewing Contact'].map((role) => buildParticipant(id, role, role)),
     documents: [
       { label: 'Views', value: 0 },
@@ -281,16 +300,18 @@ export function getMobileListingWorkspace(id) {
 
 export function getMobileSharedTasks() {
   return [
-    { id: 'task-1', title: 'Confirm next action', related: 'Mobile workspace', due: 'Today', priority: 'High', tone: 'red' },
-    { id: 'task-2', title: 'Review outstanding documents', related: 'Documents', due: 'Tomorrow', priority: 'Medium', tone: 'amber' },
+    { id: 'task-1', title: 'Confirm next action', related: 'Mobile transaction workspace', due: 'Today', priority: 'High', tone: 'red', module: 'transaction', owner: 'You', route: '/mobile/transaction/demo-transaction' },
+    { id: 'task-2', title: 'Review outstanding documents', related: 'Matter documents', due: 'Tomorrow', priority: 'Medium', tone: 'amber', module: 'matter', owner: 'Attorney', route: '/mobile/matter/demo-matter' },
+    { id: 'task-3', title: 'Follow up bank response', related: 'Bond application', due: 'Today', priority: 'Medium', tone: 'amber', module: 'application', owner: 'Originator', route: '/mobile/application/demo-application' },
   ]
 }
 
 export function getMobileSharedActivity() {
   return [
-    { id: 'activity-1', title: 'Transaction Activity', body: 'Workspace status checked', time: 'Now' },
-    { id: 'activity-2', title: 'Matter Activity', body: 'Document summary updated', time: '1h ago' },
-    { id: 'activity-3', title: 'Application Activity', body: 'Bank queue reviewed', time: '2h ago' },
-    { id: 'activity-4', title: 'Deal Activity', body: 'Commercial pipeline opened', time: '3h ago' },
+    { id: 'activity-1', module: 'transaction', title: 'Transaction Activity', body: 'Workspace status checked', time: 'Now', actor: 'Sarah Williams' },
+    { id: 'activity-2', module: 'matter', title: 'Matter Activity', body: 'Document summary updated', time: '1h ago', actor: 'Attorney' },
+    { id: 'activity-3', module: 'application', title: 'Application Activity', body: 'Bank queue reviewed', time: '2h ago', actor: 'Originator' },
+    { id: 'activity-4', module: 'deal', title: 'Deal Activity', body: 'Commercial pipeline opened', time: '3h ago', actor: 'Broker' },
+    { id: 'activity-5', module: 'lead', title: 'Lead Activity', body: 'Follow-up task created', time: '4h ago', actor: 'Arch9' },
   ]
 }

@@ -31,7 +31,7 @@ const ICONS = {
 const CREATE_ACTIONS = [
   { key: 'lead', label: 'New Lead', body: 'Capture a buyer or seller lead.', icon: UsersRound, to: '/mobile/leads' },
   { key: 'transaction', label: 'New Transaction', body: 'Start a deal from the field.', icon: BriefcaseBusiness, to: '/mobile/transactions' },
-  { key: 'document', label: 'Upload Document', body: 'Add FICA, OTP, mandate, or proof.', icon: Upload, to: '/mobile/documents' },
+  { key: 'document', label: 'Scan Document', body: 'Camera capture, queue and sync field documents.', icon: Upload, to: '/mobile/documents' },
   { key: 'note', label: 'Add Note', body: 'Record a quick update.', icon: StickyNote, to: '/mobile/activity' },
   { key: 'follow-up', label: 'Schedule Follow-up', body: 'Set the next reminder.', icon: CalendarPlus, to: '/mobile/tasks' },
   { key: 'prospect', label: 'Add Prospect', body: 'Create a prospecting lead.', icon: FileText, to: '/mobile/leads' },

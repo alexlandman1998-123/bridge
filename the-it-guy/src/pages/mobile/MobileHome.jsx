@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { useOptionalOrganisation } from '../../context/OrganisationContext'
+import { MobileCommandBriefPanel, MobileFieldModePanel } from '../../components/mobile-shell/MobileProductivity'
 import { MobileCard, MobileEmptyState, MobileErrorState, MobileLoadingState } from '../../components/mobile-shell/MobileShellStates'
 import { getMobileDashboardSnapshot, getMobileDashboardSnapshotAsync } from '../../services/mobileDashboardService'
 import { trackMobileMetric } from '../../services/observability/monitoring'
@@ -350,6 +351,27 @@ export default function MobileHome() {
       ) : null}
 
       <PriorityNowCard priority={priority} onOpen={handlePriorityOpen} />
+
+      <MobileFieldModePanel
+        workspace={{ module: snapshot.category || 'home' }}
+        tasks={snapshot.tasks}
+        documents={[]}
+        priorityActions={priority ? [{ tone: snapshot.tasks.length ? 'amber' : 'green' }] : []}
+        onOpenDocuments={() => navigate('/mobile/documents')}
+      />
+
+      <MobileCommandBriefPanel
+        workspace={{ module: snapshot.category || 'home', moduleLabel: snapshot.copy?.workTitle || 'Mobile Workspace', status: snapshot.insight?.label || 'Today' }}
+        tasks={snapshot.tasks}
+        documents={[]}
+        priorityActions={priority ? [{ tone: snapshot.tasks.length ? 'amber' : 'green', title: priority.title }] : []}
+        activity={snapshot.recentActivity}
+        onAction={(action) => {
+          if (String(action).toLowerCase().includes('task')) navigate('/mobile/tasks')
+          else if (String(action).toLowerCase().includes('document')) navigate('/mobile/documents')
+          else navigate(workPath)
+        }}
+      />
 
       <section className="grid grid-cols-2 gap-3">
         {snapshot.summaryCards.map((card) => <KpiCard key={card.key} card={card} />)}

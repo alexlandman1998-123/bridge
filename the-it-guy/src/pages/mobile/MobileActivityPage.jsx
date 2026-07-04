@@ -1,16 +1,25 @@
-import { FileText, ListChecks, MessageCircle, ScrollText } from 'lucide-react'
+import { BriefcaseBusiness, FileText, Landmark, ListChecks, MessageCircle, ScrollText, ShieldCheck } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { MobileCard, MobileEmptyState, MobileFilterChips } from '../../components/mobile-shell/MobileShellStates'
 import { getMobileSharedActivity } from '../../services/mobileWorkspaceService'
 
-const FILTERS = ['All', 'Transactions', 'Documents', 'Leads', 'Tasks', 'Messages']
+const FILTERS = [
+  { value: 'All', label: 'All' },
+  { value: 'transaction', label: 'Transactions' },
+  { value: 'matter', label: 'Matters' },
+  { value: 'application', label: 'Applications' },
+  { value: 'deal', label: 'Deals' },
+  { value: 'lead', label: 'Leads' },
+]
 
 const ICONS = {
-  Transactions: ScrollText,
+  transaction: ScrollText,
+  matter: ShieldCheck,
+  application: Landmark,
+  deal: BriefcaseBusiness,
+  lead: MessageCircle,
   Documents: FileText,
   Tasks: ListChecks,
-  Messages: MessageCircle,
-  Leads: MessageCircle,
   All: MessageCircle,
 }
 
@@ -19,14 +28,29 @@ export default function MobileActivityPage() {
   const activity = getMobileSharedActivity()
   const rows = useMemo(() => {
     if (filter === 'All') return activity
-    return activity.filter((item) => `${item.title} ${item.body}`.toLowerCase().includes(filter.slice(0, -1).toLowerCase()))
+    return activity.filter((item) => item.module === filter || `${item.title} ${item.body}`.toLowerCase().includes(filter.toLowerCase()))
   }, [activity, filter])
 
   return (
-    <div className="space-y-6">
-      <section className="pt-2">
-        <h1 className="text-[34px] font-bold text-[#10243a]">Activity</h1>
-        <p className="mt-2 text-[16px] leading-7 text-[#60758d]">A clean timeline of what changed and what needs a quick look.</p>
+    <div className="space-y-6" data-mobile-shared-activity>
+      <section className="rounded-[30px] bg-[#10243a] p-5 text-white shadow-[0_20px_46px_rgba(15,23,42,0.18)]">
+        <p className="text-[11px] font-semibold uppercase text-[#9fe0bd]">Live Workstream</p>
+        <h1 className="mt-2 text-[34px] font-bold leading-tight text-white">Activity</h1>
+        <p className="mt-2 text-[16px] leading-7 text-[#dce8f2]">A chronological feed across transactions, matters, applications, leads and commercial work.</p>
+        <div className="mt-5 grid grid-cols-3 gap-2">
+          <div className="rounded-[20px] bg-white/10 p-3">
+            <p className="text-[22px] font-semibold">{activity.length}</p>
+            <p className="text-[11px] font-semibold text-[#c7d7e4]">Events</p>
+          </div>
+          <div className="rounded-[20px] bg-white/10 p-3">
+            <p className="text-[22px] font-semibold">{new Set(activity.map((item) => item.module)).size}</p>
+            <p className="text-[11px] font-semibold text-[#c7d7e4]">Modules</p>
+          </div>
+          <div className="rounded-[20px] bg-white/10 p-3">
+            <p className="text-[22px] font-semibold">{rows.length}</p>
+            <p className="text-[11px] font-semibold text-[#c7d7e4]">Visible</p>
+          </div>
+        </div>
       </section>
 
       <MobileFilterChips items={FILTERS} active={filter} onChange={setFilter} />
@@ -37,8 +61,7 @@ export default function MobileActivityPage() {
             <p className="mb-3 text-[13px] font-semibold uppercase tracking-[0.04em] text-[#60758d]">Today</p>
             <MobileCard className="pb-1">
               {rows.map((item, index) => {
-                const key = FILTERS.find((entry) => `${item.title} ${item.body}`.toLowerCase().includes(entry.slice(0, -1).toLowerCase())) || 'All'
-                const Icon = ICONS[key] || MessageCircle
+                const Icon = ICONS[item.module] || MessageCircle
                 return (
                   <div key={item.id} className="flex items-start gap-3">
                     <span className="flex flex-col items-center">
@@ -49,7 +72,7 @@ export default function MobileActivityPage() {
                     </span>
                     <span className="min-w-0 flex-1 pb-4">
                       <span className="block text-[15px] font-semibold text-[#10243a]">{item.title}</span>
-                      <span className="mt-1 block truncate text-[13px] text-[#60758d]">{item.body}</span>
+                      <span className="mt-1 block truncate text-[13px] text-[#60758d]">{item.body}{item.actor ? ` · ${item.actor}` : ''}</span>
                     </span>
                     <span className="shrink-0 text-[12px] font-semibold text-[#94a3b8]">{item.time}</span>
                   </div>

@@ -1,11 +1,12 @@
 import {
-  BadgeCheck,
-  Banknote,
   Building2,
+  FileText,
+  FolderOpen,
   Handshake,
   Home,
   Landmark,
-  MapPin,
+  MessageCircle,
+  Route,
   ScrollText,
   ShieldCheck,
   UserRound,
@@ -13,372 +14,588 @@ import {
 import { useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import {
-  MobilePortalDocumentRow,
-  MobilePortalHeader,
-  MobilePortalHero,
-  MobilePortalIconRail,
-  MobilePortalMetricStrip,
-  MobilePortalNextActionCard,
-  MobilePortalReviewCard,
-  MobilePortalScreen,
-  MobilePortalSearch,
-  MobilePortalSectionHeader,
-  MobilePortalStickyActionBar,
-  MobilePortalTabs,
-  MobilePortalTaskRow,
+  ActivityTimeline,
+  BottomNavigation,
+  JourneyDetailSheet,
+  JourneyTracker,
+  MobileTransactionScreen,
+  NextActionCard,
+  OwnerPanel,
+  PropertyCard,
+  TeamSection,
+  TransactionHeader,
+  TransactionHero,
 } from '../../components/mobile-shell/MobileOnboardingDesign'
 import { MobileUploadSheet } from '../../components/mobile-shell/MobileProductivity'
 import { trackMobileMetric } from '../../services/observability/monitoring'
 
-const FLOWS = {
+const NAV_ITEMS = [
+  { key: 'journey', label: 'Journey', icon: Route },
+  { key: 'tasks', label: 'Tasks', icon: FileText },
+  { key: 'documents', label: 'Documents', icon: FolderOpen },
+  { key: 'messages', label: 'Messages', icon: MessageCircle },
+  { key: 'property', label: 'Property', icon: Home },
+]
+
+const DASHBOARD_CONFIG = {
   buyer: {
-    title: 'Buyer Onboarding',
-    greeting: 'Buyer Portal',
-    statusLabel: 'Offer readiness file',
-    searchPlaceholder: 'Search buyer profile, funding, or documents',
-    heroEyebrow: 'Offer readiness',
-    heroTitle: 'Get buyer ready for offer.',
-    heroBody: 'Confirm the buyer profile, funding route and proof documents before the agent prepares the next offer step.',
-    heroIcon: Landmark,
-    nextActionEyebrow: 'Buyer action',
-    priorityTitle: 'Buyer Readiness',
-    tasksTitle: 'Buyer Tasks',
-    documentsTitle: 'Buyer Proof Pack',
-    documentsPreviewTitle: 'Proof Documents',
-    reviewTitlePending: 'Buyer file still needs work',
-    reviewTitleComplete: 'Buyer ready for handoff',
-    reviewBodyPending: 'Finish the buyer profile, funding and proof checks before the offer workflow moves forward.',
-    reviewBodyComplete: 'Buyer details, funding confidence and supporting documents are ready for agent review.',
-    uploadLabel: 'Add proof',
-    finalPrimaryLabel: 'Review Buyer',
-    emptyNextTitle: 'Review buyer readiness',
-    emptyNextBody: 'Profile, funding and proof documents are complete. Check the file before handoff.',
-    uploadModule: 'lead',
-    steps: [
-      { key: 'identity', label: 'Buyer Profile', body: 'Confirm buyer details, decision-maker and contact route.', icon: UserRound },
-      { key: 'address', label: 'Address Base', body: 'Capture current residential or business address.', icon: Home },
-      { key: 'financials', label: 'Funding Route', body: 'Record finance type, deposit strength and readiness.', icon: Banknote },
-      { key: 'review', label: 'Offer Readiness', body: 'Check the buyer file before offer preparation.', icon: BadgeCheck },
+    portal_label: 'Buyer Portal',
+    upload_module: 'lead',
+    transaction: {
+      id: 'buyer-local-transaction',
+      portal_type: 'buyer',
+      stage_label: 'Offer Stage',
+    },
+    property: {
+      address: '2 Pine Avenue',
+      price: 'R 2,850,000',
+      cover_image: '',
+      reference: 'B9-BUY-2048',
+      agent: 'Sarah Williams',
+      current_stage: 'Buyer Verification',
+      listing_status: 'Offer active',
+    },
+    progress: {
+      progress_percentage: 23,
+      current_stage: 'Buyer Verification',
+      stage_number: 2,
+      total_stages: 9,
+      estimated_completion: '18 August 2026',
+      days_remaining: 42,
+      last_updated: 'Updated 09:18',
+      stage_icon: UserRound,
+    },
+    owner: {
+      id: 'sarah-agent',
+      name: 'Sarah Williams',
+      role: 'Estate Agent',
+      avatar: '',
+      status: 'Online',
+    },
+    waiting_on: {
+      title: 'Buyer ID',
+      description: 'Expected Today',
+      due_date: 'Due today',
+    },
+    journey: [
+      {
+        id: 'offer',
+        title: 'Offer',
+        icon: Handshake,
+        status: 'completed',
+        owner: 'Sarah Williams',
+        expected_date: '2 Jul',
+        completed_date: '2 Jul',
+        description: 'The offer has been captured and linked to this property transaction.',
+        insight: 'Offer terms are accepted and locked into the buyer transaction file.',
+        next_step: 'Buyer verification is now active so finance and attorney work can start cleanly.',
+        documents: [
+          { label: 'Offer to Purchase', status: 'completed' },
+          { label: 'Signed addendum', status: 'completed' },
+        ],
+        cta_text: 'View offer activity',
+        cta_route: 'activity',
+      },
+      {
+        id: 'buyer_verification',
+        title: 'Buyer Verification',
+        icon: UserRound,
+        status: 'active',
+        owner: 'Buyer',
+        expected_date: 'Today',
+        completed_date: '',
+        description: 'Your identity, address and affordability documents are being collected.',
+        insight: 'This is the current transaction gate. Your agent needs the buyer pack before finance packaging can start.',
+        next_step: 'Upload your ID document and the portal will move the transaction toward finance packaging.',
+        documents: [
+          { label: 'Buyer ID document', status: 'active' },
+          { label: 'Proof of income', status: 'waiting' },
+          { label: 'FICA declaration', status: 'upcoming' },
+        ],
+        cta_text: 'Upload ID Document',
+        cta_route: 'upload_document',
+      },
+      {
+        id: 'finance',
+        title: 'Finance',
+        icon: Landmark,
+        status: 'waiting',
+        owner: 'Bank',
+        expected_date: '8 Jul',
+        completed_date: '',
+        description: 'Finance packaging starts once buyer verification is complete.',
+        insight: 'Finance is queued and waiting for the buyer verification documents to clear.',
+        next_step: 'The bond team will package the application once your ID and supporting documents are received.',
+        documents: [
+          { label: 'Income pack', status: 'waiting' },
+          { label: 'Bank statements', status: 'upcoming' },
+        ],
+        cta_text: 'Ask for update',
+        cta_route: 'messages',
+      },
+      {
+        id: 'attorney',
+        title: 'Attorney',
+        icon: ShieldCheck,
+        status: 'upcoming',
+        owner: 'Transfer Attorney',
+        expected_date: '12 Jul',
+        completed_date: '',
+        description: 'The transfer attorney will be assigned after the offer pack is confirmed.',
+        insight: 'Attorney work starts once verification and finance readiness are far enough along.',
+        next_step: 'No action is needed yet. The attorney will appear here once assigned.',
+        documents: [
+          { label: 'Attorney instruction', status: 'upcoming' },
+        ],
+        cta_text: 'View team',
+        cta_route: 'messages',
+      },
+      {
+        id: 'registration',
+        title: 'Registration',
+        icon: Home,
+        status: 'upcoming',
+        owner: 'Deeds Office',
+        expected_date: '18 Aug',
+        completed_date: '',
+        description: 'Registration confirms final transfer of the property.',
+        insight: 'Registration is the final legal handoff after attorney and finance work completes.',
+        next_step: 'The portal will show deeds-office progress once transfer is lodged.',
+        documents: [
+          { label: 'Registration confirmation', status: 'upcoming' },
+        ],
+        cta_text: 'Got it',
+        cta_route: 'close',
+      },
     ],
-    documents: [
-      { key: 'id', label: 'Buyer ID', body: 'Identity document or passport for the purchaser.' },
-      { key: 'address', label: 'Address Proof', body: 'Recent utility bill, lease or statement.' },
-      { key: 'financials', label: 'Funding Proof', body: 'Bank, finance or proof-of-funds pack.' },
+    next_action: {
+      title: 'Upload your ID document',
+      description: 'Your agent cannot prepare the Offer to Purchase until this document has been submitted.',
+      button_text: 'Upload ID Document',
+      button_route: 'upload_document',
+      priority: 'active',
+      priority_label: 'Required today',
+      due_label: 'Due today',
+      secondary_text: 'Ask Sarah',
+      secondary_route: 'messages',
+      requirements: [
+        { label: 'Buyer ID', status: 'active' },
+        { label: 'Proof of income', status: 'waiting' },
+        { label: 'FICA', status: 'upcoming' },
+      ],
+    },
+    completed_action: {
+      title: 'Buyer verification received',
+      description: 'Your document has been received and the transaction can move toward finance packaging.',
+      button_text: 'Review Next Step',
+      button_route: 'journey',
+      priority: 'completed',
+      priority_label: 'Received',
+      due_label: 'Just now',
+      secondary_text: 'Message Sarah',
+      secondary_route: 'messages',
+      completion_note: 'Nice. The buyer pack has moved into review and finance packaging can start.',
+      requirements: [
+        { label: 'Buyer ID', status: 'completed' },
+        { label: 'Finance pack', status: 'active' },
+        { label: 'Attorney prep', status: 'upcoming' },
+      ],
+    },
+    participants: [
+      { id: 'sarah-agent', name: 'Sarah Williams', role: 'Estate Agent', status: 'Online' },
+      { id: 'michael-attorney', name: 'Michael Jacobs', role: 'Transfer Attorney', status: 'Waiting for documents' },
+      { id: 'nedbank', name: 'Nedbank', role: 'Bond Originator', status: 'Preparing application' },
     ],
-    tabs: [
-      { key: 'overview', label: 'Overview' },
-      { key: 'tasks', label: 'Profile' },
-      { key: 'documents', label: 'Proof' },
-      { key: 'review', label: 'Readiness' },
-    ],
-    metrics: [
-      { label: 'Profile', type: 'steps' },
-      { label: 'Proof', type: 'documents' },
-      { label: 'Ready', type: 'completion' },
-    ],
-    reviewRows: [
-      { label: 'Buyer profile', type: 'steps' },
-      { label: 'Funding proof', type: 'documents' },
-      { label: 'Offer file', type: 'token' },
+    activity: [
+      { id: 'buyer-invited', timestamp: '09:18', title: 'Buyer Invited', subtitle: 'Portal opened', actor: 'Sarah Williams', icon: 'invite' },
+      { id: 'offer-accepted', timestamp: 'Yesterday', title: 'Offer Accepted', subtitle: 'Offer stage active', actor: 'Agent', icon: 'offer' },
+      { id: 'attorney-assigned', timestamp: '2 Jul', title: 'Attorney Assigned', subtitle: 'Transfer team added', actor: 'Arch9', icon: 'attorney' },
     ],
   },
   seller: {
-    title: 'Seller Onboarding',
-    greeting: 'Seller Portal',
-    statusLabel: 'Listing readiness file',
-    searchPlaceholder: 'Search property, mandate, or seller documents',
-    heroEyebrow: 'Listing readiness',
-    heroTitle: 'Prepare seller file for listing.',
-    heroBody: 'Validate the property profile, mandate status and seller compliance pack before publication.',
-    heroIcon: Building2,
-    nextActionEyebrow: 'Seller action',
-    priorityTitle: 'Listing Readiness',
-    tasksTitle: 'Seller Steps',
-    documentsTitle: 'Seller Compliance Pack',
-    documentsPreviewTitle: 'Compliance Documents',
-    reviewTitlePending: 'Seller file still needs work',
-    reviewTitleComplete: 'Seller ready for listing',
-    reviewBodyPending: 'Complete property, mandate and compliance checks before the listing can move cleanly.',
-    reviewBodyComplete: 'Property details, mandate readiness and seller documents are ready for the agent.',
-    uploadLabel: 'Add seller doc',
-    finalPrimaryLabel: 'Review Seller',
-    emptyNextTitle: 'Review listing readiness',
-    emptyNextBody: 'Property, mandate and compliance documents are complete. Check the file before handoff.',
-    uploadModule: 'listing',
-    steps: [
-      { key: 'property', label: 'Property Profile', body: 'Confirm address, area, ownership and listing basics.', icon: MapPin },
-      { key: 'mandate', label: 'Mandate Track', body: 'Review mandate status and required signatures.', icon: ScrollText },
-      { key: 'documents', label: 'Seller Compliance', body: 'Upload seller and property compliance documents.', icon: ShieldCheck },
-      { key: 'review', label: 'Listing Review', body: 'Check listing readiness before the agent proceeds.', icon: Handshake },
+    portal_label: 'Seller Portal',
+    upload_module: 'listing',
+    transaction: {
+      id: 'seller-local-transaction',
+      portal_type: 'seller',
+      stage_label: 'Listing Stage',
+    },
+    property: {
+      address: '2 Pine Avenue',
+      price: 'R 2,850,000',
+      cover_image: '',
+      reference: 'S9-LIST-2048',
+      agent: 'Sarah Williams',
+      current_stage: 'Mandate Review',
+      listing_status: 'Pre-listing',
+    },
+    progress: {
+      progress_percentage: 31,
+      current_stage: 'Mandate Review',
+      stage_number: 2,
+      total_stages: 8,
+      estimated_completion: '22 July 2026',
+      days_remaining: 18,
+      last_updated: 'Updated 09:18',
+      stage_icon: ScrollText,
+    },
+    owner: {
+      id: 'sarah-agent',
+      name: 'Sarah Williams',
+      role: 'Estate Agent',
+      avatar: '',
+      status: 'Online',
+    },
+    waiting_on: {
+      title: 'Seller Signature',
+      description: 'Expected Today',
+      due_date: 'Due today',
+    },
+    journey: [
+      {
+        id: 'valuation',
+        title: 'Valuation',
+        icon: Building2,
+        status: 'completed',
+        owner: 'Sarah Williams',
+        expected_date: '30 Jun',
+        completed_date: '30 Jun',
+        description: 'The property valuation and listing recommendation were completed.',
+        insight: 'The valuation is complete and the listing recommendation is available to the agent.',
+        next_step: 'Mandate review is now active and needs seller approval before publication work can continue.',
+        documents: [
+          { label: 'Valuation report', status: 'completed' },
+          { label: 'Pricing recommendation', status: 'completed' },
+        ],
+        cta_text: 'View valuation activity',
+        cta_route: 'activity',
+      },
+      {
+        id: 'mandate',
+        title: 'Mandate',
+        icon: ScrollText,
+        status: 'active',
+        owner: 'Seller',
+        expected_date: 'Today',
+        completed_date: '',
+        description: 'The mandate is waiting for review and signature before listing work can continue.',
+        insight: 'This is the current seller gate. Your agent cannot publish the listing until the mandate is reviewed.',
+        next_step: 'Review and sign the mandate so compliance and media preparation can unlock.',
+        documents: [
+          { label: 'Listing mandate', status: 'active' },
+          { label: 'Seller ID', status: 'waiting' },
+          { label: 'Municipal account', status: 'upcoming' },
+        ],
+        cta_text: 'Review Mandate',
+        cta_route: 'upload_document',
+      },
+      {
+        id: 'compliance',
+        title: 'Compliance',
+        icon: ShieldCheck,
+        status: 'waiting',
+        owner: 'Seller',
+        expected_date: '8 Jul',
+        completed_date: '',
+        description: 'Seller and property compliance documents are checked in this stage.',
+        insight: 'Compliance is queued and will start once the mandate is signed.',
+        next_step: 'Prepare municipal and seller documents so this stage can move quickly once unlocked.',
+        documents: [
+          { label: 'Rates account', status: 'waiting' },
+          { label: 'Seller FICA', status: 'upcoming' },
+        ],
+        cta_text: 'Ask Sarah',
+        cta_route: 'messages',
+      },
+      {
+        id: 'media',
+        title: 'Media',
+        icon: FileText,
+        status: 'upcoming',
+        owner: 'Creative Media Co.',
+        expected_date: '10 Jul',
+        completed_date: '',
+        description: 'Photography, listing copy and marketing assets are prepared.',
+        insight: 'Media preparation starts once mandate and compliance readiness are confirmed.',
+        next_step: 'Your agent will coordinate photography and listing copy from this stage.',
+        documents: [
+          { label: 'Photo brief', status: 'upcoming' },
+          { label: 'Listing copy', status: 'upcoming' },
+        ],
+        cta_text: 'View media team',
+        cta_route: 'messages',
+      },
+      {
+        id: 'publish',
+        title: 'Publish',
+        icon: Home,
+        status: 'upcoming',
+        owner: 'Sarah Williams',
+        expected_date: '12 Jul',
+        completed_date: '',
+        description: 'The listing is activated once compliance and media are ready.',
+        insight: 'Publishing is the final listing launch step after mandate, compliance and media are complete.',
+        next_step: 'The portal will show listing approval and launch status when this stage opens.',
+        documents: [
+          { label: 'Listing approval', status: 'upcoming' },
+        ],
+        cta_text: 'Got it',
+        cta_route: 'close',
+      },
     ],
-    documents: [
-      { key: 'id', label: 'Seller ID', body: 'Seller identity document or passport.' },
-      { key: 'address', label: 'Municipal Proof', body: 'Recent municipal, utility or account statement.' },
-      { key: 'marriage', label: 'Marital Status', body: 'ANC, marriage certificate or supporting status docs.' },
+    next_action: {
+      title: 'Review and sign the mandate',
+      description: 'Your agent cannot publish the listing until the mandate has been signed.',
+      button_text: 'Review Mandate',
+      button_route: 'upload_document',
+      priority: 'active',
+      priority_label: 'Required today',
+      due_label: 'Expected today',
+      secondary_text: 'Ask Sarah',
+      secondary_route: 'messages',
+      requirements: [
+        { label: 'Mandate', status: 'active' },
+        { label: 'Seller ID', status: 'waiting' },
+        { label: 'Rates account', status: 'upcoming' },
+      ],
+    },
+    completed_action: {
+      title: 'Mandate review received',
+      description: 'Your mandate response has been received and the listing can move toward compliance.',
+      button_text: 'Review Listing',
+      button_route: 'journey',
+      priority: 'completed',
+      priority_label: 'Received',
+      due_label: 'Just now',
+      secondary_text: 'Message Sarah',
+      secondary_route: 'messages',
+      completion_note: 'Great. The mandate gate is cleared and compliance is now active.',
+      requirements: [
+        { label: 'Mandate', status: 'completed' },
+        { label: 'Compliance', status: 'active' },
+        { label: 'Media prep', status: 'upcoming' },
+      ],
+    },
+    participants: [
+      { id: 'sarah-agent', name: 'Sarah Williams', role: 'Estate Agent', status: 'Online' },
+      { id: 'media-team', name: 'Creative Media Co.', role: 'Media Team', status: 'Photography pending' },
+      { id: 'michael-attorney', name: 'Michael Jacobs', role: 'Transfer Attorney', status: 'Standing by' },
     ],
-    tabs: [
-      { key: 'overview', label: 'Overview' },
-      { key: 'tasks', label: 'Property' },
-      { key: 'documents', label: 'Compliance' },
-      { key: 'review', label: 'Listing' },
-    ],
-    metrics: [
-      { label: 'Listing', type: 'steps' },
-      { label: 'Docs', type: 'documents' },
-      { label: 'Ready', type: 'completion' },
-    ],
-    reviewRows: [
-      { label: 'Seller profile', type: 'steps' },
-      { label: 'Compliance pack', type: 'documents' },
-      { label: 'Listing file', type: 'token' },
+    activity: [
+      { id: 'mandate-sent', timestamp: '09:18', title: 'Mandate Sent', subtitle: 'Ready for review', actor: 'Sarah Williams', icon: 'mandate' },
+      { id: 'valuation-complete', timestamp: 'Yesterday', title: 'Valuation Completed', subtitle: 'Listing stage active', actor: 'Agent', icon: 'valuation' },
+      { id: 'seller-invited', timestamp: '2 Jul', title: 'Seller Invited', subtitle: 'Portal opened', actor: 'Arch9', icon: 'invite' },
     ],
   },
 }
 
-function MobileOnboardingOverviewSection({
-  portalType,
-  flow,
-  nextStep,
-  nextDocument,
-  taskRows,
-  documentRows,
-  onShowTasks,
-  onShowDocuments,
-}) {
-  const nextActionTitle = nextStep
-    ? `Complete ${nextStep.label}`
-    : nextDocument
-      ? `Upload ${nextDocument.label}`
-      : flow.emptyNextTitle
-  const nextActionBody = nextStep?.body || nextDocument?.body || flow.emptyNextBody
-  const NextActionIcon = nextStep?.icon || ShieldCheck
+function buildMobileDashboard({ portalType = 'buyer', token = '', actionCompleted = false } = {}) {
+  const config = DASHBOARD_CONFIG[portalType] || DASHBOARD_CONFIG.buyer
+  const firstWaitingStageId = config.journey.find((stage) => stage.status === 'waiting')?.id
+  const journey = config.journey.map((stage) => {
+    if (!actionCompleted) return stage
+    if (stage.status === 'active') return { ...stage, status: 'completed', completed_date: 'Just now' }
+    if (stage.status === 'waiting' && stage.id === firstWaitingStageId) return { ...stage, status: 'active', expected_date: 'Now' }
+    return stage
+  })
+  const activeStageIndex = Math.max(0, journey.findIndex((stage) => stage.status === 'active'))
+  const nextStage = journey[activeStageIndex] || journey[0]
+  const nextAction = actionCompleted ? config.completed_action : config.next_action
 
-  return (
-    <div className="space-y-4">
-      <MobilePortalNextActionCard
-        portalType={portalType}
-        eyebrow={flow.nextActionEyebrow}
-        title={nextActionTitle}
-        body={nextActionBody}
-        Icon={NextActionIcon}
-      />
-      <section className="space-y-3">
-        <MobilePortalSectionHeader title={flow.priorityTitle} actionLabel="See all" onAction={onShowTasks} />
-        {taskRows.slice(0, 2)}
-      </section>
-      <section className="space-y-3">
-        <MobilePortalSectionHeader title={flow.documentsPreviewTitle} actionLabel="See all" onAction={onShowDocuments} />
-        {documentRows.slice(0, 2)}
-      </section>
-    </div>
-  )
-}
-
-function MobileOnboardingTasksSection({ title, taskRows }) {
-  return (
-    <section className="space-y-3">
-      <MobilePortalSectionHeader title={title} />
-      {taskRows}
-    </section>
-  )
-}
-
-function MobileOnboardingDocumentsSection({ title, documentRows }) {
-  return (
-    <section className="space-y-3">
-      <MobilePortalSectionHeader title={title} />
-      {documentRows}
-    </section>
-  )
-}
-
-function MobileOnboardingReviewSection({ portalType, flow, completion, reviewRows }) {
-  return (
-    <MobilePortalReviewCard
-      portalType={portalType}
-      title={completion === 100 ? flow.reviewTitleComplete : flow.reviewTitlePending}
-      body={completion === 100 ? flow.reviewBodyComplete : flow.reviewBodyPending}
-      rows={reviewRows}
-    />
-  )
+  return {
+    transaction: {
+      ...config.transaction,
+      token,
+    },
+    property: {
+      ...config.property,
+      current_stage: actionCompleted ? nextStage?.title || config.property.current_stage : config.property.current_stage,
+    },
+    progress: {
+      ...config.progress,
+      progress_percentage: Math.min(100, config.progress.progress_percentage + (actionCompleted ? 9 : 0)),
+      current_stage: actionCompleted ? nextStage?.title || config.progress.current_stage : config.progress.current_stage,
+      stage_number: actionCompleted ? activeStageIndex + 1 : config.progress.stage_number,
+      stage_icon: nextStage?.icon || config.progress.stage_icon,
+    },
+    owner: config.owner,
+    waiting_on: actionCompleted
+      ? {
+          title: nextStage?.owner || 'Team',
+          description: 'Next stage active',
+          due_date: 'In progress',
+        }
+      : config.waiting_on,
+    journey,
+    next_action: nextAction,
+    participants: config.participants,
+    activity: actionCompleted
+      ? [
+          { id: 'just-now', timestamp: 'Now', title: nextAction.title, subtitle: 'Transaction updated', actor: config.portal_label, icon: 'complete' },
+          ...config.activity,
+        ]
+      : config.activity,
+    notifications: [],
+    messages: [],
+    portal_label: config.portal_label,
+    upload_module: config.upload_module,
+  }
 }
 
 export default function MobileOnboardingPage({ portalType = 'buyer' }) {
   const params = useParams()
-  const flow = FLOWS[portalType] || FLOWS.buyer
-  const [completedSteps, setCompletedSteps] = useState([])
-  const [uploadedDocs, setUploadedDocs] = useState([])
+  const [activeNav, setActiveNav] = useState('journey')
+  const [selectedJourneyItem, setSelectedJourneyItem] = useState(null)
   const [uploadOpen, setUploadOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState('overview')
-  const completion = useMemo(() => {
-    const done = completedSteps.length + uploadedDocs.length
-    const total = flow.steps.length + flow.documents.length
-    return Math.round((done / total) * 100)
-  }, [completedSteps.length, flow.documents.length, flow.steps.length, uploadedDocs.length])
-
-  const nextStep = useMemo(
-    () => flow.steps.find((step) => !completedSteps.includes(step.key)) || null,
-    [completedSteps, flow.steps],
+  const [actionCompleted, setActionCompleted] = useState(false)
+  const dashboard = useMemo(
+    () => buildMobileDashboard({ portalType, token: params.token || '', actionCompleted }),
+    [actionCompleted, params.token, portalType],
   )
-
-  const nextDocument = useMemo(
-    () => flow.documents.find((document) => !uploadedDocs.includes(document.key)) || null,
-    [flow.documents, uploadedDocs],
-  )
-
-  const reviewRows = useMemo(
-    () => flow.reviewRows.map((row) => {
-      if (row.type === 'steps') return { label: row.label, value: `${completedSteps.length}/${flow.steps.length}` }
-      if (row.type === 'documents') return { label: row.label, value: `${uploadedDocs.length}/${flow.documents.length}` }
-      return { label: row.label, value: params.token ? 'Active' : 'Preview' }
-    }),
-    [completedSteps.length, flow.documents.length, flow.reviewRows, flow.steps.length, params.token, uploadedDocs.length],
-  )
-
-  function completeStep(step) {
-    const stepKey = typeof step === 'string' ? step : step.key
-    setCompletedSteps((current) => current.includes(stepKey) ? current : [...current, stepKey])
-    void trackMobileMetric('task_completed', {
-      route: `/mobile/${portalType}-onboarding`,
-      metadata: { step: stepKey, portalType, token: params.token || '' },
-    })
-  }
-
-  function handleUploaded(record) {
-    const matchedDocument = flow.documents.find((document) => document.label === record.documentType || document.key === record.documentType)
-    const documentKey = matchedDocument?.key || nextDocument?.key || record.documentType
-    setUploadedDocs((current) => current.includes(documentKey) ? current : [...current, documentKey])
-    void trackMobileMetric('document_uploaded', {
-      route: `/mobile/${portalType}-onboarding`,
-      metadata: { portalType, token: params.token || '', documentType: record.documentType },
-    })
-  }
 
   function handlePrimaryAction() {
-    if (activeTab === 'documents' || (!nextStep && nextDocument)) {
+    void trackMobileMetric('transaction_primary_action_clicked', {
+      route: `/mobile/${portalType}-onboarding`,
+      metadata: {
+        portalType,
+        token: params.token || '',
+        action: dashboard.next_action.button_text,
+      },
+    })
+
+    if (dashboard.next_action.button_route === 'upload_document') {
       setUploadOpen(true)
       return
     }
-    if (nextStep) {
-      completeStep(nextStep)
-      return
-    }
-    setActiveTab('review')
+
+    setActiveNav('journey')
   }
 
-  const railItems = flow.steps.map((step, index) => ({
-    key: step.key,
-    label: step.label,
-    icon: step.icon,
-    active: index === 0 || completedSteps.includes(step.key),
-  }))
+  function handleSecondaryAction(action) {
+    void trackMobileMetric('transaction_secondary_action_clicked', {
+      route: `/mobile/${portalType}-onboarding`,
+      metadata: {
+        portalType,
+        token: params.token || '',
+        action: action.secondary_text,
+      },
+    })
 
-  const metrics = flow.metrics.map((metric) => {
-    if (metric.type === 'steps') return { label: metric.label, value: `${completedSteps.length}/${flow.steps.length}` }
-    if (metric.type === 'documents') return { label: metric.label, value: `${uploadedDocs.length}/${flow.documents.length}` }
-    return { label: metric.label, value: `${completion}%` }
-  })
+    if (action.secondary_route === 'messages') {
+      setActiveNav('messages')
+      return
+    }
 
-  const taskRows = flow.steps.map((step) => (
-    <MobilePortalTaskRow
-      key={step.key}
-      portalType={portalType}
-      title={step.label}
-      subtitle={step.body}
-      meta={completedSteps.includes(step.key) ? 'Done' : 'Open'}
-      completed={completedSteps.includes(step.key)}
-      Icon={step.icon}
-      onAction={() => completeStep(step)}
-    />
-  ))
+    setActiveNav('journey')
+  }
 
-  const documentRows = flow.documents.map((document) => (
-    <MobilePortalDocumentRow
-      key={document.key}
-      portalType={portalType}
-      title={document.label}
-      subtitle={document.body}
-      uploaded={uploadedDocs.includes(document.key)}
-      onUpload={() => setUploadOpen(true)}
-    />
-  ))
+  function handleUploaded(record) {
+    setActionCompleted(true)
+    setUploadOpen(false)
+    void trackMobileMetric('document_uploaded', {
+      route: `/mobile/${portalType}-onboarding`,
+      metadata: {
+        portalType,
+        token: params.token || '',
+        documentType: record.documentType,
+      },
+    })
+  }
+
+  function handleJourneyAction(item) {
+    void trackMobileMetric('journey_stage_action_clicked', {
+      route: `/mobile/${portalType}-onboarding`,
+      metadata: {
+        portalType,
+        token: params.token || '',
+        stage: item.id,
+        action: item.cta_text,
+      },
+    })
+
+    setSelectedJourneyItem(null)
+
+    if (item.cta_route === 'upload_document') {
+      setUploadOpen(true)
+      return
+    }
+
+    if (item.cta_route === 'messages') {
+      setActiveNav('messages')
+      return
+    }
+
+    if (item.cta_route === 'activity') {
+      setActiveNav('journey')
+    }
+  }
 
   return (
-    <MobilePortalScreen
+    <MobileTransactionScreen
       portalType={portalType}
-      stickyAction={activeTab === 'overview' ? null : (
-        <MobilePortalStickyActionBar
-          portalType={portalType}
-          primaryLabel={nextStep ? nextStep.label : nextDocument ? flow.uploadLabel : flow.finalPrimaryLabel}
-          secondaryLabel={flow.uploadLabel}
-          onPrimary={handlePrimaryAction}
-          onSecondary={() => setUploadOpen(true)}
-        />
-      )}
+      bottomNav={<BottomNavigation portalType={portalType} items={NAV_ITEMS} active={activeNav} onChange={setActiveNav} />}
     >
-      <MobilePortalHeader
+      <TransactionHeader
         portalType={portalType}
-        eyebrow={flow.greeting}
-        title={flow.title}
-        subtitle={params.token ? flow.statusLabel : 'Preview mode'}
-        avatarLabel={portalType}
-        completion={completion}
+        eyebrow={dashboard.portal_label}
+        address={dashboard.property.address}
+        stage={dashboard.transaction.stage_label}
       />
 
-      <MobilePortalSearch portalType={portalType} placeholder={flow.searchPlaceholder} />
+      <TransactionHero portalType={portalType} progress={dashboard.progress} />
 
-      <MobilePortalHero
+      {activeNav === 'journey' ? (
+        <>
+          <OwnerPanel portalType={portalType} owner={dashboard.owner} waitingOn={dashboard.waiting_on} />
+          <JourneyTracker portalType={portalType} items={dashboard.journey} onSelect={setSelectedJourneyItem} />
+          <NextActionCard portalType={portalType} action={dashboard.next_action} onAction={handlePrimaryAction} onSecondary={handleSecondaryAction} />
+          <TeamSection portalType={portalType} people={dashboard.participants} />
+          <ActivityTimeline items={dashboard.activity} />
+        </>
+      ) : null}
+
+      {activeNav === 'tasks' ? (
+        <>
+          <NextActionCard portalType={portalType} action={dashboard.next_action} onAction={handlePrimaryAction} onSecondary={handleSecondaryAction} />
+          <JourneyTracker portalType={portalType} items={dashboard.journey} onSelect={setSelectedJourneyItem} />
+        </>
+      ) : null}
+
+      {activeNav === 'documents' ? (
+        <>
+          <NextActionCard portalType={portalType} action={dashboard.next_action} onAction={handlePrimaryAction} onSecondary={handleSecondaryAction} />
+          <ActivityTimeline items={dashboard.activity.slice(0, 2)} />
+        </>
+      ) : null}
+
+      {activeNav === 'messages' ? (
+        <>
+          <TeamSection portalType={portalType} people={dashboard.participants} />
+          <ActivityTimeline items={dashboard.activity} />
+        </>
+      ) : null}
+
+      {activeNav === 'property' ? (
+        <>
+          <PropertyCard portalType={portalType} property={dashboard.property} />
+          <JourneyTracker portalType={portalType} items={dashboard.journey} onSelect={setSelectedJourneyItem} />
+        </>
+      ) : null}
+
+      <JourneyDetailSheet
         portalType={portalType}
-        eyebrow={flow.heroEyebrow}
-        title={flow.heroTitle}
-        body={flow.heroBody}
-        completion={completion}
-        ctaLabel={nextStep ? nextStep.label : nextDocument ? flow.uploadLabel : flow.finalPrimaryLabel}
-        onCta={handlePrimaryAction}
-        Icon={flow.heroIcon}
+        item={selectedJourneyItem}
+        onClose={() => setSelectedJourneyItem(null)}
+        onAction={handleJourneyAction}
       />
-
-      <MobilePortalIconRail portalType={portalType} items={railItems} />
-      <MobilePortalMetricStrip portalType={portalType} items={metrics} />
-      <MobilePortalTabs portalType={portalType} items={flow.tabs} active={activeTab} onChange={setActiveTab} />
-
-      {activeTab === 'overview' ? (
-        <MobileOnboardingOverviewSection
-          portalType={portalType}
-          flow={flow}
-          nextStep={nextStep}
-          nextDocument={nextDocument}
-          taskRows={taskRows}
-          documentRows={documentRows}
-          onShowTasks={() => setActiveTab('tasks')}
-          onShowDocuments={() => setActiveTab('documents')}
-        />
-      ) : null}
-
-      {activeTab === 'tasks' ? (
-        <MobileOnboardingTasksSection title={flow.tasksTitle} taskRows={taskRows} />
-      ) : null}
-
-      {activeTab === 'documents' ? (
-        <MobileOnboardingDocumentsSection title={flow.documentsTitle} documentRows={documentRows} />
-      ) : null}
-
-      {activeTab === 'review' ? (
-        <MobileOnboardingReviewSection
-          portalType={portalType}
-          flow={flow}
-          completion={completion}
-          reviewRows={reviewRows}
-        />
-      ) : null}
 
       <MobileUploadSheet
         open={uploadOpen}
-        module={flow.uploadModule}
+        module={dashboard.upload_module}
         workspaceId={params.token || portalType}
         onClose={() => setUploadOpen(false)}
         onUploaded={handleUploaded}
       />
-    </MobilePortalScreen>
+    </MobileTransactionScreen>
   )
 }

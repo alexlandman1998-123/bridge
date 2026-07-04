@@ -32,13 +32,14 @@ export default function MobileSearchPage() {
   }
 
   return (
-    <div className="space-y-5">
-      <section>
-        <h1 className="text-[28px] font-semibold text-[#10243a]">Search</h1>
-        <p className="mt-2 text-sm leading-6 text-[#60758d]">Find transactions, matters, applications, deals, clients and properties instantly.</p>
+    <div className="space-y-5" data-phase5-mobile-search>
+      <section className="rounded-[30px] bg-[#10243a] p-5 text-white shadow-[0_20px_46px_rgba(15,23,42,0.18)]">
+        <p className="text-[11px] font-semibold uppercase text-[#9fe0bd]">Universal Mobile Search</p>
+        <h1 className="mt-2 text-[32px] font-semibold text-white">Search</h1>
+        <p className="mt-2 text-sm leading-6 text-[#dce8f2]">Find transactions, matters, applications, deals, clients and properties instantly.</p>
       </section>
 
-      <div className="flex min-h-12 items-center gap-2 rounded-2xl border border-[#d7e0ea] bg-white px-3 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+      <div className="flex min-h-14 items-center gap-2 rounded-2xl border border-[#d7e0ea] bg-white px-3 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
         <Search className="h-5 w-5 shrink-0 text-[#60758d]" />
         <input
           className="min-h-11 flex-1 bg-transparent text-sm font-semibold text-[#10243a] outline-none"
@@ -48,7 +49,7 @@ export default function MobileSearchPage() {
           autoFocus
         />
         {query ? (
-          <button type="button" className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#f1f5f9] text-[#60758d]" onClick={() => setQuery('')} aria-label="Clear search">
+          <button type="button" className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#f1f5f9] text-[#60758d]" onClick={() => setQuery('')} aria-label="Clear search">
             <X className="h-4 w-4" />
           </button>
         ) : null}
@@ -59,7 +60,7 @@ export default function MobileSearchPage() {
           <h2 className="mb-3 text-[19px] font-semibold text-[#10243a]">Recent Searches</h2>
           <div className="flex gap-2 overflow-x-auto pb-1">
             {recentSearches.map((item) => (
-              <button key={item} type="button" className="min-h-10 shrink-0 rounded-2xl bg-white px-4 text-sm font-semibold text-[#60758d]" onClick={() => handleRecentSearch(item)}>
+              <button key={item} type="button" className="min-h-11 shrink-0 rounded-2xl bg-white px-4 text-sm font-semibold text-[#60758d]" onClick={() => handleRecentSearch(item)}>
                 {item}
               </button>
             ))}
@@ -69,7 +70,7 @@ export default function MobileSearchPage() {
 
       <section className="space-y-3">
         {results.length ? results.map((item) => (
-          <button key={item.id} type="button" className="block w-full rounded-[22px] border border-[#e4ebf2] bg-white p-4 text-left shadow-[0_12px_28px_rgba(15,23,42,0.06)]" onClick={() => openResult(item)}>
+          <button key={item.id} type="button" className="block min-h-[74px] w-full rounded-[22px] border border-[#e4ebf2] bg-white p-4 text-left shadow-[0_12px_28px_rgba(15,23,42,0.06)]" onClick={() => openResult(item)}>
             <div className="flex items-start gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#e8f6ef] text-[#1f7a5a]">
                 <Search className="h-5 w-5" />
