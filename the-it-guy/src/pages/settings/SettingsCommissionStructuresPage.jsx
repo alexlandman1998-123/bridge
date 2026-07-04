@@ -29,8 +29,12 @@ import {
 function createStructureDraft() {
   return {
     name: '',
+    listingCommissionType: 'percentage',
+    listingCommissionPercentage: 7.5,
+    listingCommissionAmount: '',
     agentSplitPercentage: 70,
     agencySplitPercentage: 30,
+    allowSalesCommissionOverride: true,
     isDefault: false,
     isActive: true,
     notes: '',
@@ -47,6 +51,23 @@ function formatPercent(value) {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) return '0%'
   return `${numeric.toFixed(2).replace(/\.00$/, '')}%`
+}
+
+function formatMoney(value) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 'R0'
+  return new Intl.NumberFormat('en-ZA', {
+    style: 'currency',
+    currency: 'ZAR',
+    maximumFractionDigits: 0,
+  }).format(numeric)
+}
+
+function getListingCommissionLabel(structure = {}) {
+  if (structure.listingCommissionType === 'fixed') {
+    return `Fixed listing commission ${formatMoney(structure.listingCommissionAmount || 0)}`
+  }
+  return `Listing commission ${formatPercent(structure.listingCommissionPercentage || 0)}`
 }
 
 function isAgentLikeRole(role) {
@@ -163,8 +184,12 @@ export default function SettingsCommissionStructuresPage() {
     setEditingId(structure.id)
     setDraft({
       name: structure.name || '',
+      listingCommissionType: structure.listingCommissionType || 'percentage',
+      listingCommissionPercentage: normalizePercentage(structure.listingCommissionPercentage, 7.5),
+      listingCommissionAmount: structure.listingCommissionAmount || '',
       agentSplitPercentage: normalizePercentage(structure.agentSplitPercentage, 70),
       agencySplitPercentage: normalizePercentage(structure.agencySplitPercentage, 30),
+      allowSalesCommissionOverride: structure.allowSalesCommissionOverride !== false,
       isDefault: Boolean(structure.isDefault),
       isActive: Boolean(structure.isActive),
       notes: structure.notes || '',
@@ -193,8 +218,12 @@ export default function SettingsCommissionStructuresPage() {
       await saveOrganisationCommissionStructure({
         id: editingId || undefined,
         name,
+        listingCommissionType: draft.listingCommissionType || 'percentage',
+        listingCommissionPercentage: normalizePercentage(draft.listingCommissionPercentage, 0),
+        listingCommissionAmount: draft.listingCommissionType === 'fixed' ? Number(draft.listingCommissionAmount || 0) : null,
         agentSplitPercentage: normalizePercentage(draft.agentSplitPercentage, 0),
         agencySplitPercentage: normalizePercentage(100 - normalizePercentage(draft.agentSplitPercentage, 0), 0),
+        allowSalesCommissionOverride: Boolean(draft.allowSalesCommissionOverride),
         isDefault: Boolean(draft.isDefault),
         isActive: Boolean(draft.isActive),
         notes: String(draft.notes || '').trim(),
@@ -267,10 +296,10 @@ export default function SettingsCommissionStructuresPage() {
       <SettingsPageHeader
         kicker="Commission Structures"
         title="Agency commission governance"
-        description="Define how gross commission is split between the agency and each agent, then assign structures by user."
+        description="Keep listing mandate commission terms separate from sales payout splits, then assign the right sales structure by user."
       />
 
-      <SettingsSectionCard title="Structure Directory" description="Create reusable split templates and set a default for new members.">
+      <SettingsSectionCard title="Structure Directory" description="Create reusable listing defaults and sales split templates, then set a default for new members.">
         {!structures.length ? (
           <SettingsEmptyState
             title="No commission structures yet"
@@ -284,7 +313,10 @@ export default function SettingsCommissionStructuresPage() {
                   <div>
                     <p className="text-base font-semibold text-[#162334]">{structure.name}</p>
                     <p className="mt-1 text-sm text-[#60748b]">
-                      Agent {formatPercent(structure.agentSplitPercentage)} • Agency {formatPercent(structure.agencySplitPercentage)}
+                      {getListingCommissionLabel(structure)}
+                    </p>
+                    <p className="mt-1 text-sm text-[#60748b]">
+                      Sales split: Agent {formatPercent(structure.agentSplitPercentage)} • Agency {formatPercent(structure.agencySplitPercentage)}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -307,6 +339,9 @@ export default function SettingsCommissionStructuresPage() {
                 <p className="mt-3 text-sm text-[#5f748c]">
                   Assigned agents: <span className="font-semibold text-[#233247]">{structure.assignedAgentsCount || 0}</span>
                 </p>
+                <p className="mt-1 text-sm text-[#5f748c]">
+                  Sales override: <span className="font-semibold text-[#233247]">{structure.allowSalesCommissionOverride === false ? 'Locked to structure' : 'Agent editable at sale capture'}</span>
+                </p>
                 {structure.notes ? <p className="mt-1 text-sm text-[#5f748c]">{structure.notes}</p> : null}
                 <div className="mt-4 flex flex-wrap gap-2">
                   {canEdit ? (
@@ -328,29 +363,81 @@ export default function SettingsCommissionStructuresPage() {
 
       <SettingsSectionCard
         title={editingId ? 'Edit Commission Structure' : 'Add Commission Structure'}
-        description="Set the agent split percentage. Agency split is calculated automatically."
+        description="Listing commission controls mandate/default gross commission. Sales commission controls the agent/agency payout split on accepted offers."
       >
         <form className={settingsGridClass} onSubmit={handleSave}>
           <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
             <span className="text-sm font-medium text-[#51657b]">Structure name</span>
             <Field value={draft.name} disabled={!canEdit} onChange={(event) => updateDraft('name', event.target.value)} placeholder="Standard Agent 60/40" />
           </label>
-          <label className={settingsFieldClass}>
-            <span className="text-sm font-medium text-[#51657b]">Agent split %</span>
-            <Field
-              type="number"
-              min="0"
-              max="100"
-              step="0.01"
-              value={draft.agentSplitPercentage}
-              disabled={!canEdit}
-              onChange={(event) => updateAgentSplit(event.target.value)}
-            />
-          </label>
-          <label className={settingsFieldClass}>
-            <span className="text-sm font-medium text-[#51657b]">Agency split %</span>
-            <Field value={normalizePercentage(100 - normalizePercentage(draft.agentSplitPercentage, 0), 0)} disabled />
-          </label>
+          <div className={`${settingsFieldSpanClass} rounded-[12px] border border-[#e3eaf3] bg-[#fbfdff] p-4`}>
+            <div className="mb-3">
+              <h4 className="text-sm font-semibold text-[#162334]">Listing Commission</h4>
+              <p className="mt-1 text-sm text-[#60748b]">Default gross commission terms used for mandates/listings before a sale is captured.</p>
+            </div>
+            <div className={settingsGridClass}>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Listing commission type</span>
+                <Field
+                  as="select"
+                  value={draft.listingCommissionType}
+                  disabled={!canEdit}
+                  onChange={(event) => updateDraft('listingCommissionType', event.target.value)}
+                >
+                  <option value="percentage">Percentage</option>
+                  <option value="fixed">Fixed amount</option>
+                </Field>
+              </label>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">{draft.listingCommissionType === 'fixed' ? 'Listing commission amount' : 'Listing commission %'}</span>
+                <Field
+                  type="number"
+                  min="0"
+                  max={draft.listingCommissionType === 'fixed' ? undefined : '100'}
+                  step="0.01"
+                  value={draft.listingCommissionType === 'fixed' ? draft.listingCommissionAmount : draft.listingCommissionPercentage}
+                  disabled={!canEdit}
+                  onChange={(event) => updateDraft(draft.listingCommissionType === 'fixed' ? 'listingCommissionAmount' : 'listingCommissionPercentage', event.target.value)}
+                />
+              </label>
+            </div>
+          </div>
+          <div className={`${settingsFieldSpanClass} rounded-[12px] border border-[#e3eaf3] bg-[#fbfdff] p-4`}>
+            <div className="mb-3">
+              <h4 className="text-sm font-semibold text-[#162334]">Sales Commission</h4>
+              <p className="mt-1 text-sm text-[#60748b]">Default payout split used when a listing becomes a sale. Agents can override it at sale capture when enabled.</p>
+            </div>
+            <div className={settingsGridClass}>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Agent split %</span>
+                <Field
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={draft.agentSplitPercentage}
+                  disabled={!canEdit}
+                  onChange={(event) => updateAgentSplit(event.target.value)}
+                />
+              </label>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Agency split %</span>
+                <Field value={normalizePercentage(100 - normalizePercentage(draft.agentSplitPercentage, 0), 0)} disabled />
+              </label>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Sale capture override</span>
+                <Field
+                  as="select"
+                  value={draft.allowSalesCommissionOverride ? 'yes' : 'no'}
+                  disabled={!canEdit}
+                  onChange={(event) => updateDraft('allowSalesCommissionOverride', event.target.value === 'yes')}
+                >
+                  <option value="yes">Agent can edit sales split</option>
+                  <option value="no">Lock to this structure</option>
+                </Field>
+              </label>
+            </div>
+          </div>
           <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
             <span className="text-sm font-medium text-[#51657b]">Notes</span>
             <Field as="textarea" value={draft.notes} disabled={!canEdit} onChange={(event) => updateDraft('notes', event.target.value)} />
@@ -394,16 +481,16 @@ export default function SettingsCommissionStructuresPage() {
         </form>
       </SettingsSectionCard>
 
-      <SettingsSectionCard title="Agent Assignments" description="Assign a commission structure to each agent/member profile.">
+      <SettingsSectionCard title="Agent Sales Commission Assignments" description="Assign the default sales payout structure to each agent/member profile. Listing commission can still be edited on the mandate/listing.">
         {!commissionAssignableUsers.length ? (
-          <SettingsEmptyState title="No active users yet" description="Invite users first, then assign their commission structures." />
+          <SettingsEmptyState title="No active users yet" description="Invite users first, then assign their sales commission structures." />
         ) : (
           <div className={settingsTableClass}>
             <div className="hidden grid-cols-[1.2fr_1.2fr_0.9fr_1.2fr_0.8fr] gap-4 border-b border-[#e4ebf3] bg-[#f4f8fb] px-5 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7b8da6] lg:grid">
               <span>Name</span>
               <span>Email</span>
               <span>Role</span>
-              <span>Commission Structure</span>
+              <span>Sales Commission Structure</span>
               <span>Status</span>
             </div>
             <div className="divide-y divide-[#e9eff5]">
@@ -439,7 +526,7 @@ export default function SettingsCommissionStructuresPage() {
                       <span className="text-sm capitalize text-[#51657b]">{String(user.role || 'viewer').replaceAll('_', ' ')}</span>
                     </div>
                     <div className="space-y-1">
-                      <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] lg:hidden">Commission Structure</span>
+                      <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] lg:hidden">Sales Commission Structure</span>
                       {canEdit ? (
                         <Field
                           as="select"

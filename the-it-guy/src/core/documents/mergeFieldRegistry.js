@@ -491,7 +491,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     description: 'Total transaction purchase price.',
     dataSource: 'transactions.purchase_price OR sales_price',
     required: true,
-    packetTypes: ['otp', 'mandate'],
+    packetTypes: ['otp'],
     sampleValue: 'R 3 250 000',
     validationRule: 'currency_or_text',
     aliases: ['transaction.purchase_price', 'transaction.price', 'purchasePrice', 'offer_price'],

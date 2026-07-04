@@ -748,11 +748,11 @@ export function renderStructuredTemplate({
           .packet-preview-brand-left { display: flex; align-items: center; gap: 12px; }
           .packet-preview-logo { width: 44px; height: 44px; border: 1px solid #d7e4f2; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; background: #fff; overflow: hidden; }
           .packet-preview-logo img { max-width: 100%; max-height: 100%; object-fit: contain; }
-          .document-contact-row { display: inline-flex; align-items: center; justify-content: flex-end; gap: 14px; min-width: 0; color: #13263a; font-size: 0.76rem; line-height: 1.35; }
-          .document-contact-item { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 260px; }
+          .document-contact-row { display: grid; align-items: start; justify-content: end; gap: 6px; min-width: 0; color: #13263a; font-size: 0.76rem; line-height: 1.35; }
+          .document-contact-item { display: grid; grid-template-columns: 15px minmax(0, 1fr); align-items: start; gap: 6px; min-width: 0; max-width: 260px; }
           .document-contact-icon { display: inline-flex; width: 15px; height: 15px; flex: 0 0 15px; color: #111827; }
           .document-contact-icon svg { width: 15px; height: 15px; }
-          .document-contact-value { min-width: 0; overflow-wrap: anywhere; }
+          .document-contact-value { min-width: 0; overflow-wrap: break-word; word-break: normal; }
           .packet-preview-title { padding: 18px 20px 4px; }
           .packet-preview-title h1 { margin: 0; font-size: 1.35rem; letter-spacing: 0; }
           .packet-preview-title p { margin: 6px 0 0; color: #58708a; font-size: 0.92rem; }
@@ -781,8 +781,8 @@ export function renderStructuredTemplate({
           .legal-document-preview-shell .packet-preview-logo { width: auto; min-width: 34mm; max-width: 48mm; height: 15mm; border: 0; border-radius: 0; }
           .legal-document-preview-shell .packet-preview-logo img { max-width: 48mm; max-height: 15mm; }
           .legal-document-preview-shell .packet-preview-logo strong { color: #111827; font-size: 15px; line-height: 1.15; }
-          .legal-document-preview-shell .document-contact-row { flex: 1 1 auto; gap: 5mm; font-size: 10.5px; }
-          .legal-document-preview-shell .document-contact-item { max-width: 42mm; gap: 2mm; }
+          .legal-document-preview-shell .document-contact-row { flex: 0 1 78mm; gap: 2mm; font-size: 10.5px; }
+          .legal-document-preview-shell .document-contact-item { grid-template-columns: 4mm minmax(0, 1fr); max-width: 78mm; gap: 2mm; }
           .legal-document-preview-shell .document-contact-icon, .legal-document-preview-shell .document-contact-icon svg { width: 4mm; height: 4mm; }
           .legal-document-preview-shell .packet-preview-title { padding: 9mm 18mm 6mm; text-align: center; border-bottom: 1px solid #e4e4e4; }
           .legal-document-preview-shell .packet-preview-title h1 { color: #111827; font-size: 24px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
@@ -821,7 +821,7 @@ export function renderStructuredTemplate({
           .legal-preview-footer img { max-width: 34mm; max-height: 9mm; object-fit: contain; }
           .legal-preview-page-number { flex: 1; text-align: center; font-weight: 700; }
           @media print { body { padding: 0; background: #ffffff; } .legal-document-preview-shell { width: 210mm; min-height: 297mm; border: 0; box-shadow: none; } }
-          @media (max-width: 780px) { .packet-preview-header { flex-wrap: wrap; } .document-contact-row { justify-content: flex-start; flex-wrap: wrap; gap: 8px 12px; width: 100%; } .document-contact-item { max-width: 100%; } .party-card-grid { grid-template-columns: 1fr; } .party-card-row { grid-template-columns: 1fr; gap: 3px; } }
+          @media (max-width: 780px) { .packet-preview-header { flex-wrap: wrap; } .document-contact-row { justify-content: flex-start; width: 100%; } .document-contact-item { max-width: 100%; } .party-card-grid { grid-template-columns: 1fr; } .party-card-row { grid-template-columns: 1fr; gap: 3px; } }
         </style>
       </head>
       <body>

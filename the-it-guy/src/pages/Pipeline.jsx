@@ -371,6 +371,7 @@ function LegacyPipeline() {
     financeType: 'cash',
     purchaserType: 'individual',
     grossCommissionPercentage: '5',
+    salesAgentSplitPercentage: '',
   })
   const [convertUnitOptions, setConvertUnitOptions] = useState([])
   const [convertLoading, setConvertLoading] = useState(false)
@@ -680,6 +681,7 @@ function LegacyPipeline() {
         listingCommissionPercentage !== null
           ? String(listingCommissionPercentage)
           : '5',
+      salesAgentSplitPercentage: '',
     })
     setLeadViewings(getViewingRequestsForLead(lead?.id))
     setShowViewingRequestForm(false)
@@ -994,6 +996,9 @@ function LegacyPipeline() {
         isDevelopment ? selectedUnit?.price : selectedListing?.askingPrice,
       )
       const grossCommissionPercentage = normalizePercent(convertForm.grossCommissionPercentage, 0)
+      const salesAgentSplitPercentage = String(convertForm.salesAgentSplitPercentage || '').trim()
+        ? normalizePercent(convertForm.salesAgentSplitPercentage, null)
+        : null
       const assignedAgentDisplayName = String(
         profile?.fullName ||
           [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') ||
@@ -1028,11 +1033,17 @@ function LegacyPipeline() {
         return
       }
 
+      if (salesAgentSplitPercentage !== null && (!Number.isFinite(salesAgentSplitPercentage) || salesAgentSplitPercentage < 0 || salesAgentSplitPercentage > 100)) {
+        setConvertError('Sales agent split percentage must be between 0 and 100.')
+        return
+      }
+
       const commissionSnapshot = await resolveCommissionSnapshotForAgent({
         assignedAgentUserId,
         assignedAgentEmail,
         salePrice,
         grossCommissionPercentage,
+        overrideAgentSplitPercentage: salesAgentSplitPercentage,
       })
       const normalizedCommissionSnapshot = {
         ...commissionSnapshot,
@@ -2231,6 +2242,25 @@ function LegacyPipeline() {
                         }))
                       }
                     />
+                  </label>
+
+                  <label className="grid gap-2">
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Sales Agent Split Override %</span>
+                    <Field
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value={convertForm.salesAgentSplitPercentage}
+                      placeholder="Use assigned standard"
+                      onChange={(event) =>
+                        setConvertForm((previous) => ({
+                          ...previous,
+                          salesAgentSplitPercentage: event.target.value,
+                        }))
+                      }
+                    />
+                    <span className="text-xs text-[#6f8298]">Leave blank to use the agent's assigned sales commission structure.</span>
                   </label>
 
                   <div className="flex justify-end gap-2">

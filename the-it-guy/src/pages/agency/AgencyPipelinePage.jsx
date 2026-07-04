@@ -14393,6 +14393,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           if (!organisationId) return
           await reloadRecords(organisationId)
         }}
+        autoGenerateEnabled={false}
       />
     </section>
   )

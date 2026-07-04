@@ -579,7 +579,7 @@ export default function SettingsUsersPage() {
             )}
             </label>
           <label className={settingsFieldClass}>
-            <span className="text-sm font-medium text-[#51657b]">Commission Structure (Optional)</span>
+            <span className="text-sm font-medium text-[#51657b]">Sales Commission Structure (Optional)</span>
             <Field
               as="select"
               value={inviteForm.commissionStructureId}
@@ -876,7 +876,7 @@ export default function SettingsUsersPage() {
               <span>Name</span>
               <span>Email</span>
               <span>Role</span>
-              <span>Commission Structure</span>
+              <span>Sales Commission Structure</span>
               <span>Status</span>
               <span>Last active</span>
               <span>Actions</span>
@@ -933,7 +933,7 @@ export default function SettingsUsersPage() {
                     )}
                   </div>
                   <div className="space-y-1">
-                    <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] lg:hidden">Commission Structure</span>
+                    <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] lg:hidden">Sales Commission Structure</span>
                     {canEdit ? (
                       <div className="space-y-1">
                         <Field

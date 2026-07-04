@@ -1061,7 +1061,7 @@ function resolvePrimaryActionLabel(mode, statusState, packetType) {
   const typeLabel = normalizeKey(packetType) === 'otp' ? 'OTP' : 'Mandate'
   const modeKey = normalizeKey(mode)
   if (modeKey === 'generate') {
-    return normalizeKey(statusState) === 'no_packet' ? 'Generate Draft' : 'Preview Draft'
+    return normalizeKey(statusState) === 'no_packet' ? `Generate ${typeLabel} Draft` : 'Preview Draft'
   }
   if (modeKey === 'edit') return 'Preview Draft'
   if (modeKey === 'send') return 'Send for Signature'
@@ -2431,6 +2431,7 @@ export default function LegalDocumentWorkspace({
     [statusState?.state],
   )
   const isMandatePacket = normalizeKey(packetType) === 'mandate'
+  const isOtpPacket = normalizeKey(packetType) === 'otp'
   const sourceContext = useMemo(() => (
     statusState?.packet?.source_context_json && typeof statusState.packet.source_context_json === 'object'
       ? statusState.packet.source_context_json
@@ -4276,7 +4277,7 @@ export default function LegalDocumentWorkspace({
         await handleSendForSignatureFromWorkspace()
       } else if (action.actionKey === 'generate') {
         setActionProgressMessage('Preparing template…')
-        await handleGenerateMandateDraft()
+        await handleGeneratePacketDraft()
         return
       } else if (action.actionKey === 'send') {
         assertWorkspacePermission('canSend', 'send documents for signature')
@@ -4875,14 +4876,14 @@ export default function LegalDocumentWorkspace({
     }
     void runReviewAction('send_signature')
   }
-  const handleGenerateMandateDraft = async () => {
-    if (!isMandatePacket || typeof onGenerate !== 'function' || actionBusyRef.current) return
+  const handleGeneratePacketDraft = async () => {
+    if (typeof onGenerate !== 'function' || actionBusyRef.current) return
     assertWorkspacePermission('canGenerate', 'generate legal drafts')
     actionBusyRef.current = true
     setActionBusy(true)
     setLoadError('')
     setActionFeedback('')
-    setActionProgressMessage('Generating mandate…')
+    setActionProgressMessage(`Generating ${isOtpPacket ? 'OTP' : 'mandate'}…`)
     try {
       const generationResult = await onGenerate({
         onProgress: (message) => setActionProgressMessage(normalizeText(message)),
@@ -4912,10 +4913,10 @@ export default function LegalDocumentWorkspace({
           setStatusState(refreshed.resolved)
         }
       }
-      setActionFeedback('Mandate generated successfully.')
+      setActionFeedback(`${isOtpPacket ? 'OTP' : 'Mandate'} generated successfully.`)
     } catch (error) {
-      await logMandateFailure('generate_mandate', error)
-      setLoadError(toFriendlyWorkspaceError(error, 'Unable to generate this mandate draft right now.'))
+      await logMandateFailure(`generate_${isOtpPacket ? 'otp' : 'mandate'}`, error)
+      setLoadError(toFriendlyWorkspaceError(error, `Unable to generate this ${isOtpPacket ? 'OTP' : 'mandate'} draft right now.`))
     } finally {
       setActionProgressMessage('')
       actionBusyRef.current = false
@@ -4935,8 +4936,8 @@ export default function LegalDocumentWorkspace({
       handleSendForSignatureIntent()
       return
     }
-    if (isMandatePacket && !hasGeneratedMandateVersion) {
-      void handleGenerateMandateDraft()
+    if (!hasGeneratedMandateVersion && typeof onGenerate === 'function') {
+      void handleGeneratePacketDraft()
       return
     }
     void runPrimaryAction()
@@ -5047,7 +5048,7 @@ export default function LegalDocumentWorkspace({
                   <Button
                     type="button"
                     size="sm"
-                    onClick={() => void handleGenerateMandateDraft()}
+                    onClick={() => void handleGeneratePacketDraft()}
                     disabled={loading || actionBusy}
                   >
                     {actionBusy ? 'Working…' : 'Generate Mandate'}

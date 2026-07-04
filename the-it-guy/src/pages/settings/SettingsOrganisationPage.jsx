@@ -8,7 +8,6 @@ import { createAgencyBranchDraft } from '../../lib/agencyOnboarding'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import { upsertAreaFromAddress } from '../../lib/location/upsertArea'
 import {
-  normalizeOrganisationDeveloperProfile,
   saveAgencyOnboardingDraft,
   updateOrganisationSettings,
   uploadOrganisationBrandingAsset,
@@ -27,8 +26,6 @@ import {
 
 const WORKSPACE_TYPE_COPY_KEYS = {
   agency: 'agency',
-  developer_company: 'developer',
-  attorney_firm: 'attorney',
   bond_originator: 'bond',
 }
 
@@ -42,13 +39,6 @@ const CRM_VISIBILITY_OPTIONS = [
   { value: 'private', label: 'Private by Default' },
   { value: 'branch', label: 'Visible to Branch' },
   { value: 'organisation', label: 'Visible to Organisation' },
-]
-
-const PARTNER_PROFILE_CONTENT_ROLES = [
-  { key: 'agency', label: 'Agency', hint: 'Displayed when the organisation is used as an agency partner.' },
-  { key: 'bond_originator', label: 'Bond Originator', hint: 'Displayed when the organisation is used as a bond partner.' },
-  { key: 'attorney_firm', label: 'Attorney Firm', hint: 'Displayed when the organisation is used as a legal partner.' },
-  { key: 'developer_company', label: 'Developer', hint: 'Displayed when the organisation is used as a development partner.' },
 ]
 
 const BOND_ORIGINATOR_TYPE_OPTIONS = [
@@ -143,62 +133,6 @@ const AGENCY_SETTINGS_COPY = {
   },
 }
 
-const DEVELOPER_SETTINGS_COPY = {
-  header: {
-    title: 'Developer company structure, governance, and branding',
-    description: 'Owner-managed setup used across portfolio identity, team access, developments, and transaction visibility.',
-  },
-  unavailable: 'Developer company settings are unavailable right now. Please retry from the dashboard setup guide.',
-  readOnly: 'Read-only for your role. Only owner-level administrators can edit developer company settings.',
-  saved: 'Developer company settings saved.',
-  organisationSection: {
-    title: 'Developer Company Information',
-    description: 'Core company details that drive workspace identity and operational ownership.',
-  },
-  adminSection: {
-    title: 'Owner Information',
-    description: 'Owner profile and control identity used for administration and reporting lineage.',
-  },
-  branchesSection: {
-    title: 'Teams',
-    description: 'Team entities drive scope, reporting visibility, and operational ownership.',
-    addLabel: 'Add Team',
-    rowLabel: 'Team',
-  },
-  permissionsSection: {
-    title: 'Permissions & Visibility',
-    description: 'Controls for workspace ownership, team visibility, and portfolio collaboration defaults.',
-  },
-}
-
-const ATTORNEY_SETTINGS_COPY = {
-  header: {
-    title: 'Firm structure, governance, and branding',
-    description: 'Firm-managed setup used across matter ownership, team access, transfer workflows, and client visibility.',
-  },
-  unavailable: 'Firm settings are unavailable right now. Please retry from the dashboard setup guide.',
-  readOnly: 'Read-only for your role. Only firm administrators can edit firm settings.',
-  saved: 'Firm settings saved.',
-  organisationSection: {
-    title: 'Firm Information',
-    description: 'Core firm details that drive workspace identity and operational ownership.',
-  },
-  adminSection: {
-    title: 'Firm Administrator',
-    description: 'Primary administrator identity used for firm control and reporting lineage.',
-  },
-  branchesSection: {
-    title: 'Departments',
-    description: 'Department entities drive scope, reporting visibility, and operational ownership.',
-    addLabel: 'Add Department',
-    rowLabel: 'Department',
-  },
-  permissionsSection: {
-    title: 'Permissions & Visibility',
-    description: 'Controls for matter ownership, department visibility, and firm collaboration defaults.',
-  },
-}
-
 function getLogoPreviewLabel(sourceUrl, fallbackLabel = 'Uploaded logo') {
   const value = String(sourceUrl || '').trim()
   if (!value) return ''
@@ -211,26 +145,12 @@ function getLogoPreviewLabel(sourceUrl, fallbackLabel = 'Uploaded logo') {
   return decodeURIComponent(lastSegment)
 }
 
-function normalizePartnerProfileContent(content = {}) {
-  const source = content && typeof content === 'object' ? content : {}
-  return PARTNER_PROFILE_CONTENT_ROLES.reduce((accumulator, role) => {
-    const roleContent = source[role.key] && typeof source[role.key] === 'object' ? source[role.key] : {}
-    accumulator[role.key] = {
-      aboutCompany: roleContent.aboutCompany || roleContent.about_company || '',
-      serviceDelivery: roleContent.serviceDelivery || roleContent.service_delivery || '',
-    }
-    return accumulator
-  }, {})
-}
-
 export default function SettingsOrganisationPage() {
   const { role, currentWorkspace, workspaceType } = useWorkspace()
   const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
-  const copyKey = WORKSPACE_TYPE_COPY_KEYS[resolvedWorkspaceType] || (role === 'developer' ? 'developer' : role === 'bond_originator' ? 'bond' : role === 'attorney' ? 'attorney' : 'agency')
+  const copyKey = WORKSPACE_TYPE_COPY_KEYS[resolvedWorkspaceType] || (role === 'bond_originator' ? 'bond' : 'agency')
   const isBondOriginator = copyKey === 'bond'
-  const isDeveloperCompany = copyKey === 'developer'
-  const isAttorneyFirm = copyKey === 'attorney'
-  const copy = isBondOriginator ? BOND_SETTINGS_COPY : isDeveloperCompany ? DEVELOPER_SETTINGS_COPY : isAttorneyFirm ? ATTORNEY_SETTINGS_COPY : AGENCY_SETTINGS_COPY
+  const copy = isBondOriginator ? BOND_SETTINGS_COPY : AGENCY_SETTINGS_COPY
   const {
     state: organisationContextState,
     loading: organisationContextLoading,
@@ -286,15 +206,6 @@ export default function SettingsOrganisationPage() {
 
   const form = useMemo(() => state?.organisation || null, [state])
   const onboarding = useMemo(() => state?.onboarding || null, [state])
-  const organisationSettingsJson = useMemo(() => form?.settingsJson || {}, [form?.settingsJson])
-  const developerProfile = useMemo(
-    () => normalizeOrganisationDeveloperProfile(organisationSettingsJson.developerProfile),
-    [organisationSettingsJson.developerProfile],
-  )
-  const partnerProfileContent = useMemo(
-    () => normalizePartnerProfileContent(organisationSettingsJson.partnerProfileContent),
-    [organisationSettingsJson.partnerProfileContent],
-  )
   const membershipRole = normalizeOrganisationMembershipRole(state?.membershipRole, {
     appRole: role,
     workspaceType: resolvedWorkspaceType,
@@ -400,66 +311,6 @@ export default function SettingsOrganisationPage() {
         },
       },
     }))
-  }
-
-  function updatePartnerProfileContentField(roleKey, fieldKey, value) {
-    setState((previous) => ({
-      ...previous,
-      organisation: {
-        ...(previous.organisation || {}),
-        settingsJson: {
-          ...((previous.organisation && previous.organisation.settingsJson) || {}),
-          partnerProfileContent: {
-            ...normalizePartnerProfileContent(previous.organisation?.settingsJson?.partnerProfileContent),
-            [roleKey]: {
-              ...normalizePartnerProfileContent(previous.organisation?.settingsJson?.partnerProfileContent)[roleKey],
-              [fieldKey]: value,
-            },
-          },
-        },
-      },
-    }))
-  }
-
-  function updateDeveloperProfileField(fieldKey, value) {
-    setState((previous) => {
-      const currentProfile = normalizeOrganisationDeveloperProfile(previous.organisation?.settingsJson?.developerProfile)
-      return {
-        ...previous,
-        organisation: {
-          ...(previous.organisation || {}),
-          settingsJson: {
-            ...((previous.organisation && previous.organisation.settingsJson) || {}),
-            developerProfile: {
-              ...currentProfile,
-              [fieldKey]: value,
-            },
-          },
-        },
-      }
-    })
-  }
-
-  function updateDeveloperProfileSignatoryField(fieldKey, value) {
-    setState((previous) => {
-      const currentProfile = normalizeOrganisationDeveloperProfile(previous.organisation?.settingsJson?.developerProfile)
-      return {
-        ...previous,
-        organisation: {
-          ...(previous.organisation || {}),
-          settingsJson: {
-            ...((previous.organisation && previous.organisation.settingsJson) || {}),
-            developerProfile: {
-              ...currentProfile,
-              defaultSignatory: {
-                ...currentProfile.defaultSignatory,
-                [fieldKey]: value,
-              },
-            },
-          },
-        },
-      }
-    })
   }
 
   function updateBrandColour(key, value) {
@@ -656,11 +507,11 @@ export default function SettingsOrganisationPage() {
 
       {!canEdit ? <SettingsBanner tone="warning">{copy.readOnly}</SettingsBanner> : null}
 
-      <form className="space-y-0" onSubmit={handleSave}>
+      <form className="space-y-4" onSubmit={handleSave}>
         <SettingsSectionCard title={copy.organisationSection.title} description={copy.organisationSection.description}>
           <div className={settingsGridClass}>
             <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Bond originator company name' : isDeveloperCompany ? 'Developer company name' : 'Agency name'}</span>
+              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Bond originator company name' : 'Agency name'}</span>
               <Field
                 value={onboarding.agencyInformation?.agencyName || ''}
                 disabled={!canEdit}
@@ -684,7 +535,7 @@ export default function SettingsOrganisationPage() {
               />
             </label>
             <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Originator operating model' : isDeveloperCompany ? 'Company type' : 'Agency type'}</span>
+              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Originator operating model' : 'Agency type'}</span>
               <Field
                 as="select"
                 value={onboarding.agencyInformation?.agencyType || (isBondOriginator ? 'national' : 'residential')}
@@ -837,11 +688,11 @@ export default function SettingsOrganisationPage() {
         <SettingsSectionCard title={copy.adminSection.title} description={copy.adminSection.description}>
           <div className={settingsGridClass}>
             <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ administrator full name' : isDeveloperCompany ? 'Owner full name' : 'Principal full name'}</span>
+              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ administrator full name' : 'Principal full name'}</span>
               <Field value={onboarding.principalInformation?.principalFullName || ''} disabled={!canEdit} onChange={(event) => updatePrincipalField('principalFullName', event.target.value)} />
             </label>
             <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ administrator email' : isDeveloperCompany ? 'Owner email' : 'Principal email'}</span>
+              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ administrator email' : 'Principal email'}</span>
               <Field value={onboarding.principalInformation?.emailAddress || ''} disabled={!canEdit} onChange={(event) => updatePrincipalField('emailAddress', event.target.value)} />
             </label>
             <label className={settingsFieldClass}>
@@ -855,110 +706,15 @@ export default function SettingsOrganisationPage() {
           </div>
         </SettingsSectionCard>
 
-        {isDeveloperCompany ? (
-          <SettingsSectionCard
-            title="Developer Profile"
-            description="Legal seller defaults used when developments need OTP and mandate seller details."
-          >
-            <div className={settingsGridClass}>
-              <label className={settingsFieldClass}>
-                <span className="text-sm font-medium text-[#51657b]">Seller entity type</span>
-                <Field
-                  as="select"
-                  value={developerProfile.entityType}
-                  disabled={!canEdit}
-                  onChange={(event) => updateDeveloperProfileField('entityType', event.target.value)}
-                >
-                  <option value="company">Company</option>
-                  <option value="individual">Individual</option>
-                  <option value="trust">Trust</option>
-                  <option value="close_corporation">Close Corporation</option>
-                  <option value="other">Other</option>
-                </Field>
-              </label>
-              <label className={settingsFieldClass}>
-                <span className="text-sm font-medium text-[#51657b]">Legal seller name</span>
-                <Field value={developerProfile.legalName} disabled={!canEdit} onChange={(event) => updateDeveloperProfileField('legalName', event.target.value)} />
-              </label>
-              <label className={settingsFieldClass}>
-                <span className="text-sm font-medium text-[#51657b]">Trading name</span>
-                <Field value={developerProfile.tradingName} disabled={!canEdit} onChange={(event) => updateDeveloperProfileField('tradingName', event.target.value)} />
-              </label>
-              <label className={settingsFieldClass}>
-                <span className="text-sm font-medium text-[#51657b]">Registration / Trust number</span>
-                <Field value={developerProfile.registrationNumber} disabled={!canEdit} onChange={(event) => updateDeveloperProfileField('registrationNumber', event.target.value)} />
-              </label>
-              <label className={settingsFieldClass}>
-                <span className="text-sm font-medium text-[#51657b]">VAT number</span>
-                <Field value={developerProfile.vatNumber} disabled={!canEdit} onChange={(event) => updateDeveloperProfileField('vatNumber', event.target.value)} />
-              </label>
-              <label className={settingsFieldClass}>
-                <span className="text-sm font-medium text-[#51657b]">VAT treatment</span>
-                <Field value={developerProfile.vatTreatment} disabled={!canEdit} onChange={(event) => updateDeveloperProfileField('vatTreatment', event.target.value)} placeholder="e.g. VAT inclusive" />
-              </label>
-              <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
-                <span className="text-sm font-medium text-[#51657b]">Registered address</span>
-                <Field value={developerProfile.registeredAddress} disabled={!canEdit} onChange={(event) => updateDeveloperProfileField('registeredAddress', event.target.value)} />
-              </label>
-              <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
-                <span className="text-sm font-medium text-[#51657b]">Postal address</span>
-                <Field value={developerProfile.postalAddress} disabled={!canEdit} onChange={(event) => updateDeveloperProfileField('postalAddress', event.target.value)} />
-              </label>
-              <label className={settingsFieldClass}>
-                <span className="text-sm font-medium text-[#51657b]">Seller email</span>
-                <Field type="email" value={developerProfile.email} disabled={!canEdit} onChange={(event) => updateDeveloperProfileField('email', event.target.value)} />
-              </label>
-              <label className={settingsFieldClass}>
-                <span className="text-sm font-medium text-[#51657b]">Seller phone</span>
-                <Field value={developerProfile.phone} disabled={!canEdit} onChange={(event) => updateDeveloperProfileField('phone', event.target.value)} />
-              </label>
-            </div>
-
-            <div className="mt-5 rounded-[18px] border border-[#dde6f0] bg-[#fbfdff] p-4">
-              <h4 className="text-sm font-semibold text-[#142132]">Default Authorised Signatory</h4>
-              <div className={`mt-4 ${settingsGridClass}`}>
-                <label className={settingsFieldClass}>
-                  <span className="text-sm font-medium text-[#51657b]">Full name</span>
-                  <Field value={developerProfile.defaultSignatory.fullName} disabled={!canEdit} onChange={(event) => updateDeveloperProfileSignatoryField('fullName', event.target.value)} />
-                </label>
-                <label className={settingsFieldClass}>
-                  <span className="text-sm font-medium text-[#51657b]">Capacity / role</span>
-                  <Field value={developerProfile.defaultSignatory.signingCapacity} disabled={!canEdit} onChange={(event) => updateDeveloperProfileSignatoryField('signingCapacity', event.target.value)} placeholder="e.g. Director" />
-                </label>
-                <label className={settingsFieldClass}>
-                  <span className="text-sm font-medium text-[#51657b]">Position</span>
-                  <Field value={developerProfile.defaultSignatory.role} disabled={!canEdit} onChange={(event) => updateDeveloperProfileSignatoryField('role', event.target.value)} />
-                </label>
-                <label className={settingsFieldClass}>
-                  <span className="text-sm font-medium text-[#51657b]">ID number</span>
-                  <Field value={developerProfile.defaultSignatory.idNumber} disabled={!canEdit} onChange={(event) => updateDeveloperProfileSignatoryField('idNumber', event.target.value)} />
-                </label>
-                <label className={settingsFieldClass}>
-                  <span className="text-sm font-medium text-[#51657b]">Email</span>
-                  <Field type="email" value={developerProfile.defaultSignatory.email} disabled={!canEdit} onChange={(event) => updateDeveloperProfileSignatoryField('email', event.target.value)} />
-                </label>
-                <label className={settingsFieldClass}>
-                  <span className="text-sm font-medium text-[#51657b]">Phone</span>
-                  <Field value={developerProfile.defaultSignatory.phone} disabled={!canEdit} onChange={(event) => updateDeveloperProfileSignatoryField('phone', event.target.value)} />
-                </label>
-                <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
-                  <span className="text-sm font-medium text-[#51657b]">Internal notes</span>
-                  <Field as="textarea" value={developerProfile.notes} disabled={!canEdit} onChange={(event) => updateDeveloperProfileField('notes', event.target.value)} />
-                </label>
-              </div>
-            </div>
-          </SettingsSectionCard>
-        ) : null}
-
         <SettingsSectionCard
           title={copy.branchesSection.title}
           description={copy.branchesSection.description}
           actions={canEdit ? <Button type="button" variant="secondary" onClick={addBranch}>{copy.branchesSection.addLabel}</Button> : null}
         >
-          <div className="space-y-4">
+          <div className="space-y-3">
             {(onboarding.branchStructure?.branches || []).map((branch, index) => (
-              <article key={branch.id} className="rounded-[16px] border border-[#e1e9f3] bg-[#f8fbff] p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
+              <article key={branch.id} className="rounded-[12px] border border-[#e1e9f3] bg-[#f8fbff] p-4">
+                <div className="mb-4 flex items-center justify-between gap-3">
                   <h4 className="text-sm font-semibold uppercase tracking-[0.1em] text-[#2e4259]">{copy.branchesSection.rowLabel} {index + 1}</h4>
                   {canEdit ? (
                     <Button type="button" variant="ghost" onClick={() => removeBranch(branch.id)} disabled={(onboarding.branchStructure?.branches || []).length <= 1}>
@@ -989,150 +745,130 @@ export default function SettingsOrganisationPage() {
           </div>
         </SettingsSectionCard>
 
-        <SettingsSectionCard
-          title="Partner Profile Content"
-          description="Write the public-facing company overview and service delivery copy that appears on Arch9 partner profiles. Each role can be edited separately."
-        >
-          <div className="grid gap-4 xl:grid-cols-2">
-            {PARTNER_PROFILE_CONTENT_ROLES.map((roleOption) => {
-              const roleContent = partnerProfileContent[roleOption.key] || {}
-              return (
-                <article key={roleOption.key} className="rounded-[18px] border border-[#e4ebf2] bg-[#fbfdff] p-5">
-                  <div className="space-y-1">
-                    <h4 className="text-sm font-semibold uppercase tracking-[0.1em] text-[#2e4259]">{roleOption.label}</h4>
-                    <p className="text-sm leading-6 text-[#6b7d93]">{roleOption.hint}</p>
-                  </div>
-                  <div className="mt-4 grid gap-4">
-                    <label className={settingsFieldClass}>
-                      <span className="text-sm font-medium text-[#51657b]">About the company</span>
-                      <Field
-                        as="textarea"
-                        value={roleContent.aboutCompany || ''}
-                        disabled={!canEdit}
-                        onChange={(event) => updatePartnerProfileContentField(roleOption.key, 'aboutCompany', event.target.value)}
-                        placeholder={`Describe how this ${roleOption.label.toLowerCase()} presents itself to Arch9 partners.`}
-                      />
-                    </label>
-                    <label className={settingsFieldClass}>
-                      <span className="text-sm font-medium text-[#51657b]">Service delivery</span>
-                      <Field
-                        as="textarea"
-                        value={roleContent.serviceDelivery || ''}
-                        disabled={!canEdit}
-                        onChange={(event) => updatePartnerProfileContentField(roleOption.key, 'serviceDelivery', event.target.value)}
-                        placeholder={`Describe the service delivery style for this ${roleOption.label.toLowerCase()} profile.`}
-                      />
-                    </label>
-                  </div>
-                </article>
-              )
-            })}
-          </div>
-        </SettingsSectionCard>
-
         <SettingsSectionCard title="Branding" description="Brand assets used for portal, reporting, and outbound communication surfaces.">
-          <div className={settingsGridClass}>
-            <article className="agency-brand-upload">
-              <strong>Primary Logo</strong>
-              <p className="mt-1 text-sm leading-5 text-[#60758d]">Used on profile pages, reports and organisation headers. Recommended: horizontal logo.</p>
-              {canEdit ? (
-                <label className="agency-upload-trigger">
-                  <input
-                    type="file"
-                    accept="image/png,image/svg+xml,image/jpeg,image/webp"
-                    onChange={(event) => void handleLogoUpload(event.target.files?.[0], 'logoLight')}
-                  />
-                  {uploadingLogoTarget === 'logoLight' ? 'Uploading...' : 'Upload Primary Logo'}
-                </label>
-              ) : null}
+          <div className="organisation-branding-grid">
+            <article className="agency-brand-upload organisation-brand-upload-wide">
+              <div className="organisation-brand-upload-head">
+                <div>
+                  <strong>Primary Logo</strong>
+                  <p>Horizontal logo for sidebars, reports, and organisation headers.</p>
+                </div>
+                {canEdit ? (
+                  <label className="agency-upload-trigger">
+                    <input
+                      type="file"
+                      accept="image/png,image/svg+xml,image/jpeg,image/webp"
+                      onChange={(event) => void handleLogoUpload(event.target.files?.[0], 'logoLight')}
+                    />
+                    {uploadingLogoTarget === 'logoLight' ? 'Uploading...' : 'Replace'}
+                  </label>
+                ) : null}
+              </div>
+              <div className="organisation-logo-preview-frame organisation-logo-preview-frame-primary">
+                {onboarding.branding?.logoLight ? (
+                  <img className="agency-logo-preview" src={onboarding.branding.logoLight} alt="Primary logo preview" />
+                ) : (
+                  <span>Primary logo not uploaded</span>
+                )}
+              </div>
               <p className="agency-upload-caption">
                 {onboarding.branding?.logoLightName
-                  ? `Uploaded: ${onboarding.branding.logoLightName}`
+                  ? onboarding.branding.logoLightName
                   : onboarding.branding?.logoLight
-                    ? `Uploaded: ${getLogoPreviewLabel(onboarding.branding.logoLight, 'Primary logo')}`
-                    : 'No primary logo uploaded yet (Arch9 fallback is active)'}
+                    ? getLogoPreviewLabel(onboarding.branding.logoLight, 'Primary logo')
+                    : 'Arch9 fallback branding is active.'}
               </p>
-              {onboarding.branding?.logoLight ? (
-                <img className="agency-logo-preview" src={onboarding.branding.logoLight} alt="Light logo preview" />
-              ) : (
-                <div className="rounded-[12px] border border-dashed border-[#d9e4ef] bg-[#f8fbff] px-4 py-6 text-center text-sm text-[#6b7d93]">
-                  Arch9 fallback branding will be used for large brand surfaces.
-                </div>
-              )}
             </article>
 
             <article className="agency-brand-upload">
-              <strong>Icon Logo</strong>
-              <p className="mt-1 text-sm leading-5 text-[#60758d]">Used on cards, tables, lists and dashboards. Recommended: square logo mark.</p>
-              {canEdit ? (
-                <label className="agency-upload-trigger">
-                  <input
-                    type="file"
-                    accept="image/png,image/svg+xml,image/jpeg,image/webp"
-                    onChange={(event) => void handleLogoUpload(event.target.files?.[0], 'logoIcon')}
-                  />
-                  {uploadingLogoTarget === 'logoIcon' ? 'Uploading...' : 'Upload Icon Logo'}
-                </label>
-              ) : null}
+              <div className="organisation-brand-upload-head">
+                <div>
+                  <strong>Icon Logo</strong>
+                  <p>Square mark for compact surfaces.</p>
+                </div>
+                {canEdit ? (
+                  <label className="agency-upload-trigger">
+                    <input
+                      type="file"
+                      accept="image/png,image/svg+xml,image/jpeg,image/webp"
+                      onChange={(event) => void handleLogoUpload(event.target.files?.[0], 'logoIcon')}
+                    />
+                    {uploadingLogoTarget === 'logoIcon' ? 'Uploading...' : 'Replace'}
+                  </label>
+                ) : null}
+              </div>
+              <div className="organisation-logo-preview-frame organisation-logo-preview-frame-icon">
+                {onboarding.branding?.logoIcon ? (
+                  <img className="agency-logo-preview" src={onboarding.branding.logoIcon} alt="Icon logo preview" />
+                ) : (
+                  <span>Initials fallback</span>
+                )}
+              </div>
               <p className="agency-upload-caption">
                 {onboarding.branding?.logoIconName
-                  ? `Uploaded: ${onboarding.branding.logoIconName}`
+                  ? onboarding.branding.logoIconName
                   : onboarding.branding?.logoIcon
-                    ? `Uploaded: ${getLogoPreviewLabel(onboarding.branding.logoIcon, 'Icon logo')}`
-                    : 'No icon logo uploaded yet. Small surfaces will fall back to the primary logo or initials.'}
+                    ? getLogoPreviewLabel(onboarding.branding.logoIcon, 'Icon logo')
+                    : 'Small surfaces use the primary logo or initials.'}
               </p>
-              {onboarding.branding?.logoIcon ? (
-                <img className="agency-logo-preview" src={onboarding.branding.logoIcon} alt="Icon logo preview" />
-              ) : (
-                <div className="rounded-[12px] border border-dashed border-[#d9e4ef] bg-[#f8fbff] px-4 py-6 text-center text-sm text-[#6b7d93]">
-                  Initials will be used when no logo is available.
-                </div>
-              )}
             </article>
 
-            <article className="agency-brand-upload">
-              <strong>Dark / High Contrast Logo</strong>
-              {canEdit ? (
-                <label className="agency-upload-trigger">
-                  <input
-                    type="file"
-                    accept="image/png,image/svg+xml,image/jpeg,image/webp"
-                    onChange={(event) => void handleLogoUpload(event.target.files?.[0], 'logoDark')}
-                  />
-                  {uploadingLogoTarget === 'logoDark' ? 'Uploading…' : 'Upload Dark Logo'}
-                </label>
-              ) : null}
+            <article className="agency-brand-upload organisation-brand-upload-wide">
+              <div className="organisation-brand-upload-head">
+                <div>
+                  <strong>Dark / High Contrast Logo</strong>
+                  <p>Used where a stronger contrast asset is needed.</p>
+                </div>
+                {canEdit ? (
+                  <label className="agency-upload-trigger">
+                    <input
+                      type="file"
+                      accept="image/png,image/svg+xml,image/jpeg,image/webp"
+                      onChange={(event) => void handleLogoUpload(event.target.files?.[0], 'logoDark')}
+                    />
+                    {uploadingLogoTarget === 'logoDark' ? 'Uploading...' : 'Replace'}
+                  </label>
+                ) : null}
+              </div>
+              <div className="organisation-logo-preview-frame organisation-logo-preview-frame-dark">
+                {onboarding.branding?.logoDark ? (
+                  <img className="agency-logo-preview agency-logo-preview-dark" src={onboarding.branding.logoDark} alt="Dark logo preview" />
+                ) : (
+                  <span>Dark logo not uploaded</span>
+                )}
+              </div>
               <p className="agency-upload-caption">
                 {onboarding.branding?.logoDarkName
-                  ? `Uploaded: ${onboarding.branding.logoDarkName}`
+                  ? onboarding.branding.logoDarkName
                   : onboarding.branding?.logoDark
-                    ? `Uploaded: ${getLogoPreviewLabel(onboarding.branding.logoDark, 'Dark logo')}`
-                    : 'No dark/high-contrast logo uploaded yet'}
+                    ? getLogoPreviewLabel(onboarding.branding.logoDark, 'Dark logo')
+                    : 'Optional for theme-aware branding.'}
               </p>
-              {onboarding.branding?.logoDark ? (
-                <img className="agency-logo-preview agency-logo-preview-dark" src={onboarding.branding.logoDark} alt="Dark logo preview" />
-              ) : (
-                <div className="rounded-[12px] border border-dashed border-[#d9e4ef] bg-[#f8fbff] px-4 py-6 text-center text-sm text-[#6b7d93]">
-                  Optional for future theme-aware branding.
-                </div>
-              )}
             </article>
 
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Primary colour</span>
-              <Field value={onboarding.branding?.brandColours?.primary || ''} disabled={!canEdit} onChange={(event) => updateBrandColour('primary', event.target.value)} />
-            </label>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Secondary colour</span>
-              <Field value={onboarding.branding?.brandColours?.secondary || ''} disabled={!canEdit} onChange={(event) => updateBrandColour('secondary', event.target.value)} />
-            </label>
+            <div className="organisation-colour-panel">
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Primary colour</span>
+                <div className="organisation-colour-field">
+                  <span style={{ backgroundColor: onboarding.branding?.brandColours?.primary || '#274C69' }} />
+                  <Field value={onboarding.branding?.brandColours?.primary || ''} disabled={!canEdit} onChange={(event) => updateBrandColour('primary', event.target.value)} />
+                </div>
+              </label>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Secondary colour</span>
+                <div className="organisation-colour-field">
+                  <span style={{ backgroundColor: onboarding.branding?.brandColours?.secondary || '#10273A' }} />
+                  <Field value={onboarding.branding?.brandColours?.secondary || ''} disabled={!canEdit} onChange={(event) => updateBrandColour('secondary', event.target.value)} />
+                </div>
+              </label>
+            </div>
           </div>
         </SettingsSectionCard>
 
         <SettingsSectionCard title={copy.permissionsSection.title} description={copy.permissionsSection.description}>
           <div className={settingsGridClass}>
             <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ scope' : isDeveloperCompany ? 'Owner scope' : 'Principal scope'}</span>
+              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ scope' : 'Principal scope'}</span>
               <Field as="select" value={onboarding.permissions?.principalScope || 'all'} disabled={!canEdit} onChange={(event) => updatePermissionField('principalScope', event.target.value)}>
                 {PERMISSION_SCOPE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>

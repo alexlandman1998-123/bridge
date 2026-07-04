@@ -326,7 +326,7 @@ function AgentInviteModal({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-[#7a8ca2]">Commercial Details</p>
-              <p className="mt-1 text-sm text-[#61748d]">Set the commission structure before this agent starts generating pipeline or transaction data.</p>
+              <p className="mt-1 text-sm text-[#61748d]">Set the sales commission structure before this agent starts generating pipeline or transaction data.</p>
             </div>
             {!hasCommissionStructures ? (
               <Button type="button" variant="ghost" onClick={onManageCommissionStructures}>
@@ -336,12 +336,12 @@ function AgentInviteModal({
           </div>
           {hasCommissionStructures ? (
             <label className="mt-3 grid gap-1.5">
-              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Commission Structure</span>
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Sales Commission Structure</span>
               <Field as="select" value={form.commissionStructureId || ''} onChange={(event) => onChange('commissionStructureId', event.target.value)}>
                 <option value="">
                   {defaultCommissionStructure
                     ? `Use agency default: ${defaultCommissionStructure.name}`
-                    : 'Select commission structure'}
+                    : 'Select sales commission structure'}
                 </option>
                 {commissionStructureOptions.map((structure) => (
                   <option key={structure.id} value={structure.id}>
@@ -352,7 +352,7 @@ function AgentInviteModal({
             </label>
           ) : (
             <div className="mt-3 rounded-[12px] border border-[#f3d9a8] bg-[#fff8ec] px-3 py-2 text-sm text-[#8a5b13]">
-              Create at least one commission structure before inviting agents so new transactions do not fall back to generic splits.
+              Create at least one sales commission structure before inviting agents so new transactions do not fall back to generic splits.
             </div>
           )}
         </section>
@@ -4442,7 +4442,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
                   ))}
                 </div>
               </AgentManagementCard>
-              <AgentManagementCard title="Commission Structure" actionLabel="Manage" onAction={() => openPlaceholder('commission')}>
+              <AgentManagementCard title="Sales Commission Structure" actionLabel="Manage" onAction={() => openPlaceholder('commission')}>
                 <div className="space-y-1">
                   {commissionPlanRows.map(([label, value]) => (
                     <DetailInfoRow key={label} label={label} value={value} />
@@ -4521,7 +4521,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
       ) : null}
 
       {effectiveActiveTab === 'settings' ? (
-        <PrincipalAgentTabShell title="Settings" description="Profile, permissions, commission structure, notifications and account controls.">
+        <PrincipalAgentTabShell title="Settings" description="Profile, permissions, sales commission structure, notifications and account controls.">
           <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-4">
             <AgentManagementCard title="Profile" actionLabel="Edit" onAction={() => openPlaceholder('profile')}>
               <div className="space-y-1">
@@ -4539,7 +4539,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
               </div>
             </AgentManagementCard>
 
-            <AgentManagementCard title="Commission Structure" actionLabel="Manage" onAction={() => openPlaceholder('commission')}>
+            <AgentManagementCard title="Sales Commission Structure" actionLabel="Manage" onAction={() => openPlaceholder('commission')}>
               <div className="space-y-1">
                 {commissionPlanRows.map(([label, value]) => (
                   <DetailInfoRow key={label} label={label} value={value} />
@@ -4602,7 +4602,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
         }
         subtitle={
           modalMode === 'commission'
-            ? 'Assign a commission structure, optional split override and effective date for this agent.'
+            ? 'Assign a sales commission structure, optional split override and effective date for this agent.'
             : modalMode === 'permissions'
               ? 'Update the agent role and review the workspace access it grants.'
             : 'This management surface is ready for the connected workflow.'
@@ -4648,9 +4648,9 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
 
             {!activeCommissionStructures.length ? (
               <div className="rounded-2xl border border-[#e3ebf5] bg-[#fbfcfe] p-5">
-                <h3 className="text-base font-semibold text-[#10243a]">No active commission structures</h3>
+                <h3 className="text-base font-semibold text-[#10243a]">No active sales commission structures</h3>
                 <p className="mt-2 text-sm leading-6 text-[#60758d]">
-                  Create at least one active commission structure before assigning a plan to this agent.
+                  Create at least one active sales commission structure before assigning a plan to this agent.
                 </p>
                 <Button type="button" variant="secondary" className="mt-4" onClick={() => navigate('/settings/commission-structures')}>
                   Open Commission Settings
@@ -4660,7 +4660,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
               <>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="grid gap-1.5 sm:col-span-2">
-                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Commission Structure</span>
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Sales Commission Structure</span>
                     <Field
                       as="select"
                       value={commissionForm.commissionStructureId}
@@ -5716,11 +5716,11 @@ export function AgentsPage() {
       return
     }
     if (!activeCommissionStructureOptions.length) {
-      setInviteError('Create a commission structure before inviting agents.')
+      setInviteError('Create a sales commission structure before inviting agents.')
       return
     }
     if (!inviteForm.commissionStructureId && !defaultCommissionStructure) {
-      setInviteError('Select a commission structure or set an agency default before inviting this agent.')
+      setInviteError('Select a sales commission structure or set an agency default before inviting this agent.')
       return
     }
 

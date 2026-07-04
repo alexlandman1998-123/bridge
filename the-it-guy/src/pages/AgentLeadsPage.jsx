@@ -4,12 +4,14 @@ import {
   ArrowLeft,
   ArrowRight,
   BadgeCheck,
+  BarChart3,
   CalendarDays,
   ChevronDown,
   CheckCircle2,
   Clock3,
   CreditCard,
   Building2,
+  Download,
   ExternalLink,
   FileText,
   Home,
@@ -84,6 +86,7 @@ import {
   createPrivateListing,
   createPrivateListingActivity,
   sendSellerOnboarding,
+  submitSellerOnboarding,
   updatePrivateListing,
   updatePrivateListingOnboardingFormData,
 } from '../services/privateListingService'
@@ -163,6 +166,15 @@ import {
   generateSuggestionsForLead,
   rejectSuggestion,
 } from '../services/leadSuggestionService'
+import {
+  completeReferralFollowUp,
+  createLeadReferral,
+  listLeadReferrals,
+  markReferralCommissionPaid,
+  markReferralLost,
+  recordReferralConversion,
+  scheduleReferralFollowUp,
+} from '../services/leadReferralService'
 
 const pageShell = 'mx-auto flex w-full min-w-0 max-w-[1760px] flex-col gap-5'
 const leadListShell = 'mx-auto flex w-full min-w-0 max-w-[1760px] flex-col gap-5'
@@ -216,6 +228,11 @@ const VIEWING_NEXT_STEP_OPTIONS = [
 const LEAD_CATEGORY_FILTERS = [
   { key: 'buyer', label: 'Buyer Leads' },
   { key: 'seller', label: 'Seller Leads' },
+  { key: 'referrals_received', label: 'Referrals Received' },
+  { key: 'referrals_given', label: 'Referrals Given' },
+  { key: 'referral_clients', label: 'Referral Clients' },
+  { key: 'referral_partners', label: 'Referral Partners' },
+  { key: 'referral_insights', label: 'Referral Insights' },
   { key: 'archived', label: 'Archived' },
 ]
 const LEAD_SOURCE_PILL_STYLES = {
@@ -4454,7 +4471,7 @@ function LeadSourcePill({ source = '' }) {
   return <StatusPill tone={sourceStyle.tone}>{sourceStyle.label}</StatusPill>
 }
 
-function LeadTypeTabs({ activeCategory = 'buyer', rows = [], onChange }) {
+function LeadTypeTabs({ activeCategory = 'buyer', rows = [], referralCounts = {}, onChange }) {
   const counts = rows.reduce((accumulator, row) => {
     if (isArchivedLead(row)) {
       accumulator.archived += 1
@@ -4471,6 +4488,21 @@ function LeadTypeTabs({ activeCategory = 'buyer', rows = [], onChange }) {
       <div className="flex min-h-12 flex-wrap items-center gap-x-4 gap-y-2" role="tablist" aria-label="Lead category tabs">
         {LEAD_CATEGORY_FILTERS.map((option) => {
           const active = activeCategory === option.key
+          const countValue = option.key === 'referrals_received'
+            ? referralCounts.received || 0
+            : option.key === 'referrals_given'
+              ? referralCounts.given || 0
+              : option.key === 'referral_clients'
+                ? referralCounts.clients || 0
+                : option.key === 'referral_partners'
+                  ? referralCounts.partners || 0
+                  : option.key === 'referral_insights'
+                    ? referralCounts.insights || 0
+                    : option.key === 'archived'
+                      ? counts.archived
+                      : option.key === 'other'
+                        ? counts.other
+                        : counts[option.key] || 0
           return (
             <button
               key={option.key}
@@ -4482,7 +4514,7 @@ function LeadTypeTabs({ activeCategory = 'buyer', rows = [], onChange }) {
             >
               {option.label}
               <span className={`inline-flex min-h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs ${active ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
-                {option.key === 'archived' ? counts.archived : (option.key === 'other' ? counts.other : counts[option.key] || 0)}
+                {countValue}
               </span>
               {active ? <span className="absolute inset-x-2 -bottom-3 h-0.5 rounded-full bg-blue-500" aria-hidden="true" /> : null}
             </button>
@@ -4490,6 +4522,1299 @@ function LeadTypeTabs({ activeCategory = 'buyer', rows = [], onChange }) {
         })}
       </div>
     </div>
+  )
+}
+
+function getReferralScopeLabel(scope = '') {
+  const normalized = normalizeText(scope).toLowerCase()
+  if (normalized === 'internal') return 'Internal'
+  if (normalized === 'external_arch9') return 'External Arch9'
+  if (normalized === 'external_invite') return 'Invite triggered'
+  return 'External'
+}
+
+function getReferralStatusTone(status = '') {
+  const normalized = normalizeText(status).toLowerCase()
+  if (normalized === 'accepted' || normalized === 'converted' || normalized === 'paid') return 'green'
+  if (normalized === 'declined' || normalized === 'cancelled') return 'red'
+  if (normalized === 'commission_due') return 'amber'
+  if (normalized === 'sent') return 'blue'
+  return 'slate'
+}
+
+function getReferralPriorityTone(priority = '') {
+  const normalized = normalizeText(priority).toLowerCase()
+  if (normalized === 'urgent') return 'red'
+  if (normalized === 'high') return 'amber'
+  if (normalized === 'low') return 'slate'
+  return 'blue'
+}
+
+function isReferralClosed(referral = {}) {
+  return ['lost', 'paid', 'cancelled', 'declined'].includes(normalizeText(referral.status))
+}
+
+function isReferralConverted(referral = {}) {
+  return ['converted', 'commission_due', 'paid'].includes(normalizeText(referral.status))
+}
+
+function isReferralFollowUpDue(referral = {}, now = new Date()) {
+  if (isReferralClosed(referral) || !referral.nextFollowUpAt) return false
+  const dueAt = new Date(referral.nextFollowUpAt)
+  return !Number.isNaN(dueAt.getTime()) && dueAt.getTime() <= now.getTime()
+}
+
+function isReferralStale(referral = {}, now = new Date()) {
+  if (isReferralClosed(referral) || isReferralConverted(referral)) return false
+  const lastTouch = referral.latestEvent?.createdAt || referral.updatedAt || referral.createdAt
+  const lastTouchDate = new Date(lastTouch)
+  if (Number.isNaN(lastTouchDate.getTime())) return false
+  return now.getTime() - lastTouchDate.getTime() > 10 * 24 * 60 * 60 * 1000
+}
+
+function getReferralConversionDays(referral = {}) {
+  if (!referral.convertedAt) return null
+  const createdAt = new Date(referral.createdAt)
+  const convertedAt = new Date(referral.convertedAt)
+  if (Number.isNaN(createdAt.getTime()) || Number.isNaN(convertedAt.getTime())) return null
+  return Math.max(0, Math.round((convertedAt.getTime() - createdAt.getTime()) / (24 * 60 * 60 * 1000)))
+}
+
+function ReferralLedgerPanel({ mode = 'given', referrals = [], rows = [], organisationId = '', actor = null, onCreated }) {
+  const [draft, setDraft] = useState({
+    leadId: '',
+    recipientScope: 'internal',
+    targetAgentName: '',
+    targetAgentEmail: '',
+    targetCompanyName: '',
+    commissionSplitPercentage: '',
+    notes: '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const eligibleLeads = useMemo(
+    () => rows
+      .filter((row) => !isArchivedLead(row))
+      .filter((row) => ['buyer', 'seller'].includes(normalizeLeadCategory(row))),
+    [rows],
+  )
+  const leadById = useMemo(() => new Map(rows.map((row) => [normalizeText(row.leadId), row])), [rows])
+  const visibleReferrals = useMemo(() => {
+    return referrals.filter((referral) => {
+      if (mode === 'received') return normalizeText(referral.targetOrganisationId) === normalizeText(organisationId)
+      return normalizeText(referral.sourceOrganisationId) === normalizeText(organisationId)
+    })
+  }, [mode, organisationId, referrals])
+
+  function updateDraft(field, value) {
+    setError('')
+    setDraft((previous) => ({ ...previous, [field]: value }))
+  }
+
+  async function submitReferral(event) {
+    event.preventDefault()
+    const lead = leadById.get(normalizeText(draft.leadId))
+    if (!lead) {
+      setError('Select the buyer or seller lead being referred.')
+      return
+    }
+    if (!normalizeText(draft.targetAgentEmail)) {
+      setError('Add the receiving agent email.')
+      return
+    }
+    try {
+      setSaving(true)
+      setError('')
+      await createLeadReferral({
+        organisationId,
+        sourceLeadId: lead.leadId,
+        sourceLeadType: normalizeLeadCategory(lead),
+        clientName: lead.name,
+        clientEmail: lead.email,
+        clientPhone: lead.phone,
+        clientContext: normalizeLeadCategory(lead) === 'seller'
+          ? getSellerAddress(lead).first
+          : getBuyerPropertyEnquiry(lead).address,
+        recipientScope: draft.recipientScope,
+        targetAgentName: draft.targetAgentName,
+        targetAgentEmail: draft.targetAgentEmail,
+        targetCompanyName: draft.targetCompanyName,
+        commissionSplitPercentage: draft.commissionSplitPercentage,
+        commissionSplitBasis: 'gross_commission',
+        notes: draft.notes,
+      }, { actor })
+      setDraft({
+        leadId: '',
+        recipientScope: 'internal',
+        targetAgentName: '',
+        targetAgentEmail: '',
+        targetCompanyName: '',
+        commissionSplitPercentage: '',
+        notes: '',
+      })
+      await onCreated?.()
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to create this referral.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className={`${panelClass} overflow-hidden`}>
+      <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h2 className="text-base font-semibold text-slate-950">{mode === 'received' ? 'Referrals Received' : 'Referrals Given'}</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            {mode === 'received'
+              ? 'Inbound referrals from other agents and agencies.'
+              : 'Outbound buyer and seller lead referrals with split agreement tracking.'}
+          </p>
+        </div>
+        <StatusPill tone="blue">{visibleReferrals.length} referrals</StatusPill>
+      </div>
+
+      {mode === 'given' ? (
+        <form onSubmit={submitReferral} className="grid gap-3 border-b border-slate-200 p-5">
+          <div className="grid gap-3 lg:grid-cols-[minmax(220px,1.2fr)_repeat(4,minmax(140px,1fr))]">
+            <select
+              value={draft.leadId}
+              onChange={(event) => updateDraft('leadId', event.target.value)}
+              className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700"
+            >
+              <option value="">Select lead</option>
+              {eligibleLeads.map((lead) => (
+                <option key={lead.leadId} value={lead.leadId}>
+                  {lead.name} - {normalizeLeadCategory(lead) === 'seller' ? 'Seller' : 'Buyer'}
+                </option>
+              ))}
+            </select>
+            <select
+              value={draft.recipientScope}
+              onChange={(event) => updateDraft('recipientScope', event.target.value)}
+              className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700"
+            >
+              <option value="internal">Internal agent</option>
+              <option value="external_invite">External company</option>
+            </select>
+            <input
+              value={draft.targetAgentName}
+              onChange={(event) => updateDraft('targetAgentName', event.target.value)}
+              className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:border-blue-300"
+              placeholder="Receiving agent"
+            />
+            <input
+              type="email"
+              value={draft.targetAgentEmail}
+              onChange={(event) => updateDraft('targetAgentEmail', event.target.value)}
+              className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:border-blue-300"
+              placeholder="agent@email.com"
+            />
+            <input
+              value={draft.commissionSplitPercentage}
+              onChange={(event) => updateDraft('commissionSplitPercentage', event.target.value)}
+              className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:border-blue-300"
+              placeholder="Split %"
+              inputMode="decimal"
+            />
+          </div>
+          <div className="grid gap-3 lg:grid-cols-[minmax(180px,0.8fr)_minmax(280px,1.2fr)_auto]">
+            <input
+              value={draft.targetCompanyName}
+              onChange={(event) => updateDraft('targetCompanyName', event.target.value)}
+              className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:border-blue-300"
+              placeholder="External company"
+            />
+            <input
+              value={draft.notes}
+              onChange={(event) => updateDraft('notes', event.target.value)}
+              className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:border-blue-300"
+              placeholder="Referral notes"
+            />
+            <button type="submit" disabled={saving} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300">
+              <Send size={15} />
+              {saving ? 'Recording...' : 'Record Referral'}
+            </button>
+          </div>
+          {error ? <p className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
+        </form>
+      ) : null}
+
+      <div className="grid gap-3 p-5">
+        {visibleReferrals.map((referral) => {
+          const lead = leadById.get(normalizeText(referral.sourceLeadId))
+          const clientName = referral.clientName || lead?.name || 'Referral client'
+          const clientEmail = referral.clientEmail || lead?.email || ''
+          const clientPhone = referral.clientPhone || lead?.phone || ''
+          const clientContext = referral.clientContext || ''
+          return (
+            <article key={referral.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusPill tone={referral.sourceLeadType === 'seller' ? 'amber' : 'blue'}>
+                      {referral.sourceLeadType === 'seller' ? 'Seller lead' : 'Buyer lead'}
+                    </StatusPill>
+                    <StatusPill tone={getReferralStatusTone(referral.status)}>{referral.status}</StatusPill>
+                    <StatusPill>{getReferralScopeLabel(referral.recipientScope)}</StatusPill>
+                  </div>
+                  <h3 className="mt-3 text-sm font-semibold text-slate-950">{clientName}</h3>
+                  {clientEmail || clientPhone || clientContext ? (
+                    <p className="mt-1 text-xs font-medium text-slate-500">
+                      {[clientPhone, clientEmail, clientContext].filter(Boolean).join(' | ')}
+                    </p>
+                  ) : null}
+                  <p className="mt-1 text-sm leading-6 text-slate-500">
+                    {mode === 'received'
+                      ? `From ${referral.sourceAgentName || referral.sourceAgentEmail || 'referring agent'}`
+                      : `To ${referral.targetAgentName || referral.targetAgentEmail || 'receiving agent'}`}
+                    {referral.targetCompanyName ? ` at ${referral.targetCompanyName}` : ''}
+                  </p>
+                  {referral.notes ? <p className="mt-2 text-sm leading-6 text-slate-600">{referral.notes}</p> : null}
+                </div>
+                <div className="grid gap-2 text-sm text-slate-600 lg:min-w-[260px]">
+                  <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+                    <span>Commission split</span>
+                    <span className="font-semibold text-slate-950">
+                      {referral.commissionSplitPercentage === null || referral.commissionSplitPercentage === undefined || referral.commissionSplitPercentage === ''
+                        ? 'TBC'
+                        : `${Number(referral.commissionSplitPercentage)}%`}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+                    <span>Agreement</span>
+                    <span className="font-semibold text-slate-950">{referral.agreementStatus}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+                    <span>Created</span>
+                    <span className="font-semibold text-slate-950">{formatDateTime(referral.createdAt, '—')}</span>
+                  </div>
+                  {referral.inviteToken ? (
+                    <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                      <p>Invite pending for non-Arch9 recipient</p>
+                      {referral.inviteLink ? (
+                        <a href={referral.inviteLink} className="mt-1 block break-all text-amber-800 underline" target="_blank" rel="noreferrer">
+                          Open acceptance link
+                        </a>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </article>
+          )
+        })}
+        {!visibleReferrals.length ? (
+          <EmptyState
+            title={mode === 'received' ? 'No referrals received yet' : 'No referrals given yet'}
+            copy={mode === 'received'
+              ? 'Inbound referrals will appear here when another Arch9 agent or invited external agent sends you a lead.'
+              : 'Record a buyer or seller referral to track the receiving party, split agreement, and invite state.'}
+          />
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+function getReferralDirection(referral = {}, organisationId = '') {
+  const workspaceId = normalizeText(organisationId)
+  if (normalizeText(referral.targetOrganisationId) === workspaceId) return 'received'
+  return 'given'
+}
+
+function getReferralCounterparty(referral = {}, direction = 'given') {
+  if (direction === 'received') {
+    return {
+      name: normalizeText(referral.sourceAgentName || referral.sourceAgentEmail) || 'Referring agent',
+      email: normalizeText(referral.sourceAgentEmail),
+      company: '',
+    }
+  }
+  return {
+    name: normalizeText(referral.targetAgentName || referral.targetAgentEmail) || 'Receiving agent',
+    email: normalizeText(referral.targetAgentEmail),
+    company: normalizeText(referral.targetCompanyName),
+  }
+}
+
+function getReferralClientName(referral = {}, lead = null) {
+  return normalizeText(referral.clientName || referral.client?.clientName || lead?.name) || 'Referral client'
+}
+
+function getReferralClientContactLine(referral = {}, lead = null) {
+  return [
+    normalizeText(referral.clientPhone || referral.client?.clientPhone || lead?.phone),
+    normalizeText(referral.clientEmail || referral.client?.clientEmail || lead?.email),
+    normalizeText(referral.clientContext || referral.client?.clientContext),
+  ].filter(Boolean).join(' | ')
+}
+
+function getReferralRelationshipRows(referrals = [], organisationId = '', rows = []) {
+  const leadById = new Map(rows.map((row) => [normalizeText(row.leadId), row]))
+  return referrals
+    .filter((referral) => normalizeText(referral.sourceOrganisationId) === normalizeText(organisationId) || normalizeText(referral.targetOrganisationId) === normalizeText(organisationId))
+    .map((referral) => {
+      const direction = getReferralDirection(referral, organisationId)
+      const lead = leadById.get(normalizeText(referral.sourceLeadId))
+      const counterparty = getReferralCounterparty(referral, direction)
+      return {
+        referral,
+        direction,
+        lead,
+        counterparty,
+        clientName: getReferralClientName(referral, lead),
+        contactLine: getReferralClientContactLine(referral, lead),
+        status: normalizeText(referral.status) || 'sent',
+        agreementStatus: normalizeText(referral.agreementStatus) || 'pending',
+        createdAt: referral.createdAt,
+      }
+    })
+}
+
+function getReferralPartnerRows(referrals = [], organisationId = '') {
+  const partners = new Map()
+  referrals.forEach((referral) => {
+    const direction = getReferralDirection(referral, organisationId)
+    const counterparty = getReferralCounterparty(referral, direction)
+    const referralCommissionAmount = Number(referral.referralCommissionAmount || 0)
+    const conversionDays = getReferralConversionDays(referral)
+    const key = `${direction}:${normalizeText(counterparty.email || counterparty.name || counterparty.company).toLowerCase()}`
+    const existing = partners.get(key) || {
+      key,
+      direction,
+      name: counterparty.name,
+      email: counterparty.email,
+      company: counterparty.company,
+      total: 0,
+      given: 0,
+      received: 0,
+      converted: 0,
+      lost: 0,
+      active: 0,
+      followUpsDue: 0,
+      stale: 0,
+      pendingAgreement: 0,
+      pendingInvite: 0,
+      commissionDueAmount: 0,
+      commissionPaidAmount: 0,
+      commissionEarnedAmount: 0,
+      commissionPayableAmount: 0,
+      conversionDayTotal: 0,
+      conversionDayCount: 0,
+      latestAt: '',
+      referrals: [],
+    }
+    existing.total += 1
+    existing[direction] += 1
+    if (['accepted', 'contacted', 'working'].includes(normalizeText(referral.status))) existing.active += 1
+    if (['converted', 'commission_due', 'paid'].includes(normalizeText(referral.status))) existing.converted += 1
+    if (normalizeText(referral.status) === 'lost') existing.lost += 1
+    if (isReferralFollowUpDue(referral)) existing.followUpsDue += 1
+    if (isReferralStale(referral)) existing.stale += 1
+    if (normalizeText(referral.agreementStatus) !== 'accepted') existing.pendingAgreement += 1
+    if (referral.inviteToken) existing.pendingInvite += 1
+    if (normalizeText(referral.commissionStatus) === 'due') existing.commissionDueAmount += referralCommissionAmount
+    if (normalizeText(referral.commissionStatus) === 'paid') existing.commissionPaidAmount += referralCommissionAmount
+    if (direction === 'given') existing.commissionEarnedAmount += referralCommissionAmount
+    if (direction === 'received') existing.commissionPayableAmount += referralCommissionAmount
+    if (conversionDays !== null) {
+      existing.conversionDayTotal += conversionDays
+      existing.conversionDayCount += 1
+    }
+    if (!existing.latestAt || new Date(referral.createdAt || 0).getTime() > new Date(existing.latestAt || 0).getTime()) {
+      existing.latestAt = referral.createdAt
+    }
+    existing.referrals.push(referral)
+    partners.set(key, existing)
+  })
+  return Array.from(partners.values()).map((partner) => ({
+    ...partner,
+    averageConversionDays: partner.conversionDayCount ? Math.round(partner.conversionDayTotal / partner.conversionDayCount) : null,
+  })).sort((a, b) => {
+    const convertedDelta = b.converted - a.converted
+    if (convertedDelta) return convertedDelta
+    return new Date(b.latestAt || 0).getTime() - new Date(a.latestAt || 0).getTime()
+  })
+}
+
+function getReferralFinanceTone(status = '') {
+  const normalized = normalizeText(status).toLowerCase()
+  if (normalized === 'paid') return 'green'
+  if (normalized === 'due') return 'amber'
+  if (normalized === 'disputed') return 'red'
+  if (normalized === 'pending') return 'blue'
+  return 'slate'
+}
+
+function ReferralFinanceActions({ item, actor = null, onUpdated }) {
+  const referral = item.referral
+  const [conversionDraft, setConversionDraft] = useState({
+    transactionId: referral.convertedTransactionId || '',
+    dealId: referral.convertedDealId || '',
+    grossCommissionAmount: referral.grossCommissionAmount || '',
+    commissionSplitPercentage: referral.commissionSplitPercentage || '',
+    note: '',
+  })
+  const [paymentDraft, setPaymentDraft] = useState({
+    paymentReference: referral.commissionPaymentReference || '',
+    note: '',
+  })
+  const [savingAction, setSavingAction] = useState('')
+  const [error, setError] = useState('')
+  const commissionStatus = normalizeText(referral.commissionStatus) || 'not_applicable'
+  const isPaid = commissionStatus === 'paid'
+  const hasConversion = Boolean(referral.convertedAt || referral.convertedTransactionId || referral.convertedDealId || ['converted', 'commission_due', 'paid'].includes(normalizeText(referral.status)))
+
+  function updateConversionDraft(field, value) {
+    setError('')
+    setConversionDraft((previous) => ({ ...previous, [field]: value }))
+  }
+
+  function updatePaymentDraft(field, value) {
+    setError('')
+    setPaymentDraft((previous) => ({ ...previous, [field]: value }))
+  }
+
+  async function submitConversion(event) {
+    event.preventDefault()
+    const grossCommissionAmount = parseCurrencyInput(conversionDraft.grossCommissionAmount)
+    if (grossCommissionAmount <= 0) {
+      setError('Add the gross commission amount before recording conversion.')
+      return
+    }
+    try {
+      setSavingAction('conversion')
+      setError('')
+      await recordReferralConversion(referral.id, {
+        transactionId: conversionDraft.transactionId,
+        dealId: conversionDraft.dealId,
+        grossCommissionAmount,
+        commissionSplitPercentage: conversionDraft.commissionSplitPercentage,
+        note: conversionDraft.note,
+      }, { actor })
+      await onUpdated?.()
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to record this referral conversion.')
+    } finally {
+      setSavingAction('')
+    }
+  }
+
+  async function submitPayment(event) {
+    event.preventDefault()
+    try {
+      setSavingAction('payment')
+      setError('')
+      await markReferralCommissionPaid(referral.id, {
+        paymentReference: paymentDraft.paymentReference,
+        note: paymentDraft.note,
+      }, { actor })
+      await onUpdated?.()
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to mark this referral commission as paid.')
+    } finally {
+      setSavingAction('')
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Referral finance</p>
+          <p className="mt-1 text-sm font-semibold text-slate-950">
+            {referral.referralCommissionAmount ? formatCurrency(referral.referralCommissionAmount) : 'No commission snapshot'}
+          </p>
+        </div>
+        <StatusPill tone={getReferralFinanceTone(commissionStatus)}>{commissionStatus.replace(/_/g, ' ')}</StatusPill>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <div className="rounded-xl bg-white px-3 py-2">
+          <p className="text-xs font-semibold text-slate-400">Gross</p>
+          <p className="mt-1 text-sm font-semibold text-slate-950">{formatCurrency(referral.grossCommissionAmount)}</p>
+        </div>
+        <div className="rounded-xl bg-white px-3 py-2">
+          <p className="text-xs font-semibold text-slate-400">Split</p>
+          <p className="mt-1 text-sm font-semibold text-slate-950">{referral.commissionSplitPercentage ? `${Number(referral.commissionSplitPercentage)}%` : 'TBC'}</p>
+        </div>
+        <div className="rounded-xl bg-white px-3 py-2">
+          <p className="text-xs font-semibold text-slate-400">Paid</p>
+          <p className="mt-1 text-sm font-semibold text-slate-950">{formatDate(referral.commissionPaidAt, 'Unpaid')}</p>
+        </div>
+      </div>
+
+      {!isPaid ? (
+        <div className="mt-3 grid gap-2 lg:grid-cols-2">
+          <details className="rounded-xl border border-slate-200 bg-white">
+            <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm font-semibold text-slate-700">
+              <span>{hasConversion ? 'Update conversion' : 'Record conversion'}</span>
+              <BadgeCheck size={15} />
+            </summary>
+            <form onSubmit={submitConversion} className="grid gap-2 border-t border-slate-100 p-3">
+              <input
+                value={conversionDraft.transactionId}
+                onChange={(event) => updateConversionDraft('transactionId', event.target.value)}
+                className="min-h-10 rounded-xl border border-slate-200 px-3 text-sm font-medium outline-none focus:border-blue-300"
+                placeholder="Transaction ID"
+              />
+              <input
+                value={conversionDraft.dealId}
+                onChange={(event) => updateConversionDraft('dealId', event.target.value)}
+                className="min-h-10 rounded-xl border border-slate-200 px-3 text-sm font-medium outline-none focus:border-blue-300"
+                placeholder="Deal ID"
+              />
+              <div className="grid gap-2 sm:grid-cols-2">
+                <input
+                  value={conversionDraft.grossCommissionAmount}
+                  onChange={(event) => updateConversionDraft('grossCommissionAmount', event.target.value)}
+                  className="min-h-10 rounded-xl border border-slate-200 px-3 text-sm font-medium outline-none focus:border-blue-300"
+                  placeholder="Gross commission"
+                  inputMode="decimal"
+                />
+                <input
+                  value={conversionDraft.commissionSplitPercentage}
+                  onChange={(event) => updateConversionDraft('commissionSplitPercentage', event.target.value)}
+                  className="min-h-10 rounded-xl border border-slate-200 px-3 text-sm font-medium outline-none focus:border-blue-300"
+                  placeholder="Split %"
+                  inputMode="decimal"
+                />
+              </div>
+              <input
+                value={conversionDraft.note}
+                onChange={(event) => updateConversionDraft('note', event.target.value)}
+                className="min-h-10 rounded-xl border border-slate-200 px-3 text-sm font-medium outline-none focus:border-blue-300"
+                placeholder="Conversion note"
+              />
+              <button type="submit" disabled={savingAction === 'conversion'} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300">
+                <Banknote size={15} />
+                {savingAction === 'conversion' ? 'Saving...' : 'Save conversion'}
+              </button>
+            </form>
+          </details>
+
+          {commissionStatus === 'due' ? (
+            <details className="rounded-xl border border-slate-200 bg-white">
+              <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm font-semibold text-slate-700">
+                <span>Mark paid</span>
+                <CreditCard size={15} />
+              </summary>
+              <form onSubmit={submitPayment} className="grid gap-2 border-t border-slate-100 p-3">
+                <input
+                  value={paymentDraft.paymentReference}
+                  onChange={(event) => updatePaymentDraft('paymentReference', event.target.value)}
+                  className="min-h-10 rounded-xl border border-slate-200 px-3 text-sm font-medium outline-none focus:border-blue-300"
+                  placeholder="Payment reference"
+                />
+                <input
+                  value={paymentDraft.note}
+                  onChange={(event) => updatePaymentDraft('note', event.target.value)}
+                  className="min-h-10 rounded-xl border border-slate-200 px-3 text-sm font-medium outline-none focus:border-blue-300"
+                  placeholder="Payment note"
+                />
+                <button type="submit" disabled={savingAction === 'payment'} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 text-sm font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-slate-300">
+                  <CreditCard size={15} />
+                  {savingAction === 'payment' ? 'Saving...' : 'Mark paid'}
+                </button>
+              </form>
+            </details>
+          ) : null}
+        </div>
+      ) : null}
+      {referral.commissionPaymentReference ? <p className="mt-2 text-xs font-semibold text-slate-500">Payment ref: {referral.commissionPaymentReference}</p> : null}
+      {error ? <p className="mt-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
+    </div>
+  )
+}
+
+function ReferralOperationsActions({ item, actor = null, onUpdated }) {
+  const referral = item.referral
+  const [followUpDraft, setFollowUpDraft] = useState({
+    nextFollowUpAt: referral.nextFollowUpAt ? String(referral.nextFollowUpAt).slice(0, 10) : '',
+    operationalPriority: referral.operationalPriority || 'normal',
+    note: '',
+  })
+  const [lostDraft, setLostDraft] = useState({ lostReason: referral.lostReason || '', note: '' })
+  const [savingAction, setSavingAction] = useState('')
+  const [error, setError] = useState('')
+  const due = isReferralFollowUpDue(referral)
+  const stale = isReferralStale(referral)
+  const closed = isReferralClosed(referral)
+
+  function updateFollowUpDraft(field, value) {
+    setError('')
+    setFollowUpDraft((previous) => ({ ...previous, [field]: value }))
+  }
+
+  function updateLostDraft(field, value) {
+    setError('')
+    setLostDraft((previous) => ({ ...previous, [field]: value }))
+  }
+
+  async function submitFollowUp(event) {
+    event.preventDefault()
+    try {
+      setSavingAction('schedule')
+      setError('')
+      await scheduleReferralFollowUp(referral.id, {
+        nextFollowUpAt: followUpDraft.nextFollowUpAt,
+        operationalPriority: followUpDraft.operationalPriority,
+        note: followUpDraft.note,
+      }, { actor })
+      await onUpdated?.()
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to schedule this referral follow-up.')
+    } finally {
+      setSavingAction('')
+    }
+  }
+
+  async function completeFollowUp() {
+    try {
+      setSavingAction('complete')
+      setError('')
+      await completeReferralFollowUp(referral.id, {
+        nextFollowUpAt: followUpDraft.nextFollowUpAt,
+        note: followUpDraft.note,
+      }, { actor })
+      await onUpdated?.()
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to complete this referral follow-up.')
+    } finally {
+      setSavingAction('')
+    }
+  }
+
+  async function submitLost(event) {
+    event.preventDefault()
+    try {
+      setSavingAction('lost')
+      setError('')
+      await markReferralLost(referral.id, {
+        lostReason: lostDraft.lostReason,
+        note: lostDraft.note,
+      }, { actor })
+      await onUpdated?.()
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to mark this referral lost.')
+    } finally {
+      setSavingAction('')
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Operating rhythm</p>
+          <p className="mt-1 text-sm font-semibold text-slate-950">
+            {referral.nextFollowUpAt ? `Next ${formatDate(referral.nextFollowUpAt)}` : 'No follow-up scheduled'}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <StatusPill tone={getReferralPriorityTone(referral.operationalPriority)}>{referral.operationalPriority || 'normal'}</StatusPill>
+          {due ? <StatusPill tone="amber">due</StatusPill> : null}
+          {stale ? <StatusPill tone="red">stale</StatusPill> : null}
+          {referral.lostReason ? <StatusPill tone="red">{referral.lostReason}</StatusPill> : null}
+        </div>
+      </div>
+
+      {!closed ? (
+        <div className="mt-3 grid gap-2 lg:grid-cols-2">
+          <details className="rounded-xl border border-slate-200 bg-slate-50">
+            <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm font-semibold text-slate-700">
+              <span>Follow-up</span>
+              <CalendarDays size={15} />
+            </summary>
+            <form onSubmit={submitFollowUp} className="grid gap-2 border-t border-slate-100 p-3">
+              <div className="grid gap-2 sm:grid-cols-[1fr_140px]">
+                <input
+                  type="date"
+                  value={followUpDraft.nextFollowUpAt}
+                  onChange={(event) => updateFollowUpDraft('nextFollowUpAt', event.target.value)}
+                  className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700"
+                />
+                <select
+                  value={followUpDraft.operationalPriority}
+                  onChange={(event) => updateFollowUpDraft('operationalPriority', event.target.value)}
+                  className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700"
+                >
+                  <option value="low">Low</option>
+                  <option value="normal">Normal</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
+                </select>
+              </div>
+              <input
+                value={followUpDraft.note}
+                onChange={(event) => updateFollowUpDraft('note', event.target.value)}
+                className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:border-blue-300"
+                placeholder="Follow-up note"
+              />
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button type="submit" disabled={savingAction === 'schedule'} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300">
+                  <CalendarDays size={15} />
+                  {savingAction === 'schedule' ? 'Saving...' : 'Schedule'}
+                </button>
+                <button type="button" onClick={completeFollowUp} disabled={savingAction === 'complete'} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
+                  <CheckCircle2 size={15} />
+                  {savingAction === 'complete' ? 'Saving...' : 'Complete'}
+                </button>
+              </div>
+            </form>
+          </details>
+
+          <details className="rounded-xl border border-slate-200 bg-slate-50">
+            <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm font-semibold text-slate-700">
+              <span>Mark lost</span>
+              <AlertTriangle size={15} />
+            </summary>
+            <form onSubmit={submitLost} className="grid gap-2 border-t border-slate-100 p-3">
+              <select
+                value={lostDraft.lostReason}
+                onChange={(event) => updateLostDraft('lostReason', event.target.value)}
+                className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700"
+              >
+                <option value="">Lost reason</option>
+                <option value="no_response">No response</option>
+                <option value="bought_elsewhere">Bought elsewhere</option>
+                <option value="sold_elsewhere">Sold elsewhere</option>
+                <option value="finance_failed">Finance failed</option>
+                <option value="not_ready">Not ready</option>
+                <option value="duplicate">Duplicate</option>
+                <option value="other">Other</option>
+              </select>
+              <input
+                value={lostDraft.note}
+                onChange={(event) => updateLostDraft('note', event.target.value)}
+                className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:border-blue-300"
+                placeholder="Lost note"
+              />
+              <button type="submit" disabled={savingAction === 'lost'} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-rose-600 px-3 text-sm font-semibold text-white hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-slate-300">
+                <AlertTriangle size={15} />
+                {savingAction === 'lost' ? 'Saving...' : 'Mark lost'}
+              </button>
+            </form>
+          </details>
+        </div>
+      ) : null}
+      {referral.lastFollowUpAt ? <p className="mt-2 text-xs font-semibold text-slate-500">Last follow-up {formatDateTime(referral.lastFollowUpAt)}</p> : null}
+      {error ? <p className="mt-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
+    </div>
+  )
+}
+
+function formatReferralPercent(value) {
+  const number = Number(value || 0)
+  if (!Number.isFinite(number)) return '0%'
+  return `${Math.round(number)}%`
+}
+
+function getReferralLostReasonLabel(reason = '') {
+  const normalized = normalizeText(reason).toLowerCase()
+  const labels = {
+    no_response: 'No response',
+    bought_elsewhere: 'Bought elsewhere',
+    sold_elsewhere: 'Sold elsewhere',
+    finance_failed: 'Finance failed',
+    not_ready: 'Not ready',
+    duplicate: 'Duplicate',
+    other: 'Other',
+  }
+  return labels[normalized] || (normalized ? formatCleanValue(normalized) : 'Unspecified')
+}
+
+function addReferralGroupRow(groups, key, base = {}, referral = {}, amount = 0) {
+  const existing = groups.get(key) || {
+    key,
+    name: base.name || 'Unassigned',
+    email: base.email || '',
+    company: base.company || '',
+    total: 0,
+    converted: 0,
+    lost: 0,
+    followUpsDue: 0,
+    stale: 0,
+    revenue: 0,
+    latestAt: '',
+  }
+  existing.total += 1
+  if (isReferralConverted(referral)) existing.converted += 1
+  if (normalizeText(referral.status) === 'lost') existing.lost += 1
+  if (isReferralFollowUpDue(referral)) existing.followUpsDue += 1
+  if (isReferralStale(referral)) existing.stale += 1
+  existing.revenue += Number(amount || 0)
+  if (!existing.latestAt || new Date(referral.createdAt || 0).getTime() > new Date(existing.latestAt || 0).getTime()) {
+    existing.latestAt = referral.createdAt
+  }
+  groups.set(key, existing)
+}
+
+function getReferralAgentRows(referrals = [], organisationId = '', role = 'source') {
+  const groups = new Map()
+  referrals.forEach((referral) => {
+    const sourceWorkspace = normalizeText(referral.sourceOrganisationId) === normalizeText(organisationId)
+    const targetWorkspace = normalizeText(referral.targetOrganisationId) === normalizeText(organisationId)
+    if (role === 'source' && !sourceWorkspace) return
+    if (role === 'target' && !targetWorkspace) return
+    const base = role === 'source'
+      ? {
+          name: normalizeText(referral.sourceAgentName || referral.sourceAgentEmail) || 'Referring agent',
+          email: normalizeText(referral.sourceAgentEmail),
+          company: '',
+        }
+      : {
+          name: normalizeText(referral.targetAgentName || referral.targetAgentEmail) || 'Receiving agent',
+          email: normalizeText(referral.targetAgentEmail),
+          company: normalizeText(referral.targetCompanyName),
+        }
+    const key = `${role}:${normalizeText(base.email || base.name || base.company).toLowerCase()}`
+    addReferralGroupRow(groups, key, base, referral, referral.referralCommissionAmount)
+  })
+  return Array.from(groups.values()).sort((a, b) => {
+    const revenueDelta = Number(b.revenue || 0) - Number(a.revenue || 0)
+    if (revenueDelta) return revenueDelta
+    const convertedDelta = b.converted - a.converted
+    if (convertedDelta) return convertedDelta
+    return b.total - a.total
+  })
+}
+
+function getReferralLostReasonRows(referrals = []) {
+  const groups = new Map()
+  referrals.forEach((referral) => {
+    if (normalizeText(referral.status) !== 'lost') return
+    const key = normalizeText(referral.lostReason) || 'unspecified'
+    const existing = groups.get(key) || { key, label: getReferralLostReasonLabel(key), count: 0 }
+    existing.count += 1
+    groups.set(key, existing)
+  })
+  return Array.from(groups.values()).sort((a, b) => b.count - a.count)
+}
+
+function buildReferralInsightSummary(referrals = [], rows = [], organisationId = '') {
+  const relationships = getReferralRelationshipRows(referrals, organisationId, rows)
+  const partners = getReferralPartnerRows(referrals, organisationId)
+  const conversionDays = relationships
+    .map((item) => getReferralConversionDays(item.referral))
+    .filter((value) => value !== null)
+  const totals = relationships.reduce((accumulator, item) => {
+    const referral = item.referral
+    const amount = Number(referral.referralCommissionAmount || 0)
+    accumulator.total += 1
+    accumulator[item.direction] += 1
+    if (isReferralConverted(referral)) accumulator.converted += 1
+    if (normalizeText(referral.status) === 'lost') accumulator.lost += 1
+    if (isReferralFollowUpDue(referral)) accumulator.followUpsDue += 1
+    if (isReferralStale(referral)) accumulator.stale += 1
+    if (normalizeText(referral.commissionStatus) === 'due') accumulator.commissionDue += amount
+    if (normalizeText(referral.commissionStatus) === 'paid') accumulator.commissionPaid += amount
+    if (item.direction === 'given') accumulator.earned += amount
+    if (item.direction === 'received') accumulator.payable += amount
+    return accumulator
+  }, {
+    total: 0,
+    given: 0,
+    received: 0,
+    converted: 0,
+    lost: 0,
+    followUpsDue: 0,
+    stale: 0,
+    earned: 0,
+    payable: 0,
+    commissionDue: 0,
+    commissionPaid: 0,
+  })
+  totals.conversionRate = totals.total ? (totals.converted / totals.total) * 100 : 0
+  totals.lossRate = totals.total ? (totals.lost / totals.total) * 100 : 0
+  totals.averageConversionDays = conversionDays.length
+    ? Math.round(conversionDays.reduce((sum, value) => sum + value, 0) / conversionDays.length)
+    : null
+  return {
+    relationships,
+    partners,
+    totals,
+    referringAgents: getReferralAgentRows(referrals, organisationId, 'source'),
+    receivingAgents: getReferralAgentRows(referrals, organisationId, 'target'),
+    lostReasons: getReferralLostReasonRows(referrals),
+  }
+}
+
+function escapeCsvValue(value = '') {
+  const text = String(value ?? '')
+  if (!/[",\n]/.test(text)) return text
+  return `"${text.replace(/"/g, '""')}"`
+}
+
+function downloadReferralCsv(summary = {}) {
+  const rows = [
+    [
+      'Direction',
+      'Client',
+      'Lead Type',
+      'Counterparty',
+      'Status',
+      'Agreement',
+      'Commission Status',
+      'Referral Commission',
+      'Next Follow Up',
+      'Lost Reason',
+      'Created',
+      'Converted',
+    ],
+    ...(summary.relationships || []).map((item) => [
+      item.direction,
+      item.clientName,
+      item.referral.sourceLeadType,
+      item.counterparty.name,
+      item.referral.status,
+      item.referral.agreementStatus,
+      item.referral.commissionStatus,
+      item.referral.referralCommissionAmount || '',
+      item.referral.nextFollowUpAt || '',
+      item.referral.lostReason || '',
+      item.referral.createdAt || '',
+      item.referral.convertedAt || '',
+    ]),
+  ]
+  const csv = rows.map((row) => row.map(escapeCsvValue).join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `arch9-referrals-${new Date().toISOString().slice(0, 10)}.csv`
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+function ReferralRankList({ title = '', rows = [], empty = 'No rows yet', valueLabel = 'Revenue' }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
+      <div className="mt-3 grid gap-2">
+        {rows.slice(0, 6).map((row) => {
+          const conversionRate = row.total ? Math.round((row.converted / row.total) * 100) : 0
+          return (
+            <div key={row.key} className="rounded-xl bg-slate-50 px-3 py-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-950">{row.name}</p>
+                  <p className="mt-0.5 truncate text-xs font-medium text-slate-500">{[row.email, row.company].filter(Boolean).join(' | ') || `${row.total} referrals`}</p>
+                </div>
+                <p className="shrink-0 text-sm font-semibold text-slate-950">{formatCurrency(row.revenue || row.commissionEarnedAmount || row.commissionPayableAmount)}</p>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
+                <span>{row.total} total</span>
+                <span>{row.converted} won</span>
+                <span>{conversionRate}% rate</span>
+                {row.followUpsDue ? <span>{row.followUpsDue} due</span> : null}
+              </div>
+            </div>
+          )
+        })}
+        {!rows.length ? <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-500">{empty}</p> : null}
+      </div>
+      {valueLabel ? <p className="mt-3 text-xs font-semibold text-slate-400">{valueLabel}</p> : null}
+    </div>
+  )
+}
+
+function ReferralInsightsPanel({ referrals = [], rows = [], organisationId = '' }) {
+  const summary = useMemo(() => buildReferralInsightSummary(referrals, rows, organisationId), [organisationId, referrals, rows])
+  const topPartners = useMemo(() => [...summary.partners].sort((a, b) => {
+    const amountDelta = Number(b.commissionEarnedAmount + b.commissionPayableAmount) - Number(a.commissionEarnedAmount + a.commissionPayableAmount)
+    if (amountDelta) return amountDelta
+    return b.converted - a.converted
+  }), [summary.partners])
+
+  return (
+    <section className={`${panelClass} overflow-hidden`}>
+      <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-slate-950">Referral Insights</h2>
+            <p className="mt-1 text-sm text-slate-500">Network performance, revenue signal, and operating risk across referral relationships.</p>
+          </div>
+          <button type="button" onClick={() => downloadReferralCsv(summary)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-700">
+            <Download size={15} />
+            Export CSV
+          </button>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <CompactMetric label="Conversion Rate" value={formatReferralPercent(summary.totals.conversionRate)} icon={Target} />
+          <CompactMetric label="Avg Conversion" value={summary.totals.averageConversionDays === null ? '—' : `${summary.totals.averageConversionDays}d`} icon={Clock3} />
+          <CompactMetric label="Earned" value={formatCurrency(summary.totals.earned)} icon={Banknote} />
+          <CompactMetric label="Payable" value={formatCurrency(summary.totals.payable)} icon={CreditCard} />
+        </div>
+      </div>
+
+      <div className="grid gap-4 p-5">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <CompactMetric label="Total" value={summary.totals.total} icon={BarChart3} />
+          <CompactMetric label="Given" value={summary.totals.given} icon={Send} />
+          <CompactMetric label="Received" value={summary.totals.received} icon={Mail} />
+          <CompactMetric label="Follow-ups Due" value={summary.totals.followUpsDue} icon={CalendarDays} />
+          <CompactMetric label="Stale" value={summary.totals.stale} icon={AlertTriangle} />
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-3">
+          <ReferralRankList title="Top Referral Partners" rows={topPartners.map((partner) => ({
+            ...partner,
+            revenue: Number(partner.commissionEarnedAmount || 0) + Number(partner.commissionPayableAmount || 0),
+          }))} empty="No partner performance yet" />
+          <ReferralRankList title="Top Referring Agents" rows={summary.referringAgents} empty="No outbound agent performance yet" />
+          <ReferralRankList title="Top Receiving Agents" rows={summary.receivingAgents} empty="No inbound agent performance yet" />
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-semibold text-slate-950">Lost Reasons</h3>
+            <div className="mt-3 grid gap-2">
+              {summary.lostReasons.map((reason) => (
+                <div key={reason.key} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-sm">
+                  <span className="font-semibold text-slate-700">{reason.label}</span>
+                  <span className="font-semibold text-slate-950">{reason.count}</span>
+                </div>
+              ))}
+              {!summary.lostReasons.length ? <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-500">No lost referral reasons captured yet.</p> : null}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-semibold text-slate-950">Finance Queue</h3>
+            <div className="mt-3 grid gap-2">
+              <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-sm">
+                <span className="font-semibold text-slate-700">Commission due</span>
+                <span className="font-semibold text-slate-950">{formatCurrency(summary.totals.commissionDue)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-sm">
+                <span className="font-semibold text-slate-700">Commission paid</span>
+                <span className="font-semibold text-slate-950">{formatCurrency(summary.totals.commissionPaid)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-sm">
+                <span className="font-semibold text-slate-700">Loss rate</span>
+                <span className="font-semibold text-slate-950">{formatReferralPercent(summary.totals.lossRate)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function ReferralClientsPanel({ referrals = [], rows = [], organisationId = '', actor = null, onUpdated }) {
+  const relationshipRows = useMemo(() => getReferralRelationshipRows(referrals, organisationId, rows), [organisationId, referrals, rows])
+  const metrics = useMemo(() => {
+    return relationshipRows.reduce((accumulator, item) => {
+      const referralCommissionAmount = Number(item.referral.referralCommissionAmount || 0)
+      accumulator.total += 1
+      accumulator[item.direction] += 1
+      if (['accepted', 'contacted', 'working'].includes(item.status)) accumulator.active += 1
+      if (['converted', 'commission_due', 'paid'].includes(item.status)) accumulator.converted += 1
+      if (item.status === 'commission_due') accumulator.commissionDue += 1
+      if (item.status === 'lost') accumulator.lost += 1
+      if (isReferralFollowUpDue(item.referral)) accumulator.followUpsDue += 1
+      if (isReferralStale(item.referral)) accumulator.stale += 1
+      if (item.direction === 'given') accumulator.earned += referralCommissionAmount
+      if (item.direction === 'received') accumulator.payable += referralCommissionAmount
+      if (normalizeText(item.referral.commissionStatus) === 'paid') accumulator.paid += referralCommissionAmount
+      return accumulator
+    }, { total: 0, given: 0, received: 0, active: 0, converted: 0, commissionDue: 0, lost: 0, followUpsDue: 0, stale: 0, earned: 0, payable: 0, paid: 0 })
+  }, [relationshipRows])
+
+  return (
+    <section className={`${panelClass} overflow-hidden`}>
+      <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-slate-950">Referral Clients</h2>
+            <p className="mt-1 text-sm text-slate-500">Every client referred out or received into this workspace.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <StatusPill tone="blue">{metrics.total} clients</StatusPill>
+            <StatusPill tone="green">{metrics.converted} converted</StatusPill>
+            <StatusPill tone="amber">{metrics.commissionDue} commission due</StatusPill>
+            {metrics.followUpsDue ? <StatusPill tone="amber">{metrics.followUpsDue} follow-ups due</StatusPill> : null}
+            {metrics.stale ? <StatusPill tone="red">{metrics.stale} stale</StatusPill> : null}
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <CompactMetric label="Given" value={metrics.given} icon={Send} />
+          <CompactMetric label="Received" value={metrics.received} icon={Mail} />
+          <CompactMetric label="Earned" value={formatCurrency(metrics.earned)} icon={Banknote} />
+          <CompactMetric label="Payable" value={formatCurrency(metrics.payable)} icon={CreditCard} />
+        </div>
+      </div>
+
+      <div className="grid gap-3 p-5">
+        {relationshipRows.map((item) => (
+          <article key={item.referral.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusPill tone={item.direction === 'received' ? 'green' : 'blue'}>{item.direction === 'received' ? 'Received' : 'Given'}</StatusPill>
+                  <StatusPill tone={item.referral.sourceLeadType === 'seller' ? 'amber' : 'blue'}>
+                    {item.referral.sourceLeadType === 'seller' ? 'Seller' : 'Buyer'}
+                  </StatusPill>
+                  <StatusPill tone={getReferralStatusTone(item.status)}>{item.status}</StatusPill>
+                </div>
+                <h3 className="mt-3 text-sm font-semibold text-slate-950">{item.clientName}</h3>
+                {item.contactLine ? <p className="mt-1 text-xs font-medium text-slate-500">{item.contactLine}</p> : null}
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  {item.direction === 'received' ? 'Referred by' : 'Referred to'} {item.counterparty.name}
+                  {item.counterparty.company ? ` at ${item.counterparty.company}` : ''}
+                </p>
+              </div>
+              <div className="grid gap-2 text-sm text-slate-600 xl:min-w-[300px]">
+                <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+                  <span>Agreement</span>
+                  <span className="font-semibold text-slate-950">{item.agreementStatus}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+                  <span>Split</span>
+                  <span className="font-semibold text-slate-950">
+                    {item.referral.commissionSplitPercentage === null || item.referral.commissionSplitPercentage === undefined || item.referral.commissionSplitPercentage === ''
+                      ? 'TBC'
+                      : `${Number(item.referral.commissionSplitPercentage)}%`}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+                  <span>Last update</span>
+                  <span className="font-semibold text-slate-950">{formatDateTime(item.referral.latestEvent?.createdAt || item.referral.updatedAt || item.createdAt, '—')}</span>
+                </div>
+              </div>
+            </div>
+            <ReferralFinanceActions item={item} actor={actor} onUpdated={onUpdated} />
+            <ReferralOperationsActions item={item} actor={actor} onUpdated={onUpdated} />
+          </article>
+        ))}
+        {!relationshipRows.length ? <EmptyState title="No referral clients yet" copy="Clients you refer out or receive will appear here." /> : null}
+      </div>
+    </section>
+  )
+}
+
+function ReferralPartnersPanel({ referrals = [], organisationId = '' }) {
+  const partners = useMemo(() => getReferralPartnerRows(referrals, organisationId), [organisationId, referrals])
+  const totals = useMemo(() => partners.reduce((accumulator, partner) => {
+    accumulator.partners += 1
+    accumulator.referrals += partner.total
+    accumulator.converted += partner.converted
+    accumulator.pendingInvite += partner.pendingInvite
+    accumulator.lost += partner.lost
+    accumulator.followUpsDue += partner.followUpsDue
+    accumulator.stale += partner.stale
+    accumulator.earned += partner.commissionEarnedAmount
+    accumulator.payable += partner.commissionPayableAmount
+    accumulator.paid += partner.commissionPaidAmount
+    return accumulator
+  }, { partners: 0, referrals: 0, converted: 0, pendingInvite: 0, lost: 0, followUpsDue: 0, stale: 0, earned: 0, payable: 0, paid: 0 }), [partners])
+
+  return (
+    <section className={`${panelClass} overflow-hidden`}>
+      <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-slate-950">Referral Partners</h2>
+            <p className="mt-1 text-sm text-slate-500">Partner relationships ranked by referral volume and conversion signal.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <StatusPill tone="blue">{totals.partners} partners</StatusPill>
+            {totals.followUpsDue ? <StatusPill tone="amber">{totals.followUpsDue} follow-ups due</StatusPill> : null}
+            {totals.stale ? <StatusPill tone="red">{totals.stale} stale</StatusPill> : null}
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <CompactMetric label="Relationships" value={totals.partners} icon={UserRound} />
+          <CompactMetric label="Referrals" value={totals.referrals} icon={Send} />
+          <CompactMetric label="Earned" value={formatCurrency(totals.earned)} icon={Banknote} />
+          <CompactMetric label="Payable" value={formatCurrency(totals.payable)} icon={CreditCard} />
+        </div>
+      </div>
+
+      <div className="grid gap-3 p-5">
+        {partners.map((partner) => {
+          const conversionRate = partner.total ? Math.round((partner.converted / partner.total) * 100) : 0
+          return (
+            <article key={partner.key} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusPill tone={partner.direction === 'received' ? 'green' : 'blue'}>{partner.direction === 'received' ? 'Sends to us' : 'Receives from us'}</StatusPill>
+                    {partner.pendingInvite ? <StatusPill tone="amber">{partner.pendingInvite} invites pending</StatusPill> : null}
+                  </div>
+                  <h3 className="mt-3 text-sm font-semibold text-slate-950">{partner.name}</h3>
+                  <p className="mt-1 text-xs font-medium text-slate-500">
+                    {[partner.email, partner.company].filter(Boolean).join(' | ') || 'No partner contact captured'}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-600">Latest referral {formatDateTime(partner.latestAt, '—')}</p>
+                </div>
+                <div className="grid gap-2 text-sm text-slate-600 xl:min-w-[340px]">
+                  <div className="grid grid-cols-4 gap-2">
+                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-center">
+                      <p className="text-xs font-semibold text-slate-400">Total</p>
+                      <p className="mt-1 font-semibold text-slate-950">{partner.total}</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-center">
+                      <p className="text-xs font-semibold text-slate-400">Active</p>
+                      <p className="mt-1 font-semibold text-slate-950">{partner.active}</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-center">
+                      <p className="text-xs font-semibold text-slate-400">Won</p>
+                      <p className="mt-1 font-semibold text-slate-950">{partner.converted}</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-center">
+                      <p className="text-xs font-semibold text-slate-400">Rate</p>
+                      <p className="mt-1 font-semibold text-slate-950">{conversionRate}%</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-center">
+                      <p className="text-xs font-semibold text-slate-400">Due</p>
+                      <p className="mt-1 font-semibold text-slate-950">{partner.followUpsDue}</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-center">
+                      <p className="text-xs font-semibold text-slate-400">Stale</p>
+                      <p className="mt-1 font-semibold text-slate-950">{partner.stale}</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-center">
+                      <p className="text-xs font-semibold text-slate-400">Lost</p>
+                      <p className="mt-1 font-semibold text-slate-950">{partner.lost}</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-center">
+                      <p className="text-xs font-semibold text-slate-400">Avg days</p>
+                      <p className="mt-1 font-semibold text-slate-950">{partner.averageConversionDays ?? '—'}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-center">
+                      <p className="text-xs font-semibold text-slate-400">Earned</p>
+                      <p className="mt-1 font-semibold text-slate-950">{formatCurrency(partner.commissionEarnedAmount)}</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-center">
+                      <p className="text-xs font-semibold text-slate-400">Payable</p>
+                      <p className="mt-1 font-semibold text-slate-950">{formatCurrency(partner.commissionPayableAmount)}</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-center">
+                      <p className="text-xs font-semibold text-slate-400">Paid</p>
+                      <p className="mt-1 font-semibold text-slate-950">{formatCurrency(partner.commissionPaidAmount)}</p>
+                    </div>
+                  </div>
+                  {partner.pendingAgreement ? (
+                    <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                      {partner.pendingAgreement} agreement snapshots pending acceptance
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </article>
+          )
+        })}
+        {!partners.length ? <EmptyState title="No referral partners yet" copy="Referral partner relationships will appear once referrals are sent or received." /> : null}
+      </div>
+    </section>
   )
 }
 
@@ -4579,7 +5904,9 @@ function getBuyerEnquiryPricePoint(lead = {}) {
   return originalPrice || 0
 }
 
-function getPriceBandQuickMatchContext(lead = {}, band = 500000) {
+const BUYER_ENQUIRY_PRICE_MATCH_BAND = 1000000
+
+function getPriceBandQuickMatchContext(lead = {}, band = BUYER_ENQUIRY_PRICE_MATCH_BAND) {
   const pricePoint = getBuyerEnquiryPricePoint(lead)
   if (!pricePoint) {
     return {
@@ -6022,7 +7349,7 @@ function PriceBandQuickMatchPanel({ organisationId, lead, requirements = [], int
           <p className="mt-1 text-sm text-slate-500">{context.description}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {context.mode === 'price_band' ? <StatusPill tone="blue">± R500k</StatusPill> : <StatusPill tone="amber">Latest listings</StatusPill>}
+          {context.mode === 'price_band' ? <StatusPill tone="blue">± R1m</StatusPill> : <StatusPill tone="amber">Latest listings</StatusPill>}
           <StatusPill tone="green">{rows.length} shown</StatusPill>
         </div>
       </div>
@@ -6226,6 +7553,7 @@ function AgentLeadList() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [rows, setRows] = useState([])
+  const [referrals, setReferrals] = useState([])
   const [assignmentMetrics, setAssignmentMetrics] = useState({ unassigned: 0, assigned: 0, overdue: 0, escalated: 0, byAgent: [] })
   const [filters, setFilters] = useState({ search: '', category: 'buyer', stage: 'all', source: 'all', agent: 'all', dateAdded: '' })
   const [createCategory, setCreateCategory] = useState('')
@@ -6238,6 +7566,7 @@ function AgentLeadList() {
   const loadRows = useCallback(async () => {
     if (!organisationId) {
       setRows([])
+      setReferrals([])
       setAssignmentMetrics({ unassigned: 0, assigned: 0, overdue: 0, escalated: 0, byAgent: [] })
       setLoading(false)
       setError('Select an agency workspace before loading leads.')
@@ -6246,11 +7575,18 @@ function AgentLeadList() {
     try {
       setLoading(true)
       setError('')
-      const result = await listAgentLeadWorkspaceRows({ organisationId, actor })
+      const [leadResult, referralResult] = await Promise.allSettled([
+        listAgentLeadWorkspaceRows({ organisationId, actor }),
+        listLeadReferrals({ organisationId }),
+      ])
+      if (leadResult.status === 'rejected') throw leadResult.reason
+      const result = leadResult.value
       setRows(result.rows)
       setAssignmentMetrics(result.assignmentMetrics || { unassigned: 0, assigned: 0, overdue: 0, escalated: 0, byAgent: [] })
+      setReferrals(referralResult.status === 'fulfilled' ? referralResult.value : [])
     } catch (loadError) {
       setRows([])
+      setReferrals([])
       setAssignmentMetrics({ unassigned: 0, assigned: 0, overdue: 0, escalated: 0, byAgent: [] })
       setError(loadError?.message || 'Unable to load leads right now.')
     } finally {
@@ -6263,13 +7599,32 @@ function AgentLeadList() {
   }, [loadRows])
 
   const options = useMemo(() => getLeadFilterOptions(rows), [rows])
+  const referralMode = filters.category === 'referrals_received'
+    ? 'received'
+    : filters.category === 'referrals_given'
+      ? 'given'
+      : filters.category === 'referral_clients'
+        ? 'clients'
+      : filters.category === 'referral_partners'
+        ? 'partners'
+        : filters.category === 'referral_insights'
+          ? 'insights'
+          : ''
+  const referralCounts = useMemo(() => ({
+    given: referrals.filter((referral) => normalizeText(referral.sourceOrganisationId) === normalizeText(organisationId)).length,
+    received: referrals.filter((referral) => normalizeText(referral.targetOrganisationId) === normalizeText(organisationId)).length,
+    clients: getReferralRelationshipRows(referrals, organisationId, rows).length,
+    partners: getReferralPartnerRows(referrals, organisationId).length,
+    insights: getReferralRelationshipRows(referrals, organisationId, rows).length,
+  }), [organisationId, referrals, rows])
   const visibleRows = useMemo(() => {
+    if (referralMode) return []
     const filtered = filterAgentLeadRows(rows, filters)
     if (filters.category === 'archived') return filtered.filter(isArchivedLead)
     const activeRows = filtered.filter((row) => !isArchivedLead(row))
     if (!filters.category || filters.category === 'all') return activeRows
     return activeRows.filter((row) => normalizeLeadCategory(row) === filters.category)
-  }, [rows, filters])
+  }, [referralMode, rows, filters])
   const leadTableColumns = useMemo(() => getLeadTableColumns(filters.category === 'seller' ? 'seller' : 'buyer'), [filters.category])
 
   function openCreateLead(category = 'buyer') {
@@ -6410,7 +7765,7 @@ function AgentLeadList() {
       <section className={`${panelClass} p-4`}>
         <div className="flex flex-col gap-3 border-b border-slate-200 pb-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
-            <LeadTypeTabs activeCategory={filters.category} rows={rows} onChange={setFilters} />
+            <LeadTypeTabs activeCategory={filters.category} rows={rows} referralCounts={referralCounts} onChange={setFilters} />
           </div>
           <div className="grid w-full gap-2 sm:grid-cols-3 xl:w-auto xl:min-w-[620px]">
             <CreateLeadDropdown
@@ -6429,35 +7784,69 @@ function AgentLeadList() {
             </button>
           </div>
         </div>
-        <div className="mt-4 grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(130px,1fr))]">
-          <label className="relative block md:col-span-2 lg:col-span-1">
-            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              value={filters.search}
-              onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))}
-              className="min-h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm font-medium text-slate-800 outline-none focus:border-blue-300"
-              placeholder="Search by name, phone, email..."
-            />
-          </label>
-          <select value={filters.stage} onChange={(event) => setFilters((previous) => ({ ...previous, stage: event.target.value }))} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700">
-            <option value="all">All stages</option>
-            {options.stages.map((option) => <option key={option} value={option}>{option}</option>)}
-          </select>
-          <select value={filters.source} onChange={(event) => setFilters((previous) => ({ ...previous, source: event.target.value }))} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700">
-            <option value="all">All sources</option>
-            {options.sources.map((option) => <option key={option} value={option}>{option}</option>)}
-          </select>
-          <select value={filters.agent} onChange={(event) => setFilters((previous) => ({ ...previous, agent: event.target.value }))} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700">
-            <option value="all">All agents</option>
-            {options.agents.map((option) => <option key={option} value={option}>{option}</option>)}
-          </select>
-          <input type="date" value={filters.dateAdded} onChange={(event) => setFilters((previous) => ({ ...previous, dateAdded: event.target.value }))} className="min-h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700" aria-label="Date added" />
-        </div>
+        {!referralMode ? (
+          <div className="mt-4 grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(130px,1fr))]">
+            <label className="relative block md:col-span-2 lg:col-span-1">
+              <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                value={filters.search}
+                onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))}
+                className="min-h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm font-medium text-slate-800 outline-none focus:border-blue-300"
+                placeholder="Search by name, phone, email..."
+              />
+            </label>
+            <select value={filters.stage} onChange={(event) => setFilters((previous) => ({ ...previous, stage: event.target.value }))} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700">
+              <option value="all">All stages</option>
+              {options.stages.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+            <select value={filters.source} onChange={(event) => setFilters((previous) => ({ ...previous, source: event.target.value }))} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700">
+              <option value="all">All sources</option>
+              {options.sources.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+            <select value={filters.agent} onChange={(event) => setFilters((previous) => ({ ...previous, agent: event.target.value }))} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700">
+              <option value="all">All agents</option>
+              {options.agents.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+            <input type="date" value={filters.dateAdded} onChange={(event) => setFilters((previous) => ({ ...previous, dateAdded: event.target.value }))} className="min-h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700" aria-label="Date added" />
+          </div>
+        ) : null}
       </section>
 
       {loading ? <LoadingSkeleton lines={10} className={panelClass} /> : null}
       {error && !loading ? <EmptyState title="Leads could not be loaded" copy={error} /> : null}
-      {!loading && !error ? (
+      {!loading && !error && (referralMode === 'given' || referralMode === 'received') ? (
+        <ReferralLedgerPanel
+          mode={referralMode}
+          referrals={referrals}
+          rows={rows}
+          organisationId={organisationId}
+          actor={actor}
+          onCreated={loadRows}
+        />
+      ) : null}
+      {!loading && !error && referralMode === 'clients' ? (
+        <ReferralClientsPanel
+          referrals={referrals}
+          rows={rows}
+          organisationId={organisationId}
+          actor={actor}
+          onUpdated={loadRows}
+        />
+      ) : null}
+      {!loading && !error && referralMode === 'partners' ? (
+        <ReferralPartnersPanel
+          referrals={referrals}
+          organisationId={organisationId}
+        />
+      ) : null}
+      {!loading && !error && referralMode === 'insights' ? (
+        <ReferralInsightsPanel
+          referrals={referrals}
+          rows={rows}
+          organisationId={organisationId}
+        />
+      ) : null}
+      {!loading && !error && !referralMode ? (
         <section className={`${panelClass} relative overflow-hidden`}>
           <div className="hidden lg:block overflow-x-auto">
             <table className="w-full table-fixed text-left text-sm">
@@ -12926,6 +14315,12 @@ function SellerLeadActions({
             Schedule Appointment
           </button>
           <div className="my-1 h-px bg-slate-100" />
+          {!sellerOnboardingIsSubmitted(onboardingStatus) ? (
+            <button type="button" onClick={() => closeMenuAndRun(() => onStatusAction?.('agent_onboard_seller'))} className={menuButtonClass} role="menuitem">
+              <UserRound size={15} />
+              Onboard seller as agent
+            </button>
+          ) : null}
           <button type="button" onClick={() => closeMenuAndRun(() => onStatusAction?.('edit_seller'))} className={menuButtonClass} role="menuitem">Edit seller details</button>
           <button type="button" onClick={() => closeMenuAndRun(() => onStatusAction?.('assign_agent'))} className={menuButtonClass} role="menuitem">Assign agent</button>
           {onboardingMeta.disabled ? (
@@ -13889,6 +15284,7 @@ function getSellerSubmittedSectionModels({
   draft = {},
   complexDrafts = {},
   editable = false,
+  showAllEditableFields = false,
   addedFieldKeys = [],
 } = {}) {
   const addedSet = new Set((Array.isArray(addedFieldKeys) ? addedFieldKeys : []).filter(Boolean))
@@ -13897,7 +15293,7 @@ function getSellerSubmittedSectionModels({
   const models = sections.map((section) => {
     const fieldConfigs = (section.keys || []).map((key) => getSellerProfileFieldConfig(key))
     const fields = fieldConfigs
-      .filter((field) => hasValue(data?.[field.key]) || addedSet.has(field.key))
+      .filter((field) => hasValue(data?.[field.key]) || addedSet.has(field.key) || (editable && showAllEditableFields && !field.readOnly))
       .map((field) => ({
         ...field,
         value: editable ? draft?.[field.key] : data?.[field.key],
@@ -13905,7 +15301,9 @@ function getSellerSubmittedSectionModels({
         complexValue: editable ? complexDrafts?.[field.key] : undefined,
         populated: hasValue(data?.[field.key]),
       }))
-    const missingFields = fieldConfigs.filter((field) => !hasValue(data?.[field.key]) && !addedSet.has(field.key) && !field.readOnly)
+    const missingFields = showAllEditableFields
+      ? []
+      : fieldConfigs.filter((field) => !hasValue(data?.[field.key]) && !addedSet.has(field.key) && !field.readOnly)
 
     if (!fields.length && !(editable && missingFields.length)) return null
 
@@ -14297,8 +15695,10 @@ function SellerProfileTab({
   listing = null,
   actor = null,
   sendingOnboarding = false,
+  agentOnboardingSignal = 0,
   onSaved,
   onSendSellerOnboarding,
+  onAgentCompleteSellerOnboarding,
   onResendSellerPortalLink,
   onCopySellerPortalLink,
 }) {
@@ -14315,6 +15715,7 @@ function SellerProfileTab({
   }))
   const [addedFieldKeys, setAddedFieldKeys] = useState([])
   const [isEditingSubmittedDetails, setIsEditingSubmittedDetails] = useState(false)
+  const [agentAssistedMode, setAgentAssistedMode] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -14334,6 +15735,7 @@ function SellerProfileTab({
     setComplexDrafts(createComplexDraftState(nextDraft))
     setAddedFieldKeys([])
     setIsEditingSubmittedDetails(false)
+    setAgentAssistedMode(false)
     setMessage('')
     setError('')
   }, [createComplexDraftState, sourceKey, sourceFormData])
@@ -14346,20 +15748,28 @@ function SellerProfileTab({
     () => getSellerSubmittedSectionDefinitions(requirementProfile, sourceFormData),
     [requirementProfile, sourceFormData],
   )
+  const activeOnboardingSections = useMemo(
+    () => agentAssistedMode && !onboardingSubmitted
+      ? SELLER_PROFILE_SECTION_DEFS.filter((section) => section.id !== 'metadata')
+      : submittedSections,
+    [agentAssistedMode, onboardingSubmitted, submittedSections],
+  )
+  const onboardingEditorActive = isEditingSubmittedDetails || agentAssistedMode
   const submittedSectionModels = useMemo(
     () => getSellerSubmittedSectionModels({
-      sections: submittedSections,
+      sections: activeOnboardingSections,
       data: sourceFormData,
       draft,
       complexDrafts,
-      editable: onboardingSubmitted && isEditingSubmittedDetails,
+      editable: onboardingEditorActive && (onboardingSubmitted || agentAssistedMode),
+      showAllEditableFields: agentAssistedMode,
       addedFieldKeys,
     }),
-    [addedFieldKeys, complexDrafts, draft, onboardingSubmitted, isEditingSubmittedDetails, sourceFormData, submittedSections],
+    [activeOnboardingSections, addedFieldKeys, agentAssistedMode, complexDrafts, draft, onboardingEditorActive, onboardingSubmitted, sourceFormData],
   )
   const capturedSummary = useMemo(
-    () => getSellerCapturedFieldSummary({ sections: submittedSections, data: sourceFormData }),
-    [sourceFormData, submittedSections],
+    () => getSellerCapturedFieldSummary({ sections: activeOnboardingSections, data: sourceFormData }),
+    [activeOnboardingSections, sourceFormData],
   )
   const documentOverview = useMemo(
     () => buildSellerDocumentOverviewModel({ profile: requirementProfile, listing, journey }),
@@ -14405,9 +15815,26 @@ function SellerProfileTab({
   const discardChanges = useCallback(() => {
     syncDraftToSource()
     setIsEditingSubmittedDetails(false)
+    setAgentAssistedMode(false)
     setMessage('')
     setError('')
   }, [syncDraftToSource])
+
+  const beginAgentAssistedOnboarding = useCallback(() => {
+    setAgentAssistedMode(true)
+    setIsEditingSubmittedDetails(true)
+    setMessage('')
+    setError('')
+    if (typeof document === 'undefined') return
+    window.setTimeout(() => {
+      document.getElementById('seller-onboarding-editor')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+    }, 50)
+  }, [])
+
+  useEffect(() => {
+    if (!agentOnboardingSignal) return
+    beginAgentAssistedOnboarding()
+  }, [agentOnboardingSignal, beginAgentAssistedOnboarding])
 
   const viewSubmittedOnboarding = useCallback(() => {
     setIsEditingSubmittedDetails(false)
@@ -14543,17 +15970,110 @@ function SellerProfileTab({
     sourceFormData,
   ])
 
+  const completeAgentAssistedOnboarding = useCallback(async () => {
+    const listingId = getSellerListingId(row, listing || journey?.listing || null)
+    if (!listingId && !onAgentCompleteSellerOnboarding) {
+      setError('Link a seller listing before completing seller onboarding.')
+      return
+    }
+
+    try {
+      setSaving(true)
+      setError('')
+      setMessage('')
+
+      const { nextDraft, changedFields } = buildSellerOnboardingSubmissionPatch({
+        sourceData: sourceFormData,
+        draft,
+        complexDrafts,
+        addedFieldKeys,
+      })
+      const completedFormData = {
+        ...sourceFormData,
+        ...nextDraft,
+        currentStep: 4,
+        agentAssistedOnboarding: true,
+        agentAssistedBy: actor?.id || actor?.userId || '',
+        agentAssistedByName: actor?.fullName || actor?.name || actor?.email || 'Agent',
+        agentAssistedAt: new Date().toISOString(),
+      }
+
+      await onAgentCompleteSellerOnboarding?.(completedFormData, {
+        changedFields,
+        listingId,
+      })
+
+      setDraft(completedFormData)
+      setComplexDrafts(createComplexDraftState(completedFormData))
+      setAddedFieldKeys([])
+      setAgentAssistedMode(false)
+      setIsEditingSubmittedDetails(false)
+      setMessage('Seller onboarding completed by agent.')
+      await onSaved?.()
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to complete seller onboarding.')
+    } finally {
+      setSaving(false)
+    }
+  }, [
+    actor?.email,
+    actor?.fullName,
+    actor?.id,
+    actor?.name,
+    actor?.userId,
+    addedFieldKeys,
+    complexDrafts,
+    createComplexDraftState,
+    draft,
+    journey?.listing,
+    listing,
+    onAgentCompleteSellerOnboarding,
+    onSaved,
+    row,
+    sourceFormData,
+  ])
+
   const snapshotAction = (() => {
+    if (agentAssistedMode) {
+      return (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={discardChanges}
+            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={completeAgentAssistedOnboarding}
+            disabled={saving}
+            className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            {saving ? 'Saving...' : 'Complete onboarding'}
+          </button>
+        </div>
+      )
+    }
     if (onboardingState === 'not_sent') {
       return (
-        <button
-          type="button"
-          onClick={onSendSellerOnboarding}
-          className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-          disabled={!onSendSellerOnboarding || sendingOnboarding}
-        >
-          {sendingOnboarding ? 'Sending seller onboarding...' : 'Send seller onboarding'}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={beginAgentAssistedOnboarding}
+            className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800"
+          >
+            Onboard seller as agent
+          </button>
+          <button
+            type="button"
+            onClick={onSendSellerOnboarding}
+            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={!onSendSellerOnboarding || sendingOnboarding}
+          >
+            {sendingOnboarding ? 'Sending...' : 'Send link'}
+          </button>
+        </div>
       )
     }
     if (onboardingState === 'sent') {
@@ -14561,11 +16081,18 @@ function SellerProfileTab({
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
+            onClick={beginAgentAssistedOnboarding}
+            className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800"
+          >
+            Complete as agent
+          </button>
+          <button
+            type="button"
             onClick={onResendSellerPortalLink}
-            className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
             disabled={!onResendSellerPortalLink || !portalLink}
           >
-            Resend seller portal link
+            Resend link
           </button>
           <button
             type="button"
@@ -14692,7 +16219,25 @@ function SellerProfileTab({
         action={(
           <div className="flex flex-wrap items-center justify-end gap-2">
             <StatusPill tone={snapshotStatusTone}>{progressMeta.label}</StatusPill>
-            {onboardingState === 'not_sent' ? (
+            {agentAssistedMode ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={discardChanges}
+                  className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={completeAgentAssistedOnboarding}
+                  disabled={saving}
+                  className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  {saving ? 'Saving...' : 'Complete onboarding'}
+                </button>
+              </div>
+            ) : onboardingState === 'not_sent' ? (
               <button
                 type="button"
                 onClick={onSendSellerOnboarding}
@@ -14705,11 +16250,18 @@ function SellerProfileTab({
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
+                  onClick={beginAgentAssistedOnboarding}
+                  className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800"
+                >
+                  Complete as agent
+                </button>
+                <button
+                  type="button"
                   onClick={onResendSellerPortalLink}
-                  className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={!onResendSellerPortalLink || !portalLink}
                 >
-                  Resend seller portal link
+                  Resend link
                 </button>
                 <button
                   type="button"
@@ -14731,11 +16283,11 @@ function SellerProfileTab({
                 </button>
                 <button
                   type="button"
-                  onClick={saveOverrides}
+                  onClick={agentAssistedMode ? completeAgentAssistedOnboarding : saveOverrides}
                   disabled={saving}
                   className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
-                  {saving ? 'Saving...' : 'Save overrides'}
+                  {saving ? 'Saving...' : agentAssistedMode ? 'Complete onboarding' : 'Save overrides'}
                 </button>
               </div>
             ) : (
@@ -14753,17 +16305,42 @@ function SellerProfileTab({
         {message ? <p className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{message}</p> : null}
         {error ? <p className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{error}</p> : null}
 
-        {onboardingState === 'not_sent' ? (
+        {agentAssistedMode ? (
+          <>
+            <div className="rounded-3xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+              Complete the seller onboarding on behalf of the seller. This uses the same onboarding record and will mark seller onboarding as completed once saved.
+            </div>
+            <div className="mt-4 grid gap-4 lg:grid-cols-2">
+              {submittedSectionModels.map((section) => (
+                <SellerSubmittedSectionCard
+                  key={section.id}
+                  section={section}
+                  editable
+                  onChange={updateField}
+                  onComplexChange={updateComplexField}
+                  onAddField={addMissingField}
+                />
+              ))}
+            </div>
+          </>
+        ) : onboardingState === 'not_sent' ? (
           <div className="rounded-3xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-5">
             <p className="text-sm font-semibold text-slate-950">Onboarding not sent</p>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Send the onboarding form to collect seller and authority details.
+              Send the onboarding form to the seller, or capture it here if the agent is completing it for them.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <button
                 type="button"
+                onClick={beginAgentAssistedOnboarding}
+                className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800"
+              >
+                Onboard seller as agent
+              </button>
+              <button
+                type="button"
                 onClick={onSendSellerOnboarding}
-                className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={!onSendSellerOnboarding || sendingOnboarding}
               >
                 {sendingOnboarding ? 'Sending seller onboarding...' : 'Send seller onboarding'}
@@ -14781,7 +16358,7 @@ function SellerProfileTab({
           <div className="rounded-3xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-5">
             <p className="text-sm font-semibold text-slate-950">Seller onboarding sent</p>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Waiting for the seller to complete the form.
+              Waiting for the seller to complete the form. If they will not complete it, the agent can capture it here.
             </p>
             <div className="mt-4 grid gap-2 text-sm text-slate-600">
               <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2">
@@ -14796,8 +16373,15 @@ function SellerProfileTab({
             <div className="mt-5 flex flex-wrap gap-2">
               <button
                 type="button"
+                onClick={beginAgentAssistedOnboarding}
+                className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800"
+              >
+                Complete as agent
+              </button>
+              <button
+                type="button"
                 onClick={onResendSellerPortalLink}
-                className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={!onResendSellerPortalLink || !portalLink}
               >
                 Resend seller portal link
@@ -15578,10 +17162,12 @@ function SellerTabContent({
   commissionSummary,
   savingCommission,
   sendingSellerOnboarding,
+  agentOnboardingSignal = 0,
   onCommissionDraftChange,
   onSaveCommission,
   onSaved,
   onSendSellerOnboarding,
+  onAgentCompleteSellerOnboarding,
   onResendSellerPortalLink,
   onCopySellerPortalLink,
   onTabChange,
@@ -15597,8 +17183,10 @@ function SellerTabContent({
         listing={listing}
         actor={actor}
         sendingOnboarding={sendingSellerOnboarding}
+        agentOnboardingSignal={agentOnboardingSignal}
         onSaved={onSaved}
         onSendSellerOnboarding={onSendSellerOnboarding}
+        onAgentCompleteSellerOnboarding={onAgentCompleteSellerOnboarding}
         onResendSellerPortalLink={onResendSellerPortalLink}
         onCopySellerPortalLink={onCopySellerPortalLink}
       />
@@ -15856,6 +17444,7 @@ function SellerLeadWorkspaceLayout({
   onSaved,
   onSaveCommission,
   onSendSellerOnboarding,
+  onAgentCompleteSellerOnboarding,
   onResendSellerPortalLink,
   onOpenSellerPortalLink,
   onGenerateMandate,
@@ -15867,6 +17456,7 @@ function SellerLeadWorkspaceLayout({
 }) {
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState('overview')
   const [appointmentComposerSignal, setAppointmentComposerSignal] = useState(0)
+  const [agentOnboardingSignal, setAgentOnboardingSignal] = useState(0)
   const commissionSummary = useMemo(() => getSellerCommissionWorkspace(row, linkedSellerListing), [linkedSellerListing, row])
   const [commissionDraft, setCommissionDraft] = useState(() => buildSellerCommissionDraft(commissionSummary))
   useEffect(() => {
@@ -15897,6 +17487,11 @@ function SellerLeadWorkspaceLayout({
     else if (['schedule_appointment', 'open_appointments'].includes(key)) openAppointmentComposer()
     else if (['contact_seller', 'open_timeline'].includes(key)) setActiveWorkspaceTab('activity')
     else if (['capture_property_address'].includes(key)) setActiveWorkspaceTab('property')
+    else if (key === 'agent_onboard_seller') {
+      setActiveWorkspaceTab('seller')
+      setAgentOnboardingSignal((value) => value + 1)
+      focusSellerWorkspaceSection('seller-onboarding-editor')
+    }
     else if (key === 'edit_seller') {
       setActiveWorkspaceTab('seller')
       focusSellerWorkspaceSection('seller-onboarding-editor')
@@ -15960,10 +17555,12 @@ function SellerLeadWorkspaceLayout({
         commissionSummary={commissionSummary}
         savingCommission={savingCommission}
         sendingSellerOnboarding={sendingSellerOnboarding}
+        agentOnboardingSignal={agentOnboardingSignal}
         onCommissionDraftChange={updateCommissionDraft}
         onSaveCommission={onSaveCommission}
         onSaved={onSaved}
         onSendSellerOnboarding={onSendSellerOnboarding}
+        onAgentCompleteSellerOnboarding={onAgentCompleteSellerOnboarding}
         onResendSellerPortalLink={onResendSellerPortalLink}
         onCopySellerPortalLink={onCopySellerPortalLink}
         onTabChange={setActiveWorkspaceTab}
@@ -16396,6 +17993,117 @@ function AgentLeadWorkspace() {
     }
   }, [actor, isSellerLeadWorkspace, linkedSellerListing, loadWorkspace, organisationId, row, sendingSellerOnboarding, workspaceName])
 
+  const completeSellerOnboardingAsAgent = useCallback(async (formData = {}, meta = {}) => {
+    if (!row || !isSellerLeadWorkspace) return
+    if (!organisationId) {
+      throw new Error('Select an agency workspace before completing seller onboarding.')
+    }
+
+    let listingId = normalizeText(meta?.listingId || linkedSellerListing?.id || row.listingId || row.listing_id)
+    let sellerListingForSubmit = linkedSellerListing
+    if (!listingId) {
+      const created = await createPrivateListing({
+        organisationId,
+        assignedAgentId: normalizeText(row.assignedAgentId || actor.id),
+        sellerLeadId: normalizeText(row.leadId),
+        originatingCrmLeadId: normalizeText(row.leadId),
+        listingStatus: 'seller_lead',
+        sellerOnboardingStatus: 'in_progress',
+        mandateStatus: 'not_started',
+        listingVisibility: 'internal',
+        title: normalizeText(row.propertyInterest || row.property_interest || row.sellerPropertyAddress || row.seller_property_address),
+        propertyType: normalizeText(row.propertyType || row.property_type) || 'House',
+        listingCategory: 'private_sale',
+        askingPrice: Number(row.estimatedValue || row.estimated_value || row.budget || formData.askingPrice || 0) || 0,
+        estimatedValue: Number(row.estimatedValue || row.estimated_value || row.budget || formData.askingPrice || 0) || 0,
+        addressLine1: normalizeText(row.sellerPropertyAddress || row.seller_property_address || row.areaInterest || row.area_interest || formData.propertyAddressLine1),
+        suburb: normalizeText(row.areaInterest || row.area_interest || formData.suburb),
+        description: normalizeText(row.notes),
+        source: 'lead_workspace_agent_assisted_seller_onboarding',
+      }, {
+        includeRequirementsAndDocuments: false,
+        syncRequirements: false,
+      })
+      listingId = normalizeText(created?.listing?.id)
+      sellerListingForSubmit = created?.listing || sellerListingForSubmit
+    }
+    if (!listingId) throw new Error('Create or link a seller listing before completing seller onboarding.')
+
+    let token = getSellerOnboardingToken(row, sellerListingForSubmit || linkedSellerListing)
+    let portalLink = getSellerPortalLink(row, sellerListingForSubmit || linkedSellerListing)
+    if (!token) {
+      const onboarding = await sendSellerOnboarding(listingId, {
+        sellerContactEmail: normalizeText(row.email || row.contact?.email || formData.email),
+        sellerContactPhone: normalizeText(row.phone || row.contact?.phone || formData.phone),
+        includePortalBranding: false,
+        deferStatusTransition: true,
+        performedBy: normalizeText(actor.userId || actor.id),
+      })
+      token = normalizeText(onboarding?.token)
+      portalLink = normalizeText(onboarding?.link)
+    }
+    if (!token) throw new Error('Could not create the seller onboarding record.')
+
+    const completedFormData = {
+      ...(formData && typeof formData === 'object' ? formData : {}),
+      currentStep: 4,
+      agentAssistedOnboarding: true,
+      agentAssistedBy: normalizeText(actor.userId || actor.id),
+      agentAssistedByName: normalizeText(actor.fullName || actor.name || actor.email) || 'Agent',
+      agentAssistedAt: new Date().toISOString(),
+    }
+
+    const submitted = await submitSellerOnboarding(token, {
+      formData: completedFormData,
+      sellerType: completedFormData.sellerType || completedFormData.ownershipType,
+      ownershipStructure: completedFormData.ownershipType || completedFormData.ownershipStructure,
+      maritalRegime: completedFormData.maritalRegime || completedFormData.maritalStatus,
+    })
+    const submittedListing = submitted?.listing || sellerListingForSubmit || linkedSellerListing
+    const submittedPortalLink = portalLink || getSellerPortalLink(row, submittedListing)
+    const leadPatch = {
+      stage: 'Seller Onboarding Submitted',
+      status: 'Submitted',
+      sellerOnboardingToken: token,
+      sellerOnboardingLink: submittedPortalLink,
+      sellerOnboardingStatus: 'completed',
+      listingId,
+    }
+
+    setData((previous) => {
+      if (!previous?.row) return previous
+      return {
+        ...previous,
+        row: {
+          ...previous.row,
+          ...leadPatch,
+        },
+      }
+    })
+
+    await updateAgencyCrmLeadRecord(organisationId, row.leadId, leadPatch).catch((syncError) => {
+      console.warn('[AgentLeadsPage] Agent-assisted seller onboarding lead sync failed.', syncError)
+      return null
+    })
+    await createAgencyCrmLeadActivity(organisationId, row.leadId, {
+      agent: { id: actor.id, name: actor.fullName || actor.name, email: actor.email },
+      activityType: 'Seller Onboarding Completed By Agent',
+      activityNote: `Seller onboarding was completed by ${actor.fullName || actor.name || 'the agent'} on behalf of ${row.name || 'Seller'}.`,
+      outcome: 'Agent-assisted onboarding completed',
+      activityDate: new Date().toISOString(),
+      metadata: {
+        listingId,
+        onboardingToken: token,
+        changedFields: meta?.changedFields || [],
+      },
+    }, { actor }).catch((activityError) => {
+      console.warn('[AgentLeadsPage] Agent-assisted seller onboarding activity sync failed.', activityError)
+      return null
+    })
+    await loadWorkspace({ silent: true })
+    return submitted
+  }, [actor, isSellerLeadWorkspace, linkedSellerListing, loadWorkspace, organisationId, row])
+
   const resendSellerPortalLink = useCallback(async () => {
     if (!row || !isSellerLeadWorkspace || sendingSellerPortalLink) return
     if (!organisationId) {
@@ -16745,6 +18453,7 @@ function AgentLeadWorkspace() {
               onSaved={loadWorkspace}
               onSaveCommission={saveSellerCommissionForLead}
               onSendSellerOnboarding={sendSellerOnboardingForLead}
+              onAgentCompleteSellerOnboarding={completeSellerOnboardingAsAgent}
               onResendSellerPortalLink={resendSellerPortalLink}
               onOpenSellerPortalLink={openSellerPortalLink}
               onGenerateMandate={openMandateWorkspace}

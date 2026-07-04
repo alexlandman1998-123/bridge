@@ -167,6 +167,7 @@ const NewTransactionWizard = lazy(() => import('./components/NewTransactionWizar
 const Sidebar = lazy(() => import('./components/Sidebar'))
 
 const InviteResolver = lazy(() => import('./pages/InviteResolver'))
+const ReferralInvitePage = lazy(() => import('./pages/ReferralInvitePage'))
 const AgentIntelligenceMarketPage = lazy(() => import('./pages/agent-intelligence/MarketPage'))
 const AgentIntelligenceNetworkPage = lazy(() => import('./pages/agent-intelligence/NetworkPage'))
 const AgentIntelligenceOpportunitiesPage = lazy(() => import('./pages/agent-intelligence/OpportunitiesPage'))
@@ -757,7 +758,8 @@ function isSetupPath(pathname = '') {
     pathname.startsWith('/onboarding') ||
     pathname.startsWith('/attorney/onboarding') ||
     pathname.startsWith('/invite/') ||
-    pathname.startsWith('/agent/invite/')
+    pathname.startsWith('/agent/invite/') ||
+    pathname.startsWith('/referrals/invite/')
   )
 }
 
@@ -1018,7 +1020,8 @@ function RoleRoute({ allowedRoles, requiredPermission = '', requiredWorkspaceTyp
     location.pathname.startsWith('/onboarding') ||
     location.pathname.startsWith('/attorney/onboarding') ||
     location.pathname.startsWith('/invite/') ||
-    location.pathname.startsWith('/agent/invite/')
+    location.pathname.startsWith('/agent/invite/') ||
+    location.pathname.startsWith('/referrals/invite/')
 
   if (!canAccessWithoutMembership && !activeMemberships.length && onboardingRequiredReason) {
     return <Navigate to="/setup" replace state={{ from: location }} />
@@ -1256,8 +1259,8 @@ function MobileProtectedLayout({ onLogout, session }) {
 
 function MobilePublicPortalShell({ children }) {
   return (
-    <div className="min-h-screen bg-[#f6f8fb] text-[#10243a]">
-      <main className="mx-auto w-full max-w-[520px] px-4 py-4">
+    <div className="min-h-[100dvh] overflow-x-hidden bg-[#eef2f0] text-[#101820] antialiased">
+      <main className="mx-auto min-h-[100dvh] w-full max-w-[520px] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))]">
         {children}
       </main>
     </div>
@@ -1402,6 +1405,7 @@ function AppRoutes() {
           <Route path="/arch9-launch" element={<Arch9LaunchConcierge />} />
           <Route path="/launch/arch9" element={<Arch9LaunchConcierge />} />
           <Route path="/qr/arch9" element={<Arch9LaunchConcierge />} />
+          <Route path="/referrals/invite/:token" element={<AppErrorBoundary scope="referral-invite" title="Referral invite failed to load"><ReferralInvitePage /></AppErrorBoundary>} />
           <Route element={<MobileExecutiveLayout />}>
             <Route path="/m/developments" element={<MobileDevelopmentsPage />} />
             <Route path="/m/developments/:developmentId" element={<MobileDevelopmentDetailPage />} />

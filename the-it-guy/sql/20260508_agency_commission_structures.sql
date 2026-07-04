@@ -4,8 +4,12 @@ create table if not exists public.organisation_commission_structures (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid not null references public.organisations(id) on delete cascade,
   name text not null,
+  listing_commission_type text not null default 'percentage' check (listing_commission_type in ('percentage', 'fixed')),
+  listing_commission_percentage numeric(6,3) check (listing_commission_percentage is null or (listing_commission_percentage >= 0 and listing_commission_percentage <= 100)),
+  listing_commission_amount numeric(14,2) check (listing_commission_amount is null or listing_commission_amount >= 0),
   agent_split_percentage numeric(6,3) not null check (agent_split_percentage >= 0 and agent_split_percentage <= 100),
   agency_split_percentage numeric(6,3) not null check (agency_split_percentage >= 0 and agency_split_percentage <= 100),
+  allow_sales_commission_override boolean not null default true,
   is_default boolean not null default false,
   is_active boolean not null default true,
   notes text,
@@ -15,6 +19,12 @@ create table if not exists public.organisation_commission_structures (
   constraint organisation_commission_structures_split_total_check
     check (round((agent_split_percentage + agency_split_percentage)::numeric, 3) = 100.000)
 );
+
+alter table if exists public.organisation_commission_structures
+  add column if not exists listing_commission_type text not null default 'percentage',
+  add column if not exists listing_commission_percentage numeric(6,3),
+  add column if not exists listing_commission_amount numeric(14,2),
+  add column if not exists allow_sales_commission_override boolean not null default true;
 
 create index if not exists organisation_commission_structures_org_idx
   on public.organisation_commission_structures (organisation_id, is_active, is_default);

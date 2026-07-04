@@ -1107,6 +1107,18 @@ function normalizePercentage(value, fallback = 0) {
   return Number(clamped.toFixed(2))
 }
 
+function normalizeCommissionValueType(value, fallback = 'percentage') {
+  const normalized = normalizeText(value || fallback).toLowerCase()
+  return normalized === 'fixed' ? 'fixed' : 'percentage'
+}
+
+function normalizeOptionalPositiveAmount(value, fallback = null) {
+  if (value === null || value === undefined || value === '') return fallback
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return fallback
+  return Number(Math.max(0, numeric).toFixed(2))
+}
+
 function createLocalCommissionStructureId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
@@ -1127,12 +1139,37 @@ function normalizeCommissionStructureRecord(input = {}, fallback = {}) {
   const preferredAgentSplit = input.agentSplitPercentage ?? fallback.agentSplitPercentage ?? 60
   const agentSplitPercentage = normalizePercentage(preferredAgentSplit, 60)
   const agencySplitPercentage = normalizePercentage(100 - agentSplitPercentage, 40)
+  const listingCommissionType = normalizeCommissionValueType(
+    input.listingCommissionType ?? input.listing_commission_type ?? fallback.listingCommissionType ?? fallback.listing_commission_type,
+    'percentage',
+  )
+  const listingCommissionPercentage = normalizePercentage(
+    input.listingCommissionPercentage ?? input.listing_commission_percentage ?? fallback.listingCommissionPercentage ?? fallback.listing_commission_percentage,
+    7.5,
+  )
+  const listingCommissionAmount = normalizeOptionalPositiveAmount(
+    input.listingCommissionAmount ?? input.listing_commission_amount ?? fallback.listingCommissionAmount ?? fallback.listing_commission_amount,
+    null,
+  )
 
   return {
     id,
     name,
+    listingCommissionType,
+    listingCommissionPercentage,
+    listingCommissionAmount,
     agentSplitPercentage,
     agencySplitPercentage,
+    allowSalesCommissionOverride:
+      typeof input.allowSalesCommissionOverride === 'boolean'
+        ? input.allowSalesCommissionOverride
+        : typeof input.allow_sales_commission_override === 'boolean'
+          ? input.allow_sales_commission_override
+          : typeof fallback.allowSalesCommissionOverride === 'boolean'
+            ? fallback.allowSalesCommissionOverride
+            : typeof fallback.allow_sales_commission_override === 'boolean'
+              ? fallback.allow_sales_commission_override
+              : true,
     isDefault:
       typeof input.isDefault === 'boolean'
         ? input.isDefault
@@ -1156,7 +1193,11 @@ function normalizeCommissionStructureRow(row = {}) {
   return normalizeCommissionStructureRecord({
     id: row.id,
     name: row.name,
+    listingCommissionType: row.listing_commission_type,
+    listingCommissionPercentage: row.listing_commission_percentage,
+    listingCommissionAmount: row.listing_commission_amount,
     agentSplitPercentage: row.agent_split_percentage,
+    allowSalesCommissionOverride: row.allow_sales_commission_override,
     isDefault: row.is_default,
     isActive: row.is_active,
     notes: row.notes,
@@ -1171,8 +1212,12 @@ function mapCommissionStructureToRow(structure = {}, organisationId = '', actorU
     id: looksLikeUuid(normalized.id) ? normalized.id : undefined,
     organisation_id: organisationId || null,
     name: normalizeNullableText(normalized.name),
+    listing_commission_type: normalizeNullableText(normalized.listingCommissionType),
+    listing_commission_percentage: normalizePercentage(normalized.listingCommissionPercentage, 7.5),
+    listing_commission_amount: normalized.listingCommissionAmount,
     agent_split_percentage: normalizePercentage(normalized.agentSplitPercentage, 60),
     agency_split_percentage: normalizePercentage(normalized.agencySplitPercentage, 40),
+    allow_sales_commission_override: Boolean(normalized.allowSalesCommissionOverride),
     is_default: Boolean(normalized.isDefault),
     is_active: Boolean(normalized.isActive),
     notes: normalizeNullableText(normalized.notes),
@@ -4355,7 +4400,7 @@ export async function listOrganisationCommissionStructures() {
 
   const baseQuery = await client
     .from('organisation_commission_structures')
-    .select('id, name, agent_split_percentage, agency_split_percentage, is_default, is_active, notes, created_at, updated_at')
+    .select('id, name, listing_commission_type, listing_commission_percentage, listing_commission_amount, agent_split_percentage, agency_split_percentage, allow_sales_commission_override, is_default, is_active, notes, created_at, updated_at')
     .eq('organisation_id', context.organisation.id)
     .order('name', { ascending: true })
 
@@ -4363,8 +4408,47 @@ export async function listOrganisationCommissionStructures() {
   if (!baseQuery.error) {
     structures = (baseQuery.data || []).map((row) => normalizeCommissionStructureRow(row))
   } else if (
+    isMissingColumnError(baseQuery.error, 'listing_commission_type') ||
+    isMissingColumnError(baseQuery.error, 'allow_sales_commission_override')
+  ) {
+    const legacyQuery = await client
+      .from('organisation_commission_structures')
+      .select('id, name, agent_split_percentage, agency_split_percentage, is_default, is_active, notes, created_at, updated_at')
+      .eq('organisation_id', context.organisation.id)
+      .order('name', { ascending: true })
+
+    if (!legacyQuery.error) {
+      const settingsStructureMap = new Map(
+        readCommissionStructuresFromSettings(context.organisationSettings).map((item) => [normalizeText(item.id), item]),
+      )
+      structures = (legacyQuery.data || []).map((row) =>
+        normalizeCommissionStructureRecord(
+          {
+            id: row.id,
+            name: row.name,
+            agentSplitPercentage: row.agent_split_percentage,
+            isDefault: row.is_default,
+            isActive: row.is_active,
+            notes: row.notes,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+          },
+          settingsStructureMap.get(normalizeText(row.id)) || {},
+        ),
+      )
+    } else if (
+      !isMissingTableError(legacyQuery.error, 'organisation_commission_structures') &&
+      !isMissingColumnError(legacyQuery.error, 'agent_split_percentage')
+    ) {
+      throw legacyQuery.error
+    } else {
+      structures = readCommissionStructuresFromSettings(context.organisationSettings)
+    }
+  } else if (
     !isMissingTableError(baseQuery.error, 'organisation_commission_structures') &&
-    !isMissingColumnError(baseQuery.error, 'agent_split_percentage')
+    !isMissingColumnError(baseQuery.error, 'agent_split_percentage') &&
+    !isMissingColumnError(baseQuery.error, 'listing_commission_type') &&
+    !isMissingColumnError(baseQuery.error, 'allow_sales_commission_override')
   ) {
     throw baseQuery.error
   } else {
@@ -4449,7 +4533,7 @@ export async function saveOrganisationCommissionStructure(input = {}) {
   const saveResult = await client
     .from('organisation_commission_structures')
     .upsert(payload, { onConflict: 'id' })
-    .select('id, name, agent_split_percentage, agency_split_percentage, is_default, is_active, notes, created_at, updated_at')
+    .select('id, name, listing_commission_type, listing_commission_percentage, listing_commission_amount, agent_split_percentage, agency_split_percentage, allow_sales_commission_override, is_default, is_active, notes, created_at, updated_at')
     .single()
 
   if (!saveResult.error) {
@@ -4459,6 +4543,8 @@ export async function saveOrganisationCommissionStructure(input = {}) {
   if (
     !isMissingTableError(saveResult.error, 'organisation_commission_structures') &&
     !isMissingColumnError(saveResult.error, 'agent_split_percentage') &&
+    !isMissingColumnError(saveResult.error, 'listing_commission_type') &&
+    !isMissingColumnError(saveResult.error, 'allow_sales_commission_override') &&
     !isOnConflictConstraintError(saveResult.error, 'id')
   ) {
     throw saveResult.error
@@ -4701,19 +4787,23 @@ export async function resolveCommissionSnapshotForAgent({
   assignedAgentEmail = '',
   salePrice = 0,
   grossCommissionPercentage = 0,
+  overrideAgentSplitPercentage = null,
 } = {}) {
+  const explicitAgentSplitOverride = Number.isFinite(Number(overrideAgentSplitPercentage))
+    ? normalizePercentage(overrideAgentSplitPercentage, 70)
+    : null
   const buildFallbackSnapshot = () => {
     const fallback = resolveCommissionCalculation({
       salePrice,
       grossCommissionPercentage,
-      agentSplitPercentage: 70,
+      agentSplitPercentage: explicitAgentSplitOverride ?? 70,
     })
     return {
       ...fallback,
       organisationId: null,
       commissionStructureId: null,
       commissionStructureName: '',
-      overrideAgentSplitPercentage: null,
+      overrideAgentSplitPercentage: explicitAgentSplitOverride,
       isFallback: true,
     }
   }
@@ -4753,11 +4843,15 @@ export async function resolveCommissionSnapshotForAgent({
       structure = structures.find((item) => item.isActive) || null
     }
 
-    const fallbackAgentSplit = Number.isFinite(Number(targetProfile?.overrideAgentSplitPercentage))
+    const baseAgentSplit = Number.isFinite(Number(targetProfile?.overrideAgentSplitPercentage))
       ? normalizePercentage(targetProfile.overrideAgentSplitPercentage, 70)
       : structure
         ? normalizePercentage(structure.agentSplitPercentage, 70)
         : 70
+    const structureAllowsOverride = structure?.allowSalesCommissionOverride !== false
+    const fallbackAgentSplit = explicitAgentSplitOverride !== null && structureAllowsOverride
+      ? explicitAgentSplitOverride
+      : baseAgentSplit
 
     const calculation = resolveCommissionCalculation({
       salePrice,
@@ -4770,7 +4864,8 @@ export async function resolveCommissionSnapshotForAgent({
       organisationId: context.organisation.id,
       commissionStructureId: normalizeText(structure?.id),
       commissionStructureName: normalizeText(structure?.name),
-      overrideAgentSplitPercentage: targetProfile?.overrideAgentSplitPercentage ?? null,
+      overrideAgentSplitPercentage: explicitAgentSplitOverride ?? targetProfile?.overrideAgentSplitPercentage ?? null,
+      allowSalesCommissionOverride: structureAllowsOverride,
       isFallback: !structure,
     }
   } catch {

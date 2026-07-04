@@ -1,7 +1,4 @@
 import {
-  AlignCenter,
-  AlignLeft,
-  AlignRight,
   AlertTriangle,
   Bold,
   Check,
@@ -15,14 +12,9 @@ import {
   FileText,
   FlaskConical,
   HelpCircle,
-  Italic,
   Layers3,
-  Link,
-  List,
-  ListOrdered,
   MoreHorizontal,
   Plus,
-  Redo2,
   Save,
   Search,
   ShieldCheck,
@@ -30,22 +22,31 @@ import {
   Table2,
   Trash2,
   Type,
-  Underline,
-  Undo2,
   Upload,
   XCircle,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { renderPacketPreview } from '../../core/documents/packetService'
+import {
+  generateFinalSignedPacketDocument,
+  generatePacketVersion,
+  generateSigningLinks,
+  getPacketSigningSummary,
+  prepareSigningFields,
+  renderPacketPreview,
+} from '../../core/documents/packetService'
 import {
   listCanonicalMergeFields,
   suggestCanonicalMergeFieldKey,
   validateTemplateTokensAgainstRegistry,
 } from '../../core/documents/mergeFieldRegistry'
 import {
+  archiveDocumentPacket,
+  createDocumentPacket,
   createDocumentPacketTemplate,
   deleteDocumentPacketTemplate,
+  fetchDocumentPacket,
   fetchDocumentPacketTemplate,
+  listDocumentPackets,
   listDocumentPacketTemplates,
   listDocumentPlaceholderDefinitions,
   updateDocumentPacketTemplate,
@@ -109,6 +110,257 @@ const LEGAL_TEMPLATE_TABLE_SNIPPET = [
   '| Property address | {{property_address}} |',
   '| Purchase price / mandate value | {{purchase_price}} |',
 ].join('\n')
+const DOCUMENT_BLOCK_SNIPPETS = {
+  paragraph: 'New paragraph wording...',
+  heading: 'NEW CLAUSE HEADING',
+  pageBreak: '[[PAGE_BREAK]]',
+  signature: [
+    'Signature: ______________________________',
+    'Name: {{seller_full_name}}',
+    'Date: {{signed_date}}',
+  ].join('\n'),
+  initials: 'Initials: {{seller_initials}}',
+  witness: [
+    'Witness:',
+    'Signature: {{witness_signature}}',
+    'Name: ______________________________',
+  ].join('\n'),
+}
+const CONTRACT_CLAUSE_LIBRARY_ITEMS = [
+  {
+    key: 'finance_suspensive_condition',
+    category: 'Suspensive conditions',
+    title: 'Bond finance suspensive condition',
+    description: 'Standard bond approval wording with expiry and waiver language.',
+    status: 'Principal approved',
+    locked: true,
+    snippet: [
+      'This agreement is subject to the Purchaser obtaining written bond approval for an amount not less than {{bond_amount}} within the agreed fulfilment period.',
+      'This condition is for the benefit of the Purchaser and may be waived by the Purchaser in writing before expiry.',
+    ].join('\n'),
+    defaultCondition: {
+      enabled: true,
+      field: 'finance_type',
+      operator: 'equals',
+      value: 'Bond',
+      label: 'Only include when the buyer needs bond finance',
+    },
+  },
+  {
+    key: 'commission_payable',
+    category: 'Commission',
+    title: 'Commission payable on acceptance',
+    description: 'Reusable agency commission wording for offers and mandates.',
+    status: 'Principal approved',
+    locked: true,
+    snippet: [
+      'The Seller shall pay commission to {{agency_legal_name}} in accordance with the agreed commission structure.',
+      'Commission is deemed earned on acceptance and is payable on registration of transfer unless otherwise agreed in writing.',
+    ].join('\n'),
+    defaultCondition: {
+      enabled: false,
+      field: 'commission_structure',
+      operator: 'is not empty',
+      value: '',
+      label: 'Use when a commission structure exists',
+    },
+  },
+  {
+    key: 'voetstoots_property_condition',
+    category: 'Property conditions',
+    title: 'Property sold voetstoots',
+    description: 'Plain-language property condition wording for South African sale agreements.',
+    status: 'Legal reviewed',
+    locked: true,
+    snippet: [
+      'The Property is sold voetstoots, subject to all conditions, servitudes, restrictions and endorsements applicable to the Property.',
+      'The Seller confirms that all known material defects disclosed to the Agency have been recorded or disclosed to the Purchaser.',
+    ].join('\n'),
+    defaultCondition: {
+      enabled: false,
+      field: 'property_address',
+      operator: 'is not empty',
+      value: '',
+      label: 'Use when property details are available',
+    },
+  },
+  {
+    key: 'witness_signature_block',
+    category: 'Signature blocks',
+    title: 'Witness signature block',
+    description: 'Reusable witness wording and signature placeholders.',
+    status: 'Ready to use',
+    locked: false,
+    snippet: [
+      'Witness:',
+      'Signature: {{witness_signature}}',
+      'Full name: ______________________________',
+      'Date: {{signed_date}}',
+    ].join('\n'),
+    defaultCondition: {
+      enabled: false,
+      field: 'witness_signature',
+      operator: 'is required',
+      value: '',
+      label: 'Use when witness signing is required',
+    },
+  },
+]
+const CONDITION_OPERATORS = [
+  { key: 'equals', label: 'equals' },
+  { key: 'does not equal', label: 'does not equal' },
+  { key: 'contains', label: 'contains' },
+  { key: 'is not empty', label: 'is not empty' },
+  { key: 'is required', label: 'is required' },
+]
+const SIGNER_ROLE_OPTIONS = [
+  { key: 'purchaser_1', label: 'Buyer' },
+  { key: 'purchaser_2', label: 'Second buyer' },
+  { key: 'seller', label: 'Seller' },
+  { key: 'agent', label: 'Agent' },
+  { key: 'contractor', label: 'Contractor' },
+  { key: 'witness_1', label: 'Witness 1' },
+  { key: 'witness_2', label: 'Witness 2' },
+  { key: 'other', label: 'Other signer' },
+]
+const SIGNING_FIELD_TYPE_OPTIONS = [
+  { key: 'signature', label: 'Signature', width: 168, height: 44 },
+  { key: 'initial', label: 'Initials', width: 44, height: 18 },
+  { key: 'date', label: 'Date', width: 82, height: 22 },
+  { key: 'text', label: 'Text', width: 130, height: 24 },
+]
+const SIGNING_FIELD_PAGE = {
+  width: 595,
+  height: 842,
+}
+const SIGNING_FIELD_POSITION_PRESETS = [
+  { key: 'bottom_left', label: 'Bottom left', x: 68, y: 692 },
+  { key: 'bottom_center', label: 'Bottom centre', x: 214, y: 692 },
+  { key: 'bottom_right', label: 'Bottom right', x: 360, y: 692 },
+  { key: 'initial_left', label: 'Initials left', x: 70, y: 748 },
+  { key: 'initial_right', label: 'Initials right', x: 484, y: 748 },
+]
+
+function isEditorMarkdownTableLine(line = '') {
+  return /^\s*\|.*\|\s*$/.test(String(line || ''))
+}
+
+function getEditorMarkdownTableCells(line = '') {
+  return String(line || '')
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.trim())
+}
+
+function isEditorMarkdownTableSeparator(line = '') {
+  const cells = getEditorMarkdownTableCells(line)
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell))
+}
+
+function renderTemplateEditorInline(value = '', tokenLabels = {}) {
+  const parts = String(value || '').split(/(\{\{\s*[^}]+?\s*\}\})/g)
+  return parts.map((part, index) => {
+    if (/^\{\{\s*[^}]+?\s*\}\}$/.test(part)) {
+      const token = normalizeTemplateTokenKey(part.replace(/{{|}}/g, ''))
+      const label = tokenLabels[token] || humanizeKey(token)
+      return (
+        <span
+          key={`${part}-${index}`}
+          title={`{{${token}}}`}
+          className="inline-flex items-center rounded-[6px] bg-[#eef9f1] px-1.5 py-0.5 text-[0.82em] font-semibold text-[#128642]"
+        >
+          {label}
+        </span>
+      )
+    }
+    return <span key={`${part}-${index}`}>{part}</span>
+  })
+}
+
+function renderTemplateEditorMarkdownTable(rows = [], key = '', tokenLabels = {}) {
+  if (!rows.length) return null
+  const [header = [], ...bodyRows] = rows
+  return (
+    <div key={key} className="my-3 overflow-hidden rounded-[12px] border border-[#dbe7f3] bg-white">
+      <table className="w-full table-fixed border-collapse text-left text-sm">
+        <thead className="bg-[#f6f9fc] text-[#102033]">
+          <tr>
+            {header.map((cell, index) => (
+              <th key={`${key}-head-${index}`} className="border-b border-[#dbe7f3] px-3 py-2.5 font-semibold">
+                {renderTemplateEditorInline(cell, tokenLabels)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {bodyRows.map((row, rowIndex) => (
+            <tr key={`${key}-row-${rowIndex}`} className="border-t border-[#edf2f7] first:border-t-0">
+              {header.map((_cell, cellIndex) => (
+                <td key={`${key}-cell-${rowIndex}-${cellIndex}`} className="border-r border-[#edf2f7] px-3 py-2.5 align-top text-[#233246] last:border-r-0">
+                  {renderTemplateEditorInline(row[cellIndex] || '', tokenLabels)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function parseTemplateEditorDocumentBlocks(value = '') {
+  const lines = String(value || '').split(/\r?\n/)
+  const blocks = []
+  let paragraphLines = []
+
+  const flushParagraph = () => {
+    const paragraphText = paragraphLines.join('\n').trim()
+    if (paragraphText) {
+      blocks.push({
+        type: paragraphText === DOCUMENT_BLOCK_SNIPPETS.pageBreak ? 'page_break' : 'paragraph',
+        raw: paragraphText,
+        text: paragraphText,
+      })
+    }
+    paragraphLines = []
+  }
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+    const nextLine = lines[index + 1]
+    if (isEditorMarkdownTableLine(line) && isEditorMarkdownTableSeparator(nextLine)) {
+      flushParagraph()
+      const rawLines = [line, nextLine]
+      const tableRows = [getEditorMarkdownTableCells(line)]
+      index += 2
+      while (index < lines.length && isEditorMarkdownTableLine(lines[index])) {
+        rawLines.push(lines[index])
+        tableRows.push(getEditorMarkdownTableCells(lines[index]))
+        index += 1
+      }
+      index -= 1
+      blocks.push({
+        type: 'table',
+        raw: rawLines.join('\n'),
+        rows: tableRows,
+      })
+      continue
+    }
+    paragraphLines.push(line)
+  }
+
+  flushParagraph()
+  return blocks
+}
+
+function serializeTemplateEditorDocumentBlocks(blocks = []) {
+  return (blocks || [])
+    .map((block) => String(block?.raw || block?.text || ''))
+    .filter((block) => block.trim())
+    .join('\n\n')
+}
 
 const AGENCY_DOCUMENT_TABS = [
   { key: 'otp', packetType: 'otp', label: 'Offer to Purchase (OTP)', icon: FileSignature },
@@ -1400,6 +1652,7 @@ function sectionsFromTemplate(template = null) {
       section.signingRequirement || section.signing_requirement || metadata.signingRequirement || metadata.signing_requirement || signingMetadata.signingRequirement || signingMetadata.signing_requirement,
       { requiresInitial, requiresSignature },
     )
+    const signingFields = getSigningFieldsFromMetadata(metadata, section)
 
     return {
       id: section.id || null,
@@ -1416,6 +1669,12 @@ function sectionsFromTemplate(template = null) {
       signingRole: normalizeText(section.signingRole || section.signing_role || metadata.signingRole || metadata.signing_role || signingMetadata.signingRole || signingMetadata.signing_role || 'client') || 'client',
       initialPlaceholderKey: normalizeText(section.initialPlaceholderKey || section.initial_placeholder_key || metadata.initialPlaceholderKey || metadata.initial_placeholder_key || signingMetadata.initialPlaceholderKey || signingMetadata.initial_placeholder_key),
       signaturePlaceholderKey: normalizeText(section.signaturePlaceholderKey || section.signature_placeholder_key || metadata.signaturePlaceholderKey || metadata.signature_placeholder_key || signingMetadata.signaturePlaceholderKey || signingMetadata.signature_placeholder_key),
+      signingFields,
+      conditionJson: section.condition_json && typeof section.condition_json === 'object'
+        ? section.condition_json
+        : section.conditionJson && typeof section.conditionJson === 'object'
+          ? section.conditionJson
+          : {},
       metadataJson: metadata,
       sortOrder: Number.isFinite(Number(section.sort_order)) ? Number(section.sort_order) : index,
     }
@@ -1464,6 +1723,7 @@ function mapSectionForSave(section = {}, index = 0, packetType = 'otp') {
   const initialPlaceholderKey = normalizeText(section.initialPlaceholderKey) || (requiresInitial ? getDefaultClientSigningPlaceholderKey(packetType, 'client_initial') : '')
   const signaturePlaceholderKey = normalizeText(section.signaturePlaceholderKey) || (requiresSignature ? getDefaultClientSigningPlaceholderKey(packetType, 'client_signature') : '')
   const signingRole = normalizeText(section.signingRole || 'client') || 'client'
+  const signingFields = getSigningFieldsFromMetadata(metadataJson, section)
 
   return {
     sectionKey: normalizeText(section.sectionKey || `section_${index + 1}`),
@@ -1472,6 +1732,11 @@ function mapSectionForSave(section = {}, index = 0, packetType = 'otp') {
     legalText: String(section.legalText || ''),
     placeholderKeys,
     isRequired: section.isRequired === undefined ? true : Boolean(section.isRequired),
+    conditionJson: section.conditionJson && typeof section.conditionJson === 'object'
+      ? section.conditionJson
+      : section.condition_json && typeof section.condition_json === 'object'
+        ? section.condition_json
+        : {},
     metadataJson: {
       ...metadataJson,
       signing: {
@@ -1482,6 +1747,8 @@ function mapSectionForSave(section = {}, index = 0, packetType = 'otp') {
         initial_placeholder_key: initialPlaceholderKey,
         requires_signature: requiresSignature,
         signature_placeholder_key: signaturePlaceholderKey,
+        planned_fields: signingFields,
+        signing_fields: signingFields,
       },
       signing_requirement: signingRequirement,
       signing_role: signingRole,
@@ -1489,6 +1756,7 @@ function mapSectionForSave(section = {}, index = 0, packetType = 'otp') {
       initial_placeholder_key: initialPlaceholderKey,
       requires_signature: requiresSignature,
       signature_placeholder_key: signaturePlaceholderKey,
+      planned_signing_fields: signingFields,
     },
     sortOrder: Number.isFinite(Number(section.sortOrder)) ? Number(section.sortOrder) : index,
   }
@@ -1887,6 +2155,199 @@ function buildSamplePreviewContext(packetType = 'otp') {
   }
 }
 
+function createDefaultDocumentRunForm(packetType = 'otp', templateLabel = '') {
+  const normalizedPacketType = normalizeText(packetType).toLowerCase()
+  const sourceType = normalizedPacketType === 'mandate' ? 'lead' : 'transaction'
+  return {
+    sourceType,
+    transactionId: '',
+    leadId: '',
+    contactId: '',
+    dealId: '',
+    unitId: '',
+    title: templateLabel ? `${templateLabel} document run` : 'New document run',
+    useSampleFallback: false,
+    contextJson: '',
+  }
+}
+
+function parseDocumentRunContextJson(rawValue = '') {
+  const value = String(rawValue || '').trim()
+  if (!value) return {}
+  try {
+    const parsed = JSON.parse(value)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Context JSON must be an object.')
+    }
+    return parsed
+  } catch (error) {
+    throw new Error(error?.message || 'Context JSON is not valid.')
+  }
+}
+
+function isUuidText(value = '') {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizeText(value))
+}
+
+function normalizeRunReference(value = '') {
+  const text = normalizeText(value)
+  return isUuidText(text) ? text : ''
+}
+
+function buildDocumentRunPayload({
+  runForm = {},
+  packetType = 'otp',
+  selectedTemplate = null,
+  templateDetail = null,
+  form = {},
+  moduleType = 'agency',
+  validationSummary = null,
+  templateTypeConfig = {},
+} = {}) {
+  const sourceType = normalizeText(runForm.sourceType || 'transaction').toLowerCase()
+  const transactionId = normalizeRunReference(runForm.transactionId)
+  const leadId = normalizeRunReference(runForm.leadId)
+  const contactId = normalizeRunReference(runForm.contactId)
+  const dealId = normalizeRunReference(runForm.dealId)
+  const unitId = normalizeRunReference(runForm.unitId)
+  const contextOverrides = parseDocumentRunContextJson(runForm.contextJson)
+  const sampleFallback = runForm.useSampleFallback ? buildSamplePreviewContext(packetType) : {}
+  const sourceContextOverrides = contextOverrides.sourceContext && typeof contextOverrides.sourceContext === 'object'
+    ? contextOverrides.sourceContext
+    : {}
+  const sourceContext = {
+    ...sourceContextOverrides,
+    sourceType,
+    transactionId: transactionId || sourceContextOverrides.transactionId || sourceContextOverrides.transaction_id || '',
+    transaction_id: transactionId || sourceContextOverrides.transaction_id || sourceContextOverrides.transactionId || '',
+    leadId: leadId || sourceContextOverrides.leadId || sourceContextOverrides.lead_id || '',
+    lead_id: leadId || sourceContextOverrides.lead_id || sourceContextOverrides.leadId || '',
+    contactId: contactId || sourceContextOverrides.contactId || sourceContextOverrides.contact_id || '',
+    contact_id: contactId || sourceContextOverrides.contact_id || sourceContextOverrides.contactId || '',
+    dealId: dealId || sourceContextOverrides.dealId || sourceContextOverrides.deal_id || '',
+    deal_id: dealId || sourceContextOverrides.deal_id || sourceContextOverrides.dealId || '',
+    unitId: unitId || sourceContextOverrides.unitId || sourceContextOverrides.unit_id || '',
+    unit_id: unitId || sourceContextOverrides.unit_id || sourceContextOverrides.unitId || '',
+    contractStudioRun: {
+      generatedFrom: 'contract_studio_phase_6',
+      sourceType,
+      testedAt: new Date().toISOString(),
+      templateId: selectedTemplate?.id || templateDetail?.id || '',
+    },
+  }
+  const context = {
+    ...sampleFallback,
+    ...contextOverrides,
+    transaction: {
+      ...(sampleFallback.transaction && typeof sampleFallback.transaction === 'object' ? sampleFallback.transaction : {}),
+      ...(contextOverrides.transaction && typeof contextOverrides.transaction === 'object' ? contextOverrides.transaction : {}),
+      ...(transactionId ? { id: transactionId, transaction_id: transactionId } : {}),
+    },
+    lead: {
+      ...(sampleFallback.lead && typeof sampleFallback.lead === 'object' ? sampleFallback.lead : {}),
+      ...(contextOverrides.lead && typeof contextOverrides.lead === 'object' ? contextOverrides.lead : {}),
+      ...(leadId ? { id: leadId, lead_id: leadId } : {}),
+    },
+    contact: {
+      ...(sampleFallback.contact && typeof sampleFallback.contact === 'object' ? sampleFallback.contact : {}),
+      ...(contextOverrides.contact && typeof contextOverrides.contact === 'object' ? contextOverrides.contact : {}),
+      ...(contactId ? { id: contactId, contact_id: contactId } : {}),
+    },
+    unit: {
+      ...(sampleFallback.unit && typeof sampleFallback.unit === 'object' ? sampleFallback.unit : {}),
+      ...(contextOverrides.unit && typeof contextOverrides.unit === 'object' ? contextOverrides.unit : {}),
+      ...(unitId ? { id: unitId, unit_id: unitId } : {}),
+    },
+    sourceContext,
+    documentRun: {
+      sourceType,
+      title: normalizeText(runForm.title),
+      createdFromStudio: true,
+    },
+  }
+  const previewTemplate = buildPreviewTemplateFromForm({
+    selectedTemplate,
+    templateDetail,
+    form,
+    packetType,
+    moduleType,
+    validationSummary,
+  })
+  const title = normalizeText(runForm.title)
+    || `${templateTypeConfig.shortLabel || String(packetType).toUpperCase()} document run`
+
+  return {
+    context,
+    sourceContext,
+    previewTemplate,
+    title,
+    references: {
+      transactionId,
+      leadId,
+      contactId,
+      dealId,
+      unitId,
+    },
+  }
+}
+
+function getPacketSourceContext(packet = {}) {
+  return packet?.source_context_json && typeof packet.source_context_json === 'object'
+    ? packet.source_context_json
+    : {}
+}
+
+function buildDocumentRunContextFromPacket(packet = {}) {
+  const sourceContext = getPacketSourceContext(packet)
+  if (sourceContext.contractStudioPreviewContext && typeof sourceContext.contractStudioPreviewContext === 'object') {
+    return sourceContext.contractStudioPreviewContext
+  }
+  const nestedSource = sourceContext.sourceContext && typeof sourceContext.sourceContext === 'object'
+    ? sourceContext.sourceContext
+    : sourceContext
+  const transactionId = normalizeText(packet?.transaction_id || sourceContext.transactionId || sourceContext.transaction_id)
+  const leadId = normalizeText(packet?.lead_id || sourceContext.leadId || sourceContext.lead_id)
+  const contactId = normalizeText(packet?.contact_id || sourceContext.contactId || sourceContext.contact_id)
+  const dealId = normalizeText(packet?.deal_id || sourceContext.dealId || sourceContext.deal_id)
+  const unitId = normalizeText(packet?.unit_id || sourceContext.unitId || sourceContext.unit_id)
+  return {
+    transactionId,
+    leadId,
+    contactId,
+    dealId,
+    unitId,
+    transaction: transactionId ? { id: transactionId, transaction_id: transactionId } : {},
+    lead: leadId ? { id: leadId, lead_id: leadId } : {},
+    contact: contactId ? { id: contactId, contact_id: contactId } : {},
+    unit: unitId ? { id: unitId, unit_id: unitId } : {},
+    sourceContext: nestedSource,
+    documentRun: {
+      sourceType: sourceContext.sourceType || (transactionId ? 'transaction' : leadId ? 'lead' : 'manual'),
+      title: packet?.title || '',
+      createdFromStudio: Boolean(sourceContext.contractStudioRun || sourceContext.contractStudioPreviewContext),
+    },
+  }
+}
+
+function getPacketVersionArtifactUrl(version = {}) {
+  return normalizeText(
+    version?.final_signed_file_access_url ||
+      version?.final_signed_file_url ||
+      version?.rendered_file_access_url ||
+      version?.rendered_file_url,
+  )
+}
+
+function getPacketVersionArtifactLabel(version = {}) {
+  if (normalizeText(version?.final_signed_file_access_url || version?.final_signed_file_url)) return 'Open final'
+  if (normalizeText(version?.rendered_file_access_url || version?.rendered_file_url)) return 'Open generated'
+  return 'No artifact'
+}
+
+function getLatestGeneratedPacketVersion(versions = []) {
+  return (Array.isArray(versions) ? versions : []).find((version) => normalizeText(version?.render_status).toLowerCase() === 'generated') || null
+}
+
 function TemplateStatusPill({ status = 'draft', children = null }) {
   const label = children || TEMPLATE_STATUS_OPTIONS.find((item) => item.key === status)?.label || 'Draft'
   return (
@@ -1897,11 +2358,11 @@ function TemplateStatusPill({ status = 'draft', children = null }) {
 }
 
 const STUDIO_TABS = [
-  { key: 'template', label: 'Template' },
-  { key: 'variables', label: 'Variables' },
-  { key: 'settings', label: 'Settings' },
-  { key: 'preview', label: 'Test & Preview' },
-  { key: 'activity', label: 'Activity' },
+  { key: 'template', label: 'Build' },
+  { key: 'variables', label: 'Data Fields' },
+  { key: 'settings', label: 'Publishing' },
+  { key: 'preview', label: 'Test' },
+  { key: 'activity', label: 'History' },
 ]
 
 const STUDIO_VARIABLE_GROUPS = [
@@ -1929,6 +2390,12 @@ const STUDIO_VARIABLE_GROUPS = [
       'Document Metadata',
     ],
   },
+]
+
+const DOCUMENT_RUN_SOURCE_OPTIONS = [
+  { key: 'transaction', label: 'Transaction', description: 'Best for offers, accepted deals, and transfer-ready packs.' },
+  { key: 'lead', label: 'Lead', description: 'Best for buyer/seller lead documents and pre-transaction mandates.' },
+  { key: 'manual', label: 'Manual context', description: 'Use pasted context only, without linking a CRM record yet.' },
 ]
 
 const studioPrimaryButtonClass = 'inline-flex items-center justify-center gap-2 rounded-[16px] bg-[#128642] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_16px_28px_rgba(18,134,66,0.22)] transition hover:bg-[#0f7438] disabled:cursor-not-allowed disabled:opacity-60'
@@ -1973,6 +2440,151 @@ function humanizeKey(value = '') {
       return part.charAt(0).toUpperCase() + part.slice(1)
     })
     .join(' ')
+}
+
+function getTokenLabelMap(fields = []) {
+  return (fields || []).reduce((accumulator, field) => {
+    const key = normalizeTemplateTokenKey(field?.key || field?.placeholder_key)
+    if (!key) return accumulator
+    accumulator[key] = normalizeText(field?.label || field?.displayLabel) || humanizeKey(key)
+    return accumulator
+  }, {})
+}
+
+function getFieldOptionLabel(field = {}, tokenLabelByKey = {}) {
+  const key = normalizeTemplateTokenKey(field?.key || field?.placeholder_key || field)
+  return tokenLabelByKey[key] || normalizeText(field?.label || field?.displayLabel) || humanizeKey(key)
+}
+
+function normalizeConditionRule(condition = {}, fallbackField = '') {
+  const source = condition && typeof condition === 'object' ? condition : {}
+  const rule = source.rule && typeof source.rule === 'object' ? source.rule : source
+  const field = normalizeTemplateTokenKey(rule.field || rule.placeholderKey || rule.placeholder_key || fallbackField)
+  const operator = normalizeText(rule.operator || 'equals').toLowerCase()
+  const safeOperator = CONDITION_OPERATORS.some((item) => item.key === operator) ? operator : 'equals'
+  return {
+    enabled: Boolean(source.enabled ?? rule.enabled ?? field),
+    field,
+    operator: safeOperator,
+    value: normalizeText(rule.value),
+    label: normalizeText(source.label || rule.label),
+  }
+}
+
+function describeConditionRule(condition = {}, tokenLabelByKey = {}) {
+  const rule = normalizeConditionRule(condition)
+  if (!rule.enabled || !rule.field) return 'Always include this section.'
+  const fieldLabel = tokenLabelByKey[rule.field] || humanizeKey(rule.field)
+  if (['is not empty', 'is required'].includes(rule.operator)) {
+    return `Include when ${fieldLabel} ${rule.operator}.`
+  }
+  return `Include when ${fieldLabel} ${rule.operator} ${rule.value || 'the chosen value'}.`
+}
+
+function normalizeSigningFieldType(value = '') {
+  const normalized = normalizeText(value).toLowerCase()
+  return SIGNING_FIELD_TYPE_OPTIONS.some((item) => item.key === normalized) ? normalized : 'signature'
+}
+
+function normalizeSignerRole(value = '') {
+  const normalized = normalizeText(value).toLowerCase()
+  return SIGNER_ROLE_OPTIONS.some((item) => item.key === normalized) ? normalized : 'other'
+}
+
+function normalizeSigningNumber(value, fallback = 0) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function getSigningFieldTypeConfig(fieldType = 'signature') {
+  return SIGNING_FIELD_TYPE_OPTIONS.find((item) => item.key === normalizeSigningFieldType(fieldType)) || SIGNING_FIELD_TYPE_OPTIONS[0]
+}
+
+function getSignerRoleLabel(role = '') {
+  return SIGNER_ROLE_OPTIONS.find((item) => item.key === normalizeSignerRole(role))?.label || humanizeKey(role)
+}
+
+function getSigningFieldTypeLabel(fieldType = '') {
+  return getSigningFieldTypeConfig(fieldType).label
+}
+
+function normalizeSigningFieldPlan(field = {}, index = 0) {
+  const fieldType = normalizeSigningFieldType(field.fieldType || field.field_type)
+  const typeConfig = getSigningFieldTypeConfig(fieldType)
+  return {
+    id: normalizeText(field.id || field.key || field.fieldId || field.field_id || `planned_field_${index + 1}`),
+    signerRole: normalizeSignerRole(field.signerRole || field.signer_role || field.role || 'purchaser_1'),
+    fieldType,
+    pageNumber: Math.max(1, Math.trunc(normalizeSigningNumber(field.pageNumber ?? field.page_number, 1))),
+    xPosition: normalizeSigningNumber(field.xPosition ?? field.x_position, SIGNING_FIELD_POSITION_PRESETS[0].x),
+    yPosition: normalizeSigningNumber(field.yPosition ?? field.y_position, SIGNING_FIELD_POSITION_PRESETS[0].y),
+    width: Math.max(18, normalizeSigningNumber(field.width, typeConfig.width)),
+    height: Math.max(14, normalizeSigningNumber(field.height, typeConfig.height)),
+    required: field.required === undefined ? true : Boolean(field.required),
+    label: normalizeText(field.label),
+  }
+}
+
+function getSigningFieldsFromMetadata(metadata = {}, section = {}) {
+  const signing = metadata?.signing && typeof metadata.signing === 'object' ? metadata.signing : {}
+  const source = Array.isArray(section.signingFields)
+    ? section.signingFields
+    : Array.isArray(section.signing_fields)
+      ? section.signing_fields
+      : Array.isArray(signing.planned_fields)
+        ? signing.planned_fields
+        : Array.isArray(signing.plannedFields)
+          ? signing.plannedFields
+          : Array.isArray(signing.signing_fields)
+            ? signing.signing_fields
+          : []
+  return source.map((field, index) => normalizeSigningFieldPlan(field, index))
+}
+
+function stableStringify(value) {
+  if (value === null || value === undefined) return ''
+  if (typeof value !== 'object') return String(value)
+  if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(',')}]`
+  return `{${Object.keys(value).sort().map((key) => `${key}:${stableStringify(value[key])}`).join(',')}}`
+}
+
+function getSectionGovernance(section = {}) {
+  const metadata = section?.metadataJson && typeof section.metadataJson === 'object'
+    ? section.metadataJson
+    : section?.metadata_json && typeof section.metadata_json === 'object'
+      ? section.metadata_json
+      : {}
+  const governance = metadata.governance && typeof metadata.governance === 'object' ? metadata.governance : {}
+  return {
+    locked: Boolean(governance.locked),
+    lockReason: normalizeText(governance.lockReason || governance.lock_reason),
+    lockedByRole: normalizeText(governance.lockedByRole || governance.locked_by_role || 'principal') || 'principal',
+    lockedAt: normalizeText(governance.lockedAt || governance.locked_at),
+  }
+}
+
+function hasPublishingAuthority({ appRole = '', membershipRole = '', workspaceMembershipRole = '', canEdit = false } = {}) {
+  if (!canEdit) return false
+  const roles = [appRole, membershipRole, workspaceMembershipRole].map((item) => normalizeText(item).toLowerCase())
+  return roles.some((item) => ['developer', 'owner', 'principal', 'admin', 'super_admin', 'super admin'].includes(item))
+}
+
+function sectionChanged(currentSection = {}, baselineSection = {}) {
+  if (!baselineSection) return true
+  return [
+    'sectionKey',
+    'sectionLabel',
+    'sectionType',
+    'legalText',
+    'placeholderKeysText',
+    'isRequired',
+    'signingRequirement',
+    'initialPlaceholderKey',
+    'signaturePlaceholderKey',
+  ].some((key) => stableStringify(currentSection?.[key]) !== stableStringify(baselineSection?.[key]))
+    || stableStringify(currentSection?.conditionJson || {}) !== stableStringify(baselineSection?.conditionJson || {})
+    || stableStringify(getSigningFieldsFromMetadata(currentSection?.metadataJson || {}, currentSection)) !== stableStringify(getSigningFieldsFromMetadata(baselineSection?.metadataJson || {}, baselineSection))
+    || stableStringify(getSectionGovernance(currentSection)) !== stableStringify(getSectionGovernance(baselineSection))
 }
 
 function getFriendlySectionLabel(section = {}, index = 0) {
@@ -2123,12 +2735,84 @@ function TemplateStudioTabButton({ active, label, onClick }) {
   )
 }
 
+const CONTRACT_STUDIO_AREAS = [
+  {
+    key: 'templates',
+    label: 'Templates',
+    description: 'Build and publish reusable document templates.',
+    icon: FileText,
+  },
+  {
+    key: 'clauseLibrary',
+    label: 'Clause Library',
+    description: 'Approved clauses, signature blocks, and reusable wording.',
+    icon: Layers3,
+  },
+  {
+    key: 'documents',
+    label: 'Generated Documents',
+    description: 'Drafts, previews, signed documents, and exports.',
+    icon: FileSignature,
+  },
+]
+
+const CONTRACT_STUDIO_TABS = [
+  { key: 'template', label: 'Build' },
+  { key: 'preview', label: 'Test' },
+  { key: 'variables', label: 'Data Fields' },
+  { key: 'activity', label: 'History' },
+  { key: 'settings', label: 'Publishing' },
+]
+
+function normalizeValidationIssue(issue) {
+  if (typeof issue === 'string') {
+    return {
+      message: issue,
+      sectionLabel: '',
+      placeholderLabel: '',
+      placeholderKey: '',
+    }
+  }
+
+  return {
+    message: normalizeText(issue?.message || issue?.detail || issue?.label || 'Review this validation issue.'),
+    sectionLabel: normalizeText(issue?.sectionLabel || issue?.section_label || issue?.group || issue?.groupLabel),
+    placeholderLabel: normalizeText(issue?.placeholderLabel || issue?.placeholder_label || issue?.label),
+    placeholderKey: normalizeText(issue?.placeholderKey || issue?.placeholder_key || issue?.field || issue?.key),
+  }
+}
+
+function ValidationIssueCard({ issue, tone = 'warning', label = 'Issue' }) {
+  const normalized = normalizeValidationIssue(issue)
+  const Icon = tone === 'error' ? XCircle : AlertTriangle
+  const toneClass = tone === 'error'
+    ? 'border-[#f3d1ce] bg-[#fff4f3] text-[#8e1f15]'
+    : 'border-[#f4e2bf] bg-[#fff8ec] text-[#7d520d]'
+
+  return (
+    <div className={`rounded-[16px] border px-4 py-3 text-sm leading-6 ${toneClass}`}>
+      <div className="flex items-start gap-2">
+        <Icon size={16} className="mt-0.5 shrink-0" />
+        <div className="min-w-0">
+          <p className="font-semibold">{normalized.message}</p>
+          <div className="mt-1 flex flex-wrap gap-2 text-xs font-semibold opacity-80">
+            {normalized.sectionLabel ? <span>{label}: {normalized.sectionLabel}</span> : null}
+            {normalized.placeholderLabel || normalized.placeholderKey ? (
+              <span>Field: {normalized.placeholderLabel || `{{${normalized.placeholderKey}}}`}</span>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function SettingsSigningTemplatesPage({
   templateModuleType = 'agency',
   allowedPacketTypes = DEFAULT_ALLOWED_PACKET_TYPES,
-  title = 'Legal Templates',
-  eyebrow = 'Settings / Legal Templates',
-  description = 'Manage mandate, OTP and legal document templates, including defaults, merge fields, previews and publishing.',
+  title = 'Contract Studio',
+  eyebrow = 'Settings / Contract Studio',
+  description = 'Build, test, publish, and manage the document templates that power mandates, offers, clauses, and signatures.',
 } = {}) {
   const { role, currentMembership, currentWorkspace, workspaceType } = useWorkspace()
   const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
@@ -2168,6 +2852,11 @@ export default function SettingsSigningTemplatesPage({
   const [deletingTemplate, setDeletingTemplate] = useState(false)
   const [uploadingTemplate, setUploadingTemplate] = useState(false)
   const [testingTemplate, setTestingTemplate] = useState(false)
+  const [creatingDocumentPacket, setCreatingDocumentPacket] = useState(false)
+  const [documentPacketsLoading, setDocumentPacketsLoading] = useState(false)
+  const [packetDetailLoading, setPacketDetailLoading] = useState(false)
+  const [signingSummaryLoading, setSigningSummaryLoading] = useState(false)
+  const [packetActionId, setPacketActionId] = useState('')
   const [savingPlaceholder, setSavingPlaceholder] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -2176,9 +2865,15 @@ export default function SettingsSigningTemplatesPage({
   const [activeDocumentTypeKey, setActiveDocumentTypeKey] = useState(defaultPacketType)
   const [templatesByType, setTemplatesByType] = useState({})
   const [placeholdersByType, setPlaceholdersByType] = useState({})
+  const [documentPackets, setDocumentPackets] = useState([])
+  const [selectedLibraryPacketId, setSelectedLibraryPacketId] = useState('')
+  const [selectedLibraryPacketDetail, setSelectedLibraryPacketDetail] = useState(null)
+  const [selectedPacketSigningSummary, setSelectedPacketSigningSummary] = useState(null)
+  const [signingLinksResult, setSigningLinksResult] = useState(null)
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [templateDetail, setTemplateDetail] = useState(null)
   const [form, setForm] = useState(toTemplateForm(null))
+  const [documentRunForm, setDocumentRunForm] = useState(createDefaultDocumentRunForm(defaultPacketType))
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [placeholderForm, setPlaceholderForm] = useState({
     placeholderKey: '',
@@ -2192,9 +2887,12 @@ export default function SettingsSigningTemplatesPage({
   const [previewState, setPreviewState] = useState({ loading: false, html: '', warnings: [], critical: [], error: '' })
   const [mergeFieldSearch, setMergeFieldSearch] = useState('')
   const [mergeFieldCategory, setMergeFieldCategory] = useState('all')
+  const [activeStudioArea, setActiveStudioArea] = useState('templates')
   const [activeTab, setActiveTab] = useState('template')
   const [selectedSectionIndex, setSelectedSectionIndex] = useState(0)
+  const [selectedCanvasBlockIndex, setSelectedCanvasBlockIndex] = useState(0)
   const [showPublishConfirm, setShowPublishConfirm] = useState(false)
+  const [publishReviewAccepted, setPublishReviewAccepted] = useState(false)
   const [pendingSectionTitleFocus, setPendingSectionTitleFocus] = useState(false)
   const clauseTextareaRef = useRef(null)
   const sectionTitleInputRef = useRef(null)
@@ -2251,6 +2949,66 @@ export default function SettingsSigningTemplatesPage({
     setSelectedTemplateId(currentStillExists ? preferredTemplateId : selectedList[0].id)
   }, [defaultPacketType, normalizedModuleType, stableAllowedPacketTypes])
 
+  const loadDocumentLibrary = useCallback(async ({ targetPacketType = packetType } = {}) => {
+    try {
+      setDocumentPacketsLoading(true)
+      const rows = await listDocumentPackets({
+        packetType: targetPacketType,
+        limit: 30,
+      })
+      setDocumentPackets(rows || [])
+    } catch (libraryError) {
+      console.warn('[Contract Studio] Unable to load document packet library.', libraryError)
+      setDocumentPackets([])
+    } finally {
+      setDocumentPacketsLoading(false)
+    }
+  }, [packetType])
+
+  const loadLibraryPacketDetail = useCallback(async (packetId = '') => {
+    const resolvedPacketId = normalizeText(packetId)
+    if (!resolvedPacketId) {
+      setSelectedLibraryPacketDetail(null)
+      return
+    }
+    try {
+      setPacketDetailLoading(true)
+      const detail = await fetchDocumentPacket(resolvedPacketId, {
+        includeVersions: true,
+        includeEvents: true,
+      })
+      setSelectedLibraryPacketDetail(detail || null)
+    } catch (detailError) {
+      console.warn('[Contract Studio] Unable to load document packet detail.', detailError)
+      setSelectedLibraryPacketDetail(null)
+      setError(detailError?.message || 'Unable to load document packet detail.')
+    } finally {
+      setPacketDetailLoading(false)
+    }
+  }, [])
+
+  const loadLibraryPacketSigningSummary = useCallback(async ({ packetId = '', packetVersionId = '' } = {}) => {
+    const resolvedPacketId = normalizeText(packetId)
+    const resolvedVersionId = normalizeText(packetVersionId)
+    if (!resolvedPacketId || !resolvedVersionId) {
+      setSelectedPacketSigningSummary(null)
+      return
+    }
+    try {
+      setSigningSummaryLoading(true)
+      const summary = await getPacketSigningSummary({
+        packetId: resolvedPacketId,
+        packetVersionId: resolvedVersionId,
+      })
+      setSelectedPacketSigningSummary(summary || null)
+    } catch (summaryError) {
+      console.warn('[Contract Studio] Unable to load packet signing summary.', summaryError)
+      setSelectedPacketSigningSummary(null)
+    } finally {
+      setSigningSummaryLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (!stableAllowedPacketTypes.includes(packetType)) {
       setPacketType(defaultPacketType)
@@ -2291,7 +3049,7 @@ export default function SettingsSigningTemplatesPage({
         })
       } catch (loadError) {
         if (active) {
-          setError(loadError?.message || 'Unable to load legal templates.')
+          setError(loadError?.message || 'Unable to load Contract Studio templates.')
         }
       } finally {
         if (active) setLoading(false)
@@ -2304,6 +3062,29 @@ export default function SettingsSigningTemplatesPage({
       active = false
     }
   }, [defaultPacketType, loadTemplatesAndRegistry, resolvedWorkspaceType, role, workspaceMembershipRole])
+
+  useEffect(() => {
+    void loadDocumentLibrary({ targetPacketType: packetType })
+  }, [loadDocumentLibrary, packetType])
+
+  useEffect(() => {
+    if (!documentPackets.length) {
+      setSelectedLibraryPacketId('')
+      setSelectedLibraryPacketDetail(null)
+      return
+    }
+    if (!selectedLibraryPacketId || !documentPackets.some((packet) => packet.id === selectedLibraryPacketId)) {
+      setSelectedLibraryPacketId(documentPackets[0].id)
+    }
+  }, [documentPackets, selectedLibraryPacketId])
+
+  useEffect(() => {
+    void loadLibraryPacketDetail(selectedLibraryPacketId)
+  }, [loadLibraryPacketDetail, selectedLibraryPacketId])
+
+  useEffect(() => {
+    setSigningLinksResult(null)
+  }, [selectedLibraryPacketId])
 
   useEffect(() => {
     const selectedList = templatesByType[packetType] || []
@@ -2354,8 +3135,14 @@ export default function SettingsSigningTemplatesPage({
 
   useEffect(() => {
     setSelectedSectionIndex(0)
+    setSelectedCanvasBlockIndex(0)
     setShowPublishConfirm(false)
+    setPublishReviewAccepted(false)
   }, [selectedTemplateId])
+
+  useEffect(() => {
+    setSelectedCanvasBlockIndex(0)
+  }, [selectedSectionIndex])
 
   useEffect(() => {
     const sectionCount = Array.isArray(form.sections) ? form.sections.length : 0
@@ -2375,6 +3162,10 @@ export default function SettingsSigningTemplatesPage({
   const selectedTemplate = useMemo(
     () => selectedList.find((item) => item.id === selectedTemplateId) || null,
     [selectedList, selectedTemplateId],
+  )
+  const baselineForm = useMemo(
+    () => (templateDetail ? toTemplateForm(templateDetail) : null),
+    [templateDetail],
   )
   const deletableSiblingTemplates = useMemo(
     () => selectedList.filter((item) => item?.organisation_id && item.id !== selectedTemplateId),
@@ -2413,6 +3204,29 @@ export default function SettingsSigningTemplatesPage({
     () => listCanonicalMergeFields({ packetType }),
     [packetType],
   )
+  const tokenLabelByKey = useMemo(
+    () => getTokenLabelMap(canonicalFields),
+    [canonicalFields],
+  )
+  const conditionFieldOptions = useMemo(() => {
+    const preferredKeys = [
+      'finance_type',
+      'bond_amount',
+      'purchase_price',
+      'commission_structure',
+      'mandate_type',
+      'property_address',
+      'seller_entity_type',
+      'buyer_entity_type',
+      'witness_signature',
+    ]
+    const byKey = new Map(canonicalFields.map((field) => [normalizeTemplateTokenKey(field.key), field]))
+    const preferred = preferredKeys.map((key) => byKey.get(key)).filter(Boolean)
+    const remaining = canonicalFields
+      .filter((field) => !preferredKeys.includes(normalizeTemplateTokenKey(field.key)))
+      .slice(0, 18)
+    return [...preferred, ...remaining]
+  }, [canonicalFields])
   const canonicalCategories = useMemo(
     () => ['all', ...Array.from(new Set(canonicalFields.map((row) => normalizeText(row.category)).filter(Boolean)))],
     [canonicalFields],
@@ -2462,6 +3276,21 @@ export default function SettingsSigningTemplatesPage({
 
   const selectedSectionDescription = selectedSection ? getSectionDescription(selectedSection, selectedSectionIndex) : ''
   const selectedSectionText = String(selectedSection?.legalText || '')
+  const selectedSectionCanvasBlocks = useMemo(
+    () => parseTemplateEditorDocumentBlocks(selectedSectionText),
+    [selectedSectionText],
+  )
+  const selectedCanvasBlock = selectedSectionCanvasBlocks[selectedCanvasBlockIndex] || null
+
+  useEffect(() => {
+    if (!selectedSectionCanvasBlocks.length) {
+      if (selectedCanvasBlockIndex !== 0) setSelectedCanvasBlockIndex(0)
+      return
+    }
+    if (selectedCanvasBlockIndex > selectedSectionCanvasBlocks.length - 1) {
+      setSelectedCanvasBlockIndex(selectedSectionCanvasBlocks.length - 1)
+    }
+  }, [selectedCanvasBlockIndex, selectedSectionCanvasBlocks.length])
   const selectedSectionWordCount = selectedSectionText.trim() ? selectedSectionText.trim().split(/\s+/).length : 0
   const selectedSectionCharacterCount = selectedSectionText.length
   const sectionStatuses = useMemo(
@@ -2477,9 +3306,32 @@ export default function SettingsSigningTemplatesPage({
       .filter(Boolean)
     return Array.from(new Set([...(selectedSection.placeholderKeys || []), ...placeholderKeys, ...tokenScan.tokens]))
   }, [selectedSection])
+  const selectedSectionTokenDetails = useMemo(
+    () => selectedSectionTokens.map((token) => ({
+      key: token,
+      label: tokenLabelByKey[token] || humanizeKey(token),
+    })),
+    [selectedSectionTokens, tokenLabelByKey],
+  )
   const selectedSectionUnknownTokens = useMemo(
     () => validateTemplateTokensAgainstRegistry({ tokens: selectedSectionTokens, packetType }).unknown || [],
     [packetType, selectedSectionTokens],
+  )
+  const selectedSectionCondition = useMemo(
+    () => normalizeConditionRule(selectedSection?.conditionJson, conditionFieldOptions[0]?.key || ''),
+    [conditionFieldOptions, selectedSection?.conditionJson],
+  )
+  const selectedSectionConditionSummary = useMemo(
+    () => describeConditionRule(selectedSectionCondition, tokenLabelByKey),
+    [selectedSectionCondition, tokenLabelByKey],
+  )
+  const selectedSigningFields = useMemo(
+    () => getSigningFieldsFromMetadata(selectedSection?.metadataJson || {}, selectedSection || {}),
+    [selectedSection],
+  )
+  const selectedSectionGovernance = useMemo(
+    () => getSectionGovernance(selectedSection || {}),
+    [selectedSection],
   )
   const simpleVariableGroups = useMemo(() => {
     const search = normalizeText(mergeFieldSearch).toLowerCase()
@@ -2518,6 +3370,61 @@ export default function SettingsSigningTemplatesPage({
     () => migrationReport.defaultTemplate?.template || selectedList.find((row) => row?.is_default) || null,
     [migrationReport.defaultTemplate, selectedList],
   )
+  const canPublishTemplate = hasPublishingAuthority({
+    appRole: role,
+    membershipRole,
+    workspaceMembershipRole,
+    canEdit,
+  })
+  const publishReview = useMemo(() => {
+    const baselineSections = baselineForm?.sections || []
+    const currentSections = form.sections || []
+    const changedSections = currentSections
+      .map((section, index) => ({
+        section,
+        index,
+        changed: sectionChanged(section, baselineSections[index]),
+      }))
+      .filter((item) => item.changed)
+    const lockedSections = currentSections.filter((section) => getSectionGovernance(section).locked)
+    const signingFieldCount = currentSections.reduce((total, section) => total + getSigningFieldsFromMetadata(section.metadataJson || {}, section).length, 0)
+    const conditionCount = currentSections.filter((section) => normalizeConditionRule(section.conditionJson).enabled).length
+    const metadataChanged = baselineForm ? [
+      'templateLabel',
+      'description',
+      'versionTag',
+      'renderMode',
+      'templateStatus',
+      'templateStoragePath',
+      'templateStorageBucket',
+      'templateFileName',
+      'templateOutputBucket',
+    ].some((key) => stableStringify(form[key]) !== stableStringify(baselineForm[key])) : Boolean(selectedTemplate)
+    const blockers = [
+      ...validationSummary.blockers,
+      ...(!selectedIsOrgOwned ? ['Create an organisation draft before publishing.'] : []),
+      ...(!canPublishTemplate ? [`Only ${administratorLabel} can publish live document versions.`] : []),
+      ...(hasUnsavedChanges ? ['Save the latest edits before publishing.'] : []),
+      ...(normalizeText(form.renderMode) === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED && !validationSummary.renderable ? ['Native structured template is not renderable yet.'] : []),
+    ]
+
+    return {
+      changedSections,
+      changedSectionCount: changedSections.length,
+      sectionCount: currentSections.length,
+      addedSectionCount: Math.max(0, currentSections.length - baselineSections.length),
+      removedSectionCount: Math.max(0, baselineSections.length - currentSections.length),
+      metadataChanged,
+      lockedSections,
+      lockedSectionCount: lockedSections.length,
+      signingFieldCount,
+      conditionCount,
+      blockers,
+      warnings: validationSummary.warnings,
+      liveTemplateLabel: liveTemplate?.template_label || liveTemplate?.template_key || 'No live template',
+      currentTemplateLabel: form.templateLabel || selectedTemplate?.template_label || selectedTemplate?.template_key || 'Current draft',
+    }
+  }, [administratorLabel, baselineForm, canPublishTemplate, form, hasUnsavedChanges, liveTemplate, selectedIsOrgOwned, selectedTemplate, validationSummary.blockers, validationSummary.renderable, validationSummary.warnings])
   const studioHealthChecks = useMemo(() => {
     const docxReady = normalizeText(form.renderMode) === TEMPLATE_RENDER_MODES.LEGACY_DOCX
       ? Boolean(normalizeText(form.templateStoragePath))
@@ -2535,11 +3442,11 @@ export default function SettingsSigningTemplatesPage({
         passed: validationSummary.missingRequired.length === 0,
       },
       {
-        label: previewState.html ? 'Preview generated' : 'Preview not generated yet',
+        label: previewState.html ? 'Test preview generated' : 'Test preview not generated yet',
         passed: Boolean(previewState.html) && !previewState.error,
       },
       {
-        label: publishReady ? 'Publishing ready' : 'Save and validate before publishing',
+        label: publishReady ? 'Ready to publish' : 'Save and test before publishing',
         passed: publishReady,
       },
     ]
@@ -2578,6 +3485,181 @@ export default function SettingsSigningTemplatesPage({
     }
     return items
   }, [selectedTemplate])
+  const generatedDocumentRows = useMemo(() => ([
+    {
+      key: 'drafts',
+      title: 'Draft documents',
+      value: documentPackets.filter((packet) => normalizeText(packet?.status).toLowerCase() === 'draft').length,
+      detail: 'Draft packet records created from Contract Studio runs.',
+    },
+    {
+      key: 'in_progress',
+      title: 'In progress',
+      value: documentPackets.filter((packet) => ['ready_for_generation', 'generated', 'signing_prep', 'sent', 'partially_signed'].includes(normalizeText(packet?.status).toLowerCase())).length,
+      detail: 'Generated or signing-prep packets currently moving through workflow.',
+    },
+    {
+      key: 'completed',
+      title: 'Completed',
+      value: documentPackets.filter((packet) => normalizeText(packet?.status).toLowerCase() === 'completed').length,
+      detail: 'Completed or signed packets for this document type.',
+    },
+  ]), [documentPackets])
+  const selectedLibraryPacket = useMemo(
+    () => selectedLibraryPacketDetail || documentPackets.find((packet) => packet.id === selectedLibraryPacketId) || null,
+    [documentPackets, selectedLibraryPacketDetail, selectedLibraryPacketId],
+  )
+  const selectedLibraryPacketVersions = useMemo(
+    () => (Array.isArray(selectedLibraryPacketDetail?.versions) ? selectedLibraryPacketDetail.versions : []),
+    [selectedLibraryPacketDetail],
+  )
+  const selectedLibraryPacketEvents = useMemo(
+    () => (Array.isArray(selectedLibraryPacketDetail?.events) ? selectedLibraryPacketDetail.events : []),
+    [selectedLibraryPacketDetail],
+  )
+  const latestLibraryPacketVersion = selectedLibraryPacketVersions[0] || null
+  const latestGeneratedLibraryPacketVersion = getLatestGeneratedPacketVersion(selectedLibraryPacketVersions)
+  const latestFinalLibraryPacketVersion = useMemo(
+    () => selectedLibraryPacketVersions.find((version) => normalizeText(version?.final_signed_file_access_url || version?.final_signed_file_url)) || null,
+    [selectedLibraryPacketVersions],
+  )
+  const latestLibraryPacketArtifactUrl = getPacketVersionArtifactUrl(latestLibraryPacketVersion)
+  const latestFinalLibraryPacketArtifactUrl = normalizeText(
+    latestFinalLibraryPacketVersion?.final_signed_file_access_url ||
+      latestFinalLibraryPacketVersion?.final_signed_file_url,
+  )
+  const completedLibrarySignersCount = useMemo(
+    () => (selectedPacketSigningSummary?.signers || []).filter((signer) => normalizeText(signer?.status).toLowerCase() === 'signed').length,
+    [selectedPacketSigningSummary?.signers],
+  )
+  const canGenerateFinalLibraryPacket = Boolean(
+    selectedLibraryPacket?.id &&
+      latestGeneratedLibraryPacketVersion?.id &&
+      Number(selectedPacketSigningSummary?.signerCount || 0) > 0 &&
+      (selectedPacketSigningSummary?.allSignersSigned || completedLibrarySignersCount === Number(selectedPacketSigningSummary?.signerCount || 0)) &&
+      Number(selectedPacketSigningSummary?.requiredSignatures || 0) > 0 &&
+      (
+        selectedPacketSigningSummary?.allRequiredFieldsCompleted ||
+        Number(selectedPacketSigningSummary?.completedRequiredFieldCount || 0) === Number(selectedPacketSigningSummary?.requiredFieldCount || 0)
+      ),
+  )
+  const libraryPacketHandoverManifest = useMemo(() => {
+    if (!selectedLibraryPacket?.id) return null
+    const sourceContext = selectedLibraryPacket.source_context_json && typeof selectedLibraryPacket.source_context_json === 'object'
+      ? selectedLibraryPacket.source_context_json
+      : {}
+    const signers = (selectedPacketSigningSummary?.signers || []).map((signer) => ({
+      role: normalizeText(signer?.signer_role || signer?.signerRole),
+      name: normalizeText(signer?.signer_name || signer?.signerName),
+      email: normalizeText(signer?.signer_email || signer?.signerEmail),
+      status: normalizeText(signer?.status) || 'pending',
+      signedAt: normalizeText(signer?.signed_at || signer?.completed_at || signer?.updated_at),
+    }))
+    const events = selectedLibraryPacketEvents.slice(0, 20).map((event) => ({
+      type: normalizeText(event?.event_type),
+      timestamp: normalizeText(event?.created_at),
+      versionId: normalizeText(event?.packet_version_id || event?.version_id),
+    }))
+    return {
+      generatedAt: new Date().toISOString(),
+      packet: {
+        id: selectedLibraryPacket.id,
+        title: selectedLibraryPacket.title || selectedLibraryPacket.template_label_snapshot || 'Document packet',
+        type: selectedLibraryPacket.packet_type || packetType,
+        status: normalizeText(selectedLibraryPacket.status).toLowerCase() || 'draft',
+        currentVersion: selectedLibraryPacket.current_version_number || latestLibraryPacketVersion?.version_number || 0,
+        template: selectedLibraryPacket.template_label_snapshot || selectedTemplate?.template_label || '',
+      },
+      source: {
+        transactionId: normalizeText(selectedLibraryPacket.transaction_id || sourceContext.transactionId || sourceContext.transaction_id),
+        leadId: normalizeText(selectedLibraryPacket.lead_id || sourceContext.leadId || sourceContext.lead_id),
+        dealId: normalizeText(selectedLibraryPacket.deal_id || sourceContext.dealId || sourceContext.deal_id),
+        unitId: normalizeText(selectedLibraryPacket.unit_id || sourceContext.unitId || sourceContext.unit_id),
+      },
+      artifacts: {
+        generatedDocumentUrl: latestLibraryPacketArtifactUrl,
+        finalSignedDocumentUrl: latestFinalLibraryPacketArtifactUrl,
+        generatedVersionId: latestGeneratedLibraryPacketVersion?.id || '',
+        finalVersionId: latestFinalLibraryPacketVersion?.id || '',
+      },
+      signing: {
+        signerCount: Number(selectedPacketSigningSummary?.signerCount || 0),
+        signedCount: completedLibrarySignersCount,
+        fieldCount: Number(selectedPacketSigningSummary?.fieldCount || 0),
+        requiredFieldCount: Number(selectedPacketSigningSummary?.requiredFieldCount || 0),
+        completedRequiredFieldCount: Number(selectedPacketSigningSummary?.completedRequiredFieldCount || 0),
+        allRequiredFieldsCompleted: Boolean(selectedPacketSigningSummary?.allRequiredFieldsCompleted),
+        signers,
+      },
+      audit: {
+        eventCount: selectedLibraryPacketEvents.length,
+        events,
+      },
+    }
+  }, [
+    completedLibrarySignersCount,
+    latestFinalLibraryPacketArtifactUrl,
+    latestFinalLibraryPacketVersion?.id,
+    latestGeneratedLibraryPacketVersion?.id,
+    latestLibraryPacketArtifactUrl,
+    latestLibraryPacketVersion?.version_number,
+    packetType,
+    selectedLibraryPacket,
+    selectedLibraryPacketEvents,
+    selectedPacketSigningSummary,
+    selectedTemplate?.template_label,
+  ])
+  const libraryPacketHandoverSteps = useMemo(() => ([
+    {
+      key: 'generated',
+      label: 'Generated document',
+      detail: latestGeneratedLibraryPacketVersion ? `Version ${latestGeneratedLibraryPacketVersion.version_number}` : 'Generate the packet first',
+      passed: Boolean(latestGeneratedLibraryPacketVersion),
+    },
+    {
+      key: 'signed',
+      label: 'Signer completion',
+      detail: `${completedLibrarySignersCount}/${selectedPacketSigningSummary?.signerCount || 0} signed`,
+      passed: Number(selectedPacketSigningSummary?.signerCount || 0) > 0 &&
+        (selectedPacketSigningSummary?.allSignersSigned || completedLibrarySignersCount === Number(selectedPacketSigningSummary?.signerCount || 0)),
+    },
+    {
+      key: 'fields',
+      label: 'Required fields',
+      detail: `${selectedPacketSigningSummary?.completedRequiredFieldCount || 0}/${selectedPacketSigningSummary?.requiredFieldCount || 0} completed`,
+      passed: Number(selectedPacketSigningSummary?.requiredFieldCount || 0) > 0 &&
+        (selectedPacketSigningSummary?.allRequiredFieldsCompleted ||
+          Number(selectedPacketSigningSummary?.completedRequiredFieldCount || 0) === Number(selectedPacketSigningSummary?.requiredFieldCount || 0)),
+    },
+    {
+      key: 'final',
+      label: 'Final signed copy',
+      detail: latestFinalLibraryPacketVersion ? `Final v${latestFinalLibraryPacketVersion.version_number}` : 'Final copy not generated',
+      passed: Boolean(latestFinalLibraryPacketArtifactUrl),
+    },
+  ]), [
+    completedLibrarySignersCount,
+    latestFinalLibraryPacketArtifactUrl,
+    latestFinalLibraryPacketVersion,
+    latestGeneratedLibraryPacketVersion,
+    selectedPacketSigningSummary,
+  ])
+  const libraryPacketHandoverReady = Boolean(
+    latestFinalLibraryPacketArtifactUrl &&
+      libraryPacketHandoverSteps.length &&
+      libraryPacketHandoverSteps.every((step) => step.passed),
+  )
+  useEffect(() => {
+    void loadLibraryPacketSigningSummary({
+      packetId: selectedLibraryPacket?.id || '',
+      packetVersionId: latestGeneratedLibraryPacketVersion?.id || '',
+    })
+  }, [latestGeneratedLibraryPacketVersion?.id, loadLibraryPacketSigningSummary, selectedLibraryPacket?.id])
+  const clauseLibraryItems = useMemo(() => CONTRACT_CLAUSE_LIBRARY_ITEMS.map((item) => ({
+    ...item,
+    tokens: detectTemplateTokenIssues(item.snippet).tokens,
+    tokenLabels: detectTemplateTokenIssues(item.snippet).tokens.map((token) => tokenLabelByKey[token] || humanizeKey(token)),
+  })), [tokenLabelByKey])
   const stickyNextStep = useMemo(() => {
     if (!selectedTemplate) {
       return {
@@ -2611,11 +3693,25 @@ export default function SettingsSigningTemplatesPage({
 
   const templateTypeConfig = visiblePacketTypes.find((item) => item.key === packetType) || visiblePacketTypes[0] || SUPPORTED_PACKET_TYPES[0]
 
+  useEffect(() => {
+    setDocumentRunForm((previous) => {
+      const nextDefault = createDefaultDocumentRunForm(packetType, form.templateLabel || selectedTemplate?.template_label || templateTypeConfig?.label || '')
+      if (previous.sourceType && previous.title && previous.sourceType === nextDefault.sourceType) {
+        return previous
+      }
+      return {
+        ...nextDefault,
+        title: previous.title || nextDefault.title,
+      }
+    })
+  }, [form.templateLabel, packetType, selectedTemplate?.template_label, templateTypeConfig?.label])
+
   async function refreshAll() {
     await loadTemplatesAndRegistry({
       targetPacketType: packetType,
       preferredTemplateId: selectedTemplateId,
     })
+    await loadDocumentLibrary({ targetPacketType: packetType })
   }
 
   async function handleCreateTemplate() {
@@ -2687,6 +3783,11 @@ export default function SettingsSigningTemplatesPage({
           legalText: section.legal_text,
           placeholderKeysText: Array.isArray(section.placeholder_keys) ? section.placeholder_keys.join(', ') : '',
           isRequired: section.is_required,
+          conditionJson: section.condition_json && typeof section.condition_json === 'object' ? section.condition_json : {},
+          signingFields: getSigningFieldsFromMetadata(
+            section.metadata_json && typeof section.metadata_json === 'object' ? section.metadata_json : {},
+            section,
+          ),
           sortOrder: section.sort_order ?? index,
         }, index, packetType)),
       })
@@ -2789,8 +3890,10 @@ export default function SettingsSigningTemplatesPage({
           legalText: '',
           placeholderKeysText: '',
           isRequired: true,
+          conditionJson: {},
           requiresInitial: false,
           initialPlaceholderKey: '',
+          signingFields: [],
           sortOrder: (previous.sections || []).length,
         },
       ],
@@ -3019,6 +4122,330 @@ export default function SettingsSigningTemplatesPage({
     }
   }
 
+  async function handleTestGenerateFromRun() {
+    if (!templateDetail && !selectedTemplate) return
+
+    try {
+      setTestingTemplate(true)
+      setError('')
+      setMessage('')
+      setPreviewState({ loading: true, html: '', warnings: [], critical: [], error: '' })
+      const runPayload = buildDocumentRunPayload({
+        runForm: documentRunForm,
+        packetType,
+        selectedTemplate,
+        templateDetail,
+        form,
+        moduleType: normalizedModuleType,
+        validationSummary,
+        templateTypeConfig,
+      })
+
+      const preview = await renderPacketPreview({
+        packetType,
+        context: runPayload.context,
+        template: runPayload.previewTemplate,
+        title: runPayload.title,
+      })
+
+      setPreviewState({
+        loading: false,
+        html: preview?.previewHtml || '',
+        warnings: preview?.warnings || [],
+        critical: preview?.critical || [],
+        error: '',
+        sourceLabel: 'real_run',
+      })
+
+      if (preview?.critical?.length) {
+        setMessage('Real-context preview generated with validation blockers. Open the issue cards and fix the missing source data.')
+      } else {
+        setMessage('Real-context preview generated from the current run details.')
+      }
+    } catch (previewError) {
+      setPreviewState({
+        loading: false,
+        html: '',
+        warnings: [],
+        critical: [],
+        error: previewError?.message || 'Unable to generate real-context preview.',
+      })
+    } finally {
+      setTestingTemplate(false)
+    }
+  }
+
+  async function handleCreateDocumentPacketFromRun() {
+    if (!selectedTemplateId || !selectedTemplate) return
+    if (hasUnsavedChanges) {
+      setError('Save the template before creating a draft document packet from it.')
+      setActiveStudioArea('templates')
+      setActiveTab('template')
+      return
+    }
+
+    try {
+      setCreatingDocumentPacket(true)
+      setError('')
+      setMessage('')
+      const runPayload = buildDocumentRunPayload({
+        runForm: documentRunForm,
+        packetType,
+        selectedTemplate,
+        templateDetail,
+        form,
+        moduleType: normalizedModuleType,
+        validationSummary,
+        templateTypeConfig,
+      })
+      const packet = await createDocumentPacket({
+        packetType,
+        templateId: selectedTemplateId,
+        templateKeySnapshot: selectedTemplate.template_key || selectedTemplate.templateKey || '',
+        templateLabelSnapshot: form.templateLabel || selectedTemplate.template_label || selectedTemplate.templateLabel || '',
+        title: runPayload.title,
+        status: 'draft',
+        transactionId: runPayload.references.transactionId || null,
+        leadId: runPayload.references.leadId || null,
+        contactId: runPayload.references.contactId || null,
+        dealId: runPayload.references.dealId || null,
+        unitId: runPayload.references.unitId || null,
+        sourceContextJson: {
+          ...runPayload.sourceContext,
+          contractStudioPreviewContext: runPayload.context,
+          templateId: selectedTemplateId,
+          templateLabel: form.templateLabel || selectedTemplate.template_label || selectedTemplate.templateLabel || '',
+          templateVersion: form.versionTag || selectedTemplate.version_tag || selectedTemplate.versionTag || '',
+        },
+      })
+      await loadDocumentLibrary({ targetPacketType: packetType })
+      setActiveStudioArea('documents')
+      setMessage(`Draft packet created: ${packet?.title || runPayload.title}`)
+    } catch (packetError) {
+      setError(packetError?.message || 'Unable to create draft document packet.')
+    } finally {
+      setCreatingDocumentPacket(false)
+    }
+  }
+
+  async function resolveTemplateForLibraryPacket(packet = {}) {
+    const packetTemplateId = normalizeText(packet?.template_id)
+    if (!packetTemplateId) return null
+    if (packetTemplateId === selectedTemplateId && templateDetail) return templateDetail
+    return fetchDocumentPacketTemplate(packetTemplateId, { includeSections: true }).catch((templateError) => {
+      console.warn('[Contract Studio] Unable to load packet template for library action.', templateError)
+      return null
+    })
+  }
+
+  async function handlePreviewLibraryPacket(packet = selectedLibraryPacket) {
+    if (!packet?.id) return
+    try {
+      setPacketActionId(`preview:${packet.id}`)
+      setError('')
+      setMessage('')
+      setPreviewState({ loading: true, html: '', warnings: [], critical: [], error: '' })
+      const context = buildDocumentRunContextFromPacket(packet)
+      const template = await resolveTemplateForLibraryPacket(packet)
+      const preview = await renderPacketPreview({
+        packetType: packet.packet_type || packetType,
+        context,
+        template,
+        title: packet.title || packet.template_label_snapshot || 'Document packet preview',
+      })
+      setPreviewState({
+        loading: false,
+        html: preview?.previewHtml || '',
+        warnings: preview?.warnings || [],
+        critical: preview?.critical || [],
+        error: '',
+        sourceLabel: 'library_packet',
+      })
+      setActiveStudioArea('templates')
+      setActiveTab('preview')
+      setMessage(preview?.critical?.length ? 'Packet preview generated with validation blockers.' : 'Packet preview generated from stored packet context.')
+    } catch (previewError) {
+      setPreviewState({
+        loading: false,
+        html: '',
+        warnings: [],
+        critical: [],
+        error: previewError?.message || 'Unable to preview packet.',
+      })
+      setError(previewError?.message || 'Unable to preview packet.')
+    } finally {
+      setPacketActionId('')
+    }
+  }
+
+  async function handleGenerateLibraryPacket(packet = selectedLibraryPacket) {
+    if (!packet?.id) return
+    try {
+      setPacketActionId(`generate:${packet.id}`)
+      setError('')
+      setMessage('')
+      const context = buildDocumentRunContextFromPacket(packet)
+      const template = await resolveTemplateForLibraryPacket(packet)
+      const result = await generatePacketVersion({
+        packetId: packet.id,
+        packetType: packet.packet_type || packetType,
+        context,
+        template,
+        allowWarnings: true,
+      })
+      await loadDocumentLibrary({ targetPacketType: packet.packet_type || packetType })
+      await loadLibraryPacketDetail(packet.id)
+      setMessage(`Generated packet version v${result?.version?.version_number || result?.packet?.current_version_number || ''}.`)
+    } catch (generateError) {
+      setError(generateError?.message || 'Unable to generate packet version.')
+    } finally {
+      setPacketActionId('')
+    }
+  }
+
+  async function handleArchiveLibraryPacket(packet = selectedLibraryPacket) {
+    if (!packet?.id) return
+    const confirmed = window.confirm(`Archive "${packet.title || packet.template_label_snapshot || 'this document packet'}"?`)
+    if (!confirmed) return
+    try {
+      setPacketActionId(`archive:${packet.id}`)
+      setError('')
+      setMessage('')
+      await archiveDocumentPacket(packet.id, {
+        reason: 'Archived from Contract Studio document library.',
+      })
+      await loadDocumentLibrary({ targetPacketType: packet.packet_type || packetType })
+      await loadLibraryPacketDetail(packet.id)
+      setMessage('Document packet archived.')
+    } catch (archiveError) {
+      setError(archiveError?.message || 'Unable to archive document packet.')
+    } finally {
+      setPacketActionId('')
+    }
+  }
+
+  async function handlePrepareSigningForLibraryPacket(packet = selectedLibraryPacket) {
+    if (!packet?.id) return
+    const targetVersion = latestGeneratedLibraryPacketVersion
+    if (!targetVersion?.id) {
+      setError('Generate a packet version before preparing signing fields.')
+      return
+    }
+    try {
+      setPacketActionId(`signing-prep:${packet.id}`)
+      setError('')
+      setMessage('')
+      const context = buildDocumentRunContextFromPacket(packet)
+      const placeholders = targetVersion.placeholders_resolved_json && typeof targetVersion.placeholders_resolved_json === 'object'
+        ? targetVersion.placeholders_resolved_json
+        : {}
+      const result = await prepareSigningFields({
+        packetId: packet.id,
+        packetType: packet.packet_type || packetType,
+        context,
+        placeholders,
+      })
+      setSelectedPacketSigningSummary(result?.summary || null)
+      await loadDocumentLibrary({ targetPacketType: packet.packet_type || packetType })
+      await loadLibraryPacketDetail(packet.id)
+      await loadLibraryPacketSigningSummary({
+        packetId: packet.id,
+        packetVersionId: targetVersion.id,
+      })
+      setMessage(result?.alreadyPrepared ? 'Signing prep was already complete.' : 'Signing fields and signers prepared.')
+    } catch (signingError) {
+      setError(signingError?.message || 'Unable to prepare signing fields.')
+    } finally {
+      setPacketActionId('')
+    }
+  }
+
+  async function handleGenerateSigningLinksForLibraryPacket(packet = selectedLibraryPacket) {
+    if (!packet?.id) return
+    const targetVersion = latestGeneratedLibraryPacketVersion
+    if (!targetVersion?.id) {
+      setError('Generate a packet version before creating signing links.')
+      return
+    }
+    try {
+      setPacketActionId(`signing-links:${packet.id}`)
+      setError('')
+      setMessage('')
+      const result = await generateSigningLinks({
+        packetId: packet.id,
+        packetVersionId: targetVersion.id,
+        expiresInHours: 72,
+        baseUrl: typeof window !== 'undefined' ? window.location.origin : '',
+        regenerate: false,
+      })
+      setSigningLinksResult(result || null)
+      await loadDocumentLibrary({ targetPacketType: packet.packet_type || packetType })
+      await loadLibraryPacketDetail(packet.id)
+      await loadLibraryPacketSigningSummary({
+        packetId: packet.id,
+        packetVersionId: targetVersion.id,
+      })
+      setMessage(`Generated secure signing link${(result?.signers || []).filter((signer) => normalizeText(signer?.signing_link)).length === 1 ? '' : 's'}.`)
+    } catch (signingError) {
+      setError(signingError?.message || 'Unable to generate signing links.')
+    } finally {
+      setPacketActionId('')
+    }
+  }
+
+  async function handleGenerateFinalSignedForLibraryPacket(packet = selectedLibraryPacket) {
+    if (!packet?.id) return
+    const targetVersion = latestGeneratedLibraryPacketVersion
+    if (!targetVersion?.id) {
+      setError('Generate a packet version before finalising the signed document.')
+      return
+    }
+    try {
+      setPacketActionId(`finalise:${packet.id}`)
+      setError('')
+      setMessage('')
+      const result = await generateFinalSignedPacketDocument({
+        packetId: packet.id,
+        packetVersionId: targetVersion.id,
+      })
+      await loadDocumentLibrary({ targetPacketType: packet.packet_type || packetType })
+      await loadLibraryPacketDetail(packet.id)
+      await loadLibraryPacketSigningSummary({
+        packetId: packet.id,
+        packetVersionId: targetVersion.id,
+      })
+      setMessage(result?.packet ? 'Final signed document generated and archived.' : 'Final signed document generated.')
+    } catch (finaliseError) {
+      setError(finaliseError?.message || 'Unable to generate final signed document.')
+    } finally {
+      setPacketActionId('')
+    }
+  }
+
+  function handleDownloadLibraryPacketHandoverManifest() {
+    if (!libraryPacketHandoverManifest || !selectedLibraryPacket?.id) return
+    try {
+      const safeTitle = normalizeText(selectedLibraryPacket.title || selectedLibraryPacket.template_label_snapshot || 'document-packet')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'document-packet'
+      const blob = new Blob([JSON.stringify(libraryPacketHandoverManifest, null, 2)], {
+        type: 'application/json;charset=utf-8',
+      })
+      const objectUrl = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = objectUrl
+      anchor.download = `${safeTitle}-handover-manifest.json`
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(objectUrl)
+      setMessage('Handover manifest downloaded.')
+    } catch (manifestError) {
+      setError(manifestError?.message || 'Unable to download handover manifest.')
+    }
+  }
+
   async function handleSaveDraftAction(event) {
     event?.preventDefault?.()
     if (!selectedTemplateId || !selectedTemplate || !canEdit) return
@@ -3217,6 +4644,214 @@ export default function SettingsSigningTemplatesPage({
     })
   }
 
+  function updateSelectedCanvasBlock(blockIndex, nextRawValue) {
+    if (!selectedSection || !canEdit) return
+    const blocks = selectedSectionCanvasBlocks.length
+      ? selectedSectionCanvasBlocks
+      : [{ type: 'paragraph', raw: selectedSectionText, text: selectedSectionText }]
+    const nextBlocks = blocks.map((block, index) => (
+      index === blockIndex
+        ? {
+            ...block,
+            raw: String(nextRawValue || ''),
+            text: String(nextRawValue || ''),
+          }
+        : block
+    ))
+    const nextValue = serializeTemplateEditorDocumentBlocks(nextBlocks)
+    const tokenScan = detectTemplateTokenIssues(nextValue)
+    const nextPlaceholderKeys = Array.from(new Set([
+      ...(selectedSection.placeholderKeys || []),
+      ...tokenScan.tokens.map((item) => normalizeTemplateTokenKey(item)).filter(Boolean),
+    ]))
+    updateSection(selectedSectionIndex, {
+      legalText: nextValue,
+      placeholderKeysText: nextPlaceholderKeys.join(', '),
+      placeholderKeys: nextPlaceholderKeys,
+    })
+  }
+
+  function handleInsertDocumentBlock(blockType = 'paragraph') {
+    if (blockType === 'table') {
+      handleInsertTable()
+      return
+    }
+    const snippet = DOCUMENT_BLOCK_SNIPPETS[blockType] || DOCUMENT_BLOCK_SNIPPETS.paragraph
+    insertTextIntoSelectedSection(snippet, { block: true })
+  }
+
+  function updateSelectedSectionCondition(patch = {}) {
+    if (!selectedSection || !canEdit) return
+    const nextCondition = normalizeConditionRule({
+      ...selectedSectionCondition,
+      ...patch,
+    })
+    const nextPlaceholderKeys = Array.from(new Set([
+      ...(selectedSection.placeholderKeys || []),
+      ...String(selectedSection.placeholderKeysText || '')
+        .split(',')
+        .map((item) => normalizeTemplateTokenKey(item))
+        .filter(Boolean),
+      nextCondition.enabled ? nextCondition.field : '',
+    ].filter(Boolean)))
+    updateSection(selectedSectionIndex, {
+      conditionJson: nextCondition.enabled && nextCondition.field
+        ? {
+            enabled: true,
+            rule: {
+              field: nextCondition.field,
+              operator: nextCondition.operator,
+              value: nextCondition.value,
+            },
+            label: nextCondition.label || describeConditionRule(nextCondition, tokenLabelByKey),
+          }
+        : {},
+      placeholderKeysText: nextPlaceholderKeys.join(', '),
+      placeholderKeys: nextPlaceholderKeys,
+    })
+  }
+
+  function clearSelectedSectionCondition() {
+    if (!selectedSection || !canEdit) return
+    updateSection(selectedSectionIndex, { conditionJson: {} })
+  }
+
+  function setSelectedSectionSigningFields(nextFields = []) {
+    if (!selectedSection || !canEdit) return
+    const normalizedFields = (Array.isArray(nextFields) ? nextFields : []).map((field, index) => normalizeSigningFieldPlan(field, index))
+    const metadataJson = selectedSection.metadataJson && typeof selectedSection.metadataJson === 'object' ? selectedSection.metadataJson : {}
+    const signingMetadata = metadataJson.signing && typeof metadataJson.signing === 'object' ? metadataJson.signing : {}
+    updateSection(selectedSectionIndex, {
+      signingFields: normalizedFields,
+      metadataJson: {
+        ...metadataJson,
+        signing: {
+          ...signingMetadata,
+          planned_fields: normalizedFields,
+          signing_fields: normalizedFields,
+        },
+        planned_signing_fields: normalizedFields,
+      },
+    })
+  }
+
+  function addSelectedSectionSigningField(fieldType = 'signature', signerRole = 'purchaser_1') {
+    if (!selectedSection || !canEdit) return
+    const typeConfig = getSigningFieldTypeConfig(fieldType)
+    const preset = normalizeSigningFieldType(fieldType) === 'initial'
+      ? SIGNING_FIELD_POSITION_PRESETS.find((item) => item.key === 'initial_right') || SIGNING_FIELD_POSITION_PRESETS[0]
+      : SIGNING_FIELD_POSITION_PRESETS[Math.min(selectedSigningFields.length, 2)] || SIGNING_FIELD_POSITION_PRESETS[0]
+    const nextField = normalizeSigningFieldPlan({
+      id: `planned_field_${Date.now()}_${selectedSigningFields.length + 1}`,
+      signerRole,
+      fieldType,
+      pageNumber: 1,
+      xPosition: preset.x,
+      yPosition: preset.y,
+      width: typeConfig.width,
+      height: typeConfig.height,
+      required: true,
+    }, selectedSigningFields.length)
+    setSelectedSectionSigningFields([...selectedSigningFields, nextField])
+  }
+
+  function updateSelectedSectionSigningField(fieldId = '', patch = {}) {
+    if (!selectedSection || !canEdit) return
+    setSelectedSectionSigningFields(selectedSigningFields.map((field, index) => {
+      if (field.id !== fieldId) return field
+      const patched = { ...field, ...patch }
+      if (patch.fieldType) {
+        const typeConfig = getSigningFieldTypeConfig(patch.fieldType)
+        patched.width = typeConfig.width
+        patched.height = typeConfig.height
+      }
+      return normalizeSigningFieldPlan(patched, index)
+    }))
+  }
+
+  function removeSelectedSectionSigningField(fieldId = '') {
+    if (!selectedSection || !canEdit) return
+    setSelectedSectionSigningFields(selectedSigningFields.filter((field) => field.id !== fieldId))
+  }
+
+  function updateSectionGovernance(index = selectedSectionIndex, patch = {}) {
+    const section = (form.sections || [])[index]
+    if (!section || !canEdit || !canPublishTemplate) return
+    const metadataJson = section.metadataJson && typeof section.metadataJson === 'object' ? section.metadataJson : {}
+    const currentGovernance = metadataJson.governance && typeof metadataJson.governance === 'object' ? metadataJson.governance : {}
+    const nextGovernance = {
+      ...currentGovernance,
+      ...patch,
+    }
+    if (patch.locked === true && !nextGovernance.locked_at) {
+      nextGovernance.locked_at = new Date().toISOString()
+    }
+    if (patch.locked === false) {
+      nextGovernance.locked_at = null
+      nextGovernance.locked_by_role = null
+      nextGovernance.lockReason = ''
+    }
+    updateSection(index, {
+      metadataJson: {
+        ...metadataJson,
+        governance: nextGovernance,
+      },
+    })
+  }
+
+  function updateSelectedSectionGovernance(patch = {}) {
+    updateSectionGovernance(selectedSectionIndex, patch)
+  }
+
+  function handleInsertClauseFromLibrary(clause = {}) {
+    if (!selectedSection || !canEdit) {
+      setActiveStudioArea('templates')
+      setActiveTab('template')
+      setError('Choose an editable template section before inserting a clause.')
+      return
+    }
+    setError('')
+    setActiveStudioArea('templates')
+    setActiveTab('template')
+    const currentValue = String(selectedSection.legalText || '')
+    const snippet = String(clause.snippet || '')
+    const nextValue = `${currentValue}${currentValue && !/\n\s*$/.test(currentValue) ? '\n\n' : ''}${snippet}`
+    const tokenScan = detectTemplateTokenIssues(nextValue)
+    const normalizedCondition = normalizeConditionRule(clause.defaultCondition || {})
+    const nextPlaceholderKeys = Array.from(new Set([
+      ...(selectedSection.placeholderKeys || []),
+      ...String(selectedSection.placeholderKeysText || '')
+        .split(',')
+        .map((item) => normalizeTemplateTokenKey(item))
+        .filter(Boolean),
+      ...tokenScan.tokens.map((item) => normalizeTemplateTokenKey(item)).filter(Boolean),
+      normalizedCondition.enabled ? normalizedCondition.field : '',
+    ].filter(Boolean)))
+    updateSection(selectedSectionIndex, {
+      legalText: nextValue,
+      conditionJson: normalizedCondition.enabled && normalizedCondition.field
+        ? {
+            enabled: true,
+            rule: {
+              field: normalizedCondition.field,
+              operator: normalizedCondition.operator,
+              value: normalizedCondition.value,
+            },
+            label: normalizedCondition.label || describeConditionRule(normalizedCondition, tokenLabelByKey),
+          }
+        : selectedSection.conditionJson || {},
+      placeholderKeysText: nextPlaceholderKeys.join(', '),
+      placeholderKeys: nextPlaceholderKeys,
+    })
+    setMessage(`Inserted clause: ${clause.title}`)
+  }
+
+  function focusSourceEditor() {
+    requestAnimationFrame(() => {
+      clauseTextareaRef.current?.focus?.()
+    })
+  }
+
   function handleInsertVariableToken(token = '') {
     const normalizedToken = normalizeText(token)
     if (!normalizedToken) return
@@ -3229,16 +4864,26 @@ export default function SettingsSigningTemplatesPage({
 
   function openPublishDialog() {
     if (!selectedTemplateId || !selectedIsOrgOwned || !canEdit || saving || form.isDefault) return
+    setPublishReviewAccepted(false)
     setShowPublishConfirm(true)
   }
 
   async function confirmPublishTemplate() {
+    if (publishReview.blockers.length) {
+      setError('Resolve the publishing blockers before publishing this template.')
+      setShowPublishConfirm(false)
+      return
+    }
+    if (!publishReviewAccepted) {
+      setError('Review and confirm the publishing summary before publishing this template.')
+      return
+    }
     setShowPublishConfirm(false)
     await handleSetAsDefault()
   }
 
   if (loading) {
-    return <SettingsLoadingState label="Loading legal template library…" />
+    return <SettingsLoadingState label="Loading Contract Studio…" />
   }
 
   return (
@@ -3269,7 +4914,7 @@ export default function SettingsSigningTemplatesPage({
               disabled={!selectedTemplate}
             >
               <Eye size={15} />
-              <span>Preview</span>
+              <span>Test</span>
             </button>
             <button
               type="button"
@@ -3285,53 +4930,84 @@ export default function SettingsSigningTemplatesPage({
 
         {!canEdit ? (
           <SettingsBanner tone="warning">
-            Read-only for your role. {administratorLabel} can edit legal templates and merge-field governance.
+            Read-only for your role. {administratorLabel} can edit templates, clauses, publishing, and data-field governance.
           </SettingsBanner>
         ) : null}
 
         {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
         {message ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}
 
-        <div className="overflow-x-auto rounded-[18px] border border-[#dbe7f3] bg-white p-2">
-          <div className="flex min-w-max gap-1">
-            {simpleDocumentTabs.map((item) => {
-              const Icon = item.icon
-              const active = activeDocumentTypeKey === item.key
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => {
-                    setActiveDocumentTypeKey(item.key)
-                    setPacketType(item.packetType)
+        <div className="grid gap-3 xl:grid-cols-3">
+          {CONTRACT_STUDIO_AREAS.map((area) => {
+            const Icon = area.icon
+            const active = activeStudioArea === area.key
+            return (
+              <button
+                key={area.key}
+                type="button"
+                onClick={() => {
+                  setActiveStudioArea(area.key)
+                  if (area.key === 'templates' && !CONTRACT_STUDIO_TABS.some((tab) => tab.key === activeTab)) {
                     setActiveTab('template')
-                  }}
-                  className={[
-                    'inline-flex items-center gap-2 rounded-[14px] border px-4 py-3 text-sm font-semibold transition',
-                    active
-                      ? 'border-[#b9dfc8] bg-[#eef9f1] text-[#128642] shadow-[inset_0_-2px_0_#128642]'
-                      : 'border-transparent bg-white text-[#42566d] hover:border-[#dbe7f3] hover:bg-[#f8fbff]',
-                  ].join(' ')}
-                >
-                  <Icon size={15} />
-                  <span>{item.label}</span>
-                </button>
-              )
-            })}
-          </div>
+                  }
+                }}
+                className={[
+                  'flex min-h-[104px] items-start gap-3 rounded-[18px] border px-4 py-4 text-left transition',
+                  active
+                    ? 'border-[#96d7ad] bg-[#eef9f1] shadow-[0_14px_28px_rgba(18,134,66,0.10)]'
+                    : 'border-[#dbe7f3] bg-[#fbfdff] hover:border-[#c4d5e6] hover:bg-white',
+                ].join(' ')}
+              >
+                <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[12px] ${active ? 'bg-white text-[#128642]' : 'bg-white text-[#52667d]'}`}>
+                  <Icon size={18} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-[#102033]">{area.label}</span>
+                  <span className="mt-1 block text-sm leading-5 text-[#607387]">{area.description}</span>
+                </span>
+              </button>
+            )
+          })}
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        {activeStudioArea === 'templates' ? (
+          <div className="overflow-x-auto rounded-[18px] border border-[#dbe7f3] bg-white p-2">
+            <div className="flex min-w-max gap-1">
+              {simpleDocumentTabs.map((item) => {
+                const Icon = item.icon
+                const active = activeDocumentTypeKey === item.key
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => {
+                      setActiveDocumentTypeKey(item.key)
+                      setPacketType(item.packetType)
+                      setActiveTab('template')
+                    }}
+                    className={[
+                      'inline-flex items-center gap-2 rounded-[14px] border px-4 py-3 text-sm font-semibold transition',
+                      active
+                        ? 'border-[#b9dfc8] bg-[#eef9f1] text-[#128642] shadow-[inset_0_-2px_0_#128642]'
+                        : 'border-transparent bg-white text-[#42566d] hover:border-[#dbe7f3] hover:bg-[#f8fbff]',
+                    ].join(' ')}
+                  >
+                    <Icon size={15} />
+                    <span>{item.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {activeStudioArea === 'templates' ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-[#52667d]">
             {selectedIsOrgOwned ? 'You are editing your agency draft.' : 'This is the standard Arch9 document. Saving creates your agency draft.'}
           </p>
           <div className="flex flex-wrap gap-2">
-            {[
-              { key: 'template', label: 'Edit' },
-              { key: 'preview', label: 'Preview' },
-              { key: 'activity', label: 'History' },
-              { key: 'settings', label: 'Advanced' },
-            ].map((tab) => (
+            {CONTRACT_STUDIO_TABS.map((tab) => (
               <TemplateStudioTabButton
                 key={tab.key}
                 active={activeTab === tab.key}
@@ -3340,13 +5016,14 @@ export default function SettingsSigningTemplatesPage({
               />
             ))}
           </div>
-        </div>
+          </div>
+        ) : null}
       </header>
 
-      {activeTab === 'template' ? (
+      {activeStudioArea === 'templates' && activeTab === 'template' ? (
         selectedTemplate ? (
           <>
-            <form onSubmit={handleSaveDraftAction} className="grid gap-5 xl:h-[calc(100vh-220px)] xl:max-h-[760px] xl:min-h-[560px] xl:grid-cols-[260px_minmax(0,1fr)_300px] xl:items-stretch">
+            <form onSubmit={handleSaveDraftAction} className="grid gap-5 xl:h-[calc(100vh-150px)] xl:min-h-[820px] xl:grid-cols-[260px_minmax(0,1fr)_300px] xl:items-stretch">
               <aside className="rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)] xl:flex xl:min-h-0 xl:flex-col xl:self-stretch xl:overflow-hidden">
                 <div className="mb-4">
                   <h2 className="text-base font-semibold text-[#102033]">Document Outline</h2>
@@ -3480,48 +5157,168 @@ export default function SettingsSigningTemplatesPage({
                       </SettingsBanner>
                     ) : null}
 
-                    <div className="overflow-hidden rounded-[18px] border border-[#dbe7f3] bg-white xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
-                      <div className="flex flex-wrap items-center gap-1 border-b border-[#e7eef6] bg-[#fbfdff] px-4 py-2.5">
-                        <button type="button" className={studioQuietButtonClass}>Paragraph <ChevronDown size={14} /></button>
+                    <div className="overflow-hidden rounded-[18px] border border-[#dbe7f3] bg-white xl:flex xl:min-h-[620px] xl:flex-1 xl:flex-col">
+                      <div className="flex flex-wrap items-center gap-2 border-b border-[#e7eef6] bg-[#fbfdff] px-4 py-2.5">
                         {[
-                          { icon: Bold, label: 'Bold' },
-                          { icon: Italic, label: 'Italic' },
-                          { icon: Underline, label: 'Underline' },
-                          { icon: List, label: 'Bullets' },
-                          { icon: ListOrdered, label: 'Numbered list' },
-                          { icon: AlignLeft, label: 'Align left' },
-                          { icon: AlignCenter, label: 'Align center' },
-                          { icon: AlignRight, label: 'Align right' },
-                          { icon: Link, label: 'Link' },
-                          { icon: Table2, label: 'Insert table', onClick: handleInsertTable },
-                          { icon: Undo2, label: 'Undo' },
-                          { icon: Redo2, label: 'Redo' },
+                          { icon: Type, label: 'Paragraph', action: () => handleInsertDocumentBlock('paragraph') },
+                          { icon: Bold, label: 'Heading', action: () => handleInsertDocumentBlock('heading') },
+                          { icon: Table2, label: 'Table', action: () => handleInsertDocumentBlock('table') },
+                          { icon: MoreHorizontal, label: 'Page break', action: () => handleInsertDocumentBlock('pageBreak') },
+                          { icon: FileSignature, label: 'Signature', action: () => handleInsertDocumentBlock('signature') },
+                          { icon: Check, label: 'Initials', action: () => handleInsertDocumentBlock('initials') },
+                          { icon: ShieldCheck, label: 'Witness', action: () => handleInsertDocumentBlock('witness') },
                         ].map((item) => {
                           const Icon = item.icon
                           return (
                             <button
                               key={item.label}
                               type="button"
-                              title={item.label}
-                              onClick={item.onClick}
-                              disabled={!item.onClick || !canEdit || !selectedSection}
-                              className="grid h-9 w-9 place-items-center rounded-[10px] text-[#233246] transition hover:bg-white hover:shadow-[0_8px_16px_rgba(15,23,42,0.06)]"
+                              title={`Add ${item.label.toLowerCase()}`}
+                              onClick={item.action}
+                              disabled={!canEdit || !selectedSection}
+                              className="inline-flex h-9 items-center gap-1.5 rounded-[10px] px-2.5 text-xs font-semibold text-[#233246] transition hover:bg-white hover:shadow-[0_8px_16px_rgba(15,23,42,0.06)] disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              <Icon size={16} />
+                              <Icon size={15} />
+                              <span>{item.label}</span>
                             </button>
                           )
                         })}
+                        <button
+                          type="button"
+                          className={`${studioQuietButtonClass} ml-auto`}
+                          onClick={focusSourceEditor}
+                        >
+                          <FileText size={14} />
+                          <span>Source</span>
+                        </button>
                       </div>
 
-                      <textarea
-                        ref={clauseTextareaRef}
-                        rows={16}
-                        value={selectedSection.legalText}
-                        disabled={!canEdit}
-                        onChange={(event) => updateSection(selectedSectionIndex, { legalText: event.target.value })}
-                        placeholder="Write the wording for this section. Use variables like {{buyer_full_name}} where Arch9 should fill in transaction details."
-                        className="min-h-[430px] w-full resize-y border-0 bg-white px-5 py-5 text-[15px] leading-8 text-[#102033] outline-none disabled:bg-[#f8fbff] disabled:text-[#7b8da6] xl:min-h-0 xl:flex-1 xl:resize-none xl:overflow-y-auto"
-                      />
+                      <div className="min-h-[640px] bg-[#eef3f8] px-4 py-5 xl:min-h-0 xl:flex-1 xl:overflow-y-auto">
+                        <article className="mx-auto min-h-[760px] w-full max-w-[760px] rounded-[8px] border border-[#dbe7f3] bg-white px-10 py-9 shadow-[0_22px_50px_rgba(15,23,42,0.14)]">
+                          <div className="mb-7 border-b border-[#e7eef6] pb-5">
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#7a8da6]">
+                              {templateTypeConfig.shortLabel} document canvas
+                            </p>
+                            <h3 className="mt-2 text-xl font-semibold text-[#102033]">{selectedSection.sectionLabel || `Section ${selectedSectionIndex + 1}`}</h3>
+                          </div>
+
+                          {selectedSectionCanvasBlocks.length ? (
+                            <div className="space-y-4">
+                              {selectedSectionCanvasBlocks.map((block, blockIndex) => {
+                                const activeBlock = selectedCanvasBlockIndex === blockIndex
+                                if (block.type === 'table') {
+                                  return (
+                                    <div
+                                      key={`canvas-table-${blockIndex}`}
+                                      role="button"
+                                      tabIndex={0}
+                                      onClick={() => setSelectedCanvasBlockIndex(blockIndex)}
+                                      onKeyDown={(event) => {
+                                        if (event.key === 'Enter' || event.key === ' ') setSelectedCanvasBlockIndex(blockIndex)
+                                      }}
+                                      className={[
+                                        'rounded-[10px] border px-3 py-3 transition',
+                                        activeBlock ? 'border-[#96d7ad] bg-[#f6fbf8] shadow-[0_0_0_3px_rgba(18,134,66,0.08)]' : 'border-transparent hover:border-[#dbe7f3] hover:bg-[#fbfdff]',
+                                      ].join(' ')}
+                                    >
+                                      {renderTemplateEditorMarkdownTable(block.rows, `canvas-table-${blockIndex}`, tokenLabelByKey)}
+                                      {activeBlock ? (
+                                        <textarea
+                                          value={block.raw}
+                                          disabled={!canEdit}
+                                          onChange={(event) => updateSelectedCanvasBlock(blockIndex, event.target.value)}
+                                          className="mt-3 min-h-[120px] w-full resize-y rounded-[10px] border border-[#dbe7f3] bg-white px-3 py-2 font-mono text-xs leading-5 text-[#102033] outline-none focus:border-[#96d7ad] focus:ring-4 focus:ring-[#e7f6ed] disabled:bg-[#f8fbff]"
+                                        />
+                                      ) : null}
+                                    </div>
+                                  )
+                                }
+                                if (block.type === 'page_break') {
+                                  return (
+                                    <button
+                                      key={`canvas-page-break-${blockIndex}`}
+                                      type="button"
+                                      onClick={() => setSelectedCanvasBlockIndex(blockIndex)}
+                                      className={[
+                                        'my-4 flex w-full items-center gap-3 rounded-[10px] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition',
+                                        activeBlock ? 'bg-[#f6fbf8] text-[#128642]' : 'text-[#8aa0b7] hover:bg-[#fbfdff]',
+                                      ].join(' ')}
+                                    >
+                                      <span className="h-px flex-1 bg-[#dbe7f3]" />
+                                      Page break
+                                      <span className="h-px flex-1 bg-[#dbe7f3]" />
+                                    </button>
+                                  )
+                                }
+                                if (!activeBlock) {
+                                  return (
+                                    <button
+                                      key={`canvas-paragraph-preview-${blockIndex}`}
+                                      type="button"
+                                      onClick={() => setSelectedCanvasBlockIndex(blockIndex)}
+                                      className="block w-full rounded-[10px] border border-transparent px-3 py-3 text-left text-sm leading-7 text-[#233246] transition hover:border-[#dbe7f3] hover:bg-[#fbfdff]"
+                                    >
+                                      {renderTemplateEditorInline(block.raw, tokenLabelByKey)}
+                                    </button>
+                                  )
+                                }
+                                return (
+                                  <div
+                                    key={`canvas-paragraph-${blockIndex}`}
+                                    className={[
+                                      'rounded-[10px] border transition',
+                                      activeBlock ? 'border-[#96d7ad] bg-[#f6fbf8] shadow-[0_0_0_3px_rgba(18,134,66,0.08)]' : 'border-transparent hover:border-[#dbe7f3] hover:bg-[#fbfdff]',
+                                    ].join(' ')}
+                                  >
+                                    <textarea
+                                      value={block.raw}
+                                      disabled={!canEdit}
+                                      onFocus={() => setSelectedCanvasBlockIndex(blockIndex)}
+                                      onClick={() => setSelectedCanvasBlockIndex(blockIndex)}
+                                      onChange={(event) => updateSelectedCanvasBlock(blockIndex, event.target.value)}
+                                      style={{ minHeight: `${Math.max(72, block.raw.split(/\r?\n/).length * 28 + 32)}px` }}
+                                      className="w-full resize-none border-0 bg-transparent px-3 py-3 text-sm leading-7 text-[#233246] outline-none disabled:text-[#7b8da6]"
+                                    />
+                                    {detectTemplateTokenIssues(block.raw).tokens.length ? (
+                                      <div className="flex flex-wrap gap-1.5 border-t border-[#dbe7f3] px-3 py-2">
+                                        {detectTemplateTokenIssues(block.raw).tokens.map((token) => (
+                                          <span
+                                            key={`${blockIndex}-${token}`}
+                                            title={`{{${token}}}`}
+                                            className="rounded-full bg-[#eef9f1] px-2 py-1 text-[11px] font-semibold text-[#128642]"
+                                          >
+                                            {tokenLabelByKey[token] || humanizeKey(token)}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          ) : (
+                            <div className="rounded-[10px] border border-dashed border-[#dbe7f3] bg-[#fbfdff] px-5 py-10 text-center">
+                              <p className="text-sm font-semibold text-[#102033]">Start with a block</p>
+                              <p className="mt-2 text-sm leading-6 text-[#607387]">Add a paragraph, table, signature, initial box, or witness block to build this section visually.</p>
+                            </div>
+                          )}
+                        </article>
+
+                        <details open className="mx-auto mt-5 w-full max-w-[760px] rounded-[14px] border border-[#dbe7f3] bg-white">
+                          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-[#102033]">
+                            Source editor
+                          </summary>
+                          <textarea
+                            ref={clauseTextareaRef}
+                            rows={12}
+                            value={selectedSection.legalText}
+                            disabled={!canEdit}
+                            onChange={(event) => updateSection(selectedSectionIndex, { legalText: event.target.value })}
+                            placeholder="Write the wording for this section. Use variables like {{buyer_full_name}} where Arch9 should fill in transaction details."
+                            className="min-h-[260px] w-full resize-y border-t border-[#e7eef6] bg-white px-5 py-5 font-mono text-[13px] leading-6 text-[#102033] outline-none disabled:bg-[#f8fbff] disabled:text-[#7b8da6]"
+                          />
+                        </details>
+                      </div>
 
                       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e7eef6] bg-[#fbfdff] px-5 py-3 text-sm text-[#607387]">
                         <span>Words: {selectedSectionWordCount}</span>
@@ -3534,14 +5331,15 @@ export default function SettingsSigningTemplatesPage({
 
                     {selectedSectionTokens.length ? (
                       <div className="flex flex-wrap gap-2">
-                        {selectedSectionTokens.map((token) => (
+                        {selectedSectionTokenDetails.map((token) => (
                           <button
-                            key={token}
+                            key={token.key}
                             type="button"
                             className="rounded-[8px] border border-[#cdebd8] bg-[#eef9f1] px-2.5 py-1 text-xs font-semibold text-[#0f7438]"
-                            onClick={() => void handleCopyToken(token)}
+                            title={`{{${token.key}}}`}
+                            onClick={() => void handleCopyToken(token.key)}
                           >
-                            {`{{${token}}}`}
+                            {token.label}
                           </button>
                         ))}
                       </div>
@@ -3556,6 +5354,354 @@ export default function SettingsSigningTemplatesPage({
               </main>
 
               <aside className="space-y-4 xl:min-h-0 xl:self-stretch xl:overflow-y-auto xl:pr-1">
+                <section className="rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Inspector</p>
+                      <h2 className="mt-2 text-base font-semibold text-[#102033]">Selected Block</h2>
+                    </div>
+                    <span className="rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
+                      {selectedCanvasBlock?.type ? selectedCanvasBlock.type.replace(/_/g, ' ') : 'none'}
+                    </span>
+                  </div>
+
+                  {selectedCanvasBlock ? (
+                    <div className="mt-4 space-y-3">
+                      <div className="rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] px-4 py-3">
+                        <p className="text-sm font-semibold text-[#102033]">Block {selectedCanvasBlockIndex + 1}</p>
+                        <p className="mt-1 text-sm leading-5 text-[#607387]">
+                          {selectedCanvasBlock.type === 'table'
+                            ? 'Table content is still stored as markdown for safe generation.'
+                            : selectedCanvasBlock.type === 'page_break'
+                              ? 'This block marks where a new page should begin.'
+                              : 'Edit this text directly on the document canvas.'}
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          className={studioSecondaryButtonClass}
+                          onClick={() => handleInsertDocumentBlock('signature')}
+                          disabled={!canEdit}
+                        >
+                          <FileSignature size={14} />
+                          <span>Signature</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={studioSecondaryButtonClass}
+                          onClick={() => handleInsertDocumentBlock('initials')}
+                          disabled={!canEdit}
+                        >
+                          <Check size={14} />
+                          <span>Initials</span>
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="w-full rounded-[12px] border border-[#dbe7f3] bg-[#f8fbff] px-3 py-2.5 text-sm font-semibold text-[#24518a] transition hover:bg-white"
+                        onClick={focusSourceEditor}
+                      >
+                        Open source for this section
+                      </button>
+
+                      <div className="rounded-[14px] border border-[#dbe7f3] bg-[#fbfdff] px-3 py-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-semibold text-[#102033]">Section lock</p>
+                          <span className={[
+                            'rounded-full border px-2 py-0.5 text-[0.66rem] font-semibold',
+                            selectedSectionGovernance.locked ? 'border-[#cdebd8] bg-[#eef9f1] text-[#128642]' : 'border-[#dbe7f3] bg-white text-[#607387]',
+                          ].join(' ')}
+                          >
+                            {selectedSectionGovernance.locked ? 'Locked' : 'Open'}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="mt-2 w-full rounded-[10px] border border-[#dbe7f3] bg-white px-3 py-2 text-xs font-semibold text-[#24518a] transition hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={!canPublishTemplate || !selectedSection}
+                          onClick={() => updateSelectedSectionGovernance({
+                            locked: !selectedSectionGovernance.locked,
+                            locked_by_role: !selectedSectionGovernance.locked ? 'principal' : null,
+                            lockReason: !selectedSectionGovernance.locked ? 'Approved wording' : '',
+                          })}
+                        >
+                          {selectedSectionGovernance.locked ? 'Unlock wording' : 'Lock approved wording'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-4 rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] px-4 py-3 text-sm leading-6 text-[#607387]">
+                      Select or add a block on the canvas to inspect it.
+                    </p>
+                  )}
+                </section>
+
+                <section className="rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Rules</p>
+                      <h2 className="mt-2 text-base font-semibold text-[#102033]">Clause Condition</h2>
+                    </div>
+                    <span className={[
+                      'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold',
+                      selectedSectionCondition.enabled ? 'border-[#cdebd8] bg-[#eef9f1] text-[#128642]' : 'border-[#dbe7f3] bg-[#f8fbff] text-[#607387]',
+                    ].join(' ')}
+                    >
+                      {selectedSectionCondition.enabled ? 'Conditional' : 'Always'}
+                    </span>
+                  </div>
+
+                  <p className="mt-3 rounded-[14px] border border-[#dbe7f3] bg-[#fbfdff] px-3 py-2 text-sm leading-6 text-[#52667d]">
+                    {selectedSectionConditionSummary}
+                  </p>
+
+                  <div className="mt-4 space-y-3">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-[#102033]">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(selectedSectionCondition.enabled)}
+                        disabled={!selectedSection || !canEdit}
+                        onChange={(event) => updateSelectedSectionCondition({ enabled: event.target.checked })}
+                        className="h-4 w-4 rounded border-[#dbe7f3] text-[#128642] focus:ring-[#96d7ad]"
+                      />
+                      Include only when a rule matches
+                    </label>
+
+                    <label className={settingsFieldClass}>
+                      Data field
+                      <select
+                        value={selectedSectionCondition.field}
+                        disabled={!selectedSection || !canEdit || !selectedSectionCondition.enabled}
+                        onChange={(event) => updateSelectedSectionCondition({ field: event.target.value })}
+                      >
+                        {conditionFieldOptions.map((field) => (
+                          <option key={field.key} value={field.key}>
+                            {getFieldOptionLabel(field, tokenLabelByKey)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className={settingsFieldClass}>
+                      Rule
+                      <select
+                        value={selectedSectionCondition.operator}
+                        disabled={!selectedSection || !canEdit || !selectedSectionCondition.enabled}
+                        onChange={(event) => updateSelectedSectionCondition({ operator: event.target.value })}
+                      >
+                        {CONDITION_OPERATORS.map((operator) => (
+                          <option key={operator.key} value={operator.key}>{operator.label}</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    {!['is not empty', 'is required'].includes(selectedSectionCondition.operator) ? (
+                      <label className={settingsFieldClass}>
+                        Value
+                        <input
+                          type="text"
+                          value={selectedSectionCondition.value}
+                          disabled={!selectedSection || !canEdit || !selectedSectionCondition.enabled}
+                          onChange={(event) => updateSelectedSectionCondition({ value: event.target.value })}
+                          placeholder="Bond, Cash, Company..."
+                        />
+                      </label>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      className="w-full rounded-[12px] border border-[#dbe7f3] bg-[#f8fbff] px-3 py-2.5 text-sm font-semibold text-[#24518a] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={clearSelectedSectionCondition}
+                      disabled={!selectedSection || !canEdit || !selectedSectionCondition.enabled}
+                    >
+                      Clear condition
+                    </button>
+                  </div>
+                </section>
+
+                <section className="rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Signing</p>
+                      <h2 className="mt-2 text-base font-semibold text-[#102033]">Signer Field Planner</h2>
+                    </div>
+                    <span className="rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
+                      {selectedSigningFields.length} field{selectedSigningFields.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      className={studioSecondaryButtonClass}
+                      onClick={() => addSelectedSectionSigningField('signature', packetType === 'mandate' ? 'seller' : 'purchaser_1')}
+                      disabled={!selectedSection || !canEdit}
+                    >
+                      <FileSignature size={14} />
+                      <span>Signature</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={studioSecondaryButtonClass}
+                      onClick={() => addSelectedSectionSigningField('initial', packetType === 'mandate' ? 'seller' : 'purchaser_1')}
+                      disabled={!selectedSection || !canEdit}
+                    >
+                      <Check size={14} />
+                      <span>Initials</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={studioSecondaryButtonClass}
+                      onClick={() => addSelectedSectionSigningField('signature', 'witness_1')}
+                      disabled={!selectedSection || !canEdit}
+                    >
+                      <ShieldCheck size={14} />
+                      <span>Witness</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={studioSecondaryButtonClass}
+                      onClick={() => addSelectedSectionSigningField('date', packetType === 'mandate' ? 'seller' : 'purchaser_1')}
+                      disabled={!selectedSection || !canEdit}
+                    >
+                      <Clock3 size={14} />
+                      <span>Date</span>
+                    </button>
+                  </div>
+
+                  <div className="mt-4 rounded-[16px] border border-[#dbe7f3] bg-[#eef3f8] p-3">
+                    <div
+                      className="relative mx-auto w-full max-w-[210px] overflow-hidden rounded-[8px] border border-[#dbe7f3] bg-white shadow-[0_12px_24px_rgba(15,23,42,0.10)]"
+                      style={{ aspectRatio: `${SIGNING_FIELD_PAGE.width} / ${SIGNING_FIELD_PAGE.height}` }}
+                    >
+                      <div className="absolute left-[12%] right-[12%] top-[10%] h-2 rounded-full bg-[#e7eef6]" />
+                      <div className="absolute left-[12%] right-[18%] top-[16%] h-1.5 rounded-full bg-[#edf2f7]" />
+                      <div className="absolute left-[12%] right-[14%] top-[21%] h-1.5 rounded-full bg-[#edf2f7]" />
+                      <div className="absolute left-[12%] right-[20%] top-[26%] h-1.5 rounded-full bg-[#edf2f7]" />
+                      {selectedSigningFields.map((field) => (
+                        <div
+                          key={`planned-field-preview-${field.id}`}
+                          className={[
+                            'absolute flex items-center justify-center rounded-[4px] border text-[7px] font-semibold leading-none shadow-[0_4px_8px_rgba(15,23,42,0.10)]',
+                            field.fieldType === 'signature'
+                              ? 'border-[#96d7ad] bg-[#eef9f1] text-[#0f7438]'
+                              : field.fieldType === 'initial'
+                                ? 'border-[#bcd6ff] bg-[#eef5ff] text-[#24518a]'
+                                : 'border-[#ead49c] bg-[#fff8ec] text-[#7d520d]',
+                          ].join(' ')}
+                          style={{
+                            left: `${Math.min(92, Math.max(0, (field.xPosition / SIGNING_FIELD_PAGE.width) * 100))}%`,
+                            top: `${Math.min(94, Math.max(0, (field.yPosition / SIGNING_FIELD_PAGE.height) * 100))}%`,
+                            width: `${Math.max(7, (field.width / SIGNING_FIELD_PAGE.width) * 100)}%`,
+                            height: `${Math.max(2.4, (field.height / SIGNING_FIELD_PAGE.height) * 100)}%`,
+                          }}
+                          title={`${getSignerRoleLabel(field.signerRole)} ${getSigningFieldTypeLabel(field.fieldType)}`}
+                        >
+                          {field.fieldType === 'initial' ? 'IN' : field.fieldType === 'date' ? 'DATE' : 'SIGN'}
+                        </div>
+                      ))}
+                    </div>
+                    <p className="mt-3 text-center text-xs font-semibold text-[#607387]">
+                      Planned positions use generated PDF coordinates.
+                    </p>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {selectedSigningFields.length ? selectedSigningFields.map((field, index) => (
+                      <div key={`planned-field-${field.id}`} className="rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-semibold text-[#102033]">Field {index + 1}</p>
+                          <button
+                            type="button"
+                            className="grid h-8 w-8 place-items-center rounded-[10px] border border-[#f3d5d7] bg-white text-[#b4383e] transition hover:bg-[#fff6f6] disabled:cursor-not-allowed disabled:opacity-50"
+                            onClick={() => removeSelectedSectionSigningField(field.id)}
+                            disabled={!canEdit}
+                            aria-label="Remove signing field"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+
+                        <div className="mt-3 grid gap-2">
+                          <label className={settingsFieldClass}>
+                            Signer
+                            <select
+                              value={field.signerRole}
+                              disabled={!selectedSection || !canEdit}
+                              onChange={(event) => updateSelectedSectionSigningField(field.id, { signerRole: event.target.value })}
+                            >
+                              {SIGNER_ROLE_OPTIONS.map((roleOption) => (
+                                <option key={roleOption.key} value={roleOption.key}>{roleOption.label}</option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <label className={settingsFieldClass}>
+                              Type
+                              <select
+                                value={field.fieldType}
+                                disabled={!selectedSection || !canEdit}
+                                onChange={(event) => updateSelectedSectionSigningField(field.id, { fieldType: event.target.value })}
+                              >
+                                {SIGNING_FIELD_TYPE_OPTIONS.map((typeOption) => (
+                                  <option key={typeOption.key} value={typeOption.key}>{typeOption.label}</option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label className={settingsFieldClass}>
+                              Page
+                              <input
+                                type="number"
+                                min="1"
+                                value={field.pageNumber}
+                                disabled={!selectedSection || !canEdit}
+                                onChange={(event) => updateSelectedSectionSigningField(field.id, { pageNumber: event.target.value })}
+                              />
+                            </label>
+                          </div>
+
+                          <label className={settingsFieldClass}>
+                            Position
+                            <select
+                              value=""
+                              disabled={!selectedSection || !canEdit}
+                              onChange={(event) => {
+                                const preset = SIGNING_FIELD_POSITION_PRESETS.find((item) => item.key === event.target.value)
+                                if (preset) updateSelectedSectionSigningField(field.id, { xPosition: preset.x, yPosition: preset.y })
+                              }}
+                            >
+                              <option value="">Custom: x {Math.round(field.xPosition)}, y {Math.round(field.yPosition)}</option>
+                              {SIGNING_FIELD_POSITION_PRESETS.map((preset) => (
+                                <option key={preset.key} value={preset.key}>{preset.label}</option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label className="flex items-center gap-2 text-sm font-semibold text-[#102033]">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(field.required)}
+                              disabled={!selectedSection || !canEdit}
+                              onChange={(event) => updateSelectedSectionSigningField(field.id, { required: event.target.checked })}
+                              className="h-4 w-4 rounded border-[#dbe7f3] text-[#128642] focus:ring-[#96d7ad]"
+                            />
+                            Required field
+                          </label>
+                        </div>
+                      </div>
+                    )) : (
+                      <p className="rounded-[14px] border border-dashed border-[#dbe7f3] bg-[#fbfdff] px-3 py-4 text-sm leading-6 text-[#607387]">
+                        Add signatures, initials, witness fields, or date boxes for this section.
+                      </p>
+                    )}
+                  </div>
+                </section>
+
                 <section className="rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
                   <h2 className="text-base font-semibold text-[#102033]">Insert variable</h2>
                   <label className="relative mt-4 block">
@@ -3664,7 +5810,7 @@ export default function SettingsSigningTemplatesPage({
                       disabled={!selectedTemplate}
                     >
                       <Eye size={14} />
-                      <span>Preview</span>
+                      <span>Test</span>
                     </button>
                     <button
                       type="button"
@@ -3701,7 +5847,7 @@ export default function SettingsSigningTemplatesPage({
         )
       ) : null}
 
-      {activeTab === 'legacyTemplate' ? (
+      {activeStudioArea === 'templates' && activeTab === 'legacyTemplate' ? (
         selectedTemplate ? (
           <>
             <form onSubmit={handleSave} className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)_400px] xl:items-start">
@@ -3966,11 +6112,12 @@ export default function SettingsSigningTemplatesPage({
                               Clause content
                               <textarea
                                 ref={clauseTextareaRef}
-                                rows={14}
+                                rows={24}
                                 value={selectedSection.legalText}
                                 disabled={!canEdit || !selectedIsOrgOwned}
                                 onChange={(event) => updateSection(selectedSectionIndex, { legalText: event.target.value })}
                                 placeholder="Write the clause text here and place variables where needed, for example {{seller_full_name}}."
+                                className="min-h-[620px]"
                               />
                             </label>
                           </div>
@@ -4163,8 +6310,8 @@ export default function SettingsSigningTemplatesPage({
               <div className="space-y-6 xl:sticky xl:top-4">
                 <TemplateStudioPanel
                   eyebrow="Preview"
-                  title="Live Preview"
-                  description="Sample data preview of the current edited template version."
+                  title="Test Preview"
+                  description="Validate the current edited template with sample or real transaction data."
                   actions={
                     <button
                       type="button"
@@ -4172,41 +6319,49 @@ export default function SettingsSigningTemplatesPage({
                       onClick={() => setActiveTab('preview')}
                     >
                       <Eye size={14} />
-                      <span>Open Preview</span>
+                      <span>Open Test</span>
                     </button>
                   }
                 >
                   <div className="rounded-[24px] border border-[#dbe7f3] bg-[#f5f7fb] p-4">
                     <div className="flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">
-                      <span>Sample Preview</span>
-                      <span>{previewState.html ? 'Current edits preview' : 'Run Test Generate'}</span>
+                      <span>Sample Test</span>
+                      <span>{previewState.html ? 'Current edits tested' : 'Run sample test'}</span>
                     </div>
                     <div className="mt-4 flex min-h-[420px] items-start justify-center overflow-auto rounded-[22px] border border-[#e7eef6] bg-[radial-gradient(circle_at_top,_#ffffff_0%,_#f5f7fb_100%)] p-4">
                       <div className="w-full max-w-[320px] rounded-[18px] border border-[#e2eaf3] bg-white p-6 shadow-[0_24px_40px_rgba(15,23,42,0.12)]">
                         {previewState.loading ? (
-                          <SettingsLoadingState compact label="Preparing sample preview…" />
+                          <SettingsLoadingState compact label="Preparing sample test…" />
                         ) : previewState.error ? (
                           <SettingsBanner tone="error">{previewState.error}</SettingsBanner>
                         ) : previewState.html ? (
                           <div className="space-y-3 text-sm leading-6 text-[#233246]">
                             {previewState.critical.length ? (
-                              <SettingsBanner tone="error">Critical validation issues detected in sample preview.</SettingsBanner>
+                              <div className="space-y-2">
+                                {previewState.critical.map((issue, index) => (
+                                  <ValidationIssueCard key={`live-preview-critical-${index}`} issue={issue} tone="error" label="Section" />
+                                ))}
+                              </div>
                             ) : null}
                             {previewState.warnings.length ? (
-                              <SettingsBanner tone="warning">Sample preview generated with warning-level data gaps.</SettingsBanner>
+                              <div className="space-y-2">
+                                {previewState.warnings.map((issue, index) => (
+                                  <ValidationIssueCard key={`live-preview-warning-${index}`} issue={issue} tone="warning" label="Section" />
+                                ))}
+                              </div>
                             ) : null}
                             <div dangerouslySetInnerHTML={{ __html: previewState.html }} />
                           </div>
                         ) : (
                           <SettingsEmptyState
-                            title="Sample Preview"
-                            description="Run Test Generate to render the current edits with safe sample data."
+                            title="No test generated yet"
+                            description="Run a sample test to render the current edits with safe data."
                           />
                         )}
                       </div>
                     </div>
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[#dbe7f3] bg-white/90 px-4 py-3 text-sm text-[#6b7c93]">
-                      <span>Preview uses the currently saved version of this template.</span>
+                      <span>Preview tests use the current editor values without changing live documents.</span>
                       <button
                         type="button"
                         className={studioSecondaryButtonClass}
@@ -4214,7 +6369,19 @@ export default function SettingsSigningTemplatesPage({
                         disabled={testingTemplate}
                       >
                         <FlaskConical size={14} />
-                        <span>{testingTemplate ? 'Generating…' : 'Test Generate'}</span>
+                        <span>{testingTemplate ? 'Testing…' : 'Test with sample data'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={studioSecondaryButtonClass}
+                        onClick={() => {
+                          setActiveTab('preview')
+                          requestAnimationFrame(() => void handleTestGenerateFromRun())
+                        }}
+                        disabled={testingTemplate}
+                      >
+                        <FileSignature size={14} />
+                        <span>{testingTemplate ? 'Testing…' : 'Test real run'}</span>
                       </button>
                     </div>
                   </div>
@@ -4222,7 +6389,7 @@ export default function SettingsSigningTemplatesPage({
 
                 <TemplateStudioPanel
                   eyebrow="Checks"
-                  title="Template Health"
+                  title="Publishing Readiness"
                   description="A quick view of readiness, variable coverage, and publishing safety."
                 >
                   <div className="rounded-[24px] border border-[#dbe7f3] bg-[#f8fbff] p-4">
@@ -4231,7 +6398,7 @@ export default function SettingsSigningTemplatesPage({
                         {templateHealthPercent}%
                       </div>
                       <div>
-                        <p className="text-base font-semibold text-[#102033]">Template Health</p>
+                        <p className="text-base font-semibold text-[#102033]">Publishing Readiness</p>
                         <p className="mt-1 text-sm leading-6 text-[#6b7c93]">
                           {validationSummary.warnings.length
                             ? `${validationSummary.warnings.length} warning${validationSummary.warnings.length === 1 ? '' : 's'} to review before publishing.`
@@ -4306,7 +6473,7 @@ export default function SettingsSigningTemplatesPage({
                       onClick={() => setActiveTab('preview')}
                     >
                       <Eye size={14} />
-                      <span>Preview</span>
+                      <span>Test</span>
                     </button>
 
                     <button
@@ -4316,7 +6483,7 @@ export default function SettingsSigningTemplatesPage({
                       disabled={testingTemplate}
                     >
                       <FlaskConical size={14} />
-                      <span>{testingTemplate ? 'Generating…' : 'Test Generate'}</span>
+                      <span>{testingTemplate ? 'Testing…' : 'Test with sample data'}</span>
                     </button>
 
                     <details className="relative">
@@ -4382,7 +6549,7 @@ export default function SettingsSigningTemplatesPage({
         )
       ) : null}
 
-      {activeTab === 'variables' ? (
+      {activeStudioArea === 'templates' && activeTab === 'variables' ? (
         selectedTemplate ? (
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,0.9fr)]">
             <TemplateStudioPanel
@@ -4469,14 +6636,14 @@ export default function SettingsSigningTemplatesPage({
             <div className="space-y-6">
               <TemplateStudioPanel
                 eyebrow="Registry"
-                title="Template Variables"
-                description="Advanced merge-field mappings and governance for this document type."
+                title="Data Fields"
+                description="Merge-field mappings and governance for this document type."
               >
                 <div className="overflow-x-auto rounded-[20px] border border-[#dbe7f3] bg-white">
                   <table className="min-w-[620px] w-full text-left text-sm">
                     <thead className="bg-[#f6f9fc] text-[0.68rem] uppercase tracking-[0.14em] text-[#6b7d93]">
                       <tr>
-                        <th className="px-4 py-3">Merge Field</th>
+                        <th className="px-4 py-3">Data Field</th>
                         <th className="px-4 py-3">Entity</th>
                         <th className="px-4 py-3">Required</th>
                         <th className="px-4 py-3">Active</th>
@@ -4520,7 +6687,7 @@ export default function SettingsSigningTemplatesPage({
                       }) : (
                         <tr>
                           <td className="px-4 py-6 text-sm text-[#6b7d93]" colSpan={4}>
-                            No merge-field definitions yet for this template type.
+                            No data-field definitions yet for this template type.
                           </td>
                         </tr>
                       )}
@@ -4531,7 +6698,7 @@ export default function SettingsSigningTemplatesPage({
 
               {canEdit ? (
                 <TemplateStudioPanel
-                  eyebrow="Advanced"
+                  eyebrow="Data Governance"
                   title="Add Custom Variable"
                   description="Create additional merge fields without changing the existing resolution logic."
                 >
@@ -4623,13 +6790,13 @@ export default function SettingsSigningTemplatesPage({
         )
       ) : null}
 
-      {activeTab === 'settings' ? (
+      {activeStudioArea === 'templates' && activeTab === 'settings' ? (
         selectedTemplate ? (
           <form onSubmit={handleSave} className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
             <TemplateStudioPanel
-              eyebrow="Template Settings"
-              title="Template Metadata"
-              description="Name, describe, and control the status of the version you are editing."
+              eyebrow="Publishing"
+              title="Document Metadata"
+              description="Name, describe, and control the publishing status of this document version."
             >
               <div className={settingsGridClass}>
                 <label className={settingsFieldClass}>
@@ -4714,6 +6881,79 @@ export default function SettingsSigningTemplatesPage({
                       ? 'New documents of this type already start from this version.'
                       : 'Publish this version as live when you are ready for new documents to use it.'}
                   </p>
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-[22px] border border-[#dbe7f3] bg-[#fbfdff] p-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Governance</p>
+                    <h3 className="mt-2 text-base font-semibold text-[#102033]">Publish Review & Section Locks</h3>
+                    <p className="mt-1 text-sm leading-6 text-[#6b7c93]">
+                      Lock approved wording before publishing so future edits have a clear governance signal.
+                    </p>
+                  </div>
+                  <span className={[
+                    'rounded-full border px-3 py-1.5 text-xs font-semibold',
+                    canPublishTemplate ? 'border-[#cdebd8] bg-[#eef9f1] text-[#128642]' : 'border-[#f3d1ce] bg-[#fff4f3] text-[#8e1f15]',
+                  ].join(' ')}
+                  >
+                    {canPublishTemplate ? 'Publish authority' : 'Review only'}
+                  </span>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-4">
+                  {[
+                    { label: 'Changed sections', value: publishReview.changedSectionCount },
+                    { label: 'Locked sections', value: publishReview.lockedSectionCount },
+                    { label: 'Signing fields', value: publishReview.signingFieldCount },
+                    { label: 'Conditional clauses', value: publishReview.conditionCount },
+                  ].map((item) => (
+                    <div key={item.label} className="rounded-[16px] border border-[#dbe7f3] bg-white px-4 py-3">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">{item.label}</p>
+                      <p className="mt-2 text-2xl font-semibold text-[#102033]">{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  {(form.sections || []).map((section, index) => {
+                    const governance = getSectionGovernance(section)
+                    return (
+                      <div key={`${section.sectionKey || index}-governance`} className="flex flex-col gap-3 rounded-[16px] border border-[#dbe7f3] bg-white px-4 py-3 md:flex-row md:items-center md:justify-between">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-[#102033]">{getFriendlySectionLabel(section, index)}</p>
+                          <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
+                            {governance.locked
+                              ? `Locked for ${governance.lockedByRole || 'principal'} review${governance.lockReason ? `: ${governance.lockReason}` : ''}`
+                              : 'Unlocked wording'}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={[
+                            'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold',
+                            governance.locked ? 'border-[#cdebd8] bg-[#eef9f1] text-[#128642]' : 'border-[#dbe7f3] bg-[#f8fbff] text-[#607387]',
+                          ].join(' ')}
+                          >
+                            {governance.locked ? 'Locked' : 'Open'}
+                          </span>
+                          <button
+                            type="button"
+                            className={studioQuietButtonClass}
+                            disabled={!canPublishTemplate || !selectedIsOrgOwned}
+                            onClick={() => updateSectionGovernance(index, {
+                              locked: !governance.locked,
+                              locked_by_role: !governance.locked ? 'principal' : null,
+                              lockReason: !governance.locked ? 'Approved wording' : '',
+                            })}
+                          >
+                            <ShieldCheck size={14} />
+                            <span>{governance.locked ? 'Unlock' : 'Lock'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             </TemplateStudioPanel>
@@ -4843,7 +7083,7 @@ export default function SettingsSigningTemplatesPage({
               <div className="flex flex-wrap justify-end gap-2">
                 <button type="button" className={studioSecondaryButtonClass} onClick={() => setActiveTab('preview')}>
                   <Eye size={14} />
-                  <span>Preview</span>
+                  <span>Test</span>
                 </button>
                 <button
                   type="submit"
@@ -4864,46 +7104,65 @@ export default function SettingsSigningTemplatesPage({
         )
       ) : null}
 
-      {activeTab === 'preview' ? (
+      {activeStudioArea === 'templates' && activeTab === 'preview' ? (
         selectedTemplate ? (
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
             <TemplateStudioPanel
-              eyebrow="Preview"
-              title="Sample Preview"
-              description="Validate the current edits with safe sample data before publishing."
+              eyebrow="Test"
+              title="Document Test Preview"
+              description="Validate the current edits with sample data or a linked real document run before publishing."
               actions={
-                <button
-                  type="button"
-                  className={studioPrimaryButtonClass}
-                  onClick={() => void handleTestGenerate()}
-                  disabled={testingTemplate}
-                >
-                  <FlaskConical size={14} />
-                  <span>{testingTemplate ? 'Generating...' : 'Preview with sample data'}</span>
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className={studioSecondaryButtonClass}
+                    onClick={() => void handleTestGenerateFromRun()}
+                    disabled={testingTemplate}
+                  >
+                    <FileSignature size={14} />
+                    <span>{testingTemplate ? 'Testing...' : 'Test real run'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={studioPrimaryButtonClass}
+                    onClick={() => void handleTestGenerate()}
+                    disabled={testingTemplate}
+                  >
+                    <FlaskConical size={14} />
+                    <span>{testingTemplate ? 'Testing...' : 'Test with sample data'}</span>
+                  </button>
+                </div>
               }
             >
               <div className="rounded-[24px] border border-[#dbe7f3] bg-[#f5f7fb] p-5">
                 <div className="flex min-h-[620px] items-start justify-center overflow-auto rounded-[22px] border border-[#e7eef6] bg-[radial-gradient(circle_at_top,_#ffffff_0%,_#f5f7fb_100%)] p-5">
                   <div className="w-full max-w-[760px] rounded-[20px] border border-[#e2eaf3] bg-white p-8 shadow-[0_26px_48px_rgba(15,23,42,0.12)]">
                     {previewState.loading ? (
-                      <SettingsLoadingState compact label="Preparing sample preview…" />
+                      <SettingsLoadingState compact label="Preparing document preview…" />
                     ) : previewState.error ? (
                       <SettingsBanner tone="error">{previewState.error}</SettingsBanner>
                     ) : previewState.html ? (
                       <div className="space-y-4 text-sm leading-6 text-[#233246]">
                         {previewState.critical.length ? (
-                          <SettingsBanner tone="error">Critical validation issues detected in sample preview.</SettingsBanner>
+                          <div className="space-y-2">
+                            {previewState.critical.map((issue, index) => (
+                              <ValidationIssueCard key={`test-preview-critical-${index}`} issue={issue} tone="error" label="Section" />
+                            ))}
+                          </div>
                         ) : null}
                         {previewState.warnings.length ? (
-                          <SettingsBanner tone="warning">Sample preview generated with warning-level data gaps.</SettingsBanner>
+                          <div className="space-y-2">
+                            {previewState.warnings.map((issue, index) => (
+                              <ValidationIssueCard key={`test-preview-warning-${index}`} issue={issue} tone="warning" label="Section" />
+                            ))}
+                          </div>
                         ) : null}
                         <div dangerouslySetInnerHTML={{ __html: previewState.html }} />
                       </div>
                     ) : (
                       <SettingsEmptyState
-                        title="Preview not generated yet"
-                        description="Preview the current edited document with sample data without affecting live transactions."
+                        title="No test generated yet"
+                        description="Run a sample preview or a real document run without affecting live transactions."
                       />
                     )}
                   </div>
@@ -4913,16 +7172,141 @@ export default function SettingsSigningTemplatesPage({
 
             <div className="space-y-6">
               <TemplateStudioPanel
+                eyebrow="Real Run"
+                title="Test With Real Context"
+                description="Attach source records, paste missing values as JSON, then create a draft packet when the run is ready."
+              >
+                <div className="space-y-4">
+                  <div className="grid gap-2">
+                    {DOCUMENT_RUN_SOURCE_OPTIONS.map((option) => {
+                      const active = documentRunForm.sourceType === option.key
+                      return (
+                        <button
+                          key={option.key}
+                          type="button"
+                          onClick={() => setDocumentRunForm((previous) => ({ ...previous, sourceType: option.key }))}
+                          className={`rounded-[16px] border px-4 py-3 text-left transition ${
+                            active
+                              ? 'border-[#96d7ad] bg-[#f3fbf6] shadow-[0_10px_22px_rgba(18,134,66,0.08)]'
+                              : 'border-[#dbe7f3] bg-white hover:border-[#bfd5f5] hover:bg-[#f8fbff]'
+                          }`}
+                        >
+                          <span className="block text-sm font-semibold text-[#102033]">{option.label}</span>
+                          <span className="mt-1 block text-xs leading-5 text-[#6b7c93]">{option.description}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  <label className={settingsFieldClass}>
+                    Run title
+                    <input
+                      type="text"
+                      value={documentRunForm.title}
+                      onChange={(event) => setDocumentRunForm((previous) => ({ ...previous, title: event.target.value }))}
+                      placeholder={`${templateTypeConfig.shortLabel} document run`}
+                    />
+                  </label>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className={settingsFieldClass}>
+                      Transaction ID
+                      <input
+                        type="text"
+                        value={documentRunForm.transactionId}
+                        onChange={(event) => setDocumentRunForm((previous) => ({ ...previous, transactionId: event.target.value }))}
+                        placeholder="UUID"
+                      />
+                    </label>
+                    <label className={settingsFieldClass}>
+                      Lead ID
+                      <input
+                        type="text"
+                        value={documentRunForm.leadId}
+                        onChange={(event) => setDocumentRunForm((previous) => ({ ...previous, leadId: event.target.value }))}
+                        placeholder="UUID"
+                      />
+                    </label>
+                    <label className={settingsFieldClass}>
+                      Deal ID
+                      <input
+                        type="text"
+                        value={documentRunForm.dealId}
+                        onChange={(event) => setDocumentRunForm((previous) => ({ ...previous, dealId: event.target.value }))}
+                        placeholder="UUID"
+                      />
+                    </label>
+                    <label className={settingsFieldClass}>
+                      Unit ID
+                      <input
+                        type="text"
+                        value={documentRunForm.unitId}
+                        onChange={(event) => setDocumentRunForm((previous) => ({ ...previous, unitId: event.target.value }))}
+                        placeholder="UUID"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="flex items-start gap-3 rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] px-4 py-3 text-sm text-[#445b73]">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={Boolean(documentRunForm.useSampleFallback)}
+                      onChange={(event) => setDocumentRunForm((previous) => ({ ...previous, useSampleFallback: event.target.checked }))}
+                    />
+                    <span>
+                      <span className="block font-semibold text-[#102033]">Use sample fallback values</span>
+                      <span className="mt-1 block leading-5 text-[#6b7c93]">Keeps previews readable while you add real context. Turn off to expose missing source fields.</span>
+                    </span>
+                  </label>
+
+                  <label className={settingsFieldClass}>
+                    Context JSON
+                    <textarea
+                      rows={8}
+                      value={documentRunForm.contextJson}
+                      onChange={(event) => setDocumentRunForm((previous) => ({ ...previous, contextJson: event.target.value }))}
+                      placeholder={'{\n  "transaction": { "purchase_price": 3250000 },\n  "buyer": { "full_name": "Jane Buyer" },\n  "sourceContext": { "property_address": "12 Example Street" }\n}'}
+                    />
+                  </label>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className={studioSecondaryButtonClass}
+                      onClick={() => void handleTestGenerateFromRun()}
+                      disabled={testingTemplate}
+                    >
+                      <FlaskConical size={14} />
+                      <span>{testingTemplate ? 'Testing...' : 'Preview Run'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={studioPrimaryButtonClass}
+                      onClick={() => void handleCreateDocumentPacketFromRun()}
+                      disabled={creatingDocumentPacket || !selectedTemplate || hasUnsavedChanges}
+                    >
+                      <FileSignature size={14} />
+                      <span>{creatingDocumentPacket ? 'Creating...' : 'Create Draft Packet'}</span>
+                    </button>
+                  </div>
+
+                  {hasUnsavedChanges ? (
+                    <p className="rounded-[14px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm leading-6 text-[#7d520d]">
+                      Save this template before creating a draft packet. Preview can still use the unsaved edits.
+                    </p>
+                  ) : null}
+                </div>
+              </TemplateStudioPanel>
+
+              <TemplateStudioPanel
                 eyebrow="Health"
                 title="Checklist"
                 description="Use the existing validation summary to decide whether this template is safe to publish."
               >
                 <div className="space-y-3">
                   {validationSummary.blockers.length ? validationSummary.blockers.map((item) => (
-                    <p key={`preview-blocker-${item}`} className="flex items-start gap-2 rounded-[16px] border border-[#f3d1ce] bg-[#fff4f3] px-4 py-3 text-sm text-[#8e1f15]">
-                      <XCircle size={16} className="mt-0.5 shrink-0" />
-                      <span>{item}</span>
-                    </p>
+                    <ValidationIssueCard key={`preview-blocker-${item}`} issue={item} tone="error" label="Template" />
                   )) : (
                     <p className="flex items-center gap-2 rounded-[16px] border border-[#ccead8] bg-[#f2fbf5] px-4 py-3 text-sm text-[#1f7a45]">
                       <CheckCircle2 size={16} />
@@ -4931,10 +7315,7 @@ export default function SettingsSigningTemplatesPage({
                   )}
 
                   {validationSummary.warnings.map((item) => (
-                    <p key={`preview-warning-${item}`} className="flex items-start gap-2 rounded-[16px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm text-[#7d520d]">
-                      <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-                      <span>{item}</span>
-                    </p>
+                    <ValidationIssueCard key={`preview-warning-${item}`} issue={item} tone="warning" label="Template" />
                   ))}
                 </div>
               </TemplateStudioPanel>
@@ -4970,7 +7351,7 @@ export default function SettingsSigningTemplatesPage({
         )
       ) : null}
 
-      {activeTab === 'activity' ? (
+      {activeStudioArea === 'templates' && activeTab === 'activity' ? (
         selectedTemplate ? (
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.95fr)]">
             <TemplateStudioPanel
@@ -5071,19 +7452,755 @@ export default function SettingsSigningTemplatesPage({
         )
       ) : null}
 
+      {activeStudioArea === 'clauseLibrary' ? (
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <TemplateStudioPanel
+            eyebrow="Clause Library"
+            title="Approved Clause Library"
+            description="Reusable approved wording that can be inserted directly into the selected document section."
+            actions={
+              <button type="button" className={studioPrimaryButtonClass} onClick={() => setActiveStudioArea('templates')}>
+                <Plus size={14} />
+                <span>Open Builder</span>
+              </button>
+            }
+          >
+            <div className="grid gap-4 lg:grid-cols-2">
+              {clauseLibraryItems.map((item) => (
+                <article key={item.key} className="rounded-[20px] border border-[#dbe7f3] bg-[#fbfdff] p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="grid h-10 w-10 place-items-center rounded-[12px] bg-white text-[#128642]">
+                      <Layers3 size={18} />
+                    </span>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {item.locked ? (
+                        <span className="rounded-full border border-[#cdebd8] bg-[#eef9f1] px-2.5 py-1 text-[0.68rem] font-semibold text-[#128642]">
+                          Locked
+                        </span>
+                      ) : null}
+                      <span className="rounded-full border border-[#dbe7f3] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
+                        {item.status}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="mt-4 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">{item.category}</p>
+                  <h3 className="mt-4 text-base font-semibold text-[#102033]">{item.title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-[#607387]">{item.description}</p>
+                  <div className="mt-4 rounded-[14px] border border-[#dbe7f3] bg-white px-3 py-3 text-sm leading-6 text-[#233246]">
+                    {renderTemplateEditorInline(item.snippet, tokenLabelByKey)}
+                  </div>
+                  {item.tokenLabels.length ? (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {item.tokenLabels.map((label, index) => (
+                        <span key={`${item.key}-token-${index}`} className="rounded-full bg-[#eef9f1] px-2 py-1 text-[11px] font-semibold text-[#128642]">
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  <p className="mt-3 text-xs font-semibold text-[#6f7f95]">
+                    Suggested rule: {describeConditionRule(item.defaultCondition, tokenLabelByKey)}
+                  </p>
+                  <button
+                    type="button"
+                    className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[14px] bg-[#128642] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_14px_24px_rgba(18,134,66,0.18)] transition hover:bg-[#0f7438] disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={() => handleInsertClauseFromLibrary(item)}
+                    disabled={!selectedSection || !canEdit}
+                  >
+                    <Plus size={14} />
+                    <span>Insert into selected section</span>
+                  </button>
+                </article>
+              ))}
+            </div>
+          </TemplateStudioPanel>
+
+          <div className="space-y-6">
+            <TemplateStudioPanel
+              eyebrow="Governance"
+              title="Library Controls"
+              description="The library will become the source of truth for approved wording."
+            >
+              <div className="space-y-3">
+                {[
+                  'Approved clause cards now insert into Build',
+                  'Locked clauses are visually marked for governance',
+                  'Suggested conditions can be applied with the clause',
+                  'Variable chips show readable field names',
+                ].map((item) => (
+                  <div key={item} className="flex items-center gap-3 rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] px-4 py-3 text-sm font-semibold text-[#102033]">
+                    <CheckCircle2 size={16} className="text-[#128642]" />
+                    <span>{item}</span>
+                  </div>
+                ))}
+              </div>
+            </TemplateStudioPanel>
+
+            <TemplateStudioPanel
+              eyebrow="Next Step"
+              title="Using Clauses"
+              description="Choose a target section in Build first, then insert approved wording from this library."
+            >
+              <button type="button" className={studioSecondaryButtonClass} onClick={() => setActiveStudioArea('templates')}>
+                <FileText size={14} />
+                <span>Back to Templates</span>
+              </button>
+            </TemplateStudioPanel>
+          </div>
+        </div>
+      ) : null}
+
+      {activeStudioArea === 'documents' ? (
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <TemplateStudioPanel
+            eyebrow="Generated Documents"
+            title="Document Library"
+            description="Draft packets, generated documents, signing-prep work, and transaction-linked exports for this document type."
+            actions={
+              <button
+                type="button"
+                className={studioPrimaryButtonClass}
+                onClick={() => {
+                  setActiveStudioArea('templates')
+                  setActiveTab('preview')
+                }}
+              >
+                <Plus size={14} />
+                <span>Create from Template</span>
+              </button>
+            }
+          >
+            <div className="space-y-5">
+              <div className="grid gap-4 lg:grid-cols-3">
+                {generatedDocumentRows.map((item) => (
+                  <article key={item.key} className="rounded-[20px] border border-[#dbe7f3] bg-[#fbfdff] p-4">
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">{item.title}</p>
+                    <p className="mt-3 text-[1.6rem] font-semibold text-[#102033]">{item.value}</p>
+                    <p className="mt-2 text-sm leading-6 text-[#607387]">{item.detail}</p>
+                  </article>
+                ))}
+              </div>
+
+              <div className="rounded-[22px] border border-[#dbe7f3] bg-[#fbfdff] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Recent Packets</p>
+                    <h3 className="mt-2 text-base font-semibold text-[#102033]">{templateTypeConfig.label} library</h3>
+                  </div>
+                  <button
+                    type="button"
+                    className={studioQuietButtonClass}
+                    onClick={() => void loadDocumentLibrary({ targetPacketType: packetType })}
+                    disabled={documentPacketsLoading}
+                  >
+                    <Clock3 size={14} />
+                    <span>{documentPacketsLoading ? 'Refreshing...' : 'Refresh'}</span>
+                  </button>
+                </div>
+
+                {documentPacketsLoading ? (
+                  <div className="mt-5">
+                    <SettingsLoadingState compact label="Loading document packets…" />
+                  </div>
+                ) : documentPackets.length ? (
+                  <div className="mt-5 space-y-3">
+                    {documentPackets.map((packet) => {
+                      const packetStatus = normalizeText(packet?.status).toLowerCase() || 'draft'
+                      const sourceContext = packet?.source_context_json && typeof packet.source_context_json === 'object'
+                        ? packet.source_context_json
+                        : {}
+                      const selected = packet.id === selectedLibraryPacketId
+                      const packetActionPending = packetActionId.endsWith(`:${packet.id}`)
+                      const canGeneratePacket = !['archived', 'voided', 'completed', 'sent', 'partially_signed'].includes(packetStatus)
+                      const canArchivePacket = !['archived', 'voided'].includes(packetStatus)
+                      const linkedReference = normalizeText(packet?.transaction_id)
+                        ? `Transaction ${String(packet.transaction_id).slice(0, 8)}`
+                        : normalizeText(packet?.lead_id)
+                          ? `Lead ${String(packet.lead_id).slice(0, 8)}`
+                          : normalizeText(sourceContext.transactionId || sourceContext.leadId || sourceContext.dealId || sourceContext.unitId)
+                            ? 'Linked by source context'
+                            : 'Manual context'
+                      return (
+                        <article
+                          key={packet.id}
+                          className={`rounded-[18px] border bg-white p-4 transition ${
+                            selected
+                              ? 'border-[#96d7ad] shadow-[0_14px_28px_rgba(18,134,66,0.10)]'
+                              : 'border-[#dbe7f3] hover:border-[#bfd5f5]'
+                          }`}
+                        >
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-[#102033]">{packet.title || packet.template_label_snapshot || 'Untitled document packet'}</p>
+                              <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
+                                {packet.template_label_snapshot || selectedTemplate?.template_label || 'Template'} · {linkedReference}
+                              </p>
+                            </div>
+                            <TemplateStatusPill status={packetStatus}>{packetStatus.replace(/_/g, ' ')}</TemplateStatusPill>
+                          </div>
+                          <div className="mt-4 grid gap-3 text-xs text-[#607387] md:grid-cols-3">
+                            <div>
+                              <p className="font-semibold uppercase tracking-[0.12em] text-[#8aa0b8]">Created</p>
+                              <p className="mt-1">{formatDateTime(packet.created_at)}</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold uppercase tracking-[0.12em] text-[#8aa0b8]">Updated</p>
+                              <p className="mt-1">{formatDateTime(packet.updated_at)}</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold uppercase tracking-[0.12em] text-[#8aa0b8]">Version</p>
+                              <p className="mt-1">v{packet.current_version_number || 0}</p>
+                            </div>
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              className={studioQuietButtonClass}
+                              onClick={() => setSelectedLibraryPacketId(packet.id)}
+                            >
+                              <Eye size={14} />
+                              <span>{selected ? 'Selected' : 'Inspect'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              className={studioQuietButtonClass}
+                              onClick={() => void handlePreviewLibraryPacket(packet)}
+                              disabled={packetActionPending}
+                            >
+                              <FlaskConical size={14} />
+                              <span>Preview</span>
+                            </button>
+                            <button
+                              type="button"
+                              className={studioSecondaryButtonClass}
+                              onClick={() => void handleGenerateLibraryPacket(packet)}
+                              disabled={packetActionPending || !canGeneratePacket}
+                            >
+                              <FileSignature size={14} />
+                              <span>{packet.current_version_number ? 'Regenerate' : 'Generate'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              className={studioDangerButtonClass}
+                              onClick={() => void handleArchiveLibraryPacket(packet)}
+                              disabled={packetActionPending || !canArchivePacket}
+                            >
+                              <Trash2 size={14} />
+                              <span>Archive</span>
+                            </button>
+                          </div>
+                        </article>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <SettingsEmptyState
+                    title="No generated documents yet"
+                    description="Create a draft packet from the Test tab to start the document library for this template type."
+                  />
+                )}
+              </div>
+            </div>
+          </TemplateStudioPanel>
+
+          <div className="space-y-6">
+            <TemplateStudioPanel
+              eyebrow="Packet Workspace"
+              title={selectedLibraryPacket ? selectedLibraryPacket.title || selectedLibraryPacket.template_label_snapshot || 'Selected packet' : 'No packet selected'}
+              description={selectedLibraryPacket ? 'Inspect packet versions, artifact links, source context, and workflow history.' : 'Select a packet from the library to inspect and manage it.'}
+            >
+              {packetDetailLoading ? (
+                <SettingsLoadingState compact label="Loading packet workspace…" />
+              ) : selectedLibraryPacket ? (
+                <div className="space-y-5">
+                  <div className="rounded-[18px] border border-[#dbe7f3] bg-[#fbfdff] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-[#102033]">{selectedLibraryPacket.template_label_snapshot || selectedTemplate?.template_label || 'Template'}</p>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
+                          Updated {formatDateTime(selectedLibraryPacket.updated_at)}
+                        </p>
+                      </div>
+                      <TemplateStatusPill status={normalizeText(selectedLibraryPacket.status).toLowerCase() || 'draft'}>
+                        {normalizeText(selectedLibraryPacket.status).replace(/_/g, ' ') || 'draft'}
+                      </TemplateStatusPill>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 text-xs text-[#607387]">
+                      {[
+                        ['Transaction', selectedLibraryPacket.transaction_id],
+                        ['Lead', selectedLibraryPacket.lead_id],
+                        ['Deal', selectedLibraryPacket.deal_id],
+                        ['Unit', selectedLibraryPacket.unit_id],
+                      ].map(([label, value]) => (
+                        <div key={label} className="flex items-center justify-between gap-3 rounded-[14px] border border-[#e8eff7] bg-white px-3 py-2">
+                          <span className="font-semibold text-[#35546c]">{label}</span>
+                          <span className="truncate text-right">{normalizeText(value) ? String(value).slice(0, 12) : 'Not linked'}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className={studioSecondaryButtonClass}
+                        onClick={() => void handlePreviewLibraryPacket(selectedLibraryPacket)}
+                        disabled={Boolean(packetActionId)}
+                      >
+                        <Eye size={14} />
+                        <span>Preview</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={studioPrimaryButtonClass}
+                        onClick={() => void handleGenerateLibraryPacket(selectedLibraryPacket)}
+                        disabled={Boolean(packetActionId) || ['archived', 'voided', 'completed', 'sent', 'partially_signed'].includes(normalizeText(selectedLibraryPacket.status).toLowerCase())}
+                      >
+                        <FileSignature size={14} />
+                        <span>{packetActionId.startsWith('generate:') ? 'Generating...' : latestLibraryPacketVersion ? 'Regenerate' : 'Generate'}</span>
+                      </button>
+                      {latestLibraryPacketArtifactUrl ? (
+                        <a
+                          className={studioQuietButtonClass}
+                          href={latestLibraryPacketArtifactUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <Upload size={14} />
+                          <span>{getPacketVersionArtifactLabel(latestLibraryPacketVersion)}</span>
+                        </a>
+                      ) : null}
+                      <button
+                        type="button"
+                        className={studioSecondaryButtonClass}
+                        onClick={() => void handlePrepareSigningForLibraryPacket(selectedLibraryPacket)}
+                        disabled={Boolean(packetActionId) || !latestGeneratedLibraryPacketVersion}
+                      >
+                        <FileSignature size={14} />
+                        <span>{packetActionId.startsWith('signing-prep:') ? 'Preparing...' : 'Prepare Signing'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[18px] border border-[#dbe7f3] bg-white p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-[#102033]">Versions</p>
+                      <span className="rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
+                        {selectedLibraryPacketVersions.length}
+                      </span>
+                    </div>
+                    {selectedLibraryPacketVersions.length ? (
+                      <div className="mt-3 space-y-2">
+                        {selectedLibraryPacketVersions.slice(0, 5).map((version) => {
+                          const artifactUrl = getPacketVersionArtifactUrl(version)
+                          return (
+                            <div key={version.id} className="rounded-[14px] border border-[#e8eff7] bg-[#fbfdff] px-3 py-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <p className="text-sm font-semibold text-[#102033]">v{version.version_number}</p>
+                                <TemplateStatusPill status={normalizeText(version.render_status).toLowerCase() || 'draft'}>
+                                  {normalizeText(version.render_status) || 'draft'}
+                                </TemplateStatusPill>
+                              </div>
+                              <p className="mt-2 text-xs leading-5 text-[#6b7c93]">{formatDateTime(version.generated_at || version.created_at)}</p>
+                              {artifactUrl ? (
+                                <a className="mt-2 inline-flex text-xs font-semibold text-[#0a66ff]" href={artifactUrl} target="_blank" rel="noreferrer">
+                                  {getPacketVersionArtifactLabel(version)}
+                                </a>
+                              ) : null}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-sm leading-6 text-[#6b7c93]">No generated versions yet.</p>
+                    )}
+                  </div>
+
+                  <div className="rounded-[18px] border border-[#dbe7f3] bg-white p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-[#102033]">Signing Prep</p>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
+                          Prepare signers and fields from the generated version, then create secure signing links.
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
+                        {latestGeneratedLibraryPacketVersion ? `v${latestGeneratedLibraryPacketVersion.version_number}` : 'Generate first'}
+                      </span>
+                    </div>
+
+                    {signingSummaryLoading ? (
+                      <div className="mt-4">
+                        <SettingsLoadingState compact label="Loading signing prep…" />
+                      </div>
+                    ) : (
+                      <div className="mt-4 grid gap-3 md:grid-cols-3">
+                        {[
+                          { label: 'Signers', value: selectedPacketSigningSummary?.signerCount || 0 },
+                          { label: 'Fields', value: selectedPacketSigningSummary?.fieldCount || 0 },
+                          { label: 'Required done', value: `${selectedPacketSigningSummary?.completedRequiredFieldCount || 0}/${selectedPacketSigningSummary?.requiredFieldCount || 0}` },
+                        ].map((item) => (
+                          <div key={item.label} className="rounded-[14px] border border-[#e8eff7] bg-[#fbfdff] px-3 py-3">
+                            <p className="text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#7a8da6]">{item.label}</p>
+                            <p className="mt-2 text-lg font-semibold text-[#102033]">{item.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className={studioSecondaryButtonClass}
+                        onClick={() => void handlePrepareSigningForLibraryPacket(selectedLibraryPacket)}
+                        disabled={Boolean(packetActionId) || !latestGeneratedLibraryPacketVersion}
+                      >
+                        <FileSignature size={14} />
+                        <span>{packetActionId.startsWith('signing-prep:') ? 'Preparing...' : 'Prepare Fields'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={studioPrimaryButtonClass}
+                        onClick={() => void handleGenerateSigningLinksForLibraryPacket(selectedLibraryPacket)}
+                        disabled={Boolean(packetActionId) || !latestGeneratedLibraryPacketVersion || !(selectedPacketSigningSummary?.signerCount)}
+                      >
+                        <Upload size={14} />
+                        <span>{packetActionId.startsWith('signing-links:') ? 'Generating...' : 'Generate Links'}</span>
+                      </button>
+                    </div>
+
+                    {Array.isArray(selectedPacketSigningSummary?.signers) && selectedPacketSigningSummary.signers.length ? (
+                      <div className="mt-4 space-y-2">
+                        {selectedPacketSigningSummary.signers.map((signer) => {
+                          const resultLink = normalizeText((signingLinksResult?.signers || []).find((item) => normalizeText(item?.id) === normalizeText(signer.id))?.signing_link)
+                          const tokenLink = normalizeText(signer.signing_token)
+                            ? `${typeof window !== 'undefined' ? window.location.origin : ''}/sign/${signer.signing_token}`
+                            : ''
+                          const generatedLink = resultLink || tokenLink
+                          return (
+                            <div key={signer.id} className="rounded-[14px] border border-[#e8eff7] bg-[#fbfdff] px-3 py-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-[#102033]">{signer.signer_name || getSignerRoleLabel(signer.signer_role)}</p>
+                                  <p className="mt-1 truncate text-xs text-[#6b7c93]">{signer.signer_email || 'No email'}</p>
+                                </div>
+                                <TemplateStatusPill status={normalizeText(signer.status).toLowerCase() || 'pending'}>
+                                  {normalizeText(signer.status) || 'pending'}
+                                </TemplateStatusPill>
+                              </div>
+                              {generatedLink ? (
+                                <a className="mt-2 inline-flex text-xs font-semibold text-[#0a66ff]" href={generatedLink} target="_blank" rel="noreferrer">
+                                  Open signing link
+                                </a>
+                              ) : null}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <p className="mt-4 text-sm leading-6 text-[#6b7c93]">
+                        No signers prepared yet. Generate the document, then prepare signing fields.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="rounded-[18px] border border-[#dbe7f3] bg-white p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-[#102033]">Final Signed Record</p>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
+                          Generate the immutable final copy after all required signers and fields are complete.
+                        </p>
+                      </div>
+                      <span className={[
+                        'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold',
+                        latestFinalLibraryPacketArtifactUrl
+                          ? 'border-[#cdebd8] bg-[#eef9f1] text-[#128642]'
+                          : canGenerateFinalLibraryPacket
+                            ? 'border-[#bcd6ff] bg-[#eef5ff] text-[#0a66ff]'
+                            : 'border-[#f4e2bf] bg-[#fff8ec] text-[#7d520d]',
+                      ].join(' ')}
+                      >
+                        {latestFinalLibraryPacketArtifactUrl ? 'Final ready' : canGenerateFinalLibraryPacket ? 'Ready' : 'Waiting'}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-3">
+                      {[
+                        { label: 'Signed', value: `${completedLibrarySignersCount}/${selectedPacketSigningSummary?.signerCount || 0}` },
+                        { label: 'Required fields', value: `${selectedPacketSigningSummary?.completedRequiredFieldCount || 0}/${selectedPacketSigningSummary?.requiredFieldCount || 0}` },
+                        { label: 'Final version', value: latestFinalLibraryPacketVersion ? `v${latestFinalLibraryPacketVersion.version_number}` : 'None' },
+                      ].map((item) => (
+                        <div key={item.label} className="rounded-[14px] border border-[#e8eff7] bg-[#fbfdff] px-3 py-3">
+                          <p className="text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#7a8da6]">{item.label}</p>
+                          <p className="mt-2 text-lg font-semibold text-[#102033]">{item.value}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {!canGenerateFinalLibraryPacket && !latestFinalLibraryPacketArtifactUrl ? (
+                      <div className="mt-4 rounded-[14px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm leading-6 text-[#7d520d]">
+                        {!latestGeneratedLibraryPacketVersion
+                          ? 'Generate a packet version before finalising.'
+                          : !Number(selectedPacketSigningSummary?.signerCount || 0)
+                            ? 'Prepare signers and signing fields first.'
+                            : !(selectedPacketSigningSummary?.allSignersSigned || completedLibrarySignersCount === Number(selectedPacketSigningSummary?.signerCount || 0))
+                              ? 'All signers must complete signing first.'
+                              : Number(selectedPacketSigningSummary?.requiredSignatures || 0) <= 0
+                                ? 'At least one required signature field is needed before finalisation.'
+                                : 'All required signing fields must be completed first.'}
+                      </div>
+                    ) : null}
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className={studioPrimaryButtonClass}
+                        onClick={() => void handleGenerateFinalSignedForLibraryPacket(selectedLibraryPacket)}
+                        disabled={Boolean(packetActionId) || !canGenerateFinalLibraryPacket || Boolean(latestFinalLibraryPacketArtifactUrl)}
+                      >
+                        <ShieldCheck size={14} />
+                        <span>{packetActionId.startsWith('finalise:') ? 'Finalising...' : 'Generate Final Signed'}</span>
+                      </button>
+                      {latestFinalLibraryPacketArtifactUrl ? (
+                        <a
+                          className={studioSecondaryButtonClass}
+                          href={latestFinalLibraryPacketArtifactUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <Eye size={14} />
+                          <span>Open Final Signed</span>
+                        </a>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[18px] border border-[#dbe7f3] bg-white p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-[#102033]">Completion Handover</p>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
+                          Package the final document, signing state, source links, and audit trail for filing.
+                        </p>
+                      </div>
+                      <span className={[
+                        'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold',
+                        libraryPacketHandoverReady
+                          ? 'border-[#cdebd8] bg-[#eef9f1] text-[#128642]'
+                          : 'border-[#f4e2bf] bg-[#fff8ec] text-[#7d520d]',
+                      ].join(' ')}
+                      >
+                        {libraryPacketHandoverReady ? 'Ready to file' : 'Not complete'}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid gap-2">
+                      {libraryPacketHandoverSteps.map((step) => (
+                        <div key={step.key} className="flex items-center justify-between gap-3 rounded-[14px] border border-[#e8eff7] bg-[#fbfdff] px-3 py-3">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <span className={[
+                              'flex h-7 w-7 shrink-0 items-center justify-center rounded-full border',
+                              step.passed
+                                ? 'border-[#cdebd8] bg-[#eef9f1] text-[#128642]'
+                                : 'border-[#dbe7f3] bg-white text-[#7a8da6]',
+                            ].join(' ')}
+                            >
+                              {step.passed ? <Check size={14} /> : <Clock3 size={14} />}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-[#102033]">{step.label}</p>
+                              <p className="mt-1 truncate text-xs text-[#6b7c93]">{step.detail}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-3">
+                      {[
+                        { label: 'Audit events', value: selectedLibraryPacketEvents.length },
+                        { label: 'Artifacts', value: [latestLibraryPacketArtifactUrl, latestFinalLibraryPacketArtifactUrl].filter(Boolean).length },
+                        { label: 'Source links', value: [
+                          selectedLibraryPacket.transaction_id,
+                          selectedLibraryPacket.lead_id,
+                          selectedLibraryPacket.deal_id,
+                          selectedLibraryPacket.unit_id,
+                        ].filter((value) => normalizeText(value)).length },
+                      ].map((item) => (
+                        <div key={item.label} className="rounded-[14px] border border-[#e8eff7] bg-[#fbfdff] px-3 py-3">
+                          <p className="text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#7a8da6]">{item.label}</p>
+                          <p className="mt-2 text-lg font-semibold text-[#102033]">{item.value}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {latestFinalLibraryPacketArtifactUrl ? (
+                        <a
+                          className={studioPrimaryButtonClass}
+                          href={latestFinalLibraryPacketArtifactUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <ShieldCheck size={14} />
+                          <span>Open Final Document</span>
+                        </a>
+                      ) : null}
+                      <button
+                        type="button"
+                        className={studioSecondaryButtonClass}
+                        onClick={handleDownloadLibraryPacketHandoverManifest}
+                        disabled={!libraryPacketHandoverManifest}
+                      >
+                        <FileText size={14} />
+                        <span>Download Manifest</span>
+                      </button>
+                    </div>
+
+                    {!libraryPacketHandoverReady ? (
+                      <p className="mt-4 rounded-[14px] border border-[#eef2f6] bg-[#fbfdff] px-4 py-3 text-sm leading-6 text-[#607387]">
+                        Complete the checklist above before treating this packet as filed.
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="rounded-[18px] border border-[#dbe7f3] bg-white p-4">
+                    <p className="text-sm font-semibold text-[#102033]">Activity</p>
+                    {selectedLibraryPacketEvents.length ? (
+                      <div className="mt-3 space-y-2">
+                        {selectedLibraryPacketEvents.slice(0, 5).map((event) => (
+                          <div key={event.id} className="rounded-[14px] border border-[#e8eff7] bg-[#fbfdff] px-3 py-3">
+                            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7a8da6]">{normalizeText(event.event_type).replace(/_/g, ' ')}</p>
+                            <p className="mt-1 text-xs leading-5 text-[#6b7c93]">{formatDateTime(event.created_at)}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-sm leading-6 text-[#6b7c93]">No packet activity has been recorded yet.</p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <SettingsEmptyState
+                  title="No packet selected"
+                  description="Create or select a draft packet to inspect versions and actions."
+                />
+              )}
+            </TemplateStudioPanel>
+
+            <TemplateStudioPanel
+              eyebrow="Library Filters"
+              title="Document Context"
+              description="Use these contexts when deciding where a document belongs."
+            >
+              <div className="flex flex-wrap gap-2">
+                {['Lead', 'Listing', 'Transaction', 'Client', 'Document type', 'Status', 'Owner'].map((item) => (
+                  <span key={item} className="rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+                    {item}
+                  </span>
+                ))}
+              </div>
+            </TemplateStudioPanel>
+          </div>
+        </div>
+      ) : null}
+
       {showPublishConfirm ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(16,32,51,0.28)] px-4">
-          <div className="w-full max-w-md rounded-[30px] border border-[#dbe7f3] bg-white p-6 shadow-[0_28px_60px_rgba(15,23,42,0.24)]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[rgba(16,32,51,0.28)] px-4 py-8">
+          <div className="w-full max-w-3xl rounded-[30px] border border-[#dbe7f3] bg-white p-6 shadow-[0_28px_60px_rgba(15,23,42,0.24)]">
             <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7a8da6]">Publish Document</p>
-            <h2 className="mt-3 text-[1.35rem] font-semibold text-[#102033]">Publish this document?</h2>
+            <h2 className="mt-3 text-[1.35rem] font-semibold text-[#102033]">Review before publishing</h2>
             <p className="mt-3 text-sm leading-7 text-[#6b7c93]">
               New documents of this type will use this version going forward. Existing transactions will not be changed.
             </p>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-4">
+              {[
+                { label: 'Changed sections', value: publishReview.changedSectionCount },
+                { label: 'Locked sections', value: publishReview.lockedSectionCount },
+                { label: 'Signing fields', value: publishReview.signingFieldCount },
+                { label: 'Warnings', value: publishReview.warnings.length },
+              ].map((item) => (
+                <div key={`publish-review-${item.label}`} className="rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] px-4 py-3">
+                  <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">{item.label}</p>
+                  <p className="mt-2 text-2xl font-semibold text-[#102033]">{item.value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <div className="rounded-[18px] border border-[#dbe7f3] bg-[#fbfdff] p-4">
+                <p className="text-sm font-semibold text-[#102033]">Replacing live template</p>
+                <p className="mt-2 text-sm leading-6 text-[#6b7c93]">{publishReview.liveTemplateLabel}</p>
+                <p className="mt-3 text-sm font-semibold text-[#102033]">With</p>
+                <p className="mt-2 text-sm leading-6 text-[#6b7c93]">{publishReview.currentTemplateLabel}</p>
+              </div>
+
+              <div className="rounded-[18px] border border-[#dbe7f3] bg-[#fbfdff] p-4">
+                <p className="text-sm font-semibold text-[#102033]">Change summary</p>
+                <div className="mt-3 space-y-2 text-sm leading-6 text-[#52667d]">
+                  <p>{publishReview.metadataChanged ? 'Metadata changed.' : 'Metadata unchanged.'}</p>
+                  <p>{publishReview.addedSectionCount} section{publishReview.addedSectionCount === 1 ? '' : 's'} added.</p>
+                  <p>{publishReview.removedSectionCount} section{publishReview.removedSectionCount === 1 ? '' : 's'} removed.</p>
+                  <p>{publishReview.conditionCount} conditional clause{publishReview.conditionCount === 1 ? '' : 's'} configured.</p>
+                </div>
+              </div>
+            </div>
+
+            {publishReview.changedSections.length ? (
+              <div className="mt-5 rounded-[18px] border border-[#dbe7f3] bg-white p-4">
+                <p className="text-sm font-semibold text-[#102033]">Changed sections</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {publishReview.changedSections.slice(0, 10).map(({ section, index }) => (
+                    <span key={`changed-section-${section.sectionKey || index}`} className="rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+                      {getFriendlySectionLabel(section, index)}
+                    </span>
+                  ))}
+                  {publishReview.changedSections.length > 10 ? (
+                    <span className="rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#607387]">
+                      +{publishReview.changedSections.length - 10} more
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-5 space-y-2">
+              {publishReview.blockers.length ? publishReview.blockers.map((item) => (
+                <ValidationIssueCard key={`publish-blocker-${item}`} issue={item} tone="error" label="Publish" />
+              )) : (
+                <p className="flex items-center gap-2 rounded-[16px] border border-[#cdebd8] bg-[#eef9f1] px-4 py-3 text-sm font-semibold text-[#128642]">
+                  <CheckCircle2 size={16} />
+                  No publish blockers detected.
+                </p>
+              )}
+              {publishReview.warnings.slice(0, 4).map((item) => (
+                <ValidationIssueCard key={`publish-warning-${item}`} issue={item} tone="warning" label="Warning" />
+              ))}
+            </div>
+
+            <label className="mt-5 flex items-start gap-3 rounded-[18px] border border-[#dbe7f3] bg-[#fbfdff] px-4 py-3 text-sm leading-6 text-[#445b73]">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 rounded border-[#dbe7f3] text-[#128642] focus:ring-[#96d7ad]"
+                checked={publishReviewAccepted}
+                onChange={(event) => setPublishReviewAccepted(event.target.checked)}
+                disabled={Boolean(publishReview.blockers.length)}
+              />
+              <span>I have reviewed the changes, locks, warnings, and live-template replacement.</span>
+            </label>
+
             <div className="mt-6 flex justify-end gap-2">
               <button type="button" className={studioSecondaryButtonClass} onClick={() => setShowPublishConfirm(false)}>
                 Cancel
               </button>
-              <button type="button" className={studioPrimaryButtonClass} onClick={() => void confirmPublishTemplate()} disabled={saving}>
+              <button
+                type="button"
+                className={studioPrimaryButtonClass}
+                onClick={() => void confirmPublishTemplate()}
+                disabled={saving || Boolean(publishReview.blockers.length) || !publishReviewAccepted}
+              >
                 <ShieldCheck size={14} />
                 <span>{saving ? 'Publishing...' : 'Publish Document'}</span>
               </button>

@@ -7135,26 +7135,27 @@
 }
 
 .agency-brand-upload {
-  border: 1px dashed #c8d9ed;
-  border-radius: 13px;
-  background: #f8fbff;
-  padding: 0.68rem;
+  min-width: 0;
+  border: 1px solid #dfe8f2;
+  border-radius: 12px;
+  background: #fbfdff;
+  padding: 0.9rem;
   display: grid;
-  gap: 0.45rem;
+  gap: 0.72rem;
 }
 
 .agency-brand-upload strong {
   color: #1b2d45;
-  font-size: 0.82rem;
+  font-size: 0.88rem;
 }
 
 .agency-upload-trigger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 40px;
+  min-height: 36px;
   width: fit-content;
-  border-radius: 10px;
+  border-radius: 9px;
   border: 1px solid #c8d9ed;
   background: #ffffff;
   color: #1f4f86;
@@ -7170,21 +7171,127 @@
 
 .agency-upload-caption {
   margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 0.72rem;
   color: #5f7089;
 }
 
 .agency-logo-preview {
-  max-height: 54px;
-  max-width: min(220px, 100%);
-  border-radius: 8px;
-  border: 1px solid #d5e4f2;
-  background: #ffffff;
-  padding: 0.22rem;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
 }
 
 .agency-logo-preview-dark {
-  background: #0f172a;
+  background: transparent;
+}
+
+.organisation-branding-grid {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.organisation-brand-upload-wide {
+  grid-column: auto;
+}
+
+.organisation-brand-upload-head {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.organisation-brand-upload-head div {
+  min-width: 0;
+}
+
+.organisation-brand-upload-head p {
+  margin: 0.25rem 0 0;
+  color: #60758d;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.organisation-logo-preview-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #e3ebf4;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #8091a7;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.organisation-logo-preview-frame-primary,
+.organisation-logo-preview-frame-dark {
+  height: 136px;
+  padding: 1rem;
+}
+
+.organisation-logo-preview-frame-icon {
+  width: min(100%, 178px);
+  aspect-ratio: 1 / 1;
+  justify-self: center;
+  padding: 1.1rem;
+}
+
+.organisation-logo-preview-frame-dark {
+  background: #0d2743;
+}
+
+.organisation-logo-preview-frame-dark span {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.organisation-colour-panel {
+  display: grid;
+  align-content: start;
+  gap: 0.9rem;
+  border: 1px solid #dfe8f2;
+  border-radius: 12px;
+  background: #fbfdff;
+  padding: 0.9rem;
+}
+
+.organisation-colour-field {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.organisation-colour-field > span {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  border: 1px solid #d8e3ee;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+@media (min-width: 900px) {
+  .organisation-branding-grid {
+    grid-template-columns: minmax(0, 1.18fr) minmax(260px, 0.82fr);
+  }
+
+  .organisation-brand-upload-wide {
+    grid-column: span 1;
+  }
 }
 
 .agency-review {

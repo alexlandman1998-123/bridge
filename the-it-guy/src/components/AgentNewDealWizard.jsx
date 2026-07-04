@@ -258,6 +258,12 @@ function parseNumberValue(value) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+function normalizePercentageInput(value, fallback = null) {
+  const numeric = parseNumberValue(value)
+  if (!Number.isFinite(numeric)) return fallback
+  return Math.min(100, Math.max(0, Number(numeric.toFixed(2))))
+}
+
 function resolveSalePriceFromListing(listing = {}) {
   const candidates = [
     listing?.askingPrice,
@@ -670,6 +676,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
   const [errors, setErrors] = useState({})
   const [createdDeal, setCreatedDeal] = useState(null)
   const [commissionPreview, setCommissionPreview] = useState(null)
+  const [salesAgentSplitOverride, setSalesAgentSplitOverride] = useState('')
   const [privateListings, setPrivateListings] = useState([])
   const [propertyPickerListings, setPropertyPickerListings] = useState([])
   const [isLoadingPropertyOptions, setIsLoadingPropertyOptions] = useState(false)
@@ -805,6 +812,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     setErrors({})
     setCreatedDeal(null)
     setCommissionPreview(null)
+    setSalesAgentSplitOverride('')
     setLoading(true)
     setPreferredPartnersLoading(true)
     setPreferredPartnersError('')
@@ -1255,9 +1263,13 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
             assignedAgentEmail: String(profile?.email || '').trim(),
             salePrice: numericSalePrice,
             grossCommissionPercentage,
+            overrideAgentSplitPercentage: normalizePercentageInput(salesAgentSplitOverride),
           })
           if (active) {
             setCommissionPreview(preview)
+            if (!salesAgentSplitOverride && Number.isFinite(Number(preview?.agentSplitPercentage))) {
+              setSalesAgentSplitOverride(String(preview.agentSplitPercentage))
+            }
           }
         } catch {
           if (active) {
@@ -1271,7 +1283,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
       active = false
       window.clearTimeout(timeoutId)
     }
-  }, [open, inheritedDealTerms?.salePrice, inheritedDealTerms?.grossCommissionPercentage, profile?.id, profile?.email])
+  }, [open, inheritedDealTerms?.salePrice, inheritedDealTerms?.grossCommissionPercentage, profile?.id, profile?.email, salesAgentSplitOverride])
 
   useEffect(() => {
     if (!open || !['attorney', 'review'].includes(activeStep) || !sourceOrganisationId || !profile?.id) {
@@ -1727,6 +1739,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
         assignedAgentEmail: String(profile?.email || '').trim(),
         salePrice: Number(inheritedDealTerms?.salePrice || 0),
         grossCommissionPercentage: Number(inheritedDealTerms?.grossCommissionPercentage || 0),
+        overrideAgentSplitPercentage: normalizePercentageInput(salesAgentSplitOverride),
       })
       if (import.meta.env.DEV) {
         console.debug('[AgentNewDealWizard] createTransaction payload', {
@@ -2098,6 +2111,24 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                       ? `Commission: ${Number(inheritedDealTerms.grossCommissionPercentage).toFixed(2).replace(/\.00$/, '')}%`
                       : 'Commission terms not captured yet.'}
                   </p>
+                  <label className="mt-3 grid gap-2">
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Sales agent split %</span>
+                    <input
+                      className={fieldClass()}
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value={salesAgentSplitOverride}
+                      disabled={commissionPreview?.allowSalesCommissionOverride === false}
+                      onChange={(event) => setSalesAgentSplitOverride(event.target.value)}
+                    />
+                  </label>
+                  {commissionPreview?.allowSalesCommissionOverride === false ? (
+                    <p className="mt-2 text-xs font-medium text-[#8a5a12]">This agent's sales split is locked to the assigned commission structure.</p>
+                  ) : (
+                    <p className="mt-2 text-xs text-[#6f8298]">Defaults from the assigned sales commission structure; edit here for this transaction.</p>
+                  )}
                 </div>
               </section>
             ) : null}

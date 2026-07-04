@@ -1610,18 +1610,19 @@ export function renderPacketPreviewHtml({
             object-fit: contain;
           }
           .document-contact-row {
-            display: inline-flex;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 14px;
+            display: grid;
+            align-items: start;
+            justify-content: end;
+            gap: 6px;
             min-width: 0;
             color: #13263a;
             font-size: 0.76rem;
             line-height: 1.35;
           }
           .document-contact-item {
-            display: inline-flex;
-            align-items: center;
+            display: grid;
+            grid-template-columns: 15px minmax(0, 1fr);
+            align-items: start;
             gap: 6px;
             min-width: 0;
             max-width: 260px;
@@ -1639,7 +1640,8 @@ export function renderPacketPreviewHtml({
           }
           .document-contact-value {
             min-width: 0;
-            overflow-wrap: anywhere;
+            overflow-wrap: break-word;
+            word-break: normal;
           }
           .packet-preview-title {
             padding: 18px 20px 4px;
@@ -1788,12 +1790,13 @@ export function renderPacketPreviewHtml({
             line-height: 1.15;
           }
           .legal-document-preview-shell .document-contact-row {
-            flex: 1 1 auto;
-            gap: 5mm;
+            flex: 0 1 78mm;
+            gap: 2mm;
             font-size: 10.5px;
           }
           .legal-document-preview-shell .document-contact-item {
-            max-width: 42mm;
+            grid-template-columns: 4mm minmax(0, 1fr);
+            max-width: 78mm;
             gap: 2mm;
           }
           .legal-document-preview-shell .document-contact-icon,
@@ -2034,8 +2037,6 @@ export function renderPacketPreviewHtml({
             }
             .document-contact-row {
               justify-content: flex-start;
-              flex-wrap: wrap;
-              gap: 8px 12px;
               width: 100%;
             }
             .document-contact-item {

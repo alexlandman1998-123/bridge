@@ -1,10 +1,10 @@
 export const settingsPageClass =
-  'space-y-6'
-export const settingsCardClass = 'rounded-[16px] border border-[#e4ebf2] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]'
-export const settingsGridClass = 'grid gap-4 md:grid-cols-2'
+  'space-y-4'
+export const settingsCardClass = 'rounded-[12px] border border-[#e4ebf2] bg-white p-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)]'
+export const settingsGridClass = 'grid gap-3 md:grid-cols-2'
 export const settingsFieldClass = 'grid gap-2 [&_.ui-input]:px-3.5 [&_.ui-input]:py-2.5 [&_.ui-select]:px-3.5 [&_.ui-select]:py-2.5 [&_.ui-textarea]:px-3.5 [&_.ui-textarea]:py-2.5'
 export const settingsFieldSpanClass = 'md:col-span-2'
-export const settingsActionRowClass = 'flex flex-wrap items-center justify-end gap-3 border-t border-[#e8eef5] pt-4'
+export const settingsActionRowClass = 'flex flex-wrap items-center justify-end gap-3 border-t border-[#e8eef5] pt-3'
 export const settingsTableClass = 'overflow-hidden rounded-[16px] border border-[#e3eaf2] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.04)]'
 
 function getAlertToneClasses(tone) {
@@ -36,7 +36,7 @@ export function SettingsPageHeader({ kicker, title, description, actions }) {
 
 export function SettingsSectionCard({ title, description, actions, className = '', children }) {
   return (
-    <section className={`space-y-5 rounded-[16px] border border-[#e4ebf2] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)] ${className}`.trim()}>
+    <section className={`space-y-4 rounded-[12px] border border-[#e4ebf2] bg-white p-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)] ${className}`.trim()}>
       {(title || description || actions) ? (
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-1">

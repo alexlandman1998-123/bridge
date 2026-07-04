@@ -2261,7 +2261,7 @@ export default function LegalDocumentWorkspacePage() {
         onView={() => openLatestDocument({ signed: false })}
         onViewSigned={() => openLatestDocument({ signed: true })}
         onRefreshContext={undefined}
-        autoGenerateEnabled={contextHydrated && (Boolean(routeTransactionId) || !routeLeadId)}
+        autoGenerateEnabled={contextHydrated && false}
       />
     </>
   )
