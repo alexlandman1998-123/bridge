@@ -1300,7 +1300,7 @@ function SellerBrandBar({ brand }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-white/8 pb-3 sm:pb-5">
       <div className="flex min-w-0 items-center gap-3">
-        <AgencyMark brand={brand} />
+        <AgencyMark brand={brand} tone="light" />
       </div>
       <div className="flex w-fit shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/6 px-2.5 py-1.5 text-[10px] font-semibold text-white/75 sm:gap-3 sm:px-3 sm:py-2 sm:text-xs">
         <span>Powered by</span>
