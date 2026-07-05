@@ -636,6 +636,7 @@ function HeaderBar({ onLogout, user }) {
   const userInitials = getUserInitials(user)
   const userAvatarUrl = getUserAvatarUrl(user)
   const isAgentsDirectoryRoute = location.pathname === '/agency/agents'
+  const hideQuickCreateInHeader = location.pathname === '/settings/legal-templates' || location.pathname === '/settings/signing-templates'
   const isAgentWorkspaceRole = role === 'agent' || role === 'principal' || role === 'headquarters'
   const showPersonaSwitcher = role !== 'bond_originator' && !isAgentWorkspaceRole && !isAgentsDirectoryRoute
   const unreadDisplay = notificationState.unreadCount > 99 ? '99+' : String(notificationState.unreadCount || 0)
@@ -782,7 +783,7 @@ function HeaderBar({ onLogout, user }) {
     return (
       <header className="no-print ui-shell-header ui-shell-header-attorney-dashboard">
         <div className="flex min-w-0 shrink-0 items-center gap-3">
-          <QuickCreateDropdown />
+          {!hideQuickCreateInHeader ? <QuickCreateDropdown /> : null}
           <label className="relative min-w-[220px] max-w-[280px] flex-1 sm:flex-none">
             <span className="sr-only">Matter view</span>
             <select
@@ -853,7 +854,7 @@ function HeaderBar({ onLogout, user }) {
     return (
       <header className="no-print ui-shell-header ui-shell-header-no-title ui-shell-header-developer-dashboard">
         <div className="ui-shell-actions ui-shell-actions-developer-dashboard">
-          <QuickCreateDropdown />
+          {!hideQuickCreateInHeader ? <QuickCreateDropdown /> : null}
           <div className="ui-shell-search ui-shell-search-developer-dashboard min-h-[44px]" aria-label="Search">
             <Search size={17} className="shrink-0 text-textSoft" />
             <input
@@ -948,7 +949,7 @@ function HeaderBar({ onLogout, user }) {
             <kbd>⌘K</kbd>
           </div>
 
-          <QuickCreateDropdown />
+          {!hideQuickCreateInHeader ? <QuickCreateDropdown /> : null}
 
           {notificationsControl}
           {avatarControl}
@@ -966,7 +967,7 @@ function HeaderBar({ onLogout, user }) {
       ) : null}
 
       <div className="ui-shell-actions">
-        <QuickCreateDropdown />
+        {!hideQuickCreateInHeader ? <QuickCreateDropdown /> : null}
 
         {showPersonaSwitcher ? (
           <div

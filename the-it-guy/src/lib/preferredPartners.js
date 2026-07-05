@@ -1,8 +1,9 @@
 export const PREFERRED_PARTNER_TYPES = [
   { value: 'agency', label: 'Agency / Selling Agent' },
   { value: 'bond_originator', label: 'Bond Originator' },
-  { value: 'bond_attorney', label: 'Bond Attorney' },
   { value: 'transfer_attorney', label: 'Transfer Attorney' },
+  { value: 'bond_attorney', label: 'Bond Attorney' },
+  { value: 'cancellation_attorney', label: 'Cancellation Attorney' },
 ]
 
 export const PREFERRED_PARTNER_TYPE_LABELS = PREFERRED_PARTNER_TYPES.reduce((accumulator, item) => {
@@ -42,8 +43,18 @@ export function normalizePreferredPartnerType(value, fallback = 'transfer_attorn
     return 'bond_originator'
   }
 
-  if (normalized === 'bondattorney') {
+  if (normalized === 'bondattorney' || normalized === 'bond_registration_attorney') {
     return 'bond_attorney'
+  }
+
+  if (
+    normalized === 'cancellation' ||
+    normalized === 'cancellationattorney' ||
+    normalized === 'bond_cancellation' ||
+    normalized === 'bond_cancellation_attorney' ||
+    normalized === 'bondcancellationattorney'
+  ) {
+    return 'cancellation_attorney'
   }
 
   if (PREFERRED_PARTNER_TYPE_VALUES.includes(normalized)) {

@@ -163,18 +163,19 @@ assert.match(studioUi, /export function DocumentCreationPanel/, 'DocumentCreatio
 assert.match(studioUi, /createDefaultDocumentRunForm/, 'DocumentCreationPanel should still use the existing default document run helper.')
 assert.match(studioUi, /export function DocumentBuilderActionRail/, 'Phase 2 should keep the simple action rail extracted in the shared UI module.')
 assert.match(studioUi, /sm:grid-cols-2 xl:grid-cols-4[\s\S]*min-h-\[72px\][\s\S]*min-w-0/, 'DocumentBuilderActionRail should keep stable responsive dimensions to avoid overlapping labels.')
-assert.match(
+assert.doesNotMatch(
   page,
   /<DocumentBuilderActionRail actions=\{documentBuilderActions\} \/>/,
-  'Document Builder should render the simple primary action rail.',
+  'Document Builder should not render the old duplicated primary action rail in the workspace header.',
 )
-for (const actionLabel of ['Edit', 'Preview', 'Create', 'Make live']) {
-  assert.match(page, new RegExp(`label: '${actionLabel}'`), `Document Builder action rail should include ${actionLabel}.`)
-}
+assert.match(page, /label: cloning \? 'Creating\.\.\.' : 'Create Editable Draft'/, 'The protected-template CTA should explain that it creates an editable draft.')
+assert.match(page, /label: saving \|\| cloning \? 'Saving\.\.\.' : 'Save Changes'/, 'The draft edit CTA should use Save Changes copy.')
+assert.match(page, /label: 'Make Live'/, 'Making a draft live should remain a page action, not a mode tab.')
+assert.doesNotMatch(studioConstants, /\{ key: 'settings', label: 'Make live' \}/, 'Make live should not appear as a mode tab.')
 assert.match(
   page,
-  /overflow-x-auto rounded-\[18px\][\s\S]*CONTRACT_STUDIO_AREAS\.map/,
-  'Document Builder area switcher should stay compact and horizontally safe.',
+  /overflow-x-auto rounded-\[16px\][\s\S]*CONTRACT_STUDIO_AREAS\.map/,
+  'Document Builder area switcher should stay compact, visible, and horizontally safe.',
 )
 assert.doesNotMatch(page, /MANDATE DOCUMENT CANVAS/, 'Phase 3 should not reintroduce the duplicate canvas label.')
 assert.match(
@@ -235,13 +236,13 @@ assert.doesNotMatch(
 
 assert.match(
   page,
-  /label: 'Text'[\s\S]*handleInsertDocumentBlock\('paragraph'\)[\s\S]*label: 'Table'[\s\S]*label: 'Signature'/,
-  'Phase 6 should keep the canvas toolbar focused on the three common insert actions.',
+  /SECTION_EDITOR_INSERT_GROUPS[\s\S]*label: 'Content'[\s\S]*label: 'Text'[\s\S]*label: 'Table'[\s\S]*label: 'Signing'[\s\S]*label: 'Signature'/,
+  'Phase 6 should keep the canvas toolbar grouped around content and signing actions.',
 )
 assert.match(
   page,
-  /<span>More inserts<\/span>[\s\S]*Heading[\s\S]*Page break[\s\S]*Initials[\s\S]*Witness[\s\S]*Raw source/,
-  'Phase 6 should tuck advanced insert actions and raw source into More inserts.',
+  /item\.action === 'source' \? focusSourceEditor : \(\) => handleInsertDocumentBlock\(item\.key\)/,
+  'Phase 6 should keep raw source behind the grouped editor tool action.',
 )
 assert.doesNotMatch(
   page,
@@ -249,15 +250,15 @@ assert.doesNotMatch(
   'Phase 6 should not reintroduce the old seven-button insert strip.',
 )
 
-assert.match(
+assert.doesNotMatch(
   page,
   /Document actions[\s\S]*Save Draft[\s\S]*Preview[\s\S]*Make live/,
-  'Phase 7 should keep the editor footer as a compact action bar.',
+  'Phase 7 should not reintroduce the old duplicated editor footer action bar.',
 )
 assert.match(
   page,
-  /disabled=\{makeLiveDisabled\}[\s\S]*<span>Make live<\/span>/,
-  'Phase 7 should reuse the shared make-live disabled state in the footer action.',
+  /label: 'Make Live'[\s\S]*disabled: makeLiveDisabled/,
+  'Phase 7 should reuse the shared make-live disabled state for the header page action.',
 )
 assert.doesNotMatch(
   page,
@@ -305,38 +306,38 @@ assertFunctionReferences(page, 'setSelectedSectionSigningFields', [
 
 assert.match(
   page,
-  /const documentBuilderModeLabel[\s\S]*activeStudioArea === 'templates'[\s\S]*activeDocumentTypeConfig[\s\S]*activeTemplateTabConfig/,
-  'Phase 9 should summarize the current Document Builder mode in plain language.',
+  /const documentMetadataItems[\s\S]*selectedDocumentLabel[\s\S]*selectedTemplateStatusLabel[\s\S]*selectedTemplateSavedLabel/,
+  'Phase 9 should summarize the current document, status, and saved state in the compact header.',
 )
 assert.match(
   page,
-  /const guidedNextAction = \(\(\) => \{[\s\S]*Start with a template[\s\S]*Make an editable copy[\s\S]*Save your draft[\s\S]*Check the layout[\s\S]*Ready to make live[\s\S]*Template is live/,
-  'Phase 9 should keep one guided next action for the main document lifecycle states.',
+  /const headerPrimaryAction = \(\(\) => \{[\s\S]*Create Template[\s\S]*Create Editable Draft[\s\S]*Save Changes[\s\S]*Review Issues[\s\S]*Make Live[\s\S]*Create Document/,
+  'Phase 9 should keep one primary next action for the main document lifecycle states.',
 )
 assert.match(
   page,
-  /Current workspace[\s\S]*Next best action[\s\S]*guidedNextAction\.title[\s\S]*guidedNextAction\.description/,
-  'Phase 9 should render a calm first-viewport guidance card.',
+  /aria-label="Selected legal template"[\s\S]*documentMetadataItems\.map/,
+  'Phase 9 should render the selected document metadata in the first-viewport header.',
 )
 assert.match(
   page,
-  /handleCreateTemplate\(\)[\s\S]*handleSaveDraftAction\(event\)[\s\S]*openTemplatePreview\(\)[\s\S]*openPublishDialog[\s\S]*setActiveStudioArea\('documents'\)/,
-  'Phase 9 guidance should reuse existing template, save, preview, publish, and document actions.',
+  /handleCreateTemplate\(\)[\s\S]*handleSaveDraftAction\(event\)[\s\S]*setActiveTab\('preview'\)[\s\S]*openPublishDialog[\s\S]*setActiveStudioArea\('documents'\)/,
+  'Phase 9 primary action should reuse existing template, save, review, publish, and document actions.',
 )
 assert.match(
   page,
-  /<GuidedNextIcon size=\{14\} \/>[\s\S]*<span>\{guidedNextAction\.label\}<\/span>/,
-  'Phase 9 should keep the guided action compact with an icon and label.',
+  /<HeaderPrimaryIcon size=\{14\} \/>[\s\S]*<span>\{headerPrimaryAction\.label\}<\/span>/,
+  'Phase 9 should keep the primary action compact with an icon and label.',
 )
 
 assert.match(
   page,
-  /<details className="group rounded-\[18px\][\s\S]*Switch document type or view[\s\S]*\{documentBuilderModeLabel\}[\s\S]*CONTRACT_STUDIO_AREAS\.map[\s\S]*simpleDocumentTabs\.map[\s\S]*Template status[\s\S]*CONTRACT_STUDIO_TABS\.map/,
-  'Phase 10 should tuck secondary workspace, document-type, and tab navigation into one calm disclosure.',
+  /CONTRACT_STUDIO_AREAS\.map[\s\S]*Document type[\s\S]*simpleDocumentTabs\.map[\s\S]*Mode[\s\S]*CONTRACT_STUDIO_TABS\.map/,
+  'Phase 10 should keep workspace, document-type, and mode navigation visible as three clear levels.',
 )
 assert.match(
   page,
-  /selectedIsOrgOwned \? 'Agency draft' : 'Standard template'/,
+  /selectedIsOrgOwned[\s\S]*\? 'Draft'[\s\S]*: 'Standard template'/,
   'Phase 10 should keep template status short and scannable.',
 )
 assert.doesNotMatch(

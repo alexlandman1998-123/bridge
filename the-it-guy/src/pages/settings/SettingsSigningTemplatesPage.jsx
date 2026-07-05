@@ -64,7 +64,6 @@ import {
 } from './settingsUi'
 import {
   DocumentCreationPanel,
-  DocumentBuilderActionRail,
   TemplateCreationPanel,
   TemplateStatusPill,
   TemplateStudioMetricCard,
@@ -6645,129 +6644,87 @@ export default function SettingsSigningTemplatesPage({
   }
 
   const makeLiveDisabled = !selectedTemplate || !selectedIsOrgOwned || !canEdit || saving || Boolean(form.isDefault)
-  const makeLiveDetail = !selectedTemplate
-    ? 'Choose template'
-    : form.isDefault
-      ? 'Already live'
-      : !selectedIsOrgOwned
-        ? 'Create draft first'
-        : !canEdit
-          ? 'Review only'
-          : hasUnsavedChanges
-            ? 'Save first'
-            : 'Final check'
-  const activeStudioAreaConfig = CONTRACT_STUDIO_AREAS.find((area) => area.key === activeStudioArea) || CONTRACT_STUDIO_AREAS[0]
   const activeDocumentTypeConfig = simpleDocumentTabs.find((item) => item.key === activeDocumentTypeKey) || simpleDocumentTabs[0]
-  const activeTemplateTabConfig = CONTRACT_STUDIO_TABS.find((tab) => tab.key === activeTab) || CONTRACT_STUDIO_TABS[0]
-  const documentBuilderModeLabel = activeStudioArea === 'templates'
-    ? `${activeDocumentTypeConfig?.label || templateTypeConfig.label} / ${activeTemplateTabConfig?.label || 'Build'}`
-    : activeStudioAreaConfig?.label || 'Document Builder'
-  const documentBuilderModeDescription = activeStudioArea === 'templates'
-    ? (selectedIsOrgOwned ? 'Editing your agency draft.' : 'Viewing the standard Arch9 template.')
-    : activeStudioAreaConfig?.description || 'Create and manage agency documents.'
-  const guidedNextAction = (() => {
+  const selectedDocumentLabel = activeDocumentTypeConfig?.label || form.templateLabel || templateTypeConfig?.label || 'Template'
+  const selectedTemplateStatusLabel = !selectedTemplate
+    ? 'No template selected'
+    : form.isDefault
+      ? 'Live template'
+      : selectedIsOrgOwned
+        ? 'Draft'
+        : 'Standard template'
+  const selectedTemplateSavedLabel = !selectedTemplate
+    ? ''
+    : saving
+      ? 'Saving...'
+      : hasUnsavedChanges
+        ? 'Unsaved changes'
+        : `Saved ${formatFriendlyDate(selectedTemplate?.updated_at || liveTemplate?.updated_at)}`
+  const documentMetadataItems = [
+    selectedTemplate ? selectedDocumentLabel : '',
+    selectedTemplateStatusLabel,
+    selectedTemplateSavedLabel,
+  ].filter(Boolean)
+  const headerPrimaryAction = (() => {
     if (!selectedTemplate) {
       return {
-        title: 'Start with a template',
-        description: 'Create a reusable template or choose an existing one.',
         label: 'Create Template',
         icon: Plus,
         disabled: !canEdit || saving || cloning,
-        onClick: () => void handleCreateTemplate(),
+        onClick: () => {
+          setActiveStudioArea('templates')
+          setActiveTab('template')
+          void handleCreateTemplate()
+        },
       }
     }
     if (!selectedIsOrgOwned) {
       return {
-        title: 'Make an editable copy',
-        description: 'Shared templates stay protected until your agency has a draft.',
-        label: cloning ? 'Creating...' : 'Create Draft',
+        label: cloning ? 'Creating...' : 'Create Editable Draft',
         icon: CopyPlus,
         disabled: !canEdit || cloning || saving,
-        onClick: (event) => void handleSaveDraftAction(event),
+        onClick: (event) => {
+          setActiveStudioArea('templates')
+          setActiveTab('template')
+          void handleSaveDraftAction(event)
+        },
       }
     }
     if (hasUnsavedChanges) {
       return {
-        title: 'Save your draft',
-        description: 'Save changes before making this version live or creating documents from it.',
-        label: saving || cloning ? 'Saving...' : 'Save Draft',
+        label: saving || cloning ? 'Saving...' : 'Save Changes',
         icon: Save,
         disabled: !canEdit || saving || cloning,
         onClick: (event) => void handleSaveDraftAction(event),
       }
     }
-    if (!previewState.html) {
+    if (!form.isDefault && publishReview.blockers.length) {
       return {
-        title: 'Check the layout',
-        description: 'Preview with safe example data before you publish or generate.',
-        label: testingTemplate ? 'Previewing...' : 'Preview',
-        icon: Eye,
-        disabled: testingTemplate,
-        onClick: () => openTemplatePreview(),
+        label: 'Review Issues',
+        icon: AlertTriangle,
+        disabled: false,
+        onClick: () => {
+          setActiveStudioArea('templates')
+          setActiveTab('preview')
+        },
       }
     }
     if (!form.isDefault) {
       return {
-        title: 'Ready to make live',
-        description: 'Make this version available for new documents when the checks look right.',
-        label: 'Make live',
+        label: 'Make Live',
         icon: Upload,
         disabled: makeLiveDisabled,
         onClick: openPublishDialog,
       }
     }
     return {
-      title: 'Template is live',
-      description: 'Create a document, addendum, amendment, or annexure from this template.',
       label: 'Create Document',
       icon: FileSignature,
       disabled: !selectedTemplate,
       onClick: () => setActiveStudioArea('documents'),
     }
   })()
-  const GuidedNextIcon = guidedNextAction.icon || Sparkles
-  const documentBuilderActions = [
-    {
-      key: 'edit',
-      label: 'Edit',
-      detail: selectedSection ? getFriendlySectionLabel(selectedSection, selectedSectionIndex) : 'Template',
-      icon: FileText,
-      active: activeStudioArea === 'templates' && activeTab === 'template',
-      disabled: !selectedTemplate,
-      onClick: () => {
-        setActiveStudioArea('templates')
-        setActiveTab('template')
-      },
-    },
-    {
-      key: 'preview',
-      label: 'Preview',
-      detail: testingTemplate ? 'Opening...' : previewState.html ? 'Ready' : 'Check layout',
-      icon: Eye,
-      active: activeStudioArea === 'templates' && activeTab === 'preview',
-      disabled: !selectedTemplate || testingTemplate,
-      onClick: () => openTemplatePreview(),
-    },
-    {
-      key: 'create',
-      label: 'Create',
-      detail: documentPackets.length ? `${documentPackets.length} saved` : 'Draft or addendum',
-      icon: FileSignature,
-      tone: 'primary',
-      active: activeStudioArea === 'documents',
-      disabled: !selectedTemplate,
-      onClick: () => setActiveStudioArea('documents'),
-    },
-    {
-      key: 'make-live',
-      label: 'Make live',
-      detail: makeLiveDetail,
-      icon: Upload,
-      active: showPublishConfirm,
-      disabled: makeLiveDisabled,
-      onClick: openPublishDialog,
-    },
-  ]
+  const HeaderPrimaryIcon = headerPrimaryAction.icon || Sparkles
 
   return (
     <div className="space-y-6 pb-10" data-simple-document-builder={simpleDocumentBuilderEnabled ? 'enabled' : 'off'}>
@@ -6787,25 +6744,36 @@ export default function SettingsSigningTemplatesPage({
         busy={creatingDocumentPacket}
         onContinue={handleStartDocumentLibraryDocument}
       />
-      <header className="space-y-6 rounded-[28px] border border-[#dbe7f3] bg-white p-5 shadow-[0_18px_42px_rgba(15,23,42,0.05)] sm:p-6">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-          <div className="space-y-3">
+      <header className="space-y-5 rounded-[20px] border border-[#dbe7f3] bg-white p-5 shadow-[0_16px_34px_rgba(15,23,42,0.05)] sm:p-6">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+          <div className="min-w-0 space-y-3">
             <p className="text-sm font-medium text-[#607387]">{eyebrow}</p>
             <div className="space-y-2">
-              <h1 className="text-[2rem] font-semibold text-[#102033] sm:text-[2.15rem]">{title}</h1>
+              <h1 className="text-[1.9rem] font-semibold leading-tight text-[#102033] sm:text-[2.1rem]">{title}</h1>
               <p className="max-w-3xl text-[15px] leading-7 text-[#52667d]">{visibleDescription}</p>
+            </div>
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-2 text-sm font-semibold text-[#102033]" aria-label="Selected legal template">
+              {documentMetadataItems.map((item, index) => (
+                <span key={`${item}-${index}`} className="inline-flex min-w-0 items-center gap-2">
+                  {index > 0 ? <span className="h-1 w-1 rounded-full bg-[#9aabba]" /> : null}
+                  <span className={index === 1 ? 'rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-2.5 py-1 text-xs text-[#52667d]' : 'min-w-0 truncate'}>
+                    {item}
+                  </span>
+                </span>
+              ))}
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 xl:justify-end">
-            <div className="mr-2 text-sm text-[#52667d]">
-              <p>Last made live</p>
-              <p className="font-semibold text-[#102033]">{formatFriendlyDate(liveTemplate?.updated_at || selectedTemplate?.updated_at)}</p>
-            </div>
-            <span className={`inline-flex items-center gap-2 rounded-[14px] border px-4 py-2.5 text-sm font-semibold ${hasUnsavedChanges ? 'border-[#f1d9a8] bg-[#fff8e8] text-[#8a5b06]' : 'border-[#d6efe1] bg-white text-[#1f7a45]'}`}>
-              <CheckCircle2 size={16} />
-              {saving ? 'Saving...' : hasUnsavedChanges ? 'Unsaved changes' : 'Saved'}
-            </span>
+          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+            <button
+              type="button"
+              className={`${studioPrimaryButtonClass} w-full sm:w-auto`}
+              onClick={headerPrimaryAction.onClick}
+              disabled={headerPrimaryAction.disabled}
+            >
+              <HeaderPrimaryIcon size={14} />
+              <span>{headerPrimaryAction.label}</span>
+            </button>
           </div>
         </div>
 
@@ -6818,130 +6786,86 @@ export default function SettingsSigningTemplatesPage({
         {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
         {message ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}
 
-        <DocumentBuilderActionRail actions={documentBuilderActions} />
-
-        <div className="rounded-[18px] border border-[#dbe7f3] bg-[#fbfdff] p-3 shadow-[0_12px_26px_rgba(15,23,42,0.04)]">
-          <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-            <div className="min-w-0">
-              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">Current workspace</p>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <span className="min-w-0 truncate text-sm font-semibold text-[#102033]">{documentBuilderModeLabel}</span>
-                <span className="rounded-full border border-[#dbe7f3] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
-                  Next best action
-                </span>
-              </div>
-              <p className="mt-2 text-sm leading-6 text-[#607387]">
-                {documentBuilderModeDescription} {guidedNextAction.title}: {guidedNextAction.description}
-              </p>
+        <div className="grid gap-3">
+          <div className="overflow-x-auto rounded-[16px] border border-[#dbe7f3] bg-[#f8fbff] p-1">
+            <div className="flex min-w-max gap-1">
+              {CONTRACT_STUDIO_AREAS.map((area) => {
+                const Icon = area.icon
+                const active = activeStudioArea === area.key
+                return (
+                  <button
+                    key={area.key}
+                    type="button"
+                    onClick={() => {
+                      setActiveStudioArea(area.key)
+                      if (area.key === 'templates' && !CONTRACT_STUDIO_TABS.some((tab) => tab.key === activeTab)) {
+                        setActiveTab('template')
+                      }
+                    }}
+                    className={[
+                      'inline-flex min-h-11 items-center gap-2 rounded-[12px] border px-4 py-2.5 text-sm font-semibold transition',
+                      active
+                        ? 'border-[#96d7ad] bg-white text-[#128642] shadow-[inset_0_-2px_0_#128642]'
+                        : 'border-transparent bg-transparent text-[#52667d] hover:border-[#dbe7f3] hover:bg-white hover:text-[#102033]',
+                    ].join(' ')}
+                    title={area.description}
+                  >
+                    <Icon size={15} />
+                    <span>{area.label}</span>
+                  </button>
+                )
+              })}
             </div>
-            <button
-              type="button"
-              className={`${studioPrimaryButtonClass} w-full lg:w-auto`}
-              onClick={guidedNextAction.onClick}
-              disabled={guidedNextAction.disabled}
-            >
-              <GuidedNextIcon size={14} />
-              <span>{guidedNextAction.label}</span>
-            </button>
           </div>
-        </div>
 
-        <details className="group rounded-[18px] border border-[#dbe7f3] bg-white/80 p-3">
-          <summary className="flex cursor-pointer list-none flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
-            <span className="inline-flex min-w-0 items-center gap-2 font-semibold text-[#102033]">
-              <ChevronDown size={15} className="shrink-0 text-[#8aa0b7] transition group-open:rotate-180" />
-              <span>Switch document type or view</span>
-            </span>
-            <span className="min-w-0 truncate rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#607387]">
-              {documentBuilderModeLabel}
-            </span>
-          </summary>
-
-          <div className="mt-3 grid gap-3">
-            <div className="overflow-x-auto rounded-[18px] border border-[#dbe7f3] bg-[#f8fbff] p-1">
-              <div className="flex min-w-max gap-1">
-                {CONTRACT_STUDIO_AREAS.map((area) => {
-                  const Icon = area.icon
-                  const active = activeStudioArea === area.key
-                  return (
-                    <button
-                      key={area.key}
-                      type="button"
-                      onClick={() => {
-                        setActiveStudioArea(area.key)
-                        if (area.key === 'templates' && !CONTRACT_STUDIO_TABS.some((tab) => tab.key === activeTab)) {
+          {activeStudioArea === 'templates' ? (
+            <div className="grid gap-3 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)]">
+              <div className="min-w-0 rounded-[16px] border border-[#dbe7f3] bg-white p-3">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#7a8da6]">Document type</p>
+                <div className="flex min-w-0 flex-wrap gap-2">
+                  {simpleDocumentTabs.map((item) => {
+                    const Icon = item.icon
+                    const active = activeDocumentTypeKey === item.key
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => {
+                          setActiveDocumentTypeKey(item.key)
+                          setPacketType(item.packetType)
                           setActiveTab('template')
-                        }
-                      }}
-                      className={[
-                        'inline-flex min-h-11 items-center gap-2 rounded-[14px] border px-4 py-2.5 text-sm font-semibold transition',
-                        active
-                          ? 'border-[#96d7ad] bg-white text-[#128642] shadow-[inset_0_-2px_0_#128642]'
-                          : 'border-transparent bg-transparent text-[#52667d] hover:border-[#dbe7f3] hover:bg-white hover:text-[#102033]',
-                      ].join(' ')}
-                      title={area.description}
-                    >
-                      <Icon size={15} />
-                      <span>{area.label}</span>
-                    </button>
-                  )
-                })}
+                        }}
+                        className={[
+                          'inline-flex min-h-10 min-w-0 items-center gap-2 rounded-[12px] border px-3 py-2 text-sm font-semibold transition',
+                          active
+                            ? 'border-[#b9dfc8] bg-[#eef9f1] text-[#128642] shadow-[inset_0_-2px_0_#128642]'
+                            : 'border-[#e4ebf2] bg-white text-[#42566d] hover:border-[#dbe7f3] hover:bg-[#f8fbff]',
+                        ].join(' ')}
+                      >
+                        <Icon size={15} className="shrink-0" />
+                        <span className="truncate">{item.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="min-w-0 rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] p-3">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#7a8da6]">Mode</p>
+                <div className="flex min-w-0 flex-wrap gap-2">
+                  {CONTRACT_STUDIO_TABS.map((tab) => (
+                    <TemplateStudioTabButton
+                      key={tab.key}
+                      active={activeTab === tab.key}
+                      label={tab.label}
+                      onClick={() => setActiveTab(tab.key)}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
-
-            {activeStudioArea === 'templates' ? (
-              <>
-                <div className="overflow-x-auto rounded-[18px] border border-[#dbe7f3] bg-white p-2">
-                  <div className="flex min-w-max gap-1">
-                    {simpleDocumentTabs.map((item) => {
-                      const Icon = item.icon
-                      const active = activeDocumentTypeKey === item.key
-                      return (
-                        <button
-                          key={item.key}
-                          type="button"
-                          onClick={() => {
-                            setActiveDocumentTypeKey(item.key)
-                            setPacketType(item.packetType)
-                            setActiveTab('template')
-                          }}
-                          className={[
-                            'inline-flex items-center gap-2 rounded-[14px] border px-4 py-3 text-sm font-semibold transition',
-                            active
-                              ? 'border-[#b9dfc8] bg-[#eef9f1] text-[#128642] shadow-[inset_0_-2px_0_#128642]'
-                              : 'border-transparent bg-white text-[#42566d] hover:border-[#dbe7f3] hover:bg-[#f8fbff]',
-                          ].join(' ')}
-                        >
-                          <Icon size={15} />
-                          <span>{item.label}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[#dbe7f3] bg-[#fbfdff] px-3 py-3">
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7a8da6]">Template status</p>
-                    <p className="mt-1 text-sm font-semibold text-[#102033]">
-                      {selectedIsOrgOwned ? 'Agency draft' : 'Standard template'}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {CONTRACT_STUDIO_TABS.map((tab) => (
-                      <TemplateStudioTabButton
-                        key={tab.key}
-                        active={activeTab === tab.key}
-                        label={tab.label}
-                        onClick={() => setActiveTab(tab.key)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </>
-            ) : null}
-          </div>
-        </details>
+          ) : null}
+        </div>
       </header>
 
       {activeStudioArea === 'templates' && activeTab === 'template' ? (
@@ -7745,48 +7669,6 @@ export default function SettingsSigningTemplatesPage({
               </aside>
             </form>
 
-            <div className="mt-2 pb-8">
-              <div className="rounded-[18px] border border-[#dbe7f3] bg-white px-4 py-3 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="min-w-0">
-                    <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">Document actions</p>
-                    <p className="mt-1 text-sm font-semibold text-[#102033]">
-                      {hasUnsavedChanges ? 'Unsaved changes' : selectedIsOrgOwned ? 'Draft saved' : 'Standard template'}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-                    <button
-                      type="button"
-                      className={studioSecondaryButtonClass}
-                      onClick={(event) => void handleSaveDraftAction(event)}
-                      disabled={!selectedTemplate || !canEdit || saving || cloning}
-                    >
-                      <Save size={14} />
-                      <span>{saving || cloning ? 'Saving...' : 'Save Draft'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={studioSecondaryButtonClass}
-                      onClick={() => openTemplatePreview()}
-                      disabled={!selectedTemplate || testingTemplate}
-                    >
-                      <Eye size={14} />
-                      <span>{testingTemplate ? 'Previewing...' : 'Preview'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={studioPrimaryButtonClass}
-                      onClick={openPublishDialog}
-                      disabled={makeLiveDisabled}
-                    >
-                      <Upload size={14} />
-                      <span>Make live</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
           </>
         ) : (
           <TemplateStudioPanel
@@ -7799,10 +7681,6 @@ export default function SettingsSigningTemplatesPage({
               action={
                 canEdit ? (
                   <div className="flex flex-wrap justify-center gap-2">
-                    <button type="button" className={studioPrimaryButtonClass} onClick={() => void handleCreateTemplate()}>
-                      <Plus size={15} />
-                      <span>Create Template</span>
-                    </button>
                     <button type="button" className={studioSecondaryButtonClass} onClick={() => void handleCreateGeneralAddendumTemplate()}>
                       <FileSignature size={15} />
                       <span>General Addendum</span>
@@ -8509,10 +8387,6 @@ export default function SettingsSigningTemplatesPage({
               action={
                 canEdit ? (
                   <div className="flex flex-wrap justify-center gap-2">
-                    <button type="button" className={studioPrimaryButtonClass} onClick={() => void handleCreateTemplate()}>
-                      <Plus size={15} />
-                      <span>Create First Template</span>
-                    </button>
                     <button type="button" className={studioSecondaryButtonClass} onClick={() => void handleCreateGeneralAddendumTemplate()}>
                       <FileSignature size={15} />
                       <span>General Addendum</span>

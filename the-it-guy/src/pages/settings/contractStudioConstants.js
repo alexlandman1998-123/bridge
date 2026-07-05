@@ -52,10 +52,9 @@ export const CONTRACT_STUDIO_AREAS = [
 
 export const CONTRACT_STUDIO_TABS = [
   { key: 'template', label: 'Build' },
-  { key: 'preview', label: 'Preview' },
   { key: 'variables', label: 'Fields' },
+  { key: 'preview', label: 'Preview' },
   { key: 'activity', label: 'History' },
-  { key: 'settings', label: 'Make live' },
 ]
 
 export function getDocumentKindOption(key = 'standard') {

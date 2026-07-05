@@ -52,6 +52,17 @@ const OPTIONAL_PARTNER_ROLE_FIELD_OPTIONS = [
   { value: PARTNER_MODE_NONE, label: 'Not Assigned Yet' },
   ...PARTNER_ROLE_FIELD_OPTIONS,
 ]
+const CANCELLATION_PARTNER_ROLE_FIELD_OPTIONS = [
+  { value: PARTNER_MODE_NONE, label: 'Not Assigned Yet' },
+  { value: PARTNER_MODE_AGENCY, label: 'Use Agency Preferred Cancellation Attorney' },
+  { value: PARTNER_MODE_BUYER, label: 'Use Seller Appointed Cancellation Attorney' },
+]
+const FINANCE_TYPE_OPTIONS = [
+  { value: 'unknown', label: 'Not confirmed yet' },
+  { value: 'cash', label: 'Cash' },
+  { value: 'bond', label: 'Bond' },
+  { value: 'combination', label: 'Combination' },
+]
 const CORE_ROUTING_ROLE_TYPES = ['transfer_attorney', 'bond_originator', 'cancellation_attorney']
 const ROLE_FIELD_TO_ROLE_KEY = Object.freeze({
   transferPartnerMode: 'transfer_attorney',
@@ -68,6 +79,13 @@ const ROLE_FIELD_TO_ROLE_KEY = Object.freeze({
   bondOriginatorBuyerEmail: 'bond_originator',
   bondOriginatorBuyerPhone: 'bond_originator',
   bondOriginatorBuyerNotes: 'bond_originator',
+  cancellationAttorneyMode: 'cancellation_attorney',
+  cancellationAttorneyPreferredPartnerId: 'cancellation_attorney',
+  cancellationAttorneyBuyerCompanyName: 'cancellation_attorney',
+  cancellationAttorneyBuyerContactPerson: 'cancellation_attorney',
+  cancellationAttorneyBuyerEmail: 'cancellation_attorney',
+  cancellationAttorneyBuyerPhone: 'cancellation_attorney',
+  cancellationAttorneyBuyerNotes: 'cancellation_attorney',
 })
 
 function todayIso() {
@@ -461,6 +479,11 @@ function getPreferredPartnerRowsFromRoutingRules(partnerSnapshot = null, routing
           partnerType: 'bond_attorney',
           id: `${primaryRow.id}-bond-attorney`,
         },
+        {
+          ...primaryRow,
+          partnerType: 'cancellation_attorney',
+          id: `${primaryRow.id}-cancellation-attorney`,
+        },
       ]
     }
     return [primaryRow]
@@ -472,7 +495,7 @@ function getFallbackPreferredPartnersFromSnapshot(partnerSnapshot, accessContext
     return []
   }
 
-  const roleTypes = ['transfer_attorney', 'bond_originator', 'bond_attorney']
+  const roleTypes = ['transfer_attorney', 'bond_originator', 'bond_attorney', 'cancellation_attorney']
   const fallbackRows = roleTypes.flatMap((roleType) => {
     const assignmentRows = getPartnerAssignmentOptions(partnerSnapshot, roleType, accessContext)
     return assignmentRows
@@ -696,6 +719,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
   const [partnerSearch, setPartnerSearch] = useState({
     transferAttorney: '',
     bondOriginator: '',
+    cancellationAttorney: '',
   })
   const [form, setForm] = useState({
     propertyMode: PROPERTY_MODE_PRIVATE,
@@ -743,6 +767,13 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     bondOriginatorBuyerEmail: '',
     bondOriginatorBuyerPhone: '',
     bondOriginatorBuyerNotes: '',
+    cancellationAttorneyMode: PARTNER_MODE_NONE,
+    cancellationAttorneyPreferredPartnerId: '',
+    cancellationAttorneyBuyerCompanyName: '',
+    cancellationAttorneyBuyerContactPerson: '',
+    cancellationAttorneyBuyerEmail: '',
+    cancellationAttorneyBuyerPhone: '',
+    cancellationAttorneyBuyerNotes: '',
   })
 
   const loadPropertyPickerListings = useCallback(async () => {
@@ -823,7 +854,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     setRoutingRecommendationsLoading(false)
     setRoutingRecommendationChoices({})
     setRoleSelectionTouched({})
-    setPartnerSearch({ transferAttorney: '', bondOriginator: '' })
+    setPartnerSearch({ transferAttorney: '', bondOriginator: '', cancellationAttorney: '' })
     setPropertyOptionsError('')
     setIsLoadingPropertyOptions(true)
     setForm((previous) => ({
@@ -908,6 +939,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
             transferAttorneyCount: mergedPreferredPartners.filter((partner) => normalizePreferredPartnerType(partner?.partnerType) === 'transfer_attorney').length,
             bondOriginatorCount: mergedPreferredPartners.filter((partner) => normalizePreferredPartnerType(partner?.partnerType) === 'bond_originator').length,
             bondAttorneyCount: mergedPreferredPartners.filter((partner) => normalizePreferredPartnerType(partner?.partnerType) === 'bond_attorney').length,
+            cancellationAttorneyCount: mergedPreferredPartners.filter((partner) => normalizePreferredPartnerType(partner?.partnerType) === 'cancellation_attorney').length,
           })
 
           if (!mergedPreferredPartners.length && partnerRowsLoadFailed) {
@@ -1031,6 +1063,15 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
       }),
     [activePreferredPartners, partnerSearch.bondOriginator],
   )
+  const cancellationAttorneyOptions = useMemo(
+    () =>
+      filterPreferredPartners(activePreferredPartners, {
+        type: 'cancellation_attorney',
+        query: partnerSearch.cancellationAttorney,
+        activeOnly: true,
+      }),
+    [activePreferredPartners, partnerSearch.cancellationAttorney],
+  )
   const selectedTransferPartner = useMemo(
     () => findPartnerById(activePreferredPartners, form.transferPreferredPartnerId),
     [activePreferredPartners, form.transferPreferredPartnerId],
@@ -1038,6 +1079,10 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
   const selectedBondOriginatorPartner = useMemo(
     () => findPartnerById(activePreferredPartners, form.bondOriginatorPreferredPartnerId),
     [activePreferredPartners, form.bondOriginatorPreferredPartnerId],
+  )
+  const selectedCancellationAttorneyPartner = useMemo(
+    () => findPartnerById(activePreferredPartners, form.cancellationAttorneyPreferredPartnerId),
+    [activePreferredPartners, form.cancellationAttorneyPreferredPartnerId],
   )
   const sourceOrganisationId = useMemo(
     () => normalizeText(workspace?.id),
@@ -1081,6 +1126,9 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
       }, {}),
     [routingRecommendations],
   )
+  const cancellationAttorneyRequired = Boolean(
+    form.hasExistingBondToCancel || routingRecommendationByRole.cancellation_attorney?.required,
+  )
 
   const describeManualRoleSelection = useCallback((roleType) => {
     if (roleType === 'transfer_attorney') {
@@ -1117,6 +1165,23 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
         : null
     }
 
+    if (roleType === 'cancellation_attorney') {
+      if (form.cancellationAttorneyMode === PARTNER_MODE_BUYER) {
+        return {
+          roleType,
+          label: String(form.cancellationAttorneyBuyerCompanyName || form.cancellationAttorneyBuyerContactPerson || '').trim(),
+          detail: 'Seller-appointed partner',
+        }
+      }
+      return selectedCancellationAttorneyPartner
+        ? {
+            roleType,
+            label: selectedCancellationAttorneyPartner.companyName || selectedCancellationAttorneyPartner.contactPerson || '',
+            detail: 'Agency selection',
+          }
+        : null
+    }
+
     return null
   }, [
     form.transferPartnerMode,
@@ -1125,8 +1190,12 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     form.bondOriginatorMode,
     form.bondOriginatorBuyerCompanyName,
     form.bondOriginatorBuyerContactPerson,
+    form.cancellationAttorneyMode,
+    form.cancellationAttorneyBuyerCompanyName,
+    form.cancellationAttorneyBuyerContactPerson,
     selectedTransferPartner,
     selectedBondOriginatorPartner,
+    selectedCancellationAttorneyPartner,
   ])
 
   const defaultAttorney = useMemo(() => {
@@ -1142,6 +1211,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
 
     const defaultTransferPartner = getDefaultPreferredPartnerByType(activePreferredPartners, 'transfer_attorney')
     const defaultBondOriginatorPartner = getDefaultPreferredPartnerByType(activePreferredPartners, 'bond_originator')
+    const defaultCancellationAttorneyPartner = getDefaultPreferredPartnerByType(activePreferredPartners, 'cancellation_attorney')
     setForm((previous) => {
       const next = { ...previous }
       let changed = false
@@ -1160,9 +1230,19 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
         next.bondOriginatorMode = PARTNER_MODE_AGENCY
         changed = true
       }
+      if (
+        previous.hasExistingBondToCancel
+        && defaultCancellationAttorneyPartner
+        && !previous.cancellationAttorneyPreferredPartnerId
+        && previous.cancellationAttorneyMode === PARTNER_MODE_NONE
+      ) {
+        next.cancellationAttorneyPreferredPartnerId = defaultCancellationAttorneyPartner.id
+        next.cancellationAttorneyMode = PARTNER_MODE_AGENCY
+        changed = true
+      }
       return changed ? next : previous
     })
-  }, [activePreferredPartners, open])
+  }, [activePreferredPartners, form.hasExistingBondToCancel, open])
 
   useEffect(() => {
     if (selectedLead) {
@@ -1357,9 +1437,10 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
         setRoutingRecommendations(results)
         setRoutingRecommendationChoices((previous) =>
           results.reduce((accumulator, item) => {
-            if (accumulator[item.roleType]) return accumulator
             if (item.notRequired) {
               accumulator[item.roleType] = 'skip'
+            } else if (accumulator[item.roleType]) {
+              return accumulator
             } else if (roleSelectionTouched[item.roleType]) {
               accumulator[item.roleType] = 'manual'
             } else if (item.requiresManualSelection) {
@@ -1458,8 +1539,13 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     if (stepKey === 'attorney') {
       const transferChoice = routingRecommendationChoices.transfer_attorney || ''
       const bondOriginatorChoice = routingRecommendationChoices.bond_originator || ''
+      const cancellationAttorneyChoice = routingRecommendationChoices.cancellation_attorney || ''
       const transferRecommendation = routingRecommendationByRole.transfer_attorney || null
       const bondOriginatorRecommendation = routingRecommendationByRole.bond_originator || null
+      const cancellationAttorneyRecommendation = routingRecommendationByRole.cancellation_attorney || null
+      const cancellationAttorneyRequired = Boolean(
+        form.hasExistingBondToCancel || cancellationAttorneyRecommendation?.required,
+      )
 
       if (
         transferChoice !== 'confirm'
@@ -1490,6 +1576,27 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
       if (bondOriginatorChoice !== 'confirm' && form.bondOriginatorMode === PARTNER_MODE_BUYER) {
         if (!String(form.bondOriginatorBuyerCompanyName || '').trim()) nextErrors.bondOriginatorBuyerCompanyName = 'Company name is required.'
         if (!String(form.bondOriginatorBuyerContactPerson || '').trim()) nextErrors.bondOriginatorBuyerContactPerson = 'Contact person is required.'
+      }
+
+      if (
+        cancellationAttorneyRequired
+        && cancellationAttorneyChoice !== 'confirm'
+        && cancellationAttorneyChoice !== 'skip'
+        && form.cancellationAttorneyMode === PARTNER_MODE_AGENCY
+        && !String(form.cancellationAttorneyPreferredPartnerId || '').trim()
+      ) {
+        nextErrors.cancellationAttorneyPreferredPartnerId = 'Select a cancellation attorney partner or change mode.'
+      }
+
+      if (
+        cancellationAttorneyChoice !== 'confirm'
+        && cancellationAttorneyChoice !== 'skip'
+        && form.cancellationAttorneyMode === PARTNER_MODE_BUYER
+      ) {
+        if (!String(form.cancellationAttorneyBuyerCompanyName || '').trim()) nextErrors.cancellationAttorneyBuyerCompanyName = 'Company name is required.'
+        if (!String(form.cancellationAttorneyBuyerContactPerson || '').trim()) nextErrors.cancellationAttorneyBuyerContactPerson = 'Contact person is required.'
+        if (!String(form.cancellationAttorneyBuyerEmail || '').trim()) nextErrors.cancellationAttorneyBuyerEmail = 'Email is required.'
+        if (!String(form.cancellationAttorneyBuyerPhone || '').trim()) nextErrors.cancellationAttorneyBuyerPhone = 'Phone is required.'
       }
 
       if (
@@ -1647,6 +1754,35 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
             }
           : null
 
+    const cancellationAttorneySelection =
+      form.cancellationAttorneyMode === PARTNER_MODE_AGENCY
+        ? {
+            mode: PARTNER_MODE_AGENCY,
+            partnerId: selectedCancellationAttorneyPartner?.id || null,
+            companyName: selectedCancellationAttorneyPartner?.companyName || '',
+            contactPerson: selectedCancellationAttorneyPartner?.contactPerson || '',
+            email: selectedCancellationAttorneyPartner?.email || '',
+            phone: selectedCancellationAttorneyPartner?.phone || '',
+            website: selectedCancellationAttorneyPartner?.website || '',
+            physicalAddress: selectedCancellationAttorneyPartner?.physicalAddress || '',
+            province: selectedCancellationAttorneyPartner?.province || '',
+            notes: selectedCancellationAttorneyPartner?.notes || '',
+          }
+        : form.cancellationAttorneyMode === PARTNER_MODE_BUYER
+          ? {
+              mode: PARTNER_MODE_BUYER,
+              partnerId: null,
+              companyName: String(form.cancellationAttorneyBuyerCompanyName || '').trim(),
+              contactPerson: String(form.cancellationAttorneyBuyerContactPerson || '').trim(),
+              email: String(form.cancellationAttorneyBuyerEmail || '').trim(),
+              phone: String(form.cancellationAttorneyBuyerPhone || '').trim(),
+              website: '',
+              physicalAddress: '',
+              province: '',
+              notes: String(form.cancellationAttorneyBuyerNotes || '').trim(),
+            }
+          : null
+
     const manualRolePlayers = {
       transfer_attorney: {
         roleType: 'transfer_attorney',
@@ -1662,7 +1798,14 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
             partner: bondOriginatorSelection,
           }
         : null,
-      cancellation_attorney: null,
+      cancellation_attorney: cancellationAttorneySelection
+        ? {
+            roleType: 'cancellation_attorney',
+            source: cancellationAttorneySelection.mode === PARTNER_MODE_AGENCY ? 'agency_preferred' : 'manual',
+            preferredPartnerId: cancellationAttorneySelection.partnerId || null,
+            partner: cancellationAttorneySelection,
+          }
+        : null,
     }
     const resolvedRolePlayers = CORE_ROUTING_ROLE_TYPES.flatMap((roleType) => {
       const choice = routingRecommendationChoices[roleType] || ''
@@ -1720,15 +1863,18 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
 
     const transferAttorneyDisplay = resolveRolePlayerDisplay('transfer_attorney', transferSelection)
     const bondOriginatorDisplay = resolveRolePlayerDisplay('bond_originator', bondOriginatorSelection)
+    const cancellationAttorneyDisplay = resolveRolePlayerDisplay('cancellation_attorney', cancellationAttorneySelection)
     const transferAttorneyLabel = transferAttorneyDisplay.label
     const transferAttorneyEmail = transferAttorneyDisplay.email
     const bondOriginatorLabel = bondOriginatorDisplay.label
     const bondOriginatorEmail = bondOriginatorDisplay.email
-    const hasBuyerSelectedRolePlayer = [transferSelection, bondOriginatorSelection]
+    const cancellationAttorneyLabel = cancellationAttorneyDisplay.label
+    const cancellationAttorneyEmail = cancellationAttorneyDisplay.email
+    const hasExternallyAppointedRolePlayer = [transferSelection, bondOriginatorSelection, cancellationAttorneySelection]
       .filter(Boolean)
       .some((item) => item.mode === PARTNER_MODE_BUYER)
-    const nextAction = hasBuyerSelectedRolePlayer
-      ? 'Buyer-appointed role player captured. Validate assignment while onboarding proceeds.'
+    const nextAction = hasExternallyAppointedRolePlayer
+      ? 'Externally appointed role player captured. Validate assignment while onboarding proceeds.'
       : 'Finance details and bond requirements will be captured during client onboarding.'
 
     try {
@@ -1801,6 +1947,8 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
           attorneyEmail: transferAttorneyEmail,
           bondOriginator: bondOriginatorLabel,
           bondOriginatorEmail,
+          cancellationAttorney: cancellationAttorneyLabel,
+          cancellationAttorneyEmail,
         },
         status: {
           stage: propertyMode === PROPERTY_MODE_IMPORT
@@ -1810,7 +1958,9 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
               : 'Offer Accepted',
           nextAction,
           notes: [
-            hasBuyerSelectedRolePlayer ? 'Buyer-appointed role player captured for at least one assignment.' : '',
+            hasExternallyAppointedRolePlayer ? 'Externally appointed role player captured for at least one assignment.' : '',
+            cancellationAttorneyLabel ? `Cancellation attorney: ${cancellationAttorneyLabel}${cancellationAttorneyEmail ? ` (${cancellationAttorneyEmail})` : ''}` : '',
+            form.hasExistingBondToCancel && !cancellationAttorneyLabel ? 'Existing bond cancellation attorney not assigned yet.' : '',
             form.importNotes ? `Import notes: ${form.importNotes}` : '',
             completeness.missingItems.length ? `Missing follow-up items: ${completeness.missingItems.join(', ')}` : '',
           ].filter(Boolean).join('\n'),
@@ -1882,6 +2032,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
         ...result,
         onboardingUrl: result?.onboardingToken ? `${window.location.origin}/client/onboarding/${result.onboardingToken}` : '',
         attorneyChangeRequested: transferSelection.mode === PARTNER_MODE_BUYER,
+        externalRolePlayerCaptured: hasExternallyAppointedRolePlayer,
       })
       window.dispatchEvent(new Event('itg:listings-updated'))
       window.dispatchEvent(new Event('itg:transaction-created'))
@@ -2129,6 +2280,23 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                   ) : (
                     <p className="mt-2 text-xs text-[#6f8298]">Defaults from the assigned sales commission structure; edit here for this transaction.</p>
                   )}
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <Field label="Finance Route">
+                      <select className={fieldClass()} value={form.financeType} onChange={(event) => updateField('financeType', event.target.value)}>
+                        {FINANCE_TYPE_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </Field>
+                    <label className="flex min-h-[54px] items-center gap-3 rounded-[14px] border border-[#dce6f2] bg-white px-4 py-3 text-sm font-semibold text-[#324b66]">
+                      <input
+                        type="checkbox"
+                        checked={form.hasExistingBondToCancel}
+                        onChange={(event) => updateField('hasExistingBondToCancel', event.target.checked)}
+                      />
+                      Seller has existing bond to cancel
+                    </label>
+                  </div>
                 </div>
               </section>
             ) : null}
@@ -2167,7 +2335,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                 <div className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-4">
                   <p className="text-[0.82rem] font-semibold uppercase tracking-[0.08em] text-[#6f8298]">Transaction Roles</p>
                   <p className="mt-1 text-sm text-[#5f748c]">
-                    Assign transfer and bond originator role players now. The transfer attorney can set the bond attorney after creation.
+                    Assign transfer, bond originator, and cancellation role players when needed. The transfer attorney can set the bond attorney after creation.
                   </p>
                 </div>
 
@@ -2236,7 +2404,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                           ) : null}
                           {!transferAttorneyOptions.length && !preferredPartnersLoading && !preferredPartnersError ? (
                             <p className="mt-1">
-                              Add one in Agency Settings → Preferred Partners.
+                              Add one in Organisation → Partners.
                             </p>
                           ) : null}
                         </div>
@@ -2314,7 +2482,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                           <p className="mt-1 text-sm text-[#b42318]">Could not load agency preferred partners. Try refreshing the page.</p>
                         ) : null}
                         {!bondOriginatorOptions.length && !preferredPartnersLoading && !preferredPartnersError ? (
-                          <p className="mt-1 text-sm text-[#5f748c]">Add one in Agency Settings → Preferred Partners.</p>
+                          <p className="mt-1 text-sm text-[#5f748c]">Add one in Organisation → Partners.</p>
                         ) : null}
                       </div>
                     ) : null}
@@ -2338,6 +2506,99 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                       </div>
                     ) : null}
                   </article>
+
+                  {cancellationAttorneyRequired ? (
+                    <article className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <strong className="text-sm text-[#22374d]">Cancellation Attorney</strong>
+                          <p className="mt-1 text-sm text-[#5f748c]">Required when the seller has an existing bond to cancel.</p>
+                        </div>
+                        <span className="rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#5f748c]">
+                          Required follow-up
+                        </span>
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <Field label="Selection Mode" error={errors.cancellationAttorneyMode}>
+                          <select className={fieldClass()} value={form.cancellationAttorneyMode} onChange={(event) => updateField('cancellationAttorneyMode', event.target.value)}>
+                            {CANCELLATION_PARTNER_ROLE_FIELD_OPTIONS.map((item) => (
+                              <option key={item.value} value={item.value}>
+                                {item.label}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        {form.cancellationAttorneyMode === PARTNER_MODE_AGENCY ? (
+                          <Field label="Search Partners">
+                            <input
+                              className={fieldClass()}
+                              value={partnerSearch.cancellationAttorney}
+                              onChange={(event) => updatePartnerSearchField('cancellationAttorney', event.target.value)}
+                              placeholder="Search company, contact, or email"
+                            />
+                          </Field>
+                        ) : null}
+                      </div>
+                      {form.cancellationAttorneyMode === PARTNER_MODE_AGENCY ? (
+                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                          <Field label="Agency Preferred Cancellation Attorney" error={errors.cancellationAttorneyPreferredPartnerId}>
+                            <select className={fieldClass()} value={form.cancellationAttorneyPreferredPartnerId} onChange={(event) => updateField('cancellationAttorneyPreferredPartnerId', event.target.value)}>
+                              <option value="">Select cancellation attorney</option>
+                              {preferredPartnersLoading ? (
+                                <option disabled>Loading preferred cancellation attorneys...</option>
+                              ) : preferredPartnersError ? (
+                                <option disabled>Could not load agency preferred partners</option>
+                              ) : cancellationAttorneyOptions.length ? (
+                                cancellationAttorneyOptions.map((partner) => (
+                                  <option key={partner.id} value={partner.id}>
+                                    {partner.companyName} • {partner.contactPerson || 'Contact pending'} • {partner.email || 'No email'}
+                                  </option>
+                                ))
+                              ) : (
+                                <option disabled>No preferred cancellation attorneys found</option>
+                              )}
+                            </select>
+                          </Field>
+                          <div className="rounded-[14px] border border-[#dce6f2] bg-white px-4 py-3 text-sm text-[#5f748c]">
+                            {selectedCancellationAttorneyPartner ? (
+                              <>
+                                <p className="font-semibold text-[#22374d]">{selectedCancellationAttorneyPartner.companyName}</p>
+                                <p className="mt-1">{selectedCancellationAttorneyPartner.contactPerson || 'No contact person'}</p>
+                                <p className="mt-1">{selectedCancellationAttorneyPartner.email || 'No email'} • {selectedCancellationAttorneyPartner.phone || 'No phone'}</p>
+                              </>
+                            ) : (
+                              <p>Select a preferred cancellation attorney partner.</p>
+                            )}
+                            {preferredPartnersError ? (
+                              <p className="mt-1 text-[#b42318]">Could not load agency preferred partners. Try refreshing the page.</p>
+                            ) : null}
+                            {!cancellationAttorneyOptions.length && !preferredPartnersLoading && !preferredPartnersError ? (
+                              <p className="mt-1">Add one in Organisation → Partners.</p>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
+                      {form.cancellationAttorneyMode === PARTNER_MODE_BUYER ? (
+                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                          <Field label="Seller Appointed Company" error={errors.cancellationAttorneyBuyerCompanyName}>
+                            <input className={fieldClass()} value={form.cancellationAttorneyBuyerCompanyName} onChange={(event) => updateField('cancellationAttorneyBuyerCompanyName', event.target.value)} />
+                          </Field>
+                          <Field label="Seller Appointed Contact" error={errors.cancellationAttorneyBuyerContactPerson}>
+                            <input className={fieldClass()} value={form.cancellationAttorneyBuyerContactPerson} onChange={(event) => updateField('cancellationAttorneyBuyerContactPerson', event.target.value)} />
+                          </Field>
+                          <Field label="Email" error={errors.cancellationAttorneyBuyerEmail}>
+                            <input className={fieldClass()} type="email" value={form.cancellationAttorneyBuyerEmail} onChange={(event) => updateField('cancellationAttorneyBuyerEmail', event.target.value)} />
+                          </Field>
+                          <Field label="Phone" error={errors.cancellationAttorneyBuyerPhone}>
+                            <input className={fieldClass()} value={form.cancellationAttorneyBuyerPhone} onChange={(event) => updateField('cancellationAttorneyBuyerPhone', normalizePhoneInput(event.target.value))} />
+                          </Field>
+                          <Field label="Notes" fullWidth>
+                            <textarea className={fieldClass()} rows={3} value={form.cancellationAttorneyBuyerNotes} onChange={(event) => updateField('cancellationAttorneyBuyerNotes', event.target.value)} />
+                          </Field>
+                        </div>
+                      ) : null}
+                    </article>
+                  ) : null}
 
                 </div>
               </section>
@@ -2448,6 +2709,15 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                       <p className="mt-1">{formatCurrency(inheritedDealTerms?.salePrice || 0)}</p>
                     </div>
                     <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Finance Snapshot</p>
+                      <p className="mt-2 font-semibold text-[#22374d]">
+                        {FINANCE_TYPE_OPTIONS.find((option) => option.value === form.financeType)?.label || 'Not confirmed yet'}
+                      </p>
+                      <p className="mt-1 text-[#5f748c]">
+                        {form.hasExistingBondToCancel ? 'Seller has an existing bond to cancel.' : 'No existing seller bond cancellation captured.'}
+                      </p>
+                    </div>
+                    <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                       <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Client</p>
                       <p className="mt-2 font-semibold text-[#22374d]">{`${form.clientName} ${form.clientSurname}`.trim()}</p>
                       <p className="mt-1">{form.clientEmail} • {form.clientPhone}</p>
@@ -2473,6 +2743,25 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                             : form.bondOriginatorBuyerCompanyName || form.bondOriginatorBuyerContactPerson || 'Buyer-appointed partner pending'}
                       </p>
                     </div>
+                    {cancellationAttorneyRequired ? (
+                      <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                        <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Cancellation Attorney</p>
+                        <p className="mt-2 font-semibold text-[#22374d]">
+                          {form.cancellationAttorneyMode === PARTNER_MODE_NONE
+                            ? 'Not assigned yet'
+                            : form.cancellationAttorneyMode === PARTNER_MODE_AGENCY
+                              ? selectedCancellationAttorneyPartner?.companyName || selectedCancellationAttorneyPartner?.contactPerson || 'Pending selection'
+                              : form.cancellationAttorneyBuyerCompanyName || form.cancellationAttorneyBuyerContactPerson || 'Seller-appointed partner pending'}
+                        </p>
+                        <p className="mt-1 text-[#5f748c]">
+                          {form.cancellationAttorneyMode === PARTNER_MODE_AGENCY
+                            ? 'Agency preferred partner'
+                            : form.cancellationAttorneyMode === PARTNER_MODE_BUYER
+                              ? 'Seller appointed partner'
+                              : 'Existing bond cancellation follow-up'}
+                        </p>
+                      </div>
+                    ) : null}
                     <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                       <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Commission Projection</p>
                       <p className="mt-2 font-semibold text-[#22374d]">
@@ -2492,7 +2781,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                       'Transaction will be created and linked to the selected property.',
                       `${getOriginLabel(form.propertyMode)} will be logged on the activity timeline.`,
                       'Completeness follow-ups will be captured without blocking creation.',
-                      'Transfer attorney will be notified.',
+                      'Assigned role players will be notified.',
                       form.propertyMode === PROPERTY_MODE_PRIVATE
                         ? 'Listing will move into an in-progress state.'
                         : form.propertyMode === PROPERTY_MODE_DEVELOPMENT
@@ -2524,6 +2813,9 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                 ) : null}
                 {createdDeal.attorneyChangeRequested ? (
                   <p className="text-sm text-[#9a5b13]">Buyer-appointed role player recorded and saved against this transaction setup.</p>
+                ) : null}
+                {!createdDeal.attorneyChangeRequested && createdDeal.externalRolePlayerCaptured ? (
+                  <p className="text-sm text-[#9a5b13]">Externally appointed role player recorded and saved against this transaction setup.</p>
                 ) : null}
               </div>
             </div>

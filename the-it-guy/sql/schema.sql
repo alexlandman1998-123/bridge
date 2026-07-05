@@ -298,7 +298,7 @@ alter table if exists organisation_preferred_partners add column if not exists u
 alter table if exists organisation_preferred_partners drop constraint if exists organisation_preferred_partners_partner_type_check;
 alter table if exists organisation_preferred_partners
   add constraint organisation_preferred_partners_partner_type_check
-  check (partner_type in ('bond_originator', 'bond_attorney', 'transfer_attorney'));
+  check (partner_type in ('agency', 'bond_originator', 'transfer_attorney', 'bond_attorney', 'cancellation_attorney'));
 
 create unique index if not exists organisation_preferred_partners_default_unique_idx
   on organisation_preferred_partners (organisation_id, partner_type)
