@@ -262,6 +262,157 @@ const COMMAND_TONES = {
   green: 'border-[#d9eadf] bg-[#f5fbf7] text-[#1f7a5a]',
 }
 
+const INSIGHT_ACCENTS = {
+  command: { bg: '#f7fbf8', icon: '#e8f6ef', color: '#1f7a5a', border: '#d9eadf' },
+  room: { bg: '#f7faff', icon: '#e8f1fb', color: '#2563eb', border: '#dbe8fb' },
+  handoff: { bg: '#fffaf2', icon: '#fff1d8', color: '#b7791f', border: '#f2dfbd' },
+}
+
+function InsightCard({
+  marker = '',
+  title,
+  headline,
+  body,
+  score,
+  tone = 'command',
+  icon: Icon = Sparkles,
+  chips = [],
+  actionLabel,
+  onAction,
+}) {
+  const accent = INSIGHT_ACCENTS[tone] || INSIGHT_ACCENTS.command
+  const markerProps = marker ? { [marker]: true } : {}
+  const iconNode = Icon ? <Icon className="h-5 w-5" /> : null
+  return (
+    <button
+      type="button"
+      className="block min-h-[152px] w-full rounded-[26px] border bg-white p-4 text-left shadow-[0_12px_30px_rgba(15,23,42,0.06)]"
+      style={{ borderColor: accent.border }}
+      onClick={onAction || undefined}
+      {...markerProps}
+    >
+      <span className="flex items-start justify-between gap-3">
+        <span className="flex min-w-0 gap-3">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px]" style={{ background: accent.icon, color: accent.color }}>
+            {iconNode}
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-[#60758d]">{title}</span>
+            <span className="mt-1 block text-[16px] font-semibold leading-5 text-[#10243a]">{headline}</span>
+          </span>
+        </span>
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-[15px] font-bold" style={{ background: accent.bg, color: accent.color }}>
+          {score}
+        </span>
+      </span>
+      <span className="mt-3 block text-[13px] leading-5 text-[#60758d]">{body}</span>
+      <span className="mt-4 flex items-center justify-between gap-3">
+        <span className="flex min-w-0 flex-wrap gap-1.5">
+          {chips.slice(0, 2).map((chip) => (
+            <span key={chip} className="rounded-full bg-[#f1f5f9] px-2.5 py-1 text-[11px] font-semibold text-[#60758d]">
+              {chip}
+            </span>
+          ))}
+        </span>
+        <span className="shrink-0 rounded-full px-3 py-1.5 text-[12px] font-semibold text-white" style={{ background: accent.color }}>
+          {actionLabel}
+        </span>
+      </span>
+    </button>
+  )
+}
+
+export function MobileWorkspaceInsightCards({
+  workspace = {},
+  tasks = [],
+  documents = [],
+  priorityActions = [],
+  activity = [],
+  communicationThread = {},
+  onCommandAction = null,
+  onSendUpdate = null,
+  onApproveHandoff = null,
+}) {
+  const brief = useMemo(() => getMobileCommandBrief({ workspace, tasks, documents, priorityActions, activity }), [activity, documents, priorityActions, tasks, workspace])
+  const room = useMemo(() => getMobileLiveRoomBrief({ workspace, tasks, documents, activity, communicationThread }), [activity, communicationThread, documents, tasks, workspace])
+  const review = useMemo(() => getMobileHandoffReview({ workspace, tasks, documents, activity, priorityActions, communicationThread }), [activity, communicationThread, documents, priorityActions, tasks, workspace])
+  const recommendation = brief.recommendations[0] || null
+  const update = room.suggestedUpdates[0] || null
+
+  function handleCommand() {
+    const action = recommendation?.action || 'Review command brief'
+    void trackMobileMetric('mobile_command_brief_action', {
+      route: `/mobile/${workspace.module || 'home'}`,
+      metadata: { module: workspace.module || '', action, recommendationId: recommendation?.id || '', score: brief.score, compact: true },
+    })
+    onCommandAction?.(action, recommendation)
+  }
+
+  function handleUpdate() {
+    if (!update) return
+    void trackMobileMetric('mobile_live_room_update_prepared', {
+      route: `/mobile/${workspace.module || 'room'}`,
+      metadata: { module: workspace.module || '', templateId: update.id, readiness: room.readiness, compact: true },
+    })
+    onSendUpdate?.(update)
+  }
+
+  function handleHandoff() {
+    void trackMobileMetric('mobile_handoff_review_approved', {
+      route: `/mobile/${workspace.module || 'handoff'}`,
+      metadata: { module: workspace.module || '', score: review.score, certificate: review.certificate, compact: true },
+    })
+    onApproveHandoff?.(review)
+  }
+
+  return (
+    <section className="space-y-3" data-mobile-compact-insights>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-[19px] font-semibold text-[#10243a]">Workspace Insights</h2>
+        <span className="rounded-full bg-white px-3 py-1 text-[12px] font-semibold text-[#60758d] shadow-[0_8px_18px_rgba(15,23,42,0.05)]">Compact</span>
+      </div>
+      <div className="grid gap-3">
+        <InsightCard
+          marker="data-phase6-command-brief"
+          title="Command Brief"
+          headline={brief.headline}
+          body={recommendation?.title || brief.summary}
+          score={brief.score}
+          tone="command"
+          icon={Workflow}
+          chips={[brief.handoff.label, `${brief.automations.filter((item) => item.enabled).length}/${brief.automations.length} automations`]}
+          actionLabel="Run"
+          onAction={handleCommand}
+        />
+        <InsightCard
+          marker="data-phase7-live-room"
+          title="Live Room"
+          headline={room.state}
+          body={`${room.nextOwner}: ${room.nextAction}`}
+          score={room.readiness}
+          tone="room"
+          icon={UsersRound}
+          chips={[room.clientUpdate.label, `${room.lanes.length} lanes`]}
+          actionLabel="Update"
+          onAction={handleUpdate}
+        />
+        <InsightCard
+          marker="data-phase8-handoff-review"
+          title="Handoff"
+          headline={review.state}
+          body={review.certificate}
+          score={review.score}
+          tone="handoff"
+          icon={ClipboardCheck}
+          chips={[review.owner, review.stageLabel]}
+          actionLabel={review.score >= 86 ? 'Approve' : 'Review'}
+          onAction={handleHandoff}
+        />
+      </div>
+    </section>
+  )
+}
+
 export function MobileCommandBriefPanel({
   workspace = {},
   tasks = [],

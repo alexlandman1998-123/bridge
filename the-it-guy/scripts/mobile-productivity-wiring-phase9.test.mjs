@@ -195,15 +195,23 @@ assert.ok(mobileSearchSource.includes("replace(/^\\/mobile(?=\\/|$)/, '/mobile-d
 
 const markerComponentPairs = [
   ['data-phase5-field-mode', 'MobileFieldModePanel'],
-  ['data-phase6-command-brief', 'MobileCommandBriefPanel'],
-  ['data-phase7-live-room', 'MobileLiveRoomPanel'],
-  ['data-phase8-handoff-review', 'MobileHandoffReviewPanel'],
 ]
 
 for (const [marker, componentName] of markerComponentPairs) {
   assert.ok(productivitySource.includes(marker), `MobileProductivity should expose ${marker}`)
   assert.ok(workspacePageSource.includes(componentName), `Mobile workspace should wire ${componentName}`)
 }
+
+for (const marker of ['data-phase6-command-brief', 'data-phase7-live-room', 'data-phase8-handoff-review']) {
+  assert.ok(productivitySource.includes(marker), `MobileProductivity should preserve ${marker} on compact insight cards`)
+}
+
+assert.ok(productivitySource.includes('data-mobile-compact-insights'), 'MobileProductivity should expose compact workspace insight cards')
+assert.ok(productivitySource.includes('MobileWorkspaceInsightCards'), 'MobileProductivity should export compact workspace insight cards')
+assert.ok(workspacePageSource.includes('MobileWorkspaceInsightCards'), 'Mobile workspace should use compact insight cards instead of full panels')
+assert.ok(!workspacePageSource.includes('MobileCommandBriefPanel'), 'Mobile workspace should not render the full Command Brief panel')
+assert.ok(!workspacePageSource.includes('MobileLiveRoomPanel'), 'Mobile workspace should not render the full Live Room panel')
+assert.ok(!workspacePageSource.includes('MobileHandoffReviewPanel'), 'Mobile workspace should not render the full Handoff panel')
 
 assert.ok(bottomNavSource.includes("item.key === 'create'"), 'Create nav item should be intercepted by the bottom nav')
 assert.ok(bottomNavSource.includes('setCreateOpen(true)'), 'Create nav item should open the quick action sheet')

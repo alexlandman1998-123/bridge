@@ -22,7 +22,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { MobileCommandBriefPanel, MobileFieldModePanel, MobileHandoffReviewPanel, MobileLiveRoomPanel, MobileOfflineDraftPanel, MobileSmartActionBar, MobileUploadSheet } from '../../components/mobile-shell/MobileProductivity'
+import { MobileFieldModePanel, MobileOfflineDraftPanel, MobileSmartActionBar, MobileUploadSheet, MobileWorkspaceInsightCards } from '../../components/mobile-shell/MobileProductivity'
 import { MobileCard, MobileEmptyState, MobileLoadingState } from '../../components/mobile-shell/MobileShellStates'
 import { trackMobileMetric } from '../../services/observability/monitoring'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -412,32 +412,16 @@ export default function MobileWorkspacePage({ workspaceType }) {
         onOpenDocuments={() => setUploadOpen(true)}
       />
 
-      <MobileCommandBriefPanel
+      <MobileWorkspaceInsightCards
         workspace={workspace}
         tasks={tasks}
         documents={documents}
         priorityActions={workspace.priorityActions}
         activity={activity}
-        onAction={handleCommandBriefAction}
-      />
-
-      <MobileLiveRoomPanel
-        workspace={workspace}
-        tasks={tasks}
-        documents={documents}
-        activity={activity}
         communicationThread={communicationThread}
+        onCommandAction={handleCommandBriefAction}
         onSendUpdate={handleLiveRoomUpdate}
-      />
-
-      <MobileHandoffReviewPanel
-        workspace={workspace}
-        tasks={tasks}
-        documents={documents}
-        activity={activity}
-        priorityActions={workspace.priorityActions}
-        communicationThread={communicationThread}
-        onApprove={handleHandoffApproval}
+        onApproveHandoff={handleHandoffApproval}
       />
 
       <MobileSmartActionBar actions={smartActions} onAction={handleSmartAction} />
