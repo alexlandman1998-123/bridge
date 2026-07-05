@@ -1,7 +1,11 @@
 import {
   AlertTriangle,
   ArrowUpRight,
+  Bath,
+  BedDouble,
+  Building2,
   CalendarDays,
+  Camera,
   Check,
   ChevronRight,
   CheckCircle2,
@@ -9,8 +13,11 @@ import {
   ContactRound,
   FileText,
   FileUp,
+  Home,
+  Image as ImageIcon,
   ListChecks,
   Mail,
+  MapPin,
   MessageCircle,
   MessageSquarePlus,
   MoreHorizontal,
@@ -89,6 +96,175 @@ function getAccent(workspace = {}) {
 function getOutstandingDocuments(documents = []) {
   const item = documents.find((entry) => String(entry.label || '').toLowerCase().includes('outstanding'))
   return Number(item?.value || 0)
+}
+
+function formatMoney(value = 0) {
+  const number = Number(value)
+  if (!Number.isFinite(number) || number <= 0) return 'Value pending'
+  return new Intl.NumberFormat('en-ZA', {
+    style: 'currency',
+    currency: 'ZAR',
+    maximumFractionDigits: 0,
+  }).format(number)
+}
+
+function buildFallbackVisualContext(workspace = {}, displayStatus = '') {
+  return {
+    transaction: {
+      label: workspace.moduleLabel || 'Workspace File',
+      reference: workspace.reference,
+      stage: displayStatus || workspace.status || workspace.currentStage,
+      owner: workspace.owner || 'Owner pending',
+      value: 0,
+    },
+    property: {
+      address: workspace.title || 'Property context',
+      suburb: workspace.moduleLabel || 'Workspace',
+      type: workspace.module === 'listing' || workspace.module === 'deal' ? 'Commercial asset' : 'Property file',
+      price: 0,
+      beds: 0,
+      baths: 0,
+      size: '',
+      imageUrl: '',
+    },
+    media: {
+      status: 'Media context',
+      count: 0,
+      items: [
+        { id: 'photo', label: 'Hero photo', type: 'photo', status: 'Pending' },
+        { id: 'plan', label: 'Floor plan', type: 'plan', status: 'Queued' },
+        { id: 'docs', label: 'Document scans', type: 'document', status: 'Ready' },
+      ],
+    },
+  }
+}
+
+function MiniPropertyVisual({ imageUrl = '', accent }) {
+  if (imageUrl) {
+    return <img src={imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
+  }
+
+  return (
+    <div className="relative h-full w-full overflow-hidden bg-[#e9f0f4]">
+      <div className="absolute inset-x-0 bottom-0 h-[34%] bg-[#d8e4eb]" />
+      <div className="absolute left-[11%] top-[20%] h-[48%] w-[44%] rounded-t-[18px] bg-white shadow-[0_14px_26px_rgba(15,23,42,0.12)]">
+        <div className="absolute left-[14%] top-[18%] h-8 w-8 rounded-lg" style={{ backgroundColor: accent.soft }} />
+        <div className="absolute right-[14%] top-[18%] h-8 w-8 rounded-lg bg-[#dfe7ef]" />
+        <div className="absolute bottom-0 left-[34%] h-12 w-10 rounded-t-lg" style={{ backgroundColor: accent.color }} />
+      </div>
+      <div className="absolute right-[10%] top-[30%] h-[38%] w-[34%] rounded-t-[16px] bg-[#f8fafc] shadow-[0_12px_24px_rgba(15,23,42,0.10)]">
+        <div className="absolute left-[18%] top-[20%] h-6 w-6 rounded-md bg-[#dfe7ef]" />
+        <div className="absolute right-[18%] top-[20%] h-6 w-6 rounded-md" style={{ backgroundColor: accent.soft }} />
+        <div className="absolute bottom-0 left-[35%] h-9 w-8 rounded-t-md bg-[#94a3b8]" />
+      </div>
+      <div className="absolute bottom-[18%] left-[8%] h-2 w-[84%] rounded-full bg-white/80" />
+    </div>
+  )
+}
+
+function MediaTile({ item = {}, accent }) {
+  const Icon = item.type === 'plan' ? Building2 : item.type === 'document' ? FileText : ImageIcon
+  return (
+    <div className="min-w-[118px] rounded-[20px] border border-[#e4ebf2] bg-white p-3 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+      <span className="flex h-12 w-12 items-center justify-center rounded-[17px]" style={{ backgroundColor: accent.soft, color: accent.color }}>
+        <Icon className="h-5 w-5" />
+      </span>
+      <p className="mt-3 truncate text-[13px] font-semibold text-[#10243a]">{item.label}</p>
+      <p className="mt-1 text-[11px] font-semibold text-[#60758d]">{item.status}</p>
+    </div>
+  )
+}
+
+function MobileVisualContextCards({ workspace = {}, displayStatus = '', progressPercent = 0, documents = [], accent }) {
+  const context = workspace.visualContext || buildFallbackVisualContext(workspace, displayStatus)
+  const property = context.property || {}
+  const transaction = context.transaction || {}
+  const media = context.media || {}
+  const mediaItems = Array.isArray(media.items) ? media.items.slice(0, 3) : []
+  const uploadedDocuments = documents.find((item) => String(item.label || '').toLowerCase().includes('uploaded'))?.value || media.count || 0
+
+  return (
+    <section className="space-y-3" data-mobile-visual-context>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-[19px] font-semibold text-[#10243a]">Visual Context</h2>
+        <span className="rounded-full bg-white px-3 py-1 text-[12px] font-semibold text-[#60758d] shadow-[0_8px_18px_rgba(15,23,42,0.05)]">Live file</span>
+      </div>
+
+      <div className="flex gap-3 overflow-x-auto pb-1">
+        <div className="min-w-[245px] overflow-hidden rounded-[28px] bg-[#10243a] text-white shadow-[0_16px_36px_rgba(15,23,42,0.16)]" data-mobile-transaction-card>
+          <div className="p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[#9fe0bd]">{transaction.label || 'Transaction File'}</p>
+                <h3 className="mt-2 truncate text-[20px] font-semibold text-white">{transaction.reference || workspace.reference}</h3>
+              </div>
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/12 text-[#9fe0bd]">
+                <FileText className="h-5 w-5" />
+              </span>
+            </div>
+            <div className="mt-5 flex items-end justify-between gap-4">
+              <div>
+                <p className="text-[12px] font-semibold text-[#9fb3c7]">Stage</p>
+                <p className="mt-1 max-w-[140px] truncate text-[16px] font-semibold text-white">{transaction.stage || displayStatus}</p>
+              </div>
+              <div className="flex h-[58px] w-[58px] items-center justify-center rounded-full bg-white text-[#10243a]">
+                <span className="text-[17px] font-bold">{progressPercent}%</span>
+              </div>
+            </div>
+            <p className="mt-4 truncate text-[13px] text-[#dce8f2]">Owner: {transaction.owner || workspace.owner || 'Owner pending'}</p>
+          </div>
+        </div>
+
+        <div className="min-w-[292px] overflow-hidden rounded-[28px] border border-white/80 bg-white shadow-[0_14px_34px_rgba(15,23,42,0.08)]" data-mobile-property-card>
+          <div className="h-[138px] overflow-hidden">
+            <MiniPropertyVisual imageUrl={property.imageUrl} accent={accent} />
+          </div>
+          <div className="p-4">
+            <div className="flex items-start gap-2">
+              <MapPin className="mt-0.5 h-4 w-4 shrink-0" style={{ color: accent.color }} />
+              <div className="min-w-0">
+                <h3 className="truncate text-[17px] font-semibold text-[#10243a]">{property.address || workspace.title}</h3>
+                <p className="mt-1 truncate text-[12px] font-semibold text-[#60758d]">{property.suburb || property.type || 'Property context'}</p>
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <div className="rounded-2xl bg-[#f8fafc] p-2">
+                <p className="truncate text-[11px] font-semibold text-[#60758d]">Value</p>
+                <p className="mt-1 truncate text-[12px] font-bold text-[#10243a]">{formatMoney(property.price || transaction.value)}</p>
+              </div>
+              <div className="rounded-2xl bg-[#f8fafc] p-2">
+                <p className="flex items-center gap-1 text-[11px] font-semibold text-[#60758d]"><BedDouble className="h-3.5 w-3.5" /> Beds</p>
+                <p className="mt-1 text-[13px] font-bold text-[#10243a]">{property.beds || '-'}</p>
+              </div>
+              <div className="rounded-2xl bg-[#f8fafc] p-2">
+                <p className="flex items-center gap-1 text-[11px] font-semibold text-[#60758d]"><Bath className="h-3.5 w-3.5" /> Baths</p>
+                <p className="mt-1 text-[13px] font-bold text-[#10243a]">{property.baths || '-'}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="min-w-[284px] rounded-[28px] border border-white/80 bg-[#f8fafc] p-4 shadow-[0_14px_34px_rgba(15,23,42,0.07)]" data-mobile-media-card>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[#60758d]">Media Pack</p>
+              <h3 className="mt-2 text-[18px] font-semibold text-[#10243a]">{media.status || 'Media context'}</h3>
+            </div>
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl" style={{ backgroundColor: accent.soft, color: accent.color }}>
+              <Camera className="h-5 w-5" />
+            </span>
+          </div>
+          <div className="mt-4 flex gap-2 overflow-x-auto">
+            {mediaItems.map((item) => <MediaTile key={item.id || item.label} item={item} accent={accent} />)}
+          </div>
+          <div className="mt-4 flex items-center justify-between rounded-[18px] bg-white px-3 py-2">
+            <span className="text-[12px] font-semibold text-[#60758d]">Assets linked</span>
+            <span className="text-[15px] font-bold" style={{ color: accent.color }}>{uploadedDocuments}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
 }
 
 function SectionHeader({ title, action = '', onAction = null }) {
@@ -380,6 +556,14 @@ export default function MobileWorkspacePage({ workspaceType }) {
           )
         })}
       </section>
+
+      <MobileVisualContextCards
+        workspace={workspace}
+        displayStatus={displayStatus}
+        progressPercent={progressPercent}
+        documents={documents}
+        accent={accent}
+      />
 
       <MobileCard>
         <div className="flex items-start justify-between gap-3">

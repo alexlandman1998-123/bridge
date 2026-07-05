@@ -94,6 +94,9 @@ for (const [workspaceType, loader] of Object.entries(workspaceLoaders)) {
   assert.ok(Array.isArray(workspace.tasks), `${workspaceType} workspace should expose tasks`)
   assert.ok(Array.isArray(workspace.activity), `${workspaceType} workspace should expose activity`)
   assert.ok(Array.isArray(workspace.actions), `${workspaceType} workspace should expose actions`)
+  assert.ok(workspace.visualContext?.transaction?.reference, `${workspaceType} workspace should expose transaction visual context`)
+  assert.ok(workspace.visualContext?.property?.address, `${workspaceType} workspace should expose property visual context`)
+  assert.ok(Array.isArray(workspace.visualContext?.media?.items), `${workspaceType} workspace should expose media visual context`)
 
   const fieldMode = getMobileFieldModeSnapshot({
     workspace,
@@ -209,6 +212,10 @@ for (const marker of ['data-phase6-command-brief', 'data-phase7-live-room', 'dat
 assert.ok(productivitySource.includes('data-mobile-compact-insights'), 'MobileProductivity should expose compact workspace insight cards')
 assert.ok(productivitySource.includes('MobileWorkspaceInsightCards'), 'MobileProductivity should export compact workspace insight cards')
 assert.ok(workspacePageSource.includes('MobileWorkspaceInsightCards'), 'Mobile workspace should use compact insight cards instead of full panels')
+assert.ok(workspacePageSource.includes('data-mobile-visual-context'), 'Mobile workspace should expose visual context cards')
+assert.ok(workspacePageSource.includes('data-mobile-transaction-card'), 'Mobile workspace should expose a visual transaction card')
+assert.ok(workspacePageSource.includes('data-mobile-property-card'), 'Mobile workspace should expose a visual property card')
+assert.ok(workspacePageSource.includes('data-mobile-media-card'), 'Mobile workspace should expose a visual media card')
 assert.ok(!workspacePageSource.includes('MobileCommandBriefPanel'), 'Mobile workspace should not render the full Command Brief panel')
 assert.ok(!workspacePageSource.includes('MobileLiveRoomPanel'), 'Mobile workspace should not render the full Live Room panel')
 assert.ok(!workspacePageSource.includes('MobileHandoffReviewPanel'), 'Mobile workspace should not render the full Handoff panel')

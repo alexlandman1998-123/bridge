@@ -75,18 +75,90 @@ function buildWorkspaceMeta(module, label, owner = 'You', nextAction = 'Confirm 
   }
 }
 
+function getFirstNumber(...values) {
+  for (const value of values) {
+    const number = Number(value)
+    if (Number.isFinite(number) && number > 0) return number
+  }
+  return 0
+}
+
+function buildVisualContext({
+  module = 'transaction',
+  title = 'Workspace',
+  reference = '',
+  stage = '',
+  owner = 'You',
+  value = 0,
+  property = {},
+  media = {},
+} = {}) {
+  const propertyTitle = normalizeText(property.address || property.title || title, title)
+  return {
+    transaction: {
+      label: module === 'listing' ? 'Listing File' : module === 'deal' ? 'Deal File' : module === 'lead' || module === 'commercial_lead' ? 'Lead File' : 'Transaction File',
+      reference,
+      stage,
+      owner,
+      value,
+    },
+    property: {
+      address: propertyTitle,
+      suburb: normalizeText(property.suburb, module === 'listing' ? 'Commercial precinct' : 'Property context'),
+      type: normalizeText(property.type, module === 'listing' || module === 'deal' || module === 'commercial_lead' ? 'Commercial asset' : 'Residential property'),
+      price: value,
+      beds: Number(property.beds || 0),
+      baths: Number(property.baths || 0),
+      size: normalizeText(property.size, property.erf ? `${property.erf} erf` : ''),
+      imageUrl: normalizeText(property.imageUrl),
+    },
+    media: {
+      status: normalizeText(media.status, module === 'listing' ? 'Media preparation' : 'Document media'),
+      count: Number(media.count || media.items?.length || 0),
+      items: Array.isArray(media.items) && media.items.length ? media.items : [
+        { id: 'hero', label: 'Hero photo', type: 'photo', status: module === 'listing' ? 'Pending' : 'Linked' },
+        { id: 'floorplan', label: 'Floor plan', type: 'plan', status: 'Queued' },
+        { id: 'docs', label: 'Document scans', type: 'document', status: 'Ready' },
+      ],
+    },
+  }
+}
+
 function buildTransactionWorkspace(id) {
   const row = findAgentTransaction(id)
   const transaction = row?.transaction || row || {}
   const title = normalizeText(transaction.property_address_line_1 || row?.unit?.address || row?.unit?.name, 'Residential Transaction')
   const stage = normalizeText(transaction.current_main_stage || transaction.stage, 'Finance Stage')
   const daysActive = getDaysSince(transaction.created_at || row?.created_at)
+  const reference = normalizeText(transaction.transaction_reference || transaction.matter_number || id, `TXN-${String(id).slice(0, 8)}`)
+  const value = getFirstNumber(transaction.purchase_price, transaction.sales_price, transaction.sale_price, row?.unit?.price)
   return {
     ...buildWorkspaceMeta('transaction', 'Residential Transaction', normalizeText(transaction.assigned_agent, 'Assigned Agent'), 'Upload outstanding buyer documents'),
     module: 'transaction',
     title,
-    reference: normalizeText(transaction.transaction_reference || transaction.matter_number || id, `TXN-${String(id).slice(0, 8)}`),
+    reference,
     status: stage,
+    visualContext: buildVisualContext({
+      module: 'transaction',
+      title,
+      reference,
+      stage,
+      owner: normalizeText(transaction.assigned_agent, 'Assigned Agent'),
+      value,
+      property: {
+        address: title,
+        suburb: normalizeText(transaction.suburb || row?.unit?.suburb, 'Residential address'),
+        type: normalizeText(transaction.property_type || row?.unit?.property_type, 'Residential property'),
+        beds: row?.unit?.bedrooms,
+        baths: row?.unit?.bathrooms,
+        size: row?.unit?.size ? `${row.unit.size} m2` : '',
+        imageUrl: normalizeText(row?.unit?.imageUrl || row?.unit?.propertyImage || row?.unit?.thumbnailUrl),
+      },
+      media: {
+        status: Number(transaction.required_documents_missing || transaction.missing_documents_count || 0) > 0 ? 'Media needs documents' : 'Media pack current',
+        count: Number(transaction.uploaded_documents_count || 0),
+      },
+    }),
     header: [
       { label: 'Transaction Type', value: normalizeText(transaction.transaction_type, 'Residential Sale') },
       { label: 'Days Active', value: daysActive || 1 },
@@ -120,12 +192,34 @@ function buildTransactionWorkspace(id) {
 
 function buildLeadWorkspace(id, commercial = false) {
   const title = commercial ? 'Commercial Lead' : 'Residential Lead'
+  const reference = `LEAD-${String(id).slice(0, 8)}`
   return {
     ...buildWorkspaceMeta(commercial ? 'commercial_lead' : 'lead', commercial ? 'Commercial Lead' : 'Residential Lead', commercial ? 'Assigned Broker' : 'Assigned Agent', commercial ? 'Qualify lead requirement' : 'Follow up with lead'),
     module: commercial ? 'commercial_lead' : 'lead',
     title,
-    reference: `LEAD-${String(id).slice(0, 8)}`,
+    reference,
     status: commercial ? 'Qualified' : 'Contacted',
+    visualContext: buildVisualContext({
+      module: commercial ? 'commercial_lead' : 'lead',
+      title,
+      reference,
+      stage: commercial ? 'Qualified' : 'Contacted',
+      owner: commercial ? 'Assigned Broker' : 'Assigned Agent',
+      property: {
+        address: commercial ? 'Tenant requirement area' : 'Buyer search area',
+        suburb: commercial ? 'Office / industrial corridor' : 'Matched suburbs',
+        type: commercial ? 'Commercial requirement' : 'Residential search',
+      },
+      media: {
+        status: commercial ? 'Requirement pack' : 'Property matches',
+        count: commercial ? 2 : 4,
+        items: [
+          { id: 'brief', label: 'Requirement brief', type: 'document', status: 'Ready' },
+          { id: 'matches', label: 'Matched assets', type: 'photo', status: 'Queued' },
+          { id: 'notes', label: 'Lead notes', type: 'document', status: 'Live' },
+        ],
+      },
+    }),
     header: commercial
       ? [
           { label: 'Lead Type', value: 'Tenant' },
@@ -155,12 +249,34 @@ function buildLeadWorkspace(id, commercial = false) {
 
 function buildMatterWorkspace(id) {
   const title = 'Matter Workspace'
+  const reference = `MAT-${String(id).slice(0, 8)}`
   return {
     ...buildWorkspaceMeta('matter', 'Attorney Matter', 'Attorney', 'Review FICA milestone'),
     module: 'matter',
     title,
-    reference: `MAT-${String(id).slice(0, 8)}`,
+    reference,
     status: 'FICA',
+    visualContext: buildVisualContext({
+      module: 'matter',
+      title,
+      reference,
+      stage: 'FICA',
+      owner: 'Attorney',
+      property: {
+        address: 'Private property matter',
+        suburb: 'Transfer context',
+        type: 'Conveyancing matter',
+      },
+      media: {
+        status: 'Evidence pack',
+        count: 3,
+        items: [
+          { id: 'fica', label: 'FICA scans', type: 'document', status: 'Review' },
+          { id: 'instruction', label: 'Instruction', type: 'document', status: 'Ready' },
+          { id: 'property', label: 'Property file', type: 'plan', status: 'Linked' },
+        ],
+      },
+    }),
     header: [
       { label: 'Matter Type', value: 'Transfer' },
       { label: 'Days Open', value: 8 },
@@ -184,12 +300,34 @@ function buildMatterWorkspace(id) {
 
 function buildApplicationWorkspace(id) {
   const title = 'Bond Application'
+  const reference = `APP-${String(id).slice(0, 8)}`
   return {
     ...buildWorkspaceMeta('application', 'Bond Application', 'Bond Originator', 'Follow up bank responses'),
     module: 'application',
     title,
-    reference: `APP-${String(id).slice(0, 8)}`,
+    reference,
     status: 'Banks',
+    visualContext: buildVisualContext({
+      module: 'application',
+      title,
+      reference,
+      stage: 'Banks',
+      owner: 'Bond Originator',
+      property: {
+        address: 'Property pending',
+        suburb: 'Finance package',
+        type: 'Bond application',
+      },
+      media: {
+        status: 'Bank pack',
+        count: 5,
+        items: [
+          { id: 'income', label: 'Income proof', type: 'document', status: 'Ready' },
+          { id: 'property', label: 'Property pack', type: 'photo', status: 'Linked' },
+          { id: 'offers', label: 'Bank offers', type: 'document', status: 'Waiting' },
+        ],
+      },
+    }),
     header: [
       { label: 'Applicant', value: 'Applicant' },
       { label: 'Property', value: 'Property Pending' },
@@ -213,12 +351,35 @@ function buildApplicationWorkspace(id) {
 
 function buildDealWorkspace(id) {
   const title = 'Commercial Deal'
+  const reference = `DEAL-${String(id).slice(0, 8)}`
   return {
     ...buildWorkspaceMeta('deal', 'Commercial Deal', 'Assigned Broker', 'Confirm heads of terms path'),
     module: 'deal',
     title,
-    reference: `DEAL-${String(id).slice(0, 8)}`,
+    reference,
     status: 'Viewing',
+    visualContext: buildVisualContext({
+      module: 'deal',
+      title,
+      reference,
+      stage: 'Viewing',
+      owner: 'Assigned Broker',
+      property: {
+        address: 'Commercial asset',
+        suburb: 'Viewing route',
+        type: 'Lease opportunity',
+        size: '850 m2',
+      },
+      media: {
+        status: 'Deal room media',
+        count: 4,
+        items: [
+          { id: 'photos', label: 'Site photos', type: 'photo', status: 'Ready' },
+          { id: 'plan', label: 'Floor plan', type: 'plan', status: 'Ready' },
+          { id: 'hot', label: 'HOT pack', type: 'document', status: 'Draft' },
+        ],
+      },
+    }),
     header: [
       { label: 'Type', value: 'Lease' },
       { label: 'Broker', value: 'Assigned Broker' },
@@ -242,12 +403,35 @@ function buildDealWorkspace(id) {
 
 function buildListingWorkspace(id) {
   const title = 'Commercial Listing'
+  const reference = `LIST-${String(id).slice(0, 8)}`
   return {
     ...buildWorkspaceMeta('listing', 'Commercial Listing', 'Assigned Broker', 'Review new listing interest'),
     module: 'listing',
     title,
-    reference: `LIST-${String(id).slice(0, 8)}`,
+    reference,
     status: 'Active',
+    visualContext: buildVisualContext({
+      module: 'listing',
+      title,
+      reference,
+      stage: 'Active',
+      owner: 'Assigned Broker',
+      property: {
+        address: 'Listing Property',
+        suburb: 'Commercial precinct',
+        type: 'Office listing',
+        size: '1,200 m2',
+      },
+      media: {
+        status: 'Listing media',
+        count: 6,
+        items: [
+          { id: 'hero', label: 'Hero photo', type: 'photo', status: 'Live' },
+          { id: 'gallery', label: 'Gallery', type: 'photo', status: 'Live' },
+          { id: 'floorplan', label: 'Floor plan', type: 'plan', status: 'Ready' },
+        ],
+      },
+    }),
     header: [
       { label: 'Asset Class', value: 'Office' },
       { label: 'Status', value: 'Active' },
