@@ -188,6 +188,8 @@ assert.ok(demoLayoutSource.includes('/mobile-demo/transaction/demo-transaction')
 assert.ok(demoHomeSource.includes('data-mobile-demo-home'), 'Mobile demo home should expose a stable verification marker')
 assert.ok(demoHomeSource.includes('Buyer') && demoHomeSource.includes('Seller'), 'Mobile demo home should make buyer and seller modes distinct')
 assert.ok(demoHomeSource.includes('PropertyVisual'), 'Mobile demo home should include a visual transaction/property hero')
+assert.ok(demoHomeSource.includes('buyer-docs') && demoHomeSource.includes('seller-offer'), 'Mobile demo home should expose role-specific quick actions')
+assert.ok(demoHomeSource.includes('Buyer support room') && demoHomeSource.includes('Seller command room'), 'Mobile demo home should expose role-specific support room language')
 assert.ok(mobileSearchSource.includes('routePrefix = \'/mobile\''), 'Mobile search should preserve protected mobile routing by default')
 assert.ok(mobileSearchSource.includes("replace(/^\\/mobile(?=\\/|$)/, '/mobile-demo')"), 'Mobile search should rewrite results for public demo routing')
 

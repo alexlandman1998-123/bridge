@@ -2,12 +2,10 @@ import {
   Bell,
   BriefcaseBusiness,
   Building2,
-  CalendarDays,
   ChevronRight,
   CircleDollarSign,
   ClipboardCheck,
   FileText,
-  Home,
   MapPin,
   MessageCircle,
   Search,
@@ -37,6 +35,25 @@ const MODE_CONTENT = {
     property: 'Unit 12, The Avenues',
     value: 'R2.85m',
     next: 'Upload buyer ID',
+    nextBody: 'Unlocks finance approval and keeps transfer moving.',
+    networkTitle: 'Buyer support room',
+    networkBody: 'Agent, originator and attorney updates in one place.',
+    quickActions: [
+      { key: 'buyer-docs', label: 'Upload ID', icon: Upload, to: '/mobile-demo/transaction/demo-transaction' },
+      { key: 'buyer-message', label: 'Ask Agent', icon: MessageCircle, to: '/mobile-demo/lead/demo-lead' },
+      { key: 'buyer-finance', label: 'Finance', icon: CircleDollarSign, to: '/mobile-demo/application/demo-application' },
+    ],
+    portalCards: [
+      { key: 'buyer-checklist', label: 'My Checklist', icon: ClipboardCheck, to: '/mobile-demo/transaction/demo-transaction' },
+      { key: 'buyer-documents', label: 'Documents', icon: FileText, to: '/mobile-demo/transaction/demo-transaction' },
+      { key: 'buyer-bond', label: 'Bond Progress', icon: CircleDollarSign, to: '/mobile-demo/application/demo-application' },
+      { key: 'buyer-attorney', label: 'Attorney', icon: ShieldCheck, to: '/mobile-demo/matter/demo-matter' },
+    ],
+    activities: [
+      { id: 'buyer-activity-1', title: 'Originator reviewed bank pack', meta: '12 min ago' },
+      { id: 'buyer-activity-2', title: 'Buyer ID still outstanding', meta: 'Today' },
+      { id: 'buyer-activity-3', title: 'Attorney opened transfer room', meta: 'Tomorrow' },
+    ],
   },
   seller: {
     label: 'Seller',
@@ -54,27 +71,27 @@ const MODE_CONTENT = {
     property: '18 Hillcrest Road',
     value: 'R3.4m',
     next: 'Sign disclosure pack',
+    nextBody: 'Confirms seller readiness before transfer instruction.',
+    networkTitle: 'Seller command room',
+    networkBody: 'Offer, compliance and transfer updates without chasing.',
+    quickActions: [
+      { key: 'seller-offer', label: 'Offer', icon: FileText, to: '/mobile-demo/transaction/demo-transaction' },
+      { key: 'seller-message', label: 'Agent Chat', icon: MessageCircle, to: '/mobile-demo/lead/demo-lead' },
+      { key: 'seller-disclosure', label: 'Disclosure', icon: ShieldCheck, to: '/mobile-demo/transaction/demo-transaction' },
+    ],
+    portalCards: [
+      { key: 'seller-room', label: 'Sale Room', icon: BriefcaseBusiness, to: '/mobile-demo/transaction/demo-transaction' },
+      { key: 'seller-disclosures', label: 'Disclosures', icon: ShieldCheck, to: '/mobile-demo/transaction/demo-transaction' },
+      { key: 'seller-buyer', label: 'Buyer Finance', icon: CircleDollarSign, to: '/mobile-demo/application/demo-application' },
+      { key: 'seller-transfer', label: 'Transfer Team', icon: Building2, to: '/mobile-demo/matter/demo-matter' },
+    ],
+    activities: [
+      { id: 'seller-activity-1', title: 'Buyer finance moved to review', meta: 'Now' },
+      { id: 'seller-activity-2', title: 'Disclosure pack ready to sign', meta: 'Today' },
+      { id: 'seller-activity-3', title: 'Transfer attorney assigned', meta: 'Tomorrow' },
+    ],
   },
 }
-
-const QUICK_ACTIONS = [
-  { key: 'documents', label: 'Upload', icon: Upload, to: '/mobile-demo/transaction/demo-transaction' },
-  { key: 'messages', label: 'Messages', icon: MessageCircle, to: '/mobile-demo/lead/demo-lead' },
-  { key: 'timeline', label: 'Timeline', icon: CalendarDays, to: '/mobile-demo/transaction/demo-transaction' },
-]
-
-const SERVICE_CARDS = [
-  { key: 'transaction', label: 'Transaction', icon: BriefcaseBusiness, to: '/mobile-demo/transaction/demo-transaction' },
-  { key: 'documents', label: 'Documents', icon: FileText, to: '/mobile-demo/transaction/demo-transaction' },
-  { key: 'attorney', label: 'Attorney', icon: ShieldCheck, to: '/mobile-demo/matter/demo-matter' },
-  { key: 'finance', label: 'Finance', icon: CircleDollarSign, to: '/mobile-demo/application/demo-application' },
-]
-
-const ACTIVITY = [
-  { id: 'activity-1', title: 'Attorney reviewed FICA', meta: '12 min ago' },
-  { id: 'activity-2', title: 'Finance milestone updated', meta: 'Today' },
-  { id: 'activity-3', title: 'Seller disclosure requested', meta: 'Tomorrow' },
-]
 
 function ModeToggle({ mode, setMode }) {
   return (
@@ -83,10 +100,8 @@ function ModeToggle({ mode, setMode }) {
         <button
           key={key}
           type="button"
-          className={[
-            'min-h-11 rounded-xl text-sm font-semibold transition',
-            mode === key ? 'bg-[#10243a] text-white shadow-[0_8px_18px_rgba(15,23,42,0.16)]' : 'text-[#60758d] active:bg-[#f1f5f9]',
-          ].join(' ')}
+          className="min-h-11 rounded-xl text-sm font-semibold transition active:bg-[#f1f5f9]"
+          style={mode === key ? { background: item.accent, color: '#ffffff', boxShadow: '0 8px 18px rgba(15,23,42,0.16)' } : { color: '#60758d' }}
           onClick={() => setMode(key)}
         >
           {item.label}
@@ -137,11 +152,11 @@ function HeroCard({ content }) {
   )
 }
 
-function QuickAction({ action }) {
+function QuickAction({ action, content }) {
   const Icon = action.icon
   return (
     <Link to={action.to} className="min-h-[92px] rounded-[24px] bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
-      <span className="flex h-11 w-11 items-center justify-center rounded-[18px] bg-[#e8f6ef] text-[#1f7a5a]">
+      <span className="flex h-11 w-11 items-center justify-center rounded-[18px]" style={{ background: content.soft, color: content.accent }}>
         <Icon className="h-5 w-5" />
       </span>
       <span className="mt-3 block text-sm font-semibold text-[#10243a]">{action.label}</span>
@@ -162,11 +177,11 @@ function SectionHeader({ title, to = '' }) {
   )
 }
 
-function ServiceCard({ item }) {
+function ServiceCard({ item, content }) {
   const Icon = item.icon
   return (
     <Link to={item.to} className="flex min-h-[66px] items-center gap-3 rounded-[22px] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[17px] bg-[#f1f5f3] text-[#1f7a5a]">
+      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[17px]" style={{ background: content.soft, color: content.accent }}>
         <Icon className="h-5 w-5" />
       </span>
       <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[#10243a]">{item.label}</span>
@@ -178,7 +193,9 @@ function ServiceCard({ item }) {
 export default function MobileDemoHomePage() {
   const [mode, setMode] = useState('buyer')
   const content = MODE_CONTENT[mode] || MODE_CONTENT.buyer
-  const activities = useMemo(() => (mode === 'buyer' ? ACTIVITY : [...ACTIVITY].reverse()), [mode])
+  const quickActions = useMemo(() => content.quickActions || [], [content])
+  const portalCards = useMemo(() => content.portalCards || [], [content])
+  const activities = useMemo(() => content.activities || [], [content])
 
   return (
     <div className="space-y-6 pb-2" data-mobile-demo-home>
@@ -214,13 +231,13 @@ export default function MobileDemoHomePage() {
       <HeroCard content={content} />
 
       <section className="grid grid-cols-3 gap-3">
-        {QUICK_ACTIONS.map((action) => <QuickAction key={action.key} action={action} />)}
+        {quickActions.map((action) => <QuickAction key={action.key} action={action} content={content} />)}
       </section>
 
       <section>
         <SectionHeader title="Your Portal" to="/mobile-demo/search" />
         <div className="grid grid-cols-2 gap-3">
-          {SERVICE_CARDS.map((item) => <ServiceCard key={item.key} item={item} />)}
+          {portalCards.map((item) => <ServiceCard key={item.key} item={item} content={content} />)}
         </div>
       </section>
 
@@ -232,7 +249,7 @@ export default function MobileDemoHomePage() {
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-[16px] font-semibold text-[#10243a]">{content.next}</span>
-            <span className="mt-1 block truncate text-[13px] text-[#60758d]">Keeps the transfer team moving today.</span>
+            <span className="mt-1 block truncate text-[13px] text-[#60758d]">{content.nextBody}</span>
           </span>
           <ChevronRight className="h-5 w-5 text-[#94a3b8]" />
         </Link>
@@ -243,7 +260,7 @@ export default function MobileDemoHomePage() {
         <div className="space-y-3">
           {activities.map((item) => (
             <div key={item.id} className="flex items-center gap-3 rounded-[22px] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[16px] bg-[#f1f5f3] text-[#1f7a5a]">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[16px]" style={{ background: content.soft, color: content.accent }}>
                 <Sparkles className="h-4 w-4" />
               </span>
               <span className="min-w-0 flex-1">
@@ -257,12 +274,12 @@ export default function MobileDemoHomePage() {
 
       <section className="rounded-[28px] bg-[#eef4f8] p-4">
         <div className="flex items-center gap-3">
-          <span className="flex h-11 w-11 items-center justify-center rounded-[18px] bg-white text-[#1f7a5a]">
+          <span className="flex h-11 w-11 items-center justify-center rounded-[18px] bg-white" style={{ color: content.accent }}>
             <MapPin className="h-5 w-5" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-[#10243a]">Cape Town transfer network</p>
-            <p className="mt-1 truncate text-xs text-[#60758d]">Agent, attorney and finance updates in one room.</p>
+            <p className="text-sm font-semibold text-[#10243a]">{content.networkTitle}</p>
+            <p className="mt-1 truncate text-xs text-[#60758d]">{content.networkBody}</p>
           </div>
           <Building2 className="h-5 w-5 text-[#60758d]" />
         </div>
