@@ -59,7 +59,7 @@ export default function MobileBottomNav() {
             <div className="mx-auto max-w-[520px]">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#1f7a5a]">Create</p>
+                  <p className="text-[12px] font-semibold uppercase text-[#1f7a5a]">Create</p>
                   <h2 className="text-[22px] font-semibold text-[#10243a]">Quick action</h2>
                 </div>
                 <button
@@ -98,8 +98,8 @@ export default function MobileBottomNav() {
         </div>
       ) : null}
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2" aria-label="Mobile navigation" data-mobile-bottom-nav>
-        <div className="mx-auto grid max-w-[520px] grid-cols-5 items-end gap-1 rounded-[30px] border border-white/70 bg-white/88 px-2 py-2 shadow-[0_-14px_36px_rgba(15,23,42,0.14)] backdrop-blur-xl">
+      <nav className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2" aria-label="Mobile navigation" data-mobile-bottom-nav>
+        <div className="mx-auto grid max-w-[520px] grid-cols-5 items-end gap-1 rounded-[24px] border border-[#dfe7ef]/80 bg-white/92 px-2 py-1.5 shadow-[0_-10px_28px_rgba(15,23,42,0.10)] backdrop-blur-xl">
           {items.map((item) => {
             const Icon = ICONS[item.key] || LayoutGrid
             if (item.key === 'create') {
@@ -107,12 +107,12 @@ export default function MobileBottomNav() {
                 <button
                   key={item.key}
                   type="button"
-                  className="-mt-8 flex flex-col items-center justify-center gap-1 text-[10px] font-semibold text-[#1f7a5a]"
+                  className="-mt-6 flex flex-col items-center justify-center gap-1 text-[10px] font-semibold text-[#1f7a5a]"
                   onClick={() => setCreateOpen(true)}
                   aria-label="Open create menu"
                 >
-                  <span className="flex h-16 w-16 items-center justify-center rounded-full border-[5px] border-[#f6f8fb] bg-[#1f7a5a] text-white shadow-[0_14px_28px_rgba(31,122,90,0.32)]">
-                    <Plus className="h-7 w-7" />
+                  <span className="flex h-14 w-14 items-center justify-center rounded-full border-[4px] border-[#f6f8fb] bg-[#1f7a5a] text-white shadow-[0_12px_24px_rgba(31,122,90,0.26)]">
+                    <Plus className="h-6 w-6" />
                   </span>
                   <span className="sr-only">Create</span>
                 </button>
@@ -124,7 +124,7 @@ export default function MobileBottomNav() {
                 to={item.to}
                 className={({ isActive }) =>
                   [
-                    'flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-[22px] px-0.5 text-[10px] font-semibold transition',
+                    'flex min-h-[50px] flex-col items-center justify-center gap-1 rounded-[18px] px-0.5 text-[10px] font-semibold transition',
                     isActive ? 'bg-[#e8f6ef] text-[#1f7a5a]' : 'text-[#60758d] active:bg-[#f1f5f9]',
                   ].join(' ')
                 }

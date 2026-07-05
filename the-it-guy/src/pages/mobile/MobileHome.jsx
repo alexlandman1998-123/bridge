@@ -1,18 +1,22 @@
 import {
   ArrowUpRight,
+  Building2,
+  Camera,
   ChevronRight,
+  CheckCircle2,
   CircleCheck,
-  Home,
+  Clock3,
+  FileText,
   ListChecks,
   RefreshCw,
   Sparkles,
+  Target,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { useOptionalOrganisation } from '../../context/OrganisationContext'
-import { MobileCommandBriefPanel, MobileFieldModePanel } from '../../components/mobile-shell/MobileProductivity'
-import { MobileCard, MobileEmptyState, MobileErrorState, MobileLoadingState } from '../../components/mobile-shell/MobileShellStates'
+import { MobileCard, MobileErrorState, MobileLoadingState } from '../../components/mobile-shell/MobileShellStates'
 import { getMobileDashboardSnapshot, getMobileDashboardSnapshotAsync } from '../../services/mobileDashboardService'
 import { trackMobileMetric } from '../../services/observability/monitoring'
 
@@ -67,52 +71,222 @@ function getPriority(snapshot) {
   return null
 }
 
+function getSummaryCard(snapshot, key) {
+  return (snapshot?.summaryCards || []).find((card) => card.key === key) || null
+}
+
+function getSummaryValue(snapshot, key, fallback = '0') {
+  const value = getSummaryCard(snapshot, key)?.value
+  return value === undefined || value === null || value === '' ? fallback : formatMetric(value)
+}
+
+function getSummaryNumber(snapshot, key) {
+  const value = getSummaryCard(snapshot, key)?.value
+  if (typeof value === 'number') return value
+  const parsed = Number(String(value || '').replace(/[^\d.-]/g, ''))
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function getHealthScore(snapshot) {
+  const taskPressure = (snapshot?.tasks || []).length * 6
+  const staleWork = (snapshot?.activeWork || []).filter((item) => Number(item.progress || 0) < 35).length * 3
+  return Math.max(72, Math.min(96, 92 - taskPressure - staleWork))
+}
+
+function getCommandAction(snapshot, priority) {
+  if (priority) {
+    return {
+      eyebrow: 'Next best action',
+      title: priority.title,
+      body: priority.body,
+      meta: priority.meta,
+      to: priority.to,
+    }
+  }
+
+  if (snapshot?.category === 'principal') {
+    return {
+      eyebrow: 'Next best action',
+      title: 'Review lead flow',
+      body: 'Mandates clear. No urgent blockers.',
+      meta: 'Today',
+      to: '/mobile/leads',
+    }
+  }
+
+  return {
+    eyebrow: 'Next best action',
+    title: 'Keep today moving',
+    body: 'Capture the next field update.',
+    meta: 'Ready',
+    to: '/mobile/create',
+  }
+}
+
 function KpiCard({ card }) {
-  const Icon = card.key === 'tasks' ? ListChecks : card.key === 'pipeline' ? Sparkles : card.key === 'listings' ? Home : CircleCheck
+  const Icon = card.key === 'tasks' ? ListChecks : card.key === 'pipeline' ? Sparkles : card.key === 'listings' ? Building2 : CircleCheck
+  const taskCount = card.key === 'tasks' ? Number(card.value || 0) : 0
   return (
-    <MobileCard className="min-h-[142px] p-4">
-      <div className="flex items-start justify-between gap-3">
-        <span className={`flex h-11 w-11 items-center justify-center rounded-[17px] ${CARD_TONES[card.tone] || CARD_TONES.blue}`}>
-          <Icon className="h-5 w-5" />
+    <div className="min-h-[88px] rounded-[16px] border border-[#dfe7ef] bg-white px-3 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+      <div className="flex items-center justify-between gap-3">
+        <span className={`flex h-8 w-8 items-center justify-center rounded-[11px] ${CARD_TONES[card.tone] || CARD_TONES.blue}`}>
+          <Icon className="h-[17px] w-[17px]" />
         </span>
+        {card.key === 'tasks' ? (
+          <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${taskCount > 0 ? 'bg-[#fff1e7] text-[#b45309]' : 'bg-[#edf8f2] text-[#1f7a5a]'}`}>
+            {taskCount > 0 ? 'Due' : 'Clear'}
+          </span>
+        ) : null}
       </div>
-      <strong className="mt-5 block text-[31px] font-bold leading-none text-[#10243a]">{formatMetric(card.value)}</strong>
-      <p className="mt-2 text-[15px] font-semibold leading-5 text-[#10243a]">{card.label}</p>
-      <p className={`mt-2 text-[12px] font-semibold ${card.key === 'tasks' && Number(card.value) > 0 ? 'text-[#b42318]' : 'text-[#1f7a5a]'}`}>
-        {card.supportingValue || (card.key === 'tasks' && Number(card.value) > 0 ? 'Needs attention' : 'Up to date')}
-      </p>
-    </MobileCard>
+      <strong className="mt-3 block truncate text-[22px] font-bold leading-none text-[#10243a]">{formatMetric(card.value)}</strong>
+      <p className="mt-1.5 line-clamp-2 text-[10px] font-semibold uppercase leading-4 text-[#60758d]">{card.label}</p>
+    </div>
   )
 }
 
 function SectionHeader({ title, actionTo = '', actionLabel = 'View All' }) {
   return (
     <div className="mb-3 flex items-center justify-between gap-3">
-      <h2 className="text-[22px] font-semibold text-[#10243a]">{title}</h2>
-      {actionTo ? <Link to={actionTo} className="text-sm font-semibold text-[#1f7a5a]">{actionLabel}</Link> : null}
+      <h2 className="text-[18px] font-semibold text-[#10243a]">{title}</h2>
+      {actionTo ? <Link to={actionTo} className="text-[13px] font-semibold text-[#1f7a5a]">{actionLabel}</Link> : null}
     </div>
   )
 }
 
-function PriorityNowCard({ priority, onOpen }) {
-  if (!priority) return null
+function AgencyCommandCard({ snapshot, priority, onOpen }) {
+  const action = getCommandAction(snapshot, priority)
+  const pipelineValue = getSummaryValue(snapshot, 'pipeline', 'R0')
+  const activeTransactions = getSummaryValue(snapshot, 'active', '0')
+  const mandates = getSummaryValue(snapshot, 'listings', '0')
+  const atRisk = Math.max((snapshot?.tasks || []).length, getSummaryNumber(snapshot, 'tasks'))
+  const healthScore = getHealthScore(snapshot)
+
   return (
-    <button
-      type="button"
-      className="flex w-full items-center gap-4 rounded-[28px] border border-[#dbece1] bg-[#edf8f2] p-4 text-left shadow-[0_14px_34px_rgba(31,122,90,0.12)]"
-      onClick={() => onOpen(priority.to)}
-    >
-      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[20px] bg-white text-[#1f7a5a] shadow-[0_8px_18px_rgba(31,122,90,0.10)]">
-        <ListChecks className="h-6 w-6" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-[12px] font-semibold uppercase tracking-[0.04em] text-[#1f7a5a]">Priority Now</span>
-        <span className="mt-1 block truncate text-[17px] font-semibold text-[#10243a]">{priority.title}</span>
-        <span className="mt-1 block truncate text-[13px] text-[#60758d]">{priority.body}</span>
-        <span className="mt-1 block text-[12px] font-semibold text-[#b7791f]">{priority.meta}</span>
-      </span>
-      <ChevronRight className="h-5 w-5 shrink-0 text-[#1f7a5a]" />
-    </button>
+    <section className="overflow-hidden rounded-[22px] bg-[#10243a] p-4 text-white shadow-[0_16px_36px_rgba(15,23,42,0.16)]">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase text-[#9fe0bd]">Agency Command</p>
+          <h1 className="mt-2 text-[28px] font-bold leading-[1.05] text-white">{pipelineValue} pipeline</h1>
+          <p className="mt-2 text-[14px] leading-5 text-[#d7e4ed]">
+            {activeTransactions} active transactions · {mandates} mandates · {atRisk} at risk
+          </p>
+        </div>
+        <div className="flex h-[62px] w-[62px] shrink-0 flex-col items-center justify-center rounded-full bg-[#a8e7be] text-[#10243a] ring-8 ring-white/5">
+          <span className="text-[23px] font-bold leading-none">{healthScore}</span>
+          <span className="mt-1 text-[8px] font-bold uppercase">Health</span>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        className="mt-4 flex w-full items-center gap-3 rounded-[16px] border border-white/10 bg-white/[0.08] p-3 text-left transition active:bg-white/[0.13]"
+        onClick={() => onOpen(action.to)}
+      >
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-white text-[#1f7a5a]">
+          <Target className="h-[18px] w-[18px]" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[10px] font-semibold uppercase text-[#9fe0bd]">{action.eyebrow}</span>
+          <span className="mt-1 block line-clamp-2 text-[14px] font-semibold leading-5 text-white">{action.title}</span>
+          <span className="mt-0.5 block line-clamp-2 text-[12px] leading-4 text-[#c4d4df]">{action.body}</span>
+        </span>
+        <span className="shrink-0 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-[#d7e4ed]">{action.meta}</span>
+      </button>
+    </section>
+  )
+}
+
+function CommandActions({ actions = [], onAction, onRefresh }) {
+  return (
+    <div className="grid grid-cols-2 gap-2.5">
+      {actions.slice(0, 4).map((action) => (
+        <button
+          key={action.key}
+          type="button"
+          className="flex min-h-[50px] items-center justify-center gap-2 rounded-[16px] border border-[#dfe7ef] bg-white px-3 text-[13px] font-semibold text-[#10243a] shadow-[0_8px_20px_rgba(15,23,42,0.04)] active:bg-[#f8fafc]"
+          onClick={() => onAction(action)}
+        >
+          <ArrowUpRight className="h-4 w-4 text-[#1f7a5a]" />
+          <span className="truncate">{action.label}</span>
+        </button>
+      ))}
+      <button
+        type="button"
+        className="flex min-h-[50px] items-center justify-center gap-2 rounded-[16px] border border-[#dfe7ef] bg-[#f8fafc] px-3 text-[13px] font-semibold text-[#60758d]"
+        onClick={onRefresh}
+      >
+        <RefreshCw className="h-4 w-4" />
+        Refresh
+      </button>
+    </div>
+  )
+}
+
+function TodayQueue({ snapshot, priority, onOpen }) {
+  const rows = [
+    {
+      key: 'priority',
+      icon: Target,
+      title: getCommandAction(snapshot, priority).title,
+      body: getCommandAction(snapshot, priority).body,
+      status: getCommandAction(snapshot, priority).meta,
+      to: getCommandAction(snapshot, priority).to,
+    },
+    {
+      key: 'documents',
+      icon: FileText,
+      title: 'Document queue clear',
+      body: 'Scan and sync from the field when a mandate or OTP lands.',
+      status: 'Clear',
+      to: '/mobile/documents',
+    },
+    {
+      key: 'capture',
+      icon: Camera,
+      title: 'Offline capture ready',
+      body: 'Lead notes, photos, and documents can be saved on mobile.',
+      status: 'Ready',
+      to: '/mobile/create',
+    },
+  ]
+
+  if (!(snapshot?.recentActivity || []).length) {
+    rows.push({
+      key: 'movement',
+      icon: Clock3,
+      title: 'No recent movement',
+      body: 'The agency is clean right now. New activity will surface here.',
+      status: 'Stable',
+      to: '/mobile/activity',
+    })
+  }
+
+  return (
+    <section>
+      <SectionHeader title="Today" />
+      <div className="overflow-hidden rounded-[20px] border border-[#dfe7ef] bg-white shadow-[0_10px_26px_rgba(15,23,42,0.045)]">
+        {rows.slice(0, 4).map((row, index) => {
+          const Icon = row.icon
+          return (
+            <button
+              key={row.key}
+              type="button"
+              className={`flex w-full items-center gap-3 px-4 py-3.5 text-left ${index ? 'border-t border-[#edf2f6]' : ''}`}
+              onClick={() => onOpen(row.to)}
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-[#edf8f2] text-[#1f7a5a]">
+                <Icon className="h-[18px] w-[18px]" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[14px] font-semibold text-[#10243a]">{row.title}</span>
+                <span className="mt-0.5 block truncate text-[12px] text-[#60758d]">{row.body}</span>
+              </span>
+              <span className="shrink-0 rounded-full bg-[#f2f6f9] px-2.5 py-1 text-[11px] font-semibold text-[#60758d]">{row.status}</span>
+            </button>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
@@ -191,7 +365,26 @@ function ActivityRow({ item, last = false }) {
 
 function EmptyCompact({ title, body, actionLabel, onAction }) {
   return (
-    <MobileEmptyState title={title} body={body} actionLabel={actionLabel} onAction={onAction} />
+    <div className="rounded-[20px] border border-dashed border-[#d7e0ea] bg-white px-4 py-5 text-left">
+      <div className="flex items-start gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#edf8f2] text-[#1f7a5a]">
+          <CheckCircle2 className="h-5 w-5" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[15px] font-semibold text-[#10243a]">{title}</span>
+          <span className="mt-1 block text-[13px] leading-5 text-[#60758d]">{body}</span>
+          {actionLabel && onAction ? (
+            <button
+              type="button"
+              className="mt-3 inline-flex min-h-10 items-center justify-center rounded-[14px] bg-[#10243a] px-3 text-[13px] font-semibold text-white"
+              onClick={onAction}
+            >
+              {actionLabel}
+            </button>
+          ) : null}
+        </span>
+      </div>
+    </div>
   )
 }
 
@@ -332,17 +525,7 @@ export default function MobileHome() {
   if (state.error) return <MobileErrorState title="We couldn't load your dashboard." body={state.error} onRetry={load} />
 
   return (
-    <div className="space-y-8" data-mobile-home>
-      <section className="pt-2">
-        <div className="min-w-0">
-          <p className="text-[17px] font-medium text-[#60758d]">{snapshot.greeting},</p>
-          <h1 className="mt-1 text-[38px] font-bold leading-[1.04] text-[#10243a]">{snapshot.displayName}</h1>
-          <p className="mt-3 max-w-[29ch] text-[17px] leading-7 text-[#60758d]">
-            {snapshot.category === 'principal' ? "Here's what's happening across your team." : "Here's what needs attention today."}
-          </p>
-        </div>
-      </section>
-
+    <div className="space-y-5" data-mobile-home>
       {showUnsupportedNotice ? (
         <MobileCard>
           <h2 className="text-[17px] font-semibold text-[#10243a]">That page is not available on mobile yet.</h2>
@@ -350,40 +533,18 @@ export default function MobileHome() {
         </MobileCard>
       ) : null}
 
-      <PriorityNowCard priority={priority} onOpen={handlePriorityOpen} />
-
-      <MobileFieldModePanel
-        workspace={{ module: snapshot.category || 'home' }}
-        tasks={snapshot.tasks}
-        documents={[]}
-        priorityActions={priority ? [{ tone: snapshot.tasks.length ? 'amber' : 'green' }] : []}
-        onOpenDocuments={() => navigate('/mobile/documents')}
-      />
-
-      <MobileCommandBriefPanel
-        workspace={{ module: snapshot.category || 'home', moduleLabel: snapshot.copy?.workTitle || 'Mobile Workspace', status: snapshot.insight?.label || 'Today' }}
-        tasks={snapshot.tasks}
-        documents={[]}
-        priorityActions={priority ? [{ tone: snapshot.tasks.length ? 'amber' : 'green', title: priority.title }] : []}
-        activity={snapshot.recentActivity}
-        onAction={(action) => {
-          if (String(action).toLowerCase().includes('task')) navigate('/mobile/tasks')
-          else if (String(action).toLowerCase().includes('document')) navigate('/mobile/documents')
-          else navigate(workPath)
-        }}
-      />
+      <section className="pt-1">
+        <p className="mb-2 text-[13px] font-semibold text-[#60758d]">{snapshot.greeting}, {snapshot.displayName}</p>
+        <AgencyCommandCard snapshot={snapshot} priority={priority} onOpen={handlePriorityOpen} />
+      </section>
 
       <section className="grid grid-cols-2 gap-3">
         {snapshot.summaryCards.map((card) => <KpiCard key={card.key} card={card} />)}
       </section>
 
-      {snapshot.insight ? (
-        <MobileCard surface="dark">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#9fe0bd]">{snapshot.insight.label}</p>
-          <h2 className="mt-2 text-[30px] font-bold text-white">{snapshot.insight.value}</h2>
-          <p className="mt-1 text-sm leading-6 text-[#dce8f2]">{snapshot.insight.body}</p>
-        </MobileCard>
-      ) : null}
+      <CommandActions actions={snapshot.quickActions} onAction={handleQuickAction} onRefresh={load} />
+
+      <TodayQueue snapshot={snapshot} priority={priority} onOpen={handlePriorityOpen} />
 
       <section>
         <SectionHeader title={snapshot.copy.workTitle} actionTo={workPath} />
@@ -396,16 +557,14 @@ export default function MobileHome() {
         )}
       </section>
 
-      <section>
-        <SectionHeader title="Tasks Due Today" actionTo="/mobile/tasks" />
-        {snapshot.tasks.length ? (
+      {snapshot.tasks.length ? (
+        <section>
+          <SectionHeader title="Tasks Due Today" actionTo="/mobile/tasks" />
           <div className="space-y-3">
             {snapshot.tasks.slice(0, 3).map((item) => <TaskRow key={item.id} item={item} onOpen={handleTaskOpen} />)}
           </div>
-        ) : (
-          <EmptyCompact title={snapshot.copy.taskEmptyTitle} body={snapshot.copy.taskEmptyBody} />
-        )}
-      </section>
+        </section>
+      ) : null}
 
       <section>
         <SectionHeader title="Recent Activity" actionTo="/mobile/activity" />
@@ -416,27 +575,6 @@ export default function MobileHome() {
         ) : (
           <EmptyCompact title={snapshot.copy.activityEmptyTitle} body={snapshot.copy.activityEmptyBody} />
         )}
-      </section>
-
-      <section>
-        <SectionHeader title="Quick Actions" />
-        <div className="grid grid-cols-2 gap-3">
-          {snapshot.quickActions.slice(0, 4).map((action) => (
-            <button
-              key={action.key}
-              type="button"
-              className="flex min-h-[64px] items-center justify-center gap-2 rounded-[22px] bg-white px-3 text-sm font-semibold text-[#10243a] shadow-[0_10px_24px_rgba(15,23,42,0.06)]"
-              onClick={() => handleQuickAction(action)}
-            >
-              <ArrowUpRight className="h-4 w-4 text-[#1f7a5a]" />
-              {action.label}
-            </button>
-          ))}
-          <button type="button" className="flex min-h-[64px] items-center justify-center gap-2 rounded-[22px] border border-[#d7e0ea] bg-[#f8fafc] px-3 text-sm font-semibold text-[#60758d]" onClick={load}>
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </button>
-        </div>
       </section>
     </div>
   )

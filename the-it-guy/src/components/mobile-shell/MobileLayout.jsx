@@ -16,7 +16,7 @@ export default function MobileLayout({ onLogout = null }) {
       <MobileHeader />
       <main
         ref={scrollRootRef}
-        className="mx-auto min-h-0 w-full max-w-[520px] flex-1 overflow-y-auto overscroll-contain px-5 pb-[calc(8.5rem+env(safe-area-inset-bottom))] pt-3 [-webkit-overflow-scrolling:touch]"
+        className="mx-auto min-h-0 w-full max-w-[520px] flex-1 overflow-y-auto overscroll-contain px-5 pb-[calc(7.5rem+env(safe-area-inset-bottom))] pt-3 [-webkit-overflow-scrolling:touch]"
         data-mobile-scroll-root
       >
         <Outlet context={{ onLogout }} />

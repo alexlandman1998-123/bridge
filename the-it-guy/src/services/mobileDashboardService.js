@@ -441,17 +441,17 @@ const ROLE_COPY = {
   principal: {
     workloadLabel: 'Active Transactions',
     workTitle: 'Team Snapshot',
-    workEmptyTitle: 'No team movement yet.',
-    workEmptyBody: 'Top agents will appear once activity is available.',
+    workEmptyTitle: 'No active agency work yet.',
+    workEmptyBody: 'New leads, mandates, and transactions will surface here as the team moves.',
     taskEmptyTitle: 'No management tasks due today.',
     taskEmptyBody: 'Agency follow-ups will appear here.',
     activityEmptyTitle: 'No agency activity yet.',
     activityEmptyBody: 'Recent team updates will appear here.',
     quickActions: [
-      { key: 'view_agency', label: 'View Agency', to: '/mobile/home' },
-      { key: 'view_transactions', label: 'View Transactions', to: '/mobile/transactions' },
-      { key: 'view_leads', label: 'View Leads', to: '/mobile/leads' },
-      { key: 'view_reports', label: 'View Reports', to: '/mobile/reports' },
+      { key: 'add_lead', label: 'Add Lead', to: '/mobile/leads?create=lead' },
+      { key: 'scan_mandate', label: 'Scan Mandate', to: '/mobile/documents?create=document' },
+      { key: 'create_transaction', label: 'Create Transaction', to: '/mobile/transactions?create=transaction' },
+      { key: 'follow_up', label: 'Follow Up', to: '/mobile/tasks?create=follow-up' },
     ],
   },
   attorney: {

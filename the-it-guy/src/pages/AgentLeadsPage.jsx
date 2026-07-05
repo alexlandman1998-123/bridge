@@ -32,6 +32,7 @@ import {
   UserRound,
 } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import StartDocumentModal from '../components/documents/StartDocumentModal'
@@ -6123,22 +6124,110 @@ function ReferralPartnersPanel({ referrals = [], organisationId = '' }) {
   )
 }
 
-function RowActionMenu({ row, onOpen }) {
+function RowActionMenu({ row, onOpen, onDelete }) {
+  const [open, setOpen] = useState(false)
+  const buttonRef = useRef(null)
+  const menuRef = useRef(null)
+  const [menuStyle, setMenuStyle] = useState(null)
+  const rowName = normalizeText(row?.name) || 'lead'
+  const canDelete = typeof onDelete === 'function'
+
+  const updateMenuPosition = useCallback(() => {
+    if (typeof window === 'undefined') return
+    const rect = buttonRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const menuWidth = 192
+    const menuHeight = canDelete ? 236 : 188
+    const viewportPadding = 12
+    const left = Math.max(
+      viewportPadding,
+      Math.min(window.innerWidth - menuWidth - viewportPadding, rect.right - menuWidth),
+    )
+    const preferredTop = rect.bottom + 8
+    const top = preferredTop + menuHeight > window.innerHeight - viewportPadding
+      ? Math.max(viewportPadding, rect.top - menuHeight - 8)
+      : preferredTop
+    setMenuStyle({ left, top, width: menuWidth })
+  }, [canDelete])
+
+  useEffect(() => {
+    if (!open) return undefined
+    updateMenuPosition()
+
+    function handlePointerDown(event) {
+      if (buttonRef.current?.contains(event.target) || menuRef.current?.contains(event.target)) return
+      setOpen(false)
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('resize', updateMenuPosition)
+    window.addEventListener('scroll', updateMenuPosition, true)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('resize', updateMenuPosition)
+      window.removeEventListener('scroll', updateMenuPosition, true)
+    }
+  }, [open, updateMenuPosition])
+
+  function runOpenAction() {
+    setOpen(false)
+    onOpen?.()
+  }
+
+  function runDeleteAction() {
+    setOpen(false)
+    onDelete?.(row)
+  }
+
+  const menu = open && typeof document !== 'undefined'
+    ? createPortal(
+        <div
+          ref={menuRef}
+          className="fixed z-[1000] rounded-xl border border-slate-200 bg-white p-1 text-sm font-semibold text-slate-700 shadow-[0_18px_45px_rgba(15,23,42,0.18)]"
+          style={menuStyle || { visibility: 'hidden' }}
+          role="menu"
+          aria-label={`More actions for ${rowName}`}
+        >
+          {['Assign', 'Reassign', 'Archive', 'Convert'].map((label) => (
+            <button key={label} type="button" onClick={runOpenAction} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50" role="menuitem">{label}</button>
+          ))}
+          {canDelete ? (
+            <>
+              <div className="my-1 border-t border-slate-100" />
+              <button type="button" onClick={runDeleteAction} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-rose-700 hover:bg-rose-50" role="menuitem">
+                <Trash2 size={15} />
+                Delete
+              </button>
+            </>
+          ) : null}
+        </div>,
+        document.body,
+      )
+    : null
+
   return (
     <div className="flex items-center justify-end gap-2">
       <button type="button" onClick={onOpen} className="inline-flex min-h-9 items-center gap-2 rounded-xl bg-slate-900 px-3 text-xs font-semibold text-white hover:bg-slate-700">
         Open <ExternalLink size={13} />
       </button>
-      <details className="relative">
-        <summary className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50" aria-label={`More actions for ${row.name}`}>
-          <MoreVertical size={16} />
-        </summary>
-        <div className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-slate-200 bg-white p-1 text-sm font-semibold text-slate-700 shadow-lg">
-          {['Assign', 'Reassign', 'Archive', 'Convert'].map((label) => (
-            <button key={label} type="button" onClick={onOpen} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">{label}</button>
-          ))}
-        </div>
-      </details>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+        aria-label={`More actions for ${rowName}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        <MoreVertical size={16} />
+      </button>
+      {menu}
     </div>
   )
 }
@@ -6430,6 +6519,43 @@ function LeadCreateModal({ open, category = 'buyer', form, setForm, saving, erro
           <textarea value={form.notes} onChange={(event) => update('notes', event.target.value)} className="min-h-24 resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-300" placeholder={isOther ? 'Basic context and routing notes' : 'Helpful context'} />
         </label>
       </form>
+    </Modal>
+  )
+}
+
+function DeleteLeadConfirmationModal({ lead = null, deleting = false, error = '', onClose, onConfirm }) {
+  const leadName = normalizeText(lead?.name) || 'this lead'
+  const category = normalizeLeadCategory(lead)
+  const categoryLabel = category === 'seller' ? 'seller' : category === 'buyer' ? 'buyer' : 'lead'
+  const footer = (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+      <button type="button" onClick={onClose} disabled={deleting} className="min-h-10 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-60">
+        Cancel
+      </button>
+      <button type="button" onClick={onConfirm} disabled={deleting} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-500 disabled:bg-rose-300">
+        <Trash2 size={15} />
+        {deleting ? 'Deleting...' : 'Delete lead'}
+      </button>
+    </div>
+  )
+
+  return (
+    <Modal
+      open={Boolean(lead)}
+      onClose={deleting ? undefined : onClose}
+      title={`Delete ${categoryLabel} lead`}
+      subtitle="This removes the lead from the pipeline and cannot be undone."
+      className="max-w-lg"
+      footer={footer}
+    >
+      <div className="grid gap-3">
+        {error ? <p className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Lead</p>
+          <p className="mt-1 text-base font-semibold text-slate-950">{leadName}</p>
+          <p className="mt-1 text-sm font-medium text-slate-500">{lead?.email || lead?.phone || 'No contact detail captured'}</p>
+        </div>
+      </div>
     </Modal>
   )
 }
@@ -7867,6 +7993,9 @@ function AgentLeadList() {
   const [createError, setCreateError] = useState('')
   const [importOpen, setImportOpen] = useState(false)
   const [importLeadCategory, setImportLeadCategory] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deletingLead, setDeletingLead] = useState(false)
+  const [deleteLeadError, setDeleteLeadError] = useState('')
 
   const loadRows = useCallback(async () => {
     if (!organisationId) {
@@ -7952,6 +8081,42 @@ function AgentLeadList() {
   function closeLeadImport() {
     setImportOpen(false)
     setImportLeadCategory('')
+  }
+
+  function requestDeleteLead(row = null) {
+    setDeleteTarget(row)
+    setDeleteLeadError('')
+  }
+
+  function closeDeleteLead() {
+    if (deletingLead) return
+    setDeleteTarget(null)
+    setDeleteLeadError('')
+  }
+
+  async function confirmDeleteLead() {
+    const targetLeadId = normalizeText(deleteTarget?.leadId)
+    if (!organisationId) {
+      setDeleteLeadError('Select an agency workspace before deleting a lead.')
+      return
+    }
+    if (!targetLeadId) {
+      setDeleteLeadError('This lead cannot be deleted until it has been saved.')
+      return
+    }
+
+    try {
+      setDeletingLead(true)
+      setDeleteLeadError('')
+      await deleteAgencyCrmLeadRecord(organisationId, targetLeadId)
+      setRows((current) => current.filter((row) => normalizeText(row.leadId) !== targetLeadId))
+      setDeleteTarget(null)
+      void loadRows()
+    } catch (deleteError) {
+      setDeleteLeadError(deleteError?.message || 'Unable to delete this lead right now.')
+    } finally {
+      setDeletingLead(false)
+    }
   }
 
   function closeCreateLead() {
@@ -8152,7 +8317,7 @@ function AgentLeadList() {
         />
       ) : null}
       {!loading && !error && !referralMode ? (
-        <section className={`${panelClass} relative overflow-hidden`}>
+        <section className={`${panelClass} relative overflow-visible`}>
           <div className="hidden lg:block overflow-x-auto">
             <table className="w-full table-fixed text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-400">
@@ -8206,7 +8371,7 @@ function AgentLeadList() {
                         <span className="mt-1 block truncate text-xs text-slate-500">{formatRelativeTime(latestDate, 'No activity yet')}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <RowActionMenu row={row} onOpen={openRow} />
+                        <RowActionMenu row={row} onOpen={openRow} onDelete={requestDeleteLead} />
                       </td>
                     </tr>
                   )
@@ -8266,7 +8431,7 @@ function AgentLeadList() {
                     </div>
                   </div>
                   <div className="mt-3 flex justify-end">
-                    <RowActionMenu row={row} onOpen={openRow} />
+                    <RowActionMenu row={row} onOpen={openRow} onDelete={requestDeleteLead} />
                   </div>
                 </article>
               )
@@ -8300,6 +8465,13 @@ function AgentLeadList() {
         defaultLeadCategory={importLeadCategory}
         onClose={closeLeadImport}
         onImported={loadRows}
+      />
+      <DeleteLeadConfirmationModal
+        lead={deleteTarget}
+        deleting={deletingLead}
+        error={deleteLeadError}
+        onClose={closeDeleteLead}
+        onConfirm={confirmDeleteLead}
       />
     </main>
   )

@@ -2707,6 +2707,20 @@ function AppRoutes() {
                   </RoleRoute>
                 }
               />
+              <Route
+                path="/settings/legal-templates"
+                element={
+                  <OrganisationSettingsManageRoute>
+                    <RoleRoute allowedRoles={['developer', 'agent']}>
+                      <SettingsSigningTemplatesPage
+                        title="Legal Templates"
+                        eyebrow="Organisation / Legal Templates"
+                        description="Create, preview, and manage the legal templates your agency uses every day."
+                      />
+                    </RoleRoute>
+                  </OrganisationSettingsManageRoute>
+                }
+              />
               <Route path="/settings" element={<ClientAwareSettingsLayout />}>
                 <Route index element={<Navigate to="profile" replace />} />
                 <Route path="account" element={<SettingsAccountPage section="profile" />} />
@@ -2794,16 +2808,6 @@ function AppRoutes() {
                     <RoleRoute allowedRoles={['developer', 'agent']}>
                       <SettingsWorkflowsPage />
                     </RoleRoute>
-                  }
-                />
-                <Route
-                  path="legal-templates"
-                  element={
-                    <OrganisationSettingsManageRoute>
-                      <RoleRoute allowedRoles={['developer', 'agent']}>
-                        <SettingsSigningTemplatesPage />
-                      </RoleRoute>
-                    </OrganisationSettingsManageRoute>
                   }
                 />
                 <Route
