@@ -16,7 +16,7 @@ import {
   Trash2,
   UserRound,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import Button from '../components/ui/Button'
@@ -150,7 +150,7 @@ const PAGE_STACK_CLASS = 'space-y-4 sm:space-y-6 lg:space-y-8'
 const SECTION_CARD_CLASS =
   'rounded-[20px] border border-[#d8e2ec] bg-white/90 p-3 shadow-[0_14px_34px_rgba(15,23,42,0.05)] backdrop-blur-xl sm:rounded-[28px] sm:p-5 lg:rounded-[32px] lg:p-6 lg:shadow-[0_26px_60px_rgba(15,23,42,0.08)]'
 const INNER_PANEL_CLASS =
-  'rounded-[18px] border border-[#dce6ef] bg-white/92 p-3 shadow-[0_12px_28px_rgba(15,23,42,0.04)] backdrop-blur-xl sm:rounded-[22px] sm:p-5 lg:rounded-[26px] lg:p-7'
+  'rounded-[18px] border border-[#dce6ef] bg-white/95 p-3 shadow-[0_12px_28px_rgba(15,23,42,0.04)] backdrop-blur-xl sm:rounded-[22px] sm:p-5 lg:rounded-[26px] lg:p-7'
 const DETAIL_INPUT_CLASS =
   'w-full min-h-[50px] rounded-[14px] border border-[#d7e2ed] bg-white px-4 py-3 text-base text-[#142334] outline-none transition duration-150 ease-out placeholder:text-[#93a4b8] focus:border-[#35546c]/40 focus:ring-2 focus:ring-[#35546c]/10'
 const SELLER_ONBOARDING_NOTIFICATION_TIMEOUT_MS = 8000
@@ -276,6 +276,14 @@ function chipChoiceClass(isActive) {
   }`
 }
 
+function disclosureAnswerClass(isActive) {
+  return `inline-flex min-h-[44px] items-center justify-center rounded-[14px] border px-3 text-sm font-semibold transition ${
+    isActive
+      ? 'border-[#138a3d] bg-[#eaf8ef] text-[#126b34] shadow-[0_10px_22px_rgba(19,138,61,0.12)]'
+      : 'border-[#d8e2ec] bg-white text-[#4f6378]'
+  }`
+}
+
 function formatCurrency(value) {
   const amount = Number(value || 0)
   if (!Number.isFinite(amount) || amount <= 0) return 'R 0'
@@ -339,6 +347,48 @@ function resolveAgentName(listing = {}) {
   ).trim()
 }
 
+function resolveSellerWelcomeImageUrl(listing = {}) {
+  const directCandidates = [
+    listing?.coverImageUrl,
+    listing?.cover_image_url,
+    listing?.coverImage,
+    listing?.cover_image,
+    listing?.heroImageUrl,
+    listing?.hero_image_url,
+    listing?.imageUrl,
+    listing?.image_url,
+    listing?.mainImageUrl,
+    listing?.main_image_url,
+    listing?.propertyImageUrl,
+    listing?.property_image_url,
+    listing?.thumbnailUrl,
+    listing?.thumbnail_url,
+  ]
+  const collectionCandidates = [
+    listing?.images,
+    listing?.photos,
+    listing?.media,
+    listing?.listingImages,
+    listing?.listing_images,
+    listing?.propertyImages,
+    listing?.property_images,
+  ]
+
+  const direct = directCandidates.find((candidate) => String(candidate || '').trim())
+  if (direct) return String(direct).trim()
+
+  for (const collection of collectionCandidates) {
+    if (!Array.isArray(collection)) continue
+    const item = collection.find(Boolean)
+    const url = typeof item === 'string'
+      ? item
+      : item?.url || item?.src || item?.imageUrl || item?.image_url || item?.publicUrl || item?.public_url
+    if (String(url || '').trim()) return String(url).trim()
+  }
+
+  return ''
+}
+
 function getSellerDisplayName(listing = {}, form = {}) {
   return [form?.sellerFirstName, form?.sellerSurname].filter(Boolean).join(' ').trim() ||
     String(listing?.seller?.name || listing?.sellerName || 'Seller').trim()
@@ -346,6 +396,101 @@ function getSellerDisplayName(listing = {}, form = {}) {
 
 function todayInputValue() {
   return new Date().toISOString().slice(0, 10)
+}
+
+function scrollSellerOnboardingToTop({ focusAlert = false } = {}) {
+  if (typeof window === 'undefined') return
+  window.requestAnimationFrame(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    if (focusAlert && typeof document !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        document.querySelector('[data-seller-onboarding-alert]')?.focus({ preventScroll: true })
+      })
+    }
+  })
+}
+
+function buildSellerDraftSignature(form = {}, currentStep = 0) {
+  try {
+    return JSON.stringify({ currentStep, form })
+  } catch {
+    return ''
+  }
+}
+
+function resolveDraftSavedAt(listing = {}) {
+  return String(
+    listing?.sellerOnboarding?.updatedAt ||
+      listing?.sellerOnboarding?.updated_at ||
+      listing?.updatedAt ||
+      listing?.updated_at ||
+      '',
+  ).trim()
+}
+
+function formatDraftSavedAt(value = '') {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function getDraftSaveStatusMeta(status = 'idle', savedAt = '', fallback = '') {
+  if (status === 'saving') {
+    return {
+      label: 'Saving draft...',
+      dotClass: 'bg-[#2f8f86]',
+      className: 'border-[#d5eee9] bg-[#f1fbf8] text-[#1d6d66]',
+    }
+  }
+  if (status === 'pending') {
+    return {
+      label: 'Unsaved changes',
+      dotClass: 'bg-[#b45309]',
+      className: 'border-[#f2dcc0] bg-[#fff9ef] text-[#8a5a18]',
+    }
+  }
+  if (status === 'error') {
+    return {
+      label: 'Draft not saved',
+      dotClass: 'bg-[#b42318]',
+      className: 'border-[#f6d4d4] bg-[#fff5f5] text-[#b42318]',
+    }
+  }
+  if (status === 'offline') {
+    return {
+      label: 'Offline - draft pending',
+      dotClass: 'bg-[#b45309]',
+      className: 'border-[#f2dcc0] bg-[#fff9ef] text-[#8a5a18]',
+    }
+  }
+  if (status === 'saved') {
+    const timeLabel = formatDraftSavedAt(savedAt)
+    return {
+      label: timeLabel ? `Saved ${timeLabel}` : 'Draft saved',
+      dotClass: 'bg-[#1f7d44]',
+      className: 'border-[#d8ecdf] bg-[#eefbf3] text-[#1f7d44]',
+    }
+  }
+  return {
+    label: fallback,
+    dotClass: 'bg-[#8aa0b5]',
+    className: 'border-[#dbe5ef] bg-[#f7fbff] text-[#5f738a]',
+  }
+}
+
+function DraftSaveStatus({ status = 'idle', savedAt = '', fallback = '' }) {
+  const meta = getDraftSaveStatusMeta(status, savedAt, fallback)
+  if (!meta.label) return null
+
+  return (
+    <span
+      aria-live="polite"
+      className={`inline-flex min-w-0 max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${meta.className}`}
+    >
+      <span className={`h-2 w-2 shrink-0 rounded-full ${meta.dotClass}`} />
+      <span className="truncate">{meta.label}</span>
+    </span>
+  )
 }
 
 function getPropertyDisclosureMissingItems(disclosure = {}) {
@@ -1165,13 +1310,43 @@ function SellerBrandBar({ brand }) {
   )
 }
 
+function SellerMobileFormHeader({ brand, listing, form, statusLabel }) {
+  const sellerName = getSellerDisplayName(listing, form)
+  const propertyAddress = getPropertyDisplayAddress(listing, form)
+  const agentName = resolveAgentName(listing)
+
+  return (
+    <section className="rounded-[20px] border border-[#d8e2ec] bg-white/95 p-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:hidden">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <AgencyMark brand={brand} tone="light" />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-[#142334]">{brand?.name || 'Your Agency'}</p>
+            <p className="mt-0.5 truncate text-xs text-[#6b7d93]">Seller onboarding</p>
+          </div>
+        </div>
+        <span className="shrink-0 rounded-full border border-[#dbe5ef] bg-[#f7fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+          {statusLabel}
+        </span>
+      </div>
+      <div className="mt-3 rounded-[16px] border border-[#dfe8f2] bg-[#fbfdff] p-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7a8da3]">Seller</p>
+        <p className="mt-1 truncate text-sm font-semibold text-[#172334]">{sellerName}</p>
+        <p className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#7a8da3]">Property</p>
+        <p className="mt-1 break-words text-sm font-semibold leading-5 text-[#172334]">{propertyAddress}</p>
+        <p className="mt-2 text-xs text-[#6b7d93]">Need help? Contact {agentName}.</p>
+      </div>
+    </section>
+  )
+}
+
 function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
   const sellerName = getSellerDisplayName(listing, form)
   const propertyAddress = getPropertyDisplayAddress(listing, form)
   const agentName = resolveAgentName(listing)
 
   return (
-    <section className="overflow-hidden rounded-[22px] border border-[#18263a]/90 bg-[linear-gradient(135deg,#0b1626_0%,#12253b_54%,#18354d_100%)] p-4 text-white shadow-[0_18px_44px_rgba(15,23,42,0.16)] sm:rounded-[32px] sm:p-6 lg:rounded-[36px] lg:p-8 lg:shadow-[0_32px_80px_rgba(15,23,42,0.22)]">
+    <section className="hidden overflow-hidden rounded-[22px] border border-[#18263a]/90 bg-[linear-gradient(135deg,#0b1626_0%,#12253b_54%,#18354d_100%)] p-4 text-white shadow-[0_18px_44px_rgba(15,23,42,0.16)] sm:block sm:rounded-[32px] sm:p-6 lg:rounded-[36px] lg:p-8 lg:shadow-[0_32px_80px_rgba(15,23,42,0.22)]">
       <SellerBrandBar brand={brand} />
       <div className="mt-4 grid gap-4 sm:mt-6 sm:gap-5 lg:mt-7 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
         <div>
@@ -1210,6 +1385,105 @@ function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
             {item}
           </span>
         ))}
+      </div>
+    </section>
+  )
+}
+
+function SellerWelcomeScreen({ brand, listing, form, onContinue }) {
+  const sellerName = getSellerDisplayName(listing, form)
+  const propertyAddress = getPropertyDisplayAddress(listing, form)
+  const agentName = resolveAgentName(listing)
+  const welcomeImageUrl = resolveSellerWelcomeImageUrl(listing)
+  const welcomeName = sellerName && sellerName !== 'Seller'
+    ? sellerName.split(/\s+/).filter(Boolean)[0]
+    : 'Seller'
+  const expectationItems = [
+    'Takes about 10 minutes',
+    'Your progress can be saved',
+    'We only ask what applies to this sale',
+    `${agentName} will be notified when you submit`,
+  ]
+
+  return (
+    <section className="overflow-hidden rounded-[28px] border border-[#d9e4ec] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.12)] sm:rounded-[34px] lg:grid lg:min-h-[720px] lg:grid-cols-[0.9fr_1.1fr]">
+      <div className="relative min-h-[640px] overflow-hidden bg-[#0e1b2b] text-white sm:min-h-[720px] lg:min-h-full">
+        {welcomeImageUrl ? (
+          <img
+            src={welcomeImageUrl}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        ) : (
+          <div aria-hidden className="absolute inset-0 bg-[linear-gradient(150deg,#0b1626_0%,#172b3e_48%,#31506a_100%)]" />
+        )}
+        <div aria-hidden className="absolute inset-0 bg-[linear-gradient(180deg,rgba(7,15,26,0.62)_0%,rgba(7,15,26,0.28)_35%,rgba(7,15,26,0.78)_100%)]" />
+        <div className="relative z-10 flex min-h-[640px] flex-col p-5 sm:min-h-[720px] sm:p-7 lg:min-h-full">
+          <SellerBrandBar brand={brand} />
+          <div className="mt-auto pt-12">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/70">Seller onboarding</p>
+            <h1 className="mt-3 max-w-[460px] text-[2.35rem] font-semibold leading-[1.04] tracking-normal text-white sm:text-5xl">
+              Welcome, <span className="text-[#37c871]">{welcomeName}</span>
+            </h1>
+            <p className="mt-3 max-w-[420px] text-sm leading-6 text-white/80 sm:text-base">
+              Let’s get your property sale journey started with a guided seller intake.
+            </p>
+
+            <div className="mt-5 space-y-3">
+              <article className="flex items-start gap-3 rounded-[20px] border border-white/20 bg-white/95 p-4 text-[#142334] shadow-[0_18px_34px_rgba(0,0,0,0.18)] backdrop-blur-xl">
+                <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] bg-[#e9f8ee] text-[#138a3d]">
+                  <Home size={20} />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-[#142334]">Seller onboarding</p>
+                  <p className="mt-1 break-words text-xs leading-5 text-[#60748b]">{propertyAddress}</p>
+                </div>
+              </article>
+              <div className="rounded-[20px] border border-white/20 bg-white/10 p-4 text-sm leading-6 text-white/80 backdrop-blur-xl">
+                Your information is secure and protected.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col justify-center bg-white p-5 sm:p-8 lg:p-10">
+        <div className="mx-auto w-full max-w-[440px]">
+          <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-[28px] border border-[#dce7ef] bg-[#f7fbff] text-[#138a3d] shadow-[0_18px_38px_rgba(15,23,42,0.08)]">
+            <Home size={42} strokeWidth={1.7} />
+          </div>
+          <div className="mt-6 text-center">
+            <h2 className="text-2xl font-semibold tracking-normal text-[#132033] sm:text-3xl">Let’s get you started</h2>
+            <p className="mx-auto mt-2 max-w-[320px] text-sm leading-6 text-[#60748b]">
+              We’ll guide you through the seller, property, disclosure, and compliance details.
+            </p>
+          </div>
+
+          <div className="mt-6 rounded-[22px] border border-[#dfe8f1] bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] sm:p-5">
+            <p className="text-sm font-semibold text-[#142334]">What to expect</p>
+            <ul className="mt-4 space-y-3">
+              {expectationItems.map((item) => (
+                <li key={item} className="flex items-start gap-3 text-sm leading-5 text-[#4f6378]">
+                  <CheckCircle2 size={17} className="mt-0.5 shrink-0 text-[#138a3d]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <Button
+            type="button"
+            onClick={onContinue}
+            className="mt-6 min-h-[52px] w-full rounded-[16px] bg-[#138a3d] text-white shadow-[0_16px_32px_rgba(19,138,61,0.22)] hover:bg-[#0f7533]"
+          >
+            Continue
+            <ChevronRight size={16} />
+          </Button>
+
+          <p className="mt-4 text-center text-xs leading-5 text-[#7a8da3]">
+            Powered by arch9 for {brand?.name || 'your agency'}.
+          </p>
+        </div>
       </div>
     </section>
   )
@@ -1376,7 +1650,7 @@ function ReviewCard({ title, items, onEdit, missing = [], collapsible = false, d
 
   if (collapsible) {
     return (
-      <details className="group rounded-[20px] border border-[#dfe8f2] bg-white/96 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:rounded-[22px] sm:p-5" {...(defaultOpen ? { open: true } : {})}>
+      <details className="group rounded-[20px] border border-[#dfe8f2] bg-white/95 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:rounded-[22px] sm:p-5" {...(defaultOpen ? { open: true } : {})}>
         <summary className="cursor-pointer list-none">
           {header}
         </summary>
@@ -1386,10 +1660,92 @@ function ReviewCard({ title, items, onEdit, missing = [], collapsible = false, d
   }
 
   return (
-    <article className="rounded-[20px] border border-[#dfe8f2] bg-white/96 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:rounded-[22px] sm:p-5">
+    <article className="rounded-[20px] border border-[#dfe8f2] bg-white/95 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:rounded-[22px] sm:p-5">
       {header}
       {body}
     </article>
+  )
+}
+
+function ReviewReadinessPanel({ issueGroups = [], sellerName = '', propertyAddress = '' }) {
+  const issueCount = issueGroups.reduce((total, group) => total + (group.missing?.length || 0), 0)
+  const ready = issueCount === 0
+
+  return (
+    <section className={`rounded-[22px] border p-4 shadow-[0_14px_32px_rgba(15,23,42,0.06)] sm:p-5 ${
+      ready
+        ? 'border-[#cfe8da] bg-[#f2fbf5]'
+        : 'border-[#f2dcc0] bg-[#fff9ef]'
+    }`}>
+      <div className="flex items-start gap-3">
+        <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${
+          ready ? 'bg-[#1f7d44] text-white' : 'bg-[#fff2d8] text-[#b45309]'
+        }`}>
+          {ready ? <CheckCircle2 size={22} /> : <ClipboardCheck size={21} />}
+        </span>
+        <div className="min-w-0">
+          <p className={`text-lg font-semibold tracking-normal ${ready ? 'text-[#14532d]' : 'text-[#7a4b10]'}`}>
+            {ready ? 'Ready to submit' : `${issueCount} item${issueCount === 1 ? '' : 's'} need attention`}
+          </p>
+          <p className={`mt-1 text-sm leading-6 ${ready ? 'text-[#25603d]' : 'text-[#8a5a18]'}`}>
+            {ready
+              ? 'Everything required for this onboarding has been captured. Submit when the summary looks correct.'
+              : 'Open the highlighted sections below and finish the missing details before submitting.'}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 rounded-[18px] border border-white/70 bg-white/75 p-3 text-sm sm:grid-cols-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7a8da3]">Seller</p>
+          <p className="mt-1 break-words font-semibold text-[#172334]">{sellerName || 'Not provided'}</p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7a8da3]">Property</p>
+          <p className="mt-1 break-words font-semibold text-[#172334]">{propertyAddress || 'Not provided'}</p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {issueGroups.map((group) => {
+          const hasMissing = Boolean(group.missing?.length)
+          const content = (
+            <>
+              <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                hasMissing ? 'bg-[#fff2d8] text-[#b45309]' : 'bg-[#e7f6ed] text-[#1f7d44]'
+              }`}>
+                {hasMissing ? <Circle size={13} /> : <CheckCircle2 size={16} />}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold text-[#172334]">{group.label}</span>
+                <span className="mt-0.5 block text-xs leading-4 text-[#6b7d93]">
+                  {hasMissing ? group.missing.join(', ') : 'Complete'}
+                </span>
+              </span>
+            </>
+          )
+
+          if (typeof group.onEdit === 'function') {
+            return (
+              <button
+                key={group.label}
+                type="button"
+                onClick={group.onEdit}
+                className="flex min-h-[58px] items-start gap-2 rounded-[16px] border border-[#dfe8f2] bg-white p-3 text-left transition hover:border-[#bccddd]"
+              >
+                {content}
+              </button>
+            )
+          }
+
+          return (
+            <div key={group.label} className="flex min-h-[58px] items-start gap-2 rounded-[16px] border border-[#dfe8f2] bg-white p-3">
+              {content}
+            </div>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
@@ -1426,7 +1782,46 @@ function PropertyDisclosureSection({
             <span>Status: <strong className="text-[#22364a]">{statusLabel}</strong></span>
             <span>{answerSummary.answered} / {answerSummary.total} answered</span>
           </div>
-          <div className="overflow-hidden rounded-[18px] border border-[#1f2937] bg-white">
+          <div className="space-y-3 sm:hidden">
+            {PROPERTY_DISCLOSURE_QUESTIONS.map((question) => {
+              const response = normalized.responses?.[question.key] || {}
+              return (
+                <article key={question.key} className="rounded-[18px] border border-[#dfe8f2] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                  <div className="flex items-start gap-3">
+                    <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#eef6f2] text-sm font-semibold text-[#138a3d]">
+                      {question.number}
+                    </span>
+                    <p className="min-w-0 text-sm font-semibold leading-6 text-[#172334]">{question.text}</p>
+                  </div>
+                  {question.extraLabel ? (
+                    <label className="mt-3 grid gap-1.5 text-xs font-semibold text-[#4f6378]">
+                      {question.extraLabel}
+                      <input
+                        className="min-h-11 rounded-[12px] border border-[#d7e2ed] bg-white px-3 text-sm text-[#142334] outline-none focus:border-[#35546c]/40 focus:ring-2 focus:ring-[#35546c]/10"
+                        value={normalized.remoteControlsQuantity}
+                        onChange={(event) => onDisclosureChange('remoteControlsQuantity', event.target.value)}
+                        placeholder="e.g. 2 gate remotes, 1 garage remote"
+                      />
+                    </label>
+                  ) : null}
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    {answerOptions.map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        aria-pressed={response.answer === option.key}
+                        onClick={() => onAnswerChange(question.key, option.key)}
+                        className={disclosureAnswerClass(response.answer === option.key)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+          <div className="hidden overflow-hidden rounded-[18px] border border-[#1f2937] bg-white sm:block">
             <table className="w-full border-collapse text-left text-sm text-[#172334]">
               <thead>
                 <tr className="bg-[#d9dde2]">
@@ -1532,63 +1927,146 @@ function PropertyDisclosureSection({
 function SellerCompletedState({ token, listing, form, brand, onDownloadDisclosure }) {
   const clientSellingPath = `/client/${token}/selling/documents`
   const mandateTypeLabel = MANDATE_TYPE_OPTIONS.find((item) => item.value === form.mandateType)?.label || 'Not selected'
+  const sellerName = getSellerDisplayName(listing, form)
+  const propertyAddress = getPropertyDisplayAddress(listing, form)
+  const agentName = resolveAgentName(listing)
+  const disclosureComplete = isPropertyDisclosureDigitallyComplete(form?.propertyDisclosure || {})
+  const submittedAt = String(
+    listing?.sellerOnboarding?.submittedAt ||
+      listing?.sellerOnboarding?.submitted_at ||
+      listing?.sellerOnboarding?.completedAt ||
+      listing?.sellerOnboarding?.completed_at ||
+      '',
+  ).trim()
+  const submittedDate = submittedAt ? new Date(submittedAt) : null
+  const submittedLabel = submittedDate && !Number.isNaN(submittedDate.getTime())
+    ? new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(submittedDate)
+    : 'Just now'
+  const journeyItems = [
+    {
+      label: 'Onboarding submitted',
+      status: 'Complete',
+      detail: submittedLabel,
+      complete: true,
+    },
+    {
+      label: 'Information under review',
+      status: 'Next',
+      detail: `${agentName} will review the seller and property details.`,
+      complete: false,
+    },
+    {
+      label: 'Documents upload',
+      status: 'Open portal',
+      detail: 'Upload FICA, mandate, and property compliance files in the seller portal.',
+      complete: false,
+    },
+    {
+      label: 'Mandate preparation',
+      status: 'Upcoming',
+      detail: 'Your agent prepares the mandate and sends the secure signing link.',
+      complete: false,
+    },
+  ]
 
   return (
-    <section className="rounded-[28px] border border-[#d8e2ec] bg-white/90 p-5 shadow-[0_20px_44px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:rounded-[32px] sm:p-6 lg:rounded-[36px] lg:p-8 lg:shadow-[0_28px_60px_rgba(15,23,42,0.09)]">
-      <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr] lg:items-start lg:gap-6">
-        <div className="rounded-[24px] border border-[#d8ecdf] bg-[#eefbf3] p-5 sm:rounded-[28px] sm:p-6">
-          <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#1f7d44] text-white shadow-[0_16px_32px_rgba(31,125,68,0.24)] sm:h-14 sm:w-14">
-            <CheckCircle2 size={26} />
-          </span>
-          <h2 className="mt-4 text-xl font-semibold tracking-[-0.02em] text-[#14532d] sm:mt-5 sm:text-2xl sm:tracking-[-0.025em]">Your seller information has been submitted</h2>
-          <p className="mt-3 text-sm leading-6 text-[#25603d]">
-            Your seller portal is ready now. Open it to upload the documents needed for FICA, mandate preparation, and listing readiness while your agent reviews the submitted information.
-          </p>
-          <div className="mt-4 rounded-[18px] border border-[#cfe8da] bg-white/70 p-4 text-left text-sm leading-6 text-[#25603d]">
-            <p className="font-semibold text-[#14532d]">What happens next</p>
-            <ul className="mt-2 list-disc space-y-1 pl-5">
-              <li>Upload the requested seller documents in the client portal.</li>
-              <li>Your agent checks the documents and prepares the mandate.</li>
-              <li>You will receive a secure signing link when the mandate is ready.</li>
-            </ul>
+    <section className="overflow-hidden rounded-[28px] border border-[#d8e2ec] bg-white/95 shadow-[0_20px_44px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:rounded-[32px] lg:rounded-[36px] lg:shadow-[0_28px_60px_rgba(15,23,42,0.09)]">
+      <div className="grid gap-0 lg:grid-cols-[0.92fr_1.08fr]">
+        <div className="bg-[#eefbf3] p-5 text-center sm:p-7 lg:p-8 lg:text-left">
+          <div className="flex justify-center lg:justify-start">
+            <span className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-[#1f7d44] text-white shadow-[0_18px_36px_rgba(31,125,68,0.24)]">
+              <CheckCircle2 size={32} />
+            </span>
           </div>
-          <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-            <Link to={clientSellingPath} className="inline-flex min-h-[50px] w-full items-center justify-center rounded-[16px] bg-[#172334] px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] sm:w-auto">
+          <p className="mt-5 text-xs font-semibold uppercase tracking-[0.14em] text-[#1f7d44]">Seller onboarding</p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-normal text-[#14532d] sm:text-3xl">You're all set</h2>
+          <p className="mt-2 text-sm font-semibold text-[#25603d]">Thank you, {sellerName}.</p>
+          <p className="mx-auto mt-3 max-w-[420px] text-sm leading-6 text-[#25603d] lg:mx-0">
+            Your seller information has been submitted. Your seller portal is ready now for document uploads while {agentName} reviews the file.
+          </p>
+
+          <div className="mt-5 rounded-[20px] border border-[#cfe8da] bg-white/80 p-4 text-left">
+            <div className="flex items-start gap-3">
+              <AgencyMark brand={brand} tone="light" />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-[#172334]">{brand?.name || 'Your Agency'}</p>
+                <p className="mt-1 text-sm leading-5 text-[#60748b]">{propertyAddress}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 flex flex-col gap-2 sm:flex-row lg:flex-col xl:flex-row">
+            <Link to={clientSellingPath} className="inline-flex min-h-[52px] w-full items-center justify-center rounded-[16px] bg-[#172334] px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)]">
               Open Seller Portal
             </Link>
-            {isPropertyDisclosureDigitallyComplete(form?.propertyDisclosure || {}) ? (
+            {disclosureComplete ? (
               <button
                 type="button"
                 onClick={onDownloadDisclosure}
-                className="inline-flex min-h-[50px] w-full items-center justify-center gap-2 rounded-[16px] border border-[#b7dfc3] bg-white px-4 py-3 text-sm font-semibold text-[#14532d] sm:w-auto"
+                className="inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-[16px] border border-[#b7dfc3] bg-white px-4 py-3 text-sm font-semibold text-[#14532d]"
               >
                 <Download size={15} />
                 Download Disclosure
               </button>
             ) : null}
-            <Link to="/" className="inline-flex min-h-[50px] w-full items-center justify-center rounded-[16px] border border-[#b7dfc3] bg-white px-4 py-3 text-sm font-semibold text-[#14532d] sm:w-auto">
-              Return to Arch9
-            </Link>
           </div>
         </div>
-        <div className="space-y-4">
-          <div className="flex items-center gap-3 rounded-[20px] border border-[#dfe8f2] bg-[#fbfdff] p-4 sm:rounded-[22px] sm:p-5">
-            <AgencyMark brand={brand} tone="light" />
-            <div>
-              <p className="text-sm font-semibold text-[#172334]">{brand.name}</p>
-              <p className="text-sm text-[#6b7d93]">Need help? Contact your agent for the next step.</p>
+
+        <div className="space-y-4 p-5 sm:p-7 lg:p-8">
+          <div className="rounded-[22px] border border-[#dfe8f2] bg-[#fbfdff] p-4 sm:p-5">
+            <p className="text-sm font-semibold text-[#172334]">What happens next</p>
+            <div className="mt-4 space-y-3">
+              {journeyItems.map((item) => (
+                <div key={item.label} className="flex gap-3 rounded-[16px] border border-[#dfe8f2] bg-white p-3">
+                  <span className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                    item.complete ? 'bg-[#1f7d44] text-white' : 'bg-[#eef3f8] text-[#35546c]'
+                  }`}>
+                    {item.complete ? <CheckCircle2 size={17} /> : <Circle size={13} />}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-semibold text-[#172334]">{item.label}</p>
+                      <span className="rounded-full bg-[#f2f6fb] px-2 py-0.5 text-[11px] font-semibold text-[#35546c]">{item.status}</span>
+                    </div>
+                    <p className="mt-1 text-sm leading-5 text-[#60748b]">{item.detail}</p>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-          <ReviewCard
-            title="Submitted Summary"
-            items={[
-              { label: 'Seller', value: getSellerDisplayName(listing, form) },
-              { label: 'Property', value: getPropertyDisplayAddress(listing, form) },
-              { label: 'Ownership', value: OWNERSHIP_TYPES.find((item) => item.value === form.ownershipType)?.label || 'Individual' },
-              { label: 'Mandate Type', value: mandateTypeLabel },
-              { label: 'Asking Price', value: form.askingPrice ? formatCurrency(form.askingPrice) : 'Not provided' },
-            ]}
-          />
+
+          <div className="rounded-[22px] border border-[#dfe8f2] bg-white p-4 sm:p-5">
+            <p className="text-sm font-semibold text-[#172334]">Submitted summary</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {[
+                { label: 'Seller', value: sellerName },
+                { label: 'Property', value: propertyAddress },
+                { label: 'Ownership', value: OWNERSHIP_TYPES.find((item) => item.value === form.ownershipType)?.label || 'Individual' },
+                { label: 'Mandate Type', value: mandateTypeLabel },
+                { label: 'Asking Price', value: form.askingPrice ? formatCurrency(form.askingPrice) : 'Not provided' },
+                { label: 'Disclosure', value: disclosureComplete ? 'Signed' : 'Not signed' },
+              ].map((item) => (
+                <div key={item.label} className="rounded-[15px] border border-[#eef3f8] bg-[#fbfdff] p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#8a9ab0]">{item.label}</p>
+                  <p className="mt-1 break-words text-sm font-semibold leading-5 text-[#172334]">{item.value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3 rounded-[20px] border border-[#dfe8f2] bg-[#fbfdff] p-4 sm:rounded-[22px] sm:p-5">
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#eef3f8] text-[#35546c]">
+              <ShieldCheck size={19} />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-[#172334]">Need help?</p>
+              <p className="mt-1 text-sm leading-5 text-[#6b7d93]">Contact {agentName} if anything looks incorrect or if you need help with document uploads.</p>
+            </div>
+          </div>
+
+          <Link to="/" className="inline-flex min-h-[50px] w-full items-center justify-center rounded-[16px] border border-[#dbe5ef] bg-white px-4 py-3 text-sm font-semibold text-[#35546c] sm:w-auto">
+            Return to Arch9
+          </Link>
         </div>
       </div>
     </section>
@@ -1607,6 +2085,15 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [showWelcome, setShowWelcome] = useState(true)
+  const [draftSyncStatus, setDraftSyncStatus] = useState('idle')
+  const [lastDraftSavedAt, setLastDraftSavedAt] = useState('')
+  const [isOffline, setIsOffline] = useState(() => (
+    typeof navigator !== 'undefined' ? navigator.onLine === false : false
+  ))
+  const draftAutosaveTimerRef = useRef(null)
+  const lastDraftSignatureRef = useRef('')
+  const saveDraftRef = useRef(null)
 
   useEffect(() => {
     let isMounted = true
@@ -1648,9 +2135,18 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           }
 
           if (!isMounted) return
+          const nextForm = normalizeFormData(nextListing)
+          lastDraftSignatureRef.current = buildSellerDraftSignature(nextForm, nextStep)
           setListing(nextListing)
-          setForm(normalizeFormData(nextListing))
+          setForm(nextForm)
           setCurrentStep(nextStep)
+          setLastDraftSavedAt(resolveDraftSavedAt(nextListing))
+          setDraftSyncStatus(resolveDraftSavedAt(nextListing) ? 'saved' : 'idle')
+          setShowWelcome(nextStep === 0 && ![
+            SELLER_ONBOARDING_STATUS.SUBMITTED,
+            SELLER_ONBOARDING_STATUS.UNDER_REVIEW,
+            SELLER_ONBOARDING_STATUS.COMPLETED,
+          ].includes(onboardingStatus))
           setLoading(false)
           return
         } catch {
@@ -1688,9 +2184,18 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           : found
 
       if (!isMounted) return
+      const nextForm = normalizeFormData(nextListing)
+      lastDraftSignatureRef.current = buildSellerDraftSignature(nextForm, nextStep)
       setListing(nextListing)
-      setForm(normalizeFormData(nextListing))
+      setForm(nextForm)
       setCurrentStep(nextStep)
+      setLastDraftSavedAt(resolveDraftSavedAt(nextListing))
+      setDraftSyncStatus(resolveDraftSavedAt(nextListing) ? 'saved' : 'idle')
+      setShowWelcome(nextStep === 0 && ![
+        SELLER_ONBOARDING_STATUS.SUBMITTED,
+        SELLER_ONBOARDING_STATUS.UNDER_REVIEW,
+        SELLER_ONBOARDING_STATUS.COMPLETED,
+      ].includes(onboardingStatus))
       setLoading(false)
     }
 
@@ -1699,6 +2204,38 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       isMounted = false
     }
   }, [token, useDbFirstSellerOnboarding])
+
+  useEffect(() => {
+    return () => {
+      if (draftAutosaveTimerRef.current) {
+        window.clearTimeout(draftAutosaveTimerRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+
+    const handleOnlineStateChange = () => {
+      const offline = typeof navigator !== 'undefined' ? navigator.onLine === false : false
+      setIsOffline(offline)
+      if (offline) {
+        setDraftSyncStatus((previous) => (
+          previous === 'pending' || previous === 'saving' || previous === 'error'
+            ? 'offline'
+            : previous
+        ))
+      }
+    }
+
+    handleOnlineStateChange()
+    window.addEventListener('online', handleOnlineStateChange)
+    window.addEventListener('offline', handleOnlineStateChange)
+    return () => {
+      window.removeEventListener('online', handleOnlineStateChange)
+      window.removeEventListener('offline', handleOnlineStateChange)
+    }
+  }, [])
 
   const progress = useMemo(() => Math.round(((currentStep + 1) / STEPS.length) * 100), [currentStep])
 
@@ -2131,29 +2668,165 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     removeCollectionItem('trustees', trusteeId)
   }
 
-  async function saveDraft(nextStep = currentStep) {
-    if (!form) return
-    setSaving(true)
-    setError('')
-    const canonicalPayload = buildCanonicalPayload({ ...(form || {}), currentStep: nextStep }, {
-      draft: true,
-      source: 'seller_onboarding_draft',
-    })
-    const draftFormData = { ...(form || {}), currentStep: nextStep, ...canonicalPayload }
-    await persistListingUpdate((row) => ({
-      ...row,
-      sellerOnboarding: {
-        ...(row?.sellerOnboarding || {}),
-        status: SELLER_ONBOARDING_STATUS.IN_PROGRESS,
-        currentStep: nextStep,
-        formData: draftFormData,
-        updatedAt: new Date().toISOString(),
-      },
-    }))
-    setSaving(false)
-    setSuccess('Draft saved.')
-    setTimeout(() => setSuccess(''), 1200)
+  async function saveDraft(nextStep = currentStep, options = {}) {
+    if (!form) return false
+    const silent = Boolean(options.silent)
+    const signature = options.signature || buildSellerDraftSignature(form, nextStep)
+    const savedAt = new Date().toISOString()
+    const offlineBlocksRemoteSave = useDbFirstSellerOnboarding && (
+      isOffline ||
+      (typeof navigator !== 'undefined' && navigator.onLine === false)
+    )
+
+    if (offlineBlocksRemoteSave) {
+      setDraftSyncStatus('offline')
+      if (!silent) {
+        setError('You appear to be offline. Keep this page open; we will save your draft when the connection returns.')
+        scrollSellerOnboardingToTop({ focusAlert: true })
+      }
+      return false
+    }
+
+    if (!silent) {
+      setSaving(true)
+      setError('')
+    }
+    setDraftSyncStatus('saving')
+
+    try {
+      const canonicalPayload = buildCanonicalPayload({ ...(form || {}), currentStep: nextStep }, {
+        draft: true,
+        source: 'seller_onboarding_draft',
+      })
+      const draftFormData = { ...(form || {}), currentStep: nextStep, ...canonicalPayload }
+      const updated = await persistListingUpdate((row) => ({
+        ...row,
+        sellerOnboarding: {
+          ...(row?.sellerOnboarding || {}),
+          status: SELLER_ONBOARDING_STATUS.IN_PROGRESS,
+          currentStep: nextStep,
+          formData: draftFormData,
+          updatedAt: savedAt,
+        },
+      }))
+
+      if (!updated) {
+        throw new Error('Unable to save draft right now.')
+      }
+
+      lastDraftSignatureRef.current = signature
+      setLastDraftSavedAt(savedAt)
+      setDraftSyncStatus('saved')
+
+      if (!silent) {
+        setSuccess('Draft saved.')
+        setTimeout(() => setSuccess(''), 1200)
+      }
+      return true
+    } catch (draftError) {
+      console.error('[Seller Onboarding] draft save failed', draftError)
+      setDraftSyncStatus('error')
+      if (!silent) {
+        setError(draftError?.message || 'Unable to save draft right now. Please try again.')
+        scrollSellerOnboardingToTop({ focusAlert: true })
+      }
+      return false
+    } finally {
+      if (!silent) setSaving(false)
+    }
   }
+
+  saveDraftRef.current = saveDraft
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    if (
+      loading ||
+      !form ||
+      !listing ||
+      isCompleted ||
+      submitting ||
+      saving ||
+      (!embedded && showWelcome && currentStep === 0)
+    ) {
+      return undefined
+    }
+
+    const signature = buildSellerDraftSignature(form, currentStep)
+    if (!signature || signature === lastDraftSignatureRef.current) {
+      return undefined
+    }
+
+    if (useDbFirstSellerOnboarding && isOffline) {
+      setDraftSyncStatus('offline')
+      return undefined
+    }
+
+    setDraftSyncStatus((previous) => (previous === 'saving' ? previous : 'pending'))
+    draftAutosaveTimerRef.current = window.setTimeout(() => {
+      void saveDraftRef.current?.(currentStep, { silent: true, signature })
+    }, 1600)
+
+    return () => {
+      if (draftAutosaveTimerRef.current) {
+        window.clearTimeout(draftAutosaveTimerRef.current)
+        draftAutosaveTimerRef.current = null
+      }
+    }
+  }, [currentStep, embedded, form, isCompleted, isOffline, listing, loading, saving, showWelcome, submitting, useDbFirstSellerOnboarding])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    if (!form || !listing || isCompleted || submitting) return undefined
+
+    const currentSignature = buildSellerDraftSignature(form, currentStep)
+    const hasUnsavedDraft =
+      Boolean(currentSignature && currentSignature !== lastDraftSignatureRef.current) ||
+      ['pending', 'saving', 'error', 'offline'].includes(draftSyncStatus)
+
+    if (!hasUnsavedDraft) return undefined
+
+    const handleBeforeUnload = (event) => {
+      event.preventDefault()
+      event.returnValue = ''
+      return ''
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [currentStep, draftSyncStatus, form, isCompleted, listing, submitting])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return undefined
+    if (!form || !listing || isCompleted || submitting || saving) return undefined
+
+    const flushPendingDraft = () => {
+      if (document.visibilityState && document.visibilityState !== 'hidden') return
+      const signature = buildSellerDraftSignature(form, currentStep)
+      if (!signature || signature === lastDraftSignatureRef.current) return
+
+      if (draftAutosaveTimerRef.current) {
+        window.clearTimeout(draftAutosaveTimerRef.current)
+        draftAutosaveTimerRef.current = null
+      }
+
+      if (useDbFirstSellerOnboarding && (isOffline || (typeof navigator !== 'undefined' && navigator.onLine === false))) {
+        setDraftSyncStatus('offline')
+        return
+      }
+
+      void saveDraftRef.current?.(currentStep, { silent: true, signature })
+    }
+
+    document.addEventListener('visibilitychange', flushPendingDraft)
+    window.addEventListener('pagehide', flushPendingDraft)
+    return () => {
+      document.removeEventListener('visibilitychange', flushPendingDraft)
+      window.removeEventListener('pagehide', flushPendingDraft)
+    }
+  }, [currentStep, form, isCompleted, isOffline, listing, saving, submitting, useDbFirstSellerOnboarding])
 
   function validateCurrentStep() {
     if (!form) return 'Form state unavailable.'
@@ -2303,26 +2976,42 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     const validationError = validateCurrentStep()
     if (validationError) {
       setError(validationError)
+      scrollSellerOnboardingToTop({ focusAlert: true })
       return
     }
     const nextStep = Math.min(currentStep + 1, STEPS.length - 1)
-    await saveDraft(nextStep)
+    const saved = await saveDraft(nextStep)
+    if (!saved) return
     setCurrentStep(nextStep)
+    scrollSellerOnboardingToTop()
   }
 
   async function handleBack() {
     setError('')
     const nextStep = Math.max(currentStep - 1, 0)
-    await saveDraft(nextStep)
+    const saved = await saveDraft(nextStep)
+    if (!saved) return
     setCurrentStep(nextStep)
+    scrollSellerOnboardingToTop()
   }
 
   async function handleSubmit() {
     if (!form || submitting) return
-    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
-    setSubmitting(true)
     setError('')
     setSuccess('')
+    const finalRequiredMissing = [
+      ...sellerMissing.map((item) => `Seller: ${item}`),
+      ...propertyMissing.map((item) => `Property: ${item}`),
+      ...getPropertyDisclosureMissingItems(form.propertyDisclosure || {}).map((item) => `Disclosure: ${item}`),
+    ]
+    if (finalRequiredMissing.length) {
+      setError(`Please finish the required items before submitting: ${finalRequiredMissing.join(', ')}.`)
+      scrollSellerOnboardingToTop({ focusAlert: true })
+      return
+    }
+
+    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    setSubmitting(true)
 
     try {
       const disclosureDocument = buildPropertyDisclosureDocument(form.propertyDisclosure || {}, {
@@ -2391,6 +3080,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       setListing(updated)
       setCurrentStep(FINAL_STEP_INDEX)
       setSuccess('Your property details have been submitted.\nYour seller portal is ready now. Open the client portal selling module to upload the required seller documents.')
+      scrollSellerOnboardingToTop()
       if (typeof window !== 'undefined') {
         window.dispatchEvent(
           new CustomEvent('itg:seller-onboarding-submitted', {
@@ -2424,9 +3114,15 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     } catch (submitError) {
       console.error('[Seller Onboarding] submit failed', submitError)
       setError(resolveSellerOnboardingSubmitError(submitError))
+      scrollSellerOnboardingToTop({ focusAlert: true })
     } finally {
       setSubmitting(false)
     }
+  }
+
+  function handleWelcomeContinue() {
+    setShowWelcome(false)
+    scrollSellerOnboardingToTop()
   }
 
   if (loading) {
@@ -2546,10 +3242,26 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         : showCommercialDetails
           ? [form.commercialUseDescription, form.floorSize ? `${form.floorSize} m2` : ''].filter(Boolean).join(' / ')
           : `${form.erfSize || 'Not provided'} m2`
+  const disclosureMissing = getPropertyDisclosureMissingItems(form.propertyDisclosure || {})
+  const reviewIssueGroups = [
+    { label: 'Seller details', missing: sellerMissing, onEdit: () => setCurrentStep(0) },
+    { label: 'Property details', missing: propertyMissing, onEdit: () => setCurrentStep(1) },
+    { label: 'Property disclosure', missing: disclosureMissing, onEdit: () => setCurrentStep(2) },
+    ...(bondComplianceSummary ? [{ label: 'Bond follow-up', missing: bondComplianceSummary.missing, onEdit: () => setCurrentStep(1) }] : []),
+    ...(tenantComplianceSummary ? [{ label: 'Tenant follow-up', missing: tenantComplianceSummary.missing, onEdit: () => setCurrentStep(1) }] : []),
+    { label: 'Document portal', missing: [], onEdit: () => setCurrentStep(3) },
+  ]
 
-  const content = (
+  const shouldShowWelcome = !embedded && !isCompleted && showWelcome && currentStep === 0
+
+  const formContent = (
     <div className={PAGE_STACK_CLASS}>
-      <SellerOnboardingHero brand={agencyBrand} listing={listing} form={form} statusLabel={statusLabel} />
+      {!isCompleted ? (
+        <>
+          <SellerMobileFormHeader brand={agencyBrand} listing={listing} form={form} statusLabel={statusLabel} />
+          <SellerOnboardingHero brand={agencyBrand} listing={listing} form={form} statusLabel={statusLabel} />
+        </>
+      ) : null}
 
       {isCompleted ? (
         <SellerCompletedState token={token} listing={listing} form={form} brand={agencyBrand} onDownloadDisclosure={handleDownloadDisclosurePdf} />
@@ -2557,8 +3269,24 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         <section className={SECTION_CARD_CLASS}>
         <SellerStepProgress currentStep={currentStep} progress={progress} />
 
-        {error ? <p className="mt-4 rounded-[14px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm text-[#b42318]">{error}</p> : null}
-        {success ? <p className="mt-4 whitespace-pre-line rounded-[14px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-3 text-sm text-[#1f7d44]">{success}</p> : null}
+        {error ? (
+          <p
+            data-seller-onboarding-alert
+            role="alert"
+            tabIndex={-1}
+            className="mt-4 rounded-[14px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm text-[#b42318] outline-none focus:ring-2 focus:ring-[#b42318]/20"
+          >
+            {error}
+          </p>
+        ) : null}
+        {success ? (
+          <p
+            aria-live="polite"
+            className="mt-4 whitespace-pre-line rounded-[14px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-3 text-sm text-[#1f7d44]"
+          >
+            {success}
+          </p>
+        ) : null}
 
         <div className="mt-4 space-y-4 sm:mt-6 sm:space-y-6">
           {currentStep === 0 ? (
@@ -2601,19 +3329,19 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     {ownershipFieldLabels.firstName}
-                    <input className={DETAIL_INPUT_CLASS} value={form.sellerFirstName} onChange={(event) => handleFormUpdate('sellerFirstName', event.target.value)} />
+                    <input className={DETAIL_INPUT_CLASS} autoComplete="given-name" value={form.sellerFirstName} onChange={(event) => handleFormUpdate('sellerFirstName', event.target.value)} />
                   </label>
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     {ownershipFieldLabels.surname}
-                    <input className={DETAIL_INPUT_CLASS} value={form.sellerSurname} onChange={(event) => handleFormUpdate('sellerSurname', event.target.value)} />
+                    <input className={DETAIL_INPUT_CLASS} autoComplete="family-name" value={form.sellerSurname} onChange={(event) => handleFormUpdate('sellerSurname', event.target.value)} />
                   </label>
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     Email
-                    <input className={DETAIL_INPUT_CLASS} type="email" value={form.email} onChange={(event) => handleFormUpdate('email', event.target.value)} />
+                    <input className={DETAIL_INPUT_CLASS} type="email" inputMode="email" autoComplete="email" value={form.email} onChange={(event) => handleFormUpdate('email', event.target.value)} />
                   </label>
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     Phone
-                    <input className={DETAIL_INPUT_CLASS} value={form.phone} onChange={(event) => handleFormUpdate('phone', event.target.value)} />
+                    <input className={DETAIL_INPUT_CLASS} type="tel" inputMode="tel" autoComplete="tel" value={form.phone} onChange={(event) => handleFormUpdate('phone', event.target.value)} />
                   </label>
 
                   {!['company', 'trust', 'deceased_estate', 'power_of_attorney', 'multiple_owners'].includes(ownershipBranch) ? (
@@ -2625,7 +3353,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     Tax Number (optional)
-                    <input className={DETAIL_INPUT_CLASS} value={form.sellerTaxNumber} onChange={(event) => handleFormUpdate('sellerTaxNumber', event.target.value)} />
+                    <input className={DETAIL_INPUT_CLASS} inputMode="numeric" value={form.sellerTaxNumber} onChange={(event) => handleFormUpdate('sellerTaxNumber', event.target.value)} />
                   </label>
                   {showVatFields ? (
                     <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
@@ -2636,7 +3364,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   {showVatFields && form.vatRegistered ? (
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       VAT Number
-                      <input className={DETAIL_INPUT_CLASS} value={form.vatNumber} onChange={(event) => handleFormUpdate('vatNumber', event.target.value)} />
+                      <input className={DETAIL_INPUT_CLASS} inputMode="numeric" value={form.vatNumber} onChange={(event) => handleFormUpdate('vatNumber', event.target.value)} />
                     </label>
                   ) : null}
                 </div>
@@ -2663,11 +3391,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Spouse Email (optional)
-                        <input className={DETAIL_INPUT_CLASS} value={form.spouseEmail} onChange={(event) => handleFormUpdate('spouseEmail', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} type="email" inputMode="email" autoComplete="email" value={form.spouseEmail} onChange={(event) => handleFormUpdate('spouseEmail', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Spouse Phone (optional)
-                        <input className={DETAIL_INPUT_CLASS} value={form.spousePhone} onChange={(event) => handleFormUpdate('spousePhone', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} type="tel" inputMode="tel" autoComplete="tel" value={form.spousePhone} onChange={(event) => handleFormUpdate('spousePhone', event.target.value)} />
                       </label>
                     </div>
                   </div>
@@ -3702,7 +4430,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 </FormSection>
 
                 <div className="space-y-4">
-                  <article className="rounded-[22px] border border-[#dbe6f2] bg-white/96 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-5">
+                  <article className="rounded-[22px] border border-[#dbe6f2] bg-white/95 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-5">
                     <span className="inline-flex h-11 w-11 items-center justify-center rounded-[15px] bg-[#eefbf3] text-[#1f7d44]">
                       <FileCheck2 size={20} />
                     </span>
@@ -3740,7 +4468,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               title="Check your seller file"
               description="Once submitted, your agent will review the information and prepare the next step in your selling journey."
             >
-              <div className="grid grid-cols-1 gap-3">
+              <div className="grid grid-cols-1 gap-4">
+                <ReviewReadinessPanel
+                  issueGroups={reviewIssueGroups}
+                  sellerName={getSellerDisplayName(listing, form)}
+                  propertyAddress={getPropertyDisplayAddress(listing, form)}
+                />
                 <ReviewCard
                   title="Seller Summary"
                   missing={sellerMissing}
@@ -3792,7 +4525,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 />
                 <ReviewCard
                   title="Property Disclosure"
-                  missing={isPropertyDisclosureDigitallyComplete(form.propertyDisclosure || {}) ? [] : ['Property Disclosure']}
+                  missing={disclosureMissing}
                   onEdit={() => setCurrentStep(2)}
                   collapsible
                   items={[
@@ -3825,7 +4558,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         </div>
 
         <div className="mt-6 hidden flex-col gap-3 border-t border-[#e4ebf5] pt-4 sm:mt-7 lg:flex lg:flex-row lg:items-center lg:justify-between">
-          <p className="text-center text-sm text-[#6b7d93] lg:text-left">{saving ? 'Saving your progress...' : success ? 'Saved just now' : 'Secure seller onboarding powered by arch9'}</p>
+          <div className="flex min-w-0 justify-center lg:justify-start">
+            <DraftSaveStatus
+              status={saving ? 'saving' : draftSyncStatus}
+              savedAt={lastDraftSavedAt}
+              fallback="Secure seller onboarding powered by arch9"
+            />
+          </div>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
             {currentStep > 0 ? (
               <Button type="button" variant="secondary" onClick={handleBack} disabled={saving || submitting} className="min-h-[46px] w-full sm:w-auto">
@@ -3862,12 +4601,21 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     </div>
   )
 
+  const content = shouldShowWelcome ? (
+    <SellerWelcomeScreen
+      brand={agencyBrand}
+      listing={listing}
+      form={form}
+      onContinue={handleWelcomeContinue}
+    />
+  ) : formContent
+
   if (embedded) {
     return <div className="w-full">{content}</div>
   }
 
   return (
-    <main className="relative min-h-screen overflow-x-hidden bg-[#e4ebf3] px-3 py-3 pb-24 font-sans antialiased text-[#132033] sm:px-5 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8 lg:pb-10">
+    <main className={`relative min-h-screen overflow-x-hidden bg-[#e4ebf3] px-3 py-3 font-sans antialiased text-[#132033] sm:px-5 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8 ${shouldShowWelcome ? 'pb-3 sm:pb-5 lg:pb-8' : 'pb-24 lg:pb-10'}`}>
       <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -left-24 top-10 h-72 w-72 rounded-full bg-white/40 blur-3xl" />
         <div className="absolute right-[-7rem] top-28 h-96 w-96 rounded-full bg-[#d7e2ee]/60 blur-3xl" />
@@ -3876,9 +4624,20 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       <div className={PAGE_CONTAINER_CLASS}>
         {content}
       </div>
+      {!shouldShowWelcome && !isCompleted ? (
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/70 bg-white/90 px-3 py-2 shadow-[0_-12px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl md:hidden">
         <div className={PAGE_CONTAINER_CLASS}>
           <div className="grid gap-1.5 pb-[max(4px,env(safe-area-inset-bottom))]">
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <DraftSaveStatus
+                status={saving ? 'saving' : draftSyncStatus}
+                savedAt={lastDraftSavedAt}
+                fallback="Secure seller onboarding"
+              />
+              <span className="shrink-0 rounded-full bg-[#f2f6fb] px-2.5 py-1 text-[11px] font-semibold text-[#5f738a]">
+                Step {currentStep + 1}/{STEPS.length}
+              </span>
+            </div>
             {(currentStep > 0 || currentStep < FINAL_STEP_INDEX) ? (
               <div className="flex items-center justify-between gap-2">
                 {currentStep < FINAL_STEP_INDEX ? (
@@ -3913,6 +4672,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           </div>
         </div>
       </div>
+      ) : null}
     </main>
   )
 }
