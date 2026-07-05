@@ -40,6 +40,7 @@ const productivitySource = readFileSync(new URL('../src/components/mobile-shell/
 const workspacePageSource = readFileSync(new URL('../src/pages/mobile/MobileWorkspacePage.jsx', import.meta.url), 'utf8')
 const bottomNavSource = readFileSync(new URL('../src/components/mobile-shell/MobileBottomNav.jsx', import.meta.url), 'utf8')
 const demoLayoutSource = readFileSync(new URL('../src/components/mobile-shell/MobileDemoLayout.jsx', import.meta.url), 'utf8')
+const demoHomeSource = readFileSync(new URL('../src/pages/mobile/MobileDemoHomePage.jsx', import.meta.url), 'utf8')
 const mobileSearchSource = readFileSync(new URL('../src/pages/mobile/MobileSearchPage.jsx', import.meta.url), 'utf8')
 
 const routePatterns = [
@@ -168,6 +169,7 @@ for (const route of [
 }
 
 for (const route of [
+  '/mobile-demo/home',
   '/mobile-demo/search',
   '/mobile-demo/transaction/:workspaceId',
   '/mobile-demo/lead/:workspaceId',
@@ -183,6 +185,9 @@ for (const route of [
 assert.ok(appSource.includes('MobileDemoLayout'), 'App route table should mount the public mobile demo layout before AuthGate')
 assert.ok(demoLayoutSource.includes('data-mobile-demo-shell'), 'Mobile demo shell should expose a stable verification marker')
 assert.ok(demoLayoutSource.includes('/mobile-demo/transaction/demo-transaction'), 'Mobile demo shell should keep bottom navigation inside public demo routes')
+assert.ok(demoHomeSource.includes('data-mobile-demo-home'), 'Mobile demo home should expose a stable verification marker')
+assert.ok(demoHomeSource.includes('Buyer') && demoHomeSource.includes('Seller'), 'Mobile demo home should make buyer and seller modes distinct')
+assert.ok(demoHomeSource.includes('PropertyVisual'), 'Mobile demo home should include a visual transaction/property hero')
 assert.ok(mobileSearchSource.includes('routePrefix = \'/mobile\''), 'Mobile search should preserve protected mobile routing by default')
 assert.ok(mobileSearchSource.includes("replace(/^\\/mobile(?=\\/|$)/, '/mobile-demo')"), 'Mobile search should rewrite results for public demo routing')
 

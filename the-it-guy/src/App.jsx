@@ -313,6 +313,7 @@ const MobileDemoLayout = lazy(() => import('./components/mobile-shell/MobileDemo
 const MobileLayout = lazy(() => import('./components/mobile-shell/MobileLayout'))
 const MobileDevelopmentDetailPage = lazy(() => import('./pages/mobile/MobileDevelopmentDetailPage'))
 const MobileDevelopmentsPage = lazy(() => import('./pages/mobile/MobileDevelopmentsPage'))
+const MobileDemoHomePage = lazy(() => import('./pages/mobile/MobileDemoHomePage'))
 const MobileHome = lazy(() => import('./pages/mobile/MobileHome'))
 const MobileModulePage = lazy(() => import('./pages/mobile/MobileModulePage'))
 const MobileMore = lazy(() => import('./pages/mobile/MobileMore'))
@@ -1413,7 +1414,8 @@ function AppRoutes() {
             <Route path="/m/transactions/:transactionId" element={<MobileTransactionDetailPage />} />
           </Route>
           <Route element={<MobileDemoLayout />}>
-            <Route path="/mobile-demo" element={<Navigate to="/mobile-demo/transaction/demo-transaction" replace />} />
+            <Route path="/mobile-demo" element={<Navigate to="/mobile-demo/home" replace />} />
+            <Route path="/mobile-demo/home" element={<AppErrorBoundary scope="mobile-demo-home" title="Mobile demo home failed to load"><MobileDemoHomePage /></AppErrorBoundary>} />
             <Route path="/mobile-demo/search" element={<AppErrorBoundary scope="mobile-demo-search" title="Mobile demo search failed to load"><MobileSearchPage routePrefix="/mobile-demo" /></AppErrorBoundary>} />
             <Route path="/mobile-demo/transaction/:workspaceId" element={<AppErrorBoundary scope="mobile-demo-transaction-workspace" title="Mobile demo transaction failed to load"><MobileWorkspacePage workspaceType="transaction" /></AppErrorBoundary>} />
             <Route path="/mobile-demo/lead/:workspaceId" element={<AppErrorBoundary scope="mobile-demo-lead-workspace" title="Mobile demo lead failed to load"><MobileWorkspacePage workspaceType="lead" /></AppErrorBoundary>} />
