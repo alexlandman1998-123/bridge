@@ -337,6 +337,22 @@ function resolveRoutingSourceMatch(rule = {}, context = {}) {
   return false
 }
 
+function hasRoutingDecisionTarget(decision = {}) {
+  return Boolean(
+    normalizeText(
+      decision.targetUserId ||
+        decision.targetOrganisationId ||
+        decision.targetRegionId ||
+        decision.targetBranchId ||
+        decision.targetTeamId,
+    ),
+  )
+}
+
+function isUnresolvedRoutingFallback(decision = {}) {
+  return Boolean(decision?.fallbackUsed && !hasRoutingDecisionTarget(decision) && !normalizeText(decision.routingRuleId))
+}
+
 async function resolveRoutingDecision({ row = {}, actor = {} } = {}) {
   const context = getBondIntakeRoutingContext(row, actor)
   const decision = await universalPartnerRoutingResolver({
@@ -349,29 +365,24 @@ async function resolveRoutingDecision({ row = {}, actor = {} } = {}) {
     moduleContext: { actor, row, context },
     routingRules: await listOrganisationPartnerRoutingRules().catch(() => []),
   })
-
-  return {
-    source: decision?.resolutionScope === 'transaction_override' ? 'manual' : 'rule',
-    method: decision?.assignmentMode || PARTNER_ROUTING_MODES.manual,
-    ruleId: decision?.routingRuleId || null,
-    assignee: {
-      id: decision?.targetUserId || null,
-      organisationId: decision?.targetOrganisationId || context.organisationId || null,
-      regionId: decision?.targetBranchId ? null : context.regionId || null,
-      branchId: decision?.targetBranchId || null,
-      teamId: decision?.targetTeamId || null,
-      workspaceUnitId: decision?.targetBranchId || decision?.targetTeamId || null,
-    },
-    scope: resolveAssignmentScope({
-      actor,
-      assignee: {
+  const unresolvedFallback = isUnresolvedRoutingFallback(decision)
+  const assignee = unresolvedFallback
+    ? {}
+    : {
         id: decision?.targetUserId || null,
         organisationId: decision?.targetOrganisationId || context.organisationId || null,
+        regionId: decision?.targetBranchId ? null : decision?.targetRegionId || context.regionId || null,
         branchId: decision?.targetBranchId || null,
         teamId: decision?.targetTeamId || null,
         workspaceUnitId: decision?.targetBranchId || decision?.targetTeamId || null,
-      },
-    }),
+      }
+
+  return {
+    source: unresolvedFallback || decision?.resolutionScope === 'transaction_override' ? 'manual' : 'rule',
+    method: decision?.assignmentMode || PARTNER_ROUTING_MODES.manual,
+    ruleId: unresolvedFallback ? null : decision?.routingRuleId || null,
+    assignee,
+    scope: resolveAssignmentScope({ actor, assignee }),
   }
 }
 

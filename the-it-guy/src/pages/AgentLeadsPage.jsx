@@ -167,12 +167,17 @@ import {
   rejectSuggestion,
 } from '../services/leadSuggestionService'
 import {
+  buildReferralAgreementText,
   completeReferralFollowUp,
   createLeadReferral,
+  getDefaultReferralCommissionSplit,
+  getReferralTypeLabel,
   listLeadReferrals,
   markReferralCommissionPaid,
   markReferralLost,
   recordReferralConversion,
+  REFERRAL_TYPES,
+  respondToLeadReferralTerms,
   scheduleReferralFollowUp,
 } from '../services/leadReferralService'
 
@@ -666,6 +671,8 @@ function getActor(profile = {}) {
     fullName: normalizeText(profile?.fullName || profile?.full_name || [profile?.firstName, profile?.lastName].filter(Boolean).join(' ')),
     role: normalizeText(profile?.role || profile?.workspaceRole || profile?.workspace_role || profile?.organisationRole || profile?.organisation_role),
     workspaceRole: normalizeText(profile?.workspaceRole || profile?.workspace_role || profile?.organisationRole || profile?.organisation_role || profile?.role),
+    branchId: normalizeText(profile?.branchId || profile?.branch_id || profile?.primaryBranchId || profile?.primary_branch_id),
+    primaryBranchId: normalizeText(profile?.primaryBranchId || profile?.primary_branch_id || profile?.branchId || profile?.branch_id),
   }
 }
 
@@ -4537,7 +4544,7 @@ function getReferralStatusTone(status = '') {
   const normalized = normalizeText(status).toLowerCase()
   if (normalized === 'accepted' || normalized === 'converted' || normalized === 'paid') return 'green'
   if (normalized === 'declined' || normalized === 'cancelled') return 'red'
-  if (normalized === 'commission_due') return 'amber'
+  if (normalized === 'commission_due' || normalized === 'needs_review') return 'amber'
   if (normalized === 'sent') return 'blue'
   return 'slate'
 }
@@ -4580,16 +4587,214 @@ function getReferralConversionDays(referral = {}) {
   return Math.max(0, Math.round((convertedAt.getTime() - createdAt.getTime()) / (24 * 60 * 60 * 1000)))
 }
 
-function ReferralLedgerPanel({ mode = 'given', referrals = [], rows = [], organisationId = '', actor = null, onCreated }) {
-  const [draft, setDraft] = useState({
+const REFERRAL_FORM_TYPES = [
+  { value: REFERRAL_TYPES.clientReferral, label: 'Client referral' },
+  { value: REFERRAL_TYPES.buyerIntroduction, label: 'Buyer introduction' },
+  { value: REFERRAL_TYPES.listingCollaboration, label: 'Listing collaboration' },
+  { value: REFERRAL_TYPES.externalReferral, label: 'External referral' },
+]
+
+function getEmptyReferralDraft() {
+  return {
     leadId: '',
+    referralType: REFERRAL_TYPES.clientReferral,
     recipientScope: 'internal',
+    relatedListingId: '',
     targetAgentName: '',
     targetAgentEmail: '',
     targetCompanyName: '',
     commissionSplitPercentage: '',
+    protectionPeriodDays: '30',
     notes: '',
+  }
+}
+
+function getLeadBranchId(row = {}) {
+  return normalizeText(
+    row.branchId ||
+      row.branch_id ||
+      row.primaryBranchId ||
+      row.primary_branch_id ||
+      row.assignedBranchId ||
+      row.assigned_branch_id ||
+      row.workspaceUnitId ||
+      row.workspace_unit_id,
+  )
+}
+
+function buildReferralListingOptions(rows = [], selectedLead = null) {
+  const options = []
+  const seen = new Set()
+  const addOption = (option = {}, lead = {}, priority = 1) => {
+    const id = normalizeText(option.id || option.listingId || option.listing_id)
+    if (!id || seen.has(id)) return
+    seen.add(id)
+    const label = normalizeText(option.label || option.title || option.address) || 'Linked listing'
+    const description = [
+      normalizeText(option.description),
+      normalizeText(option.source),
+      normalizeText(lead?.name),
+    ].filter(Boolean).join(' - ')
+    options.push({
+      id,
+      label,
+      description,
+      leadId: normalizeText(lead?.leadId),
+      priority,
+    })
+  }
+
+  if (selectedLead) {
+    getLeadAppointmentPropertyOptions(selectedLead).forEach((option) => addOption(option, selectedLead, 0))
+  }
+  rows.forEach((lead) => {
+    if (selectedLead && normalizeText(lead.leadId) === normalizeText(selectedLead.leadId)) return
+    getLeadAppointmentPropertyOptions(lead).forEach((option) => addOption(option, lead, 1))
   })
+
+  return options
+    .sort((left, right) => {
+      if (left.priority !== right.priority) return left.priority - right.priority
+      return left.label.localeCompare(right.label)
+    })
+    .slice(0, 120)
+}
+
+const REFERRAL_RESPONSE_LOCKED_STATUSES = new Set(['accepted', 'declined', 'converted', 'commission_due', 'paid', 'cancelled', 'lost'])
+
+function ReferralTermsResponseActions({ referral = {}, relatedListing = null, actor = null, onUpdated }) {
+  const [declineReason, setDeclineReason] = useState('')
+  const [savingAction, setSavingAction] = useState('')
+  const [error, setError] = useState('')
+  const status = normalizeText(referral.status).toLowerCase()
+  const agreementStatus = normalizeText(referral.agreementStatus).toLowerCase()
+  const isAccepted = status === 'accepted' || agreementStatus === 'accepted'
+  const isDeclined = status === 'declined' || agreementStatus === 'declined'
+  const isLocked = REFERRAL_RESPONSE_LOCKED_STATUSES.has(status) || isAccepted || isDeclined
+  const splitLabel = referral.commissionSplitPercentage === null || referral.commissionSplitPercentage === undefined || referral.commissionSplitPercentage === ''
+    ? 'TBC split'
+    : `${Number(referral.commissionSplitPercentage)}% split`
+  const protectionDays = referral.protectionPeriodDays || referral.latestAgreement?.protectionPeriodDays || 30
+  const relatedListingLabel = relatedListing?.label || normalizeText(referral.relatedListingLabel || referral.relatedListingId)
+  const agreementText = normalizeText(referral.agreementText || referral.latestAgreement?.agreementText)
+  const responseAt = referral.acceptedAt || referral.declinedAt || referral.agreementLockedAt
+  const pendingLabel = status === 'needs_review' ? 'Manual discussion requested' : 'Terms response pending'
+
+  async function submitTermsResponse(action) {
+    if (action === 'declined' && !normalizeText(declineReason)) {
+      setError('Capture a decline reason before declining referral terms.')
+      return
+    }
+
+    try {
+      setSavingAction(action)
+      setError('')
+      await respondToLeadReferralTerms(referral.id, action, {
+        declineReason,
+        note: action === 'needs_review' ? 'Referral terms marked for manual discussion.' : '',
+        metadata: { source: 'agent_leads_referrals_received' },
+      }, { actor })
+      setDeclineReason('')
+      await onUpdated?.()
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to update these referral terms.')
+    } finally {
+      setSavingAction('')
+    }
+  }
+
+  if (isLocked) {
+    const label = isDeclined
+      ? 'Terms declined'
+      : isAccepted
+        ? 'Terms accepted'
+        : 'Terms locked'
+    const lockedTone = isDeclined
+      ? 'red'
+      : isAccepted
+        ? 'green'
+        : status === 'cancelled' || status === 'lost'
+          ? 'red'
+          : 'slate'
+    return (
+      <div className="mt-4 border-t border-slate-200 pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-slate-500">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusPill tone={lockedTone}>{label}</StatusPill>
+            {referral.declineReason ? <span>Reason: {referral.declineReason}</span> : null}
+          </div>
+          {responseAt ? <span>{formatDateTime(responseAt, '')}</span> : null}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-4 border-t border-slate-200 pt-4">
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(250px,0.55fr)]">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusPill tone={status === 'needs_review' ? 'amber' : 'blue'}>{pendingLabel}</StatusPill>
+            <StatusPill>{splitLabel}</StatusPill>
+            <StatusPill>{protectionDays} days</StatusPill>
+            {relatedListingLabel ? <StatusPill tone="amber">{relatedListingLabel}</StatusPill> : null}
+          </div>
+          {agreementText ? (
+            <details className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <summary className="cursor-pointer text-xs font-semibold text-slate-600">View agreement terms</summary>
+              <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap rounded-xl bg-white p-3 text-xs font-medium leading-5 text-slate-600">{agreementText}</pre>
+            </details>
+          ) : null}
+          {error ? <p className="mt-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
+        </div>
+        <div className="grid gap-2">
+          <input
+            value={declineReason}
+            onChange={(event) => {
+              setError('')
+              setDeclineReason(event.target.value)
+            }}
+            className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:border-blue-300"
+            placeholder="Decline reason"
+            aria-label="Decline referral reason"
+          />
+          <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-1">
+            <button
+              type="button"
+              onClick={() => submitTermsResponse('accepted')}
+              disabled={Boolean(savingAction)}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 text-sm font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              <CheckCircle2 size={15} />
+              {savingAction === 'accepted' ? 'Accepting...' : 'Accept'}
+            </button>
+            <button
+              type="button"
+              onClick={() => submitTermsResponse('needs_review')}
+              disabled={Boolean(savingAction)}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 text-sm font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+            >
+              <MessageSquarePlus size={15} />
+              {savingAction === 'needs_review' ? 'Saving...' : 'Discuss'}
+            </button>
+            <button
+              type="button"
+              onClick={() => submitTermsResponse('declined')}
+              disabled={Boolean(savingAction)}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+            >
+              <Archive size={15} />
+              {savingAction === 'declined' ? 'Declining...' : 'Decline'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ReferralLedgerPanel({ mode = 'given', referrals = [], rows = [], organisationId = '', actor = null, onCreated }) {
+  const [draft, setDraft] = useState(() => getEmptyReferralDraft())
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -4600,6 +4805,32 @@ function ReferralLedgerPanel({ mode = 'given', referrals = [], rows = [], organi
     [rows],
   )
   const leadById = useMemo(() => new Map(rows.map((row) => [normalizeText(row.leadId), row])), [rows])
+  const selectedLead = leadById.get(normalizeText(draft.leadId)) || null
+  const listingOptions = useMemo(() => buildReferralListingOptions(rows, selectedLead), [rows, selectedLead])
+  const listingById = useMemo(() => new Map(listingOptions.map((option) => [option.id, option])), [listingOptions])
+  const selectedListing = listingById.get(normalizeText(draft.relatedListingId)) || null
+  const sourceBranchId = getLeadBranchId(selectedLead) || normalizeText(actor?.branchId || actor?.primaryBranchId)
+  const defaultCommissionSplit = getDefaultReferralCommissionSplit({
+    referralType: draft.referralType,
+    recipientScope: draft.recipientScope,
+    sourceBranchId,
+  })
+  const previewCommissionSplit = normalizeText(draft.commissionSplitPercentage) || defaultCommissionSplit
+  const agreementPreview = useMemo(() => buildReferralAgreementText({
+    sourceLeadType: selectedLead ? normalizeLeadCategory(selectedLead) : 'buyer',
+    referralType: draft.referralType,
+    sourceAgentName: actor?.name || actor?.fullName,
+    sourceAgentEmail: actor?.email,
+    targetAgentName: draft.targetAgentName,
+    targetAgentEmail: draft.targetAgentEmail,
+    targetCompanyName: draft.targetCompanyName,
+    clientName: selectedLead?.name,
+    relatedListingId: draft.relatedListingId,
+    relatedListingLabel: selectedListing?.label,
+    commissionSplitPercentage: previewCommissionSplit,
+    commissionSplitBasis: 'gross_commission',
+    protectionPeriodDays: draft.protectionPeriodDays || 30,
+  }), [actor?.email, actor?.fullName, actor?.name, draft.protectionPeriodDays, draft.referralType, draft.relatedListingId, draft.targetAgentEmail, draft.targetAgentName, draft.targetCompanyName, previewCommissionSplit, selectedLead, selectedListing])
   const visibleReferrals = useMemo(() => {
     return referrals.filter((referral) => {
       if (mode === 'received') return normalizeText(referral.targetOrganisationId) === normalizeText(organisationId)
@@ -4609,7 +4840,12 @@ function ReferralLedgerPanel({ mode = 'given', referrals = [], rows = [], organi
 
   function updateDraft(field, value) {
     setError('')
-    setDraft((previous) => ({ ...previous, [field]: value }))
+    setDraft((previous) => {
+      const next = { ...previous, [field]: value }
+      if (field === 'leadId') next.relatedListingId = ''
+      if (field === 'referralType' && value === REFERRAL_TYPES.externalReferral) next.recipientScope = 'external_invite'
+      return next
+    })
   }
 
   async function submitReferral(event) {
@@ -4630,6 +4866,10 @@ function ReferralLedgerPanel({ mode = 'given', referrals = [], rows = [], organi
         organisationId,
         sourceLeadId: lead.leadId,
         sourceLeadType: normalizeLeadCategory(lead),
+        referralType: draft.referralType,
+        relatedListingId: draft.relatedListingId,
+        relatedListingLabel: selectedListing?.label,
+        sourceBranchId,
         clientName: lead.name,
         clientEmail: lead.email,
         clientPhone: lead.phone,
@@ -4642,17 +4882,10 @@ function ReferralLedgerPanel({ mode = 'given', referrals = [], rows = [], organi
         targetCompanyName: draft.targetCompanyName,
         commissionSplitPercentage: draft.commissionSplitPercentage,
         commissionSplitBasis: 'gross_commission',
+        protectionPeriodDays: draft.protectionPeriodDays,
         notes: draft.notes,
       }, { actor })
-      setDraft({
-        leadId: '',
-        recipientScope: 'internal',
-        targetAgentName: '',
-        targetAgentEmail: '',
-        targetCompanyName: '',
-        commissionSplitPercentage: '',
-        notes: '',
-      })
+      setDraft(getEmptyReferralDraft())
       await onCreated?.()
     } catch (saveError) {
       setError(saveError?.message || 'Unable to create this referral.')
@@ -4677,11 +4910,22 @@ function ReferralLedgerPanel({ mode = 'given', referrals = [], rows = [], organi
 
       {mode === 'given' ? (
         <form onSubmit={submitReferral} className="grid gap-3 border-b border-slate-200 p-5">
-          <div className="grid gap-3 lg:grid-cols-[minmax(220px,1.2fr)_repeat(4,minmax(140px,1fr))]">
+          <div className="grid gap-3 lg:grid-cols-[minmax(170px,0.8fr)_minmax(220px,1.15fr)_repeat(3,minmax(140px,1fr))]">
+            <select
+              value={draft.referralType}
+              onChange={(event) => updateDraft('referralType', event.target.value)}
+              className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700"
+              aria-label="Referral type"
+            >
+              {REFERRAL_FORM_TYPES.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
             <select
               value={draft.leadId}
               onChange={(event) => updateDraft('leadId', event.target.value)}
               className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700"
+              aria-label="Referral client"
             >
               <option value="">Select lead</option>
               {eligibleLeads.map((lead) => (
@@ -4694,8 +4938,10 @@ function ReferralLedgerPanel({ mode = 'given', referrals = [], rows = [], organi
               value={draft.recipientScope}
               onChange={(event) => updateDraft('recipientScope', event.target.value)}
               className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700"
+              aria-label="Referral recipient scope"
             >
               <option value="internal">Internal agent</option>
+              <option value="external_arch9">External Arch9</option>
               <option value="external_invite">External company</option>
             </select>
             <input
@@ -4711,20 +4957,43 @@ function ReferralLedgerPanel({ mode = 'given', referrals = [], rows = [], organi
               className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:border-blue-300"
               placeholder="agent@email.com"
             />
-            <input
-              value={draft.commissionSplitPercentage}
-              onChange={(event) => updateDraft('commissionSplitPercentage', event.target.value)}
-              className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:border-blue-300"
-              placeholder="Split %"
-              inputMode="decimal"
-            />
           </div>
-          <div className="grid gap-3 lg:grid-cols-[minmax(180px,0.8fr)_minmax(280px,1.2fr)_auto]">
+          <div className="grid gap-3 lg:grid-cols-[minmax(220px,1.15fr)_minmax(180px,0.8fr)_minmax(130px,0.55fr)_minmax(130px,0.55fr)_minmax(240px,1fr)_auto]">
+            <select
+              value={draft.relatedListingId}
+              onChange={(event) => updateDraft('relatedListingId', event.target.value)}
+              className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700"
+              aria-label="Related listing"
+            >
+              <option value="">No related listing</option>
+              {listingOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {[option.label, option.description].filter(Boolean).join(' - ')}
+                </option>
+              ))}
+            </select>
             <input
               value={draft.targetCompanyName}
               onChange={(event) => updateDraft('targetCompanyName', event.target.value)}
               className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:border-blue-300"
               placeholder="External company"
+            />
+            <input
+              value={draft.commissionSplitPercentage}
+              onChange={(event) => updateDraft('commissionSplitPercentage', event.target.value)}
+              className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:border-blue-300"
+              placeholder={`Default ${defaultCommissionSplit}%`}
+              inputMode="decimal"
+            />
+            <input
+              type="number"
+              min="1"
+              max="3650"
+              value={draft.protectionPeriodDays}
+              onChange={(event) => updateDraft('protectionPeriodDays', event.target.value)}
+              className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:border-blue-300"
+              placeholder="30 days"
+              aria-label="Protection period days"
             />
             <input
               value={draft.notes}
@@ -4737,6 +5006,17 @@ function ReferralLedgerPanel({ mode = 'given', referrals = [], rows = [], organi
               {saving ? 'Recording...' : 'Record Referral'}
             </button>
           </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusPill tone="blue">{getReferralTypeLabel(draft.referralType)}</StatusPill>
+                <StatusPill tone="slate">{previewCommissionSplit}% split</StatusPill>
+                <StatusPill tone="slate">{draft.protectionPeriodDays || 30} days</StatusPill>
+              </div>
+              {selectedListing ? <StatusPill tone="amber">{selectedListing.label}</StatusPill> : null}
+            </div>
+            <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-xl bg-white p-3 text-xs font-medium leading-5 text-slate-600">{agreementPreview}</pre>
+          </div>
           {error ? <p className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
         </form>
       ) : null}
@@ -4748,11 +5028,13 @@ function ReferralLedgerPanel({ mode = 'given', referrals = [], rows = [], organi
           const clientEmail = referral.clientEmail || lead?.email || ''
           const clientPhone = referral.clientPhone || lead?.phone || ''
           const clientContext = referral.clientContext || ''
+          const relatedListing = listingById.get(normalizeText(referral.relatedListingId))
           return (
             <article key={referral.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
+                    <StatusPill tone="blue">{referral.referralTypeLabel || getReferralTypeLabel(referral.referralType)}</StatusPill>
                     <StatusPill tone={referral.sourceLeadType === 'seller' ? 'amber' : 'blue'}>
                       {referral.sourceLeadType === 'seller' ? 'Seller lead' : 'Buyer lead'}
                     </StatusPill>
@@ -4771,6 +5053,11 @@ function ReferralLedgerPanel({ mode = 'given', referrals = [], rows = [], organi
                       : `To ${referral.targetAgentName || referral.targetAgentEmail || 'receiving agent'}`}
                     {referral.targetCompanyName ? ` at ${referral.targetCompanyName}` : ''}
                   </p>
+                  {relatedListing || referral.relatedListingId ? (
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      {[relatedListing?.label || referral.relatedListingId, `${referral.protectionPeriodDays || 30} days`].filter(Boolean).join(' | ')}
+                    </p>
+                  ) : null}
                   {referral.notes ? <p className="mt-2 text-sm leading-6 text-slate-600">{referral.notes}</p> : null}
                 </div>
                 <div className="grid gap-2 text-sm text-slate-600 lg:min-w-[260px]">
@@ -4802,6 +5089,14 @@ function ReferralLedgerPanel({ mode = 'given', referrals = [], rows = [], organi
                   ) : null}
                 </div>
               </div>
+              {mode === 'received' ? (
+                <ReferralTermsResponseActions
+                  referral={referral}
+                  relatedListing={relatedListing}
+                  actor={actor}
+                  onUpdated={onCreated}
+                />
+              ) : null}
             </article>
           )
         })}

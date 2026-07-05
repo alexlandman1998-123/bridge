@@ -349,7 +349,6 @@ const SettingsCommissionStructuresPage = lazy(() => import('./pages/settings/Set
 const SettingsCommunicationsTemplatesPage = lazy(() => import('./pages/settings/SettingsCommunicationsTemplatesPage'))
 const SettingsDevelopmentsPage = lazy(() => import('./pages/settings/SettingsDevelopmentsPage'))
 const SettingsIntegrationsPage = lazy(() => import('./pages/settings/SettingsIntegrationsPage'))
-const SettingsLanding = lazy(() => import('./pages/settings/SettingsLanding'))
 const SettingsLayout = lazy(() => import('./pages/settings/SettingsLayout'))
 const SettingsLeadCapturePage = lazy(() => import('./pages/settings/SettingsLeadCapturePage'))
 const SettingsOrganisationPage = lazy(() => import('./pages/settings/SettingsOrganisationPage'))
@@ -357,6 +356,7 @@ const SettingsPreferredPartnersPage = lazy(() => import('./pages/settings/Settin
 const SettingsPartnerProspectsPage = lazy(() => import('./pages/settings/SettingsPartnerProspectsPage'))
 const SettingsPartnerRoutingRulesPage = lazy(() => import('./pages/settings/SettingsPartnerRoutingRulesPage'))
 const SettingsSigningTemplatesPage = lazy(() => import('./pages/settings/SettingsSigningTemplatesPage'))
+const SettingsSupportPage = lazy(() => import('./pages/settings/SettingsSupportPage'))
 const SettingsUsersPage = lazy(() => import('./pages/settings/SettingsUsersPage'))
 const SettingsWorkflowsPage = lazy(() => import('./pages/settings/SettingsWorkflowsPage'))
 const SignerPortal = lazy(() => import('./pages/SignerPortal'))
@@ -1566,9 +1566,9 @@ function AppRoutes() {
                     <SettingsSigningTemplatesPage
                       templateModuleType="commercial"
                       allowedPacketTypes={['commercial_sale', 'commercial_lease']}
-                      title="Commercial Template Studio"
-                      eyebrow="Commercial / Document Templates"
-                      description="Manage commercial sales and leasing templates, merge fields, previews, and publishing."
+                      title="Commercial Document Builder"
+                      eyebrow="Commercial / Documents"
+                      description="Create, preview, send, and manage commercial sale and lease documents."
                     />
                   }
                 />
@@ -2698,7 +2698,7 @@ function AppRoutes() {
                 }
               />
               <Route path="/settings" element={<ClientAwareSettingsLayout />}>
-                <Route index element={<SettingsLanding />} />
+                <Route index element={<Navigate to="profile" replace />} />
                 <Route path="account" element={<SettingsAccountPage section="profile" />} />
                 <Route path="profile" element={<SettingsAccountPage section="profile" />} />
                 <Route path="security" element={<SettingsAccountPage section="security" />} />
@@ -2709,6 +2709,14 @@ function AppRoutes() {
                   element={
                     <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
                       <SettingsOrganisationPage />
+                    </RoleRoute>
+                  }
+                />
+                <Route
+                  path="branding"
+                  element={
+                    <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                      <SettingsOrganisationPage section="branding" />
                     </RoleRoute>
                   }
                 />
@@ -2807,7 +2815,9 @@ function AppRoutes() {
                   }
                 />
                 <Route path="integrations" element={<SettingsIntegrationsPage />} />
+                <Route path="api" element={<SettingsIntegrationsPage view="api" />} />
                 <Route path="audit-log" element={<SettingsAuditLogPage />} />
+                <Route path="help" element={<SettingsSupportPage />} />
                 <Route
                   path="users"
                   element={

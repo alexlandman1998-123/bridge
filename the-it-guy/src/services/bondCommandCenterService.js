@@ -1,6 +1,10 @@
 import { getAttorneyTransferStage, stageLabelFromAttorneyKey } from '../core/transactions/attorneySelectors'
 import { buildBondDemoRows } from '../core/transactions/attorneyMockData'
 import { getBondApplicationStage } from '../core/transactions/bondSelectors'
+import {
+  getBondHybridFinanceStageLabel,
+  normalizeBondHybridFinanceStage,
+} from '../core/transactions/bondHybridFinanceWorkflow'
 import { isBondFinanceType, normalizeFinanceType } from '../core/transactions/financeType'
 import { getTransactionScopeForRow } from '../core/transactions/transactionScope'
 import { fetchTransactionsByParticipantSummary } from '../lib/api'
@@ -12,6 +16,7 @@ import {
   isNewBondApplicationReadyForReview,
   resolveBondOperationalQueues,
 } from './bondOperationalQueueService'
+import { buildBondOperationalDiagnostics } from './bondOperationalDiagnosticsService'
 import { getBondDashboardReportingScope } from './bondDashboardService'
 import {
   calculateApprovalProbability,
@@ -45,6 +50,34 @@ const PRIORITY_CARD_META = Object.freeze({
     href: '/bond/pipeline?view=submitted',
     helper: 'Bank queries and lender responses waiting on action.',
   },
+  awaiting_grant: {
+    title: 'Awaiting Grant',
+    icon: 'badge-check',
+    tone: 'blue',
+    href: '/bond/applications?view=bond-approved',
+    helper: 'Approved bonds waiting for the formal lender grant.',
+  },
+  grant_received: {
+    title: 'Grant Received',
+    icon: 'file-check',
+    tone: 'cyan',
+    href: '/bond/applications?view=grant-received',
+    helper: 'Formal grants received and awaiting buyer signature.',
+  },
+  grant_signed: {
+    title: 'Grant Signed',
+    icon: 'signature',
+    tone: 'emerald',
+    href: '/bond/applications?view=grant-signed',
+    helper: 'Signed grants waiting to be submitted for attorney instruction.',
+  },
+  ready_for_instruction: {
+    title: 'Ready for Instruction',
+    icon: 'send',
+    tone: 'violet',
+    href: '/bond/applications?view=grant-submitted',
+    helper: 'Submitted grants ready for attorney instruction.',
+  },
   overdue_applications: {
     title: 'Overdue Applications',
     icon: 'clock-alert',
@@ -68,7 +101,9 @@ const PIPELINE_STAGE_META = Object.freeze([
   { key: 'submitted', label: 'Submitted', href: '/bond/pipeline?view=submitted' },
   { key: 'bank_feedback', label: 'Bank Feedback', href: '/bond/pipeline?view=submitted' },
   { key: 'approved', label: 'Approved', href: '/bond/applications?view=bond-approved' },
+  { key: 'grant_received', label: 'Grant Received', href: '/bond/applications?view=grant-received' },
   { key: 'grant_signed', label: 'Grant Signed', href: '/bond/applications?view=grant-signed' },
+  { key: 'grant_submitted', label: 'Grant Submitted', href: '/bond/applications?view=grant-submitted' },
   { key: 'instruction_sent', label: 'Instruction Sent', href: '/bond/applications?view=instruction-sent' },
 ])
 
@@ -80,6 +115,10 @@ const DASHBOARD_PIPELINE_FLOW_META = Object.freeze([
   { key: 'submitted', label: 'Submission', href: '/bond/pipeline?view=submitted' },
   { key: 'bank_feedback', label: 'Bank Feedback', href: '/bond/pipeline?view=submitted' },
   { key: 'approved', label: 'Approval', href: '/bond/applications?view=bond-approved' },
+  { key: 'grant_received', label: 'Grant Received', href: '/bond/applications?view=grant-received' },
+  { key: 'grant_signed', label: 'Grant Signed', href: '/bond/applications?view=grant-signed' },
+  { key: 'grant_submitted', label: 'Grant Submitted', href: '/bond/applications?view=grant-submitted' },
+  { key: 'instruction_sent', label: 'Instruction Sent', href: '/bond/applications?view=instruction-sent' },
   { key: 'registered', label: 'Registration', href: '/bond/applications?view=registered' },
 ])
 
@@ -192,7 +231,9 @@ const TRANSACTION_STATUS_META = Object.freeze({
   active: { label: 'Active' },
   awaiting_instruction: { label: 'Awaiting Attorney Instruction' },
   bond_approved: { label: 'Bond Approved' },
+  grant_received: { label: 'Grant Received' },
   grant_signed: { label: 'Grant Signed' },
+  grant_submitted: { label: 'Grant Submitted' },
   instruction_sent: { label: 'Instruction Sent' },
   attorney_stage: { label: 'Attorney Stage' },
   in_transfer: { label: 'In Transfer' },
@@ -235,13 +276,6 @@ function buildSparkline(values = [], maxPoints = 7) {
   const sample = values.slice(-maxPoints)
   const maxValue = Math.max(...sample.map((entry) => normalizeNumber(entry.value, 0)), 1)
   return sample.map((entry) => (normalizeNumber(entry.value, 0) / maxValue) * 100)
-}
-
-function getRandomishDate(index = 0, spreadDays = 60, anchorDate = new Date()) {
-  const date = new Date(anchorDate)
-  const offsetDays = index * 2 + (index % 7)
-  date.setDate(date.getDate() - Math.min(Math.max(1, offsetDays), spreadDays))
-  return date.toISOString()
 }
 
 function formatRelativeTime(value) {
@@ -413,6 +447,63 @@ function getSignalText(row = {}) {
     .toLowerCase()
 }
 
+function getFirstArrayItem(value) {
+  return Array.isArray(value) ? value.find(Boolean) || null : value || null
+}
+
+function getCanonicalBondFinanceWorkflow(row = {}) {
+  const transaction = row?.transaction || row || {}
+  const workflowData =
+    row?.transactionFinanceWorkflow ||
+    row?.transaction_finance_workflow ||
+    row?.financeWorkflow ||
+    row?.bondFinanceWorkflow ||
+    transaction.transactionFinanceWorkflow ||
+    transaction.transaction_finance_workflow ||
+    transaction.financeWorkflow ||
+    transaction.bondFinanceWorkflow ||
+    null
+  if (workflowData) return workflowData
+
+  const workflow = getFirstArrayItem(row?.transaction_finance_workflows || transaction.transaction_finance_workflows)
+  if (!workflow) return null
+
+  return {
+    workflow,
+    instruction: getFirstArrayItem(row?.transaction_bond_instructions || transaction.transaction_bond_instructions),
+  }
+}
+
+function getCanonicalBondFinanceStage(row = {}) {
+  const workflowData = getCanonicalBondFinanceWorkflow(row)
+  const workflow = workflowData?.workflow || workflowData || null
+  const stage = normalizeText(
+    workflow?.currentStage ||
+      workflow?.current_stage ||
+      workflowData?.summary?.currentStage ||
+      workflowData?.summary?.current_stage ||
+      workflowData?.currentStage ||
+      workflowData?.current_stage,
+  )
+  return stage ? normalizeBondHybridFinanceStage(stage, '') : ''
+}
+
+function resolvePipelineStageFromCanonical(row = {}) {
+  const stage = getCanonicalBondFinanceStage(row)
+  if (!stage) return ''
+
+  if (stage === 'intake') return 'lead'
+  if (stage === 'documents') return 'docs_collection'
+  if (stage === 'submitted_to_banks') return 'submitted'
+  if (stage === 'bank_review' || stage === 'quote_received') return 'bank_feedback'
+  if (stage === 'quote_accepted' || stage === 'bond_approved') return 'approved'
+  if (stage === 'grant_received') return 'grant_received'
+  if (stage === 'grant_signed') return 'grant_signed'
+  if (stage === 'grant_submitted') return 'grant_submitted'
+  if (stage === 'instruction_sent' || stage === 'complete') return 'instruction_sent'
+  return ''
+}
+
 function getRoleFocus(reportingScope = {}) {
   return DASHBOARD_ROLE_FOCUS[reportingScope.dashboardMode] || DASHBOARD_ROLE_FOCUS.consultant
 }
@@ -510,8 +601,44 @@ function cloneRowSafe(row = {}) {
   }
 }
 
-function buildExpandedBondRows(rows = []) {
-  return Array.isArray(rows) ? rows.filter(Boolean) : []
+function buildExpandedBondRows(rows = [], targetCount = 0) {
+  const baseRows = Array.isArray(rows) ? rows.filter(Boolean) : []
+  if (!targetCount || baseRows.length >= targetCount || !baseRows.length) return baseRows
+
+  const expandedRows = [...baseRows]
+  let index = 0
+  while (expandedRows.length < targetCount) {
+    const source = baseRows[index % baseRows.length]
+    const clone = cloneRowSafe(source)
+    const sequence = expandedRows.length + 1
+    const sourceTransaction = source?.transaction || {}
+    const sourceId = normalizeText(sourceTransaction.id || source?.id || `row-${index + 1}`)
+    const sourceReference = normalizeText(sourceTransaction.transaction_reference || sourceTransaction.reference || sourceId)
+
+    clone.__demo = true
+    clone.isDemo = true
+    clone.source = 'demo'
+    clone.transaction = {
+      ...(clone.transaction || {}),
+      id: `demo-expanded-${sequence}-${sourceId}`,
+      transaction_reference: `${sourceReference || 'DEMO'}-${sequence}`,
+      source: 'demo',
+      __demo: true,
+    }
+    clone.buyer = clone.buyer
+      ? {
+          ...clone.buyer,
+          name: `${normalizeText(clone.buyer.name) || 'Demo Buyer'} ${sequence}`,
+        }
+      : {
+          id: `demo-buyer-${sequence}`,
+          name: `Demo Buyer ${sequence}`,
+        }
+    expandedRows.push(clone)
+    index += 1
+  }
+
+  return expandedRows
 }
 
 function buildTeamPerformance(rows = []) {
@@ -532,7 +659,7 @@ function buildTeamPerformance(rows = []) {
 
     member.activeFiles += 1
     const status = deriveTransactionStatus(row)
-    if (status === 'bond_approved' || status === 'instruction_sent' || status === 'registered') {
+    if (['bond_approved', 'grant_received', 'grant_signed', 'grant_submitted', 'instruction_sent', 'registered'].includes(status)) {
       member.approvals += 1
     }
     if (getTimestamp(row?.transaction?.created_at) && getTimestamp(getUpdatedAt(row))) {
@@ -601,6 +728,18 @@ function getPriorityRowsByKey(rows = [], key = '') {
   if (key === 'bank_feedback') {
     return rows.filter((row) => resolvePipelineStageKey(row) === 'bank_feedback')
   }
+  if (key === 'awaiting_grant') {
+    return rows.filter((row) => resolvePipelineStageKey(row) === 'approved')
+  }
+  if (key === 'grant_received') {
+    return rows.filter((row) => resolvePipelineStageKey(row) === 'grant_received')
+  }
+  if (key === 'grant_signed') {
+    return rows.filter((row) => resolvePipelineStageKey(row) === 'grant_signed')
+  }
+  if (key === 'ready_for_instruction') {
+    return rows.filter((row) => resolvePipelineStageKey(row) === 'grant_submitted')
+  }
   if (key === 'overdue_applications') {
     return rows.filter((row) => deriveRiskSignals(row).overdueDays > 0)
   }
@@ -618,6 +757,9 @@ function getTrendLabel(rows = [], count = 0) {
 }
 
 function resolvePipelineStageKey(row = {}) {
+  const canonicalStage = resolvePipelineStageFromCanonical(row)
+  if (canonicalStage) return canonicalStage
+
   const bondStage = getBondApplicationStage(row)
   const transferStage = getAttorneyTransferStage(row)
   const signal = getSignalText(row)
@@ -626,8 +768,14 @@ function resolvePipelineStageKey(row = {}) {
   if (/(instruction sent|attorney instructed|proceed to attorneys|guarantees issued|handoff to attorney)/i.test(signal)) {
     return 'instruction_sent'
   }
+  if (/(grant submitted|signed grant submitted|submitted grant|grant sent for instruction|ready for instruction)/i.test(signal)) {
+    return 'grant_submitted'
+  }
   if (/(grant signed|grant accepted|accept grant|loan acceptance signed)/i.test(signal)) {
     return 'grant_signed'
+  }
+  if (/(grant received|formal grant|bond grant received)/i.test(signal)) {
+    return 'grant_received'
   }
   if (bondStage === 'approval_granted') return 'approved'
   if (bondStage === 'bank_reviewing') return 'bank_feedback'
@@ -688,7 +836,9 @@ function deriveFinanceLaneStage(row = {}) {
     return { key: 'attorney_transfer_in_progress', label: 'Attorney Transfer In Progress' }
   }
   if (pipelineStage === 'instruction_sent') return { key: 'bond_instruction_sent', label: 'Bond Instruction Sent' }
+  if (pipelineStage === 'grant_submitted') return { key: 'grant_submitted', label: getBondHybridFinanceStageLabel('grant_submitted') }
   if (pipelineStage === 'grant_signed') return { key: 'grant_signed', label: 'Grant Signed' }
+  if (pipelineStage === 'grant_received') return { key: 'grant_received', label: getBondHybridFinanceStageLabel('grant_received') }
   if (pipelineStage === 'approved') return { key: 'bond_approved', label: 'Bond Approved' }
   if (pipelineStage === 'bank_feedback') return { key: 'bank_feedback', label: 'Bank Feedback' }
   if (pipelineStage === 'submitted') return { key: 'submitted_to_banks', label: 'Submitted to Banks' }
@@ -703,7 +853,7 @@ function deriveActiveApplicationStageKey(row = {}) {
   const pipelineStage = resolvePipelineStageKey(row)
   const transferStage = getAttorneyTransferStage(row)
 
-  if (transferStage === 'registered' || ['instruction_sent', 'grant_signed', 'approved'].includes(pipelineStage)) return 'approval'
+  if (transferStage === 'registered' || ['instruction_sent', 'grant_submitted', 'grant_signed', 'grant_received', 'approved'].includes(pipelineStage)) return 'approval'
   if (pipelineStage === 'bank_feedback') return 'feedback'
   if (pipelineStage === 'submitted') return 'submission'
   if (pipelineStage === 'pre_approval' || pipelineStage === 'docs_collection') return 'docs'
@@ -717,7 +867,9 @@ function deriveTransactionStatus(row = {}) {
   if (risk.declined) return 'cancelled'
   if (financeLane.key === 'registered') return 'registered'
   if (financeLane.key === 'bond_instruction_sent') return 'instruction_sent'
+  if (financeLane.key === 'grant_submitted') return 'grant_submitted'
   if (financeLane.key === 'grant_signed') return 'grant_signed'
+  if (financeLane.key === 'grant_received') return 'grant_received'
   if (financeLane.key === 'bond_approved') return 'bond_approved'
   if (financeLane.key === 'attorney_transfer_in_progress' || financeLane.key === 'lodgement') return 'in_transfer'
   if (/(awaiting attorney instruction|instruction pending)/i.test(getSignalText(row))) return 'awaiting_instruction'
@@ -735,7 +887,9 @@ function isBondTransactionLifecycleRow(row = {}) {
   const financeLane = deriveFinanceLaneStage(row)
   const transactionLanes = new Set([
     'bond_approved',
+    'grant_received',
     'grant_signed',
+    'grant_submitted',
     'bond_instruction_sent',
     'attorney_transfer_in_progress',
     'lodgement',
@@ -910,7 +1064,7 @@ function buildTeamWorkload(rows = [], reportingScope = {}) {
 
     current.activeApplications += 1
     if (getDocumentMissingCount(row) > 0) current.awaitingDocs += 1
-    if (['submitted', 'bank_feedback', 'approved', 'grant_signed', 'instruction_sent'].includes(stageKey)) {
+    if (['submitted', 'bank_feedback', 'approved', 'grant_received', 'grant_signed', 'grant_submitted', 'instruction_sent'].includes(stageKey)) {
       current.submitted += 1
     }
     if (risk.overdueDays > 0) current.overdue += 1
@@ -947,7 +1101,7 @@ function buildRecentBankActivity(rows = []) {
         statusLabel: financeLane.label,
         timeLabel: formatRelativeTime(getUpdatedAt(row)),
         statusTone:
-          financeLane.key === 'bond_approved'
+          ['bond_approved', 'grant_received', 'grant_signed', 'grant_submitted', 'bond_instruction_sent'].includes(financeLane.key)
             ? 'success'
             : financeLane.key === 'bank_feedback'
               ? 'warning'
@@ -1020,7 +1174,7 @@ function makeTrendLabel(current, previous, label = 'vs last month') {
 function buildHeroKpiCards(rows = []) {
   const rowsForTrend = rows.filter(Boolean)
   const activeApplications = rowsForTrend.length
-  const approvedRows = rowsForTrend.filter((row) => deriveFinanceLaneStage(row).key === 'bond_approved')
+  const approvedRows = rowsForTrend.filter(isApprovedStage)
   const approvedCount = approvedRows.length
   const bondValueRows = rowsForTrend.filter((row) => getBondAmount(row) > 0)
   const approvalRate = activeApplications ? roundTo((approvedCount / activeApplications) * 100, 0) : 0
@@ -1229,7 +1383,7 @@ function buildBankBreakdown(rows = []) {
     const bank = EXECUTIVE_BANKS.includes(rowBank) ? rowBank : 'Others'
     const bucket = accumulator.get(bank) || { bank, approved: 0, pending: 0, declined: 0, total: 0 }
     const status = deriveTransactionStatus(row)
-    if (status === 'bond_approved') {
+    if (['bond_approved', 'grant_received', 'grant_signed', 'grant_submitted', 'instruction_sent', 'registered'].includes(status)) {
       bucket.approved += 1
     } else if (status === 'cancelled') {
       bucket.declined += 1
@@ -1285,7 +1439,10 @@ function resolveDashboardPipelineStageKey(row = {}) {
   const transferStage = getAttorneyTransferStage(row)
 
   if (transferStage === 'registered') return 'registered'
-  if (stageKey === 'grant_signed' || stageKey === 'instruction_sent') return 'registered'
+  if (stageKey === 'instruction_sent') return 'instruction_sent'
+  if (stageKey === 'grant_submitted') return 'grant_submitted'
+  if (stageKey === 'grant_signed') return 'grant_signed'
+  if (stageKey === 'grant_received') return 'grant_received'
   if (stageKey === 'approved') return 'approved'
   if (stageKey === 'bank_feedback') return 'bank_feedback'
   if (stageKey === 'submitted') return 'submitted'
@@ -1348,7 +1505,7 @@ function buildBuyerDemographics(rows = []) {
     bankBucket.total += 1
     bankBucket.active += deriveTransactionStatus(row) === 'active' || deriveTransactionStatus(row) === 'at_risk' ? 1 : 0
     bankBucket.submitted += ['submitted', 'bank_feedback'].includes(stageKey) ? 1 : 0
-    bankBucket.approved += deriveFinanceLaneStage(row).key === 'bond_approved' ? 1 : 0
+    bankBucket.approved += isApprovedStage(row) ? 1 : 0
     bankBuckets.set(bank, bankBucket)
   }
 
@@ -1498,8 +1655,8 @@ function buildPerformanceSnapshot(rows = []) {
     return days > 30 && days <= 60
   })
 
-  const currentApproved = currentWindow.filter((row) => deriveFinanceLaneStage(row).key === 'bond_approved').length
-  const previousApproved = previousWindow.filter((row) => deriveFinanceLaneStage(row).key === 'bond_approved').length
+  const currentApproved = currentWindow.filter(isApprovedStage).length
+  const previousApproved = previousWindow.filter(isApprovedStage).length
   const currentTotal = currentWindow.length || rows.length || 1
   const previousTotal = previousWindow.length || 1
   const approvalRate = (currentApproved / currentTotal) * 100
@@ -1535,7 +1692,7 @@ function buildPerformanceSnapshot(rows = []) {
     if (!bank) return accumulator
     const bucket = accumulator.get(bank) || { bank, approvals: 0, total: 0 }
     bucket.total += 1
-    if (deriveFinanceLaneStage(row).key === 'bond_approved') bucket.approvals += 1
+    if (isApprovedStage(row)) bucket.approvals += 1
     accumulator.set(bank, bucket)
     return accumulator
   }, new Map())
@@ -1651,11 +1808,11 @@ function getBranchLabel(row = {}) {
 }
 
 function isSubmittedStage(row = {}) {
-  return ['submitted_to_banks', 'bank_feedback', 'bond_approved', 'grant_signed', 'bond_instruction_sent', 'registered'].includes(deriveFinanceLaneStage(row).key)
+  return ['submitted_to_banks', 'bank_feedback', 'bond_approved', 'grant_received', 'grant_signed', 'grant_submitted', 'bond_instruction_sent', 'registered'].includes(deriveFinanceLaneStage(row).key)
 }
 
 function isApprovedStage(row = {}) {
-  return ['bond_approved', 'grant_signed', 'bond_instruction_sent', 'registered'].includes(deriveFinanceLaneStage(row).key)
+  return ['bond_approved', 'grant_received', 'grant_signed', 'grant_submitted', 'bond_instruction_sent', 'registered'].includes(deriveFinanceLaneStage(row).key)
 }
 
 function getTurnaroundDays(row = {}) {
@@ -1848,15 +2005,19 @@ function getHqPipelineSource(row = {}) {
   if (lane === 'registered' || transferStage === 'registered') return { key: 'registered', stageKey: 'registration' }
   if (
     lane === 'bond_instruction_sent' ||
-    lane === 'grant_signed' ||
     pipelineStage === 'instruction_sent' ||
-    pipelineStage === 'grant_signed' ||
     ['lodgement', 'attorney_transfer_in_progress'].includes(lane)
   ) {
     return { key: lane || pipelineStage, stageKey: 'registration' }
   }
   if (getBondApplicationStage(row) === 'declined') return { key: 'declined', stageKey: 'bank_decision' }
-  if (isApprovedStage(row) || lane === 'bond_approved' || pipelineStage === 'approved') return { key: 'approved', stageKey: 'bank_decision' }
+  if (
+    isApprovedStage(row) ||
+    ['bond_approved', 'grant_received', 'grant_signed', 'grant_submitted'].includes(lane) ||
+    ['approved', 'grant_received', 'grant_signed', 'grant_submitted'].includes(pipelineStage)
+  ) {
+    return { key: lane || pipelineStage || 'approved', stageKey: 'bank_decision' }
+  }
   if (lane === 'bank_feedback' || pipelineStage === 'bank_feedback') return { key: 'bank_feedback', stageKey: 'bank_decision' }
   if (lane === 'submitted_to_banks' || pipelineStage === 'submitted') return { key: 'submitted_to_banks', stageKey: 'review_submit' }
   if (queueState.status === 'READY_FOR_REVIEW' || lane === 'ready_for_review' || lane === 'pre_approval' || pipelineStage === 'pre_approval') {
@@ -2111,7 +2272,9 @@ function buildStatusCards(rows = []) {
     { key: 'all', label: 'All', count: rows.length },
     { key: 'active', label: 'Active', count: buckets.active || 0 },
     { key: 'bond_approved', label: 'Bond Approved', count: buckets.bond_approved || 0 },
+    { key: 'grant_received', label: 'Grant Received', count: buckets.grant_received || 0 },
     { key: 'grant_signed', label: 'Grant Signed', count: buckets.grant_signed || 0 },
+    { key: 'grant_submitted', label: 'Grant Submitted', count: buckets.grant_submitted || 0 },
     { key: 'instruction_sent', label: 'Instruction Sent', count: buckets.instruction_sent || 0 },
     { key: 'attorney_stage', label: 'Attorney Stage', count: (buckets.awaiting_instruction || 0) + (buckets.in_transfer || 0) },
     { key: 'registered', label: 'Registered', count: buckets.registered || 0 },
@@ -2204,7 +2367,13 @@ function mapTransactionTrackerRow(row = {}) {
         ? 'Registered'
         : financeLane.key === 'bond_instruction_sent'
           ? 'Awaiting registration'
-          : 'In progress',
+          : financeLane.key === 'grant_submitted'
+            ? 'Ready for instruction'
+            : financeLane.key === 'grant_signed'
+              ? 'Grant signed'
+              : financeLane.key === 'grant_received'
+                ? 'Grant received'
+                : 'In progress',
     status,
     transactionScope: getTransactionScopeForRow(row),
   }
@@ -2269,7 +2438,9 @@ function isSubmittedOrDecisionedPortfolioApplication(row = {}) {
     'submitted_to_banks',
     'bank_feedback',
     'bond_approved',
+    'grant_received',
     'grant_signed',
+    'grant_submitted',
     'bond_instruction_sent',
     'attorney_transfer_in_progress',
     'lodgement',
@@ -2277,7 +2448,9 @@ function isSubmittedOrDecisionedPortfolioApplication(row = {}) {
   ].includes(laneKey) || [
     'cancelled',
     'bond_approved',
+    'grant_received',
     'grant_signed',
+    'grant_submitted',
     'instruction_sent',
     'in_transfer',
     'registered',
@@ -2285,7 +2458,7 @@ function isSubmittedOrDecisionedPortfolioApplication(row = {}) {
 }
 
 function isApprovedPortfolioApplication(row = {}) {
-  return ['bond_approved', 'grant_signed', 'instruction_sent', 'in_transfer', 'registered'].includes(deriveTransactionStatus(row))
+  return ['bond_approved', 'grant_received', 'grant_signed', 'grant_submitted', 'instruction_sent', 'in_transfer', 'registered'].includes(deriveTransactionStatus(row))
 }
 
 function calculateApprovalRate(rows = []) {
@@ -2414,7 +2587,7 @@ export function getBondDevelopmentPortfolio(groups = []) {
 function buildDevelopmentSummary(rows = []) {
   const pipelineRows = rows.filter((row) => !isBondTransactionLifecycleRow(row))
   const transactionRows = rows.filter(isBondTransactionLifecycleRow)
-  const approvedRows = rows.filter((row) => ['bond_approved', 'grant_signed', 'instruction_sent', 'registered'].includes(deriveTransactionStatus(row)))
+  const approvedRows = rows.filter((row) => ['bond_approved', 'grant_received', 'grant_signed', 'grant_submitted', 'instruction_sent', 'registered'].includes(deriveTransactionStatus(row)))
   const approvalDurations = approvedRows
     .map((row) => {
       const created = getTimestamp(row?.transaction?.created_at)
@@ -2448,7 +2621,7 @@ function buildBankDistribution(rows = []) {
     item.count += 1
     item.value += getBondAmount(row)
     if (status === 'cancelled') item.declined += 1
-    else if (['bond_approved', 'grant_signed', 'instruction_sent', 'registered'].includes(status)) item.approved += 1
+    else if (['bond_approved', 'grant_received', 'grant_signed', 'grant_submitted', 'instruction_sent', 'registered'].includes(status)) item.approved += 1
     else item.pending += 1
     groups.set(bank, item)
   }
@@ -2613,8 +2786,7 @@ export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', 
   const rangeKey = options.rangeKey || DEFAULT_DASHBOARD_RANGE_KEY
   const dateRows = filterRowsByDateRange(allRows, rangeKey)
   const filteredRows = filterRowsByDevelopment(dateRows, options.developmentId)
-  const transactions = filteredRows.map((row) => row.transaction).filter(Boolean)
-  const queues = resolveBondOperationalQueues(user, transactions)
+  const queues = resolveBondOperationalQueues(user, filteredRows)
   const priorityActions = buildPriorityActions(filteredRows)
   const focus = getRoleFocus(reportingScope)
   const executiveAnalytics = buildHeroKpiCards(filteredRows)
@@ -2625,6 +2797,7 @@ export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', 
   const buyerDemographics = buildBuyerDemographics(filteredRows)
   const operationalRisk = buildOperationalRisk(filteredRows)
   const operationalHeatmap = buildOperationalHeatmap(filteredRows)
+  const operationalDiagnostics = buildBondOperationalDiagnostics(filteredRows)
   const financeIntelligence = getCachedFinanceIntelligence(filteredRows, `bond-command-center:${workspaceId}:${rangeKey}`)
   const approvalConfidenceDistribution = buildApprovalConfidenceDistribution(filteredRows)
   const operationalRiskMatrix = buildOperationalRiskMatrix(filteredRows)
@@ -2649,6 +2822,7 @@ export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', 
     bankEfficiency: financeIntelligence.bankEfficiency,
     buyerQualityDistribution: financeIntelligence.readinessDistribution,
     operationalRisk,
+    operationalDiagnostics,
     operationalRiskMatrix,
     operationalHeatmap,
     advancedOperationalHeatmaps: financeIntelligence.heatmaps,

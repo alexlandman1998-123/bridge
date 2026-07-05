@@ -98,6 +98,24 @@ const transactions = [
     updated_at: '2026-05-22T10:00:00.000Z',
   }),
   createTransaction({
+    id: 'tx-grant-submitted-canonical',
+    finance_status: 'documents_pending',
+    stage: 'Application Open',
+    next_action: 'Prepare attorney instruction',
+    comment: 'Legacy text is stale; canonical workflow is grant submitted.',
+    transactionFinanceWorkflow: {
+      workflow: {
+        currentStage: 'grant_submitted',
+        status: 'active',
+      },
+      instruction: {
+        grantSubmitted: true,
+        grantSubmittedAt: '2026-05-23T09:00:00.000Z',
+      },
+    },
+    updated_at: '2026-05-23T10:00:00.000Z',
+  }),
+  createTransaction({
     id: 'tx-compliance-flag',
     finance_status: 'blocked',
     compliance_status: 'review_required',
@@ -236,6 +254,15 @@ try {
     assert.equal(managerSnapshot.hqCommandCentre.pipelineFunnel.stages.some((stage) => stage.label === 'Application Prep'), true)
     assert.equal(managerSnapshot.hqCommandCentre.pipelineFunnel.stages.some((stage) => stage.label === 'OTP Ready'), false)
     assert.ok(managerSnapshot.hqCommandCentre.pipelineFunnel.stages.every((stage) => stage.sourceBreakdown))
+    assert.equal(managerSnapshot.priorityActions.find((item) => item.key === 'ready_for_instruction')?.count >= 1, true)
+    assert.equal(managerSnapshot.pipelineOverview.find((stage) => stage.key === 'grant_submitted')?.count >= 1, true)
+    assert.equal(managerSnapshot.queues.ready_for_instruction.some((item) => item.transactionId === 'tx-grant-submitted-canonical'), true)
+    assert.ok(managerSnapshot.operationalDiagnostics)
+    assert.equal(managerSnapshot.operationalDiagnostics.actionQueues.find((item) => item.queueKey === 'ready_for_instruction')?.count >= 1, true)
+    assert.equal(
+      managerSnapshot.operationalDiagnostics.rows.some((row) => row.transactionId === 'tx-grant-submitted-canonical' && row.stage === 'grant_submitted'),
+      true,
+    )
 
     const managerPreviewSnapshot = await service.getBondCommandCenterSnapshot(manager, 'workspace-1', {
       transactions,
@@ -287,6 +314,11 @@ try {
     assert.ok(linkedApprovedRow)
     assert.equal(linkedApprovedRow.linkedApplicationId, 'tx-approved-linked')
     assert.equal(['instruction_sent', 'in_transfer', 'bond_approved', 'grant_signed'].includes(linkedApprovedRow.status), true)
+    const grantSubmittedRow = transactionSnapshot.rows.find((row) => row.transactionId === 'tx-grant-submitted-canonical')
+    assert.ok(grantSubmittedRow)
+    assert.equal(grantSubmittedRow.status, 'grant_submitted')
+    assert.equal(grantSubmittedRow.financeStageKey, 'grant_submitted')
+    assert.equal(grantSubmittedRow.registrationStatus, 'Ready for instruction')
 
     const readyForReviewSnapshot = await service.getBondTransactionTrackerSnapshot(manager, 'workspace-1', {
       rows: [

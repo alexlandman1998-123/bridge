@@ -15,6 +15,10 @@ const PROGRESS_STAGE_ORDER = [
   'applications_submitted',
   'quotes_received',
   'quote_approved',
+  'bond_approved',
+  'grant_received',
+  'grant_signed',
+  'grant_submitted',
   'instruction_sent',
 ]
 
@@ -25,6 +29,10 @@ const PROGRESS_STAGE_LABELS = {
   applications_submitted: 'Applications Submitted',
   quotes_received: 'Quotes Received',
   quote_approved: 'Quote Approved',
+  bond_approved: 'Bond Approved',
+  grant_received: 'Grant Received',
+  grant_signed: 'Grant Signed',
+  grant_submitted: 'Grant Submitted',
   instruction_sent: 'Instruction Sent',
   registered: 'Registered',
   declined: 'Declined',
@@ -38,6 +46,10 @@ export const APPLICATION_PROGRESS_STAGE_OPTIONS = [
   { key: 'applications_submitted', label: PROGRESS_STAGE_LABELS.applications_submitted },
   { key: 'quotes_received', label: PROGRESS_STAGE_LABELS.quotes_received },
   { key: 'quote_approved', label: PROGRESS_STAGE_LABELS.quote_approved },
+  { key: 'bond_approved', label: PROGRESS_STAGE_LABELS.bond_approved },
+  { key: 'grant_received', label: PROGRESS_STAGE_LABELS.grant_received },
+  { key: 'grant_signed', label: PROGRESS_STAGE_LABELS.grant_signed },
+  { key: 'grant_submitted', label: PROGRESS_STAGE_LABELS.grant_submitted },
   { key: 'instruction_sent', label: PROGRESS_STAGE_LABELS.instruction_sent },
   { key: 'registered', label: PROGRESS_STAGE_LABELS.registered },
   { key: 'declined', label: PROGRESS_STAGE_LABELS.declined },
@@ -63,9 +75,13 @@ export function resolveBondProgressStage(row = {}) {
   if (normalized.status === 'registered' || normalized.transferKey === 'registered') {
     return 'registered'
   }
-  if (['bond_approved', 'bond_approved_', 'bond_instruction_sent', 'instruction_sent', 'grant_signed'].includes(normalized.financeKey)) {
+  if (['bond_instruction_sent', 'instruction_sent'].includes(normalized.financeKey)) {
     return 'instruction_sent'
   }
+  if (['bond_approved', 'bond_approved_', 'approval_granted'].includes(normalized.financeKey)) return 'bond_approved'
+  if (normalized.financeKey === 'grant_received') return 'grant_received'
+  if (normalized.financeKey === 'grant_signed') return 'grant_signed'
+  if (normalized.financeKey === 'grant_submitted') return 'grant_submitted'
   if (['bond_application_open', 'pre_approval', 'docs_collection', 'finance_requested'].includes(normalized.financeKey)) {
     return normalized.financeKey === 'pre_approval' ? 'documents_reviewed' : 'documents_received'
   }
@@ -75,6 +91,10 @@ export function resolveBondProgressStage(row = {}) {
   if (normalized.financeKey === 'bank_feedback' || normalized.status === 'bank_feedback' || normalized.risk.includes('bank feedback') || normalized.nextAction.includes('bank')) {
     return 'quotes_received'
   }
+  if (normalized.financeLabel.includes('grant submitted')) return 'grant_submitted'
+  if (normalized.financeLabel.includes('grant signed')) return 'grant_signed'
+  if (normalized.financeLabel.includes('grant received')) return 'grant_received'
+  if (normalized.financeLabel.includes('bond approved')) return 'bond_approved'
   if (normalized.status === 'approved' || normalized.financeLabel.includes('approved') || normalized.financeLabel.includes('quote')) {
     return 'quote_approved'
   }

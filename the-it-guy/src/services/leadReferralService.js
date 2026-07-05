@@ -6,10 +6,14 @@ const REFERRAL_SELECT_FIELDS = [
   'source_organisation_id',
   'source_lead_id',
   'source_lead_type',
+  'referral_type',
+  'related_listing_id',
+  'source_branch_id',
   'source_agent_id',
   'source_agent_email',
   'source_agent_name',
   'target_organisation_id',
+  'target_branch_id',
   'target_agent_id',
   'target_agent_email',
   'target_agent_name',
@@ -35,6 +39,15 @@ const REFERRAL_SELECT_FIELDS = [
   'lost_at',
   'agreement_status',
   'agreement_text',
+  'protection_period_days',
+  'accepted_at',
+  'accepted_by_user_id',
+  'accepted_by_email',
+  'declined_at',
+  'declined_by_user_id',
+  'declined_by_email',
+  'decline_reason',
+  'agreement_locked_at',
   'invite_token',
   'invite_expires_at',
   'notes',
@@ -70,6 +83,12 @@ const REFERRAL_LEDGER_SELECT = `
     accepted_at,
     declined_at,
     accepted_by_email,
+    protection_period_days,
+    accepted_by_user_id,
+    declined_by_user_id,
+    declined_by_email,
+    decline_reason,
+    locked_at,
     created_by,
     created_at,
     updated_at
@@ -97,6 +116,9 @@ const REFERRAL_LEDGER_SELECT = `
     last_sent_at,
     accepted_at,
     accepted_by_user_id,
+    declined_at,
+    declined_by_user_id,
+    decline_reason,
     metadata,
     created_at,
     updated_at
@@ -135,6 +157,7 @@ export const REFERRAL_STATUSES = Object.freeze([
   'received',
   'accepted',
   'declined',
+  'needs_review',
   'contacted',
   'working',
   'converted',
@@ -143,6 +166,22 @@ export const REFERRAL_STATUSES = Object.freeze([
   'paid',
   'cancelled',
 ])
+
+export const REFERRAL_TYPES = Object.freeze({
+  clientReferral: 'client_referral',
+  buyerIntroduction: 'buyer_introduction',
+  listingCollaboration: 'listing_collaboration',
+  externalReferral: 'external_referral',
+})
+
+export const REFERRAL_TYPE_LABELS = Object.freeze({
+  [REFERRAL_TYPES.clientReferral]: 'Client referral',
+  [REFERRAL_TYPES.buyerIntroduction]: 'Buyer introduction',
+  [REFERRAL_TYPES.listingCollaboration]: 'Listing collaboration',
+  [REFERRAL_TYPES.externalReferral]: 'External referral',
+})
+
+const DEFAULT_PROTECTION_PERIOD_DAYS = 30
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -156,6 +195,23 @@ function normalizeLeadType(value = '') {
   const normalized = normalizeText(value).toLowerCase()
   if (normalized === 'seller') return 'seller'
   return 'buyer'
+}
+
+function normalizeReferralType(value = '') {
+  const normalized = normalizeText(value).toLowerCase()
+  if (normalized === 'buyer_intro' || normalized === 'buyer-introduction') return REFERRAL_TYPES.buyerIntroduction
+  if (normalized === 'buyer_introduction') return REFERRAL_TYPES.buyerIntroduction
+  if (normalized === 'listing_collab' || normalized === 'listing-collaboration') return REFERRAL_TYPES.listingCollaboration
+  if (normalized === 'listing_collaboration') return REFERRAL_TYPES.listingCollaboration
+  if (normalized === 'external' || normalized === 'external-referral') return REFERRAL_TYPES.externalReferral
+  if (normalized === 'external_referral') return REFERRAL_TYPES.externalReferral
+  return REFERRAL_TYPES.clientReferral
+}
+
+function normalizeProtectionPeriodDays(value = '', fallback = DEFAULT_PROTECTION_PERIOD_DAYS) {
+  const number = Number.parseInt(value, 10)
+  if (!Number.isFinite(number)) return fallback
+  return Math.min(3650, Math.max(1, number))
 }
 
 function normalizeRecipientScope(value = '') {
@@ -204,6 +260,38 @@ function normalizeMoney(value) {
   if (value === '' || value === null || value === undefined) return null
   const number = Number(value)
   return Number.isFinite(number) ? number : null
+}
+
+export function getReferralTypeLabel(value = '') {
+  const referralType = normalizeReferralType(value)
+  return REFERRAL_TYPE_LABELS[referralType] || REFERRAL_TYPE_LABELS[REFERRAL_TYPES.clientReferral]
+}
+
+export function getDefaultReferralCommissionSplit(input = {}) {
+  const referralType = normalizeReferralType(input.referralType || input.type)
+  const recipientScopeInput = normalizeText(input.recipientScope)
+  const recipientScope = recipientScopeInput ? normalizeRecipientScope(recipientScopeInput) : ''
+  const sourceBranchId = normalizeText(input.sourceBranchId || input.source_branch_id)
+  const targetBranchId = normalizeText(input.targetBranchId || input.target_branch_id)
+
+  if (referralType === REFERRAL_TYPES.buyerIntroduction || referralType === REFERRAL_TYPES.listingCollaboration) {
+    return 50
+  }
+
+  if (referralType === REFERRAL_TYPES.externalReferral || recipientScope === 'external_invite' || recipientScope === 'external_arch9') {
+    return 20
+  }
+
+  if (sourceBranchId && targetBranchId && sourceBranchId !== targetBranchId) {
+    return 15
+  }
+
+  return 10
+}
+
+export function resolveReferralCommissionSplit(input = {}) {
+  const explicitSplit = normalizeMoney(input.commissionSplitPercentage ?? input.proposedCommissionPercentage)
+  return explicitSplit ?? getDefaultReferralCommissionSplit(input)
 }
 
 function createUuid() {
@@ -277,7 +365,13 @@ function mapAgreementRow(row = {}) {
     sentAt: row.sent_at || row.sentAt || null,
     acceptedAt: row.accepted_at || row.acceptedAt || null,
     declinedAt: row.declined_at || row.declinedAt || null,
+    protectionPeriodDays: normalizeProtectionPeriodDays(row.protection_period_days ?? row.protectionPeriodDays),
+    acceptedByUserId: normalizeText(row.accepted_by_user_id || row.acceptedByUserId),
     acceptedByEmail: normalizeEmail(row.accepted_by_email || row.acceptedByEmail),
+    declinedByUserId: normalizeText(row.declined_by_user_id || row.declinedByUserId),
+    declinedByEmail: normalizeEmail(row.declined_by_email || row.declinedByEmail),
+    declineReason: normalizeText(row.decline_reason || row.declineReason),
+    lockedAt: row.locked_at || row.lockedAt || null,
     createdBy: normalizeText(row.created_by || row.createdBy),
     createdAt: row.created_at || row.createdAt || new Date().toISOString(),
     updatedAt: row.updated_at || row.updatedAt || new Date().toISOString(),
@@ -313,6 +407,9 @@ function mapInviteRow(row = {}) {
     lastSentAt: row.last_sent_at || row.lastSentAt || null,
     acceptedAt: row.accepted_at || row.acceptedAt || null,
     acceptedByUserId: normalizeText(row.accepted_by_user_id || row.acceptedByUserId),
+    declinedAt: row.declined_at || row.declinedAt || null,
+    declinedByUserId: normalizeText(row.declined_by_user_id || row.declinedByUserId),
+    declineReason: normalizeText(row.decline_reason || row.declineReason),
     metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata : {},
     createdAt: row.created_at || row.createdAt || new Date().toISOString(),
     updatedAt: row.updated_at || row.updatedAt || new Date().toISOString(),
@@ -364,10 +461,15 @@ function mapReferralRow(row = {}) {
     sourceOrganisationId: normalizeText(row.source_organisation_id || row.sourceOrganisationId),
     sourceLeadId: normalizeText(row.source_lead_id || row.sourceLeadId),
     sourceLeadType: normalizeLeadType(row.source_lead_type || row.sourceLeadType || client?.clientType),
+    referralType: normalizeReferralType(row.referral_type || row.referralType),
+    referralTypeLabel: getReferralTypeLabel(row.referral_type || row.referralType),
+    relatedListingId: normalizeText(row.related_listing_id || row.relatedListingId),
+    sourceBranchId: normalizeText(row.source_branch_id || row.sourceBranchId),
     sourceAgentId: normalizeText(row.source_agent_id || row.sourceAgentId),
     sourceAgentEmail: normalizeEmail(row.source_agent_email || row.sourceAgentEmail),
     sourceAgentName: normalizeText(row.source_agent_name || row.sourceAgentName),
     targetOrganisationId: normalizeText(row.target_organisation_id || row.targetOrganisationId),
+    targetBranchId: normalizeText(row.target_branch_id || row.targetBranchId),
     targetAgentId: normalizeText(row.target_agent_id || row.targetAgentId),
     targetAgentEmail: normalizeEmail(row.target_agent_email || row.targetAgentEmail),
     targetAgentName: normalizeText(row.target_agent_name || row.targetAgentName),
@@ -393,6 +495,15 @@ function mapReferralRow(row = {}) {
     lostAt: row.lost_at || row.lostAt || null,
     agreementStatus: latestAgreement?.status || normalizeAgreementStatus(row.agreement_status || row.agreementStatus),
     agreementText: latestAgreement?.agreementText || normalizeText(row.agreement_text || row.agreementText),
+    protectionPeriodDays: latestAgreement?.protectionPeriodDays || normalizeProtectionPeriodDays(row.protection_period_days ?? row.protectionPeriodDays),
+    acceptedAt: row.accepted_at || row.acceptedAt || latestAgreement?.acceptedAt || null,
+    acceptedByUserId: normalizeText(row.accepted_by_user_id || row.acceptedByUserId || latestAgreement?.acceptedByUserId),
+    acceptedByEmail: normalizeEmail(row.accepted_by_email || row.acceptedByEmail || latestAgreement?.acceptedByEmail),
+    declinedAt: row.declined_at || row.declinedAt || latestAgreement?.declinedAt || null,
+    declinedByUserId: normalizeText(row.declined_by_user_id || row.declinedByUserId || latestAgreement?.declinedByUserId),
+    declinedByEmail: normalizeEmail(row.declined_by_email || row.declinedByEmail || latestAgreement?.declinedByEmail),
+    declineReason: normalizeText(row.decline_reason || row.declineReason || latestAgreement?.declineReason),
+    agreementLockedAt: row.agreement_locked_at || row.agreementLockedAt || latestAgreement?.lockedAt || null,
     inviteToken: invite?.token || normalizeText(row.invite_token || row.inviteToken),
     inviteExpiresAt: invite?.expiresAt || row.invite_expires_at || row.inviteExpiresAt || null,
     inviteLink: buildReferralInviteLink(invite?.token || row.invite_token || row.inviteToken),
@@ -420,10 +531,14 @@ function toDatabasePayload(referral = {}) {
     source_organisation_id: normalizeText(referral.sourceOrganisationId),
     source_lead_id: normalizeText(referral.sourceLeadId) || null,
     source_lead_type: normalizeLeadType(referral.sourceLeadType),
+    referral_type: normalizeReferralType(referral.referralType),
+    related_listing_id: normalizeText(referral.relatedListingId) || null,
+    source_branch_id: normalizeText(referral.sourceBranchId) || null,
     source_agent_id: normalizeText(referral.sourceAgentId) || null,
     source_agent_email: normalizeEmail(referral.sourceAgentEmail) || null,
     source_agent_name: normalizeText(referral.sourceAgentName) || null,
     target_organisation_id: normalizeText(referral.targetOrganisationId) || null,
+    target_branch_id: normalizeText(referral.targetBranchId) || null,
     target_agent_id: normalizeText(referral.targetAgentId) || null,
     target_agent_email: normalizeEmail(referral.targetAgentEmail) || null,
     target_agent_name: normalizeText(referral.targetAgentName) || null,
@@ -451,6 +566,15 @@ function toDatabasePayload(referral = {}) {
     lost_at: referral.lostAt || null,
     agreement_status: normalizeAgreementStatus(referral.agreementStatus),
     agreement_text: normalizeText(referral.agreementText) || null,
+    protection_period_days: normalizeProtectionPeriodDays(referral.protectionPeriodDays),
+    accepted_at: referral.acceptedAt || null,
+    accepted_by_user_id: normalizeText(referral.acceptedByUserId) || null,
+    accepted_by_email: normalizeEmail(referral.acceptedByEmail) || null,
+    declined_at: referral.declinedAt || null,
+    declined_by_user_id: normalizeText(referral.declinedByUserId) || null,
+    declined_by_email: normalizeEmail(referral.declinedByEmail) || null,
+    decline_reason: normalizeText(referral.declineReason) || null,
+    agreement_locked_at: referral.agreementLockedAt || null,
     invite_token: normalizeText(referral.inviteToken) || null,
     invite_expires_at: referral.inviteExpiresAt || null,
     notes: normalizeText(referral.notes) || null,
@@ -499,10 +623,16 @@ function buildAgreementSnapshot(referral = {}, actor = null) {
       : Number(referral.commissionSplitPercentage),
     commissionSplitBasis: referral.commissionSplitBasis || 'gross_commission',
     agreementText: referral.agreementText,
+    protectionPeriodDays: normalizeProtectionPeriodDays(referral.protectionPeriodDays),
     sentAt: null,
     acceptedAt: null,
     declinedAt: null,
+    acceptedByUserId: '',
     acceptedByEmail: '',
+    declinedByUserId: '',
+    declinedByEmail: '',
+    declineReason: '',
+    lockedAt: null,
     createdBy: normalizeText(actor?.id || actor?.userId),
     createdAt: referral.createdAt,
     updatedAt: referral.updatedAt,
@@ -524,6 +654,9 @@ function buildInitialStatusEvent(referral = {}, actor = null) {
     metadata: {
       recipientScope: referral.recipientScope,
       sourceLeadType: referral.sourceLeadType,
+      referralType: referral.referralType,
+      relatedListingId: referral.relatedListingId,
+      protectionPeriodDays: referral.protectionPeriodDays,
     },
     createdAt: referral.createdAt,
   }
@@ -542,9 +675,15 @@ function buildReferralInvite(referral = {}) {
     lastSentAt: null,
     acceptedAt: null,
     acceptedByUserId: '',
+    declinedAt: null,
+    declinedByUserId: '',
+    declineReason: '',
     metadata: {
       targetAgentName: referral.targetAgentName,
       targetCompanyName: referral.targetCompanyName,
+      referralType: referral.referralType,
+      relatedListingId: referral.relatedListingId,
+      protectionPeriodDays: referral.protectionPeriodDays,
     },
     createdAt: referral.createdAt,
     updatedAt: referral.updatedAt,
@@ -581,7 +720,13 @@ function agreementToDatabasePayload(agreement = {}) {
     sent_at: agreement.sentAt,
     accepted_at: agreement.acceptedAt,
     declined_at: agreement.declinedAt,
+    protection_period_days: normalizeProtectionPeriodDays(agreement.protectionPeriodDays),
+    accepted_by_user_id: agreement.acceptedByUserId || null,
     accepted_by_email: agreement.acceptedByEmail || null,
+    declined_by_user_id: agreement.declinedByUserId || null,
+    declined_by_email: agreement.declinedByEmail || null,
+    decline_reason: agreement.declineReason || null,
+    locked_at: agreement.lockedAt || null,
     created_by: agreement.createdBy || null,
     created_at: agreement.createdAt,
     updated_at: agreement.updatedAt,
@@ -615,6 +760,9 @@ function inviteToDatabasePayload(invite = {}) {
     last_sent_at: invite.lastSentAt,
     accepted_at: invite.acceptedAt,
     accepted_by_user_id: invite.acceptedByUserId || null,
+    declined_at: invite.declinedAt,
+    declined_by_user_id: invite.declinedByUserId || null,
+    decline_reason: invite.declineReason || null,
     metadata: invite.metadata || {},
     created_at: invite.createdAt,
     updated_at: invite.updatedAt,
@@ -650,6 +798,8 @@ export function calculateReferralCommission({ grossCommissionAmount = 0, commiss
 
 export function buildReferralAgreementText(referral = {}) {
   const leadType = normalizeLeadType(referral.sourceLeadType)
+  const referralType = normalizeReferralType(referral.referralType)
+  const referralTypeLabel = getReferralTypeLabel(referralType)
   const split = referral.commissionSplitPercentage === null || referral.commissionSplitPercentage === undefined || referral.commissionSplitPercentage === ''
     ? 'to be confirmed'
     : `${Number(referral.commissionSplitPercentage)}%`
@@ -658,35 +808,43 @@ export function buildReferralAgreementText(referral = {}) {
   const recipient = normalizeText(referral.targetAgentName || referral.targetAgentEmail) || 'Receiving agent'
   const company = normalizeText(referral.targetCompanyName)
   const clientName = normalizeText(referral.clientName)
+  const protectionPeriodDays = normalizeProtectionPeriodDays(referral.protectionPeriodDays)
+  const listingReference = normalizeText(referral.relatedListingLabel || referral.relatedListingAddress || referral.relatedListingId)
   return [
-    'Arch9 Referral Commission Split Agreement',
+    'Arch9 Referral Agreement',
     '',
+    `Referral type: ${referralTypeLabel}`,
     `Client: ${clientName || 'Referral client'}`,
     `Lead type: ${leadType === 'seller' ? 'Seller lead' : 'Buyer lead'}`,
+    listingReference ? `Related listing: ${listingReference}` : '',
     `Referring party: ${sender}`,
     `Receiving party: ${recipient}${company ? ` (${company})` : ''}`,
-    `Commission split: ${split} of ${basis}`,
+    `Protection period: ${protectionPeriodDays} days`,
+    `Proposed commission terms: ${split} of ${basis}`,
     '',
-    'The receiving party agrees to keep the referring party updated on material progress and to honour the agreed referral split when the referred client converts into a payable transaction.',
-  ].join('\n')
+    `The receiving party agrees that this ${referralTypeLabel.toLowerCase()} was referred by ${sender}. If this referral results in a successful sale, lease, mandate, transaction or other commissionable event within the protection period, the receiving party agrees that ${split} of the applicable ${basis} will be allocated to the referring party, subject to company approval and final commission reconciliation.`,
+  ].filter(Boolean).join('\n')
 }
 
-async function findExistingArch9Recipient(email = '') {
+async function findExistingArch9Recipient(email = '', { organisationId = '' } = {}) {
   const normalizedEmail = normalizeEmail(email)
   if (!normalizedEmail || !isSupabaseConfigured || !supabase) return null
+  const scopedOrganisationId = normalizeText(organisationId)
 
-  const membershipResult = await supabase
+  const membershipQuery = supabase
     .from('organisation_users')
-    .select('id, organisation_id, user_id, first_name, last_name, email, status')
+    .select('id, organisation_id, user_id, branch_id, primary_branch_id, first_name, last_name, email, status')
     .ilike('email', normalizedEmail)
     .eq('status', 'active')
     .limit(1)
-    .maybeSingle()
+  if (scopedOrganisationId) membershipQuery.eq('organisation_id', scopedOrganisationId)
+  const membershipResult = await membershipQuery.maybeSingle()
   if (!membershipResult.error && membershipResult.data?.id) {
     const row = membershipResult.data
     return {
       organisationId: normalizeText(row.organisation_id),
       userId: normalizeText(row.user_id),
+      branchId: normalizeText(row.primary_branch_id || row.branch_id),
       name: [row.first_name, row.last_name].map(normalizeText).filter(Boolean).join(' '),
       email: normalizedEmail,
     }
@@ -821,9 +979,9 @@ export async function createLeadReferral(input = {}, { actor = null } = {}) {
   if (!targetEmail) throw new Error('Recipient email is required before creating a referral.')
 
   const requestedScope = normalizeRecipientScope(input.recipientScope)
-  const existingRecipient = requestedScope === 'internal'
-    ? null
-    : await findExistingArch9Recipient(targetEmail).catch(() => null)
+  const existingRecipient = await findExistingArch9Recipient(targetEmail, {
+    organisationId: requestedScope === 'internal' ? sourceOrganisationId : '',
+  }).catch(() => null)
   const recipientScope = requestedScope === 'internal'
     ? 'internal'
     : existingRecipient?.userId
@@ -835,17 +993,29 @@ export async function createLeadReferral(input = {}, { actor = null } = {}) {
     sourceOrganisationId,
     sourceLeadId: normalizeText(input.sourceLeadId || input.leadId),
     sourceLeadType: normalizeLeadType(input.sourceLeadType || input.leadType),
+    referralType: normalizeReferralType(input.referralType || input.type),
+    relatedListingId: normalizeText(input.relatedListingId || input.listingId),
+    relatedListingLabel: normalizeText(input.relatedListingLabel || input.relatedListingAddress || input.listingAddress),
+    sourceBranchId: normalizeText(input.sourceBranchId || actor?.branchId || actor?.primaryBranchId),
     sourceAgentId: normalizeText(input.sourceAgentId || actor?.id || actor?.userId),
     sourceAgentEmail: normalizeEmail(input.sourceAgentEmail || actor?.email),
     sourceAgentName: normalizeText(input.sourceAgentName || actor?.name || actor?.fullName),
     targetOrganisationId: normalizeText(input.targetOrganisationId) || existingRecipient?.organisationId || (requestedScope === 'internal' ? sourceOrganisationId : ''),
+    targetBranchId: normalizeText(input.targetBranchId || existingRecipient?.branchId),
     targetAgentId: normalizeText(input.targetAgentId) || existingRecipient?.userId || '',
     targetAgentEmail: targetEmail,
     targetAgentName: normalizeText(input.targetAgentName || existingRecipient?.name),
     targetCompanyName: normalizeText(input.targetCompanyName),
     recipientScope,
     status: 'sent',
-    commissionSplitPercentage: input.commissionSplitPercentage,
+    protectionPeriodDays: normalizeProtectionPeriodDays(input.protectionPeriodDays),
+    commissionSplitPercentage: resolveReferralCommissionSplit({
+      ...input,
+      recipientScope,
+      referralType: input.referralType || input.type,
+      sourceBranchId: input.sourceBranchId || actor?.branchId || actor?.primaryBranchId,
+      targetBranchId: input.targetBranchId || existingRecipient?.branchId,
+    }),
     commissionSplitBasis: normalizeText(input.commissionSplitBasis) || 'gross_commission',
     agreementStatus: 'pending',
     inviteToken: recipientScope === 'external_invite' ? buildInviteToken() : '',
@@ -936,12 +1106,17 @@ export async function getLeadReferralInviteByToken(token = '') {
   return local || { ok: false, code: 'not_found' }
 }
 
-export async function respondToLeadReferralInvite(token = '', action = '', { actorEmail = '', actorName = '' } = {}) {
+export async function respondToLeadReferralInvite(token = '', action = '', { actorEmail = '', actorName = '', declineReason = '' } = {}) {
   const safeToken = normalizeText(token)
   const normalizedAction = normalizeText(action).toLowerCase()
+  const nextStatus = normalizedAction.startsWith('accept') ? 'accepted' : 'declined'
+  const normalizedDeclineReason = normalizeText(declineReason)
   if (!safeToken) return { ok: false, code: 'missing_token' }
   if (!['accept', 'accepted', 'decline', 'declined'].includes(normalizedAction)) {
     return { ok: false, code: 'invalid_action' }
+  }
+  if (nextStatus === 'declined' && !normalizedDeclineReason) {
+    return { ok: false, code: 'decline_reason_required' }
   }
 
   if (isSupabaseConfigured && supabase) {
@@ -950,13 +1125,14 @@ export async function respondToLeadReferralInvite(token = '', action = '', { act
       p_action: normalizedAction,
       p_actor_email: normalizeEmail(actorEmail),
       p_actor_name: normalizeText(actorName),
+      p_decline_reason: normalizedDeclineReason || null,
     })
     if (!result.error && result.data) return mapReferralInvitePayload(result.data)
     if (result.error) console.warn('[leadReferralService] referral invite response failed', result.error)
   }
 
   const rows = safeLocalRows()
-  const nextStatus = normalizedAction.startsWith('accept') ? 'accepted' : 'declined'
+  const normalizedActorEmail = normalizeEmail(actorEmail)
   let updatedReferral = null
   const nextRows = rows.map((row) => {
     const mapped = mapReferralRow(row)
@@ -969,14 +1145,20 @@ export async function respondToLeadReferralInvite(token = '', action = '', { act
       toStatus: nextStatus,
       eventType: 'invite_response',
       eventNote: nextStatus === 'accepted' ? 'Referral invite accepted.' : 'Referral invite declined.',
-      actorEmail: normalizeEmail(actorEmail) || mapped.targetAgentEmail,
-      metadata: { actorName: normalizeText(actorName) },
+      actorEmail: normalizedActorEmail || mapped.targetAgentEmail,
+      metadata: { actorName: normalizeText(actorName), declineReason: normalizedDeclineReason || undefined },
       createdAt: nowIso,
     }
     updatedReferral = mapReferralRow({
       ...row,
       status: nextStatus,
       agreementStatus: nextStatus,
+      acceptedAt: nextStatus === 'accepted' ? nowIso : mapped.acceptedAt,
+      acceptedByEmail: nextStatus === 'accepted' ? normalizedActorEmail || mapped.targetAgentEmail : mapped.acceptedByEmail,
+      declinedAt: nextStatus === 'declined' ? nowIso : mapped.declinedAt,
+      declinedByEmail: nextStatus === 'declined' ? normalizedActorEmail || mapped.targetAgentEmail : mapped.declinedByEmail,
+      declineReason: nextStatus === 'declined' ? normalizedDeclineReason : mapped.declineReason,
+      agreementLockedAt: nextStatus === 'accepted' ? nowIso : mapped.agreementLockedAt,
       updatedAt: nowIso,
       invite: {
         ...(mapped.invite || {}),
@@ -984,6 +1166,8 @@ export async function respondToLeadReferralInvite(token = '', action = '', { act
         email: mapped.targetAgentEmail,
         status: nextStatus,
         acceptedAt: nextStatus === 'accepted' ? nowIso : null,
+        declinedAt: nextStatus === 'declined' ? nowIso : null,
+        declineReason: nextStatus === 'declined' ? normalizedDeclineReason : '',
         updatedAt: nowIso,
       },
       client: mapped.client ? {
@@ -995,7 +1179,11 @@ export async function respondToLeadReferralInvite(token = '', action = '', { act
         ...agreement,
         status: nextStatus,
         acceptedAt: nextStatus === 'accepted' ? nowIso : agreement.acceptedAt,
+        acceptedByEmail: nextStatus === 'accepted' ? normalizedActorEmail || mapped.targetAgentEmail : agreement.acceptedByEmail,
         declinedAt: nextStatus === 'declined' ? nowIso : agreement.declinedAt,
+        declinedByEmail: nextStatus === 'declined' ? normalizedActorEmail || mapped.targetAgentEmail : agreement.declinedByEmail,
+        declineReason: nextStatus === 'declined' ? normalizedDeclineReason : agreement.declineReason,
+        lockedAt: nextStatus === 'accepted' ? nowIso : agreement.lockedAt,
         updatedAt: nowIso,
       } : agreement) : mapped.agreements,
       events: [event, ...(Array.isArray(mapped.events) ? mapped.events : [])],
@@ -1016,6 +1204,249 @@ export async function respondToLeadReferralInvite(token = '', action = '', { act
     }
   }
   return { ok: false, code: 'not_found' }
+}
+
+function normalizeReferralResponseAction(action = '') {
+  const normalizedAction = normalizeText(action).toLowerCase()
+  if (['accept', 'accepted'].includes(normalizedAction)) return 'accepted'
+  if (['decline', 'declined', 'reject', 'rejected'].includes(normalizedAction)) return 'declined'
+  if (['review', 'needs_review', 'manual_discussion', 'dispute', 'disputed'].includes(normalizedAction)) return 'needs_review'
+  return ''
+}
+
+function getReferralResponseErrorMessage(code = '') {
+  const normalizedCode = normalizeText(code)
+  if (normalizedCode === 'forbidden') return 'You do not have permission to respond to this referral.'
+  if (normalizedCode === 'not_found') return 'Referral not found.'
+  if (normalizedCode === 'unauthenticated') return 'Sign in before responding to referral terms.'
+  if (normalizedCode === 'decline_reason_required') return 'Capture a decline reason before declining referral terms.'
+  if (normalizedCode === 'already_accepted') return 'These referral terms have already been accepted.'
+  if (normalizedCode === 'already_declined') return 'These referral terms have already been declined.'
+  if (normalizedCode === 'status_locked') return 'This referral can no longer be changed from this status.'
+  if (normalizedCode === 'invalid_action') return 'Choose accept, decline, or needs review before saving.'
+  return 'Unable to update referral terms.'
+}
+
+function buildReferralResponseEvent(referral = {}, {
+  nextStatus = '',
+  note = '',
+  metadata = {},
+  actor = null,
+  nowIso = new Date().toISOString(),
+} = {}) {
+  const status = normalizeReferralStatus(nextStatus, '')
+  return {
+    id: createUuid(),
+    referralId: referral.id,
+    fromStatus: referral.status,
+    toStatus: status,
+    eventType: status === 'needs_review' ? 'terms_needs_review' : 'terms_response',
+    eventNote: note || (
+      status === 'accepted'
+        ? 'Referral terms accepted.'
+        : status === 'declined'
+          ? 'Referral terms declined.'
+          : 'Referral terms marked for manual discussion.'
+    ),
+    actorId: normalizeText(actor?.id || actor?.userId),
+    actorEmail: normalizeEmail(actor?.email),
+    metadata: metadata && typeof metadata === 'object' ? metadata : {},
+    createdAt: nowIso,
+  }
+}
+
+export async function respondToLeadReferralTerms(
+  referralId = '',
+  action = '',
+  { declineReason = '', note = '', metadata = {} } = {},
+  { actor = null } = {},
+) {
+  const normalizedReferralId = normalizeText(referralId)
+  const nextStatus = normalizeReferralResponseAction(action)
+  if (!normalizedReferralId) throw new Error('Referral id is required before responding to terms.')
+  if (!nextStatus) throw new Error('Choose accept, decline, or needs review before saving.')
+
+  const normalizedDeclineReason = normalizeText(declineReason)
+  if (nextStatus === 'declined' && !normalizedDeclineReason) {
+    throw new Error('Capture a decline reason before declining referral terms.')
+  }
+
+  const nowIso = new Date().toISOString()
+  const actorId = normalizeText(actor?.id || actor?.userId)
+  const actorEmail = normalizeEmail(actor?.email)
+  const eventMetadata = {
+    ...(metadata && typeof metadata === 'object' ? metadata : {}),
+    responseAction: nextStatus,
+    declineReason: normalizedDeclineReason || undefined,
+  }
+
+  if (isSupabaseConfigured && supabase) {
+    const rpcResult = await supabase.rpc('bridge_respond_referral_terms', {
+      p_referral_id: normalizedReferralId,
+      p_action: nextStatus,
+      p_decline_reason: normalizedDeclineReason || null,
+      p_event_note: normalizeText(note) || null,
+      p_metadata: eventMetadata,
+    })
+    if (!rpcResult.error && rpcResult.data) {
+      if (rpcResult.data.success === false) {
+        throw new Error(getReferralResponseErrorMessage(rpcResult.data.code))
+      }
+      const mappedPayload = mapReferralInvitePayload(rpcResult.data)
+      if (mappedPayload.referral?.id) return mappedPayload.referral
+    } else if (rpcResult.error) {
+      console.warn('[leadReferralService] referral terms RPC failed; using direct update fallback', rpcResult.error)
+    }
+
+    const currentResult = await supabase
+      .from('lead_referrals')
+      .select(REFERRAL_LEDGER_SELECT)
+      .eq('id', normalizedReferralId)
+      .maybeSingle()
+    if (currentResult.error) throw currentResult.error
+    const currentReferral = mapReferralRow(currentResult.data || {})
+    if (!currentReferral.id) throw new Error('Referral not found.')
+
+    const agreementStatus = nextStatus === 'needs_review' ? currentReferral.agreementStatus || 'pending' : nextStatus
+    const updatePayload = {
+      status: nextStatus,
+      agreement_status: agreementStatus,
+      updated_at: nowIso,
+    }
+    if (nextStatus === 'accepted') {
+      updatePayload.accepted_at = nowIso
+      updatePayload.accepted_by_user_id = actorId || null
+      updatePayload.accepted_by_email = actorEmail || currentReferral.targetAgentEmail || null
+      updatePayload.agreement_locked_at = nowIso
+      updatePayload.decline_reason = null
+    } else if (nextStatus === 'declined') {
+      updatePayload.declined_at = nowIso
+      updatePayload.declined_by_user_id = actorId || null
+      updatePayload.declined_by_email = actorEmail || currentReferral.targetAgentEmail || null
+      updatePayload.decline_reason = normalizedDeclineReason
+    }
+
+    const updateResult = await supabase
+      .from('lead_referrals')
+      .update(updatePayload)
+      .eq('id', normalizedReferralId)
+      .select(REFERRAL_SELECT_FIELDS.join(', '))
+      .single()
+    if (updateResult.error) throw updateResult.error
+
+    const latestAgreement = currentReferral.latestAgreement
+    if (latestAgreement?.id) {
+      const agreementPayload = {
+        status: agreementStatus,
+        updated_at: nowIso,
+      }
+      if (nextStatus === 'accepted') {
+        agreementPayload.accepted_at = nowIso
+        agreementPayload.accepted_by_user_id = actorId || null
+        agreementPayload.accepted_by_email = actorEmail || currentReferral.targetAgentEmail || null
+        agreementPayload.locked_at = nowIso
+        agreementPayload.decline_reason = null
+      } else if (nextStatus === 'declined') {
+        agreementPayload.declined_at = nowIso
+        agreementPayload.declined_by_user_id = actorId || null
+        agreementPayload.declined_by_email = actorEmail || currentReferral.targetAgentEmail || null
+        agreementPayload.decline_reason = normalizedDeclineReason
+      }
+      const agreementResult = await supabase
+        .from('referral_agreements')
+        .update(agreementPayload)
+        .eq('id', latestAgreement.id)
+      if (agreementResult.error) throw agreementResult.error
+    }
+
+    const clientStatus = nextStatus === 'accepted'
+      ? 'accepted'
+      : nextStatus === 'declined'
+        ? 'archived'
+        : 'referred'
+    const event = buildReferralResponseEvent(currentReferral, {
+      nextStatus,
+      note,
+      metadata: eventMetadata,
+      actor,
+      nowIso,
+    })
+    const [clientResult, eventResult] = await Promise.all([
+      supabase.from('referral_clients').update({ client_status: clientStatus, updated_at: nowIso }).eq('referral_id', normalizedReferralId),
+      supabase.from('referral_status_events').insert(eventToDatabasePayload(event)),
+    ])
+    if (clientResult.error) throw clientResult.error
+    if (eventResult.error) throw eventResult.error
+
+    const refreshedResult = await supabase
+      .from('lead_referrals')
+      .select(REFERRAL_LEDGER_SELECT)
+      .eq('id', normalizedReferralId)
+      .maybeSingle()
+    if (!refreshedResult.error && refreshedResult.data) return mapReferralRow(refreshedResult.data)
+    return mapReferralRow({ ...(updateResult.data || {}), referral_status_events: [eventToDatabasePayload(event)] })
+  }
+
+  const rows = safeLocalRows()
+  let updatedReferral = null
+  const nextRows = rows.map((row) => {
+    const mapped = mapReferralRow(row)
+    if (mapped.id !== normalizedReferralId) return row
+    const agreementStatus = nextStatus === 'needs_review' ? mapped.agreementStatus || 'pending' : nextStatus
+    const event = buildReferralResponseEvent(mapped, {
+      nextStatus,
+      note,
+      metadata: eventMetadata,
+      actor,
+      nowIso,
+    })
+    const responseFields = nextStatus === 'accepted'
+      ? {
+          acceptedAt: nowIso,
+          acceptedByUserId: actorId,
+          acceptedByEmail: actorEmail || mapped.targetAgentEmail,
+          agreementLockedAt: nowIso,
+          declineReason: '',
+        }
+      : nextStatus === 'declined'
+        ? {
+            declinedAt: nowIso,
+            declinedByUserId: actorId,
+            declinedByEmail: actorEmail || mapped.targetAgentEmail,
+            declineReason: normalizedDeclineReason,
+          }
+        : {}
+    updatedReferral = mapReferralRow({
+      ...row,
+      status: nextStatus,
+      agreementStatus,
+      ...responseFields,
+      updatedAt: nowIso,
+      client: mapped.client ? {
+        ...mapped.client,
+        clientStatus: nextStatus === 'accepted' ? 'accepted' : nextStatus === 'declined' ? 'archived' : 'referred',
+        updatedAt: nowIso,
+      } : mapped.client,
+      agreements: mapped.agreements?.length ? mapped.agreements.map((agreement, index) => index === 0 ? {
+        ...agreement,
+        status: agreementStatus,
+        acceptedAt: nextStatus === 'accepted' ? nowIso : agreement.acceptedAt,
+        acceptedByUserId: nextStatus === 'accepted' ? actorId : agreement.acceptedByUserId,
+        acceptedByEmail: nextStatus === 'accepted' ? actorEmail || mapped.targetAgentEmail : agreement.acceptedByEmail,
+        declinedAt: nextStatus === 'declined' ? nowIso : agreement.declinedAt,
+        declinedByUserId: nextStatus === 'declined' ? actorId : agreement.declinedByUserId,
+        declinedByEmail: nextStatus === 'declined' ? actorEmail || mapped.targetAgentEmail : agreement.declinedByEmail,
+        declineReason: nextStatus === 'declined' ? normalizedDeclineReason : agreement.declineReason,
+        lockedAt: nextStatus === 'accepted' ? nowIso : agreement.lockedAt,
+        updatedAt: nowIso,
+      } : agreement) : mapped.agreements,
+      events: [event, ...(Array.isArray(mapped.events) ? mapped.events : [])],
+    })
+    return updatedReferral
+  })
+  writeLocalRows(nextRows)
+  if (updatedReferral?.id) return updatedReferral
+  throw new Error('Referral not found.')
 }
 
 export async function recordReferralConversion(referralId = '', input = {}, { actor = null } = {}) {

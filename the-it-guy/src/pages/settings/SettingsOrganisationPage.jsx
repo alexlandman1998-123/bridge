@@ -145,7 +145,7 @@ function getLogoPreviewLabel(sourceUrl, fallbackLabel = 'Uploaded logo') {
   return decodeURIComponent(lastSegment)
 }
 
-export default function SettingsOrganisationPage() {
+export default function SettingsOrganisationPage({ section = 'organisation' }) {
   const { role, currentWorkspace, workspaceType } = useWorkspace()
   const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
   const copyKey = WORKSPACE_TYPE_COPY_KEYS[resolvedWorkspaceType] || (role === 'bond_originator' ? 'bond' : 'agency')
@@ -215,6 +215,12 @@ export default function SettingsOrganisationPage() {
     membershipRole,
     workspaceType: resolvedWorkspaceType,
   })
+  const showBrandingOnly = section === 'branding'
+  const headerKicker = showBrandingOnly ? 'Branding' : 'Organisation'
+  const headerTitle = showBrandingOnly ? 'Branding' : copy.header.title
+  const headerDescription = showBrandingOnly
+    ? 'Brand assets used for portal, reporting, and outbound communication surfaces.'
+    : copy.header.description
 
   function updateField(key, value) {
     setState((previous) => ({
@@ -486,9 +492,9 @@ export default function SettingsOrganisationPage() {
     return (
       <div className={settingsPageClass}>
         <SettingsPageHeader
-          kicker="Organisation"
-          title={copy.header.title}
-          description={copy.header.description}
+          kicker={headerKicker}
+          title={headerTitle}
+          description={headerDescription}
         />
         <SettingsBanner tone="warning">
           {error || copy.unavailable}
@@ -500,250 +506,254 @@ export default function SettingsOrganisationPage() {
   return (
     <div className={settingsPageClass}>
       <SettingsPageHeader
-        kicker="Organisation"
-        title={copy.header.title}
-        description={copy.header.description}
+        kicker={headerKicker}
+        title={headerTitle}
+        description={headerDescription}
       />
 
       {!canEdit ? <SettingsBanner tone="warning">{copy.readOnly}</SettingsBanner> : null}
 
       <form className="space-y-4" onSubmit={handleSave}>
-        <SettingsSectionCard title={copy.organisationSection.title} description={copy.organisationSection.description}>
-          <div className={settingsGridClass}>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Bond originator company name' : 'Agency name'}</span>
-              <Field
-                value={onboarding.agencyInformation?.agencyName || ''}
-                disabled={!canEdit}
-                onChange={(event) => {
-                  const value = event.target.value
-                  updateAgencyField('agencyName', value)
-                  updateField('name', value)
-                }}
-              />
-            </label>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Trading name</span>
-              <Field
-                value={onboarding.agencyInformation?.tradingName || ''}
-                disabled={!canEdit}
-                onChange={(event) => {
-                  const value = event.target.value
-                  updateAgencyField('tradingName', value)
-                  updateField('displayName', value)
-                }}
-              />
-            </label>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Originator operating model' : 'Agency type'}</span>
-              <Field
-                as="select"
-                value={onboarding.agencyInformation?.agencyType || (isBondOriginator ? 'national' : 'residential')}
-                disabled={!canEdit}
-                onChange={(event) => updateAgencyField('agencyType', event.target.value)}
-              >
-                {(isBondOriginator ? BOND_ORIGINATOR_TYPE_OPTIONS : [
-                  { value: 'residential', label: 'Residential' },
-                  { value: 'commercial', label: 'Commercial' },
-                  { value: 'mixed', label: 'Mixed' },
-                ]).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </Field>
-            </label>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Origination focus' : 'Business focus'}</span>
-              <Field
-                as="select"
-                value={onboarding.agencyInformation?.businessFocus || (isBondOriginator ? 'bond_applications' : 'sales')}
-                disabled={!canEdit}
-                onChange={(event) => updateAgencyField('businessFocus', event.target.value)}
-              >
-                {(isBondOriginator ? BOND_BUSINESS_FOCUS_OPTIONS : [
-                  { value: 'sales', label: 'Sales' },
-                  { value: 'rentals', label: 'Rentals' },
-                  { value: 'sales_rentals', label: 'Sales & Rentals' },
-                ]).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </Field>
-            </label>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Company registration number</span>
-              <Field
-                value={onboarding.agencyInformation?.companyRegistrationNumber || ''}
-                disabled={!canEdit}
-                onChange={(event) => updateAgencyField('companyRegistrationNumber', event.target.value)}
-              />
-            </label>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">VAT number</span>
-              <Field
-                value={onboarding.agencyInformation?.vatNumber || ''}
-                disabled={!canEdit}
-                onChange={(event) => updateAgencyField('vatNumber', event.target.value)}
-              />
-            </label>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'NCR / FSP / compliance number' : 'EAAB / PPRA number'}</span>
-              <Field
-                value={onboarding.agencyInformation?.eaabPpraNumber || ''}
-                disabled={!canEdit}
-                onChange={(event) => updateAgencyField('eaabPpraNumber', event.target.value)}
-              />
-            </label>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Website</span>
-              <Field
-                value={onboarding.agencyInformation?.website || ''}
-                disabled={!canEdit}
-                onChange={(event) => {
-                  const value = event.target.value
-                  updateAgencyField('website', value)
-                  updateField('website', value)
-                }}
-              />
-            </label>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ office number' : 'Main office number'}</span>
-              <Field
-                value={onboarding.agencyInformation?.mainOfficeNumber || ''}
-                disabled={!canEdit}
-                onChange={(event) => {
-                  const value = event.target.value
-                  updateAgencyField('mainOfficeNumber', value)
-                  updateField('companyPhone', value)
-                }}
-              />
-            </label>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ email address' : 'Main email address'}</span>
-              <Field
-                value={onboarding.agencyInformation?.mainEmailAddress || ''}
-                disabled={!canEdit}
-                onChange={(event) => {
-                  const value = event.target.value
-                  updateAgencyField('mainEmailAddress', value)
-                  updateField('companyEmail', value)
-                }}
-              />
-            </label>
-            <div className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
-              <AddressAutocomplete
-                label="Physical address"
-                value={buildOrganisationAddressValue(form, onboarding)}
-                disabled={!canEdit}
-                onChange={updateOrganisationAddress}
-                placeholder="12 Main Road Bedfordview"
-                description="Used for branch routing, profile quality, local search, and platform analytics."
-              />
-            </div>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Suburb</span>
-              <Field
-                value={form.suburb || ''}
-                disabled={!canEdit}
-                onChange={(event) => updateField('suburb', event.target.value)}
-              />
-            </label>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">City</span>
-              <Field
-                value={form.city || ''}
-                disabled={!canEdit}
-                onChange={(event) => updateField('city', event.target.value)}
-              />
-            </label>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Province</span>
-              <Field
-                value={onboarding.agencyInformation?.province || ''}
-                disabled={!canEdit}
-                onChange={(event) => {
-                  const value = event.target.value
-                  updateAgencyField('province', value)
-                  updateField('province', value)
-                }}
-              />
-            </label>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Postal code</span>
-              <Field
-                value={form.postalCode || ''}
-                disabled={!canEdit}
-                onChange={(event) => updateField('postalCode', event.target.value)}
-              />
-            </label>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Country</span>
-              <Field
-                value={onboarding.agencyInformation?.country || ''}
-                disabled={!canEdit}
-                onChange={(event) => {
-                  const value = event.target.value
-                  updateAgencyField('country', value)
-                  updateField('country', value)
-                }}
-              />
-            </label>
-          </div>
-        </SettingsSectionCard>
-
-        <SettingsSectionCard title={copy.adminSection.title} description={copy.adminSection.description}>
-          <div className={settingsGridClass}>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ administrator full name' : 'Principal full name'}</span>
-              <Field value={onboarding.principalInformation?.principalFullName || ''} disabled={!canEdit} onChange={(event) => updatePrincipalField('principalFullName', event.target.value)} />
-            </label>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ administrator email' : 'Principal email'}</span>
-              <Field value={onboarding.principalInformation?.emailAddress || ''} disabled={!canEdit} onChange={(event) => updatePrincipalField('emailAddress', event.target.value)} />
-            </label>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Phone number</span>
-              <Field value={onboarding.principalInformation?.phoneNumber || ''} disabled={!canEdit} onChange={(event) => updatePrincipalField('phoneNumber', event.target.value)} />
-            </label>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Position</span>
-              <Field value={onboarding.principalInformation?.position || ''} disabled={!canEdit} onChange={(event) => updatePrincipalField('position', event.target.value)} />
-            </label>
-          </div>
-        </SettingsSectionCard>
-
-        <SettingsSectionCard
-          title={copy.branchesSection.title}
-          description={copy.branchesSection.description}
-          actions={canEdit ? <Button type="button" variant="secondary" onClick={addBranch}>{copy.branchesSection.addLabel}</Button> : null}
-        >
-          <div className="space-y-3">
-            {(onboarding.branchStructure?.branches || []).map((branch, index) => (
-              <article key={branch.id} className="rounded-[12px] border border-[#e1e9f3] bg-[#f8fbff] p-4">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.1em] text-[#2e4259]">{copy.branchesSection.rowLabel} {index + 1}</h4>
-                  {canEdit ? (
-                    <Button type="button" variant="ghost" onClick={() => removeBranch(branch.id)} disabled={(onboarding.branchStructure?.branches || []).length <= 1}>
-                      Remove
-                    </Button>
-                  ) : null}
+        {!showBrandingOnly ? (
+          <>
+            <SettingsSectionCard title={copy.organisationSection.title} description={copy.organisationSection.description}>
+              <div className={settingsGridClass}>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Bond originator company name' : 'Agency name'}</span>
+                  <Field
+                    value={onboarding.agencyInformation?.agencyName || ''}
+                    disabled={!canEdit}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      updateAgencyField('agencyName', value)
+                      updateField('name', value)
+                    }}
+                  />
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">Trading name</span>
+                  <Field
+                    value={onboarding.agencyInformation?.tradingName || ''}
+                    disabled={!canEdit}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      updateAgencyField('tradingName', value)
+                      updateField('displayName', value)
+                    }}
+                  />
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Originator operating model' : 'Agency type'}</span>
+                  <Field
+                    as="select"
+                    value={onboarding.agencyInformation?.agencyType || (isBondOriginator ? 'national' : 'residential')}
+                    disabled={!canEdit}
+                    onChange={(event) => updateAgencyField('agencyType', event.target.value)}
+                  >
+                    {(isBondOriginator ? BOND_ORIGINATOR_TYPE_OPTIONS : [
+                      { value: 'residential', label: 'Residential' },
+                      { value: 'commercial', label: 'Commercial' },
+                      { value: 'mixed', label: 'Mixed' },
+                    ]).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </Field>
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Origination focus' : 'Business focus'}</span>
+                  <Field
+                    as="select"
+                    value={onboarding.agencyInformation?.businessFocus || (isBondOriginator ? 'bond_applications' : 'sales')}
+                    disabled={!canEdit}
+                    onChange={(event) => updateAgencyField('businessFocus', event.target.value)}
+                  >
+                    {(isBondOriginator ? BOND_BUSINESS_FOCUS_OPTIONS : [
+                      { value: 'sales', label: 'Sales' },
+                      { value: 'rentals', label: 'Rentals' },
+                      { value: 'sales_rentals', label: 'Sales & Rentals' },
+                    ]).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </Field>
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">Company registration number</span>
+                  <Field
+                    value={onboarding.agencyInformation?.companyRegistrationNumber || ''}
+                    disabled={!canEdit}
+                    onChange={(event) => updateAgencyField('companyRegistrationNumber', event.target.value)}
+                  />
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">VAT number</span>
+                  <Field
+                    value={onboarding.agencyInformation?.vatNumber || ''}
+                    disabled={!canEdit}
+                    onChange={(event) => updateAgencyField('vatNumber', event.target.value)}
+                  />
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'NCR / FSP / compliance number' : 'EAAB / PPRA number'}</span>
+                  <Field
+                    value={onboarding.agencyInformation?.eaabPpraNumber || ''}
+                    disabled={!canEdit}
+                    onChange={(event) => updateAgencyField('eaabPpraNumber', event.target.value)}
+                  />
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">Website</span>
+                  <Field
+                    value={onboarding.agencyInformation?.website || ''}
+                    disabled={!canEdit}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      updateAgencyField('website', value)
+                      updateField('website', value)
+                    }}
+                  />
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ office number' : 'Main office number'}</span>
+                  <Field
+                    value={onboarding.agencyInformation?.mainOfficeNumber || ''}
+                    disabled={!canEdit}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      updateAgencyField('mainOfficeNumber', value)
+                      updateField('companyPhone', value)
+                    }}
+                  />
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ email address' : 'Main email address'}</span>
+                  <Field
+                    value={onboarding.agencyInformation?.mainEmailAddress || ''}
+                    disabled={!canEdit}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      updateAgencyField('mainEmailAddress', value)
+                      updateField('companyEmail', value)
+                    }}
+                  />
+                </label>
+                <div className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
+                  <AddressAutocomplete
+                    label="Physical address"
+                    value={buildOrganisationAddressValue(form, onboarding)}
+                    disabled={!canEdit}
+                    onChange={updateOrganisationAddress}
+                    placeholder="12 Main Road Bedfordview"
+                    description="Used for branch routing, profile quality, local search, and platform analytics."
+                  />
                 </div>
-                <div className={settingsGridClass}>
-                  <label className={settingsFieldClass}>
-                    <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Branch / region name' : 'Branch name'}</span>
-                    <Field value={branch.branchName || ''} disabled={!canEdit} onChange={(event) => updateBranch(branch.id, 'branchName', event.target.value)} />
-                  </label>
-                  <label className={settingsFieldClass}>
-                    <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Office / region location' : 'Office location'}</span>
-                    <Field value={branch.officeLocation || ''} disabled={!canEdit} onChange={(event) => updateBranch(branch.id, 'officeLocation', event.target.value)} />
-                  </label>
-                  <label className={settingsFieldClass}>
-                    <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Regional / branch manager' : 'Branch manager'}</span>
-                    <Field value={branch.branchManager || ''} disabled={!canEdit} onChange={(event) => updateBranch(branch.id, 'branchManager', event.target.value)} />
-                  </label>
-                  <label className={settingsFieldClass}>
-                    <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Number of consultants' : 'Number of agents'}</span>
-                    <Field value={branch.numberOfAgents || ''} disabled={!canEdit} onChange={(event) => updateBranch(branch.id, 'numberOfAgents', event.target.value)} />
-                  </label>
-                </div>
-              </article>
-            ))}
-          </div>
-        </SettingsSectionCard>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">Suburb</span>
+                  <Field
+                    value={form.suburb || ''}
+                    disabled={!canEdit}
+                    onChange={(event) => updateField('suburb', event.target.value)}
+                  />
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">City</span>
+                  <Field
+                    value={form.city || ''}
+                    disabled={!canEdit}
+                    onChange={(event) => updateField('city', event.target.value)}
+                  />
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">Province</span>
+                  <Field
+                    value={onboarding.agencyInformation?.province || ''}
+                    disabled={!canEdit}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      updateAgencyField('province', value)
+                      updateField('province', value)
+                    }}
+                  />
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">Postal code</span>
+                  <Field
+                    value={form.postalCode || ''}
+                    disabled={!canEdit}
+                    onChange={(event) => updateField('postalCode', event.target.value)}
+                  />
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">Country</span>
+                  <Field
+                    value={onboarding.agencyInformation?.country || ''}
+                    disabled={!canEdit}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      updateAgencyField('country', value)
+                      updateField('country', value)
+                    }}
+                  />
+                </label>
+              </div>
+            </SettingsSectionCard>
+
+            <SettingsSectionCard title={copy.adminSection.title} description={copy.adminSection.description}>
+              <div className={settingsGridClass}>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ administrator full name' : 'Principal full name'}</span>
+                  <Field value={onboarding.principalInformation?.principalFullName || ''} disabled={!canEdit} onChange={(event) => updatePrincipalField('principalFullName', event.target.value)} />
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ administrator email' : 'Principal email'}</span>
+                  <Field value={onboarding.principalInformation?.emailAddress || ''} disabled={!canEdit} onChange={(event) => updatePrincipalField('emailAddress', event.target.value)} />
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">Phone number</span>
+                  <Field value={onboarding.principalInformation?.phoneNumber || ''} disabled={!canEdit} onChange={(event) => updatePrincipalField('phoneNumber', event.target.value)} />
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">Position</span>
+                  <Field value={onboarding.principalInformation?.position || ''} disabled={!canEdit} onChange={(event) => updatePrincipalField('position', event.target.value)} />
+                </label>
+              </div>
+            </SettingsSectionCard>
+
+            <SettingsSectionCard
+              title={copy.branchesSection.title}
+              description={copy.branchesSection.description}
+              actions={canEdit ? <Button type="button" variant="secondary" onClick={addBranch}>{copy.branchesSection.addLabel}</Button> : null}
+            >
+              <div className="space-y-3">
+                {(onboarding.branchStructure?.branches || []).map((branch, index) => (
+                  <article key={branch.id} className="rounded-[12px] border border-[#e1e9f3] bg-[#f8fbff] p-4">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <h4 className="text-sm font-semibold uppercase text-[#2e4259]">{copy.branchesSection.rowLabel} {index + 1}</h4>
+                      {canEdit ? (
+                        <Button type="button" variant="ghost" onClick={() => removeBranch(branch.id)} disabled={(onboarding.branchStructure?.branches || []).length <= 1}>
+                          Remove
+                        </Button>
+                      ) : null}
+                    </div>
+                    <div className={settingsGridClass}>
+                      <label className={settingsFieldClass}>
+                        <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Branch / region name' : 'Branch name'}</span>
+                        <Field value={branch.branchName || ''} disabled={!canEdit} onChange={(event) => updateBranch(branch.id, 'branchName', event.target.value)} />
+                      </label>
+                      <label className={settingsFieldClass}>
+                        <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Office / region location' : 'Office location'}</span>
+                        <Field value={branch.officeLocation || ''} disabled={!canEdit} onChange={(event) => updateBranch(branch.id, 'officeLocation', event.target.value)} />
+                      </label>
+                      <label className={settingsFieldClass}>
+                        <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Regional / branch manager' : 'Branch manager'}</span>
+                        <Field value={branch.branchManager || ''} disabled={!canEdit} onChange={(event) => updateBranch(branch.id, 'branchManager', event.target.value)} />
+                      </label>
+                      <label className={settingsFieldClass}>
+                        <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Number of consultants' : 'Number of agents'}</span>
+                        <Field value={branch.numberOfAgents || ''} disabled={!canEdit} onChange={(event) => updateBranch(branch.id, 'numberOfAgents', event.target.value)} />
+                      </label>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </SettingsSectionCard>
+          </>
+        ) : null}
 
         <SettingsSectionCard title="Branding" description="Brand assets used for portal, reporting, and outbound communication surfaces.">
           <div className="organisation-branding-grid">
@@ -865,74 +875,76 @@ export default function SettingsOrganisationPage() {
           </div>
         </SettingsSectionCard>
 
-        <SettingsSectionCard title={copy.permissionsSection.title} description={copy.permissionsSection.description}>
-          <div className={settingsGridClass}>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ scope' : 'Principal scope'}</span>
-              <Field as="select" value={onboarding.permissions?.principalScope || 'all'} disabled={!canEdit} onChange={(event) => updatePermissionField('principalScope', event.target.value)}>
-                {PERMISSION_SCOPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </Field>
-            </label>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Branch manager scope</span>
-              <Field as="select" value={onboarding.permissions?.branchManagerScope || 'branch'} disabled={!canEdit} onChange={(event) => updatePermissionField('branchManagerScope', event.target.value)}>
-                {PERMISSION_SCOPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </Field>
-            </label>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Consultant scope' : 'Agent scope'}</span>
-              <Field as="select" value={onboarding.permissions?.agentScope || 'own'} disabled={!canEdit} onChange={(event) => updatePermissionField('agentScope', event.target.value)}>
-                {PERMISSION_SCOPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </Field>
-            </label>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Application visibility' : 'CRM lead visibility'}</span>
-              <Field as="select" value={onboarding.permissions?.crmLeadVisibility || 'private'} disabled={!canEdit} onChange={(event) => updatePermissionField('crmLeadVisibility', event.target.value)}>
-                {CRM_VISIBILITY_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </Field>
-            </label>
-            <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
-              <span className="text-sm font-medium text-[#51657b]">Collaboration controls</span>
-              <div className="grid gap-2 rounded-[12px] border border-[#e4ecf5] bg-white px-4 py-3">
-                <label className="flex items-center justify-between gap-3 text-sm text-[#51657b]">
-                  <span>{isBondOriginator ? 'Allow cross-branch application collaboration' : 'Allow cross-branch collaboration'}</span>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(onboarding.permissions?.allowCrossBranchCollaboration)}
-                    disabled={!canEdit}
-                    onChange={(event) => updatePermissionField('allowCrossBranchCollaboration', event.target.checked)}
-                  />
-                </label>
-                <label className="flex items-center justify-between gap-3 text-sm text-[#51657b]">
-                  <span>{isBondOriginator ? 'Allow shared application queues' : 'Allow shared lead pools'}</span>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(onboarding.permissions?.allowSharedLeadPools)}
-                    disabled={!canEdit}
-                    onChange={(event) => updatePermissionField('allowSharedLeadPools', event.target.checked)}
-                  />
-                </label>
-                <label className="flex items-center justify-between gap-3 text-sm text-[#51657b]">
-                  <span>{isBondOriginator ? 'Allow shared developer/development access' : 'Allow shared listings'}</span>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(onboarding.permissions?.allowSharedListings)}
-                    disabled={!canEdit}
-                    onChange={(event) => updatePermissionField('allowSharedListings', event.target.checked)}
-                  />
-                </label>
-              </div>
-            </label>
-          </div>
-        </SettingsSectionCard>
+        {!showBrandingOnly ? (
+          <SettingsSectionCard title={copy.permissionsSection.title} description={copy.permissionsSection.description}>
+            <div className={settingsGridClass}>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ scope' : 'Principal scope'}</span>
+                <Field as="select" value={onboarding.permissions?.principalScope || 'all'} disabled={!canEdit} onChange={(event) => updatePermissionField('principalScope', event.target.value)}>
+                  {PERMISSION_SCOPE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </Field>
+              </label>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Branch manager scope</span>
+                <Field as="select" value={onboarding.permissions?.branchManagerScope || 'branch'} disabled={!canEdit} onChange={(event) => updatePermissionField('branchManagerScope', event.target.value)}>
+                  {PERMISSION_SCOPE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </Field>
+              </label>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Consultant scope' : 'Agent scope'}</span>
+                <Field as="select" value={onboarding.permissions?.agentScope || 'own'} disabled={!canEdit} onChange={(event) => updatePermissionField('agentScope', event.target.value)}>
+                  {PERMISSION_SCOPE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </Field>
+              </label>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Application visibility' : 'CRM lead visibility'}</span>
+                <Field as="select" value={onboarding.permissions?.crmLeadVisibility || 'private'} disabled={!canEdit} onChange={(event) => updatePermissionField('crmLeadVisibility', event.target.value)}>
+                  {CRM_VISIBILITY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </Field>
+              </label>
+              <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
+                <span className="text-sm font-medium text-[#51657b]">Collaboration controls</span>
+                <div className="grid gap-2 rounded-[12px] border border-[#e4ecf5] bg-white px-4 py-3">
+                  <label className="flex items-center justify-between gap-3 text-sm text-[#51657b]">
+                    <span>{isBondOriginator ? 'Allow cross-branch application collaboration' : 'Allow cross-branch collaboration'}</span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(onboarding.permissions?.allowCrossBranchCollaboration)}
+                      disabled={!canEdit}
+                      onChange={(event) => updatePermissionField('allowCrossBranchCollaboration', event.target.checked)}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 text-sm text-[#51657b]">
+                    <span>{isBondOriginator ? 'Allow shared application queues' : 'Allow shared lead pools'}</span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(onboarding.permissions?.allowSharedLeadPools)}
+                      disabled={!canEdit}
+                      onChange={(event) => updatePermissionField('allowSharedLeadPools', event.target.checked)}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 text-sm text-[#51657b]">
+                    <span>{isBondOriginator ? 'Allow shared developer/development access' : 'Allow shared listings'}</span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(onboarding.permissions?.allowSharedListings)}
+                      disabled={!canEdit}
+                      onChange={(event) => updatePermissionField('allowSharedListings', event.target.checked)}
+                    />
+                  </label>
+                </div>
+              </label>
+            </div>
+          </SettingsSectionCard>
+        ) : null}
 
         {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
         {message ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}
@@ -940,7 +952,7 @@ export default function SettingsOrganisationPage() {
         {canEdit ? (
           <div className={settingsActionRowClass}>
             <Button type="submit" disabled={saving}>
-              {saving ? 'Saving…' : isBondOriginator ? 'Save Bond Originator Settings' : 'Save Organisation Settings'}
+              {saving ? 'Saving…' : showBrandingOnly ? 'Save Branding' : isBondOriginator ? 'Save Bond Originator Settings' : 'Save Organisation Settings'}
             </Button>
           </div>
         ) : null}

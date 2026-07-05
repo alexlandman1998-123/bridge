@@ -5,6 +5,7 @@ import {
   declineBondQuote,
   markFinanceDocumentsReviewed,
   markFinanceInstructionSent,
+  recordBondGrantMilestone,
   recordBondOfferDecision,
   updateBondApplication,
   updateBondQuote,
@@ -248,24 +249,31 @@ function deriveBondStage(workflowData = {}, buyerDocumentRows = []) {
   const summary = summarizeBondHybridFinanceWorkflow(workflowData)
   const applications = resolveBondApplications(workflowData)
   const offers = resolveBondOffers(workflowData)
-  const instructionSent = Boolean(workflowData?.instruction?.instructionSent || workflowData?.instruction?.instruction_sent || summary.instructionSent)
+  const instruction = workflowData?.instruction || {}
+  const workflowStage = normalizeBondHybridFinanceStage(workflow?.currentStage || workflow?.current_stage)
+  const instructionSent = Boolean(instruction?.instructionSent || instruction?.instruction_sent || summary.instructionSent)
+  const grantSubmitted = Boolean(instruction?.grantSubmitted || instruction?.grant_submitted || summary.grantSubmitted)
+  const grantSigned = Boolean(instruction?.grantSigned || instruction?.grant_signed || summary.grantSigned)
+  const grantReceived = Boolean(instruction?.grantReceived || instruction?.grant_received || summary.grantReceived)
   const hasAcceptedOffer = Boolean(summary.approvedQuote || workflowData?.acceptedOffer)
   const hasOffers = offers.length > 0
   const hasApplications = applications.length > 0
   const hasReviewedDocs =
-    ['documents', 'submitted_to_banks', 'bank_review', 'quote_received', 'quote_accepted', 'instruction_sent', 'complete'].includes(
-      normalizeBondHybridFinanceStage(workflow?.currentStage || workflow?.current_stage),
-    )
+    ['documents', 'submitted_to_banks', 'bank_review', 'quote_received', 'quote_accepted', 'bond_approved', 'grant_received', 'grant_signed', 'grant_submitted', 'instruction_sent', 'complete'].includes(workflowStage)
   const uploadedBuyerDocs = buyerDocumentRows.filter((item) => item.status !== 'missing').length > 0
 
-  if (normalizeBondHybridFinanceStage(workflow?.currentStage || workflow?.current_stage) === 'complete') return 'complete'
+  if (workflowStage === 'complete') return 'complete'
   if (instructionSent) return 'instruction_sent'
+  if (workflowStage === 'grant_submitted' || grantSubmitted) return 'grant_submitted'
+  if (workflowStage === 'grant_signed' || grantSigned) return 'grant_signed'
+  if (workflowStage === 'grant_received' || grantReceived) return 'grant_received'
+  if (workflowStage === 'bond_approved') return 'bond_approved'
   if (hasAcceptedOffer) return 'quote_accepted'
   if (hasOffers) return 'quote_received'
   if (applications.some((item) => ['feedback_received', 'additional_documents_required', 'declined', 'approved', 'buyer_approved', 'quote_received'].includes(lower(item.status)))) return 'bank_review'
   if (hasApplications) return 'submitted_to_banks'
   if (hasReviewedDocs || uploadedBuyerDocs) return 'documents'
-  return normalizeBondHybridFinanceStage(workflow?.currentStage || workflow?.current_stage || 'intake')
+  return workflowStage || 'intake'
 }
 
 function deriveCashStatus({ transaction = {}, documents = [], requiredDocumentChecklist = [] } = {}) {
@@ -430,6 +438,10 @@ function enrichBondRailSteps(steps = [], workflowData = {}, buyerDocumentRows = 
     bank_review: 'Banks / Originator',
     quote_received: 'Banks / Originator',
     quote_accepted: 'Buyer',
+    bond_approved: 'Bond Originator',
+    grant_received: 'Bond Originator',
+    grant_signed: 'Buyer / Bond Originator',
+    grant_submitted: 'Bond Originator',
     instruction_sent: 'Bond Originator',
     complete: 'Bond Originator',
   }
@@ -452,6 +464,15 @@ function enrichBondRailSteps(steps = [], workflowData = {}, buyerDocumentRows = 
     } else if (step.key === 'quote_accepted') {
       completedAt ||= acceptedOffer?.decisionAt || acceptedOffer?.approvedAt || acceptedOffer?.approved_at || null
       responsibleRole ||= 'Buyer'
+    } else if (step.key === 'grant_received') {
+      completedAt ||= instruction?.grantReceivedAt || instruction?.grant_received_at || null
+      responsibleRole ||= instruction?.grantReceivedByName || null
+    } else if (step.key === 'grant_signed') {
+      completedAt ||= instruction?.grantSignedAt || instruction?.grant_signed_at || null
+      responsibleRole ||= instruction?.grantSignedByName || null
+    } else if (step.key === 'grant_submitted') {
+      completedAt ||= instruction?.grantSubmittedAt || instruction?.grant_submitted_at || null
+      responsibleRole ||= instruction?.grantSubmittedByName || null
     } else if (step.key === 'instruction_sent') {
       completedAt ||= instruction?.instructionSentAt || instruction?.instruction_sent_at || null
       responsibleRole ||= instruction?.instructionSentByName || null
@@ -526,12 +547,26 @@ function deriveSummary({
   let blockerStatus = text(workflow?.blockerStatus || workflow?.blocker_status)
 
   if (financeType === 'bond') {
+    const acceptedOffer = workflowData?.acceptedOffer || summarizeBondHybridFinanceWorkflow(workflowData || {}).approvedQuote || null
+    const instruction = workflowData?.instruction || {}
+    const grantReceived = Boolean(instruction?.grantReceived || instruction?.grant_received || instruction?.grantDocumentId || instruction?.grant_document_id)
+    const grantSigned = Boolean(instruction?.grantSigned || instruction?.grant_signed || instruction?.signedGrantDocumentId || instruction?.signed_grant_document_id)
+    const grantSubmitted = Boolean(instruction?.grantSubmitted || instruction?.grant_submitted || instruction?.grantSubmittedAt || instruction?.grant_submitted_at)
     stageLabel = BOND_HYBRID_FINANCE_STAGE_LABELS[bondStage] || title(bondStage)
     if (!nextAction) {
-      if (buyerDocumentRows.every((item) => item.status === 'missing')) nextAction = 'Request buyer finance documents'
+      if (bondStage === 'complete') nextAction = 'Finance workflow complete'
+      else if (bondStage === 'instruction_sent') nextAction = 'Monitor attorney registration handoff'
+      else if (bondStage === 'grant_submitted') nextAction = 'Send instruction to attorney'
+      else if (bondStage === 'grant_signed') nextAction = grantSubmitted ? 'Send instruction to attorney' : 'Submit signed bond grant'
+      else if (bondStage === 'grant_received') nextAction = grantSigned ? 'Submit signed bond grant' : 'Capture signed bond grant'
+      else if (bondStage === 'bond_approved') nextAction = grantReceived ? 'Capture signed bond grant' : 'Record bond grant received'
+      else if (buyerDocumentRows.every((item) => item.status === 'missing')) nextAction = 'Request buyer finance documents'
       else if (!resolveBondApplications(workflowData).length) nextAction = 'Submit first bank application'
       else if (!resolveBondOffers(workflowData).length) nextAction = 'Capture first bank offer'
-      else if (!workflowData?.acceptedOffer) nextAction = 'Await buyer quote decision'
+      else if (!acceptedOffer) nextAction = 'Await buyer quote decision'
+      else if (!grantReceived) nextAction = 'Record bond grant received'
+      else if (!grantSigned) nextAction = 'Capture signed bond grant'
+      else if (!grantSubmitted) nextAction = 'Submit signed bond grant'
       else if (!(workflowData?.instruction?.instructionSent || workflowData?.instruction?.instruction_sent)) nextAction = 'Send instruction to attorney'
       else nextAction = 'Finance workflow complete'
     }
@@ -928,6 +963,55 @@ export async function markBondInstructionSent(transactionId, payload = {}, optio
     ...instructionPayload,
     instructionDocumentId: uploaded?.id || instructionPayload.instructionDocumentId || instructionPayload.instruction_document_id || null,
   })
+}
+
+export async function markBondGrantMilestone(transactionId, payload = {}, options = {}) {
+  const {
+    file = null,
+    signedFile = null,
+    token = '',
+    category = '',
+    stage = 'grant_received',
+    milestone = stage,
+    ...grantPayload
+  } = payload || {}
+
+  let uploadedGrant = null
+  if (file) {
+    uploadedGrant = await uploadFinanceDocument({
+      transactionId,
+      token,
+      file,
+      category: category || 'Bond Grant',
+      documentType: 'bond_grant',
+      financeLane: 'bond',
+      relatedEntityType: 'bond_grant',
+      uploadedByParty: token ? 'buyer' : 'bond_originator',
+      isClientVisible: true,
+    })
+  }
+
+  let uploadedSignedGrant = null
+  if (signedFile) {
+    uploadedSignedGrant = await uploadFinanceDocument({
+      transactionId,
+      token,
+      file: signedFile,
+      category: category || 'Signed Bond Grant',
+      documentType: 'signed_bond_grant',
+      financeLane: 'bond',
+      relatedEntityType: 'bond_grant',
+      uploadedByParty: token ? 'buyer' : 'bond_originator',
+      isClientVisible: true,
+    })
+  }
+
+  return recordBondGrantMilestone(transactionId, {
+    ...grantPayload,
+    stage: milestone,
+    grantDocumentId: uploadedGrant?.id || grantPayload.grantDocumentId || grantPayload.grant_document_id || null,
+    signedGrantDocumentId: uploadedSignedGrant?.id || grantPayload.signedGrantDocumentId || grantPayload.signed_grant_document_id || null,
+  }, options)
 }
 
 export async function reviewFinanceDocuments(transactionId, options = {}) {

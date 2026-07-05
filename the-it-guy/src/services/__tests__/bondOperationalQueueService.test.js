@@ -112,6 +112,59 @@ const transactions = [
     finance_status: 'blocked',
     updated_at: '2026-05-05T10:00:00.000Z',
   },
+  {
+    id: 'tx-awaiting-grant',
+    organisation_id: 'workspace-1',
+    bond_workspace_id: 'workspace-1',
+    bond_region_id: 'region-1',
+    bond_workspace_unit_id: 'unit-2',
+    primary_bond_consultant_user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    assigned_bond_processor_user_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    finance_status: 'documents_pending',
+    transactionFinanceWorkflow: {
+      workflow: { currentStage: 'bond_approved', status: 'active' },
+    },
+    updated_at: '2026-05-23T10:00:00.000Z',
+  },
+  {
+    id: 'tx-grant-received',
+    organisation_id: 'workspace-1',
+    bond_workspace_id: 'workspace-1',
+    bond_region_id: 'region-1',
+    bond_workspace_unit_id: 'unit-2',
+    primary_bond_consultant_user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    assigned_bond_processor_user_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    transactionFinanceWorkflow: {
+      workflow: { currentStage: 'grant_received', status: 'active' },
+    },
+    updated_at: '2026-05-24T10:00:00.000Z',
+  },
+  {
+    id: 'tx-grant-signed',
+    organisation_id: 'workspace-1',
+    bond_workspace_id: 'workspace-1',
+    bond_region_id: 'region-1',
+    bond_workspace_unit_id: 'unit-2',
+    primary_bond_consultant_user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    assigned_bond_processor_user_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    transactionFinanceWorkflow: {
+      workflow: { currentStage: 'grant_signed', status: 'active' },
+    },
+    updated_at: '2026-05-25T10:00:00.000Z',
+  },
+  {
+    id: 'tx-ready-for-instruction',
+    organisation_id: 'workspace-1',
+    bond_workspace_id: 'workspace-1',
+    bond_region_id: 'region-1',
+    bond_workspace_unit_id: 'unit-2',
+    primary_bond_consultant_user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    assigned_bond_processor_user_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    transactionFinanceWorkflow: {
+      workflow: { currentStage: 'grant_submitted', status: 'active' },
+    },
+    updated_at: '2026-05-26T10:00:00.000Z',
+  },
 ]
 
 try {
@@ -149,6 +202,12 @@ try {
   assert.equal(queueService.getBankFeedbackQueue(manager, transactions).length >= 1, true)
   assert.equal(queueService.getSubmissionReadinessQueue(manager, transactions).length >= 1, true)
   assert.equal(queueService.getManagerEscalationsQueue(manager, transactions).length >= 1, true)
+  assert.equal(queueService.getAwaitingGrantQueue(manager, transactions).some((item) => item.transactionId === 'tx-awaiting-grant'), true)
+  assert.equal(queueService.getGrantReceivedQueue(manager, transactions).some((item) => item.transactionId === 'tx-grant-received'), true)
+  assert.equal(queueService.getGrantSignedQueue(manager, transactions).some((item) => item.transactionId === 'tx-grant-signed'), true)
+  const readyForInstruction = queueService.getReadyForInstructionQueue(manager, transactions)
+  assert.equal(readyForInstruction.some((item) => item.transactionId === 'tx-ready-for-instruction'), true)
+  assert.equal(readyForInstruction.find((item) => item.transactionId === 'tx-ready-for-instruction')?.canonicalFinanceStage, 'grant_submitted')
 
   const compliance = makeContext({
     userId: '44444444-4444-4444-8444-444444444444',
@@ -162,6 +221,8 @@ try {
   const queues = queueService.resolveBondOperationalQueues(manager, transactions)
   assert.equal(Array.isArray(queues.processing_queue), true)
   assert.equal(queues.manager_escalations.length >= 1, true)
+  assert.equal(queues.awaiting_grant.some((item) => item.transactionId === 'tx-awaiting-grant'), true)
+  assert.equal(queues.ready_for_instruction.some((item) => item.transactionId === 'tx-ready-for-instruction'), true)
 
   const intakeRows = [
     {

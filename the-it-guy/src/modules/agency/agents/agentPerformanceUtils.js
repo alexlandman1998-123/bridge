@@ -340,11 +340,11 @@ export function buildAgentPerformanceModel({
   activities = [],
   filters = {},
   commissionRate = null,
+  now = new Date(),
 } = {}) {
-  const range = resolveAgentDateRange(filters.dateRange)
+  const range = resolveAgentDateRange(filters.dateRange, now)
   const agentLookup = buildAgentLookup(agents)
-  const todayStart = startOfDay(new Date())
-  const now = new Date()
+  const todayStart = startOfDay(now)
   const branchOptions = buildBranchOptions({ branches, agents })
   const selectedBranch = normalizeKey(filters.branchId || 'all')
   const query = normalizeKey(filters.search)
@@ -475,9 +475,14 @@ export function buildAgentPerformanceModel({
         bucket.performance.registrationDays.push((registeredAt.getTime() - created.getTime()) / 86400000)
       }
     }
-    if (registered && isWithinRange(getTransactionDate(transaction), resolveAgentDateRange('month_to_date'))) {
-      const explicitCommission = toNumber((transaction.transaction || transaction).agent_commission_amount || transaction.agentCommissionAmount)
-      bucket.performance.commissionMtd = toNumber(bucket.performance.commissionMtd) + (explicitCommission || (commissionRate ? value * commissionRate : 0))
+    if (registered && isWithinRange(getTransactionDate(transaction), resolveAgentDateRange('month_to_date', now))) {
+      const rawCommission = (transaction.transaction || transaction).agent_commission_amount ?? transaction.agentCommissionAmount
+      const explicitCommission = Number(rawCommission)
+      const hasExplicitCommission = rawCommission !== null && rawCommission !== undefined && rawCommission !== '' && Number.isFinite(explicitCommission)
+      const commissionValue = hasExplicitCommission ? explicitCommission : (commissionRate ? value * commissionRate : null)
+      if (commissionValue !== null) {
+        bucket.performance.commissionMtd = toNumber(bucket.performance.commissionMtd) + commissionValue
+      }
     }
     registerEvent(bucket, {
       type: registered ? 'registration' : 'transaction',

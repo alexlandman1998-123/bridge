@@ -6,11 +6,13 @@ import { changePassword, fetchAccountSettings, updateAccountSettings, uploadAcco
 import {
   SettingsBanner,
   SettingsLoadingState,
+  SettingsPageHeader,
   SettingsSectionCard,
   SettingsStickySaveBar,
   SettingsToggleRow,
   settingsCardClass,
   settingsFieldClass,
+  settingsFieldSpanClass,
   settingsGridClass,
   settingsPageClass,
 } from './settingsUi'
@@ -262,15 +264,44 @@ export default function SettingsAccountPage({ section = 'profile' }) {
   const showSecurity = section === 'security'
   const showNotifications = section === 'notifications'
   const showPreferences = section === 'preferences'
+  const sectionMeta = showSecurity
+    ? {
+        kicker: 'Personal',
+        title: 'Security',
+        description: 'Password, multi-factor authentication, sessions, and login history.',
+      }
+    : showNotifications
+      ? {
+          kicker: 'Personal',
+          title: 'Notifications',
+          description: 'Email, in-app, SMS, and critical alert preferences.',
+        }
+      : showPreferences
+        ? {
+            kicker: 'Personal',
+            title: 'Preferences',
+            description: 'Language, timezone, date format, and regional defaults.',
+          }
+        : {
+            kicker: 'Personal',
+            title: 'Profile',
+            description: 'Personal Information',
+          }
 
   return (
     <div className={settingsPageClass}>
+      <SettingsPageHeader
+        kicker={sectionMeta.kicker}
+        title={sectionMeta.title}
+        description={sectionMeta.description}
+      />
+
       {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
       {message ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}
 
       {showProfile ? (
         <form className="space-y-5" onSubmit={handleSave}>
-          <SettingsSectionCard title="Profile Card" description="This is how you appear across Arch9 and seller-facing workflows.">
+          <SettingsSectionCard title="Profile Photo" description="Avatar and visible identity across Arch9 and seller-facing workflows.">
             <div className="flex flex-col gap-4 rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-4 sm:flex-row sm:items-center">
               <div className="flex items-center gap-4">
                 <span className="inline-flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#d7e2ef] bg-white text-lg font-semibold text-[#244e70] shadow-sm">
@@ -303,7 +334,7 @@ export default function SettingsAccountPage({ section = 'profile' }) {
                 <Field value={form.firstName} onChange={(event) => updateField('firstName', event.target.value)} />
               </label>
               <label className={settingsFieldClass}>
-                <span className="text-sm font-medium text-[#51657b]">Last name</span>
+                <span className="text-sm font-medium text-[#51657b]">Surname</span>
                 <Field value={form.lastName} onChange={(event) => updateField('lastName', event.target.value)} />
               </label>
               <label className={settingsFieldClass}>
@@ -313,6 +344,10 @@ export default function SettingsAccountPage({ section = 'profile' }) {
               <label className={settingsFieldClass}>
                 <span className="text-sm font-medium text-[#51657b]">Phone</span>
                 <Field value={form.phoneNumber} onChange={(event) => updateField('phoneNumber', event.target.value)} />
+              </label>
+              <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
+                <span className="text-sm font-medium text-[#51657b]">Bio</span>
+                <Field as="textarea" value="" placeholder="Bio is not stored for this workspace yet." disabled />
               </label>
             </div>
           </SettingsSectionCard>

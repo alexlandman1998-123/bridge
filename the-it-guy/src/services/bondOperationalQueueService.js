@@ -10,6 +10,10 @@ import {
   getBondApplicationProgress,
   getBondIntakeSummary,
 } from '../core/transactions/bondIntakeSelectors'
+import {
+  getBondHybridFinanceStageLabel,
+  normalizeBondHybridFinanceStage,
+} from '../core/transactions/bondHybridFinanceWorkflow'
 import { financeTypeShortLabel } from '../core/transactions/financeType'
 import {
   buildFinanceReadinessHandoffPacket,
@@ -25,6 +29,10 @@ import {
 
 export const BOND_OPERATIONAL_QUEUE_KEYS = Object.freeze({
   NEW_APPLICATIONS: 'new_applications',
+  AWAITING_GRANT: 'awaiting_grant',
+  GRANT_RECEIVED: 'grant_received',
+  GRANT_SIGNED: 'grant_signed',
+  READY_FOR_INSTRUCTION: 'ready_for_instruction',
 })
 
 const NEW_APPLICATION_INTAKE_STATUSES = new Set([
@@ -78,6 +86,56 @@ function getTimestamp(value) {
   return Number.isNaN(date.getTime()) ? 0 : date.getTime()
 }
 
+function getQueueRecordTransaction(record = {}) {
+  return record?.transaction && typeof record.transaction === 'object' ? record.transaction : record
+}
+
+function getFirstArrayItem(value) {
+  return Array.isArray(value) ? value.find(Boolean) || null : value || null
+}
+
+function getCanonicalBondFinanceWorkflow(record = {}) {
+  const transaction = getQueueRecordTransaction(record)
+  const workflowData =
+    record?.transactionFinanceWorkflow ||
+    record?.transaction_finance_workflow ||
+    record?.financeWorkflow ||
+    record?.bondFinanceWorkflow ||
+    transaction.transactionFinanceWorkflow ||
+    transaction.transaction_finance_workflow ||
+    transaction.financeWorkflow ||
+    transaction.bondFinanceWorkflow ||
+    null
+  if (workflowData) return workflowData
+
+  const workflow = getFirstArrayItem(record?.transaction_finance_workflows || transaction.transaction_finance_workflows)
+  if (!workflow) return null
+
+  return {
+    workflow,
+    instruction: getFirstArrayItem(record?.transaction_bond_instructions || transaction.transaction_bond_instructions),
+  }
+}
+
+function getCanonicalBondFinanceStage(record = {}) {
+  const workflowData = getCanonicalBondFinanceWorkflow(record)
+  const workflow = workflowData?.workflow || workflowData || null
+  const stage = normalizeText(
+    workflow?.currentStage ||
+      workflow?.current_stage ||
+      workflowData?.summary?.currentStage ||
+      workflowData?.summary?.current_stage ||
+      workflowData?.currentStage ||
+      workflowData?.current_stage,
+  )
+  return stage ? normalizeBondHybridFinanceStage(stage, '') : ''
+}
+
+function hasCanonicalBondFinanceStage(record = {}, stages = []) {
+  const stage = getCanonicalBondFinanceStage(record)
+  return Boolean(stage && stages.includes(stage))
+}
+
 function getAgeLabel(value) {
   const timestamp = getTimestamp(value)
   if (!timestamp) return 'Date pending'
@@ -102,7 +160,10 @@ function isOverdueTransaction(transaction = {}) {
   return new Date(dueDate).getTime() < Date.now()
 }
 
-function normalizeQueueItem(transaction = {}, owners = {}, source = 'canonical') {
+function normalizeQueueItem(record = {}, owners = {}, source = 'canonical') {
+  const transaction = getQueueRecordTransaction(record)
+  const canonicalFinanceStage = getCanonicalBondFinanceStage(record)
+
   return {
     transactionId: normalizeText(transaction.id || transaction.transaction_id),
     applicationReference:
@@ -124,6 +185,8 @@ function normalizeQueueItem(transaction = {}, owners = {}, source = 'canonical')
           transaction.bond_assignment_status ||
           transaction.current_sub_stage_summary,
       ) || null,
+    canonicalFinanceStage: canonicalFinanceStage || null,
+    canonicalFinanceStageLabel: canonicalFinanceStage ? getBondHybridFinanceStageLabel(canonicalFinanceStage) : null,
     bondWorkspaceId: owners.bondWorkspaceId || null,
     bondRegionId: owners.bondRegionId || null,
     bondWorkspaceUnitId: owners.bondWorkspaceUnitId || null,
@@ -393,7 +456,8 @@ export function getVisibleNewApplicationsQueue(user = {}, rows = []) {
     .map(buildBondNewApplicationViewModel)
 }
 
-function hasMissingDocuments(transaction = {}) {
+function hasMissingDocuments(record = {}) {
+  const transaction = getQueueRecordTransaction(record)
   return (
     normalizeBool(transaction.documents_missing) ||
     normalizeBool(transaction.required_documents_missing) ||
@@ -403,15 +467,19 @@ function hasMissingDocuments(transaction = {}) {
   )
 }
 
-function hasBankFeedbackWork(transaction = {}) {
+function hasBankFeedbackWork(record = {}) {
+  const transaction = getQueueRecordTransaction(record)
   const status = normalizeText(transaction.bank_feedback_status || transaction.bankFeedbackStatus).toLowerCase()
   return (
+    hasCanonicalBondFinanceStage(record, ['bank_review', 'quote_received']) ||
     normalizeBool(transaction.bank_feedback_pending) ||
     ['pending', 'received', 'action_required', 'needs_action'].includes(status)
   )
 }
 
-function isSubmissionReady(transaction = {}) {
+function isSubmissionReady(record = {}) {
+  const transaction = getQueueRecordTransaction(record)
+  const canonicalStage = getCanonicalBondFinanceStage(record)
   const docsComplete =
     normalizeBool(transaction.documents_complete) ||
     normalizeBool(transaction.finance_documents_complete) ||
@@ -420,9 +488,26 @@ function isSubmissionReady(transaction = {}) {
     normalizeBool(transaction.application_prepared) ||
     normalizeText(transaction.finance_status).toLowerCase().includes('prepared')
   const submitted =
+    ['submitted_to_banks', 'bank_review', 'quote_received', 'quote_accepted', 'bond_approved', 'grant_received', 'grant_signed', 'grant_submitted', 'instruction_sent', 'complete'].includes(canonicalStage) ||
     normalizeBool(transaction.submitted_to_banks) ||
     normalizeText(transaction.finance_status).toLowerCase().includes('submitted')
   return docsComplete && prepared && !submitted
+}
+
+function isAwaitingGrant(record = {}) {
+  return hasCanonicalBondFinanceStage(record, ['quote_accepted', 'bond_approved'])
+}
+
+function isGrantReceived(record = {}) {
+  return hasCanonicalBondFinanceStage(record, ['grant_received'])
+}
+
+function isGrantSigned(record = {}) {
+  return hasCanonicalBondFinanceStage(record, ['grant_signed'])
+}
+
+function isReadyForInstruction(record = {}) {
+  return hasCanonicalBondFinanceStage(record, ['grant_submitted'])
 }
 
 function needsComplianceReview(transaction = {}, owners = {}) {
@@ -461,19 +546,20 @@ function canSeeTeamProcessorQueue(userContext = {}, owners = {}, transaction = {
 }
 
 function filterVisibleTransactions(user = {}, transactions = []) {
-  return (Array.isArray(transactions) ? transactions : []).filter((transaction) =>
-    canViewFinanceWorkflow(user, transaction),
+  return (Array.isArray(transactions) ? transactions : []).filter((record) =>
+    canViewFinanceWorkflow(user, getQueueRecordTransaction(record)),
   )
 }
 
 function createQueueItems(user = {}, transactions = [], predicate = () => false, sourceLabel = 'canonical') {
   const visible = filterVisibleTransactions(user, transactions)
   return visible
-    .map((transaction) => {
+    .map((record) => {
+      const transaction = getQueueRecordTransaction(record)
       const owners = resolveFinanceWorkflowOwners(transaction)
-      return { transaction, owners, item: normalizeQueueItem(transaction, owners, sourceLabel) }
+      return { record, transaction, owners, item: normalizeQueueItem(record, owners, sourceLabel) }
     })
-    .filter(({ transaction, owners, item }) => predicate({ transaction, owners, item }))
+    .filter(({ record, transaction, owners, item }) => predicate({ record, transaction, owners, item }))
     .map(({ item }) => item)
 }
 
@@ -505,7 +591,7 @@ export function getMissingDocumentsQueue(user = {}, transactions = []) {
   return createQueueItems(
     user,
     transactions,
-    ({ transaction }) => hasMissingDocuments(transaction),
+    ({ record }) => hasMissingDocuments(record),
     'missing_documents',
   )
 }
@@ -514,7 +600,7 @@ export function getBankFeedbackQueue(user = {}, transactions = []) {
   return createQueueItems(
     user,
     transactions,
-    ({ transaction }) => hasBankFeedbackWork(transaction),
+    ({ record }) => hasBankFeedbackWork(record),
     'bank_feedback',
   )
 }
@@ -523,8 +609,44 @@ export function getSubmissionReadinessQueue(user = {}, transactions = []) {
   return createQueueItems(
     user,
     transactions,
-    ({ transaction }) => isSubmissionReady(transaction),
+    ({ record }) => isSubmissionReady(record),
     'submission_readiness',
+  )
+}
+
+export function getAwaitingGrantQueue(user = {}, transactions = []) {
+  return createQueueItems(
+    user,
+    transactions,
+    ({ record }) => isAwaitingGrant(record),
+    BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_GRANT,
+  )
+}
+
+export function getGrantReceivedQueue(user = {}, transactions = []) {
+  return createQueueItems(
+    user,
+    transactions,
+    ({ record }) => isGrantReceived(record),
+    BOND_OPERATIONAL_QUEUE_KEYS.GRANT_RECEIVED,
+  )
+}
+
+export function getGrantSignedQueue(user = {}, transactions = []) {
+  return createQueueItems(
+    user,
+    transactions,
+    ({ record }) => isGrantSigned(record),
+    BOND_OPERATIONAL_QUEUE_KEYS.GRANT_SIGNED,
+  )
+}
+
+export function getReadyForInstructionQueue(user = {}, transactions = []) {
+  return createQueueItems(
+    user,
+    transactions,
+    ({ record }) => isReadyForInstruction(record),
+    BOND_OPERATIONAL_QUEUE_KEYS.READY_FOR_INSTRUCTION,
   )
 }
 
@@ -563,16 +685,21 @@ export function getManagerEscalationsQueue(user = {}, transactions = []) {
 }
 
 export function resolveBondOperationalQueues(user = {}, transactions = []) {
-  const transactionRows = (Array.isArray(transactions) ? transactions : []).map((transaction) => ({ transaction }))
+  const records = Array.isArray(transactions) ? transactions : []
+  const transactionRows = records.map((record) => (record?.transaction ? record : { transaction: record }))
   return {
     [BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS]: getVisibleNewApplicationsQueue(user, transactionRows),
-    my_applications: getMyApplicationsQueue(user, transactions),
-    processing_queue: getProcessingQueue(user, transactions),
-    missing_documents: getMissingDocumentsQueue(user, transactions),
-    bank_feedback: getBankFeedbackQueue(user, transactions),
-    submission_readiness: getSubmissionReadinessQueue(user, transactions),
-    overdue_applications: getOverdueApplicationsQueue(user, transactions),
-    compliance_review: getComplianceReviewQueue(user, transactions),
-    manager_escalations: getManagerEscalationsQueue(user, transactions),
+    my_applications: getMyApplicationsQueue(user, records),
+    processing_queue: getProcessingQueue(user, records),
+    missing_documents: getMissingDocumentsQueue(user, records),
+    bank_feedback: getBankFeedbackQueue(user, records),
+    submission_readiness: getSubmissionReadinessQueue(user, records),
+    awaiting_grant: getAwaitingGrantQueue(user, records),
+    grant_received: getGrantReceivedQueue(user, records),
+    grant_signed: getGrantSignedQueue(user, records),
+    ready_for_instruction: getReadyForInstructionQueue(user, records),
+    overdue_applications: getOverdueApplicationsQueue(user, records),
+    compliance_review: getComplianceReviewQueue(user, records),
+    manager_escalations: getManagerEscalationsQueue(user, records),
   }
 }

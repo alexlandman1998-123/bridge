@@ -1,5 +1,5 @@
 export const settingsPageClass =
-  'space-y-4'
+  'space-y-5'
 export const settingsCardClass = 'rounded-[12px] border border-[#e4ebf2] bg-white p-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)]'
 export const settingsGridClass = 'grid gap-3 md:grid-cols-2'
 export const settingsFieldClass = 'grid gap-2 [&_.ui-input]:px-3.5 [&_.ui-input]:py-2.5 [&_.ui-select]:px-3.5 [&_.ui-select]:py-2.5 [&_.ui-textarea]:px-3.5 [&_.ui-textarea]:py-2.5'
@@ -23,9 +23,9 @@ export function SettingsPageHeader({ kicker, title, description, actions }) {
   return (
     <header className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
       <div className="space-y-2">
-        {kicker ? <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7b8da6]">{kicker}</span> : null}
+        {kicker ? <span className="text-[0.68rem] font-semibold uppercase text-[#7b8da6]">{kicker}</span> : null}
         <div className="space-y-1.5">
-          <h2 className="text-[1.75rem] font-bold leading-tight text-[#121c2d]">{title}</h2>
+          <h2 className="text-xl font-semibold leading-tight text-[#121c2d]">{title}</h2>
           {description ? <p className="max-w-3xl text-sm font-normal leading-6 text-[#607387]">{description}</p> : null}
         </div>
       </div>
@@ -36,7 +36,7 @@ export function SettingsPageHeader({ kicker, title, description, actions }) {
 
 export function SettingsSectionCard({ title, description, actions, className = '', children }) {
   return (
-    <section className={`space-y-4 rounded-[12px] border border-[#e4ebf2] bg-white p-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)] ${className}`.trim()}>
+    <section className={`space-y-4 border-t border-[#e4ebf2] pt-5 first:border-t-0 first:pt-0 ${className}`.trim()}>
       {(title || description || actions) ? (
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-1">
@@ -98,16 +98,10 @@ export function SettingsToggleRow({ title, description, checked, disabled, onCha
 }
 
 export function SettingsStickySaveBar({ dirty = false, saving = false, onDiscard, onSave }) {
-  if (!dirty) return null
-
   return (
-    <div className="sticky bottom-4 z-30 rounded-[16px] border border-[#dce7f1] bg-white/95 p-3 shadow-[0_18px_42px_rgba(15,23,42,0.14)] backdrop-blur">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-sm font-semibold text-[#162334]">Unsaved changes</p>
-          <p className="text-sm font-normal text-[#607387]">Make sure to save your changes.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+    <div className="pointer-events-none sticky bottom-4 z-30 flex justify-end">
+      <div className="pointer-events-auto inline-flex flex-wrap justify-end gap-2 rounded-[14px] border border-[#dce7f1] bg-white/95 p-2 shadow-[0_18px_42px_rgba(15,23,42,0.14)] backdrop-blur">
+        {dirty ? (
           <button
             type="button"
             className="inline-flex min-h-10 items-center justify-center rounded-[10px] border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc]"
@@ -116,15 +110,15 @@ export function SettingsStickySaveBar({ dirty = false, saving = false, onDiscard
           >
             Discard changes
           </button>
-          <button
-            type="button"
-            className="inline-flex min-h-10 items-center justify-center rounded-[10px] border border-[#0f7f4f] bg-[#0f7f4f] px-4 text-sm font-semibold text-white shadow-[0_8px_16px_rgba(15,127,79,0.2)] transition hover:bg-[#0d6f45] disabled:opacity-60"
-            onClick={onSave}
-            disabled={saving}
-          >
-            {saving ? 'Saving...' : 'Save changes'}
-          </button>
-        </div>
+        ) : null}
+        <button
+          type="button"
+          className="inline-flex min-h-10 items-center justify-center rounded-[10px] border border-[#0f7f4f] bg-[#0f7f4f] px-4 text-sm font-semibold text-white shadow-[0_8px_16px_rgba(15,127,79,0.2)] transition hover:bg-[#0d6f45] disabled:border-[#cbd8e5] disabled:bg-[#eef2f6] disabled:text-[#8391a2] disabled:shadow-none"
+          onClick={onSave}
+          disabled={!dirty || saving}
+        >
+          {saving ? 'Saving...' : 'Save Changes'}
+        </button>
       </div>
     </div>
   )

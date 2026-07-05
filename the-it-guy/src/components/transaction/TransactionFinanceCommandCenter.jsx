@@ -796,6 +796,8 @@ function InstructionCard({
   const [notes, setNotes] = useState('')
   const [instructionFile, setInstructionFile] = useState(null)
   const sent = Boolean(instruction?.instructionSent || instruction?.instruction_sent)
+  const grantSubmitted = Boolean(instruction?.grantSubmitted || instruction?.grant_submitted)
+  const existingInstructionDocumentId = instruction?.instructionDocumentId || instruction?.instruction_document_id || null
 
   return (
     <div className="space-y-3">
@@ -824,7 +826,13 @@ function InstructionCard({
       ) : (
         <EmptyState
           message="Instruction has not been sent yet."
-          action={!acceptedOffer ? <span className="text-xs font-medium text-[#7c8ea4]">A quote must be accepted before instruction can be sent.</span> : null}
+          action={
+            !acceptedOffer
+              ? <span className="text-xs font-medium text-[#7c8ea4]">A quote must be accepted before instruction can be sent.</span>
+              : !grantSubmitted
+                ? <span className="text-xs font-medium text-[#7c8ea4]">The signed grant must be submitted before instruction can be sent.</span>
+                : null
+          }
         />
       )}
 
@@ -846,8 +854,121 @@ function InstructionCard({
           />
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
             <UploadAction label={instructionFile ? instructionFile.name : 'Attach instruction document'} onSelect={setInstructionFile} />
-            <Button type="submit" size="sm" disabled={Boolean(loadingAction) || !acceptedOffer}>
+            <Button type="submit" size="sm" disabled={Boolean(loadingAction) || !acceptedOffer || !grantSubmitted || (!instructionFile && !existingInstructionDocumentId)}>
               {loadingAction === 'instruction_sent' ? 'Sending...' : 'Mark instruction sent'}
+            </Button>
+          </div>
+        </form>
+      ) : null}
+    </div>
+  )
+}
+
+function GrantMilestoneCard({
+  instruction,
+  acceptedOffer,
+  documents = [],
+  canMark = false,
+  loadingAction = '',
+  onSubmit,
+  onOpenDocument,
+}) {
+  const [notes, setNotes] = useState('')
+  const [grantFile, setGrantFile] = useState(null)
+  const [signedGrantFile, setSignedGrantFile] = useState(null)
+  const grantReceived = Boolean(instruction?.grantReceived || instruction?.grant_received || instruction?.grantDocumentId || instruction?.grant_document_id)
+  const grantSigned = Boolean(instruction?.grantSigned || instruction?.grant_signed || instruction?.signedGrantDocumentId || instruction?.signed_grant_document_id)
+  const grantSubmitted = Boolean(instruction?.grantSubmitted || instruction?.grant_submitted)
+  const grantDocumentId = instruction?.grantDocumentId || instruction?.grant_document_id || null
+  const signedGrantDocumentId = instruction?.signedGrantDocumentId || instruction?.signed_grant_document_id || null
+  const findDocument = (documentId) => (documents || []).find((item) => String(item?.id || item?.documentId || item?.document_id || '') === String(documentId || '')) || null
+  const grantDocument = findDocument(grantDocumentId)
+  const signedGrantDocument = findDocument(signedGrantDocumentId)
+
+  const submitMilestone = (stage) => {
+    onSubmit?.({
+      stage,
+      notes,
+      file: stage === 'grant_received' ? grantFile : null,
+      signedFile: ['grant_signed', 'grant_submitted'].includes(stage) ? signedGrantFile : null,
+      grantDocumentId,
+      signedGrantDocumentId,
+    })
+    setNotes('')
+    if (stage === 'grant_received') setGrantFile(null)
+    if (['grant_signed', 'grant_submitted'].includes(stage)) setSignedGrantFile(null)
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-2 sm:grid-cols-3">
+        {[
+          ['Grant Received', grantReceived, instruction?.grantReceivedAt || instruction?.grant_received_at],
+          ['Grant Signed', grantSigned, instruction?.grantSignedAt || instruction?.grant_signed_at],
+          ['Grant Submitted', grantSubmitted, instruction?.grantSubmittedAt || instruction?.grant_submitted_at],
+        ].map(([label, complete, date]) => (
+          <article key={label} className="rounded-[8px] border border-[#e5ecf4] bg-white px-3 py-3">
+            <strong className="block text-sm font-semibold text-[#142132]">{label}</strong>
+            <p className="mt-1 text-xs leading-4 text-[#70839a]">{complete ? formatDate(date, 'Recorded') : 'Pending'}</p>
+            <span className={`mt-2 inline-flex items-center rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${getStatusTone(complete ? 'completed' : 'pending')}`}>
+              {complete ? 'Complete' : 'Waiting'}
+            </span>
+          </article>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {grantDocument?.url ? (
+          <Button type="button" variant="secondary" size="sm" onClick={() => onOpenDocument?.(grantDocument)}>
+            View grant
+          </Button>
+        ) : null}
+        {signedGrantDocument?.url ? (
+          <Button type="button" variant="secondary" size="sm" onClick={() => onOpenDocument?.(signedGrantDocument)}>
+            View signed grant
+          </Button>
+        ) : null}
+      </div>
+
+      {canMark ? (
+        <form
+          className="rounded-[8px] border border-[#e5ecf4] bg-[#fbfdff] p-3"
+          onSubmit={(event) => event.preventDefault()}
+        >
+          <Field
+            as="textarea"
+            placeholder="Grant notes"
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+          />
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <UploadAction label={grantFile ? grantFile.name : 'Attach grant document'} onSelect={setGrantFile} disabled={grantReceived} />
+            <Button
+              type="button"
+              size="sm"
+              variant={grantReceived ? 'secondary' : 'primary'}
+              disabled={Boolean(loadingAction) || !acceptedOffer || grantReceived || (!grantFile && !grantDocumentId)}
+              onClick={() => submitMilestone('grant_received')}
+            >
+              {loadingAction === 'grant_received' ? 'Recording...' : 'Record grant received'}
+            </Button>
+            <UploadAction label={signedGrantFile ? signedGrantFile.name : 'Attach signed grant'} onSelect={setSignedGrantFile} disabled={grantSigned} />
+            <Button
+              type="button"
+              size="sm"
+              variant={grantSigned ? 'secondary' : 'primary'}
+              disabled={Boolean(loadingAction) || !grantReceived || grantSigned || (!signedGrantFile && !signedGrantDocumentId)}
+              onClick={() => submitMilestone('grant_signed')}
+            >
+              {loadingAction === 'grant_signed' ? 'Recording...' : 'Record grant signed'}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={Boolean(loadingAction) || !grantSigned || grantSubmitted}
+              onClick={() => submitMilestone('grant_submitted')}
+            >
+              {loadingAction === 'grant_submitted' ? 'Submitting...' : 'Mark grant submitted'}
             </Button>
           </div>
         </form>
@@ -891,6 +1012,7 @@ function FinanceCommandCenter({
   onCaptureBondOffer,
   onAcceptOffer,
   onDeclineOffer,
+  onMarkGrantMilestone,
   onMarkInstructionSent,
   onReviewDocuments,
   onVerifyProofOfFunds,
@@ -1293,14 +1415,25 @@ function FinanceCommandCenter({
               title="Instruction to Attorney"
               copy="Bond instruction handoff to the transfer attorneys."
             >
-              <InstructionCard
-                instruction={workspace.bond.instruction}
-                acceptedOffer={workspace.bond.acceptedOffer}
-                canMark={workspace.permissions.canMarkInstructionSent}
-                loadingAction={loadingAction}
-                onSubmit={(payload) => onMarkInstructionSent?.(payload)}
-                onOpenDocument={onOpenDocument}
-              />
+              <div className="space-y-4">
+                <GrantMilestoneCard
+                  instruction={workspace.bond.instruction}
+                  acceptedOffer={workspace.bond.acceptedOffer}
+                  documents={documents}
+                  canMark={workspace.permissions.canMarkInstructionSent}
+                  loadingAction={loadingAction}
+                  onSubmit={(payload) => onMarkGrantMilestone?.(payload)}
+                  onOpenDocument={onOpenDocument}
+                />
+                <InstructionCard
+                  instruction={workspace.bond.instruction}
+                  acceptedOffer={workspace.bond.acceptedOffer}
+                  canMark={workspace.permissions.canMarkInstructionSent}
+                  loadingAction={loadingAction}
+                  onSubmit={(payload) => onMarkInstructionSent?.(payload)}
+                  onOpenDocument={onOpenDocument}
+                />
+              </div>
             </SectionCard>
           ) : null}
         </main>

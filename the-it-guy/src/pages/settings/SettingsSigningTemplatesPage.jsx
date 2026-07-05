@@ -23,7 +23,6 @@ import {
   Trash2,
   Type,
   Upload,
-  XCircle,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -63,6 +62,27 @@ import {
   settingsFieldSpanClass,
   settingsGridClass,
 } from './settingsUi'
+import {
+  DocumentCreationPanel,
+  DocumentBuilderActionRail,
+  TemplateCreationPanel,
+  TemplateStatusPill,
+  TemplateStudioMetricCard,
+  TemplateStudioPanel,
+  TemplateStudioTabButton,
+  ValidationIssueCard,
+} from './contractStudioUi'
+import {
+  CONTRACT_STUDIO_AREAS,
+  CONTRACT_STUDIO_TABS,
+  DOCUMENT_RUN_SOURCE_OPTIONS,
+  getDocumentKindOption,
+  isSimpleDocumentBuilderEnabled,
+  studioDangerButtonClass,
+  studioPrimaryButtonClass,
+  studioQuietButtonClass,
+  studioSecondaryButtonClass,
+} from './contractStudioConstants'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import {
   NATIVE_RENDERER_VERSION,
@@ -1834,20 +1854,6 @@ function incrementVersionTag(versionTag = 'v1') {
   return `${prefix}${nextNumber}`
 }
 
-function statusPillClass(status = '') {
-  const key = normalizeText(status).toLowerCase()
-  if (key === 'active' || key === 'approved' || key === 'signed') {
-    return 'border-[#ccead8] bg-[#f2fbf5] text-[#1f7a45]'
-  }
-  if (key === 'in_review' || key === 'deprecated') {
-    return 'border-[#f4e2bf] bg-[#fff8ec] text-[#7d520d]'
-  }
-  if (key === 'archived') {
-    return 'border-[#e2eaf3] bg-[#f7fafc] text-[#5f7288]'
-  }
-  return 'border-[#d7e2ee] bg-white text-[#4f637a]'
-}
-
 function formatRenderModeLabel(renderMode = TEMPLATE_RENDER_MODES.LEGACY_DOCX) {
   return renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? 'Built in app' : 'File based'
 }
@@ -2159,6 +2165,7 @@ function createDefaultDocumentRunForm(packetType = 'otp', templateLabel = '') {
   const normalizedPacketType = normalizeText(packetType).toLowerCase()
   const sourceType = normalizedPacketType === 'mandate' ? 'lead' : 'transaction'
   return {
+    documentKind: 'standard',
     sourceType,
     transactionId: '',
     leadId: '',
@@ -2205,6 +2212,8 @@ function buildDocumentRunPayload({
   templateTypeConfig = {},
 } = {}) {
   const sourceType = normalizeText(runForm.sourceType || 'transaction').toLowerCase()
+  const documentKind = getDocumentKindOption(runForm.documentKind).key
+  const documentKindLabel = getDocumentKindOption(documentKind).label
   const transactionId = normalizeRunReference(runForm.transactionId)
   const leadId = normalizeRunReference(runForm.leadId)
   const contactId = normalizeRunReference(runForm.contactId)
@@ -2228,9 +2237,14 @@ function buildDocumentRunPayload({
     deal_id: dealId || sourceContextOverrides.deal_id || sourceContextOverrides.dealId || '',
     unitId: unitId || sourceContextOverrides.unitId || sourceContextOverrides.unit_id || '',
     unit_id: unitId || sourceContextOverrides.unit_id || sourceContextOverrides.unitId || '',
+    documentKind,
+    document_kind: documentKind,
+    documentKindLabel,
+    document_kind_label: documentKindLabel,
     contractStudioRun: {
       generatedFrom: 'contract_studio_phase_6',
       sourceType,
+      documentKind,
       testedAt: new Date().toISOString(),
       templateId: selectedTemplate?.id || templateDetail?.id || '',
     },
@@ -2261,6 +2275,8 @@ function buildDocumentRunPayload({
     sourceContext,
     documentRun: {
       sourceType,
+      documentKind,
+      documentKindLabel,
       title: normalizeText(runForm.title),
       createdFromStudio: true,
     },
@@ -2274,13 +2290,17 @@ function buildDocumentRunPayload({
     validationSummary,
   })
   const title = normalizeText(runForm.title)
-    || `${templateTypeConfig.shortLabel || String(packetType).toUpperCase()} document run`
+    || (documentKind === 'standard'
+      ? `${templateTypeConfig.shortLabel || String(packetType).toUpperCase()} document run`
+      : `${documentKindLabel} - ${templateTypeConfig.shortLabel || String(packetType).toUpperCase()}`)
 
   return {
     context,
     sourceContext,
     previewTemplate,
     title,
+    documentKind,
+    documentKindLabel,
     references: {
       transactionId,
       leadId,
@@ -2348,23 +2368,6 @@ function getLatestGeneratedPacketVersion(versions = []) {
   return (Array.isArray(versions) ? versions : []).find((version) => normalizeText(version?.render_status).toLowerCase() === 'generated') || null
 }
 
-function TemplateStatusPill({ status = 'draft', children = null }) {
-  const label = children || TEMPLATE_STATUS_OPTIONS.find((item) => item.key === status)?.label || 'Draft'
-  return (
-    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.64rem] font-semibold uppercase tracking-[0.12em] ${statusPillClass(status)}`}>
-      {label}
-    </span>
-  )
-}
-
-const STUDIO_TABS = [
-  { key: 'template', label: 'Build' },
-  { key: 'variables', label: 'Data Fields' },
-  { key: 'settings', label: 'Publishing' },
-  { key: 'preview', label: 'Test' },
-  { key: 'activity', label: 'History' },
-]
-
 const STUDIO_VARIABLE_GROUPS = [
   { key: 'buyer', label: 'Buyer', categories: ['Buyer Details'] },
   { key: 'seller', label: 'Seller', categories: ['Seller Details'] },
@@ -2392,17 +2395,6 @@ const STUDIO_VARIABLE_GROUPS = [
   },
 ]
 
-const DOCUMENT_RUN_SOURCE_OPTIONS = [
-  { key: 'transaction', label: 'Transaction', description: 'Best for offers, accepted deals, and transfer-ready packs.' },
-  { key: 'lead', label: 'Lead', description: 'Best for buyer/seller lead documents and pre-transaction mandates.' },
-  { key: 'manual', label: 'Manual context', description: 'Use pasted context only, without linking a CRM record yet.' },
-]
-
-const studioPrimaryButtonClass = 'inline-flex items-center justify-center gap-2 rounded-[16px] bg-[#128642] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_16px_28px_rgba(18,134,66,0.22)] transition hover:bg-[#0f7438] disabled:cursor-not-allowed disabled:opacity-60'
-const studioSecondaryButtonClass = 'inline-flex items-center justify-center gap-2 rounded-[16px] border border-[#dbe7f3] bg-white px-4 py-2.5 text-sm font-semibold text-[#102033] shadow-[0_12px_24px_rgba(15,23,42,0.04)] transition hover:border-[#bfd5f5] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60'
-const studioQuietButtonClass = 'inline-flex items-center justify-center gap-2 rounded-[16px] border border-transparent bg-[#f5f8fc] px-4 py-2.5 text-sm font-semibold text-[#51657c] transition hover:border-[#dbe7f3] hover:bg-white disabled:cursor-not-allowed disabled:opacity-60'
-const studioDangerButtonClass = 'inline-flex items-center justify-center gap-2 rounded-[16px] border border-[#f3d5d7] bg-white px-4 py-2.5 text-sm font-semibold text-[#b4383e] transition hover:bg-[#fff6f6] disabled:cursor-not-allowed disabled:opacity-60'
-
 function formatDateTime(value = '') {
   const normalized = normalizeText(value)
   if (!normalized) return '—'
@@ -2421,7 +2413,7 @@ function formatDateOnly(value = '') {
 
 function formatFriendlyDate(value = '') {
   const normalized = normalizeText(value)
-  if (!normalized) return 'Not published yet'
+  if (!normalized) return 'Not live yet'
   const date = new Date(normalized)
   if (Number.isNaN(date.getTime())) return normalized
   return date.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
@@ -2523,6 +2515,85 @@ function normalizeSigningFieldPlan(field = {}, index = 0) {
     required: field.required === undefined ? true : Boolean(field.required),
     label: normalizeText(field.label),
   }
+}
+
+function getSigningFieldPreviewLayout(fields = []) {
+  const placed = []
+  return (Array.isArray(fields) ? fields : [])
+    .map((field) => normalizeSigningFieldPlan(field))
+    .map((field) => {
+      const width = Math.min(field.width, SIGNING_FIELD_PAGE.width - 24)
+      const height = Math.min(field.height, SIGNING_FIELD_PAGE.height - 24)
+      const rect = {
+        ...field,
+        previewX: Math.min(SIGNING_FIELD_PAGE.width - width - 8, Math.max(8, field.xPosition)),
+        previewY: Math.min(SIGNING_FIELD_PAGE.height - height - 8, Math.max(8, field.yPosition)),
+        previewWidth: width,
+        previewHeight: height,
+      }
+      let guard = 0
+      while (
+        placed.some((placedRect) => (
+          placedRect.pageNumber === rect.pageNumber &&
+          rect.previewX < placedRect.previewX + placedRect.previewWidth + 8 &&
+          rect.previewX + rect.previewWidth + 8 > placedRect.previewX &&
+          rect.previewY < placedRect.previewY + placedRect.previewHeight + 8 &&
+          rect.previewY + rect.previewHeight + 8 > placedRect.previewY
+        )) &&
+        guard < 20
+      ) {
+        const nextY = rect.previewY + rect.previewHeight + 10
+        if (nextY + rect.previewHeight > SIGNING_FIELD_PAGE.height - 8) {
+          rect.previewY = Math.max(8, rect.previewY - rect.previewHeight - 10)
+          rect.previewX = Math.max(8, rect.previewX - 18)
+        } else {
+          rect.previewY = nextY
+        }
+        guard += 1
+      }
+      placed.push(rect)
+      return rect
+    })
+}
+
+function resolveSigningFieldPlanCollisions(fields = []) {
+  const placed = []
+  return (Array.isArray(fields) ? fields : [])
+    .map((field, index) => normalizeSigningFieldPlan(field, index))
+    .map((field) => {
+      const width = Math.min(field.width, SIGNING_FIELD_PAGE.width - 24)
+      const height = Math.min(field.height, SIGNING_FIELD_PAGE.height - 24)
+      const rect = {
+        ...field,
+        width,
+        height,
+        xPosition: Math.min(SIGNING_FIELD_PAGE.width - width - 8, Math.max(8, field.xPosition)),
+        yPosition: Math.min(SIGNING_FIELD_PAGE.height - height - 8, Math.max(8, field.yPosition)),
+      }
+      let guard = 0
+      while (
+        placed.some((placedRect) => (
+          placedRect.pageNumber === rect.pageNumber &&
+          rect.xPosition < placedRect.xPosition + placedRect.width + 8 &&
+          rect.xPosition + rect.width + 8 > placedRect.xPosition &&
+          rect.yPosition < placedRect.yPosition + placedRect.height + 8 &&
+          rect.yPosition + rect.height + 8 > placedRect.yPosition
+        )) &&
+        guard < 20
+      ) {
+        const nextY = rect.yPosition + rect.height + 10
+        if (nextY + rect.height > SIGNING_FIELD_PAGE.height - 8) {
+          const nextX = rect.xPosition + rect.width + 14
+          rect.xPosition = nextX + rect.width > SIGNING_FIELD_PAGE.width - 8 ? 8 : nextX
+          rect.yPosition = 24 + (guard % 4) * (rect.height + 12)
+        } else {
+          rect.yPosition = nextY
+        }
+        guard += 1
+      }
+      placed.push(rect)
+      return rect
+    })
 }
 
 function getSigningFieldsFromMetadata(metadata = {}, section = {}) {
@@ -2684,135 +2755,12 @@ function getSectionVisualState(section = {}, packetType = 'otp') {
   }
 }
 
-function TemplateStudioPanel({ eyebrow = '', title = '', description = '', actions = null, className = '', children }) {
-  return (
-    <section className={`rounded-[28px] border border-[#dbe7f3] bg-white p-5 shadow-[0_18px_42px_rgba(15,23,42,0.05)] ${className}`.trim()}>
-      {(eyebrow || title || description || actions) ? (
-        <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-1.5">
-            {eyebrow ? <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7a8da6]">{eyebrow}</p> : null}
-            {title ? <h3 className="text-[1.05rem] font-semibold text-[#102033]">{title}</h3> : null}
-            {description ? <p className="text-sm leading-6 text-[#6b7c93]">{description}</p> : null}
-          </div>
-          {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
-        </div>
-      ) : null}
-      {children}
-    </section>
-  )
-}
-
-function TemplateStudioMetricCard({ label, value, description, tone = 'default' }) {
-  const toneClasses = tone === 'success'
-    ? 'border-[#d6efe1] bg-[#f5fbf8]'
-    : tone === 'warning'
-      ? 'border-[#f6e4bf] bg-[#fffaf1]'
-      : 'border-[#dbe7f3] bg-white'
-
-  return (
-    <div className={`rounded-[22px] border p-4 shadow-[0_12px_24px_rgba(15,23,42,0.04)] ${toneClasses}`}>
-      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">{label}</p>
-      <p className="mt-3 text-[1.8rem] font-semibold leading-none text-[#102033]">{value}</p>
-      {description ? <p className="mt-2 text-sm leading-5 text-[#6b7c93]">{description}</p> : null}
-    </div>
-  )
-}
-
-function TemplateStudioTabButton({ active, label, onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={[
-        'rounded-[16px] px-4 py-2.5 text-sm font-semibold transition',
-        active
-          ? 'border border-[#b9dfc8] bg-[#edf9f1] text-[#128642] shadow-[0_10px_22px_rgba(18,134,66,0.10)]'
-          : 'border border-transparent bg-white/70 text-[#6b7c93] hover:border-[#dbe7f3] hover:text-[#102033]',
-      ].join(' ')}
-    >
-      {label}
-    </button>
-  )
-}
-
-const CONTRACT_STUDIO_AREAS = [
-  {
-    key: 'templates',
-    label: 'Templates',
-    description: 'Build and publish reusable document templates.',
-    icon: FileText,
-  },
-  {
-    key: 'clauseLibrary',
-    label: 'Clause Library',
-    description: 'Approved clauses, signature blocks, and reusable wording.',
-    icon: Layers3,
-  },
-  {
-    key: 'documents',
-    label: 'Generated Documents',
-    description: 'Drafts, previews, signed documents, and exports.',
-    icon: FileSignature,
-  },
-]
-
-const CONTRACT_STUDIO_TABS = [
-  { key: 'template', label: 'Build' },
-  { key: 'preview', label: 'Test' },
-  { key: 'variables', label: 'Data Fields' },
-  { key: 'activity', label: 'History' },
-  { key: 'settings', label: 'Publishing' },
-]
-
-function normalizeValidationIssue(issue) {
-  if (typeof issue === 'string') {
-    return {
-      message: issue,
-      sectionLabel: '',
-      placeholderLabel: '',
-      placeholderKey: '',
-    }
-  }
-
-  return {
-    message: normalizeText(issue?.message || issue?.detail || issue?.label || 'Review this validation issue.'),
-    sectionLabel: normalizeText(issue?.sectionLabel || issue?.section_label || issue?.group || issue?.groupLabel),
-    placeholderLabel: normalizeText(issue?.placeholderLabel || issue?.placeholder_label || issue?.label),
-    placeholderKey: normalizeText(issue?.placeholderKey || issue?.placeholder_key || issue?.field || issue?.key),
-  }
-}
-
-function ValidationIssueCard({ issue, tone = 'warning', label = 'Issue' }) {
-  const normalized = normalizeValidationIssue(issue)
-  const Icon = tone === 'error' ? XCircle : AlertTriangle
-  const toneClass = tone === 'error'
-    ? 'border-[#f3d1ce] bg-[#fff4f3] text-[#8e1f15]'
-    : 'border-[#f4e2bf] bg-[#fff8ec] text-[#7d520d]'
-
-  return (
-    <div className={`rounded-[16px] border px-4 py-3 text-sm leading-6 ${toneClass}`}>
-      <div className="flex items-start gap-2">
-        <Icon size={16} className="mt-0.5 shrink-0" />
-        <div className="min-w-0">
-          <p className="font-semibold">{normalized.message}</p>
-          <div className="mt-1 flex flex-wrap gap-2 text-xs font-semibold opacity-80">
-            {normalized.sectionLabel ? <span>{label}: {normalized.sectionLabel}</span> : null}
-            {normalized.placeholderLabel || normalized.placeholderKey ? (
-              <span>Field: {normalized.placeholderLabel || `{{${normalized.placeholderKey}}}`}</span>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export default function SettingsSigningTemplatesPage({
   templateModuleType = 'agency',
   allowedPacketTypes = DEFAULT_ALLOWED_PACKET_TYPES,
-  title = 'Contract Studio',
-  eyebrow = 'Settings / Contract Studio',
-  description = 'Build, test, publish, and manage the document templates that power mandates, offers, clauses, and signatures.',
+  title = 'Document Builder',
+  eyebrow = 'Settings / Documents',
+  description = 'Create, preview, send, and manage the documents your agency uses every day.',
 } = {}) {
   const { role, currentMembership, currentWorkspace, workspaceType } = useWorkspace()
   const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
@@ -2891,6 +2839,8 @@ export default function SettingsSigningTemplatesPage({
   const [activeTab, setActiveTab] = useState('template')
   const [selectedSectionIndex, setSelectedSectionIndex] = useState(0)
   const [selectedCanvasBlockIndex, setSelectedCanvasBlockIndex] = useState(0)
+  const [outlineCollapsed, setOutlineCollapsed] = useState(false)
+  const [showSourceEditor, setShowSourceEditor] = useState(false)
   const [showPublishConfirm, setShowPublishConfirm] = useState(false)
   const [publishReviewAccepted, setPublishReviewAccepted] = useState(false)
   const [pendingSectionTitleFocus, setPendingSectionTitleFocus] = useState(false)
@@ -2899,6 +2849,7 @@ export default function SettingsSigningTemplatesPage({
 
   const administratorLabel = getWorkspaceAdministratorLabel({ appRole: role, workspaceType: resolvedWorkspaceType })
   const canEdit = canManageOrganisationSettings({ appRole: role, membershipRole, workspaceType: resolvedWorkspaceType })
+  const simpleDocumentBuilderEnabled = isSimpleDocumentBuilderEnabled()
   const visiblePacketTypes = useMemo(() => SUPPORTED_PACKET_TYPES.filter((item) => stableAllowedPacketTypes.includes(item.key)), [stableAllowedPacketTypes])
   const normalizedModuleType = normalizeText(templateModuleType || 'agency').toLowerCase() || 'agency'
   const visibleDescription = normalizedModuleType === 'agency'
@@ -2958,7 +2909,7 @@ export default function SettingsSigningTemplatesPage({
       })
       setDocumentPackets(rows || [])
     } catch (libraryError) {
-      console.warn('[Contract Studio] Unable to load document packet library.', libraryError)
+      console.warn('[Document Builder] Unable to load document library.', libraryError)
       setDocumentPackets([])
     } finally {
       setDocumentPacketsLoading(false)
@@ -2979,9 +2930,9 @@ export default function SettingsSigningTemplatesPage({
       })
       setSelectedLibraryPacketDetail(detail || null)
     } catch (detailError) {
-      console.warn('[Contract Studio] Unable to load document packet detail.', detailError)
+      console.warn('[Document Builder] Unable to load document detail.', detailError)
       setSelectedLibraryPacketDetail(null)
-      setError(detailError?.message || 'Unable to load document packet detail.')
+      setError(detailError?.message || 'Unable to load document details.')
     } finally {
       setPacketDetailLoading(false)
     }
@@ -3002,7 +2953,7 @@ export default function SettingsSigningTemplatesPage({
       })
       setSelectedPacketSigningSummary(summary || null)
     } catch (summaryError) {
-      console.warn('[Contract Studio] Unable to load packet signing summary.', summaryError)
+      console.warn('[Document Builder] Unable to load packet signing summary.', summaryError)
       setSelectedPacketSigningSummary(null)
     } finally {
       setSigningSummaryLoading(false)
@@ -3049,7 +3000,7 @@ export default function SettingsSigningTemplatesPage({
         })
       } catch (loadError) {
         if (active) {
-          setError(loadError?.message || 'Unable to load Contract Studio templates.')
+          setError(loadError?.message || 'Unable to load Document Builder templates.')
         }
       } finally {
         if (active) setLoading(false)
@@ -3274,6 +3225,10 @@ export default function SettingsSigningTemplatesPage({
     setPendingSectionTitleFocus(false)
   }, [pendingSectionTitleFocus, selectedSection])
 
+  useEffect(() => {
+    setShowSourceEditor(false)
+  }, [selectedSectionIndex])
+
   const selectedSectionDescription = selectedSection ? getSectionDescription(selectedSection, selectedSectionIndex) : ''
   const selectedSectionText = String(selectedSection?.legalText || '')
   const selectedSectionCanvasBlocks = useMemo(
@@ -3328,6 +3283,10 @@ export default function SettingsSigningTemplatesPage({
   const selectedSigningFields = useMemo(
     () => getSigningFieldsFromMetadata(selectedSection?.metadataJson || {}, selectedSection || {}),
     [selectedSection],
+  )
+  const selectedSigningFieldPreviewLayout = useMemo(
+    () => getSigningFieldPreviewLayout(selectedSigningFields),
+    [selectedSigningFields],
   )
   const selectedSectionGovernance = useMemo(
     () => getSectionGovernance(selectedSection || {}),
@@ -3402,9 +3361,9 @@ export default function SettingsSigningTemplatesPage({
     ].some((key) => stableStringify(form[key]) !== stableStringify(baselineForm[key])) : Boolean(selectedTemplate)
     const blockers = [
       ...validationSummary.blockers,
-      ...(!selectedIsOrgOwned ? ['Create an organisation draft before publishing.'] : []),
-      ...(!canPublishTemplate ? [`Only ${administratorLabel} can publish live document versions.`] : []),
-      ...(hasUnsavedChanges ? ['Save the latest edits before publishing.'] : []),
+      ...(!selectedIsOrgOwned ? ['Create an organisation draft before making this live.'] : []),
+      ...(!canPublishTemplate ? [`Only ${administratorLabel} can make document versions live.`] : []),
+      ...(hasUnsavedChanges ? ['Save the latest edits before making this live.'] : []),
       ...(normalizeText(form.renderMode) === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED && !validationSummary.renderable ? ['Native structured template is not renderable yet.'] : []),
     ]
 
@@ -3446,7 +3405,7 @@ export default function SettingsSigningTemplatesPage({
         passed: Boolean(previewState.html) && !previewState.error,
       },
       {
-        label: publishReady ? 'Ready to publish' : 'Save and test before publishing',
+        label: publishReady ? 'Ready to make live' : 'Save and preview before making live',
         passed: publishReady,
       },
     ]
@@ -3490,24 +3449,35 @@ export default function SettingsSigningTemplatesPage({
       key: 'drafts',
       title: 'Draft documents',
       value: documentPackets.filter((packet) => normalizeText(packet?.status).toLowerCase() === 'draft').length,
-      detail: 'Draft packet records created from Contract Studio runs.',
+      detail: 'Draft documents created in Document Builder.',
     },
     {
       key: 'in_progress',
       title: 'In progress',
       value: documentPackets.filter((packet) => ['ready_for_generation', 'generated', 'signing_prep', 'sent', 'partially_signed'].includes(normalizeText(packet?.status).toLowerCase())).length,
-      detail: 'Generated or signing-prep packets currently moving through workflow.',
+      detail: 'Documents currently being generated, checked, sent, or signed.',
     },
     {
       key: 'completed',
       title: 'Completed',
       value: documentPackets.filter((packet) => normalizeText(packet?.status).toLowerCase() === 'completed').length,
-      detail: 'Completed or signed packets for this document type.',
+      detail: 'Completed or signed documents for this document type.',
     },
   ]), [documentPackets])
   const selectedLibraryPacket = useMemo(
     () => selectedLibraryPacketDetail || documentPackets.find((packet) => packet.id === selectedLibraryPacketId) || null,
     [documentPackets, selectedLibraryPacketDetail, selectedLibraryPacketId],
+  )
+  const selectedLibraryPacketSourceContext = useMemo(
+    () => (selectedLibraryPacket?.source_context_json && typeof selectedLibraryPacket.source_context_json === 'object'
+      ? selectedLibraryPacket.source_context_json
+      : {}),
+    [selectedLibraryPacket],
+  )
+  const selectedLibraryPacketDocumentKindLabel = useMemo(
+    () => normalizeText(selectedLibraryPacketSourceContext.documentKindLabel || selectedLibraryPacketSourceContext.document_kind_label)
+      || getDocumentKindOption(selectedLibraryPacketSourceContext.documentKind || selectedLibraryPacketSourceContext.document_kind).label,
+    [selectedLibraryPacketSourceContext],
   )
   const selectedLibraryPacketVersions = useMemo(
     () => (Array.isArray(selectedLibraryPacketDetail?.versions) ? selectedLibraryPacketDetail.versions : []),
@@ -3564,7 +3534,7 @@ export default function SettingsSigningTemplatesPage({
       generatedAt: new Date().toISOString(),
       packet: {
         id: selectedLibraryPacket.id,
-        title: selectedLibraryPacket.title || selectedLibraryPacket.template_label_snapshot || 'Document packet',
+        title: selectedLibraryPacket.title || selectedLibraryPacket.template_label_snapshot || 'Document',
         type: selectedLibraryPacket.packet_type || packetType,
         status: normalizeText(selectedLibraryPacket.status).toLowerCase() || 'draft',
         currentVersion: selectedLibraryPacket.current_version_number || latestLibraryPacketVersion?.version_number || 0,
@@ -3613,7 +3583,7 @@ export default function SettingsSigningTemplatesPage({
     {
       key: 'generated',
       label: 'Generated document',
-      detail: latestGeneratedLibraryPacketVersion ? `Version ${latestGeneratedLibraryPacketVersion.version_number}` : 'Generate the packet first',
+      detail: latestGeneratedLibraryPacketVersion ? `Version ${latestGeneratedLibraryPacketVersion.version_number}` : 'Generate the document first',
       passed: Boolean(latestGeneratedLibraryPacketVersion),
     },
     {
@@ -3675,14 +3645,14 @@ export default function SettingsSigningTemplatesPage({
     }
     if (!previewState.html) {
       return {
-        title: 'Generate a preview before publishing',
-        description: 'Run a safe sample preview to validate wording and variables.',
+        title: 'Generate a preview before making this live',
+        description: 'Run a safe preview to validate wording and variables.',
       }
     }
     if (!form.isDefault) {
       return {
-        title: 'Publish when this draft is ready',
-        description: 'New documents will use this version after you publish it as live.',
+        title: 'Make this live when the draft is ready',
+        description: 'New documents will use this version after you make it live.',
       }
     }
     return {
@@ -3744,8 +3714,10 @@ export default function SettingsSigningTemplatesPage({
       await refreshAll()
       setSelectedTemplateId(created?.id || '')
       setMessage('New draft template created.')
+      return created
     } catch (createError) {
       setError(createError?.message || 'Unable to create template.')
+      return null
     } finally {
       setCreatingTemplate(false)
     }
@@ -4107,7 +4079,7 @@ export default function SettingsSigningTemplatesPage({
       if (preview?.critical?.length) {
         setMessage('Template preview generated with validation blockers. Review the checklist before activation.')
       } else {
-        setMessage('Template preview generated from the current edits using sample data.')
+        setMessage('Preview generated from the current edits using safe example details.')
       }
     } catch (previewError) {
       setPreviewState({
@@ -4158,9 +4130,9 @@ export default function SettingsSigningTemplatesPage({
       })
 
       if (preview?.critical?.length) {
-        setMessage('Real-context preview generated with validation blockers. Open the issue cards and fix the missing source data.')
+        setMessage('Preview generated with validation blockers. Open the issue cards and fix the missing linked details.')
       } else {
-        setMessage('Real-context preview generated from the current run details.')
+        setMessage('Preview generated from the linked details.')
       }
     } catch (previewError) {
       setPreviewState({
@@ -4175,10 +4147,10 @@ export default function SettingsSigningTemplatesPage({
     }
   }
 
-  async function handleCreateDocumentPacketFromRun() {
+  async function handleCreateDocumentPacketFromRun({ autoGenerate = false } = {}) {
     if (!selectedTemplateId || !selectedTemplate) return
     if (hasUnsavedChanges) {
-      setError('Save the template before creating a draft document packet from it.')
+      setError('Save the template before creating a draft document from it.')
       setActiveStudioArea('templates')
       setActiveTab('template')
       return
@@ -4216,13 +4188,30 @@ export default function SettingsSigningTemplatesPage({
           templateId: selectedTemplateId,
           templateLabel: form.templateLabel || selectedTemplate.template_label || selectedTemplate.templateLabel || '',
           templateVersion: form.versionTag || selectedTemplate.version_tag || selectedTemplate.versionTag || '',
+          documentKind: runPayload.documentKind,
+          documentKindLabel: runPayload.documentKindLabel,
         },
       })
+      if (autoGenerate && packet?.id) {
+        await generatePacketVersion({
+          packetId: packet.id,
+          packetType,
+          context: runPayload.context,
+          template: runPayload.previewTemplate,
+          allowWarnings: true,
+        })
+      }
       await loadDocumentLibrary({ targetPacketType: packetType })
+      if (packet?.id) {
+        setSelectedLibraryPacketId(packet.id)
+        await loadLibraryPacketDetail(packet.id)
+      }
       setActiveStudioArea('documents')
-      setMessage(`Draft packet created: ${packet?.title || runPayload.title}`)
+      setMessage(autoGenerate ? `Document created and generated: ${packet?.title || runPayload.title}` : `Draft document saved: ${packet?.title || runPayload.title}`)
+      return packet
     } catch (packetError) {
-      setError(packetError?.message || 'Unable to create draft document packet.')
+      setError(packetError?.message || 'Unable to create draft document.')
+      return null
     } finally {
       setCreatingDocumentPacket(false)
     }
@@ -4233,7 +4222,7 @@ export default function SettingsSigningTemplatesPage({
     if (!packetTemplateId) return null
     if (packetTemplateId === selectedTemplateId && templateDetail) return templateDetail
     return fetchDocumentPacketTemplate(packetTemplateId, { includeSections: true }).catch((templateError) => {
-      console.warn('[Contract Studio] Unable to load packet template for library action.', templateError)
+      console.warn('[Document Builder] Unable to load packet template for library action.', templateError)
       return null
     })
   }
@@ -4251,7 +4240,7 @@ export default function SettingsSigningTemplatesPage({
         packetType: packet.packet_type || packetType,
         context,
         template,
-        title: packet.title || packet.template_label_snapshot || 'Document packet preview',
+        title: packet.title || packet.template_label_snapshot || 'Document preview',
       })
       setPreviewState({
         loading: false,
@@ -4263,16 +4252,16 @@ export default function SettingsSigningTemplatesPage({
       })
       setActiveStudioArea('templates')
       setActiveTab('preview')
-      setMessage(preview?.critical?.length ? 'Packet preview generated with validation blockers.' : 'Packet preview generated from stored packet context.')
+      setMessage(preview?.critical?.length ? 'Document preview generated with validation blockers.' : 'Document preview generated from its saved linked details.')
     } catch (previewError) {
       setPreviewState({
         loading: false,
         html: '',
         warnings: [],
         critical: [],
-        error: previewError?.message || 'Unable to preview packet.',
+        error: previewError?.message || 'Unable to preview document.',
       })
-      setError(previewError?.message || 'Unable to preview packet.')
+      setError(previewError?.message || 'Unable to preview document.')
     } finally {
       setPacketActionId('')
     }
@@ -4295,9 +4284,9 @@ export default function SettingsSigningTemplatesPage({
       })
       await loadDocumentLibrary({ targetPacketType: packet.packet_type || packetType })
       await loadLibraryPacketDetail(packet.id)
-      setMessage(`Generated packet version v${result?.version?.version_number || result?.packet?.current_version_number || ''}.`)
+      setMessage(`Generated document version v${result?.version?.version_number || result?.packet?.current_version_number || ''}.`)
     } catch (generateError) {
-      setError(generateError?.message || 'Unable to generate packet version.')
+      setError(generateError?.message || 'Unable to generate document version.')
     } finally {
       setPacketActionId('')
     }
@@ -4305,20 +4294,20 @@ export default function SettingsSigningTemplatesPage({
 
   async function handleArchiveLibraryPacket(packet = selectedLibraryPacket) {
     if (!packet?.id) return
-    const confirmed = window.confirm(`Archive "${packet.title || packet.template_label_snapshot || 'this document packet'}"?`)
+    const confirmed = window.confirm(`Archive "${packet.title || packet.template_label_snapshot || 'this document'}"?`)
     if (!confirmed) return
     try {
       setPacketActionId(`archive:${packet.id}`)
       setError('')
       setMessage('')
       await archiveDocumentPacket(packet.id, {
-        reason: 'Archived from Contract Studio document library.',
+        reason: 'Archived from Document Builder.',
       })
       await loadDocumentLibrary({ targetPacketType: packet.packet_type || packetType })
       await loadLibraryPacketDetail(packet.id)
-      setMessage('Document packet archived.')
+      setMessage('Document archived.')
     } catch (archiveError) {
-      setError(archiveError?.message || 'Unable to archive document packet.')
+      setError(archiveError?.message || 'Unable to archive document.')
     } finally {
       setPacketActionId('')
     }
@@ -4328,7 +4317,7 @@ export default function SettingsSigningTemplatesPage({
     if (!packet?.id) return
     const targetVersion = latestGeneratedLibraryPacketVersion
     if (!targetVersion?.id) {
-      setError('Generate a packet version before preparing signing fields.')
+      setError('Generate the document before preparing signing fields.')
       return
     }
     try {
@@ -4364,7 +4353,7 @@ export default function SettingsSigningTemplatesPage({
     if (!packet?.id) return
     const targetVersion = latestGeneratedLibraryPacketVersion
     if (!targetVersion?.id) {
-      setError('Generate a packet version before creating signing links.')
+      setError('Generate the document before creating signing links.')
       return
     }
     try {
@@ -4397,7 +4386,7 @@ export default function SettingsSigningTemplatesPage({
     if (!packet?.id) return
     const targetVersion = latestGeneratedLibraryPacketVersion
     if (!targetVersion?.id) {
-      setError('Generate a packet version before finalising the signed document.')
+      setError('Generate the document before finalising the signed document.')
       return
     }
     try {
@@ -4718,7 +4707,7 @@ export default function SettingsSigningTemplatesPage({
 
   function setSelectedSectionSigningFields(nextFields = []) {
     if (!selectedSection || !canEdit) return
-    const normalizedFields = (Array.isArray(nextFields) ? nextFields : []).map((field, index) => normalizeSigningFieldPlan(field, index))
+    const normalizedFields = resolveSigningFieldPlanCollisions(nextFields)
     const metadataJson = selectedSection.metadataJson && typeof selectedSection.metadataJson === 'object' ? selectedSection.metadataJson : {}
     const signingMetadata = metadataJson.signing && typeof metadataJson.signing === 'object' ? metadataJson.signing : {}
     updateSection(selectedSectionIndex, {
@@ -4738,16 +4727,18 @@ export default function SettingsSigningTemplatesPage({
   function addSelectedSectionSigningField(fieldType = 'signature', signerRole = 'purchaser_1') {
     if (!selectedSection || !canEdit) return
     const typeConfig = getSigningFieldTypeConfig(fieldType)
-    const preset = normalizeSigningFieldType(fieldType) === 'initial'
+    const normalizedFieldType = normalizeSigningFieldType(fieldType)
+    const preset = normalizedFieldType === 'initial'
       ? SIGNING_FIELD_POSITION_PRESETS.find((item) => item.key === 'initial_right') || SIGNING_FIELD_POSITION_PRESETS[0]
       : SIGNING_FIELD_POSITION_PRESETS[Math.min(selectedSigningFields.length, 2)] || SIGNING_FIELD_POSITION_PRESETS[0]
+    const yOffset = normalizedFieldType === 'date' ? -36 : 0
     const nextField = normalizeSigningFieldPlan({
       id: `planned_field_${Date.now()}_${selectedSigningFields.length + 1}`,
       signerRole,
       fieldType,
       pageNumber: 1,
       xPosition: preset.x,
-      yPosition: preset.y,
+      yPosition: Math.max(24, preset.y + yOffset),
       width: typeConfig.width,
       height: typeConfig.height,
       required: true,
@@ -4847,6 +4838,7 @@ export default function SettingsSigningTemplatesPage({
   }
 
   function focusSourceEditor() {
+    setShowSourceEditor(true)
     requestAnimationFrame(() => {
       clauseTextareaRef.current?.focus?.()
     })
@@ -4862,6 +4854,15 @@ export default function SettingsSigningTemplatesPage({
     insertTextIntoSelectedSection(LEGAL_TEMPLATE_TABLE_SNIPPET, { block: true })
   }
 
+  function openTemplatePreview({ generate = true } = {}) {
+    if (!selectedTemplate) return
+    setActiveStudioArea('templates')
+    setActiveTab('preview')
+    if (generate && !testingTemplate) {
+      requestAnimationFrame(() => void handleTestGenerate())
+    }
+  }
+
   function openPublishDialog() {
     if (!selectedTemplateId || !selectedIsOrgOwned || !canEdit || saving || form.isDefault) return
     setPublishReviewAccepted(false)
@@ -4870,12 +4871,12 @@ export default function SettingsSigningTemplatesPage({
 
   async function confirmPublishTemplate() {
     if (publishReview.blockers.length) {
-      setError('Resolve the publishing blockers before publishing this template.')
+      setError('Resolve the blockers before making this template live.')
       setShowPublishConfirm(false)
       return
     }
     if (!publishReviewAccepted) {
-      setError('Review and confirm the publishing summary before publishing this template.')
+      setError('Review and confirm the summary before making this template live.')
       return
     }
     setShowPublishConfirm(false)
@@ -4883,11 +4884,136 @@ export default function SettingsSigningTemplatesPage({
   }
 
   if (loading) {
-    return <SettingsLoadingState label="Loading Contract Studio…" />
+    return <SettingsLoadingState label="Loading Document Builder…" />
   }
 
+  const makeLiveDisabled = !selectedTemplate || !selectedIsOrgOwned || !canEdit || saving || Boolean(form.isDefault)
+  const makeLiveDetail = !selectedTemplate
+    ? 'Choose template'
+    : form.isDefault
+      ? 'Already live'
+      : !selectedIsOrgOwned
+        ? 'Create draft first'
+        : !canEdit
+          ? 'Review only'
+          : hasUnsavedChanges
+            ? 'Save first'
+            : 'Final check'
+  const activeStudioAreaConfig = CONTRACT_STUDIO_AREAS.find((area) => area.key === activeStudioArea) || CONTRACT_STUDIO_AREAS[0]
+  const activeDocumentTypeConfig = simpleDocumentTabs.find((item) => item.key === activeDocumentTypeKey) || simpleDocumentTabs[0]
+  const activeTemplateTabConfig = CONTRACT_STUDIO_TABS.find((tab) => tab.key === activeTab) || CONTRACT_STUDIO_TABS[0]
+  const documentBuilderModeLabel = activeStudioArea === 'templates'
+    ? `${activeDocumentTypeConfig?.label || templateTypeConfig.label} / ${activeTemplateTabConfig?.label || 'Build'}`
+    : activeStudioAreaConfig?.label || 'Document Builder'
+  const documentBuilderModeDescription = activeStudioArea === 'templates'
+    ? (selectedIsOrgOwned ? 'Editing your agency draft.' : 'Viewing the standard Arch9 template.')
+    : activeStudioAreaConfig?.description || 'Create and manage agency documents.'
+  const guidedNextAction = (() => {
+    if (!selectedTemplate) {
+      return {
+        title: 'Start with a template',
+        description: 'Create a reusable template or choose an existing one.',
+        label: 'Create Template',
+        icon: Plus,
+        disabled: !canEdit || saving || cloning,
+        onClick: () => void handleCreateTemplate(),
+      }
+    }
+    if (!selectedIsOrgOwned) {
+      return {
+        title: 'Make an editable copy',
+        description: 'Shared templates stay protected until your agency has a draft.',
+        label: cloning ? 'Creating...' : 'Create Draft',
+        icon: CopyPlus,
+        disabled: !canEdit || cloning || saving,
+        onClick: (event) => void handleSaveDraftAction(event),
+      }
+    }
+    if (hasUnsavedChanges) {
+      return {
+        title: 'Save your draft',
+        description: 'Save changes before making this version live or creating documents from it.',
+        label: saving || cloning ? 'Saving...' : 'Save Draft',
+        icon: Save,
+        disabled: !canEdit || saving || cloning,
+        onClick: (event) => void handleSaveDraftAction(event),
+      }
+    }
+    if (!previewState.html) {
+      return {
+        title: 'Check the layout',
+        description: 'Preview with safe example data before you publish or generate.',
+        label: testingTemplate ? 'Previewing...' : 'Preview',
+        icon: Eye,
+        disabled: testingTemplate,
+        onClick: () => openTemplatePreview(),
+      }
+    }
+    if (!form.isDefault) {
+      return {
+        title: 'Ready to make live',
+        description: 'Make this version available for new documents when the checks look right.',
+        label: 'Make live',
+        icon: Upload,
+        disabled: makeLiveDisabled,
+        onClick: openPublishDialog,
+      }
+    }
+    return {
+      title: 'Template is live',
+      description: 'Create a document, addendum, amendment, or annexure from this template.',
+      label: 'Create Document',
+      icon: FileSignature,
+      disabled: !selectedTemplate,
+      onClick: () => setActiveStudioArea('documents'),
+    }
+  })()
+  const GuidedNextIcon = guidedNextAction.icon || Sparkles
+  const documentBuilderActions = [
+    {
+      key: 'edit',
+      label: 'Edit',
+      detail: selectedSection ? getFriendlySectionLabel(selectedSection, selectedSectionIndex) : 'Template',
+      icon: FileText,
+      active: activeStudioArea === 'templates' && activeTab === 'template',
+      disabled: !selectedTemplate,
+      onClick: () => {
+        setActiveStudioArea('templates')
+        setActiveTab('template')
+      },
+    },
+    {
+      key: 'preview',
+      label: 'Preview',
+      detail: testingTemplate ? 'Opening...' : previewState.html ? 'Ready' : 'Check layout',
+      icon: Eye,
+      active: activeStudioArea === 'templates' && activeTab === 'preview',
+      disabled: !selectedTemplate || testingTemplate,
+      onClick: () => openTemplatePreview(),
+    },
+    {
+      key: 'create',
+      label: 'Create',
+      detail: documentPackets.length ? `${documentPackets.length} saved` : 'Draft or addendum',
+      icon: FileSignature,
+      tone: 'primary',
+      active: activeStudioArea === 'documents',
+      disabled: !selectedTemplate,
+      onClick: () => setActiveStudioArea('documents'),
+    },
+    {
+      key: 'make-live',
+      label: 'Make live',
+      detail: makeLiveDetail,
+      icon: Upload,
+      active: showPublishConfirm,
+      disabled: makeLiveDisabled,
+      onClick: openPublishDialog,
+    },
+  ]
+
   return (
-    <div className="space-y-6 pb-10">
+    <div className="space-y-6 pb-10" data-simple-document-builder={simpleDocumentBuilderEnabled ? 'enabled' : 'off'}>
       <header className="space-y-6 rounded-[28px] border border-[#dbe7f3] bg-white p-5 shadow-[0_18px_42px_rgba(15,23,42,0.05)] sm:p-6">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-3">
@@ -4900,138 +5026,186 @@ export default function SettingsSigningTemplatesPage({
 
           <div className="flex flex-wrap items-center gap-3 xl:justify-end">
             <div className="mr-2 text-sm text-[#52667d]">
-              <p>Last published</p>
+              <p>Last made live</p>
               <p className="font-semibold text-[#102033]">{formatFriendlyDate(liveTemplate?.updated_at || selectedTemplate?.updated_at)}</p>
             </div>
             <span className={`inline-flex items-center gap-2 rounded-[14px] border px-4 py-2.5 text-sm font-semibold ${hasUnsavedChanges ? 'border-[#f1d9a8] bg-[#fff8e8] text-[#8a5b06]' : 'border-[#d6efe1] bg-white text-[#1f7a45]'}`}>
               <CheckCircle2 size={16} />
               {saving ? 'Saving...' : hasUnsavedChanges ? 'Unsaved changes' : 'Saved'}
             </span>
-            <button
-              type="button"
-              className={studioSecondaryButtonClass}
-              onClick={() => setActiveTab('preview')}
-              disabled={!selectedTemplate}
-            >
-              <Eye size={15} />
-              <span>Test</span>
-            </button>
-            <button
-              type="button"
-              className={studioPrimaryButtonClass}
-              onClick={openPublishDialog}
-              disabled={!selectedTemplate || !selectedIsOrgOwned || !canEdit || saving || Boolean(form.isDefault)}
-            >
-              <Upload size={15} />
-              <span>Publish</span>
-            </button>
           </div>
         </div>
 
         {!canEdit ? (
           <SettingsBanner tone="warning">
-            Read-only for your role. {administratorLabel} can edit templates, clauses, publishing, and data-field governance.
+            Read-only for your role. {administratorLabel} can edit templates, clauses, live versions, and field rules.
           </SettingsBanner>
         ) : null}
 
         {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
         {message ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}
 
-        <div className="grid gap-3 xl:grid-cols-3">
-          {CONTRACT_STUDIO_AREAS.map((area) => {
-            const Icon = area.icon
-            const active = activeStudioArea === area.key
-            return (
-              <button
-                key={area.key}
-                type="button"
-                onClick={() => {
-                  setActiveStudioArea(area.key)
-                  if (area.key === 'templates' && !CONTRACT_STUDIO_TABS.some((tab) => tab.key === activeTab)) {
-                    setActiveTab('template')
-                  }
-                }}
-                className={[
-                  'flex min-h-[104px] items-start gap-3 rounded-[18px] border px-4 py-4 text-left transition',
-                  active
-                    ? 'border-[#96d7ad] bg-[#eef9f1] shadow-[0_14px_28px_rgba(18,134,66,0.10)]'
-                    : 'border-[#dbe7f3] bg-[#fbfdff] hover:border-[#c4d5e6] hover:bg-white',
-                ].join(' ')}
-              >
-                <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[12px] ${active ? 'bg-white text-[#128642]' : 'bg-white text-[#52667d]'}`}>
-                  <Icon size={18} />
+        <DocumentBuilderActionRail actions={documentBuilderActions} />
+
+        <div className="rounded-[18px] border border-[#dbe7f3] bg-[#fbfdff] p-3 shadow-[0_12px_26px_rgba(15,23,42,0.04)]">
+          <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+            <div className="min-w-0">
+              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">Current workspace</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="min-w-0 truncate text-sm font-semibold text-[#102033]">{documentBuilderModeLabel}</span>
+                <span className="rounded-full border border-[#dbe7f3] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
+                  Next best action
                 </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-[#102033]">{area.label}</span>
-                  <span className="mt-1 block text-sm leading-5 text-[#607387]">{area.description}</span>
-                </span>
-              </button>
-            )
-          })}
+              </div>
+              <p className="mt-2 text-sm leading-6 text-[#607387]">
+                {documentBuilderModeDescription} {guidedNextAction.title}: {guidedNextAction.description}
+              </p>
+            </div>
+            <button
+              type="button"
+              className={`${studioPrimaryButtonClass} w-full lg:w-auto`}
+              onClick={guidedNextAction.onClick}
+              disabled={guidedNextAction.disabled}
+            >
+              <GuidedNextIcon size={14} />
+              <span>{guidedNextAction.label}</span>
+            </button>
+          </div>
         </div>
 
-        {activeStudioArea === 'templates' ? (
-          <div className="overflow-x-auto rounded-[18px] border border-[#dbe7f3] bg-white p-2">
-            <div className="flex min-w-max gap-1">
-              {simpleDocumentTabs.map((item) => {
-                const Icon = item.icon
-                const active = activeDocumentTypeKey === item.key
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => {
-                      setActiveDocumentTypeKey(item.key)
-                      setPacketType(item.packetType)
-                      setActiveTab('template')
-                    }}
-                    className={[
-                      'inline-flex items-center gap-2 rounded-[14px] border px-4 py-3 text-sm font-semibold transition',
-                      active
-                        ? 'border-[#b9dfc8] bg-[#eef9f1] text-[#128642] shadow-[inset_0_-2px_0_#128642]'
-                        : 'border-transparent bg-white text-[#42566d] hover:border-[#dbe7f3] hover:bg-[#f8fbff]',
-                    ].join(' ')}
-                  >
-                    <Icon size={15} />
-                    <span>{item.label}</span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        ) : null}
+        <details className="group rounded-[18px] border border-[#dbe7f3] bg-white/80 p-3">
+          <summary className="flex cursor-pointer list-none flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <span className="inline-flex min-w-0 items-center gap-2 font-semibold text-[#102033]">
+              <ChevronDown size={15} className="shrink-0 text-[#8aa0b7] transition group-open:rotate-180" />
+              <span>Switch document type or view</span>
+            </span>
+            <span className="min-w-0 truncate rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#607387]">
+              {documentBuilderModeLabel}
+            </span>
+          </summary>
 
-        {activeStudioArea === 'templates' ? (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-[#52667d]">
-            {selectedIsOrgOwned ? 'You are editing your agency draft.' : 'This is the standard Arch9 document. Saving creates your agency draft.'}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {CONTRACT_STUDIO_TABS.map((tab) => (
-              <TemplateStudioTabButton
-                key={tab.key}
-                active={activeTab === tab.key}
-                label={tab.label}
-                onClick={() => setActiveTab(tab.key)}
-              />
-            ))}
+          <div className="mt-3 grid gap-3">
+            <div className="overflow-x-auto rounded-[18px] border border-[#dbe7f3] bg-[#f8fbff] p-1">
+              <div className="flex min-w-max gap-1">
+                {CONTRACT_STUDIO_AREAS.map((area) => {
+                  const Icon = area.icon
+                  const active = activeStudioArea === area.key
+                  return (
+                    <button
+                      key={area.key}
+                      type="button"
+                      onClick={() => {
+                        setActiveStudioArea(area.key)
+                        if (area.key === 'templates' && !CONTRACT_STUDIO_TABS.some((tab) => tab.key === activeTab)) {
+                          setActiveTab('template')
+                        }
+                      }}
+                      className={[
+                        'inline-flex min-h-11 items-center gap-2 rounded-[14px] border px-4 py-2.5 text-sm font-semibold transition',
+                        active
+                          ? 'border-[#96d7ad] bg-white text-[#128642] shadow-[inset_0_-2px_0_#128642]'
+                          : 'border-transparent bg-transparent text-[#52667d] hover:border-[#dbe7f3] hover:bg-white hover:text-[#102033]',
+                      ].join(' ')}
+                      title={area.description}
+                    >
+                      <Icon size={15} />
+                      <span>{area.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {activeStudioArea === 'templates' ? (
+              <>
+                <div className="overflow-x-auto rounded-[18px] border border-[#dbe7f3] bg-white p-2">
+                  <div className="flex min-w-max gap-1">
+                    {simpleDocumentTabs.map((item) => {
+                      const Icon = item.icon
+                      const active = activeDocumentTypeKey === item.key
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => {
+                            setActiveDocumentTypeKey(item.key)
+                            setPacketType(item.packetType)
+                            setActiveTab('template')
+                          }}
+                          className={[
+                            'inline-flex items-center gap-2 rounded-[14px] border px-4 py-3 text-sm font-semibold transition',
+                            active
+                              ? 'border-[#b9dfc8] bg-[#eef9f1] text-[#128642] shadow-[inset_0_-2px_0_#128642]'
+                              : 'border-transparent bg-white text-[#42566d] hover:border-[#dbe7f3] hover:bg-[#f8fbff]',
+                          ].join(' ')}
+                        >
+                          <Icon size={15} />
+                          <span>{item.label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[#dbe7f3] bg-[#fbfdff] px-3 py-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7a8da6]">Template status</p>
+                    <p className="mt-1 text-sm font-semibold text-[#102033]">
+                      {selectedIsOrgOwned ? 'Agency draft' : 'Standard template'}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {CONTRACT_STUDIO_TABS.map((tab) => (
+                      <TemplateStudioTabButton
+                        key={tab.key}
+                        active={activeTab === tab.key}
+                        label={tab.label}
+                        onClick={() => setActiveTab(tab.key)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : null}
           </div>
-          </div>
-        ) : null}
+        </details>
       </header>
 
       {activeStudioArea === 'templates' && activeTab === 'template' ? (
         selectedTemplate ? (
           <>
-            <form onSubmit={handleSaveDraftAction} className="grid gap-5 xl:h-[calc(100vh-150px)] xl:min-h-[820px] xl:grid-cols-[260px_minmax(0,1fr)_300px] xl:items-stretch">
-              <aside className="rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)] xl:flex xl:min-h-0 xl:flex-col xl:self-stretch xl:overflow-hidden">
-                <div className="mb-4">
-                  <h2 className="text-base font-semibold text-[#102033]">Document Outline</h2>
-                  <p className="mt-1 text-sm leading-6 text-[#607387]">Click a section to edit that part of the document.</p>
+            <form
+              onSubmit={handleSaveDraftAction}
+              className={[
+                'grid min-w-0 gap-4 pb-8 lg:gap-5 xl:min-h-[760px] xl:items-start',
+                outlineCollapsed
+                  ? 'xl:grid-cols-[64px_minmax(0,1fr)_minmax(260px,300px)] 2xl:grid-cols-[64px_minmax(0,1fr)_minmax(280px,320px)]'
+                  : 'xl:grid-cols-[220px_minmax(0,1fr)_minmax(260px,300px)] 2xl:grid-cols-[260px_minmax(0,1fr)_minmax(280px,320px)]',
+              ].join(' ')}
+            >
+              <aside className={[
+                'rounded-[20px] border border-[#dbe7f3] bg-white shadow-[0_16px_34px_rgba(15,23,42,0.05)] xl:sticky xl:top-4 xl:max-h-[calc(100vh-140px)] xl:overflow-hidden',
+                outlineCollapsed ? 'p-3' : 'p-4',
+              ].join(' ')}
+              >
+                <div className={`mb-4 flex items-start gap-3 ${outlineCollapsed ? 'flex-col items-center' : 'justify-between'}`}>
+                  <div className={outlineCollapsed ? 'sr-only' : ''}>
+                    <h2 className="text-base font-semibold text-[#102033]">Document Outline</h2>
+                    <p className="mt-1 text-sm leading-6 text-[#607387]">Click a section to edit that part of the document.</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-[#dbe7f3] bg-white text-[#52667d] transition hover:border-[#96d7ad] hover:bg-[#f6fbf8] hover:text-[#128642]"
+                    onClick={() => setOutlineCollapsed((previous) => !previous)}
+                    aria-label={outlineCollapsed ? 'Expand document outline' : 'Collapse document outline'}
+                    title={outlineCollapsed ? 'Expand outline' : 'Collapse outline'}
+                  >
+                    <ChevronDown size={16} className={outlineCollapsed ? '-rotate-90' : 'rotate-90'} />
+                  </button>
                 </div>
 
                 {(form.sections || []).length ? (
-                  <div className="min-h-0 space-y-2 xl:flex-1 xl:overflow-y-auto xl:pr-1">
+                  <div className="space-y-2 xl:max-h-[calc(100vh-300px)] xl:overflow-y-auto xl:pr-1">
                     {(form.sections || []).map((section, index) => {
                       const active = selectedSectionIndex === index
                       const label = getFriendlySectionLabel(section, index)
@@ -5048,14 +5222,15 @@ export default function SettingsSigningTemplatesPage({
                           <button
                             type="button"
                             onClick={() => setSelectedSectionIndex(index)}
-                            className="flex min-w-0 flex-1 items-center gap-3 rounded-[8px] px-1 py-0.5 text-left"
+                            className={`flex min-w-0 flex-1 items-center gap-3 rounded-[8px] px-1 py-0.5 text-left ${outlineCollapsed ? 'justify-center' : ''}`}
+                            title={label}
                           >
                             <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-[#dbe7f3] bg-white text-xs font-semibold">
                               {index + 1}
                             </span>
-                            <span className="min-w-0 truncate font-semibold">{label}</span>
+                            <span className={outlineCollapsed ? 'sr-only' : 'min-w-0 truncate font-semibold'}>{label}</span>
                           </button>
-                          {canEdit ? (
+                          {canEdit && !outlineCollapsed ? (
                             <button
                               type="button"
                               onClick={(event) => {
@@ -5085,29 +5260,33 @@ export default function SettingsSigningTemplatesPage({
                   className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[10px] border border-[#dbe7f3] bg-white px-3 py-2.5 text-sm font-semibold text-[#128642] shadow-[0_10px_18px_rgba(15,23,42,0.04)] transition hover:bg-[#f6fbf8] disabled:cursor-not-allowed disabled:opacity-60"
                   onClick={addSection}
                   disabled={!canEdit}
+                  title="Add Section"
                 >
                   <Plus size={15} />
-                  <span>Add Section</span>
+                  <span className={outlineCollapsed ? 'sr-only' : ''}>Add Section</span>
                 </button>
               </aside>
 
-              <main className="rounded-[20px] border border-[#dbe7f3] bg-white p-5 shadow-[0_16px_34px_rgba(15,23,42,0.05)] xl:flex xl:min-h-0 xl:flex-col xl:self-stretch">
+              <main className="min-w-0 overflow-hidden rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)] sm:p-5">
                 {selectedSection ? (
-                  <div className="flex min-h-0 flex-1 flex-col gap-5">
+                  <div className="flex flex-col gap-5">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                       <div className="min-w-0 flex-1">
-                        <label className="grid gap-1.5 text-sm font-semibold text-[#102033]">
-                          Section title
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <span className="inline-flex shrink-0 items-center justify-center rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-[#607387]">
+                            Section {selectedSectionIndex + 1}
+                          </span>
                           <input
                             ref={sectionTitleInputRef}
+                            aria-label="Section title"
                             type="text"
                             value={selectedSection.sectionLabel}
                             disabled={!canEdit}
                             onChange={(event) => updateSection(selectedSectionIndex, { sectionLabel: event.target.value })}
-                            className="min-h-11 w-full rounded-[12px] border border-[#dbe7f3] bg-white px-3 text-base font-semibold text-[#102033] outline-none transition placeholder:text-[#9aabba] focus:border-[#96d7ad] focus:ring-4 focus:ring-[#e7f6ed] disabled:bg-[#f8fbff] disabled:text-[#7b8da6]"
+                            className="min-h-11 min-w-0 flex-1 rounded-[12px] border border-[#dbe7f3] bg-white px-3 text-base font-semibold text-[#102033] outline-none transition placeholder:text-[#9aabba] focus:border-[#96d7ad] focus:ring-4 focus:ring-[#e7f6ed] disabled:bg-[#f8fbff] disabled:text-[#7b8da6]"
                             placeholder={`Section ${selectedSectionIndex + 1}`}
                           />
-                        </label>
+                        </div>
                         <p className="mt-2 text-sm leading-6 text-[#607387]">{selectedSectionDescription}</p>
                       </div>
                       <details className="relative">
@@ -5157,16 +5336,13 @@ export default function SettingsSigningTemplatesPage({
                       </SettingsBanner>
                     ) : null}
 
-                    <div className="overflow-hidden rounded-[18px] border border-[#dbe7f3] bg-white xl:flex xl:min-h-[620px] xl:flex-1 xl:flex-col">
-                      <div className="flex flex-wrap items-center gap-2 border-b border-[#e7eef6] bg-[#fbfdff] px-4 py-2.5">
+                    <div className="min-w-0 overflow-hidden rounded-[18px] border border-[#dbe7f3] bg-white">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-[#e7eef6] bg-[#fbfdff] px-3 py-2.5 sm:px-4">
+                        <span className="mr-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">Add</span>
                         {[
-                          { icon: Type, label: 'Paragraph', action: () => handleInsertDocumentBlock('paragraph') },
-                          { icon: Bold, label: 'Heading', action: () => handleInsertDocumentBlock('heading') },
+                          { icon: Type, label: 'Text', action: () => handleInsertDocumentBlock('paragraph') },
                           { icon: Table2, label: 'Table', action: () => handleInsertDocumentBlock('table') },
-                          { icon: MoreHorizontal, label: 'Page break', action: () => handleInsertDocumentBlock('pageBreak') },
                           { icon: FileSignature, label: 'Signature', action: () => handleInsertDocumentBlock('signature') },
-                          { icon: Check, label: 'Initials', action: () => handleInsertDocumentBlock('initials') },
-                          { icon: ShieldCheck, label: 'Witness', action: () => handleInsertDocumentBlock('witness') },
                         ].map((item) => {
                           const Icon = item.icon
                           return (
@@ -5176,34 +5352,50 @@ export default function SettingsSigningTemplatesPage({
                               title={`Add ${item.label.toLowerCase()}`}
                               onClick={item.action}
                               disabled={!canEdit || !selectedSection}
-                              className="inline-flex h-9 items-center gap-1.5 rounded-[10px] px-2.5 text-xs font-semibold text-[#233246] transition hover:bg-white hover:shadow-[0_8px_16px_rgba(15,23,42,0.06)] disabled:cursor-not-allowed disabled:opacity-50"
+                              className="inline-flex h-9 min-w-0 items-center gap-1.5 rounded-[10px] border border-[#dbe7f3] bg-white px-3 text-xs font-semibold text-[#233246] transition hover:border-[#96d7ad] hover:bg-[#f6fbf8] disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <Icon size={15} />
-                              <span>{item.label}</span>
+                              <span className="truncate">{item.label}</span>
                             </button>
                           )
                         })}
-                        <button
-                          type="button"
-                          className={`${studioQuietButtonClass} ml-auto`}
-                          onClick={focusSourceEditor}
-                        >
-                          <FileText size={14} />
-                          <span>Source</span>
-                        </button>
+                        <details className="group basis-full sm:basis-auto">
+                          <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-[10px] border border-transparent px-3 text-xs font-semibold text-[#52667d] transition hover:border-[#dbe7f3] hover:bg-white">
+                            <MoreHorizontal size={15} />
+                            <span>More inserts</span>
+                            <ChevronDown size={14} className="transition group-open:rotate-180" />
+                          </summary>
+                          <div className="mt-2 grid gap-2 rounded-[14px] border border-[#dbe7f3] bg-white p-2 sm:grid-cols-2 lg:grid-cols-5">
+                            {[
+                              { icon: Bold, label: 'Heading', action: () => handleInsertDocumentBlock('heading') },
+                              { icon: MoreHorizontal, label: 'Page break', action: () => handleInsertDocumentBlock('pageBreak') },
+                              { icon: Check, label: 'Initials', action: () => handleInsertDocumentBlock('initials') },
+                              { icon: ShieldCheck, label: 'Witness', action: () => handleInsertDocumentBlock('witness') },
+                              { icon: FileText, label: 'Raw source', action: focusSourceEditor },
+                            ].map((item) => {
+                              const Icon = item.icon
+                              return (
+                                <button
+                                  key={item.label}
+                                  type="button"
+                                  title={item.label === 'Raw source' ? 'Open raw source editor' : `Add ${item.label.toLowerCase()}`}
+                                  onClick={item.action}
+                                  disabled={!canEdit || !selectedSection}
+                                  className="inline-flex min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-[10px] border border-[#e4ebf2] bg-[#fbfdff] px-2.5 text-xs font-semibold text-[#233246] transition hover:border-[#96d7ad] hover:bg-[#f6fbf8] disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  <Icon size={15} />
+                                  <span className="truncate">{item.label}</span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </details>
                       </div>
 
-                      <div className="min-h-[640px] bg-[#eef3f8] px-4 py-5 xl:min-h-0 xl:flex-1 xl:overflow-y-auto">
-                        <article className="mx-auto min-h-[760px] w-full max-w-[760px] rounded-[8px] border border-[#dbe7f3] bg-white px-10 py-9 shadow-[0_22px_50px_rgba(15,23,42,0.14)]">
-                          <div className="mb-7 border-b border-[#e7eef6] pb-5">
-                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#7a8da6]">
-                              {templateTypeConfig.shortLabel} document canvas
-                            </p>
-                            <h3 className="mt-2 text-xl font-semibold text-[#102033]">{selectedSection.sectionLabel || `Section ${selectedSectionIndex + 1}`}</h3>
-                          </div>
-
+                      <div className="bg-[#eef3f8] px-3 py-4 sm:px-4 sm:py-5">
+                        <article className="mx-auto min-h-[560px] w-full max-w-[760px] rounded-[8px] border border-[#dbe7f3] bg-white px-4 py-6 shadow-[0_22px_50px_rgba(15,23,42,0.14)] sm:min-h-[680px] sm:px-8 sm:py-8 lg:px-10">
                           {selectedSectionCanvasBlocks.length ? (
-                            <div className="space-y-4">
+                            <div className="space-y-3">
                               {selectedSectionCanvasBlocks.map((block, blockIndex) => {
                                 const activeBlock = selectedCanvasBlockIndex === blockIndex
                                 if (block.type === 'table') {
@@ -5256,7 +5448,7 @@ export default function SettingsSigningTemplatesPage({
                                       key={`canvas-paragraph-preview-${blockIndex}`}
                                       type="button"
                                       onClick={() => setSelectedCanvasBlockIndex(blockIndex)}
-                                      className="block w-full rounded-[10px] border border-transparent px-3 py-3 text-left text-sm leading-7 text-[#233246] transition hover:border-[#dbe7f3] hover:bg-[#fbfdff]"
+                                      className="block w-full rounded-[10px] border border-transparent px-3 py-3 text-left text-sm leading-7 text-[#233246] transition hover:border-[#dbe7f3] hover:bg-[#fbfdff] [overflow-wrap:anywhere]"
                                     >
                                       {renderTemplateEditorInline(block.raw, tokenLabelByKey)}
                                     </button>
@@ -5304,9 +5496,17 @@ export default function SettingsSigningTemplatesPage({
                           )}
                         </article>
 
-                        <details open className="mx-auto mt-5 w-full max-w-[760px] rounded-[14px] border border-[#dbe7f3] bg-white">
-                          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-[#102033]">
-                            Source editor
+                        <details
+                          open={showSourceEditor}
+                          onToggle={(event) => setShowSourceEditor(event.currentTarget.open)}
+                          className="mx-auto mt-5 w-full max-w-[760px] rounded-[14px] border border-[#f4e2bf] bg-[#fffaf1]"
+                        >
+                          <summary className="flex cursor-pointer list-none flex-col gap-1 px-4 py-3 text-sm text-[#7d520d] sm:flex-row sm:items-center sm:justify-between">
+                            <span className="inline-flex min-w-0 items-center gap-2 font-semibold text-[#102033]">
+                              <AlertTriangle size={15} className="shrink-0 text-[#a66a08]" />
+                              <span>Raw source (advanced)</span>
+                            </span>
+                            <span className="text-xs font-medium text-[#7d520d]">Use only when the visual editor needs cleanup.</span>
                           </summary>
                           <textarea
                             ref={clauseTextareaRef}
@@ -5315,7 +5515,7 @@ export default function SettingsSigningTemplatesPage({
                             disabled={!canEdit}
                             onChange={(event) => updateSection(selectedSectionIndex, { legalText: event.target.value })}
                             placeholder="Write the wording for this section. Use variables like {{buyer_full_name}} where Arch9 should fill in transaction details."
-                            className="min-h-[260px] w-full resize-y border-t border-[#e7eef6] bg-white px-5 py-5 font-mono text-[13px] leading-6 text-[#102033] outline-none disabled:bg-[#f8fbff] disabled:text-[#7b8da6]"
+                            className="min-h-[260px] w-full resize-y border-t border-[#f4e2bf] bg-white px-5 py-5 font-mono text-[13px] leading-6 text-[#102033] outline-none disabled:bg-[#f8fbff] disabled:text-[#7b8da6]"
                           />
                         </details>
                       </div>
@@ -5330,7 +5530,7 @@ export default function SettingsSigningTemplatesPage({
                     </div>
 
                     {selectedSectionTokens.length ? (
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap gap-2 pb-2">
                         {selectedSectionTokenDetails.map((token) => (
                           <button
                             key={token.key}
@@ -5353,12 +5553,12 @@ export default function SettingsSigningTemplatesPage({
                 )}
               </main>
 
-              <aside className="space-y-4 xl:min-h-0 xl:self-stretch xl:overflow-y-auto xl:pr-1">
-                <section className="rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
+              <aside className="min-w-0 max-w-full space-y-4 overflow-x-hidden xl:sticky xl:top-4 xl:max-h-[calc(100vh-140px)] xl:overflow-y-auto xl:pr-1">
+                <section className="min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Inspector</p>
-                      <h2 className="mt-2 text-base font-semibold text-[#102033]">Selected Block</h2>
+                      <h2 className="mt-2 text-base font-semibold text-[#102033]">Block</h2>
                     </div>
                     <span className="rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
                       {selectedCanvasBlock?.type ? selectedCanvasBlock.type.replace(/_/g, ' ') : 'none'}
@@ -5374,14 +5574,14 @@ export default function SettingsSigningTemplatesPage({
                             ? 'Table content is still stored as markdown for safe generation.'
                             : selectedCanvasBlock.type === 'page_break'
                               ? 'This block marks where a new page should begin.'
-                              : 'Edit this text directly on the document canvas.'}
+                              : 'Edit this block on the document page.'}
                         </p>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
                         <button
                           type="button"
-                          className={studioSecondaryButtonClass}
+                          className={`${studioSecondaryButtonClass} min-w-0 px-3`}
                           onClick={() => handleInsertDocumentBlock('signature')}
                           disabled={!canEdit}
                         >
@@ -5390,7 +5590,7 @@ export default function SettingsSigningTemplatesPage({
                         </button>
                         <button
                           type="button"
-                          className={studioSecondaryButtonClass}
+                          className={`${studioSecondaryButtonClass} min-w-0 px-3`}
                           onClick={() => handleInsertDocumentBlock('initials')}
                           disabled={!canEdit}
                         >
@@ -5404,7 +5604,7 @@ export default function SettingsSigningTemplatesPage({
                         className="w-full rounded-[12px] border border-[#dbe7f3] bg-[#f8fbff] px-3 py-2.5 text-sm font-semibold text-[#24518a] transition hover:bg-white"
                         onClick={focusSourceEditor}
                       >
-                        Open source for this section
+                        Raw source (advanced)
                       </button>
 
                       <div className="rounded-[14px] border border-[#dbe7f3] bg-[#fbfdff] px-3 py-3">
@@ -5439,20 +5639,27 @@ export default function SettingsSigningTemplatesPage({
                   )}
                 </section>
 
-                <section className="rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
-                  <div className="flex items-start justify-between gap-3">
+                <details
+                  defaultOpen={selectedSectionCondition.enabled}
+                  className="group min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]"
+                >
+                  <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
                     <div>
-                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Rules</p>
-                      <h2 className="mt-2 text-base font-semibold text-[#102033]">Clause Condition</h2>
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Optional</p>
+                      <h2 className="mt-2 text-base font-semibold text-[#102033]">Show Clause When</h2>
+                      <p className="mt-1 text-sm leading-5 text-[#607387]">Only use this when a section should appear for certain deals.</p>
                     </div>
-                    <span className={[
-                      'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold',
-                      selectedSectionCondition.enabled ? 'border-[#cdebd8] bg-[#eef9f1] text-[#128642]' : 'border-[#dbe7f3] bg-[#f8fbff] text-[#607387]',
-                    ].join(' ')}
-                    >
-                      {selectedSectionCondition.enabled ? 'Conditional' : 'Always'}
-                    </span>
-                  </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className={[
+                        'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold',
+                        selectedSectionCondition.enabled ? 'border-[#cdebd8] bg-[#eef9f1] text-[#128642]' : 'border-[#dbe7f3] bg-[#f8fbff] text-[#607387]',
+                      ].join(' ')}
+                      >
+                        {selectedSectionCondition.enabled ? 'On' : 'Off'}
+                      </span>
+                      <ChevronDown size={15} className="mt-1 text-[#8aa0b7] transition group-open:rotate-180" />
+                    </div>
+                  </summary>
 
                   <p className="mt-3 rounded-[14px] border border-[#dbe7f3] bg-[#fbfdff] px-3 py-2 text-sm leading-6 text-[#52667d]">
                     {selectedSectionConditionSummary}
@@ -5520,23 +5727,30 @@ export default function SettingsSigningTemplatesPage({
                       Clear condition
                     </button>
                   </div>
-                </section>
+                </details>
 
-                <section className="rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
-                  <div className="flex items-start justify-between gap-3">
+                <details
+                  defaultOpen={Boolean(selectedSigningFields.length)}
+                  className="group min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]"
+                >
+                  <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
                     <div>
-                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Signing</p>
-                      <h2 className="mt-2 text-base font-semibold text-[#102033]">Signer Field Planner</h2>
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Optional</p>
+                      <h2 className="mt-2 text-base font-semibold text-[#102033]">Signing Fields</h2>
+                      <p className="mt-1 text-sm leading-5 text-[#607387]">Add boxes only when this section needs a signature, date, witness, or initials.</p>
                     </div>
-                    <span className="rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
-                      {selectedSigningFields.length} field{selectedSigningFields.length === 1 ? '' : 's'}
-                    </span>
-                  </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className="rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
+                        {selectedSigningFields.length} field{selectedSigningFields.length === 1 ? '' : 's'}
+                      </span>
+                      <ChevronDown size={15} className="mt-1 text-[#8aa0b7] transition group-open:rotate-180" />
+                    </div>
+                  </summary>
 
-                  <div className="mt-4 grid grid-cols-2 gap-2">
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
                     <button
                       type="button"
-                      className={studioSecondaryButtonClass}
+                      className={`${studioSecondaryButtonClass} min-w-0 px-3`}
                       onClick={() => addSelectedSectionSigningField('signature', packetType === 'mandate' ? 'seller' : 'purchaser_1')}
                       disabled={!selectedSection || !canEdit}
                     >
@@ -5545,7 +5759,7 @@ export default function SettingsSigningTemplatesPage({
                     </button>
                     <button
                       type="button"
-                      className={studioSecondaryButtonClass}
+                      className={`${studioSecondaryButtonClass} min-w-0 px-3`}
                       onClick={() => addSelectedSectionSigningField('initial', packetType === 'mandate' ? 'seller' : 'purchaser_1')}
                       disabled={!selectedSection || !canEdit}
                     >
@@ -5554,7 +5768,7 @@ export default function SettingsSigningTemplatesPage({
                     </button>
                     <button
                       type="button"
-                      className={studioSecondaryButtonClass}
+                      className={`${studioSecondaryButtonClass} min-w-0 px-3`}
                       onClick={() => addSelectedSectionSigningField('signature', 'witness_1')}
                       disabled={!selectedSection || !canEdit}
                     >
@@ -5563,7 +5777,7 @@ export default function SettingsSigningTemplatesPage({
                     </button>
                     <button
                       type="button"
-                      className={studioSecondaryButtonClass}
+                      className={`${studioSecondaryButtonClass} min-w-0 px-3`}
                       onClick={() => addSelectedSectionSigningField('date', packetType === 'mandate' ? 'seller' : 'purchaser_1')}
                       disabled={!selectedSection || !canEdit}
                     >
@@ -5581,11 +5795,11 @@ export default function SettingsSigningTemplatesPage({
                       <div className="absolute left-[12%] right-[18%] top-[16%] h-1.5 rounded-full bg-[#edf2f7]" />
                       <div className="absolute left-[12%] right-[14%] top-[21%] h-1.5 rounded-full bg-[#edf2f7]" />
                       <div className="absolute left-[12%] right-[20%] top-[26%] h-1.5 rounded-full bg-[#edf2f7]" />
-                      {selectedSigningFields.map((field) => (
+                      {selectedSigningFieldPreviewLayout.map((field) => (
                         <div
                           key={`planned-field-preview-${field.id}`}
                           className={[
-                            'absolute flex items-center justify-center rounded-[4px] border text-[7px] font-semibold leading-none shadow-[0_4px_8px_rgba(15,23,42,0.10)]',
+                            'absolute flex items-center justify-center overflow-hidden rounded-[4px] border px-1 text-[7px] font-semibold leading-none shadow-[0_4px_8px_rgba(15,23,42,0.10)]',
                             field.fieldType === 'signature'
                               ? 'border-[#96d7ad] bg-[#eef9f1] text-[#0f7438]'
                               : field.fieldType === 'initial'
@@ -5593,10 +5807,10 @@ export default function SettingsSigningTemplatesPage({
                                 : 'border-[#ead49c] bg-[#fff8ec] text-[#7d520d]',
                           ].join(' ')}
                           style={{
-                            left: `${Math.min(92, Math.max(0, (field.xPosition / SIGNING_FIELD_PAGE.width) * 100))}%`,
-                            top: `${Math.min(94, Math.max(0, (field.yPosition / SIGNING_FIELD_PAGE.height) * 100))}%`,
-                            width: `${Math.max(7, (field.width / SIGNING_FIELD_PAGE.width) * 100)}%`,
-                            height: `${Math.max(2.4, (field.height / SIGNING_FIELD_PAGE.height) * 100)}%`,
+                            left: `${Math.min(92, Math.max(0, (field.previewX / SIGNING_FIELD_PAGE.width) * 100))}%`,
+                            top: `${Math.min(94, Math.max(0, (field.previewY / SIGNING_FIELD_PAGE.height) * 100))}%`,
+                            width: `${Math.max(7, (field.previewWidth / SIGNING_FIELD_PAGE.width) * 100)}%`,
+                            height: `${Math.max(2.4, (field.previewHeight / SIGNING_FIELD_PAGE.height) * 100)}%`,
                           }}
                           title={`${getSignerRoleLabel(field.signerRole)} ${getSigningFieldTypeLabel(field.fieldType)}`}
                         >
@@ -5605,13 +5819,13 @@ export default function SettingsSigningTemplatesPage({
                       ))}
                     </div>
                     <p className="mt-3 text-center text-xs font-semibold text-[#607387]">
-                      Planned positions use generated PDF coordinates.
+                      Fields are placed on the generated PDF.
                     </p>
                   </div>
 
                   <div className="mt-4 space-y-3">
                     {selectedSigningFields.length ? selectedSigningFields.map((field, index) => (
-                      <div key={`planned-field-${field.id}`} className="rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] p-3">
+                      <div key={`planned-field-${field.id}`} className="min-w-0 rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] p-3">
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-sm font-semibold text-[#102033]">Field {index + 1}</p>
                           <button
@@ -5625,7 +5839,7 @@ export default function SettingsSigningTemplatesPage({
                           </button>
                         </div>
 
-                        <div className="mt-3 grid gap-2">
+                        <div className="mt-3 grid min-w-0 gap-2">
                           <label className={settingsFieldClass}>
                             Signer
                             <select
@@ -5639,7 +5853,7 @@ export default function SettingsSigningTemplatesPage({
                             </select>
                           </label>
 
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
                             <label className={settingsFieldClass}>
                               Type
                               <select
@@ -5700,17 +5914,26 @@ export default function SettingsSigningTemplatesPage({
                       </p>
                     )}
                   </div>
-                </section>
+                </details>
 
-                <section className="rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
-                  <h2 className="text-base font-semibold text-[#102033]">Insert variable</h2>
+                <details
+                  defaultOpen
+                  className="group min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]"
+                >
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Insert</p>
+                      <h2 className="mt-2 text-base font-semibold text-[#102033]">Fields</h2>
+                    </div>
+                    <ChevronDown size={15} className="text-[#8aa0b7] transition group-open:rotate-180" />
+                  </summary>
                   <label className="relative mt-4 block">
                     <Search size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8aa0b7]" />
                     <input
                       type="text"
                       value={mergeFieldSearch}
                       onChange={(event) => setMergeFieldSearch(event.target.value)}
-                      placeholder="Search variables..."
+                      placeholder="Search fields..."
                       className="w-full rounded-[12px] border border-[#dbe7f3] bg-white py-3 pl-10 pr-3 text-sm outline-none transition focus:border-[#96d7ad] focus:ring-4 focus:ring-[#e7f6ed]"
                     />
                   </label>
@@ -5727,73 +5950,61 @@ export default function SettingsSigningTemplatesPage({
                             <button
                               key={field.key}
                               type="button"
-                              className="rounded-[10px] border border-[#e4ebf2] bg-white px-3 py-2 text-left transition hover:border-[#96d7ad] hover:bg-[#f6fbf8] disabled:cursor-not-allowed disabled:opacity-60"
+                              className="min-w-0 rounded-[10px] border border-[#e4ebf2] bg-white px-3 py-2 text-left transition hover:border-[#96d7ad] hover:bg-[#f6fbf8] disabled:cursor-not-allowed disabled:opacity-60"
                               onClick={() => handleInsertVariableToken(field.key)}
                               disabled={!selectedSection || !canEdit}
                             >
-                              <span className="block text-sm font-semibold text-[#102033]">{field.displayLabel}</span>
-                              <span className="mt-1 block font-mono text-[11px] text-[#128642]">{`{{${field.key}}}`}</span>
+                              <span className="block truncate text-sm font-semibold text-[#102033]">{field.displayLabel}</span>
+                              <span className="mt-1 block break-all font-mono text-[11px] text-[#128642]">{`{{${field.key}}}`}</span>
                             </button>
                           ))}
                         </div>
                       </details>
                     )) : (
                       <p className="rounded-[14px] border border-[#dbe7f3] bg-[#fbfdff] px-3 py-4 text-sm text-[#607387]">
-                        No variables match your search.
+                        No fields match your search.
                       </p>
                     )}
                   </div>
-                </section>
+                </details>
 
-                <section className="rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
-                  <div className="flex items-start gap-3">
-                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#eef9f1] text-[#128642]">
-                      <HelpCircle size={18} />
+                <details className="group min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+                    <span className="inline-flex items-center gap-3">
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#eef9f1] text-[#128642]">
+                        <HelpCircle size={18} />
+                      </span>
+                      <span className="text-base font-semibold text-[#102033]">Help</span>
                     </span>
-                    <div>
-                      <h2 className="text-base font-semibold text-[#102033]">Quick tips</h2>
-                      <p className="mt-3 text-sm leading-6 text-[#607387]">
-                        Variables are automatically replaced with the correct information when the document is generated.
-                      </p>
-                      <button
-                        type="button"
-                        className="mt-4 text-sm font-semibold text-[#128642]"
-                        onClick={() => setActiveTab('variables')}
-                      >
-                        Learn more about variables
-                      </button>
-                    </div>
+                    <ChevronDown size={15} className="text-[#8aa0b7] transition group-open:rotate-180" />
+                  </summary>
+                  <div className="mt-4">
+                    <p className="text-sm leading-6 text-[#607387]">
+                      Fields are automatically replaced with the correct information when the document is generated.
+                    </p>
+                    <button
+                      type="button"
+                      className="mt-4 text-sm font-semibold text-[#128642]"
+                      onClick={() => setActiveTab('variables')}
+                    >
+                      View all fields
+                    </button>
                   </div>
-                </section>
+                </details>
               </aside>
             </form>
 
-            <div className="mt-5">
-              <div className="rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
-                <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)_auto] xl:items-center">
-                  <button
-                    type="button"
-                    className="flex items-center gap-3 rounded-[16px] px-3 py-2 text-left transition hover:bg-[#f8fbff]"
-                    onClick={() => setMessage('Guide and support links can be connected here.')}
-                  >
-                    <span className="grid h-10 w-10 place-items-center rounded-full bg-[#eef9f1] text-[#128642]">
-                      <HelpCircle size={19} />
-                    </span>
-                    <span>
-                      <span className="block text-sm font-semibold text-[#102033]">Need help?</span>
-                      <span className="block text-sm text-[#607387]">View guide or contact support</span>
-                    </span>
-                    <ChevronDown size={15} className="-rotate-90 text-[#8aa0b7]" />
-                  </button>
-
-                  <div className="rounded-[16px] border border-[#e4ebf2] bg-[#fbfdff] px-4 py-3">
-                    <p className="text-sm font-semibold text-[#102033]">
-                      {selectedIsOrgOwned ? "You're editing a draft" : 'Saving will create your agency draft'}
+            <div className="mt-2 pb-8">
+              <div className="rounded-[18px] border border-[#dbe7f3] bg-white px-4 py-3 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">Document actions</p>
+                    <p className="mt-1 text-sm font-semibold text-[#102033]">
+                      {hasUnsavedChanges ? 'Unsaved changes' : selectedIsOrgOwned ? 'Draft saved' : 'Standard template'}
                     </p>
-                    <p className="mt-1 text-sm text-[#607387]">Publish when you're ready to make changes live.</p>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                  <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                     <button
                       type="button"
                       className={studioSecondaryButtonClass}
@@ -5806,20 +6017,20 @@ export default function SettingsSigningTemplatesPage({
                     <button
                       type="button"
                       className={studioSecondaryButtonClass}
-                      onClick={() => setActiveTab('preview')}
-                      disabled={!selectedTemplate}
+                      onClick={() => openTemplatePreview()}
+                      disabled={!selectedTemplate || testingTemplate}
                     >
                       <Eye size={14} />
-                      <span>Test</span>
+                      <span>{testingTemplate ? 'Previewing...' : 'Preview'}</span>
                     </button>
                     <button
                       type="button"
                       className={studioPrimaryButtonClass}
                       onClick={openPublishDialog}
-                      disabled={!selectedTemplate || !selectedIsOrgOwned || !canEdit || saving || Boolean(form.isDefault)}
+                      disabled={makeLiveDisabled}
                     >
                       <Upload size={14} />
-                      <span>Publish</span>
+                      <span>Make live</span>
                     </button>
                   </div>
                 </div>
@@ -5828,7 +6039,7 @@ export default function SettingsSigningTemplatesPage({
           </>
         ) : (
           <TemplateStudioPanel
-            title="No documents yet"
+            title="No templates yet"
             description="Create your first document template to start editing wording and variables."
           >
             <SettingsEmptyState
@@ -5838,7 +6049,7 @@ export default function SettingsSigningTemplatesPage({
                 canEdit ? (
                   <button type="button" className={studioPrimaryButtonClass} onClick={() => void handleCreateTemplate()}>
                     <Plus size={15} />
-                    <span>Create Document</span>
+                    <span>Create Template</span>
                   </button>
                 ) : null
               }
@@ -5855,7 +6066,7 @@ export default function SettingsSigningTemplatesPage({
                 <TemplateStudioPanel
                   eyebrow="Template Library"
                   title="Template List"
-                  description="Select the version you want to update, review, or publish."
+                  description="Select the version you want to update, review, or make live."
                 >
                   <div className="rounded-[24px] border border-[#dbe7f3] bg-[#f8fbff] p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -6018,7 +6229,7 @@ export default function SettingsSigningTemplatesPage({
                           }
                         >
                           <ShieldCheck size={15} />
-                          <span>{form.isDefault ? 'Live Default' : 'Publish as Live'}</span>
+                          <span>{form.isDefault ? 'Live default' : 'Make live'}</span>
                         </button>
                       ) : null}
                     </div>
@@ -6026,7 +6237,7 @@ export default function SettingsSigningTemplatesPage({
                 >
                   {!selectedIsOrgOwned ? (
                     <SettingsBanner tone="warning">
-                      This is a shared base template. Create a draft first if you want to change clauses, section settings, or publishing state.
+                      This is a shared base template. Create a draft first if you want to change clauses, section settings, or live status.
                     </SettingsBanner>
                   ) : null}
 
@@ -6310,23 +6521,24 @@ export default function SettingsSigningTemplatesPage({
               <div className="space-y-6 xl:sticky xl:top-4">
                 <TemplateStudioPanel
                   eyebrow="Preview"
-                  title="Test Preview"
-                  description="Validate the current edited template with sample or real transaction data."
+                  title="Document Preview"
+                  description="See how the current template will look with safe examples or linked details."
                   actions={
                     <button
                       type="button"
                       className={studioSecondaryButtonClass}
-                      onClick={() => setActiveTab('preview')}
+                      onClick={() => openTemplatePreview()}
+                      disabled={testingTemplate}
                     >
                       <Eye size={14} />
-                      <span>Open Test</span>
+                      <span>{testingTemplate ? 'Previewing...' : 'Open Preview'}</span>
                     </button>
                   }
                 >
                   <div className="rounded-[24px] border border-[#dbe7f3] bg-[#f5f7fb] p-4">
                     <div className="flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">
-                      <span>Sample Test</span>
-                      <span>{previewState.html ? 'Current edits tested' : 'Run sample test'}</span>
+                      <span>Preview</span>
+                      <span>{previewState.html ? 'Current edits rendered' : 'Run preview'}</span>
                     </div>
                     <div className="mt-4 flex min-h-[420px] items-start justify-center overflow-auto rounded-[22px] border border-[#e7eef6] bg-[radial-gradient(circle_at_top,_#ffffff_0%,_#f5f7fb_100%)] p-4">
                       <div className="w-full max-w-[320px] rounded-[18px] border border-[#e2eaf3] bg-white p-6 shadow-[0_24px_40px_rgba(15,23,42,0.12)]">
@@ -6354,22 +6566,22 @@ export default function SettingsSigningTemplatesPage({
                           </div>
                         ) : (
                           <SettingsEmptyState
-                            title="No test generated yet"
-                            description="Run a sample test to render the current edits with safe data."
+                            title="No preview generated yet"
+                            description="Run a preview to see the current edits with safe example details."
                           />
                         )}
                       </div>
                     </div>
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[#dbe7f3] bg-white/90 px-4 py-3 text-sm text-[#6b7c93]">
-                      <span>Preview tests use the current editor values without changing live documents.</span>
+                      <span>Preview uses the current editor values without changing live documents.</span>
                       <button
                         type="button"
                         className={studioSecondaryButtonClass}
                         onClick={() => void handleTestGenerate()}
                         disabled={testingTemplate}
                       >
-                        <FlaskConical size={14} />
-                        <span>{testingTemplate ? 'Testing…' : 'Test with sample data'}</span>
+                        <Eye size={14} />
+                        <span>{testingTemplate ? 'Previewing…' : 'Preview'}</span>
                       </button>
                       <button
                         type="button"
@@ -6380,8 +6592,8 @@ export default function SettingsSigningTemplatesPage({
                         }}
                         disabled={testingTemplate}
                       >
-                        <FileSignature size={14} />
-                        <span>{testingTemplate ? 'Testing…' : 'Test real run'}</span>
+                      <FileSignature size={14} />
+                      <span>{testingTemplate ? 'Previewing…' : 'Preview linked record'}</span>
                       </button>
                     </div>
                   </div>
@@ -6389,8 +6601,8 @@ export default function SettingsSigningTemplatesPage({
 
                 <TemplateStudioPanel
                   eyebrow="Checks"
-                  title="Publishing Readiness"
-                  description="A quick view of readiness, variable coverage, and publishing safety."
+                  title="Ready to Make Live"
+                  description="A quick view of readiness, field coverage, and safety."
                 >
                   <div className="rounded-[24px] border border-[#dbe7f3] bg-[#f8fbff] p-4">
                     <div className="flex items-center gap-4">
@@ -6398,10 +6610,10 @@ export default function SettingsSigningTemplatesPage({
                         {templateHealthPercent}%
                       </div>
                       <div>
-                        <p className="text-base font-semibold text-[#102033]">Publishing Readiness</p>
+                        <p className="text-base font-semibold text-[#102033]">Ready to Make Live</p>
                         <p className="mt-1 text-sm leading-6 text-[#6b7c93]">
                           {validationSummary.warnings.length
-                            ? `${validationSummary.warnings.length} warning${validationSummary.warnings.length === 1 ? '' : 's'} to review before publishing.`
+                            ? `${validationSummary.warnings.length} warning${validationSummary.warnings.length === 1 ? '' : 's'} to review before making this live.`
                             : 'No warning-level issues detected right now.'}
                         </p>
                       </div>
@@ -6470,10 +6682,11 @@ export default function SettingsSigningTemplatesPage({
                     <button
                       type="button"
                       className={studioSecondaryButtonClass}
-                      onClick={() => setActiveTab('preview')}
+                      onClick={() => openTemplatePreview()}
+                      disabled={testingTemplate}
                     >
                       <Eye size={14} />
-                      <span>Test</span>
+                      <span>{testingTemplate ? 'Previewing…' : 'Preview'}</span>
                     </button>
 
                     <button
@@ -6482,8 +6695,8 @@ export default function SettingsSigningTemplatesPage({
                       onClick={() => void handleTestGenerate()}
                       disabled={testingTemplate}
                     >
-                      <FlaskConical size={14} />
-                      <span>{testingTemplate ? 'Testing…' : 'Test with sample data'}</span>
+                      <Eye size={14} />
+                      <span>{testingTemplate ? 'Previewing…' : 'Preview'}</span>
                     </button>
 
                     <details className="relative">
@@ -6508,7 +6721,7 @@ export default function SettingsSigningTemplatesPage({
                           onClick={openPublishDialog}
                           disabled={!selectedIsOrgOwned || !canEdit || Boolean(form.isDefault)}
                         >
-                          <span>{form.isDefault ? 'Already live' : 'Publish as Live'}</span>
+                          <span>{form.isDefault ? 'Already live' : 'Make live'}</span>
                           <ShieldCheck size={14} className="text-[#8aa0b7]" />
                         </button>
                         <button
@@ -6531,7 +6744,7 @@ export default function SettingsSigningTemplatesPage({
           <TemplateStudioPanel
             eyebrow="Template Workspace"
             title="No templates yet"
-            description="Create your first template to start building clause content, testing previews, and managing publishing."
+            description="Create your first template to start building clause content, testing previews, and managing live versions."
           >
             <SettingsEmptyState
               title="No templates found"
@@ -6636,14 +6849,14 @@ export default function SettingsSigningTemplatesPage({
             <div className="space-y-6">
               <TemplateStudioPanel
                 eyebrow="Registry"
-                title="Data Fields"
-                description="Merge-field mappings and governance for this document type."
+                title="Fields"
+                description="The saved details this document can fill in automatically."
               >
                 <div className="overflow-x-auto rounded-[20px] border border-[#dbe7f3] bg-white">
                   <table className="min-w-[620px] w-full text-left text-sm">
                     <thead className="bg-[#f6f9fc] text-[0.68rem] uppercase tracking-[0.14em] text-[#6b7d93]">
                       <tr>
-                        <th className="px-4 py-3">Data Field</th>
+                        <th className="px-4 py-3">Field</th>
                         <th className="px-4 py-3">Entity</th>
                         <th className="px-4 py-3">Required</th>
                         <th className="px-4 py-3">Active</th>
@@ -6687,7 +6900,7 @@ export default function SettingsSigningTemplatesPage({
                       }) : (
                         <tr>
                           <td className="px-4 py-6 text-sm text-[#6b7d93]" colSpan={4}>
-                            No data-field definitions yet for this template type.
+                            No saved fields yet for this template type.
                           </td>
                         </tr>
                       )}
@@ -6700,7 +6913,7 @@ export default function SettingsSigningTemplatesPage({
                 <TemplateStudioPanel
                   eyebrow="Data Governance"
                   title="Add Custom Variable"
-                  description="Create additional merge fields without changing the existing resolution logic."
+                  description="Create an extra field without changing how existing documents fill themselves in."
                 >
                   <div className={settingsGridClass}>
                     <label className={settingsFieldClass}>
@@ -6794,9 +7007,9 @@ export default function SettingsSigningTemplatesPage({
         selectedTemplate ? (
           <form onSubmit={handleSave} className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
             <TemplateStudioPanel
-              eyebrow="Publishing"
+              eyebrow="Make Live"
               title="Document Metadata"
-              description="Name, describe, and control the publishing status of this document version."
+              description="Name, describe, and choose whether this version is available to the team."
             >
               <div className={settingsGridClass}>
                 <label className={settingsFieldClass}>
@@ -6860,8 +7073,8 @@ export default function SettingsSigningTemplatesPage({
                   <p className="mt-3 text-sm font-semibold text-[#102033]">{selectedIsOrgOwned ? 'Organisation version' : 'Shared base version'}</p>
                   <p className="mt-2 text-xs leading-5 text-[#6b7c93]">
                     {selectedIsOrgOwned
-                      ? 'Your team can edit this version, save changes, and publish it live.'
-                      : 'Create a draft copy before making wording or publishing changes.'}
+                      ? 'Your team can edit this version, save changes, and make it live.'
+                      : 'Create a draft copy before making wording or live-status changes.'}
                   </p>
                 </div>
                 <div className="rounded-[20px] border border-[#dbe7f3] bg-[#f8fbff] p-4">
@@ -6879,7 +7092,7 @@ export default function SettingsSigningTemplatesPage({
                   <p className="mt-2 text-xs leading-5 text-[#6b7c93]">
                     {form.isDefault
                       ? 'New documents of this type already start from this version.'
-                      : 'Publish this version as live when you are ready for new documents to use it.'}
+                      : 'Make this version live when you are ready for new documents to use it.'}
                   </p>
                 </div>
               </div>
@@ -6888,9 +7101,9 @@ export default function SettingsSigningTemplatesPage({
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div>
                     <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Governance</p>
-                    <h3 className="mt-2 text-base font-semibold text-[#102033]">Publish Review & Section Locks</h3>
+                    <h3 className="mt-2 text-base font-semibold text-[#102033]">Live Review & Section Locks</h3>
                     <p className="mt-1 text-sm leading-6 text-[#6b7c93]">
-                      Lock approved wording before publishing so future edits have a clear governance signal.
+                      Lock approved wording before making a version live so future edits have a clear governance signal.
                     </p>
                   </div>
                   <span className={[
@@ -6898,7 +7111,7 @@ export default function SettingsSigningTemplatesPage({
                     canPublishTemplate ? 'border-[#cdebd8] bg-[#eef9f1] text-[#128642]' : 'border-[#f3d1ce] bg-[#fff4f3] text-[#8e1f15]',
                   ].join(' ')}
                   >
-                    {canPublishTemplate ? 'Publish authority' : 'Review only'}
+                    {canPublishTemplate ? 'Can make live' : 'Review only'}
                   </span>
                 </div>
 
@@ -7010,7 +7223,7 @@ export default function SettingsSigningTemplatesPage({
                     <SettingsBanner tone={validationSummary.renderable ? 'success' : 'warning'}>
                       {validationSummary.renderable
                         ? 'This in-app template is ready to use. No DOCX file is needed.'
-                        : 'This in-app template can still be saved, but you may want to review warnings before publishing it live.'}
+                        : 'This in-app template can still be saved, but you may want to review warnings before making it live.'}
                     </SettingsBanner>
                   </div>
                 ) : null}
@@ -7081,9 +7294,9 @@ export default function SettingsSigningTemplatesPage({
               </TemplateStudioPanel>
 
               <div className="flex flex-wrap justify-end gap-2">
-                <button type="button" className={studioSecondaryButtonClass} onClick={() => setActiveTab('preview')}>
+                <button type="button" className={studioSecondaryButtonClass} onClick={() => openTemplatePreview()} disabled={testingTemplate}>
                   <Eye size={14} />
-                  <span>Test</span>
+                  <span>{testingTemplate ? 'Previewing...' : 'Preview'}</span>
                 </button>
                 <button
                   type="submit"
@@ -7108,9 +7321,9 @@ export default function SettingsSigningTemplatesPage({
         selectedTemplate ? (
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
             <TemplateStudioPanel
-              eyebrow="Test"
-              title="Document Test Preview"
-              description="Validate the current edits with sample data or a linked real document run before publishing."
+              eyebrow="Preview"
+              title="Document Preview"
+              description="See how the current template will look with safe examples or linked details."
               actions={
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -7120,7 +7333,7 @@ export default function SettingsSigningTemplatesPage({
                     disabled={testingTemplate}
                   >
                     <FileSignature size={14} />
-                    <span>{testingTemplate ? 'Testing...' : 'Test real run'}</span>
+                    <span>{testingTemplate ? 'Previewing...' : 'Preview linked record'}</span>
                   </button>
                   <button
                     type="button"
@@ -7128,8 +7341,8 @@ export default function SettingsSigningTemplatesPage({
                     onClick={() => void handleTestGenerate()}
                     disabled={testingTemplate}
                   >
-                    <FlaskConical size={14} />
-                    <span>{testingTemplate ? 'Testing...' : 'Test with sample data'}</span>
+                    <Eye size={14} />
+                    <span>{testingTemplate ? 'Previewing...' : 'Preview'}</span>
                   </button>
                 </div>
               }
@@ -7161,8 +7374,8 @@ export default function SettingsSigningTemplatesPage({
                       </div>
                     ) : (
                       <SettingsEmptyState
-                        title="No test generated yet"
-                        description="Run a sample preview or a real document run without affecting live transactions."
+                        title="No preview generated yet"
+                        description="Run a preview to inspect the current template layout without affecting live transactions."
                       />
                     )}
                   </div>
@@ -7172,9 +7385,9 @@ export default function SettingsSigningTemplatesPage({
 
             <div className="space-y-6">
               <TemplateStudioPanel
-                eyebrow="Real Run"
-                title="Test With Real Context"
-                description="Attach source records, paste missing values as JSON, then create a draft packet when the run is ready."
+                eyebrow="Linked Details"
+                title="Preview With Real Details"
+                description="Link a record, add any missing details, then create a draft document when it is ready."
               >
                 <div className="space-y-4">
                   <div className="grid gap-2">
@@ -7199,7 +7412,7 @@ export default function SettingsSigningTemplatesPage({
                   </div>
 
                   <label className={settingsFieldClass}>
-                    Run title
+                    Document title
                     <input
                       type="text"
                       value={documentRunForm.title}
@@ -7254,14 +7467,14 @@ export default function SettingsSigningTemplatesPage({
                       checked={Boolean(documentRunForm.useSampleFallback)}
                       onChange={(event) => setDocumentRunForm((previous) => ({ ...previous, useSampleFallback: event.target.checked }))}
                     />
-                    <span>
-                      <span className="block font-semibold text-[#102033]">Use sample fallback values</span>
-                      <span className="mt-1 block leading-5 text-[#6b7c93]">Keeps previews readable while you add real context. Turn off to expose missing source fields.</span>
+                      <span>
+                      <span className="block font-semibold text-[#102033]">Use safe example values</span>
+                      <span className="mt-1 block leading-5 text-[#6b7c93]">Keeps previews readable while you add linked details. Turn off to find missing fields.</span>
                     </span>
                   </label>
 
                   <label className={settingsFieldClass}>
-                    Context JSON
+                    Extra details JSON
                     <textarea
                       rows={8}
                       value={documentRunForm.contextJson}
@@ -7278,7 +7491,7 @@ export default function SettingsSigningTemplatesPage({
                       disabled={testingTemplate}
                     >
                       <FlaskConical size={14} />
-                      <span>{testingTemplate ? 'Testing...' : 'Preview Run'}</span>
+                      <span>{testingTemplate ? 'Previewing...' : 'Preview details'}</span>
                     </button>
                     <button
                       type="button"
@@ -7287,13 +7500,13 @@ export default function SettingsSigningTemplatesPage({
                       disabled={creatingDocumentPacket || !selectedTemplate || hasUnsavedChanges}
                     >
                       <FileSignature size={14} />
-                      <span>{creatingDocumentPacket ? 'Creating...' : 'Create Draft Packet'}</span>
+                      <span>{creatingDocumentPacket ? 'Creating...' : 'Create Draft Document'}</span>
                     </button>
                   </div>
 
                   {hasUnsavedChanges ? (
                     <p className="rounded-[14px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm leading-6 text-[#7d520d]">
-                      Save this template before creating a draft packet. Preview can still use the unsaved edits.
+                      Save this template before creating a draft document. Preview can still use the unsaved edits.
                     </p>
                   ) : null}
                 </div>
@@ -7302,7 +7515,7 @@ export default function SettingsSigningTemplatesPage({
               <TemplateStudioPanel
                 eyebrow="Health"
                 title="Checklist"
-                description="Use the existing validation summary to decide whether this template is safe to publish."
+                description="Check whether this template is ready to make live."
               >
                 <div className="space-y-3">
                   {validationSummary.blockers.length ? validationSummary.blockers.map((item) => (
@@ -7406,7 +7619,7 @@ export default function SettingsSigningTemplatesPage({
             <div className="space-y-6">
               <TemplateStudioPanel
                 eyebrow="Current Activity"
-                title="Publishing Context"
+                title="Live Version Activity"
                 description="Live status and recent template timestamps from the current record."
               >
                 <div className="space-y-3">
@@ -7428,7 +7641,7 @@ export default function SettingsSigningTemplatesPage({
               </TemplateStudioPanel>
 
               <TemplateStudioPanel
-                eyebrow="Publishing"
+                eyebrow="Make Live"
                 title="Live Template"
                 description="The version new documents currently use."
               >
@@ -7436,7 +7649,7 @@ export default function SettingsSigningTemplatesPage({
                   <div className="rounded-[22px] border border-[#dbe7f3] bg-[#f8fbff] p-4">
                     <p className="text-base font-semibold text-[#102033]">{liveTemplate.template_label || liveTemplate.template_key}</p>
                     <p className="mt-2 text-sm text-[#6b7c93]">{liveTemplate.version_tag || 'v1'} · {formatDateTime(liveTemplate.updated_at)}</p>
-                    <p className="mt-2 text-sm text-[#6b7c93]">Published by: {getTemplateActorLabel(liveTemplate)}</p>
+                    <p className="mt-2 text-sm text-[#6b7c93]">Made live by: {getTemplateActorLabel(liveTemplate)}</p>
                   </div>
                 ) : (
                   <p className="text-sm leading-6 text-[#6b7c93]">No live default template is active yet for this document type.</p>
@@ -7447,7 +7660,7 @@ export default function SettingsSigningTemplatesPage({
         ) : (
           <SettingsEmptyState
             title="Choose a template first"
-            description="Select or create a template to review versions and publishing context."
+            description="Select or create a template to review versions and live status."
           />
         )
       ) : null}
@@ -7553,21 +7766,37 @@ export default function SettingsSigningTemplatesPage({
       {activeStudioArea === 'documents' ? (
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
           <TemplateStudioPanel
-            eyebrow="Generated Documents"
+            eyebrow="Documents"
             title="Document Library"
-            description="Draft packets, generated documents, signing-prep work, and transaction-linked exports for this document type."
+            description="Drafts, generated documents, signing prep, and linked exports for this document type."
             actions={
-              <button
-                type="button"
-                className={studioPrimaryButtonClass}
-                onClick={() => {
-                  setActiveStudioArea('templates')
-                  setActiveTab('preview')
-                }}
-              >
-                <Plus size={14} />
-                <span>Create from Template</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  className={studioSecondaryButtonClass}
+                  onClick={() => {
+                    void handleCreateTemplate().then((created) => {
+                      if (created?.id) {
+                        setActiveStudioArea('templates')
+                        setActiveTab('template')
+                      }
+                    })
+                  }}
+                  disabled={!canEdit || saving || cloning}
+                >
+                  <FileText size={14} />
+                  <span>New Template</span>
+                </button>
+                <button
+                  type="button"
+                  className={studioPrimaryButtonClass}
+                  onClick={() => void handleCreateDocumentPacketFromRun({ autoGenerate: true })}
+                  disabled={creatingDocumentPacket || !selectedTemplate || hasUnsavedChanges}
+                >
+                  <Plus size={14} />
+                  <span>{creatingDocumentPacket ? 'Creating...' : 'Create Document'}</span>
+                </button>
+              </>
             }
           >
             <div className="space-y-5">
@@ -7584,7 +7813,7 @@ export default function SettingsSigningTemplatesPage({
               <div className="rounded-[22px] border border-[#dbe7f3] bg-[#fbfdff] p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Recent Packets</p>
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Recent Documents</p>
                     <h3 className="mt-2 text-base font-semibold text-[#102033]">{templateTypeConfig.label} library</h3>
                   </div>
                   <button
@@ -7600,7 +7829,7 @@ export default function SettingsSigningTemplatesPage({
 
                 {documentPacketsLoading ? (
                   <div className="mt-5">
-                    <SettingsLoadingState compact label="Loading document packets…" />
+                    <SettingsLoadingState compact label="Loading documents…" />
                   </div>
                 ) : documentPackets.length ? (
                   <div className="mt-5 space-y-3">
@@ -7618,8 +7847,10 @@ export default function SettingsSigningTemplatesPage({
                         : normalizeText(packet?.lead_id)
                           ? `Lead ${String(packet.lead_id).slice(0, 8)}`
                           : normalizeText(sourceContext.transactionId || sourceContext.leadId || sourceContext.dealId || sourceContext.unitId)
-                            ? 'Linked by source context'
-                            : 'Manual context'
+                            ? 'Linked details'
+                            : 'Manual details'
+                      const documentKindLabel = normalizeText(sourceContext.documentKindLabel || sourceContext.document_kind_label)
+                        || getDocumentKindOption(sourceContext.documentKind || sourceContext.document_kind).label
                       return (
                         <article
                           key={packet.id}
@@ -7631,9 +7862,9 @@ export default function SettingsSigningTemplatesPage({
                         >
                           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-[#102033]">{packet.title || packet.template_label_snapshot || 'Untitled document packet'}</p>
+                              <p className="truncate text-sm font-semibold text-[#102033]">{packet.title || packet.template_label_snapshot || 'Untitled document'}</p>
                               <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
-                                {packet.template_label_snapshot || selectedTemplate?.template_label || 'Template'} · {linkedReference}
+                                {documentKindLabel} · {packet.template_label_snapshot || selectedTemplate?.template_label || 'Template'} · {linkedReference}
                               </p>
                             </div>
                             <TemplateStatusPill status={packetStatus}>{packetStatus.replace(/_/g, ' ')}</TemplateStatusPill>
@@ -7696,7 +7927,7 @@ export default function SettingsSigningTemplatesPage({
                 ) : (
                   <SettingsEmptyState
                     title="No generated documents yet"
-                    description="Create a draft packet from the Test tab to start the document library for this template type."
+                    description="Create a draft document from Preview or Documents to start the library for this template type."
                   />
                 )}
               </div>
@@ -7704,13 +7935,39 @@ export default function SettingsSigningTemplatesPage({
           </TemplateStudioPanel>
 
           <div className="space-y-6">
+            <DocumentCreationPanel
+              documentRunForm={documentRunForm}
+              setDocumentRunForm={setDocumentRunForm}
+              packetType={packetType}
+              form={form}
+              selectedTemplate={selectedTemplate}
+              templateTypeConfig={templateTypeConfig}
+              hasUnsavedChanges={hasUnsavedChanges}
+              testingTemplate={testingTemplate}
+              creatingDocumentPacket={creatingDocumentPacket}
+              setActiveStudioArea={setActiveStudioArea}
+              setActiveTab={setActiveTab}
+              createDefaultDocumentRunForm={createDefaultDocumentRunForm}
+              handleTestGenerateFromRun={handleTestGenerateFromRun}
+              handleCreateDocumentPacketFromRun={handleCreateDocumentPacketFromRun}
+            />
+
+            <TemplateCreationPanel
+              canEdit={canEdit}
+              cloning={cloning}
+              saving={saving}
+              handleCreateTemplate={handleCreateTemplate}
+              setActiveStudioArea={setActiveStudioArea}
+              setActiveTab={setActiveTab}
+            />
+
             <TemplateStudioPanel
-              eyebrow="Packet Workspace"
-              title={selectedLibraryPacket ? selectedLibraryPacket.title || selectedLibraryPacket.template_label_snapshot || 'Selected packet' : 'No packet selected'}
-              description={selectedLibraryPacket ? 'Inspect packet versions, artifact links, source context, and workflow history.' : 'Select a packet from the library to inspect and manage it.'}
+              eyebrow="Document Workspace"
+              title={selectedLibraryPacket ? selectedLibraryPacket.title || selectedLibraryPacket.template_label_snapshot || 'Selected document' : 'No document selected'}
+              description={selectedLibraryPacket ? 'Inspect versions, file links, linked details, and workflow history.' : 'Select a document from the library to inspect and manage it.'}
             >
               {packetDetailLoading ? (
-                <SettingsLoadingState compact label="Loading packet workspace…" />
+                <SettingsLoadingState compact label="Loading document workspace…" />
               ) : selectedLibraryPacket ? (
                 <div className="space-y-5">
                   <div className="rounded-[18px] border border-[#dbe7f3] bg-[#fbfdff] p-4">
@@ -7718,7 +7975,7 @@ export default function SettingsSigningTemplatesPage({
                       <div>
                         <p className="text-sm font-semibold text-[#102033]">{selectedLibraryPacket.template_label_snapshot || selectedTemplate?.template_label || 'Template'}</p>
                         <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
-                          Updated {formatDateTime(selectedLibraryPacket.updated_at)}
+                          {selectedLibraryPacketDocumentKindLabel} · Updated {formatDateTime(selectedLibraryPacket.updated_at)}
                         </p>
                       </div>
                       <TemplateStatusPill status={normalizeText(selectedLibraryPacket.status).toLowerCase() || 'draft'}>
@@ -7728,14 +7985,15 @@ export default function SettingsSigningTemplatesPage({
 
                     <div className="mt-4 grid gap-3 text-xs text-[#607387]">
                       {[
-                        ['Transaction', selectedLibraryPacket.transaction_id],
-                        ['Lead', selectedLibraryPacket.lead_id],
-                        ['Deal', selectedLibraryPacket.deal_id],
-                        ['Unit', selectedLibraryPacket.unit_id],
-                      ].map(([label, value]) => (
-                        <div key={label} className="flex items-center justify-between gap-3 rounded-[14px] border border-[#e8eff7] bg-white px-3 py-2">
-                          <span className="font-semibold text-[#35546c]">{label}</span>
-                          <span className="truncate text-right">{normalizeText(value) ? String(value).slice(0, 12) : 'Not linked'}</span>
+                        { label: 'Transaction', value: selectedLibraryPacket.transaction_id, missing: 'Not linked', truncate: true },
+                        { label: 'Lead', value: selectedLibraryPacket.lead_id, missing: 'Not linked', truncate: true },
+                        { label: 'Deal', value: selectedLibraryPacket.deal_id, missing: 'Not linked', truncate: true },
+                        { label: 'Unit', value: selectedLibraryPacket.unit_id, missing: 'Not linked', truncate: true },
+                        { label: 'Document kind', value: selectedLibraryPacketDocumentKindLabel, missing: 'Standard document', truncate: false },
+                      ].map((item) => (
+                        <div key={item.label} className="flex items-center justify-between gap-3 rounded-[14px] border border-[#e8eff7] bg-white px-3 py-2">
+                          <span className="font-semibold text-[#35546c]">{item.label}</span>
+                          <span className="truncate text-right">{normalizeText(item.value) ? (item.truncate ? String(item.value).slice(0, 12) : String(item.value)) : item.missing}</span>
                         </div>
                       ))}
                     </div>
@@ -7865,7 +8123,7 @@ export default function SettingsSigningTemplatesPage({
                         disabled={Boolean(packetActionId) || !latestGeneratedLibraryPacketVersion || !(selectedPacketSigningSummary?.signerCount)}
                       >
                         <Upload size={14} />
-                        <span>{packetActionId.startsWith('signing-links:') ? 'Generating...' : 'Generate Links'}</span>
+                        <span>{packetActionId.startsWith('signing-links:') ? 'Sending...' : 'Send / Generate Links'}</span>
                       </button>
                     </div>
 
@@ -7941,7 +8199,7 @@ export default function SettingsSigningTemplatesPage({
                     {!canGenerateFinalLibraryPacket && !latestFinalLibraryPacketArtifactUrl ? (
                       <div className="mt-4 rounded-[14px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm leading-6 text-[#7d520d]">
                         {!latestGeneratedLibraryPacketVersion
-                          ? 'Generate a packet version before finalising.'
+                          ? 'Generate the document before finalising.'
                           : !Number(selectedPacketSigningSummary?.signerCount || 0)
                             ? 'Prepare signers and signing fields first.'
                             : !(selectedPacketSigningSummary?.allSignersSigned || completedLibrarySignersCount === Number(selectedPacketSigningSummary?.signerCount || 0))
@@ -7981,7 +8239,7 @@ export default function SettingsSigningTemplatesPage({
                       <div>
                         <p className="text-sm font-semibold text-[#102033]">Completion Handover</p>
                         <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
-                          Package the final document, signing state, source links, and audit trail for filing.
+                          Package the final document, signing state, linked records, and audit trail for filing.
                         </p>
                       </div>
                       <span className={[
@@ -8021,7 +8279,7 @@ export default function SettingsSigningTemplatesPage({
                       {[
                         { label: 'Audit events', value: selectedLibraryPacketEvents.length },
                         { label: 'Artifacts', value: [latestLibraryPacketArtifactUrl, latestFinalLibraryPacketArtifactUrl].filter(Boolean).length },
-                        { label: 'Source links', value: [
+                        { label: 'Linked records', value: [
                           selectedLibraryPacket.transaction_id,
                           selectedLibraryPacket.lead_id,
                           selectedLibraryPacket.deal_id,
@@ -8060,7 +8318,7 @@ export default function SettingsSigningTemplatesPage({
 
                     {!libraryPacketHandoverReady ? (
                       <p className="mt-4 rounded-[14px] border border-[#eef2f6] bg-[#fbfdff] px-4 py-3 text-sm leading-6 text-[#607387]">
-                        Complete the checklist above before treating this packet as filed.
+                        Complete the checklist above before treating this document as filed.
                       </p>
                     ) : null}
                   </div>
@@ -8077,14 +8335,14 @@ export default function SettingsSigningTemplatesPage({
                         ))}
                       </div>
                     ) : (
-                      <p className="mt-3 text-sm leading-6 text-[#6b7c93]">No packet activity has been recorded yet.</p>
+                      <p className="mt-3 text-sm leading-6 text-[#6b7c93]">No document activity has been recorded yet.</p>
                     )}
                   </div>
                 </div>
               ) : (
                 <SettingsEmptyState
-                  title="No packet selected"
-                  description="Create or select a draft packet to inspect versions and actions."
+                  title="No document selected"
+                  description="Create or select a draft document to inspect versions and actions."
                 />
               )}
             </TemplateStudioPanel>
@@ -8109,8 +8367,8 @@ export default function SettingsSigningTemplatesPage({
       {showPublishConfirm ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[rgba(16,32,51,0.28)] px-4 py-8">
           <div className="w-full max-w-3xl rounded-[30px] border border-[#dbe7f3] bg-white p-6 shadow-[0_28px_60px_rgba(15,23,42,0.24)]">
-            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7a8da6]">Publish Document</p>
-            <h2 className="mt-3 text-[1.35rem] font-semibold text-[#102033]">Review before publishing</h2>
+            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7a8da6]">Make Live</p>
+            <h2 className="mt-3 text-[1.35rem] font-semibold text-[#102033]">Review before making this live</h2>
             <p className="mt-3 text-sm leading-7 text-[#6b7c93]">
               New documents of this type will use this version going forward. Existing transactions will not be changed.
             </p>
@@ -8168,11 +8426,11 @@ export default function SettingsSigningTemplatesPage({
 
             <div className="mt-5 space-y-2">
               {publishReview.blockers.length ? publishReview.blockers.map((item) => (
-                <ValidationIssueCard key={`publish-blocker-${item}`} issue={item} tone="error" label="Publish" />
+                <ValidationIssueCard key={`publish-blocker-${item}`} issue={item} tone="error" label="Make live" />
               )) : (
                 <p className="flex items-center gap-2 rounded-[16px] border border-[#cdebd8] bg-[#eef9f1] px-4 py-3 text-sm font-semibold text-[#128642]">
                   <CheckCircle2 size={16} />
-                  No publish blockers detected.
+                  No blockers detected.
                 </p>
               )}
               {publishReview.warnings.slice(0, 4).map((item) => (
@@ -8202,7 +8460,7 @@ export default function SettingsSigningTemplatesPage({
                 disabled={saving || Boolean(publishReview.blockers.length) || !publishReviewAccepted}
               >
                 <ShieldCheck size={14} />
-                <span>{saving ? 'Publishing...' : 'Publish Document'}</span>
+                <span>{saving ? 'Making live...' : 'Make live'}</span>
               </button>
             </div>
           </div>

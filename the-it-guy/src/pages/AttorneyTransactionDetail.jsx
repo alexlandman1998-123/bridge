@@ -83,7 +83,6 @@ import {
   getTransactionFinanceWorkflow,
   getOrCreateTransactionOnboarding,
   getRegistrationBlockers,
-  markFinanceInstructionSent,
   markTransactionCompleted,
   markTransactionRegistered,
   recordBuyerOnboardingSent,
@@ -108,6 +107,10 @@ import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supab
 import { getFinanceReadiness } from '../services/bondFinanceReadinessService'
 import { getDocumentReadiness } from '../services/documentReadinessService'
 import { getBankPanelForCurrentUser } from '../services/bondOriginatorBankService'
+import {
+  markBondGrantMilestone,
+  markBondInstructionSent,
+} from '../services/transactionFinanceService'
 import {
   buildTransactionRoutingDiagnostics,
   getTransactionRoutingStatusLabel,
@@ -5798,7 +5801,8 @@ function AttorneyTransactionDetail() {
       onUpdateBankApplication={(application, payload) => void handleUpdateBondHybridApplication(application.id, payload)}
       onCaptureBondOffer={(payload) => void handleAddBondHybridQuote(payload)}
       onAcceptOffer={(offer) => void handleApproveBondHybridQuote(offer.id)}
-      onMarkInstructionSent={() => void handleMarkBondHybridInstructionSent()}
+      onMarkGrantMilestone={(payload) => void handleMarkBondHybridGrantMilestone(payload)}
+      onMarkInstructionSent={(payload) => void handleMarkBondHybridInstructionSent(payload)}
       onOpenDocument={handleOpenFinanceDocument}
     />
   )
@@ -5985,7 +5989,27 @@ function AttorneyTransactionDetail() {
     setDiscussionBody(bankName ? `Requesting a revised quote from ${bankName}.` : 'Requesting a revised bond quote.')
   }
 
-  async function handleMarkBondHybridInstructionSent() {
+  async function handleMarkBondHybridGrantMilestone(payload = {}) {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for grant updates.')
+      return
+    }
+
+    const stage = payload.stage || payload.milestone || 'grant_received'
+    try {
+      setBondHybridFinanceActionLoading(stage)
+      setError('')
+      const result = await markBondGrantMilestone(transaction.id, payload, { actorRole: workspaceRole })
+      await refreshBondHybridFinanceWorkflow(result)
+      await loadData({ background: true })
+    } catch (workflowActionError) {
+      setError(workflowActionError?.message || 'Unable to update the bond grant milestone.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
+  async function handleMarkBondHybridInstructionSent(payload = {}) {
     if (!transaction?.id) {
       setError('Transaction data is not available for instruction updates.')
       return
@@ -5994,7 +6018,7 @@ function AttorneyTransactionDetail() {
     try {
       setBondHybridFinanceActionLoading('instruction_sent')
       setError('')
-      const result = await markFinanceInstructionSent(transaction.id, { actorRole: workspaceRole })
+      const result = await markBondInstructionSent(transaction.id, payload, { actorRole: workspaceRole })
       await refreshBondHybridFinanceWorkflow(result)
       await loadData({ background: true })
     } catch (workflowActionError) {

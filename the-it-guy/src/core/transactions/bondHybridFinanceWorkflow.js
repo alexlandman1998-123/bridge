@@ -7,6 +7,10 @@ export const BOND_HYBRID_FINANCE_STAGES = [
   'bank_review',
   'quote_received',
   'quote_accepted',
+  'bond_approved',
+  'grant_received',
+  'grant_signed',
+  'grant_submitted',
   'instruction_sent',
   'complete',
 ]
@@ -18,6 +22,10 @@ export const BOND_HYBRID_FINANCE_STAGE_LABELS = {
   bank_review: 'Bank Review',
   quote_received: 'Quote Received',
   quote_accepted: 'Quote Accepted',
+  bond_approved: 'Bond Approved',
+  grant_received: 'Grant Received',
+  grant_signed: 'Grant Signed',
+  grant_submitted: 'Grant Submitted',
   instruction_sent: 'Instruction Issued',
   complete: 'Complete',
 }
@@ -29,6 +37,10 @@ export const BOND_HYBRID_FINANCE_STAGE_DESCRIPTIONS = {
   bank_review: 'Banks are reviewing the application or requesting additional documents.',
   quote_received: 'Bank feedback or finance quotes have been received.',
   quote_accepted: 'The buyer has accepted one finance quote.',
+  bond_approved: 'The bond approval is confirmed and ready for grant processing.',
+  grant_received: 'The formal bond grant has been received from the lender.',
+  grant_signed: 'The buyer has signed the bond grant.',
+  grant_submitted: 'The signed bond grant has been submitted for instruction.',
   instruction_sent: 'Finance instruction has been issued to the attorney workflow.',
   complete: 'Finance workflow is complete.',
 }
@@ -49,7 +61,17 @@ export const BOND_HYBRID_FINANCE_STAGE_ALIASES = {
   quote_approved: 'quote_accepted',
   approved_by_buyer: 'quote_accepted',
   accepted: 'quote_accepted',
+  approved: 'bond_approved',
+  bond_approved: 'bond_approved',
+  approval_granted: 'bond_approved',
+  grant_received: 'grant_received',
+  bond_grant_received: 'grant_received',
+  grant_signed: 'grant_signed',
+  bond_grant_signed: 'grant_signed',
+  grant_submitted: 'grant_submitted',
+  bond_grant_submitted: 'grant_submitted',
   instruction_issued: 'instruction_sent',
+  bond_instruction_sent: 'instruction_sent',
   registered: 'complete',
   completed: 'complete',
 }
@@ -105,6 +127,10 @@ export const BOND_HYBRID_WORKFLOW_EVENT_TYPES = [
   'bank_feedback_added',
   'quote_added',
   'quote_approved',
+  'bond_approved',
+  'grant_received',
+  'grant_signed',
+  'grant_submitted',
   'instruction_sent',
 ]
 
@@ -161,6 +187,10 @@ export function summarizeBondHybridFinanceWorkflow(workflowData = {}) {
     quotesReceivedCount: quoteCount,
     approvedBank: approvedQuote?.bankName || approvedQuote?.bank_name || null,
     approvedQuote,
+    bondApproved: Boolean(approvedQuote),
+    grantReceived: Boolean(instruction?.grantReceived || instruction?.grant_received || instruction?.grantDocumentId || instruction?.grant_document_id),
+    grantSigned: Boolean(instruction?.grantSigned || instruction?.grant_signed || instruction?.signedGrantDocumentId || instruction?.signed_grant_document_id),
+    grantSubmitted: Boolean(instruction?.grantSubmitted || instruction?.grant_submitted),
     instructionSent: Boolean(instruction?.instructionSent || instruction?.instruction_sent) || isBondHybridFinanceWorkflowComplete(workflow),
   }
 }

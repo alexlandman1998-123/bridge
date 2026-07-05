@@ -223,13 +223,6 @@ function getTrendDirection(value = '') {
   return 'flat'
 }
 
-function getTrendLabel(value = '') {
-  const trend = String(value || '').trim()
-  if (!trend) return 'Tracking'
-  if (trend.toLowerCase().includes('vs last month')) return trend
-  return `${trend} vs last month`
-}
-
 function getBadgeTone(level = 'neutral') {
   if (level === 'positive') {
     return 'bg-[#ecfdf3] text-[#027a48] ring-[#bdeccb]'
@@ -287,7 +280,25 @@ function countRowsMatching(rows = [], needles = []) {
   }).length
 }
 
-function buildAttentionItems({ alerts = [], priorityActions = [], operationalRiskMatrix = [], atRiskApplications = [] } = {}) {
+function getDiagnosticIssueCount(operationalDiagnostics = {}, codes = []) {
+  const safeCodes = Array.isArray(codes) ? codes : [codes]
+  const byCode = operationalDiagnostics?.issueSummary?.byCode || {}
+  const summaryCount = safeCodes.reduce((sum, code) => sum + normalizeNumber(byCode[code]), 0)
+  if (summaryCount) return summaryCount
+
+  return (Array.isArray(operationalDiagnostics?.issues) ? operationalDiagnostics.issues : [])
+    .filter((issue) => safeCodes.includes(issue?.code))
+    .length
+}
+
+function getDiagnosticQueueCount(operationalDiagnostics = {}, queueKeys = []) {
+  const safeKeys = Array.isArray(queueKeys) ? queueKeys : [queueKeys]
+  return (Array.isArray(operationalDiagnostics?.actionQueues) ? operationalDiagnostics.actionQueues : [])
+    .filter((row) => safeKeys.includes(row?.queueKey) || safeKeys.includes(row?.stage))
+    .reduce((sum, row) => sum + normalizeNumber(row.count), 0)
+}
+
+function buildAttentionItems({ alerts = [], priorityActions = [], operationalRiskMatrix = [], atRiskApplications = [], operationalDiagnostics = {} } = {}) {
   const missingDocuments = Math.max(
     getAlertMetricValue(alerts, ['missing_docs', 'missing_documents']),
     normalizeNumber(findMetric(priorityActions, 'missing_documents')?.count),
@@ -307,6 +318,15 @@ function buildAttentionItems({ alerts = [], priorityActions = [], operationalRis
     normalizeNumber(findMetric(priorityActions, 'overdue_applications')?.count),
     countRowsMatching(operationalRiskMatrix, ['valuation', 'valuer', 'valuation request']),
     countRowsMatching(atRiskApplications, ['valuation', 'valuer', 'valuation request']),
+  )
+  const grantEvidence = Math.max(
+    getDiagnosticIssueCount(operationalDiagnostics, [
+      'missing_grant_document',
+      'missing_signed_grant_document',
+      'missing_grant_submission_evidence',
+      'missing_instruction_evidence',
+    ]),
+    getDiagnosticQueueCount(operationalDiagnostics, ['awaiting_grant', 'grant_received', 'grant_signed', 'ready_for_instruction']),
   )
 
   return [
@@ -341,6 +361,14 @@ function buildAttentionItems({ alerts = [], priorityActions = [], operationalRis
       detail: 'Deals still waiting on valuation movement',
       tone: valuationOutstanding ? 'critical' : 'neutral',
       href: '/bond/pipeline?view=stalled',
+    },
+    {
+      key: 'grant_evidence',
+      label: 'Grant Evidence',
+      value: grantEvidence,
+      detail: 'Grant and instruction evidence before attorney handoff',
+      tone: grantEvidence ? 'critical' : 'neutral',
+      href: '/bond/applications?view=grant-submitted',
     },
   ]
     .sort((left, right) => right.value - left.value)
@@ -450,50 +478,6 @@ const KPI_TONES = {
     fill: 'rgba(249,115,22,0.1)',
   },
 }
-
-const hqKpis = [
-  {
-    label: 'Applications',
-    value: '90',
-    status: '+5.9% vs last month',
-    detail: '90 active applications',
-    tone: 'green',
-    featured: true,
-    icon: Layers3,
-    sparkline: [14, 16, 15, 24, 28, 23, 24, 26, 42, 39, 35, 48],
-    statusIcon: TrendingUp,
-  },
-  {
-    label: 'Approval Rate',
-    value: '3%',
-    status: 'Needs attention',
-    detail: '3 approved • 87 pending',
-    tone: 'blue',
-    icon: Gauge,
-    sparkline: [18, 19, 18, 23, 22, 24, 23, 26, 25, 27, 26, 29],
-    statusIcon: AlertTriangle,
-  },
-  {
-    label: 'Revenue Forecast',
-    value: 'R22.96m',
-    status: '+R7.65m vs last month',
-    detail: 'Forward revenue view',
-    tone: 'green',
-    icon: LineChart,
-    sparkline: [20, 28, 26, 31, 33, 37, 36, 45, 43, 48, 60, 55],
-    statusIcon: TrendingUp,
-  },
-  {
-    label: 'Avg Approval Time',
-    value: '46 days',
-    status: '38d over target',
-    detail: 'Needs operational focus',
-    tone: 'orange',
-    icon: Clock3,
-    sparkline: [13, 15, 14, 20, 19, 23, 22, 29, 28, 27, 31, 39],
-    statusIcon: Clock3,
-  },
-]
 
 function ExecutiveMiniTrend({ values = [], tone = {} }) {
   const safeValues = (values.length ? values : [16, 20, 18, 26, 30, 28, 35]).map((value) => normalizeNumber(value))
@@ -607,6 +591,7 @@ export default function BondHqCommandCentre({ snapshot = {} }) {
   const priorityActions = Array.isArray(snapshot.priorityActions) ? snapshot.priorityActions : []
   const operationalRiskMatrix = Array.isArray(snapshot.operationalRiskMatrix) ? snapshot.operationalRiskMatrix : []
   const atRiskApplications = Array.isArray(snapshot.atRiskApplications) ? snapshot.atRiskApplications : []
+  const operationalDiagnostics = snapshot.operationalDiagnostics || {}
 
   return (
     <div className="space-y-10 pb-8">
@@ -617,6 +602,7 @@ export default function BondHqCommandCentre({ snapshot = {} }) {
         priorityActions={priorityActions}
         operationalRiskMatrix={operationalRiskMatrix}
         atRiskApplications={atRiskApplications}
+        operationalDiagnostics={operationalDiagnostics}
       />
       <RegionalPerformanceStrip rows={hq.regionalPerformance || hq.regionComparison || []} loading={snapshot.loading || hq.loading} />
       <BankRelationshipBreakdown bankPerformance={hq.bankPerformance || {}} bankDistribution={snapshot.buyerDemographics?.bankDistribution || []} />
@@ -1304,7 +1290,7 @@ function SupportKpiCard({ className = '', tone = KPI_TONES.blue, icon: Icon = Ga
     <article className={`group flex min-h-[240px] flex-col overflow-hidden rounded-[24px] border border-[#e7edf4] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.04)] transition duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_22px_42px_rgba(15,23,42,0.07)] ${className}`}>
       <div className="flex items-start justify-between gap-4">
         <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] ring-1 ${tone.icon}`}>
-          <Icon size={18} strokeWidth={2.25} />
+          {createElement(Icon, { size: 18, strokeWidth: 2.25 })}
         </span>
         <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ${getBadgeTone(trendTone)}`}>
           {trend || 'Tracking'}
@@ -1326,13 +1312,14 @@ function SupportKpiCard({ className = '', tone = KPI_TONES.blue, icon: Icon = Ga
   )
 }
 
-function WhatNeedsAttentionSection({ hq = {}, priorityActions = [], operationalRiskMatrix = [], atRiskApplications = [] }) {
+function WhatNeedsAttentionSection({ hq = {}, priorityActions = [], operationalRiskMatrix = [], atRiskApplications = [], operationalDiagnostics = {} }) {
   const health = buildOperationalHealthModel(hq)
   const attentionItems = buildAttentionItems({
     alerts: hq.alerts || [],
     priorityActions,
     operationalRiskMatrix,
     atRiskApplications,
+    operationalDiagnostics,
   })
   const actionableItems = attentionItems.filter((item) => item.value > 0)
   const itemsToShow = actionableItems.length ? actionableItems : [{

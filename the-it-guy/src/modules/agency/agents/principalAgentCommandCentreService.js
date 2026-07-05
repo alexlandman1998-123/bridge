@@ -213,6 +213,7 @@ export function getPrincipalAgentCommandCentre({
       search: filters.search || '',
       dateRange: filters.dateRange || 'last_30_days',
     },
+    now,
   })
 
   const modelAgents = model.agents.map((agent) => {
@@ -622,6 +623,9 @@ function getRegisteredTransactionValue(row = {}) {
     row?.transaction?.purchase_price ||
       row?.transaction?.sales_price ||
       row?.transaction?.cash_amount ||
+      row?.purchase_price ||
+      row?.sales_price ||
+      row?.cash_amount ||
       row?.purchasePrice ||
       row?.salesPrice ||
       row?.unit?.price,
@@ -710,6 +714,7 @@ export function getPrincipalAgentDetailCommandCentre({
       search: '',
       dateRange: 'month_to_date',
     },
+    now,
   })
   const performanceAgent = performanceModel.agents[0] || { ...agent, performance: {} }
   const performance = performanceAgent.performance || {}
@@ -799,6 +804,12 @@ export function getPrincipalAgentDetailCommandCentre({
   const commissionGenerated = performance.commissionMtd !== null && performance.commissionMtd !== undefined
     ? toNumber(performance.commissionMtd)
     : registeredThisMonthValue * 0.03
+  const registrationDayValues = Array.isArray(performance.registrationDays)
+    ? performance.registrationDays.filter((value) => Number.isFinite(Number(value)) && Number(value) >= 0)
+    : []
+  const avgDaysToRegistration = registrationDayValues.length
+    ? Math.round(registrationDayValues.reduce((sum, value) => sum + Number(value), 0) / registrationDayValues.length)
+    : null
 
   return {
     agentIdentity: {
@@ -835,6 +846,7 @@ export function getPrincipalAgentDetailCommandCentre({
       pipelineValue: toNumber(performance.pipelineValue),
       activeDeals: activeTransactionCount,
       atRiskDeals,
+      avgDaysToRegistration,
       hasPipeline: toNumber(performance.pipelineValue) > 0 || activeTransactionCount > 0 || agentLeads.length > 0,
     },
     calendarSummary: {
@@ -862,6 +874,7 @@ export function getPrincipalAgentDetailCommandCentre({
         { key: 'commissionGenerated', label: 'Commission Generated', value: commissionGenerated, format: 'currency' },
         { key: 'pipelineValue', label: 'Pipeline Value', value: toNumber(performance.pipelineValue), format: 'currency' },
         { key: 'conversionRate', label: 'Conversion Rate', value: toNumber(performance.conversionRate), format: 'percent' },
+        { key: 'avgDaysToRegistration', label: 'Avg. Days to Register', value: avgDaysToRegistration, format: 'days' },
       ],
     },
     existingCharts: {

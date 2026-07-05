@@ -127,6 +127,94 @@ function makeSnapshot(overrides = {}) {
     operationalRisk: [
       { key: 'waiting', metric: 'Waiting >7 Days', value: '2 cases', description: 'Applications without movement.', severity: 'watch' },
     ],
+    operationalDiagnostics: {
+      status: 'critical',
+      generatedAt: '2026-07-05T10:00:00.000Z',
+      totals: {
+        rows: 3,
+        healthyRows: 1,
+        warningRows: 1,
+        criticalRows: 1,
+        issues: 3,
+        criticalIssues: 2,
+        warningIssues: 1,
+        infoIssues: 0,
+      },
+      issueSummary: {
+        bySeverity: { critical: 2, warning: 1, info: 0 },
+        byCode: {
+          missing_grant_document: 1,
+          missing_instruction_evidence: 1,
+          stale_legacy_finance_status: 1,
+        },
+      },
+      remediationPlan: [
+        {
+          code: 'missing_grant_document',
+          severity: 'critical',
+          count: 1,
+          transactionIds: ['tx-missing-grant'],
+          actionLabel: 'Attach grant document',
+          actionHref: '/bond/applications?view=grant-received',
+          queueHref: '/bond/applications?view=grant-received',
+          queueKey: 'grant_received',
+          ownerRole: 'Bond Originator',
+          recommendation: 'Attach the lender grant document before progressing the grant workflow.',
+        },
+        {
+          code: 'missing_instruction_evidence',
+          severity: 'critical',
+          count: 1,
+          transactionIds: ['tx-missing-instruction'],
+          actionLabel: 'Attach instruction evidence',
+          actionHref: '/bond/applications?view=instruction-sent',
+          queueHref: '/bond/applications?view=instruction-sent',
+          queueKey: 'ready_for_instruction',
+          ownerRole: 'Bond Originator',
+          recommendation: 'Attach the instruction document and record the instruction-sent milestone.',
+        },
+      ],
+      actionQueues: [
+        { stage: 'grant_received', queueKey: 'grant_received', count: 1, label: 'Grant Received', href: '/bond/applications?view=grant-received', actionLabel: 'Get the buyer-signed grant uploaded.' },
+        { stage: 'grant_submitted', queueKey: 'ready_for_instruction', count: 1, label: 'Grant Submitted', href: '/bond/applications?view=grant-submitted', actionLabel: 'Prepare and send the attorney instruction.' },
+      ],
+      stageCoverage: [
+        { key: 'documents', label: 'Documents', count: 1 },
+        { key: 'grant_received', label: 'Grant Received', count: 1 },
+        { key: 'grant_submitted', label: 'Grant Submitted', count: 1 },
+      ],
+      issues: [
+        {
+          code: 'missing_grant_document',
+          severity: 'critical',
+          transactionId: 'tx-missing-grant',
+          stage: 'grant_received',
+          actionLabel: 'Attach grant document',
+          actionHref: '/bond/files/tx-missing-grant?diagnostic=missing_grant_document',
+          queueHref: '/bond/applications?view=grant-received',
+          ownerRole: 'Bond Originator',
+          recommendation: 'Attach the lender grant document before progressing the grant workflow.',
+        },
+        {
+          code: 'missing_instruction_evidence',
+          severity: 'critical',
+          transactionId: 'tx-missing-instruction',
+          stage: 'instruction_sent',
+          actionLabel: 'Attach instruction evidence',
+          actionHref: '/bond/files/tx-missing-instruction?diagnostic=missing_instruction_evidence',
+          queueHref: '/bond/applications?view=instruction-sent',
+          ownerRole: 'Bond Originator',
+          recommendation: 'Attach the instruction document and record the instruction-sent milestone.',
+        },
+        {
+          code: 'stale_legacy_finance_status',
+          severity: 'warning',
+          transactionId: 'tx-stale-legacy',
+          stage: 'grant_submitted',
+          recommendation: 'Prefer the canonical workflow in dashboards and consider backfilling stale finance_status text.',
+        },
+      ],
+    },
     priorityActions: [
       { key: 'missing_documents', count: 32 },
       { key: 'bank_feedback', count: 18 },
@@ -276,6 +364,16 @@ function makeSnapshot(overrides = {}) {
     assert.match(commandCenterMarkup, /Bank Distribution/)
     assert.match(commandCenterMarkup, /xl:grid-cols-\[minmax\(0,0\.92fr\)_minmax\(0,1\.08fr\)\]/)
     assert.match(commandCenterMarkup, /Operational Bottleneck Heatmap/)
+    assert.match(commandCenterMarkup, /Operational Diagnostics/)
+    assert.match(commandCenterMarkup, /Critical Issues/)
+    assert.match(commandCenterMarkup, /Missing Grant Document/)
+    assert.match(commandCenterMarkup, /Missing Instruction Evidence/)
+    assert.match(commandCenterMarkup, /Attach grant document/)
+    assert.match(commandCenterMarkup, /Attach instruction evidence/)
+    assert.match(commandCenterMarkup, /Bond Originator/)
+    assert.match(commandCenterMarkup, /Ready for Instruction/)
+    assert.match(commandCenterMarkup, /Grant Submitted/)
+    assert.match(commandCenterMarkup, /Prepare and send the attorney instruction/)
     assert.match(commandCenterMarkup, /Recent Bank Activity/)
     assert.match(commandCenterMarkup, /Team Performance/)
     assert.match(commandCenterMarkup, /Connected Partners/)
@@ -286,7 +384,8 @@ function makeSnapshot(overrides = {}) {
     assert.ok(commandCenterMarkup.indexOf('Bank Lead Times') < commandCenterMarkup.indexOf('Pipeline Overview'))
     assert.ok(commandCenterMarkup.indexOf('Pipeline Overview') < commandCenterMarkup.indexOf('Buyer Type Mix'))
     assert.ok(commandCenterMarkup.indexOf('Buyer Type Mix') < commandCenterMarkup.indexOf('Bank Distribution'))
-    assert.ok(commandCenterMarkup.indexOf('Operational Bottleneck Heatmap') < commandCenterMarkup.indexOf('Recent Bank Activity'))
+    assert.ok(commandCenterMarkup.indexOf('Operational Bottleneck Heatmap') < commandCenterMarkup.indexOf('Operational Diagnostics'))
+    assert.ok(commandCenterMarkup.indexOf('Operational Diagnostics') < commandCenterMarkup.indexOf('Recent Bank Activity'))
     assert.ok(commandCenterMarkup.indexOf('Connected Partners') < commandCenterMarkup.indexOf('Operational Risk'))
 
     const hqMarkup = render(BondDashboard, {
@@ -406,6 +505,7 @@ function makeSnapshot(overrides = {}) {
     assert.match(hqMarkup, /Bank Feedback/)
     assert.match(hqMarkup, /Awaiting Client/)
     assert.match(hqMarkup, /Valuation Outstanding/)
+    assert.match(hqMarkup, /Grant Evidence/)
     assert.match(hqMarkup, /Regional Performance/)
     assert.match(hqMarkup, /Live performance across your national network/)
     assert.match(hqMarkup, /View all regions/)

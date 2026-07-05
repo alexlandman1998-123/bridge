@@ -35,6 +35,19 @@ function findStageDate(workflowData = {}, stageKey = '') {
     const accepted = workflowData?.acceptedOffer || (workflowData?.quotes || []).find((item) => ['accepted', 'approved_by_buyer'].includes(String(item?.quoteStatus || item?.quote_status || '').toLowerCase()))
     return accepted?.decisionAt || accepted?.approvedAt || accepted?.approved_at || ''
   }
+  if (normalizedStage === 'bond_approved') {
+    const accepted = workflowData?.acceptedOffer || (workflowData?.quotes || []).find((item) => ['accepted', 'approved_by_buyer'].includes(String(item?.quoteStatus || item?.quote_status || '').toLowerCase()))
+    return accepted?.decisionAt || accepted?.approvedAt || accepted?.approved_at || ''
+  }
+  if (normalizedStage === 'grant_received') {
+    return workflowData?.instruction?.grantReceivedAt || workflowData?.instruction?.grant_received_at || ''
+  }
+  if (normalizedStage === 'grant_signed') {
+    return workflowData?.instruction?.grantSignedAt || workflowData?.instruction?.grant_signed_at || ''
+  }
+  if (normalizedStage === 'grant_submitted') {
+    return workflowData?.instruction?.grantSubmittedAt || workflowData?.instruction?.grant_submitted_at || ''
+  }
   if (normalizedStage === 'instruction_sent') {
     return workflowData?.instruction?.instructionSentAt || workflowData?.instruction?.instruction_sent_at || ''
   }
@@ -83,13 +96,13 @@ function FinanceProgressBar({
       </div>
 
       <div className="mt-7 overflow-x-auto pb-2">
-        <div className="relative min-w-[860px]">
+        <div className="relative" style={{ minWidth: `${Math.max(860, steps.length * 118)}px` }}>
           <div className="absolute left-4 right-4 top-[18px] h-px bg-[#cfd9e6]" />
           <div
             className="absolute left-4 top-[18px] h-[3px] rounded-full bg-[#155eef]"
             style={{ width: progress <= 0 ? 0 : `calc(${Math.max(progress, 0)}% - 2rem)` }}
           />
-          <div className="relative grid grid-cols-8 gap-4">
+          <div className="relative grid gap-4" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
             {steps.map((step, index) => {
               const Icon = stageIcon(step.status)
               const isCurrent = step.status === 'current'

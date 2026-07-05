@@ -241,7 +241,13 @@ function buildMockClient(seed = {}) {
 try {
   const api = await server.ssrLoadModule('/src/lib/api.js')
   const queueService = await server.ssrLoadModule('/src/services/bondOperationalQueueService.js')
-  const { addBondApplication, __transactionBondApplicationClassificationTestUtils } = api
+  const {
+    addBondApplication,
+    markFinanceInstructionSent,
+    recordBondGrantMilestone,
+    updateBondHybridFinanceStage,
+    __transactionBondApplicationClassificationTestUtils,
+  } = api
   const { getBondOriginatorQueueState, getNewApplicationsQueue, isBondApplicationTrackerRow } = queueService
   const client = buildMockClient()
 
@@ -327,6 +333,93 @@ try {
   }
   assert.equal(isBondApplicationTrackerRow(trackerInput), true)
   assert.equal(getBondOriginatorQueueState(trackerInput).status, 'READY_FOR_REVIEW')
+
+  const approvedQuoteId = '00000000-0000-4000-8000-000000000101'
+  const grantDocumentId = '00000000-0000-4000-8000-000000000201'
+  const signedGrantDocumentId = '00000000-0000-4000-8000-000000000202'
+  const instructionDocumentId = '00000000-0000-4000-8000-000000000203'
+  const grantClient = buildMockClient({
+    transaction: {
+      id: 'tx-bond-grant',
+      finance_type: 'bond',
+    },
+    state: {
+      profiles: [{ id: 'user-bond-1', role: 'bond_originator', firm_id: null, firm_role: null }],
+      transactions: [{ id: 'tx-bond-grant', finance_type: 'bond', finance_status: 'Quote Accepted' }],
+      transaction_finance_workflows: [{
+        id: 'workflow-bond-grant',
+        transaction_id: 'tx-bond-grant',
+        workflow_type: 'bond_hybrid',
+        current_stage: 'quote_accepted',
+        status: 'active',
+        last_updated_by: 'user-bond-1',
+        last_updated_at: '2026-06-04T08:00:00.000Z',
+        created_at: '2026-06-04T08:00:00.000Z',
+        updated_at: '2026-06-04T08:00:00.000Z',
+      }],
+      transaction_bond_applications: [],
+      transaction_bond_quotes: [{
+        id: approvedQuoteId,
+        transaction_id: 'tx-bond-grant',
+        workflow_id: 'workflow-bond-grant',
+        bank_name: 'FNB',
+        quote_status: 'approved_by_buyer',
+        quoted_amount: 1250000,
+        approved_at: '2026-06-04T10:00:00.000Z',
+        created_at: '2026-06-04T09:00:00.000Z',
+        updated_at: '2026-06-04T10:00:00.000Z',
+      }],
+      transaction_finance_workflow_events: [],
+      transaction_bond_offer_decisions: [],
+      transaction_bond_instructions: [],
+      transaction_lifecycle_workflows: [],
+      transaction_comments: [],
+      transaction_events: [],
+      transaction_participants: [],
+      transaction_role_players: [],
+      transaction_notifications: [],
+    },
+  })
+
+  await assert.rejects(
+    () => updateBondHybridFinanceStage('tx-bond-grant', 'instruction_sent', { client: grantClient, actorRole: 'bond_originator' }),
+    /Attach the bond grant document/,
+  )
+
+  await recordBondGrantMilestone('tx-bond-grant', {
+    stage: 'grant_received',
+    grantDocumentId,
+  }, { client: grantClient, actorRole: 'bond_originator' })
+  assert.equal(grantClient.state.transaction_finance_workflows[0].current_stage, 'grant_received')
+  assert.equal(grantClient.state.transaction_bond_instructions[0].grant_document_id, grantDocumentId)
+
+  await recordBondGrantMilestone('tx-bond-grant', {
+    stage: 'grant_signed',
+    signedGrantDocumentId,
+  }, { client: grantClient, actorRole: 'bond_originator' })
+  assert.equal(grantClient.state.transaction_finance_workflows[0].current_stage, 'grant_signed')
+  assert.equal(grantClient.state.transaction_bond_instructions[0].signed_grant_document_id, signedGrantDocumentId)
+
+  await recordBondGrantMilestone('tx-bond-grant', {
+    stage: 'grant_submitted',
+  }, { client: grantClient, actorRole: 'bond_originator' })
+  assert.equal(grantClient.state.transaction_finance_workflows[0].current_stage, 'grant_submitted')
+  assert.equal(grantClient.state.transaction_bond_instructions[0].grant_submitted, true)
+
+  await assert.rejects(
+    () => markFinanceInstructionSent('tx-bond-grant', { client: grantClient, actorRole: 'bond_originator' }),
+    /Attach the attorney instruction document/,
+  )
+
+  const instructedWorkflow = await markFinanceInstructionSent('tx-bond-grant', {
+    client: grantClient,
+    actorRole: 'bond_originator',
+    instructionDocumentId,
+  })
+  assert.equal(instructedWorkflow.workflow.currentStage, 'instruction_sent')
+  assert.equal(grantClient.state.transaction_bond_instructions[0].instruction_document_id, instructionDocumentId)
+  assert.equal(instructedWorkflow.steps.some((step) => step.key === 'grant_submitted'), true)
+  assert.equal(instructedWorkflow.summary.grantSubmitted, true)
 
   console.log('bondApplicationClassification tests passed')
 } finally {

@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { access, readFile } from 'node:fs/promises'
 
 const layout = await readFile(new URL('../src/pages/settings/SettingsLayout.jsx', import.meta.url), 'utf8')
-const landing = await readFile(new URL('../src/pages/settings/SettingsLanding.jsx', import.meta.url), 'utf8')
 const account = await readFile(new URL('../src/pages/settings/SettingsAccountPage.jsx', import.meta.url), 'utf8')
 const legalTemplates = await readFile(new URL('../src/pages/settings/SettingsSigningTemplatesPage.jsx', import.meta.url), 'utf8')
 const documentPacketsApi = await readFile(new URL('../src/lib/documentPacketsApi.js', import.meta.url), 'utf8')
@@ -10,56 +9,69 @@ const ui = await readFile(new URL('../src/pages/settings/settingsUi.jsx', import
 const app = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
 const packageJson = await readFile(new URL('../package.json', import.meta.url), 'utf8')
 
-for (const group of ['Account', 'Organisation', 'Platform', 'System']) {
+let landingExists = true
+try {
+  await access(new URL('../src/pages/settings/SettingsLanding.jsx', import.meta.url))
+} catch {
+  landingExists = false
+}
+
+assert.equal(landingExists, false, 'Settings launcher landing page should be removed.')
+
+for (const group of ['PERSONAL', 'COMPANY', 'TRANSACTIONS', 'PLATFORM', 'SUPPORT']) {
   assert.match(layout, new RegExp(`label: '${group}'`), `Settings sidebar should include ${group} navigation group.`)
 }
 
-for (const route of ['/settings/profile', '/settings/security', '/settings/notifications', '/settings/preferences', '/settings/integrations', '/settings/audit-log']) {
-  assert.match(layout + landing + app, new RegExp(route.replaceAll('/', '\\/')), `Settings route ${route} should be wired into the workspace.`)
+for (const route of ['/settings/profile', '/settings/security', '/settings/notifications', '/settings/organisation', '/settings/branding', '/settings/users', '/settings/commission-structures', '/settings/signing-templates', '/settings/legal-templates', '/settings/lead-capture', '/settings/integrations', '/settings/api', '/settings/billing', '/settings/help']) {
+  assert.match(layout + app, new RegExp(route.replaceAll('/', '\\/')), `Settings route ${route} should be wired into the workspace.`)
 }
 
 assert.match(
-  landing,
-  /Profile Summary|Profile Card|Settings categories|Quick actions|Manage your account, organisation and platform preferences\./,
-  'Settings home should include a summary, category cards and quick actions.',
+  app,
+  /<Route index element=\{<Navigate to="profile" replace \/>\} \/>/,
+  'Settings index route should open Profile by default.',
 )
 
-for (const title of ['Profile', 'Organisation', 'Security', 'Notifications', 'Preferences', 'Integrations', 'Preferred Partners', 'Legal Templates', 'Workflow Rules', 'Communication Templates', 'Audit Log']) {
-  assert.match(landing, new RegExp(title), `Settings home missing category: ${title}`)
-}
+assert.doesNotMatch(app, /SettingsLanding/, 'SettingsLanding should not be imported or routed.')
+assert.doesNotMatch(layout + account + app, /Settings categories|Manage your account, organisation and platform preferences\./, 'Settings launcher copy and category cards should not remain.')
 
 assert.ok(
-  layout.indexOf("label: 'Legal Templates'") < layout.indexOf("label: 'Preferred Partners'"),
-  'Settings sidebar should list Legal Templates before Preferred Partners.',
-)
-
-assert.ok(
-  landing.indexOf("title: 'Legal Templates'") < landing.indexOf("title: 'Preferred Partners'"),
-  'Settings home should list Legal Templates before Preferred Partners.',
+  layout.indexOf("label: 'Document Builder'") < layout.indexOf("label: 'Documents'"),
+  'Settings sidebar should list Document Builder before Documents.',
 )
 
 assert.match(
   layout,
-  /!canManage && \[[^\]]*'\/settings\/legal-templates'[\s\S]*\.includes\(item\.to\)/,
-  'Settings sidebar should hide Legal Templates from non-management users.',
+  /placeholder="Search settings\.\.\."/,
+  'Settings search should use the workspace placeholder.',
+)
+
+for (const keyword of ['fields', 'templates', 'api keys', 'logo colours colors brand', 'billing subscription invoices', 'permissions']) {
+  assert.match(layout, new RegExp(keyword), `Settings search keywords should include ${keyword}.`)
+}
+
+assert.match(
+  layout,
+  /function AccountSummary[\s\S]*Profile Complete[\s\S]*Edit Profile/,
+  'Settings layout should render the compact account summary.',
 )
 
 assert.match(
-  landing,
-  /!canManage && \[[^\]]*'Legal Templates'[\s\S]*\.includes\(card\.title\)/,
-  'Settings home should hide Legal Templates from non-management users.',
+  layout,
+  /requiresManage: true[\s\S]*canShowSettingsItem[\s\S]*item\.requiresManage && !canManage/,
+  'Settings sidebar should hide management-only sections from non-management users.',
 )
 
 assert.match(
-  landing,
-  /Manage mandate, OTP and legal document defaults\.[\s\S]*Manage legal templates/,
-  'Settings home should explain Legal Templates in principal-friendly document terms.',
+  app,
+  /path="branding"[\s\S]*<SettingsOrganisationPage section="branding" \/>/,
+  'Branding should be a deep-linkable settings workspace.',
 )
 
 assert.match(
   legalTemplates,
-  /title = 'Legal Templates'[\s\S]*Manage mandate, OTP and legal document templates/,
-  'Legal templates page should use principal-friendly title and description copy.',
+  /title = 'Document Builder'[\s\S]*Create, preview, send, and manage the documents your agency uses every day\./,
+  'Document Builder page should keep the simplified title and description copy.',
 )
 
 assert.match(
@@ -92,20 +104,20 @@ assert.match(
   'Legacy signing templates route should require organisation settings management authority.',
 )
 
-for (const section of ['Personal Information', 'Employment', 'Preferences', 'Danger Zone', 'Two-factor authentication', 'Active Sessions', 'Login History']) {
+for (const section of ['Profile Photo', 'Personal Information', 'Surname', 'Bio', 'Employment', 'Preferences', 'Danger Zone', 'Two-factor authentication', 'Active Sessions', 'Login History']) {
   assert.match(account, new RegExp(section), `Settings account workspace missing section: ${section}`)
 }
 
 assert.match(
   ui,
-  /function SettingsStickySaveBar/,
-  'Settings should use a sticky save bar for unsaved changes.',
+  /function SettingsSectionCard[\s\S]*border-t border/,
+  'Settings sections should use dividers instead of launcher-style cards.',
 )
 
 assert.match(
-  account,
-  /hasUnsavedChanges/,
-  'Account settings should detect unsaved changes before showing the sticky save bar.',
+  ui,
+  /function SettingsStickySaveBar[\s\S]*disabled=\{!dirty \|\| saving\}[\s\S]*Save Changes/,
+  'Settings should use a sticky bottom-right Save Changes control that only enables when data changes.',
 )
 
 assert.match(

@@ -93,6 +93,7 @@ import {
   acceptBondOffer,
   captureBondOffer,
   declineBondOffer,
+  markBondGrantMilestone,
   markBondInstructionSent,
   reviewFinanceDocuments,
   submitBankApplication,
@@ -5562,6 +5563,29 @@ function UnitDetail() {
     }
   }
 
+  async function handleMarkFinanceGrantMilestoneFromCommandCentre(payload = {}) {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for finance grant updates.')
+      return
+    }
+
+    const stage = payload.stage || payload.milestone || 'grant_received'
+    try {
+      setBondHybridFinanceActionLoading(stage)
+      setError('')
+      const result = await markBondGrantMilestone(transaction.id, payload, {
+        actorRole: effectiveEditorRole,
+      })
+      setDetail((previous) => previous ? { ...previous, transactionFinanceWorkflow: result } : previous)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (grantError) {
+      setError(grantError?.message || 'Unable to update the bond grant milestone.')
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
   async function handleUpdateFinanceCommand(payload = {}) {
     if (!transaction?.id) {
       setError('Transaction data is not available for finance blocker updates.')
@@ -6327,6 +6351,7 @@ function UnitDetail() {
       onCaptureBondOffer={(payload) => void handleCaptureFinanceBondOffer(payload)}
       onAcceptOffer={(offer) => void handleAcceptFinanceBondOffer(offer)}
       onDeclineOffer={(offer) => void handleDeclineFinanceBondOffer(offer)}
+      onMarkGrantMilestone={(payload) => void handleMarkFinanceGrantMilestoneFromCommandCentre(payload)}
       onMarkInstructionSent={(payload) => void handleMarkFinanceInstructionFromCommandCentre(payload)}
       onReviewDocuments={() => void handleMarkFinanceDocumentsReviewed()}
       onVerifyProofOfFunds={() => void handleVerifyCashProofOfFunds()}

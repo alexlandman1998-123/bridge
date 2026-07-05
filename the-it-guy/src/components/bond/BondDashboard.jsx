@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowRight, Banknote, Building2, ChevronDown, CircleCheck, CircleDashed, CircleAlert, Clock3, FileCheck2, FileText, HandCoins, UsersRound } from 'lucide-react'
+import { ArrowRight, Banknote, Building2, ChevronDown, CircleCheck, CircleDashed, CircleAlert, Clock3, FileCheck2, FileText, HandCoins, ShieldAlert, UsersRound } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import AppointmentDashboardSection from '../appointments/dashboard/AppointmentDashboardSection'
 import BondEmptyState from './BondEmptyState'
@@ -154,6 +154,7 @@ export default function BondDashboard({
   const buyerQualityDistribution = snapshot.buyerQualityDistribution || {}
   const operationalRiskMatrix = snapshot.operationalRiskMatrix || []
   const operationalRisk = snapshot.operationalRisk || []
+  const operationalDiagnostics = snapshot.operationalDiagnostics || null
   const recentBankActivity = snapshot.recentBankActivity || []
   const teamPerformance = snapshot.teamPerformance || []
   const connectedPartners = snapshot.connectedPartners || []
@@ -289,6 +290,19 @@ export default function BondDashboard({
               >
                 <OperationalHeatmapPanel rows={heatmapRows} />
               </BondSectionCard>
+
+              {operationalDiagnostics ? (
+                <BondSectionCard
+                  eyebrow="Diagnostic Console"
+                  title="Operational Diagnostics"
+                  description="Evidence and ownership gaps from application arrival through grant submission."
+                  className="flex min-h-[360px] flex-col overflow-hidden rounded-[24px] p-6 sm:p-6"
+                  headerClassName="gap-3"
+                  contentClassName="mt-6 min-h-0 flex-1"
+                >
+                  <OperationalDiagnosticsPanel diagnostics={operationalDiagnostics} />
+                </BondSectionCard>
+              ) : null}
 
               <section className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
                 <BondSectionCard
@@ -1460,6 +1474,194 @@ function OperationalHeatmapPanel({ rows = [] }) {
       emptyTitle="No bottleneck heatmap data"
       emptyDescription="Stage concentration will appear once applications move through the pipeline."
     />
+  )
+}
+
+function formatDiagnosticLabel(value = '') {
+  const labels = {
+    awaiting_grant: 'Awaiting Grant',
+    grant_received: 'Grant Received',
+    grant_signed: 'Grant Signed',
+    ready_for_instruction: 'Ready for Instruction',
+    application_arrived: 'Application Arrived',
+    submitted_to_banks: 'Submitted to Banks',
+    bank_review: 'Bank Review',
+    quote_received: 'Quote Received',
+    quote_accepted: 'Quote Accepted',
+    bond_approved: 'Bond Approved',
+    grant_submitted: 'Grant Submitted',
+    instruction_sent: 'Instruction Sent',
+    missing_transaction_id: 'Missing Transaction ID',
+    legacy_stage_only: 'Legacy Stage Only',
+    stale_legacy_finance_status: 'Stale Legacy Finance Status',
+    missing_bond_workspace_assignment: 'Missing Bond Workspace',
+    missing_primary_consultant: 'Missing Primary Consultant',
+    missing_processor_assignment: 'Missing Processor Assignment',
+    missing_grant_document: 'Missing Grant Document',
+    missing_signed_grant_document: 'Missing Signed Grant',
+    missing_grant_submission_evidence: 'Missing Grant Submission Evidence',
+    missing_instruction_evidence: 'Missing Instruction Evidence',
+  }
+  const normalized = normalizeText(value)
+  if (!normalized) return 'Tracking'
+  return labels[normalized] || normalized.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function getDiagnosticTone(value = '') {
+  const normalized = normalizeText(value).toLowerCase()
+  if (normalized === 'critical') return 'border-[#f2c9cf] bg-[#fff6f7] text-[#a24053]'
+  if (normalized === 'warning') return 'border-[#efd9b4] bg-[#fff9ef] text-[#94620f]'
+  if (normalized === 'info') return 'border-[#cfe1f4] bg-[#f4f9ff] text-[#24518a]'
+  return 'border-[#cde8d4] bg-[#f7fcf8] text-[#2a7352]'
+}
+
+function buildDiagnosticIssueRows(issues = []) {
+  const issueMap = new Map()
+  for (const issue of Array.isArray(issues) ? issues : []) {
+    const code = issue?.code || 'unknown_issue'
+    const existing = issueMap.get(code) || {
+      code,
+      label: formatDiagnosticLabel(code),
+      severity: issue?.severity || 'warning',
+      count: 0,
+      recommendation: issue?.recommendation || '',
+      actionLabel: issue?.actionLabel || 'Review issue',
+      actionHref: issue?.queueHref || issue?.actionHref || '',
+      ownerRole: issue?.ownerRole || 'Operations',
+    }
+    existing.count += 1
+    if (issue?.severity === 'critical') existing.severity = 'critical'
+    else if (issue?.severity === 'warning' && existing.severity !== 'critical') existing.severity = 'warning'
+    if (!existing.recommendation && issue?.recommendation) existing.recommendation = issue.recommendation
+    if (!existing.actionHref && (issue?.queueHref || issue?.actionHref)) existing.actionHref = issue.queueHref || issue.actionHref
+    if (!existing.actionLabel && issue?.actionLabel) existing.actionLabel = issue.actionLabel
+    issueMap.set(code, existing)
+  }
+
+  const severityRank = { critical: 3, warning: 2, info: 1 }
+  return [...issueMap.values()]
+    .sort((left, right) => (severityRank[right.severity] || 0) - (severityRank[left.severity] || 0) || right.count - left.count)
+    .slice(0, 5)
+}
+
+function OperationalDiagnosticsPanel({ diagnostics = {} }) {
+  const totals = diagnostics?.totals || {}
+  const issues = Array.isArray(diagnostics?.issues) ? diagnostics.issues : []
+  const remediationRows = Array.isArray(diagnostics?.remediationPlan) ? diagnostics.remediationPlan : []
+  const issueRows = (remediationRows.length ? remediationRows : buildDiagnosticIssueRows(issues))
+    .map((issue) => ({
+      ...issue,
+      label: issue.label || formatDiagnosticLabel(issue.code),
+      actionLabel: issue.actionLabel || 'Review issue',
+      actionHref: issue.actionHref || issue.queueHref || '',
+      ownerRole: issue.ownerRole || 'Operations',
+    }))
+    .slice(0, 5)
+  const actionQueues = Array.isArray(diagnostics?.actionQueues) ? diagnostics.actionQueues.filter((row) => normalizeNumber(row.count) > 0) : []
+  const stageCoverage = Array.isArray(diagnostics?.stageCoverage) ? diagnostics.stageCoverage.filter((row) => normalizeNumber(row.count) > 0).slice(0, 8) : []
+  const status = diagnostics?.status || 'healthy'
+
+  if (!normalizeNumber(totals.rows) && !issues.length) {
+    return <BondEmptyState compact title="No diagnostic rows yet" description="Diagnostics will appear once bond applications enter the operational pipeline." />
+  }
+
+  return (
+    <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[minmax(0,0.84fr)_minmax(0,1.16fr)]">
+      <section className="flex min-h-[260px] flex-col rounded-[18px] border border-[#dbe5f0] bg-[#fbfdff] p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#73869c]">Diagnostic Status</p>
+            <p className="mt-2 text-2xl font-semibold tracking-normal text-[#142132]">{formatDiagnosticLabel(status)}</p>
+            <p className="mt-2 text-sm leading-5 text-[#60758d]">{normalizeNumber(totals.rows)} rows checked across the bond workflow.</p>
+          </div>
+          <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${getDiagnosticTone(status)}`}>
+            <ShieldAlert size={18} />
+          </span>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+          <DiagnosticMetric label="Critical Issues" value={totals.criticalIssues} tone="critical" />
+          <DiagnosticMetric label="Warning Issues" value={totals.warningIssues} tone="warning" />
+          <DiagnosticMetric label="Healthy Rows" value={totals.healthyRows} tone="healthy" />
+        </div>
+      </section>
+
+      <section className="min-h-[260px] rounded-[18px] border border-[#dbe5f0] bg-white p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#73869c]">Top Gaps</p>
+            <p className="mt-1 text-sm text-[#60758d]">Highest evidence and ownership exceptions.</p>
+          </div>
+          <span className="rounded-full border border-[#dbe5f0] bg-[#fbfdff] px-2.5 py-1 text-xs font-semibold text-[#31506a]">
+            {normalizeNumber(totals.issues)} total
+          </span>
+        </div>
+        <div className="mt-4 grid gap-2">
+          {issueRows.length ? issueRows.map((issue) => (
+            <article key={issue.code} className={`rounded-[14px] border px-3 py-3 ${getDiagnosticTone(issue.severity)}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-[#142132]">{issue.label}</p>
+                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#60758d]">{issue.recommendation || 'Review the application evidence and ownership fields.'}</p>
+                  <p className="mt-2 text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#73869c]">{issue.ownerRole}</p>
+                </div>
+                <strong className="shrink-0 text-sm tabular-nums">{issue.count}</strong>
+              </div>
+              {issue.actionHref ? (
+                <Link to={issue.actionHref} className="mt-3 inline-flex h-8 items-center rounded-[10px] bg-white px-3 text-xs font-semibold text-[#17324d] ring-1 ring-[#dbe5f0] transition hover:bg-[#f8fbff]">
+                  {issue.actionLabel}
+                </Link>
+              ) : null}
+            </article>
+          )) : (
+            <BondEmptyState compact title="No diagnostic gaps" description="Evidence and ownership checks are currently clear." />
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-[18px] border border-[#dbe5f0] bg-white p-4 xl:col-span-2">
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div>
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#73869c]">Grant Queues</p>
+            <div className="mt-3 grid gap-2">
+              {actionQueues.length ? actionQueues.map((queue) => (
+                <Link key={`${queue.queueKey}-${queue.stage}`} to={queue.href || '/bond/applications'} className="grid grid-cols-[minmax(0,1fr)_54px] items-center gap-3 rounded-[13px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2 transition hover:border-[#c7d8e8] hover:bg-white">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-[#142132]">{formatDiagnosticLabel(queue.queueKey)}</p>
+                    <p className="mt-0.5 truncate text-xs text-[#60758d]">{queue.actionLabel || formatDiagnosticLabel(queue.stage)}</p>
+                  </div>
+                  <strong className="text-right text-sm tabular-nums text-[#142132]">{normalizeNumber(queue.count)}</strong>
+                </Link>
+              )) : (
+                <p className="rounded-[13px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2 text-sm text-[#60758d]">No grant queues waiting.</p>
+              )}
+            </div>
+          </div>
+          <div>
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#73869c]">Stage Coverage</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {stageCoverage.length ? stageCoverage.map((stage) => (
+                <span key={stage.key} className="inline-flex items-center gap-2 rounded-full border border-[#dbe5f0] bg-[#fbfdff] px-3 py-1.5 text-xs font-semibold text-[#31506a]">
+                  {formatDiagnosticLabel(stage.key)}
+                  <strong className="tabular-nums text-[#142132]">{normalizeNumber(stage.count)}</strong>
+                </span>
+              )) : (
+                <p className="rounded-[13px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2 text-sm text-[#60758d]">No stage coverage yet.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function DiagnosticMetric({ label = '', value = 0, tone = 'healthy' }) {
+  return (
+    <div className={`rounded-[14px] border px-3 py-3 ${getDiagnosticTone(tone)}`}>
+      <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#73869c]">{label}</p>
+      <p className="mt-2 text-2xl font-semibold leading-none tracking-normal text-[#142132]">{normalizeNumber(value)}</p>
+    </div>
   )
 }
 

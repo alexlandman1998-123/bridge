@@ -10024,10 +10024,27 @@ function normalizeBondOfferDecisionRow(row = {}, profileById = {}) {
 function normalizeBondInstructionRow(row = {}, profileById = {}) {
   if (!row) return null
   const instructionSentBy = row.instruction_sent_by || null
+  const grantReceivedBy = row.grant_received_by || null
+  const grantSignedBy = row.grant_signed_by || null
+  const grantSubmittedBy = row.grant_submitted_by || null
   return {
     id: row.id,
     transactionId: row.transaction_id,
     acceptedBondOfferId: row.accepted_bond_offer_id || null,
+    grantReceived: row.grant_received === true,
+    grantReceivedAt: row.grant_received_at || null,
+    grantReceivedBy,
+    grantReceivedByName: grantReceivedBy ? profileById[grantReceivedBy]?.full_name || profileById[grantReceivedBy]?.email || null : null,
+    grantDocumentId: row.grant_document_id || null,
+    grantSigned: row.grant_signed === true,
+    grantSignedAt: row.grant_signed_at || null,
+    grantSignedBy,
+    grantSignedByName: grantSignedBy ? profileById[grantSignedBy]?.full_name || profileById[grantSignedBy]?.email || null : null,
+    signedGrantDocumentId: row.signed_grant_document_id || null,
+    grantSubmitted: row.grant_submitted === true,
+    grantSubmittedAt: row.grant_submitted_at || null,
+    grantSubmittedBy,
+    grantSubmittedByName: grantSubmittedBy ? profileById[grantSubmittedBy]?.full_name || profileById[grantSubmittedBy]?.email || null : null,
     instructionSent: row.instruction_sent === true,
     instructionSentAt: row.instruction_sent_at || null,
     instructionSentBy,
@@ -10055,6 +10072,87 @@ function normalizeBondHybridWorkflowEventRow(row = {}, profileById = {}) {
     createdByName: createdBy ? profileById[createdBy]?.full_name || profileById[createdBy]?.email || null : null,
     createdAt: row.created_at || null,
   }
+}
+
+async function loadBondHybridFinanceWorkflowSummariesByTransactionIds(client, transactionIds = []) {
+  const ids = [...new Set((transactionIds || []).filter(Boolean))]
+  if (!ids.length) return {}
+
+  const workflowsQuery = await client
+    .from('transaction_finance_workflows')
+    .select('id, transaction_id, workflow_type, current_stage, status, last_updated_by, last_updated_at, completed_at, created_at, updated_at')
+    .eq('workflow_type', BOND_HYBRID_FINANCE_WORKFLOW_TYPE)
+    .in('transaction_id', ids)
+
+  if (workflowsQuery.error) {
+    if (
+      isMissingTableError(workflowsQuery.error, 'transaction_finance_workflows') ||
+      isMissingSchemaError(workflowsQuery.error) ||
+      isPermissionDeniedError(workflowsQuery.error)
+    ) {
+      return {}
+    }
+    throw workflowsQuery.error
+  }
+
+  const instructionsQuery = await client
+    .from('transaction_bond_instructions')
+    .select('*')
+    .in('transaction_id', ids)
+
+  if (
+    instructionsQuery.error &&
+    !isMissingTableError(instructionsQuery.error, 'transaction_bond_instructions') &&
+    !isMissingSchemaError(instructionsQuery.error) &&
+    !isPermissionDeniedError(instructionsQuery.error)
+  ) {
+    throw instructionsQuery.error
+  }
+
+  const workflowsByTransactionId = new Map()
+  for (const row of workflowsQuery.data || []) {
+    const transactionId = row?.transaction_id
+    if (!transactionId) continue
+    const existing = workflowsByTransactionId.get(transactionId)
+    const existingTimestamp = new Date(existing?.last_updated_at || existing?.updated_at || existing?.created_at || 0).getTime()
+    const rowTimestamp = new Date(row?.last_updated_at || row?.updated_at || row?.created_at || 0).getTime()
+    if (!existing || rowTimestamp >= existingTimestamp) workflowsByTransactionId.set(transactionId, row)
+  }
+
+  const instructionsByTransactionId = new Map()
+  if (!instructionsQuery.error) {
+    for (const row of instructionsQuery.data || []) {
+      const transactionId = row?.transaction_id
+      if (!transactionId) continue
+      const existing = instructionsByTransactionId.get(transactionId)
+      const existingTimestamp = new Date(existing?.updated_at || existing?.created_at || 0).getTime()
+      const rowTimestamp = new Date(row?.updated_at || row?.created_at || 0).getTime()
+      if (!existing || rowTimestamp >= existingTimestamp) instructionsByTransactionId.set(transactionId, row)
+    }
+  }
+
+  return ids.reduce((accumulator, transactionId) => {
+    const workflow = workflowsByTransactionId.get(transactionId)
+    if (!workflow) return accumulator
+
+    const snapshot = {
+      workflow: normalizeBondHybridWorkflowRow(workflow),
+      applications: [],
+      quotes: [],
+      offers: [],
+      events: [],
+      decisions: [],
+      acceptedOffer: null,
+      instruction: normalizeBondInstructionRow(instructionsByTransactionId.get(transactionId) || null),
+    }
+
+    accumulator[transactionId] = {
+      ...snapshot,
+      steps: buildBondHybridFinanceStageSteps(snapshot),
+      summary: summarizeBondHybridFinanceWorkflow(snapshot),
+    }
+    return accumulator
+  }, {})
 }
 
 async function fetchProfilesByIds(client, ids = []) {
@@ -10196,6 +10294,10 @@ async function notifyBondHybridWorkflowRoles(client, { transactionId, stage, mes
     bank_review: ['agent'],
     quote_received: ['agent'],
     quote_accepted: ['agent', 'attorney'],
+    bond_approved: ['agent', 'attorney'],
+    grant_received: ['agent', 'attorney'],
+    grant_signed: ['agent', 'attorney'],
+    grant_submitted: ['agent', 'attorney'],
     instruction_sent: ['agent', 'attorney'],
     complete: ['agent', 'attorney'],
   }
@@ -10219,6 +10321,37 @@ function assertBondHybridWorkflowEditable(workflow, activeProfile = {}, actorRol
   const normalizedRole = normalizeRoleType(actorRole || activeProfile.role || '')
   if (['developer', 'internal_admin'].includes(normalizedRole)) return
   throw new Error('This finance workflow is completed. Only an admin can override completed bond finance workflows.')
+}
+
+async function fetchBondInstructionEvidence(client, transactionId) {
+  if (!transactionId) return null
+  const query = await client
+    .from('transaction_bond_instructions')
+    .select('*')
+    .eq('transaction_id', transactionId)
+    .maybeSingle()
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'transaction_bond_instructions') || isMissingSchemaError(query.error)) return null
+    throw query.error
+  }
+  return query.data || null
+}
+
+function hasBondGrantDocument(instruction = {}) {
+  return Boolean(instruction?.grant_document_id || instruction?.grantDocumentId)
+}
+
+function hasSignedBondGrantDocument(instruction = {}) {
+  return Boolean(instruction?.signed_grant_document_id || instruction?.signedGrantDocumentId)
+}
+
+function hasSubmittedBondGrant(instruction = {}) {
+  return Boolean(instruction?.grant_submitted || instruction?.grantSubmitted || instruction?.grant_submitted_at || instruction?.grantSubmittedAt)
+}
+
+function hasInstructionDocument(instruction = {}) {
+  return Boolean(instruction?.instruction_document_id || instruction?.instructionDocumentId)
 }
 
 async function assertBondHybridStageRequirements(client, workflow, nextStage) {
@@ -10260,7 +10393,15 @@ async function assertBondHybridStageRequirements(client, workflow, nextStage) {
     }
   }
 
-  if (normalizedStage === 'quote_accepted' || normalizedStage === 'instruction_sent' || normalizedStage === 'complete') {
+  if ([
+    'quote_accepted',
+    'bond_approved',
+    'grant_received',
+    'grant_signed',
+    'grant_submitted',
+    'instruction_sent',
+    'complete',
+  ].includes(normalizedStage)) {
     const approvedQuote = await client
       .from('transaction_bond_quotes')
       .select('id')
@@ -10275,6 +10416,25 @@ async function assertBondHybridStageRequirements(client, workflow, nextStage) {
     }
     if (!(approvedQuote.data || []).length) {
       throw new Error('Approve one buyer-selected quote before moving to Quote Approved.')
+    }
+  }
+
+  if (['grant_received', 'grant_signed', 'grant_submitted', 'instruction_sent', 'complete'].includes(normalizedStage)) {
+    const instruction = await fetchBondInstructionEvidence(client, workflow.transaction_id)
+    if (!hasBondGrantDocument(instruction)) {
+      throw new Error('Attach the bond grant document before moving to Grant Received.')
+    }
+    if (['grant_signed', 'grant_submitted', 'instruction_sent', 'complete'].includes(normalizedStage) && !hasSignedBondGrantDocument(instruction)) {
+      throw new Error('Attach the signed bond grant before moving to Grant Signed.')
+    }
+    if (['grant_submitted', 'instruction_sent', 'complete'].includes(normalizedStage) && !hasSubmittedBondGrant(instruction)) {
+      throw new Error('Submit the signed bond grant before moving to Grant Submitted.')
+    }
+    if (['instruction_sent', 'complete'].includes(normalizedStage) && !hasInstructionDocument(instruction)) {
+      throw new Error('Attach the attorney instruction document before moving to Instruction Issued.')
+    }
+    if (normalizedStage === 'complete' && instruction?.instruction_sent !== true) {
+      throw new Error('Send the attorney instruction before completing the finance workflow.')
     }
   }
 }
@@ -10364,7 +10524,7 @@ export async function getTransactionFinanceWorkflow(transactionId, options = {})
       .order('decision_at', { ascending: false }),
     client
       .from('transaction_bond_instructions')
-      .select('id, transaction_id, accepted_bond_offer_id, instruction_sent, instruction_sent_at, instruction_sent_by, instruction_document_id, notes, created_at, updated_at')
+      .select('*')
       .eq('transaction_id', transactionId)
       .maybeSingle(),
   ])
@@ -10388,7 +10548,14 @@ export async function getTransactionFinanceWorkflow(transactionId, options = {})
     ...(quotesQuery.data || []).flatMap((row) => [row.created_by, row.updated_by, row.uploaded_by]),
     ...(eventsQuery.data || []).map((row) => row.created_by),
     ...((decisionsQuery.data || []).map((row) => row.decided_by)),
-    ...(instructionQuery.data ? [instructionQuery.data.instruction_sent_by] : []),
+    ...(instructionQuery.data
+      ? [
+          instructionQuery.data.grant_received_by,
+          instructionQuery.data.grant_signed_by,
+          instructionQuery.data.grant_submitted_by,
+          instructionQuery.data.instruction_sent_by,
+        ]
+      : []),
   ].filter(Boolean)
   const profileById = await fetchProfilesByIds(client, profileIds)
   const normalizedWorkflow = normalizeBondHybridWorkflowRow(workflow, profileById)
@@ -11118,12 +11285,132 @@ export async function declineBondQuote(quoteId, options = {}) {
   })
 }
 
+const BOND_GRANT_MILESTONE_STAGES = new Set([
+  'bond_approved',
+  'grant_received',
+  'grant_signed',
+  'grant_submitted',
+])
+
+function buildGrantMilestoneNotes(stage, notes = '') {
+  const explicitNotes = normalizeNullableText(notes)
+  if (explicitNotes) return explicitNotes
+  const stageLabel = getBondHybridFinanceStageLabel(stage)
+  return `${stageLabel} recorded.`
+}
+
+export async function recordBondGrantMilestone(transactionId, payload = {}, options = {}) {
+  const client = options.client || requireClient()
+  const actorRole = options.actorRole || null
+  const activeProfile = await resolveActiveProfileContext(client)
+  const milestone = normalizeBondHybridFinanceStage(payload.stage || payload.milestone || options.stage || 'bond_approved')
+  if (!BOND_GRANT_MILESTONE_STAGES.has(milestone)) {
+    throw new Error('Bond grant milestone is not valid.')
+  }
+
+  const workflow = await fetchRawBondHybridWorkflow(client, transactionId, { createIfMissing: true })
+  if (!workflow?.id) throw new Error('Bond / Hybrid finance workflow is not available.')
+  assertBondHybridWorkflowEditable(workflow, activeProfile, actorRole)
+
+  if (milestone === 'bond_approved') {
+    return updateBondHybridFinanceStage(transactionId, 'bond_approved', {
+      ...options,
+      client,
+      notes: buildGrantMilestoneNotes('bond_approved', payload.notes || options.notes),
+      actorRole,
+    })
+  }
+
+  const snapshot = await getTransactionFinanceWorkflow(transactionId, { client })
+  const existingInstruction = await fetchBondInstructionEvidence(client, transactionId)
+  const acceptedOfferId = normalizeNullableUuid(
+    payload.acceptedBondOfferId ||
+      payload.accepted_bond_offer_id ||
+      options.acceptedBondOfferId ||
+      options.accepted_bond_offer_id ||
+      snapshot?.acceptedOffer?.id ||
+      existingInstruction?.accepted_bond_offer_id ||
+      snapshot?.instruction?.acceptedBondOfferId,
+  )
+  const grantDocumentId = normalizeNullableUuid(
+    payload.grantDocumentId ||
+      payload.grant_document_id ||
+      options.grantDocumentId ||
+      options.grant_document_id ||
+      existingInstruction?.grant_document_id,
+  )
+  const signedGrantDocumentId = normalizeNullableUuid(
+    payload.signedGrantDocumentId ||
+      payload.signed_grant_document_id ||
+      options.signedGrantDocumentId ||
+      options.signed_grant_document_id ||
+      existingInstruction?.signed_grant_document_id,
+  )
+
+  if (!grantDocumentId) {
+    throw new Error('Attach the bond grant document before moving to Grant Received.')
+  }
+  if (['grant_signed', 'grant_submitted'].includes(milestone) && !signedGrantDocumentId) {
+    throw new Error('Attach the signed bond grant before moving to Grant Signed.')
+  }
+
+  const now = new Date().toISOString()
+  const instructionPayload = {
+    transaction_id: transactionId,
+    accepted_bond_offer_id: acceptedOfferId,
+    notes: buildGrantMilestoneNotes(milestone, payload.notes || options.notes),
+  }
+
+  if (['grant_received', 'grant_signed', 'grant_submitted'].includes(milestone)) {
+    Object.assign(instructionPayload, {
+      grant_received: true,
+      grant_received_at: existingInstruction?.grant_received_at || now,
+      grant_received_by: existingInstruction?.grant_received_by || activeProfile.userId || null,
+      grant_document_id: grantDocumentId,
+    })
+  }
+  if (['grant_signed', 'grant_submitted'].includes(milestone)) {
+    Object.assign(instructionPayload, {
+      grant_signed: true,
+      grant_signed_at: existingInstruction?.grant_signed_at || now,
+      grant_signed_by: existingInstruction?.grant_signed_by || activeProfile.userId || null,
+      signed_grant_document_id: signedGrantDocumentId,
+    })
+  }
+  if (milestone === 'grant_submitted') {
+    Object.assign(instructionPayload, {
+      grant_submitted: true,
+      grant_submitted_at: existingInstruction?.grant_submitted_at || now,
+      grant_submitted_by: activeProfile.userId || null,
+    })
+  }
+
+  const instructionWrite = existingInstruction?.id
+    ? await client
+        .from('transaction_bond_instructions')
+        .update(instructionPayload)
+        .eq('id', existingInstruction.id)
+    : await client.from('transaction_bond_instructions').insert(instructionPayload)
+
+  if (instructionWrite.error && !isMissingTableError(instructionWrite.error, 'transaction_bond_instructions')) {
+    throw instructionWrite.error
+  }
+
+  return updateBondHybridFinanceStage(transactionId, milestone, {
+    ...options,
+    client,
+    notes: buildGrantMilestoneNotes(milestone, payload.notes || options.notes),
+    actorRole,
+  })
+}
+
 export async function markFinanceInstructionSent(transactionId, options = {}) {
   const client = options.client || requireClient()
   const actorRole = options.actorRole || null
   const activeProfile = await resolveActiveProfileContext(client)
   const workflow = await fetchRawBondHybridWorkflow(client, transactionId, { createIfMissing: true })
   if (!workflow?.id) throw new Error('Bond / Hybrid finance workflow is not available.')
+  assertBondHybridWorkflowEditable(workflow, activeProfile, actorRole)
 
   const snapshot = await getTransactionFinanceWorkflow(transactionId, { client })
   const acceptedOfferId = normalizeNullableUuid(
@@ -11132,21 +11419,25 @@ export async function markFinanceInstructionSent(transactionId, options = {}) {
 
   const existingInstruction = await client
     .from('transaction_bond_instructions')
-    .select('id')
+    .select('*')
     .eq('transaction_id', transactionId)
     .maybeSingle()
 
   if (existingInstruction.error && !isMissingTableError(existingInstruction.error, 'transaction_bond_instructions')) {
     throw existingInstruction.error
   }
+  const instructionDocumentId = normalizeNullableUuid(options.instructionDocumentId || options.instruction_document_id) || existingInstruction.data?.instruction_document_id || null
+  if (!instructionDocumentId) {
+    throw new Error('Attach the attorney instruction document before marking instruction sent.')
+  }
 
   const instructionPayload = {
     transaction_id: transactionId,
-    accepted_bond_offer_id: acceptedOfferId,
+    accepted_bond_offer_id: acceptedOfferId || existingInstruction.data?.accepted_bond_offer_id || null,
     instruction_sent: true,
     instruction_sent_at: new Date().toISOString(),
     instruction_sent_by: activeProfile.userId || null,
-    instruction_document_id: normalizeNullableUuid(options.instructionDocumentId || options.instruction_document_id) || null,
+    instruction_document_id: instructionDocumentId,
     notes: normalizeNullableText(options.notes || 'Finance instruction sent.'),
   }
 
@@ -27006,13 +27297,22 @@ export async function enrichRowsWithBondIntakeContext(rows = []) {
   })()
 
   const bondApplicationsPromise = loadBondApplicationScopesByTransactionIds(client, transactionIds)
+  const bondFinanceWorkflowsPromise = loadBondHybridFinanceWorkflowSummariesByTransactionIds(client, transactionIds)
 
-  const [onboardingByTransactionId, documentsByTransactionId, documentRequestsByTransactionId, rolePlayersByTransactionId, bondApplicationsByTransactionId] = await Promise.all([
+  const [
+    onboardingByTransactionId,
+    documentsByTransactionId,
+    documentRequestsByTransactionId,
+    rolePlayersByTransactionId,
+    bondApplicationsByTransactionId,
+    bondFinanceWorkflowsByTransactionId,
+  ] = await Promise.all([
     onboardingPromise,
     documentsPromise,
     documentRequestsPromise,
     rolePlayersPromise,
     bondApplicationsPromise,
+    bondFinanceWorkflowsPromise,
   ])
 
   return safeRows.map((row) => {
@@ -27031,6 +27331,7 @@ export async function enrichRowsWithBondIntakeContext(rows = []) {
       documentRequests,
       documents,
       rolePlayers: rolePlayersByTransactionId[transactionId] || [],
+      transactionFinanceWorkflow: bondFinanceWorkflowsByTransactionId[transactionId] || row.transactionFinanceWorkflow || null,
       documentSummary: row.documentSummary || {
         uploadedCount: documents.length,
         totalRequired: documentRequests.length,

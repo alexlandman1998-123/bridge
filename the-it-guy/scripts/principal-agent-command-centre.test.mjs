@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
-import { getPrincipalAgentCommandCentre } from '../src/modules/agency/agents/principalAgentCommandCentreService.js'
+import {
+  getPrincipalAgentCommandCentre,
+  getPrincipalAgentDetailCommandCentre,
+} from '../src/modules/agency/agents/principalAgentCommandCentreService.js'
 
 const today = new Date()
 const yesterday = new Date(today)
@@ -151,6 +154,110 @@ function buildModel(overrides = {}) {
   assert.equal(model.topPerformers[0].avatarUrl, 'https://example.com/agent-a.jpg', 'top performers preserve profile picture urls')
   assert.equal(model.agentsTable.find((row) => row.id === 'agent-a')?.avatarUrl, 'https://example.com/agent-a.jpg', 'agent table preserves profile picture urls')
   assert.ok(model.attentionAgents.some((row) => row.id === 'agent-a' && row.reasons.includes('Overdue follow-ups')), 'attention agents include overdue follow-up signals')
+}
+
+{
+  const model = buildModel()
+  const agentA = model.agentsTable.find((row) => row.id === 'agent-a')
+  assert.equal(agentA?.performance.activeTransactionCount, 1, 'card active transaction count comes from assigned active transactions')
+  assert.equal(agentA?.performance.activeListingCount, 1, 'card active listing count comes from assigned listings')
+  assert.equal(agentA?.performance.stageCounts.otp, 1, 'card transaction progress receives active stage counts')
+  assert.equal(agentA?.performance.pipelineValue, 5500000, 'card pipeline value combines active transaction and listing value for the visible agent')
+}
+
+{
+  const detailNow = new Date('2026-07-15T12:00:00.000Z')
+  const detailAgent = {
+    id: 'detail-agent',
+    name: 'Detail Agent',
+    email: 'detail@test.com',
+    role: 'agent',
+    status: 'active',
+    organisationId: 'agency-a',
+    branchId: 'benoni',
+  }
+  const detailModel = getPrincipalAgentDetailCommandCentre({
+    agent: detailAgent,
+    branches,
+    now: detailNow,
+    leads: [
+      {
+        id: 'detail-lead-open',
+        assignedAgentId: 'detail-agent',
+        status: 'new',
+        createdAt: '2026-07-04T08:00:00.000Z',
+      },
+      {
+        id: 'detail-lead-otp',
+        assignedAgentId: 'detail-agent',
+        status: 'OTP signed',
+        createdAt: '2026-07-05T08:00:00.000Z',
+      },
+    ],
+    transactions: [
+      {
+        id: 'detail-active-transaction',
+        assigned_agent_id: 'detail-agent',
+        status: 'finance',
+        purchase_price: 3000000,
+        created_at: '2026-07-02T08:00:00.000Z',
+        updated_at: '2026-07-10T08:00:00.000Z',
+      },
+      {
+        id: 'detail-registered-transaction',
+        assigned_agent_id: 'detail-agent',
+        status: 'registered',
+        purchase_price: 2000000,
+        agent_commission_amount: 60000,
+        created_at: '2026-07-01T08:00:00.000Z',
+        registered_at: '2026-07-11T08:00:00.000Z',
+      },
+    ],
+    listings: [
+      {
+        id: 'detail-listing',
+        assignedAgentId: 'detail-agent',
+        status: 'active',
+        price: 1500000,
+        createdAt: '2026-07-06T08:00:00.000Z',
+      },
+    ],
+  })
+  const detailMetrics = new Map(detailModel.monthlyPerformance.metrics.map((metric) => [metric.key, metric]))
+  assert.equal(detailModel.pipelineHealth.activeDeals, 1, 'detail workspace active deals come from scoped active transactions')
+  assert.equal(detailModel.pipelineHealth.pipelineValue, 4500000, 'detail workspace pipeline value uses active transactions plus active listings')
+  assert.equal(detailMetrics.get('conversionRate')?.value, 50, 'detail performance conversion rate comes from assigned leads')
+  assert.equal(detailMetrics.get('commissionGenerated')?.value, 60000, 'detail performance commission uses registered transaction commission')
+  assert.equal(detailMetrics.get('avgDaysToRegistration')?.value, 10, 'detail performance exposes real average days to registration')
+}
+
+{
+  const detailNow = new Date('2026-07-15T12:00:00.000Z')
+  const detailModel = getPrincipalAgentDetailCommandCentre({
+    agent: {
+      id: 'fallback-commission-agent',
+      name: 'Fallback Commission Agent',
+      email: 'fallback@test.com',
+      role: 'agent',
+      status: 'active',
+      organisationId: 'agency-a',
+      branchId: 'benoni',
+    },
+    branches,
+    now: detailNow,
+    transactions: [
+      {
+        id: 'fallback-registered-transaction',
+        assigned_agent_id: 'fallback-commission-agent',
+        status: 'registered',
+        purchase_price: 2000000,
+        created_at: '2026-07-01T08:00:00.000Z',
+        registered_at: '2026-07-11T08:00:00.000Z',
+      },
+    ],
+  })
+  const detailMetrics = new Map(detailModel.monthlyPerformance.metrics.map((metric) => [metric.key, metric]))
+  assert.equal(detailMetrics.get('commissionGenerated')?.value, 60000, 'detail performance estimates commission from registered value when no explicit commission exists')
 }
 
 {

@@ -212,7 +212,14 @@ function getAgentRoleTitle(agent = {}) {
 
 function formatSummaryMetricValue(metric = {}) {
   if (metric.format === 'currency') return formatCurrency(metric.value)
-  if (metric.format === 'percent') return `${Math.round(Number(metric.value || 0))}%`
+  if (metric.format === 'percent') return metric.value === null || metric.value === undefined ? '—' : `${Math.round(Number(metric.value || 0))}%`
+  if (metric.format === 'days') {
+    if (metric.value === null || metric.value === undefined) return '—'
+    const days = Number(metric.value)
+    if (!Number.isFinite(days)) return '—'
+    const roundedDays = Math.round(days)
+    return `${roundedDays} ${roundedDays === 1 ? 'day' : 'days'}`
+  }
   return metric.value ?? '—'
 }
 
@@ -2764,8 +2771,8 @@ function AgentPerformanceTable({
   canManage = false,
   sortBy = 'pipeline',
   onSort,
-  title = 'All Agents',
-  helper = 'Manage agents across every branch in your visible scope.',
+  title = 'Agent Directory',
+  helper = 'Performance, access, and activity by agent.',
   actionSlot = null,
   onView,
   onDeactivate,
@@ -2994,6 +3001,138 @@ function AgentRowActions({
   )
 }
 
+const AGENT_CARD_PROGRESS_STAGES = [
+  { key: 'otp', label: 'Offer', tone: 'bg-info' },
+  { key: 'finance', label: 'Finance', tone: 'bg-primary' },
+  { key: 'transfer', label: 'Transfer', tone: 'bg-warning' },
+  { key: 'registration', label: 'Registered', tone: 'bg-success' },
+]
+
+function getCardMetricNumber(...values) {
+  for (const value of values) {
+    const number = Number(value)
+    if (Number.isFinite(number)) return number
+  }
+  return 0
+}
+
+function getAgentCardPresence(performance = {}, pendingInvite = false) {
+  if (pendingInvite) {
+    return {
+      label: 'Offline',
+      dotClassName: 'bg-[#9aaabd]',
+      textClassName: 'text-[#60758d]',
+    }
+  }
+
+  const activity = formatCompactActivity(performance.lastActivityAt)
+  const online = Boolean(performance.activeToday || activity.label === 'Today')
+  return online
+    ? {
+        label: 'Online',
+        dotClassName: 'bg-success',
+        textClassName: 'text-success',
+      }
+    : {
+        label: 'Offline',
+        dotClassName: 'bg-[#9aaabd]',
+        textClassName: 'text-[#60758d]',
+      }
+}
+
+function getAgentCardRecentActivity(row = {}, performance = {}) {
+  const events = [
+    ...(Array.isArray(row.recentEvents) ? row.recentEvents : []),
+    ...(Array.isArray(row.agent?.recentEvents) ? row.agent.recentEvents : []),
+  ]
+    .map((event) => ({
+      title: String(event?.title || event?.action || '').trim(),
+      timestamp: event?.timestamp || event?.createdAt || event?.created_at || event?.updatedAt || event?.updated_at || null,
+    }))
+    .filter((event) => event.title || event.timestamp)
+    .sort((left, right) => (new Date(right.timestamp).getTime() || 0) - (new Date(left.timestamp).getTime() || 0))
+
+  const latest = events[0]
+  if (latest) {
+    const title = latest.title || 'Activity recorded'
+    return {
+      title: title.charAt(0).toUpperCase() + title.slice(1),
+      time: formatRelativeActivity(latest.timestamp),
+      muted: false,
+    }
+  }
+
+  if (performance.lastActivityAt) {
+    return {
+      title: 'Activity recorded',
+      time: formatRelativeActivity(performance.lastActivityAt),
+      muted: false,
+    }
+  }
+
+  return {
+    title: 'No recent activity',
+    time: 'Ready to start the first transaction.',
+    muted: true,
+  }
+}
+
+function AgentCardSecondaryMetric({ label, value }) {
+  return (
+    <div className="min-w-0">
+      <p className="truncate text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{label}</p>
+      <p className="mt-1 truncate text-lg font-semibold leading-none tracking-[-0.02em] text-[#10243a]">{value}</p>
+    </div>
+  )
+}
+
+function AgentCardTransactionProgress({ counts = {}, onSelect }) {
+  const stages = AGENT_CARD_PROGRESS_STAGES.map((stage) => ({
+    ...stage,
+    count: getCardMetricNumber(counts?.[stage.key]),
+  }))
+  const total = stages.reduce((sum, stage) => sum + stage.count, 0)
+
+  return (
+    <section className="border-t border-[#edf2f7] pt-4">
+      <div className="flex items-center justify-between gap-3">
+        <h4 className="truncate text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839a]">Transaction Progress</h4>
+        {total ? <span className="shrink-0 text-xs font-semibold text-[#10243a]">{total} active</span> : null}
+      </div>
+
+      {total ? (
+        <div className="mt-3 space-y-2.5">
+          {stages.map((stage) => {
+            const width = stage.count ? Math.max(8, Math.round((stage.count / total) * 100)) : 0
+            return (
+              <button
+                key={stage.key}
+                type="button"
+                className="grid w-full grid-cols-[78px_minmax(0,1fr)_28px] items-center gap-3 text-left"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onSelect?.(stage.key)
+                }}
+              >
+                <span className="inline-flex min-w-0 items-center gap-2">
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${stage.tone}`} />
+                  <span className="truncate text-xs font-semibold text-[#405870]">{stage.label}</span>
+                </span>
+                <span className="h-2 overflow-hidden rounded-full bg-[#edf2f7]">
+                  <span className={`block h-full rounded-full ${stage.tone}`} style={{ width: `${width}%` }} />
+                </span>
+                <span className="text-right text-xs font-semibold tabular-nums text-[#10243a]">{stage.count}</span>
+              </button>
+            )
+          })}
+        </div>
+      ) : (
+        <p className="mt-3 rounded-xl bg-[#f8fbff] px-3 py-2.5 text-sm text-[#6d8299]">No active transaction stages yet.</p>
+      )}
+    </section>
+  )
+}
+
 function AgentTableMobileCard({
   row,
   canManage,
@@ -3072,8 +3211,8 @@ function AgentCommandCardGrid({
     <div className="overflow-hidden rounded-2xl border border-[#dde6f1] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-[#edf2f7] px-4 py-4">
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold text-[#10243a]">All Agents</h2>
-          <p className="mt-0.5 truncate text-xs text-[#6d8299]">Card view for branch-aware agent management.</p>
+          <h2 className="truncate text-sm font-semibold text-[#10243a]">Agent Directory</h2>
+          <p className="mt-0.5 truncate text-xs text-[#6d8299]">Branch, activity, and action shortcuts.</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <span className="rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#60758d]">{rows.length} agents</span>
@@ -3084,22 +3223,89 @@ function AgentCommandCardGrid({
         {rows.map((row) => {
           const performance = row.performance || {}
           const pendingInvite = row.statusKey === AGENT_INVITE_STATUS.PENDING_INVITE || row.agent?.isPendingInvite
-          const activity = formatCompactActivity(performance.lastActivityAt)
+          const activeTransactions = getCardMetricNumber(performance.activeTransactionCount, performance.activeTransactions, performance.deals)
+          const pipelineValue = getCardMetricNumber(performance.pipelineValue)
+          const activeListings = getCardMetricNumber(performance.activeListingCount, performance.listings)
+          const leadCount = getCardMetricNumber(
+            performance.totalLeads,
+            performance.leads,
+            Array.isArray(row.agent?.pipelineRows) ? row.agent.pipelineRows.length : undefined,
+            Array.isArray(row.agent?.leads) ? row.agent.leads.length : undefined,
+            performance.totalOpportunities,
+          )
+          const conversionRate = formatConversionRate(performance.conversionRate)
+          const presence = getAgentCardPresence(performance, pendingInvite)
+          const recentActivity = getAgentCardRecentActivity(row, performance)
           return (
-            <article key={`${row.id}-${row.branchId || 'branch'}-command-card`} className="flex min-h-[260px] flex-col rounded-2xl border border-[#e1e9f3] bg-[linear-gradient(180deg,#ffffff,#fbfdff)] p-4">
-              <div className="flex min-w-0 items-start justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-3">
-                  <AgentAvatar agent={row} className="h-12 w-12 border border-[#d7e2ef] bg-white text-sm font-semibold text-[#245076]" />
+            <article key={`${row.id}-${row.branchId || 'branch'}-command-card`} className="flex min-h-[400px] flex-col rounded-[22px] border border-[#dfe8f2] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:border-[#c9d8e8] hover:shadow-[0_20px_42px_rgba(15,23,42,0.09)]">
+              <div className="flex min-w-0 items-start justify-between gap-4">
+                <button type="button" className="flex min-w-0 items-start gap-3 text-left" onClick={() => onView(row.agent)}>
+                  <span className="relative shrink-0">
+                    <AgentAvatar agent={row} className="h-12 w-12 border border-[#d7e2ef] bg-[#f8fbff] text-sm font-semibold text-[#245076]" />
+                    <span className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-white ${presence.dotClassName}`} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-base font-semibold tracking-[-0.02em] text-[#10243a]">{row.name || 'Agent'}</span>
+                      {row.needsAttention ? <AlertTriangle size={14} className="shrink-0 text-warning" aria-label="Needs attention" /> : null}
+                    </span>
+                    <span className="mt-1 block truncate text-sm text-[#526981]">{formatRoleLabel(row.role)} · {row.branchName || 'Current Office'}</span>
+                    <span className="mt-0.5 block truncate text-xs text-[#8294aa]">{row.email || 'No email added'}</span>
+                  </span>
+                </button>
+                <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#f8fbff] px-2.5 py-1 text-xs font-semibold ${presence.textClassName}`}>
+                  <span className={`h-2 w-2 rounded-full ${presence.dotClassName}`} />
+                  {presence.label}
+                </span>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-4 border-t border-[#edf2f7] pt-4">
+                <div className="min-w-0">
+                  <p className="truncate text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Active Transactions</p>
+                  <p className="mt-2 truncate text-[2rem] font-semibold leading-none tracking-[-0.045em] text-[#10243a]">{activeTransactions}</p>
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Pipeline Value</p>
+                  <p className="mt-2 truncate text-[2rem] font-semibold leading-none tracking-[-0.045em] text-[#10243a]" title={formatCurrency(pipelineValue)}>{formatCompactCurrency(pipelineValue)}</p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-3 divide-x divide-[#edf2f7] border-t border-[#edf2f7] pt-4">
+                <div className="pr-3">
+                  <AgentCardSecondaryMetric label="Listings" value={activeListings} />
+                </div>
+                <div className="px-3">
+                  <AgentCardSecondaryMetric label="Leads" value={leadCount} />
+                </div>
+                <div className="pl-3">
+                  <AgentCardSecondaryMetric label="Conversion" value={conversionRate} />
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <AgentCardTransactionProgress counts={performance.stageCounts} onSelect={(stage) => onViewTransactions?.(row.agent, stage)} />
+              </div>
+
+              <section className="mt-4 border-t border-[#edf2f7] pt-4">
+                <h4 className="truncate text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839a]">Recent Activity</h4>
+                <div className="mt-2 flex min-w-0 items-start gap-2.5">
+                  <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${recentActivity.muted ? 'bg-[#c5d1de]' : 'bg-success'}`} />
                   <div className="min-w-0">
-                    <h3 className="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-[#10243a]">
-                      <span className="truncate">{row.name || 'Agent'}</span>
-                      {row.needsAttention ? <AlertTriangle size={13} className="shrink-0 text-warning" aria-label="Needs attention" /> : null}
-                    </h3>
-                    <p className="truncate text-xs text-[#60758d]">{formatRoleLabel(row.role)}</p>
-                    <p className="truncate text-xs text-[#60758d]">{row.branchName || 'Current Office'}</p>
-                    <p className="truncate text-xs text-[#8294aa]">{row.email || 'No email added'}</p>
+                    <p className={`truncate text-sm font-semibold ${recentActivity.muted ? 'text-[#60758d]' : 'text-[#10243a]'}`}>{recentActivity.title}</p>
+                    <p className="mt-0.5 truncate text-xs text-[#8294aa]">{recentActivity.time}</p>
                   </div>
                 </div>
+              </section>
+
+              <div className="mt-auto flex items-center gap-2 pt-4">
+                <button
+                  type="button"
+                  className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-[#12304c] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0f2742]"
+                  onClick={() => onView(row.agent)}
+                >
+                  View Workspace
+                  <ArrowRight size={15} />
+                </button>
                 <AgentRowActions
                   canManage={canManage}
                   pendingInvite={pendingInvite}
@@ -3112,48 +3318,6 @@ function AgentCommandCardGrid({
                   onCopy={() => onCopyInviteLink?.(row.agent)}
                   onRevoke={() => onRevokeInvite?.(row.agent)}
                 />
-              </div>
-
-              <div className="mt-4 grid grid-cols-3 divide-x divide-[#e4ebf4] rounded-2xl border border-[#edf2f7] bg-white py-3">
-                <div className="px-3">
-                  <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#71859c]">Pipeline</p>
-                  <p className="mt-1 truncate text-sm font-semibold text-[#10243a]">{formatCompactCurrency(performance.pipelineValue)}</p>
-                </div>
-                <div className="px-3">
-                  <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#71859c]">Deals</p>
-                  <p className="mt-1 text-sm font-semibold text-[#10243a]">{performance.activeTransactionCount ?? performance.activeTransactions ?? 0}</p>
-                </div>
-                <div className="px-3">
-                  <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#71859c]">Conversion</p>
-                  <p className="mt-1 text-sm font-semibold text-[#10243a]">{formatConversionRate(performance.conversionRate)}</p>
-                </div>
-              </div>
-
-              <div className="mt-4">
-                <StageMixChips counts={performance.stageCounts} onSelect={(stage) => onViewTransactions?.(row.agent, stage)} />
-              </div>
-
-              <div className="mt-4 space-y-2 text-xs text-[#60758d]">
-                <p className="flex items-center justify-between gap-3">
-                  <span>Last active</span>
-                  <span className="inline-flex items-center gap-2 font-semibold text-[#10243a]">
-                    <span className={`h-2 w-2 rounded-full ${activity.tone === 'active' ? 'bg-success' : activity.tone === 'warning' ? 'bg-warning' : 'bg-danger'}`} />
-                    {activity.label}
-                  </span>
-                </p>
-              </div>
-
-              <div className="mt-auto flex flex-wrap items-center gap-2 pt-4">
-                <Button type="button" size="sm" onClick={() => onView(row.agent)}>Open</Button>
-                {pendingInvite ? (
-                  <>
-                    {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => onResendInvite?.(row.agent)}><Send size={14} />Resend</Button> : null}
-                    {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => onCopyInviteLink?.(row.agent)}><Copy size={14} />Copy</Button> : null}
-                    {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => onRevokeInvite?.(row.agent)}><XCircle size={14} />Revoke</Button> : null}
-                  </>
-                ) : (
-                  null
-                )}
               </div>
             </article>
           )
@@ -3725,7 +3889,6 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
   const completedDeals = agent.deals.filter((row) => normalizeDealStatus(row) === 'completed')
   const cancelledDeals = agent.deals.filter((row) => normalizeDealStatus(row) === 'cancelled')
   const activeClientCount = Math.max(agent.pipelineRows?.length || 0, getNumericMetric(agent, 'activeDeals'))
-  const conversionRate = agent.deals.length ? `${Math.round((getNumericMetric(agent, 'registeredDeals') / agent.deals.length) * 100)}%` : '—'
   const commandCentre = useMemo(
     () =>
       getPrincipalAgentDetailCommandCentre({
@@ -3754,6 +3917,12 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     typeof value === 'number' && label !== 'Average Response Time' ? formatCurrency(value) : value || '—',
   ])
   const monthSummary = commandCentre?.monthlyPerformance?.metrics || []
+  const monthSummaryMetricMap = new Map(monthSummary.map((metric) => [metric.key, metric]))
+  const getMonthSummaryValue = (key, fallback = '—') => {
+    const metric = monthSummaryMetricMap.get(key)
+    return metric ? formatSummaryMetricValue(metric) : fallback
+  }
+  const pipelineStageMap = new Map((commandCentre?.pipelineHealth?.stages || []).map((stage) => [stage.key, Number(stage.count || 0)]))
   const headerActionPermissions = commandCentre?.headerActionsPermissions || {
     canMessage: Boolean(agent.email),
     canViewCalendar: true,
@@ -3912,9 +4081,11 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
   const topTransactions = [...activeTransactionRows]
     .sort((left, right) => getTransactionAmount(right) - getTransactionAmount(left))
     .slice(0, 5)
-  const projectedCommission =
-    commandCentre?.existingCharts?.financialRows?.find(([label]) => label === 'Projected Commission')?.[1] ||
-    getAgentPipelineValue(agent) * 0.03
+  const projectedCommissionMetric = commandCentre?.existingCharts?.financialRows?.find(([label]) => label === 'Projected Commission')?.[1]
+  const projectedCommission = projectedCommissionMetric ?? getAgentPipelineValue(agent) * 0.03
+  const activeDealCount = commandCentre?.pipelineHealth?.activeDeals ?? activeDeals.length
+  const activeListingStatusCount = listingStatuses.find((item) => item.label === 'Active')?.count
+  const pipelineHealthValue = commandCentre?.pipelineHealth?.pipelineValue ?? getAgentPipelineValue(agent)
   const compliancePercent = commandCentre?.followUpCompliance?.tasksCompletedPercent
   const prospectingMetricMap = new Map((commandCentre?.prospectingActivity?.metrics || []).map((metric) => [metric.key, metric]))
   const prospectingMetrics = [
@@ -3926,19 +4097,21 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     { label: 'Compliance %', value: compliancePercent === null || compliancePercent === undefined ? '—' : `${compliancePercent}%`, icon: ShieldCheck, helper: 'Task completion' },
   ]
   const kpiCards = [
-    { label: 'Active Transactions', value: activeDeals.length, helper: 'Locked to agent', icon: BriefcaseBusiness },
-    { label: 'Active Listings', value: listingStatuses.find((item) => item.label === 'Active')?.count || allListings.length, helper: 'Current stock', icon: Building2 },
+    { label: 'Active Transactions', value: activeDealCount, helper: 'Locked to agent', icon: BriefcaseBusiness },
+    { label: 'Active Listings', value: activeListingStatusCount ?? allListings.length, helper: 'Current stock', icon: Building2 },
     { label: 'Buyer Leads', value: buyerLeadRows.length, helper: 'Assigned leads', icon: Users },
     { label: 'Seller Leads', value: sellerLeadRows.length, helper: 'Assigned leads', icon: Users },
-    { label: 'Pipeline Value', value: formatCompactCurrency(commandCentre?.pipelineHealth?.pipelineValue || getAgentPipelineValue(agent)), helper: 'Open value', icon: DollarSign },
+    { label: 'Pipeline Value', value: formatCompactCurrency(pipelineHealthValue), helper: 'Open value', icon: DollarSign },
     { label: 'Projected Commission', value: formatCompactCurrency(projectedCommission), helper: 'Forecast', icon: Trophy },
   ]
+  const otpStageCount = pipelineStageMap.get('otp') || 0
+  const registrationStageCount = pipelineStageMap.get('registration') || 0
   const performanceOverviewRows = [
-    ['Conversion Rate', conversionRate],
-    ['Listings to OTP', `${allListings.length}:${commandCentre?.pipelineHealth?.stages?.find((stage) => stage.key === 'otp')?.count || 0}`],
-    ['OTP to Registration', `${commandCentre?.pipelineHealth?.stages?.find((stage) => stage.key === 'otp')?.count || 0}:${commandCentre?.pipelineHealth?.stages?.find((stage) => stage.key === 'registration')?.count || 0}`],
-    ['Avg. Days to Register', getNumericMetric(agent, 'averageDealTime') ? `${getNumericMetric(agent, 'averageDealTime')} days` : '—'],
-    ['Commission Earned', formatCurrency(getNumericMetric(agent, 'commissionEarned'))],
+    ['Conversion Rate', getMonthSummaryValue('conversionRate')],
+    ['Listings to OTP', `${allListings.length}:${otpStageCount}`],
+    ['OTP to Registration', `${otpStageCount}:${registrationStageCount}`],
+    ['Avg. Days to Register', getMonthSummaryValue('avgDaysToRegistration')],
+    ['Commission Earned', getMonthSummaryValue('commissionGenerated', formatCurrency(getNumericMetric(agent, 'commissionEarned')))],
     ['Commission Forecast', formatCurrency(projectedCommission)],
   ]
 
@@ -6170,47 +6343,39 @@ export function AgentsPage() {
     <section className="space-y-5">
       {canManageDirectory ? (
         <>
-          <section className="rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-sm">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-              <div className="min-w-0">
-                <h1 className="text-[1.45rem] font-semibold tracking-[-0.035em] text-[#10243a]">All Agents</h1>
-                <p className="mt-1 text-sm text-[#526981]">Manage agents across every branch in your visible scope.</p>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center xl:justify-end">
-                <label className="min-w-0 sm:w-[320px]">
-                  <span className="sr-only">Search agents</span>
-                  <input
-                    className="h-10 w-full rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] shadow-sm outline-none transition placeholder:text-[#9aaabd] focus:border-[#1f4f78] focus:ring-2 focus:ring-[#1f4f78]/10"
-                    value={searchTerm}
-                    onChange={(event) => setSearchTerm(event.target.value)}
-                    placeholder="Search agents by name, email, branch..."
-                  />
-                </label>
-                <DirectorySelect
-                  label="Branch / office"
-                  value={branchFilter}
-                  onChange={setBranchFilter}
-                  options={commandCentreModel.filterOptions.branches.map((branch) => ({ value: branch.id, label: branch.name }))}
-                />
-                <DirectorySelect
-                  label="Role"
-                  value={roleFilter}
-                  onChange={setRoleFilter}
-                  options={roleOptions.map((item) => ({ value: item, label: item === 'all' ? 'All Roles' : formatRoleLabel(item) }))}
-                />
-                {agentDirectoryViewToggle}
-                <button
-                  type="button"
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] shadow-sm transition hover:bg-[#f7fafc]"
-                  onClick={handleExportAgentRows}
-                >
-                  <Download size={15} />
-                  Export
-                </button>
-                {inviteAgentAction}
-              </div>
-            </div>
-          </section>
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+            <label className="min-w-0 sm:w-[320px]">
+              <span className="sr-only">Search agents</span>
+              <input
+                className="h-10 w-full rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] shadow-sm outline-none transition placeholder:text-[#9aaabd] focus:border-[#1f4f78] focus:ring-2 focus:ring-[#1f4f78]/10"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Search agents by name, email, branch..."
+              />
+            </label>
+            <DirectorySelect
+              label="Branch / office"
+              value={branchFilter}
+              onChange={setBranchFilter}
+              options={commandCentreModel.filterOptions.branches.map((branch) => ({ value: branch.id, label: branch.name }))}
+            />
+            <DirectorySelect
+              label="Role"
+              value={roleFilter}
+              onChange={setRoleFilter}
+              options={roleOptions.map((item) => ({ value: item, label: item === 'all' ? 'All Roles' : formatRoleLabel(item) }))}
+            />
+            {agentDirectoryViewToggle}
+            <button
+              type="button"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] shadow-sm transition hover:bg-[#f7fafc]"
+              onClick={handleExportAgentRows}
+            >
+              <Download size={15} />
+              Export
+            </button>
+            {inviteAgentAction}
+          </div>
 
           <PerformanceKpiStrip kpis={commandCentreModel.kpis} onAttentionClick={() => setStatusFilter('needs_attention')} />
           <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
