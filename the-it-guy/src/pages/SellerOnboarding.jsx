@@ -146,11 +146,11 @@ const MANDATE_TYPE_OPTIONS = [
 ]
 
 const PAGE_CONTAINER_CLASS = 'mx-auto w-full max-w-[560px] lg:max-w-[1184px]'
-const PAGE_STACK_CLASS = 'space-y-4 sm:space-y-6 lg:space-y-8'
+const PAGE_STACK_CLASS = 'space-y-3 sm:space-y-6 lg:space-y-8'
 const SECTION_CARD_CLASS =
-  'rounded-[20px] border border-[#d8e2ec] bg-white/90 p-3 shadow-[0_14px_34px_rgba(15,23,42,0.05)] backdrop-blur-xl sm:rounded-[28px] sm:p-5 lg:rounded-[32px] lg:p-6 lg:shadow-[0_26px_60px_rgba(15,23,42,0.08)]'
+  'rounded-[28px] border border-[#dfe8f1] bg-white px-4 py-4 shadow-[0_18px_42px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:rounded-[28px] sm:bg-white/90 sm:p-5 lg:rounded-[32px] lg:p-6 lg:shadow-[0_26px_60px_rgba(15,23,42,0.08)]'
 const INNER_PANEL_CLASS =
-  'rounded-[18px] border border-[#dce6ef] bg-white/95 p-3 shadow-[0_12px_28px_rgba(15,23,42,0.04)] backdrop-blur-xl sm:rounded-[22px] sm:p-5 lg:rounded-[26px] lg:p-7'
+  'rounded-none border-0 bg-transparent p-0 shadow-none sm:rounded-[22px] sm:border sm:border-[#dce6ef] sm:bg-white/95 sm:p-5 sm:shadow-[0_12px_28px_rgba(15,23,42,0.04)] sm:backdrop-blur-xl lg:rounded-[26px] lg:p-7'
 const DETAIL_INPUT_CLASS =
   'w-full min-h-[50px] rounded-[14px] border border-[#d7e2ed] bg-white px-4 py-3 text-base text-[#142334] outline-none transition duration-150 ease-out placeholder:text-[#93a4b8] focus:border-[#35546c]/40 focus:ring-2 focus:ring-[#35546c]/10'
 const SELLER_ONBOARDING_NOTIFICATION_TIMEOUT_MS = 8000
@@ -263,16 +263,16 @@ async function notifyAssignedAgentOfSellerOnboarding(updated = {}, form = {}) {
 }
 
 function choiceCardClass(isActive) {
-  return `w-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out sm:rounded-[20px] sm:px-5 sm:py-5 ${
+  return `w-full rounded-[14px] border px-3 py-2.5 text-left transition duration-150 ease-out sm:rounded-[20px] sm:px-5 sm:py-5 ${
     isActive
-      ? 'border-[#35546c]/60 bg-[#f5f8fc] shadow-[0_12px_28px_rgba(53,84,108,0.10)]'
+      ? 'border-[#138a3d]/55 bg-[#f0fbf4] shadow-[0_12px_28px_rgba(19,138,61,0.10)]'
       : 'border-[#d8e2ec] bg-white hover:border-[#bccddd] hover:bg-[#fbfcfe]'
   }`
 }
 
 function chipChoiceClass(isActive) {
   return `inline-flex items-center gap-2 rounded-full border px-3.5 py-2.5 text-xs font-semibold transition ${
-    isActive ? 'border-[#35546c]/55 bg-[#f5f8fc] text-[#20384f]' : 'border-[#d6e1ee] bg-white text-[#35546c]'
+    isActive ? 'border-[#138a3d]/55 bg-[#f0fbf4] text-[#126b34]' : 'border-[#d6e1ee] bg-white text-[#35546c]'
   }`
 }
 
@@ -1310,36 +1310,6 @@ function SellerBrandBar({ brand }) {
   )
 }
 
-function SellerMobileFormHeader({ brand, listing, form, statusLabel }) {
-  const sellerName = getSellerDisplayName(listing, form)
-  const propertyAddress = getPropertyDisplayAddress(listing, form)
-  const agentName = resolveAgentName(listing)
-
-  return (
-    <section className="rounded-[20px] border border-[#d8e2ec] bg-white/95 p-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:hidden">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <AgencyMark brand={brand} tone="light" />
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-[#142334]">{brand?.name || 'Your Agency'}</p>
-            <p className="mt-0.5 truncate text-xs text-[#6b7d93]">Seller onboarding</p>
-          </div>
-        </div>
-        <span className="shrink-0 rounded-full border border-[#dbe5ef] bg-[#f7fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
-          {statusLabel}
-        </span>
-      </div>
-      <div className="mt-3 rounded-[16px] border border-[#dfe8f2] bg-[#fbfdff] p-3">
-        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7a8da3]">Seller</p>
-        <p className="mt-1 truncate text-sm font-semibold text-[#172334]">{sellerName}</p>
-        <p className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#7a8da3]">Property</p>
-        <p className="mt-1 break-words text-sm font-semibold leading-5 text-[#172334]">{propertyAddress}</p>
-        <p className="mt-2 text-xs text-[#6b7d93]">Need help? Contact {agentName}.</p>
-      </div>
-    </section>
-  )
-}
-
 function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
   const sellerName = getSellerDisplayName(listing, form)
   const propertyAddress = getPropertyDisplayAddress(listing, form)
@@ -1406,8 +1376,8 @@ function SellerWelcomeScreen({ brand, listing, form, onContinue }) {
   ]
 
   return (
-    <section className="overflow-hidden rounded-[28px] border border-[#d9e4ec] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.12)] sm:rounded-[34px] lg:grid lg:min-h-[720px] lg:grid-cols-[0.9fr_1.1fr]">
-      <div className="relative min-h-[640px] overflow-hidden bg-[#0e1b2b] text-white sm:min-h-[720px] lg:min-h-full">
+    <section className="overflow-hidden rounded-[30px] border border-[#d9e4ec] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.12)] sm:rounded-[34px] lg:grid lg:min-h-[720px] lg:grid-cols-[0.9fr_1.1fr]">
+      <div className="relative min-h-[calc(100dvh-24px)] overflow-hidden bg-[#0e1b2b] text-white sm:min-h-[720px] lg:min-h-full">
         {welcomeImageUrl ? (
           <img
             src={welcomeImageUrl}
@@ -1418,9 +1388,9 @@ function SellerWelcomeScreen({ brand, listing, form, onContinue }) {
           <div aria-hidden className="absolute inset-0 bg-[linear-gradient(150deg,#0b1626_0%,#172b3e_48%,#31506a_100%)]" />
         )}
         <div aria-hidden className="absolute inset-0 bg-[linear-gradient(180deg,rgba(7,15,26,0.62)_0%,rgba(7,15,26,0.28)_35%,rgba(7,15,26,0.78)_100%)]" />
-        <div className="relative z-10 flex min-h-[640px] flex-col p-5 sm:min-h-[720px] sm:p-7 lg:min-h-full">
+        <div className="relative z-10 flex min-h-[calc(100dvh-24px)] flex-col p-5 sm:min-h-[720px] sm:p-7 lg:min-h-full">
           <SellerBrandBar brand={brand} />
-          <div className="mt-auto pt-12">
+          <div className="mt-auto pt-10">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/70">Seller onboarding</p>
             <h1 className="mt-3 max-w-[460px] text-[2.35rem] font-semibold leading-[1.04] tracking-normal text-white sm:text-5xl">
               Welcome, <span className="text-[#37c871]">{welcomeName}</span>
@@ -1443,11 +1413,35 @@ function SellerWelcomeScreen({ brand, listing, form, onContinue }) {
                 Your information is secure and protected.
               </div>
             </div>
+
+            <div className="mt-5 rounded-[22px] border border-white/20 bg-white/95 p-4 text-[#142334] shadow-[0_18px_34px_rgba(0,0,0,0.18)] backdrop-blur-xl lg:hidden">
+              <p className="text-sm font-semibold">What to expect</p>
+              <ul className="mt-3 space-y-2.5">
+                {expectationItems.map((item) => (
+                  <li key={item} className="flex items-start gap-2.5 text-xs leading-5 text-[#4f6378]">
+                    <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-[#138a3d]" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <Button
+              type="button"
+              onClick={onContinue}
+              className="mt-5 min-h-[52px] w-full rounded-[16px] bg-[#138a3d] text-white shadow-[0_16px_32px_rgba(19,138,61,0.24)] hover:bg-[#0f7533] lg:hidden"
+            >
+              Continue
+              <ChevronRight size={16} />
+            </Button>
+            <p className="mt-3 text-center text-xs leading-5 text-white/70 lg:hidden">
+              Powered by arch9 for {brand?.name || 'your agency'}.
+            </p>
           </div>
         </div>
       </div>
 
-      <div className="flex flex-col justify-center bg-white p-5 sm:p-8 lg:p-10">
+      <div className="hidden flex-col justify-center bg-white p-5 sm:p-8 lg:flex lg:p-10">
         <div className="mx-auto w-full max-w-[440px]">
           <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-[28px] border border-[#dce7ef] bg-[#f7fbff] text-[#138a3d] shadow-[0_18px_38px_rgba(15,23,42,0.08)]">
             <Home size={42} strokeWidth={1.7} />
@@ -1491,19 +1485,19 @@ function SellerWelcomeScreen({ brand, listing, form, onContinue }) {
 
 function SellerStepProgress({ currentStep, progress }) {
   return (
-    <section className="rounded-[18px] border border-[#dce6ef] bg-white/90 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.04)] backdrop-blur-xl sm:rounded-[28px] sm:p-5 lg:rounded-[30px] lg:p-6 lg:shadow-[0_22px_50px_rgba(15,23,42,0.06)]">
+    <section className="border-b border-[#edf2f7] pb-4 sm:rounded-[28px] sm:border sm:border-[#dce6ef] sm:bg-white/90 sm:p-5 sm:shadow-[0_12px_30px_rgba(15,23,42,0.04)] sm:backdrop-blur-xl lg:rounded-[30px] lg:p-6 lg:shadow-[0_22px_50px_rgba(15,23,42,0.06)]">
       <div className="flex items-start justify-between gap-3 sm:hidden">
         <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6f8298]">Step {currentStep + 1} of {STEPS.length}</p>
-          <h2 className="mt-1 break-words text-base font-semibold tracking-normal text-[#142132]">{STEP_META[currentStep]?.label}</h2>
+          <h2 className="mt-1 break-words text-[1.35rem] font-semibold leading-tight tracking-normal text-[#142132]">{STEP_META[currentStep]?.label}</h2>
         </div>
-        <span className="shrink-0 rounded-full bg-[#f2f6fb] px-3 py-1.5 text-xs font-semibold text-[#35546c]">{progress}%</span>
+        <span className="shrink-0 rounded-full bg-[#f0fbf4] px-3 py-1.5 text-xs font-semibold text-[#126b34]">{progress}%</span>
       </div>
       <p className="mt-2 text-[13px] leading-5 text-[#6b7d93] sm:hidden">{STEP_META[currentStep]?.helper}</p>
 
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#eef3f8] sm:hidden">
         <span
-          className="block h-full rounded-full bg-gradient-to-r from-[#172334] via-[#35546c] to-[#2f8f86] transition-[width] duration-300"
+          className="block h-full rounded-full bg-[#138a3d] transition-[width] duration-300"
           style={{ width: `${progress}%` }}
         />
       </div>
@@ -1511,7 +1505,7 @@ function SellerStepProgress({ currentStep, progress }) {
         {STEP_META.map((step, index) => (
           <span
             key={step.label}
-            className={`h-1.5 rounded-full transition-all ${index <= currentStep ? 'w-5 bg-[#35546c]' : 'w-1.5 bg-[#d8e2ee]'}`}
+            className={`h-1.5 rounded-full transition-all ${index <= currentStep ? 'w-5 bg-[#138a3d]' : 'w-1.5 bg-[#d8e2ee]'}`}
           />
         ))}
       </div>
@@ -1521,11 +1515,11 @@ function SellerStepProgress({ currentStep, progress }) {
           <p className="text-sm font-semibold text-[#142132]">Step {currentStep + 1} of {STEPS.length}</p>
           <p className="mt-1 text-sm text-[#6b7d93]">{STEP_META[currentStep]?.helper}</p>
         </div>
-        <span className="rounded-full bg-[#f2f6fb] px-3 py-1 text-xs font-semibold text-[#35546c]">{progress}% complete</span>
+        <span className="rounded-full bg-[#f0fbf4] px-3 py-1 text-xs font-semibold text-[#126b34]">{progress}% complete</span>
       </div>
       <div className="mt-4 hidden h-2 overflow-hidden rounded-full bg-[#eef3f8] sm:block">
         <span
-          className="block h-full rounded-full bg-gradient-to-r from-[#172334] via-[#35546c] to-[#2f8f86] transition-[width] duration-300"
+          className="block h-full rounded-full bg-[#138a3d] transition-[width] duration-300"
           style={{ width: `${progress}%` }}
         />
       </div>
@@ -1540,7 +1534,7 @@ function SellerStepProgress({ currentStep, progress }) {
               type="button"
               className={`flex items-center gap-3 rounded-[18px] border px-3 py-3.5 text-left transition ${
                 isActive
-                  ? 'border-[#35546c]/65 bg-[#f5f8fc] shadow-[0_12px_26px_rgba(53,84,108,0.10)]'
+                  ? 'border-[#138a3d]/65 bg-[#f0fbf4] shadow-[0_12px_26px_rgba(19,138,61,0.10)]'
                   : isComplete
                     ? 'border-[#d8ecdf] bg-[#f5fbf7]'
                     : 'border-[#e1e9f3] bg-white/90'
@@ -1567,7 +1561,7 @@ function SellerStepProgress({ currentStep, progress }) {
 function StepShell({ eyebrow, title, description, children }) {
   return (
     <section className={INNER_PANEL_CLASS}>
-      <header className="mb-4 sm:mb-6">
+      <header className="mb-5 hidden sm:mb-6 sm:block">
         <p className="inline-flex rounded-full border border-[#dbe6f2] bg-[#f3f7fb] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#637589] sm:px-3 sm:text-[11px]">
           {eyebrow}
         </p>
@@ -1582,13 +1576,13 @@ function StepShell({ eyebrow, title, description, children }) {
 function FormSection({ icon, title, description, children }) {
   const SectionIcon = icon || Circle
   return (
-    <section className="rounded-[18px] border border-[#dfe7f1] bg-[#fbfcfe] p-3 sm:rounded-[22px] sm:p-5 lg:rounded-[24px] lg:p-6">
+    <section className="rounded-none border-0 bg-transparent p-0 sm:rounded-[22px] sm:border sm:border-[#dfe7f1] sm:bg-[#fbfcfe] sm:p-5 lg:rounded-[24px] lg:p-6">
       <div className="flex items-start gap-3">
-        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white text-[#35546c] shadow-[0_10px_22px_rgba(15,23,42,0.05)] sm:h-11 sm:w-11 sm:rounded-[16px]">
+        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-[#dbe5ef] bg-white text-[#35546c] shadow-[0_10px_22px_rgba(15,23,42,0.05)] sm:h-11 sm:w-11 sm:rounded-[16px]">
           <SectionIcon size={17} />
         </span>
         <div>
-          <h3 className="text-base font-semibold text-[#162435] sm:text-[1.1rem]">{title}</h3>
+          <h3 className="text-[1.15rem] font-semibold leading-tight text-[#162435] sm:text-[1.1rem]">{title}</h3>
           {description ? <p className="mt-1.5 text-sm leading-5 text-[#6b7d93]">{description}</p> : null}
         </div>
       </div>
@@ -1599,7 +1593,7 @@ function FormSection({ icon, title, description, children }) {
 
 function ChoiceCard({ active, title, description, onClick }) {
   return (
-    <button type="button" onClick={onClick} className={`${choiceCardClass(active)} min-h-[74px] sm:min-h-[92px]`}>
+    <button type="button" onClick={onClick} className={`${choiceCardClass(active)} min-h-[58px] sm:min-h-[92px]`}>
       <span className={`block text-sm font-semibold sm:text-[15px] ${active ? 'text-[#132033]' : 'text-[#35546c]'}`}>{title}</span>
       {description ? <span className="mt-1 block text-xs leading-5 text-[#6b7d93] sm:mt-1.5">{description}</span> : null}
     </button>
@@ -3258,7 +3252,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     <div className={PAGE_STACK_CLASS}>
       {!isCompleted ? (
         <>
-          <SellerMobileFormHeader brand={agencyBrand} listing={listing} form={form} statusLabel={statusLabel} />
           <SellerOnboardingHero brand={agencyBrand} listing={listing} form={form} statusLabel={statusLabel} />
         </>
       ) : null}
@@ -3290,9 +3283,25 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
         <div className="mt-4 space-y-4 sm:mt-6 sm:space-y-6">
           {currentStep === 0 ? (
-            <>
+            <StepShell
+              eyebrow="About you"
+              title="Tell us about yourself"
+              description="Confirm the seller identity, ownership structure, and sale context."
+            >
+              <div className="space-y-6 sm:space-y-4">
               <FormSection icon={Landmark} title="Who owns this property?" description="Choose the ownership structure first. We’ll show the right follow-up fields from here.">
-                <div className="mt-3 grid grid-cols-1 gap-2 sm:mt-4 sm:grid-cols-2 lg:grid-cols-3">
+                <label className="grid gap-2 text-sm font-medium text-[#2a4057] sm:hidden">
+                  Ownership structure
+                  <select className={DETAIL_INPUT_CLASS} value={form.ownershipType} onChange={(event) => handleOwnershipTypeChange(event.target.value)}>
+                    {OWNERSHIP_TYPES.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="mt-3 hidden grid-cols-1 gap-2 sm:mt-4 sm:grid sm:grid-cols-2 lg:grid-cols-3">
                   {OWNERSHIP_TYPES.map((item) => {
                     const active = form.ownershipType === item.value
                     return (
@@ -3803,7 +3812,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   </label>
                 </div>
               </FormSection>
-            </>
+              </div>
+            </StepShell>
           ) : null}
 
           {currentStep === 1 ? (
@@ -3818,7 +3828,18 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   title="Property category"
                   description="Choose the broad category first. It controls the type options and the rest of the flow."
                 >
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  <label className="grid gap-2 text-sm font-medium text-[#2a4057] sm:hidden">
+                    Property category
+                    <select className={DETAIL_INPUT_CLASS} value={form.propertyCategory} onChange={(event) => handlePropertyCategoryChange(event.target.value)}>
+                      {PROPERTY_CATEGORIES.map((category) => (
+                        <option key={category} value={category}>
+                          {getPropertyCategoryLabel(category)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="hidden gap-2 sm:grid sm:grid-cols-2 lg:grid-cols-4">
                     {PROPERTY_CATEGORIES.map((category) => (
                       <ChoiceCard
                         key={category}
@@ -4578,13 +4599,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               </Button>
             ) : null}
             {currentStep < FINAL_STEP_INDEX ? (
-              <Button type="button" onClick={handleNext} disabled={saving || submitting} className="min-h-[46px] w-full sm:w-auto">
+              <Button type="button" onClick={handleNext} disabled={saving || submitting} className="min-h-[46px] w-full bg-[#138a3d] text-white hover:bg-[#0f7533] sm:w-auto">
                 Save & Continue
                 <ChevronRight size={14} />
               </Button>
             ) : null}
             {currentStep === FINAL_STEP_INDEX && !isCompleted ? (
-              <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[46px] w-full sm:w-auto">
+              <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[46px] w-full bg-[#138a3d] text-white hover:bg-[#0f7533] sm:w-auto">
                 {submitting ? 'Submitting...' : 'Submit Seller Information'}
                 <CheckCircle2 size={14} />
               </Button>
@@ -4625,46 +4646,40 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         {content}
       </div>
       {!shouldShowWelcome && !isCompleted ? (
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/70 bg-white/90 px-3 py-2 shadow-[0_-12px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl md:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/70 bg-white/95 px-3 py-2 shadow-[0_-12px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl md:hidden">
         <div className={PAGE_CONTAINER_CLASS}>
-          <div className="grid gap-1.5 pb-[max(4px,env(safe-area-inset-bottom))]">
+          <div className="grid gap-2 pb-[max(4px,env(safe-area-inset-bottom))]">
             <div className="flex min-w-0 items-center justify-between gap-2">
               <DraftSaveStatus
                 status={saving ? 'saving' : draftSyncStatus}
                 savedAt={lastDraftSavedAt}
                 fallback="Secure seller onboarding"
               />
-              <span className="shrink-0 rounded-full bg-[#f2f6fb] px-2.5 py-1 text-[11px] font-semibold text-[#5f738a]">
-                Step {currentStep + 1}/{STEPS.length}
-              </span>
-            </div>
-            {(currentStep > 0 || currentStep < FINAL_STEP_INDEX) ? (
-              <div className="flex items-center justify-between gap-2">
-                {currentStep < FINAL_STEP_INDEX ? (
-                  <Button type="button" variant="ghost" onClick={() => saveDraft(currentStep)} disabled={saving || submitting} className="min-h-[38px] px-3">
-                    {saving ? 'Saving...' : 'Save Draft'}
-                  </Button>
-                ) : (
-                  <span />
-                )}
+              <div className="flex shrink-0 items-center gap-1.5">
                 {currentStep > 0 ? (
-                  <Button type="button" variant="secondary" onClick={handleBack} disabled={saving || submitting} className="min-h-[38px] px-3">
+                  <Button type="button" variant="secondary" onClick={handleBack} disabled={saving || submitting} className="min-h-[34px] rounded-full px-2.5">
                     <ChevronLeft size={14} />
                     Back
                   </Button>
-                ) : (
-                  <span />
-                )}
+                ) : null}
+                {currentStep < FINAL_STEP_INDEX ? (
+                  <Button type="button" variant="ghost" onClick={() => saveDraft(currentStep)} disabled={saving || submitting} className="min-h-[34px] rounded-full px-2.5 text-xs">
+                    {saving ? 'Saving...' : 'Save'}
+                  </Button>
+                ) : null}
+                <span className="rounded-full bg-[#f2f6fb] px-2.5 py-1 text-[11px] font-semibold text-[#5f738a]">
+                  {currentStep + 1}/{STEPS.length}
+                </span>
               </div>
-            ) : null}
+            </div>
             {currentStep < FINAL_STEP_INDEX ? (
-              <Button type="button" onClick={handleNext} disabled={saving || submitting} className="min-h-[48px] w-full">
+              <Button type="button" onClick={handleNext} disabled={saving || submitting} className="min-h-[52px] w-full rounded-[18px] bg-[#138a3d] text-white shadow-[0_14px_28px_rgba(19,138,61,0.22)] hover:bg-[#0f7533]">
                 {saving ? 'Saving...' : 'Save & Continue'}
                 <ChevronRight size={14} />
               </Button>
             ) : null}
             {currentStep === FINAL_STEP_INDEX && !isCompleted ? (
-              <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[48px] w-full">
+              <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[52px] w-full rounded-[18px] bg-[#138a3d] text-white shadow-[0_14px_28px_rgba(19,138,61,0.22)] hover:bg-[#0f7533]">
                 {submitting ? 'Submitting...' : 'Submit Seller Information'}
                 <CheckCircle2 size={14} />
               </Button>
