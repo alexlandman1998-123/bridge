@@ -16,7 +16,7 @@ import {
   Trash2,
   UserRound,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import Button from '../components/ui/Button'
@@ -183,6 +183,7 @@ const STEP_META = [
   },
 ]
 const FINAL_STEP_INDEX = STEPS.length - 1
+const MobileQuestionFlowContext = createContext(null)
 
 function resolveSellerOnboardingSubmitError(error) {
   const message = String(error?.message || '').trim()
@@ -490,6 +491,36 @@ function DraftSaveStatus({ status = 'idle', savedAt = '', fallback = '' }) {
       <span className={`h-2 w-2 shrink-0 rounded-full ${meta.dotClass}`} />
       <span className="truncate">{meta.label}</span>
     </span>
+  )
+}
+
+function MobileQuestionFlow({ activeIndex = 0, children }) {
+  const value = useMemo(() => ({ activeIndex }), [activeIndex])
+
+  return (
+    <MobileQuestionFlowContext.Provider value={value}>
+      {children}
+    </MobileQuestionFlowContext.Provider>
+  )
+}
+
+function useMobileQuestionPane(enabled = true, paneIndex = null) {
+  const flowContext = useContext(MobileQuestionFlowContext)
+  if (!enabled || !flowContext || paneIndex === null || paneIndex === undefined) {
+    return { paneIndex: -1, mobilePaneClassName: '' }
+  }
+  return {
+    paneIndex,
+    mobilePaneClassName: paneIndex === flowContext.activeIndex ? '' : 'hidden sm:block',
+  }
+}
+
+function MobileQuestionPane({ children, className = '', paneIndex = null }) {
+  const { mobilePaneClassName } = useMobileQuestionPane(true, paneIndex)
+  return (
+    <div data-mobile-question-pane={paneIndex} className={`${mobilePaneClassName} ${className}`.trim()}>
+      {children}
+    </div>
   )
 }
 
@@ -1360,7 +1391,7 @@ function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
   )
 }
 
-function SellerWelcomeScreen({ brand, listing, form, onContinue }) {
+function SellerWelcomeScreen({ brand, listing, form, currentStep = 0, onContinue }) {
   const sellerName = getSellerDisplayName(listing, form)
   const propertyAddress = getPropertyDisplayAddress(listing, form)
   const agentName = resolveAgentName(listing)
@@ -1374,6 +1405,7 @@ function SellerWelcomeScreen({ brand, listing, form, onContinue }) {
     'We only ask what applies to this sale',
     `${agentName} will be notified when you submit`,
   ]
+  const actionLabel = currentStep > 0 ? 'Resume seller onboarding' : 'Start seller onboarding'
 
   return (
     <section className="overflow-hidden rounded-[30px] border border-[#d9e4ec] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.12)] sm:rounded-[34px] lg:grid lg:min-h-[720px] lg:grid-cols-[0.9fr_1.1fr]">
@@ -1431,7 +1463,7 @@ function SellerWelcomeScreen({ brand, listing, form, onContinue }) {
               onClick={onContinue}
               className="mt-5 min-h-[52px] w-full rounded-[16px] bg-[#138a3d] text-white shadow-[0_16px_32px_rgba(19,138,61,0.24)] hover:bg-[#0f7533] lg:hidden"
             >
-              Continue
+              {actionLabel}
               <ChevronRight size={16} />
             </Button>
             <p className="mt-3 text-center text-xs leading-5 text-white/70 lg:hidden">
@@ -1470,7 +1502,7 @@ function SellerWelcomeScreen({ brand, listing, form, onContinue }) {
             onClick={onContinue}
             className="mt-6 min-h-[52px] w-full rounded-[16px] bg-[#138a3d] text-white shadow-[0_16px_32px_rgba(19,138,61,0.22)] hover:bg-[#0f7533]"
           >
-            Continue
+            {actionLabel}
             <ChevronRight size={16} />
           </Button>
 
@@ -1573,10 +1605,11 @@ function StepShell({ eyebrow, title, description, children }) {
   )
 }
 
-function FormSection({ icon, title, description, children }) {
+function FormSection({ icon, title, description, children, mobilePane = true, mobilePaneIndex = null }) {
   const SectionIcon = icon || Circle
+  const { paneIndex, mobilePaneClassName } = useMobileQuestionPane(mobilePane, mobilePaneIndex)
   return (
-    <section className="rounded-none border-0 bg-transparent p-0 sm:rounded-[22px] sm:border sm:border-[#dfe7f1] sm:bg-[#fbfcfe] sm:p-5 lg:rounded-[24px] lg:p-6">
+    <section data-mobile-question-pane={mobilePane ? paneIndex : undefined} className={`rounded-none border-0 bg-transparent p-0 sm:rounded-[22px] sm:border sm:border-[#dfe7f1] sm:bg-[#fbfcfe] sm:p-5 lg:rounded-[24px] lg:p-6 ${mobilePaneClassName}`}>
       <div className="flex items-start gap-3">
         <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-[#dbe5ef] bg-white text-[#35546c] shadow-[0_10px_22px_rgba(15,23,42,0.05)] sm:h-11 sm:w-11 sm:rounded-[16px]">
           <SectionIcon size={17} />
@@ -1771,15 +1804,19 @@ function PropertyDisclosureSection({
           icon={ShieldCheck}
           title="Annexure A questions"
           description="Answer each item Yes, No, or Unsure. Use the comments section for explanations where needed."
+          mobilePane={false}
         >
+          <MobileQuestionPane paneIndex={0}>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-[14px] border border-[#dbe6f2] bg-white px-4 py-3 text-sm leading-6 text-[#4f6378]">
             <span>Status: <strong className="text-[#22364a]">{statusLabel}</strong></span>
             <span>{answerSummary.answered} / {answerSummary.total} answered</span>
           </div>
+          </MobileQuestionPane>
           <div className="space-y-3 sm:hidden">
-            {PROPERTY_DISCLOSURE_QUESTIONS.map((question) => {
+            {PROPERTY_DISCLOSURE_QUESTIONS.map((question, questionIndex) => {
               const response = normalized.responses?.[question.key] || {}
               return (
+                <MobileQuestionPane key={question.key} paneIndex={questionIndex + 1}>
                 <article key={question.key} className="rounded-[18px] border border-[#dfe8f2] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
                   <div className="flex items-start gap-3">
                     <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#eef6f2] text-sm font-semibold text-[#138a3d]">
@@ -1812,6 +1849,7 @@ function PropertyDisclosureSection({
                     ))}
                   </div>
                 </article>
+                </MobileQuestionPane>
               )
             })}
           </div>
@@ -1864,15 +1902,17 @@ function PropertyDisclosureSection({
               </tbody>
             </table>
           </div>
-          <label className="mt-4 grid gap-2 text-sm font-medium text-[#2a4057]">
-            21. Comments or explanation for any of the above
-            <textarea
-              className={`${DETAIL_INPUT_CLASS} min-h-[150px] resize-y`}
-              value={normalized.comments}
-              onChange={(event) => onDisclosureChange({ comments: event.target.value, otherDisclosure: event.target.value })}
-              placeholder="Explain any yes or unsure answers, or add any other relevant disclosure."
-            />
-          </label>
+          <MobileQuestionPane paneIndex={PROPERTY_DISCLOSURE_QUESTIONS.length + 1}>
+            <label className="mt-4 grid gap-2 text-sm font-medium text-[#2a4057]">
+              21. Comments or explanation for any of the above
+              <textarea
+                className={`${DETAIL_INPUT_CLASS} min-h-[150px] resize-y`}
+                value={normalized.comments}
+                onChange={(event) => onDisclosureChange({ comments: event.target.value, otherDisclosure: event.target.value })}
+                placeholder="Explain any yes or unsure answers, or add any other relevant disclosure."
+              />
+            </label>
+          </MobileQuestionPane>
         </FormSection>
 
         {answerSummary.answered ? (
@@ -1880,6 +1920,7 @@ function PropertyDisclosureSection({
             icon={FileCheck2}
             title="Seller Declaration"
             description="Sign only when the disclosure information is true and complete to the best of your knowledge."
+            mobilePaneIndex={PROPERTY_DISCLOSURE_QUESTIONS.length + 2}
           >
             <div className="rounded-[18px] border border-[#d8ecdf] bg-[#f5fbf7] p-4 text-sm leading-6 text-[#25603d]">
               I declare that the information provided above is true and complete to the best of my knowledge and that I have disclosed all known material facts relating to the property.
@@ -2074,6 +2115,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const [listing, setListing] = useState(null)
   const [form, setForm] = useState(null)
   const [currentStep, setCurrentStep] = useState(0)
+  const [mobilePaneIndex, setMobilePaneIndex] = useState(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -2136,7 +2178,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           setCurrentStep(nextStep)
           setLastDraftSavedAt(resolveDraftSavedAt(nextListing))
           setDraftSyncStatus(resolveDraftSavedAt(nextListing) ? 'saved' : 'idle')
-          setShowWelcome(nextStep === 0 && ![
+          setShowWelcome(!embedded && ![
             SELLER_ONBOARDING_STATUS.SUBMITTED,
             SELLER_ONBOARDING_STATUS.UNDER_REVIEW,
             SELLER_ONBOARDING_STATUS.COMPLETED,
@@ -2185,7 +2227,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       setCurrentStep(nextStep)
       setLastDraftSavedAt(resolveDraftSavedAt(nextListing))
       setDraftSyncStatus(resolveDraftSavedAt(nextListing) ? 'saved' : 'idle')
-      setShowWelcome(nextStep === 0 && ![
+      setShowWelcome(!embedded && ![
         SELLER_ONBOARDING_STATUS.SUBMITTED,
         SELLER_ONBOARDING_STATUS.UNDER_REVIEW,
         SELLER_ONBOARDING_STATUS.COMPLETED,
@@ -2197,7 +2239,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     return () => {
       isMounted = false
     }
-  }, [token, useDbFirstSellerOnboarding])
+  }, [embedded, token, useDbFirstSellerOnboarding])
 
   useEffect(() => {
     return () => {
@@ -2741,7 +2783,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       isCompleted ||
       submitting ||
       saving ||
-      (!embedded && showWelcome && currentStep === 0)
+      (!embedded && showWelcome)
     ) {
       return undefined
     }
@@ -2976,6 +3018,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     const nextStep = Math.min(currentStep + 1, STEPS.length - 1)
     const saved = await saveDraft(nextStep)
     if (!saved) return
+    setMobilePaneIndex(0)
     setCurrentStep(nextStep)
     scrollSellerOnboardingToTop()
   }
@@ -2985,8 +3028,29 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     const nextStep = Math.max(currentStep - 1, 0)
     const saved = await saveDraft(nextStep)
     if (!saved) return
+    setMobilePaneIndex(0)
     setCurrentStep(nextStep)
     scrollSellerOnboardingToTop()
+  }
+
+  function handleMobilePaneBack() {
+    setError('')
+    if (activeMobilePaneIndex > 0) {
+      setMobilePaneIndex(activeMobilePaneIndex - 1)
+      scrollSellerOnboardingToTop()
+      return
+    }
+    void handleBack()
+  }
+
+  function handleMobilePaneNext() {
+    setError('')
+    if (hasNextMobilePane) {
+      setMobilePaneIndex(activeMobilePaneIndex + 1)
+      scrollSellerOnboardingToTop()
+      return
+    }
+    void handleNext()
   }
 
   async function handleSubmit() {
@@ -3116,6 +3180,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
   function handleWelcomeContinue() {
     setShowWelcome(false)
+    setMobilePaneIndex(0)
     scrollSellerOnboardingToTop()
   }
 
@@ -3164,6 +3229,54 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const showCommercialDetails = propertyBranch === 'commercial' || propertyBranch === 'mixed_use'
   const showLandDetails = propertyBranch === 'vacant_land' || propertyBranch === 'agricultural'
   const showResidentialDetails = !showCommercialDetails && !showLandDetails
+  const showsResidentialAddressPane = !['company', 'trust', 'deceased_estate', 'power_of_attorney', 'multiple_owners'].includes(ownershipBranch)
+  const sellerPaneIndexes = {
+    ownership: 0,
+    identity: 1,
+    residentialAddress: showsResidentialAddressPane ? 2 : -1,
+    sellingContext: showsResidentialAddressPane ? 3 : 2,
+  }
+  const propertyPaneIndexes = (() => {
+    let paneIndex = 0
+    const indexes = {
+      category: paneIndex++,
+      type: paneIndex++,
+      address: paneIndex++,
+      sectional: -1,
+      estate: -1,
+      commercial: -1,
+      residential: -1,
+      land: -1,
+      alterations: -1,
+      valuation: -1,
+      documents: -1,
+      occupancy: -1,
+      features: -1,
+    }
+    if (showSectionalTitleDetails) indexes.sectional = paneIndex++
+    if (showEstateDetails) indexes.estate = paneIndex++
+    if (showCommercialDetails) indexes.commercial = paneIndex++
+    if (showResidentialDetails) indexes.residential = paneIndex++
+    if (showLandDetails) indexes.land = paneIndex++
+    indexes.alterations = paneIndex++
+    indexes.valuation = paneIndex++
+    indexes.documents = paneIndex++
+    indexes.occupancy = paneIndex++
+    indexes.features = paneIndex++
+    indexes.count = paneIndex
+    return indexes
+  })()
+  const mobilePaneCount = (() => {
+    if (currentStep === 0) return sellerPaneIndexes.sellingContext + 1
+    if (currentStep === 1) return propertyPaneIndexes.count
+    if (currentStep === 2) {
+      const disclosureAnswered = getPropertyDisclosureAnswerSummary(form.propertyDisclosure || {}).answered
+      return 1 + PROPERTY_DISCLOSURE_QUESTIONS.length + 1 + (disclosureAnswered ? 1 : 0)
+    }
+    return 1
+  })()
+  const activeMobilePaneIndex = Math.min(Math.max(mobilePaneIndex, 0), Math.max(mobilePaneCount - 1, 0))
+  const hasNextMobilePane = activeMobilePaneIndex < mobilePaneCount - 1
   const companyDirectors = Array.isArray(form.companyDirectors) ? form.companyDirectors : []
   const trustTrustees = Array.isArray(form.trustees) ? form.trustees : []
   const multipleOwners = Array.isArray(form.multipleOwners) ? form.multipleOwners : []
@@ -3246,7 +3359,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     { label: 'Document portal', missing: [], onEdit: () => setCurrentStep(3) },
   ]
 
-  const shouldShowWelcome = !embedded && !isCompleted && showWelcome && currentStep === 0
+  const shouldShowWelcome = !embedded && !isCompleted && showWelcome
 
   const formContent = (
     <div className={PAGE_STACK_CLASS}>
@@ -3281,6 +3394,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           </p>
         ) : null}
 
+        <MobileQuestionFlow activeIndex={activeMobilePaneIndex}>
         <div className="mt-4 space-y-4 sm:mt-6 sm:space-y-6">
           {currentStep === 0 ? (
             <StepShell
@@ -3289,7 +3403,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               description="Confirm the seller identity, ownership structure, and sale context."
             >
               <div className="space-y-6 sm:space-y-4">
-              <FormSection icon={Landmark} title="Who owns this property?" description="Choose the ownership structure first. We’ll show the right follow-up fields from here.">
+              <FormSection icon={Landmark} title="Who owns this property?" description="Choose the ownership structure first. We’ll show the right follow-up fields from here." mobilePaneIndex={sellerPaneIndexes.ownership}>
                 <label className="grid gap-2 text-sm font-medium text-[#2a4057] sm:hidden">
                   Ownership structure
                   <select className={DETAIL_INPUT_CLASS} value={form.ownershipType} onChange={(event) => handleOwnershipTypeChange(event.target.value)}>
@@ -3334,7 +3448,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 </div>
               </FormSection>
 
-              <FormSection icon={UserRound} title={sellerIdentityCopy.title} description={sellerIdentityCopy.description}>
+              <FormSection icon={UserRound} title={sellerIdentityCopy.title} description={sellerIdentityCopy.description} mobilePaneIndex={sellerPaneIndexes.identity}>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     {ownershipFieldLabels.firstName}
@@ -3762,6 +3876,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   icon={Home}
                   title="Residential address"
                   description="Start typing and choose the matching Google address for the seller's residential address."
+                  mobilePaneIndex={sellerPaneIndexes.residentialAddress}
                 >
                   <AddressAutocomplete
                     label="Residential address"
@@ -3773,7 +3888,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 </FormSection>
               ) : null}
 
-              <FormSection icon={Building2} title="Selling Context" description="Light qualification details help your agent prepare the next step.">
+              <FormSection icon={Building2} title="Selling Context" description="Light qualification details help your agent prepare the next step." mobilePaneIndex={sellerPaneIndexes.sellingContext}>
                 <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     Mandate Type
@@ -3827,6 +3942,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   icon={Building2}
                   title="Property category"
                   description="Choose the broad category first. It controls the type options and the rest of the flow."
+                  mobilePaneIndex={propertyPaneIndexes.category}
                 >
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057] sm:hidden">
                     Property category
@@ -3873,6 +3989,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   icon={Home}
                   title="Property type & structure"
                   description="Choose the specific property type and the legal structure."
+                  mobilePaneIndex={propertyPaneIndexes.type}
                 >
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
@@ -3913,6 +4030,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   icon={Landmark}
                   title="Canonical address"
                   description="This becomes the source of truth for the listing, mandate, and documents."
+                  mobilePaneIndex={propertyPaneIndexes.address}
                 >
                   <div className="grid gap-3">
                     <AddressAutocomplete
@@ -3984,6 +4102,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     icon={ClipboardCheck}
                     title="Sectional title / scheme details"
                     description="Sectional title properties need scheme and body corporate details."
+                    mobilePaneIndex={propertyPaneIndexes.sectional}
                   >
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
@@ -4031,6 +4150,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     icon={ShieldCheck}
                     title="Estate / HOA details"
                     description="Estate and HOA branches need the contact details for the body managing the scheme."
+                    mobilePaneIndex={propertyPaneIndexes.estate}
                   >
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
@@ -4066,6 +4186,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     icon={Building2}
                     title="Commercial / mixed-use details"
                     description="Commercial and mixed-use listings should reflect how the property is actually used."
+                    mobilePaneIndex={propertyPaneIndexes.commercial}
                   >
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
@@ -4106,6 +4227,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     icon={Home}
                     title="Residential details"
                     description="These questions help with pricing and publication for residential property."
+                    mobilePaneIndex={propertyPaneIndexes.residential}
                   >
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
@@ -4157,6 +4279,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     icon={Landmark}
                     title="Land / agricultural details"
                     description="Land-only properties need size and a few practical notes."
+                    mobilePaneIndex={propertyPaneIndexes.land}
                   >
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
@@ -4183,6 +4306,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   icon={ClipboardCheck}
                   title="Alterations & changes"
                   description="Tell us about any alterations, additions, or unapproved changes."
+                  mobilePaneIndex={propertyPaneIndexes.alterations}
                 >
                   <div className="grid grid-cols-1 gap-3">
                     <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
@@ -4207,6 +4331,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   icon={Sparkles}
                   title="Valuation factors"
                   description="These numbers help the agent price the property realistically."
+                  mobilePaneIndex={propertyPaneIndexes.valuation}
                 >
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
@@ -4267,6 +4392,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   icon={FileCheck2}
                   title="Documents already available"
                   description="Let us know what documents you already have on hand."
+                  mobilePaneIndex={propertyPaneIndexes.documents}
                 >
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
                     {[
@@ -4288,6 +4414,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   icon={Building2}
                   title="Occupancy & finance"
                   description="A few practical questions help prepare the next step."
+                  mobilePaneIndex={propertyPaneIndexes.occupancy}
                 >
                   <div className="grid grid-cols-1 gap-4">
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -4390,6 +4517,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   icon={Sparkles}
                   title="Features"
                   description="Optional features help with publication and valuation."
+                  mobilePaneIndex={propertyPaneIndexes.features}
                 >
                   <div className="flex flex-wrap gap-2">
                     {PROPERTY_FEATURES.map((feature) => {
@@ -4434,6 +4562,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   icon={ShieldCheck}
                   title="Upload FICA and compliance documents in the seller portal"
                   description="You do not need to upload documents during this onboarding step."
+                  mobilePaneIndex={0}
                 >
                   <div className="rounded-[18px] border border-[#dbe6f2] bg-[#f7fbff] p-4 sm:p-5">
                     <p className="text-sm leading-6 text-[#35546c]">
@@ -4577,6 +4706,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
             </StepShell>
           ) : null}
         </div>
+        </MobileQuestionFlow>
 
         <div className="mt-6 hidden flex-col gap-3 border-t border-[#e4ebf5] pt-4 sm:mt-7 lg:flex lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 justify-center lg:justify-start">
@@ -4627,6 +4757,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       brand={agencyBrand}
       listing={listing}
       form={form}
+      currentStep={currentStep}
       onContinue={handleWelcomeContinue}
     />
   ) : formContent
@@ -4636,7 +4767,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }
 
   return (
-    <main className={`relative min-h-screen overflow-x-hidden bg-[#e4ebf3] px-3 py-3 font-sans antialiased text-[#132033] sm:px-5 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8 ${shouldShowWelcome ? 'pb-3 sm:pb-5 lg:pb-8' : 'pb-24 lg:pb-10'}`}>
+    <main className={`relative min-h-screen overflow-x-hidden bg-[#e4ebf3] px-3 py-3 font-sans antialiased text-[#132033] sm:px-5 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8 ${shouldShowWelcome ? 'pb-3 sm:pb-5 lg:pb-8' : 'pb-40 lg:pb-10'}`}>
       <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -left-24 top-10 h-72 w-72 rounded-full bg-white/40 blur-3xl" />
         <div className="absolute right-[-7rem] top-28 h-96 w-96 rounded-full bg-[#d7e2ee]/60 blur-3xl" />
@@ -4656,8 +4787,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 fallback="Secure seller onboarding"
               />
               <div className="flex shrink-0 items-center gap-1.5">
-                {currentStep > 0 ? (
-                  <Button type="button" variant="secondary" onClick={handleBack} disabled={saving || submitting} className="min-h-[34px] rounded-full px-2.5">
+                {currentStep > 0 || activeMobilePaneIndex > 0 ? (
+                  <Button type="button" variant="secondary" onClick={handleMobilePaneBack} disabled={saving || submitting} className="min-h-[34px] rounded-full px-2.5">
                     <ChevronLeft size={14} />
                     Back
                   </Button>
@@ -4668,13 +4799,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   </Button>
                 ) : null}
                 <span className="rounded-full bg-[#f2f6fb] px-2.5 py-1 text-[11px] font-semibold text-[#5f738a]">
-                  {currentStep + 1}/{STEPS.length}
+                  {mobilePaneCount > 1 ? `${activeMobilePaneIndex + 1}/${mobilePaneCount}` : `${currentStep + 1}/${STEPS.length}`}
                 </span>
               </div>
             </div>
             {currentStep < FINAL_STEP_INDEX ? (
-              <Button type="button" onClick={handleNext} disabled={saving || submitting} className="min-h-[52px] w-full rounded-[18px] bg-[#138a3d] text-white shadow-[0_14px_28px_rgba(19,138,61,0.22)] hover:bg-[#0f7533]">
-                {saving ? 'Saving...' : 'Save & Continue'}
+              <Button type="button" onClick={handleMobilePaneNext} disabled={saving || submitting} className="min-h-[52px] w-full rounded-[18px] bg-[#138a3d] text-white shadow-[0_14px_28px_rgba(19,138,61,0.22)] hover:bg-[#0f7533]">
+                {saving ? 'Saving...' : hasNextMobilePane ? 'Continue' : 'Save & Continue'}
                 <ChevronRight size={14} />
               </Button>
             ) : null}
