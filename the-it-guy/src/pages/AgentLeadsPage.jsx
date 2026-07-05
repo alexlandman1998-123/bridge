@@ -34,6 +34,7 @@ import {
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
+import StartDocumentModal from '../components/documents/StartDocumentModal'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import AreaMultiSelect from '../components/location/AreaMultiSelect'
@@ -153,6 +154,12 @@ import { buildSellerJourney } from '../services/sellerJourneyService'
 import { buildSellerReadinessSummary } from '../services/sellerReadinessService'
 import { getSellerRequiredDocuments } from '../services/sellerDocumentRequirementsService'
 import {
+  DOCUMENT_START_DOCUMENT_KINDS,
+  DOCUMENT_START_ENTRY_POINTS,
+  DOCUMENT_START_PACKET_TYPES,
+  DOCUMENT_START_SOURCE_MODES,
+} from '../core/documents/documentStartRules'
+import {
   buildSellerRequirementProfile,
 } from '../lib/sellerDocumentRequirementEngine'
 import {
@@ -247,6 +254,7 @@ const LEAD_SOURCE_PILL_STYLES = {
   whatsapp: { tone: 'emerald', label: 'WhatsApp' },
   call: { tone: 'red', label: 'Call' },
   referral: { tone: 'amber', label: 'Referral' },
+  showDay: { tone: 'blue', label: 'Show Day' },
   walkIn: { tone: 'slate', label: 'Walk-in' },
   unknown: { tone: 'slate', label: 'Unknown' },
 }
@@ -263,12 +271,13 @@ const LEAD_SOURCE_LOGOS = {
     imageClassName: 'h-6 max-w-[106px]',
   },
 }
-const LEAD_SOURCE_PILL_ORDER = ['property24', 'privateProperty', 'whatsapp', 'call', 'website', 'referral', 'walkIn', 'unknown']
+const LEAD_SOURCE_PILL_ORDER = ['property24', 'privateProperty', 'whatsapp', 'call', 'website', 'referral', 'showDay', 'walkIn', 'unknown']
 const LEAD_SOURCE_OPTIONS = [
   'Property24',
   'Private Property',
   'Website',
   'Referral',
+  'Show Day',
   'Walk-In',
   'WhatsApp',
   'Facebook',
@@ -340,6 +349,7 @@ function normalizeLeadSourceForPill(value = '') {
   if (source === 'call' || source.includes('phone')) return 'call'
   if (source.includes('website')) return 'website'
   if (source.includes('referral')) return 'referral'
+  if (source.includes('show day') || source.includes('showday') || source.includes('showing') || source.includes('open house')) return 'showDay'
   if (source.includes('walk in') || source.includes('walk-in')) return 'walkIn'
   if (source.includes('other') || source.includes('unknown')) return 'unknown'
   if (source.includes('manual')) return 'unknown'
@@ -11489,6 +11499,27 @@ function getOfferPublicUrl(offer = {}) {
   return `${window.location.origin}/offers/${encodeURIComponent(token)}`
 }
 
+function buildAcceptedOfferOtpWorkspacePath({
+  transactionId = '',
+  offerId = '',
+  leadId = '',
+  listingId = '',
+  sourceMode = DOCUMENT_START_SOURCE_MODES.saved,
+  returnTo = '',
+} = {}) {
+  const resolvedTransactionId = normalizeText(transactionId)
+  if (!resolvedTransactionId) return ''
+  const params = new URLSearchParams()
+  params.set('mode', 'generate')
+  params.set('sourceMode', normalizeText(sourceMode) || DOCUMENT_START_SOURCE_MODES.saved)
+  params.set('documentStart', DOCUMENT_START_ENTRY_POINTS.acceptedOfferOtp)
+  if (offerId) params.set('offerId', normalizeText(offerId))
+  if (leadId) params.set('leadId', normalizeText(leadId))
+  if (listingId) params.set('listingId', normalizeText(listingId))
+  if (returnTo) params.set('returnTo', returnTo)
+  return `/transactions/${encodeURIComponent(resolvedTransactionId)}/legal/otp?${params.toString()}`
+}
+
 function getDealPropertySummary(lead = {}, offer = null) {
   const contexts = getLeadOfferPropertyContexts(lead)
   const propertyOptions = getLeadAppointmentPropertyOptions(lead)
@@ -12094,9 +12125,9 @@ function DealOfferSection({ lead, offer, onSendOffer, onCaptureManualOffer, onVi
   )
 }
 
-function DealTransactionSection({ lead, converting, onConvert, message, error }) {
+function DealTransactionSection({ lead, createdTransactionId = '', converting, onConvert, onPrepareOtp, message, error }) {
   const transaction = getLatestTransaction(lead)
-  const transactionId = getLeadLinkedTransactionId(lead)
+  const transactionId = getLeadLinkedTransactionId(lead) || normalizeText(createdTransactionId)
   const acceptedOffer = getAcceptedOfferForConversion(lead?.offers || [])
   const registered = normalizeText(transaction?.status || transaction?.currentMainStage || transaction?.current_main_stage).toLowerCase().includes('registered')
   return (
@@ -12129,6 +12160,10 @@ function DealTransactionSection({ lead, converting, onConvert, message, error })
               Open Transaction
               <ExternalLink size={15} />
             </Link>
+            <button type="button" onClick={onPrepareOtp} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700">
+              <FileText size={15} />
+              Prepare OTP
+            </button>
             <Link to={`/transactions/${transactionId || transaction?.id}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">
               View Timeline
             </Link>
@@ -12163,6 +12198,7 @@ function DealTransactionSection({ lead, converting, onConvert, message, error })
 }
 
 function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavigate }) {
+  const navigate = useNavigate()
   const deal = getBuyerDealSnapshot(lead)
   const latestOffer = deal.latestOffer
   const latestOfferId = getOfferId(latestOffer)
@@ -12175,6 +12211,26 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
   const [workingAction, setWorkingAction] = useState('')
   const [transactionMessage, setTransactionMessage] = useState('')
   const [transactionError, setTransactionError] = useState('')
+  const [createdTransactionId, setCreatedTransactionId] = useState('')
+  const [otpStartOpen, setOtpStartOpen] = useState(false)
+  const buyerContact = getLeadContactSnapshot(lead)
+  const acceptedOtpOffer = acceptedOffer || latestOffer
+  const acceptedOtpOfferId = getOfferId(acceptedOtpOffer)
+  const acceptedOtpListingId = getOfferListingId(acceptedOtpOffer) || property?.id || acceptedProperty?.id || ''
+  const resolvedTransactionId = normalizeText(
+    createdTransactionId ||
+      getOfferTransactionId(acceptedOtpOffer) ||
+      getLeadLinkedTransactionId(lead) ||
+      deal.latestTransaction?.id ||
+      deal.latestTransaction?.transactionId ||
+      deal.latestTransaction?.transaction_id,
+  )
+  const acceptedOtpStartSummary = [
+    { label: 'Buyer', value: buyerContact.name || lead?.name || 'Buyer' },
+    { label: 'Accepted offer', value: getOfferAmount(acceptedOtpOffer) ? formatCurrency(getOfferAmount(acceptedOtpOffer)) : 'Offer details' },
+    { label: 'Property', value: acceptedProperty?.title || property?.title || acceptedOtpListingId || 'Property pending' },
+    { label: 'Transaction', value: resolvedTransactionId || 'Create transaction first' },
+  ]
 
   function openOfferModal(mode = 'send_link') {
     setOfferModalInitialMode(mode)
@@ -12279,6 +12335,7 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
       const transactionId = normalizeText(result?.transactionId || result?.transactionRow?.transaction?.id)
       const reused = Boolean(result?.alreadyConverted || result?.existing)
       const onboarding = await sendBuyerOnboarding(transactionId)
+      if (transactionId) setCreatedTransactionId(transactionId)
 
       await createAgencyCrmLeadActivity(
         organisationId,
@@ -12368,6 +12425,7 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
       })
       const newTransactionId = normalizeText(result?.transactionId || result?.transactionRow?.transaction?.id)
       const onboarding = await sendBuyerOnboarding(newTransactionId)
+      if (newTransactionId) setCreatedTransactionId(newTransactionId)
       setTransactionMessage(onboarding.sent ? 'Transaction created and buyer onboarding was sent.' : 'Transaction created.')
       if (onboarding.error) setTransactionError(onboarding.error?.message || 'Transaction created, but onboarding email failed.')
       await onSaved?.()
@@ -12378,8 +12436,62 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
     }
   }
 
+  async function handleStartAcceptedOfferOtpDocument(selection = {}) {
+    const sourceMode = normalizeText(selection?.sourceMode || DOCUMENT_START_SOURCE_MODES.saved)
+    if (!resolvedTransactionId) {
+      setOtpStartOpen(false)
+      setTransactionError('Create the transaction before preparing the OTP.')
+      return
+    }
+    setTransactionError('')
+    setTransactionMessage('')
+    setOtpStartOpen(false)
+
+    if (sourceMode === DOCUMENT_START_SOURCE_MODES.onboarding) {
+      setWorkingAction('otp_onboarding')
+      const onboarding = await sendBuyerOnboarding(resolvedTransactionId)
+      setWorkingAction('')
+      if (onboarding.sent) {
+        setTransactionMessage('Buyer onboarding was sent. Prepare the OTP once the details are back, or continue manually if needed.')
+      } else {
+        setTransactionError(onboarding.error?.message || 'Buyer onboarding could not be sent.')
+      }
+      return
+    }
+
+    const path = buildAcceptedOfferOtpWorkspacePath({
+      transactionId: resolvedTransactionId,
+      offerId: acceptedOtpOfferId,
+      leadId: lead?.leadId,
+      listingId: acceptedOtpListingId,
+      sourceMode,
+      returnTo: `/pipeline/leads/${encodeURIComponent(normalizeText(lead?.leadId))}?tab=offers`,
+    })
+    if (!path) {
+      setTransactionError('Unable to open the OTP workspace for this accepted offer.')
+      return
+    }
+    navigate(path)
+  }
+
   return (
     <div className="space-y-5">
+      <StartDocumentModal
+        open={otpStartOpen}
+        onClose={() => setOtpStartOpen(false)}
+        entryPoint={DOCUMENT_START_ENTRY_POINTS.acceptedOfferOtp}
+        packetType={DOCUMENT_START_PACKET_TYPES.otp}
+        documentKind={DOCUMENT_START_DOCUMENT_KINDS.standard}
+        initialSourceMode={DOCUMENT_START_SOURCE_MODES.saved}
+        hasExistingContext={Boolean(resolvedTransactionId)}
+        hasClientContact={Boolean(buyerContact.email || buyerContact.phone)}
+        hasParentDocument
+        contextSummary={acceptedOtpStartSummary}
+        title="Create OTP"
+        subtitle="Start from the accepted offer and review the OTP before sending it for signature."
+        busy={workingAction === 'otp_onboarding'}
+        onContinue={(selection) => void handleStartAcceptedOfferOtpDocument(selection)}
+      />
       <section className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_16px_42px_rgba(15,23,42,0.045)] sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -12408,8 +12520,10 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
       />
       <DealTransactionSection
         lead={lead}
+        createdTransactionId={createdTransactionId}
         converting={workingAction === 'convert'}
         onConvert={convertAcceptedOffer}
+        onPrepareOtp={() => setOtpStartOpen(true)}
         message={transactionMessage}
         error={transactionError}
       />
@@ -12705,6 +12819,7 @@ function LeadOfferReadinessPanel({ organisationId, lead, actor, onSaved }) {
 }
 
 function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSaved }) {
+  const navigate = useNavigate()
   const offers = Array.isArray(lead?.offers) ? lead.offers : []
   const transactions = Array.isArray(lead?.transactions) ? lead.transactions : []
   const acceptedOffer = getAcceptedOfferForConversion(offers)
@@ -12725,6 +12840,15 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [createdTransactionId, setCreatedTransactionId] = useState(existingTransactionId)
+  const [otpStartOpen, setOtpStartOpen] = useState(false)
+  const contact = getLeadContactSnapshot(lead)
+  const acceptedListingId = getOfferListingId(acceptedOffer) || acceptedListing?.listingId || acceptedListing?.id || ''
+  const acceptedOfferOtpStartSummary = [
+    { label: 'Buyer', value: contact.name || lead?.name || 'Buyer' },
+    { label: 'Accepted offer', value: getOfferAmount(acceptedOffer) ? formatCurrency(getOfferAmount(acceptedOffer)) : 'Offer details' },
+    { label: 'Property', value: acceptedListing?.label || acceptedListingId || 'Property pending' },
+    { label: 'Transaction', value: createdTransactionId || 'Create transaction first' },
+  ]
 
   useEffect(() => {
     setCreatedTransactionId(existingTransactionId)
@@ -12834,6 +12958,42 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
     }
   }
 
+  async function startAcceptedOfferOtp(selection = {}) {
+    const sourceMode = normalizeText(selection?.sourceMode || DOCUMENT_START_SOURCE_MODES.saved)
+    if (!createdTransactionId) {
+      setOtpStartOpen(false)
+      setError('Create the transaction before preparing the OTP.')
+      return
+    }
+    setOtpStartOpen(false)
+    setError('')
+    setMessage('')
+
+    if (sourceMode === DOCUMENT_START_SOURCE_MODES.onboarding) {
+      const onboarding = await sendBuyerOnboarding(createdTransactionId)
+      if (onboarding.sent) {
+        setMessage('Buyer onboarding was sent. Prepare the OTP once the details are back, or continue manually if needed.')
+      } else {
+        setError(onboarding.error?.message || 'Buyer onboarding could not be sent.')
+      }
+      return
+    }
+
+    const path = buildAcceptedOfferOtpWorkspacePath({
+      transactionId: createdTransactionId,
+      offerId: acceptedOfferId,
+      leadId: lead?.leadId,
+      listingId: acceptedListingId,
+      sourceMode,
+      returnTo: `/pipeline/leads/${encodeURIComponent(normalizeText(lead?.leadId))}?tab=offers`,
+    })
+    if (!path) {
+      setError('Unable to open the OTP workspace for this accepted offer.')
+      return
+    }
+    navigate(path)
+  }
+
   if (!offers.length && !existingTransactionId) {
     return (
       <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -12849,6 +13009,22 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
   }
 
   return (
+    <>
+      <StartDocumentModal
+        open={otpStartOpen}
+        onClose={() => setOtpStartOpen(false)}
+        entryPoint={DOCUMENT_START_ENTRY_POINTS.acceptedOfferOtp}
+        packetType={DOCUMENT_START_PACKET_TYPES.otp}
+        documentKind={DOCUMENT_START_DOCUMENT_KINDS.standard}
+        initialSourceMode={DOCUMENT_START_SOURCE_MODES.saved}
+        hasExistingContext={Boolean(createdTransactionId)}
+        hasClientContact={Boolean(contact.email || contact.phone)}
+        hasParentDocument
+        contextSummary={acceptedOfferOtpStartSummary}
+        title="Create OTP"
+        subtitle="Start from the accepted offer and review the OTP before sending it for signature."
+        onContinue={(selection) => void startAcceptedOfferOtp(selection)}
+      />
     <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
@@ -12874,9 +13050,15 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
             <p className="mt-1 text-xs text-slate-500">{deal.transactionStateHelper}</p>
           </div>
           {createdTransactionId ? (
-            <Link to={`/transactions/${createdTransactionId}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">
-              Open Transaction <ExternalLink size={13} />
-            </Link>
+            <div className="grid gap-2">
+              <Link to={`/transactions/${createdTransactionId}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">
+                Open Transaction <ExternalLink size={13} />
+              </Link>
+              <button type="button" onClick={() => setOtpStartOpen(true)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700">
+                <FileText size={15} />
+                Prepare OTP
+              </button>
+            </div>
           ) : (
             <button type="button" disabled={converting || !acceptedOfferId} onClick={convertAcceptedOffer} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">
               <CheckCircle2 size={15} />
@@ -12892,6 +13074,7 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
       {error ? <p className="mt-3 text-sm font-semibold text-red-600">{error}</p> : null}
       {message ? <p className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
     </section>
+    </>
   )
 }
 
@@ -14131,16 +14314,15 @@ function SellerActionsPanel({
 }) {
   const actions = readiness?.actions?.length ? readiness.actions : journey?.actions || []
   const onboardingSubmitted = sellerOnboardingIsSubmitted(onboardingStatus)
-  const mandateDisabled = !onboardingSubmitted
-  const mandateReason = mandateDisabled
-    ? 'Seller onboarding must be submitted before generating a mandate.'
-    : 'Open the mandate workspace to generate, edit, or send the mandate.'
+  const mandateReason = onboardingSubmitted
+    ? 'Open the mandate workspace to generate, edit, or send the mandate.'
+    : 'Choose saved details, enter details manually, or send seller onboarding first.'
   return (
     <section className={`${panelClass} p-5`}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Seller Actions</h2>
-          <p className="mt-1 text-sm text-slate-500">Seller onboarding must be submitted before a mandate can be generated.</p>
+          <p className="mt-1 text-sm text-slate-500">Start the mandate with saved lead details, manual details, or seller onboarding.</p>
         </div>
         <StatusPill tone={onboardingSubmitted ? 'green' : onboardingStatus === 'sent' ? 'amber' : 'slate'}>{normalizeText(onboardingStatus) || 'not started'}</StatusPill>
       </div>
@@ -14158,12 +14340,11 @@ function SellerActionsPanel({
         </button>
         <button
           type="button"
-          disabled={mandateDisabled}
           onClick={() => onGenerateMandate?.()}
-          className={`rounded-2xl border p-4 text-left ${mandateDisabled ? 'border-slate-200 bg-slate-50 text-slate-400' : 'border-blue-200 bg-blue-50 text-blue-800'} disabled:cursor-not-allowed`}
+          className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-left text-blue-800 transition hover:border-blue-300 hover:bg-blue-100"
         >
           <span className="block text-sm font-semibold">Generate Mandate</span>
-          <span className={`mt-1 block text-xs font-medium ${mandateDisabled ? 'text-slate-400' : 'text-blue-700'}`}>{mandateReason}</span>
+          <span className="mt-1 block text-xs font-medium text-blue-700">{mandateReason}</span>
         </button>
       </div>
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -14521,7 +14702,6 @@ function SellerLeadActions({
   const mandateMeta = getSellerMandateMeta(row, listing, journey)
   const onboardingMeta = getSellerOnboardingActionMeta(onboardingStatus, row, listing, journey)
   const OnboardingIcon = onboardingMeta.icon || Mail
-  const mandateRequiresOnboarding = !mandateMeta.hasRecord && !sellerOnboardingIsSubmitted(onboardingStatus)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
 
@@ -14597,8 +14777,7 @@ function SellerLeadActions({
           <button
             type="button"
             onClick={() => closeMenuAndRun(onGenerateMandate)}
-            disabled={mandateRequiresOnboarding}
-            title={mandateRequiresOnboarding ? 'Seller onboarding must be submitted before generating a mandate.' : mandateMeta.actionLabel}
+            title={mandateMeta.hasRecord ? mandateMeta.actionLabel : 'Choose saved details, manual details, or seller onboarding.'}
             className={menuButtonClass}
             role="menuitem"
           >
@@ -18012,6 +18191,7 @@ function AgentLeadWorkspace() {
   const [sendingSellerOnboarding, setSendingSellerOnboarding] = useState(false)
   const [sendingSellerPortalLink, setSendingSellerPortalLink] = useState(false)
   const [savingSellerCommission, setSavingSellerCommission] = useState(false)
+  const [mandateStartOpen, setMandateStartOpen] = useState(false)
   const sellerOnboardingInFlightRef = useRef(false)
 
   const loadWorkspace = useCallback(async ({ silent = false } = {}) => {
@@ -18133,6 +18313,26 @@ function AgentLeadWorkspace() {
     })
   }, [isSellerLeadWorkspace, linkedSellerListing, row, sellerJourney, sellerMandatePacket, sellerMandatePacketStatus])
   const sellerOnboardingStatus = row ? getSellerOnboardingStatus(row, linkedSellerListing, sellerJourney) : ''
+  const sellerMandateStartSummary = useMemo(() => {
+    if (!row || !isSellerLeadWorkspace) return []
+    const property = getSellerPropertySummary(row, linkedSellerListing)
+    const commission = getSellerCommissionWorkspace(row, linkedSellerListing || {})
+    const mandateMeta = getSellerMandateMeta(row, linkedSellerListing, sellerJourney)
+    const commissionLabel = commission.commissionType === 'fixed'
+      ? commission.amount ? `Fixed ${formatCurrency(commission.amount)}` : 'Fixed commission pending'
+      : commission.percentage ? `${commission.percentage}% commission` : 'Commission pending'
+    const onboardingLabel = sellerOnboardingIsSubmitted(sellerOnboardingStatus)
+      ? 'Submitted'
+      : sellerOnboardingHasStarted(sellerOnboardingStatus) || getSellerOnboardingToken(row, linkedSellerListing)
+        ? 'Sent'
+        : 'Not sent'
+    return [
+      { label: 'Seller', value: normalizeText(row.name || row.contact?.name) || 'Seller not named' },
+      { label: 'Property', value: property.address },
+      { label: 'Onboarding', value: onboardingLabel },
+      { label: 'Mandate', value: mandateMeta.label || commissionLabel },
+    ]
+  }, [isSellerLeadWorkspace, linkedSellerListing, row, sellerJourney, sellerOnboardingStatus])
   const workspaceName = normalizeText(workspaceContext.currentWorkspace?.name || workspaceContext.workspace?.name)
   const tabs = useMemo(() => isSellerLeadWorkspace
     ? [
@@ -18536,15 +18736,38 @@ function AgentLeadWorkspace() {
 
   const openMandateWorkspace = useCallback(() => {
     if (!row) return
-    const onboardingSubmitted = sellerOnboardingIsSubmitted(getSellerOnboardingStatus(row, linkedSellerListing, sellerJourney))
     const mandateMeta = getSellerMandateMeta(row, linkedSellerListing, sellerJourney)
-    if (!mandateMeta.hasRecord && !onboardingSubmitted) {
-      setSellerActionError('Send seller onboarding and wait for the seller to submit their details before generating the mandate.')
+    setSellerActionError('')
+    if (!mandateMeta.hasRecord) {
+      setSellerActionMessage('')
+      setMandateStartOpen(true)
       return
     }
-    const returnTo = encodeURIComponent(`/pipeline/leads/${row.leadId}`)
-    navigate(`/pipeline/leads/${row.leadId}/legal/mandate?mode=${mandateMeta.mode}&returnTo=${returnTo}`)
+    const params = new URLSearchParams()
+    params.set('mode', mandateMeta.mode)
+    params.set('returnTo', `/pipeline/leads/${row.leadId}`)
+    navigate(`/pipeline/leads/${row.leadId}/legal/mandate?${params.toString()}`)
   }, [linkedSellerListing, navigate, row, sellerJourney])
+
+  const handleStartMandateDocument = useCallback((selection = {}) => {
+    if (!row) return
+    const sourceMode = normalizeText(selection.sourceMode || DOCUMENT_START_SOURCE_MODES.saved)
+    setMandateStartOpen(false)
+    setSellerActionError('')
+    setSellerActionMessage('')
+
+    if (sourceMode === DOCUMENT_START_SOURCE_MODES.onboarding) {
+      void sendSellerOnboardingForLead()
+      return
+    }
+
+    const params = new URLSearchParams()
+    params.set('mode', 'generate')
+    params.set('returnTo', `/pipeline/leads/${row.leadId}`)
+    params.set('sourceMode', sourceMode)
+    params.set('documentStart', DOCUMENT_START_ENTRY_POINTS.sellerLeadMandate)
+    navigate(`/pipeline/leads/${row.leadId}/legal/mandate?${params.toString()}`)
+  }, [navigate, row, sendSellerOnboardingForLead])
 
   const openSellerListing = useCallback(() => {
     const listingId = getSellerListingId(row, linkedSellerListing)
@@ -18874,6 +19097,21 @@ function AgentLeadWorkspace() {
             </div>
           )}
         </>
+      ) : null}
+      {row && isSellerLeadWorkspace ? (
+        <StartDocumentModal
+          open={mandateStartOpen}
+          onClose={() => setMandateStartOpen(false)}
+          entryPoint={DOCUMENT_START_ENTRY_POINTS.sellerLeadMandate}
+          packetType={DOCUMENT_START_PACKET_TYPES.mandate}
+          documentKind={DOCUMENT_START_DOCUMENT_KINDS.standard}
+          hasExistingContext={Boolean(row)}
+          hasClientContact={Boolean(normalizeText(row.email || row.contact?.email || row.phone || row.contact?.phone))}
+          hasParentDocument
+          contextSummary={sellerMandateStartSummary}
+          busy={sendingSellerOnboarding}
+          onContinue={handleStartMandateDocument}
+        />
       ) : null}
       {shareDraft && row ? (
         <PropertyShareDialog

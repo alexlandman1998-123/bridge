@@ -50,6 +50,7 @@ const SOURCE_OPTIONS = [
   'Referral',
   'Facebook',
   'Google',
+  'Show Day',
   'Walk-In',
   'Manual Import',
   'Other',

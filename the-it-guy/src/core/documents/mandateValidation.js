@@ -1,4 +1,4 @@
-import { normalizeMergeFieldPayload } from './mergeFieldRegistry'
+import { normalizeMergeFieldPayload } from './mergeFieldRegistry.js'
 
 function normalizeText(value) {
   return String(value || '').trim()

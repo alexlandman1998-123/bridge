@@ -37,6 +37,7 @@ import TransactionWorkspaceMenu from '../components/TransactionWorkspaceMenu'
 import TransactionFinanceCommandCenter from '../components/transaction/TransactionFinanceCommandCenter'
 import TransferWorkflowLane from '../components/TransferWorkflowLane'
 import LegalDocumentWorkspace from '../components/documents/LegalDocumentWorkspace'
+import StartDocumentModal from '../components/documents/StartDocumentModal'
 import Button from '../components/ui/Button'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Field from '../components/ui/Field'
@@ -87,7 +88,7 @@ import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { createPerfTimer } from '../lib/performanceTrace'
 import { getPurchaserTypeOptions, getPurchaserTypeLabel, normalizePurchaserType } from '../lib/purchaserPersonas'
 import { getRequiredBuyerDocuments } from '../lib/buyerRequirementEngine'
-import { normalizeFinanceType } from '../core/transactions/financeType'
+import { normalizeFinanceManagedBy, normalizeFinanceType } from '../core/transactions/financeType'
 import { buildFinanceReadinessHandoffPacket } from '../core/finance/financeReadinessSelectors'
 import {
   acceptBondOffer,
@@ -133,6 +134,12 @@ import {
 } from '../core/transactions/developerTransactionMandateProfile.js'
 import { buildDeveloperTransactionReadinessProfile } from '../core/transactions/developerTransactionReadinessProfile.js'
 import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
+import {
+  DOCUMENT_START_DOCUMENT_KINDS,
+  DOCUMENT_START_ENTRY_POINTS,
+  DOCUMENT_START_PACKET_TYPES,
+  DOCUMENT_START_SOURCE_MODES,
+} from '../core/documents/documentStartRules'
 import { generatePacketVersion, listPacketTemplates } from '../core/documents/packetService'
 import { resolveDocumentPacketActionState, resolveDocumentPacketStatus } from '../core/documents/packetStatusResolver'
 import { createDocumentPacket, listDocumentPackets } from '../lib/documentPacketsApi'
@@ -2872,6 +2879,7 @@ function UnitDetail() {
   const [documentRequestStatusUpdatingId, setDocumentRequestStatusUpdatingId] = useState('')
   const [showAdditionalRequestForm, setShowAdditionalRequestForm] = useState(false)
   const [otpModalOpen, setOtpModalOpen] = useState(false)
+  const [otpStartOpen, setOtpStartOpen] = useState(false)
   const [otpSpecialConditions, setOtpSpecialConditions] = useState('')
   const [otpModalMessage, setOtpModalMessage] = useState('')
   const [otpPacketId, setOtpPacketId] = useState('')
@@ -4612,7 +4620,7 @@ function UnitDetail() {
     if (!opened) window.location.href = targetUrl
   }
 
-  function buildOtpLegalWorkspacePath(mode = 'view') {
+  function buildOtpLegalWorkspacePath(mode = 'view', options = {}) {
     const resolvedTransactionId = String(transaction?.id || '').trim()
     if (!resolvedTransactionId) return ''
     const params = new URLSearchParams()
@@ -4620,6 +4628,10 @@ function UnitDetail() {
     params.set('returnTo', `${location.pathname}${location.search}`)
     const resolvedPacketId = String(otpPacketStatus?.packet?.id || otpPacketId || '').trim()
     if (resolvedPacketId) params.set('packetId', resolvedPacketId)
+    const sourceMode = normalizeText(options?.sourceMode)
+    const documentStart = normalizeText(options?.documentStart)
+    if (sourceMode) params.set('sourceMode', sourceMode)
+    if (documentStart) params.set('documentStart', documentStart)
     return `/transactions/${resolvedTransactionId}/legal/otp?${params.toString()}`
   }
 
@@ -4721,7 +4733,40 @@ function UnitDetail() {
 
   function handleOtpPrimaryAction() {
     const actionKey = String(otpPacketActionState?.actionKey || '').trim().toLowerCase()
+    if (actionKey === 'generate') {
+      if (!transaction?.id) {
+        setError('Transaction data is not available for OTP generation.')
+        return
+      }
+      setOtpStartOpen(true)
+      return
+    }
     openOtpLegalWorkspace(actionKey)
+  }
+
+  async function handleStartTransactionOtpDocument(selection = {}) {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for OTP generation.')
+      return
+    }
+    const sourceMode = selection?.sourceMode || DOCUMENT_START_SOURCE_MODES.saved
+    setError('')
+    setOtpStartOpen(false)
+
+    if (sourceMode === DOCUMENT_START_SOURCE_MODES.onboarding) {
+      await handleSendOnboardingEmail({ resend: onboardingEmailSent })
+      return
+    }
+
+    const path = buildOtpLegalWorkspacePath('generate', {
+      sourceMode,
+      documentStart: DOCUMENT_START_ENTRY_POINTS.transactionOtp,
+    })
+    if (!path) {
+      setError('Transaction data is not available for the legal document workspace.')
+      return
+    }
+    navigate(path)
   }
 
   function handleWorkspaceViewOtp() {
@@ -6251,7 +6296,14 @@ function UnitDetail() {
     ? normalizeFinanceType(transaction?.finance_type || stageForm.finance_type, { allowUnknown: true })
     : 'unknown'
   const isBondOrHybridFinance = activeFinanceType === 'bond' || activeFinanceType === 'combination'
-  const canViewBondWorkspaceTab = ['developer', 'agent'].includes(workspaceRole) && isBondOrHybridFinance
+  const financeManagedByForTransaction = normalizeFinanceManagedBy(
+    stageForm.finance_managed_by || transaction?.finance_managed_by,
+    { fallback: 'bond_originator' },
+  )
+  const financeOwnerDisplayLabel = formatFinanceOwnerValue(financeManagedByForTransaction)
+  const isOriginatorManagedFinance = isBondOrHybridFinance && financeManagedByForTransaction === 'bond_originator'
+  const isClientManagedBondFinance = isBondOrHybridFinance && !isOriginatorManagedFinance
+  const canViewBondWorkspaceTab = ['developer', 'agent'].includes(workspaceRole) && isOriginatorManagedFinance
   const bondHybridFinanceSummary = transactionFinanceWorkflow?.summary || null
   const developerFinancialTermsPanel = isDevelopmentTransaction ? (
     <WorkspacePanel
@@ -6653,6 +6705,29 @@ function UnitDetail() {
     if (salesActionLoading === 'share_otp') return 'Sending...'
     return otpPacketActionState.label
   })()
+  const buyerEmailForOtpStart = normalizeText(clientInfoForm.buyer_email || buyer?.email)
+  const transactionOtpStartSummary = [
+    {
+      label: 'Buyer',
+      value: purchaserNameForOtp || 'Buyer not named',
+    },
+    {
+      label: 'Property',
+      value: unit?.unit_number
+        ? `Unit ${unit.unit_number}`
+        : unit?.development?.name || propertyAddressForOtp || 'Property not set',
+    },
+    {
+      label: 'Purchase Price',
+      value: currency.format(Number(purchasePriceValue || transaction?.purchase_price || transaction?.sales_price || unit?.price || 0)),
+    },
+    {
+      label: 'Finance',
+      value: normalizeFinanceType(transaction?.finance_type || clientInfoForm.finance_type || 'cash') === 'combination'
+        ? 'Hybrid'
+        : toTitleLabel(normalizeFinanceType(transaction?.finance_type || clientInfoForm.finance_type || 'cash')),
+    },
+  ]
   const developmentModuleState = developmentSettings?.enabledModules || {}
   const developmentTeams = developmentSettings?.stakeholderTeams || {}
   const agentOptions = developmentTeams.agents || []
@@ -6866,13 +6941,37 @@ function UnitDetail() {
     : []
   const agentMetricCards = isBondOrHybridFinance
     ? [
-        { label: 'Finance Type', value: activeFinanceType === 'combination' ? 'Hybrid' : 'Bond', subtext: 'Bond / Hybrid', icon: Landmark },
-        { label: 'Finance Stage', value: bondHybridFinanceSummary?.currentStageLabel || 'Not started', subtext: 'Shared workflow', icon: UploadCloud },
-        { label: 'Bond Originator', value: stageForm.bond_originator || transaction?.bond_originator || 'Not assigned', subtext: stageForm.assigned_bond_originator_email || transaction?.assigned_bond_originator_email || 'No email', icon: UserRound },
-        { label: 'Submitted Banks', value: String(bondHybridFinanceSummary?.submittedBanksCount ?? 0), subtext: 'Applications captured', icon: Landmark },
-        { label: 'Quotes Received', value: String(bondHybridFinanceSummary?.quotesReceivedCount ?? 0), subtext: 'Feedback and quotes', icon: BadgeDollarSign },
-        { label: 'Approved Bank', value: bondHybridFinanceSummary?.approvedBank || 'Not approved yet', subtext: 'Buyer-selected quote', icon: CheckCircle2 },
-        { label: 'Instruction Sent', value: bondHybridFinanceSummary?.instructionSent ? 'Yes' : 'No', subtext: bondHybridFinanceSummary?.instructionSent ? 'Ready for attorney workflow' : 'Pending instruction', icon: Send },
+        {
+          label: 'Finance Type',
+          value: activeFinanceType === 'combination' ? 'Hybrid' : 'Bond',
+          subtext: isClientManagedBondFinance ? 'Buyer-arranged finance' : 'Bond / Hybrid',
+          icon: Landmark,
+        },
+        {
+          label: 'Finance Stage',
+          value: isOriginatorManagedFinance ? bondHybridFinanceSummary?.currentStageLabel || 'Not started' : 'External finance tracking',
+          subtext: isOriginatorManagedFinance ? 'Shared workflow' : 'Approval evidence managed outside originator workflow',
+          icon: UploadCloud,
+        },
+        {
+          label: isOriginatorManagedFinance ? 'Bond Originator' : 'Finance Owner',
+          value: isOriginatorManagedFinance ? stageForm.bond_originator || transaction?.bond_originator || 'Not assigned' : financeOwnerDisplayLabel,
+          subtext: isOriginatorManagedFinance
+            ? stageForm.assigned_bond_originator_email || transaction?.assigned_bond_originator_email || 'No email'
+            : 'Track approval evidence with buyer and attorney',
+          icon: UserRound,
+        },
+        ...(isOriginatorManagedFinance
+          ? [
+              { label: 'Submitted Banks', value: String(bondHybridFinanceSummary?.submittedBanksCount ?? 0), subtext: 'Applications captured', icon: Landmark },
+              { label: 'Quotes Received', value: String(bondHybridFinanceSummary?.quotesReceivedCount ?? 0), subtext: 'Feedback and quotes', icon: BadgeDollarSign },
+              { label: 'Approved Bank', value: bondHybridFinanceSummary?.approvedBank || 'Not approved yet', subtext: 'Buyer-selected quote', icon: CheckCircle2 },
+              { label: 'Instruction Sent', value: bondHybridFinanceSummary?.instructionSent ? 'Yes' : 'No', subtext: bondHybridFinanceSummary?.instructionSent ? 'Ready for attorney workflow' : 'Pending instruction', icon: Send },
+            ]
+          : [
+              { label: 'External Approval', value: 'Awaiting evidence', subtext: 'Upload bank approval or finance confirmation', icon: CheckCircle2 },
+              { label: 'Attorney Review', value: 'Pending', subtext: 'Attorney verifies external finance proof', icon: Scale },
+            ]),
       ]
       : [
         { label: 'Purchase Price', value: displayPurchasePriceLabel, subtext: hasCapturedFinancials ? 'Transaction value' : 'Awaiting onboarding', icon: CircleDollarSign },
@@ -8042,7 +8141,11 @@ function UnitDetail() {
           { role: 'Buyer / Purchaser', name: buyer?.name || 'Not assigned', detail: buyer?.email || purchaserEmailForOtp, icon: UserRound, active: Boolean(buyer?.name || buyer?.email) },
           { role: 'Selling Agent', name: assignedAgentDisplayName, detail: stageForm.assigned_agent_email || transaction?.assigned_agent_email || '', icon: UserRound, active: assignedAgentDisplayName !== 'Not assigned' },
           { role: 'Transfer Attorney', name: transferAttorneyDisplayName, detail: stageForm.assigned_attorney_email || transaction?.assigned_attorney_email || transferAttorneyStatusLabel, icon: Scale, active: transferAttorneyDisplayName !== 'Not assigned' },
-          { role: 'Bond Originator', name: bondAttorneyDisplayName, detail: stageForm.assigned_bond_originator_email || transaction?.assigned_bond_originator_email || bondOriginatorStatusLabel, icon: Landmark, active: bondAttorneyDisplayName !== 'Not assigned' },
+          isBondOrHybridFinance
+            ? isOriginatorManagedFinance
+              ? { role: 'Bond Originator', name: bondAttorneyDisplayName, detail: stageForm.assigned_bond_originator_email || transaction?.assigned_bond_originator_email || bondOriginatorStatusLabel, icon: Landmark, active: bondAttorneyDisplayName !== 'Not assigned' }
+              : { role: 'External Finance', name: financeOwnerDisplayLabel, detail: 'Buyer-arranged approval evidence', icon: Landmark, active: isClientManagedBondFinance }
+            : { role: 'Finance Owner', name: financeOwnerDisplayLabel, detail: activeFinanceType === 'cash' ? 'Cash / proof of funds' : 'Finance route', icon: Landmark, active: hasCapturedFinanceType },
         ].map((item) => {
           const Icon = item.icon
           return (
@@ -9669,7 +9772,7 @@ function UnitDetail() {
           </div>
         ) : null}
 
-        {activeWorkspaceMenu === 'bond' || (isAgentWorkspace && activeWorkspaceMenu === 'financials' && canViewBondWorkspaceTab) ? (
+        {canViewBondWorkspaceTab && (activeWorkspaceMenu === 'bond' || (isAgentWorkspace && activeWorkspaceMenu === 'financials')) ? (
           <div className="space-y-4">
             {activeWorkspaceMenu === 'bond' ? financeCommandCenterPanel : null}
             <WorkspacePanel
@@ -10811,6 +10914,22 @@ function UnitDetail() {
 
       </div>
     </SharedTransactionShell>
+    <StartDocumentModal
+      open={otpStartOpen}
+      onClose={() => setOtpStartOpen(false)}
+      entryPoint={DOCUMENT_START_ENTRY_POINTS.transactionOtp}
+      packetType={DOCUMENT_START_PACKET_TYPES.otp}
+      documentKind={DOCUMENT_START_DOCUMENT_KINDS.standard}
+      initialSourceMode={DOCUMENT_START_SOURCE_MODES.saved}
+      hasExistingContext={Boolean(transaction?.id)}
+      hasClientContact={Boolean(buyerEmailForOtpStart || onboardingRequiresManualHandoff)}
+      hasParentDocument
+      contextSummary={transactionOtpStartSummary}
+      title="Create OTP"
+      subtitle="Choose the quickest way to prepare this transaction OTP. You can still review and edit the document before sending."
+      busy={salesActionLoading === 'generate_otp' || sendingOnboardingEmail || otpPacketStatusLoading}
+      onContinue={(selection) => void handleStartTransactionOtpDocument(selection)}
+    />
     <LegalDocumentWorkspace
       open={legalWorkspaceOpen}
       onClose={() => setLegalWorkspaceOpen(false)}

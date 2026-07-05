@@ -196,7 +196,7 @@ export function MobileFieldModePanel({
   }
 
   return (
-    <MobileCard className="overflow-hidden bg-[#10243a] text-white shadow-[0_18px_42px_rgba(15,23,42,0.20)]" data-phase5-field-mode>
+    <MobileCard surface="dark" className="overflow-hidden" data-phase5-field-mode>
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[#9fe0bd]">Field Mode</p>
@@ -438,7 +438,7 @@ export function MobileCommandBriefPanel({
   }
 
   return (
-    <MobileCard className="border-[#dfe7ef] bg-white" data-phase6-command-brief>
+    <MobileCard data-phase6-command-brief>
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[#60758d]">Command Brief</p>
@@ -549,7 +549,7 @@ export function MobileLiveRoomPanel({
   }
 
   return (
-    <MobileCard className="overflow-hidden border-[#dfe7ef] bg-[#f8fbfd]" data-phase7-live-room>
+    <MobileCard surface="soft" className="overflow-hidden" data-phase7-live-room>
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[#60758d]">Live Transaction Room</p>
@@ -677,7 +677,7 @@ export function MobileHandoffReviewPanel({
   }
 
   return (
-    <MobileCard className="overflow-hidden border-[#dfe7ef] bg-white" data-phase8-handoff-review>
+    <MobileCard className="overflow-hidden" data-phase8-handoff-review>
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[#60758d]">Handoff Review</p>
@@ -805,7 +805,7 @@ export function MobilePushOptIn({ route = '/mobile/notifications' }) {
   }
 
   return (
-    <MobileCard className="bg-[#10243a] text-white">
+    <MobileCard surface="dark">
       <div className="flex items-start gap-3">
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/12 text-white">
           <Bell className="h-5 w-5" />

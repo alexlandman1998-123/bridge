@@ -160,6 +160,8 @@ try {
 
   assert.equal(normalizeLeadSource('property24'), 'Property24')
   assert.equal(normalizeLeadSource('PrivateProperty'), 'Private Property')
+  assert.equal(normalizeLeadSource('show day'), 'Show Day')
+  assert.equal(normalizeLeadSource('open house'), 'Show Day')
   assert.equal(normalizeLeadSource('manual import'), 'Manual Import')
   assert.equal(normalizeLeadSource('mystery'), 'Other')
   assert.equal(normalizePhone('+27 82 000 0000'), '+27820000000')
@@ -187,6 +189,16 @@ try {
   assert.equal(enquiry.contact.phone, '+27820000000')
   assert.equal(enquiry.contact.hasIdentity, true)
   assert.equal(enquiry.listingReference, 'B9-123')
+
+  const showDayEnquiry = normalizeEnquiryPayload({
+    organisationId: enquiry.organisationId,
+    source: 'showday',
+    name: 'Sipho Visitor',
+    phone: '082 111 2222',
+    listingId: '44444444-4444-4444-8444-444444444444',
+  })
+  assert.equal(showDayEnquiry.source, 'Show Day')
+  assert.equal(showDayEnquiry.lead.leadCategory, 'buyer')
 
   const invalid = normalizeEnquiryPayload({ organisationId: enquiry.organisationId, source: 'Website' })
   assert.equal(invalid.contact.hasIdentity, false, 'empty payload should be flagged for failed handling')

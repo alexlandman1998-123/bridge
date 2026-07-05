@@ -283,6 +283,7 @@ const LEAD_SOURCE_OPTIONS = [
   'Private Property',
   'Website',
   'Referral',
+  'Show Day',
   'Walk-In',
   'WhatsApp',
   'Facebook',

@@ -77,6 +77,7 @@ import {
   CONTRACT_STUDIO_TABS,
   DOCUMENT_RUN_SOURCE_OPTIONS,
   getDocumentKindOption,
+  getDocumentRunReadiness,
   isSimpleDocumentBuilderEnabled,
   studioDangerButtonClass,
   studioPrimaryButtonClass,
@@ -84,12 +85,20 @@ import {
   studioSecondaryButtonClass,
 } from './contractStudioConstants'
 import { useWorkspace } from '../../context/WorkspaceContext'
+import { listAgencyCrmLeadContacts } from '../../lib/agencyCrmRepository'
+import { getOrganisationPrivateListings } from '../../services/privateListingService'
 import {
   NATIVE_RENDERER_VERSION,
   TEMPLATE_RENDER_MODES,
   normalizeTemplateRenderMode,
   templateHasLegacySource,
 } from '../../core/documents/structuredTemplateRenderer'
+import StartDocumentModal from '../../components/documents/StartDocumentModal'
+import {
+  DOCUMENT_START_DOCUMENT_KINDS,
+  DOCUMENT_START_ENTRY_POINTS,
+  DOCUMENT_START_SOURCE_MODES,
+} from '../../core/documents/documentStartRules'
 
 const SUPPORTED_PACKET_TYPES = [
   {
@@ -146,6 +155,31 @@ const DOCUMENT_BLOCK_SNIPPETS = {
     'Name: ______________________________',
   ].join('\n'),
 }
+const SECTION_EDITOR_INSERT_GROUPS = [
+  {
+    label: 'Content',
+    items: [
+      { key: 'paragraph', icon: Type, label: 'Text', title: 'Add paragraph text' },
+      { key: 'heading', icon: Bold, label: 'Heading', title: 'Add a clause heading' },
+      { key: 'table', icon: Table2, label: 'Table', title: 'Add a details table' },
+      { key: 'pageBreak', icon: MoreHorizontal, label: 'Page break', title: 'Insert a page break' },
+    ],
+  },
+  {
+    label: 'Signing',
+    items: [
+      { key: 'signature', icon: FileSignature, label: 'Signature', title: 'Add a signature block' },
+      { key: 'initials', icon: Check, label: 'Initial', title: 'Add an initials marker' },
+      { key: 'witness', icon: ShieldCheck, label: 'Witness', title: 'Add a witness block' },
+    ],
+  },
+  {
+    label: 'Tools',
+    items: [
+      { key: 'source', icon: FileText, label: 'Source', title: 'Open the raw source editor', action: 'source' },
+    ],
+  },
+]
 const CONTRACT_CLAUSE_LIBRARY_ITEMS = [
   {
     key: 'finance_suspensive_condition',
@@ -386,6 +420,12 @@ const AGENCY_DOCUMENT_TABS = [
   { key: 'otp', packetType: 'otp', label: 'Offer to Purchase (OTP)', icon: FileSignature },
   { key: 'sales_mandate', packetType: 'mandate', label: 'Sales Mandate', icon: FileText },
 ]
+
+const GENERAL_ADDENDUM_TEMPLATE_FAMILY = 'general_addendum'
+const OCCUPATION_ADDENDUM_TEMPLATE_FAMILY = 'occupation_addendum'
+const PURCHASE_PRICE_ADDENDUM_TEMPLATE_FAMILY = 'purchase_price_addendum'
+const SUSPENSIVE_CONDITION_ADDENDUM_TEMPLATE_FAMILY = 'suspensive_condition_addendum'
+const FIXTURES_EXCLUSIONS_ADDENDUM_TEMPLATE_FAMILY = 'fixtures_exclusions_addendum'
 
 const SIMPLE_SECTION_LABELS = [
   'Buyer Details',
@@ -1181,6 +1221,344 @@ Generated Date: {{generated_date}}
 Template Version: {{template_version}}`,
 }
 
+const GENERAL_ADDENDUM_DEFAULT_LEGAL_TEXT = {
+  cover_page: `GENERAL ADDENDUM
+
+This Addendum is prepared as an additional document linked to the existing agreement or mandate recorded below.
+
+Property:
+{{property_address}}
+
+Document Reference:
+{{document_reference}}
+
+Transaction Reference:
+{{transaction_reference}}
+
+Generated Date:
+{{generated_date}}
+
+Template Version:
+{{template_version}}`,
+  otp_parties: `PARTIES
+
+The parties to this Addendum are:
+
+| Party | Details |
+| --- | --- |
+| Purchaser | {{buyer_full_name}} |
+| Seller | {{seller_full_name}} |
+| Agency | {{agency_legal_name}} |
+| Agent | {{agent_full_name}} |
+
+This Addendum forms part of the Offer to Purchase or related transaction documents for the Property.`,
+  mandate_parties: `PARTIES
+
+The parties to this Addendum are:
+
+| Party | Details |
+| --- | --- |
+| Seller | {{seller_full_name}} |
+| Agency | {{agency_legal_name}} |
+| Agent | {{agent_full_name}} |
+
+This Addendum forms part of the mandate or related listing documents for the Property.`,
+  linked_document: `LINKED DOCUMENT
+
+This Addendum must be read together with the existing agreement, mandate, or document pack linked to the Property.
+
+Unless expressly changed by this Addendum, all terms of the linked document remain unchanged and continue to apply.`,
+  agreed_changes: `AGREED ADDENDUM TERMS
+
+The parties agree to the following additional, amended, or clarified terms:
+
+{{special_conditions}}
+
+Where applicable, the updated commercial particulars are:
+
+| Detail | Value |
+| --- | --- |
+| Purchase price / value | {{purchase_price}} |
+| Occupation date | {{occupation_date}} |
+| Transfer date | {{transfer_date}} |
+
+If a field above is not applicable, it may be removed or marked as not applicable before the Addendum is sent for signature.`,
+  occupation_terms: `OCCUPATION DATE ADDENDUM
+
+The parties agree to amend or confirm the occupation arrangements for the Property as follows:
+
+| Detail | Value |
+| --- | --- |
+| Property | {{property_address}} |
+| Occupation date | {{occupation_date}} |
+| Transfer date | {{transfer_date}} |
+
+The occupation date, handover arrangements, keys, and any related occupation conditions must be read with the linked document.
+
+Special occupation terms:
+{{special_conditions}}
+
+All other terms of the linked document remain unchanged unless expressly amended in this Addendum.`,
+  purchase_price_terms: `PURCHASE PRICE ADDENDUM
+
+The parties agree to amend or confirm the purchase price and related financial terms as follows:
+
+| Detail | Value |
+| --- | --- |
+| Purchase price | {{purchase_price}} |
+| Deposit | {{deposit_amount}} |
+| Bond amount | {{bond_amount}} |
+| Cash contribution | {{cash_amount}} |
+
+Special financial terms:
+{{special_conditions}}
+
+The parties confirm that all other payment, transfer, and performance obligations in the linked document remain unchanged unless expressly amended in this Addendum.`,
+  suspensive_condition_terms: `SUSPENSIVE CONDITION ADDENDUM
+
+The parties agree to amend, add, waive, or confirm the following suspensive condition:
+
+{{suspensive_conditions}}
+
+Additional condition wording:
+{{special_conditions}}
+
+Unless the wording above expressly provides otherwise, the time periods, notice requirements, and consequences of non-fulfilment recorded in the linked document remain in force.`,
+  fixtures_exclusions_terms: `FIXTURES AND EXCLUSIONS ADDENDUM
+
+The parties agree to clarify the fixtures, fittings, exclusions, and items included with the Property.
+
+Property:
+{{property_address}}
+
+Included / excluded items:
+{{special_conditions}}
+
+Annexures or supporting lists:
+{{annexures_list}}
+
+If there is any conflict between this Addendum and the linked document regarding fixtures or exclusions, this Addendum prevails only to the extent of that conflict.`,
+  unchanged_terms: `UNCHANGED TERMS
+
+Except to the extent expressly varied by this Addendum, every term, condition, warranty, undertaking, date, amount, and obligation contained in the linked document remains in full force and effect.
+
+If there is a conflict between this Addendum and the linked document, this Addendum will prevail only to the extent of that conflict.
+
+Annexures:
+{{annexures_list}}`,
+  otp_signatures: `SIGNATURES
+
+SIGNED BY THE PURCHASER
+
+Purchaser:
+{{buyer_full_name}}
+
+Signature:
+{{buyer_signature}}
+
+Initials:
+{{buyer_initials}}
+
+Date:
+{{signed_date}}
+
+SIGNED BY THE SELLER
+
+Seller:
+{{seller_full_name}}
+
+Signature:
+{{seller_signature}}
+
+Initials:
+{{seller_initials}}
+
+Date:
+{{signed_date}}
+
+Witness:
+{{witness_signature}}
+
+Agency:
+{{organisation_name}}
+
+Agent:
+{{agent_full_name}}
+
+FFC Number:
+{{agent_ffc_number}}`,
+  mandate_signatures: `SIGNATURES
+
+SIGNED BY THE SELLER
+
+Seller:
+{{seller_full_name}}
+
+Signature:
+{{seller_signature}}
+
+Initials:
+{{seller_initials}}
+
+Date:
+{{signed_date}}
+
+Witness:
+{{witness_signature}}
+
+Agency:
+{{organisation_name}}
+
+Agent:
+{{agent_full_name}}
+
+FFC Number:
+{{agent_ffc_number}}`,
+}
+
+const ADDENDUM_TEMPLATE_STARTERS = [
+  {
+    key: GENERAL_ADDENDUM_TEMPLATE_FAMILY,
+    label: 'General Addendum',
+    shortLabel: 'General',
+    description: 'Broad addendum for any agreed change, clarification, or extra term.',
+    templateLabel: 'General Addendum',
+    templateKeySegment: 'general_addendum',
+    termsSectionLabel: 'Agreed Addendum Terms',
+    termsLegalText: GENERAL_ADDENDUM_DEFAULT_LEGAL_TEXT.agreed_changes,
+    placeholderKeysText: 'special_conditions, purchase_price, occupation_date, transfer_date',
+  },
+  {
+    key: OCCUPATION_ADDENDUM_TEMPLATE_FAMILY,
+    label: 'Occupation Date Addendum',
+    shortLabel: 'Occupation',
+    description: 'Change or confirm occupation date, keys, handover, or related occupation terms.',
+    templateLabel: 'Occupation Date Addendum',
+    templateKeySegment: 'occupation_addendum',
+    termsSectionLabel: 'Occupation Terms',
+    termsLegalText: GENERAL_ADDENDUM_DEFAULT_LEGAL_TEXT.occupation_terms,
+    placeholderKeysText: 'property_address, occupation_date, transfer_date, special_conditions',
+  },
+  {
+    key: PURCHASE_PRICE_ADDENDUM_TEMPLATE_FAMILY,
+    label: 'Purchase Price Addendum',
+    shortLabel: 'Price',
+    description: 'Record a purchase price, deposit, bond amount, or cash contribution change.',
+    templateLabel: 'Purchase Price Addendum',
+    templateKeySegment: 'purchase_price_addendum',
+    termsSectionLabel: 'Price and Finance Terms',
+    termsLegalText: GENERAL_ADDENDUM_DEFAULT_LEGAL_TEXT.purchase_price_terms,
+    placeholderKeysText: 'purchase_price, deposit_amount, bond_amount, cash_amount, special_conditions',
+  },
+  {
+    key: SUSPENSIVE_CONDITION_ADDENDUM_TEMPLATE_FAMILY,
+    label: 'Suspensive Condition Addendum',
+    shortLabel: 'Condition',
+    description: 'Add, amend, waive, or confirm a bond or other suspensive condition.',
+    templateLabel: 'Suspensive Condition Addendum',
+    templateKeySegment: 'suspensive_condition_addendum',
+    termsSectionLabel: 'Suspensive Condition Terms',
+    termsLegalText: GENERAL_ADDENDUM_DEFAULT_LEGAL_TEXT.suspensive_condition_terms,
+    placeholderKeysText: 'suspensive_conditions, special_conditions',
+  },
+  {
+    key: FIXTURES_EXCLUSIONS_ADDENDUM_TEMPLATE_FAMILY,
+    label: 'Fixtures and Exclusions Addendum',
+    shortLabel: 'Fixtures',
+    description: 'Clarify included fixtures, fittings, exclusions, and attached lists.',
+    templateLabel: 'Fixtures and Exclusions Addendum',
+    templateKeySegment: 'fixtures_exclusions_addendum',
+    termsSectionLabel: 'Fixtures and Exclusions',
+    termsLegalText: GENERAL_ADDENDUM_DEFAULT_LEGAL_TEXT.fixtures_exclusions_terms,
+    placeholderKeysText: 'property_address, special_conditions, annexures_list',
+  },
+]
+
+const ADDENDUM_TEMPLATE_STARTER_OPTIONS = ADDENDUM_TEMPLATE_STARTERS.map((starter) => ({
+  key: starter.key,
+  label: starter.label,
+  shortLabel: starter.shortLabel,
+  description: starter.description,
+}))
+
+const ADDENDUM_DOCUMENT_DETAIL_FIELD_GROUPS = {
+  [GENERAL_ADDENDUM_TEMPLATE_FAMILY]: {
+    key: GENERAL_ADDENDUM_TEMPLATE_FAMILY,
+    label: 'General Addendum',
+    helperText: 'Capture the agreed change in plain language. Linked transaction details can still fill the rest.',
+    fields: [
+      { key: 'property_address', label: 'Property address', control: 'text', placeholder: 'Property affected by this addendum' },
+      { key: 'special_conditions', label: 'Agreed wording', control: 'textarea', rows: 4, placeholder: 'Write the exact agreed change, clarification, or extra term.' },
+      { key: 'purchase_price', label: 'Purchase price / value', control: 'text', placeholder: 'Optional' },
+      { key: 'occupation_date', label: 'Occupation date', control: 'date', placeholder: '' },
+      { key: 'transfer_date', label: 'Transfer date', control: 'date', placeholder: '' },
+    ],
+  },
+  [OCCUPATION_ADDENDUM_TEMPLATE_FAMILY]: {
+    key: OCCUPATION_ADDENDUM_TEMPLATE_FAMILY,
+    label: 'Occupation Date Addendum',
+    helperText: 'Use this when the parties change or confirm occupation timing, keys, or handover terms.',
+    fields: [
+      { key: 'property_address', label: 'Property address', control: 'text', placeholder: 'Property affected by this addendum' },
+      { key: 'occupation_date', label: 'Occupation date', control: 'date', placeholder: '' },
+      { key: 'transfer_date', label: 'Expected transfer date', control: 'date', placeholder: '' },
+      { key: 'special_conditions', label: 'Occupation terms', control: 'textarea', rows: 4, placeholder: 'Keys, handover, occupational rent, access, or other occupation terms.' },
+    ],
+  },
+  [PURCHASE_PRICE_ADDENDUM_TEMPLATE_FAMILY]: {
+    key: PURCHASE_PRICE_ADDENDUM_TEMPLATE_FAMILY,
+    label: 'Purchase Price Addendum',
+    helperText: 'Use this when price, deposit, bond, or cash contribution terms change.',
+    fields: [
+      { key: 'property_address', label: 'Property address', control: 'text', placeholder: 'Property affected by this addendum' },
+      { key: 'purchase_price', label: 'Purchase price', control: 'text', placeholder: 'R 0.00' },
+      { key: 'deposit_amount', label: 'Deposit', control: 'text', placeholder: 'Optional' },
+      { key: 'bond_amount', label: 'Bond amount', control: 'text', placeholder: 'Optional' },
+      { key: 'cash_amount', label: 'Cash contribution', control: 'text', placeholder: 'Optional' },
+      { key: 'special_conditions', label: 'Financial terms', control: 'textarea', rows: 4, placeholder: 'Payment timing, conditions, or finance wording.' },
+    ],
+  },
+  [SUSPENSIVE_CONDITION_ADDENDUM_TEMPLATE_FAMILY]: {
+    key: SUSPENSIVE_CONDITION_ADDENDUM_TEMPLATE_FAMILY,
+    label: 'Suspensive Condition Addendum',
+    helperText: 'Use this to add, amend, waive, extend, or confirm a condition.',
+    fields: [
+      { key: 'property_address', label: 'Property address', control: 'text', placeholder: 'Property affected by this addendum' },
+      { key: 'suspensive_conditions', label: 'Condition wording', control: 'textarea', rows: 4, placeholder: 'Write the condition, waiver, extension, or fulfilment wording.' },
+      { key: 'special_conditions', label: 'Additional notes', control: 'textarea', rows: 3, placeholder: 'Optional supporting wording.' },
+    ],
+  },
+  [FIXTURES_EXCLUSIONS_ADDENDUM_TEMPLATE_FAMILY]: {
+    key: FIXTURES_EXCLUSIONS_ADDENDUM_TEMPLATE_FAMILY,
+    label: 'Fixtures and Exclusions Addendum',
+    helperText: 'Use this to make included and excluded items clear before signature.',
+    fields: [
+      { key: 'property_address', label: 'Property address', control: 'text', placeholder: 'Property affected by this addendum' },
+      { key: 'special_conditions', label: 'Included / excluded items', control: 'textarea', rows: 4, placeholder: 'List included fixtures, excluded items, appliances, curtains, remotes, or other items.' },
+      { key: 'annexures_list', label: 'Annexures or supporting lists', control: 'textarea', rows: 3, placeholder: 'Optional attachment names or references.' },
+    ],
+  },
+}
+
+const ADDENDUM_DOCUMENT_DETAIL_OPTIONS = ADDENDUM_TEMPLATE_STARTERS.map((starter) => ({
+  key: starter.key,
+  label: starter.label,
+  shortLabel: starter.shortLabel,
+  description: starter.description,
+  fields: ADDENDUM_DOCUMENT_DETAIL_FIELD_GROUPS[starter.key]?.fields || [],
+  helperText: ADDENDUM_DOCUMENT_DETAIL_FIELD_GROUPS[starter.key]?.helperText || starter.description,
+}))
+
+function getAddendumTemplateStarter(starterKind = GENERAL_ADDENDUM_TEMPLATE_FAMILY) {
+  const normalized = normalizeText(starterKind).toLowerCase() || GENERAL_ADDENDUM_TEMPLATE_FAMILY
+  return ADDENDUM_TEMPLATE_STARTERS.find((starter) => starter.key === normalized) || null
+}
+
+function getAddendumDetailConfig(addendumType = GENERAL_ADDENDUM_TEMPLATE_FAMILY) {
+  const normalized = normalizeText(addendumType).toLowerCase() || GENERAL_ADDENDUM_TEMPLATE_FAMILY
+  return ADDENDUM_DOCUMENT_DETAIL_FIELD_GROUPS[normalized] || ADDENDUM_DOCUMENT_DETAIL_FIELD_GROUPS[GENERAL_ADDENDUM_TEMPLATE_FAMILY]
+}
+
 function getDefaultRenderMode(packetType = 'otp') {
   const normalized = normalizeText(packetType).toLowerCase()
   return normalized === 'mandate' || normalized.startsWith('commercial_')
@@ -1475,6 +1853,90 @@ function createStarterSections(packetType = 'otp') {
       placeholderKeysText: 'buyer_full_name, buyer_signature, buyer_initials, signed_date, witness_signature, seller_full_name, seller_signature, seller_initials, organisation_name, agent_full_name, agent_ffc_number, buyer_phone, buyer_email, seller_phone, seller_email, agent_phone, agent_email, document_reference, transaction_reference, generated_date, template_version, annexures_list',
       isRequired: true,
       sortOrder: 16,
+    },
+  ]
+}
+
+function createGeneralAddendumStarterSections(packetType = 'otp', starterKind = GENERAL_ADDENDUM_TEMPLATE_FAMILY) {
+  const normalized = normalizeText(packetType).toLowerCase()
+  const isMandate = normalized === 'mandate'
+  const starter = getAddendumTemplateStarter(starterKind) || getAddendumTemplateStarter(GENERAL_ADDENDUM_TEMPLATE_FAMILY)
+
+  return [
+    {
+      sectionKey: 'addendum_cover',
+      sectionLabel: 'Addendum Details',
+      sectionType: 'dynamic_fields',
+      legalText: GENERAL_ADDENDUM_DEFAULT_LEGAL_TEXT.cover_page,
+      placeholderKeysText: 'property_address, document_reference, transaction_reference, generated_date, template_version',
+      isRequired: true,
+      sortOrder: 0,
+    },
+    {
+      sectionKey: 'addendum_parties',
+      sectionLabel: 'Parties',
+      sectionType: 'dynamic_fields',
+      legalText: isMandate
+        ? GENERAL_ADDENDUM_DEFAULT_LEGAL_TEXT.mandate_parties
+        : GENERAL_ADDENDUM_DEFAULT_LEGAL_TEXT.otp_parties,
+      placeholderKeysText: isMandate
+        ? 'seller_full_name, agency_legal_name, agent_full_name'
+        : 'buyer_full_name, seller_full_name, agency_legal_name, agent_full_name',
+      isRequired: true,
+      sortOrder: 1,
+    },
+    {
+      sectionKey: 'linked_document',
+      sectionLabel: 'Linked Document',
+      sectionType: 'legal_text',
+      legalText: GENERAL_ADDENDUM_DEFAULT_LEGAL_TEXT.linked_document,
+      placeholderKeysText: '',
+      isRequired: true,
+      sortOrder: 2,
+    },
+    {
+      sectionKey: 'agreed_addendum_terms',
+      sectionLabel: starter.termsSectionLabel,
+      sectionType: 'dynamic_fields',
+      legalText: starter.termsLegalText,
+      placeholderKeysText: starter.placeholderKeysText,
+      isRequired: true,
+      sortOrder: 3,
+    },
+    {
+      sectionKey: 'unchanged_terms',
+      sectionLabel: 'Unchanged Terms',
+      sectionType: 'legal_text',
+      legalText: GENERAL_ADDENDUM_DEFAULT_LEGAL_TEXT.unchanged_terms,
+      placeholderKeysText: 'annexures_list',
+      isRequired: true,
+      sortOrder: 4,
+    },
+    {
+      sectionKey: 'signature_pages',
+      sectionLabel: 'Signature Pages',
+      sectionType: 'signature_zone',
+      legalText: isMandate
+        ? GENERAL_ADDENDUM_DEFAULT_LEGAL_TEXT.mandate_signatures
+        : GENERAL_ADDENDUM_DEFAULT_LEGAL_TEXT.otp_signatures,
+      placeholderKeysText: isMandate
+        ? 'seller_full_name, seller_signature, seller_initials, signed_date, witness_signature, organisation_name, agent_full_name, agent_ffc_number'
+        : 'buyer_full_name, buyer_signature, buyer_initials, seller_full_name, seller_signature, seller_initials, signed_date, witness_signature, organisation_name, agent_full_name, agent_ffc_number',
+      isRequired: true,
+      signingFields: isMandate
+        ? [
+            { id: 'seller_signature', signerRole: 'seller', fieldType: 'signature', pageNumber: 1, xPosition: 70, yPosition: 692, width: 168, height: 44, required: true, label: 'Seller signature' },
+            { id: 'seller_date', signerRole: 'seller', fieldType: 'date', pageNumber: 1, xPosition: 260, yPosition: 692, width: 82, height: 22, required: true, label: 'Seller date' },
+            { id: 'witness_signature', signerRole: 'witness_1', fieldType: 'signature', pageNumber: 1, xPosition: 70, yPosition: 758, width: 168, height: 44, required: false, label: 'Witness signature' },
+          ]
+        : [
+            { id: 'buyer_signature', signerRole: 'purchaser_1', fieldType: 'signature', pageNumber: 1, xPosition: 70, yPosition: 654, width: 168, height: 44, required: true, label: 'Buyer signature' },
+            { id: 'buyer_date', signerRole: 'purchaser_1', fieldType: 'date', pageNumber: 1, xPosition: 260, yPosition: 654, width: 82, height: 22, required: true, label: 'Buyer date' },
+            { id: 'seller_signature', signerRole: 'seller', fieldType: 'signature', pageNumber: 1, xPosition: 70, yPosition: 726, width: 168, height: 44, required: true, label: 'Seller signature' },
+            { id: 'seller_date', signerRole: 'seller', fieldType: 'date', pageNumber: 1, xPosition: 260, yPosition: 726, width: 82, height: 22, required: true, label: 'Seller date' },
+            { id: 'witness_signature', signerRole: 'witness_1', fieldType: 'signature', pageNumber: 1, xPosition: 374, yPosition: 726, width: 168, height: 44, required: false, label: 'Witness signature' },
+          ],
+      sortOrder: 5,
     },
   ]
 }
@@ -2161,18 +2623,826 @@ function buildSamplePreviewContext(packetType = 'otp') {
   }
 }
 
-function createDefaultDocumentRunForm(packetType = 'otp', templateLabel = '') {
+function getTemplatePreferredDocumentKind(template = null) {
+  const metadata = template?.metadata_json && typeof template.metadata_json === 'object'
+    ? template.metadata_json
+    : template?.metadataJson && typeof template.metadataJson === 'object'
+      ? template.metadataJson
+      : {}
+  return getDocumentKindOption(
+    metadata.document_kind ||
+      metadata.documentKind ||
+      metadata.preferred_document_kind ||
+      metadata.preferredDocumentKind ||
+      'standard',
+  ).key
+}
+
+function getTemplateAddendumType(template = null) {
+  const metadata = template?.metadata_json && typeof template.metadata_json === 'object'
+    ? template.metadata_json
+    : template?.metadataJson && typeof template.metadataJson === 'object'
+      ? template.metadataJson
+      : {}
+  const starterKey = metadata.addendum_type || metadata.addendumType || metadata.starter_template || metadata.starterTemplate
+  return getAddendumDetailConfig(starterKey).key
+}
+
+function getPreferredAddendumTemplateForType(templates = [], addendumType = GENERAL_ADDENDUM_TEMPLATE_FAMILY) {
+  const preferredAddendumType = getAddendumDetailConfig(addendumType).key
+  const addendumTemplates = (Array.isArray(templates) ? templates : [])
+    .filter((template) => getTemplatePreferredDocumentKind(template) === 'addendum')
+  return addendumTemplates.find((template) => getTemplateAddendumType(template) === preferredAddendumType)
+    || addendumTemplates.find((template) => getTemplateAddendumType(template) === GENERAL_ADDENDUM_TEMPLATE_FAMILY)
+    || addendumTemplates[0]
+    || null
+}
+
+function normalizeAddendumRunDetails(addendumType = GENERAL_ADDENDUM_TEMPLATE_FAMILY, rawDetails = {}) {
+  const config = getAddendumDetailConfig(addendumType)
+  const details = rawDetails && typeof rawDetails === 'object' ? rawDetails : {}
+  return config.fields.reduce((accumulator, field) => {
+    const value = normalizeText(details[field.key])
+    if (value) accumulator[field.key] = value
+    return accumulator
+  }, {})
+}
+
+function buildAddendumDocumentReviewSummary(sourceContext = {}) {
+  const source = sourceContext && typeof sourceContext === 'object' ? sourceContext : {}
+  const documentKind = getDocumentKindOption(source.documentKind || source.document_kind).key
+  const hasRelatedDocumentContext = !['standard', 'custom'].includes(documentKind) || normalizeText(source.addendumType || source.addendum_type)
+  if (!hasRelatedDocumentContext) {
+    return {
+      visible: false,
+      detailItems: [],
+      manifest: null,
+    }
+  }
+
+  const addendumConfig = getAddendumDetailConfig(source.addendumType || source.addendum_type)
+  const addendumDetails = normalizeAddendumRunDetails(addendumConfig.key, source.addendumDetails || source.addendum_details || source)
+  const detailItems = addendumConfig.fields
+    .map((field) => ({
+      key: field.key,
+      label: field.label,
+      value: normalizeText(addendumDetails[field.key]),
+    }))
+    .filter((item) => item.value)
+  const parentDocumentId = normalizeText(source.parentDocumentId || source.parent_document_id || source.linkedDocumentId || source.linked_document_id)
+  const parentDocumentReference = normalizeText(source.parentDocumentReference || source.parent_document_reference)
+  const documentChangeSummary = normalizeText(source.documentChangeSummary || source.document_change_summary)
+  const label = normalizeText(source.addendumLabel || source.addendum_label) || addendumConfig.label
+  const referenceLabel = parentDocumentReference || (parentDocumentId ? `Packet ${parentDocumentId.slice(0, 8)}` : 'Not linked yet')
+
+  return {
+    visible: true,
+    documentKind,
+    addendumType: addendumConfig.key,
+    label,
+    parentDocumentId,
+    parentDocumentReference,
+    referenceLabel,
+    documentChangeSummary,
+    detailItems,
+    manifest: {
+      documentKind,
+      addendumType: addendumConfig.key,
+      label,
+      parentDocumentId,
+      parentDocumentReference,
+      documentChangeSummary,
+      details: addendumDetails,
+    },
+  }
+}
+
+function buildAddendumRunFormFromPacket({
+  packet = {},
+  packetType = 'otp',
+  templateLabel = '',
+  addendumType = GENERAL_ADDENDUM_TEMPLATE_FAMILY,
+} = {}) {
+  const sourceContext = getPacketSourceContext(packet)
+  const previewContext = sourceContext.contractStudioPreviewContext && typeof sourceContext.contractStudioPreviewContext === 'object'
+    ? sourceContext.contractStudioPreviewContext
+    : {}
+  const previewSourceContext = previewContext.sourceContext && typeof previewContext.sourceContext === 'object'
+    ? previewContext.sourceContext
+    : {}
+  const transactionContext = previewContext.transaction && typeof previewContext.transaction === 'object' ? previewContext.transaction : {}
+  const onboardingContext = previewContext.onboardingFormData && typeof previewContext.onboardingFormData === 'object' ? previewContext.onboardingFormData : {}
+  const mandateDraftContext = previewContext.mandateDraft && typeof previewContext.mandateDraft === 'object' ? previewContext.mandateDraft : {}
+  const resolvedAddendumType = getAddendumDetailConfig(addendumType).key
+  const parentDocumentId = normalizeRunReference(packet?.id)
+  const parentDocumentReference = normalizeText(
+    packet?.title ||
+      packet?.template_label_snapshot ||
+      packet?.templateLabelSnapshot ||
+      sourceContext.documentReference ||
+      sourceContext.document_reference,
+  ) || (parentDocumentId ? `Packet ${parentDocumentId.slice(0, 8)}` : 'Original document')
+  const addendumDetails = normalizeAddendumRunDetails(resolvedAddendumType, {
+    ...previewSourceContext,
+    ...transactionContext,
+    ...onboardingContext,
+    ...mandateDraftContext,
+    ...(sourceContext.addendumDetails && typeof sourceContext.addendumDetails === 'object' ? sourceContext.addendumDetails : {}),
+    ...(sourceContext.addendum_details && typeof sourceContext.addendum_details === 'object' ? sourceContext.addendum_details : {}),
+    ...sourceContext,
+  })
+  const transactionId = normalizeRunReference(packet?.transaction_id || sourceContext.transactionId || sourceContext.transaction_id)
+  const leadId = normalizeRunReference(packet?.lead_id || sourceContext.leadId || sourceContext.lead_id)
+  const contactId = normalizeRunReference(packet?.contact_id || sourceContext.contactId || sourceContext.contact_id)
+  const dealId = normalizeRunReference(packet?.deal_id || sourceContext.dealId || sourceContext.deal_id)
+  const unitId = normalizeRunReference(packet?.unit_id || sourceContext.unitId || sourceContext.unit_id)
+  const privateListingId = normalizeRunReference(sourceContext.privateListingId || sourceContext.private_listing_id)
+  const defaultRunForm = createDefaultDocumentRunForm(packetType, templateLabel, {
+    documentKind: 'addendum',
+    addendumType: resolvedAddendumType,
+  })
+
+  return {
+    ...defaultRunForm,
+    sourceType: transactionId ? 'transaction' : leadId ? 'lead' : 'manual',
+    transactionId,
+    leadId,
+    contactId,
+    dealId,
+    unitId,
+    privateListingId,
+    parentDocumentId,
+    parentDocumentReference,
+    documentChangeSummary: '',
+    addendumType: resolvedAddendumType,
+    addendumDetails,
+    title: `Addendum - ${parentDocumentReference}`,
+  }
+}
+
+function buildDocumentPacketRelationshipMap(packets = []) {
+  const rows = Array.isArray(packets) ? packets : []
+  const relationshipMap = new Map()
+
+  rows.forEach((packet) => {
+    const packetId = normalizeText(packet?.id)
+    if (!packetId) return
+    relationshipMap.set(packetId, {
+      packet,
+      review: buildAddendumDocumentReviewSummary(getPacketSourceContext(packet)),
+      parentPacket: null,
+      parentPacketId: '',
+      relatedAddendums: [],
+    })
+  })
+
+  rows.forEach((packet) => {
+    const packetId = normalizeText(packet?.id)
+    if (!packetId) return
+    const relationship = relationshipMap.get(packetId)
+    const review = relationship?.review || buildAddendumDocumentReviewSummary(getPacketSourceContext(packet))
+    const parentPacketId = normalizeText(review.parentDocumentId)
+    if (!review.visible || !parentPacketId) return
+
+    relationship.parentPacketId = parentPacketId
+    relationship.parentPacket = relationshipMap.get(parentPacketId)?.packet || null
+
+    const parentRelationship = relationshipMap.get(parentPacketId)
+    if (parentRelationship) {
+      parentRelationship.relatedAddendums.push({
+        packet,
+        review,
+      })
+    }
+  })
+
+  return relationshipMap
+}
+
+function getAddendumGenerationReadinessForRun(runForm = {}) {
+  const documentKind = getDocumentKindOption(runForm.documentKind).key
+  if (['standard', 'custom'].includes(documentKind)) {
+    return {
+      ready: true,
+      items: [],
+      capturedDetailCount: 0,
+    }
+  }
+  const addendumConfig = getAddendumDetailConfig(runForm.addendumType)
+  return getDocumentRunReadiness({
+    documentRunForm: {
+      ...runForm,
+      documentKind,
+      addendumType: addendumConfig.key,
+    },
+    addendumDetailFields: addendumConfig.fields,
+  })
+}
+
+function compactDocumentRunObject(source = {}) {
+  return Object.entries(source || {}).reduce((accumulator, [key, value]) => {
+    if (Array.isArray(value)) {
+      if (value.length) accumulator[key] = value
+      return accumulator
+    }
+    if (value && typeof value === 'object') {
+      if (Object.keys(value).length) accumulator[key] = value
+      return accumulator
+    }
+    const text = normalizeText(value)
+    if (text || value === 0 || value === false) accumulator[key] = value
+    return accumulator
+  }, {})
+}
+
+function parseDocumentRunMoney(value = '') {
+  const text = normalizeText(value)
+  if (!text) return null
+  const numeric = Number(text.replace(/[^0-9.-]+/g, ''))
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+function normalizeManualDraftEntityType(value = '', fallback = 'individual') {
+  const key = normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  if (['individual', 'company', 'trust', 'close_corporation'].includes(key)) return key
+  if (key === 'cc') return 'close_corporation'
+  return fallback
+}
+
+function normalizeManualDraftFinanceType(value = '') {
+  const key = normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  if (['bond', 'cash', 'combination'].includes(key)) return key
+  if (['hybrid', 'cash_and_bond', 'bond_and_cash'].includes(key)) return 'combination'
+  return 'cash'
+}
+
+function createDefaultManualDocumentDraft(packetType = 'otp') {
+  const normalizedPacketType = normalizeText(packetType).toLowerCase()
+  if (normalizedPacketType === 'mandate') {
+    return {
+      sellerEntityType: 'individual',
+      sellerFullName: '',
+      sellerIdNumber: '',
+      sellerEmail: '',
+      sellerPhone: '',
+      sellerDomiciliumAddress: '',
+      sellerRepresentativeName: '',
+      sellerRepresentativeCapacity: '',
+      propertyAddress: '',
+      propertySuburb: '',
+      propertyCity: '',
+      propertyType: '',
+      unitNumber: '',
+      complexName: '',
+      erfNumber: '',
+      askingPrice: '',
+      mandateType: 'sole',
+      mandateStartDate: '',
+      mandateEndDate: '',
+      vatHandling: 'exclusive',
+      commissionStructure: 'percentage',
+      commissionPercent: '7.5',
+      commissionAmount: '',
+      specialConditions: '',
+    }
+  }
+
+  return {
+    buyerEntityType: 'individual',
+    buyerFullName: '',
+    buyerIdNumber: '',
+    buyerEmail: '',
+    buyerPhone: '',
+    buyerDomiciliumAddress: '',
+    buyerRepresentativeName: '',
+    buyerRepresentativeCapacity: '',
+    coBuyerFullName: '',
+    coBuyerEmail: '',
+    coBuyerPhone: '',
+    coBuyerIdNumber: '',
+    sellerEntityType: 'company',
+    sellerFullName: '',
+    sellerIdNumber: '',
+    sellerEmail: '',
+    sellerPhone: '',
+    sellerRegisteredAddress: '',
+    sellerRepresentativeName: '',
+    sellerRepresentativeCapacity: '',
+    sellerRepresentativeEmail: '',
+    sellerRepresentativePhone: '',
+    sellerRepresentativeIdNumber: '',
+    propertyAddress: '',
+    propertySuburb: '',
+    propertyCity: '',
+    propertyType: '',
+    unitNumber: '',
+    complexName: '',
+    erfNumber: '',
+    purchasePrice: '',
+    depositAmount: '',
+    financeType: 'cash',
+    bondAmount: '',
+    cashAmount: '',
+    occupationDate: '',
+    transferDate: '',
+    suspensiveConditions: '',
+    specialConditions: '',
+  }
+}
+
+function buildMandateManualDocumentContext(manualDraft = {}) {
+  const draft = {
+    ...createDefaultManualDocumentDraft('mandate'),
+    ...(manualDraft && typeof manualDraft === 'object' ? manualDraft : {}),
+  }
+  const sellerEntityType = normalizeManualDraftEntityType(draft.sellerEntityType)
+  const seller = compactDocumentRunObject({
+    entityType: sellerEntityType,
+    fullName: draft.sellerFullName,
+    name: draft.sellerFullName,
+    idNumber: draft.sellerIdNumber,
+    registrationNumber: draft.sellerIdNumber,
+    email: draft.sellerEmail,
+    phone: draft.sellerPhone,
+    domiciliumAddress: draft.sellerDomiciliumAddress,
+    representativeName: draft.sellerRepresentativeName,
+    representativeCapacity: draft.sellerRepresentativeCapacity,
+  })
+  const property = compactDocumentRunObject({
+    address: draft.propertyAddress,
+    propertyAddress: draft.propertyAddress,
+    fullAddress: draft.propertyAddress,
+    suburb: draft.propertySuburb,
+    city: draft.propertyCity,
+    propertyType: draft.propertyType,
+    type: draft.propertyType,
+    unitNumber: draft.unitNumber,
+    complexName: draft.complexName,
+    estateComplexName: draft.complexName,
+    erfNumber: draft.erfNumber,
+  })
+  const askingPrice = parseDocumentRunMoney(draft.askingPrice)
+  const commissionAmount = parseDocumentRunMoney(draft.commissionAmount)
+  const mandate = compactDocumentRunObject({
+    type: draft.mandateType,
+    startDate: draft.mandateStartDate,
+    endDate: draft.mandateEndDate,
+    expiryDate: draft.mandateEndDate,
+    vatHandling: draft.vatHandling,
+    commissionStructure: draft.commissionStructure,
+    commissionPercent: draft.commissionPercent,
+    commissionPercentage: draft.commissionPercent,
+    commissionAmount: commissionAmount ?? draft.commissionAmount,
+    askingPrice: askingPrice ?? draft.askingPrice,
+    specialConditions: draft.specialConditions,
+  })
+  const onboardingFormData = compactDocumentRunObject({
+    seller_full_name: draft.sellerFullName,
+    fullName: draft.sellerFullName,
+    displayName: draft.sellerFullName,
+    seller_id_number: draft.sellerIdNumber,
+    idNumber: draft.sellerIdNumber,
+    email: draft.sellerEmail,
+    sellerEmail: draft.sellerEmail,
+    phone: draft.sellerPhone,
+    sellerPhone: draft.sellerPhone,
+    entityType: sellerEntityType,
+    sellerType: sellerEntityType,
+    domiciliumAddress: draft.sellerDomiciliumAddress,
+    representativeName: draft.sellerRepresentativeName,
+    representativeCapacity: draft.sellerRepresentativeCapacity,
+    propertyAddress: draft.propertyAddress,
+    property_address: draft.propertyAddress,
+    suburb: draft.propertySuburb,
+    city: draft.propertyCity,
+    propertyType: draft.propertyType,
+    unitNumber: draft.unitNumber,
+    complexName: draft.complexName,
+    erfNumber: draft.erfNumber,
+    askingPrice: draft.askingPrice,
+    mandateType: draft.mandateType,
+    mandateStartDate: draft.mandateStartDate,
+    mandateEndDate: draft.mandateEndDate,
+    commissionStructure: draft.commissionStructure,
+    commissionPercent: draft.commissionPercent,
+    commissionAmount: draft.commissionAmount,
+    vatHandling: draft.vatHandling,
+    specialConditions: draft.specialConditions,
+  })
+  const sourceContext = {
+    mandateDraft: draft,
+    seller,
+    property,
+    mandate,
+    property_address: draft.propertyAddress,
+    seller_full_name: draft.sellerFullName,
+    mandate_type: draft.mandateType,
+    commission_structure: draft.commissionStructure,
+  }
+
+  return {
+    mandateDraft: draft,
+    mandateData: {
+      seller,
+      property,
+      mandate,
+      mandateDraft: draft,
+      sourceContext,
+    },
+    lead: compactDocumentRunObject({
+      name: draft.sellerFullName,
+      sellerName: draft.sellerFullName,
+      sellerEmail: draft.sellerEmail,
+      sellerPhone: draft.sellerPhone,
+      sellerPropertyAddress: draft.propertyAddress,
+      propertyAddress: draft.propertyAddress,
+      propertyInterest: draft.propertyAddress,
+      estimatedValue: askingPrice ?? draft.askingPrice,
+      mandateType: draft.mandateType,
+      commissionStructure: draft.commissionStructure,
+      commissionPercent: draft.commissionPercent,
+      commissionAmount: draft.commissionAmount,
+      vatHandling: draft.vatHandling,
+      sellerOnboarding: {
+        status: 'manual_details',
+        formData: onboardingFormData,
+      },
+    }),
+    onboardingFormData,
+    sourceContext,
+    specialConditions: draft.specialConditions,
+  }
+}
+
+function buildOtpManualDocumentContext(manualDraft = {}) {
+  const draft = {
+    ...createDefaultManualDocumentDraft('otp'),
+    ...(manualDraft && typeof manualDraft === 'object' ? manualDraft : {}),
+  }
+  const buyerEntityType = normalizeManualDraftEntityType(draft.buyerEntityType)
+  const sellerEntityType = normalizeManualDraftEntityType(draft.sellerEntityType, 'company')
+  const financeType = normalizeManualDraftFinanceType(draft.financeType)
+  const purchasePrice = parseDocumentRunMoney(draft.purchasePrice)
+  const depositAmount = parseDocumentRunMoney(draft.depositAmount)
+  const bondAmount = parseDocumentRunMoney(draft.bondAmount)
+  const cashAmount = parseDocumentRunMoney(draft.cashAmount)
+  const buyer = compactDocumentRunObject({
+    name: draft.buyerFullName,
+    fullName: draft.buyerFullName,
+    email: draft.buyerEmail,
+    phone: draft.buyerPhone,
+    idNumber: draft.buyerIdNumber,
+    entityType: buyerEntityType,
+    representativeName: draft.buyerRepresentativeName,
+    representativeCapacity: draft.buyerRepresentativeCapacity,
+    domiciliumAddress: draft.buyerDomiciliumAddress,
+  })
+  const seller = compactDocumentRunObject({
+    entityType: sellerEntityType,
+    fullName: draft.sellerFullName,
+    name: draft.sellerFullName,
+    idNumber: draft.sellerIdNumber,
+    registrationNumber: draft.sellerIdNumber,
+    email: draft.sellerEmail,
+    phone: draft.sellerPhone,
+    registeredAddress: draft.sellerRegisteredAddress,
+    representativeName: draft.sellerRepresentativeName,
+    representativeCapacity: draft.sellerRepresentativeCapacity,
+    representativeEmail: draft.sellerRepresentativeEmail || draft.sellerEmail,
+    representativePhone: draft.sellerRepresentativePhone || draft.sellerPhone,
+    representativeIdNumber: draft.sellerRepresentativeIdNumber,
+  })
+  const property = compactDocumentRunObject({
+    address: draft.propertyAddress,
+    propertyAddress: draft.propertyAddress,
+    suburb: draft.propertySuburb,
+    city: draft.propertyCity,
+    propertyType: draft.propertyType,
+    unitNumber: draft.unitNumber,
+    complexName: draft.complexName,
+    estateComplexName: draft.complexName,
+    erfNumber: draft.erfNumber,
+  })
+  const transaction = compactDocumentRunObject({
+    purchaser_type: buyerEntityType,
+    seller_type: sellerEntityType,
+    seller_registration_number: draft.sellerIdNumber,
+    property_address_line_1: draft.propertyAddress,
+    property_address: draft.propertyAddress,
+    suburb: draft.propertySuburb,
+    city: draft.propertyCity,
+    property_type: draft.propertyType,
+    finance_type: financeType,
+    purchase_price: purchasePrice ?? draft.purchasePrice,
+    sales_price: purchasePrice ?? draft.purchasePrice,
+    deposit_amount: depositAmount ?? draft.depositAmount,
+    bond_amount: bondAmount ?? draft.bondAmount,
+    cash_amount: cashAmount ?? draft.cashAmount,
+  })
+  const onboardingFormData = compactDocumentRunObject({
+    purchaserType: buyerEntityType,
+    purchaser_type: buyerEntityType,
+    fullName: draft.buyerFullName,
+    full_name: draft.buyerFullName,
+    idNumber: draft.buyerIdNumber,
+    identityNumber: draft.buyerIdNumber,
+    email: draft.buyerEmail,
+    buyerEmail: draft.buyerEmail,
+    phone: draft.buyerPhone,
+    buyerPhone: draft.buyerPhone,
+    residentialAddress: draft.buyerDomiciliumAddress,
+    physicalAddress: draft.buyerDomiciliumAddress,
+    authorizedRepresentativeName: draft.buyerRepresentativeName,
+    authorisedRepresentativeName: draft.buyerRepresentativeName,
+    authorizedRepresentativeCapacity: draft.buyerRepresentativeCapacity,
+    authorisedRepresentativeCapacity: draft.buyerRepresentativeCapacity,
+    co_buyer_name: draft.coBuyerFullName,
+    coBuyerName: draft.coBuyerFullName,
+    co_buyer_email: draft.coBuyerEmail,
+    coBuyerEmail: draft.coBuyerEmail,
+    co_buyer_phone: draft.coBuyerPhone,
+    coBuyerPhone: draft.coBuyerPhone,
+    co_buyer_id_number: draft.coBuyerIdNumber,
+    coBuyerIdNumber: draft.coBuyerIdNumber,
+    propertyAddress: draft.propertyAddress,
+    property_address: draft.propertyAddress,
+    suburb: draft.propertySuburb,
+    propertySuburb: draft.propertySuburb,
+    city: draft.propertyCity,
+    propertyCity: draft.propertyCity,
+    propertyType: draft.propertyType,
+    unitNumber: draft.unitNumber,
+    unit_number: draft.unitNumber,
+    complexName: draft.complexName,
+    estateComplexName: draft.complexName,
+    erfNumber: draft.erfNumber,
+    depositAmount: draft.depositAmount,
+    deposit_amount: draft.depositAmount,
+    financeType,
+    finance_type: financeType,
+    bondAmount: draft.bondAmount,
+    bond_amount: draft.bondAmount,
+    cashAmount: draft.cashAmount,
+    cash_amount: draft.cashAmount,
+    occupationDate: draft.occupationDate,
+    occupation_date: draft.occupationDate,
+    transferDate: draft.transferDate,
+    transfer_date: draft.transferDate,
+    suspensiveConditions: draft.suspensiveConditions,
+    suspensive_conditions: draft.suspensiveConditions,
+    specialConditions: draft.specialConditions,
+    special_conditions: draft.specialConditions,
+  })
+  const sourceContext = {
+    otpDraft: draft,
+    buyer,
+    seller,
+    property,
+    offer: {
+      ...compactDocumentRunObject({
+        purchasePrice: draft.purchasePrice,
+        depositAmount: draft.depositAmount,
+        financeType,
+        bondAmount: draft.bondAmount,
+        cashAmount: draft.cashAmount,
+        occupationDate: draft.occupationDate,
+        transferDate: draft.transferDate,
+      }),
+      conditions: compactDocumentRunObject({
+        suspensiveConditions: draft.suspensiveConditions,
+        specialConditions: draft.specialConditions,
+      }),
+    },
+    signatureParties: compactDocumentRunObject({
+      buyerName: draft.buyerRepresentativeName || draft.buyerFullName,
+      sellerName: draft.sellerRepresentativeName || draft.sellerFullName,
+    }),
+  }
+
+  return {
+    otpDraft: draft,
+    transaction,
+    buyer,
+    sellerDetails: {
+      ...seller,
+      legalName: draft.sellerFullName,
+      tradingName: draft.sellerFullName,
+      registrationNumber: draft.sellerIdNumber,
+      signatory: compactDocumentRunObject({
+        fullName: draft.sellerRepresentativeName,
+        role: draft.sellerRepresentativeCapacity,
+        signingCapacity: draft.sellerRepresentativeCapacity,
+        idNumber: draft.sellerRepresentativeIdNumber,
+        email: draft.sellerRepresentativeEmail || draft.sellerEmail,
+        phone: draft.sellerRepresentativePhone || draft.sellerPhone,
+      }),
+    },
+    onboardingFormData,
+    sourceContext,
+    specialConditions: draft.specialConditions,
+    generatedDataSnapshot: {
+      otpDraft: draft,
+      transaction,
+      buyer,
+      sellerDetails: {
+        ...seller,
+        legalName: draft.sellerFullName,
+        tradingName: draft.sellerFullName,
+        registrationNumber: draft.sellerIdNumber,
+      },
+      onboardingFormData,
+      sourceContext,
+    },
+  }
+}
+
+function buildManualDocumentRunContext({ packetType = 'otp', manualDraft = {}, enabled = false } = {}) {
+  if (!enabled) return {}
+  const normalizedPacketType = normalizeText(packetType).toLowerCase()
+  if (normalizedPacketType === 'mandate') return buildMandateManualDocumentContext(manualDraft)
+  if (normalizedPacketType === 'otp') return buildOtpManualDocumentContext(manualDraft)
+  return {}
+}
+
+function firstDocumentRunText(...values) {
+  return values.map((value) => normalizeText(value)).find(Boolean) || ''
+}
+
+function getDocumentPickerContactName(contact = {}) {
+  return firstDocumentRunText(
+    contact.name,
+    contact.fullName,
+    [contact.firstName, contact.lastName].map(normalizeText).filter(Boolean).join(' '),
+    contact.email,
+    contact.phone,
+  )
+}
+
+function buildDocumentClientLinkOptions(snapshot = {}) {
+  const contacts = Array.isArray(snapshot.contacts) ? snapshot.contacts : []
+  const leads = Array.isArray(snapshot.leads) ? snapshot.leads : []
+  const contactById = new Map(contacts.map((contact) => [normalizeText(contact.contactId || contact.contact_id || contact.id), contact]).filter(([id]) => id))
+  const leadOptions = leads.slice(0, 50).map((lead) => {
+    const contact = contactById.get(normalizeText(lead.contactId || lead.contact_id)) || {}
+    const contactName = getDocumentPickerContactName(contact)
+    const leadCategory = normalizeText(lead.leadCategory || lead.lead_category || lead.category || '').toLowerCase()
+    const label = firstDocumentRunText(
+      contactName,
+      lead.name,
+      lead.sellerName,
+      lead.enquiredPropertyTitle,
+      lead.propertyInterest,
+      'Saved lead',
+    )
+    const propertyAddress = firstDocumentRunText(
+      lead.enquiredPropertyAddress,
+      lead.sellerPropertyAddress,
+      lead.formattedAddress,
+      lead.streetAddress,
+      lead.propertyInterest,
+    )
+    const price = lead.enquiredPropertyPrice ?? lead.estimatedValue ?? lead.budget ?? ''
+    return {
+      key: `lead:${normalizeText(lead.leadId || lead.lead_id || lead.id)}`,
+      kind: 'lead',
+      label,
+      helper: [
+        leadCategory ? `${leadCategory} lead` : 'lead',
+        contact.email,
+        propertyAddress,
+      ].map(normalizeText).filter(Boolean).join(' · '),
+      leadId: normalizeText(lead.leadId || lead.lead_id || lead.id),
+      contactId: normalizeText(contact.contactId || contact.contact_id || contact.id || lead.contactId || lead.contact_id),
+      mandateDraftPatch: compactDocumentRunObject({
+        sellerFullName: contactName || lead.sellerName,
+        sellerEmail: contact.email || lead.sellerEmail || lead.email,
+        sellerPhone: contact.phone || lead.sellerPhone || lead.phone,
+        propertyAddress,
+        propertySuburb: lead.suburb,
+        propertyCity: lead.city,
+        askingPrice: price ? String(price) : '',
+      }),
+      otpDraftPatch: compactDocumentRunObject({
+        buyerFullName: contactName,
+        buyerEmail: contact.email || lead.email,
+        buyerPhone: contact.phone || lead.phone,
+        propertyAddress,
+        propertySuburb: lead.suburb,
+        propertyCity: lead.city,
+        purchasePrice: price ? String(price) : '',
+      }),
+    }
+  }).filter((option) => option.leadId || option.contactId)
+
+  const leadContactIds = new Set(leadOptions.map((option) => normalizeText(option.contactId)).filter(Boolean))
+  const contactOptions = contacts
+    .filter((contact) => !leadContactIds.has(normalizeText(contact.contactId || contact.contact_id || contact.id)))
+    .slice(0, 30)
+    .map((contact) => {
+      const contactName = getDocumentPickerContactName(contact)
+      return {
+        key: `contact:${normalizeText(contact.contactId || contact.contact_id || contact.id)}`,
+        kind: 'contact',
+        label: contactName || 'Saved contact',
+        helper: [contact.contactType || contact.contact_type || 'contact', contact.email, contact.phone].map(normalizeText).filter(Boolean).join(' · '),
+        leadId: '',
+        contactId: normalizeText(contact.contactId || contact.contact_id || contact.id),
+        mandateDraftPatch: compactDocumentRunObject({
+          sellerFullName: contactName,
+          sellerEmail: contact.email,
+          sellerPhone: contact.phone,
+        }),
+        otpDraftPatch: compactDocumentRunObject({
+          buyerFullName: contactName,
+          buyerEmail: contact.email,
+          buyerPhone: contact.phone,
+        }),
+      }
+    })
+
+  return [...leadOptions, ...contactOptions]
+}
+
+function buildDocumentPropertyLinkOptions(listings = []) {
+  return (Array.isArray(listings) ? listings : []).slice(0, 50).map((listing) => {
+    const listingId = normalizeText(listing.id || listing.privateListingId || listing.private_listing_id)
+    const propertyAddress = firstDocumentRunText(
+      listing.propertyAddress,
+      listing.addressLine1,
+      listing.address_line_1,
+      listing.title,
+    )
+    const price = listing.askingPrice || listing.asking_price || listing.estimatedValue || ''
+    return {
+      key: `listing:${listingId}`,
+      kind: 'listing',
+      label: firstDocumentRunText(listing.title, propertyAddress, listing.listingReference, 'Saved property'),
+      helper: [
+        propertyAddress,
+        listing.suburb,
+        listing.listingStatus || listing.status,
+      ].map(normalizeText).filter(Boolean).join(' · '),
+      privateListingId: listingId,
+      leadId: normalizeText(listing.sellerLeadId || listing.seller_lead_id),
+      mandatePacketId: normalizeText(listing.mandatePacketId || listing.mandate_packet_id),
+      mandateDraftPatch: compactDocumentRunObject({
+        propertyAddress,
+        propertySuburb: listing.suburb,
+        propertyCity: listing.city,
+        propertyType: listing.propertyType || listing.property_type,
+        unitNumber: listing.unitNumber || listing.unit_number,
+        complexName: listing.complexName || listing.complex_name,
+        erfNumber: listing.erfNumber || listing.erf_number,
+        askingPrice: price ? String(price) : '',
+        mandateType: listing.mandateType || listing.mandate_type,
+      }),
+      otpDraftPatch: compactDocumentRunObject({
+        propertyAddress,
+        propertySuburb: listing.suburb,
+        propertyCity: listing.city,
+        propertyType: listing.propertyType || listing.property_type,
+        unitNumber: listing.unitNumber || listing.unit_number,
+        complexName: listing.complexName || listing.complex_name,
+        erfNumber: listing.erfNumber || listing.erf_number,
+        purchasePrice: price ? String(price) : '',
+      }),
+    }
+  }).filter((option) => option.privateListingId)
+}
+
+function createDefaultDocumentRunForm(packetType = 'otp', templateLabel = '', options = {}) {
   const normalizedPacketType = normalizeText(packetType).toLowerCase()
   const sourceType = normalizedPacketType === 'mandate' ? 'lead' : 'transaction'
+  const documentKindOption = getDocumentKindOption(options.documentKind || options.document_kind || 'standard')
+  const addendumConfig = getAddendumDetailConfig(options.addendumType || options.addendum_type || options.starter_template || options.starterTemplate)
+  const title = templateLabel
+    ? documentKindOption.key === 'standard'
+      ? `${templateLabel} document run`
+      : `${documentKindOption.label} - ${templateLabel}`
+    : documentKindOption.key === 'standard'
+      ? 'New document run'
+      : `New ${documentKindOption.label.toLowerCase()}`
   return {
-    documentKind: 'standard',
+    documentKind: documentKindOption.key,
     sourceType,
+    documentStart: DOCUMENT_START_ENTRY_POINTS.documentLibraryDocument,
+    documentStartSourceMode: '',
     transactionId: '',
     leadId: '',
     contactId: '',
     dealId: '',
     unitId: '',
-    title: templateLabel ? `${templateLabel} document run` : 'New document run',
+    privateListingId: '',
+    linkedClientKey: '',
+    linkedPropertyKey: '',
+    parentDocumentId: '',
+    parentDocumentReference: '',
+    documentChangeSummary: '',
+    addendumType: addendumConfig.key,
+    addendumDetails: {},
+    manualDraftType: normalizedPacketType,
+    manualDraft: createDefaultManualDocumentDraft(normalizedPacketType),
+    title,
     useSampleFallback: false,
     contextJson: '',
   }
@@ -2214,19 +3484,81 @@ function buildDocumentRunPayload({
   const sourceType = normalizeText(runForm.sourceType || 'transaction').toLowerCase()
   const documentKind = getDocumentKindOption(runForm.documentKind).key
   const documentKindLabel = getDocumentKindOption(documentKind).label
+  const documentStart = normalizeText(runForm.documentStart || DOCUMENT_START_ENTRY_POINTS.documentLibraryDocument)
   const transactionId = normalizeRunReference(runForm.transactionId)
   const leadId = normalizeRunReference(runForm.leadId)
   const contactId = normalizeRunReference(runForm.contactId)
   const dealId = normalizeRunReference(runForm.dealId)
   const unitId = normalizeRunReference(runForm.unitId)
+  const privateListingId = normalizeRunReference(runForm.privateListingId)
+  const linkedClientKey = normalizeText(runForm.linkedClientKey)
+  const linkedPropertyKey = normalizeText(runForm.linkedPropertyKey)
+  const parentDocumentId = normalizeRunReference(runForm.parentDocumentId)
+  const parentDocumentReference = normalizeText(runForm.parentDocumentReference)
+  const documentChangeSummary = normalizeText(runForm.documentChangeSummary)
   const contextOverrides = parseDocumentRunContextJson(runForm.contextJson)
   const sampleFallback = runForm.useSampleFallback ? buildSamplePreviewContext(packetType) : {}
   const sourceContextOverrides = contextOverrides.sourceContext && typeof contextOverrides.sourceContext === 'object'
     ? contextOverrides.sourceContext
     : {}
+  const inferredStartSourceMode = sourceType === 'manual'
+    ? DOCUMENT_START_SOURCE_MODES.manual
+    : DOCUMENT_START_SOURCE_MODES.saved
+  const requestedStartSourceMode = normalizeText(
+    runForm.documentStartSourceMode ||
+      sourceContextOverrides.sourceMode ||
+      sourceContextOverrides.source_mode ||
+      inferredStartSourceMode,
+  )
+  const documentStartSourceMode = sourceType === 'manual'
+    ? DOCUMENT_START_SOURCE_MODES.manual
+    : requestedStartSourceMode || inferredStartSourceMode
+  const manualDraft = runForm.manualDraft && typeof runForm.manualDraft === 'object'
+    ? runForm.manualDraft
+    : {}
+  const usesManualDraftContext = documentKind === 'standard' &&
+    ['otp', 'mandate'].includes(normalizeText(packetType).toLowerCase()) &&
+    (sourceType === 'manual' || documentStartSourceMode === DOCUMENT_START_SOURCE_MODES.manual)
+  const manualDocumentContext = buildManualDocumentRunContext({
+    packetType,
+    manualDraft,
+    enabled: usesManualDraftContext,
+  })
+  const addendumConfig = getAddendumDetailConfig(runForm.addendumType || sourceContextOverrides.addendumType || sourceContextOverrides.addendum_type)
+  const sourceAddendumDetails = sourceContextOverrides.addendumDetails && typeof sourceContextOverrides.addendumDetails === 'object'
+    ? sourceContextOverrides.addendumDetails
+    : sourceContextOverrides.addendum_details && typeof sourceContextOverrides.addendum_details === 'object'
+      ? sourceContextOverrides.addendum_details
+      : sourceContextOverrides
+  const addendumDetails = {
+    ...normalizeAddendumRunDetails(addendumConfig.key, sourceAddendumDetails),
+    ...normalizeAddendumRunDetails(addendumConfig.key, runForm.addendumDetails),
+  }
+  const addendumSpecialConditions = normalizeText(addendumDetails.special_conditions || addendumDetails.suspensive_conditions || documentChangeSummary)
+  const mandateDraftOverrides = contextOverrides.mandateDraft && typeof contextOverrides.mandateDraft === 'object'
+    ? contextOverrides.mandateDraft
+    : {}
+  const mandateDataOverrides = contextOverrides.mandateData && typeof contextOverrides.mandateData === 'object'
+    ? contextOverrides.mandateData
+    : {}
+  const sourceConditionsOverrides = sourceContextOverrides.conditions && typeof sourceContextOverrides.conditions === 'object'
+    ? sourceContextOverrides.conditions
+    : {}
   const sourceContext = {
     ...sourceContextOverrides,
+    ...(manualDocumentContext.sourceContext || {}),
+    ...addendumDetails,
     sourceType,
+    documentStart,
+    document_start: documentStart,
+    sourceMode: documentStartSourceMode,
+    source_mode: documentStartSourceMode,
+    standaloneDocumentStart: sourceType === 'manual' && !transactionId && !leadId && !dealId && !unitId && !privateListingId,
+    standalone_document_start: sourceType === 'manual' && !transactionId && !leadId && !dealId && !unitId && !privateListingId,
+    linkedClientKey,
+    linked_client_key: linkedClientKey,
+    linkedPropertyKey,
+    linked_property_key: linkedPropertyKey,
     transactionId: transactionId || sourceContextOverrides.transactionId || sourceContextOverrides.transaction_id || '',
     transaction_id: transactionId || sourceContextOverrides.transaction_id || sourceContextOverrides.transactionId || '',
     leadId: leadId || sourceContextOverrides.leadId || sourceContextOverrides.lead_id || '',
@@ -2237,6 +3569,30 @@ function buildDocumentRunPayload({
     deal_id: dealId || sourceContextOverrides.deal_id || sourceContextOverrides.dealId || '',
     unitId: unitId || sourceContextOverrides.unitId || sourceContextOverrides.unit_id || '',
     unit_id: unitId || sourceContextOverrides.unit_id || sourceContextOverrides.unitId || '',
+    privateListingId: privateListingId || sourceContextOverrides.privateListingId || sourceContextOverrides.private_listing_id || '',
+    private_listing_id: privateListingId || sourceContextOverrides.private_listing_id || sourceContextOverrides.privateListingId || '',
+    parentDocumentId: parentDocumentId || sourceContextOverrides.parentDocumentId || sourceContextOverrides.parent_document_id || '',
+    parent_document_id: parentDocumentId || sourceContextOverrides.parent_document_id || sourceContextOverrides.parentDocumentId || '',
+    linkedDocumentId: parentDocumentId || sourceContextOverrides.linkedDocumentId || sourceContextOverrides.linked_document_id || '',
+    linked_document_id: parentDocumentId || sourceContextOverrides.linked_document_id || sourceContextOverrides.linkedDocumentId || '',
+    parentDocumentReference: parentDocumentReference || sourceContextOverrides.parentDocumentReference || sourceContextOverrides.parent_document_reference || '',
+    parent_document_reference: parentDocumentReference || sourceContextOverrides.parent_document_reference || sourceContextOverrides.parentDocumentReference || '',
+    documentChangeSummary: documentChangeSummary || sourceContextOverrides.documentChangeSummary || sourceContextOverrides.document_change_summary || '',
+    document_change_summary: documentChangeSummary || sourceContextOverrides.document_change_summary || sourceContextOverrides.documentChangeSummary || '',
+    addendumType: addendumConfig.key,
+    addendum_type: addendumConfig.key,
+    addendumLabel: addendumConfig.label,
+    addendum_label: addendumConfig.label,
+    addendumDetails,
+    addendum_details: addendumDetails,
+    conditions: {
+      ...sourceConditionsOverrides,
+      ...(addendumDetails.occupation_date ? { occupation_date: addendumDetails.occupation_date, occupationDate: addendumDetails.occupation_date } : {}),
+      ...(addendumDetails.transfer_date ? { transfer_date: addendumDetails.transfer_date, transferDate: addendumDetails.transfer_date } : {}),
+      ...(addendumDetails.suspensive_conditions ? { suspensive_conditions: addendumDetails.suspensive_conditions, suspensiveConditions: addendumDetails.suspensive_conditions } : {}),
+    },
+    documentRelationship: documentKind === 'standard' ? 'primary' : documentKind,
+    document_relationship: documentKind === 'standard' ? 'primary' : documentKind,
     documentKind,
     document_kind: documentKind,
     documentKindLabel,
@@ -2244,7 +3600,16 @@ function buildDocumentRunPayload({
     contractStudioRun: {
       generatedFrom: 'contract_studio_phase_6',
       sourceType,
+      sourceMode: documentStartSourceMode,
+      documentStart,
       documentKind,
+      parentDocumentId,
+      parentDocumentReference,
+      linkedClientKey,
+      linkedPropertyKey,
+      privateListingId,
+      addendumType: addendumConfig.key,
+      addendumDetails,
       testedAt: new Date().toISOString(),
       templateId: selectedTemplate?.id || templateDetail?.id || '',
     },
@@ -2255,12 +3620,27 @@ function buildDocumentRunPayload({
     transaction: {
       ...(sampleFallback.transaction && typeof sampleFallback.transaction === 'object' ? sampleFallback.transaction : {}),
       ...(contextOverrides.transaction && typeof contextOverrides.transaction === 'object' ? contextOverrides.transaction : {}),
+      ...(manualDocumentContext.transaction && typeof manualDocumentContext.transaction === 'object' ? manualDocumentContext.transaction : {}),
+      ...addendumDetails,
       ...(transactionId ? { id: transactionId, transaction_id: transactionId } : {}),
     },
     lead: {
       ...(sampleFallback.lead && typeof sampleFallback.lead === 'object' ? sampleFallback.lead : {}),
       ...(contextOverrides.lead && typeof contextOverrides.lead === 'object' ? contextOverrides.lead : {}),
+      ...(manualDocumentContext.lead && typeof manualDocumentContext.lead === 'object' ? manualDocumentContext.lead : {}),
       ...(leadId ? { id: leadId, lead_id: leadId } : {}),
+    },
+    buyer: {
+      ...(sampleFallback.buyer && typeof sampleFallback.buyer === 'object' ? sampleFallback.buyer : {}),
+      ...(contextOverrides.buyer && typeof contextOverrides.buyer === 'object' ? contextOverrides.buyer : {}),
+      ...(manualDocumentContext.buyer && typeof manualDocumentContext.buyer === 'object' ? manualDocumentContext.buyer : {}),
+    },
+    sellerDetails: {
+      ...(sampleFallback.sellerDetails && typeof sampleFallback.sellerDetails === 'object' ? sampleFallback.sellerDetails : {}),
+      ...(sampleFallback.seller_details && typeof sampleFallback.seller_details === 'object' ? sampleFallback.seller_details : {}),
+      ...(contextOverrides.sellerDetails && typeof contextOverrides.sellerDetails === 'object' ? contextOverrides.sellerDetails : {}),
+      ...(contextOverrides.seller_details && typeof contextOverrides.seller_details === 'object' ? contextOverrides.seller_details : {}),
+      ...(manualDocumentContext.sellerDetails && typeof manualDocumentContext.sellerDetails === 'object' ? manualDocumentContext.sellerDetails : {}),
     },
     contact: {
       ...(sampleFallback.contact && typeof sampleFallback.contact === 'object' ? sampleFallback.contact : {}),
@@ -2272,11 +3652,73 @@ function buildDocumentRunPayload({
       ...(contextOverrides.unit && typeof contextOverrides.unit === 'object' ? contextOverrides.unit : {}),
       ...(unitId ? { id: unitId, unit_id: unitId } : {}),
     },
+    privateListing: {
+      ...(sampleFallback.privateListing && typeof sampleFallback.privateListing === 'object' ? sampleFallback.privateListing : {}),
+      ...(sampleFallback.private_listing && typeof sampleFallback.private_listing === 'object' ? sampleFallback.private_listing : {}),
+      ...(contextOverrides.privateListing && typeof contextOverrides.privateListing === 'object' ? contextOverrides.privateListing : {}),
+      ...(contextOverrides.private_listing && typeof contextOverrides.private_listing === 'object' ? contextOverrides.private_listing : {}),
+      ...(privateListingId ? { id: privateListingId, private_listing_id: privateListingId } : {}),
+    },
+    private_listing: {
+      ...(sampleFallback.private_listing && typeof sampleFallback.private_listing === 'object' ? sampleFallback.private_listing : {}),
+      ...(sampleFallback.privateListing && typeof sampleFallback.privateListing === 'object' ? sampleFallback.privateListing : {}),
+      ...(contextOverrides.private_listing && typeof contextOverrides.private_listing === 'object' ? contextOverrides.private_listing : {}),
+      ...(contextOverrides.privateListing && typeof contextOverrides.privateListing === 'object' ? contextOverrides.privateListing : {}),
+      ...(privateListingId ? { id: privateListingId, private_listing_id: privateListingId } : {}),
+    },
+    onboardingFormData: {
+      ...(sampleFallback.onboardingFormData && typeof sampleFallback.onboardingFormData === 'object' ? sampleFallback.onboardingFormData : {}),
+      ...(contextOverrides.onboardingFormData && typeof contextOverrides.onboardingFormData === 'object' ? contextOverrides.onboardingFormData : {}),
+      ...(manualDocumentContext.onboardingFormData && typeof manualDocumentContext.onboardingFormData === 'object' ? manualDocumentContext.onboardingFormData : {}),
+      ...addendumDetails,
+      ...(addendumDetails.occupation_date ? { occupationDate: addendumDetails.occupation_date } : {}),
+      ...(addendumDetails.transfer_date ? { transferDate: addendumDetails.transfer_date } : {}),
+    },
+    mandateDraft: {
+      ...(sampleFallback.mandateDraft && typeof sampleFallback.mandateDraft === 'object' ? sampleFallback.mandateDraft : {}),
+      ...mandateDraftOverrides,
+      ...(manualDocumentContext.mandateDraft && typeof manualDocumentContext.mandateDraft === 'object' ? manualDocumentContext.mandateDraft : {}),
+      ...addendumDetails,
+      ...(addendumSpecialConditions ? { specialConditions: addendumSpecialConditions } : {}),
+      ...(addendumDetails.annexures_list ? { annexuresList: addendumDetails.annexures_list } : {}),
+    },
+    mandateData: {
+      ...(sampleFallback.mandateData && typeof sampleFallback.mandateData === 'object' ? sampleFallback.mandateData : {}),
+      ...mandateDataOverrides,
+      ...(manualDocumentContext.mandateData && typeof manualDocumentContext.mandateData === 'object' ? manualDocumentContext.mandateData : {}),
+      ...(addendumDetails.purchase_price ? { askingPrice: addendumDetails.purchase_price, purchasePrice: addendumDetails.purchase_price } : {}),
+      ...(addendumSpecialConditions ? { specialConditions: addendumSpecialConditions } : {}),
+      ...(addendumDetails.annexures_list ? { annexuresList: addendumDetails.annexures_list } : {}),
+      sourceContext,
+    },
+    otpDraft: {
+      ...(sampleFallback.otpDraft && typeof sampleFallback.otpDraft === 'object' ? sampleFallback.otpDraft : {}),
+      ...(contextOverrides.otpDraft && typeof contextOverrides.otpDraft === 'object' ? contextOverrides.otpDraft : {}),
+      ...(manualDocumentContext.otpDraft && typeof manualDocumentContext.otpDraft === 'object' ? manualDocumentContext.otpDraft : {}),
+    },
+    generatedDataSnapshot: {
+      ...(sampleFallback.generatedDataSnapshot && typeof sampleFallback.generatedDataSnapshot === 'object' ? sampleFallback.generatedDataSnapshot : {}),
+      ...(contextOverrides.generatedDataSnapshot && typeof contextOverrides.generatedDataSnapshot === 'object' ? contextOverrides.generatedDataSnapshot : {}),
+      ...(manualDocumentContext.generatedDataSnapshot && typeof manualDocumentContext.generatedDataSnapshot === 'object' ? manualDocumentContext.generatedDataSnapshot : {}),
+    },
+    specialConditions: addendumSpecialConditions || manualDocumentContext.specialConditions || contextOverrides.specialConditions || sampleFallback.specialConditions || '',
     sourceContext,
     documentRun: {
       sourceType,
+      sourceMode: documentStartSourceMode,
+      documentStart,
       documentKind,
       documentKindLabel,
+      manualDraftCaptured: Boolean(usesManualDraftContext),
+      linkedClientKey,
+      linkedPropertyKey,
+      privateListingId,
+      parentDocumentId,
+      parentDocumentReference,
+      documentChangeSummary,
+      addendumType: addendumConfig.key,
+      addendumLabel: addendumConfig.label,
+      addendumDetails,
       title: normalizeText(runForm.title),
       createdFromStudio: true,
     },
@@ -2307,6 +3749,9 @@ function buildDocumentRunPayload({
       contactId,
       dealId,
       unitId,
+      privateListingId,
+      parentDocumentId,
+      addendumType: addendumConfig.key,
     },
   }
 }
@@ -2315,6 +3760,29 @@ function getPacketSourceContext(packet = {}) {
   return packet?.source_context_json && typeof packet.source_context_json === 'object'
     ? packet.source_context_json
     : {}
+}
+
+function getAddendumGenerationReadinessForPacket(packet = {}) {
+  const review = buildAddendumDocumentReviewSummary(getPacketSourceContext(packet))
+  if (!review.visible) {
+    return {
+      ready: true,
+      items: [],
+      capturedDetailCount: 0,
+    }
+  }
+  const addendumConfig = getAddendumDetailConfig(review.addendumType)
+  return getDocumentRunReadiness({
+    documentRunForm: {
+      documentKind: review.documentKind,
+      parentDocumentId: review.parentDocumentId,
+      parentDocumentReference: review.parentDocumentReference,
+      documentChangeSummary: review.documentChangeSummary,
+      addendumType: review.addendumType,
+      addendumDetails: review.manifest?.details || {},
+    },
+    addendumDetailFields: addendumConfig.fields,
+  })
 }
 
 function buildDocumentRunContextFromPacket(packet = {}) {
@@ -2330,6 +3798,14 @@ function buildDocumentRunContextFromPacket(packet = {}) {
   const contactId = normalizeText(packet?.contact_id || sourceContext.contactId || sourceContext.contact_id)
   const dealId = normalizeText(packet?.deal_id || sourceContext.dealId || sourceContext.deal_id)
   const unitId = normalizeText(packet?.unit_id || sourceContext.unitId || sourceContext.unit_id)
+  const privateListingId = normalizeText(sourceContext.privateListingId || sourceContext.private_listing_id)
+  const documentKind = getDocumentKindOption(sourceContext.documentKind || sourceContext.document_kind).key
+  const documentKindLabel = getDocumentKindOption(documentKind).label
+  const parentDocumentId = normalizeText(sourceContext.parentDocumentId || sourceContext.parent_document_id || sourceContext.linkedDocumentId || sourceContext.linked_document_id)
+  const parentDocumentReference = normalizeText(sourceContext.parentDocumentReference || sourceContext.parent_document_reference)
+  const documentChangeSummary = normalizeText(sourceContext.documentChangeSummary || sourceContext.document_change_summary)
+  const addendumType = getAddendumDetailConfig(sourceContext.addendumType || sourceContext.addendum_type).key
+  const addendumDetails = normalizeAddendumRunDetails(addendumType, sourceContext.addendumDetails || sourceContext.addendum_details || sourceContext)
   return {
     transactionId,
     leadId,
@@ -2340,9 +3816,20 @@ function buildDocumentRunContextFromPacket(packet = {}) {
     lead: leadId ? { id: leadId, lead_id: leadId } : {},
     contact: contactId ? { id: contactId, contact_id: contactId } : {},
     unit: unitId ? { id: unitId, unit_id: unitId } : {},
+    privateListing: privateListingId ? { id: privateListingId, private_listing_id: privateListingId } : {},
+    private_listing: privateListingId ? { id: privateListingId, private_listing_id: privateListingId } : {},
     sourceContext: nestedSource,
     documentRun: {
       sourceType: sourceContext.sourceType || (transactionId ? 'transaction' : leadId ? 'lead' : 'manual'),
+      documentKind,
+      documentKindLabel,
+      parentDocumentId,
+      parentDocumentReference,
+      documentChangeSummary,
+      privateListingId,
+      addendumType,
+      addendumLabel: getAddendumDetailConfig(addendumType).label,
+      addendumDetails,
       title: packet?.title || '',
       createdFromStudio: Boolean(sourceContext.contractStudioRun || sourceContext.contractStudioPreviewContext),
     },
@@ -2764,6 +4251,15 @@ export default function SettingsSigningTemplatesPage({
 } = {}) {
   const { role, currentMembership, currentWorkspace, workspaceType } = useWorkspace()
   const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
+  const resolvedOrganisationId = normalizeText(
+    currentWorkspace?.id ||
+      currentWorkspace?.organisationId ||
+      currentWorkspace?.organisation_id ||
+      currentMembership?.workspaceId ||
+      currentMembership?.workspace_id ||
+      currentMembership?.organisationId ||
+      currentMembership?.organisation_id,
+  )
   const workspaceMembershipRole = useMemo(() => {
     const rawRole = normalizeText(
       currentMembership?.workspaceRole ||
@@ -2804,6 +4300,7 @@ export default function SettingsSigningTemplatesPage({
   const [documentPacketsLoading, setDocumentPacketsLoading] = useState(false)
   const [packetDetailLoading, setPacketDetailLoading] = useState(false)
   const [signingSummaryLoading, setSigningSummaryLoading] = useState(false)
+  const [documentLibraryStartOpen, setDocumentLibraryStartOpen] = useState(false)
   const [packetActionId, setPacketActionId] = useState('')
   const [savingPlaceholder, setSavingPlaceholder] = useState('')
   const [error, setError] = useState('')
@@ -2822,6 +4319,9 @@ export default function SettingsSigningTemplatesPage({
   const [templateDetail, setTemplateDetail] = useState(null)
   const [form, setForm] = useState(toTemplateForm(null))
   const [documentRunForm, setDocumentRunForm] = useState(createDefaultDocumentRunForm(defaultPacketType))
+  const [documentLinkOptions, setDocumentLinkOptions] = useState({ clients: [], properties: [] })
+  const [documentLinkOptionsLoading, setDocumentLinkOptionsLoading] = useState(false)
+  const [documentLinkOptionsError, setDocumentLinkOptionsError] = useState('')
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [placeholderForm, setPlaceholderForm] = useState({
     placeholderKey: '',
@@ -2855,6 +4355,37 @@ export default function SettingsSigningTemplatesPage({
   const visibleDescription = normalizedModuleType === 'agency'
     ? "Manage the documents used in your agency's transactions."
     : description
+  const loadDocumentLinkOptions = useCallback(async () => {
+    if (!resolvedOrganisationId) {
+      setDocumentLinkOptions({ clients: [], properties: [] })
+      setDocumentLinkOptionsError('')
+      return
+    }
+
+    setDocumentLinkOptionsLoading(true)
+    setDocumentLinkOptionsError('')
+
+    const [crmResult, listingsResult] = await Promise.allSettled([
+      listAgencyCrmLeadContacts(resolvedOrganisationId),
+      getOrganisationPrivateListings(resolvedOrganisationId, { includeRequirementsAndDocuments: false }),
+    ])
+
+    const crmSnapshot = crmResult.status === 'fulfilled' ? crmResult.value || {} : {}
+    const listings = listingsResult.status === 'fulfilled' ? listingsResult.value || [] : []
+    setDocumentLinkOptions({
+      clients: buildDocumentClientLinkOptions(crmSnapshot),
+      properties: buildDocumentPropertyLinkOptions(listings),
+    })
+
+    if (crmResult.status === 'rejected' || listingsResult.status === 'rejected') {
+      setDocumentLinkOptionsError('Some saved records could not be loaded. You can still enter the details manually.')
+    }
+    setDocumentLinkOptionsLoading(false)
+  }, [resolvedOrganisationId])
+
+  useEffect(() => {
+    void loadDocumentLinkOptions()
+  }, [loadDocumentLinkOptions])
 
   const loadTemplatesAndRegistry = useCallback(async ({
     targetPacketType = defaultPacketType,
@@ -3113,6 +4644,10 @@ export default function SettingsSigningTemplatesPage({
   const selectedTemplate = useMemo(
     () => selectedList.find((item) => item.id === selectedTemplateId) || null,
     [selectedList, selectedTemplateId],
+  )
+  const defaultAddendumTemplate = useMemo(
+    () => getPreferredAddendumTemplateForType(selectedList),
+    [selectedList],
   )
   const baselineForm = useMemo(
     () => (templateDetail ? toTemplateForm(templateDetail) : null),
@@ -3464,6 +4999,10 @@ export default function SettingsSigningTemplatesPage({
       detail: 'Completed or signed documents for this document type.',
     },
   ]), [documentPackets])
+  const documentPacketRelationshipMap = useMemo(
+    () => buildDocumentPacketRelationshipMap(documentPackets),
+    [documentPackets],
+  )
   const selectedLibraryPacket = useMemo(
     () => selectedLibraryPacketDetail || documentPackets.find((packet) => packet.id === selectedLibraryPacketId) || null,
     [documentPackets, selectedLibraryPacketDetail, selectedLibraryPacketId],
@@ -3478,6 +5017,14 @@ export default function SettingsSigningTemplatesPage({
     () => normalizeText(selectedLibraryPacketSourceContext.documentKindLabel || selectedLibraryPacketSourceContext.document_kind_label)
       || getDocumentKindOption(selectedLibraryPacketSourceContext.documentKind || selectedLibraryPacketSourceContext.document_kind).label,
     [selectedLibraryPacketSourceContext],
+  )
+  const selectedLibraryPacketAddendumReview = useMemo(
+    () => buildAddendumDocumentReviewSummary(selectedLibraryPacketSourceContext),
+    [selectedLibraryPacketSourceContext],
+  )
+  const selectedLibraryPacketRelationship = useMemo(
+    () => documentPacketRelationshipMap.get(normalizeText(selectedLibraryPacket?.id)) || null,
+    [documentPacketRelationshipMap, selectedLibraryPacket?.id],
   )
   const selectedLibraryPacketVersions = useMemo(
     () => (Array.isArray(selectedLibraryPacketDetail?.versions) ? selectedLibraryPacketDetail.versions : []),
@@ -3545,6 +5092,14 @@ export default function SettingsSigningTemplatesPage({
         leadId: normalizeText(selectedLibraryPacket.lead_id || sourceContext.leadId || sourceContext.lead_id),
         dealId: normalizeText(selectedLibraryPacket.deal_id || sourceContext.dealId || sourceContext.deal_id),
         unitId: normalizeText(selectedLibraryPacket.unit_id || sourceContext.unitId || sourceContext.unit_id),
+        relatedDocument: selectedLibraryPacketAddendumReview.manifest,
+        relatedAddendums: (selectedLibraryPacketRelationship?.relatedAddendums || []).map(({ packet, review }) => ({
+          id: packet.id,
+          title: packet.title || packet.template_label_snapshot || 'Addendum',
+          status: normalizeText(packet.status).toLowerCase() || 'draft',
+          addendumType: review.addendumType,
+          label: review.label,
+        })),
       },
       artifacts: {
         generatedDocumentUrl: latestLibraryPacketArtifactUrl,
@@ -3575,6 +5130,8 @@ export default function SettingsSigningTemplatesPage({
     latestLibraryPacketVersion?.version_number,
     packetType,
     selectedLibraryPacket,
+    selectedLibraryPacketAddendumReview.manifest,
+    selectedLibraryPacketRelationship?.relatedAddendums,
     selectedLibraryPacketEvents,
     selectedPacketSigningSummary,
     selectedTemplate?.template_label,
@@ -3665,16 +5222,144 @@ export default function SettingsSigningTemplatesPage({
 
   useEffect(() => {
     setDocumentRunForm((previous) => {
-      const nextDefault = createDefaultDocumentRunForm(packetType, form.templateLabel || selectedTemplate?.template_label || templateTypeConfig?.label || '')
-      if (previous.sourceType && previous.title && previous.sourceType === nextDefault.sourceType) {
+      const templateMetadata = form.metadataJson || selectedTemplate?.metadata_json || {}
+      const preferredDocumentKind = getTemplatePreferredDocumentKind({
+        metadata_json: templateMetadata,
+      })
+      const preferredAddendumType = getTemplateAddendumType({ metadata_json: templateMetadata })
+      const nextDefault = createDefaultDocumentRunForm(
+        packetType,
+        form.templateLabel || selectedTemplate?.template_label || templateTypeConfig?.label || '',
+        { documentKind: preferredDocumentKind, addendumType: preferredAddendumType },
+      )
+      const shouldPreserveExistingRun = previous.sourceType &&
+        previous.title &&
+        previous.documentKind === nextDefault.documentKind &&
+        previous.addendumType === nextDefault.addendumType &&
+        previous.manualDraftType === nextDefault.manualDraftType &&
+        (
+          previous.sourceType === nextDefault.sourceType ||
+          normalizeText(previous.parentDocumentId || previous.parentDocumentReference)
+        )
+      if (shouldPreserveExistingRun) {
         return previous
       }
       return {
         ...nextDefault,
-        title: previous.title || nextDefault.title,
+        title: previous.documentKind === nextDefault.documentKind ? previous.title || nextDefault.title : nextDefault.title,
+        addendumDetails: previous.addendumType === nextDefault.addendumType ? previous.addendumDetails || {} : {},
+        manualDraftType: nextDefault.manualDraftType,
+        manualDraft: previous.documentKind === nextDefault.documentKind && previous.manualDraftType === nextDefault.manualDraftType
+          ? previous.manualDraft || nextDefault.manualDraft
+          : nextDefault.manualDraft,
       }
     })
-  }, [form.templateLabel, packetType, selectedTemplate?.template_label, templateTypeConfig?.label])
+  }, [form.metadataJson, form.templateLabel, packetType, selectedTemplate?.metadata_json, selectedTemplate?.template_label, templateTypeConfig?.label])
+
+  const documentLibraryStartDocumentKind = getDocumentKindOption(documentRunForm.documentKind).key
+  const documentLibraryStartHasParentDocument = Boolean(
+    normalizeText(documentRunForm.parentDocumentId || documentRunForm.parentDocumentReference),
+  )
+  const documentLibraryStartHasExistingContext = Boolean(
+    normalizeText(
+      documentRunForm.transactionId ||
+        documentRunForm.leadId ||
+        documentRunForm.contactId ||
+        documentRunForm.dealId ||
+        documentRunForm.unitId ||
+        documentRunForm.privateListingId ||
+        documentRunForm.parentDocumentId ||
+        documentRunForm.parentDocumentReference,
+    ),
+  )
+  const documentLibraryStartSummary = useMemo(() => ([
+    {
+      label: 'Template',
+      value: form.templateLabel || selectedTemplate?.template_label || selectedTemplate?.templateLabel || templateTypeConfig?.label || 'Selected template',
+    },
+    {
+      label: 'Document type',
+      value: getDocumentKindOption(documentRunForm.documentKind).label,
+    },
+    {
+      label: 'Source',
+      value: documentLibraryStartHasExistingContext
+        ? DOCUMENT_RUN_SOURCE_OPTIONS.find((option) => option.key === documentRunForm.sourceType)?.label || 'Saved details'
+        : 'Manual / standalone',
+    },
+    {
+      label: 'Library',
+      value: templateTypeConfig?.label || packetType.toUpperCase(),
+    },
+  ]), [
+    documentLibraryStartHasExistingContext,
+    documentRunForm.documentKind,
+    documentRunForm.sourceType,
+    form.templateLabel,
+    packetType,
+    selectedTemplate?.templateLabel,
+    selectedTemplate?.template_label,
+    templateTypeConfig?.label,
+  ])
+
+  function openDocumentLibraryStart() {
+    if (!selectedTemplate) {
+      setError('Choose a template before creating a document.')
+      setActiveStudioArea('templates')
+      return
+    }
+    if (hasUnsavedChanges) {
+      setError('Save the selected template before creating a document from it.')
+      setActiveStudioArea('templates')
+      setActiveTab('template')
+      return
+    }
+    setError('')
+    setDocumentLibraryStartOpen(true)
+  }
+
+  function handleStartDocumentLibraryDocument(selection = {}) {
+    const sourceMode = normalizeText(selection?.sourceMode || DOCUMENT_START_SOURCE_MODES.manual)
+    const useManualDetails = sourceMode === DOCUMENT_START_SOURCE_MODES.manual
+    setDocumentLibraryStartOpen(false)
+    setActiveStudioArea('documents')
+    setDocumentRunForm((previous) => {
+      const fallbackSourceType = packetType === 'mandate' ? 'lead' : 'transaction'
+      const nextManualDraftType = normalizeText(packetType).toLowerCase()
+      const nextManualDraft = previous.manualDraftType === nextManualDraftType
+        ? previous.manualDraft || createDefaultManualDocumentDraft(packetType)
+        : createDefaultManualDocumentDraft(packetType)
+      return {
+        ...previous,
+        documentStart: DOCUMENT_START_ENTRY_POINTS.documentLibraryDocument,
+        documentStartSourceMode: sourceMode,
+        sourceType: useManualDetails
+          ? 'manual'
+          : previous.sourceType === 'manual'
+            ? fallbackSourceType
+            : previous.sourceType || fallbackSourceType,
+        manualDraft: useManualDetails
+          ? nextManualDraft
+          : nextManualDraft,
+        manualDraftType: nextManualDraftType,
+        ...(useManualDetails
+          ? {
+              transactionId: '',
+              leadId: '',
+              contactId: '',
+              dealId: '',
+              unitId: '',
+              privateListingId: '',
+              linkedClientKey: '',
+              linkedPropertyKey: '',
+            }
+          : {}),
+      }
+    })
+    setMessage(useManualDetails
+      ? 'Standalone document start is ready. Fill the simple details panel, then preview or create the document.'
+      : 'Saved-details document start is ready. Confirm the linked IDs in More options, then create the document.')
+  }
 
   async function refreshAll() {
     await loadTemplatesAndRegistry({
@@ -3684,20 +5369,62 @@ export default function SettingsSigningTemplatesPage({
     await loadDocumentLibrary({ targetPacketType: packetType })
   }
 
-  async function handleCreateTemplate() {
+  function handleStartAddendumFromLibraryPacket(packet = selectedLibraryPacket, addendumType = GENERAL_ADDENDUM_TEMPLATE_FAMILY) {
+    const sourcePacket = packet || selectedLibraryPacket
+    if (!sourcePacket?.id) {
+      setError('Select a document before starting an addendum.')
+      return
+    }
+
+    const preferredTemplate = getPreferredAddendumTemplateForType(selectedList, addendumType)
+    if (!preferredTemplate?.id) {
+      setActiveStudioArea('templates')
+      setMessage('Create a General Addendum template first, then return to Documents to start the addendum.')
+      return
+    }
+
+    const resolvedAddendumType = getTemplateAddendumType(preferredTemplate)
+    const templateLabel = preferredTemplate.template_label || preferredTemplate.templateLabel || preferredTemplate.template_key || 'Addendum'
+    setSelectedTemplateId(preferredTemplate.id)
+    setSelectedLibraryPacketId(sourcePacket.id)
+    setDocumentRunForm(buildAddendumRunFormFromPacket({
+      packet: sourcePacket,
+      packetType,
+      templateLabel,
+      addendumType: resolvedAddendumType,
+    }))
+    setActiveStudioArea('documents')
+    setError('')
+    setMessage('Addendum details are prefilled from the selected document. Add the change summary, then create the addendum.')
+  }
+
+  async function handleCreateTemplate({ starterKind = 'standard' } = {}) {
     try {
       setCreatingTemplate(true)
       setError('')
       setMessage('')
 
       const timestamp = Date.now()
+      const addendumStarterConfig = getAddendumTemplateStarter(starterKind)
+      const isGeneralAddendumStarter = Boolean(addendumStarterConfig || starterKind === GENERAL_ADDENDUM_TEMPLATE_FAMILY)
+      const resolvedAddendumStarter = addendumStarterConfig || getAddendumTemplateStarter(GENERAL_ADDENDUM_TEMPLATE_FAMILY)
       const renderMode = getDefaultRenderMode(packetType)
+      const documentKindOption = getDocumentKindOption(isGeneralAddendumStarter ? 'addendum' : 'standard')
+      const starterSections = isGeneralAddendumStarter
+        ? createGeneralAddendumStarterSections(packetType, resolvedAddendumStarter.key)
+        : createStarterSections(packetType)
       const created = await createDocumentPacketTemplate({
         packetType,
         moduleType: normalizedModuleType,
-        templateKey: `${packetType}_template_${timestamp}`,
-        templateLabel: `${templateTypeConfig.shortLabel} Template ${new Date().toLocaleDateString()}`,
-        description: 'Draft legal template',
+        templateKey: isGeneralAddendumStarter
+          ? `${packetType}_${resolvedAddendumStarter.templateKeySegment}_${timestamp}`
+          : `${packetType}_template_${timestamp}`,
+        templateLabel: isGeneralAddendumStarter
+          ? `${templateTypeConfig.shortLabel} ${resolvedAddendumStarter.templateLabel}`
+          : `${templateTypeConfig.shortLabel} Template ${new Date().toLocaleDateString()}`,
+        description: isGeneralAddendumStarter
+          ? resolvedAddendumStarter.description
+          : 'Draft legal template',
         versionTag: 'v1',
         templateStatus: 'draft',
         templateFormat: getTemplateFormatForMode(renderMode),
@@ -3707,13 +5434,21 @@ export default function SettingsSigningTemplatesPage({
           lifecycle_status: 'draft',
           render_mode: renderMode,
           native_renderer_version: renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? NATIVE_RENDERER_VERSION : null,
+          starter_template: isGeneralAddendumStarter ? resolvedAddendumStarter.key : 'blank',
+          template_family: isGeneralAddendumStarter ? GENERAL_ADDENDUM_TEMPLATE_FAMILY : null,
+          addendum_type: isGeneralAddendumStarter ? resolvedAddendumStarter.key : null,
+          addendum_label: isGeneralAddendumStarter ? resolvedAddendumStarter.label : null,
+          document_kind: documentKindOption.key,
+          documentKind: documentKindOption.key,
+          preferred_document_kind: documentKindOption.key,
+          document_kind_label: documentKindOption.label,
         },
-        sections: createStarterSections(packetType).map((section, index) => mapSectionForSave(section, index, packetType)),
+        sections: starterSections.map((section, index) => mapSectionForSave(section, index, packetType)),
       })
 
       await refreshAll()
       setSelectedTemplateId(created?.id || '')
-      setMessage('New draft template created.')
+      setMessage(isGeneralAddendumStarter ? `${resolvedAddendumStarter.label} template created.` : 'New draft template created.')
       return created
     } catch (createError) {
       setError(createError?.message || 'Unable to create template.')
@@ -3721,6 +5456,15 @@ export default function SettingsSigningTemplatesPage({
     } finally {
       setCreatingTemplate(false)
     }
+  }
+
+  async function handleCreateGeneralAddendumTemplate() {
+    return handleCreateTemplate({ starterKind: GENERAL_ADDENDUM_TEMPLATE_FAMILY })
+  }
+
+  async function handleCreateAddendumStarterTemplate(starterKind = GENERAL_ADDENDUM_TEMPLATE_FAMILY) {
+    if (starterKind === GENERAL_ADDENDUM_TEMPLATE_FAMILY) return handleCreateGeneralAddendumTemplate()
+    return handleCreateTemplate({ starterKind })
   }
 
   async function handleCreateEditableCopy() {
@@ -4155,6 +5899,12 @@ export default function SettingsSigningTemplatesPage({
       setActiveTab('template')
       return
     }
+    const addendumReadiness = getAddendumGenerationReadinessForRun(documentRunForm)
+    if (autoGenerate && !addendumReadiness.ready) {
+      setError('Complete the addendum readiness checklist before generating. You can still save it as a draft from More options.')
+      setActiveStudioArea('documents')
+      return null
+    }
 
     try {
       setCreatingDocumentPacket(true)
@@ -4269,6 +6019,13 @@ export default function SettingsSigningTemplatesPage({
 
   async function handleGenerateLibraryPacket(packet = selectedLibraryPacket) {
     if (!packet?.id) return
+    const addendumReadiness = getAddendumGenerationReadinessForPacket(packet)
+    if (!addendumReadiness.ready) {
+      setError('Complete the addendum readiness checklist before generating this document.')
+      setSelectedLibraryPacketId(packet.id)
+      setActiveStudioArea('documents')
+      return
+    }
     try {
       setPacketActionId(`generate:${packet.id}`)
       setError('')
@@ -5014,6 +6771,22 @@ export default function SettingsSigningTemplatesPage({
 
   return (
     <div className="space-y-6 pb-10" data-simple-document-builder={simpleDocumentBuilderEnabled ? 'enabled' : 'off'}>
+      <StartDocumentModal
+        open={documentLibraryStartOpen}
+        onClose={() => setDocumentLibraryStartOpen(false)}
+        entryPoint={DOCUMENT_START_ENTRY_POINTS.documentLibraryDocument}
+        packetType={packetType}
+        documentKind={documentLibraryStartDocumentKind === 'custom' ? DOCUMENT_START_DOCUMENT_KINDS.standard : documentLibraryStartDocumentKind}
+        initialSourceMode={documentLibraryStartHasExistingContext ? DOCUMENT_START_SOURCE_MODES.saved : DOCUMENT_START_SOURCE_MODES.manual}
+        hasExistingContext={documentLibraryStartHasExistingContext}
+        hasClientContact
+        hasParentDocument={documentLibraryStartDocumentKind === 'standard' || documentLibraryStartDocumentKind === 'custom' || documentLibraryStartHasParentDocument}
+        contextSummary={documentLibraryStartSummary}
+        title="Create Document"
+        subtitle="Choose whether this starts from saved records or as a standalone manual document. You can still review before sending."
+        busy={creatingDocumentPacket}
+        onContinue={handleStartDocumentLibraryDocument}
+      />
       <header className="space-y-6 rounded-[28px] border border-[#dbe7f3] bg-white p-5 shadow-[0_18px_42px_rgba(15,23,42,0.05)] sm:p-6">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-3">
@@ -5337,59 +7110,37 @@ export default function SettingsSigningTemplatesPage({
                     ) : null}
 
                     <div className="min-w-0 overflow-hidden rounded-[18px] border border-[#dbe7f3] bg-white">
-                      <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-[#e7eef6] bg-[#fbfdff] px-3 py-2.5 sm:px-4">
-                        <span className="mr-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">Add</span>
-                        {[
-                          { icon: Type, label: 'Text', action: () => handleInsertDocumentBlock('paragraph') },
-                          { icon: Table2, label: 'Table', action: () => handleInsertDocumentBlock('table') },
-                          { icon: FileSignature, label: 'Signature', action: () => handleInsertDocumentBlock('signature') },
-                        ].map((item) => {
-                          const Icon = item.icon
-                          return (
-                            <button
-                              key={item.label}
-                              type="button"
-                              title={`Add ${item.label.toLowerCase()}`}
-                              onClick={item.action}
-                              disabled={!canEdit || !selectedSection}
-                              className="inline-flex h-9 min-w-0 items-center gap-1.5 rounded-[10px] border border-[#dbe7f3] bg-white px-3 text-xs font-semibold text-[#233246] transition hover:border-[#96d7ad] hover:bg-[#f6fbf8] disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <Icon size={15} />
-                              <span className="truncate">{item.label}</span>
-                            </button>
-                          )
-                        })}
-                        <details className="group basis-full sm:basis-auto">
-                          <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-[10px] border border-transparent px-3 text-xs font-semibold text-[#52667d] transition hover:border-[#dbe7f3] hover:bg-white">
-                            <MoreHorizontal size={15} />
-                            <span>More inserts</span>
-                            <ChevronDown size={14} className="transition group-open:rotate-180" />
-                          </summary>
-                          <div className="mt-2 grid gap-2 rounded-[14px] border border-[#dbe7f3] bg-white p-2 sm:grid-cols-2 lg:grid-cols-5">
-                            {[
-                              { icon: Bold, label: 'Heading', action: () => handleInsertDocumentBlock('heading') },
-                              { icon: MoreHorizontal, label: 'Page break', action: () => handleInsertDocumentBlock('pageBreak') },
-                              { icon: Check, label: 'Initials', action: () => handleInsertDocumentBlock('initials') },
-                              { icon: ShieldCheck, label: 'Witness', action: () => handleInsertDocumentBlock('witness') },
-                              { icon: FileText, label: 'Raw source', action: focusSourceEditor },
-                            ].map((item) => {
-                              const Icon = item.icon
-                              return (
-                                <button
-                                  key={item.label}
-                                  type="button"
-                                  title={item.label === 'Raw source' ? 'Open raw source editor' : `Add ${item.label.toLowerCase()}`}
-                                  onClick={item.action}
-                                  disabled={!canEdit || !selectedSection}
-                                  className="inline-flex min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-[10px] border border-[#e4ebf2] bg-[#fbfdff] px-2.5 text-xs font-semibold text-[#233246] transition hover:border-[#96d7ad] hover:bg-[#f6fbf8] disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  <Icon size={15} />
-                                  <span className="truncate">{item.label}</span>
-                                </button>
-                              )
-                            })}
+                      <div className="flex min-w-0 flex-wrap items-center gap-3 border-b border-[#e7eef6] bg-[#fbfdff] px-3 py-2.5 sm:px-4">
+                        {SECTION_EDITOR_INSERT_GROUPS.map((group) => (
+                          <div key={group.label} className="flex min-w-0 flex-wrap items-center gap-1.5">
+                            <span className="px-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">
+                              {group.label}
+                            </span>
+                            <div className="inline-flex min-w-0 flex-wrap items-center gap-1 rounded-[12px] border border-[#dbe7f3] bg-white p-1">
+                              {group.items.map((item) => {
+                                const Icon = item.icon
+                                return (
+                                  <button
+                                    key={item.key}
+                                    type="button"
+                                    title={item.title}
+                                    onClick={item.action === 'source' ? focusSourceEditor : () => handleInsertDocumentBlock(item.key)}
+                                    disabled={!canEdit || !selectedSection}
+                                    className={[
+                                      'inline-flex h-8 min-w-0 items-center gap-1.5 rounded-[8px] px-2.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50',
+                                      item.action === 'source'
+                                        ? 'text-[#52667d] hover:bg-[#f4f7fb] hover:text-[#233246]'
+                                        : 'text-[#233246] hover:bg-[#f6fbf8] hover:text-[#128642]',
+                                    ].join(' ')}
+                                  >
+                                    <Icon size={14} />
+                                    <span className="truncate">{item.label}</span>
+                                  </button>
+                                )
+                              })}
+                            </div>
                           </div>
-                        </details>
+                        ))}
                       </div>
 
                       <div className="bg-[#eef3f8] px-3 py-4 sm:px-4 sm:py-5">
@@ -6047,10 +7798,16 @@ export default function SettingsSigningTemplatesPage({
               description="There are no template records for this legal document type yet."
               action={
                 canEdit ? (
-                  <button type="button" className={studioPrimaryButtonClass} onClick={() => void handleCreateTemplate()}>
-                    <Plus size={15} />
-                    <span>Create Template</span>
-                  </button>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <button type="button" className={studioPrimaryButtonClass} onClick={() => void handleCreateTemplate()}>
+                      <Plus size={15} />
+                      <span>Create Template</span>
+                    </button>
+                    <button type="button" className={studioSecondaryButtonClass} onClick={() => void handleCreateGeneralAddendumTemplate()}>
+                      <FileSignature size={15} />
+                      <span>General Addendum</span>
+                    </button>
+                  </div>
                 ) : null
               }
             />
@@ -6751,10 +8508,16 @@ export default function SettingsSigningTemplatesPage({
               description="There are no template records for this legal document type yet."
               action={
                 canEdit ? (
-                  <button type="button" className={studioPrimaryButtonClass} onClick={() => void handleCreateTemplate()}>
-                    <Plus size={15} />
-                    <span>Create First Template</span>
-                  </button>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <button type="button" className={studioPrimaryButtonClass} onClick={() => void handleCreateTemplate()}>
+                      <Plus size={15} />
+                      <span>Create First Template</span>
+                    </button>
+                    <button type="button" className={studioSecondaryButtonClass} onClick={() => void handleCreateGeneralAddendumTemplate()}>
+                      <FileSignature size={15} />
+                      <span>General Addendum</span>
+                    </button>
+                  </div>
                 ) : null
               }
             />
@@ -7397,7 +9160,13 @@ export default function SettingsSigningTemplatesPage({
                         <button
                           key={option.key}
                           type="button"
-                          onClick={() => setDocumentRunForm((previous) => ({ ...previous, sourceType: option.key }))}
+                          onClick={() => setDocumentRunForm((previous) => ({
+                            ...previous,
+                            sourceType: option.key,
+                            documentStartSourceMode: option.key === 'manual'
+                              ? DOCUMENT_START_SOURCE_MODES.manual
+                              : previous.documentStartSourceMode,
+                          }))}
                           className={`rounded-[16px] border px-4 py-3 text-left transition ${
                             active
                               ? 'border-[#96d7ad] bg-[#f3fbf6] shadow-[0_10px_22px_rgba(18,134,66,0.08)]'
@@ -7790,7 +9559,7 @@ export default function SettingsSigningTemplatesPage({
                 <button
                   type="button"
                   className={studioPrimaryButtonClass}
-                  onClick={() => void handleCreateDocumentPacketFromRun({ autoGenerate: true })}
+                  onClick={openDocumentLibraryStart}
                   disabled={creatingDocumentPacket || !selectedTemplate || hasUnsavedChanges}
                 >
                   <Plus size={14} />
@@ -7851,6 +9620,9 @@ export default function SettingsSigningTemplatesPage({
                             : 'Manual details'
                       const documentKindLabel = normalizeText(sourceContext.documentKindLabel || sourceContext.document_kind_label)
                         || getDocumentKindOption(sourceContext.documentKind || sourceContext.document_kind).label
+                      const addendumReview = buildAddendumDocumentReviewSummary(sourceContext)
+                      const packetRelationship = documentPacketRelationshipMap.get(normalizeText(packet.id))
+                      const linkedAddendumCount = packetRelationship?.relatedAddendums?.length || 0
                       return (
                         <article
                           key={packet.id}
@@ -7866,6 +9638,25 @@ export default function SettingsSigningTemplatesPage({
                               <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
                                 {documentKindLabel} · {packet.template_label_snapshot || selectedTemplate?.template_label || 'Template'} · {linkedReference}
                               </p>
+                              {addendumReview.visible || linkedAddendumCount ? (
+                                <div className="mt-2 flex min-w-0 flex-wrap gap-1.5">
+                                  {addendumReview.visible ? (
+                                    <>
+                                      <span className="max-w-full truncate rounded-full border border-[#cdebd8] bg-[#eef9f1] px-2.5 py-1 text-[0.68rem] font-semibold text-[#128642]">
+                                        {addendumReview.label}
+                                      </span>
+                                      <span className="max-w-full truncate rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
+                                        Original: {addendumReview.referenceLabel}
+                                      </span>
+                                    </>
+                                  ) : null}
+                                  {linkedAddendumCount ? (
+                                    <span className="max-w-full truncate rounded-full border border-[#bcd6ff] bg-[#eef5ff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#0a66ff]">
+                                      {linkedAddendumCount} addendum{linkedAddendumCount === 1 ? '' : 's'} linked
+                                    </span>
+                                  ) : null}
+                                </div>
+                              ) : null}
                             </div>
                             <TemplateStatusPill status={packetStatus}>{packetStatus.replace(/_/g, ' ')}</TemplateStatusPill>
                           </div>
@@ -7883,6 +9674,20 @@ export default function SettingsSigningTemplatesPage({
                               <p className="mt-1">v{packet.current_version_number || 0}</p>
                             </div>
                           </div>
+                          {addendumReview.visible && (addendumReview.documentChangeSummary || addendumReview.detailItems.length) ? (
+                            <div className="mt-4 rounded-[14px] border border-[#e8eff7] bg-[#fbfdff] px-3 py-3 text-xs leading-5 text-[#607387]">
+                              {addendumReview.documentChangeSummary ? (
+                                <p className="break-words">
+                                  <span className="font-semibold text-[#35546c]">Change:</span> {addendumReview.documentChangeSummary}
+                                </p>
+                              ) : null}
+                              {addendumReview.detailItems.length ? (
+                                <p className="mt-1 font-semibold text-[#35546c]">
+                                  {addendumReview.detailItems.length} captured detail{addendumReview.detailItems.length === 1 ? '' : 's'}
+                                </p>
+                              ) : null}
+                            </div>
+                          ) : null}
                           <div className="mt-4 flex flex-wrap gap-2">
                             <button
                               type="button"
@@ -7909,6 +9714,16 @@ export default function SettingsSigningTemplatesPage({
                             >
                               <FileSignature size={14} />
                               <span>{packet.current_version_number ? 'Regenerate' : 'Generate'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              className={studioSecondaryButtonClass}
+                              onClick={() => handleStartAddendumFromLibraryPacket(packet)}
+                              disabled={packetActionPending}
+                              title={defaultAddendumTemplate ? 'Start an addendum from this document' : 'Create a General Addendum template first'}
+                            >
+                              <CopyPlus size={14} />
+                              <span>Add Addendum</span>
                             </button>
                             <button
                               type="button"
@@ -7948,6 +9763,11 @@ export default function SettingsSigningTemplatesPage({
               setActiveStudioArea={setActiveStudioArea}
               setActiveTab={setActiveTab}
               createDefaultDocumentRunForm={createDefaultDocumentRunForm}
+              addendumDetailOptions={ADDENDUM_DOCUMENT_DETAIL_OPTIONS}
+              documentLinkOptions={documentLinkOptions}
+              documentLinkOptionsLoading={documentLinkOptionsLoading}
+              documentLinkOptionsError={documentLinkOptionsError}
+              onRefreshDocumentLinkOptions={loadDocumentLinkOptions}
               handleTestGenerateFromRun={handleTestGenerateFromRun}
               handleCreateDocumentPacketFromRun={handleCreateDocumentPacketFromRun}
             />
@@ -7957,6 +9777,9 @@ export default function SettingsSigningTemplatesPage({
               cloning={cloning}
               saving={saving}
               handleCreateTemplate={handleCreateTemplate}
+              handleCreateGeneralAddendumTemplate={handleCreateGeneralAddendumTemplate}
+              handleCreateAddendumStarterTemplate={handleCreateAddendumStarterTemplate}
+              addendumTemplateStarters={ADDENDUM_TEMPLATE_STARTER_OPTIONS}
               setActiveStudioArea={setActiveStudioArea}
               setActiveTab={setActiveTab}
             />
@@ -7998,6 +9821,108 @@ export default function SettingsSigningTemplatesPage({
                       ))}
                     </div>
 
+                    {selectedLibraryPacketAddendumReview.visible ? (
+                      <div className="mt-4 rounded-[16px] border border-[#d6efe1] bg-[#f5fbf8] p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-[#102033]">Related Document</p>
+                            <p className="mt-1 text-xs leading-5 text-[#607387]">
+                              {selectedLibraryPacketAddendumReview.label} linked to {selectedLibraryPacketAddendumReview.referenceLabel}.
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-[#cdebd8] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#128642]">
+                            {selectedLibraryPacketAddendumReview.documentKind.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 grid gap-3 text-xs text-[#607387]">
+                          {[
+                            { label: 'Original reference', value: selectedLibraryPacketAddendumReview.parentDocumentReference || selectedLibraryPacketAddendumReview.parentDocumentId || 'Not linked yet' },
+                            { label: 'Change summary', value: selectedLibraryPacketAddendumReview.documentChangeSummary || 'Not captured' },
+                          ].map((item) => (
+                            <div key={item.label} className="rounded-[14px] border border-[#d6efe1] bg-white px-3 py-3">
+                              <p className="font-semibold uppercase tracking-[0.12em] text-[#5a8d6d]">{item.label}</p>
+                              <p className="mt-1 break-words text-[#35546c]">{item.value}</p>
+                            </div>
+                          ))}
+                        </div>
+
+                        {selectedLibraryPacketAddendumReview.detailItems.length ? (
+                          <div className="mt-4 grid min-w-0 gap-3 md:grid-cols-2">
+                            {selectedLibraryPacketAddendumReview.detailItems.map((item) => (
+                              <div key={item.key} className="min-w-0 rounded-[14px] border border-[#d6efe1] bg-white px-3 py-3">
+                                <p className="text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#5a8d6d]">{item.label}</p>
+                                <p className="mt-1 break-words text-sm leading-6 text-[#35546c]">{item.value}</p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-4 rounded-[14px] border border-[#d6efe1] bg-white px-3 py-3 text-sm leading-6 text-[#607387]">
+                            No guided addendum values were captured for this document.
+                          </p>
+                        )}
+                      </div>
+                    ) : null}
+
+                    {(selectedLibraryPacketRelationship?.parentPacket || selectedLibraryPacketRelationship?.relatedAddendums?.length) ? (
+                      <div className="mt-4 rounded-[16px] border border-[#dbe7f3] bg-white p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-[#102033]">Document Chain</p>
+                            <p className="mt-1 text-xs leading-5 text-[#607387]">
+                              Jump between the original document and addendums linked to it.
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
+                            {(selectedLibraryPacketRelationship?.relatedAddendums || []).length} linked
+                          </span>
+                        </div>
+
+                        <div className="mt-4 space-y-2">
+                          {selectedLibraryPacketRelationship?.parentPacket ? (
+                            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#e8eff7] bg-[#fbfdff] px-3 py-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-[#102033]">
+                                  {selectedLibraryPacketRelationship.parentPacket.title || selectedLibraryPacketRelationship.parentPacket.template_label_snapshot || 'Original document'}
+                                </p>
+                                <p className="mt-1 text-xs text-[#6b7c93]">Original document</p>
+                              </div>
+                              <button
+                                type="button"
+                                className={studioQuietButtonClass}
+                                onClick={() => setSelectedLibraryPacketId(selectedLibraryPacketRelationship.parentPacket.id)}
+                              >
+                                <Eye size={14} />
+                                <span>Inspect</span>
+                              </button>
+                            </div>
+                          ) : null}
+
+                          {(selectedLibraryPacketRelationship?.relatedAddendums || []).map(({ packet, review }) => (
+                            <div key={packet.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#e8eff7] bg-[#fbfdff] px-3 py-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-[#102033]">{packet.title || packet.template_label_snapshot || 'Linked addendum'}</p>
+                                <p className="mt-1 text-xs text-[#6b7c93]">{review.label}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <TemplateStatusPill status={normalizeText(packet.status).toLowerCase() || 'draft'}>
+                                  {normalizeText(packet.status).replace(/_/g, ' ') || 'draft'}
+                                </TemplateStatusPill>
+                                <button
+                                  type="button"
+                                  className={studioQuietButtonClass}
+                                  onClick={() => setSelectedLibraryPacketId(packet.id)}
+                                >
+                                  <Eye size={14} />
+                                  <span>Inspect</span>
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
                     <div className="mt-4 flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -8016,6 +9941,16 @@ export default function SettingsSigningTemplatesPage({
                       >
                         <FileSignature size={14} />
                         <span>{packetActionId.startsWith('generate:') ? 'Generating...' : latestLibraryPacketVersion ? 'Regenerate' : 'Generate'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={studioSecondaryButtonClass}
+                        onClick={() => handleStartAddendumFromLibraryPacket(selectedLibraryPacket)}
+                        disabled={Boolean(packetActionId)}
+                        title={defaultAddendumTemplate ? 'Start an addendum from this document' : 'Create a General Addendum template first'}
+                      >
+                        <CopyPlus size={14} />
+                        <span>Add Addendum</span>
                       </button>
                       {latestLibraryPacketArtifactUrl ? (
                         <a

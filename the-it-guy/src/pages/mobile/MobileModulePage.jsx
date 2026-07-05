@@ -1,10 +1,12 @@
 import { BriefcaseBusiness, ChevronRight, Plus, Upload, UsersRound } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import MobileCreateSheet, { MobileDraftCard, isMobileCreateType, mobileDraftMatchesModule } from '../../components/mobile-shell/MobileCreateSheet'
 import { MobileCard, MobileEmptyState, MobileErrorState, MobileFilterChips, MobileLoadingState, MobileSearchBar } from '../../components/mobile-shell/MobileShellStates'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { useOptionalOrganisation } from '../../context/OrganisationContext'
 import { getMobileDashboardSnapshot, getMobileDashboardSnapshotAsync } from '../../services/mobileDashboardService'
+import { getOfflineDrafts } from '../../services/mobileProductivityService'
 
 const MODULE_COPY = {
   transactions: {
@@ -129,7 +131,7 @@ function MobileTransactionCard({ item, onOpen }) {
 function GenericModuleCard({ copy }) {
   const Icon = copy.actionLabel?.includes('Lead') ? UsersRound : BriefcaseBusiness
   return (
-    <MobileCard className="bg-[#10243a] text-white">
+    <MobileCard surface="dark">
       <span className="flex h-12 w-12 items-center justify-center rounded-[18px] bg-white/12 text-[#9fe0bd]">
         <Icon className="h-5 w-5" />
       </span>
@@ -143,15 +145,22 @@ export default function MobileModulePage({ moduleKey }) {
   const workspace = useWorkspace()
   const organisationContext = useOptionalOrganisation()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const copy = MODULE_COPY[moduleKey] || MODULE_COPY.transactions
   const ActionIcon = copy.actionIcon
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('All')
+  const [drafts, setDrafts] = useState(() => getOfflineDrafts())
   const [state, setState] = useState(() => ({
     loading: moduleKey === 'transactions',
     error: '',
     snapshot: moduleKey === 'transactions' ? getMobileDashboardSnapshot({ workspace }) : null,
   }))
+  const createType = searchParams.get('create') || ''
+  const createOpen = isMobileCreateType(createType) && (
+    (moduleKey === 'transactions' && createType === 'transaction') ||
+    (moduleKey === 'leads' && (createType === 'lead' || createType === 'prospect'))
+  )
 
   useEffect(() => {
     if (moduleKey !== 'transactions') return undefined
@@ -185,9 +194,28 @@ export default function MobileModulePage({ moduleKey }) {
       return matchesQuery && matchesFilter
     })
   }, [filter, query, state.snapshot?.activeWork])
+  const pendingDrafts = useMemo(() => (
+    drafts.filter((draft) => mobileDraftMatchesModule(draft, moduleKey))
+  ), [drafts, moduleKey])
 
   function openTransaction(item) {
     navigate(item.to || '/mobile/transaction/unknown')
+  }
+
+  function clearCreateIntent() {
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete('create')
+    setSearchParams(nextParams, { replace: true })
+  }
+
+  function handleDraftSaved() {
+    setDrafts(getOfflineDrafts())
+  }
+
+  function openModuleCreate() {
+    if (moduleKey === 'leads') {
+      navigate('/mobile/leads?create=lead')
+    }
   }
 
   if (state.loading) return <MobileLoadingState label={`Loading ${copy.title}`} />
@@ -205,17 +233,28 @@ export default function MobileModulePage({ moduleKey }) {
         <MobileFilterChips items={TRANSACTION_FILTERS} active={filter} onChange={setFilter} />
 
         <section className="space-y-3">
+          {pendingDrafts.map((draft) => <MobileDraftCard key={draft.id} draft={draft} />)}
           {rows.length ? (
             rows.map((item) => <MobileTransactionCard key={item.id} item={item} onOpen={openTransaction} />)
           ) : (
-            <MobileEmptyState
-              title="No matching transactions."
-              body={state.snapshot?.activeWork?.length ? 'Try another stage or search term.' : 'Your transactions will appear here once created.'}
-              actionLabel="New Transaction"
-              onAction={() => navigate('/mobile/transactions')}
-            />
+            pendingDrafts.length ? null : (
+              <MobileEmptyState
+                title="No matching transactions."
+                body={state.snapshot?.activeWork?.length ? 'Try another stage or search term.' : 'Your transactions will appear here once created.'}
+                actionLabel="New Transaction"
+                onAction={() => navigate('/mobile/transactions?create=transaction')}
+              />
+            )
           )}
         </section>
+
+        <MobileCreateSheet
+          open={createOpen}
+          type={createType}
+          route="/mobile/transactions"
+          onClose={clearCreateIntent}
+          onSaved={handleDraftSaved}
+        />
       </div>
     )
   }
@@ -228,7 +267,11 @@ export default function MobileModulePage({ moduleKey }) {
           <p className="mt-2 text-[16px] leading-7 text-[#60758d]">{copy.intro}</p>
         </div>
         {copy.actionLabel ? (
-          <button type="button" className="inline-flex min-h-12 shrink-0 items-center gap-2 rounded-full bg-[#1f7a5a] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(31,122,90,0.24)]">
+          <button
+            type="button"
+            className="inline-flex min-h-12 shrink-0 items-center gap-2 rounded-full bg-[#1f7a5a] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(31,122,90,0.24)]"
+            onClick={openModuleCreate}
+          >
             {ActionIcon ? <ActionIcon className="h-4 w-4" /> : null}
             {copy.actionLabel}
           </button>
@@ -239,8 +282,17 @@ export default function MobileModulePage({ moduleKey }) {
       <GenericModuleCard copy={copy} />
 
       <section className="space-y-3">
-        <MobileEmptyState title={copy.emptyTitle} body={copy.emptyBody} />
+        {pendingDrafts.map((draft) => <MobileDraftCard key={draft.id} draft={draft} />)}
+        {pendingDrafts.length ? null : <MobileEmptyState title={copy.emptyTitle} body={copy.emptyBody} />}
       </section>
+
+      <MobileCreateSheet
+        open={createOpen}
+        type={createType}
+        route={`/mobile/${moduleKey}`}
+        onClose={clearCreateIntent}
+        onSaved={handleDraftSaved}
+      />
     </div>
   )
 }

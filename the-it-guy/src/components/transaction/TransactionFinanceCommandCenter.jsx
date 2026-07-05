@@ -196,14 +196,22 @@ function OwnershipBadge({ label, status = 'active', detail = '' }) {
   )
 }
 
-function OwnershipBadgeStrip({ financeType = '', canProxyFinanceWorkflow = false }) {
+function OwnershipBadgeStrip({
+  financeType = '',
+  financeOwner = '',
+  originatorManagedFinance = false,
+  clientManagedBondFinance = false,
+  canProxyFinanceWorkflow = false,
+}) {
   const isBond = financeType === 'bond' || financeType === 'combination'
   const isCash = financeType === 'cash' || financeType === 'combination'
   return (
     <div className="flex flex-wrap gap-2">
-      {isBond ? <OwnershipBadge label="Bond Originator" detail="bond lane" /> : null}
+      {isBond && originatorManagedFinance ? <OwnershipBadge label="Bond Originator" detail="bond lane" /> : null}
+      {isBond && clientManagedBondFinance ? <OwnershipBadge label="Buyer / Attorney" detail="external finance" /> : null}
       {isCash ? <OwnershipBadge label="Buyer" detail="cash evidence" /> : null}
       {isCash ? <OwnershipBadge label="Attorney" detail="verification" /> : null}
+      {financeOwner && !isBond ? <OwnershipBadge label={financeOwner} detail="finance owner" /> : null}
       <OwnershipBadge
         label="Agent proxy"
         status={canProxyFinanceWorkflow ? 'warning' : 'disabled'}
@@ -1086,7 +1094,10 @@ function FinanceCommandCenter({
   }
 
   const acceptedOfferId = workspace.bond.acceptedOffer?.id || ''
-  const hasBondWorkflow = workspace.financeType === 'bond' || workspace.financeType === 'combination'
+  const hasBondLikeFinance = workspace.financeType === 'bond' || workspace.financeType === 'combination'
+  const hasBondWorkflow = hasBondLikeFinance && workspace.originatorManagedFinance
+  const hasExternalBondFinance = hasBondLikeFinance && workspace.clientManagedBondFinance
+  const hasBondDocumentWorkflow = hasBondLikeFinance
   const hasCashWorkflow = workspace.financeType === 'cash' || workspace.financeType === 'combination'
   const hasDeveloperWorkflow = workspace.financeType === 'developer'
   const applicationOwnership = buildApplicationOwnershipCard(transaction, workspace)
@@ -1149,6 +1160,9 @@ function FinanceCommandCenter({
 
       <OwnershipBadgeStrip
         financeType={workspace.financeType}
+        financeOwner={workspace.financeOwner}
+        originatorManagedFinance={workspace.originatorManagedFinance}
+        clientManagedBondFinance={workspace.clientManagedBondFinance}
         canProxyFinanceWorkflow={workspace.permissions.canProxyFinanceWorkflow}
       />
 
@@ -1173,10 +1187,14 @@ function FinanceCommandCenter({
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]">
         <main className="space-y-4">
-          {hasBondWorkflow ? (
+          {hasBondDocumentWorkflow ? (
             <SectionCard
-              title="Buyer Finance Documents"
-              copy="Required buyer finance documents and upload status."
+              title={hasExternalBondFinance ? 'External Finance Documents' : 'Buyer Finance Documents'}
+              copy={
+                hasExternalBondFinance
+                  ? 'Approval letters, bank confirmations, and buyer-arranged finance evidence.'
+                  : 'Required buyer finance documents and upload status.'
+              }
               actions={workspace.permissions.canReviewDocuments ? (
                 <Button type="button" size="sm" variant="secondary" disabled={Boolean(loadingAction)} onClick={() => onReviewDocuments?.()}>
                   Mark reviewed
@@ -1187,7 +1205,15 @@ function FinanceCommandCenter({
                 rows={workspace.bond.buyerDocuments}
                 canUpload={workspace.permissions.canUploadDocuments}
                 uploadingKey={uploadingKey}
-                onUpload={(row, file) => handleRequirementUpload(row, file, 'bond', 'buyer_finance_document', workspace.permissions.role)}
+                onUpload={(row, file) =>
+                  handleRequirementUpload(
+                    row,
+                    file,
+                    hasExternalBondFinance ? 'external' : 'bond',
+                    hasExternalBondFinance ? 'external_finance_document' : 'buyer_finance_document',
+                    workspace.permissions.role,
+                  )
+                }
                 onOpenDocument={onOpenDocument}
               />
             </SectionCard>

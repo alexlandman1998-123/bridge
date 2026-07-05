@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
 import { resolveMobileAwareRedirect } from '../src/lib/resolveMobileAwareRedirect.js'
 import {
@@ -30,6 +31,12 @@ function resolve(path, overrides = {}) {
     ...overrides,
   })
 }
+
+const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
+const mobileLayoutSource = readFileSync(new URL('../src/components/mobile-shell/MobileLayout.jsx', import.meta.url), 'utf8')
+const mobileHeaderSource = readFileSync(new URL('../src/components/mobile-shell/MobileHeader.jsx', import.meta.url), 'utf8')
+const mobileBottomNavSource = readFileSync(new URL('../src/components/mobile-shell/MobileBottomNav.jsx', import.meta.url), 'utf8')
+const mobileHomeSource = readFileSync(new URL('../src/pages/mobile/MobileHome.jsx', import.meta.url), 'utf8')
 
 global.window = {
   localStorage: createLocalStorageMock(),
@@ -69,5 +76,17 @@ assert.equal(window.localStorage.getItem(MOBILE_DESKTOP_PREFERENCE_KEY), null, '
 
 setPreferDesktopOnMobile(false)
 assert.equal(window.localStorage.getItem(MOBILE_DESKTOP_PREFERENCE_KEY), null, 'clearing desktop preference should remove storage key')
+
+assert.equal((appSource.match(/<MobileProtectedLayout/g) || []).length, 1, 'protected mobile shell should be mounted once')
+assert.match(mobileLayoutSource, /data-mobile-shell/, 'mobile layout should expose a single shell marker')
+assert.match(mobileLayoutSource, /data-mobile-scroll-root/, 'mobile layout should expose the dedicated scroll root')
+assert.match(mobileLayoutSource, /h-\[100dvh\]/, 'mobile shell should be constrained to the dynamic viewport height')
+assert.match(mobileLayoutSource, /overflow-hidden/, 'mobile shell should prevent document-level overflow duplication')
+assert.match(mobileLayoutSource, /overflow-y-auto/, 'mobile content should scroll inside the shell')
+assert.match(mobileLayoutSource, /overscroll-contain/, 'mobile content should contain overscroll on iOS Safari')
+assert.match(mobileLayoutSource, /scrollRootRef\.current\?\.scrollTo/, 'mobile route changes should reset the shell scroll root')
+assert.match(mobileHeaderSource, /data-mobile-header/, 'mobile header should expose a stable marker')
+assert.match(mobileBottomNavSource, /data-mobile-bottom-nav/, 'mobile bottom nav should expose a stable marker')
+assert.match(mobileHomeSource, /data-mobile-home/, 'mobile home should expose a stable marker')
 
 console.log('mobile shell routing regression tests passed')

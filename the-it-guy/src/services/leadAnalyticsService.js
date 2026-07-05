@@ -16,7 +16,7 @@ import {
 } from './sellerJourneyService.js'
 import { getSellerReadiness } from './sellerReadinessService.js'
 
-const SOURCE_VALUES = ['Property24', 'Private Property', 'Website', 'WhatsApp', 'Referral', 'Facebook', 'Google', 'Walk-In', 'Manual Import', 'Other']
+const SOURCE_VALUES = ['Property24', 'Private Property', 'Website', 'WhatsApp', 'Referral', 'Facebook', 'Google', 'Show Day', 'Walk-In', 'Manual Import', 'Other']
 
 function normalizeText(value) {
   return String(value ?? '').trim()

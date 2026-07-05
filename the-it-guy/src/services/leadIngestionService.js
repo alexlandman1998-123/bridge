@@ -21,6 +21,7 @@ export const CANONICAL_LEAD_SOURCES = [
   'Referral',
   'Facebook',
   'Google',
+  'Show Day',
   'Walk-In',
   'Manual Import',
   'Other',
@@ -80,6 +81,9 @@ export function normalizeLeadSource(value = '') {
     referral: 'Referral',
     facebook: 'Facebook',
     google: 'Google',
+    showday: 'Show Day',
+    showing: 'Show Day',
+    openhouse: 'Show Day',
     walkin: 'Walk-In',
     manualimport: 'Manual Import',
     import: 'Manual Import',
@@ -432,9 +436,21 @@ async function createOrReuseLead({ enquiry, contact, listing, actor }) {
   return { lead: mapLeadRow(lead), reusedLead: false }
 }
 
-export async function createOrUpdateLeadFromEnquiry(payload = {}, { actor = null } = {}) {
+export async function createOrUpdateLeadFromEnquiry(
+  payload = {},
+  {
+    actor = null,
+    createInitialTask = true,
+    createLeadRecommendation = true,
+    workflowVariant = '',
+  } = {},
+) {
   const client = requireClient()
   const enquiry = normalizeEnquiryPayload(payload, payload.source || 'Other')
+  const normalizedWorkflowVariant = normalizeLower(workflowVariant).replace(/[^a-z0-9]+/g, '_')
+  const isShowDayWorkflow = normalizedWorkflowVariant === 'show_day'
+  const shouldCreateInitialTask = createInitialTask !== false && !isShowDayWorkflow
+  const shouldCreateLeadRecommendation = createLeadRecommendation !== false && !isShowDayWorkflow
   if (!isUuidLike(enquiry.organisationId)) throw new Error('A valid organisation id is required for lead ingestion.')
   if (!enquiry.contact.hasIdentity) {
     const failure = await createIngestionLog(client, enquiry, { status: 'failed', error: 'Invalid contact: name, phone, or email is required.' })
@@ -452,7 +468,16 @@ export async function createOrUpdateLeadFromEnquiry(payload = {}, { actor = null
       reviewStatus: 'duplicate',
       error: 'Duplicate payload external reference.',
     })
-    return { ok: true, status: 'duplicate', log, duplicateOf: duplicateLog }
+    return {
+      ok: true,
+      status: 'duplicate',
+      source: enquiry.source,
+      contactId: normalizeText(duplicateLog.contact_id),
+      leadId: normalizeText(duplicateLog.lead_id),
+      listingId: normalizeText(duplicateLog.listing_id),
+      log,
+      duplicateOf: duplicateLog,
+    }
   }
 
   try {
@@ -484,19 +509,21 @@ export async function createOrUpdateLeadFromEnquiry(payload = {}, { actor = null
       { actor },
     )
 
-    const task = await createAgencyCrmLeadTask(
-      enquiry.organisationId,
-      lead.leadId,
-      {
-        title: 'Contact Lead',
-        description: `${enquiry.source} enquiry follow-up.`,
-        dueDate: new Date(enquiry.enquiryTimestamp).toISOString().slice(0, 10),
-        status: 'Pending',
-        priority: 'High',
-        assignedAgent: buildAssignedAgent(enquiry, listing) || actor,
-      },
-      { actor },
-    )
+    const task = shouldCreateInitialTask
+      ? await createAgencyCrmLeadTask(
+          enquiry.organisationId,
+          lead.leadId,
+          {
+            title: 'Contact Lead',
+            description: `${enquiry.source} enquiry follow-up.`,
+            dueDate: new Date(enquiry.enquiryTimestamp).toISOString().slice(0, 10),
+            status: 'Pending',
+            priority: 'High',
+            assignedAgent: buildAssignedAgent(enquiry, listing) || actor,
+          },
+          { actor },
+        )
+      : null
 
     let listingInterest = null
     let warning = ''
@@ -538,21 +565,23 @@ export async function createOrUpdateLeadFromEnquiry(payload = {}, { actor = null
       return null
     })
 
-    void import('./leadActionEngineService')
-      .then(({ processLeadEvent }) => processLeadEvent({
-        organisationId: enquiry.organisationId,
-        leadId: lead.leadId,
-        contactId,
-        assignedAgentId: assignment?.agentId || assignment?.newAgentId || buildAssignedAgent(enquiry, listing)?.id || actor?.id,
-        eventType: 'new_lead',
-        sourceEvent: `ingestion:${log?.log_id || enquiry.externalReference || lead.leadId}`,
-        metadata: {
-          source: enquiry.source,
-          ingestionLogId: log?.log_id,
-          reusedLead,
-        },
-      }, { actor }))
-      .catch((recommendationError) => console.warn('[leadIngestionService] recommendation generation skipped', recommendationError))
+    if (shouldCreateLeadRecommendation) {
+      void import('./leadActionEngineService')
+        .then(({ processLeadEvent }) => processLeadEvent({
+          organisationId: enquiry.organisationId,
+          leadId: lead.leadId,
+          contactId,
+          assignedAgentId: assignment?.agentId || assignment?.newAgentId || buildAssignedAgent(enquiry, listing)?.id || actor?.id,
+          eventType: 'new_lead',
+          sourceEvent: `ingestion:${log?.log_id || enquiry.externalReference || lead.leadId}`,
+          metadata: {
+            source: enquiry.source,
+            ingestionLogId: log?.log_id,
+            reusedLead,
+          },
+        }, { actor }))
+        .catch((recommendationError) => console.warn('[leadIngestionService] recommendation generation skipped', recommendationError))
+    }
 
     return {
       ok: true,
@@ -570,6 +599,7 @@ export async function createOrUpdateLeadFromEnquiry(payload = {}, { actor = null
       log,
       assignment,
       warning,
+      workflowVariant: normalizedWorkflowVariant,
     }
   } catch (error) {
     const log = await createIngestionLog(client, enquiry, { status: 'failed', error: error?.message || 'Lead ingestion failed.' }).catch(() => null)

@@ -1,6 +1,6 @@
 import { buildFinanceReadinessHandoffPacket } from '../core/finance/financeReadinessSelectors'
 import { getBondApplicationProgress, getBondIntakeSummary } from '../core/transactions/bondIntakeSelectors'
-import { isBondFinanceType } from '../core/transactions/financeType'
+import { deriveFinanceManagedBy, isBondFinanceType } from '../core/transactions/financeType'
 import { invokeEdgeFunction, supabase } from '../lib/supabaseClient'
 
 export const BOND_NOTIFICATION_EVENTS = Object.freeze({
@@ -207,25 +207,62 @@ function roleMatches(row = {}, roles = []) {
   return normalizedRoles.includes(role)
 }
 
-function isAffirmative(value) {
-  const normalized = normalizeLower(value)
-  return ['1', 'true', 'yes', 'y', 'on', 'enabled'].includes(normalized)
+function getNotificationFormData(metadata = {}, transaction = {}) {
+  const candidates = [
+    metadata.onboardingFormData,
+    metadata.formData,
+    metadata.form_data,
+    transaction.onboardingFormData,
+    transaction.onboarding_form_data,
+    transaction.formData,
+    transaction.form_data,
+  ]
+  const formData = candidates.find((candidate) => candidate && typeof candidate === 'object' && !Array.isArray(candidate))
+  if (!formData) return {}
+  if (formData.form_data && typeof formData.form_data === 'object' && !Array.isArray(formData.form_data)) {
+    return formData.form_data
+  }
+  if (formData.formData && typeof formData.formData === 'object' && !Array.isArray(formData.formData)) {
+    return formData.formData
+  }
+  return formData
 }
 
-function isBondAssistanceRequested(formData = {}) {
-  const form = formData?.form_data && typeof formData.form_data === 'object' ? formData.form_data : formData
-  return [
-    form?.bond_help_requested,
-    form?.bondHelpRequested,
-    form?.needs_bond_assistance,
-    form?.needsBondAssistance,
-    form?.ooba_assist_requested,
-    form?.oobaAssistRequested,
-    form?.finance?.bond_help_requested,
-    form?.finance?.bondHelpRequested,
-    form?.finance?.needs_bond_assistance,
-    form?.finance?.needsBondAssistance,
-  ].some(isAffirmative)
+function resolveBondNotificationFinanceContext(transaction = {}, metadata = {}) {
+  const formData = getNotificationFormData(metadata, transaction)
+  const financeType =
+    transaction.finance_type ||
+    transaction.financeType ||
+    metadata.finance_type ||
+    metadata.financeType ||
+    formData.purchase_finance_type ||
+    formData.purchaseFinanceType ||
+    formData.finance_type ||
+    formData.financeType ||
+    formData.finance?.purchase_finance_type ||
+    formData.finance?.purchaseFinanceType ||
+    formData.finance?.finance_type ||
+    formData.finance?.financeType ||
+    ''
+  const financeManagedBy = deriveFinanceManagedBy({
+    financeType,
+    financeManagedBy:
+      transaction.finance_managed_by ||
+      transaction.financeManagedBy ||
+      metadata.finance_managed_by ||
+      metadata.financeManagedBy ||
+      formData.finance_managed_by ||
+      formData.financeManagedBy ||
+      formData.finance?.finance_managed_by ||
+      formData.finance?.financeManagedBy,
+    formData,
+  })
+
+  return {
+    financeType,
+    financeManagedBy,
+    originatorManaged: isBondFinanceType(financeType) && financeManagedBy === 'bond_originator',
+  }
 }
 
 async function resolveProfilesByEmail(client, emails = []) {
@@ -1201,6 +1238,17 @@ export async function notifyBondIntakeEvent({
   const id = getTransactionId(resolvedTransaction, transactionId)
   const effectiveEventType = BOND_NOTIFICATION_EVENTS[eventType] || eventType
   const eventKey = resolveEventKey(effectiveEventType, metadata)
+  const financeContext = resolveBondNotificationFinanceContext(resolvedTransaction, metadata)
+
+  if (!financeContext.originatorManaged) {
+    return {
+      skipped: true,
+      reason: isBondFinanceType(financeContext.financeType) ? 'finance_not_originator_managed' : 'not_bond_finance',
+      eventType: effectiveEventType,
+      eventKey,
+      financeManagedBy: financeContext.financeManagedBy,
+    }
+  }
 
   if (await eventAlreadyExists(db, { transactionId: id, eventType: effectiveEventType, eventKey })) {
     return { skipped: true, duplicate: true, eventType: effectiveEventType, eventKey }
@@ -1297,25 +1345,36 @@ export async function notifyBondIntakeEvent({
 }
 
 export async function notifyBondIntakeStartedForOnboarding({ transaction, formData = {}, actor = { roleType: 'client' }, metadata = {}, client = null, emailEnabled, invokeEmailFunction } = {}) {
+  const financeContext = resolveBondNotificationFinanceContext(transaction || {}, {
+    ...metadata,
+    onboardingFormData: formData,
+  })
   const financeType =
+    financeContext.financeType ||
     transaction?.finance_type ||
     transaction?.financeType ||
     formData?.finance_type ||
     formData?.financeType ||
     formData?.finance?.finance_type ||
     formData?.finance?.financeType
-  if (!isBondFinanceType(financeType) && !isBondAssistanceRequested(formData)) {
-    return { skipped: true, reason: 'not_bond_finance' }
+  if (!financeContext.originatorManaged) {
+    return {
+      skipped: true,
+      reason: isBondFinanceType(financeType) ? 'finance_not_originator_managed' : 'not_bond_finance',
+      financeManagedBy: financeContext.financeManagedBy,
+    }
   }
   const started = await notifyBondIntakeEvent({
     eventType: BOND_NOTIFICATION_EVENTS.BOND_INTAKE_RECEIVED,
     transaction: {
       ...transaction,
+      finance_managed_by: financeContext.financeManagedBy,
       finance_type: isBondFinanceType(financeType) ? financeType : transaction?.finance_type || transaction?.financeType || 'bond',
     },
     actor,
     metadata: {
       ...metadata,
+      financeManagedBy: financeContext.financeManagedBy,
       formDataSource: 'client_onboarding_submitted',
       onboardingFormData: formData,
       applicationPath: metadata.originatorPath || metadata.bondApplicationPath || '/bond/applications',
@@ -1328,11 +1387,13 @@ export async function notifyBondIntakeStartedForOnboarding({ transaction, formDa
     eventType: BOND_NOTIFICATION_EVENTS.BUYER_BOND_ORIGINATOR_INTRO,
     transaction: {
       ...transaction,
+      finance_managed_by: financeContext.financeManagedBy,
       finance_type: isBondFinanceType(financeType) ? financeType : transaction?.finance_type || transaction?.financeType || 'bond',
     },
     actor,
     metadata: {
       ...metadata,
+      financeManagedBy: financeContext.financeManagedBy,
       formDataSource: 'client_onboarding_submitted',
       onboardingFormData: formData,
       applicationPath: metadata.applicationPath || metadata.portalPath || transaction?.buyerPortalPath || transaction?.buyer_portal_path || '/client-access',
@@ -1360,9 +1421,16 @@ export async function checkAndNotifyBondOtpReady({
   const resolvedTransaction = transaction || { id: transactionId }
   const id = getTransactionId(resolvedTransaction, transactionId)
   const financeType = resolvedTransaction?.finance_type || resolvedTransaction?.financeType || metadata.financeType
+  const financeContext = resolveBondNotificationFinanceContext(resolvedTransaction, {
+    ...metadata,
+    financeType,
+  })
 
   if (!isBondFinanceType(financeType)) {
     return { skipped: true, reason: 'not_bond_finance' }
+  }
+  if (!financeContext.originatorManaged) {
+    return { skipped: true, reason: 'finance_not_originator_managed', financeManagedBy: financeContext.financeManagedBy }
   }
   if (previousOtpReady || !currentOtpReady) {
     return { skipped: true, reason: 'otp_not_crossing_ready_threshold' }
@@ -1395,9 +1463,16 @@ export async function checkAndNotifyBondApplicationReadyForReview({
   const resolvedTransaction = transaction || { id: transactionId }
   const id = getTransactionId(resolvedTransaction, transactionId)
   const financeType = resolvedTransaction?.finance_type || resolvedTransaction?.financeType || metadata.financeType
+  const financeContext = resolveBondNotificationFinanceContext(resolvedTransaction, {
+    ...metadata,
+    financeType,
+  })
 
   if (!isBondFinanceType(financeType)) {
     return { skipped: true, reason: 'not_bond_finance' }
+  }
+  if (!financeContext.originatorManaged) {
+    return { skipped: true, reason: 'finance_not_originator_managed', financeManagedBy: financeContext.financeManagedBy }
   }
   if (previousReadyForReview || !currentReadyForReview) {
     return { skipped: true, reason: 'application_not_crossing_ready_for_review_threshold' }
@@ -1429,10 +1504,18 @@ export async function checkAndNotifyBondDocumentsComplete({
   const db = getClient({ client })
   const resolvedTransaction = transaction || { id: transactionId }
   const id = getTransactionId(resolvedTransaction, transactionId)
+  const financeContext = resolveBondNotificationFinanceContext(resolvedTransaction, metadata)
   const missingCount = Number(readiness?.missingRequiredDocs ?? readiness?.missingCount ?? metadata.missingRequiredDocs ?? Number.NaN)
   const wasIncomplete = Number(previousMissingCount) > 0
   const isNowComplete = Number.isFinite(missingCount) ? missingCount === 0 : Boolean(readiness?.docsComplete || readiness?.isComplete)
 
+  if (!financeContext.originatorManaged) {
+    return {
+      skipped: true,
+      reason: isBondFinanceType(financeContext.financeType) ? 'finance_not_originator_managed' : 'not_bond_finance',
+      financeManagedBy: financeContext.financeManagedBy,
+    }
+  }
   if (!wasIncomplete || !isNowComplete) {
     return { skipped: true, reason: 'documents_not_crossing_complete_threshold' }
   }

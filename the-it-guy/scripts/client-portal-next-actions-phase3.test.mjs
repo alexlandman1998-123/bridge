@@ -62,6 +62,40 @@ test('bond finance asks buyer to complete the bond application when not started'
   assert.equal(action.actionRoute, 'bond_application')
 })
 
+test('client-managed bond finance skips originator bond application actions', () => {
+  const actions = generateClientPortalNextActions({
+    workspaceMode: 'buying',
+    onboarding: { status: 'submitted' },
+    transaction: {
+      finance_type: 'bond',
+      finance_managed_by: 'client',
+    },
+    documentCenter: {
+      requiredDocuments: [
+        {
+          key: 'bank_approval',
+          label: 'Bank approval letter',
+          status: 'required',
+          requirementLevel: 'required',
+        },
+      ],
+    },
+    portalData: {
+      onboardingFormData: {
+        formData: {},
+      },
+    },
+  })
+
+  const ids = actionIds(actions)
+  assert.equal(ids.has('bond_application_required'), false)
+  const financeAction = actions.find((item) => item.id === 'bond_finance_documents_required')
+  assert.equal(Boolean(financeAction), true)
+  assert.equal(financeAction.title, 'Upload external finance documents')
+  assert.equal(financeAction.actionRoute, 'documents')
+  assert.equal(financeAction.metadata.financeManagedBy, 'client')
+})
+
 test('combination finance treats bond documents and application as buyer actions', () => {
   const actions = generateClientPortalNextActions({
     workspaceMode: 'buying',

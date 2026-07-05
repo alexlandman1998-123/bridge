@@ -1,6 +1,9 @@
 import { BriefcaseBusiness, FileText, Landmark, ListChecks, MessageCircle, ScrollText, ShieldCheck } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import MobileCreateSheet, { MobileDraftCard, mobileDraftMatchesModule } from '../../components/mobile-shell/MobileCreateSheet'
 import { MobileCard, MobileEmptyState, MobileFilterChips } from '../../components/mobile-shell/MobileShellStates'
+import { getOfflineDrafts } from '../../services/mobileProductivityService'
 import { getMobileSharedActivity } from '../../services/mobileWorkspaceService'
 
 const FILTERS = [
@@ -24,12 +27,29 @@ const ICONS = {
 }
 
 export default function MobileActivityPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [filter, setFilter] = useState('All')
+  const [drafts, setDrafts] = useState(() => getOfflineDrafts())
+  const createType = searchParams.get('create') || ''
+  const createOpen = createType === 'note'
   const activity = getMobileSharedActivity()
   const rows = useMemo(() => {
     if (filter === 'All') return activity
     return activity.filter((item) => item.module === filter || `${item.title} ${item.body}`.toLowerCase().includes(filter.toLowerCase()))
   }, [activity, filter])
+  const pendingDrafts = useMemo(() => (
+    drafts.filter((draft) => mobileDraftMatchesModule(draft, 'activity'))
+  ), [drafts])
+
+  function clearCreateIntent() {
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete('create')
+    setSearchParams(nextParams, { replace: true })
+  }
+
+  function handleDraftSaved() {
+    setDrafts(getOfflineDrafts())
+  }
 
   return (
     <div className="space-y-6" data-mobile-shared-activity>
@@ -54,6 +74,12 @@ export default function MobileActivityPage() {
       </section>
 
       <MobileFilterChips items={FILTERS} active={filter} onChange={setFilter} />
+
+      {pendingDrafts.length ? (
+        <section className="space-y-3" data-mobile-pending-notes>
+          {pendingDrafts.map((draft) => <MobileDraftCard key={draft.id} draft={draft} />)}
+        </section>
+      ) : null}
 
       {rows.length ? (
         <section className="space-y-4">
@@ -81,7 +107,14 @@ export default function MobileActivityPage() {
             </MobileCard>
           </div>
         </section>
-      ) : <MobileEmptyState title="No activity found." body="Try another activity filter." />}
+      ) : pendingDrafts.length && filter === 'All' ? null : <MobileEmptyState title="No activity found." body="Try another activity filter." />}
+      <MobileCreateSheet
+        open={createOpen}
+        type={createType}
+        route="/mobile/activity"
+        onClose={clearCreateIntent}
+        onSaved={handleDraftSaved}
+      />
     </div>
   )
 }

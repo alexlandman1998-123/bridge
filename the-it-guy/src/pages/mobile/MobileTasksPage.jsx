@@ -1,8 +1,10 @@
 import { CheckCircle2, Clock3, ExternalLink, ListChecks, UserRound } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import MobileCreateSheet, { MobileDraftCard, mobileDraftMatchesModule } from '../../components/mobile-shell/MobileCreateSheet'
 import { MobileOfflineDraftPanel } from '../../components/mobile-shell/MobileProductivity'
 import { MobileCard, MobileEmptyState, MobileFilterChips } from '../../components/mobile-shell/MobileShellStates'
+import { getOfflineDrafts } from '../../services/mobileProductivityService'
 import { getMobileSharedTasks } from '../../services/mobileWorkspaceService'
 import { trackMobileMetric } from '../../services/observability/monitoring'
 
@@ -10,13 +12,20 @@ const FILTERS = ['All', 'Today', 'High', 'Matter', 'Transaction', 'Application']
 
 export default function MobileTasksPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [tasks, setTasks] = useState(() => getMobileSharedTasks())
+  const [drafts, setDrafts] = useState(() => getOfflineDrafts())
   const [filter, setFilter] = useState('All')
+  const createType = searchParams.get('create') || ''
+  const createOpen = createType === 'follow-up'
   const visibleTasks = useMemo(() => {
     if (filter === 'All') return tasks
     const needle = filter.toLowerCase()
     return tasks.filter((task) => `${task.title} ${task.related} ${task.due} ${task.priority} ${task.module}`.toLowerCase().includes(needle))
   }, [filter, tasks])
+  const pendingDrafts = useMemo(() => (
+    drafts.filter((draft) => mobileDraftMatchesModule(draft, 'tasks'))
+  ), [drafts])
 
   function completeTask(taskId) {
     setTasks((current) => current.filter((task) => task.id !== taskId))
@@ -36,6 +45,16 @@ export default function MobileTasksPage() {
   function assignTask(taskId) {
     setTasks((current) => current.map((task) => task.id === taskId ? { ...task, assigned: 'You' } : task))
     void trackMobileMetric('workspace_action_used', { route: '/mobile/tasks', metadata: { taskId, action: 'Assign' } })
+  }
+
+  function clearCreateIntent() {
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete('create')
+    setSearchParams(nextParams, { replace: true })
+  }
+
+  function handleDraftSaved() {
+    setDrafts(getOfflineDrafts())
   }
 
   return (
@@ -64,6 +83,12 @@ export default function MobileTasksPage() {
 
       <MobileFilterChips items={FILTERS} active={filter} onChange={setFilter} />
 
+      {pendingDrafts.length ? (
+        <section className="space-y-3" data-mobile-pending-follow-ups>
+          {pendingDrafts.map((draft) => <MobileDraftCard key={draft.id} draft={draft} />)}
+        </section>
+      ) : null}
+
       {visibleTasks.length ? visibleTasks.map((task) => (
         <MobileCard key={task.id}>
           <div className="flex items-start gap-3">
@@ -87,8 +112,15 @@ export default function MobileTasksPage() {
             <button type="button" className="min-h-11 rounded-2xl bg-[#10243a] px-3 text-sm font-semibold text-white" onClick={() => completeTask(task.id)}>Complete</button>
           </div>
         </MobileCard>
-      )) : <MobileEmptyState title="No outstanding tasks." body={filter === 'All' ? 'Your shared task list is clear.' : 'No tasks match this filter.'} />}
+      )) : pendingDrafts.length && filter === 'All' ? null : <MobileEmptyState title="No outstanding tasks." body={filter === 'All' ? 'Your shared task list is clear.' : 'No tasks match this filter.'} />}
       <MobileOfflineDraftPanel />
+      <MobileCreateSheet
+        open={createOpen}
+        type={createType}
+        route="/mobile/tasks"
+        onClose={clearCreateIntent}
+        onSaved={handleDraftSaved}
+      />
     </div>
   )
 }

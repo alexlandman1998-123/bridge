@@ -22,6 +22,7 @@ import {
 } from '../core/transactions/bondHybridFinanceWorkflow'
 import {
   financeTypeShortLabel,
+  normalizeFinanceManagedBy,
   normalizeFinanceType,
 } from '../core/transactions/financeType'
 
@@ -85,6 +86,14 @@ const DEVELOPER_STAGE_LABELS = {
   ready_for_transfer: 'Ready For Transfer',
 }
 
+const EXTERNAL_FINANCE_STAGE_LABELS = {
+  documents_required: 'External Documents Required',
+  documents_uploaded: 'External Documents Uploaded',
+  approval_received: 'Approval Received',
+  attorney_review: 'Attorney Review',
+  ready_for_transfer: 'Ready For Transfer',
+}
+
 function text(value) {
   return String(value || '').trim()
 }
@@ -133,6 +142,40 @@ export function normalizeTransactionFinanceType(value, { allowUnknown = true } =
   const raw = lower(value)
   if (raw.includes('developer')) return 'developer'
   return normalizeFinanceType(value, { allowUnknown })
+}
+
+function getDefaultFinanceOwner(financeType = '') {
+  if (financeType === 'bond' || financeType === 'combination') return 'bond_originator'
+  if (financeType === 'developer') return 'internal'
+  return 'client'
+}
+
+function resolveFinanceOwnerDescriptor(rawOwner = '', financeType = '') {
+  const normalizedOwner = normalizeFinanceManagedBy(rawOwner, {
+    fallback: getDefaultFinanceOwner(financeType),
+  })
+
+  if (normalizedOwner === 'bond_originator') {
+    return {
+      key: normalizedOwner,
+      label: 'Bond Originator',
+      subtext: 'Originator-managed finance',
+    }
+  }
+
+  if (normalizedOwner === 'internal') {
+    return {
+      key: normalizedOwner,
+      label: financeType === 'developer' ? 'Developer' : 'Internal Team',
+      subtext: financeType === 'developer' ? 'Developer finance route' : 'Internal finance coordination',
+    }
+  }
+
+  return {
+    key: normalizedOwner,
+    label: 'Buyer / Attorney',
+    subtext: financeType === 'cash' ? 'Cash / proof of funds route' : 'Buyer-arranged finance',
+  }
 }
 
 function hasAnyMatch(value, patterns = []) {
@@ -400,6 +443,58 @@ function deriveDeveloperStatus({ transaction = {}, documents = [] } = {}) {
   }
 }
 
+function deriveExternalFinanceStatus({ transaction = {}, documents = [], buyerDocumentRows = [] } = {}) {
+  const externalDocuments = filterDocuments(documents, {
+    lane: 'external',
+    matchers: ['bank approval', 'approval letter', 'finance approval', 'home loan', 'bond', 'mortgage', 'loan confirmation'],
+  }).map((item) => buildDocumentRow(item))
+  const uploadedDocuments = buyerDocumentRows.filter((item) => item.status !== 'missing')
+  const rejectedDocuments = buyerDocumentRows.filter((item) => item.status === 'rejected')
+  const documentsUploaded = uploadedDocuments.length > 0 || externalDocuments.length > 0
+  const approvalReceived =
+    buyerDocumentRows.some((item) => item.status === 'approved') ||
+    externalDocuments.some((item) => hasAnyMatch(`${item.name} ${item.category} ${item.documentType}`, ['approval', 'approved', 'confirmation'])) ||
+    hasAnyMatch(transaction?.next_action, ['approval received', 'finance approved', 'bank confirmation received'])
+  const attorneyReviewed = approvalReceived && hasAnyMatch(transaction?.next_action, ['attorney reviewed', 'attorney verified', 'finance proof verified'])
+  const readyForTransfer =
+    hasAnyMatch(transaction?.stage, ['ready for transfer']) ||
+    hasAnyMatch(transaction?.next_action, ['ready for transfer', 'finance workflow complete'])
+
+  const stage =
+    !documentsUploaded || rejectedDocuments.length
+      ? 'documents_required'
+      : !approvalReceived
+        ? 'documents_uploaded'
+        : !attorneyReviewed
+          ? 'approval_received'
+          : !readyForTransfer
+            ? 'attorney_review'
+            : 'ready_for_transfer'
+
+  const steps = [
+    { key: 'documents_required', label: EXTERNAL_FINANCE_STAGE_LABELS.documents_required, completed: documentsUploaded && !rejectedDocuments.length, current: stage === 'documents_required' },
+    { key: 'documents_uploaded', label: EXTERNAL_FINANCE_STAGE_LABELS.documents_uploaded, completed: approvalReceived, current: stage === 'documents_uploaded' },
+    { key: 'approval_received', label: EXTERNAL_FINANCE_STAGE_LABELS.approval_received, completed: attorneyReviewed || readyForTransfer, current: stage === 'approval_received' },
+    { key: 'attorney_review', label: EXTERNAL_FINANCE_STAGE_LABELS.attorney_review, completed: readyForTransfer, current: stage === 'attorney_review' },
+    { key: 'ready_for_transfer', label: EXTERNAL_FINANCE_STAGE_LABELS.ready_for_transfer, completed: readyForTransfer, current: stage === 'ready_for_transfer' },
+  ].map((item) => ({
+    key: item.key,
+    label: item.label,
+    status: item.completed ? 'completed' : item.current ? 'current' : 'upcoming',
+  }))
+
+  return {
+    stage,
+    stageLabel: EXTERNAL_FINANCE_STAGE_LABELS[stage] || title(stage),
+    documents: externalDocuments,
+    documentsUploaded,
+    approvalReceived,
+    attorneyReviewed,
+    readyForTransfer,
+    steps,
+  }
+}
+
 function buildRailGroup({ key, label, steps = [] }) {
   return {
     key,
@@ -530,23 +625,45 @@ function deriveSummary({
   buyerDocumentRows = [],
   cashStatus,
   developerStatus,
+  externalStatus,
 }) {
   const workflow = workflowData?.workflow || {}
   const rawOwner = workflow?.financeOwner || workflow?.finance_owner || transaction?.finance_managed_by || transaction?.finance_owner || ''
-  const ownerLabel =
-    rawOwner
-      ? title(rawOwner)
-      : financeType === 'bond' || financeType === 'combination'
-        ? 'Bond Originator'
-        : financeType === 'developer'
-          ? 'Developer'
-          : 'Buyer / Attorney'
+  const ownerDescriptor = resolveFinanceOwnerDescriptor(rawOwner, financeType)
+  const originatorManagedFinance = ownerDescriptor.key === 'bond_originator'
 
   let stageLabel = 'Not Started'
   let nextAction = text(workflow?.nextAction || workflow?.next_action || transaction?.next_action)
   let blockerStatus = text(workflow?.blockerStatus || workflow?.blocker_status)
 
-  if (financeType === 'bond') {
+  if ((financeType === 'bond' || financeType === 'combination') && !originatorManagedFinance) {
+    stageLabel =
+      financeType === 'combination'
+        ? `External: ${externalStatus.stageLabel} / Cash: ${cashStatus.stageLabel}`
+        : externalStatus.stageLabel
+    if (!nextAction) {
+      nextAction =
+        !externalStatus.documentsUploaded
+          ? 'Upload external finance approval documents'
+          : !externalStatus.approvalReceived
+            ? 'Await external finance approval'
+            : !externalStatus.attorneyReviewed
+              ? 'Attorney to review external finance proof'
+              : financeType === 'combination' && !cashStatus.readyForTransfer
+                ? 'Complete cash portion finance evidence'
+                : 'Finance workflow complete'
+    }
+    if (!blockerStatus) {
+      blockerStatus =
+        !externalStatus.documentsUploaded
+          ? 'Missing external finance documents'
+          : !externalStatus.approvalReceived
+            ? 'Awaiting external approval'
+            : financeType === 'combination' && !cashStatus.readyForTransfer
+              ? 'Awaiting parallel finance completion'
+              : 'No blockers'
+    }
+  } else if (financeType === 'bond') {
     const acceptedOffer = workflowData?.acceptedOffer || summarizeBondHybridFinanceWorkflow(workflowData || {}).approvedQuote || null
     const instruction = workflowData?.instruction || {}
     const grantReceived = Boolean(instruction?.grantReceived || instruction?.grant_received || instruction?.grantDocumentId || instruction?.grant_document_id)
@@ -638,7 +755,9 @@ function deriveSummary({
   }
 
   return {
-    financeOwner: ownerLabel,
+    financeOwner: ownerDescriptor.label,
+    financeOwnerKey: ownerDescriptor.key,
+    financeOwnerSubtext: ownerDescriptor.subtext,
     currentStageLabel: stageLabel,
     nextAction: nextAction || 'Review finance workflow',
     blockerStatus: blockerStatus || 'No blockers',
@@ -665,6 +784,7 @@ export function buildTransactionFinanceWorkspace({
   const bondStage = deriveBondStage(workflowData || {}, buyerDocumentRows)
   const cashStatus = deriveCashStatus({ transaction, documents, requiredDocumentChecklist })
   const developerStatus = deriveDeveloperStatus({ transaction, documents })
+  const externalStatus = deriveExternalFinanceStatus({ transaction, documents, buyerDocumentRows })
   const summary = deriveSummary({
     financeType,
     transaction,
@@ -673,10 +793,14 @@ export function buildTransactionFinanceWorkspace({
     buyerDocumentRows,
     cashStatus,
     developerStatus,
+    externalStatus,
   })
+  const isBondLikeFinance = financeType === 'bond' || financeType === 'combination'
+  const originatorManagedFinance = isBondLikeFinance && summary.financeOwnerKey === 'bond_originator'
+  const clientManagedBondFinance = isBondLikeFinance && !originatorManagedFinance
 
   const railGroups = []
-  if (financeType === 'bond') {
+  if (financeType === 'bond' && originatorManagedFinance) {
     railGroups.push(
       buildRailGroup({
         key: 'bond',
@@ -694,24 +818,42 @@ export function buildTransactionFinanceWorkspace({
         ),
       }),
     )
+  } else if (financeType === 'bond') {
+    railGroups.push(buildRailGroup({ key: 'external_finance', label: 'External Finance', steps: enrichGenericRailSteps(externalStatus.steps, {
+      documents_required: 'Buyer',
+      documents_uploaded: 'Buyer',
+      approval_received: 'Buyer / Bank',
+      attorney_review: 'Attorney',
+      ready_for_transfer: 'Attorney',
+    }) }))
   } else if (financeType === 'combination') {
-    railGroups.push(
-      buildRailGroup({
-        key: 'bond',
-        label: 'Bond Portion',
-        steps: enrichBondRailSteps(
-          buildBondHybridFinanceStageSteps({
-            ...(workflowData || {}),
-            workflow: {
-              ...(workflowData?.workflow || {}),
-              currentStage: bondStage,
-            },
-          }),
-          workflowData || {},
-          buyerDocumentRows,
-        ),
-      }),
-    )
+    if (originatorManagedFinance) {
+      railGroups.push(
+        buildRailGroup({
+          key: 'bond',
+          label: 'Bond Portion',
+          steps: enrichBondRailSteps(
+            buildBondHybridFinanceStageSteps({
+              ...(workflowData || {}),
+              workflow: {
+                ...(workflowData?.workflow || {}),
+                currentStage: bondStage,
+              },
+            }),
+            workflowData || {},
+            buyerDocumentRows,
+          ),
+        }),
+      )
+    } else {
+      railGroups.push(buildRailGroup({ key: 'external_finance', label: 'External Finance Portion', steps: enrichGenericRailSteps(externalStatus.steps, {
+        documents_required: 'Buyer',
+        documents_uploaded: 'Buyer',
+        approval_received: 'Buyer / Bank',
+        attorney_review: 'Attorney',
+        ready_for_transfer: 'Attorney',
+      }) }))
+    }
     railGroups.push(buildRailGroup({ key: 'cash', label: 'Cash Portion', steps: enrichGenericRailSteps(cashStatus.steps, {
       proof_of_funds_required: 'Buyer',
       proof_uploaded: 'Buyer',
@@ -751,23 +893,42 @@ export function buildTransactionFinanceWorkspace({
     lane: 'bond',
     matchers: BOND_DOCUMENT_MATCHERS,
   }).map((item) => buildDocumentRow(item))
+  const effectivePermissions = {
+    ...permissions,
+    canManageApplications: originatorManagedFinance && permissions.canManageApplications,
+    canManageOffers: originatorManagedFinance && permissions.canManageOffers,
+    canMarkInstructionSent: originatorManagedFinance && permissions.canMarkInstructionSent,
+  }
 
   return {
     financeType,
     financeTypeLabel: financeTypeShortLabel(financeType === 'unknown' ? transaction?.finance_type : financeType),
-    permissions,
+    financeOwner: summary.financeOwner,
+    financeOwnerKey: summary.financeOwnerKey,
+    financeOwnerSubtext: summary.financeOwnerSubtext,
+    originatorManagedFinance,
+    clientManagedBondFinance,
+    permissions: effectivePermissions,
     summaryBlocks: [
       {
         key: 'finance_type',
         label: 'Finance Type',
         value: financeType === 'unknown' ? 'Not captured' : title(financeType === 'combination' ? 'hybrid' : financeType),
-        subtext: financeType === 'bond' ? 'Buyer using bond finance' : financeType === 'combination' ? 'Bond plus cash component' : financeType === 'developer' ? 'Developer finance route' : 'Cash / proof of funds route',
+        subtext: clientManagedBondFinance
+          ? 'Buyer-arranged external finance'
+          : financeType === 'bond'
+            ? 'Buyer using bond finance'
+            : financeType === 'combination'
+              ? 'Bond plus cash component'
+              : financeType === 'developer'
+                ? 'Developer finance route'
+                : 'Cash / proof of funds route',
       },
       {
         key: 'finance_owner',
         label: 'Finance Owner',
         value: summary.financeOwner,
-        subtext: financeType === 'bond' || financeType === 'combination' ? 'Bond Originator' : financeType === 'developer' ? 'Developer' : 'Buyer / Attorney',
+        subtext: summary.financeOwnerSubtext,
       },
       {
         key: 'current_stage',
@@ -804,6 +965,7 @@ export function buildTransactionFinanceWorkspace({
     },
     cash: cashStatus,
     developer: developerStatus,
+    external: externalStatus,
     amounts: {
       purchasePrice: formatCurrency(transaction?.purchase_price || transaction?.sales_price || transaction?.price),
       deposit: formatCurrency(transaction?.deposit || transaction?.deposit_amount),

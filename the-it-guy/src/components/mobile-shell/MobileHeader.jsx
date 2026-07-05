@@ -8,7 +8,7 @@ export default function MobileHeader() {
   const unreadCount = 3
 
   return (
-    <header className="sticky top-0 z-30 bg-[#f6f8fb]/88 px-5 pb-3 pt-[max(0.875rem,env(safe-area-inset-top))] backdrop-blur-xl">
+    <header className="sticky top-0 z-30 bg-[#f6f8fb]/88 px-5 pb-3 pt-[max(0.875rem,env(safe-area-inset-top))] backdrop-blur-xl" data-mobile-header>
       <div className="mx-auto flex max-w-[520px] items-center gap-3">
         <Link to="/mobile/home" className="flex min-w-0 flex-1 items-center gap-3 text-inherit">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[18px] bg-[#10243a] text-sm font-bold text-white shadow-[0_10px_22px_rgba(15,23,42,0.16)]">

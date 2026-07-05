@@ -1,9 +1,11 @@
 import {
   AlertTriangle,
+  CheckCircle2,
   Eye,
   FileSignature,
   FileText,
   Plus,
+  RefreshCw,
   Save,
   XCircle,
 } from 'lucide-react'
@@ -12,9 +14,13 @@ import {
   DOCUMENT_CREATION_KIND_OPTIONS,
   DOCUMENT_RUN_SOURCE_OPTIONS,
   getDocumentKindOption,
+  getDocumentRunReadiness,
   studioPrimaryButtonClass,
   studioSecondaryButtonClass,
 } from './contractStudioConstants'
+import MandateDraftIntakePanel from '../../components/documents/MandateDraftIntakePanel'
+import OtpDraftIntakePanel from '../../components/documents/OtpDraftIntakePanel'
+import { DOCUMENT_START_SOURCE_MODES } from '../../core/documents/documentStartRules'
 
 function normalizeText(value = '') {
   return String(value ?? '').trim()
@@ -206,6 +212,11 @@ export function DocumentCreationPanel({
   setActiveStudioArea,
   setActiveTab,
   createDefaultDocumentRunForm,
+  addendumDetailOptions = [],
+  documentLinkOptions = { clients: [], properties: [] },
+  documentLinkOptionsLoading = false,
+  documentLinkOptionsError = '',
+  onRefreshDocumentLinkOptions,
   handleTestGenerateFromRun,
   handleCreateDocumentPacketFromRun,
 }) {
@@ -213,6 +224,33 @@ export function DocumentCreationPanel({
   const selectedDocumentKindOption = getDocumentKindOption(documentRunForm.documentKind)
   const selectedSourceOption = DOCUMENT_RUN_SOURCE_OPTIONS.find((option) => option.key === documentRunForm.sourceType) || DOCUMENT_RUN_SOURCE_OPTIONS[0]
   const selectedTemplateLabel = form.templateLabel || selectedTemplate?.template_label || templateTypeConfig?.label || ''
+  const normalizedPacketType = normalizeText(packetType).toLowerCase()
+  const isRelatedDocumentKind = !['standard', 'custom'].includes(selectedDocumentKind)
+  const selectedAddendumDetailOption = addendumDetailOptions.find((option) => option.key === documentRunForm.addendumType) || addendumDetailOptions[0] || null
+  const addendumDetailFields = selectedAddendumDetailOption?.fields || []
+  const shouldShowAddendumDetails = isRelatedDocumentKind && Boolean(selectedAddendumDetailOption && addendumDetailFields.length)
+  const defaultManualDraft = createDefaultDocumentRunForm(packetType, selectedTemplateLabel)?.manualDraft || {}
+  const manualDraft = {
+    ...defaultManualDraft,
+    ...(documentRunForm.manualDraftType === normalizedPacketType && documentRunForm.manualDraft && typeof documentRunForm.manualDraft === 'object'
+      ? documentRunForm.manualDraft
+      : {}),
+  }
+  const showManualDraftIntake = selectedDocumentKind === 'standard' &&
+    ['otp', 'mandate'].includes(normalizedPacketType) &&
+    (
+      documentRunForm.sourceType === 'manual' ||
+      documentRunForm.documentStartSourceMode === DOCUMENT_START_SOURCE_MODES.manual
+    )
+  const documentRunReadiness = getDocumentRunReadiness({ documentRunForm, addendumDetailFields })
+  const readyForGeneratedCreate = !isRelatedDocumentKind || documentRunReadiness.ready
+  const readinessStepLabel = shouldShowAddendumDetails ? 'Step 4' : 'Step 3'
+  const finalStepLabel = isRelatedDocumentKind ? shouldShowAddendumDetails ? 'Step 5' : 'Step 4' : 'Step 2'
+  const createActionLabel = selectedDocumentKind === 'standard' ? 'Create Document' : `Create ${selectedDocumentKindOption.label}`
+  const savingActionLabel = selectedDocumentKind === 'standard' ? 'Creating...' : `Creating ${selectedDocumentKindOption.label}...`
+  const saveDraftLabel = selectedDocumentKind === 'standard' ? 'Save Draft' : `Save ${selectedDocumentKindOption.label} Draft`
+  const clientLinkOptions = Array.isArray(documentLinkOptions.clients) ? documentLinkOptions.clients : []
+  const propertyLinkOptions = Array.isArray(documentLinkOptions.properties) ? documentLinkOptions.properties : []
 
   function updateDocumentKind(option) {
     setDocumentRunForm((previous) => {
@@ -230,6 +268,152 @@ export function DocumentCreationPanel({
         ...previous,
         documentKind: option.key,
         title: shouldReplaceTitle ? generatedTitle : previous.title,
+      }
+    })
+  }
+
+  function updateAddendumType(nextAddendumType) {
+    const nextOption = addendumDetailOptions.find((option) => option.key === nextAddendumType) || addendumDetailOptions[0]
+    if (!nextOption) return
+    const allowedKeys = new Set((nextOption.fields || []).map((field) => field.key))
+    setDocumentRunForm((previous) => {
+      const nextDetails = Object.entries(previous.addendumDetails || {}).reduce((accumulator, [key, value]) => {
+        if (allowedKeys.has(key)) accumulator[key] = value
+        return accumulator
+      }, {})
+      return {
+        ...previous,
+        addendumType: nextOption.key,
+        addendumDetails: nextDetails,
+      }
+    })
+  }
+
+  function updateAddendumDetail(fieldKey, value) {
+    setDocumentRunForm((previous) => ({
+      ...previous,
+      addendumDetails: {
+        ...(previous.addendumDetails || {}),
+        [fieldKey]: value,
+      },
+    }))
+  }
+
+  function updateManualDraftField(fieldKey, value) {
+    setDocumentRunForm((previous) => {
+      const previousDraft = previous.manualDraftType === normalizedPacketType && previous.manualDraft && typeof previous.manualDraft === 'object'
+        ? previous.manualDraft
+        : {}
+      return {
+        ...previous,
+        sourceType: 'manual',
+        documentStartSourceMode: previous.documentStartSourceMode || DOCUMENT_START_SOURCE_MODES.manual,
+        manualDraftType: normalizedPacketType,
+        manualDraft: {
+          ...defaultManualDraft,
+          ...previousDraft,
+          [fieldKey]: value,
+        },
+      }
+    })
+  }
+
+  function resetManualDraftFields() {
+    setDocumentRunForm((previous) => ({
+      ...previous,
+      sourceType: 'manual',
+      documentStartSourceMode: previous.documentStartSourceMode || DOCUMENT_START_SOURCE_MODES.manual,
+      manualDraftType: normalizedPacketType,
+      manualDraft: defaultManualDraft,
+    }))
+  }
+
+  function applySavedClientLink(optionKey = '') {
+    const selectedKey = normalizeText(optionKey)
+    setDocumentRunForm((previous) => {
+      if (!selectedKey) {
+        return {
+          ...previous,
+          linkedClientKey: '',
+          leadId: previous.linkedPropertyKey ? previous.leadId || '' : '',
+          contactId: '',
+        }
+      }
+
+      const option = clientLinkOptions.find((item) => item.key === selectedKey)
+      if (!option) {
+        return {
+          ...previous,
+          linkedClientKey: selectedKey,
+        }
+      }
+
+      const previousDraft = previous.manualDraftType === normalizedPacketType && previous.manualDraft && typeof previous.manualDraft === 'object'
+        ? previous.manualDraft
+        : {}
+      const draftPatch = normalizedPacketType === 'mandate'
+        ? option.mandateDraftPatch || {}
+        : option.otpDraftPatch || {}
+
+      return {
+        ...previous,
+        sourceType: 'manual',
+        documentStartSourceMode: previous.documentStartSourceMode || DOCUMENT_START_SOURCE_MODES.manual,
+        linkedClientKey: option.key,
+        leadId: option.leadId || previous.leadId || '',
+        contactId: option.contactId || previous.contactId || '',
+        manualDraftType: normalizedPacketType,
+        manualDraft: {
+          ...defaultManualDraft,
+          ...previousDraft,
+          ...draftPatch,
+        },
+      }
+    })
+  }
+
+  function applySavedPropertyLink(optionKey = '') {
+    const selectedKey = normalizeText(optionKey)
+    setDocumentRunForm((previous) => {
+      if (!selectedKey) {
+        return {
+          ...previous,
+          linkedPropertyKey: '',
+          privateListingId: '',
+          leadId: previous.linkedClientKey ? previous.leadId || '' : '',
+        }
+      }
+
+      const option = propertyLinkOptions.find((item) => item.key === selectedKey)
+      if (!option) {
+        return {
+          ...previous,
+          linkedPropertyKey: selectedKey,
+        }
+      }
+
+      const previousDraft = previous.manualDraftType === normalizedPacketType && previous.manualDraft && typeof previous.manualDraft === 'object'
+        ? previous.manualDraft
+        : {}
+      const draftPatch = normalizedPacketType === 'mandate'
+        ? option.mandateDraftPatch || {}
+        : option.otpDraftPatch || {}
+
+      return {
+        ...previous,
+        sourceType: 'manual',
+        documentStartSourceMode: previous.documentStartSourceMode || DOCUMENT_START_SOURCE_MODES.manual,
+        linkedPropertyKey: option.key,
+        privateListingId: option.privateListingId || previous.privateListingId || '',
+        leadId: normalizedPacketType === 'mandate' && option.leadId
+          ? option.leadId
+          : previous.leadId || '',
+        manualDraftType: normalizedPacketType,
+        manualDraft: {
+          ...defaultManualDraft,
+          ...previousDraft,
+          ...draftPatch,
+        },
       }
     })
   }
@@ -266,19 +450,256 @@ export function DocumentCreationPanel({
           </SettingsBanner>
         ) : null}
 
+        {showManualDraftIntake ? (
+          <div className="rounded-[18px] border border-[#dbe7f3] bg-white p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">Optional</p>
+                <h4 className="mt-2 text-sm font-semibold text-[#102033]">Use saved records (optional)</h4>
+                <p className="mt-1 text-sm leading-6 text-[#607387]">
+                  Choose a client or property to fill the form below, then edit anything before creating the document.
+                </p>
+              </div>
+              {onRefreshDocumentLinkOptions ? (
+                <button
+                  type="button"
+                  className={`${studioSecondaryButtonClass} shrink-0`}
+                  onClick={() => void onRefreshDocumentLinkOptions()}
+                  disabled={documentLinkOptionsLoading}
+                >
+                  <RefreshCw size={14} className={documentLinkOptionsLoading ? 'animate-spin' : ''} />
+                  <span>{documentLinkOptionsLoading ? 'Loading...' : 'Refresh'}</span>
+                </button>
+              ) : null}
+            </div>
+
+            {documentLinkOptionsError ? (
+              <div className="mt-3 rounded-[14px] border border-[#f4e2bf] bg-[#fff8ec] px-3 py-2 text-sm leading-6 text-[#9a650d]">
+                {documentLinkOptionsError}
+              </div>
+            ) : null}
+
+            <div className="mt-4 grid min-w-0 gap-3 lg:grid-cols-2">
+              <label className={`${settingsFieldClass} min-w-0`}>
+                Saved client
+                <select
+                  value={documentRunForm.linkedClientKey || ''}
+                  onChange={(event) => applySavedClientLink(event.target.value)}
+                  disabled={documentLinkOptionsLoading && !clientLinkOptions.length}
+                >
+                  <option value="">
+                    {documentLinkOptionsLoading && !clientLinkOptions.length ? 'Loading saved clients...' : 'No saved client selected'}
+                  </option>
+                  {clientLinkOptions.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.helper ? `${option.label} - ${option.helper}` : option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className={`${settingsFieldClass} min-w-0`}>
+                Saved property
+                <select
+                  value={documentRunForm.linkedPropertyKey || ''}
+                  onChange={(event) => applySavedPropertyLink(event.target.value)}
+                  disabled={documentLinkOptionsLoading && !propertyLinkOptions.length}
+                >
+                  <option value="">
+                    {documentLinkOptionsLoading && !propertyLinkOptions.length ? 'Loading saved properties...' : 'No saved property selected'}
+                  </option>
+                  {propertyLinkOptions.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.helper ? `${option.label} - ${option.helper}` : option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+        ) : null}
+
+        {showManualDraftIntake ? (
+          normalizedPacketType === 'mandate' ? (
+            <MandateDraftIntakePanel
+              draft={manualDraft}
+              sourceMode={documentRunForm.documentStartSourceMode || DOCUMENT_START_SOURCE_MODES.manual}
+              documentStart={documentRunForm.documentStart}
+              onFieldChange={updateManualDraftField}
+              onReset={resetManualDraftFields}
+            />
+          ) : (
+            <OtpDraftIntakePanel
+              draft={manualDraft}
+              sourceMode={documentRunForm.documentStartSourceMode || DOCUMENT_START_SOURCE_MODES.manual}
+              documentStart={documentRunForm.documentStart}
+              onFieldChange={updateManualDraftField}
+              onReset={resetManualDraftFields}
+            />
+          )
+        ) : null}
+
+        {isRelatedDocumentKind ? (
+          <div className="rounded-[18px] border border-[#dbe7f3] bg-white p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">Step 2</p>
+            <div className="mt-3 space-y-3">
+              <div>
+                <h4 className="text-sm font-semibold text-[#102033]">Link the original document</h4>
+                <p className="mt-1 text-sm leading-6 text-[#607387]">
+                  Connect this {selectedDocumentKindOption.label.toLowerCase()} to the existing agreement, mandate, or deal record it changes.
+                </p>
+              </div>
+              <label className={settingsFieldClass}>
+                Original document packet ID
+                <input
+                  type="text"
+                  value={documentRunForm.parentDocumentId || ''}
+                  onChange={(event) => setDocumentRunForm((previous) => ({ ...previous, parentDocumentId: event.target.value }))}
+                  placeholder="UUID"
+                />
+              </label>
+              <label className={settingsFieldClass}>
+                Original document reference
+                <input
+                  type="text"
+                  value={documentRunForm.parentDocumentReference || ''}
+                  onChange={(event) => setDocumentRunForm((previous) => ({ ...previous, parentDocumentReference: event.target.value }))}
+                  placeholder="Signed OTP v1, Sales Mandate, or client reference"
+                />
+              </label>
+              <label className={settingsFieldClass}>
+                What changed?
+                <textarea
+                  rows={3}
+                  value={documentRunForm.documentChangeSummary || ''}
+                  onChange={(event) => setDocumentRunForm((previous) => ({ ...previous, documentChangeSummary: event.target.value }))}
+                  placeholder="Example: update occupation date, add a condition, or clarify a mandate term."
+                />
+              </label>
+            </div>
+          </div>
+        ) : null}
+
+        {shouldShowAddendumDetails ? (
+          <div className="rounded-[18px] border border-[#dbe7f3] bg-white p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">Step 3</p>
+            <div className="mt-3 space-y-3">
+              <div>
+                <h4 className="text-sm font-semibold text-[#102033]">Fill the addendum details</h4>
+                <p className="mt-1 text-sm leading-6 text-[#607387]">
+                  These fields feed the generated document so the addendum can be reviewed before signing.
+                </p>
+              </div>
+              <label className={settingsFieldClass}>
+                Addendum type
+                <select
+                  value={selectedAddendumDetailOption.key}
+                  onChange={(event) => updateAddendumType(event.target.value)}
+                >
+                  {addendumDetailOptions.map((option) => (
+                    <option key={option.key} value={option.key}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              {selectedAddendumDetailOption.helperText ? (
+                <p className="rounded-[14px] border border-[#e7eef6] bg-[#fbfdff] px-3 py-2 text-xs leading-5 text-[#607387]">
+                  {selectedAddendumDetailOption.helperText}
+                </p>
+              ) : null}
+              <div className="grid min-w-0 gap-3 md:grid-cols-2">
+                {addendumDetailFields.map((field) => {
+                  const fieldValue = documentRunForm.addendumDetails?.[field.key] || ''
+                  const isWide = field.control === 'textarea'
+                  return (
+                    <label key={field.key} className={`${settingsFieldClass} min-w-0 ${isWide ? 'md:col-span-2' : ''}`}>
+                      {field.label}
+                      {field.control === 'textarea' ? (
+                        <textarea
+                          rows={field.rows || 3}
+                          value={fieldValue}
+                          onChange={(event) => updateAddendumDetail(field.key, event.target.value)}
+                          placeholder={field.placeholder || ''}
+                        />
+                      ) : (
+                        <input
+                          type={field.control === 'date' ? 'date' : 'text'}
+                          value={fieldValue}
+                          onChange={(event) => updateAddendumDetail(field.key, event.target.value)}
+                          placeholder={field.placeholder || ''}
+                        />
+                      )}
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {isRelatedDocumentKind ? (
+          <div className={[
+            'rounded-[18px] border p-4',
+            documentRunReadiness.ready
+              ? 'border-[#d6efe1] bg-[#f5fbf8]'
+              : 'border-[#f4e2bf] bg-[#fff8ec]',
+          ].join(' ')}
+          >
+            <p className={[
+              'text-xs font-semibold uppercase tracking-[0.14em]',
+              documentRunReadiness.ready ? 'text-[#5a8d6d]' : 'text-[#9a650d]',
+            ].join(' ')}
+            >
+              {readinessStepLabel}
+            </p>
+            <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-semibold text-[#102033]">Ready to generate?</h4>
+                <p className="mt-1 text-sm leading-6 text-[#607387]">
+                  Complete these basics before generating the addendum. You can still save an incomplete draft from More options.
+                </p>
+              </div>
+              <span className={[
+                'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold',
+                documentRunReadiness.ready
+                  ? 'border-[#cdebd8] bg-white text-[#128642]'
+                  : 'border-[#f4e2bf] bg-white text-[#9a650d]',
+              ].join(' ')}
+              >
+                {documentRunReadiness.ready ? 'Ready' : 'Needs details'}
+              </span>
+            </div>
+            <div className="mt-4 grid gap-2">
+              {documentRunReadiness.items.map((item) => {
+                const Icon = item.passed ? CheckCircle2 : AlertTriangle
+                return (
+                  <div key={item.key} className="flex items-start gap-3 rounded-[14px] border border-white/70 bg-white px-3 py-3 text-sm">
+                    <Icon size={16} className={item.passed ? 'mt-0.5 shrink-0 text-[#128642]' : 'mt-0.5 shrink-0 text-[#b46f00]'} />
+                    <span className="min-w-0">
+                      <span className="block font-semibold text-[#102033]">{item.label}</span>
+                      <span className="mt-1 block leading-5 text-[#607387]">{item.detail}</span>
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ) : null}
+
         <div className="rounded-[18px] border border-[#d6efe1] bg-[#f5fbf8] p-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#5a8d6d]">Step 2</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#5a8d6d]">{finalStepLabel}</p>
           <button
             type="button"
             className={`${studioPrimaryButtonClass} mt-3 w-full`}
             onClick={() => void handleCreateDocumentPacketFromRun({ autoGenerate: true })}
-            disabled={creatingDocumentPacket || !selectedTemplate || hasUnsavedChanges}
+            disabled={creatingDocumentPacket || !selectedTemplate || hasUnsavedChanges || !readyForGeneratedCreate}
           >
             <FileSignature size={14} />
-            <span>{creatingDocumentPacket ? 'Creating...' : 'Create Document'}</span>
+            <span>{creatingDocumentPacket ? savingActionLabel : createActionLabel}</span>
           </button>
           <p className="mt-3 text-sm leading-6 text-[#4f6d5d]">
-            Creates a generated draft. You can then prepare signing fields and send links from the document library.
+            {readyForGeneratedCreate
+              ? `Creates a generated ${selectedDocumentKind === 'standard' ? 'draft' : selectedDocumentKindOption.label.toLowerCase()}. You can then prepare signing fields and send links from the document library.`
+              : 'Complete the readiness checklist above before generating. Save a draft from More options if you need to come back later.'}
           </p>
         </div>
 
@@ -304,7 +725,16 @@ export function DocumentCreationPanel({
               Link to
               <select
                 value={documentRunForm.sourceType}
-                onChange={(event) => setDocumentRunForm((previous) => ({ ...previous, sourceType: event.target.value }))}
+                onChange={(event) => {
+                  const nextSourceType = event.target.value
+                  setDocumentRunForm((previous) => ({
+                    ...previous,
+                    sourceType: nextSourceType,
+                    documentStartSourceMode: nextSourceType === 'manual'
+                      ? DOCUMENT_START_SOURCE_MODES.manual
+                      : previous.documentStartSourceMode,
+                  }))
+                }}
               >
                 {DOCUMENT_RUN_SOURCE_OPTIONS.map((option) => (
                   <option key={option.key} value={option.key}>{option.label}</option>
@@ -319,8 +749,10 @@ export function DocumentCreationPanel({
               {[
                 ['transactionId', 'Transaction ID'],
                 ['leadId', 'Lead ID'],
+                ['contactId', 'Contact ID'],
                 ['dealId', 'Deal ID'],
                 ['unitId', 'Unit ID'],
+                ['privateListingId', 'Property listing ID'],
               ].map(([key, label]) => (
                 <label key={key} className={settingsFieldClass}>
                   {label}
@@ -378,7 +810,7 @@ export function DocumentCreationPanel({
                 disabled={creatingDocumentPacket || !selectedTemplate || hasUnsavedChanges}
               >
                 <Save size={14} />
-                <span>{creatingDocumentPacket ? 'Saving...' : 'Save Draft'}</span>
+                <span>{creatingDocumentPacket ? 'Saving...' : saveDraftLabel}</span>
               </button>
             </div>
           </div>
@@ -397,6 +829,9 @@ export function TemplateCreationPanel({
   cloning,
   saving,
   handleCreateTemplate,
+  handleCreateGeneralAddendumTemplate,
+  handleCreateAddendumStarterTemplate,
+  addendumTemplateStarters = [],
   setActiveStudioArea,
   setActiveTab,
 }) {
@@ -405,6 +840,8 @@ export function TemplateCreationPanel({
     setActiveStudioArea('templates')
     setActiveTab('template')
   }
+
+  const commonAddendumStarters = addendumTemplateStarters.filter((starter) => starter.key !== 'general_addendum')
 
   return (
     <TemplateStudioPanel
@@ -424,6 +861,43 @@ export function TemplateCreationPanel({
           <Plus size={14} />
           <span>Create Blank Template</span>
         </button>
+        <button
+          type="button"
+          className={studioSecondaryButtonClass}
+          onClick={() => {
+            void handleCreateGeneralAddendumTemplate().then(openCreatedTemplate)
+          }}
+          disabled={!canEdit || cloning || saving}
+        >
+          <FileSignature size={14} />
+          <span>General Addendum</span>
+        </button>
+        {commonAddendumStarters.length ? (
+          <details className="rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff]">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-[#102033]">
+              <span>Common Addendums</span>
+              <span className="rounded-full border border-[#dbe7f3] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
+                {commonAddendumStarters.length}
+              </span>
+            </summary>
+            <div className="grid gap-2 border-t border-[#e7eef6] px-3 py-3">
+              {commonAddendumStarters.map((starter) => (
+                <button
+                  key={starter.key}
+                  type="button"
+                  className="rounded-[14px] border border-[#dbe7f3] bg-white px-3 py-2.5 text-left transition hover:border-[#bfd5f5] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => {
+                    void handleCreateAddendumStarterTemplate(starter.key).then(openCreatedTemplate)
+                  }}
+                  disabled={!canEdit || cloning || saving}
+                >
+                  <span className="block text-sm font-semibold text-[#102033]">{starter.shortLabel}</span>
+                  <span className="mt-1 block text-xs leading-5 text-[#607387]">{starter.description}</span>
+                </button>
+              ))}
+            </div>
+          </details>
+        ) : null}
         <button
           type="button"
           className={studioSecondaryButtonClass}

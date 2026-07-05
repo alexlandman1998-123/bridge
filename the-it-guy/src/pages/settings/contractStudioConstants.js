@@ -62,3 +62,53 @@ export function getDocumentKindOption(key = 'standard') {
   const normalized = normalizeStudioText(key).toLowerCase() || 'standard'
   return DOCUMENT_CREATION_KIND_OPTIONS.find((option) => option.key === normalized) || DOCUMENT_CREATION_KIND_OPTIONS[0]
 }
+
+export function getDocumentRunReadiness({
+  documentRunForm = {},
+  addendumDetailFields = [],
+} = {}) {
+  const documentKind = getDocumentKindOption(documentRunForm.documentKind).key
+  const isRelatedDocumentKind = !['standard', 'custom'].includes(documentKind)
+  if (!isRelatedDocumentKind) {
+    return {
+      ready: true,
+      items: [],
+      capturedDetailCount: 0,
+    }
+  }
+
+  const details = documentRunForm.addendumDetails && typeof documentRunForm.addendumDetails === 'object'
+    ? documentRunForm.addendumDetails
+    : {}
+  const fields = Array.isArray(addendumDetailFields) ? addendumDetailFields : []
+  const capturedDetailCount = fields.filter((field) => normalizeStudioText(details[field.key])).length
+  const items = [
+    {
+      key: 'original_document',
+      label: 'Original document linked',
+      detail: 'Add the original packet ID or a clear original document reference.',
+      passed: Boolean(normalizeStudioText(documentRunForm.parentDocumentId || documentRunForm.parentDocumentReference)),
+    },
+    {
+      key: 'change_summary',
+      label: 'Change summary captured',
+      detail: 'Summarise what this addendum changes before generation.',
+      passed: Boolean(normalizeStudioText(documentRunForm.documentChangeSummary)),
+    },
+  ]
+
+  if (fields.length) {
+    items.push({
+      key: 'guided_details',
+      label: 'Addendum details captured',
+      detail: 'Fill at least one guided addendum field so the generated document has usable wording.',
+      passed: capturedDetailCount > 0,
+    })
+  }
+
+  return {
+    ready: items.every((item) => item.passed),
+    items,
+    capturedDetailCount,
+  }
+}

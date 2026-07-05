@@ -39,6 +39,11 @@ const BUYER_SOURCE_KEYS = new Set([
   'buyer_referral',
   'property_enquiry',
   'viewing_request',
+  'show_day',
+  'showday',
+  'showing',
+  'open_house',
+  'openhouse',
 ])
 
 const SELLER_SOURCE_KEYS = new Set([
@@ -69,7 +74,7 @@ export function inferLeadCategoryFromSource(source = '', fallback = 'other') {
   const key = normalizeKey(source)
   if (!key) return fallback === '' ? '' : LEAD_CATEGORY_VALUES.includes(fallback) ? fallback : 'other'
   if (SELLER_SOURCE_KEYS.has(key) || key.includes('valuation') || key.includes('list_my_property') || key.includes('seller')) return 'seller'
-  if (BUYER_SOURCE_KEYS.has(key) || key.includes('property24') || key.includes('private_property') || key.includes('property_enquiry')) return 'buyer'
+  if (BUYER_SOURCE_KEYS.has(key) || key.includes('property24') || key.includes('private_property') || key.includes('property_enquiry') || key.includes('show_day') || key.includes('open_house')) return 'buyer'
   if (key.includes('referral')) return fallback === '' ? '' : LEAD_CATEGORY_VALUES.includes(fallback) ? fallback : 'other'
   return fallback === '' ? '' : LEAD_CATEGORY_VALUES.includes(fallback) ? fallback : 'other'
 }

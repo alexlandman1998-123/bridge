@@ -146,6 +146,9 @@ const CANVASSING_STORAGE_PREFIX = 'itg:agency-canvassing:v1'
 const BUYER_LIFECYCLE_REFRESH_STORAGE_KEY = 'bridge:buyer-lifecycle-refresh:v1'
 const BUYER_LIFECYCLE_REFRESH_EVENT = 'bridge:buyer-lifecycle-refresh'
 const LEAD_TABLE_PAGE_SIZE = 12
+const SHOW_DAY_SOURCE_LABEL = 'Show Day'
+const SHOW_DAY_FOLLOW_UP_TITLE_FRAGMENT = 'follow up after show day'
+const SHOW_DAY_FOLLOW_UP_PROMPT = 'Phone follow-up and confirm whether buyer wants to submit an offer.'
 const QUICK_CREATE_STORAGE_KEY = 'bridge:quick-create-records:v1'
 const APPOINTMENT_CATEGORY_CONFIG = {
   viewing: {
@@ -538,6 +541,160 @@ function normalizeLeadUuid(value) {
 
 function normalizeLeadIdentityKey(value) {
   return normalizeLeadUuid(value) || normalizeText(value)
+}
+
+function normalizeShowDaySignal(value) {
+  return normalizeText(value)
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function isShowDayLead(lead = {}) {
+  const source = normalizeShowDaySignal(lead?.leadSource || lead?.lead_source || lead?.source)
+  const reference = normalizeText(
+    lead?.sourceReferenceId ||
+      lead?.source_reference_id ||
+      lead?.externalReference ||
+      lead?.external_reference,
+  ).toLowerCase()
+  const notes = normalizeShowDaySignal(lead?.notes)
+  return (
+    source === normalizeShowDaySignal(SHOW_DAY_SOURCE_LABEL) ||
+    source.includes('show day') ||
+    reference.startsWith('show-day:') ||
+    notes.includes('show day capture reference')
+  )
+}
+
+function isOpenCrmTask(task = {}) {
+  const status = normalizeShowDaySignal(task?.status || 'Pending')
+  return !['completed', 'done', 'cancelled', 'canceled', 'closed'].includes(status)
+}
+
+function isShowDayFollowUpTask(task = {}) {
+  const signal = normalizeShowDaySignal([
+    task?.title,
+    task?.description,
+    task?.source,
+    task?.metadata?.source,
+    task?.sourceEvent,
+  ].filter(Boolean).join(' '))
+  return signal.includes(SHOW_DAY_FOLLOW_UP_TITLE_FRAGMENT) || signal.includes('show day')
+}
+
+function isTaskDueBeforeToday(task = {}, now = new Date()) {
+  const due = new Date(task?.dueDate || task?.due_date || 0)
+  if (Number.isNaN(due.getTime())) return false
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  return due.getTime() < startOfToday
+}
+
+function isCompletedViewingAppointment(appointment = {}) {
+  const status = normalizeShowDaySignal(appointment?.status)
+  return (
+    resolveAppointmentCategoryKey(appointment) === 'viewing' &&
+    (
+      status.includes('completed') ||
+      Boolean(appointment?.completedAt || appointment?.completed_at || appointment?.outcomeSummary || appointment?.outcome_summary)
+    )
+  )
+}
+
+function hasPositiveShowDayOutcome(value = {}) {
+  const signal = normalizeShowDaySignal([
+    value?.outcomeSummary,
+    value?.outcome_summary,
+    value?.clientFeedback,
+    value?.client_feedback,
+    value?.buyerFeedback,
+    value?.buyer_feedback,
+    value?.nextStep,
+    value?.next_step,
+    value?.status,
+  ].filter(Boolean).join(' '))
+  return ['interested', 'wants to offer', 'offer requested', 'offer draft', 'needs follow up', 'needs follow-up']
+    .some((token) => signal.includes(token))
+}
+
+function getShowDayLeadDisplayName(lead = {}) {
+  return normalizeText(
+    lead?.displayName ||
+      lead?.name ||
+      lead?.contactName ||
+      lead?.contact_name ||
+      [lead?.firstName || lead?.first_name, lead?.lastName || lead?.last_name].filter(Boolean).join(' ') ||
+      lead?.email ||
+      lead?.phone,
+  ) || 'Show-day buyer'
+}
+
+function buildShowDayFollowUpSummary({
+  leads = [],
+  tasks = [],
+  appointments = [],
+  deals = [],
+} = {}) {
+  const showDayLeads = (Array.isArray(leads) ? leads : []).filter(isShowDayLead)
+  const taskRows = Array.isArray(tasks) ? tasks : []
+  const appointmentRows = Array.isArray(appointments) ? appointments : []
+  const dealLeadKeys = new Set(
+    (Array.isArray(deals) ? deals : [])
+      .map((deal) => normalizeLeadIdentityKey(deal?.leadId || deal?.lead_id || deal?.buyerLeadId || deal?.buyer_lead_id))
+      .filter(Boolean),
+  )
+  const now = new Date()
+  const rows = showDayLeads.map((lead) => {
+    const leadKey = normalizeLeadIdentityKey(lead?.leadId || lead?.id)
+    const leadTasks = taskRows
+      .filter((task) => normalizeLeadIdentityKey(task?.leadId || task?.lead_id) === leadKey)
+      .filter(isShowDayFollowUpTask)
+      .sort((left, right) => new Date(left?.dueDate || left?.createdAt || 0) - new Date(right?.dueDate || right?.createdAt || 0))
+    const openTasks = leadTasks.filter(isOpenCrmTask)
+    const leadAppointments = appointmentRows
+      .filter((appointment) => normalizeLeadIdentityKey(appointment?.leadId || appointment?.lead_id) === leadKey)
+      .filter(isCompletedViewingAppointment)
+      .sort((left, right) => new Date(right?.completedAt || right?.dateTime || right?.updatedAt || 0) - new Date(left?.completedAt || left?.dateTime || left?.updatedAt || 0))
+    const positiveViewing = leadAppointments.find(hasPositiveShowDayOutcome) || leadAppointments[0] || null
+    const stageSignal = normalizeShowDaySignal(`${lead?.stage || ''} ${lead?.status || ''}`)
+    const hasCompletedViewing = Boolean(positiveViewing) || stageSignal.includes('viewing completed')
+    const offerReady = hasCompletedViewing && !dealLeadKeys.has(leadKey)
+    const dueTask = openTasks[0] || null
+    const dueDate = normalizeText(dueTask?.dueDate || dueTask?.due_date || lead?.nextFollowUpDate || lead?.next_follow_up_date)
+
+    return {
+      lead,
+      leadId: normalizeText(lead?.leadId || lead?.id),
+      name: getShowDayLeadDisplayName(lead),
+      property: normalizeText(lead?.propertyInterest || lead?.enquiredPropertyTitle || lead?.enquiredPropertyAddress || lead?.areaInterest || lead?.listingId),
+      dueDate,
+      openFollowUps: openTasks.length,
+      overdue: openTasks.some((task) => isTaskDueBeforeToday(task, now)),
+      viewed: hasCompletedViewing,
+      offerReady,
+      outcome: normalizeText(positiveViewing?.outcomeSummary || positiveViewing?.clientFeedback || lead?.stage || lead?.status),
+      latestViewingAt: normalizeText(positiveViewing?.completedAt || positiveViewing?.dateTime || positiveViewing?.updatedAt),
+    }
+  })
+
+  const queue = rows
+    .filter((row) => row.openFollowUps > 0 || row.offerReady)
+    .sort((left, right) => {
+      if (left.overdue !== right.overdue) return left.overdue ? -1 : 1
+      const leftTime = new Date(left.dueDate || left.latestViewingAt || 8640000000000000).getTime()
+      const rightTime = new Date(right.dueDate || right.latestViewingAt || 8640000000000000).getTime()
+      return (Number.isFinite(leftTime) ? leftTime : 0) - (Number.isFinite(rightTime) ? rightTime : 0)
+    })
+
+  return {
+    captured: rows.length,
+    viewed: rows.filter((row) => row.viewed).length,
+    due: rows.reduce((count, row) => count + row.openFollowUps, 0),
+    overdue: rows.filter((row) => row.overdue).length,
+    offerReady: rows.filter((row) => row.offerReady).length,
+    queue,
+  }
 }
 
 function isAuthSessionMissingError(error) {
@@ -2082,6 +2239,7 @@ const MANUAL_LEAD_SOURCE_OPTIONS = [
   'Private Property',
   'Website',
   'Referral',
+  'Show Day',
   'Walk-In',
   'WhatsApp',
   'Facebook',
@@ -4403,6 +4561,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }, [selectedLeadAppointments, selectedLeadTasks])
 
+  const selectedLeadShowDayContext = useMemo(
+    () =>
+      buildShowDayFollowUpSummary({
+        leads: selectedLead ? [selectedLead] : [],
+        tasks: selectedLeadTasks,
+        appointments: selectedLeadAppointments,
+        deals: records.deals,
+      }),
+    [records.deals, selectedLead, selectedLeadAppointments, selectedLeadTasks],
+  )
+  const selectedLeadIsShowDay = selectedLeadShowDayContext.captured > 0
+  const selectedLeadShowDayQueueItem = selectedLeadShowDayContext.queue[0] || null
+
   const activityOutcomeOptions = useMemo(() => {
     const currentOutcome = normalizeText(activityForm.outcome)
     if (currentOutcome && !LEAD_ACTIVITY_OUTCOME_OPTIONS.includes(currentOutcome)) {
@@ -5533,6 +5704,30 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }, [filteredLeads.length, leadTypeView, records.leads])
 
+  const showDayLeadScope = useMemo(
+    () =>
+      records.leads.filter((lead) => {
+        const categoryMatch = leadTypeView === 'all' ? true : resolveLeadCategoryView(lead) === leadTypeView
+        const agentMatch = leadFilter.agent === 'all'
+          ? true
+          : normalizeKey(lead?.assignedAgentId) === normalizeKey(leadFilter.agent) ||
+            normalizeKey(lead?.assignedAgentEmail) === normalizeKey(leadFilter.agent)
+        return categoryMatch && agentMatch
+      }),
+    [leadFilter.agent, leadTypeView, records.leads],
+  )
+
+  const showDayFollowUpSummary = useMemo(
+    () =>
+      buildShowDayFollowUpSummary({
+        leads: showDayLeadScope,
+        tasks: records.tasks,
+        appointments: records.appointments,
+        deals: records.deals,
+      }),
+    [records.appointments, records.deals, records.tasks, showDayLeadScope],
+  )
+
   const leadCategoryCounts = useMemo(() => {
     return records.leads.reduce((counts, lead) => {
       const category = resolveLeadCategoryView(lead)
@@ -5664,6 +5859,39 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       leadSource: MANUAL_LEAD_SOURCE_OPTIONS[0] || 'Other',
     })
     setSelectedAgentId(normalizeText(currentAgent.id || currentAgent.email))
+  }
+
+  function openShowDayFollowUpQueue() {
+    setLeadTypeView('buyer')
+    setPipelineViewMode('table')
+    setLeadFilter((previous) => ({
+      ...previous,
+      source: SHOW_DAY_SOURCE_LABEL,
+      stage: 'all',
+      sort: 'next_follow_up',
+    }))
+    if (isLeadWorkspaceRoute) {
+      navigate('/pipeline/leads')
+    }
+  }
+
+  function openShowDayLead(row = {}, tab = 'activity') {
+    const leadId = normalizeText(row?.leadId || row?.lead?.leadId || row?.lead?.id)
+    if (!leadId) return
+    setSelectedLeadId(leadId)
+    setLeadWorkspaceTab(tab)
+    navigate(`/pipeline/leads/${encodeURIComponent(leadId)}`)
+  }
+
+  function handleShowDayLogFollowUpCall() {
+    setLeadWorkspaceTab('activity')
+    setActivityComposerMode('activity')
+    setActivityForm((previous) => ({
+      ...previous,
+      activityType: 'Call',
+      activityNote: normalizeText(previous.activityNote) || SHOW_DAY_FOLLOW_UP_PROMPT,
+      outcome: normalizeText(previous.outcome) || 'Needs follow-up',
+    }))
   }
 
   function openLeadForm(category = leadTypeView) {
@@ -9497,6 +9725,63 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         </section>
       ) : null}
 
+      {!isCalendarMode && !isLeadWorkspaceRoute && showDayFollowUpSummary.captured > 0 ? (
+        <section className="rounded-[18px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Show Day Follow-Up Queue</p>
+              <h3 className="mt-1 text-lg font-semibold text-[#17334f]">Phone buyers who already viewed, then move offer-ready leads forward.</h3>
+              <p className="mt-1 text-sm text-[#60758d]">{SHOW_DAY_FOLLOW_UP_PROMPT}</p>
+            </div>
+            <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={openShowDayFollowUpQueue}>
+              <Filter className="h-4 w-4" />
+              Open Show Day Queue
+            </Button>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-4">
+            {[
+              ['Captured', showDayFollowUpSummary.captured],
+              ['Viewed', showDayFollowUpSummary.viewed],
+              ['Due', showDayFollowUpSummary.due],
+              ['Offer Ready', showDayFollowUpSummary.offerReady],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-[12px] border border-[#e5edf6] bg-[#fbfdff] px-3 py-2">
+                <p className="text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-[#8296aa]">{label}</p>
+                <p className="mt-1 text-xl font-semibold text-[#102236]">{value}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 space-y-2">
+            {showDayFollowUpSummary.queue.length ? (
+              showDayFollowUpSummary.queue.slice(0, 4).map((row) => (
+                <div key={row.leadId} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#e5edf6] bg-[#fbfdff] px-3 py-3">
+                  <div className="min-w-[220px] flex-1">
+                    <p className="text-sm font-semibold text-[#203a54]">{row.name}</p>
+                    <p className="mt-0.5 text-xs text-[#6f849a]">{row.property || 'Linked property pending'} · {row.dueDate ? `Due ${formatDateShort(row.dueDate)}` : 'Follow-up timing pending'}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {row.overdue ? (
+                      <span className="rounded-full border border-[#f1cdc8] bg-[#fff5f4] px-2.5 py-1 text-xs font-semibold text-[#9f3028]">Overdue</span>
+                    ) : row.openFollowUps > 0 ? (
+                      <span className="rounded-full border border-[#efdcb7] bg-[#fff9ec] px-2.5 py-1 text-xs font-semibold text-[#8a641d]">Follow-up due</span>
+                    ) : null}
+                    {row.offerReady ? (
+                      <span className="rounded-full border border-[#cfe8dc] bg-[#effaf3] px-2.5 py-1 text-xs font-semibold text-[#26724c]">Offer Ready</span>
+                    ) : null}
+                    <Button type="button" size="sm" variant="secondary" className="rounded-[10px]" onClick={() => openShowDayLead(row, 'activity')}>Open Lead</Button>
+                    <Button type="button" size="sm" className="rounded-[10px]" onClick={() => openShowDayLead(row, 'offers')}>Open Offer Centre</Button>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-[14px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-4 text-sm text-[#6a8098]">
+                No show-day follow-ups are due right now.
+              </div>
+            )}
+          </div>
+        </section>
+      ) : null}
+
       {isCalendarMode ? (
         <section className="space-y-4">
           <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
@@ -9728,6 +10013,66 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : (
                     <tr>
                       <td className="px-3 py-4 text-[#6c8097]" colSpan={8}>No productivity data yet.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-[#20344b]">Show Day Follow-Up</h3>
+                <p className="mt-1 text-sm text-[#60758d]">Post-show-day calls, buyer feedback, and offer intent from visitors who already viewed.</p>
+              </div>
+              <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={openShowDayFollowUpQueue}>
+                Open Show Day Queue
+              </Button>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              {[
+                ['Captured', showDayFollowUpSummary.captured],
+                ['Viewed', showDayFollowUpSummary.viewed],
+                ['Follow-ups Due', showDayFollowUpSummary.due],
+                ['Overdue', showDayFollowUpSummary.overdue],
+                ['Offer Ready', showDayFollowUpSummary.offerReady],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-[12px] border border-[#e5edf6] bg-[#fbfdff] px-3 py-3">
+                  <p className="text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-[#8296aa]">{label}</p>
+                  <p className="mt-1 text-2xl font-semibold text-[#102236]">{value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 overflow-x-auto rounded-[14px] border border-[#e4ebf4]">
+              <table className="min-w-[760px] w-full text-sm">
+                <thead className="bg-[#f7faff] text-left text-[0.7rem] uppercase tracking-[0.08em] text-[#6f839a]">
+                  <tr>
+                    <th className="px-3 py-2">Buyer</th>
+                    <th className="px-3 py-2">Property</th>
+                    <th className="px-3 py-2">Next Follow-Up</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {showDayFollowUpSummary.queue.length ? (
+                    showDayFollowUpSummary.queue.slice(0, 5).map((row) => (
+                      <tr key={row.leadId} className="border-t border-[#e8eef5] text-[#2d4560]">
+                        <td className="px-3 py-2 font-medium">{row.name}</td>
+                        <td className="px-3 py-2">{row.property || 'Linked property pending'}</td>
+                        <td className="px-3 py-2">{row.dueDate ? formatDateShort(row.dueDate) : 'Pending'}</td>
+                        <td className="px-3 py-2">{row.overdue ? 'Overdue' : row.offerReady ? 'Offer ready' : 'Follow-up due'}</td>
+                        <td className="px-3 py-2">
+                          <button type="button" className="text-xs font-semibold text-[#0b63f6]" onClick={() => openShowDayLead(row, row.offerReady ? 'offers' : 'activity')}>
+                            {row.offerReady ? 'Open Offer Centre' : 'Open Lead'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td className="px-3 py-4 text-[#6c8097]" colSpan={5}>No show-day follow-up queue items yet.</td>
                     </tr>
                   )}
                 </tbody>
@@ -10743,6 +11088,45 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           </Button>
                         </div>
                       </div>
+
+                      {selectedLeadIsShowDay ? (
+                        <div className="mt-5 rounded-[16px] border border-[#d8e6f6] bg-[#f4f9ff] p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#42709b]">Show Day Follow-Up</p>
+                              <h3 className="mt-1 text-base font-semibold text-[#17334f]">This buyer has already viewed the property.</h3>
+                              <p className="mt-1 text-sm text-[#60758d]">
+                                {selectedLeadShowDayQueueItem?.offerReady
+                                  ? 'Feedback is offer-ready. Open the offer centre when the buyer confirms intent.'
+                                  : SHOW_DAY_FOLLOW_UP_PROMPT}
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={handleShowDayLogFollowUpCall}>
+                                <Phone className="h-4 w-4" />
+                                Log Follow-Up Call
+                              </Button>
+                              <Button type="button" size="sm" className="rounded-[12px]" onClick={() => setLeadWorkspaceTab('offers')}>
+                                <Send className="h-4 w-4" />
+                                Open Offer Centre
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <span className="rounded-full border border-[#cfe8dc] bg-white px-2.5 py-1 text-xs font-semibold text-[#26724c]">
+                              {selectedLeadShowDayContext.viewed ? 'Viewing completed' : 'Viewed signal pending'}
+                            </span>
+                            <span className="rounded-full border border-[#d8e6f6] bg-white px-2.5 py-1 text-xs font-semibold text-[#2c5a89]">
+                              {selectedLeadShowDayContext.due} open follow-up{selectedLeadShowDayContext.due === 1 ? '' : 's'}
+                            </span>
+                            {selectedLeadShowDayContext.overdue ? (
+                              <span className="rounded-full border border-[#f1cdc8] bg-white px-2.5 py-1 text-xs font-semibold text-[#9f3028]">
+                                {selectedLeadShowDayContext.overdue} overdue
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 ) : (

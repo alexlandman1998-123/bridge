@@ -1,7 +1,24 @@
 import {
-  FINANCE_MANAGED_BY_OPTIONS,
   TRANSACTION_ROLE_TYPES,
-} from './roleConfig'
+} from './roleConfig.js'
+import {
+  deriveFinanceManagedBy,
+  isClientManagedFinance,
+  isFinanceAssistanceDeclined,
+  isFinanceAssistanceRequested,
+  isOriginatorManagedFinance,
+  normalizeFinanceManagedBy as normalizeCanonicalFinanceManagedBy,
+  resolveFinanceAssistancePreference,
+} from './financeType.js'
+
+export {
+  deriveFinanceManagedBy,
+  isClientManagedFinance,
+  isFinanceAssistanceDeclined,
+  isFinanceAssistanceRequested,
+  isOriginatorManagedFinance,
+  resolveFinanceAssistancePreference,
+}
 
 export function normalizeRoleType(value) {
   const normalized = String(value || '')
@@ -44,17 +61,17 @@ export function normalizeRoleType(value) {
   return TRANSACTION_ROLE_TYPES.includes(normalized) ? normalized : 'developer'
 }
 
-export function normalizeFinanceManagedBy(value) {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase()
-
-  return FINANCE_MANAGED_BY_OPTIONS.includes(normalized) ? normalized : 'bond_originator'
+export function normalizeFinanceManagedBy(value, options = {}) {
+  return normalizeCanonicalFinanceManagedBy(value, {
+    fallback: options.fallback || 'bond_originator',
+  })
 }
 
-export function getRolePermissions({ role, financeManagedBy }) {
+export function getRolePermissions({ role, financeManagedBy, financeType, formData } = {}) {
   const normalizedRole = normalizeRoleType(role)
-  const managedBy = normalizeFinanceManagedBy(financeManagedBy)
+  const managedBy = financeType || formData
+    ? deriveFinanceManagedBy({ financeType, financeManagedBy, formData })
+    : normalizeFinanceManagedBy(financeManagedBy)
 
   if (normalizedRole === 'developer' || normalizedRole === 'internal_admin') {
     return {

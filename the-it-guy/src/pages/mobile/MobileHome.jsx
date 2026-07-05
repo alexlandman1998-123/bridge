@@ -332,7 +332,7 @@ export default function MobileHome() {
   if (state.error) return <MobileErrorState title="We couldn't load your dashboard." body={state.error} onRetry={load} />
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8" data-mobile-home>
       <section className="pt-2">
         <div className="min-w-0">
           <p className="text-[17px] font-medium text-[#60758d]">{snapshot.greeting},</p>
@@ -378,7 +378,7 @@ export default function MobileHome() {
       </section>
 
       {snapshot.insight ? (
-        <MobileCard className="bg-[#10243a] text-white shadow-[0_18px_42px_rgba(15,23,42,0.18)]">
+        <MobileCard surface="dark">
           <p className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#9fe0bd]">{snapshot.insight.label}</p>
           <h2 className="mt-2 text-[30px] font-bold text-white">{snapshot.insight.value}</h2>
           <p className="mt-1 text-sm leading-6 text-[#dce8f2]">{snapshot.insight.body}</p>

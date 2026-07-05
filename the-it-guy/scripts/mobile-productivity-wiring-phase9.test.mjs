@@ -42,6 +42,11 @@ const bottomNavSource = readFileSync(new URL('../src/components/mobile-shell/Mob
 const demoLayoutSource = readFileSync(new URL('../src/components/mobile-shell/MobileDemoLayout.jsx', import.meta.url), 'utf8')
 const demoHomeSource = readFileSync(new URL('../src/pages/mobile/MobileDemoHomePage.jsx', import.meta.url), 'utf8')
 const mobileSearchSource = readFileSync(new URL('../src/pages/mobile/MobileSearchPage.jsx', import.meta.url), 'utf8')
+const mobileCreateSheetSource = readFileSync(new URL('../src/components/mobile-shell/MobileCreateSheet.jsx', import.meta.url), 'utf8')
+const mobileModuleSource = readFileSync(new URL('../src/pages/mobile/MobileModulePage.jsx', import.meta.url), 'utf8')
+const mobileDocumentsSource = readFileSync(new URL('../src/pages/mobile/MobileDocumentsPage.jsx', import.meta.url), 'utf8')
+const mobileTasksSource = readFileSync(new URL('../src/pages/mobile/MobileTasksPage.jsx', import.meta.url), 'utf8')
+const mobileActivitySource = readFileSync(new URL('../src/pages/mobile/MobileActivityPage.jsx', import.meta.url), 'utf8')
 
 const routePatterns = [
   /^\/mobile\/home$/,
@@ -226,5 +231,25 @@ assert.ok(!workspacePageSource.includes('MobileHandoffReviewPanel'), 'Mobile wor
 
 assert.ok(bottomNavSource.includes("item.key === 'create'"), 'Create nav item should be intercepted by the bottom nav')
 assert.ok(bottomNavSource.includes('setCreateOpen(true)'), 'Create nav item should open the quick action sheet')
+assert.ok(bottomNavSource.includes('/mobile/leads?create=lead'), 'New Lead quick action should open the mobile lead capture sheet')
+assert.ok(bottomNavSource.includes('/mobile/transactions?create=transaction'), 'New Transaction quick action should open the mobile transaction capture sheet')
+assert.ok(bottomNavSource.includes('/mobile/documents?create=document'), 'Scan Document quick action should open the mobile upload sheet')
+assert.ok(bottomNavSource.includes('/mobile/activity?create=note'), 'Add Note quick action should open the mobile note sheet')
+assert.ok(bottomNavSource.includes('/mobile/tasks?create=follow-up'), 'Schedule Follow-up quick action should open the mobile follow-up sheet')
+assert.ok(bottomNavSource.includes('/mobile/leads?create=prospect'), 'Add Prospect quick action should open the mobile prospect sheet')
+assert.ok(bottomNavSource.includes('data-mobile-create-action'), 'Create sheet buttons should expose stable action markers for browser verification')
+
+for (const actionType of ['lead', 'prospect', 'transaction', 'note', 'follow-up']) {
+  assert.ok(mobileCreateSheetSource.includes(`${actionType}:`) || mobileCreateSheetSource.includes(`'${actionType}':`), `Mobile create sheet should configure ${actionType}`)
+}
+
+assert.ok(mobileCreateSheetSource.includes('addOfflineDraft'), 'Mobile create sheet should persist mobile captures as offline drafts')
+assert.ok(mobileCreateSheetSource.includes('data-mobile-create-sheet'), 'Mobile create sheet should expose a stable sheet marker')
+assert.ok(mobileModuleSource.includes('useSearchParams'), 'Mobile module page should consume create query params')
+assert.ok(mobileModuleSource.includes('MobileCreateSheet'), 'Mobile module page should render the create sheet for leads and transactions')
+assert.ok(mobileModuleSource.includes('MobileDraftCard'), 'Mobile module page should show pending mobile drafts after save')
+assert.ok(mobileDocumentsSource.includes("createIntent === 'document'"), 'Mobile documents page should open upload sheet from the create query')
+assert.ok(mobileTasksSource.includes("createType === 'follow-up'"), 'Mobile tasks page should open follow-up capture from the create query')
+assert.ok(mobileActivitySource.includes("createType === 'note'"), 'Mobile activity page should open note capture from the create query')
 
 console.log('mobile productivity Phase 9 wiring tests passed')

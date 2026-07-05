@@ -58,7 +58,7 @@ function submittedOnboarding() {
 try {
   const queueService = await server.ssrLoadModule('/src/services/bondOperationalQueueService.js')
   const intakeSelectors = await server.ssrLoadModule('/src/core/transactions/bondIntakeSelectors.js')
-  const { BOND_INTAKE_STATUSES } = intakeSelectors
+  const { BOND_INTAKE_STATUSES, isBondFinanceType, isOriginatorManagedBondFinance } = intakeSelectors
   const {
     getBondOriginatorQueueState,
     getNewApplicationsQueue,
@@ -69,6 +69,29 @@ try {
 
   const cash = makeRow('cash', { transaction: { finance_type: 'cash' } })
   assert.equal(getNewApplicationsQueue([cash]).length, 0, 'cash transaction is excluded')
+
+  const selfManagedBond = makeRow('self-managed-bond', {
+    transaction: {
+      finance_type: 'bond',
+      finance_managed_by: 'client',
+      onboarding_completed_at: '2026-05-02T09:00:00.000Z',
+      otp_status: 'fully_signed',
+    },
+    onboardingFormData: {
+      form_data: {
+        purchase_finance_type: 'bond',
+        finance_managed_by: 'client',
+        bond_help_requested: 'no',
+      },
+    },
+  })
+  assert.equal(isBondFinanceType(selfManagedBond.transaction, selfManagedBond.onboardingFormData), true, 'self-managed bond remains bond finance')
+  assert.equal(
+    isOriginatorManagedBondFinance(selfManagedBond.transaction, selfManagedBond.onboardingFormData),
+    false,
+    'self-managed bond is not originator-managed finance',
+  )
+  assert.equal(getNewApplicationsQueue([selfManagedBond]).length, 0, 'self-managed bond is excluded from originator pipeline')
 
   const bondAwaitingBuyer = makeRow('bond-awaiting-buyer')
   assert.equal(getNewApplicationsQueue([bondAwaitingBuyer]).length, 0, 'bond awaiting buyer onboarding is not visible yet')

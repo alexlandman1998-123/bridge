@@ -2,6 +2,10 @@ import {
   getMainStageFromDetailedStage,
   normalizeStageLabel,
 } from '../core/transactions/stageConfig'
+import {
+  isBondFinanceType,
+  normalizeFinanceManagedBy,
+} from '../core/transactions/financeType'
 import { getOperationalStepDefinition } from '../core/workflows/operationalStepMapping'
 import {
   getMainStageLabel,
@@ -111,6 +115,7 @@ function mapTransactionRow(row = {}) {
     currentMainStage: mainStage,
     currentSubStageSummary: row.current_sub_stage_summary || null,
     financeType: row.finance_type || null,
+    financeManagedBy: row.finance_managed_by || null,
     purchaserType: row.purchaser_type || null,
     lifecycleState: row.lifecycle_state || null,
     riskStatus: row.risk_status || null,
@@ -483,7 +488,11 @@ function buildMissingAssignmentBlockers({ transaction = null, participants = [],
     })
   }
 
-  if (transaction.financeType && toLower(transaction.financeType) !== 'cash' && !hasBondParticipant && !hasBondAssignment) {
+  const originatorManagedFinance =
+    isBondFinanceType(transaction.financeType) &&
+    normalizeFinanceManagedBy(transaction.financeManagedBy, { fallback: 'bond_originator' }) === 'bond_originator'
+
+  if (originatorManagedFinance && !hasBondParticipant && !hasBondAssignment) {
     blockers.push({
       id: 'missing-bond-role-assignment',
       type: 'missing_role_assignment',
@@ -577,7 +586,7 @@ function buildNextActions({ blockers = [] }) {
 async function fetchTransaction(client, transactionId, warnings) {
   const primary = await client
     .from('transactions')
-    .select('id, transaction_reference, stage, current_main_stage, current_sub_stage_summary, finance_type, purchaser_type, lifecycle_state, risk_status, updated_at, created_at')
+    .select('id, transaction_reference, stage, current_main_stage, current_sub_stage_summary, finance_type, finance_managed_by, purchaser_type, lifecycle_state, risk_status, updated_at, created_at')
     .eq('id', transactionId)
     .maybeSingle()
 
@@ -587,7 +596,10 @@ async function fetchTransaction(client, transactionId, warnings) {
       return null
     }
 
-    if (isMissingColumnError(primary.error, 'current_main_stage')) {
+    if (
+      isMissingColumnError(primary.error, 'current_main_stage') ||
+      isMissingColumnError(primary.error, 'finance_managed_by')
+    ) {
       const fallback = await client
         .from('transactions')
         .select('id, transaction_reference, stage, finance_type, purchaser_type, updated_at, created_at')

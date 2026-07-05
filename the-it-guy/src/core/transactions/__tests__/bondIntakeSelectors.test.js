@@ -110,8 +110,8 @@ try {
       },
       documentRequests: [],
     }),
-    BOND_INTAKE_STATUSES.READY_FOR_REVIEW,
-    'completed buyer onboarding can create a new ready intake without a separate bond application payload',
+    BOND_INTAKE_STATUSES.AWAITING_OTP,
+    'completed buyer onboarding waits for signed OTP before creating a ready intake without a separate bond application payload',
   )
 
   assert.equal(

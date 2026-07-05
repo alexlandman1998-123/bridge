@@ -1215,6 +1215,7 @@ export function validatePacketPlaceholders({
         packetType: normalizedPacketType,
       })
       const fieldLabel = normalizeText(definition?.label || placeholderLabel || placeholderKey)
+      const isRequiredPlaceholder = Boolean(section.required && (definition?.required ?? true))
       const value = resolvePlaceholderValue(normalizedPayload.payload, placeholderKey, normalizedPacketType)
       const missing = value === null || value === undefined || value === ''
       if (!missing) continue
@@ -1224,11 +1225,12 @@ export function validatePacketPlaceholders({
         sectionLabel: section.label,
         placeholderKey,
         placeholderLabel: fieldLabel,
+        required: isRequiredPlaceholder,
       }
       missingPlaceholders.push(missingRecord)
       warnings.push({
         ...missingRecord,
-        message: `${section.required ? 'Missing' : 'Optional'} ${fieldLabel}.`,
+        message: `${isRequiredPlaceholder ? 'Missing' : 'Optional'} ${fieldLabel}.`,
       })
     }
   }

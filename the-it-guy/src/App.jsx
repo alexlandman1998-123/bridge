@@ -2475,6 +2475,16 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/agent/listings/:listingId/legal/:packetType"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <AppErrorBoundary scope="legal-document-workspace" title="Legal document workspace failed to load">
+                      <LegalDocumentWorkspacePage />
+                    </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/agent/listings/:listingId"
                 element={
                   <RoleRoute allowedRoles={['agent']}>

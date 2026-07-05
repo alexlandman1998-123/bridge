@@ -61,7 +61,7 @@ export default function MobileMore() {
 
   return (
     <div className="space-y-6">
-      <MobileCard className="bg-[#10243a] text-white shadow-[0_18px_42px_rgba(15,23,42,0.20)]">
+      <MobileCard surface="dark">
         <div className="flex items-center gap-3">
           <span className="flex h-16 w-16 items-center justify-center rounded-[22px] bg-white/12 text-xl font-semibold text-white">
             {profileName.slice(0, 1).toUpperCase()}

@@ -258,14 +258,28 @@ function buildMapperInput(input = {}, legacyLead = {}, legacyAgency = {}, legacy
   }
 }
 
-function resolveSellerProfile(onboarding = {}, lead = {}, contact = {}) {
+function draftHasAnyValue(draft = {}, keys = []) {
+  return keys.some((key) => normalizeText(draft?.[key]))
+}
+
+function resolveSellerProfile(onboarding = {}, lead = {}, contact = {}, mandateDraft = {}) {
   const ownershipType = normalizeKey(
-    firstText(onboarding.ownershipType, onboarding.ownership_structure, onboarding.entityType, onboarding.sellerType, lead.sellerType) || 'individual',
+    firstText(
+      mandateDraft.sellerEntityType,
+      mandateDraft.entityType,
+      onboarding.ownershipType,
+      onboarding.ownership_structure,
+      onboarding.entityType,
+      onboarding.sellerType,
+      lead.sellerType,
+    ) || 'individual',
   )
   const entityType = normalizeEntityType(ownershipType)
-  const firstName = firstText(onboarding.sellerFirstName, onboarding.firstName, lead.sellerName)
-  const surname = firstText(onboarding.sellerSurname, onboarding.lastName, onboarding.surname, lead.sellerSurname)
+  const firstName = firstText(mandateDraft.sellerFirstName, onboarding.sellerFirstName, onboarding.firstName, lead.sellerName)
+  const surname = firstText(mandateDraft.sellerSurname, mandateDraft.sellerLastName, onboarding.sellerSurname, onboarding.lastName, onboarding.surname, lead.sellerSurname)
   const individualName = firstText(
+    mandateDraft.sellerFullName,
+    mandateDraft.fullName,
     onboarding.seller_full_name,
     onboarding.fullName,
     onboarding.display_name,
@@ -275,24 +289,26 @@ function resolveSellerProfile(onboarding = {}, lead = {}, contact = {}) {
     [contact.firstName, contact.lastName].filter(Boolean).join(' '),
     lead.name,
   )
-  const companyName = firstText(onboarding.companyName, onboarding.entityName, onboarding.seller_full_name)
-  const trustName = firstText(onboarding.trustName, onboarding.entityName, onboarding.seller_full_name)
+  const companyName = firstText(mandateDraft.sellerCompanyName, mandateDraft.sellerFullName, onboarding.companyName, onboarding.entityName, onboarding.seller_full_name)
+  const trustName = firstText(mandateDraft.sellerTrustName, mandateDraft.sellerFullName, onboarding.trustName, onboarding.entityName, onboarding.seller_full_name)
   const isCompany = entityType === 'company'
   const isTrust = entityType === 'trust'
   const identityNumber = isCompany
-    ? firstText(onboarding.companyRegistrationNumber, onboarding.entityRegistrationNumber, onboarding.seller_id_number)
+    ? firstText(mandateDraft.sellerRegistrationNumber, mandateDraft.sellerIdNumber, onboarding.companyRegistrationNumber, onboarding.entityRegistrationNumber, onboarding.seller_id_number)
     : isTrust
-      ? firstText(onboarding.trustRegistrationNumber, onboarding.entityRegistrationNumber, onboarding.seller_id_number)
-      : firstText(onboarding.idNumber, onboarding.passportNumber, onboarding.seller_id_number, lead.sellerIdNumber)
+      ? firstText(mandateDraft.sellerRegistrationNumber, mandateDraft.sellerIdNumber, onboarding.trustRegistrationNumber, onboarding.entityRegistrationNumber, onboarding.seller_id_number)
+      : firstText(mandateDraft.sellerIdNumber, mandateDraft.sellerIdentityNumber, onboarding.idNumber, onboarding.passportNumber, onboarding.seller_id_number, lead.sellerIdNumber)
 
   return {
     entityType,
     fullName: isCompany ? companyName : isTrust ? trustName : individualName,
     identityNumber,
     idNumber: identityNumber,
-    email: firstText(onboarding.email, onboarding.sellerEmail, contact.email, lead.sellerEmail, lead.email),
-    phone: firstText(onboarding.phone, onboarding.sellerPhone, contact.phone, lead.sellerPhone, lead.phone),
+    email: firstText(mandateDraft.sellerEmail, onboarding.email, onboarding.sellerEmail, contact.email, lead.sellerEmail, lead.email),
+    phone: firstText(mandateDraft.sellerPhone, onboarding.phone, onboarding.sellerPhone, contact.phone, lead.sellerPhone, lead.phone),
     domiciliumAddress: firstText(
+      mandateDraft.sellerDomiciliumAddress,
+      mandateDraft.domiciliumAddress,
       onboarding.domiciliumAddress,
       onboarding.domicilium_address,
       onboarding.residentialAddress,
@@ -306,25 +322,27 @@ function resolveSellerProfile(onboarding = {}, lead = {}, contact = {}) {
       contact.address,
       lead.address,
     ),
-    maritalStatus: firstText(onboarding.maritalStatus, valueIndicatesMarried(ownershipType) ? 'married' : ''),
-    maritalRegime: firstText(onboarding.marriageType, onboarding.marriageRegime, onboarding.maritalRegime, onboarding.antenuptialContract, valueIndicatesMarried(ownershipType) ? ownershipType : ''),
-    spouseName: firstText(onboarding.spouseName),
-    spouseIdNumber: firstText(onboarding.spouseIdNumber),
-    spouseEmail: firstText(onboarding.spouseEmail),
+    maritalStatus: firstText(mandateDraft.sellerMaritalStatus, onboarding.maritalStatus, valueIndicatesMarried(ownershipType) ? 'married' : ''),
+    maritalRegime: firstText(mandateDraft.sellerMaritalRegime, onboarding.marriageType, onboarding.marriageRegime, onboarding.maritalRegime, onboarding.antenuptialContract, valueIndicatesMarried(ownershipType) ? ownershipType : ''),
+    spouseName: firstText(mandateDraft.spouseName, onboarding.spouseName),
+    spouseIdNumber: firstText(mandateDraft.spouseIdNumber, onboarding.spouseIdNumber),
+    spouseEmail: firstText(mandateDraft.spouseEmail, onboarding.spouseEmail),
     representativeName: isCompany
-      ? firstText(onboarding.representativeName, onboarding.companyRepresentativeName, onboarding.companyDirectorName, onboarding.authorisedRepresentativeName, onboarding.authorizedRepresentativeName, onboarding.entityRepresentative)
+      ? firstText(mandateDraft.sellerRepresentativeName, onboarding.representativeName, onboarding.companyRepresentativeName, onboarding.companyDirectorName, onboarding.authorisedRepresentativeName, onboarding.authorizedRepresentativeName, onboarding.entityRepresentative)
       : isTrust
-        ? firstText(onboarding.representativeName, onboarding.trustRepresentativeName, onboarding.trusteeName, onboarding.authorisedRepresentativeName, onboarding.authorizedRepresentativeName, onboarding.entityRepresentative)
-        : firstText(onboarding.representativeName, onboarding.authorisedRepresentativeName, onboarding.authorizedRepresentativeName),
-    representativeIdNumber: firstText(onboarding.representativeIdNumber, onboarding.companyDirectorIdNumber, onboarding.trusteeIdNumber),
+        ? firstText(mandateDraft.sellerRepresentativeName, onboarding.representativeName, onboarding.trustRepresentativeName, onboarding.trusteeName, onboarding.authorisedRepresentativeName, onboarding.authorizedRepresentativeName, onboarding.entityRepresentative)
+        : firstText(mandateDraft.sellerRepresentativeName, onboarding.representativeName, onboarding.authorisedRepresentativeName, onboarding.authorizedRepresentativeName),
+    representativeIdNumber: firstText(mandateDraft.sellerRepresentativeIdNumber, onboarding.representativeIdNumber, onboarding.companyDirectorIdNumber, onboarding.trusteeIdNumber),
     representativeCapacity: isCompany
-      ? firstText(onboarding.representativeCapacity, onboarding.companyDirectorCapacity, onboarding.authorisedRepresentativeCapacity, onboarding.authorizedRepresentativeCapacity, 'Director')
+      ? firstText(mandateDraft.sellerRepresentativeCapacity, onboarding.representativeCapacity, onboarding.companyDirectorCapacity, onboarding.authorisedRepresentativeCapacity, onboarding.authorizedRepresentativeCapacity, 'Director')
       : isTrust
-        ? firstText(onboarding.representativeCapacity, onboarding.trusteeCapacity, onboarding.authorisedRepresentativeCapacity, onboarding.authorizedRepresentativeCapacity, 'Trustee')
-        : firstText(onboarding.representativeCapacity, onboarding.authorisedRepresentativeCapacity, onboarding.authorizedRepresentativeCapacity),
-    trustRegistrationNumber: firstText(onboarding.trustRegistrationNumber),
-    companyRegistrationNumber: firstText(onboarding.companyRegistrationNumber),
-    multipleOwners: Array.isArray(onboarding.multipleOwners) ? onboarding.multipleOwners : [],
+        ? firstText(mandateDraft.sellerRepresentativeCapacity, onboarding.representativeCapacity, onboarding.trusteeCapacity, onboarding.authorisedRepresentativeCapacity, onboarding.authorizedRepresentativeCapacity, 'Trustee')
+        : firstText(mandateDraft.sellerRepresentativeCapacity, onboarding.representativeCapacity, onboarding.authorisedRepresentativeCapacity, onboarding.authorizedRepresentativeCapacity),
+    trustRegistrationNumber: firstText(mandateDraft.sellerRegistrationNumber, onboarding.trustRegistrationNumber),
+    companyRegistrationNumber: firstText(mandateDraft.sellerRegistrationNumber, onboarding.companyRegistrationNumber),
+    multipleOwners: Array.isArray(mandateDraft.sellerParties)
+      ? mandateDraft.sellerParties
+      : Array.isArray(onboarding.multipleOwners) ? onboarding.multipleOwners : [],
   }
 }
 
@@ -387,13 +405,13 @@ function buildSellerParties(seller = {}) {
   return [primarySeller, spouse].filter((party) => [party.name, party.idNumber, party.email, party.phone, party.capacity].some((value) => normalizeText(value)))
 }
 
-function resolvePropertyProfile(onboarding = {}, lead = {}, privateListing = {}, transaction = {}) {
+function resolvePropertyProfile(onboarding = {}, lead = {}, privateListing = {}, transaction = {}, mandateDraft = {}) {
   const addressDetails = onboarding.propertyAddressDetails || onboarding.property_address_details || onboarding.addressDetails || onboarding.address_details || {}
-  const unitNumber = firstText(onboarding.unitNumber, onboarding.unit_number, addressDetails.unitNumber, addressDetails.unit_number, privateListing.unitNumber, privateListing.unit_number, lead.unitNumber, transaction.unit_number)
-  const sectionNumber = firstText(onboarding.sectionNumber, onboarding.section_number, addressDetails.sectionNumber, addressDetails.section_number, privateListing.sectionNumber, privateListing.section_number, lead.sectionNumber, transaction.section_number)
-  const complexName = firstText(onboarding.complexName, onboarding.complex_name, onboarding.schemeName, onboarding.scheme_name, onboarding.estateComplexName, addressDetails.complexName, addressDetails.complex_name, addressDetails.schemeName, addressDetails.scheme_name, lead.complexName, lead.estateComplexName)
-  const estateName = firstText(onboarding.estateName, onboarding.estate_name, onboarding.estateComplexName, addressDetails.estateName, addressDetails.estate_name, lead.estateName, lead.estateComplexName)
-  const sectionalTitleScheme = firstText(onboarding.sectionalTitleScheme, onboarding.property_sectional_title_scheme, onboarding.sectionalTitleNumber, onboarding.schemeName, onboarding.scheme_name, addressDetails.sectionalTitleScheme, addressDetails.schemeName, lead.sectionalTitleScheme, transaction.sectional_title_number)
+  const unitNumber = firstText(mandateDraft.unitNumber, mandateDraft.propertyUnitNumber, onboarding.unitNumber, onboarding.unit_number, addressDetails.unitNumber, addressDetails.unit_number, privateListing.unitNumber, privateListing.unit_number, lead.unitNumber, transaction.unit_number)
+  const sectionNumber = firstText(mandateDraft.sectionNumber, mandateDraft.propertySectionNumber, onboarding.sectionNumber, onboarding.section_number, addressDetails.sectionNumber, addressDetails.section_number, privateListing.sectionNumber, privateListing.section_number, lead.sectionNumber, transaction.section_number)
+  const complexName = firstText(mandateDraft.complexName, mandateDraft.propertyComplexName, onboarding.complexName, onboarding.complex_name, onboarding.schemeName, onboarding.scheme_name, onboarding.estateComplexName, addressDetails.complexName, addressDetails.complex_name, addressDetails.schemeName, addressDetails.scheme_name, lead.complexName, lead.estateComplexName)
+  const estateName = firstText(mandateDraft.estateName, mandateDraft.propertyEstateName, onboarding.estateName, onboarding.estate_name, onboarding.estateComplexName, addressDetails.estateName, addressDetails.estate_name, lead.estateName, lead.estateComplexName)
+  const sectionalTitleScheme = firstText(mandateDraft.sectionalTitleScheme, mandateDraft.propertySectionalTitleScheme, onboarding.sectionalTitleScheme, onboarding.property_sectional_title_scheme, onboarding.sectionalTitleNumber, onboarding.schemeName, onboarding.scheme_name, addressDetails.sectionalTitleScheme, addressDetails.schemeName, lead.sectionalTitleScheme, transaction.sectional_title_number)
   const structuredOnboardingAddress = firstText(
     addressDetails.formatted,
     addressDetails.fullAddress,
@@ -402,6 +420,8 @@ function resolvePropertyProfile(onboarding = {}, lead = {}, privateListing = {},
     joinAddressParts(onboarding.propertyAddressLine1 || onboarding.property_address_line_1 || onboarding.addressLine1, onboarding.propertyAddressLine2 || onboarding.property_address_line_2 || onboarding.addressLine2, onboarding.suburb || onboarding.property_suburb, onboarding.city || onboarding.property_city, onboarding.province || onboarding.property_province, onboarding.postalCode || onboarding.postal_code),
   )
   const askingPrice = firstNumber(
+    mandateDraft.askingPrice,
+    mandateDraft.marketingPrice,
     onboarding.askingPrice,
     onboarding.marketingPrice,
     privateListing.askingPrice,
@@ -415,6 +435,8 @@ function resolvePropertyProfile(onboarding = {}, lead = {}, privateListing = {},
     transaction.sales_price,
   )
   const address = firstText(
+    mandateDraft.propertyAddress,
+    mandateDraft.propertyFullAddress,
     onboarding.propertyAddress,
     onboarding.property_address,
     onboarding.address,
@@ -436,44 +458,44 @@ function resolvePropertyProfile(onboarding = {}, lead = {}, privateListing = {},
     fullAddress: address,
     displayAddress: displayAddress || address,
     address,
-    type: firstText(onboarding.propertyType, onboarding.propertyStructureType, privateListing.propertyType, lead.propertyType, transaction.property_type, lead.propertyInterest),
-    propertyType: firstText(onboarding.propertyType, onboarding.propertyStructureType, privateListing.propertyType, lead.propertyType, transaction.property_type, lead.propertyInterest),
-    suburb: firstText(onboarding.suburb, privateListing.suburb, lead.suburb, transaction.suburb, lead.areaInterest),
-    city: firstText(onboarding.city, privateListing.city, lead.city, transaction.city),
-    province: firstText(onboarding.province, privateListing.province, lead.province, transaction.province),
-    postalCode: firstText(onboarding.postalCode, privateListing.postalCode, privateListing.postal_code, lead.postalCode, transaction.postal_code),
-    erfNumber: firstText(onboarding.erfNumber, onboarding.erf, lead.erfNumber, privateListing.erfNumber, transaction.erf_number),
+    type: firstText(mandateDraft.propertyType, onboarding.propertyType, onboarding.propertyStructureType, privateListing.propertyType, lead.propertyType, transaction.property_type, lead.propertyInterest),
+    propertyType: firstText(mandateDraft.propertyType, onboarding.propertyType, onboarding.propertyStructureType, privateListing.propertyType, lead.propertyType, transaction.property_type, lead.propertyInterest),
+    suburb: firstText(mandateDraft.propertySuburb, mandateDraft.suburb, onboarding.suburb, privateListing.suburb, lead.suburb, transaction.suburb, lead.areaInterest),
+    city: firstText(mandateDraft.propertyCity, mandateDraft.city, onboarding.city, privateListing.city, lead.city, transaction.city),
+    province: firstText(mandateDraft.propertyProvince, mandateDraft.province, onboarding.province, privateListing.province, lead.province, transaction.province),
+    postalCode: firstText(mandateDraft.propertyPostalCode, mandateDraft.postalCode, onboarding.postalCode, privateListing.postalCode, privateListing.postal_code, lead.postalCode, transaction.postal_code),
+    erfNumber: firstText(mandateDraft.erfNumber, mandateDraft.propertyErfNumber, onboarding.erfNumber, onboarding.erf, lead.erfNumber, privateListing.erfNumber, transaction.erf_number),
     sectionalTitleScheme,
     estateComplexName: firstText(complexName, estateName),
     complexName,
     estateName,
     unitNumber,
     sectionNumber,
-    erfSize: firstText(onboarding.erfSize, lead.erfSize),
-    floorSize: firstText(onboarding.floorSize, lead.floorSize),
-    bedrooms: firstText(onboarding.bedrooms, lead.bedrooms),
-    bathrooms: firstText(onboarding.bathrooms, lead.bathrooms),
+    erfSize: firstText(mandateDraft.erfSize, onboarding.erfSize, lead.erfSize),
+    floorSize: firstText(mandateDraft.floorSize, onboarding.floorSize, lead.floorSize),
+    bedrooms: firstText(mandateDraft.bedrooms, onboarding.bedrooms, lead.bedrooms),
+    bathrooms: firstText(mandateDraft.bathrooms, onboarding.bathrooms, lead.bathrooms),
     askingPrice,
   }
 }
 
 function resolveMandateProfile(onboarding = {}, lead = {}, agency = {}, organisation = {}, privateListing = {}, transaction = {}, mandateDraft = {}) {
   const commissionStructure = normalizeKey(firstText(
+    mandateDraft.commissionStructure,
     onboarding.commissionStructure,
     onboarding.commissionType,
     onboarding.commission_type,
-    mandateDraft.commissionStructure,
     lead.commissionStructure,
     agency.defaultCommissionStructure,
     organisation.defaultCommissionStructure,
     'percentage',
   ))
   const commissionPercentResolved = firstNumberWithSource([
+    { value: mandateDraft.commissionPercent, source: 'document_packet_context' },
     { value: onboarding.commissionPercentage, source: 'private_listing_seller_onboarding' },
     { value: onboarding.commissionPercent, source: 'private_listing_seller_onboarding' },
     { value: onboarding.commission_percentage, source: 'private_listing_seller_onboarding' },
     { value: onboarding.mandateCommissionPercent, source: 'private_listing_seller_onboarding' },
-    { value: mandateDraft.commissionPercent, source: 'document_packet_context' },
     { value: lead.commissionPercent, source: 'lead' },
     { value: lead.mandateCommissionPercent, source: 'lead' },
     { value: agency.defaultCommissionPercentage, source: 'agency_default' },
@@ -482,17 +504,17 @@ function resolveMandateProfile(onboarding = {}, lead = {}, agency = {}, organisa
     { value: organisation.defaultCommissionPercent, source: 'agency_default' },
   ].filter(Boolean))
   const commissionAmountResolved = firstNumberWithSource([
+    { value: mandateDraft.commissionAmount, source: 'document_packet_context' },
     { value: onboarding.commissionAmount, source: 'private_listing_seller_onboarding' },
     { value: onboarding.commission_amount, source: 'private_listing_seller_onboarding' },
     { value: onboarding.mandateCommissionAmount, source: 'private_listing_seller_onboarding' },
-    { value: mandateDraft.commissionAmount, source: 'document_packet_context' },
     { value: lead.commissionAmount, source: 'lead' },
     { value: agency.defaultCommissionAmount, source: 'agency_default' },
     { value: organisation.defaultCommissionAmount, source: 'agency_default' },
   ])
-  const askingPrice = firstNumber(onboarding.marketingPrice, onboarding.askingPrice, privateListing.askingPrice, privateListing.asking_price, lead.askingPrice, lead.estimatedPrice, lead.estimatedValue, lead.budget, transaction.asking_price, transaction.purchase_price)
-  const explicitStartDate = firstText(onboarding.mandateStartDate, onboarding.mandate_start_date, onboarding.startDate, mandateDraft.mandateStartDate, mandateDraft.startDate, lead.mandateStartDate, privateListing.mandateStartDate)
-  const explicitEndDate = firstText(onboarding.mandateExpiryDate, onboarding.mandate_expiry_date, onboarding.mandateEndDate, onboarding.mandate_end_date, onboarding.expiryDate, mandateDraft.mandateEndDate, mandateDraft.expiryDate, mandateDraft.endDate, lead.mandateEndDate, privateListing.mandateEndDate)
+  const askingPrice = firstNumber(mandateDraft.askingPrice, mandateDraft.marketingPrice, onboarding.marketingPrice, onboarding.askingPrice, privateListing.askingPrice, privateListing.asking_price, lead.askingPrice, lead.estimatedPrice, lead.estimatedValue, lead.budget, transaction.asking_price, transaction.purchase_price)
+  const explicitStartDate = firstText(mandateDraft.mandateStartDate, mandateDraft.startDate, onboarding.mandateStartDate, onboarding.mandate_start_date, onboarding.startDate, lead.mandateStartDate, privateListing.mandateStartDate)
+  const explicitEndDate = firstText(mandateDraft.mandateEndDate, mandateDraft.expiryDate, mandateDraft.endDate, onboarding.mandateExpiryDate, onboarding.mandate_expiry_date, onboarding.mandateEndDate, onboarding.mandate_end_date, onboarding.expiryDate, lead.mandateEndDate, privateListing.mandateEndDate)
   const startDate = toIsoDate(explicitStartDate) || addDaysToIsoDate(0)
   const expiryDate = toIsoDate(explicitEndDate) || addDaysToIsoDate(90)
   const resolvedCommissionPercentage = commissionPercentResolved.value ?? (commissionStructure === 'fixed' ? null : 7.5)
@@ -511,13 +533,14 @@ function resolveMandateProfile(onboarding = {}, lead = {}, agency = {}, organisa
     lead.additionalConditions,
   )
   const specialConditions = firstText(
+    mandateDraft.specialConditions,
     onboarding.specialConditions,
     lead.specialConditions,
     [selectedSpecialConditions, additionalConditions].filter(Boolean).join('\n'),
   )
 
   return {
-    type: firstText(onboarding.mandateType, onboarding.mandate_type, mandateDraft.mandateType, mandateDraft.type, lead.mandateType, privateListing.mandateType, agency.defaultMandateType, organisation.defaultMandateType, 'sole'),
+    type: firstText(mandateDraft.mandateType, mandateDraft.type, onboarding.mandateType, onboarding.mandate_type, lead.mandateType, privateListing.mandateType, agency.defaultMandateType, organisation.defaultMandateType, 'sole'),
     startDate,
     expiryDate,
     endDate: expiryDate,
@@ -530,7 +553,7 @@ function resolveMandateProfile(onboarding = {}, lead = {}, agency = {}, organisa
     commissionPercentageSource: commissionPercentResolved.source || (resolvedCommissionPercentage !== null ? 'draft_default' : ''),
     commissionAmount: commissionAmountResolved.value,
     commissionAmountSource: commissionAmountResolved.source,
-    vatHandling: firstText(onboarding.vatHandling, onboarding.vat_handling, lead.vatHandling, agency.vatHandling, organisation.vatHandling, 'exclusive'),
+    vatHandling: firstText(mandateDraft.vatHandling, onboarding.vatHandling, onboarding.vat_handling, lead.vatHandling, agency.vatHandling, organisation.vatHandling, 'exclusive'),
     askingPrice,
     marketingPermissions,
     accessInstructions: firstText(onboarding.accessInstructions, lead.accessInstructions),
@@ -596,12 +619,16 @@ function resolveAgentProfile(agent = {}, lead = {}) {
   }
 }
 
-function resolveSourceContext({ onboarding = {}, lead = {}, privateListing = {}, agency = {}, organisation = {}, agent = {}, transaction = {} } = {}) {
+function resolveSourceContext({ onboarding = {}, lead = {}, privateListing = {}, agency = {}, organisation = {}, agent = {}, transaction = {}, mandateDraft = {} } = {}) {
+  const hasDraftSeller = draftHasAnyValue(mandateDraft, ['sellerFullName', 'sellerIdNumber', 'sellerEmail', 'sellerPhone', 'sellerDomiciliumAddress'])
+  const hasDraftProperty = draftHasAnyValue(mandateDraft, ['propertyAddress', 'propertyType', 'propertySuburb', 'propertyCity', 'askingPrice'])
+  const hasDraftMandate = draftHasAnyValue(mandateDraft, ['mandateType', 'mandateStartDate', 'mandateEndDate', 'specialConditions'])
+  const hasDraftCommission = draftHasAnyValue(mandateDraft, ['commissionStructure', 'commissionPercent', 'commissionAmount', 'vatHandling'])
   return {
-    seller: Object.keys(onboarding).length ? 'private_listing_seller_onboarding' : lead?.sellerName || lead?.name ? 'lead' : 'unknown',
-    property: privateListing?.id || privateListing?.propertyAddress || privateListing?.addressLine1 ? 'private_listings' : Object.keys(onboarding).length ? 'private_listing_seller_onboarding' : transaction?.id ? 'transaction' : 'lead',
-    mandate: Object.keys(onboarding).length ? 'private_listing_seller_onboarding' : privateListing?.id ? 'private_listings' : 'lead',
-    commission: agency?.defaultCommissionPercentage || agency?.defaultCommissionPercent || organisation?.defaultCommissionPercentage || organisation?.defaultCommissionPercent ? 'agency_default' : Object.keys(onboarding).length ? 'private_listing_seller_onboarding' : 'lead',
+    seller: hasDraftSeller ? 'document_packet_context' : Object.keys(onboarding).length ? 'private_listing_seller_onboarding' : lead?.sellerName || lead?.name ? 'lead' : 'unknown',
+    property: hasDraftProperty ? 'document_packet_context' : privateListing?.id || privateListing?.propertyAddress || privateListing?.addressLine1 ? 'private_listings' : Object.keys(onboarding).length ? 'private_listing_seller_onboarding' : transaction?.id ? 'transaction' : 'lead',
+    mandate: hasDraftMandate ? 'document_packet_context' : Object.keys(onboarding).length ? 'private_listing_seller_onboarding' : privateListing?.id ? 'private_listings' : 'lead',
+    commission: hasDraftCommission ? 'document_packet_context' : agency?.defaultCommissionPercentage || agency?.defaultCommissionPercent || organisation?.defaultCommissionPercentage || organisation?.defaultCommissionPercent ? 'agency_default' : Object.keys(onboarding).length ? 'private_listing_seller_onboarding' : 'lead',
     agency: organisation?.id || organisation?.name || organisation?.displayName ? 'organisation_settings' : agency?.name || agency?.legalName ? 'agency_context' : 'unknown',
     agent: agent?.id || agent?.email || agent?.fullName ? 'user_profile' : 'lead_assignment',
   }
@@ -624,9 +651,9 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     mandateDraft,
   } = buildMapperInput(input, legacyLead, legacyAgency, legacyAgent)
   const onboarding = onboardingSubmission && typeof onboardingSubmission === 'object' ? onboardingSubmission : {}
-  const seller = resolveSellerProfile(onboarding, lead, contact)
+  const seller = resolveSellerProfile(onboarding, lead, contact, mandateDraft)
   const sellerParties = buildSellerParties(seller)
-  const property = resolvePropertyProfile(onboarding, lead, privateListing, transaction)
+  const property = resolvePropertyProfile(onboarding, lead, privateListing, transaction, mandateDraft)
   const mandate = resolveMandateProfile(onboarding, lead, agency, organisation, privateListing, transaction, mandateDraft)
   const propertyDisclosureAnnexure = resolvePropertyDisclosureAnnexure(onboarding, privateListing, transaction)
   if (propertyDisclosureAnnexure) {
@@ -650,7 +677,7 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     hasFormData: Boolean(Object.keys(onboarding).length),
   })
   const warnings = []
-  const sourceContext = resolveSourceContext({ onboarding, lead, privateListing, agency, organisation, agent, transaction })
+  const sourceContext = resolveSourceContext({ onboarding, lead, privateListing, agency, organisation, agent, transaction, mandateDraft })
   if (propertyDisclosureAnnexure) {
     sourceContext.propertyDisclosureAnnexure = propertyDisclosureAnnexure
     sourceContext.property_disclosure_annexure = propertyDisclosureAnnexure
@@ -787,6 +814,7 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
       agent: agentProfile,
       organisation,
       transaction,
+      mandateDraft,
       propertyDisclosureAnnexure,
       sourceContext,
       generatedAt: new Date().toISOString(),

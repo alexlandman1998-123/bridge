@@ -2,6 +2,8 @@ import { AlertCircle, ArrowLeft } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import LegalDocumentWorkspace from '../components/documents/LegalDocumentWorkspace'
+import MandateDraftIntakePanel from '../components/documents/MandateDraftIntakePanel'
+import OtpDraftIntakePanel from '../components/documents/OtpDraftIntakePanel'
 import Button from '../components/ui/Button'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { archivePacket, generatePacketVersion, listPacketTemplates, resolveActiveTemplate } from '../core/documents/packetService'
@@ -114,6 +116,36 @@ function toIsoDate(value = '') {
   return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10)
 }
 
+function normalizeEntityType(value = '', fallback = 'individual') {
+  const key = normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  if (['individual', 'company', 'trust', 'close_corporation'].includes(key)) return key
+  if (key === 'cc') return 'close_corporation'
+  return fallback
+}
+
+function normalizeOtpFinanceType(value = '') {
+  const key = normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  if (key === 'hybrid') return 'combination'
+  if (['cash', 'bond', 'combination'].includes(key)) return key
+  return 'cash'
+}
+
+function parseDraftMoney(value = '') {
+  const text = normalizeText(value)
+  if (!text) return null
+  const number = Number(text)
+  return Number.isFinite(number) ? number : null
+}
+
+function compactObjectValues(source = {}) {
+  const output = {}
+  for (const [key, value] of Object.entries(source || {})) {
+    const text = normalizeText(value)
+    if (text) output[key] = value
+  }
+  return output
+}
+
 function toFriendlyPageError(error = null) {
   const raw = normalizeText(error?.message || error)
   const message = raw.toLowerCase()
@@ -187,9 +219,10 @@ function findLeadContext({ organisationId = '', leadId = '' } = {}) {
   return { lead, contact, linkedTransaction }
 }
 
-function buildLooseLeadContextFromRoute({ organisationId = '', leadId = '' } = {}) {
+function buildLooseLeadContextFromRoute({ organisationId = '', leadId = '', listingId = '' } = {}) {
   const normalizedLeadId = normalizeText(leadId)
-  if (!normalizedLeadId) return { lead: null, contact: null, linkedTransaction: null }
+  const normalizedListingId = normalizeText(listingId)
+  if (!normalizedLeadId && !normalizedListingId) return { lead: null, contact: null, linkedTransaction: null }
   const lead = {
     leadId: normalizedLeadId,
     organisationId: normalizeText(organisationId) || null,
@@ -199,6 +232,7 @@ function buildLooseLeadContextFromRoute({ organisationId = '', leadId = '' } = {
     sellerPropertyAddress: '',
     areaInterest: '',
     propertyInterest: '',
+    listingId: normalizedListingId || null,
   }
   return { lead, contact: null, linkedTransaction: null }
 }
@@ -341,6 +375,171 @@ async function fetchLeadContextFromSupabase({ organisationId = '', leadId = '' }
       : null,
     privateListing: listing,
     listing,
+  }
+}
+
+function mapPrivateListingToLeadContext({ listingRow = {}, onboardingRow = null, organisationId = '', leadId = '' } = {}) {
+  const onboarding = onboardingRow
+    ? {
+        ...(onboardingRow || {}),
+        token: normalizeText(onboardingRow?.token),
+        status: normalizeText(onboardingRow?.status),
+        formData:
+          onboardingRow?.form_data && typeof onboardingRow.form_data === 'object'
+            ? onboardingRow.form_data
+            : onboardingRow?.formData && typeof onboardingRow.formData === 'object'
+              ? onboardingRow.formData
+              : {},
+      }
+    : null
+  const formData = onboarding?.formData || {}
+  const listingId = normalizeText(listingRow?.id)
+  const sellerLeadId = normalizeText(listingRow?.seller_lead_id || listingRow?.sellerLeadId)
+  const incomingLeadId = normalizeText(leadId)
+  const safeIncomingLeadId = incomingLeadId && incomingLeadId !== listingId ? incomingLeadId : ''
+  const propertyAddress = [
+    listingRow?.address_line_1 || listingRow?.addressLine1,
+    listingRow?.address_line_2 || listingRow?.addressLine2,
+  ].map(normalizeText).filter(Boolean).join(', ')
+  const sellerFirstName = firstText(formData.sellerFirstName, formData.firstName)
+  const sellerSurname = firstText(formData.sellerSurname, formData.lastName, formData.surname)
+  const sellerFullName = firstText(
+    formData.sellerName,
+    formData.fullName,
+    formData.displayName,
+    [sellerFirstName, sellerSurname].filter(Boolean).join(' '),
+  )
+  const sellerEmail = firstText(formData.sellerEmail, formData.email, formData.contactEmail).toLowerCase()
+  const sellerPhone = firstText(formData.sellerPhone, formData.phone, formData.contactNumber, formData.mobile)
+  const privateListing = {
+    id: listingId,
+    organisationId: normalizeText(listingRow?.organisation_id || listingRow?.organisationId || organisationId),
+    sellerLeadId,
+    listingTitle: normalizeText(listingRow?.title || listingRow?.listingTitle),
+    propertyAddress,
+    addressLine1: normalizeText(listingRow?.address_line_1 || listingRow?.addressLine1),
+    addressLine2: normalizeText(listingRow?.address_line_2 || listingRow?.addressLine2),
+    suburb: normalizeText(listingRow?.suburb),
+    city: normalizeText(listingRow?.city),
+    province: normalizeText(listingRow?.province),
+    postalCode: normalizeText(listingRow?.postal_code || listingRow?.postalCode),
+    propertyType: normalizeText(listingRow?.property_type || listingRow?.propertyType),
+    mandateType: normalizeText(listingRow?.mandate_type || listingRow?.mandateType),
+    askingPrice: Number(listingRow?.asking_price || listingRow?.askingPrice || 0) || 0,
+    estimatedValue: Number(listingRow?.estimated_value || listingRow?.estimatedValue || listingRow?.asking_price || 0) || 0,
+    sellerOnboardingStatus: normalizeText(onboarding?.status),
+    sellerOnboarding: onboarding ? { ...onboarding } : null,
+  }
+  const contact = sellerFullName || sellerEmail || sellerPhone
+    ? {
+        contactId: '',
+        organisationId: privateListing.organisationId,
+        firstName: sellerFirstName,
+        lastName: sellerSurname,
+        phone: sellerPhone,
+        email: sellerEmail,
+        contactType: 'Seller',
+        notes: '',
+        createdAt: null,
+        updatedAt: null,
+      }
+    : null
+  const lead = {
+    leadId: sellerLeadId || safeIncomingLeadId,
+    organisationId: privateListing.organisationId,
+    contactId: '',
+    leadCategory: 'seller',
+    leadDirection: 'Listing',
+    leadSource: 'Listing',
+    stage: 'Mandate Draft',
+    status: 'Mandate Draft',
+    priority: 'Medium',
+    budget: privateListing.estimatedValue || privateListing.askingPrice || 0,
+    areaInterest: privateListing.suburb,
+    propertyInterest: privateListing.propertyType || privateListing.listingTitle || propertyAddress,
+    sellerPropertyAddress: propertyAddress,
+    estimatedValue: privateListing.estimatedValue || privateListing.askingPrice || 0,
+    sellerName: sellerFirstName,
+    sellerSurname,
+    sellerEmail,
+    sellerPhone,
+    sellerOnboardingToken: normalizeText(onboarding?.token),
+    sellerOnboardingLink: '',
+    sellerOnboardingStatus: normalizeText(onboarding?.status),
+    sellerWorkflowLeadId: sellerLeadId,
+    mandatePacketId: '',
+    listingId,
+    sellerOnboarding: onboarding ? { ...onboarding, listing: privateListing } : null,
+    createdAt: listingRow?.created_at || null,
+    updatedAt: listingRow?.updated_at || null,
+    convertedDealId: '',
+    convertedTransactionId: '',
+  }
+
+  return {
+    lead,
+    contact,
+    linkedTransaction: null,
+    privateListing,
+    listing: privateListing,
+  }
+}
+
+async function fetchListingContextFromSupabase({ organisationId = '', listingId = '', leadId = '' } = {}) {
+  if (!isSupabaseConfigured || !supabase) return { lead: null, contact: null, linkedTransaction: null }
+  const scopedListingId = normalizeText(listingId)
+  if (!isUuidLike(scopedListingId)) return { lead: null, contact: null, linkedTransaction: null }
+
+  let listingQuery = supabase
+    .from('private_listings')
+    .select('id, organisation_id, seller_lead_id, title, asking_price, estimated_value, address_line_1, address_line_2, suburb, city, province, postal_code, property_type, mandate_type, created_at, updated_at')
+    .eq('id', scopedListingId)
+
+  if (isUuidLike(organisationId)) {
+    listingQuery = listingQuery.eq('organisation_id', organisationId)
+  }
+
+  const [listingResult, onboardingResult] = await Promise.all([
+    listingQuery.maybeSingle(),
+    supabase
+      .from('private_listing_seller_onboarding')
+      .select('id, private_listing_id, token, status, submitted_at, updated_at, form_data')
+      .eq('private_listing_id', scopedListingId)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ])
+
+  if (listingResult.error || !listingResult.data) {
+    return { lead: null, contact: null, linkedTransaction: null }
+  }
+
+  return mapPrivateListingToLeadContext({
+    listingRow: listingResult.data,
+    onboardingRow: onboardingResult?.data || null,
+    organisationId,
+    leadId,
+  })
+}
+
+function mergeLeadContextWithListingContext(leadContext = {}, listingContext = {}) {
+  if (!leadContext?.lead) return listingContext
+  if (!listingContext?.lead) return leadContext
+  return {
+    ...leadContext,
+    privateListing: leadContext.privateListing || listingContext.privateListing || null,
+    listing: leadContext.listing || listingContext.listing || null,
+    contact: leadContext.contact || listingContext.contact || null,
+    linkedTransaction: leadContext.linkedTransaction || listingContext.linkedTransaction || null,
+    lead: {
+      ...(listingContext.lead || {}),
+      ...(leadContext.lead || {}),
+      listingId: normalizeText(leadContext.lead?.listingId || listingContext.lead?.listingId),
+      sellerWorkflowLeadId: normalizeText(leadContext.lead?.sellerWorkflowLeadId || listingContext.lead?.sellerWorkflowLeadId),
+      sellerOnboardingToken: normalizeText(leadContext.lead?.sellerOnboardingToken || listingContext.lead?.sellerOnboardingToken),
+      sellerOnboardingStatus: normalizeText(leadContext.lead?.sellerOnboardingStatus || listingContext.lead?.sellerOnboardingStatus),
+      sellerOnboarding: leadContext.lead?.sellerOnboarding || listingContext.lead?.sellerOnboarding || null,
+    },
   }
 }
 
@@ -977,8 +1176,163 @@ function buildMandateDraftDefaults({ leadContext = {}, initialStatus = null, tra
         ? packetSourceContext.generatedDataSnapshot
         : {}
   const snapshotMandate = generatedSnapshot?.mandate && typeof generatedSnapshot.mandate === 'object' ? generatedSnapshot.mandate : {}
+  const snapshotSeller = generatedSnapshot?.seller && typeof generatedSnapshot.seller === 'object' ? generatedSnapshot.seller : {}
+  const snapshotProperty = generatedSnapshot?.property && typeof generatedSnapshot.property === 'object' ? generatedSnapshot.property : {}
+  const sellerFirstName = firstText(
+    onboarding.sellerFirstName,
+    onboarding.firstName,
+    lead.sellerName,
+    lead.name,
+    lead.contact?.firstName,
+  )
+  const sellerSurname = firstText(
+    onboarding.sellerSurname,
+    onboarding.lastName,
+    onboarding.surname,
+    lead.sellerSurname,
+    lead.contact?.lastName,
+  )
+  const sellerFullName = firstText(
+    packetDraft.sellerFullName,
+    snapshotSeller.fullName,
+    onboarding.seller_full_name,
+    onboarding.fullName,
+    onboarding.displayName,
+    [sellerFirstName, sellerSurname].map(normalizeText).filter(Boolean).join(' '),
+    lead.name,
+    lead.contact?.name,
+  )
 
   return {
+    sellerEntityType: normalizeKey(firstText(
+      packetDraft.sellerEntityType,
+      snapshotSeller.entityType,
+      onboarding.ownershipType,
+      onboarding.entityType,
+      onboarding.sellerType,
+      lead.sellerType,
+      'individual',
+    )) || 'individual',
+    sellerFullName,
+    sellerIdNumber: firstText(
+      packetDraft.sellerIdNumber,
+      snapshotSeller.identityNumber,
+      snapshotSeller.idNumber,
+      onboarding.idNumber,
+      onboarding.passportNumber,
+      onboarding.seller_id_number,
+      onboarding.companyRegistrationNumber,
+      onboarding.trustRegistrationNumber,
+      lead.sellerIdNumber,
+    ),
+    sellerEmail: firstText(
+      packetDraft.sellerEmail,
+      snapshotSeller.email,
+      onboarding.email,
+      onboarding.sellerEmail,
+      lead.contact?.email,
+      lead.sellerEmail,
+      lead.email,
+    ),
+    sellerPhone: firstText(
+      packetDraft.sellerPhone,
+      snapshotSeller.phone,
+      onboarding.phone,
+      onboarding.sellerPhone,
+      lead.contact?.phone,
+      lead.sellerPhone,
+      lead.phone,
+    ),
+    sellerDomiciliumAddress: firstText(
+      packetDraft.sellerDomiciliumAddress,
+      snapshotSeller.domiciliumAddress,
+      onboarding.domiciliumAddress,
+      onboarding.domicilium_address,
+      onboarding.residentialAddress,
+      onboarding.physicalAddress,
+      lead.address,
+    ),
+    sellerRepresentativeName: firstText(
+      packetDraft.sellerRepresentativeName,
+      snapshotSeller.representativeName,
+      onboarding.representativeName,
+      onboarding.companyRepresentativeName,
+      onboarding.trustRepresentativeName,
+    ),
+    sellerRepresentativeCapacity: firstText(
+      packetDraft.sellerRepresentativeCapacity,
+      snapshotSeller.representativeCapacity,
+      onboarding.representativeCapacity,
+      onboarding.companyDirectorCapacity,
+      onboarding.trusteeCapacity,
+    ),
+    propertyAddress: firstText(
+      packetDraft.propertyAddress,
+      snapshotProperty.fullAddress,
+      snapshotProperty.address,
+      onboarding.propertyAddress,
+      onboarding.property_address,
+      onboarding.address,
+      privateListing.propertyAddress,
+      privateListing.addressLine1,
+      privateListing.address_line_1,
+      lead.propertyAddress,
+      lead.sellerPropertyAddress,
+      lead.addressLine1,
+      lead.propertyInterest,
+    ),
+    propertySuburb: firstText(
+      packetDraft.propertySuburb,
+      snapshotProperty.suburb,
+      onboarding.suburb,
+      privateListing.suburb,
+      lead.suburb,
+      lead.areaInterest,
+    ),
+    propertyCity: firstText(
+      packetDraft.propertyCity,
+      snapshotProperty.city,
+      onboarding.city,
+      privateListing.city,
+      lead.city,
+    ),
+    propertyType: firstText(
+      packetDraft.propertyType,
+      snapshotProperty.propertyType,
+      snapshotProperty.type,
+      onboarding.propertyType,
+      onboarding.propertyStructureType,
+      privateListing.propertyType,
+      lead.propertyType,
+      lead.propertyInterest,
+    ),
+    unitNumber: firstText(
+      packetDraft.unitNumber,
+      snapshotProperty.unitNumber,
+      onboarding.unitNumber,
+      onboarding.unit_number,
+      privateListing.unitNumber,
+      privateListing.unit_number,
+      lead.unitNumber,
+    ),
+    complexName: firstText(
+      packetDraft.complexName,
+      snapshotProperty.complexName,
+      snapshotProperty.estateComplexName,
+      onboarding.complexName,
+      onboarding.complex_name,
+      onboarding.estateComplexName,
+      lead.complexName,
+      lead.estateComplexName,
+    ),
+    erfNumber: firstText(
+      packetDraft.erfNumber,
+      snapshotProperty.erfNumber,
+      onboarding.erfNumber,
+      onboarding.erf,
+      privateListing.erfNumber,
+      lead.erfNumber,
+    ),
     mandateType: normalizeKey(firstText(packetDraft.mandateType, snapshotMandate.type, onboarding.mandateType, onboarding.mandate_type, lead.mandateType, 'sole')) || 'sole',
     commissionStructure: normalizeKey(firstText(
       packetDraft.commissionStructure,
@@ -1073,6 +1427,403 @@ function buildMandateDraftDefaults({ leadContext = {}, initialStatus = null, tra
   }
 }
 
+function buildOtpDraftDefaults({ transactionDetail = null, initialStatus = null, leadContext = {} } = {}) {
+  const transaction = transactionDetail?.transaction && typeof transactionDetail.transaction === 'object' ? transactionDetail.transaction : {}
+  const buyer = transactionDetail?.buyer && typeof transactionDetail.buyer === 'object' ? transactionDetail.buyer : {}
+  const unit = transactionDetail?.unit && typeof transactionDetail.unit === 'object' ? transactionDetail.unit : {}
+  const onboarding =
+    transactionDetail?.onboardingFormData?.formData ||
+    transactionDetail?.onboardingFormData ||
+    {}
+  const sellerDetails = resolveDevelopmentSellerDetailsFromTransactionDetail(transactionDetail)
+  const sellerSignatory = sellerDetails?.signatory && typeof sellerDetails.signatory === 'object' ? sellerDetails.signatory : {}
+  const privateListing =
+    leadContext?.privateListing && typeof leadContext.privateListing === 'object'
+      ? leadContext.privateListing
+      : leadContext?.listing && typeof leadContext.listing === 'object'
+        ? leadContext.listing
+        : {}
+  const packetSourceContext =
+    initialStatus?.packet?.source_context_json && typeof initialStatus.packet.source_context_json === 'object'
+      ? initialStatus.packet.source_context_json
+      : {}
+  const nestedSourceContext = packetSourceContext?.sourceContext && typeof packetSourceContext.sourceContext === 'object'
+    ? packetSourceContext.sourceContext
+    : packetSourceContext?.source_context && typeof packetSourceContext.source_context === 'object'
+      ? packetSourceContext.source_context
+      : {}
+  const generatedSnapshot =
+    initialStatus?.versions?.[0]?.validation_summary_json?.generatedDataSnapshot &&
+    typeof initialStatus.versions[0].validation_summary_json.generatedDataSnapshot === 'object'
+      ? initialStatus.versions[0].validation_summary_json.generatedDataSnapshot
+      : packetSourceContext?.generatedDataSnapshot && typeof packetSourceContext.generatedDataSnapshot === 'object'
+        ? packetSourceContext.generatedDataSnapshot
+        : {}
+  const packetDraft =
+    packetSourceContext?.otpDraft && typeof packetSourceContext.otpDraft === 'object'
+      ? packetSourceContext.otpDraft
+      : nestedSourceContext?.otpDraft && typeof nestedSourceContext.otpDraft === 'object'
+        ? nestedSourceContext.otpDraft
+        : generatedSnapshot?.otpDraft && typeof generatedSnapshot.otpDraft === 'object'
+          ? generatedSnapshot.otpDraft
+          : {}
+  const sourceProperty =
+    nestedSourceContext?.property && typeof nestedSourceContext.property === 'object'
+      ? nestedSourceContext.property
+      : {}
+  const sourceSeller =
+    nestedSourceContext?.seller && typeof nestedSourceContext.seller === 'object'
+      ? nestedSourceContext.seller
+      : {}
+  const sourceBuyer =
+    nestedSourceContext?.buyer && typeof nestedSourceContext.buyer === 'object'
+      ? nestedSourceContext.buyer
+      : {}
+  const sourceOffer =
+    nestedSourceContext?.offer && typeof nestedSourceContext.offer === 'object'
+      ? nestedSourceContext.offer
+      : {}
+  const offerConditions =
+    sourceOffer?.conditions && typeof sourceOffer.conditions === 'object'
+      ? sourceOffer.conditions
+      : {}
+  const purchaserRows = Array.isArray(onboarding.purchasers) ? onboarding.purchasers : []
+  const primaryPurchaser = purchaserRows[0] && typeof purchaserRows[0] === 'object' ? purchaserRows[0] : {}
+  const secondaryPurchaser = purchaserRows[1] && typeof purchaserRows[1] === 'object' ? purchaserRows[1] : {}
+  const buyerFirstName = firstText(onboarding.firstName, onboarding.buyerFirstName)
+  const buyerLastName = firstText(onboarding.lastName, onboarding.surname, onboarding.buyerLastName)
+  const buyerFullName = firstText(
+    packetDraft.buyerFullName,
+    sourceBuyer.fullName,
+    sourceBuyer.name,
+    primaryPurchaser.name,
+    primaryPurchaser.fullName,
+    primaryPurchaser.full_name,
+    buyer.name,
+    onboarding.fullName,
+    onboarding.full_name,
+    [buyerFirstName, buyerLastName].map(normalizeText).filter(Boolean).join(' '),
+  )
+  const propertyAddress = firstText(
+    packetDraft.propertyAddress,
+    sourceProperty.address,
+    sourceProperty.propertyAddress,
+    transaction.property_address_line_1,
+    transaction.property_address,
+    onboarding.propertyAddress,
+    onboarding.property_address,
+    privateListing.propertyAddress,
+    privateListing.addressLine1,
+    privateListing.address_line_1,
+    unit?.development?.address,
+    leadContext?.lead?.sellerPropertyAddress,
+    leadContext?.lead?.propertyInterest,
+  )
+
+  return {
+    buyerEntityType: normalizeEntityType(firstText(
+      packetDraft.buyerEntityType,
+      sourceBuyer.entityType,
+      transaction.purchaser_type,
+      onboarding.purchaserType,
+      onboarding.purchaser_type,
+      'individual',
+    )),
+    buyerFullName,
+    buyerIdNumber: firstText(
+      packetDraft.buyerIdNumber,
+      sourceBuyer.idNumber,
+      sourceBuyer.registrationNumber,
+      primaryPurchaser.idNumber,
+      primaryPurchaser.id_number,
+      primaryPurchaser.identityNumber,
+      onboarding.idNumber,
+      onboarding.identityNumber,
+      onboarding.companyRegistrationNumber,
+      onboarding.trustRegistrationNumber,
+    ),
+    buyerEmail: firstText(packetDraft.buyerEmail, sourceBuyer.email, primaryPurchaser.email, buyer.email, onboarding.email, onboarding.buyerEmail),
+    buyerPhone: firstText(packetDraft.buyerPhone, sourceBuyer.phone, primaryPurchaser.phone, buyer.phone, onboarding.phone, onboarding.buyerPhone),
+    buyerDomiciliumAddress: firstText(
+      packetDraft.buyerDomiciliumAddress,
+      sourceBuyer.domiciliumAddress,
+      onboarding.residentialAddress,
+      onboarding.physicalAddress,
+      onboarding.domiciliumAddress,
+    ),
+    buyerRepresentativeName: firstText(packetDraft.buyerRepresentativeName, sourceBuyer.representativeName, onboarding.authorizedRepresentativeName, onboarding.authorisedRepresentativeName),
+    buyerRepresentativeCapacity: firstText(packetDraft.buyerRepresentativeCapacity, sourceBuyer.representativeCapacity, onboarding.authorizedRepresentativeCapacity, onboarding.authorisedRepresentativeCapacity),
+    coBuyerFullName: firstText(packetDraft.coBuyerFullName, secondaryPurchaser.name, secondaryPurchaser.fullName, secondaryPurchaser.full_name, onboarding.co_buyer_name, onboarding.coBuyerName, onboarding.co_buyer_full_name, onboarding.coBuyerFullName),
+    coBuyerEmail: firstText(packetDraft.coBuyerEmail, secondaryPurchaser.email, onboarding.co_buyer_email, onboarding.coBuyerEmail),
+    coBuyerPhone: firstText(packetDraft.coBuyerPhone, secondaryPurchaser.phone, onboarding.co_buyer_phone, onboarding.coBuyerPhone),
+    coBuyerIdNumber: firstText(packetDraft.coBuyerIdNumber, secondaryPurchaser.idNumber, secondaryPurchaser.id_number, secondaryPurchaser.identityNumber, onboarding.co_buyer_id_number, onboarding.coBuyerIdNumber, onboarding.co_buyer_identity_number, onboarding.coBuyerIdentityNumber),
+
+    sellerEntityType: normalizeEntityType(firstText(packetDraft.sellerEntityType, sourceSeller.entityType, sellerDetails.entityType, transaction.seller_type, 'company'), 'company'),
+    sellerFullName: firstText(
+      packetDraft.sellerFullName,
+      sourceSeller.fullName,
+      sourceSeller.name,
+      sellerDetails.legalName,
+      sellerDetails.tradingName,
+      unit?.development?.developer_company,
+      unit?.development?.name,
+      transaction.matter_owner,
+    ),
+    sellerIdNumber: firstText(packetDraft.sellerIdNumber, sourceSeller.idNumber, sourceSeller.registrationNumber, sellerDetails.registrationNumber, transaction.seller_registration_number),
+    sellerEmail: firstText(packetDraft.sellerEmail, sourceSeller.email, sellerDetails.email),
+    sellerPhone: firstText(packetDraft.sellerPhone, sourceSeller.phone, sellerDetails.phone),
+    sellerRegisteredAddress: firstText(packetDraft.sellerRegisteredAddress, sourceSeller.registeredAddress, sellerDetails.registeredAddress, sellerDetails.postalAddress),
+    sellerRepresentativeName: firstText(packetDraft.sellerRepresentativeName, sourceSeller.representativeName, sellerSignatory.fullName),
+    sellerRepresentativeCapacity: firstText(packetDraft.sellerRepresentativeCapacity, sourceSeller.representativeCapacity, sellerSignatory.signingCapacity, sellerSignatory.role),
+    sellerRepresentativeEmail: firstText(packetDraft.sellerRepresentativeEmail, sourceSeller.representativeEmail, sellerSignatory.email),
+    sellerRepresentativePhone: firstText(packetDraft.sellerRepresentativePhone, sourceSeller.representativePhone, sellerSignatory.phone),
+    sellerRepresentativeIdNumber: firstText(packetDraft.sellerRepresentativeIdNumber, sourceSeller.representativeIdNumber, sellerSignatory.idNumber),
+
+    propertyAddress,
+    propertySuburb: firstText(packetDraft.propertySuburb, sourceProperty.suburb, transaction.suburb, onboarding.suburb, onboarding.propertySuburb, privateListing.suburb, unit?.development?.suburb),
+    propertyCity: firstText(packetDraft.propertyCity, sourceProperty.city, transaction.city, onboarding.city, onboarding.propertyCity, privateListing.city, unit?.development?.city),
+    propertyType: firstText(packetDraft.propertyType, sourceProperty.propertyType, transaction.property_type, onboarding.propertyType, unit?.property_type, privateListing.propertyType),
+    unitNumber: firstText(packetDraft.unitNumber, sourceProperty.unitNumber, unit.unit_number, onboarding.unitNumber, onboarding.unit_number, privateListing.unitNumber),
+    complexName: firstText(packetDraft.complexName, sourceProperty.complexName, onboarding.complexName, onboarding.estateComplexName, privateListing.complexName),
+    erfNumber: firstText(packetDraft.erfNumber, sourceProperty.erfNumber, onboarding.erfNumber, privateListing.erfNumber),
+
+    purchasePrice: String(firstText(packetDraft.purchasePrice, sourceOffer.purchasePrice, transaction.purchase_price, transaction.sales_price, unit.price)),
+    depositAmount: String(firstText(packetDraft.depositAmount, sourceOffer.depositAmount, transaction.deposit_amount, onboarding.depositAmount, onboarding.deposit_amount)),
+    financeType: normalizeOtpFinanceType(firstText(packetDraft.financeType, sourceOffer.financeType, transaction.finance_type, onboarding.financeType, onboarding.finance_type, 'cash')),
+    bondAmount: String(firstText(packetDraft.bondAmount, sourceOffer.bondAmount, transaction.bond_amount, onboarding.bondAmount, onboarding.bond_amount)),
+    cashAmount: String(firstText(packetDraft.cashAmount, sourceOffer.cashAmount, transaction.cash_amount, onboarding.cashAmount, onboarding.cash_amount)),
+    occupationDate: toIsoDate(firstText(packetDraft.occupationDate, offerConditions.occupationDate, offerConditions.occupation_date, onboarding.occupationDate, onboarding.occupation_date)),
+    transferDate: toIsoDate(firstText(packetDraft.transferDate, sourceOffer.transferDate, sourceOffer.transfer_date, transaction.expected_transfer_date, transaction.target_registration_date, onboarding.transferDate, onboarding.transfer_date)),
+    suspensiveConditions: firstText(packetDraft.suspensiveConditions, offerConditions.suspensiveConditions, offerConditions.suspensive_conditions, onboarding.suspensiveConditions, onboarding.suspensive_conditions),
+    specialConditions: firstText(packetDraft.specialConditions, nestedSourceContext.specialConditions, onboarding.specialConditions, onboarding.special_conditions),
+  }
+}
+
+function buildOtpDraftGenerationOverrides({
+  transaction = null,
+  buyer = null,
+  sellerDetails = null,
+  onboardingFormData = null,
+  otpDraft = {},
+} = {}) {
+  const draft = otpDraft && typeof otpDraft === 'object' ? otpDraft : {}
+  const purchasePrice = parseDraftMoney(draft.purchasePrice)
+  const depositAmount = parseDraftMoney(draft.depositAmount)
+  const bondAmount = parseDraftMoney(draft.bondAmount)
+  const cashAmount = parseDraftMoney(draft.cashAmount)
+  const buyerEntityType = normalizeEntityType(draft.buyerEntityType, 'individual')
+  const sellerEntityType = normalizeEntityType(draft.sellerEntityType, 'company')
+  const financeType = normalizeOtpFinanceType(draft.financeType)
+  const existingTransaction = transaction && typeof transaction === 'object' ? transaction : {}
+  const existingBuyer = buyer && typeof buyer === 'object' ? buyer : {}
+  const existingSeller = sellerDetails && typeof sellerDetails === 'object' ? sellerDetails : {}
+  const existingSignatory = existingSeller.signatory && typeof existingSeller.signatory === 'object' ? existingSeller.signatory : {}
+  const existingOnboarding = onboardingFormData && typeof onboardingFormData === 'object' ? onboardingFormData : {}
+
+  const transactionPatch = compactObjectValues({
+    purchaser_type: buyerEntityType,
+    finance_type: financeType,
+    property_address_line_1: draft.propertyAddress,
+    property_address: draft.propertyAddress,
+    suburb: draft.propertySuburb,
+    city: draft.propertyCity,
+    property_type: draft.propertyType,
+    seller_type: sellerEntityType,
+    seller_registration_number: draft.sellerIdNumber,
+  })
+  if (purchasePrice !== null) transactionPatch.purchase_price = purchasePrice
+  if (depositAmount !== null) transactionPatch.deposit_amount = depositAmount
+  if (bondAmount !== null) transactionPatch.bond_amount = bondAmount
+  if (cashAmount !== null) transactionPatch.cash_amount = cashAmount
+
+  const nextTransaction = {
+    ...existingTransaction,
+    ...transactionPatch,
+  }
+  const nextBuyer = {
+    ...existingBuyer,
+    ...compactObjectValues({
+      name: draft.buyerFullName,
+      email: draft.buyerEmail,
+      phone: draft.buyerPhone,
+    }),
+  }
+  const nextSellerDetails = {
+    ...existingSeller,
+    ...compactObjectValues({
+      entityType: sellerEntityType,
+      legalName: draft.sellerFullName,
+      tradingName: draft.sellerFullName,
+      registrationNumber: draft.sellerIdNumber,
+      email: draft.sellerEmail,
+      phone: draft.sellerPhone,
+      registeredAddress: draft.sellerRegisteredAddress,
+      postalAddress: draft.sellerRegisteredAddress,
+    }),
+    signatory: {
+      ...existingSignatory,
+      ...compactObjectValues({
+        fullName: draft.sellerRepresentativeName,
+        role: draft.sellerRepresentativeCapacity,
+        signingCapacity: draft.sellerRepresentativeCapacity,
+        idNumber: draft.sellerRepresentativeIdNumber,
+        email: draft.sellerRepresentativeEmail || draft.sellerEmail,
+        phone: draft.sellerRepresentativePhone || draft.sellerPhone,
+      }),
+    },
+  }
+  const draftPurchasers = [
+    compactObjectValues({
+      name: draft.buyerFullName,
+      idNumber: draft.buyerIdNumber,
+      email: draft.buyerEmail,
+      phone: draft.buyerPhone,
+    }),
+    compactObjectValues({
+      name: draft.coBuyerFullName,
+      idNumber: draft.coBuyerIdNumber,
+      email: draft.coBuyerEmail,
+      phone: draft.coBuyerPhone,
+    }),
+  ].filter((party) => Object.keys(party).length)
+  const nextOnboardingFormData = {
+    ...existingOnboarding,
+    ...compactObjectValues({
+      purchaserType: buyerEntityType,
+      purchaser_type: buyerEntityType,
+      fullName: draft.buyerFullName,
+      full_name: draft.buyerFullName,
+      idNumber: draft.buyerIdNumber,
+      identityNumber: draft.buyerIdNumber,
+      email: draft.buyerEmail,
+      phone: draft.buyerPhone,
+      residentialAddress: draft.buyerDomiciliumAddress,
+      physicalAddress: draft.buyerDomiciliumAddress,
+      authorizedRepresentativeName: draft.buyerRepresentativeName,
+      authorisedRepresentativeName: draft.buyerRepresentativeName,
+      authorizedRepresentativeCapacity: draft.buyerRepresentativeCapacity,
+      authorisedRepresentativeCapacity: draft.buyerRepresentativeCapacity,
+      co_buyer_name: draft.coBuyerFullName,
+      coBuyerName: draft.coBuyerFullName,
+      co_buyer_email: draft.coBuyerEmail,
+      coBuyerEmail: draft.coBuyerEmail,
+      co_buyer_phone: draft.coBuyerPhone,
+      coBuyerPhone: draft.coBuyerPhone,
+      co_buyer_id_number: draft.coBuyerIdNumber,
+      coBuyerIdNumber: draft.coBuyerIdNumber,
+      propertyAddress: draft.propertyAddress,
+      property_address: draft.propertyAddress,
+      suburb: draft.propertySuburb,
+      propertySuburb: draft.propertySuburb,
+      city: draft.propertyCity,
+      propertyCity: draft.propertyCity,
+      propertyType: draft.propertyType,
+      unitNumber: draft.unitNumber,
+      unit_number: draft.unitNumber,
+      complexName: draft.complexName,
+      estateComplexName: draft.complexName,
+      erfNumber: draft.erfNumber,
+      depositAmount: draft.depositAmount,
+      deposit_amount: draft.depositAmount,
+      financeType,
+      finance_type: financeType,
+      bondAmount: draft.bondAmount,
+      bond_amount: draft.bondAmount,
+      cashAmount: draft.cashAmount,
+      cash_amount: draft.cashAmount,
+      occupationDate: draft.occupationDate,
+      occupation_date: draft.occupationDate,
+      transferDate: draft.transferDate,
+      transfer_date: draft.transferDate,
+      suspensiveConditions: draft.suspensiveConditions,
+      suspensive_conditions: draft.suspensiveConditions,
+      specialConditions: draft.specialConditions,
+      special_conditions: draft.specialConditions,
+    }),
+  }
+  if (draftPurchasers.length) {
+    nextOnboardingFormData.purchasers = draftPurchasers
+  }
+
+  const sourceContext = {
+    otpDraft: draft,
+    buyer: compactObjectValues({
+      entityType: buyerEntityType,
+      fullName: draft.buyerFullName,
+      name: draft.buyerFullName,
+      idNumber: draft.buyerIdNumber,
+      email: draft.buyerEmail,
+      phone: draft.buyerPhone,
+      representativeName: draft.buyerRepresentativeName,
+      representativeCapacity: draft.buyerRepresentativeCapacity,
+      domiciliumAddress: draft.buyerDomiciliumAddress,
+    }),
+    seller: compactObjectValues({
+      entityType: sellerEntityType,
+      fullName: draft.sellerFullName,
+      name: draft.sellerFullName,
+      idNumber: draft.sellerIdNumber,
+      registrationNumber: draft.sellerIdNumber,
+      email: draft.sellerEmail,
+      phone: draft.sellerPhone,
+      registeredAddress: draft.sellerRegisteredAddress,
+      representativeName: draft.sellerRepresentativeName,
+      representativeCapacity: draft.sellerRepresentativeCapacity,
+      representativeEmail: draft.sellerRepresentativeEmail || draft.sellerEmail,
+      representativePhone: draft.sellerRepresentativePhone || draft.sellerPhone,
+      representativeIdNumber: draft.sellerRepresentativeIdNumber,
+    }),
+    property: compactObjectValues({
+      address: draft.propertyAddress,
+      propertyAddress: draft.propertyAddress,
+      suburb: draft.propertySuburb,
+      city: draft.propertyCity,
+      propertyType: draft.propertyType,
+      unitNumber: draft.unitNumber,
+      complexName: draft.complexName,
+      estateComplexName: draft.complexName,
+      erfNumber: draft.erfNumber,
+    }),
+    offer: {
+      ...compactObjectValues({
+        purchasePrice: draft.purchasePrice,
+        depositAmount: draft.depositAmount,
+        financeType,
+        bondAmount: draft.bondAmount,
+        cashAmount: draft.cashAmount,
+        occupationDate: draft.occupationDate,
+        transferDate: draft.transferDate,
+      }),
+      conditions: compactObjectValues({
+        suspensiveConditions: draft.suspensiveConditions,
+        specialConditions: draft.specialConditions,
+      }),
+    },
+    signatureParties: compactObjectValues({
+      buyerName: draft.buyerRepresentativeName || draft.buyerFullName,
+      sellerName: draft.sellerRepresentativeName || draft.sellerFullName,
+    }),
+  }
+
+  return {
+    otpDraft: draft,
+    transaction: nextTransaction,
+    buyer: nextBuyer,
+    sellerDetails: nextSellerDetails,
+    onboardingFormData: nextOnboardingFormData,
+    specialConditions: firstText(draft.specialConditions),
+    sourceContext,
+    generatedDataSnapshot: {
+      otpDraft: draft,
+      transaction: nextTransaction,
+      buyer: nextBuyer,
+      sellerDetails: nextSellerDetails,
+      onboardingFormData: nextOnboardingFormData,
+      sourceContext,
+    },
+  }
+}
+
 const LEGAL_WORKSPACE_ROUTE_TIMEOUT_MS = 3500
 const LEGAL_WORKSPACE_GENERATION_TIMEOUT_MS = 65000
 const LEGAL_WORKSPACE_PACKET_SAVE_TIMEOUT_MS = 18000
@@ -1119,6 +1870,7 @@ export default function LegalDocumentWorkspacePage() {
   const [initialStatus, setInitialStatus] = useState(null)
   const [validatedRoutePacketId, setValidatedRoutePacketId] = useState('')
   const [mandateDraftOverrides, setMandateDraftOverrides] = useState({})
+  const [otpDraftOverrides, setOtpDraftOverrides] = useState({})
   const initialStatusRef = useRef(null)
   const hasRenderedContextRef = useRef(false)
 
@@ -1129,6 +1881,8 @@ export default function LegalDocumentWorkspacePage() {
   const rawRoutePacketId = normalizeText(params.packetId || searchParams.get('packetId'))
   const routePacketId = isUuidLike(rawRoutePacketId) ? rawRoutePacketId : ''
   const routeLeadId = normalizeText(params.leadId || searchParams.get('leadId'))
+  const routeListingId = normalizeText(params.listingId || searchParams.get('listingId'))
+  const routeOfferId = normalizeText(params.offerId || searchParams.get('offerId'))
   const routeTransactionId = normalizeText(params.transactionId || searchParams.get('transactionId'))
   const mode = resolveModeFromQuery(searchParams.get('mode'))
   const returnTo = resolveSafeReturnPath(searchParams.get('returnTo'))
@@ -1136,6 +1890,8 @@ export default function LegalDocumentWorkspacePage() {
   const packetType = ['mandate', 'otp'].includes(requestedPacketType)
     ? requestedPacketType
     : normalizeKey(initialStatus?.packet?.packet_type || initialStatus?.packetType || 'mandate')
+  const documentStartSourceMode = normalizeKey(searchParams.get('sourceMode'))
+  const documentStartEntryPoint = normalizeKey(searchParams.get('documentStart'))
   const actor = useMemo(() => buildAgentFromProfile(profile), [profile])
   const initialStatusValueRef = useRef(initialStatus)
 
@@ -1146,9 +1902,10 @@ export default function LegalDocumentWorkspacePage() {
   const backPath = useMemo(() => {
     if (returnTo) return returnTo
     if (routeTransactionId) return `/transactions/${routeTransactionId}`
+    if (routeListingId) return `/agent/listings/${routeListingId}`
     if (routeLeadId) return `/pipeline/leads/${routeLeadId}`
     return '/transactions'
-  }, [returnTo, routeLeadId, routeTransactionId])
+  }, [returnTo, routeLeadId, routeListingId, routeTransactionId])
 
   const handleBack = useCallback(() => {
     navigate(backPath)
@@ -1183,6 +1940,36 @@ export default function LegalDocumentWorkspacePage() {
   }, [])
   const resetMandateDraftFields = useCallback(() => {
     setMandateDraftOverrides({})
+  }, [])
+  const otpDraftDefaults = useMemo(
+    () => buildOtpDraftDefaults({
+      transactionDetail,
+      initialStatus,
+      leadContext,
+    }),
+    [initialStatus, leadContext, transactionDetail],
+  )
+  const effectiveOtpDraft = useMemo(
+    () => ({
+      ...otpDraftDefaults,
+      ...otpDraftOverrides,
+    }),
+    [otpDraftDefaults, otpDraftOverrides],
+  )
+  const showOtpDraftPanel =
+    routeContextSettled &&
+    packetType === 'otp' &&
+    mode === 'generate' &&
+    !validatedRoutePacketId &&
+    !initialStatus?.packet?.id
+  const updateOtpDraftField = useCallback((field, value) => {
+    setOtpDraftOverrides((previous) => ({
+      ...previous,
+      [field]: value,
+    }))
+  }, [])
+  const resetOtpDraftFields = useCallback(() => {
+    setOtpDraftOverrides({})
   }, [])
 
   const loadRouteContext = useCallback(async () => {
@@ -1219,8 +2006,8 @@ export default function LegalDocumentWorkspacePage() {
         throw new Error('This legal document type is not supported.')
       }
 
-      if (!resolvedTransactionId && !effectiveRoutePacketId && !routeLeadId) {
-        throw new Error('A transaction, packet, or lead reference is required to open this workspace.')
+      if (!resolvedTransactionId && !effectiveRoutePacketId && !routeLeadId && !routeListingId) {
+        throw new Error('A transaction, packet, lead, or listing reference is required to open this workspace.')
       }
 
       let immediateLeadContext = findLeadContextAcrossStores({
@@ -1237,6 +2024,26 @@ export default function LegalDocumentWorkspacePage() {
           2500,
         ).catch(() => ({ lead: null, contact: null, linkedTransaction: null }))
         if (supabaseLeadContext?.lead) immediateLeadContext = supabaseLeadContext
+      }
+      if (routeListingId && (!immediateLeadContext?.lead || !normalizeText(immediateLeadContext.privateListing?.id || immediateLeadContext.listing?.id))) {
+        const listingLeadContext = await withLegalWorkspaceTimeout(
+          fetchListingContextFromSupabase({
+            organisationId: resolvedOrganisationId,
+            listingId: routeListingId,
+            leadId: routeLeadId,
+          }),
+          'Listing lookup is taking too long.',
+          2500,
+        ).catch(() => ({ lead: null, contact: null, linkedTransaction: null }))
+        if (listingLeadContext?.lead) {
+          immediateLeadContext = mergeLeadContextWithListingContext(immediateLeadContext, listingLeadContext)
+        } else if (!immediateLeadContext?.lead) {
+          immediateLeadContext = buildLooseLeadContextFromRoute({
+            organisationId: resolvedOrganisationId,
+            leadId: routeLeadId,
+            listingId: routeListingId,
+          })
+        }
       }
       immediateLeadContext = await withLegalWorkspaceTimeout(
         hydrateLeadContextWithSellerOnboarding(immediateLeadContext),
@@ -1350,6 +2157,26 @@ export default function LegalDocumentWorkspacePage() {
         ).catch(() => ({ lead: null, contact: null, linkedTransaction: null }))
         if (supabaseLeadContext?.lead) nextLeadContext = supabaseLeadContext
       }
+      if (routeListingId && (!nextLeadContext?.lead || !normalizeText(nextLeadContext.privateListing?.id || nextLeadContext.listing?.id))) {
+        const listingLeadContext = await withLegalWorkspaceTimeout(
+          fetchListingContextFromSupabase({
+            organisationId: resolvedOrganisationId,
+            listingId: routeListingId,
+            leadId: routeLeadId,
+          }),
+          'Listing lookup is taking too long.',
+          2500,
+        ).catch(() => ({ lead: null, contact: null, linkedTransaction: null }))
+        if (listingLeadContext?.lead) {
+          nextLeadContext = mergeLeadContextWithListingContext(nextLeadContext, listingLeadContext)
+        } else if (!nextLeadContext?.lead) {
+          nextLeadContext = buildLooseLeadContextFromRoute({
+            organisationId: resolvedOrganisationId,
+            leadId: routeLeadId,
+            listingId: routeListingId,
+          })
+        }
+      }
       nextLeadContext = await withLegalWorkspaceTimeout(
         hydrateLeadContextWithSellerOnboarding(nextLeadContext),
         'Seller onboarding lookup is taking too long.',
@@ -1460,7 +2287,7 @@ export default function LegalDocumentWorkspacePage() {
       setRouteContextSettled(true)
       if (!renderedFallback) setLoadingContext(false)
     }
-  }, [actor, requestedPacketType, role, routeLeadId, routePacketId, routeTransactionId])
+  }, [actor, requestedPacketType, role, routeLeadId, routeListingId, routePacketId, routeTransactionId])
 
   useEffect(() => {
     void loadRouteContext()
@@ -1574,6 +2401,16 @@ export default function LegalDocumentWorkspacePage() {
   }, [initialStatus, organisationId, packetType, routeLeadId, transactionId, validatedRoutePacketId])
 
   const ensurePacket = useCallback(async ({ template, allowRuntime = true, forceNew = false } = {}) => {
+    const routeListingUuid = normalizeLeadUuid(routeListingId)
+    const routeLeadUuid = normalizeLeadUuid(routeLeadId)
+    const contextLeadUuid = normalizeLeadUuid(leadContext.lead?.leadId)
+    const packetLeadId = routeLeadUuid && routeLeadUuid !== routeListingUuid ? routeLeadUuid : contextLeadUuid
+    const sourceListingId = normalizeText(
+      routeListingId ||
+        leadContext.lead?.listingId ||
+        leadContext.privateListing?.id ||
+        leadContext.listing?.id,
+    )
     const packetHint = forceNew
       ? ''
       : (
@@ -1605,14 +2442,14 @@ export default function LegalDocumentWorkspacePage() {
       return currentStatus.packet
     }
 
-    const shouldLookupExistingPacket = !forceNew && Boolean(transactionId || normalizeLeadUuid(routeLeadId))
+    const shouldLookupExistingPacket = !forceNew && Boolean(transactionId || packetLeadId)
     if (shouldLookupExistingPacket) {
       const scopedPackets = await withLegalWorkspaceTimeout(
         listDocumentPackets({
           organisationId,
           packetType,
           transactionId: transactionId || null,
-          leadId: normalizeLeadUuid(routeLeadId) || null,
+          leadId: packetLeadId || null,
           limit: 5,
         }),
         'Packet lookup is taking too long.',
@@ -1636,7 +2473,7 @@ export default function LegalDocumentWorkspacePage() {
         title: `${resolveDocumentLabel(packetType)} - ${transactionReference}`,
         transactionId: isUuidLike(transactionId) ? transactionId : null,
         dealId: isUuidLike(transactionId) ? transactionId : null,
-        leadId: normalizeLeadUuid(routeLeadId) || null,
+        leadId: packetLeadId || null,
         status: 'ready_for_generation',
         templateId: isUuidLike(template?.id) ? normalizeText(template?.id) : null,
         templateKeySnapshot: normalizeText(template?.template_key || template?.templateKey || template?.key),
@@ -1644,10 +2481,15 @@ export default function LegalDocumentWorkspacePage() {
         assignedAgentId: isUuidLike(actor.id) ? actor.id : null,
         sourceContextJson: {
           transactionId: transactionId || null,
-          leadId: normalizeLeadUuid(routeLeadId) || null,
+          leadId: packetLeadId || null,
           uiLeadId: routeLeadId || null,
+          listingId: sourceListingId || null,
+          offerId: routeOfferId || null,
           route: 'legal_document_workspace_page',
+          sourceMode: documentStartSourceMode || null,
+          documentStart: documentStartEntryPoint || null,
           ...(packetType === 'mandate' ? { mandateDraft: effectiveMandateDraft } : {}),
+          ...(packetType === 'otp' ? { otpDraft: effectiveOtpDraft } : {}),
         },
       }),
       'Packet creation is taking too long.',
@@ -1662,7 +2504,7 @@ export default function LegalDocumentWorkspacePage() {
     setValidatedRoutePacketId(normalizeText(packet?.id))
 
     return packet
-  }, [actor.id, effectiveMandateDraft, initialStatus, leadContext.lead, organisationId, packetType, resolveCurrentStatus, routeLeadId, syncLeadMandateState, transactionId, transactionReference, validatedRoutePacketId])
+  }, [actor.id, documentStartEntryPoint, documentStartSourceMode, effectiveMandateDraft, effectiveOtpDraft, initialStatus, leadContext.lead, leadContext.listing, leadContext.privateListing, organisationId, packetType, resolveCurrentStatus, routeLeadId, routeListingId, routeOfferId, syncLeadMandateState, transactionId, transactionReference, validatedRoutePacketId])
 
   const handleGenerate = useCallback(async ({ onProgress, persistForSend = false, resetExisting = false } = {}) => {
     onProgress?.('Preparing draft...')
@@ -1770,6 +2612,52 @@ export default function LegalDocumentWorkspacePage() {
       settings: workspaceSettings,
     })
     if (packetType === 'otp') {
+      const otpContext = buildOtpDraftGenerationOverrides({
+        transaction: generationContext.transaction || transaction,
+        buyer: generationContext.buyer,
+        sellerDetails: generationContext.sellerDetails,
+        onboardingFormData: generationContext.onboardingFormData,
+        otpDraft: effectiveOtpDraft,
+      })
+      generationContext.otpDraft = otpContext.otpDraft
+      generationContext.transaction = otpContext.transaction
+      generationContext.buyer = otpContext.buyer
+      generationContext.sellerDetails = otpContext.sellerDetails
+      generationContext.onboardingFormData = otpContext.onboardingFormData
+      generationContext.specialConditions = firstText(otpContext.specialConditions, generationContext.specialConditions)
+      generationContext.sourceContext = {
+        ...(generationContext.sourceContext || {}),
+        ...otpContext.sourceContext,
+      }
+      generationContext.generatedDataSnapshot = otpContext.generatedDataSnapshot
+    }
+    const sourceListingId = normalizeText(
+      routeListingId ||
+        generationContext?.lead?.listingId ||
+        generationContext?.privateListing?.id ||
+        leadContext?.privateListing?.id ||
+        leadContext?.listing?.id,
+    )
+    generationContext.documentStart = {
+      sourceMode: documentStartSourceMode || null,
+      entryPoint: documentStartEntryPoint || null,
+      listingId: sourceListingId || null,
+      offerId: routeOfferId || null,
+    }
+    if (packetType === 'otp') {
+      generationContext.sourceContext = {
+        ...(generationContext.sourceContext || {}),
+        packetType: 'otp',
+        contextType: documentStartEntryPoint === 'accepted_offer_otp' ? 'accepted_offer' : 'transaction',
+        transactionId: transactionId || null,
+        leadId: normalizeLeadUuid(routeLeadId) || null,
+        sourceMode: documentStartSourceMode || null,
+        documentStart: documentStartEntryPoint || null,
+        listingId: sourceListingId || null,
+        offerId: routeOfferId || null,
+      }
+    }
+    if (packetType === 'otp') {
       onProgress?.('Checking signed seller disclosure...')
       const propertyDisclosureAnnexure = await resolveOtpPropertyDisclosureAnnexure({
         leadContext,
@@ -1793,9 +2681,11 @@ export default function LegalDocumentWorkspacePage() {
           ...(existingPacketSourceContext || {}),
           ...(generationContext.sourceContext || {}),
           packetType: 'otp',
-          contextType: 'transaction',
+          contextType: documentStartEntryPoint === 'accepted_offer_otp' ? 'accepted_offer' : 'transaction',
           transactionId: transactionId || null,
           leadId: normalizeLeadUuid(routeLeadId) || null,
+          listingId: sourceListingId || null,
+          offerId: routeOfferId || null,
           propertyDisclosureAnnexure,
           property_disclosure_annexure: propertyDisclosureAnnexure,
           lockedPropertyDisclosureAnnexure: propertyDisclosureAnnexure,
@@ -1842,7 +2732,12 @@ export default function LegalDocumentWorkspacePage() {
             mandateType: 'developer_agent_mandate',
             relationshipMode: 'developer_buyer',
           }
-        : mandateData.sourceContext
+        : {
+            ...(mandateData.sourceContext || {}),
+            sourceMode: documentStartSourceMode || null,
+            documentStart: documentStartEntryPoint || null,
+            listingId: sourceListingId || null,
+          }
       if (!mandatePreflight.canProceed) {
         console.warn('[MANDATE] legal workspace preflight found missing data; continuing with mandate generation.', {
           leadId: normalizeText(generationContext?.lead?.leadId || routeLeadId),
@@ -1944,7 +2839,10 @@ export default function LegalDocumentWorkspacePage() {
     }
   }, [
     actor,
+    documentStartEntryPoint,
+    documentStartSourceMode,
     ensurePacket,
+    effectiveOtpDraft,
     initialStatus,
     leadContext,
     effectiveMandateDraft,
@@ -1955,6 +2853,8 @@ export default function LegalDocumentWorkspacePage() {
     resolveCurrentStatus,
     role,
     routeLeadId,
+    routeListingId,
+    routeOfferId,
     syncLeadMandateState,
     transaction,
     transactionDetail,
@@ -2150,95 +3050,23 @@ export default function LegalDocumentWorkspacePage() {
   return (
     <>
       {showMandateDraftPanel ? (
-        <section className="mb-5 rounded-[24px] border border-[#e3ebf4] bg-white p-5 shadow-[0_14px_34px_rgba(16,32,51,0.05)]">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Generate Mandate</p>
-              <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[#142132]">Mandate terms</h2>
-              <p className="mt-2 max-w-3xl text-sm text-[#607387]">
-                Set the mandate dates and commission override here before you generate the draft.
-              </p>
-            </div>
-            <Button type="button" variant="secondary" onClick={resetMandateDraftFields}>
-              Use defaults
-            </Button>
-          </div>
+        <MandateDraftIntakePanel
+          draft={effectiveMandateDraft}
+          sourceMode={documentStartSourceMode}
+          documentStart={documentStartEntryPoint}
+          onFieldChange={updateMandateDraftField}
+          onReset={resetMandateDraftFields}
+        />
+      ) : null}
 
-          <div className="mt-5 grid gap-4 lg:grid-cols-3">
-            <label className="grid gap-1.5">
-              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Mandate start date</span>
-              <input
-                type="date"
-                value={effectiveMandateDraft.mandateStartDate}
-                onChange={(event) => updateMandateDraftField('mandateStartDate', event.target.value)}
-                className="min-h-11 rounded-xl border border-[#dbe6f2] bg-white px-3 text-sm font-semibold text-[#102033] outline-none transition focus:border-[#0a66ff]"
-              />
-            </label>
-            <label className="grid gap-1.5">
-              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Mandate expiry date</span>
-              <input
-                type="date"
-                value={effectiveMandateDraft.mandateEndDate}
-                onChange={(event) => updateMandateDraftField('mandateEndDate', event.target.value)}
-                className="min-h-11 rounded-xl border border-[#dbe6f2] bg-white px-3 text-sm font-semibold text-[#102033] outline-none transition focus:border-[#0a66ff]"
-              />
-            </label>
-            <label className="grid gap-1.5">
-              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Commission amount override</span>
-              <input
-                type="number"
-                min="0"
-                step="100"
-                value={effectiveMandateDraft.commissionAmount}
-                onChange={(event) => updateMandateDraftField('commissionAmount', event.target.value)}
-                placeholder="Leave blank to use the lead commission card amount"
-                className="min-h-11 rounded-xl border border-[#dbe6f2] bg-white px-3 text-sm font-semibold text-[#102033] outline-none transition placeholder:text-[#9aabba] focus:border-[#0a66ff]"
-              />
-            </label>
-            <label className="grid gap-1.5 lg:col-span-3">
-              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Special conditions</span>
-              <textarea
-                rows={3}
-                value={effectiveMandateDraft.specialConditions}
-                onChange={(event) => updateMandateDraftField('specialConditions', event.target.value)}
-                placeholder="Capture any additional terms that should appear on the mandate."
-                className="min-h-[92px] rounded-xl border border-[#dbe6f2] bg-white px-3 py-3 text-sm font-medium text-[#102033] outline-none transition placeholder:text-[#9aabba] focus:border-[#0a66ff]"
-              />
-            </label>
-          </div>
-
-          <div className="mt-5 rounded-[20px] border border-[#e6edf7] bg-[#fbfdff] p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Commission snapshot</p>
-              <p className="text-xs font-semibold text-[#607387]">Lead card values prefill the draft</p>
-            </div>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div>
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Mandate type</p>
-                <p className="mt-1 text-sm font-semibold text-[#142132]">{effectiveMandateDraft.mandateType || 'sole'}</p>
-              </div>
-              <div>
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Commission</p>
-                <p className="mt-1 text-sm font-semibold text-[#142132]">
-                  {effectiveMandateDraft.commissionStructure === 'fixed'
-                    ? `Fixed amount ${effectiveMandateDraft.commissionAmount || 'not captured'}`
-                    : `Percentage ${effectiveMandateDraft.commissionPercent || 'not captured'}%`}
-                  {effectiveMandateDraft.commissionAmount && effectiveMandateDraft.commissionStructure !== 'fixed'
-                    ? `, override ${effectiveMandateDraft.commissionAmount}`
-                    : ''}
-                </p>
-              </div>
-              <div>
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">VAT handling</p>
-                <p className="mt-1 text-sm font-semibold text-[#142132]">{effectiveMandateDraft.vatHandling || 'exclusive'}</p>
-              </div>
-              <div>
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Asking price</p>
-                <p className="mt-1 text-sm font-semibold text-[#142132]">{effectiveMandateDraft.askingPrice || 'Not captured'}</p>
-              </div>
-            </div>
-          </div>
-        </section>
+      {showOtpDraftPanel ? (
+        <OtpDraftIntakePanel
+          draft={effectiveOtpDraft}
+          sourceMode={documentStartSourceMode}
+          documentStart={documentStartEntryPoint}
+          onFieldChange={updateOtpDraftField}
+          onReset={resetOtpDraftFields}
+        />
       ) : null}
 
       <LegalDocumentWorkspace
@@ -2246,7 +3074,7 @@ export default function LegalDocumentWorkspacePage() {
         open
         onBack={handleBack}
         onClose={handleBack}
-        backLabel={routeLeadId && !transactionId ? 'Back to Lead' : 'Back to Transaction'}
+        backLabel={routeListingId && !transactionId ? 'Back to Listing' : routeLeadId && !transactionId ? 'Back to Lead' : 'Back to Transaction'}
         transactionId={transactionId}
         transactionReference={transactionReference}
         packetType={packetType}

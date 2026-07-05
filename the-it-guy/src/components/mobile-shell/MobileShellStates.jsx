@@ -1,8 +1,23 @@
 import { AlertCircle, Archive, RefreshCw, Search, SlidersHorizontal } from 'lucide-react'
 
-export function MobileCard({ children, className = '', ...props }) {
+const CARD_SURFACES = {
+  default: 'border-white/80 bg-white shadow-[0_14px_34px_rgba(15,23,42,0.07)]',
+  dark: 'border-[#17324c] bg-[#10243a] text-white shadow-[0_18px_42px_rgba(15,23,42,0.20)]',
+  soft: 'border-[#dfe7ef] bg-[#f8fbfd] shadow-[0_14px_34px_rgba(15,23,42,0.06)]',
+  danger: 'border-[#f3d4d1] bg-[#fff8f7] shadow-[0_14px_34px_rgba(180,35,24,0.07)]',
+  custom: 'border-white/80 shadow-[0_14px_34px_rgba(15,23,42,0.07)]',
+}
+
+function hasBackgroundClass(className = '') {
+  return /\bbg-/.test(String(className || ''))
+}
+
+export function MobileCard({ children, className = '', surface = 'default', ...props }) {
+  const resolvedSurface = surface === 'default' && hasBackgroundClass(className) ? 'custom' : surface
+  const surfaceClass = CARD_SURFACES[resolvedSurface] || CARD_SURFACES.default
+
   return (
-    <div {...props} className={`rounded-[26px] border border-white/80 bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ${className}`.trim()}>
+    <div {...props} className={`rounded-[26px] border p-5 ${surfaceClass} ${className}`.trim()}>
       {children}
     </div>
   )
@@ -54,7 +69,7 @@ export function MobileErrorState({
   onRetry = null,
 }) {
   return (
-    <MobileCard className="border-[#f3d4d1] bg-[#fff8f7]">
+    <MobileCard surface="danger">
       <div className="flex items-start gap-3">
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#feecec] text-[#b42318]">
           <AlertCircle className="h-5 w-5" />

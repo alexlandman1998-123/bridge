@@ -163,6 +163,7 @@ const INBOUND_BUYER_SOURCES = [
   'Facebook Ads',
   'Google Ads',
   'Referral',
+  'Show Day',
   'Walk-in',
   'WhatsApp Enquiry',
   'Listing Call',

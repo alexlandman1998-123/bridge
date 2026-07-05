@@ -231,6 +231,23 @@ try {
   assert.equal(cashResult.reason, 'not_bond_finance')
   assert.equal(cashClient.state.transaction_events.length, 0)
 
+  const selfManagedClient = createMockClient(baseState)
+  const selfManagedStarted = await notifyBondIntakeStartedForOnboarding({
+    transaction: transaction({
+      id: 'tx-self-managed-1',
+      finance_type: 'bond',
+      finance_managed_by: 'client',
+    }),
+    formData: {
+      purchase_finance_type: 'bond',
+      finance_managed_by: 'client',
+      bond_help_requested: 'no',
+    },
+    client: selfManagedClient,
+  })
+  assert.equal(selfManagedStarted.reason, 'finance_not_originator_managed')
+  assert.equal(selfManagedClient.state.transaction_events.length, 0)
+
   const applicationClient = createMockClient(baseState)
   await notifyBondIntakeEvent({
     eventType: BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_STARTED,
@@ -389,6 +406,19 @@ try {
     client: otpReadyClient,
   })
   assert.equal(duplicateOtpReady.duplicate, true)
+
+  const selfManagedOtpReady = await checkAndNotifyBondOtpReady({
+    transaction: transaction({
+      id: 'tx-self-managed-otp',
+      finance_type: 'bond',
+      finance_managed_by: 'client',
+      otp_status: 'fully_signed',
+    }),
+    previousOtpReady: false,
+    currentOtpReady: true,
+    client: createMockClient(baseState),
+  })
+  assert.equal(selfManagedOtpReady.reason, 'finance_not_originator_managed')
 
   const readyForReviewClient = createMockClient(baseState)
   const readyForReview = await checkAndNotifyBondApplicationReadyForReview({

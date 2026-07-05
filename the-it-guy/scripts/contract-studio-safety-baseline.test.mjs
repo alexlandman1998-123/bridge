@@ -219,12 +219,12 @@ assert.match(
 )
 assert.match(
   studioUi,
-  /Step 2[\s\S]*handleCreateDocumentPacketFromRun\(\{ autoGenerate: true \}\)[\s\S]*Create Document/,
+  /createActionLabel[\s\S]*handleCreateDocumentPacketFromRun\(\{ autoGenerate: true \}\)[\s\S]*creatingDocumentPacket \? savingActionLabel : createActionLabel/,
   'Phase 5 should keep one primary create action that uses the existing auto-generate handler.',
 )
 assert.match(
   studioUi,
-  /<span>More options<\/span>[\s\S]*Preview[\s\S]*Save Draft/,
+  /<span>More options<\/span>[\s\S]*Preview[\s\S]*saveDraftLabel/,
   'Phase 5 should tuck preview and draft-only actions into More options.',
 )
 assert.doesNotMatch(

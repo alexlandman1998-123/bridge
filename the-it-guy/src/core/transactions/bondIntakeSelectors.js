@@ -1,4 +1,7 @@
-import { isBondFinanceType as isCanonicalBondFinanceType } from './financeType'
+import {
+  deriveFinanceManagedBy,
+  isBondFinanceType as isCanonicalBondFinanceType,
+} from './financeType'
 
 export const BOND_INTAKE_STATUSES = Object.freeze({
   AWAITING_BUYER_APPLICATION: 'AWAITING_BUYER_APPLICATION',
@@ -155,6 +158,34 @@ export function isBondFinanceType(transaction = {}, onboardingFormData = null) {
   return getFinanceTypeCandidates(transaction, onboardingFormData).some((value) => isCanonicalBondFinanceType(value))
 }
 
+function getFinanceManagedByCandidates(transaction = {}, onboardingFormData = null) {
+  const formData = getFormData(onboardingFormData)
+  return [
+    transaction?.finance_managed_by,
+    transaction?.financeManagedBy,
+    transaction?.transaction_finance_details?.finance_managed_by,
+    transaction?.transactionFinanceDetails?.financeManagedBy,
+    transaction?.transactionFinanceDetails?.finance_managed_by,
+    transaction?.finance_details?.finance_managed_by,
+    transaction?.financeDetails?.financeManagedBy,
+    formData.finance_managed_by,
+    formData.financeManagedBy,
+    formData.finance?.finance_managed_by,
+    formData.finance?.financeManagedBy,
+  ]
+}
+
+export function isOriginatorManagedBondFinance(transaction = {}, onboardingFormData = null) {
+  const financeType = pickFirstText(getFinanceTypeCandidates(transaction, onboardingFormData))
+  if (!isCanonicalBondFinanceType(financeType)) return false
+  const financeManagedBy = deriveFinanceManagedBy({
+    financeType,
+    financeManagedBy: pickFirstText(getFinanceManagedByCandidates(transaction, onboardingFormData)),
+    formData: getFormData(onboardingFormData),
+  })
+  return financeManagedBy === 'bond_originator'
+}
+
 function isSubmittedBondApplication(payload = null) {
   if (!isPlainObject(payload)) return false
   if (normalizeDateValue(payload.submitted_at || payload.submittedAt)) return true
@@ -194,7 +225,6 @@ function getSectionsCompleted(payload = null) {
 }
 
 export function getBondApplicationProgress(input = {}) {
-  const transaction = input.transaction || {}
   const payload = getBondApplicationPayload(input)
   const submittedAt = normalizeDateValue(payload?.submitted_at || payload?.submittedAt)
   const startedAt = normalizeDateValue(payload?.started_at || payload?.startedAt || payload?.created_at || payload?.createdAt)
@@ -642,7 +672,7 @@ function hasAcceptedAssignment(input = {}) {
 
 export function getBondIntakeStatus(input = {}) {
   const transaction = input.transaction || {}
-  if (!isBondFinanceType(transaction, input.onboardingFormData)) {
+  if (!isOriginatorManagedBondFinance(transaction, input.onboardingFormData)) {
     return BOND_INTAKE_STATUSES.NOT_BOND_RELEVANT
   }
 
@@ -654,6 +684,21 @@ export function getBondIntakeStatus(input = {}) {
     return BOND_INTAKE_STATUSES.ACCEPTED
   }
 
+  const applicationProgress = getBondApplicationProgress(input)
+  const documentReadiness = getDocumentReadinessSummary(input)
+
+  if (applicationProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.IN_PROGRESS && !isBuyerOnboardingComplete(input)) {
+    return BOND_INTAKE_STATUSES.BUYER_IN_PROGRESS
+  }
+
+  if (applicationProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED) {
+    return documentReadiness.isComplete
+      ? BOND_INTAKE_STATUSES.READY_FOR_REVIEW
+      : isOtpFullySigned(input)
+        ? BOND_INTAKE_STATUSES.APPLICATION_SUBMITTED
+        : BOND_INTAKE_STATUSES.AWAITING_DOCUMENTS
+  }
+
   if (!isBuyerOnboardingComplete(input)) {
     return BOND_INTAKE_STATUSES.AWAITING_BUYER_APPLICATION
   }
@@ -662,7 +707,6 @@ export function getBondIntakeStatus(input = {}) {
     return BOND_INTAKE_STATUSES.AWAITING_OTP
   }
 
-  const applicationProgress = getBondApplicationProgress(input)
   if (applicationProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.NOT_STARTED) {
     return BOND_INTAKE_STATUSES.READY_TO_START
   }
@@ -671,7 +715,6 @@ export function getBondIntakeStatus(input = {}) {
     return BOND_INTAKE_STATUSES.APPLICATION_IN_PROGRESS
   }
 
-  const documentReadiness = getDocumentReadinessSummary(input)
   if (!documentReadiness.isComplete) {
     return BOND_INTAKE_STATUSES.APPLICATION_SUBMITTED
   }
@@ -680,7 +723,7 @@ export function getBondIntakeStatus(input = {}) {
 }
 
 function getReasons({ intakeStatus, applicationProgress, documentReadiness } = {}) {
-  if (intakeStatus === BOND_INTAKE_STATUSES.NOT_BOND_RELEVANT) return ['Transaction is not Bond or Hybrid finance.']
+  if (intakeStatus === BOND_INTAKE_STATUSES.NOT_BOND_RELEVANT) return ['Transaction is not originator-managed Bond or Hybrid finance.']
   if (intakeStatus === BOND_INTAKE_STATUSES.ACCEPTED) return ['Bond originator assignment already exists.']
   if (intakeStatus === BOND_INTAKE_STATUSES.DECLINED) return ['Bond intake has been declined.']
   if (intakeStatus === BOND_INTAKE_STATUSES.AWAITING_BUYER_APPLICATION) return ['Buyer onboarding has not been completed yet.']

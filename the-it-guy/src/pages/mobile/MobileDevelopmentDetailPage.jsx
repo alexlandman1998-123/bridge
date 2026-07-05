@@ -257,7 +257,7 @@ export default function MobileDevelopmentDetailPage() {
         <MobileEmptyState title="Development not found" body="This development could not be found in the current workspace." />
       ) : (
         <>
-          <MobileCard className="mb-8 overflow-hidden bg-[linear-gradient(160deg,#111111_0%,#34312e_64%,#7c6956_100%)] text-white shadow-[0_24px_52px_rgba(17,17,17,0.2)]">
+          <MobileCard surface="custom" className="mb-8 overflow-hidden bg-[linear-gradient(160deg,#111111_0%,#34312e_64%,#7c6956_100%)] text-white shadow-[0_24px_52px_rgba(17,17,17,0.2)]">
             <div className="flex items-start justify-between gap-3">
   <div className="flex min-w-0 flex-1 items-start gap-3">
                 <Link
@@ -303,7 +303,7 @@ export default function MobileDevelopmentDetailPage() {
           </MobileCard>
 
           <div className="mb-5 space-y-3 pt-1">
-            <MobileCard className="flex items-center justify-between gap-3 bg-[linear-gradient(180deg,#fffdfa_0%,#f8f1e8_100%)]">
+            <MobileCard surface="custom" className="flex items-center justify-between gap-3 bg-[linear-gradient(180deg,#fffdfa_0%,#f8f1e8_100%)]">
               <div className="min-w-0">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8a806f]">Health</p>
                 <h3 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[#101010]">{health.label}</h3>
@@ -314,7 +314,7 @@ export default function MobileDevelopmentDetailPage() {
               </div>
             </MobileCard>
 
-            <MobileCard className="bg-[linear-gradient(180deg,#fffdfa_0%,#f7f1e8_100%)]">
+            <MobileCard surface="custom" className="bg-[linear-gradient(180deg,#fffdfa_0%,#f7f1e8_100%)]">
               <div className="mb-4 flex items-end justify-between gap-3">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8a806f]">Portfolio Completion</p>
@@ -336,7 +336,7 @@ export default function MobileDevelopmentDetailPage() {
             </MobileCard>
           </div>
 
-          <MobileCard className="mb-5 bg-[linear-gradient(180deg,#fffdfa_0%,#f8f1e8_100%)]">
+          <MobileCard surface="custom" className="mb-5 bg-[linear-gradient(180deg,#fffdfa_0%,#f8f1e8_100%)]">
             <div className="mb-4 flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#101010]">Key Metrics</h2>
             </div>
@@ -347,7 +347,7 @@ export default function MobileDevelopmentDetailPage() {
             </div>
           </MobileCard>
 
-          <MobileCard className="mb-5 bg-[linear-gradient(180deg,#fffdfa_0%,#f8f1e8_100%)]">
+          <MobileCard surface="custom" className="mb-5 bg-[linear-gradient(180deg,#fffdfa_0%,#f8f1e8_100%)]">
             <div className="mb-4 flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#101010]">Analytics</h2>
             </div>
@@ -372,7 +372,7 @@ export default function MobileDevelopmentDetailPage() {
           </MobileCard>
 
           <div className="mb-5 space-y-3">
-            <MobileCard className="px-4 py-4 bg-[linear-gradient(180deg,#fffdfa_0%,#f8f1e8_100%)]">
+            <MobileCard surface="custom" className="px-4 py-4 bg-[linear-gradient(180deg,#fffdfa_0%,#f8f1e8_100%)]">
               <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#101010]">Needs Attention</h2>
             </MobileCard>
             <div className="grid grid-cols-2 gap-3">
@@ -383,7 +383,7 @@ export default function MobileDevelopmentDetailPage() {
           </div>
 
           <div className="mb-5 space-y-3">
-            <MobileCard className="px-4 py-4 bg-[linear-gradient(180deg,#fffdfa_0%,#f8f1e8_100%)]">
+            <MobileCard surface="custom" className="px-4 py-4 bg-[linear-gradient(180deg,#fffdfa_0%,#f8f1e8_100%)]">
               <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#101010]">Current Transactions</h2>
             </MobileCard>
             {activeTransactions.length ? (
@@ -409,7 +409,7 @@ export default function MobileDevelopmentDetailPage() {
           </div>
 
           <div className="mb-5 space-y-3">
-            <MobileCard className="px-4 py-4 bg-[linear-gradient(180deg,#fffdfa_0%,#f8f1e8_100%)]">
+            <MobileCard surface="custom" className="px-4 py-4 bg-[linear-gradient(180deg,#fffdfa_0%,#f8f1e8_100%)]">
               <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#101010]">Recent Activity</h2>
             </MobileCard>
             <MobileActivityFeed items={recentActivity} emptyText="Recent development movement will appear here once transactions start updating." />

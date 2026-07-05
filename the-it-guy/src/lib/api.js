@@ -54,6 +54,7 @@ import {
 } from '../core/documents/portalDocumentMetadata'
 import {
   CANONICAL_FINANCE_TYPES,
+  deriveFinanceManagedBy,
   financeTypeMatchesFilter,
   isBondFinanceType,
   normalizeFinanceType,
@@ -22149,25 +22150,32 @@ export async function recordBuyerOnboardingSent({ transactionId, actorRole = nul
   return true
 }
 
-function isAffirmativeOnboardingValue(value) {
-  const normalized = normalizeTextValue(value).toLowerCase()
-  return ['1', 'true', 'yes', 'y', 'on', 'enabled'].includes(normalized)
-}
+function isBondActivationRequestedForOnboarding({ financeType = '', formData = {}, transaction = null } = {}) {
+  const normalizedFinanceType = normalizeFinanceType(
+    financeType ||
+      formData?.purchase_finance_type ||
+      formData?.purchaseFinanceType ||
+      formData?.finance_type ||
+      formData?.financeType ||
+      formData?.finance?.purchase_finance_type ||
+      formData?.finance?.purchaseFinanceType ||
+      formData?.finance?.finance_type ||
+      formData?.finance?.financeType ||
+      transaction?.finance_type ||
+      transaction?.financeType ||
+      'cash',
+    { allowUnknown: true },
+  )
+  if (!isBondFinanceType(normalizedFinanceType)) return false
 
-function isBondActivationRequestedForOnboarding({ financeType = '', formData = {} } = {}) {
-  if (isBondFinanceType(financeType)) return true
-  return [
-    formData?.bond_help_requested,
-    formData?.bondHelpRequested,
-    formData?.needs_bond_assistance,
-    formData?.needsBondAssistance,
-    formData?.ooba_assist_requested,
-    formData?.oobaAssistRequested,
-    formData?.finance?.bond_help_requested,
-    formData?.finance?.bondHelpRequested,
-    formData?.finance?.needs_bond_assistance,
-    formData?.finance?.needsBondAssistance,
-  ].some(isAffirmativeOnboardingValue)
+  const financeManagedBy = deriveOnboardingFinanceManagedBy({
+    formData,
+    transaction: {
+      ...(transaction && typeof transaction === 'object' ? transaction : {}),
+      finance_type: normalizedFinanceType,
+    },
+  })
+  return financeManagedBy === 'bond_originator'
 }
 
 async function fetchPartnerRelationshipForRoleplayer(client, roleplayer = {}) {
@@ -22994,7 +23002,7 @@ export async function resolveBuyerAppointedBondOriginatorRequest({
 
 async function activateSelectedAttorneyRoleplayersForOnboarding(client, { transaction, financeType, buyer = null, formData = {}, source = 'buyer_onboarding_completed', createdByRole = 'client' } = {}) {
   const transactionId = normalizeTextValue(transaction?.id || transaction?.transaction_id)
-  if (!transactionId || !isBondActivationRequestedForOnboarding({ financeType, formData })) {
+  if (!transactionId || !isBondActivationRequestedForOnboarding({ financeType, formData, transaction })) {
     return []
   }
 
@@ -23132,7 +23140,12 @@ async function notifyAttorneysForBondDocumentsComplete(client, { transactionId, 
 
 async function activateSelectedBondOriginatorForOnboarding(client, { transaction, financeType, buyer = null, formData = {}, source = 'buyer_onboarding_completed', createdByRole = 'client' } = {}) {
   const transactionId = normalizeTextValue(transaction?.id || transaction?.transaction_id)
-  if (!transactionId || !isBondActivationRequestedForOnboarding({ financeType, formData })) return { activated: false, reason: 'not_bond_finance' }
+  if (!transactionId || !isBondActivationRequestedForOnboarding({ financeType, formData, transaction })) {
+    return {
+      activated: false,
+      reason: isBondFinanceType(financeType || transaction?.finance_type) ? 'finance_not_originator_managed' : 'not_bond_finance',
+    }
+  }
 
   const rolePlayers = await fetchTransactionRolePlayersIfPossible(client, transactionId)
   const selectedBondOriginator = rolePlayers.find(
@@ -30008,6 +30021,10 @@ export async function saveTransactionClientInformation({
   const normalizedDepositAmount = hasDepositAmount
     ? normalizeOptionalNumber(depositAmount)
     : normalizeOptionalNumber(transaction.deposit_amount)
+  const normalizedFinanceManagedBy = deriveFinanceManagedBy({
+    financeType: normalizedFinanceType,
+    financeManagedBy: transaction.finance_managed_by,
+  })
 
   if (!effectiveBuyerId && (normalizedBuyerName || normalizedBuyerEmail || normalizedBuyerPhone)) {
     const nextBuyer = await findOrCreateBuyer(client, {
@@ -30075,6 +30092,7 @@ export async function saveTransactionClientInformation({
       lifecycleStatus === 'awaiting_signed_otp' ? transaction.onboarding_completed_at || now : null,
     external_onboarding_submitted_at:
       lifecycleStatus === 'awaiting_signed_otp' ? transaction.external_onboarding_submitted_at || now : null,
+    finance_managed_by: normalizedFinanceManagedBy,
     updated_at: now,
   }
 
@@ -30126,6 +30144,7 @@ export async function saveTransactionClientInformation({
       'onboarding_status',
       'onboarding_completed_at',
       'external_onboarding_submitted_at',
+      'finance_managed_by',
     ]
     let fallbackPayload = { ...transactionPayload }
     let fallbackError = transactionUpdate.error
@@ -30260,6 +30279,8 @@ export async function saveTransactionClientInformation({
         id: transactionId,
         buyer_id: effectiveBuyerId,
         purchaser_type: normalizedPurchaserType,
+        finance_type: normalizedFinanceType,
+        finance_managed_by: normalizedFinanceManagedBy,
       },
       buyer,
     })
@@ -30285,6 +30306,7 @@ export async function saveTransactionClientInformation({
       buyerEmail: normalizedBuyerEmail,
       nextAction: normalizedNextAction,
       financeType: normalizedFinanceType,
+      financeManagedBy: normalizedFinanceManagedBy,
       purchasePrice: normalizedPurchasePrice,
       cashAmount: normalizedCashAmount,
       bondAmount: normalizedBondAmount,
@@ -30304,6 +30326,7 @@ export async function saveTransactionClientInformation({
       payload: {
         onboardingMode: normalizedOnboardingMode,
         purchaserType: normalizedPurchaserType,
+        financeManagedBy: normalizedFinanceManagedBy,
       },
     })
   }
@@ -30313,6 +30336,7 @@ export async function saveTransactionClientInformation({
     onboardingStatus: normalizedOnboardingStatus,
     onboardingLifecycleStatus: lifecycleStatus,
     purchaserType: normalizedPurchaserType,
+    financeManagedBy: normalizedFinanceManagedBy,
   }
 }
 
@@ -33145,6 +33169,19 @@ function getOnboardingFinanceSnapshot({ formData = {}, transaction = null } = {}
   }
 }
 
+function deriveOnboardingFinanceManagedBy({ formData = {}, transaction = null } = {}) {
+  const snapshot = getOnboardingFinanceSnapshot({ formData, transaction })
+  return deriveFinanceManagedBy({
+    financeType: snapshot.financeType,
+    financeManagedBy:
+      formData.finance_managed_by ||
+      formData.financeManagedBy ||
+      transaction?.finance_managed_by ||
+      transaction?.financeManagedBy,
+    formData,
+  })
+}
+
 function buildBuyerOnboardingFlowSnapshot(formData = {}, transaction = {}, purchaserType = 'individual') {
   const normalizedPurchaserType = normalizePurchaserType(
     formData?.purchaser_type || purchaserType || transaction?.purchaser_type || 'individual',
@@ -33331,8 +33368,10 @@ async function syncOnboardingTransactionFinanceSnapshot(
   }
 
   const snapshot = getOnboardingFinanceSnapshot({ formData, transaction })
+  const financeManagedBy = deriveOnboardingFinanceManagedBy({ formData, transaction })
   const payload = {
     finance_type: snapshot.financeType,
+    finance_managed_by: financeManagedBy,
     sales_price: snapshot.purchasePrice,
     purchase_price: snapshot.purchasePrice,
     cash_amount: snapshot.cashAmount,
@@ -33452,7 +33491,7 @@ async function resolveTransactionAndContext(client, transactionId) {
   let transactionQuery = await client
     .from('transactions')
     .select(
-      'id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, purchaser_type, stage, current_main_stage, attorney, bond_originator, next_action, comment, updated_at, created_at',
+      'id, organisation_id, development_id, unit_id, buyer_id, transaction_reference, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, finance_managed_by, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, purchaser_type, stage, current_main_stage, assigned_agent, assigned_agent_email, attorney, bond_originator, next_action, comment, updated_at, created_at',
     )
     .eq('id', normalizedTransactionId)
     .maybeSingle()
@@ -33479,7 +33518,18 @@ async function resolveTransactionAndContext(client, transactionId) {
       isMissingColumnError(transactionQuery.error, 'reservation_review_notes') ||
       isMissingColumnError(transactionQuery.error, 'onboarding_status') ||
       isMissingColumnError(transactionQuery.error, 'onboarding_completed_at') ||
-      isMissingColumnError(transactionQuery.error, 'external_onboarding_submitted_at'))
+      isMissingColumnError(transactionQuery.error, 'external_onboarding_submitted_at') ||
+      isMissingColumnError(transactionQuery.error, 'organisation_id') ||
+      isMissingColumnError(transactionQuery.error, 'transaction_reference') ||
+      isMissingColumnError(transactionQuery.error, 'property_address_line_1') ||
+      isMissingColumnError(transactionQuery.error, 'property_address_line_2') ||
+      isMissingColumnError(transactionQuery.error, 'suburb') ||
+      isMissingColumnError(transactionQuery.error, 'city') ||
+      isMissingColumnError(transactionQuery.error, 'province') ||
+      isMissingColumnError(transactionQuery.error, 'property_description') ||
+      isMissingColumnError(transactionQuery.error, 'assigned_agent') ||
+      isMissingColumnError(transactionQuery.error, 'finance_managed_by') ||
+      isMissingColumnError(transactionQuery.error, 'assigned_agent_email'))
   ) {
     transactionQuery = await client
       .from('transactions')
@@ -33511,7 +33561,8 @@ async function resolveTransactionAndContext(client, transactionId) {
   const transaction = transactionQuery.data
   const normalizedUnitId = normalizeNullableUuid(transaction.unit_id)
   const normalizedBuyerId = normalizeNullableUuid(transaction.buyer_id)
-  const [unitQuery, buyerQuery] = await Promise.all([
+  const normalizedOrganisationId = normalizeNullableUuid(transaction.organisation_id)
+  const [unitQuery, buyerQuery, organisation] = await Promise.all([
     normalizedUnitId
       ? client
           .from('units')
@@ -33522,6 +33573,7 @@ async function resolveTransactionAndContext(client, transactionId) {
     normalizedBuyerId
       ? client.from('buyers').select('id, name, phone, email').eq('id', normalizedBuyerId).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
+    fetchOrganisationBrandContext(client, normalizedOrganisationId),
   ])
 
   if (unitQuery.error) {
@@ -33536,13 +33588,84 @@ async function resolveTransactionAndContext(client, transactionId) {
     transaction,
     unit: unitQuery.data || null,
     buyer: buyerQuery.data || null,
+    organisation,
+  }
+}
+
+async function fetchOrganisationBrandContext(client, organisationId) {
+  const normalizedOrganisationId = normalizeNullableUuid(organisationId)
+  if (!normalizedOrganisationId) {
+    return null
+  }
+
+  let organisationQuery = await client
+    .from('organisations')
+    .select('id, name, display_name, logo_url')
+    .eq('id', normalizedOrganisationId)
+    .maybeSingle()
+
+  if (organisationQuery.error && isMissingColumnError(organisationQuery.error, 'logo_url')) {
+    organisationQuery = await client
+      .from('organisations')
+      .select('id, name, display_name')
+      .eq('id', normalizedOrganisationId)
+      .maybeSingle()
+  }
+
+  if (organisationQuery.error && isMissingColumnError(organisationQuery.error, 'display_name')) {
+    organisationQuery = await client
+      .from('organisations')
+      .select('id, name')
+      .eq('id', normalizedOrganisationId)
+      .maybeSingle()
+  }
+
+  if (organisationQuery.error) {
+    if (
+      isMissingTableError(organisationQuery.error, 'organisations') ||
+      isMissingSchemaError(organisationQuery.error) ||
+      isPermissionDeniedError(organisationQuery.error)
+    ) {
+      return null
+    }
+
+    throw organisationQuery.error
+  }
+
+  return organisationQuery.data || null
+}
+
+function normalizeBuyerOnboardingBranding({ organisation = null, transaction = null, unit = null } = {}) {
+  const development = Array.isArray(unit?.development) ? unit.development[0] : unit?.development
+  const organisationName =
+    normalizeNullableText(organisation?.display_name) ||
+    normalizeNullableText(organisation?.name) ||
+    ''
+  const developmentName = normalizeNullableText(development?.name)
+  const senderName =
+    organisationName ||
+    normalizeNullableText(transaction?.assigned_agent) ||
+    developmentName ||
+    'Your property team'
+  const logoUrl = normalizeNullableText(organisation?.logo_url || organisation?.logoUrl)
+
+  return {
+    organisationId: normalizeNullableUuid(organisation?.id || transaction?.organisation_id),
+    organisationName,
+    agencyName: organisationName,
+    senderName,
+    logoUrl,
+    logoDarkUrl: logoUrl,
+    logoLightUrl: logoUrl,
+    primaryColour: '',
+    secondaryColour: '',
   }
 }
 
 export async function fetchClientOnboardingByToken(token) {
   const client = requireOnboardingTokenClient(token)
   const onboarding = await resolveOnboardingTokenContext(client, token)
-  const { transaction, unit, buyer } = await resolveTransactionAndContext(client, onboarding.transactionId)
+  const { transaction, unit, buyer, organisation } = await resolveTransactionAndContext(client, onboarding.transactionId)
   const formDataRow = await fetchOnboardingFormDataForTransaction(
     client,
     transaction.id,
@@ -33660,6 +33783,8 @@ export async function fetchClientOnboardingByToken(token) {
     transaction,
     unit,
     buyer,
+    organisation,
+    branding: normalizeBuyerOnboardingBranding({ organisation, transaction, unit }),
     purchaserType,
     purchaserTypeLabel: getPurchaserTypeLabel(purchaserType),
     formConfig,
@@ -34054,6 +34179,22 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
     buyer_bond_originator_request: buyerBondOriginatorRequest,
     buyerBondOriginatorRequest: buyerBondOriginatorRequest,
   }
+  const financeManagedBy = deriveOnboardingFinanceManagedBy({
+    formData: formDataForPersistence,
+    transaction,
+  })
+  formDataForPersistence = {
+    ...formDataForPersistence,
+    finance_managed_by: financeManagedBy,
+    financeManagedBy,
+    finance: {
+      ...(formDataForPersistence.finance && typeof formDataForPersistence.finance === 'object'
+        ? formDataForPersistence.finance
+        : {}),
+      finance_managed_by: financeManagedBy,
+      financeManagedBy,
+    },
+  }
   const nextStatus = submit ? 'Submitted' : onboarding.status === 'Not Started' ? 'In Progress' : onboarding.status
   const lifecycleStatus = submit ? 'awaiting_signed_otp' : 'awaiting_client_onboarding'
 
@@ -34326,9 +34467,22 @@ async function upsertClientPortalOnboardingForm({ token, formData = {} }) {
   })
   const fundingSources = getOnboardingFundingSources(normalizedFormData)
   const now = new Date().toISOString()
+  const financeManagedBy = deriveOnboardingFinanceManagedBy({
+    formData: normalizedFormData,
+    transaction,
+  })
   const formDataForPersistence = {
     ...normalizedFormData,
     ...buildBuyerOnboardingFlowSnapshot(normalizedFormData, transaction, purchaserType),
+    finance_managed_by: financeManagedBy,
+    financeManagedBy,
+    finance: {
+      ...(normalizedFormData.finance && typeof normalizedFormData.finance === 'object'
+        ? normalizedFormData.finance
+        : {}),
+      finance_managed_by: financeManagedBy,
+      financeManagedBy,
+    },
     funding_sources: fundingSources,
   }
 
@@ -34373,7 +34527,7 @@ async function upsertClientPortalOnboardingForm({ token, formData = {} }) {
 
   await syncOnboardingTransactionFinanceSnapshot(client, {
     transaction,
-    formData: normalizedFormData,
+    formData: formDataForPersistence,
     purchaserType,
     onboardingStatus: onboardingAlreadyCompleted ? 'awaiting_signed_otp' : 'awaiting_client_onboarding',
     onboardingCompletedAt: onboardingAlreadyCompleted ? preservedCompletedAt : null,
@@ -34386,7 +34540,7 @@ async function upsertClientPortalOnboardingForm({ token, formData = {} }) {
   })
 
   const financeSnapshot = getOnboardingFinanceSnapshot({
-    formData: normalizedFormData,
+    formData: formDataForPersistence,
     transaction,
   })
 
@@ -34397,7 +34551,7 @@ async function upsertClientPortalOnboardingForm({ token, formData = {} }) {
     reservationRequired: financeSnapshot.reservationRequired,
     cashAmount: financeSnapshot.cashAmount,
     bondAmount: financeSnapshot.bondAmount,
-    formData: normalizedFormData,
+    formData: formDataForPersistence,
   })
 
   if (onboardingRecord?.id) {
@@ -34416,10 +34570,11 @@ async function upsertClientPortalOnboardingForm({ token, formData = {} }) {
     }
   }
 
-  if (isBondFinanceType(financeSnapshot.financeType || transaction.finance_type)) {
+  if (isBondFinanceType(financeSnapshot.financeType || transaction.finance_type) && financeManagedBy === 'bond_originator') {
     const transactionForNotification = {
       ...transaction,
       finance_type: financeSnapshot.financeType || transaction.finance_type,
+      finance_managed_by: financeManagedBy,
     }
     try {
       const wasStarted = previousBondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.IN_PROGRESS ||
@@ -34433,7 +34588,8 @@ async function upsertClientPortalOnboardingForm({ token, formData = {} }) {
           actor: { roleType: 'client' },
           metadata: {
             source: 'client_portal_bond_application_save',
-            onboardingFormData: normalizedFormData,
+            financeManagedBy,
+            onboardingFormData: formDataForPersistence,
           },
           client,
         })
@@ -34450,7 +34606,8 @@ async function upsertClientPortalOnboardingForm({ token, formData = {} }) {
           metadata: {
             source: 'client_portal_bond_application_submit',
             submittedAt: nextBondProgress.submittedAt || now,
-            onboardingFormData: normalizedFormData,
+            financeManagedBy,
+            onboardingFormData: formDataForPersistence,
           },
           client,
         })
@@ -34464,7 +34621,8 @@ async function upsertClientPortalOnboardingForm({ token, formData = {} }) {
           metadata: {
             source: 'client_portal_bond_application_submit',
             submittedAt: nextBondProgress.submittedAt || now,
-            onboardingFormData: normalizedFormData,
+            financeManagedBy,
+            onboardingFormData: formDataForPersistence,
             documentStatus: readiness?.docsComplete ? 'Buyer onboarding completed' : 'Required documents outstanding',
           },
           client,
@@ -34497,6 +34655,7 @@ export async function uploadOnboardingRequiredDocument({ token, documentKey, fil
   const formData = formDataRow?.formData || {}
   const purchaserType = normalizePurchaserType(formData.purchaser_type || transaction.purchaser_type || onboarding.purchaserType)
   const financeSnapshot = getOnboardingFinanceSnapshot({ formData, transaction })
+  const financeManagedBy = deriveOnboardingFinanceManagedBy({ formData, transaction })
   const requiredDocuments = await ensureTransactionRequiredDocuments(client, {
     transactionId: transaction.id,
     purchaserType,
@@ -34642,12 +34801,13 @@ export async function uploadOnboardingRequiredDocument({ token, documentKey, fil
     requiredDocumentKey: requiredDocument.key,
   })
 
-  if (isBondFinanceType(financeSnapshot.financeType)) {
+  if (isBondFinanceType(financeSnapshot.financeType) && financeManagedBy === 'bond_originator') {
     try {
       const bondDocumentsCompleteResult = await checkAndNotifyBondDocumentsComplete({
         transaction: {
           ...transaction,
           finance_type: financeSnapshot.financeType || transaction.finance_type,
+          finance_managed_by: financeManagedBy,
           buyer_name: buyer?.name || null,
           buyer_email: buyer?.email || null,
         },
@@ -34658,6 +34818,7 @@ export async function uploadOnboardingRequiredDocument({ token, documentKey, fil
           source: 'onboarding_upload',
           documentKey: requiredDocument.key,
           documentId: insertResult.data.id,
+          financeManagedBy,
         },
         client,
       })
@@ -34669,6 +34830,7 @@ export async function uploadOnboardingRequiredDocument({ token, documentKey, fil
         transaction: {
           ...transaction,
           finance_type: financeSnapshot.financeType || transaction.finance_type,
+          finance_managed_by: financeManagedBy,
           buyer_name: buyer?.name || null,
           buyer_email: buyer?.email || null,
         },
@@ -34679,6 +34841,7 @@ export async function uploadOnboardingRequiredDocument({ token, documentKey, fil
           source: 'onboarding_upload',
           documentKey: requiredDocument.key,
           documentId: insertResult.data.id,
+          financeManagedBy,
         },
         client,
       })
@@ -34690,6 +34853,7 @@ export async function uploadOnboardingRequiredDocument({ token, documentKey, fil
           source: 'onboarding_upload',
           documentKey: requiredDocument.key,
           documentId: insertResult.data.id,
+          financeManagedBy,
         },
       })
     } catch (bondNotificationError) {
@@ -34879,10 +35043,17 @@ export async function updateTransactionRequiredDocumentStatus({
   }
 
   const readiness = await computeTransactionReadinessSnapshot(client, transactionId)
-  if (isBondFinanceType(readiness?.financeType)) {
+  const formDataRow = await fetchOnboardingFormDataForTransaction(client, transactionId, 'individual')
+  const formData = formDataRow?.formData || formDataRow?.form_data || formDataRow || {}
+  const financeManagedBy = deriveFinanceManagedBy({
+    financeType: readiness?.financeType,
+    financeManagedBy: readiness?.financeManagedBy || readiness?.finance_managed_by,
+    formData,
+  })
+  if (isBondFinanceType(readiness?.financeType) && financeManagedBy === 'bond_originator') {
     try {
       const bondDocumentsCompleteResult = await checkAndNotifyBondDocumentsComplete({
-        transaction: { id: transactionId, finance_type: readiness?.financeType },
+        transaction: { id: transactionId, finance_type: readiness?.financeType, finance_managed_by: financeManagedBy },
         previousMissingCount: previousReadiness?.missingRequiredDocs,
         readiness,
         actor: { id: effectiveActorUserId, roleType: effectiveActorRole },
@@ -34890,16 +35061,16 @@ export async function updateTransactionRequiredDocumentStatus({
           source: 'required_document_status_update',
           documentKey,
           status: normalizedStatus,
+          financeManagedBy,
         },
         client,
       })
-      const formDataRow = await fetchOnboardingFormDataForTransaction(client, transactionId, 'individual')
       const bondProgress = getBondApplicationProgress({
-        transaction: { id: transactionId, finance_type: readiness?.financeType },
-        onboardingFormData: formDataRow?.formData || formDataRow?.form_data || formDataRow || null,
+        transaction: { id: transactionId, finance_type: readiness?.financeType, finance_managed_by: financeManagedBy },
+        onboardingFormData: formData,
       })
       await checkAndNotifyBondApplicationReadyForReview({
-        transaction: { id: transactionId, finance_type: readiness?.financeType },
+        transaction: { id: transactionId, finance_type: readiness?.financeType, finance_managed_by: financeManagedBy },
         previousReadyForReview: Boolean(previousReadiness?.docsComplete && bondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED),
         currentReadyForReview: Boolean(readiness?.docsComplete && bondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED),
         actor: { id: effectiveActorUserId, roleType: effectiveActorRole },
@@ -34907,6 +35078,7 @@ export async function updateTransactionRequiredDocumentStatus({
           source: 'required_document_status_update',
           documentKey,
           status: normalizedStatus,
+          financeManagedBy,
         },
         client,
       })
@@ -38644,13 +38816,25 @@ async function triggerPostSigningWorkflowIfNeeded(
   const onboardingFormData = formDataRow?.formData || {}
   const normalizedFinanceType = normalizeFinanceType(financeType || transaction?.finance_type || 'cash', { allowUnknown: true })
   const bondFinance = isBondFinanceType(normalizedFinanceType)
-  const targetMainStage = bondFinance ? 'FIN' : 'ATT'
-  const nextAction = bondFinance
+  const financeManagedBy = deriveOnboardingFinanceManagedBy({
+    formData: onboardingFormData,
+    transaction: {
+      ...transaction,
+      finance_type: normalizedFinanceType,
+    },
+  })
+  const originatorManagedFinance = bondFinance && financeManagedBy === 'bond_originator'
+  const targetMainStage = originatorManagedFinance ? 'FIN' : 'ATT'
+  const nextAction = originatorManagedFinance
     ? 'Finance workflow triggered from signed OTP. Begin finance processing.'
-    : 'Signed OTP finalised. Continue transfer preparation.'
-  const workflowMessage = bondFinance
+    : bondFinance
+      ? 'Signed OTP finalised. Buyer-managed finance selected; track external finance proof and continue transfer preparation.'
+      : 'Signed OTP finalised. Continue transfer preparation.'
+  const workflowMessage = originatorManagedFinance
     ? 'Signed OTP finalised. Finance workflow has been triggered.'
-    : 'Signed OTP finalised. Transfer workflow can proceed.'
+    : bondFinance
+      ? 'Signed OTP finalised. Buyer-managed finance is being handled outside the bond originator pipeline.'
+      : 'Signed OTP finalised. Transfer workflow can proceed.'
 
   await markTransactionSignedOtpReceived(client, {
     transactionId: normalizedTransactionId,
@@ -38717,17 +38901,18 @@ async function triggerPostSigningWorkflowIfNeeded(
 
     await notifyRolesForTransaction(client, {
       transactionId: normalizedTransactionId,
-      roleTypes: bondFinance ? ['bond_originator', 'developer', 'agent', 'attorney'] : ['attorney', 'developer', 'agent'],
-      title: bondFinance ? 'Finance handoff ready' : 'Transfer handoff ready',
+      roleTypes: originatorManagedFinance ? ['bond_originator', 'developer', 'agent', 'attorney'] : ['attorney', 'developer', 'agent'],
+      title: originatorManagedFinance ? 'Finance handoff ready' : 'Transfer handoff ready',
       message: workflowMessage,
       notificationType: 'lane_handoff',
       eventType: 'TransactionUpdated',
       eventData: {
         source: 'signed_otp_received',
-        workflow: bondFinance ? 'finance' : 'attorney',
+        workflow: originatorManagedFinance ? 'finance' : 'attorney',
+        financeManagedBy,
         nextAction,
       },
-      dedupePrefix: `signed-otp-handoff:${bondFinance ? 'finance' : 'attorney'}`,
+      dedupePrefix: `signed-otp-handoff:${originatorManagedFinance ? 'finance' : 'attorney'}`,
       excludeUserId: actorUserId || null,
     })
 
@@ -38744,18 +38929,19 @@ async function triggerPostSigningWorkflowIfNeeded(
   const stageResult = await advanceTransactionMainStageIfNeeded(client, {
     transactionId: normalizedTransactionId,
     targetMainStage,
-    allowedCurrentMainStages: bondFinance ? ['OTP', 'DEP', 'FIN'] : ['OTP', 'DEP', 'ATT'],
+    allowedCurrentMainStages: originatorManagedFinance ? ['OTP', 'DEP', 'FIN'] : ['OTP', 'DEP', 'FIN', 'ATT'],
     nextAction,
     comment: workflowMessage,
     source,
     actorRole,
   })
 
-  if (bondFinance) {
+  if (originatorManagedFinance) {
     await checkAndNotifyBondOtpReady({
       transaction: {
         id: normalizedTransactionId,
         finance_type: normalizedFinanceType,
+        finance_managed_by: financeManagedBy,
       },
       previousOtpReady: false,
       currentOtpReady: true,
@@ -38763,6 +38949,7 @@ async function triggerPostSigningWorkflowIfNeeded(
       metadata: {
         source: 'signed_otp_received',
         workflow: 'finance',
+        financeManagedBy,
       },
       client,
     })
@@ -38780,7 +38967,9 @@ async function triggerPostSigningWorkflowIfNeeded(
 
   return {
     triggered: true,
-    workflow: bondFinance ? 'finance' : 'attorney',
+    workflow: originatorManagedFinance ? 'finance' : 'attorney',
+    financeManagedBy,
+    originatorManagedFinance,
     activation,
     stageResult,
   }

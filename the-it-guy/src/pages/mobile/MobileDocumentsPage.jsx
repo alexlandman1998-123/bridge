@@ -1,5 +1,6 @@
 import { Camera, Download, Eye, FileCheck2, Share2, Upload } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { MobilePushOptIn, MobileUploadSheet } from '../../components/mobile-shell/MobileProductivity'
 import { MobileCard, MobileEmptyState } from '../../components/mobile-shell/MobileShellStates'
 import { getMobileDocumentCentre, getMobileScannerQueue } from '../../services/mobileProductivityService'
@@ -43,10 +44,12 @@ function DocumentRow({ document, onUpload, onAction }) {
 }
 
 export default function MobileDocumentsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [centre, setCentre] = useState(() => getMobileDocumentCentre())
   const [scannerQueue, setScannerQueue] = useState(() => getMobileScannerQueue())
   const [filter, setFilter] = useState('All')
   const [uploadTarget, setUploadTarget] = useState(null)
+  const createIntent = searchParams.get('create') || ''
   const rows = useMemo(() => {
     const combined = [
       ...centre.outstanding,
@@ -57,6 +60,12 @@ export default function MobileDocumentsPage() {
     const unique = new Map(combined.map((item) => [item.id, item]))
     return Array.from(unique.values()).filter((item) => filter === 'All' || item.related === filter)
   }, [centre, filter])
+
+  useEffect(() => {
+    if (createIntent === 'document' || createIntent === 'scan') {
+      setUploadTarget({ module: 'transaction' })
+    }
+  }, [createIntent])
 
   function handleDocumentAction(document, action) {
     void trackMobileMetric('document_action_used', {
@@ -69,6 +78,14 @@ export default function MobileDocumentsPage() {
     setCentre(getMobileDocumentCentre())
     setScannerQueue(getMobileScannerQueue())
     void trackMobileMetric('document_uploaded', { route: '/mobile/documents', metadata: { source: 'document_centre' } })
+  }
+
+  function closeUploadSheet() {
+    setUploadTarget(null)
+    if (!createIntent) return
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete('create')
+    setSearchParams(nextParams, { replace: true })
   }
 
   return (
@@ -168,7 +185,7 @@ export default function MobileDocumentsPage() {
         open={Boolean(uploadTarget)}
         module={uploadTarget?.module || 'transaction'}
         workspaceId={uploadTarget?.id || ''}
-        onClose={() => setUploadTarget(null)}
+        onClose={closeUploadSheet}
         onUploaded={handleUploaded}
       />
     </div>

@@ -32,10 +32,18 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import StartDocumentModal from '../components/documents/StartDocumentModal'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
+import Modal from '../components/ui/Modal'
 import { useWorkspace } from '../context/WorkspaceContext'
+import {
+  DOCUMENT_START_DOCUMENT_KINDS,
+  DOCUMENT_START_ENTRY_POINTS,
+  DOCUMENT_START_PACKET_TYPES,
+  DOCUMENT_START_SOURCE_MODES,
+} from '../core/documents/documentStartRules'
 import {
   getListingReadinessSummary,
   getRequiredSellerDocuments,
@@ -107,6 +115,12 @@ import { listListingPropertyShares } from '../services/leadPropertySharingServic
 import { listCommunicationDeliveries } from '../services/communicationDeliveryService'
 import { buildListingWorkspaceAnalyticsSummary } from '../services/leadAnalyticsService'
 import {
+  captureShowDayLead,
+  captureShowDayLeadBatch,
+  DEFAULT_SHOW_DAY_NEXT_STEP,
+  parseShowDayVisitorRows,
+} from '../services/showDayLeadCaptureService'
+import {
   acceptSuggestion,
   generateSuggestionsForListing,
   getSuggestionsForListing,
@@ -171,6 +185,31 @@ function isUuidLike(value) {
 
 function normalizeKey(value) {
   return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+function normalizeText(value = '') {
+  return String(value ?? '').trim()
+}
+
+function buildAcceptedOfferOtpWorkspacePath({
+  transactionId = '',
+  offerId = '',
+  leadId = '',
+  listingId = '',
+  sourceMode = DOCUMENT_START_SOURCE_MODES.saved,
+  returnTo = '',
+} = {}) {
+  const resolvedTransactionId = normalizeText(transactionId)
+  if (!resolvedTransactionId) return ''
+  const params = new URLSearchParams()
+  params.set('mode', 'generate')
+  params.set('sourceMode', normalizeText(sourceMode) || DOCUMENT_START_SOURCE_MODES.saved)
+  params.set('documentStart', DOCUMENT_START_ENTRY_POINTS.acceptedOfferOtp)
+  if (offerId) params.set('offerId', normalizeText(offerId))
+  if (leadId) params.set('leadId', normalizeText(leadId))
+  if (listingId) params.set('listingId', normalizeText(listingId))
+  if (returnTo) params.set('returnTo', returnTo)
+  return `/transactions/${encodeURIComponent(resolvedTransactionId)}/legal/otp?${params.toString()}`
 }
 
 const ATTORNEY_OPTIONS = [
@@ -596,6 +635,19 @@ function resolveSellerNameFromListing(listing = {}) {
   )
 }
 
+function resolveSellerLeadIdFromListing(listing = {}) {
+  return toCleanText(
+    listing?.sellerLeadId ||
+      listing?.seller_lead_id ||
+      listing?.leadId ||
+      listing?.lead_id ||
+      listing?.seller?.leadId ||
+      listing?.seller?.lead_id ||
+      listing?.sellerLead?.leadId ||
+      listing?.sellerLead?.lead_id,
+  )
+}
+
 function describeSellerReviewPreparation(preparation = {}) {
   const blockers = Array.isArray(preparation?.blockers) ? preparation.blockers : []
   const warnings = Array.isArray(preparation?.warnings) ? preparation.warnings : []
@@ -649,6 +701,199 @@ function CompactActionButton({ active = false, disabled = false, className = '',
     >
       {children}
     </button>
+  )
+}
+
+const SHOW_DAY_OUTCOME_OPTIONS = [
+  'Interested',
+  'Wants to offer',
+  'Needs finance',
+  'Wants second viewing',
+  'Still deciding',
+  'Not interested',
+]
+
+function toLocalDateInput(date = new Date()) {
+  const parsed = date instanceof Date ? date : new Date(date)
+  if (Number.isNaN(parsed.getTime())) return ''
+  const year = parsed.getFullYear()
+  const month = String(parsed.getMonth() + 1).padStart(2, '0')
+  const day = String(parsed.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function addDaysToDateInput(value = '', days = 1) {
+  const base = value ? new Date(`${value}T00:00:00`) : new Date()
+  if (Number.isNaN(base.getTime())) return toLocalDateInput(new Date())
+  base.setDate(base.getDate() + days)
+  return toLocalDateInput(base)
+}
+
+function createShowDayCaptureForm() {
+  const showDayDate = toLocalDateInput(new Date())
+  return {
+    mode: 'single',
+    name: '',
+    phone: '',
+    email: '',
+    showDayDate,
+    showDayTime: '',
+    outcome: SHOW_DAY_OUTCOME_OPTIONS[0],
+    buyerFeedback: '',
+    notes: '',
+    nextStep: DEFAULT_SHOW_DAY_NEXT_STEP,
+    followUpDueDate: addDaysToDateInput(showDayDate, 1),
+    bulkVisitorText: '',
+  }
+}
+
+function ShowDayLeadCaptureModal({
+  open,
+  form,
+  setForm,
+  listingTitle = '',
+  saving = false,
+  feedback = { kind: '', message: '' },
+  onClose,
+  onSubmit,
+}) {
+  function updateField(key, value) {
+    setForm((previous) => {
+      const next = { ...previous, [key]: value }
+      if (key === 'showDayDate' && !previous.followUpDueDate) {
+        next.followUpDueDate = addDaysToDateInput(value, 1)
+      }
+      return next
+    })
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={saving ? undefined : onClose}
+      title="Capture Show Day Lead"
+      subtitle={listingTitle ? `Record a buyer who already viewed ${listingTitle}.` : 'Record a buyer who already viewed this property.'}
+      className="max-w-4xl"
+      footer={(
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button type="submit" form="show-day-lead-capture-form" disabled={saving}>
+            {saving ? <Loader2 size={15} className="animate-spin" /> : <UserRound size={15} />}
+            Capture Lead
+          </Button>
+        </div>
+      )}
+    >
+      <form id="show-day-lead-capture-form" className="grid gap-5" onSubmit={onSubmit}>
+        {feedback?.message ? (
+          <div className={`rounded-[14px] border px-3 py-2 text-sm font-medium ${
+            feedback.kind === 'error'
+              ? 'border-[#f4d4d4] bg-[#fff5f5] text-[#b42318]'
+              : 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
+          }`}>
+            {feedback.message}
+          </div>
+        ) : null}
+
+        <div className="grid grid-cols-2 gap-2 rounded-[14px] border border-[#dce6f2] bg-[#f7fbff] p-1">
+          {[
+            ['single', 'Single Visitor'],
+            ['bulk', 'Bulk Paste'],
+          ].map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => updateField('mode', mode)}
+              className={`min-h-10 rounded-[10px] px-3 text-sm font-semibold transition ${
+                form.mode === mode
+                  ? 'bg-white text-[#142132] shadow-[0_8px_16px_rgba(15,23,42,0.08)]'
+                  : 'text-[#5f748a] hover:bg-white/70'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {form.mode === 'bulk' ? (
+          <section className="grid gap-4">
+            <label className="grid gap-2">
+              <span className="text-sm font-semibold text-[#2d445e]">Visitor List</span>
+              <Field
+                as="textarea"
+                rows={8}
+                value={form.bulkVisitorText}
+                onChange={(event) => updateField('bulkVisitorText', event.target.value)}
+                placeholder={'Name, Phone, Email, Outcome, Feedback\nSipho Visitor, 082 111 2222, sipho@example.com, Wants to offer, Liked the garden'}
+                autoFocus
+              />
+            </label>
+          </section>
+        ) : (
+          <section className="grid gap-4 md:grid-cols-3">
+            <label className="grid gap-2 md:col-span-3">
+              <span className="text-sm font-semibold text-[#2d445e]">Buyer Name</span>
+              <Field value={form.name} onChange={(event) => updateField('name', event.target.value)} placeholder="Buyer name" autoFocus />
+            </label>
+            <label className="grid gap-2">
+              <span className="text-sm font-semibold text-[#2d445e]">Phone</span>
+              <Field value={form.phone} onChange={(event) => updateField('phone', event.target.value)} placeholder="082 000 0000" />
+            </label>
+            <label className="grid gap-2">
+              <span className="text-sm font-semibold text-[#2d445e]">Email</span>
+              <Field type="email" value={form.email} onChange={(event) => updateField('email', event.target.value)} placeholder="buyer@example.com" />
+            </label>
+            <label className="grid gap-2">
+              <span className="text-sm font-semibold text-[#2d445e]">Outcome</span>
+              <Field as="select" value={form.outcome} onChange={(event) => updateField('outcome', event.target.value)}>
+                {SHOW_DAY_OUTCOME_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+              </Field>
+            </label>
+          </section>
+        )}
+
+        <section className="grid gap-4 md:grid-cols-3">
+          <label className="grid gap-2">
+            <span className="text-sm font-semibold text-[#2d445e]">Show Day Date</span>
+            <Field type="date" value={form.showDayDate} onChange={(event) => updateField('showDayDate', event.target.value)} />
+          </label>
+          <label className="grid gap-2">
+            <span className="text-sm font-semibold text-[#2d445e]">Approx. Time</span>
+            <Field type="time" value={form.showDayTime} onChange={(event) => updateField('showDayTime', event.target.value)} />
+          </label>
+          <label className="grid gap-2">
+            <span className="text-sm font-semibold text-[#2d445e]">Follow-up Due</span>
+            <Field type="date" value={form.followUpDueDate} onChange={(event) => updateField('followUpDueDate', event.target.value)} />
+          </label>
+        </section>
+
+        {form.mode === 'bulk' ? (
+          <label className="grid gap-2">
+            <span className="text-sm font-semibold text-[#2d445e]">Shared Outcome</span>
+            <Field as="select" value={form.outcome} onChange={(event) => updateField('outcome', event.target.value)}>
+              {SHOW_DAY_OUTCOME_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+            </Field>
+          </label>
+        ) : null}
+
+        <section className="grid gap-4 md:grid-cols-2">
+          {form.mode === 'single' ? (
+            <label className="grid gap-2">
+              <span className="text-sm font-semibold text-[#2d445e]">Buyer Feedback</span>
+              <Field as="textarea" rows={4} value={form.buyerFeedback} onChange={(event) => updateField('buyerFeedback', event.target.value)} placeholder="What did they like, hesitate on, or compare against?" />
+            </label>
+          ) : null}
+          <label className="grid gap-2">
+            <span className="text-sm font-semibold text-[#2d445e]">Internal Notes</span>
+            <Field as="textarea" rows={4} value={form.notes} onChange={(event) => updateField('notes', event.target.value)} placeholder="Anything the agent should know before following up." />
+          </label>
+          <label className={`grid gap-2 ${form.mode === 'single' ? 'md:col-span-2' : ''}`}>
+            <span className="text-sm font-semibold text-[#2d445e]">Next Step</span>
+            <Field as="textarea" rows={3} value={form.nextStep} onChange={(event) => updateField('nextStep', event.target.value)} />
+          </label>
+        </section>
+      </form>
+    </Modal>
   )
 }
 
@@ -1450,6 +1695,8 @@ function AgentListingDetail() {
   const [sellerPortalAccessState, setSellerPortalAccessState] = useState(null)
   const [sellerPortalAccessLoading, setSellerPortalAccessLoading] = useState(false)
   const [followUpActionId, setFollowUpActionId] = useState('')
+  const [mandateStartOpen, setMandateStartOpen] = useState(false)
+  const [acceptedOfferOtpStartOffer, setAcceptedOfferOtpStartOffer] = useState(null)
   const [showFullGallery, setShowFullGallery] = useState(false)
   const [offerNotesDraftById, setOfferNotesDraftById] = useState({})
   const [sellerReviewDeliveryModeByOfferId, setSellerReviewDeliveryModeByOfferId] = useState({})
@@ -1491,6 +1738,10 @@ function AgentListingDetail() {
     alternativeTimeB: '',
     notes: '',
   })
+  const [showDayCaptureOpen, setShowDayCaptureOpen] = useState(false)
+  const [showDayCaptureForm, setShowDayCaptureForm] = useState(() => createShowDayCaptureForm())
+  const [showDayCaptureSaving, setShowDayCaptureSaving] = useState(false)
+  const [showDayCaptureFeedback, setShowDayCaptureFeedback] = useState({ kind: '', message: '' })
   const [feedbackDrafts, setFeedbackDrafts] = useState({})
 
   useEffect(() => {
@@ -1555,6 +1806,39 @@ function AgentListingDetail() {
     () => String(listingRecord?.organisationId || listingRecord?.organisation_id || activeOrganisationId || '').trim(),
     [activeOrganisationId, listingRecord?.organisationId, listingRecord?.organisation_id],
   )
+
+  const listingActor = useMemo(() => {
+    const id = String(profile?.id || listingRecord?.agentId || listingRecord?.assignedAgentId || '').trim()
+    const name = String(
+      profile?.fullName ||
+        [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') ||
+        listingRecord?.assignedAgentName ||
+        listingRecord?.assignedAgent ||
+        profile?.email ||
+        'Agent',
+    ).trim()
+    const email = String(profile?.email || listingRecord?.assignedAgentEmail || '').trim().toLowerCase()
+    return {
+      id,
+      userId: id,
+      name,
+      email,
+      branchId: String(profile?.branchId || listingRecord?.branchId || '').trim(),
+    }
+  }, [
+    listingRecord?.agentId,
+    listingRecord?.assignedAgent,
+    listingRecord?.assignedAgentEmail,
+    listingRecord?.assignedAgentId,
+    listingRecord?.assignedAgentName,
+    listingRecord?.branchId,
+    profile?.branchId,
+    profile?.email,
+    profile?.firstName,
+    profile?.fullName,
+    profile?.id,
+    profile?.lastName,
+  ])
 
   useEffect(() => {
     const token = resolveSellerPortalTokenFromListing(listingRecord)
@@ -2646,10 +2930,10 @@ function AgentListingDetail() {
     }
   }
 
-  async function handleGenerateMandateFollowUp() {
+  async function handleGenerateMandateFollowUp({ silent = false } = {}) {
     if (!listingRecord?.id) return
     setDetailError('')
-    setDetailMessage('')
+    if (!silent) setDetailMessage('')
     try {
       setFollowUpActionId('generate_mandate')
       const preparedAt = new Date().toISOString()
@@ -2671,12 +2955,40 @@ function AgentListingDetail() {
           setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(localListing, savedListing)))
         }
       }
-      setDetailMessage('Mandate marked ready for generation. Complete seller facts and commission before sending it out.')
+      if (!silent) {
+        setDetailMessage('Mandate marked ready for generation. Complete seller facts and commission before sending it out.')
+      }
     } catch (error) {
       setDetailError(error?.message || 'Unable to prepare the mandate.')
     } finally {
       setFollowUpActionId('')
     }
+  }
+
+  async function handleStartListingMandateDocument(selection = {}) {
+    if (!listingRecord?.id) return
+    const sourceMode = selection?.sourceMode || DOCUMENT_START_SOURCE_MODES.saved
+    setDetailError('')
+    setDetailMessage('')
+    setMandateStartOpen(false)
+
+    if (sourceMode === DOCUMENT_START_SOURCE_MODES.onboarding) {
+      await handleSendSellerOnboardingFollowUp()
+      return
+    }
+
+    await handleGenerateMandateFollowUp({ silent: true })
+
+    const params = new URLSearchParams()
+    const sellerLeadId = resolveSellerLeadIdFromListing(listingRecord)
+    if (sellerLeadId) params.set('leadId', sellerLeadId)
+    params.set('mode', 'generate')
+    params.set('sourceMode', sourceMode)
+    params.set('documentStart', DOCUMENT_START_ENTRY_POINTS.listingMandate)
+    params.set('listingId', String(listingRecord.id))
+    params.set('returnTo', `/agent/listings/${encodeURIComponent(String(listingRecord.id))}?tab=seller`)
+
+    navigate(`/agent/listings/${encodeURIComponent(String(listingRecord.id))}/legal/mandate?${params.toString()}`)
   }
 
   async function handleSignedMandateUpload(event) {
@@ -2768,11 +3080,7 @@ function AgentListingDetail() {
       return
     }
     if (action.key === 'generate_mandate') {
-      if (action.complete) {
-        openSellerWorkspaceSection('documents', 'Review mandate documents and upload the signed mandate when it is ready.')
-        return
-      }
-      void handleGenerateMandateFollowUp()
+      setMandateStartOpen(true)
       return
     }
     if (action.key === 'add_seller_contact') {
@@ -3101,6 +3409,64 @@ function AgentListingDetail() {
     } finally {
       setCanonicalOfferActionId('')
     }
+  }
+
+  async function handleStartAcceptedOfferOtpDocument(selection = {}) {
+    const offer = acceptedOfferOtpStartOffer || {}
+    const transactionId = normalizeText(offer.transactionId || offer.transaction_id)
+    const offerId = normalizeText(offer.canonicalOfferId || offer.offerId || offer.id)
+    const sourceMode = normalizeText(selection?.sourceMode || DOCUMENT_START_SOURCE_MODES.saved)
+    setAcceptedOfferOtpStartOffer(null)
+    setOfferActionError('')
+    setOfferActionMessage('')
+
+    if (!transactionId) {
+      setOfferActionError('Create the transaction before preparing the OTP.')
+      return
+    }
+
+    if (sourceMode === DOCUMENT_START_SOURCE_MODES.onboarding) {
+      try {
+        setCanonicalOfferActionId(`${offer.id}:otp_onboarding`)
+        const onboardingEmail = await invokeEdgeFunction('send-email', {
+          body: {
+            type: 'client_onboarding',
+            transactionId,
+            source: 'accepted_offer_otp_start',
+            deliveryMode: normalizeClientIntakePreference(
+              offer.conditionsJson?.clientIntakePreference ||
+                offer.conditionsJson?.deliveryMode ||
+                offer.conditions?.clientIntakePreference ||
+                offer.conditions?.deliveryMode ||
+                CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL,
+            ),
+          },
+        })
+        if (onboardingEmail?.error || onboardingEmail?.data?.error) {
+          throw onboardingEmail.error || new Error(onboardingEmail.data.error)
+        }
+        setOfferActionMessage('Buyer onboarding was sent. Prepare the OTP once the details are back, or continue manually if needed.')
+      } catch (error) {
+        setOfferActionError(error?.message || 'Buyer onboarding could not be sent.')
+      } finally {
+        setCanonicalOfferActionId('')
+      }
+      return
+    }
+
+    const path = buildAcceptedOfferOtpWorkspacePath({
+      transactionId,
+      offerId,
+      leadId: offer.buyerLeadId,
+      listingId: listingRecord?.id,
+      sourceMode,
+      returnTo: `/agent/listings/${encodeURIComponent(String(listingRecord?.id || ''))}?tab=offers`,
+    })
+    if (!path) {
+      setOfferActionError('Unable to open the OTP workspace for this accepted offer.')
+      return
+    }
+    navigate(path)
   }
 
   const legacyOfferRows = useMemo(() => {
@@ -3862,16 +4228,16 @@ function AgentListingDetail() {
       },
       {
         key: 'generate_mandate',
-        title: 'Generate mandate',
+        title: 'Create mandate',
         copy: mandatePrepared
-          ? 'Mandate preparation has started for this listing.'
-          : 'Mark the mandate ready so the listing can move from Quick Add into the mandate workflow.',
+          ? 'Open the mandate workspace to review saved details or update the draft before signature.'
+          : 'Start from saved listing details, enter the missing fields manually, or send seller onboarding.',
         complete: mandatePrepared,
-        statusLabel: 'Needs prep',
+        statusLabel: mandatePrepared ? 'Draft ready' : 'Choose path',
         icon: FileText,
         buttonIcon: FileText,
-        buttonLabel: mandatePrepared ? 'Review Mandate' : 'Mark Ready',
-        loadingLabel: 'Preparing...',
+        buttonLabel: mandatePrepared ? 'Open Mandate' : 'Create Mandate',
+        loadingLabel: 'Opening...',
         priorityLabel: 'Priority: normal',
         dueLabel: 'Before signature',
       },
@@ -3957,6 +4323,61 @@ function AgentListingDetail() {
     sellerFormData,
     sellerProfile.completionPercent,
   ])
+  const listingMandateStartSummary = useMemo(() => {
+    const sellerEmail = resolveSellerEmailFromListing(listingRecord)
+    const sellerPhone = resolveSellerPhoneFromListing(listingRecord)
+    const commissionValue = commissionWorkspace.amount
+      ? formatCurrency(commissionWorkspace.amount)
+      : commissionWorkspace.percentage
+        ? formatPercentValue(commissionWorkspace.percentage)
+        : commissionWorkspace.mandateTerms || ''
+    return [
+      {
+        label: 'Listing',
+        value: marketingDraft.headline || listingRecord?.listingTitle || listingRecord?.title || listingRecord?.listingCode || 'Current listing',
+      },
+      {
+        label: 'Seller',
+        value: resolveSellerNameFromListing(listingRecord) || sellerProfile.name || 'Seller not named',
+      },
+      {
+        label: 'Contact',
+        value: sellerEmail || sellerPhone || 'Missing contact',
+      },
+      {
+        label: 'Commission',
+        value: commissionValue || 'Not captured',
+      },
+    ]
+  }, [
+    commissionWorkspace.amount,
+    commissionWorkspace.mandateTerms,
+    commissionWorkspace.percentage,
+    listingRecord,
+    marketingDraft.headline,
+    sellerProfile.name,
+  ])
+  const acceptedOfferOtpStartSummary = useMemo(() => {
+    const offer = acceptedOfferOtpStartOffer || {}
+    return [
+      {
+        label: 'Buyer',
+        value: normalizeText(offer.buyerName || offer.conditionsJson?.buyerName || offer.conditions?.buyerName) || 'Buyer',
+      },
+      {
+        label: 'Accepted offer',
+        value: offer.offerPrice ? formatCurrency(offer.offerPrice) : 'Offer details',
+      },
+      {
+        label: 'Property',
+        value: marketingDraft.headline || listingRecord?.listingTitle || listingRecord?.title || 'Current listing',
+      },
+      {
+        label: 'Transaction',
+        value: normalizeText(offer.transactionId || offer.transaction_id) || 'Create transaction first',
+      },
+    ]
+  }, [acceptedOfferOtpStartOffer, listingRecord, marketingDraft.headline])
   const completedFollowUpCount = followUpActions.filter((action) => action.complete).length
   const listingFollowUpsComplete = !followUpActions.length || followUpActions.every((action) => action.complete)
   const shouldShowListingFollowUps = sellerWorkspaceTab === 'overview' && !listingFollowUpsComplete
@@ -4420,6 +4841,126 @@ function AgentListingDetail() {
     setViewingForm((previous) => ({ ...previous, [key]: value }))
   }
 
+  function openShowDayCaptureModal() {
+    setShowDayCaptureForm(createShowDayCaptureForm())
+    setShowDayCaptureFeedback({ kind: '', message: '' })
+    setDetailError('')
+    setShowDayCaptureOpen(true)
+  }
+
+  function closeShowDayCaptureModal() {
+    if (showDayCaptureSaving) return
+    setShowDayCaptureOpen(false)
+    setShowDayCaptureFeedback({ kind: '', message: '' })
+  }
+
+  async function submitShowDayCapture(event) {
+    event.preventDefault()
+    const form = showDayCaptureForm
+    const isBulkCapture = form.mode === 'bulk'
+    const hasBuyerIdentity = [form.name, form.phone, form.email].some((value) => toCleanText(value))
+    if (!listingOrganisationId || !listingRecord?.id) {
+      setShowDayCaptureFeedback({ kind: 'error', message: 'This listing needs a saved workspace record before capturing show-day leads.' })
+      return
+    }
+    if (!isSupabaseConfigured) {
+      setShowDayCaptureFeedback({ kind: 'error', message: 'Show-day lead capture requires the workspace database connection.' })
+      return
+    }
+    if (!isBulkCapture && !hasBuyerIdentity) {
+      setShowDayCaptureFeedback({ kind: 'error', message: 'Add at least a buyer name, phone, or email.' })
+      return
+    }
+    if (!isBulkCapture && toCleanText(form.email) && !isValidEmail(form.email)) {
+      setShowDayCaptureFeedback({ kind: 'error', message: 'Add a valid buyer email address or leave it blank.' })
+      return
+    }
+    if (!toCleanText(form.showDayDate)) {
+      setShowDayCaptureFeedback({ kind: 'error', message: 'Choose the show-day date.' })
+      return
+    }
+    const sharedPayload = {
+      organisationId: listingOrganisationId,
+      listingId: listingRecord.id,
+      showDayDate: form.showDayDate,
+      showDayTime: form.showDayTime,
+      outcome: form.outcome,
+      notes: form.notes,
+      nextStep: form.nextStep,
+      followUpDueDate: form.followUpDueDate,
+      location: [listingRecord.listingTitle, listingRecord.suburb, listingRecord.city].filter(Boolean).join(', '),
+      assignedAgent: listingActor,
+    }
+    const bulkVisitors = isBulkCapture
+      ? parseShowDayVisitorRows(form.bulkVisitorText, {
+          outcome: form.outcome,
+          nextStep: form.nextStep,
+          followUpDueDate: form.followUpDueDate,
+        })
+      : []
+    if (isBulkCapture && !bulkVisitors.length) {
+      setShowDayCaptureFeedback({ kind: 'error', message: 'Paste at least one visitor with a name, phone, or email.' })
+      return
+    }
+
+    setShowDayCaptureSaving(true)
+    setShowDayCaptureFeedback({ kind: '', message: '' })
+    setDetailError('')
+    try {
+      const result = isBulkCapture
+        ? await captureShowDayLeadBatch({
+            shared: sharedPayload,
+            visitors: bulkVisitors,
+          }, { actor: listingActor })
+        : await captureShowDayLead({
+            ...sharedPayload,
+            name: form.name,
+            phone: form.phone,
+            email: form.email,
+            buyerFeedback: form.buyerFeedback,
+          }, { actor: listingActor })
+
+      if (!result?.ok) {
+        const successfulRows = Number(result?.processed || 0) + Number(result?.duplicates || 0)
+        if (!isBulkCapture || !successfulRows) {
+          throw new Error(result?.error || 'Unable to capture this show-day lead.')
+        }
+      }
+
+      const buyerLabel = toCleanText(form.name) || toCleanText(form.phone) || toCleanText(form.email) || 'Show-day visitor'
+      setShowDayCaptureOpen(false)
+      setShowDayCaptureForm(createShowDayCaptureForm())
+      setShowDayCaptureFeedback({ kind: '', message: '' })
+      if (isBulkCapture) {
+        const processed = Number(result.processed || 0)
+        const duplicates = Number(result.duplicates || 0)
+        const failed = Number(result.failed || 0)
+        setDetailMessage(`${processed} visitor${processed === 1 ? '' : 's'} captured${duplicates ? `, ${duplicates} duplicate${duplicates === 1 ? '' : 's'} skipped` : ''}.`)
+        if (failed) {
+          setDetailError(`${failed} visitor${failed === 1 ? '' : 's'} could not be captured. ${result.error || ''}`.trim())
+        }
+      } else {
+        setDetailMessage(
+          result.status === 'duplicate'
+            ? `${buyerLabel} was already captured for this show day.`
+            : `${buyerLabel} captured from the show day. A follow-up task is ready on the buyer lead.`,
+        )
+      }
+      await Promise.all([
+        refreshInterestedLeads(),
+        refreshListingViewings(),
+      ])
+      setOffersRefreshTick((value) => value + 1)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('itg:agency-crm-updated'))
+      }
+    } catch (error) {
+      setShowDayCaptureFeedback({ kind: 'error', message: error?.message || 'Unable to capture this show-day lead.' })
+    } finally {
+      setShowDayCaptureSaving(false)
+    }
+  }
+
   async function submitViewingRequest(event) {
     event.preventDefault()
     if (!listingRecord || !viewingForm.buyerLeadId || !viewingForm.proposedDate || !viewingForm.proposedTime) return
@@ -4804,6 +5345,43 @@ function AgentListingDetail() {
 
   return (
     <section className="space-y-5">
+      <StartDocumentModal
+        open={mandateStartOpen}
+        onClose={() => setMandateStartOpen(false)}
+        entryPoint={DOCUMENT_START_ENTRY_POINTS.listingMandate}
+        packetType={DOCUMENT_START_PACKET_TYPES.mandate}
+        documentKind={DOCUMENT_START_DOCUMENT_KINDS.standard}
+        initialSourceMode={DOCUMENT_START_SOURCE_MODES.saved}
+        hasExistingContext={Boolean(listingRecord?.id)}
+        hasClientContact={Boolean(resolveSellerEmailFromListing(listingRecord) || formatSouthAfricanWhatsAppNumber(resolveSellerPhoneFromListing(listingRecord)))}
+        hasParentDocument
+        contextSummary={listingMandateStartSummary}
+        title="Create Mandate"
+        subtitle="Choose the quickest way to prepare this listing mandate. You can still edit the document before sending it for signature."
+        busy={followUpActionId === 'generate_mandate' || followUpActionId === 'send_onboarding'}
+        onContinue={(selection) => void handleStartListingMandateDocument(selection)}
+      />
+      <StartDocumentModal
+        open={Boolean(acceptedOfferOtpStartOffer)}
+        onClose={() => setAcceptedOfferOtpStartOffer(null)}
+        entryPoint={DOCUMENT_START_ENTRY_POINTS.acceptedOfferOtp}
+        packetType={DOCUMENT_START_PACKET_TYPES.otp}
+        documentKind={DOCUMENT_START_DOCUMENT_KINDS.standard}
+        initialSourceMode={DOCUMENT_START_SOURCE_MODES.saved}
+        hasExistingContext={Boolean(acceptedOfferOtpStartOffer?.transactionId || acceptedOfferOtpStartOffer?.transaction_id)}
+        hasClientContact={Boolean(
+          acceptedOfferOtpStartOffer?.buyerEmail ||
+            acceptedOfferOtpStartOffer?.conditionsJson?.buyerEmail ||
+            acceptedOfferOtpStartOffer?.conditions?.buyerEmail ||
+            acceptedOfferOtpStartOffer?.buyerLeadId
+        )}
+        hasParentDocument
+        contextSummary={acceptedOfferOtpStartSummary}
+        title="Create OTP"
+        subtitle="Start from the accepted offer and review the OTP before sending it for signature."
+        busy={canonicalOfferActionId === `${acceptedOfferOtpStartOffer?.id}:otp_onboarding`}
+        onContinue={(selection) => void handleStartAcceptedOfferOtpDocument(selection)}
+      />
       {detailError ? (
         <div className="rounded-[14px] border border-[#f3d2cc] bg-[#fef3f2] px-4 py-3 text-sm font-medium text-[#b42318]">{detailError}</div>
       ) : null}
@@ -5945,10 +6523,22 @@ function AgentListingDetail() {
                 <h3 className="text-[1.05rem] font-semibold text-[#142132]">Viewings</h3>
                 <p className="mt-1 text-sm text-[#607387]">Appointment requests, confirmations, and post-viewing feedback linked to this listing.</p>
               </div>
-              <Button onClick={() => setShowViewingForm((current) => !current)}>
-                <Plus size={15} />
-                {showViewingForm ? 'Hide Viewing Form' : 'Request / Schedule Viewing'}
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={openShowDayCaptureModal}
+                  disabled={!listingOrganisationId || !listingRecord?.id || !isSupabaseConfigured}
+                  title={!isSupabaseConfigured ? 'Show-day capture requires the workspace database.' : undefined}
+                >
+                  <UserRound size={15} />
+                  Capture Show Day Lead
+                </Button>
+                <Button onClick={() => setShowViewingForm((current) => !current)}>
+                  <Plus size={15} />
+                  {showViewingForm ? 'Hide Viewing Form' : 'Request / Schedule Viewing'}
+                </Button>
+              </div>
             </div>
 
             {showViewingForm ? (
@@ -6533,7 +7123,12 @@ function AgentListingDetail() {
                           <Button size="sm" type="button" variant="secondary" onClick={() => navigate(`/pipeline/leads/${offer.buyerLeadId}`)}>Open Buyer Lead</Button>
                         ) : null}
                         {offer.transactionId ? (
-                          <Button size="sm" type="button" variant="secondary" onClick={() => navigate(`/transactions/${offer.transactionId}`)}>Open Transaction</Button>
+                          <>
+                            <Button size="sm" type="button" variant="secondary" onClick={() => navigate(`/transactions/${offer.transactionId}`)}>Open Transaction</Button>
+                            <Button size="sm" type="button" variant="secondary" onClick={() => setAcceptedOfferOtpStartOffer(offer)}>
+                              Prepare OTP
+                            </Button>
+                          </>
                         ) : null}
                       </div>
                     ) : null}
@@ -7067,9 +7662,14 @@ function AgentListingDetail() {
                                   </Button>
                                 ) : null}
                                 {offer.transactionId ? (
-                                  <Button size="sm" type="button" variant="secondary" onClick={() => navigate(`/transactions/${offer.transactionId}`)}>
-                                    Transaction
-                                  </Button>
+                                  <>
+                                    <Button size="sm" type="button" variant="secondary" onClick={() => navigate(`/transactions/${offer.transactionId}`)}>
+                                      Transaction
+                                    </Button>
+                                    <Button size="sm" type="button" variant="secondary" onClick={() => setAcceptedOfferOtpStartOffer(offer)}>
+                                      Prepare OTP
+                                    </Button>
+                                  </>
                                 ) : null}
                                 {!canSendToSeller && !canConvert && !offer.transactionId ? (
                                   <span className="text-xs text-[#9aa9b8]">—</span>
@@ -7937,6 +8537,17 @@ function AgentListingDetail() {
           </section>
         </section>
       ) : null}
+
+      <ShowDayLeadCaptureModal
+        open={showDayCaptureOpen}
+        form={showDayCaptureForm}
+        setForm={setShowDayCaptureForm}
+        listingTitle={listingRecord?.listingTitle || ''}
+        saving={showDayCaptureSaving}
+        feedback={showDayCaptureFeedback}
+        onClose={closeShowDayCaptureModal}
+        onSubmit={submitShowDayCapture}
+      />
     </section>
   )
 }

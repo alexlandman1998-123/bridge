@@ -29,12 +29,12 @@ const ICONS = {
 }
 
 const CREATE_ACTIONS = [
-  { key: 'lead', label: 'New Lead', body: 'Capture a buyer or seller lead.', icon: UsersRound, to: '/mobile/leads' },
-  { key: 'transaction', label: 'New Transaction', body: 'Start a deal from the field.', icon: BriefcaseBusiness, to: '/mobile/transactions' },
-  { key: 'document', label: 'Scan Document', body: 'Camera capture, queue and sync field documents.', icon: Upload, to: '/mobile/documents' },
-  { key: 'note', label: 'Add Note', body: 'Record a quick update.', icon: StickyNote, to: '/mobile/activity' },
-  { key: 'follow-up', label: 'Schedule Follow-up', body: 'Set the next reminder.', icon: CalendarPlus, to: '/mobile/tasks' },
-  { key: 'prospect', label: 'Add Prospect', body: 'Create a prospecting lead.', icon: FileText, to: '/mobile/leads' },
+  { key: 'lead', label: 'New Lead', body: 'Capture a buyer or seller lead.', icon: UsersRound, to: '/mobile/leads?create=lead' },
+  { key: 'transaction', label: 'New Transaction', body: 'Start a deal from the field.', icon: BriefcaseBusiness, to: '/mobile/transactions?create=transaction' },
+  { key: 'document', label: 'Scan Document', body: 'Camera capture, queue and sync field documents.', icon: Upload, to: '/mobile/documents?create=document' },
+  { key: 'note', label: 'Add Note', body: 'Record a quick update.', icon: StickyNote, to: '/mobile/activity?create=note' },
+  { key: 'follow-up', label: 'Schedule Follow-up', body: 'Set the next reminder.', icon: CalendarPlus, to: '/mobile/tasks?create=follow-up' },
+  { key: 'prospect', label: 'Add Prospect', body: 'Create a prospecting lead.', icon: FileText, to: '/mobile/leads?create=prospect' },
 ]
 
 export default function MobileBottomNav() {
@@ -80,6 +80,7 @@ export default function MobileBottomNav() {
                       type="button"
                       className="flex min-h-[72px] items-center gap-4 rounded-[24px] border border-[#e4ebf2] bg-[#fbfcfd] px-4 text-left shadow-[0_10px_28px_rgba(15,23,42,0.05)]"
                       onClick={() => openAction(action)}
+                      data-mobile-create-action={action.key}
                     >
                       <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] bg-[#e8f6ef] text-[#1f7a5a]">
                         <Icon className="h-5 w-5" />
@@ -97,7 +98,7 @@ export default function MobileBottomNav() {
         </div>
       ) : null}
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2" aria-label="Mobile navigation">
+      <nav className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2" aria-label="Mobile navigation" data-mobile-bottom-nav>
         <div className="mx-auto grid max-w-[520px] grid-cols-5 items-end gap-1 rounded-[30px] border border-white/70 bg-white/88 px-2 py-2 shadow-[0_-14px_36px_rgba(15,23,42,0.14)] backdrop-blur-xl">
           {items.map((item) => {
             const Icon = ICONS[item.key] || LayoutGrid

@@ -1,3 +1,5 @@
+import { normalizeFinanceManagedBy } from '../core/transactions/financeType.js'
+
 function normalizeValue(value = '') {
   return String(value || '').trim().toLowerCase()
 }
@@ -61,6 +63,30 @@ function isBondFinanceType(value = '') {
 
 function isCashFinanceType(value = '') {
   return ['cash', 'hybrid'].includes(normalizeFinanceType(value))
+}
+
+function resolveFinanceManagedBy(context = {}) {
+  const formData = context?.portalData?.onboardingFormData?.formData || context?.portalData?.formData || {}
+  const finance = formData?.finance && typeof formData.finance === 'object' ? formData.finance : {}
+  return normalizeFinanceManagedBy(
+    context?.finance?.managedBy ||
+      context?.finance?.managed_by ||
+      context?.transaction?.finance_managed_by ||
+      context?.transaction?.financeManagedBy ||
+      context?.transaction?.finance_owner ||
+      context?.transaction?.financeOwner ||
+      context?.portalData?.transaction?.finance_managed_by ||
+      context?.portalData?.transaction?.financeManagedBy ||
+      formData.finance_managed_by ||
+      formData.financeManagedBy ||
+      finance.finance_managed_by ||
+      finance.financeManagedBy,
+    { fallback: 'bond_originator' },
+  )
+}
+
+function isOriginatorManagedFinanceContext(context = {}) {
+  return resolveFinanceManagedBy(context) === 'bond_originator'
 }
 
 function actionRouteFromCategory(category = '') {
@@ -539,7 +565,7 @@ export function getOtpActions(context = {}) {
 }
 
 const PROOF_OF_FUNDS_PATTERN = /(proof of funds|source of funds|deposit proof|deposit)/i
-const BOND_PATTERN = /(bond|mortgage|payslip|income|bank statement|bank statements|financial statement|application form)/i
+const BOND_PATTERN = /(bond|mortgage|home loan|payslip|income|bank statement|bank statements|financial statement|application form|approval letter|bank approval|lender approval|finance approval)/i
 
 export function getBondApplicationActions(context = {}) {
   const workspace = parseWorkspace(context)
@@ -547,6 +573,8 @@ export function getBondApplicationActions(context = {}) {
 
   const financeType = normalizeFinanceType(context?.finance?.type || context?.transaction?.finance_type || '')
   if (!isBondFinanceType(financeType)) return []
+  const financeManagedBy = resolveFinanceManagedBy(context)
+  if (!isOriginatorManagedFinanceContext(context)) return []
 
   const application = parseBondApplication(context)
   const status = normalizeBondApplicationStatus(
@@ -570,7 +598,7 @@ export function getBondApplicationActions(context = {}) {
         blocking: true,
         actionLabel: 'Open bond application',
         actionRoute: 'bond_application',
-        metadata: { workspaceScope: 'buying', bondApplicationStatus: status },
+        metadata: { workspaceScope: 'buying', bondApplicationStatus: status, financeManagedBy },
       }),
     ]
   }
@@ -588,7 +616,7 @@ export function getBondApplicationActions(context = {}) {
         blocking: true,
         actionLabel: 'Continue application',
         actionRoute: 'bond_application',
-        metadata: { workspaceScope: 'buying', bondApplicationStatus: status },
+        metadata: { workspaceScope: 'buying', bondApplicationStatus: status, financeManagedBy },
       }),
     ]
   }
@@ -606,7 +634,7 @@ export function getBondApplicationActions(context = {}) {
         blocking: false,
         actionLabel: 'View application',
         actionRoute: 'bond_application',
-        metadata: { workspaceScope: 'buying', bondApplicationStatus: status },
+        metadata: { workspaceScope: 'buying', bondApplicationStatus: status, financeManagedBy },
       }),
     ]
   }
@@ -626,7 +654,7 @@ export function getBondApplicationActions(context = {}) {
         blocking: false,
         actionLabel: 'View application',
         actionRoute: 'bond_application',
-        metadata: { workspaceScope: 'buying', bondApplicationStatus: status },
+        metadata: { workspaceScope: 'buying', bondApplicationStatus: status, financeManagedBy },
         notificationEligible: false,
       }),
     ]
@@ -640,6 +668,8 @@ export function getFinanceActions(context = {}) {
   if (workspace === 'selling') return []
 
   const financeType = normalizeFinanceType(context?.finance?.type || context?.transaction?.finance_type || 'cash')
+  const financeManagedBy = resolveFinanceManagedBy(context)
+  const originatorManagedFinance = financeManagedBy === 'bond_originator'
   const requirements = toArray(context?.documentCenter?.requiredDocuments)
 
   const missingProofOfFunds = requirements.some((item) => {
@@ -677,16 +707,18 @@ export function getFinanceActions(context = {}) {
     actions.push(
       createAction({
         id: 'bond_finance_documents_required',
-        type: financeType === 'bond' ? 'bond_document_required' : 'finance_document_required',
+        type: financeType === 'bond' && originatorManagedFinance ? 'bond_document_required' : 'finance_document_required',
         category: 'finance',
-        title: 'Upload finance documents',
-        description: 'Your finance documentation is incomplete for the current funding structure.',
+        title: originatorManagedFinance ? 'Upload finance documents' : 'Upload external finance documents',
+        description: originatorManagedFinance
+          ? 'Your finance documentation is incomplete for the current funding structure.'
+          : 'Upload the approval, bank confirmation, or supporting documents for the finance you are arranging directly.',
         priority: 'high',
         status: 'pending',
         blocking: true,
-        actionLabel: 'Upload finance docs',
+        actionLabel: originatorManagedFinance ? 'Upload finance docs' : 'Upload finance proof',
         actionRoute: 'documents',
-        metadata: { workspaceScope: 'buying' },
+        metadata: { workspaceScope: 'buying', financeManagedBy, originatorManagedFinance },
       }),
     )
   }

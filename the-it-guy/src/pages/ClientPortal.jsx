@@ -25,7 +25,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import '../App.css'
 import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
 import { buildFinanceReadinessPayload } from '../core/finance/financeReadinessSelectors'
-import { normalizeFinanceType } from '../core/transactions/financeType'
+import { normalizeFinanceManagedBy, normalizeFinanceType } from '../core/transactions/financeType'
 import { LatestUpdatesCard, PurchaseJourneyCard } from '../components/client-portal/ClientJourneySection'
 import ClientDocumentCentre from '../components/client-portal/documents/ClientDocumentCentre'
 import ClientAppointmentsSection from '../components/client-portal/appointments/ClientAppointmentsSection'
@@ -186,6 +186,22 @@ function resolveBuyerBondOriginatorRequest(portal = {}) {
     formData.buyer_bond_originator_request ||
     formData.buyerBondOriginatorRequest ||
     null
+  )
+}
+
+function resolvePortalFinanceManagedBy(portal = {}) {
+  const formData = portal?.onboardingFormData?.formData || {}
+  const finance = formData?.finance && typeof formData.finance === 'object' ? formData.finance : {}
+  return normalizeFinanceManagedBy(
+    portal?.transaction?.finance_managed_by ||
+      portal?.transaction?.financeManagedBy ||
+      portal?.transaction?.finance_owner ||
+      portal?.transaction?.financeOwner ||
+      formData.finance_managed_by ||
+      formData.financeManagedBy ||
+      finance.finance_managed_by ||
+      finance.financeManagedBy,
+    { fallback: 'bond_originator' },
   )
 }
 
@@ -4308,6 +4324,8 @@ function ClientPortal() {
   )
   const isBondOrHybridTransaction =
     financeTypeForPortal === 'bond' || financeTypeForPortal === 'combination' || financeTypeForPortal === 'hybrid'
+  const financeManagedByForPortal = resolvePortalFinanceManagedBy(portal)
+  const isOriginatorManagedPortalFinance = isBondOrHybridTransaction && financeManagedByForPortal === 'bond_originator'
 
   const sectionEnabled = {
     overview: true,
@@ -4315,7 +4333,7 @@ function ClientPortal() {
     appointments: true,
     offers: true,
     details: true,
-    bond_application: isBondOrHybridTransaction,
+    bond_application: isOriginatorManagedPortalFinance,
     documents: true,
     handover: true,
     snags: Boolean(portal?.settings?.snag_reporting_enabled),
@@ -4682,9 +4700,13 @@ function ClientPortal() {
         : 'We need your personal FICA documents and any marital documents that apply to your situation.'
   const buyerRequirementFinanceGuidance =
     buyerRequirementFinanceType === 'bond'
-      ? 'Because this is a bond purchase, bond application and approval documents are required.'
+      ? financeManagedByForPortal === 'bond_originator'
+        ? 'Because this is a bond purchase, bond application and approval documents are required.'
+        : 'Because you are arranging bond finance directly, upload your approval, bank confirmation, or lender support documents.'
       : buyerRequirementFinanceType === 'combination' || buyerRequirementFinanceType === 'hybrid'
-        ? 'Because this is a hybrid purchase, both proof of funds for the cash portion and bond documents are required.'
+        ? financeManagedByForPortal === 'bond_originator'
+          ? 'Because this is a hybrid purchase, both proof of funds for the cash portion and bond documents are required.'
+          : 'Because this is a hybrid purchase, upload proof of funds for the cash portion and approval or support documents for your direct finance.'
         : 'Because this is a cash purchase, proof of funds is required.'
   const buyerRequirementFlowSummary = buyerRequirementProfile?.branchSummary
     ? [
@@ -4889,6 +4911,18 @@ function ClientPortal() {
     }
     return true
   })
+  const bondSupportingDocumentsEmptyText = isOriginatorManagedPortalFinance
+    ? 'No bond supporting documents are active right now.'
+    : 'No external finance supporting documents are active right now.'
+  const bondSupportingDocumentsSummaryText = isOriginatorManagedPortalFinance
+    ? 'Bond-related supporting documents and lender offers for this transaction.'
+    : 'Approval letters, bank confirmations, and supporting documents for finance you are arranging directly.'
+  const lenderOffersIntroText = isOriginatorManagedPortalFinance
+    ? 'Your bond originator will upload lender offers here. Select one offer to proceed and upload your signed copy.'
+    : 'Upload or review lender approvals and finance offers from your bank or external finance provider.'
+  const lenderOffersEmptyText = isOriginatorManagedPortalFinance
+    ? 'No lender offers uploaded yet. Your bond originator will add offers as they are received.'
+    : 'No lender offers or approval letters have been uploaded yet.'
   const salesOtpRequiredDocuments = salesRequiredDocuments.filter((document) => isOtpDocument(document))
   const salesOtherRequiredDocuments = salesRequiredDocuments.filter((document) => !isOtpDocument(document) && !isReservationDocument(document))
   const otpPrimaryRequirement =
@@ -8022,7 +8056,7 @@ function ClientPortal() {
                     <div>
                       <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Offers</h4>
                       <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                        Your bond originator will upload lender offers here. Select one offer to proceed and upload your signed copy.
+                        {lenderOffersIntroText}
                       </p>
                     </div>
                     {bondOfferDocuments.length ? (
@@ -8087,7 +8121,7 @@ function ClientPortal() {
                       </div>
                     ) : (
                       <article className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
-                        No lender offers uploaded yet. Your bond originator will add offers as they are received.
+                        {lenderOffersEmptyText}
                       </article>
                     )}
 
@@ -8840,7 +8874,7 @@ function ClientPortal() {
                 <div>
                   <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Bond documents</h4>
                   <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                    Bond-related supporting documents and lender offers for this transaction.
+                    {bondSupportingDocumentsSummaryText}
                   </p>
                 </div>
                 <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
@@ -8947,7 +8981,7 @@ function ClientPortal() {
 
                   {!bondRequiredDocuments.length && !bondSupportingSharedDocuments.length ? (
                     <article className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-4 text-sm text-[#6b7d93]">
-                      No bond supporting documents are active right now.
+                      {bondSupportingDocumentsEmptyText}
                     </article>
                   ) : null}
                 </div>

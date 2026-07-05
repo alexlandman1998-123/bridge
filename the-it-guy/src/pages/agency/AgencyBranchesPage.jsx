@@ -15,6 +15,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Trash2,
   Trophy,
   UserRound,
   Users,
@@ -23,10 +24,11 @@ import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import Button from '../../components/ui/Button'
+import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import Field from '../../components/ui/Field'
 import Modal from '../../components/ui/Modal'
 import { upsertAreaFromAddress } from '../../lib/location/upsertArea'
-import { createBranch, getBranches } from '../../services/agencyBranchService'
+import { createBranch, deleteBranch, getBranches } from '../../services/agencyBranchService'
 
 const PERFORMANCE_FILTERS = [
   { key: 'all', label: 'All Branches' },
@@ -378,6 +380,66 @@ function PrincipalAvatar({ name }) {
   )
 }
 
+function BranchActionMenu({ branch, needsAttention = false, onView, onTakeAction, onManageAgents, onDelete }) {
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  function runAction(action) {
+    setMenuOpen(false)
+    action?.()
+  }
+
+  return (
+    <div className="relative shrink-0">
+      <button
+        type="button"
+        className="grid h-9 w-9 place-items-center rounded-[12px] border border-[#dde6f0] bg-white text-[#60758d] transition hover:bg-[#f7faff]"
+        aria-label={`Actions for ${branch?.name || 'branch'}`}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        onClick={() => setMenuOpen((previous) => !previous)}
+      >
+        <MoreHorizontal size={17} />
+      </button>
+      {menuOpen ? (
+        <div className="absolute right-0 top-[calc(100%+8px)] z-30 w-52 rounded-2xl border border-[#dce6f0] bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.16)]" role="menu">
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]"
+            role="menuitem"
+            onClick={() => runAction(onView)}
+          >
+            <ArrowRight size={15} />View branch
+          </button>
+          <button
+            type="button"
+            className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold hover:bg-[#fff7ed] ${needsAttention ? 'text-[#b42318]' : 'text-[#1f3448]'}`}
+            role="menuitem"
+            onClick={() => runAction(onTakeAction)}
+          >
+            <ArrowUpRight size={15} />Take action
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]"
+            role="menuitem"
+            onClick={() => runAction(onManageAgents)}
+          >
+            <UserRound size={15} />Manage agents
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#b42318] hover:bg-[#fff4f4]"
+            role="menuitem"
+            onClick={() => runAction(onDelete)}
+          >
+            <Trash2 size={15} />Delete branch
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function RankingTable({ rows, onOpenBranch }) {
   return (
     <div className="overflow-x-auto">
@@ -560,6 +622,8 @@ export default function AgencyBranchesPage() {
   const [provinceFilter, setProvinceFilter] = useState('all')
   const [performanceFilter, setPerformanceFilter] = useState('all')
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [deleteDialog, setDeleteDialog] = useState({ open: false, branch: null, error: '' })
+  const [deletingBranchId, setDeletingBranchId] = useState('')
 
   const loadBranches = useCallback(async () => {
     setLoading(true)
@@ -718,6 +782,29 @@ export default function AgencyBranchesPage() {
         inviteSource: 'residential_branches_principal_manager_invite',
       },
     })
+  }
+
+  function openDeleteBranch(branch) {
+    setDeleteDialog({ open: true, branch, error: '' })
+  }
+
+  async function handleDeleteBranch() {
+    const branch = deleteDialog.branch
+    if (!branch?.id) return
+
+    setDeletingBranchId(branch.id)
+    setDeleteDialog((previous) => ({ ...previous, error: '' }))
+    try {
+      await deleteBranch(branch.id)
+      setRows((previous) => previous.filter((row) => normalizeText(row?.id) !== normalizeText(branch.id)))
+      setDeleteDialog({ open: false, branch: null, error: '' })
+    } catch (deleteError) {
+      const message = deleteError?.message || 'Unable to delete this branch right now.'
+      setDeleteDialog((previous) => ({ ...previous, error: message }))
+      setError(message)
+    } finally {
+      setDeletingBranchId('')
+    }
   }
 
   return (
@@ -908,9 +995,14 @@ export default function AgencyBranchesPage() {
                       <h3 className="mt-3 truncate text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">{branch.name}</h3>
                       <p className="mt-1 inline-flex min-w-0 items-center gap-2 text-sm text-[#60758d]"><MapPin size={14} className="shrink-0" /><span className="truncate">{branch.location}</span></p>
                     </div>
-                    <button type="button" className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] border border-[#dde6f0] bg-white text-[#60758d] transition hover:bg-[#f7faff]" aria-label="Branch actions">
-                      <MoreHorizontal size={17} />
-                    </button>
+                    <BranchActionMenu
+                      branch={branch}
+                      needsAttention={needsAttention}
+                      onView={() => openBranch(branch.id)}
+                      onTakeAction={() => openBranch(branch.id)}
+                      onManageAgents={() => openManageAgents(branch.id)}
+                      onDelete={() => openDeleteBranch(branch)}
+                    />
                   </div>
 
                   <div className="mt-5 flex items-center justify-between gap-4">
@@ -942,9 +1034,6 @@ export default function AgencyBranchesPage() {
                     ) : (
                       <Button size="sm" variant="secondary" onClick={() => openManageAgents(branch.id)}><UserRound size={15} />Manage Agents</Button>
                     )}
-                    <button type="button" className="ml-auto grid h-10 w-10 place-items-center rounded-[12px] border border-[#dde6f0] bg-white text-[#60758d] transition hover:bg-[#f7faff]" aria-label="More branch actions">
-                      <MoreHorizontal size={17} />
-                    </button>
                   </div>
                 </article>
               )
@@ -958,6 +1047,24 @@ export default function AgencyBranchesPage() {
         onClose={() => setShowCreateModal(false)}
         onCreated={() => {
           void loadBranches()
+        }}
+      />
+      <ConfirmDialog
+        open={deleteDialog.open}
+        title="Delete Branch?"
+        description={
+          deleteDialog.error ||
+          `Delete ${deleteDialog.branch?.name || 'this branch'}? Linked agents, listings, leads, and transactions will keep their records but lose this branch assignment. This cannot be undone.`
+        }
+        confirmLabel="Delete Branch"
+        cancelLabel="Keep Branch"
+        variant="destructive"
+        confirming={Boolean(deletingBranchId)}
+        confirmDisabled={!deleteDialog.branch?.id}
+        onConfirm={handleDeleteBranch}
+        onCancel={() => {
+          if (deletingBranchId) return
+          setDeleteDialog({ open: false, branch: null, error: '' })
         }}
       />
     </section>

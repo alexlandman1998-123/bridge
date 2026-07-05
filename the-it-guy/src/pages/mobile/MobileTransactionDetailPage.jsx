@@ -160,7 +160,7 @@ export default function MobileTransactionDetailPage() {
         <MobileEmptyState title="Transaction not found" body="This transaction is not available in the current workspace." />
       ) : (
         <>
-          <MobileCard className="mb-5 bg-[linear-gradient(145deg,#101115_0%,#1a1c21_58%,#4a3a2a_100%)] text-white shadow-[0_24px_52px_rgba(15,15,15,0.28)]">
+          <MobileCard surface="custom" className="mb-5 bg-[linear-gradient(145deg,#101115_0%,#1a1c21_58%,#4a3a2a_100%)] text-white shadow-[0_24px_52px_rgba(15,15,15,0.28)]">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#e3d1bc]">Transaction Identity</p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <MobileStatusChip label={currentStageLabel} tone="dark" className="!border-white/10 !bg-white/10 !text-white" />

@@ -2,12 +2,19 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Clock3,
+  CreditCard,
+  FileText,
+  Home,
+  MapPin,
   Plus,
+  ShieldCheck,
   Trash2,
+  UserRound,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
-import { normalizeFinanceType } from '../core/transactions/financeType'
+import { deriveFinanceManagedBy, normalizeFinanceType } from '../core/transactions/financeType'
 import Button from '../components/ui/Button'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { resolveBuyerOnboardingFlow } from '../lib/buyerOnboardingFlow.js'
@@ -592,6 +599,8 @@ function getJourneyStepLabel(step = {}, index = 0) {
       return 'Finance'
     case 'details':
       return 'Details'
+    case 'review':
+      return 'Review'
     default:
       return step.title || `Step ${index + 1}`
   }
@@ -711,6 +720,48 @@ function normalizeYesNoChoice(value) {
     return normalized
   }
   return ''
+}
+
+function formatReviewText(value, fallback = 'Not provided') {
+  if (value === 0 || value === '0') {
+    return '0'
+  }
+
+  return normalizeInputValue(value) || fallback
+}
+
+function formatReviewCurrency(value, fallback = 'Not provided') {
+  if (value === null || value === undefined || value === '') {
+    return fallback
+  }
+
+  const numericValue = typeof value === 'number' ? value : Number(String(value).replace(/[^\d.-]/g, ''))
+  if (!Number.isFinite(numericValue)) {
+    return formatReviewText(value, fallback)
+  }
+
+  return currency.format(numericValue)
+}
+
+function formatReviewOption(options = [], value, fallback = 'Not provided') {
+  const normalizedValue = normalizeInputValue(value)
+  if (!normalizedValue) {
+    return fallback
+  }
+
+  const matchedOption = (Array.isArray(options) ? options : []).find((option) => String(option.value) === normalizedValue)
+  return matchedOption?.label || formatReviewText(value, fallback)
+}
+
+function formatReviewYesNo(value, fallback = 'Not provided') {
+  const normalized = normalizeYesNoChoice(value)
+  if (normalized === 'yes') return 'Yes'
+  if (normalized === 'no') return 'No'
+  return fallback
+}
+
+function getReviewPersonName(person = {}, fallback = 'Not provided') {
+  return formatReviewText([person.first_name, person.last_name].filter(Boolean).join(' '), fallback)
 }
 
 function createEmptyPurchaser() {
@@ -1409,7 +1460,240 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
     cleaned.finance.cash_contribution_source = ''
   }
 
+  const financeManagedBy = deriveFinanceManagedBy({
+    financeType,
+    financeManagedBy: cleaned.finance_managed_by || cleaned.financeManagedBy,
+    formData: cleaned,
+  })
+  cleaned.finance_managed_by = financeManagedBy
+  cleaned.financeManagedBy = financeManagedBy
+  cleaned.finance.finance_managed_by = financeManagedBy
+  cleaned.finance.financeManagedBy = financeManagedBy
+
   return cleaned
+}
+
+function getBuyerLandingInitials(name = '') {
+  const parts = String(name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+
+  if (!parts.length) return 'B9'
+
+  return parts
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('')
+}
+
+function resolveBuyerLandingBrand(payload = {}) {
+  const branding = payload?.branding || {}
+  const organisation = payload?.organisation || {}
+  const development = Array.isArray(payload?.unit?.development)
+    ? payload.unit.development[0]
+    : payload?.unit?.development
+  const name =
+    String(
+      branding.senderName ||
+        branding.organisationName ||
+        branding.agencyName ||
+        organisation.display_name ||
+        organisation.name ||
+        payload?.transaction?.assigned_agent ||
+        development?.name ||
+        '',
+    ).trim() || 'Your property team'
+  const logoUrl = String(
+    branding.logoDarkUrl ||
+      branding.logoUrl ||
+      branding.logoLightUrl ||
+      organisation.logo_url ||
+      organisation.logoUrl ||
+      '',
+  ).trim()
+
+  return {
+    name,
+    logoUrl,
+    initials: getBuyerLandingInitials(name),
+  }
+}
+
+function resolveBuyerLandingName(payload = {}, formData = {}) {
+  const firstStructuredPurchaser = Array.isArray(formData.purchasers) ? formData.purchasers[0] : null
+  const rawName = String(
+    firstStructuredPurchaser?.first_name ||
+      formData.first_name ||
+      formData.full_name ||
+      payload?.buyer?.name ||
+      '',
+  ).trim()
+
+  if (!rawName) {
+    return 'there'
+  }
+
+  return rawName.split(/\s+/)[0] || rawName
+}
+
+function BuyerLandingBrandMark({ brand }) {
+  if (brand?.logoUrl) {
+    return (
+      <span className="inline-flex h-14 min-w-14 max-w-[220px] items-center justify-center rounded-[18px] border border-white/20 bg-white px-3 py-2 shadow-[0_18px_40px_rgba(0,0,0,0.22)]">
+        <img
+          src={brand.logoUrl}
+          alt={`${brand.name || 'Agency'} logo`}
+          className="max-h-10 w-auto max-w-[190px] object-contain"
+        />
+      </span>
+    )
+  }
+
+  return (
+    <span className="inline-flex h-14 w-14 items-center justify-center rounded-[18px] border border-white/20 bg-white/10 text-base font-semibold text-white shadow-[0_18px_40px_rgba(0,0,0,0.22)]">
+      {brand?.initials || 'B9'}
+    </span>
+  )
+}
+
+function BuyerOnboardingLanding({ brand, buyerName, propertyLabel, isResume, onStart }) {
+  const expectationItems = [
+    { label: 'Takes about 10 minutes', icon: Clock3 },
+    { label: 'Information is secure', icon: ShieldCheck },
+    { label: 'Save and continue later', icon: CheckCircle2 },
+  ]
+
+  return (
+    <section className="relative min-h-[calc(100dvh-1.5rem)] overflow-hidden rounded-[30px] bg-[#101a18] text-white shadow-[0_24px_60px_rgba(15,23,42,0.24)] md:min-h-[720px]">
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            'linear-gradient(145deg, rgba(10,18,22,0.96) 0%, rgba(19,56,42,0.9) 54%, rgba(9,15,18,0.96) 100%)',
+        }}
+      />
+      <div
+        className="absolute inset-0 opacity-40"
+        style={{
+          backgroundImage:
+            'linear-gradient(135deg, rgba(255,255,255,0.08) 0 1px, transparent 1px 56px)',
+        }}
+      />
+      <div className="relative flex min-h-[calc(100dvh-1.5rem)] flex-col px-5 py-6 md:min-h-[720px] md:px-10 md:py-9">
+        <div className="flex items-center justify-between gap-4">
+          <BuyerLandingBrandMark brand={brand} />
+          <span className="inline-flex min-h-9 items-center rounded-full border border-white/20 bg-white/10 px-3 text-xs font-semibold text-white/85 backdrop-blur">
+            Buyer onboarding
+          </span>
+        </div>
+
+        <div className="flex flex-1 flex-col justify-end pb-5 pt-14 md:max-w-[560px] md:pb-7 md:pt-20">
+          <p className="text-sm font-semibold text-white/80">{brand?.name}</p>
+          <h1 className="mt-4 text-[2.45rem] font-semibold leading-[1.02] tracking-normal text-white md:text-6xl">
+            Welcome, <span className="text-[#34c66f]">{buyerName}.</span>
+          </h1>
+          <p className="mt-4 max-w-md text-base leading-7 text-white/80">
+            Let us get your property purchase journey started.
+          </p>
+
+          <div className="mt-8 rounded-[22px] border border-white/20 bg-white/95 p-3 text-[#142132] shadow-[0_20px_48px_rgba(0,0,0,0.22)] backdrop-blur">
+            <div className="flex items-start gap-3 rounded-[16px] border border-[#e1e8ef] bg-[#f8fbfd] p-3">
+              <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-[#eaf7ef] text-[#16834a]">
+                <Home size={20} />
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-[#142132]">Buyer</p>
+                <p className="mt-1 text-xs leading-5 text-[#65788f]">
+                  {propertyLabel || 'Your selected property'}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-3 px-1">
+              {expectationItems.map((item) => {
+                const Icon = item.icon
+                return (
+                  <div key={item.label} className="flex items-center gap-3 text-sm font-medium text-[#2f4358]">
+                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#eef8f2] text-[#16834a]">
+                      <Icon size={15} />
+                    </span>
+                    <span>{item.label}</span>
+                  </div>
+                )
+              })}
+            </div>
+
+            <Button type="button" onClick={onStart} className="mt-5 w-full min-h-[52px] bg-[#168f43] text-white hover:bg-[#117a38]">
+              {isResume ? 'Resume buyer onboarding' : 'Start buyer onboarding'}
+              <ChevronRight size={16} />
+            </Button>
+          </div>
+
+          <p className="mt-6 text-center text-sm font-medium leading-6 text-white/80 md:text-left">
+            Your information is secure and protected.
+          </p>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function isVisibleDetailField(fieldConfig, context) {
+  if (typeof fieldConfig?.visibleWhen === 'function') {
+    return fieldConfig.visibleWhen(context)
+  }
+  return true
+}
+
+function resolveVisibleFinanceSections({
+  values = {},
+  purchaserEntityType,
+  normalizedFinanceType,
+  buyerAppointedBondOriginatorAllowed,
+  buyerAppointedBondOriginatorRequiresApproval,
+} = {}) {
+  const details = normalizeDetailsState(values, {
+    purchaserEntityType,
+    financeType: normalizedFinanceType,
+  })
+  const context = {
+    financeType: details.financeType,
+    purchaserEntityType,
+    finance: details.finance,
+  }
+
+  return FINANCE_DETAIL_SECTIONS.filter((sectionConfig) => isVisibleDetailField(sectionConfig, context))
+    .map((sectionConfig) => {
+      if (sectionConfig.key === 'bond_originator_support' && !buyerAppointedBondOriginatorAllowed) {
+        return null
+      }
+      const nextSection = { ...sectionConfig }
+      if (sectionConfig.key === 'bond_originator_support') {
+        nextSection.title = buyerAppointedBondOriginatorRequiresApproval
+          ? 'Nominate Bond Originator'
+          : 'Your Bond Originator'
+        nextSection.description = buyerAppointedBondOriginatorRequiresApproval
+          ? 'Share the bond originator you would like to use. Your agent/developer will review this before the assigned originator changes.'
+          : 'Share the bond originator you would like to use for this transaction.'
+        nextSection.notice = buyerAppointedBondOriginatorRequiresApproval
+          ? 'This request will be routed for approval before the assigned originator changes.'
+          : 'This originator can be applied immediately when you submit onboarding.'
+      }
+      nextSection.fields = (nextSection.fields || [])
+        .filter((fieldConfig) => isVisibleDetailField(fieldConfig, context))
+        .map((fieldConfig) => {
+          if (fieldConfig.key !== 'bond_help_requested') return fieldConfig
+          return {
+            ...fieldConfig,
+            label: buyerAppointedBondOriginatorAllowed
+              ? 'Would you like to nominate your own bond originator?'
+              : 'Would you like help from the appointed bond originator?',
+          }
+        })
+      return nextSection
+    })
+    .filter(Boolean)
 }
 
 function ClientOnboarding() {
@@ -1426,6 +1710,11 @@ function ClientOnboarding() {
   const [completionBannerVisible, setCompletionBannerVisible] = useState(false)
   const [fieldErrors, setFieldErrors] = useState({})
   const [touchedFields, setTouchedFields] = useState({})
+  const [landingDismissed, setLandingDismissed] = useState(false)
+  const [activeMobileDetailPaneIndex, setActiveMobileDetailPaneIndex] = useState(0)
+  const [isMobileViewport, setIsMobileViewport] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false,
+  )
 
   const loadData = useCallback(async () => {
     if (!token) {
@@ -1493,6 +1782,28 @@ function ClientOnboarding() {
     void loadData()
   }, [loadData])
 
+  useEffect(() => {
+    setLandingDismissed(false)
+  }, [token])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined
+    }
+
+    const mediaQuery = window.matchMedia('(max-width: 767px)')
+    const syncMobileViewport = () => setIsMobileViewport(mediaQuery.matches)
+    syncMobileViewport()
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', syncMobileViewport)
+      return () => mediaQuery.removeEventListener('change', syncMobileViewport)
+    }
+
+    mediaQuery.addListener(syncMobileViewport)
+    return () => mediaQuery.removeListener(syncMobileViewport)
+  }, [])
+
   const buyerFlow = useMemo(
     () =>
       resolveBuyerOnboardingFlow(formData, payload?.transaction || {}, {
@@ -1527,27 +1838,71 @@ function ClientOnboarding() {
   const buyerAppointedBondOriginatorRequiresApproval = Boolean(
     rolePlayerPolicy.buyerAppointedBondOriginatorRequiresApproval,
   )
-  const visibleFinanceSections = getVisibleFinanceSections(formData)
-  const visibleFinanceFields = visibleFinanceSections.flatMap((section) => section.fields || [])
+  const visibleFinanceSections = useMemo(
+    () =>
+      resolveVisibleFinanceSections({
+        values: formData,
+        purchaserEntityType,
+        normalizedFinanceType,
+        buyerAppointedBondOriginatorAllowed,
+        buyerAppointedBondOriginatorRequiresApproval,
+      }),
+    [
+      buyerAppointedBondOriginatorAllowed,
+      buyerAppointedBondOriginatorRequiresApproval,
+      formData,
+      normalizedFinanceType,
+      purchaserEntityType,
+    ],
+  )
+  const visibleFinanceFields = useMemo(
+    () => visibleFinanceSections.flatMap((section) => section.fields || []),
+    [visibleFinanceSections],
+  )
+  const unitDevelopment = Array.isArray(payload?.unit?.development)
+    ? payload.unit.development[0]
+    : payload?.unit?.development
+  const transactionAddressLine = [
+    payload?.transaction?.property_address_line_1,
+    payload?.transaction?.property_address_line_2,
+    payload?.transaction?.suburb,
+    payload?.transaction?.city,
+    payload?.transaction?.province,
+  ]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .join(', ')
   const propertyAddressLine = String(
     payload?.unit?.address ||
       payload?.transaction?.property_address ||
       payload?.transaction?.propertyAddress ||
+      transactionAddressLine ||
       '',
   ).trim()
   const onboardingLocationLabel = propertyAddressLine
     ? propertyAddressLine
-    : [payload?.unit?.development?.name, payload?.unit?.unit_number ? `Unit ${payload.unit.unit_number}` : '']
+    : [unitDevelopment?.name, payload?.unit?.unit_number ? `Unit ${payload.unit.unit_number}` : '']
         .filter(Boolean)
         .join(' | ')
   const clientPortalPath = String(submittedClientPortalPath || payload?.clientPortalPath || '').trim()
   const fundingSources = normalizeFundingSources(formData.funding_sources || payload?.fundingSources || [])
-  const stepDefinitions = useMemo(
+  const baseStepDefinitions = useMemo(
     () =>
       getOnboardingStepDefinitions({ ...formData, funding_sources: fundingSources }, { transaction: payload?.transaction }).filter(
         (step) => step.key !== 'intro',
       ),
     [formData, fundingSources, payload?.transaction],
+  )
+  const stepDefinitions = useMemo(
+    () => [
+      ...baseStepDefinitions.filter((step) => step.key !== 'review'),
+      {
+        key: 'review',
+        title: 'Review & Submit',
+        description: 'Check your buyer, property, finance, and document next steps before submitting.',
+      },
+    ],
+    [baseStepDefinitions],
   )
   const journeySteps = useMemo(
     () =>
@@ -1564,7 +1919,211 @@ function ClientOnboarding() {
   const mobileProgressPercent = Math.round(((mobileProgressStepIndex + 1) / totalJourneySteps) * 100)
   const mobileStepLabel = journeySteps[mobileProgressStepIndex]?.shortLabel || journeySteps[0]?.shortLabel || 'Step'
   const submissionComplete = completionBannerVisible || payload?.onboarding?.status === 'Submitted'
+  const onboardingBrand = useMemo(() => resolveBuyerLandingBrand(payload), [payload])
+  const buyerLandingName = useMemo(() => resolveBuyerLandingName(payload, formData), [payload, formData])
+  const isResumingOnboarding = Boolean(
+    payload?.onboarding?.status && !['Not Started', 'Submitted'].includes(payload.onboarding.status),
+  )
+  const showLandingPage = !submissionComplete && !landingDismissed
+  const mobileDetailPanes = useMemo(() => {
+    const panes = []
+
+    if (isNaturalPersonPurchase) {
+      panes.push({
+        key: 'purchase-mode',
+        type: 'purchase_mode',
+        title: 'Purchase Mode',
+        description: 'Tell us whether you are buying alone or with another purchaser.',
+      })
+
+      structuredPurchasers.forEach((purchaser, purchaserIndex) => {
+        if (purchaserIndex > 0 && naturalPersonPurchaseMode !== 'co_purchasing') {
+          return
+        }
+
+        NATURAL_PURCHASER_SECTIONS.forEach((sectionConfig) => {
+          const fields = sectionConfig.fields.filter((fieldConfig) =>
+            isVisibleDetailField(fieldConfig, {
+              purchaser,
+              purchaserIndex,
+              financeType: normalizedFinanceType,
+              purchaserEntityType,
+              purchaseMode: naturalPersonPurchaseMode,
+            }),
+          )
+
+          if (!fields.length) {
+            return
+          }
+
+          panes.push({
+            key: `purchaser-${purchaserIndex}-${sectionConfig.key}`,
+            type: 'natural_section',
+            title: sectionConfig.title,
+            description: sectionConfig.description || `Purchaser ${purchaserIndex + 1} details.`,
+            purchaser,
+            purchaserIndex,
+            fields,
+          })
+        })
+      })
+    } else {
+      const entityKey = purchaserEntityType === 'trust' ? 'trust' : 'company'
+      const entityTitle = purchaserEntityType === 'trust' ? 'Trust' : 'Company'
+      const entityState = purchaserEntityType === 'trust' ? structuredTrust : structuredCompany
+      const entityFields = purchaserEntityType === 'trust' ? TRUST_DETAIL_FIELDS : COMPANY_DETAIL_FIELDS
+      const entityFieldGroups =
+        purchaserEntityType === 'trust'
+          ? [
+              {
+                key: 'identity',
+                title: 'Trust Details',
+                description: 'Capture the trust registration and authority basics.',
+                fieldKeys: ['trust_name', 'trust_registration_number', 'trust_type', 'masters_office_reference', 'trust_tax_number'],
+              },
+              {
+                key: 'address',
+                title: 'Trust Address',
+                description: 'Confirm the registered trust address.',
+                fieldKeys: ['trust_registered_address'],
+              },
+              {
+                key: 'authority',
+                title: 'Trustee Authority',
+                description: 'Confirm the authorised trustee and available trust documents.',
+                fieldKeys: [
+                  'authorised_trustee_name',
+                  'authorised_trustee_identity_number',
+                  'authorised_trustee_email',
+                  'authorised_trustee_phone',
+                  'trust_deed_available',
+                  'letters_of_authority_available',
+                  'trust_resolution_available',
+                  'all_trustees_signing',
+                ],
+              },
+            ]
+          : [
+              {
+                key: 'identity',
+                title: 'Company Details',
+                description: 'Capture the company registration and tax basics.',
+                fieldKeys: ['company_name', 'company_registration_number', 'nature_of_business', 'company_tax_number', 'vat_number'],
+              },
+              {
+                key: 'address',
+                title: 'Company Address',
+                description: 'Confirm the registered and business addresses.',
+                fieldKeys: ['company_registered_address', 'company_business_address'],
+              },
+              {
+                key: 'authority',
+                title: 'Signing Authority',
+                description: 'Confirm who is authorised to sign for the company.',
+                fieldKeys: [
+                  'authorised_signatory_name',
+                  'authorised_signatory_identity_number',
+                  'authorised_signatory_email',
+                  'authorised_signatory_phone',
+                  'authorised_signatory_capacity',
+                  'board_resolution_available',
+                ],
+              },
+            ]
+
+      entityFieldGroups.forEach((group) => {
+        const fields = entityFields.filter((fieldConfig) => group.fieldKeys.includes(fieldConfig.key))
+        if (!fields.length) {
+          return
+        }
+
+        panes.push({
+          key: `${entityKey}-${group.key}`,
+          type: 'entity_fields',
+          title: group.title,
+          description: group.description,
+          entityKey,
+          entityTitle,
+          entityState,
+          fields,
+        })
+      })
+
+      panes.push({
+        key: `${entityKey}-associated-people`,
+        type: 'associated_people',
+        title: purchaserEntityType === 'trust' ? 'Additional Trustees' : 'Directors / Owners',
+        description:
+          purchaserEntityType === 'trust'
+            ? 'Add any other trustees involved in the trust.'
+            : 'Add the directors or beneficial owners involved in the company.',
+        collectionKey: purchaserEntityType === 'trust' ? 'trust.trustees' : 'company.directors',
+        items: purchaserEntityType === 'trust' ? structuredTrust.trustees || [] : structuredCompany.directors || [],
+      })
+    }
+
+    visibleFinanceSections.forEach((sectionConfig) => {
+      panes.push({
+        key: `finance-${sectionConfig.key}`,
+        type: 'finance_section',
+        title: sectionConfig.title,
+        description: sectionConfig.description || '',
+        notice: sectionConfig.notice || '',
+        fields: sectionConfig.fields || [],
+      })
+    })
+
+    return panes
+  }, [
+    isNaturalPersonPurchase,
+    naturalPersonPurchaseMode,
+    normalizedFinanceType,
+    purchaserEntityType,
+    structuredCompany,
+    structuredPurchasers,
+    structuredTrust,
+    visibleFinanceSections,
+  ])
+  const activeMobileDetailPane = mobileDetailPanes[activeMobileDetailPaneIndex] || mobileDetailPanes[0] || null
+  const isMobileDetailFlowActive = Boolean(
+    isMobileViewport && activeStep?.key === 'details' && mobileDetailPanes.length > 0,
+  )
+  const isLastMobileDetailPane = activeMobileDetailPaneIndex >= Math.max(mobileDetailPanes.length - 1, 0)
+  const mobileQuestionTotal = Math.max(
+    stepDefinitions.reduce(
+      (total, step) => total + (step.key === 'details' ? Math.max(mobileDetailPanes.length, 1) : 1),
+      0,
+    ),
+    1,
+  )
+  const mobileQuestionPosition = Math.min(
+    Math.max(
+      activeStep?.key === 'details'
+        ? stepDefinitions
+            .slice(0, activeStepIndex)
+            .reduce((total, step) => total + (step.key === 'details' ? Math.max(mobileDetailPanes.length, 1) : 1), 0) +
+          activeMobileDetailPaneIndex +
+          1
+        : stepDefinitions
+            .slice(0, activeStepIndex + 1)
+            .reduce((total, step) => total + (step.key === 'details' ? Math.max(mobileDetailPanes.length, 1) : 1), 0),
+      1,
+    ),
+    mobileQuestionTotal,
+  )
+  const mobileQuestionProgressPercent = Math.round((mobileQuestionPosition / mobileQuestionTotal) * 100)
+  const mobileQuestionTitle =
+    activeStep?.key === 'details'
+      ? activeMobileDetailPane?.title || activeStep?.title || 'Buyer details'
+      : activeStep?.title || 'Buyer onboarding'
+  const mobileQuestionDescription =
+    activeStep?.key === 'details'
+      ? activeMobileDetailPane?.description || activeStep?.description || ''
+      : activeStep?.description || ''
   const isLastStep = activeStepIndex >= Math.max(stepDefinitions.length - 1, 0)
+  const shouldAdvanceMobileDetailPane = isMobileDetailFlowActive && !isLastMobileDetailPane
+  const shouldShowBackButton = activeStepIndex > 0 || (isMobileDetailFlowActive && activeMobileDetailPaneIndex > 0)
+  const primaryActionLabel = shouldAdvanceMobileDetailPane ? 'Continue' : isLastStep ? 'Submit Onboarding' : isMobileViewport ? 'Continue' : 'Next Step'
   const buyerFlowSummaryItems = [
     {
       label: 'Property',
@@ -1587,6 +2146,21 @@ function ClientOnboarding() {
       value: `Step ${mobileProgressStepIndex + 1} of ${totalJourneySteps}`,
     },
   ]
+  const purchaserEntityLabel = formatReviewOption(PURCHASER_ENTITY_OPTIONS, purchaserEntityType, 'Individual purchaser')
+  const naturalPurchaseModeLabel =
+    naturalPersonPurchaseMode === 'co_purchasing' ? 'Co-purchasing' : 'Individual purchase'
+  const financeTypeReviewLabel = formatFinanceTypeForWhatsApp(normalizedFinanceType)
+  const requiredDocumentItems = Array.isArray(payload?.requiredDocuments) ? payload.requiredDocuments : []
+  const completedDocumentCount = requiredDocumentItems.filter((item) => item?.complete).length
+  const outstandingDocumentItems = requiredDocumentItems.filter((item) => !item?.complete).slice(0, 3)
+  const reviewBuyerDetailPaneKey = isNaturalPersonPurchase
+    ? 'purchaser-0-personal_details'
+    : purchaserEntityType === 'trust'
+      ? 'trust-identity'
+      : 'company-identity'
+  const reviewFinanceDetailPaneKey = mobileDetailPanes.find((pane) => pane.key === 'finance-finance_totals')
+    ? 'finance-finance_totals'
+    : mobileDetailPanes.find((pane) => pane.type === 'finance_section')?.key || ''
 
   useEffect(() => {
     if (!stepDefinitions.length) {
@@ -1596,6 +2170,16 @@ function ClientOnboarding() {
 
     setActiveStepIndex((previous) => Math.min(previous, stepDefinitions.length - 1))
   }, [stepDefinitions.length])
+
+  useEffect(() => {
+    if (activeStep?.key !== 'details') {
+      setActiveMobileDetailPaneIndex(0)
+    }
+  }, [activeStep?.key])
+
+  useEffect(() => {
+    setActiveMobileDetailPaneIndex((previous) => Math.min(previous, Math.max(mobileDetailPanes.length - 1, 0)))
+  }, [mobileDetailPanes.length])
 
   function updatePurchaserEntityType(nextEntityType) {
     setFormData((previous) => {
@@ -1641,14 +2225,7 @@ function ClientOnboarding() {
   }
 
   function isDetailFieldVisible(fieldConfig, context) {
-    if (typeof fieldConfig.visibleWhen === 'function') {
-      return fieldConfig.visibleWhen(context)
-    }
-    return true
-  }
-
-  function getVisibleFields(fields = [], context = {}) {
-    return (Array.isArray(fields) ? fields : []).filter((fieldConfig) => isDetailFieldVisible(fieldConfig, context))
+    return isVisibleDetailField(fieldConfig, context)
   }
 
   function detailFieldPath(group, index, fieldKey) {
@@ -1695,45 +2272,13 @@ function ClientOnboarding() {
   }
 
   function getVisibleFinanceSections(values = formData) {
-    const details = normalizeDetailsState(values, {
+    return resolveVisibleFinanceSections({
+      values,
       purchaserEntityType,
-      financeType: normalizedFinanceType,
+      normalizedFinanceType,
+      buyerAppointedBondOriginatorAllowed,
+      buyerAppointedBondOriginatorRequiresApproval,
     })
-    const context = {
-      financeType: details.financeType,
-      purchaserEntityType,
-      finance: details.finance,
-    }
-
-    return FINANCE_DETAIL_SECTIONS.filter((sectionConfig) => isDetailFieldVisible(sectionConfig, context))
-      .map((sectionConfig) => {
-        if (sectionConfig.key === 'bond_originator_support' && !buyerAppointedBondOriginatorAllowed) {
-          return null
-        }
-        const nextSection = { ...sectionConfig }
-        if (sectionConfig.key === 'bond_originator_support') {
-          nextSection.title = buyerAppointedBondOriginatorRequiresApproval
-            ? 'Nominate Bond Originator'
-            : 'Your Bond Originator'
-          nextSection.description = buyerAppointedBondOriginatorRequiresApproval
-            ? 'Share the bond originator you would like to use. Your agent/developer will review this before the assigned originator changes.'
-            : 'Share the bond originator you would like to use for this transaction.'
-          nextSection.notice = buyerAppointedBondOriginatorRequiresApproval
-            ? 'This request will be routed for approval before the assigned originator changes.'
-            : 'This originator can be applied immediately when you submit onboarding.'
-        }
-        nextSection.fields = getVisibleFields(nextSection.fields || [], context).map((fieldConfig) => {
-          if (fieldConfig.key !== 'bond_help_requested') return fieldConfig
-          return {
-            ...fieldConfig,
-            label: buyerAppointedBondOriginatorAllowed
-              ? 'Would you like to nominate your own bond originator?'
-              : 'Would you like help from the appointed bond originator?',
-          }
-        })
-        return nextSection
-      })
-      .filter(Boolean)
   }
 
   function getVisibleFinanceFields(values = formData) {
@@ -2600,7 +3145,7 @@ function ClientOnboarding() {
         throw new Error('Select the finance type to continue.')
       }
 
-      if (activeStep?.key === 'details') {
+      if (activeStep?.key === 'details' || activeStep?.key === 'review') {
         const detailsErrors = validateDetailsStep(formData)
         setFieldErrors(detailsErrors)
 
@@ -2633,16 +3178,150 @@ function ClientOnboarding() {
     }
   }
 
+  function getMobileDetailPaneFieldKeys(pane = activeMobileDetailPane) {
+    if (!pane) {
+      return []
+    }
+
+    if (pane.type === 'purchase_mode') {
+      return ['natural_person_purchase_mode']
+    }
+
+    if (pane.type === 'natural_section') {
+      const keys = (pane.fields || []).map((fieldConfig) =>
+        detailFieldPath('purchasers', pane.purchaserIndex || 0, fieldConfig.key),
+      )
+      if ((pane.fields || []).some((fieldConfig) => fieldConfig.key === 'ownership_share')) {
+        keys.push('purchasers.ownership_share_total')
+      }
+      return keys
+    }
+
+    if (pane.type === 'entity_fields') {
+      return (pane.fields || []).map((fieldConfig) => detailFieldPath(pane.entityKey, 0, fieldConfig.key))
+    }
+
+    if (pane.type === 'associated_people') {
+      return [
+        pane.collectionKey,
+        ...getVisibleRepeatablePeopleFields(pane.items || [], pane.collectionKey),
+      ].filter(Boolean)
+    }
+
+    if (pane.type === 'finance_section') {
+      return (pane.fields || []).map((fieldConfig) => detailFieldPath('finance', 0, fieldConfig.key))
+    }
+
+    return []
+  }
+
+  function validateActiveMobileDetailPane() {
+    const pane = activeMobileDetailPane
+    if (!pane) {
+      return true
+    }
+
+    const detailErrors = validateDetailsStep(formData)
+    const paneFieldKeys = getMobileDetailPaneFieldKeys(pane)
+    const touched = paneFieldKeys.reduce((accumulator, key) => ({ ...accumulator, [key]: true }), {})
+    setFieldErrors(detailErrors)
+    setTouchedFields((previous) => ({ ...previous, ...touched }))
+
+    const firstPaneErrorKey = paneFieldKeys.find((key) => detailErrors[key])
+    if (firstPaneErrorKey) {
+      setError(detailErrors[firstPaneErrorKey] || 'Please complete this section before continuing.')
+      return false
+    }
+
+    setError('')
+    return true
+  }
+
+  function scrollMobilePaneToTop() {
+    if (typeof window === 'undefined' || !isMobileViewport) {
+      return
+    }
+
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    })
+  }
+
+  function handleNextMobileDetailPane() {
+    if (!validateActiveMobileDetailPane()) {
+      return
+    }
+
+    setActiveMobileDetailPaneIndex((previous) => Math.min(previous + 1, Math.max(mobileDetailPanes.length - 1, 0)))
+    scrollMobilePaneToTop()
+  }
+
+  function handlePreviousMobileDetailPane() {
+    setError('')
+    setActiveMobileDetailPaneIndex((previous) => Math.max(previous - 1, 0))
+    scrollMobilePaneToTop()
+  }
+
   function handleNextStep() {
     if (!validateCurrentStep()) {
       return
     }
 
-    setActiveStepIndex((previous) => Math.min(previous + 1, stepDefinitions.length - 1))
+    const nextStepIndex = Math.min(activeStepIndex + 1, stepDefinitions.length - 1)
+    if (stepDefinitions[nextStepIndex]?.key !== 'review') {
+      setActiveMobileDetailPaneIndex(0)
+    }
+    setActiveStepIndex(nextStepIndex)
   }
 
   function handlePreviousStep() {
+    setError('')
     setActiveStepIndex((previous) => Math.max(previous - 1, 0))
+  }
+
+  function handleFooterBack() {
+    if (isMobileDetailFlowActive && activeMobileDetailPaneIndex > 0) {
+      handlePreviousMobileDetailPane()
+      return
+    }
+
+    handlePreviousStep()
+  }
+
+  function handleFooterPrimaryAction() {
+    if (shouldAdvanceMobileDetailPane) {
+      handleNextMobileDetailPane()
+      return
+    }
+
+    if (isLastStep) {
+      if (!validateCurrentStep()) {
+        return
+      }
+      void handleSubmit()
+      return
+    }
+
+    handleNextStep()
+  }
+
+  function handleReviewEdit({ stepKey, paneKey = '' } = {}) {
+    const targetStepIndex = stepDefinitions.findIndex((step) => step.key === stepKey)
+    if (targetStepIndex < 0) {
+      return
+    }
+
+    setError('')
+    setActiveStepIndex(targetStepIndex)
+
+    if (stepKey === 'details') {
+      const paneIndex = paneKey ? mobileDetailPanes.findIndex((pane) => pane.key === paneKey) : 0
+      setActiveMobileDetailPaneIndex(Math.max(paneIndex, 0))
+    } else {
+      setActiveMobileDetailPaneIndex(0)
+    }
+
+    scrollMobilePaneToTop()
   }
 
   function renderDetailField({
@@ -2951,62 +3630,466 @@ function ClientOnboarding() {
     )
   }
 
-  function renderDetailsStep() {
+  function renderNaturalPurchaseModeCard() {
     const modeError = fieldErrors.natural_person_purchase_mode
     const showModeError = Boolean(modeError && touchedFields.natural_person_purchase_mode)
+
+    return (
+      <section className="rounded-[18px] border border-[#e2eaf3] bg-white p-3 shadow-[0_10px_22px_rgba(15,23,42,0.04)] md:rounded-[20px] md:p-4">
+        <h4 className="text-base font-semibold tracking-normal text-[#142132] md:text-lg">
+          Are you purchasing this unit alone or with a co-purchaser?
+        </h4>
+        <p className="mt-2 text-sm leading-6 text-[#6b7d93]">
+          This is used to prepare your sale agreement and matching compliance requirements.
+        </p>
+        <div className="mt-3 grid gap-2 md:mt-4 md:grid-cols-2 md:gap-3">
+          {NATURAL_PURCHASER_MODE_OPTIONS.map((option) => {
+            const active = naturalPersonPurchaseMode === option.value
+            return (
+              <button
+                key={option.value}
+                type="button"
+                className={`w-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out md:px-4 md:py-4 ${
+                  active
+                    ? 'border-[#35546c] bg-[#f3f8ff] shadow-[0_10px_24px_rgba(53,84,108,0.14)]'
+                    : 'border-[#dbe5ef] bg-white hover:border-[#b6c9de] hover:bg-[#fafcff]'
+                }`}
+                onClick={() => {
+                  markFieldTouched('natural_person_purchase_mode')
+                  updateNaturalPurchaseMode(option.value)
+                }}
+              >
+                <strong className="block text-sm font-semibold text-[#142132]">{option.title}</strong>
+                <span className="mt-1 block text-xs leading-5 text-[#6b7d93] md:text-sm md:leading-6">{option.description}</span>
+              </button>
+            )
+          })}
+        </div>
+        {showModeError ? <p className="mt-3 text-xs font-medium text-[#d92d20]">{modeError}</p> : null}
+      </section>
+    )
+  }
+
+  function renderMobileDetailPane() {
+    const pane = activeMobileDetailPane
+    if (!pane) {
+      return null
+    }
+
+    function renderPaneBody() {
+      if (pane.type === 'purchase_mode') {
+        return renderNaturalPurchaseModeCard()
+      }
+
+      if (pane.type === 'natural_section') {
+        return (
+          <article className="rounded-[20px] border border-[#e2eaf3] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+            <header className="mb-5 border-b border-[#edf2f7] pb-4">
+              <span className="inline-flex min-h-7 items-center rounded-full bg-[#eef5fb] px-3 text-xs font-semibold text-[#4b6077]">
+                Purchaser {pane.purchaserIndex + 1}
+              </span>
+              <h4 className="mt-3 text-lg font-semibold tracking-normal text-[#142132]">{pane.title}</h4>
+              {pane.description ? <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{pane.description}</p> : null}
+            </header>
+            <div className="grid gap-3">
+              {(pane.fields || []).map((fieldConfig) => {
+                const fieldPath = detailFieldPath('purchasers', pane.purchaserIndex, fieldConfig.key)
+                const value = pane.purchaser?.[fieldConfig.key] ?? ''
+                return renderDetailField({
+                  fieldConfig,
+                  value,
+                  fieldPath,
+                  onChange: (nextValue) => updatePurchaserField(pane.purchaserIndex, fieldConfig.key, nextValue),
+                  onBlur: () => markFieldTouched(fieldPath),
+                })
+              })}
+            </div>
+            {pane.fields?.some((fieldConfig) => fieldConfig.key === 'ownership_share') &&
+            fieldErrors['purchasers.ownership_share_total'] &&
+            touchedFields['purchasers.ownership_share_total'] ? (
+              <p className="mt-3 rounded-[12px] border border-[#f1c9c5] bg-[#fff5f4] px-3 py-2 text-xs font-medium text-[#d92d20]">
+                {fieldErrors['purchasers.ownership_share_total']}
+              </p>
+            ) : null}
+          </article>
+        )
+      }
+
+      if (pane.type === 'entity_fields') {
+        const updateEntityField = pane.entityKey === 'company' ? updateCompanyField : updateTrustField
+        return (
+          <article className="rounded-[20px] border border-[#e2eaf3] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+            <header className="mb-5 border-b border-[#edf2f7] pb-4">
+              <span className="inline-flex min-h-7 items-center rounded-full bg-[#eef5fb] px-3 text-xs font-semibold text-[#4b6077]">
+                {pane.entityTitle}
+              </span>
+              <h4 className="mt-3 text-lg font-semibold tracking-normal text-[#142132]">{pane.title}</h4>
+              {pane.description ? <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{pane.description}</p> : null}
+            </header>
+            <div className="grid gap-3">
+              {(pane.fields || []).map((fieldConfig) => {
+                const fieldPath = detailFieldPath(pane.entityKey, 0, fieldConfig.key)
+                const value = pane.entityState?.[fieldConfig.key] ?? ''
+                return renderDetailField({
+                  fieldConfig,
+                  value,
+                  fieldPath,
+                  onChange: (nextValue) => updateEntityField(fieldConfig.key, nextValue),
+                  onBlur: () => markFieldTouched(fieldPath),
+                })
+              })}
+            </div>
+          </article>
+        )
+      }
+
+      if (pane.type === 'associated_people') {
+        return purchaserEntityType === 'company'
+          ? renderRepeatablePeopleCard({
+              title: 'Directors / Beneficial Owners',
+              description:
+                'Capture the directors or beneficial owners involved in the company. Mark the people with signing authority.',
+              items: structuredCompany.directors || [],
+              itemLabel: 'Director / Owner',
+              addLabel: 'Add Director',
+              collectionKey: 'company.directors',
+              onAdd: addCompanyDirector,
+              onRemove: removeCompanyDirector,
+              onChange: updateCompanyDirectorField,
+            })
+          : renderRepeatablePeopleCard({
+              title: 'Additional Trustees',
+              description:
+                'Add any other trustees involved in the trust. The primary trustee details are captured in the previous panes.',
+              items: structuredTrust.trustees || [],
+              itemLabel: 'Trustee',
+              addLabel: 'Add Trustee',
+              collectionKey: 'trust.trustees',
+              onAdd: addTrustee,
+              onRemove: removeTrustee,
+              onChange: updateTrusteeField,
+            })
+      }
+
+      if (pane.type === 'finance_section') {
+        return (
+          <article className="rounded-[20px] border border-[#e2eaf3] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+            <header className="mb-5 border-b border-[#edf2f7] pb-4">
+              <span className="inline-flex min-h-7 items-center rounded-full bg-[#eef5fb] px-3 text-xs font-semibold text-[#4b6077]">
+                Finance
+              </span>
+              <h4 className="mt-3 text-lg font-semibold tracking-normal text-[#142132]">{pane.title}</h4>
+              {pane.description ? <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{pane.description}</p> : null}
+              {pane.notice ? (
+                <p className="mt-3 rounded-[14px] border border-[#d7eadf] bg-[#f3fbf7] px-3 py-2 text-sm leading-6 text-[#1f6f46]">
+                  {pane.notice}
+                </p>
+              ) : null}
+            </header>
+            <div className="grid gap-3">
+              {(pane.fields || []).map((fieldConfig) => {
+                const fieldPath = detailFieldPath('finance', 0, fieldConfig.key)
+                const value = structuredFinance[fieldConfig.key] ?? ''
+                return renderDetailField({
+                  fieldConfig,
+                  value,
+                  fieldPath,
+                  onChange: (nextValue) => updateFinanceField(fieldConfig.key, nextValue),
+                  onBlur: () => markFieldTouched(fieldPath),
+                })
+              })}
+            </div>
+          </article>
+        )
+      }
+
+      return null
+    }
+
+    return (
+      <div className="space-y-3">
+        {renderPaneBody()}
+      </div>
+    )
+  }
+
+  function renderDetailsStep() {
     const isCoPurchasingSelected = naturalPersonPurchaseMode === 'co_purchasing'
 
     if (isNaturalPersonPurchase) {
       return (
-        <div className={DETAIL_FLOW_WRAP_CLASS}>
-          <section className="rounded-[18px] border border-[#e2eaf3] bg-white p-3 shadow-[0_10px_22px_rgba(15,23,42,0.04)] md:rounded-[20px] md:p-4">
-            <h4 className="text-base font-semibold tracking-normal text-[#142132] md:text-lg">
-              Are you purchasing this unit alone or with a co-purchaser?
-            </h4>
-            <p className="mt-2 text-sm leading-6 text-[#6b7d93]">
-              This is used to prepare your sale agreement and matching compliance requirements.
-            </p>
-            <div className="mt-3 grid gap-2 md:mt-4 md:grid-cols-2 md:gap-3">
-              {NATURAL_PURCHASER_MODE_OPTIONS.map((option) => {
-                const active = naturalPersonPurchaseMode === option.value
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    className={`w-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out md:px-4 md:py-4 ${
-                      active
-                        ? 'border-[#35546c] bg-[#f3f8ff] shadow-[0_10px_24px_rgba(53,84,108,0.14)]'
-                        : 'border-[#dbe5ef] bg-white hover:border-[#b6c9de] hover:bg-[#fafcff]'
-                    }`}
-                    onClick={() => {
-                      markFieldTouched('natural_person_purchase_mode')
-                      updateNaturalPurchaseMode(option.value)
-                    }}
-                  >
-                    <strong className="block text-sm font-semibold text-[#142132]">{option.title}</strong>
-                    <span className="mt-1 block text-xs leading-5 text-[#6b7d93] md:text-sm md:leading-6">{option.description}</span>
-                  </button>
-                )
-              })}
+        <>
+          <div className="md:hidden">{renderMobileDetailPane()}</div>
+          <div className="hidden md:block">
+            <div className={DETAIL_FLOW_WRAP_CLASS}>
+              {renderNaturalPurchaseModeCard()}
+
+              {structuredPurchasers[0] ? <div>{renderNaturalPurchaserCard(structuredPurchasers[0], 0)}</div> : null}
+
+              {isCoPurchasingSelected && structuredPurchasers[1] ? (
+                <div>{renderNaturalPurchaserCard(structuredPurchasers[1], 1)}</div>
+              ) : null}
+
+              <div>{renderFinanceDetailsCard()}</div>
             </div>
-            {showModeError ? <p className="mt-3 text-xs font-medium text-[#d92d20]">{modeError}</p> : null}
-          </section>
-
-          {structuredPurchasers[0] ? <div>{renderNaturalPurchaserCard(structuredPurchasers[0], 0)}</div> : null}
-
-          {isCoPurchasingSelected && structuredPurchasers[1] ? (
-            <div>{renderNaturalPurchaserCard(structuredPurchasers[1], 1)}</div>
-          ) : null}
-
-          <div>{renderFinanceDetailsCard()}</div>
-        </div>
+          </div>
+        </>
       )
     }
 
     return (
-      <div className={DETAIL_FLOW_WRAP_CLASS}>
-        <div>{renderCompanyOrTrustDetailsCard()}</div>
-        <div>{renderFinanceDetailsCard()}</div>
+      <>
+        <div className="md:hidden">{renderMobileDetailPane()}</div>
+        <div className="hidden md:block">
+          <div className={DETAIL_FLOW_WRAP_CLASS}>
+            <div>{renderCompanyOrTrustDetailsCard()}</div>
+            <div>{renderFinanceDetailsCard()}</div>
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  function renderMobileFlowHeader() {
+    return (
+      <section className="md:hidden rounded-[20px] border border-[#dbe5ef] bg-white/95 p-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            {onboardingBrand.logoUrl ? (
+              <span className="inline-flex h-11 min-w-11 max-w-[130px] shrink-0 items-center justify-center rounded-[14px] border border-[#dce6f0] bg-white px-2 py-1.5">
+                <img
+                  src={onboardingBrand.logoUrl}
+                  alt={`${onboardingBrand.name || 'Agency'} logo`}
+                  className="max-h-8 w-auto max-w-[112px] object-contain"
+                />
+              </span>
+            ) : (
+              <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-[#172334] text-xs font-semibold text-white">
+                {onboardingBrand.initials}
+              </span>
+            )}
+            <div className="min-w-0">
+              <p className="truncate text-xs font-semibold text-[#52677e]">{onboardingBrand.name}</p>
+              <p className="mt-0.5 truncate text-[0.7rem] font-medium text-[#7a8ca1]">Buyer onboarding</p>
+            </div>
+          </div>
+          <span className="inline-flex h-9 shrink-0 items-center rounded-full bg-[#eef5fb] px-3 text-xs font-semibold text-[#4d637a]">
+            {mobileQuestionPosition}/{mobileQuestionTotal}
+          </span>
+        </div>
+
+        <div className="mt-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6a7f96]">
+            Question {mobileQuestionPosition} of {mobileQuestionTotal}
+          </p>
+          <h1 className="mt-1.5 text-xl font-semibold leading-tight tracking-normal text-[#142132]">
+            {mobileQuestionTitle}
+          </h1>
+          {mobileQuestionDescription ? (
+            <p className="mt-2 text-sm leading-6 text-[#637790]">{mobileQuestionDescription}</p>
+          ) : null}
+        </div>
+
+        <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#eef3f8]" aria-hidden="true">
+          <span
+            className="block h-full rounded-full bg-[linear-gradient(90deg,#35546c_0%,#2f8f86_100%)] transition-[width] duration-300"
+            style={{ width: `${mobileQuestionProgressPercent}%` }}
+          />
+        </div>
+
+        {onboardingLocationLabel ? (
+          <p className="mt-3 line-clamp-2 text-xs leading-5 text-[#70849b]">{onboardingLocationLabel}</p>
+        ) : null}
+      </section>
+    )
+  }
+
+  function renderReviewRows(rows = []) {
+    return (
+      <dl className="divide-y divide-[#edf2f7]">
+        {rows.map((row) => (
+          <div key={row.label} className="grid gap-1 py-3 first:pt-0 last:pb-0 md:grid-cols-[180px_1fr] md:gap-4">
+            <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-[#71869d]">{row.label}</dt>
+            <dd className="text-sm font-semibold leading-6 text-[#142132]">{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+    )
+  }
+
+  function renderReviewSection({ title, description, icon, editTarget, rows, children }) {
+    return (
+      <article className="rounded-[20px] border border-[#e2eaf3] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:p-5">
+        <header className="mb-4 flex items-start justify-between gap-3 border-b border-[#edf2f7] pb-4">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border border-[#dbe6f0] bg-[#f6f9fd] text-[#35546c]">
+              {icon ? createElement(icon, { size: 19 }) : null}
+            </span>
+            <div className="min-w-0">
+              <h4 className="text-base font-semibold tracking-normal text-[#142132] md:text-lg">{title}</h4>
+              {description ? <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">{description}</p> : null}
+            </div>
+          </div>
+          {editTarget ? (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => handleReviewEdit(editTarget)}
+              className="min-h-[38px] shrink-0 px-3 text-xs md:text-sm"
+            >
+              Edit
+            </Button>
+          ) : null}
+        </header>
+        {rows?.length ? renderReviewRows(rows) : null}
+        {children}
+      </article>
+    )
+  }
+
+  function renderReviewStep() {
+    const primaryPurchaser = structuredPurchasers[0] || createEmptyPurchaser()
+    const secondaryPurchaser = structuredPurchasers[1] || createEmptyPurchaser()
+    const unitLabel = [unitDevelopment?.name, payload?.unit?.unit_number ? `Unit ${payload.unit.unit_number}` : '']
+      .filter(Boolean)
+      .join(' | ')
+    const transactionReference =
+      payload?.transaction?.transaction_reference ||
+      payload?.transaction?.matter_number ||
+      payload?.transaction?.id ||
+      ''
+    const sourceOfFundsField = visibleFinanceFields.find((fieldConfig) => fieldConfig.key === 'source_of_funds')
+    const bondStatusField = visibleFinanceFields.find((fieldConfig) => fieldConfig.key === 'bond_current_status')
+    const buyerRows = isNaturalPersonPurchase
+      ? [
+          { label: 'Buyer type', value: purchaserEntityLabel },
+          { label: 'Purchase mode', value: naturalPurchaseModeLabel },
+          { label: 'Primary buyer', value: getReviewPersonName(primaryPurchaser) },
+          { label: 'Contact', value: `${formatReviewText(primaryPurchaser.email)} | ${formatReviewText(primaryPurchaser.phone)}` },
+          { label: 'Residency', value: formatReviewOption(RESIDENCY_STATUS_OPTIONS, primaryPurchaser.residency_status) },
+          { label: 'Marital status', value: formatReviewOption(MARITAL_STATUS_OPTIONS, primaryPurchaser.marital_status) },
+          ...(naturalPersonPurchaseMode === 'co_purchasing'
+            ? [
+                { label: 'Co-purchaser', value: getReviewPersonName(secondaryPurchaser) },
+                { label: 'Ownership split', value: `${formatReviewText(primaryPurchaser.ownership_share)}% / ${formatReviewText(secondaryPurchaser.ownership_share)}%` },
+              ]
+            : []),
+        ]
+      : purchaserEntityType === 'trust'
+        ? [
+            { label: 'Buyer type', value: purchaserEntityLabel },
+            { label: 'Trust name', value: formatReviewText(structuredTrust.trust_name) },
+            { label: 'Registration', value: formatReviewText(structuredTrust.trust_registration_number) },
+            { label: 'Authorised trustee', value: formatReviewText(structuredTrust.authorised_trustee_name) },
+            { label: 'Trustees', value: `${(structuredTrust.trustees || []).filter((item) => hasAssociatedPersonData(item, 'Trustee')).length} captured` },
+          ]
+        : [
+            { label: 'Buyer type', value: purchaserEntityLabel },
+            { label: 'Company name', value: formatReviewText(structuredCompany.company_name) },
+            { label: 'Registration', value: formatReviewText(structuredCompany.company_registration_number) },
+            { label: 'Authorised signatory', value: formatReviewText(structuredCompany.authorised_signatory_name) },
+            { label: 'Directors / owners', value: `${(structuredCompany.directors || []).filter((item) => hasAssociatedPersonData(item, 'Director')).length} captured` },
+          ]
+    const financeRows = [
+      { label: 'Finance type', value: financeTypeReviewLabel },
+      { label: 'Purchase price', value: formatReviewCurrency(structuredFinance.purchase_price) },
+      ...(normalizedFinanceType === 'cash' || normalizedFinanceType === 'combination'
+        ? [
+            { label: 'Cash amount', value: formatReviewCurrency(structuredFinance.cash_amount) },
+            { label: 'Source of funds', value: formatReviewOption(sourceOfFundsField?.options, structuredFinance.source_of_funds) },
+            { label: 'Proof of funds', value: formatReviewYesNo(structuredFinance.proof_of_funds_available) },
+          ]
+        : []),
+      ...(normalizedFinanceType === 'bond' || normalizedFinanceType === 'combination'
+        ? [
+            { label: 'Bond amount', value: formatReviewCurrency(structuredFinance.bond_amount) },
+            { label: 'Bond status', value: formatReviewOption(bondStatusField?.options, structuredFinance.bond_current_status) },
+            { label: 'Originator help', value: formatReviewYesNo(structuredFinance.bond_help_requested) },
+          ]
+        : []),
+    ]
+    const documentRows = [
+      {
+        label: 'Required documents',
+        value: requiredDocumentItems.length ? `${requiredDocumentItems.length} expected` : 'To be confirmed',
+      },
+      {
+        label: 'Already received',
+        value: requiredDocumentItems.length ? `${completedDocumentCount} uploaded` : 'No uploads expected yet',
+      },
+      {
+        label: 'Outstanding',
+        value: outstandingDocumentItems.length
+          ? outstandingDocumentItems.map((item) => item.label || item.key).join(', ')
+          : requiredDocumentItems.length
+            ? 'None currently outstanding'
+            : 'Your team will confirm the checklist',
+      },
+      {
+        label: 'Next step',
+        value: clientPortalPath ? 'Upload outstanding documents in your client portal' : 'Your team will share document instructions',
+      },
+    ]
+
+    return (
+      <div className="space-y-4">
+        <section className="rounded-[20px] border border-[#d7eadf] bg-[#f4fbf7] p-4 md:p-5">
+          <div className="flex items-start gap-3">
+            <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#22824d] text-white">
+              <CheckCircle2 size={20} />
+            </span>
+            <div>
+              <h4 className="text-lg font-semibold tracking-normal text-[#142132]">You are almost ready to submit</h4>
+              <p className="mt-2 text-sm leading-6 text-[#496176]">
+                Confirm the details below before sending them to the transaction team.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          {renderReviewSection({
+            title: 'Buyer',
+            description: 'Purchaser structure and primary details.',
+            icon: UserRound,
+            editTarget: { stepKey: 'details', paneKey: reviewBuyerDetailPaneKey },
+            rows: buyerRows,
+          })}
+
+          {renderReviewSection({
+            title: 'Property',
+            description: 'Property context attached to this onboarding link.',
+            icon: MapPin,
+            rows: [
+              { label: 'Address', value: formatReviewText(onboardingLocationLabel, 'Selected property') },
+              { label: 'Development / unit', value: formatReviewText(unitLabel, 'Not specified') },
+              { label: 'Reference', value: formatReviewText(transactionReference, 'Not specified') },
+              { label: 'Agency', value: onboardingBrand.name },
+            ],
+          })}
+
+          {renderReviewSection({
+            title: 'Finance',
+            description: 'Purchase funding and bond readiness summary.',
+            icon: CreditCard,
+            editTarget: { stepKey: reviewFinanceDetailPaneKey ? 'details' : 'finance_type', paneKey: reviewFinanceDetailPaneKey },
+            rows: financeRows,
+          })}
+
+          {renderReviewSection({
+            title: 'Document Next Steps',
+            description: 'The upload checklist that follows this submission.',
+            icon: FileText,
+            rows: documentRows,
+          })}
+        </div>
+
+        <section className="rounded-[20px] border border-[#dbe5ef] bg-[#fbfdff] p-4 md:p-5">
+          <h4 className="text-base font-semibold tracking-normal text-[#142132]">Ready to send?</h4>
+          <p className="mt-2 text-sm leading-6 text-[#5f738a]">
+            Submitting notifies the transaction team and keeps the document checklist connected to your client portal.
+          </p>
+        </section>
       </div>
     )
   }
@@ -3082,6 +4165,10 @@ function ClientOnboarding() {
       return renderDetailsStep()
     }
 
+    if (activeStep.key === 'review') {
+      return renderReviewStep()
+    }
+
     return null
   }
 
@@ -3128,9 +4215,17 @@ function ClientOnboarding() {
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f9fbfd_0%,#eef4fb_44%,#e7eef7_100%)] px-3 py-3 pb-24 md:px-4 md:py-5 md:pb-12">
+    <main className={`min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f9fbfd_0%,#eef4fb_44%,#e7eef7_100%)] px-3 py-3 ${!submissionComplete && !showLandingPage ? 'pb-40' : 'pb-24'} md:px-4 md:py-5 md:pb-12`}>
       <div className={`${PAGE_CONTAINER_CLASS} space-y-4 md:space-y-5`}>
-        {submissionComplete ? (
+        {showLandingPage ? (
+          <BuyerOnboardingLanding
+            brand={onboardingBrand}
+            buyerName={buyerLandingName}
+            propertyLabel={onboardingLocationLabel}
+            isResume={isResumingOnboarding}
+            onStart={() => setLandingDismissed(true)}
+          />
+        ) : submissionComplete ? (
           <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-5 py-8 text-center shadow-[0_20px_44px_rgba(15,23,42,0.08)]">
             <div className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-full border border-[#cfe8da] bg-[#effaf3] text-[#22824d]">
               <CheckCircle2 size={24} />
@@ -3149,7 +4244,9 @@ function ClientOnboarding() {
           </section>
         ) : (
           <>
-            <section className={HERO_SECTION_CLASS}>
+            {renderMobileFlowHeader()}
+
+            <section className={`hidden md:block ${HERO_SECTION_CLASS}`}>
               <div className="grid gap-0 md:grid-cols-[1.25fr_0.95fr]">
                 <div className="p-4 md:p-8">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6a7f96] md:text-xs md:tracking-[0.2em]">Buyer onboarding</p>
@@ -3161,7 +4258,7 @@ function ClientOnboarding() {
                   </p>
                   <div className="mt-4 flex flex-wrap gap-2 md:mt-6 md:gap-3">
                     {[
-                      '3 guided steps',
+                      'Guided questions',
                       'Save & continue later',
                       'Branch-aware questions',
                     ].map((chip) => (
@@ -3197,7 +4294,7 @@ function ClientOnboarding() {
               </div>
             </section>
 
-            <section className="rounded-[18px] border border-[#dbe5ef] bg-white/92 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.05)] backdrop-blur md:rounded-[28px] md:p-5 md:shadow-[0_18px_40px_rgba(15,23,42,0.07)]">
+            <section className="hidden rounded-[18px] border border-[#dbe5ef] bg-white/92 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.05)] backdrop-blur md:block md:rounded-[28px] md:p-5 md:shadow-[0_18px_40px_rgba(15,23,42,0.07)]">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6a7f96] md:text-xs md:tracking-[0.18em]">Progress</p>
@@ -3216,7 +4313,7 @@ function ClientOnboarding() {
                   style={{ width: `${mobileProgressPercent}%`, backgroundImage: 'linear-gradient(90deg,#35546c 0%,#2f8f86 100%)' }}
                 />
               </div>
-              <div className="mt-3 grid gap-2 md:mt-4 md:grid-cols-3 md:gap-3">
+              <div className="mt-3 grid gap-2 md:mt-4 md:grid-cols-4 md:gap-3">
                 {journeySteps.map((step, index) => {
                   const isActive = index === activeStepIndex
                   const isComplete = index < activeStepIndex
@@ -3253,7 +4350,7 @@ function ClientOnboarding() {
 
             <section className={SECTION_CARD_CLASS}>
               {activeStep ? (
-                <div className="mb-4 space-y-1.5 md:space-y-2">
+                <div className="mb-4 hidden space-y-1.5 md:block md:space-y-2">
                   <h3 className="text-lg font-semibold tracking-normal text-[#142132] md:text-xl">{activeStep.title}</h3>
                   <p className={MUTED_TEXT_CLASS}>{activeStep.description}</p>
                 </div>
@@ -3265,7 +4362,7 @@ function ClientOnboarding() {
         )}
       </div>
 
-      {!submissionComplete ? (
+      {!submissionComplete && !showLandingPage ? (
         <div className="fixed inset-x-0 bottom-0 z-40 bg-[linear-gradient(180deg,rgba(249,251,253,0)_0%,rgba(255,255,255,0.92)_20%,rgba(255,255,255,0.98)_100%)] backdrop-blur-xl md:static md:mt-5 md:bg-transparent md:backdrop-blur-0">
           <div className={`${PAGE_CONTAINER_CLASS} px-3 pt-2 pb-[max(8px,env(safe-area-inset-bottom))] md:px-0 md:pt-0 md:pb-0`}>
             <div className="rounded-t-[20px] border border-[#dbe5ef] bg-white/95 px-3 py-2 shadow-[0_-12px_28px_rgba(15,23,42,0.08)] md:rounded-none md:border-0 md:bg-transparent md:px-0 md:py-0 md:shadow-none">
@@ -3273,8 +4370,8 @@ function ClientOnboarding() {
                 <Button type="button" variant="ghost" onClick={() => void handleSaveDraft()} disabled={saving} className="min-h-[38px] md:min-h-[50px]">
                   Save Draft
                 </Button>
-                {activeStepIndex > 0 ? (
-                  <Button type="button" variant="ghost" onClick={handlePreviousStep} className="min-h-[38px] md:min-h-[50px]">
+                {shouldShowBackButton ? (
+                  <Button type="button" variant="ghost" onClick={handleFooterBack} className="min-h-[38px] md:min-h-[50px]">
                     <ChevronLeft size={14} /> Back
                   </Button>
                 ) : (
@@ -3283,21 +4380,12 @@ function ClientOnboarding() {
               </div>
               <Button
                 type="button"
-                onClick={() => {
-                  if (isLastStep) {
-                    if (!validateCurrentStep()) {
-                      return
-                    }
-                    void handleSubmit()
-                    return
-                  }
-                  handleNextStep()
-                }}
+                onClick={handleFooterPrimaryAction}
                 disabled={saving}
                 className="mt-2 w-full min-h-[46px] md:mt-3 md:min-h-[54px] md:max-w-[320px]"
               >
-                {isLastStep ? 'Submit Onboarding' : 'Next Step'}
-                {isLastStep ? null : <ChevronRight size={14} />}
+                {primaryActionLabel}
+                {primaryActionLabel === 'Submit Onboarding' ? null : <ChevronRight size={14} />}
               </Button>
             </div>
           </div>

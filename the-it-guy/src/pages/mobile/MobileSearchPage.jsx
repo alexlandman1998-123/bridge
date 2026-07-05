@@ -91,7 +91,7 @@ export default function MobileSearchPage({ routePrefix = '/mobile' }) {
         )) : <MobileEmptyState title="No results found." body="Try a person, property, transaction or status." />}
       </section>
 
-      <MobileCard className="bg-[#10243a] text-white">
+      <MobileCard surface="dark">
         <p className="text-[11px] font-semibold uppercase text-[#9fe0bd]">Search Scope</p>
         <p className="mt-2 text-sm leading-6 text-[#dce8f2]">Results are scoped to the active role so agents, attorneys, originators and commercial users see the objects they work with daily.</p>
       </MobileCard>

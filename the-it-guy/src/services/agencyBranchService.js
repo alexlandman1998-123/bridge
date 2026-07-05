@@ -555,6 +555,65 @@ export async function archiveBranch(branchId) {
   return updateBranch(branchId, { isActive: false })
 }
 
+export async function deleteBranch(branchId) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Supabase is not configured for branch deletion.')
+  }
+
+  const safeBranchId = normalizeText(branchId)
+  if (!safeBranchId) {
+    throw new Error('Branch id is required.')
+  }
+
+  const context = await resolveOrganisationContext()
+  assertBranchManagementAccess(context, 'delete branches')
+
+  const existing = await supabase
+    .from('organisation_branches')
+    .select('id, name')
+    .eq('id', safeBranchId)
+    .eq('organisation_id', context.organisationId)
+    .maybeSingle()
+
+  if (existing.error) {
+    if (isMissingTableError(existing.error)) {
+      throw new Error('Agency branch storage is not installed yet. Run the latest Supabase migration before deleting branches.')
+    }
+    throw existing.error
+  }
+  if (!existing.data?.id) {
+    throw new Error('Branch could not be found.')
+  }
+
+  const result = await supabase
+    .from('organisation_branches')
+    .delete()
+    .eq('id', safeBranchId)
+    .eq('organisation_id', context.organisationId)
+    .select('id')
+    .maybeSingle()
+
+  if (result.error) {
+    if (isMissingTableError(result.error)) {
+      throw new Error('Agency branch storage is not installed yet. Run the latest Supabase migration before deleting branches.')
+    }
+    throw result.error
+  }
+  if (!result.data?.id) {
+    throw new Error('Branch could not be deleted. Please refresh and try again.')
+  }
+
+  void recordSecurityAuditEvent({
+    userId: context.profile?.id,
+    workspaceId: context.organisationId,
+    action: 'branch_deleted',
+    targetType: 'organisation_branch',
+    targetId: safeBranchId,
+    metadata: { name: existing.data?.name || '' },
+  })
+  return true
+}
+
 export async function getBranchKPIs(branchId) {
   const branch = await getBranch(branchId)
   return branch?.kpis || null
