@@ -187,7 +187,11 @@ for (const route of [
 
 assert.ok(appSource.includes('MobileDemoLayout'), 'App route table should mount the public mobile demo layout before AuthGate')
 assert.ok(demoLayoutSource.includes('data-mobile-demo-shell'), 'Mobile demo shell should expose a stable verification marker')
-assert.ok(demoLayoutSource.includes('/mobile-demo/transaction/demo-transaction'), 'Mobile demo shell should keep bottom navigation inside public demo routes')
+assert.ok(demoLayoutSource.includes('data-mobile-production-tabs'), 'Mobile demo shell should expose production-feeling portal tabs')
+assert.ok(demoLayoutSource.includes('aria-label="Portal tabs"'), 'Mobile demo shell should avoid demo language in the tab navigation')
+assert.ok(demoLayoutSource.includes('/mobile-demo/transaction/demo-transaction'), 'Mobile demo shell should keep the Deal tab inside public demo routes')
+assert.ok(demoLayoutSource.includes('/mobile-demo/application/demo-application'), 'Mobile demo shell should expose a Finance tab')
+assert.ok(demoLayoutSource.includes('/mobile-demo/matter/demo-matter'), 'Mobile demo shell should expose a Team tab')
 assert.ok(demoHomeSource.includes('data-mobile-demo-home'), 'Mobile demo home should expose a stable verification marker')
 assert.ok(demoHomeSource.includes('Buyer') && demoHomeSource.includes('Seller'), 'Mobile demo home should make buyer and seller modes distinct')
 assert.ok(demoHomeSource.includes('PropertyVisual'), 'Mobile demo home should include a visual transaction/property hero')
