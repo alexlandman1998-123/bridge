@@ -13,8 +13,11 @@ const server = await createServer({
 
 try {
   const {
+    deletePartnerInvitation,
     mapPartnerRelationship,
     normalizeOrganisationPartnerVisibilityLevel,
+    resendPartnerInvitation,
+    revokePartnerInvitation,
   } = await server.ssrLoadModule('/src/lib/partnersRepository.js')
 
   assert.equal(normalizeOrganisationPartnerVisibilityLevel('connected_partners_only'), 'connected_partners')
@@ -32,6 +35,9 @@ try {
 
   assert.equal(relationship.visibilityLevel, 'preferred_partners')
   assert.equal(relationship.preferred, true)
+  assert.equal(typeof resendPartnerInvitation, 'function')
+  assert.equal(typeof revokePartnerInvitation, 'function')
+  assert.equal(typeof deletePartnerInvitation, 'function')
 
   console.log('partnersRepository tests passed')
 } finally {

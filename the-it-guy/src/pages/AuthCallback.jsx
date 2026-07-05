@@ -22,6 +22,11 @@ function resolvePendingInvitePath() {
   return `/invite/${token}`
 }
 
+function resolveCallbackInvitePath(search = '') {
+  const nextPath = resolveSafeNextPath(search)
+  return nextPath.startsWith('/invite/') ? nextPath : ''
+}
+
 export default function AuthCallback() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -96,7 +101,8 @@ export default function AuthCallback() {
         const loadedIntent = await loadSignupIntentForUser({ user })
         const readyIntent = loadedIntent ? await markSignupIntentReadyForOnboarding({ user, intent: loadedIntent }) : null
         const pendingInvitePath = resolvePendingInvitePath()
-        const target = pendingInvitePath || (readyIntent ? resolveSignupIntentRoute(readyIntent) : resolveSafeNextPath(location.search))
+        const callbackInvitePath = resolveCallbackInvitePath(location.search)
+        const target = pendingInvitePath || callbackInvitePath || (readyIntent ? resolveSignupIntentRoute(readyIntent) : resolveSafeNextPath(location.search))
         clearPostLoginRedirect()
         recordAuditEvent('session_restored_from_callback', {
           target,

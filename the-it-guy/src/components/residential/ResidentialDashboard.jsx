@@ -14,6 +14,7 @@ import {
   Users,
 } from 'lucide-react'
 import AppointmentDashboardSection from '../appointments/dashboard/AppointmentDashboardSection'
+import { AgentCommissionTracker, CompanyTargetTracker } from '../commission/CommissionWidgets'
 import ActivePipelineCarousel from '../pipeline/ActivePipelineCarousel'
 import { formatCurrencyCompactZAR } from '../../services/residentialDashboardService'
 
@@ -648,6 +649,7 @@ export function ResidentialCommandCenterGrid({
   includeAllAppointments = false,
   canManageAppointments = false,
   appointmentRefreshKey = '',
+  commissionTracker = null,
   onViewTransactions,
   onOpenTransaction,
   onViewCalendar,
@@ -678,6 +680,12 @@ export function ResidentialCommandCenterGrid({
           )
         })}
       </div>
+
+      {commissionTracker ? (
+        scope === 'agent'
+          ? <AgentCommissionTracker tracker={commissionTracker} />
+          : <CompanyTargetTracker tracker={commissionTracker} />
+      ) : null}
 
       <ResidentialActiveTransactionsCarousel
         title={model.activeTransactions.title}

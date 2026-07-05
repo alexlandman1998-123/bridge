@@ -74,11 +74,11 @@ const SETTINGS_NAV_GROUPS = [
       },
       {
         to: '/settings/commission-structures',
-        label: 'Commission Structures',
+        label: 'Commission',
         icon: BadgePercent,
         roles: ['developer', 'agent'],
         requiresManage: true,
-        keywords: 'commission splits payout structures agent sales templates',
+        keywords: 'commission splits payout structures agent sales levels targets trackers referrals templates',
       },
     ],
   },

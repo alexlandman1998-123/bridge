@@ -7,6 +7,11 @@ import {
   getScopedDashboardTransactions,
   logDashboardPipelineDiagnostics,
 } from '../lib/dashboardTransactionIntegrity'
+import {
+  DEFAULT_COMMISSION_LEVELS,
+  DEFAULT_COMPANY_MONTHLY_TARGET,
+  buildCommissionTrackerFromRows,
+} from './commissionService'
 
 const COMPLETED_STATES = ['registered', 'closed', 'completed']
 const RISK_DOCUMENT_STATUSES = ['requested', 'pending', 'missing', 'rejected', 'overdue']
@@ -1566,6 +1571,7 @@ export async function getPrincipalDashboardData({
     allPacketEvents,
     allOrganisationUsers,
     allTransactionCommissions,
+    allCommissionTargets,
     organisationBranches,
   ] = await Promise.all([
     safeSelect('transactions', transactionFields, { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
@@ -1580,6 +1586,7 @@ export async function getPrincipalDashboardData({
       'id, organisation_id, user_id, first_name, last_name, email, role, status, last_active_at, created_at, updated_at',
     ], { agencyId: resolvedAgencyId, order: 'updated_at', limit: 500 }),
     safeSelect('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
+    safeSelect('commission_targets', 'id, organisation_id, branch_id, user_id, target_type, period, target_amount, start_month, is_active, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'start_month', ascending: false, limit: 100 }),
     safeSelect('organisation_branches', 'id, organisation_id, name, location, city, is_head_office, is_active, updated_at, created_at', { agencyId: resolvedAgencyId, order: 'name', ascending: true, limit: 200 }),
   ])
 
@@ -1632,6 +1639,9 @@ export async function getPrincipalDashboardData({
     .filter((event) => selectedBranchId === ALL_BRANCHES_ID || effectivePacketIds.has(normalizeText(event.packet_id)))
   const transactionCommissions = dedupeRowsById([...allTransactionCommissions, ...linkedTransactionCommissions])
     .filter((row) => selectedBranchId === ALL_BRANCHES_ID || transactionIds.has(normalizeText(row.transaction_id)))
+  const activeCompanyTarget =
+    (allCommissionTargets || []).find((row) => normalizeKey(row.target_type) === 'company' && row.is_active !== false) ||
+    { target_amount: DEFAULT_COMPANY_MONTHLY_TARGET }
   const scopedDocumentRequests = documentRequests.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
   const scopedDocuments = documents.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
   const scopedSubprocesses = subprocesses.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
@@ -1973,6 +1983,14 @@ export async function getPrincipalDashboardData({
     .sort((left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0))
     .slice(0, 8)
   const upcomingRegistrations = buildUpcomingRegistrationBuckets(activeTransactions, commissionByTransaction, now)
+  const companyCommissionTracker = buildCommissionTrackerFromRows({
+    transactions,
+    transactionCommissions,
+    levels: DEFAULT_COMMISSION_LEVELS,
+    target: activeCompanyTarget,
+    scope: 'company',
+    now,
+  })
 
   return {
     filters: {
@@ -2028,7 +2046,9 @@ export async function getPrincipalDashboardData({
     revenue: {
       ...revenueOverview,
       ...residentialMetrics.revenue,
+      companyCommissionTracker,
     },
+    companyCommissionTracker,
     overview: {
       pipeline: {
         totalValue: pipelineValue,

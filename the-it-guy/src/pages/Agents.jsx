@@ -4821,12 +4821,12 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
 
             {!activeCommissionStructures.length ? (
               <div className="rounded-2xl border border-[#e3ebf5] bg-[#fbfcfe] p-5">
-                <h3 className="text-base font-semibold text-[#10243a]">No active sales commission structures</h3>
+                <h3 className="text-base font-semibold text-[#10243a]">No active commission levels</h3>
                 <p className="mt-2 text-sm leading-6 text-[#60758d]">
-                  Create at least one active sales commission structure before assigning a plan to this agent.
+                  Create at least one active commission level before assigning a plan to this agent.
                 </p>
                 <Button type="button" variant="secondary" className="mt-4" onClick={() => navigate('/settings/commission-structures')}>
-                  Open Commission Settings
+                  Open Commission
                 </Button>
               </div>
             ) : (

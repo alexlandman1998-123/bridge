@@ -30,6 +30,7 @@ const AGENCY_AGENT_ROLE_ALIASES = new Set([
   'sales_person',
   'sales_consultant',
   'consultant',
+  'senior_agent',
   'property_practitioner',
   'property_consultant',
   'broker',

@@ -71,6 +71,7 @@ import {
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { getAgentCommissionTracker } from '../services/commissionService'
 import { getAgentPrivateListings } from '../services/privateListingService'
 import { deriveResidentialDashboardMetrics } from '../services/residentialDashboardService'
 import {
@@ -1741,6 +1742,7 @@ function Dashboard() {
   const [residentialMode] = useState('sales')
   const [residentialDateRange, setResidentialDateRange] = useState('last_30_days')
   const [agentPrivateListingRows, setAgentPrivateListingRows] = useState([])
+  const [agentCommissionTracker, setAgentCommissionTracker] = useState(null)
   const [principalCrmSnapshot, setPrincipalCrmSnapshot] = useState({ leads: [], leadActivities: [] })
   const [principalCanvassingSnapshot, setPrincipalCanvassingSnapshot] = useState({ prospects: [], activities: [] })
   const dashboardHasLoadedRef = useRef(false)
@@ -1775,6 +1777,7 @@ function Dashboard() {
       setOrganisationMembershipRole('viewer')
       setOrganisationIdForAppointments('')
       setAgentPrivateListingRows([])
+      setAgentCommissionTracker(null)
       return
     }
     if (organisationLoading) return
@@ -2002,6 +2005,35 @@ function Dashboard() {
     window.addEventListener('itg:agency-crm-updated', handleRefreshAppointments)
     return () => window.removeEventListener('itg:agency-crm-updated', handleRefreshAppointments)
   }, [isPrincipalAgentView, organisationIdForAppointments, profile?.email, profile?.id, role])
+
+  useEffect(() => {
+    if (role !== 'agent' || isPrincipalAgentView || !organisationIdForAppointments) {
+      setAgentCommissionTracker(null)
+      return undefined
+    }
+
+    let active = true
+    const refreshCommissionTracker = async () => {
+      try {
+        const tracker = await getAgentCommissionTracker(profile?.id || profile?.userId || '', {
+          userEmail: profile?.email || '',
+        })
+        if (active) setAgentCommissionTracker(tracker)
+      } catch (trackerError) {
+        console.warn('[dashboard][commission] Unable to refresh agent commission tracker.', trackerError)
+        if (active) setAgentCommissionTracker(null)
+      }
+    }
+
+    void refreshCommissionTracker()
+    window.addEventListener('itg:transaction-created', refreshCommissionTracker)
+    window.addEventListener('itg:transaction-updated', refreshCommissionTracker)
+    return () => {
+      active = false
+      window.removeEventListener('itg:transaction-created', refreshCommissionTracker)
+      window.removeEventListener('itg:transaction-updated', refreshCommissionTracker)
+    }
+  }, [isPrincipalAgentView, organisationIdForAppointments, profile?.email, profile?.id, profile?.userId, role])
 
   useEffect(() => {
     if (role !== 'agent' || isPrincipalAgentView || !organisationIdForAppointments) return undefined
@@ -4684,6 +4716,7 @@ function renderActiveTransactionsBlock({
                       includeAllAppointments={false}
                       canManageAppointments={false}
                       appointmentRefreshKey={`${organisationIdForAppointments}:${String(profile?.id || profile?.email || '').trim()}:${agentAppointmentSummary.rows.length}:${residentialMode}:${residentialDateRange}`}
+                      commissionTracker={agentCommissionTracker}
                       onViewTransactions={() => navigate('/transactions')}
                       onOpenTransaction={(record) => {
                         if (record?.id) navigate(`/transactions/${record.id}`)

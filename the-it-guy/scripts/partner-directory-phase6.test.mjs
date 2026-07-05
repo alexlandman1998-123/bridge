@@ -4,8 +4,10 @@ import { readFile } from 'node:fs/promises'
 const files = {
   quickCreate: await readFile(new URL('../src/components/QuickCreateDropdown.jsx', import.meta.url), 'utf8'),
   partnersPage: await readFile(new URL('../src/pages/PartnersPage.jsx', import.meta.url), 'utf8'),
+  partnersRepository: await readFile(new URL('../src/lib/partnersRepository.js', import.meta.url), 'utf8'),
   settingsPreferredPartners: await readFile(new URL('../src/pages/settings/SettingsPreferredPartnersPage.jsx', import.meta.url), 'utf8'),
   wizard: await readFile(new URL('../src/components/AgentNewDealWizard.jsx', import.meta.url), 'utf8'),
+  partnerInvitationManagementMigration: await readFile(new URL('../../supabase/migrations/202607050007_partner_invitation_sender_management.sql', import.meta.url), 'utf8'),
 }
 
 for (const token of [
@@ -32,10 +34,44 @@ for (const token of [
   'location.state?.openAddThirdParty',
   "openThirdPartyInvite(location.state?.partnerType || 'transfer_attorney')",
   'navigate(location.pathname, { replace: true, state: null })',
+  'resolvePartnersActiveTab(tabQuery, isBondPartnersRoute)',
+  'new URLSearchParams(location.search).get(\'tab\')',
   'const isSimplifiedThirdPartyWorkspace = !isBondPartnersRoute && !isPartnerProfilePage',
   'ThirdPartyDirectoryModal',
+  'getThirdPartyInviteWorkspaceType',
+  'thirdPartyForm.sendInvite !== false',
+  'source: \'third_party_directory\'',
+  'Third party added and invite sent.',
+  'Send invite',
+  'handleResendInvitation',
+  'handleRevokeInvitation',
+  'handleDeleteInvitation',
+  'resendPartnerInvitation',
+  'revokePartnerInvitation',
+  'deletePartnerInvitation',
+  'Partner invitation revoked.',
+  'Partner invitation deleted.',
 ]) {
   assert(files.partnersPage.includes(token), `PartnersPage should consume quick-create route state without bypassing the simplified modal: ${token}`)
+}
+
+for (const token of [
+  'export async function resendPartnerInvitation',
+  'export async function revokePartnerInvitation',
+  'export async function deletePartnerInvitation',
+  'recipientContactEmail',
+  'status: \'revoked\'',
+]) {
+  assert(files.partnersRepository.includes(token), `partnersRepository should expose sent invite management behavior: ${token}`)
+}
+
+for (const token of [
+  'partner_invitations_delete_sender_admin',
+  'for delete',
+  "coalesce(status, 'pending') <> 'accepted'",
+  'grant delete on public.partner_invitations to authenticated',
+]) {
+  assert(files.partnerInvitationManagementMigration.includes(token), `partner invitation management migration should preserve: ${token}`)
 }
 
 assert(

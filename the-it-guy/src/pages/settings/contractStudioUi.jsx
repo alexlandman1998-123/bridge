@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   CheckCircle2,
+  CircleDot,
   Eye,
   FileSignature,
   FileText,
@@ -196,6 +197,261 @@ export function ValidationIssueCard({ issue, tone = 'warning', label = 'Issue' }
         </div>
       </div>
     </div>
+  )
+}
+
+export function DataRequirementCard({ issue }) {
+  const normalized = normalizeValidationIssue(issue)
+
+  return (
+    <div className="rounded-[16px] border border-[#dbe7f3] bg-[#f8fbff] px-4 py-3 text-sm leading-6 text-[#35546c]">
+      <div className="flex items-start gap-2">
+        <CircleDot size={16} className="mt-0.5 shrink-0 text-[#3f78a8]" />
+        <div className="min-w-0">
+          <p className="font-semibold text-[#102033]">{normalized.placeholderLabel || normalized.message}</p>
+          <p className="mt-1 text-xs leading-5 text-[#6b7c93]">{normalized.message}</p>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold text-[#607387]">
+            {normalized.sectionLabel ? <span>Section: {normalized.sectionLabel}</span> : null}
+            {normalized.placeholderKey ? <span>{`{{${normalized.placeholderKey}}}`}</span> : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function PreviewIssueSummary({ critical = [], warnings = [], compact = false }) {
+  const criticalIssues = Array.isArray(critical) ? critical : []
+  const warningIssues = Array.isArray(warnings) ? warnings : []
+  const totalIssues = criticalIssues.length + warningIssues.length
+  const visibleCritical = criticalIssues.slice(0, Math.min(criticalIssues.length, 3))
+  const visibleWarnings = warningIssues.slice(0, Math.max(0, 3 - visibleCritical.length))
+  const hiddenCount = Math.max(0, totalIssues - visibleCritical.length - visibleWarnings.length)
+
+  if (!totalIssues) {
+    return (
+      <div className={`rounded-[16px] border border-[#ccead8] bg-[#f2fbf5] px-4 py-3 text-sm text-[#1f7a45] ${compact ? '' : 'space-y-1'}`.trim()}>
+        <div className="flex items-start gap-2">
+          <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
+          <div>
+            <p className="font-semibold">No preview issues</p>
+            {!compact ? <p className="mt-1 leading-6">The sample preview rendered without blockers or warnings.</p> : null}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-[16px] border border-[#dbe7f3] bg-white px-4 py-3" data-testid="preview-issue-summary">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-[#102033]">Preview issue summary</p>
+          <p className="mt-1 text-xs leading-5 text-[#6b7c93]">Issues are shown here so the page preview stays readable.</p>
+        </div>
+        <div className="flex shrink-0 gap-1.5">
+          <span className="rounded-full border border-[#f3d1ce] bg-[#fff4f3] px-2.5 py-1 text-[0.68rem] font-semibold text-[#8e1f15]">
+            {criticalIssues.length} blockers
+          </span>
+          <span className="rounded-full border border-[#f4e2bf] bg-[#fff8ec] px-2.5 py-1 text-[0.68rem] font-semibold text-[#7d520d]">
+            {warningIssues.length} warnings
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-3 space-y-2">
+        {visibleCritical.map((issue, index) => (
+          <ValidationIssueCard key={`preview-summary-critical-${index}`} issue={issue} tone="error" label="Section" />
+        ))}
+        {visibleWarnings.map((issue, index) => (
+          <ValidationIssueCard key={`preview-summary-warning-${index}`} issue={issue} tone="warning" label="Section" />
+        ))}
+      </div>
+
+      {hiddenCount ? (
+        <details className="mt-3 rounded-[14px] border border-[#e6edf5] bg-[#fbfdff]">
+          <summary className="cursor-pointer list-none px-3 py-2 text-sm font-semibold text-[#35546c]">
+            View all issues ({totalIssues})
+          </summary>
+          <div className="space-y-2 border-t border-[#e6edf5] px-3 py-3">
+            {criticalIssues.length ? (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#b96a62]">Blockers</p>
+                {criticalIssues.map((issue, index) => (
+                  <ValidationIssueCard key={`preview-summary-all-critical-${index}`} issue={issue} tone="error" label="Section" />
+                ))}
+              </div>
+            ) : null}
+            {warningIssues.length ? (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#b08745]">Warnings</p>
+                {warningIssues.map((issue, index) => (
+                  <ValidationIssueCard key={`preview-summary-all-warning-${index}`} issue={issue} tone="warning" label="Section" />
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </details>
+      ) : null}
+    </div>
+  )
+}
+
+export function SamplePreviewSupportPanel({
+  previewState = {},
+  validationSummary = {},
+  previewReadinessIssueCount = 0,
+  setActiveStudioArea,
+}) {
+  const previewCritical = Array.isArray(previewState.critical) ? previewState.critical : []
+  const previewWarnings = Array.isArray(previewState.warnings) ? previewState.warnings : []
+  const dataRequirements = Array.isArray(previewState.dataRequirements) ? previewState.dataRequirements : []
+  const templateBlockers = Array.isArray(validationSummary.blockers) ? validationSummary.blockers : []
+  const templateWarnings = Array.isArray(validationSummary.warnings) ? validationSummary.warnings : []
+  const tokenList = Array.isArray(validationSummary.tokenList) ? validationSummary.tokenList : []
+  const templateIssueCount = templateBlockers.length + templateWarnings.length
+  const hasPreviewResult = Boolean(previewState.html) || previewCritical.length || previewWarnings.length || dataRequirements.length
+
+  return (
+    <TemplateStudioPanel
+      eyebrow="Preview Mode"
+      title="Sample Data"
+      description="Sample-preview status, template checks, and future data needs in one place."
+    >
+      <div className="space-y-5 text-sm text-[#51657c]">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+          <div className="rounded-[16px] border border-[#dbe7f3] bg-[#f8fbff] px-4 py-3">
+            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#8aa0b8]">Mode</span>
+            <strong className="mt-1 block text-base text-[#102033]">Sample preview</strong>
+            <span className="mt-1 block text-xs leading-5 text-[#6b7c93]">Safe sample values only.</span>
+          </div>
+          <div className="rounded-[16px] border border-[#dbe7f3] bg-white px-4 py-3">
+            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#8aa0b8]">Status</span>
+            <strong className="mt-1 block text-base text-[#102033]">
+              {previewReadinessIssueCount ? 'Needs review' : 'Ready'}
+            </strong>
+            <span className="mt-1 block text-xs leading-5 text-[#6b7c93]">
+              {previewReadinessIssueCount
+                ? `${previewReadinessIssueCount} item${previewReadinessIssueCount === 1 ? '' : 's'} to check`
+                : 'No blockers or warnings detected.'}
+            </span>
+          </div>
+        </div>
+
+        {hasPreviewResult ? (
+          <PreviewIssueSummary critical={previewCritical} warnings={previewWarnings} />
+        ) : (
+          <div className="rounded-[16px] border border-dashed border-[#dbe7f3] bg-white px-4 py-3 text-sm leading-6 text-[#6b7c93]">
+            Run a preview to see blockers and warnings here.
+          </div>
+        )}
+
+        <details
+          className="rounded-[16px] border border-[#dbe7f3] bg-white"
+          open={Boolean(dataRequirements.length)}
+        >
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 font-semibold text-[#102033]">
+            <span>Data this template will collect</span>
+            <span className="rounded-full border border-[#e6edf5] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
+              {dataRequirements.length}
+            </span>
+          </summary>
+          <div className="space-y-3 border-t border-[#e7eef6] px-4 py-4">
+            <p className="text-sm leading-6 text-[#6b7c93]">
+              These are not template errors. They become required only when generating a real document.
+            </p>
+            {dataRequirements.length ? (
+              <div className="space-y-2">
+                {dataRequirements.slice(0, 8).map((issue, index) => (
+                  <DataRequirementCard key={`preview-data-requirement-${issue.placeholderKey || index}-${index}`} issue={issue} />
+                ))}
+              </div>
+            ) : (
+              <p className="flex items-center gap-2 rounded-[14px] border border-[#ccead8] bg-[#f2fbf5] px-3 py-2 text-sm text-[#1f7a45]">
+                <CheckCircle2 size={16} />
+                No live-data requirements reported for this sample preview.
+              </p>
+            )}
+            {dataRequirements.length > 8 ? (
+              <p className="text-xs font-semibold text-[#607387]">
+                {dataRequirements.length - 8} more requirement{dataRequirements.length - 8 === 1 ? '' : 's'} will be checked during document generation.
+              </p>
+            ) : null}
+          </div>
+        </details>
+
+        <SettingsBanner tone="success">
+          Preview uses safe sample values and never creates or changes live documents.
+        </SettingsBanner>
+
+        <details
+          className="rounded-[16px] border border-[#dbe7f3] bg-white"
+          open={Boolean(templateIssueCount)}
+        >
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 font-semibold text-[#102033]">
+            <span>Template checklist</span>
+            <span className="rounded-full border border-[#e6edf5] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
+              {templateIssueCount} items
+            </span>
+          </summary>
+          <div className="space-y-3 border-t border-[#e7eef6] px-4 py-4">
+            {templateBlockers.length ? templateBlockers.map((item) => (
+              <ValidationIssueCard key={`preview-blocker-${item}`} issue={item} tone="error" label="Template" />
+            )) : (
+              <p className="flex items-center gap-2 rounded-[14px] border border-[#ccead8] bg-[#f2fbf5] px-3 py-2 text-sm text-[#1f7a45]">
+                <CheckCircle2 size={16} />
+                No blocking issues detected.
+              </p>
+            )}
+
+            {templateWarnings.map((item) => (
+              <ValidationIssueCard key={`preview-warning-${item}`} issue={item} tone="warning" label="Template" />
+            ))}
+          </div>
+        </details>
+
+        <details className="rounded-[16px] border border-[#dbe7f3] bg-white">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 font-semibold text-[#102033]">
+            <span>Fields used</span>
+            <span className="rounded-full border border-[#e6edf5] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
+              {tokenList.length}
+            </span>
+          </summary>
+          <div className="border-t border-[#e7eef6] px-4 py-4">
+            {tokenList.length ? (
+              <div className="flex flex-wrap gap-2">
+                {tokenList.map((token) => (
+                  <span
+                    key={token}
+                    className="inline-flex items-center gap-1 rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]"
+                  >
+                    <CircleDot size={10} />
+                    {token}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm leading-6 text-[#6b7c93]">No merge fields detected yet for this template version.</p>
+            )}
+          </div>
+        </details>
+
+        <div className="rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] px-4 py-3">
+          <p className="font-semibold text-[#102033]">Need real transaction details?</p>
+          <p className="mt-1 leading-6 text-[#6b7c93]">
+            Use Documents to test a linked record or create a draft from this template.
+          </p>
+          <button
+            type="button"
+            className={`${studioSecondaryButtonClass} mt-3 w-full`}
+            onClick={() => setActiveStudioArea?.('documents')}
+          >
+            <FileSignature size={14} />
+            <span>Open Documents</span>
+          </button>
+        </div>
+      </div>
+    </TemplateStudioPanel>
   )
 }
 
@@ -655,7 +911,7 @@ export function DocumentCreationPanel({
               <div>
                 <h4 className="text-sm font-semibold text-[#102033]">Ready to generate?</h4>
                 <p className="mt-1 text-sm leading-6 text-[#607387]">
-                  Complete these basics before generating the addendum. You can still save an incomplete draft from More options.
+                  Complete these basics before generating the addendum. You can still save an incomplete draft from Advanced preview data.
                 </p>
               </div>
               <span className={[
@@ -699,13 +955,13 @@ export function DocumentCreationPanel({
           <p className="mt-3 text-sm leading-6 text-[#4f6d5d]">
             {readyForGeneratedCreate
               ? `Creates a generated ${selectedDocumentKind === 'standard' ? 'draft' : selectedDocumentKindOption.label.toLowerCase()}. You can then prepare signing fields and send links from the document library.`
-              : 'Complete the readiness checklist above before generating. Save a draft from More options if you need to come back later.'}
+              : 'Complete the readiness checklist above before generating. Save a draft from Advanced preview data if you need to come back later.'}
           </p>
         </div>
 
         <details className="rounded-[16px] border border-[#dbe7f3] bg-white">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-[#102033]">
-            <span>More options</span>
+            <span>Advanced preview data</span>
             <span className="rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
               {selectedSourceOption.label}
             </span>
@@ -774,13 +1030,13 @@ export function DocumentCreationPanel({
                 onChange={(event) => setDocumentRunForm((previous) => ({ ...previous, useSampleFallback: event.target.checked }))}
               />
               <span>
-                <span className="block font-semibold text-[#102033]">Use safe example values</span>
-                <span className="mt-1 block leading-5 text-[#6b7c93]">Useful for drafting before every linked field is ready.</span>
+                <span className="block font-semibold text-[#102033]">Use sample data</span>
+                <span className="mt-1 block leading-5 text-[#6b7c93]">Fills preview gaps while every linked field is not ready yet.</span>
               </span>
             </label>
 
             <label className={settingsFieldClass}>
-              Extra details JSON
+              Advanced overrides
               <textarea
                 rows={7}
                 value={documentRunForm.contextJson}
@@ -801,7 +1057,7 @@ export function DocumentCreationPanel({
                 disabled={testingTemplate || !selectedTemplate}
               >
                 <Eye size={14} />
-                <span>{testingTemplate ? 'Previewing...' : 'Preview'}</span>
+                <span>{testingTemplate ? 'Testing...' : 'Test linked record'}</span>
               </button>
               <button
                 type="button"

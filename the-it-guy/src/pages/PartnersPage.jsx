@@ -8,11 +8,13 @@ import {
   Landmark,
   LockKeyhole,
   Network,
+  Send,
   ShieldCheck,
   Search,
   Sparkles,
   Trash2,
   X,
+  XCircle,
   UserPlus as InviteIcon,
   Users,
 } from 'lucide-react'
@@ -24,6 +26,7 @@ import {
   acceptPartnerInvitation,
   canConnectPartnerTypes,
   createPartnerInvitation,
+  deletePartnerInvitation,
   declinePartnerInvitation,
   filterPartnerRelationshipsByScope,
   filterDiscoverablePartners,
@@ -36,6 +39,8 @@ import {
   PARTNER_TYPES,
   fetchPartnersSnapshot,
   fetchDiscoverablePartnerDirectory,
+  resendPartnerInvitation,
+  revokePartnerInvitation,
 } from '../lib/partnersRepository'
 import {
   getPartnerRoutingRulesForUser,
@@ -118,6 +123,7 @@ const INVITATION_STATUS_OPTIONS = [
   { value: 'pending', label: 'Pending' },
   { value: 'accepted', label: 'Accepted' },
   { value: 'declined', label: 'Declined' },
+  { value: 'revoked', label: 'Revoked' },
 ]
 
 function formatNumber(value) {
@@ -139,6 +145,13 @@ function normalizeLower(value = '') {
   return normalizeText(value).toLowerCase()
 }
 
+function resolvePartnersActiveTab(tabValue = '', isBondPartnersRoute = false) {
+  const normalized = normalizeLower(tabValue)
+  if (normalized === 'invites') return 'invitations'
+  if (['connected', 'preferred', 'invitations', 'discover'].includes(normalized)) return normalized
+  return isBondPartnersRoute ? 'connected' : 'preferred'
+}
+
 function createThirdPartyDraft(partnerType = 'transfer_attorney') {
   return {
     partnerType: normalizePreferredPartnerType(partnerType, 'transfer_attorney'),
@@ -152,7 +165,16 @@ function createThirdPartyDraft(partnerType = 'transfer_attorney') {
     notes: '',
     isActive: true,
     isPreferredDefault: false,
+    sendInvite: true,
   }
+}
+
+function getThirdPartyInviteWorkspaceType(partnerType = '') {
+  const normalizedType = normalizePreferredPartnerType(partnerType, partnerType)
+  if (ATTORNEY_PREFERRED_PARTNER_TYPES.has(normalizedType) || normalizedType === 'attorney_firm') return 'attorney_firm'
+  if (normalizedType === 'bond_originator') return 'bond_originator'
+  if (normalizedType === 'agency' || normalizedType === 'agency_network') return 'agency'
+  return 'agency'
 }
 
 function isBridgeInternalToken(value = '') {
@@ -170,7 +192,7 @@ function normalizeInvitationName(value, fallback) {
 function statusBadgeClass(status) {
   const normalized = normalizeLower(status)
   if (normalized === 'accepted') return 'border-[#d8efe4] bg-[#f1fbf6] text-[#17613d]'
-  if (normalized === 'declined' || normalized === 'rejected') return 'border-[#f8d7da] bg-[#fff5f6] text-[#8d2831]'
+  if (normalized === 'declined' || normalized === 'rejected' || normalized === 'revoked') return 'border-[#f8d7da] bg-[#fff5f6] text-[#8d2831]'
   if (normalized === 'cancelled') return 'border-[#f0dfb8] bg-[#fff9ec] text-[#8a5a12]'
   return 'border-[#f0dfb8] bg-[#fff9ec] text-[#8a5a12]'
 }
@@ -1681,6 +1703,22 @@ function ThirdPartyDirectoryModal({
               />
               Default for this role
             </label>
+            {!editing ? (
+              <label
+                className={`inline-flex h-10 items-center gap-2 rounded-[8px] border border-[#d3deea] bg-white px-3 text-sm font-semibold ${
+                  normalizeText(form.email) ? 'text-[#35546c]' : 'text-[#8ba0b8]'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={Boolean(normalizeText(form.email) && form.sendInvite !== false)}
+                  disabled={!normalizeText(form.email)}
+                  onChange={(event) => onChange('sendInvite', event.target.checked)}
+                  className="h-4 w-4 rounded border-[#c8d6e5] text-[#10243a] disabled:opacity-50"
+                />
+                Send invite
+              </label>
+            ) : null}
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-2">
@@ -1915,9 +1953,10 @@ export default function PartnersPage() {
   const organisationId = organisation?.partnerOrganisationId || organisation?.organisationId || workspace?.organisationId || organisation?.id || workspace?.id || ''
   const resolvedWorkspaceType = organisation?.type || workspaceType || role
   const profileQueryId = useMemo(() => normalizeText(new URLSearchParams(location.search).get('profile')), [location.search])
+  const tabQuery = useMemo(() => normalizeText(new URLSearchParams(location.search).get('tab')), [location.search])
   const isBondPartnersRoute = location.pathname.startsWith('/bond/partners')
 
-  const [activeTab, setActiveTab] = useState(() => (isBondPartnersRoute ? 'connected' : 'preferred'))
+  const [activeTab, setActiveTab] = useState(() => resolvePartnersActiveTab(tabQuery, isBondPartnersRoute))
   const [selectedPartnerId, setSelectedPartnerId] = useState(() => profileQueryId || partnerId)
   const [profilePanelOpen, setProfilePanelOpen] = useState(() => Boolean(profileQueryId || partnerId))
   const [snapshot, setSnapshot] = useState(null)
@@ -1945,6 +1984,7 @@ export default function PartnersPage() {
   const [selectedVisiblePersonId, setSelectedVisiblePersonId] = useState('')
   const connectingPartnerIdsRef = useRef(new Set())
   const profilePanelRef = useRef(null)
+  const lastTabSearchRef = useRef(location.search)
 
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteOrganisationQuery, setInviteOrganisationQuery] = useState('')
@@ -1975,6 +2015,7 @@ export default function PartnersPage() {
     query: '',
     type: '',
   })
+  const [invitationAction, setInvitationAction] = useState({ id: '', type: '' })
 
   const accessContext = useMemo(
     () => ({
@@ -2080,6 +2121,12 @@ export default function PartnersPage() {
     setSelectedPartnerId(nextSelectedId)
     setProfilePanelOpen(true)
   }, [partnerId, profileQueryId])
+
+  useEffect(() => {
+    if (lastTabSearchRef.current === location.search) return
+    lastTabSearchRef.current = location.search
+    setActiveTab(resolvePartnersActiveTab(tabQuery, isBondPartnersRoute))
+  }, [isBondPartnersRoute, location.search, tabQuery])
 
   useEffect(() => {
     if (activeTab !== 'discover' && !isInviteModalOpen) return
@@ -2448,6 +2495,7 @@ export default function PartnersPage() {
       notes: partner.notes || '',
       isActive: partner.isActive !== false,
       isPreferredDefault: Boolean(partner.isPreferredDefault),
+      sendInvite: false,
     })
     setError('')
     setMessage('')
@@ -2467,12 +2515,60 @@ export default function PartnersPage() {
       setThirdPartySaving(true)
       setError('')
       setMessage('')
+      const isCreating = !editingThirdPartyId
+      const inviteEmail = normalizeLower(thirdPartyForm.email)
+      const shouldSendInvite = Boolean(isCreating && inviteEmail && thirdPartyForm.sendInvite !== false)
       await saveOrganisationPreferredPartner({
         id: editingThirdPartyId || undefined,
         ...thirdPartyForm,
       })
+      let inviteWarning = ''
+      if (shouldSendInvite) {
+        const scope = selectedInviteScope?.requiresTarget
+          ? allowedScopes.find((item) => !item.requiresTarget) || selectedInviteScope
+          : selectedInviteScope
+        try {
+          await createPartnerInvitation({
+            organisationId,
+            organisationName: organisation?.name,
+            recipientEmail: inviteEmail,
+            recipientOrganisationName: thirdPartyForm.companyName,
+            toWorkspaceType: getThirdPartyInviteWorkspaceType(thirdPartyForm.partnerType),
+            relationshipType: thirdPartyForm.isPreferredDefault ? 'preferred' : 'approved',
+            userId: profile?.id || '',
+            workspaceType: resolvedWorkspaceType,
+            scopeType: scope?.scopeType || 'organisation',
+            scopeId: scope?.scopeId || organisationId,
+            scopeName: scope?.label || 'Organisation-wide',
+            preferred: Boolean(thirdPartyForm.isPreferredDefault),
+          })
+          await recordWorkspaceAuditEvent('partner_invite_sent', {
+            userId: profile?.id || '',
+            workspaceId: organisationId,
+            metadata: {
+              recipientEmail: inviteEmail,
+              recipientOrganisationName: thirdPartyForm.companyName,
+              source: 'third_party_directory',
+            },
+          })
+        } catch (inviteError) {
+          inviteWarning = inviteError?.message || 'The invitation could not be sent.'
+        }
+      }
       await loadThirdPartyDirectory()
-      setMessage(editingThirdPartyId ? 'Third party updated.' : 'Third party added.')
+      if (shouldSendInvite) {
+        await loadSnapshot()
+      }
+      setMessage(
+        editingThirdPartyId
+          ? 'Third party updated.'
+          : shouldSendInvite && !inviteWarning
+            ? 'Third party added and invite sent.'
+            : 'Third party added.',
+      )
+      if (inviteWarning) {
+        setError(`Third party saved, but the invite could not be sent. ${inviteWarning}`)
+      }
       closeThirdPartyModal()
     } catch (saveError) {
       setError(saveError?.message || 'Unable to save third party.')
@@ -2763,6 +2859,92 @@ export default function PartnersPage() {
       await loadSnapshot()
     } catch (declineError) {
       setError(declineError?.message || 'Unable to decline partner invitation.')
+    }
+  }
+
+  async function handleResendInvitation(invitation) {
+    if (!invitation?.id || invitationAction.id) return
+    try {
+      setError('')
+      setMessage('')
+      setInvitationAction({ id: invitation.id, type: 'resend' })
+      await resendPartnerInvitation({
+        invitationId: invitation.id,
+        organisationId,
+        workspaceType: resolvedWorkspaceType,
+      })
+      await recordWorkspaceAuditEvent('partner_invite_resent', {
+        userId: profile?.id || '',
+        workspaceId: organisationId,
+        targetType: 'partner_invitation',
+        targetId: invitation.id,
+        metadata: { recipientEmail: invitation.invitedEmail || invitation.recipientContactEmail || '' },
+      })
+      setMessage('Partner invitation resent.')
+      await loadSnapshot()
+    } catch (resendError) {
+      setError(resendError?.message || 'Unable to resend partner invitation.')
+    } finally {
+      setInvitationAction({ id: '', type: '' })
+    }
+  }
+
+  async function handleRevokeInvitation(invitation) {
+    if (!invitation?.id || invitationAction.id) return
+    if (typeof window !== 'undefined' && !window.confirm(`Revoke the invitation for ${invitationPartnerName(invitation, organisationId)}? The recipient will no longer be able to accept it.`)) {
+      return
+    }
+    try {
+      setError('')
+      setMessage('')
+      setInvitationAction({ id: invitation.id, type: 'revoke' })
+      await revokePartnerInvitation({
+        invitationId: invitation.id,
+        organisationId,
+        userId: profile?.id || '',
+        workspaceType: resolvedWorkspaceType,
+      })
+      await recordWorkspaceAuditEvent('partner_invite_revoked', {
+        userId: profile?.id || '',
+        workspaceId: organisationId,
+        targetType: 'partner_invitation',
+        targetId: invitation.id,
+      })
+      setMessage('Partner invitation revoked.')
+      await loadSnapshot()
+    } catch (revokeError) {
+      setError(revokeError?.message || 'Unable to revoke partner invitation.')
+    } finally {
+      setInvitationAction({ id: '', type: '' })
+    }
+  }
+
+  async function handleDeleteInvitation(invitation) {
+    if (!invitation?.id || invitationAction.id) return
+    if (typeof window !== 'undefined' && !window.confirm(`Delete the invitation for ${invitationPartnerName(invitation, organisationId)}? This removes it from your invite history.`)) {
+      return
+    }
+    try {
+      setError('')
+      setMessage('')
+      setInvitationAction({ id: invitation.id, type: 'delete' })
+      await deletePartnerInvitation({
+        invitationId: invitation.id,
+        organisationId,
+        workspaceType: resolvedWorkspaceType,
+      })
+      await recordWorkspaceAuditEvent('partner_invite_deleted', {
+        userId: profile?.id || '',
+        workspaceId: organisationId,
+        targetType: 'partner_invitation',
+        targetId: invitation.id,
+      })
+      setMessage('Partner invitation deleted.')
+      await loadSnapshot()
+    } catch (deleteError) {
+      setError(deleteError?.message || 'Unable to delete partner invitation.')
+    } finally {
+      setInvitationAction({ id: '', type: '' })
     }
   }
 
@@ -3344,6 +3526,10 @@ export default function PartnersPage() {
                   const status = normalizeLower(invitation.status) || 'pending'
                   const organisationName = invitationPartnerName(invitation, organisationId)
                   const organisationType = invitationPartnerType(invitation, organisationId)
+                  const activeAction = invitationAction.id === invitation.id ? invitationAction.type : ''
+                  const inviteActionBusy = Boolean(invitationAction.id)
+                  const canManageSentInvitation = !isReceived && status === 'pending'
+                  const canDeleteSentInvitation = !isReceived && status !== 'accepted'
                   return (
                     <div
                       key={invitation.id}
@@ -3384,6 +3570,43 @@ export default function PartnersPage() {
                               >
                                 Decline
                               </button>
+                            </div>
+                          ) : null}
+                          {canManageSentInvitation || canDeleteSentInvitation ? (
+                            <div className="flex flex-wrap justify-end gap-2">
+                              {canManageSentInvitation ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleResendInvitation(invitation)}
+                                  disabled={inviteActionBusy}
+                                  className="inline-flex h-9 items-center justify-center gap-2 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-xs font-semibold text-[#35546c] transition hover:bg-[#f8fafc] disabled:opacity-60"
+                                >
+                                  <Send size={13} />
+                                  {activeAction === 'resend' ? 'Resending...' : 'Resend'}
+                                </button>
+                              ) : null}
+                              {canManageSentInvitation ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRevokeInvitation(invitation)}
+                                  disabled={inviteActionBusy}
+                                  className="inline-flex h-9 items-center justify-center gap-2 rounded-[8px] border border-[#f0d4d4] bg-white px-3 text-xs font-semibold text-[#9b2c2c] transition hover:bg-[#fff5f5] disabled:opacity-60"
+                                >
+                                  <XCircle size={13} />
+                                  {activeAction === 'revoke' ? 'Revoking...' : 'Revoke'}
+                                </button>
+                              ) : null}
+                              {canDeleteSentInvitation ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteInvitation(invitation)}
+                                  disabled={inviteActionBusy}
+                                  className="inline-flex h-9 items-center justify-center gap-2 rounded-[8px] border border-[#f0d4d4] bg-white px-3 text-xs font-semibold text-[#9b2c2c] transition hover:bg-[#fff5f5] disabled:opacity-60"
+                                >
+                                  <Trash2 size={13} />
+                                  {activeAction === 'delete' ? 'Deleting...' : 'Delete'}
+                                </button>
+                              ) : null}
                             </div>
                           ) : null}
                         </div>

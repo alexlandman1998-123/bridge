@@ -1135,7 +1135,7 @@ function LegacyPipeline() {
 
       if (!normalizedCommissionSnapshot?.commissionStructureId || normalizedCommissionSnapshot?.isFallback) {
         setConvertWarning(
-          'Deal created with a fallback commission split. Assign a commission structure to this agent in Settings → Commission Structures for strict payout governance.',
+          'Deal created with a fallback commission split. Assign a commission level to this agent in Settings → Commission for strict payout governance.',
         )
       }
 

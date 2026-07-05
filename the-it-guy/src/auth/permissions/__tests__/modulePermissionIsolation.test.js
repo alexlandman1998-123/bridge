@@ -51,7 +51,7 @@ try {
   assert.equal(can(PERMISSIONS.viewLeads, agencyContext), true)
   assert.equal(can(PERMISSIONS.viewSalesPipeline, agencyContext), false)
 
-  for (const workspaceRole of ['agent', 'agency_agent', 'estate agent', 'property_practitioner', 'broker', 'consultant']) {
+  for (const workspaceRole of ['agent', 'agency_agent', 'estate agent', 'property_practitioner', 'broker', 'consultant', 'senior_agent']) {
     const agentContext = context({ appRole: 'agent', workspaceType: 'agency', workspaceRole })
     const agentKeys = visibleKeys(filterNavigationItems(getRoleNavItems('agent'), agentContext))
     assert.equal(agentKeys.includes('agency_pipeline'), true, `${workspaceRole} should see agency pipeline navigation`)
@@ -60,6 +60,11 @@ try {
     assert.equal(evaluateAccessRequirement(getRouteAccessRequirement('/pipeline/leads'), agentContext).ok, true, `${workspaceRole} should access residential leads`)
     assert.equal(evaluateAccessRequirement(getRouteAccessRequirement('/pipeline/canvassing'), agentContext).ok, true, `${workspaceRole} should access residential canvassing`)
   }
+
+  const agencyTeamLeadContext = context({ appRole: 'agent', workspaceType: 'agency', workspaceRole: 'team_lead' })
+  assert.equal(can(PERMISSIONS.viewAgencyDashboard, agencyTeamLeadContext), true, 'agency team lead should view dashboard after invite acceptance')
+  assert.equal(can(PERMISSIONS.viewLeads, agencyTeamLeadContext), true, 'agency team lead should view residential leads')
+  assert.equal(can(PERMISSIONS.assignLeads, agencyTeamLeadContext), true, 'agency team lead should assign leads')
 
   const developerContext = context({ appRole: 'developer', workspaceType: 'developer_company', workspaceRole: 'owner' })
   const developerKeys = visibleKeys(filterNavigationItems(getRoleNavItems('developer'), developerContext))

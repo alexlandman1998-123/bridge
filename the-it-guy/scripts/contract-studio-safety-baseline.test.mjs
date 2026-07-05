@@ -225,8 +225,8 @@ assert.match(
 )
 assert.match(
   studioUi,
-  /<span>More options<\/span>[\s\S]*Preview[\s\S]*saveDraftLabel/,
-  'Phase 5 should tuck preview and draft-only actions into More options.',
+  /<span>Advanced preview data<\/span>[\s\S]*Test linked record[\s\S]*saveDraftLabel/,
+  'Phase 5 should tuck linked-record testing and draft-only actions into Advanced preview data.',
 )
 assert.doesNotMatch(
   studioUi,

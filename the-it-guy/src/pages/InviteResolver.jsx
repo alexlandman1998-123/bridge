@@ -222,13 +222,15 @@ function clearPendingInviteAutoAccept() {
 function shouldAutoAcceptInvite(token = '') {
   if (typeof window === 'undefined') return false
   const safeToken = normalizeText(token)
-  return Boolean(safeToken && window.sessionStorage.getItem(PENDING_INVITE_AUTO_ACCEPT_STORAGE_KEY) === safeToken)
+  const search = new URLSearchParams(window.location.search)
+  const queryAccept = search.get('accept') === '1' || search.get('auto_accept') === '1'
+  return Boolean(safeToken && (queryAccept || window.sessionStorage.getItem(PENDING_INVITE_AUTO_ACCEPT_STORAGE_KEY) === safeToken))
 }
 
-function getAuthInvitePath({ token = '', email = '', mode = '', moduleContext = '', role = '' } = {}) {
+function getAuthInvitePath({ token = '', email = '', mode = '', moduleContext = '', role = '', autoAccept = false } = {}) {
   const safeToken = normalizeText(token)
   const params = new URLSearchParams()
-  params.set('next', `/invite/${safeToken}`)
+  params.set('next', `/invite/${safeToken}${autoAccept ? '?accept=1' : ''}`)
   const safeEmail = normalizeText(email).toLowerCase()
   if (safeEmail) params.set('email', safeEmail)
   if (mode) params.set('mode', mode)
@@ -492,6 +494,7 @@ export default function InviteResolver() {
         mode: 'signup',
         moduleContext: getInviteModuleContext(invite),
         role: getInviteRole(invite),
+        autoAccept: true,
       }))
       return
     }

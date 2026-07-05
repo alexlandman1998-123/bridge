@@ -2244,6 +2244,7 @@ function PrincipalPremiumCommandCenter({ data, mode = 'sales', profile, dateRang
       includeAllAppointments
       canManageAppointments
       appointmentRefreshKey={`${data?.meta?.agencyId || ''}:${dateRange}:${mode}:${branchId}`}
+      commissionTracker={data?.companyCommissionTracker || data?.revenue?.companyCommissionTracker || null}
       onViewTransactions={onViewTransactions}
       onOpenTransaction={onOpenTransaction}
       onViewCalendar={onViewCalendar}

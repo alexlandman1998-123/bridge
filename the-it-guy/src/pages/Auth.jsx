@@ -99,9 +99,25 @@ function getStoredPendingInviteToken() {
 }
 
 function resolvePendingInvitePath(location = null) {
+  const nextPath = location ? new URLSearchParams(location.search).get('next') : ''
+  if (typeof nextPath === 'string' && nextPath.startsWith('/invite/')) {
+    return nextPath
+  }
   const pendingInviteToken = location ? getInviteTokenFromNextPath(location) || getStoredPendingInviteToken() : getStoredPendingInviteToken()
   if (!pendingInviteToken) return ''
   return `/invite/${pendingInviteToken}`
+}
+
+function ensureInviteAutoAcceptPath(path = '') {
+  const safePath = String(path || '').trim()
+  if (!safePath.startsWith('/invite/')) return safePath
+  try {
+    const url = new URL(safePath, 'https://arch9.local')
+    url.searchParams.set('accept', '1')
+    return `${url.pathname}${url.search}${url.hash}`
+  } catch {
+    return safePath.includes('?') ? `${safePath}&accept=1` : `${safePath}?accept=1`
+  }
 }
 
 async function resolveFounderLoginTarget(fallbackTarget = '/dashboard') {
@@ -482,8 +498,13 @@ function Auth({ onDevBypass = null }) {
       setLoading(true)
       setError('')
       setMessage('')
+      const inviteVerificationRedirectTo = ensureInviteAutoAcceptPath(resolvePendingInvitePath(location) || redirectTo)
       const emailRedirectTo = resolveEmailVerificationRedirectTo(
-        mode === 'signup' && currentIntent ? resolveSignupIntentRoute(currentIntent) : '/setup',
+        mode === 'signup' && inviteDrivenSignup
+          ? inviteVerificationRedirectTo
+          : mode === 'signup' && currentIntent
+            ? resolveSignupIntentRoute(currentIntent)
+            : '/setup',
       )
 
       if (mode === 'login') {

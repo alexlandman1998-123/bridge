@@ -1,17 +1,31 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
+import {
+  AgentSplitLevelsCard,
+  CommissionHelperNote,
+  CommissionOverviewCards,
+  CompanyTargetTracker,
+  ListingCommissionTable,
+  ReferralRulesCard,
+  formatCommissionPercent,
+} from '../../components/commission/CommissionWidgets'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { canManageOrganisationSettings, getWorkspaceAdministratorLabel, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import {
-  assignOrganisationUserCommissionProfile,
   fetchOrganisationSettings,
-  listOrganisationCommissionStructures,
-  listOrganisationUserCommissionProfiles,
-  listOrganisationUsers,
   removeOrganisationCommissionStructure,
   saveOrganisationCommissionStructure,
 } from '../../lib/settingsApi'
+import {
+  assignUserCommissionLevel,
+  createCommissionLevel,
+  getCommissionAssignableUsers,
+  getCommissionOverview,
+  updateCommissionLevel,
+  updateCommissionTarget,
+  updateReferralCommissionRule,
+} from '../../services/commissionService'
 import {
   SettingsBanner,
   SettingsEmptyState,
@@ -26,20 +40,13 @@ import {
   settingsTableClass,
 } from './settingsUi'
 
-function createStructureDraft() {
-  return {
-    name: '',
-    listingCommissionType: 'percentage',
-    listingCommissionPercentage: 7.5,
-    listingCommissionAmount: '',
-    agentSplitPercentage: 70,
-    agencySplitPercentage: 30,
-    allowSalesCommissionOverride: true,
-    isDefault: false,
-    isActive: true,
-    notes: '',
-  }
-}
+const TABS = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'levels', label: 'Commission Levels' },
+  { key: 'targets', label: 'Targets & Trackers' },
+  { key: 'overrides', label: 'Overrides' },
+  { key: 'templates', label: 'Templates' },
+]
 
 function normalizePercentage(value, fallback = 0) {
   const parsed = Number(value)
@@ -47,38 +54,70 @@ function normalizePercentage(value, fallback = 0) {
   return Math.min(100, Math.max(0, Number(parsed.toFixed(2))))
 }
 
-function formatPercent(value) {
-  const numeric = Number(value)
-  if (!Number.isFinite(numeric)) return '0%'
-  return `${numeric.toFixed(2).replace(/\.00$/, '')}%`
-}
-
-function formatMoney(value) {
-  const numeric = Number(value)
-  if (!Number.isFinite(numeric)) return 'R0'
-  return new Intl.NumberFormat('en-ZA', {
-    style: 'currency',
-    currency: 'ZAR',
-    maximumFractionDigits: 0,
-  }).format(numeric)
-}
-
-function getListingCommissionLabel(structure = {}) {
-  if (structure.listingCommissionType === 'fixed') {
-    return `Fixed listing commission ${formatMoney(structure.listingCommissionAmount || 0)}`
+function createLevelDraft(level = {}) {
+  const agentPercentage = normalizePercentage(level.agentPercentage, 60)
+  return {
+    id: level.id || '',
+    name: level.name || '',
+    agentPercentage,
+    monthlyTarget: level.monthlyTarget ?? '',
+    annualTarget: level.annualTarget ?? '',
+    isDefault: Boolean(level.isDefault),
+    isActive: level.isActive !== false,
   }
-  return `Listing commission ${formatPercent(structure.listingCommissionPercentage || 0)}`
+}
+
+function createStructureDraft(structure = {}) {
+  return {
+    id: structure.id || '',
+    name: structure.name || '',
+    listingCommissionType: structure.listingCommissionType || 'percentage',
+    listingCommissionPercentage: structure.listingCommissionPercentage ?? 7.5,
+    listingCommissionAmount: structure.listingCommissionAmount ?? '',
+    agentSplitPercentage: structure.agentSplitPercentage ?? 60,
+    allowSalesCommissionOverride: structure.allowSalesCommissionOverride !== false,
+    isDefault: Boolean(structure.isDefault),
+    isActive: structure.isActive !== false,
+    notes: structure.notes || '',
+  }
+}
+
+function createReferralDraft(rule = {}) {
+  return {
+    id: rule.id || '',
+    name: rule.name || '',
+    referralType: rule.referralType || 'custom',
+    percentage: rule.percentage ?? 0,
+    basis: rule.basis || 'gross_commission',
+    isDefault: Boolean(rule.isDefault),
+    isActive: rule.isActive !== false,
+  }
+}
+
+function formatRole(value = '') {
+  return String(value || 'viewer').replaceAll('_', ' ')
 }
 
 function isAgentLikeRole(role) {
-  const value = String(role || '').trim().toLowerCase()
-  return ['agent', 'branch_manager', 'admin', 'principal', 'super_admin'].includes(value)
+  return ['agent', 'branch_manager', 'admin', 'principal', 'super_admin'].includes(String(role || '').trim().toLowerCase())
 }
 
 export default function SettingsCommissionStructuresPage() {
   const { role, currentWorkspace, workspaceType } = useWorkspace()
   const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
   const [membershipRole, setMembershipRole] = useState('viewer')
+  const [activeTab, setActiveTab] = useState('overview')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [overview, setOverview] = useState(null)
+  const [assignmentData, setAssignmentData] = useState({ users: [], levels: [], profiles: [] })
+  const [levelDraft, setLevelDraft] = useState(createLevelDraft())
+  const [structureDraft, setStructureDraft] = useState(createStructureDraft())
+  const [referralDraft, setReferralDraft] = useState(createReferralDraft())
+  const [targetDraft, setTargetDraft] = useState({ targetAmount: 500000, startMonth: new Date().toISOString().slice(0, 7) + '-01' })
+
   const administratorLabel = getWorkspaceAdministratorLabel({ appRole: role, workspaceType: resolvedWorkspaceType })
   const canEdit = canManageOrganisationSettings({
     appRole: role,
@@ -86,51 +125,44 @@ export default function SettingsCommissionStructuresPage() {
     workspaceType: resolvedWorkspaceType,
   })
 
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
-  const [editingId, setEditingId] = useState('')
-  const [structures, setStructures] = useState([])
-  const [users, setUsers] = useState([])
-  const [profiles, setProfiles] = useState([])
-  const [draft, setDraft] = useState(createStructureDraft())
-
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
       setError('')
       const context = await fetchOrganisationSettings()
-      const nextMembershipRole = context?.membershipRole || 'viewer'
-      const canManageCommissionSettings = canManageOrganisationSettings({
+      const nextMembershipRole = normalizeOrganisationMembershipRole(context?.membershipRole || 'viewer', {
         appRole: role,
-        membershipRole: normalizeOrganisationMembershipRole(nextMembershipRole, {
-          appRole: role,
-          workspaceType: context?.organisation?.type || resolvedWorkspaceType,
-        }),
         workspaceType: context?.organisation?.type || resolvedWorkspaceType,
       })
-      setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole || 'viewer', {
+      setMembershipRole(nextMembershipRole)
+      const canManageCommissionSettings = canManageOrganisationSettings({
         appRole: role,
+        membershipRole: nextMembershipRole,
         workspaceType: context?.organisation?.type || resolvedWorkspaceType,
-      }))
+      })
+
       if (!canManageCommissionSettings) {
-        setStructures([])
-        setUsers([])
-        setProfiles([])
+        setOverview(null)
+        setAssignmentData({ users: [], levels: [], profiles: [] })
         return
       }
 
-      const [structureRows, userRows, profileRows] = await Promise.all([
-        listOrganisationCommissionStructures(),
-        listOrganisationUsers(),
-        listOrganisationUserCommissionProfiles(),
+      const [overviewResult, assignableResult] = await Promise.all([
+        getCommissionOverview(),
+        getCommissionAssignableUsers(),
       ])
-      setStructures(Array.isArray(structureRows) ? structureRows : [])
-      setUsers(Array.isArray(userRows) ? userRows : [])
-      setProfiles(Array.isArray(profileRows) ? profileRows : [])
+      setOverview(overviewResult)
+      setAssignmentData(assignableResult)
+      setTargetDraft({
+        targetAmount: overviewResult.companyTracker?.targetAmount || 500000,
+        startMonth: new Date().toISOString().slice(0, 7) + '-01',
+      })
+      const firstReferral = overviewResult.referralRules?.[0]
+      if (firstReferral) setReferralDraft(createReferralDraft(firstReferral))
+      setLevelDraft(createLevelDraft())
+      setStructureDraft(createStructureDraft())
     } catch (loadError) {
-      setError(loadError.message || 'Unable to load commission structures.')
+      setError(loadError.message || 'Unable to load commission settings.')
     } finally {
       setLoading(false)
     }
@@ -140,152 +172,200 @@ export default function SettingsCommissionStructuresPage() {
     void loadData()
   }, [loadData])
 
-  const structureMap = useMemo(
-    () => new Map(structures.map((item) => [String(item.id || ''), item])),
-    [structures],
-  )
-  const defaultStructure = useMemo(
-    () => structures.find((item) => item.isDefault && item.isActive) || null,
-    [structures],
-  )
+  const levels = overview?.levels || []
+  const structures = overview?.structures || []
+  const referralRules = overview?.referralRules || []
+
   const profileByUserKey = useMemo(() => {
     const map = new Map()
-    for (const profile of profiles) {
-      const organisationUserId = String(profile?.organisationUserId || '').trim()
-      const userId = String(profile?.userId || '').trim()
-      const email = String(profile?.email || '').trim().toLowerCase()
+    for (const profile of assignmentData.profiles || []) {
+      const organisationUserId = String(profile?.organisation_user_id || profile?.organisationUserId || '').trim()
+      const userId = String(profile?.user_id || profile?.userId || '').trim()
+      const email = String(profile?.email_address || profile?.email || '').trim().toLowerCase()
       if (organisationUserId) map.set(`org-user:${organisationUserId}`, profile)
       if (userId) map.set(`user:${userId}`, profile)
       if (email) map.set(`email:${email}`, profile)
     }
     return map
-  }, [profiles])
+  }, [assignmentData.profiles])
 
-  const commissionAssignableUsers = useMemo(
-    () =>
-      users.filter((user) => user?.status !== 'deactivated').filter((user) => isAgentLikeRole(user?.role)),
-    [users],
+  const assignableUsers = useMemo(
+    () => (assignmentData.users || []).filter((user) => isAgentLikeRole(user.role)),
+    [assignmentData.users],
   )
 
-  function updateDraft(key, value) {
-    setDraft((previous) => ({ ...previous, [key]: value }))
+  function updateLevelDraft(key, value) {
+    setLevelDraft((previous) => ({ ...previous, [key]: value }))
   }
 
-  function updateAgentSplit(value) {
-    const agentSplit = normalizePercentage(value, 0)
-    setDraft((previous) => ({
-      ...previous,
-      agentSplitPercentage: agentSplit,
-      agencySplitPercentage: normalizePercentage(100 - agentSplit, 0),
-    }))
+  function updateStructureDraft(key, value) {
+    setStructureDraft((previous) => ({ ...previous, [key]: value }))
   }
 
-  function startEdit(structure) {
-    setEditingId(structure.id)
-    setDraft({
-      name: structure.name || '',
-      listingCommissionType: structure.listingCommissionType || 'percentage',
-      listingCommissionPercentage: normalizePercentage(structure.listingCommissionPercentage, 7.5),
-      listingCommissionAmount: structure.listingCommissionAmount || '',
-      agentSplitPercentage: normalizePercentage(structure.agentSplitPercentage, 70),
-      agencySplitPercentage: normalizePercentage(structure.agencySplitPercentage, 30),
-      allowSalesCommissionOverride: structure.allowSalesCommissionOverride !== false,
-      isDefault: Boolean(structure.isDefault),
-      isActive: Boolean(structure.isActive),
-      notes: structure.notes || '',
-    })
+  function updateReferralDraft(key, value) {
+    setReferralDraft((previous) => ({ ...previous, [key]: value }))
   }
 
-  function resetForm() {
-    setEditingId('')
-    setDraft(createStructureDraft())
-  }
-
-  async function handleSave(event) {
+  async function saveLevel(event) {
     event.preventDefault()
     if (!canEdit) return
-
-    const name = String(draft.name || '').trim()
+    const name = String(levelDraft.name || '').trim()
     if (!name) {
-      setError('Structure name is required.')
+      setError('Level name is required.')
       return
     }
-
     try {
       setSaving(true)
       setError('')
       setMessage('')
-      await saveOrganisationCommissionStructure({
-        id: editingId || undefined,
+      const agentPercentage = normalizePercentage(levelDraft.agentPercentage, 60)
+      const payload = {
+        ...levelDraft,
         name,
-        listingCommissionType: draft.listingCommissionType || 'percentage',
-        listingCommissionPercentage: normalizePercentage(draft.listingCommissionPercentage, 0),
-        listingCommissionAmount: draft.listingCommissionType === 'fixed' ? Number(draft.listingCommissionAmount || 0) : null,
-        agentSplitPercentage: normalizePercentage(draft.agentSplitPercentage, 0),
-        agencySplitPercentage: normalizePercentage(100 - normalizePercentage(draft.agentSplitPercentage, 0), 0),
-        allowSalesCommissionOverride: Boolean(draft.allowSalesCommissionOverride),
-        isDefault: Boolean(draft.isDefault),
-        isActive: Boolean(draft.isActive),
-        notes: String(draft.notes || '').trim(),
-      })
+        agentPercentage,
+        agencyPercentage: normalizePercentage(100 - agentPercentage, 40),
+        monthlyTarget: levelDraft.monthlyTarget === '' ? null : Number(levelDraft.monthlyTarget),
+        annualTarget: levelDraft.annualTarget === '' ? null : Number(levelDraft.annualTarget),
+      }
+      if (levelDraft.id) await updateCommissionLevel(payload)
+      else await createCommissionLevel(payload)
+      setMessage(levelDraft.id ? 'Commission level updated.' : 'Commission level created.')
+      setLevelDraft(createLevelDraft())
       await loadData()
-      setMessage(editingId ? 'Commission structure updated.' : 'Commission structure created.')
-      resetForm()
     } catch (saveError) {
-      setError(saveError.message || 'Unable to save commission structure.')
+      setError(saveError.message || 'Unable to save commission level.')
     } finally {
       setSaving(false)
     }
   }
 
-  async function handleRemove(structure) {
+  async function saveReferral(event) {
+    event.preventDefault()
     if (!canEdit) return
     try {
+      setSaving(true)
+      setError('')
+      setMessage('')
+      await updateReferralCommissionRule({
+        ...referralDraft,
+        percentage: normalizePercentage(referralDraft.percentage, 0),
+      })
+      setMessage('Referral rule updated.')
+      await loadData()
+      setActiveTab('overview')
+    } catch (saveError) {
+      setError(saveError.message || 'Unable to save referral rule.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function saveCompanyTarget(event) {
+    event.preventDefault()
+    if (!canEdit) return
+    try {
+      setSaving(true)
+      setError('')
+      setMessage('')
+      await updateCommissionTarget({
+        targetType: 'company',
+        targetAmount: Number(targetDraft.targetAmount || 0),
+        startMonth: targetDraft.startMonth || new Date().toISOString().slice(0, 7) + '-01',
+      })
+      setMessage('Company commission target updated.')
+      await loadData()
+    } catch (saveError) {
+      setError(saveError.message || 'Unable to save company target.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function saveStructure(event) {
+    event.preventDefault()
+    if (!canEdit) return
+    const name = String(structureDraft.name || '').trim()
+    if (!name) {
+      setError('Template name is required.')
+      return
+    }
+    try {
+      setSaving(true)
+      setError('')
+      setMessage('')
+      const agentSplitPercentage = normalizePercentage(structureDraft.agentSplitPercentage, 60)
+      await saveOrganisationCommissionStructure({
+        id: structureDraft.id || undefined,
+        name,
+        listingCommissionType: structureDraft.listingCommissionType,
+        listingCommissionPercentage: normalizePercentage(structureDraft.listingCommissionPercentage, 7.5),
+        listingCommissionAmount: structureDraft.listingCommissionType === 'fixed' ? Number(structureDraft.listingCommissionAmount || 0) : null,
+        agentSplitPercentage,
+        agencySplitPercentage: normalizePercentage(100 - agentSplitPercentage, 40),
+        allowSalesCommissionOverride: Boolean(structureDraft.allowSalesCommissionOverride),
+        isDefault: Boolean(structureDraft.isDefault),
+        isActive: Boolean(structureDraft.isActive),
+        notes: String(structureDraft.notes || '').trim(),
+      })
+      setMessage(structureDraft.id ? 'Commission template updated.' : 'Commission template created.')
+      setStructureDraft(createStructureDraft())
+      await loadData()
+    } catch (saveError) {
+      setError(saveError.message || 'Unable to save commission template.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function removeStructure(structure) {
+    if (!canEdit) return
+    try {
+      setSaving(true)
       setError('')
       setMessage('')
       await removeOrganisationCommissionStructure(structure.id)
-      if (String(editingId) === String(structure.id)) {
-        resetForm()
-      }
+      setMessage('Commission template removed.')
       await loadData()
-      setMessage('Commission structure removed.')
     } catch (removeError) {
-      setError(removeError.message || 'Unable to remove commission structure.')
+      setError(removeError.message || 'Unable to remove commission template.')
+    } finally {
+      setSaving(false)
     }
   }
 
-  async function handleAssign(user, structureId) {
+  async function assignLevel(user, commissionLevelId) {
     if (!canEdit) return
     try {
+      setSaving(true)
       setError('')
       setMessage('')
-      await assignOrganisationUserCommissionProfile({
+      await assignUserCommissionLevel({
         organisationUserId: user.id || '',
-        userId: user.userId || '',
+        userId: user.userId || user.user_id || '',
         email: user.email || '',
-        commissionStructureId: structureId || '',
+        commissionLevelId,
       })
+      setMessage('Agent commission level saved.')
       await loadData()
-      setMessage('Agent commission assignment saved.')
     } catch (assignError) {
-      setError(assignError.message || 'Unable to assign commission structure.')
+      setError(assignError.message || 'Unable to assign commission level.')
+    } finally {
+      setSaving(false)
     }
   }
 
-  if (loading) {
-    return <SettingsLoadingState label="Loading commission structures…" />
-  }
+  if (loading) return <SettingsLoadingState label="Loading commission workspace..." />
 
   if (!canEdit) {
     return (
       <div className={settingsPageClass}>
         <SettingsPageHeader
-          kicker="Commission Structures"
-          title="Agency commission governance"
+          kicker="Commission"
+          title="Commission"
           description={`This area is restricted to ${administratorLabel}.`}
         />
         <SettingsBanner tone="warning">
-          Access restricted. Only {administratorLabel} can view and manage commission structures.
+          Access restricted. Only {administratorLabel} can view and manage commission settings.
         </SettingsBanner>
       </div>
     )
@@ -294,282 +374,328 @@ export default function SettingsCommissionStructuresPage() {
   return (
     <div className={settingsPageClass}>
       <SettingsPageHeader
-        kicker="Commission Structures"
-        title="Agency commission governance"
-        description="Keep listing mandate commission terms separate from sales payout splits, then assign the right sales structure by user."
+        kicker="Commission"
+        title="Commission"
+        description="Manage how your agency earns, splits, refers, and tracks commission."
       />
 
-      <SettingsSectionCard title="Structure Directory" description="Create reusable listing defaults and sales split templates, then set a default for new members.">
-        {!structures.length ? (
-          <SettingsEmptyState
-            title="No commission structures yet"
-            description="Create your first split model to standardise agent and agency commission calculations."
-          />
-        ) : (
-          <div className="grid gap-4 lg:grid-cols-2">
-            {structures.map((structure) => (
-              <article key={structure.id} className="rounded-[16px] border border-[#e3eaf3] bg-[#fbfdff] p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-base font-semibold text-[#162334]">{structure.name}</p>
-                    <p className="mt-1 text-sm text-[#60748b]">
-                      {getListingCommissionLabel(structure)}
-                    </p>
-                    <p className="mt-1 text-sm text-[#60748b]">
-                      Sales split: Agent {formatPercent(structure.agentSplitPercentage)} • Agency {formatPercent(structure.agencySplitPercentage)}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span
-                      className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] ${
-                        structure.isActive
-                          ? 'border-[#cce8d6] bg-[#f1fbf4] text-[#1f7a45]'
-                          : 'border-[#f0d4d4] bg-[#fff5f5] text-[#a23b3b]'
-                      }`}
-                    >
-                      {structure.isActive ? 'Active' : 'Inactive'}
-                    </span>
-                    {structure.isDefault ? (
-                      <span className="inline-flex rounded-full border border-[#d8e6f7] bg-[#eef5ff] px-2.5 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#2b5f93]">
-                        Default
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-                <p className="mt-3 text-sm text-[#5f748c]">
-                  Assigned agents: <span className="font-semibold text-[#233247]">{structure.assignedAgentsCount || 0}</span>
-                </p>
-                <p className="mt-1 text-sm text-[#5f748c]">
-                  Sales override: <span className="font-semibold text-[#233247]">{structure.allowSalesCommissionOverride === false ? 'Locked to structure' : 'Agent editable at sale capture'}</span>
-                </p>
-                {structure.notes ? <p className="mt-1 text-sm text-[#5f748c]">{structure.notes}</p> : null}
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {canEdit ? (
-                    <Button type="button" variant="ghost" onClick={() => startEdit(structure)}>
-                      Edit
-                    </Button>
-                  ) : null}
-                  {canEdit ? (
-                    <Button type="button" variant="ghost" onClick={() => handleRemove(structure)}>
-                      Remove
-                    </Button>
-                  ) : null}
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </SettingsSectionCard>
+      <div className="overflow-x-auto border-b border-[#dfe7f0]">
+        <div className="flex min-w-max gap-6">
+          {TABS.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              className={`border-b-2 px-0 py-3 text-sm font-semibold transition ${
+                activeTab === tab.key
+                  ? 'border-[#0f7f4f] text-[#0f7f4f]'
+                  : 'border-transparent text-[#52657a] hover:text-[#162334]'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
-      <SettingsSectionCard
-        title={editingId ? 'Edit Commission Structure' : 'Add Commission Structure'}
-        description="Listing commission controls mandate/default gross commission. Sales commission controls the agent/agency payout split on accepted offers."
-      >
-        <form className={settingsGridClass} onSubmit={handleSave}>
-          <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
-            <span className="text-sm font-medium text-[#51657b]">Structure name</span>
-            <Field value={draft.name} disabled={!canEdit} onChange={(event) => updateDraft('name', event.target.value)} placeholder="Standard Agent 60/40" />
-          </label>
-          <div className={`${settingsFieldSpanClass} rounded-[12px] border border-[#e3eaf3] bg-[#fbfdff] p-4`}>
-            <div className="mb-3">
-              <h4 className="text-sm font-semibold text-[#162334]">Listing Commission</h4>
-              <p className="mt-1 text-sm text-[#60748b]">Default gross commission terms used for mandates/listings before a sale is captured.</p>
+      {activeTab === 'overview' ? (
+        <div className="space-y-5">
+          <CommissionOverviewCards overview={overview || {}} onSelectTab={setActiveTab} />
+          <CommissionHelperNote />
+          <ListingCommissionTable rows={overview?.listingRows || []} onEdit={() => setActiveTab('templates')} />
+          <div className="grid gap-5 xl:grid-cols-2">
+            <AgentSplitLevelsCard levels={levels} onEdit={(level) => {
+              setLevelDraft(createLevelDraft(level))
+              setActiveTab('levels')
+            }} />
+            <ReferralRulesCard rules={referralRules} onEdit={(rule) => {
+              setReferralDraft(createReferralDraft(rule))
+              setActiveTab('overrides')
+            }} />
+          </div>
+          <CompanyTargetTracker tracker={overview?.companyTracker || {}} onEdit={() => setActiveTab('targets')} />
+          <details className="rounded-[14px] border border-[#dfe7f0] bg-white px-4 py-3">
+            <summary className="cursor-pointer text-sm font-semibold text-[#162334]">Advanced Settings</summary>
+            <p className="mt-2 text-sm leading-6 text-[#667085]">
+              Overrides, custom structures, VAT notes, and reconciliation-specific controls stay intentionally collapsed for this MVP.
+            </p>
+          </details>
+        </div>
+      ) : null}
+
+      {activeTab === 'levels' ? (
+        <div className="space-y-5">
+          <AgentSplitLevelsCard
+            levels={levels}
+            onEdit={(level) => setLevelDraft(createLevelDraft(level))}
+            onAdd={() => setLevelDraft(createLevelDraft())}
+          />
+          <SettingsSectionCard
+            title={levelDraft.id ? 'Edit Commission Level' : 'Add Commission Level'}
+            description="Set agent/agency split percentages and optional personal targets for this level."
+          >
+            <form className={settingsGridClass} onSubmit={saveLevel}>
+              <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
+                <span className="text-sm font-medium text-[#51657b]">Level name</span>
+                <Field value={levelDraft.name} onChange={(event) => updateLevelDraft('name', event.target.value)} placeholder="Standard" />
+              </label>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Agent percentage</span>
+                <Field type="number" min="0" max="100" step="0.01" value={levelDraft.agentPercentage} onChange={(event) => updateLevelDraft('agentPercentage', event.target.value)} />
+              </label>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Agency percentage</span>
+                <Field value={normalizePercentage(100 - normalizePercentage(levelDraft.agentPercentage, 60), 40)} disabled />
+              </label>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Monthly target</span>
+                <Field type="number" min="0" step="1000" value={levelDraft.monthlyTarget} onChange={(event) => updateLevelDraft('monthlyTarget', event.target.value)} placeholder="Optional" />
+              </label>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Annual target</span>
+                <Field type="number" min="0" step="1000" value={levelDraft.annualTarget} onChange={(event) => updateLevelDraft('annualTarget', event.target.value)} placeholder="Optional" />
+              </label>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Default level</span>
+                <Field as="select" value={levelDraft.isDefault ? 'yes' : 'no'} onChange={(event) => updateLevelDraft('isDefault', event.target.value === 'yes')}>
+                  <option value="no">No</option>
+                  <option value="yes">Yes</option>
+                </Field>
+              </label>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Status</span>
+                <Field as="select" value={levelDraft.isActive ? 'active' : 'inactive'} onChange={(event) => updateLevelDraft('isActive', event.target.value === 'active')}>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </Field>
+              </label>
+              <div className={`${settingsActionRowClass} md:col-span-2`}>
+                {levelDraft.id ? (
+                  <Button type="button" variant="ghost" onClick={() => setLevelDraft(createLevelDraft())}>
+                    Cancel Edit
+                  </Button>
+                ) : null}
+                <Button type="submit" disabled={saving}>{saving ? 'Saving...' : levelDraft.id ? 'Update Level' : 'Create Level'}</Button>
+              </div>
+            </form>
+          </SettingsSectionCard>
+        </div>
+      ) : null}
+
+      {activeTab === 'targets' ? (
+        <div className="space-y-5">
+          <CompanyTargetTracker tracker={overview?.companyTracker || {}} />
+          <SettingsSectionCard
+            title="Company Monthly Target"
+            description="Set the minimum monthly company commission target for the whole agency."
+          >
+            <form className={settingsGridClass} onSubmit={saveCompanyTarget}>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Monthly company target</span>
+                <Field type="number" min="0" step="1000" value={targetDraft.targetAmount} onChange={(event) => setTargetDraft((previous) => ({ ...previous, targetAmount: event.target.value }))} />
+              </label>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Start month</span>
+                <Field type="date" value={targetDraft.startMonth} onChange={(event) => setTargetDraft((previous) => ({ ...previous, startMonth: event.target.value }))} />
+              </label>
+              <div className={`${settingsActionRowClass} md:col-span-2`}>
+                <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save Target'}</Button>
+              </div>
+            </form>
+          </SettingsSectionCard>
+        </div>
+      ) : null}
+
+      {activeTab === 'overrides' ? (
+        <div className="space-y-5">
+          <SettingsSectionCard title="Agent Commission Level Assignments" description="Assign a split level to each active agent. Agents can view their level and tracker but cannot edit rules.">
+            {!assignableUsers.length ? (
+              <SettingsEmptyState title="No active users yet" description="Invite users first, then assign their commission levels." />
+            ) : (
+              <div className={settingsTableClass}>
+                <div className="hidden grid-cols-[1.1fr_1.2fr_0.8fr_1fr_0.7fr] gap-4 border-b border-[#e4ebf3] bg-[#f4f8fb] px-5 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8da6] lg:grid">
+                  <span>Name</span>
+                  <span>Email</span>
+                  <span>Role</span>
+                  <span>Commission Level</span>
+                  <span>Split</span>
+                </div>
+                <div className="divide-y divide-[#e9eff5]">
+                  {assignableUsers.map((user) => {
+                    const profile =
+                      profileByUserKey.get(`org-user:${String(user.id || '')}`) ||
+                      profileByUserKey.get(`user:${String(user.userId || user.user_id || '')}`) ||
+                      profileByUserKey.get(`email:${String(user.email || '').toLowerCase()}`) ||
+                      null
+                    const assignedLevel = levels.find((level) => String(level.id) === String(profile?.commission_level_id || profile?.commissionLevelId))
+                    const effectiveLevel = assignedLevel || levels.find((level) => level.isDefault) || levels[0]
+                    return (
+                      <div key={user.id || user.email} className="grid gap-3 px-5 py-4 lg:grid-cols-[1.1fr_1.2fr_0.8fr_1fr_0.7fr] lg:items-center lg:gap-4">
+                        <strong className="text-sm text-[#162334]">{user.fullName || user.email}</strong>
+                        <span className="text-sm text-[#51657b]">{user.email}</span>
+                        <span className="text-sm capitalize text-[#51657b]">{formatRole(user.role)}</span>
+                        <Field as="select" value={profile?.commission_level_id || ''} className="py-2.5" disabled={saving} onChange={(event) => assignLevel(user, event.target.value)}>
+                          <option value="">Use default</option>
+                          {levels.filter((level) => level.isActive !== false).map((level) => (
+                            <option key={level.id} value={level.id}>{level.name}</option>
+                          ))}
+                        </Field>
+                        <span className="text-sm font-semibold text-[#162334]">
+                          {formatCommissionPercent(effectiveLevel?.agentPercentage || 60)} / {formatCommissionPercent(effectiveLevel?.agencyPercentage || 40)}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </SettingsSectionCard>
+
+          <SettingsSectionCard title="Referral Rule Editor" description="Keep default referral commission percentages simple and auditable.">
+            <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+              <div className="grid gap-2">
+                {referralRules.map((rule) => (
+                  <button
+                    key={rule.id || rule.referralType}
+                    type="button"
+                    onClick={() => setReferralDraft(createReferralDraft(rule))}
+                    className={`rounded-[12px] border px-3 py-3 text-left text-sm transition ${
+                      referralDraft.referralType === rule.referralType
+                        ? 'border-[#b9d8c6] bg-[#f2fbf5] text-[#0f7f4f]'
+                        : 'border-[#e3ebf4] bg-white text-[#344054] hover:bg-[#fbfdff]'
+                    }`}
+                  >
+                    <span className="font-semibold">{rule.name}</span>
+                    <span className="mt-1 block text-xs">{formatCommissionPercent(rule.percentage)} of {String(rule.basis || '').replaceAll('_', ' ')}</span>
+                  </button>
+                ))}
+              </div>
+              <form className={settingsGridClass} onSubmit={saveReferral}>
+                <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
+                  <span className="text-sm font-medium text-[#51657b]">Rule name</span>
+                  <Field value={referralDraft.name} onChange={(event) => updateReferralDraft('name', event.target.value)} />
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">Referral percentage</span>
+                  <Field type="number" min="0" max="100" step="0.01" value={referralDraft.percentage} onChange={(event) => updateReferralDraft('percentage', event.target.value)} />
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">Basis</span>
+                  <Field as="select" value={referralDraft.basis} onChange={(event) => updateReferralDraft('basis', event.target.value)}>
+                    <option value="gross_commission">Gross commission</option>
+                    <option value="agent_commission">Agent commission</option>
+                    <option value="fixed_fee">Fixed fee</option>
+                  </Field>
+                </label>
+                <label className={settingsFieldClass}>
+                  <span className="text-sm font-medium text-[#51657b]">Status</span>
+                  <Field as="select" value={referralDraft.isActive ? 'active' : 'inactive'} onChange={(event) => updateReferralDraft('isActive', event.target.value === 'active')}>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </Field>
+                </label>
+                <div className={`${settingsActionRowClass} md:col-span-2`}>
+                  <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save Referral Rule'}</Button>
+                </div>
+              </form>
             </div>
-            <div className={settingsGridClass}>
+          </SettingsSectionCard>
+        </div>
+      ) : null}
+
+      {activeTab === 'templates' ? (
+        <div className="space-y-5">
+          <SettingsSectionCard title="Commission Templates" description="Reusable legacy templates remain available for transaction snapshots and compatibility.">
+            {!structures.length ? (
+              <SettingsEmptyState title="No commission templates yet" description="Create a template to standardise listing defaults and split snapshots." />
+            ) : (
+              <div className="grid gap-4 lg:grid-cols-2">
+                {structures.map((structure) => (
+                  <article key={structure.id} className="rounded-[16px] border border-[#e3eaf3] bg-[#fbfdff] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-base font-semibold text-[#162334]">{structure.name}</p>
+                        <p className="mt-1 text-sm text-[#60748b]">
+                          Listing: {structure.listingCommissionType === 'fixed' ? `Fixed R${Number(structure.listingCommissionAmount || 0).toLocaleString('en-ZA')}` : formatCommissionPercent(structure.listingCommissionPercentage || 0)}
+                        </p>
+                        <p className="mt-1 text-sm text-[#60748b]">
+                          Split: Agent {formatCommissionPercent(structure.agentSplitPercentage)} / Agency {formatCommissionPercent(structure.agencySplitPercentage)}
+                        </p>
+                      </div>
+                      {structure.isDefault ? <span className="rounded-full border border-[#d8e6f7] bg-[#eef5ff] px-2.5 py-1 text-xs font-semibold text-[#2b5f93]">Default</span> : null}
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Button type="button" variant="ghost" onClick={() => setStructureDraft(createStructureDraft(structure))}>Edit</Button>
+                      <Button type="button" variant="ghost" onClick={() => removeStructure(structure)}>Remove</Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </SettingsSectionCard>
+
+          <SettingsSectionCard title={structureDraft.id ? 'Edit Template' : 'Add Template'} description="Use templates for listing defaults and transaction commission snapshot compatibility.">
+            <form className={settingsGridClass} onSubmit={saveStructure}>
+              <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
+                <span className="text-sm font-medium text-[#51657b]">Template name</span>
+                <Field value={structureDraft.name} onChange={(event) => updateStructureDraft('name', event.target.value)} placeholder="Standard 60/40" />
+              </label>
               <label className={settingsFieldClass}>
                 <span className="text-sm font-medium text-[#51657b]">Listing commission type</span>
-                <Field
-                  as="select"
-                  value={draft.listingCommissionType}
-                  disabled={!canEdit}
-                  onChange={(event) => updateDraft('listingCommissionType', event.target.value)}
-                >
+                <Field as="select" value={structureDraft.listingCommissionType} onChange={(event) => updateStructureDraft('listingCommissionType', event.target.value)}>
                   <option value="percentage">Percentage</option>
                   <option value="fixed">Fixed amount</option>
                 </Field>
               </label>
               <label className={settingsFieldClass}>
-                <span className="text-sm font-medium text-[#51657b]">{draft.listingCommissionType === 'fixed' ? 'Listing commission amount' : 'Listing commission %'}</span>
+                <span className="text-sm font-medium text-[#51657b]">{structureDraft.listingCommissionType === 'fixed' ? 'Listing commission amount' : 'Listing commission %'}</span>
                 <Field
                   type="number"
                   min="0"
-                  max={draft.listingCommissionType === 'fixed' ? undefined : '100'}
+                  max={structureDraft.listingCommissionType === 'fixed' ? undefined : '100'}
                   step="0.01"
-                  value={draft.listingCommissionType === 'fixed' ? draft.listingCommissionAmount : draft.listingCommissionPercentage}
-                  disabled={!canEdit}
-                  onChange={(event) => updateDraft(draft.listingCommissionType === 'fixed' ? 'listingCommissionAmount' : 'listingCommissionPercentage', event.target.value)}
+                  value={structureDraft.listingCommissionType === 'fixed' ? structureDraft.listingCommissionAmount : structureDraft.listingCommissionPercentage}
+                  onChange={(event) => updateStructureDraft(structureDraft.listingCommissionType === 'fixed' ? 'listingCommissionAmount' : 'listingCommissionPercentage', event.target.value)}
                 />
               </label>
-            </div>
-          </div>
-          <div className={`${settingsFieldSpanClass} rounded-[12px] border border-[#e3eaf3] bg-[#fbfdff] p-4`}>
-            <div className="mb-3">
-              <h4 className="text-sm font-semibold text-[#162334]">Sales Commission</h4>
-              <p className="mt-1 text-sm text-[#60748b]">Default payout split used when a listing becomes a sale. Agents can override it at sale capture when enabled.</p>
-            </div>
-            <div className={settingsGridClass}>
               <label className={settingsFieldClass}>
                 <span className="text-sm font-medium text-[#51657b]">Agent split %</span>
-                <Field
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  value={draft.agentSplitPercentage}
-                  disabled={!canEdit}
-                  onChange={(event) => updateAgentSplit(event.target.value)}
-                />
+                <Field type="number" min="0" max="100" step="0.01" value={structureDraft.agentSplitPercentage} onChange={(event) => updateStructureDraft('agentSplitPercentage', event.target.value)} />
               </label>
               <label className={settingsFieldClass}>
                 <span className="text-sm font-medium text-[#51657b]">Agency split %</span>
-                <Field value={normalizePercentage(100 - normalizePercentage(draft.agentSplitPercentage, 0), 0)} disabled />
+                <Field value={normalizePercentage(100 - normalizePercentage(structureDraft.agentSplitPercentage, 60), 40)} disabled />
               </label>
               <label className={settingsFieldClass}>
-                <span className="text-sm font-medium text-[#51657b]">Sale capture override</span>
-                <Field
-                  as="select"
-                  value={draft.allowSalesCommissionOverride ? 'yes' : 'no'}
-                  disabled={!canEdit}
-                  onChange={(event) => updateDraft('allowSalesCommissionOverride', event.target.value === 'yes')}
-                >
-                  <option value="yes">Agent can edit sales split</option>
-                  <option value="no">Lock to this structure</option>
+                <span className="text-sm font-medium text-[#51657b]">Default template</span>
+                <Field as="select" value={structureDraft.isDefault ? 'yes' : 'no'} onChange={(event) => updateStructureDraft('isDefault', event.target.value === 'yes')}>
+                  <option value="no">No</option>
+                  <option value="yes">Yes</option>
                 </Field>
               </label>
-            </div>
-          </div>
-          <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
-            <span className="text-sm font-medium text-[#51657b]">Notes</span>
-            <Field as="textarea" value={draft.notes} disabled={!canEdit} onChange={(event) => updateDraft('notes', event.target.value)} />
-          </label>
-          <label className={settingsFieldClass}>
-            <span className="text-sm font-medium text-[#51657b]">Default structure</span>
-            <Field
-              as="select"
-              value={draft.isDefault ? 'yes' : 'no'}
-              disabled={!canEdit}
-              onChange={(event) => updateDraft('isDefault', event.target.value === 'yes')}
-            >
-              <option value="no">No</option>
-              <option value="yes">Yes</option>
-            </Field>
-          </label>
-          <label className={settingsFieldClass}>
-            <span className="text-sm font-medium text-[#51657b]">Status</span>
-            <Field
-              as="select"
-              value={draft.isActive ? 'active' : 'inactive'}
-              disabled={!canEdit}
-              onChange={(event) => updateDraft('isActive', event.target.value === 'active')}
-            >
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </Field>
-          </label>
-          {canEdit ? (
-            <div className={`${settingsActionRowClass} md:col-span-2`}>
-              {editingId ? (
-                <Button type="button" variant="ghost" onClick={resetForm}>
-                  Cancel Edit
-                </Button>
-              ) : null}
-              <Button type="submit" disabled={saving}>
-                {saving ? 'Saving…' : editingId ? 'Update Structure' : 'Create Structure'}
-              </Button>
-            </div>
-          ) : null}
-        </form>
-      </SettingsSectionCard>
-
-      <SettingsSectionCard title="Agent Sales Commission Assignments" description="Assign the default sales payout structure to each agent/member profile. Listing commission can still be edited on the mandate/listing.">
-        {!commissionAssignableUsers.length ? (
-          <SettingsEmptyState title="No active users yet" description="Invite users first, then assign their sales commission structures." />
-        ) : (
-          <div className={settingsTableClass}>
-            <div className="hidden grid-cols-[1.2fr_1.2fr_0.9fr_1.2fr_0.8fr] gap-4 border-b border-[#e4ebf3] bg-[#f4f8fb] px-5 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7b8da6] lg:grid">
-              <span>Name</span>
-              <span>Email</span>
-              <span>Role</span>
-              <span>Sales Commission Structure</span>
-              <span>Status</span>
-            </div>
-            <div className="divide-y divide-[#e9eff5]">
-              {commissionAssignableUsers.map((user) => {
-                const profileByOrgUserId = profileByUserKey.get(`org-user:${String(user.id || '')}`)
-                const profileByUserId = profileByUserKey.get(`user:${String(user.userId || '')}`)
-                const profileByEmail = profileByUserKey.get(`email:${String(user.email || '').trim().toLowerCase()}`)
-                const profile = profileByOrgUserId || profileByUserId || profileByEmail || null
-                const assignedStructure = profile?.commissionStructureId
-                  ? structureMap.get(String(profile.commissionStructureId))
-                  : null
-                const isUsingDefault = !assignedStructure && Boolean(defaultStructure)
-                const statusLabel = assignedStructure
-                  ? 'Assigned'
-                  : isUsingDefault
-                    ? 'Default'
-                    : 'Unassigned'
-                return (
-                  <div
-                    key={user.id}
-                    className="grid gap-3 px-5 py-4 lg:grid-cols-[1.2fr_1.2fr_0.9fr_1.2fr_0.8fr] lg:items-center lg:gap-4"
-                  >
-                    <div className="space-y-1">
-                      <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] lg:hidden">Name</span>
-                      <strong className="text-sm text-[#162334]">{user.fullName}</strong>
-                    </div>
-                    <div className="space-y-1">
-                      <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] lg:hidden">Email</span>
-                      <span className="text-sm text-[#51657b]">{user.email}</span>
-                    </div>
-                    <div className="space-y-1">
-                      <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] lg:hidden">Role</span>
-                      <span className="text-sm capitalize text-[#51657b]">{String(user.role || 'viewer').replaceAll('_', ' ')}</span>
-                    </div>
-                    <div className="space-y-1">
-                      <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] lg:hidden">Sales Commission Structure</span>
-                      {canEdit ? (
-                        <Field
-                          as="select"
-                          value={profile?.commissionStructureId || ''}
-                          className="py-2.5"
-                          onChange={(event) => handleAssign(user, event.target.value)}
-                        >
-                          <option value="">Use default / unassigned</option>
-                          {structures
-                            .filter((structure) => structure.isActive)
-                            .map((structure) => (
-                              <option key={structure.id} value={structure.id}>
-                                {structure.name} ({formatPercent(structure.agentSplitPercentage)} / {formatPercent(structure.agencySplitPercentage)})
-                              </option>
-                            ))}
-                        </Field>
-                      ) : (
-                        <span className="text-sm text-[#51657b]">
-                          {assignedStructure?.name || (isUsingDefault ? `${defaultStructure?.name || 'Default structure'} (Default)` : 'Unassigned')}
-                        </span>
-                      )}
-                    </div>
-                    <div className="space-y-1">
-                      <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] lg:hidden">Status</span>
-                      <span
-                        className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${
-                          statusLabel === 'Assigned'
-                            ? 'border-[#d5e2ef] bg-white text-[#51657b]'
-                            : statusLabel === 'Default'
-                              ? 'border-[#d8e6f7] bg-[#eef5ff] text-[#2b5f93]'
-                              : 'border-[#f3d9a8] bg-[#fff8ec] text-[#a16207]'
-                        }`}
-                      >
-                        {statusLabel}
-                      </span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-      </SettingsSectionCard>
+              <label className={settingsFieldClass}>
+                <span className="text-sm font-medium text-[#51657b]">Status</span>
+                <Field as="select" value={structureDraft.isActive ? 'active' : 'inactive'} onChange={(event) => updateStructureDraft('isActive', event.target.value === 'active')}>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </Field>
+              </label>
+              <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
+                <span className="text-sm font-medium text-[#51657b]">Notes</span>
+                <Field as="textarea" value={structureDraft.notes} onChange={(event) => updateStructureDraft('notes', event.target.value)} />
+              </label>
+              <div className={`${settingsActionRowClass} md:col-span-2`}>
+                {structureDraft.id ? (
+                  <Button type="button" variant="ghost" onClick={() => setStructureDraft(createStructureDraft())}>
+                    Cancel Edit
+                  </Button>
+                ) : null}
+                <Button type="submit" disabled={saving}>{saving ? 'Saving...' : structureDraft.id ? 'Update Template' : 'Create Template'}</Button>
+              </div>
+            </form>
+          </SettingsSectionCard>
+        </div>
+      ) : null}
 
       {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
       {message ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}

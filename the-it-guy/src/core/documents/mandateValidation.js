@@ -144,7 +144,7 @@ function pushValidationRequirement({
 
 function resolveMandateAction(action = 'generate') {
   const normalized = normalizeKey(action)
-  if (['preview', 'generate', 'download', 'send_for_signing', 'upload_signed'].includes(normalized)) return normalized
+  if (['preview', 'template_preview', 'generate', 'download', 'send_for_signing', 'upload_signed'].includes(normalized)) return normalized
   if (['download_pdf', 'download_physical', 'physical_download'].includes(normalized)) return 'download'
   if (['send', 'resend', 'resend_signing_link'].includes(normalized)) return 'send_for_signing'
   return 'generate'
@@ -242,7 +242,7 @@ export function validateMandateGenerationData(mandateData = {}, options = {}) {
   const sellerHasIdentity = isPresent(sellerFullName) || isPresent(sellerIdentity)
   const propertyHasIdentity = isPresent(propertyAddress) || isPresent(property.erfNumber || placeholders.property_erf_number) || isPresent(property.unitNumber || placeholders.property_unit_number)
 
-  if (action === 'preview') {
+  if (action === 'preview' || action === 'template_preview') {
     pushWarning(warnings, fieldGroups, 'seller', 'seller_full_name', sellerHasIdentity ? 'present' : '')
     pushWarning(warnings, fieldGroups, 'property', 'property_address', propertyHasIdentity ? 'present' : '')
     if (options.hasTemplate === false) {
@@ -404,6 +404,8 @@ export function formatMandateValidationMessage(validation = {}) {
       ? 'downloading the mandate'
       : validation.action === 'upload_signed'
         ? 'uploading the signed mandate'
+        : validation.action === 'template_preview'
+          ? 'previewing the template'
         : validation.action === 'preview'
           ? 'previewing the mandate'
           : 'generating the mandate'

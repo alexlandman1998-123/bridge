@@ -62,6 +62,75 @@ function normalizeNullableText(value) {
   return text || null
 }
 
+const TEMPLATE_PREVIEW_VALIDATION_ACTION = 'template_preview'
+
+function normalizeValidationAction(value, fallback = 'preview') {
+  const action = normalizeText(value || fallback).toLowerCase()
+  return action || fallback
+}
+
+function mapMandateValidationIssue(issue = {}) {
+  return {
+    sectionKey: issue.groupKey || 'mandate_validation',
+    sectionLabel: issue.group || 'Mandate Validation',
+    placeholderKey: issue.field,
+    placeholderLabel: issue.label,
+    message: issue.message,
+  }
+}
+
+function normalizeValidationRequirement(issue = {}, source = 'template') {
+  const placeholderKey = normalizeText(issue.placeholderKey || issue.placeholder_key || issue.field || issue.key)
+  const placeholderLabel = normalizeText(issue.placeholderLabel || issue.placeholder_label || issue.label || placeholderKey)
+  const sectionKey = normalizeText(issue.sectionKey || issue.section_key || issue.groupKey || source)
+  const sectionLabel = normalizeText(issue.sectionLabel || issue.section_label || issue.group || 'Data required later')
+  let message = normalizeText(issue.message) ||
+    (placeholderLabel ? `${placeholderLabel} is needed when generating a real document.` : 'Live data is needed when generating a real document.')
+  if (/^Missing\s/i.test(message) && placeholderLabel) {
+    message = `${placeholderLabel} will be required when generating a real document.`
+  } else if (/^Optional\s/i.test(message) && placeholderLabel) {
+    message = `${placeholderLabel} can be collected when generating a real document.`
+  } else if (/is required before generating/i.test(message)) {
+    message = message.replace(/is required before generating/i, 'will be required when generating')
+  } else if (/is not captured/i.test(message)) {
+    message = message.replace(/is not captured/i, 'can be collected')
+  }
+
+  return {
+    sectionKey,
+    sectionLabel,
+    placeholderKey,
+    placeholderLabel,
+    message,
+    source,
+    required: Boolean(issue.required),
+  }
+}
+
+function dedupeValidationRequirements(issues = []) {
+  const seen = new Set()
+  const rows = []
+
+  for (const issue of issues) {
+    const normalized = normalizeValidationRequirement(issue, issue?.source || 'template')
+    const placeholderKey = normalizeText(normalized.placeholderKey).toLowerCase()
+    const key = placeholderKey
+      ? `placeholder|${placeholderKey}`
+      : `message|${normalizeText(normalized.sectionKey).toLowerCase()}|${normalizeText(normalized.message).toLowerCase()}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    rows.push(normalized)
+  }
+
+  return rows
+}
+
+function isMissingPlaceholderWarning(issue = {}, missingPlaceholderKeys = new Set()) {
+  const placeholderKey = normalizeText(issue.placeholderKey || issue.placeholder_key).toLowerCase()
+  const message = normalizeText(issue.message)
+  return Boolean(placeholderKey && missingPlaceholderKeys.has(placeholderKey) && /^(Missing|Optional)\s/i.test(message))
+}
+
 function normalizeNullableUuid(value) {
   const text = normalizeText(value)
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text) ? text : null
@@ -1337,7 +1406,8 @@ export async function validatePacket({
     packetType: normalizedPacketType,
     placeholders,
   })
-  const mandateValidationAction = validationAction || context?.validationAction || 'preview'
+  const mandateValidationAction = normalizeValidationAction(validationAction || context?.validationAction || 'preview')
+  const isTemplatePreview = mandateValidationAction === TEMPLATE_PREVIEW_VALIDATION_ACTION
   const isCommercialPacket = COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(normalizedPacketType)
   const allowMandateGenerationGaps = normalizedPacketType === 'mandate' && mandateValidationAction !== 'upload_signed'
   const mandateValidation = normalizedPacketType === 'mandate'
@@ -1370,39 +1440,74 @@ export async function validatePacket({
     packetType: normalizedPacketType,
     placeholderPayload: placeholders,
   }).catch(() => null)
+  const missingPlaceholderKeys = new Set(
+    (ruleValidation.missingPlaceholders || [])
+      .map((issue) => normalizeText(issue?.placeholderKey || issue?.placeholder_key).toLowerCase())
+      .filter(Boolean),
+  )
+  const ruleCritical = ruleValidation.critical || []
+  const ruleWarnings = ruleValidation.warnings || []
+  const missingPlaceholderWarnings = ruleWarnings.filter((issue) => isMissingPlaceholderWarning(issue, missingPlaceholderKeys))
+  const structuralRuleWarnings = ruleWarnings.filter((issue) => !isMissingPlaceholderWarning(issue, missingPlaceholderKeys))
+  const sellerCriticalIssues = sellerValidation.critical || []
+  const sellerWarningIssues = sellerValidation.warnings || []
+  const mandateBlockingIssues = (mandateValidation?.blockingErrors || []).map(mapMandateValidationIssue)
+  const mandateWarningIssues = (mandateValidation?.warnings || []).map(mapMandateValidationIssue)
+  const previewDataRequirements = isTemplatePreview
+    ? dedupeValidationRequirements([
+        ...missingPlaceholderWarnings.map((issue) => ({
+          ...issue,
+          source: 'template_placeholder',
+        })),
+        ...sellerCriticalIssues.map((issue) => ({
+          ...issue,
+          source: 'seller_readiness',
+        })),
+        ...sellerWarningIssues.map((issue) => ({
+          ...issue,
+          source: 'seller_readiness',
+        })),
+        ...mandateBlockingIssues.map((issue) => ({
+          ...issue,
+          source: 'mandate_readiness',
+        })),
+        ...mandateWarningIssues.map((issue) => ({
+          ...issue,
+          source: 'mandate_readiness',
+        })),
+      ])
+    : []
+  const criticalIssues = isTemplatePreview
+    ? [...ruleCritical]
+    : allowMandateGenerationGaps
+      ? [...sellerCriticalIssues]
+      : [
+          ...ruleCritical,
+          ...sellerCriticalIssues,
+          ...mandateBlockingIssues,
+        ]
+  const warningIssues = isTemplatePreview
+    ? [...structuralRuleWarnings]
+    : [
+        ...ruleWarnings,
+        ...sellerWarningIssues,
+        ...mandateWarningIssues,
+      ]
 
   return {
     packetType: normalizedPacketType,
     placeholders,
     sectionManifest: ruleValidation.sectionManifest,
-    critical: allowMandateGenerationGaps
-      ? [...(sellerValidation.critical || [])]
-      : [
-          ...ruleValidation.critical,
-          ...(sellerValidation.critical || []),
-          ...((mandateValidation?.blockingErrors || []).map((issue) => ({
-            sectionKey: issue.groupKey || 'mandate_validation',
-            sectionLabel: issue.group || 'Mandate Validation',
-            placeholderKey: issue.field,
-            placeholderLabel: issue.label,
-            message: issue.message,
-          }))),
-        ],
-    warnings: [
-      ...ruleValidation.warnings,
-      ...(sellerValidation.warnings || []),
-      ...((mandateValidation?.warnings || []).map((issue) => ({
-        sectionKey: issue.groupKey || 'mandate_validation',
-        sectionLabel: issue.group || 'Mandate Validation',
-        placeholderKey: issue.field,
-        placeholderLabel: issue.label,
-        message: issue.message,
-      }))),
-    ],
+    validationAction: mandateValidationAction,
+    critical: criticalIssues,
+    warnings: warningIssues,
+    dataRequirements: previewDataRequirements,
     missingPlaceholders: ruleValidation.missingPlaceholders,
     aliasHits: ruleValidation.aliasHits || [],
     unknownFields: ruleValidation.unknownFields || [],
-    isValidForGeneration: isCommercialPacket
+    isValidForGeneration: isTemplatePreview
+      ? ruleValidation.isValidForGeneration
+      : isCommercialPacket
       ? ruleValidation.isValidForGeneration
       : (
           sellerValidation.canProceed &&

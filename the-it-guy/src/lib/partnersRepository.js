@@ -580,6 +580,7 @@ function mapInvitation(row = {}, organisationsById = new Map()) {
       recipientOrganisation?.name ||
       '',
     invitedEmail,
+    recipientContactEmail: normalizeText(row.recipient_contact_email || row.recipientContactEmail || recipientOrganisation?.contactEmails?.[0]),
     fromWorkspaceType,
     toWorkspaceType,
     relationshipType: normalizeText(row.relationship_type || row.relationshipType) || 'approved',
@@ -680,6 +681,7 @@ function enrichInvitations(invitations, organisations) {
         }),
       fromWorkspaceType: mapped.fromWorkspaceType || normalizeOrganisationType(organisationsById.get(mapped.fromOrganisationId)?.type || 'agency'),
       toWorkspaceType: mapped.toWorkspaceType || normalizeOrganisationType(organisationsById.get(mapped.toOrganisationId)?.type || 'agency'),
+      recipientContactEmail: mapped.recipientContactEmail || organisationsById.get(mapped.toOrganisationId)?.contactEmails?.[0] || '',
     }
   })
 }
@@ -812,7 +814,10 @@ function buildPartnerInvitationLink(invitationId = '') {
 }
 
 async function sendPartnerInvitationEmail(invitation = {}) {
-  const recipientEmail = normalizeText(invitation.invitedEmail || invitation.recipientEmail).toLowerCase()
+  const storedEmail = normalizeText(invitation.invitedEmail || invitation.recipientEmail).toLowerCase()
+  const recipientEmail = storedEmail && !storedEmail.endsWith('@bridge.internal')
+    ? storedEmail
+    : normalizeText(invitation.recipientContactEmail).toLowerCase()
   if (!recipientEmail || recipientEmail.endsWith('@bridge.internal')) {
     return { sent: false, reason: 'missing_external_email' }
   }
@@ -1332,6 +1337,137 @@ export async function createPartnerInvitation({
   const invitation = mapInvitation(result.data)
   await sendPartnerInvitationEmail(invitation)
   return invitation
+}
+
+async function fetchInvitationForManagement(id) {
+  const fullQuery = await supabase
+    .from('partner_invitations')
+    .select('id, sender_organisation_id, recipient_email, recipient_organisation_id, invited_email, from_organisation_name, to_organisation_name, from_workspace_type, to_workspace_type, partner_type, relationship_type, scope_type, scope_id, scope_name, preferred, status, message, created_at, expires_at, invited_by_user_id, responded_by_user_id, responded_at')
+    .eq('id', id)
+    .single()
+
+  let row = fullQuery.data || null
+  if (fullQuery.error) {
+    if (!isRecoverablePartnerSchemaError(fullQuery.error)) throw fullQuery.error
+    const legacyQuery = await supabase
+      .from('partner_invitations')
+      .select('id, sender_organisation_id, recipient_email, recipient_organisation_id, relationship_type, status, created_at, expires_at')
+      .eq('id', id)
+      .single()
+    if (legacyQuery.error) throw legacyQuery.error
+    row = legacyQuery.data || null
+  }
+
+  if (!row) throw new Error('Invitation not found.')
+
+  const organisations = await fetchOrganisationsByIds([
+    row.sender_organisation_id || row.senderOrganisationId,
+    row.recipient_organisation_id || row.recipientOrganisationId,
+  ])
+  return enrichInvitations([row], organisations)[0]
+}
+
+function assertSentInvitationManagementAccess(invitation = {}, organisationId = '') {
+  if (!invitation?.id) throw new Error('Invitation not found.')
+  if (normalizeText(invitation.fromOrganisationId) !== normalizeText(organisationId)) {
+    throw new Error('Only the sending organisation can manage this invitation.')
+  }
+}
+
+export async function resendPartnerInvitation({
+  invitationId = '',
+  organisationId = '',
+  workspaceType = 'agency',
+  forceDemo = false,
+} = {}) {
+  const id = normalizeText(invitationId)
+  if (!id) throw new Error('A partner invitation is required.')
+
+  if (forceDemo || PARTNERS_DEMO_MODE || !isSupabaseConfigured || !supabase) {
+    const state = getDemoState(organisationId, workspaceType)
+    const invitation = state.invitations.find((item) => item.id === id)
+    if (!invitation) throw new Error('Invitation not found.')
+    assertSentInvitationManagementAccess(invitation, organisationId)
+    if ((normalizeLower(invitation.status) || 'pending') !== 'pending') throw new Error('Only pending invitations can be resent.')
+    return { sent: true, source: 'demo' }
+  }
+
+  const invitation = await fetchInvitationForManagement(id)
+  assertSentInvitationManagementAccess(invitation, organisationId)
+  if ((normalizeLower(invitation.status) || 'pending') !== 'pending') throw new Error('Only pending invitations can be resent.')
+
+  const result = await sendPartnerInvitationEmail(invitation)
+  if (result?.sent === false) {
+    throw new Error('This invitation does not have an external email address to resend.')
+  }
+  return result
+}
+
+export async function revokePartnerInvitation({
+  invitationId = '',
+  organisationId = '',
+  userId = '',
+  workspaceType = 'agency',
+  forceDemo = false,
+} = {}) {
+  const id = normalizeText(invitationId)
+  if (!id) throw new Error('A partner invitation is required.')
+
+  if (forceDemo || PARTNERS_DEMO_MODE || !isSupabaseConfigured || !supabase) {
+    const state = getDemoState(organisationId, workspaceType)
+    const now = new Date().toISOString()
+    const invitation = state.invitations.find((item) => item.id === id)
+    if (!invitation) throw new Error('Invitation not found.')
+    assertSentInvitationManagementAccess(invitation, organisationId)
+    if ((normalizeLower(invitation.status) || 'pending') === 'accepted') throw new Error('Accepted invitations cannot be revoked.')
+    state.invitations = state.invitations.map((item) =>
+      item.id === id
+        ? {
+            ...item,
+            status: 'revoked',
+            respondedByUserId: normalizeText(userId) || item.respondedByUserId,
+            respondedAt: now,
+          }
+        : item,
+    )
+    writeDemoState(state)
+    return true
+  }
+
+  const invitation = await fetchInvitationForManagement(id)
+  assertSentInvitationManagementAccess(invitation, organisationId)
+  if ((normalizeLower(invitation.status) || 'pending') === 'accepted') throw new Error('Accepted invitations cannot be revoked.')
+  await updateInvitationResponse({ invitationId: id, status: 'revoked', userId })
+  return true
+}
+
+export async function deletePartnerInvitation({
+  invitationId = '',
+  organisationId = '',
+  workspaceType = 'agency',
+  forceDemo = false,
+} = {}) {
+  const id = normalizeText(invitationId)
+  if (!id) throw new Error('A partner invitation is required.')
+
+  if (forceDemo || PARTNERS_DEMO_MODE || !isSupabaseConfigured || !supabase) {
+    const state = getDemoState(organisationId, workspaceType)
+    const invitation = state.invitations.find((item) => item.id === id)
+    if (!invitation) throw new Error('Invitation not found.')
+    assertSentInvitationManagementAccess(invitation, organisationId)
+    if ((normalizeLower(invitation.status) || 'pending') === 'accepted') throw new Error('Accepted invitations cannot be deleted.')
+    state.invitations = state.invitations.filter((item) => item.id !== id)
+    writeDemoState(state)
+    return true
+  }
+
+  const invitation = await fetchInvitationForManagement(id)
+  assertSentInvitationManagementAccess(invitation, organisationId)
+  if ((normalizeLower(invitation.status) || 'pending') === 'accepted') throw new Error('Accepted invitations cannot be deleted.')
+
+  const result = await supabase.from('partner_invitations').delete().eq('id', id)
+  if (result.error) throw result.error
+  return true
 }
 
 async function ensureOrganisationRelationship({

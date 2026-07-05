@@ -64,6 +64,8 @@ import {
 } from './settingsUi'
 import {
   DocumentCreationPanel,
+  PreviewIssueSummary,
+  SamplePreviewSupportPanel,
   TemplateCreationPanel,
   TemplateStatusPill,
   TemplateStudioMetricCard,
@@ -3277,9 +3279,13 @@ function getDocumentPickerContactName(contact = {}) {
   )
 }
 
+function isDocumentPickerRecord(record) {
+  return Boolean(record && typeof record === 'object')
+}
+
 function buildDocumentClientLinkOptions(snapshot = {}) {
-  const contacts = Array.isArray(snapshot.contacts) ? snapshot.contacts : []
-  const leads = Array.isArray(snapshot.leads) ? snapshot.leads : []
+  const contacts = Array.isArray(snapshot.contacts) ? snapshot.contacts.filter(isDocumentPickerRecord) : []
+  const leads = Array.isArray(snapshot.leads) ? snapshot.leads.filter(isDocumentPickerRecord) : []
   const contactById = new Map(contacts.map((contact) => [normalizeText(contact.contactId || contact.contact_id || contact.id), contact]).filter(([id]) => id))
   const leadOptions = leads.slice(0, 50).map((lead) => {
     const contact = contactById.get(normalizeText(lead.contactId || lead.contact_id)) || {}
@@ -3363,7 +3369,7 @@ function buildDocumentClientLinkOptions(snapshot = {}) {
 }
 
 function buildDocumentPropertyLinkOptions(listings = []) {
-  return (Array.isArray(listings) ? listings : []).slice(0, 50).map((listing) => {
+  return (Array.isArray(listings) ? listings.filter(isDocumentPickerRecord) : []).slice(0, 50).map((listing) => {
     const listingId = normalizeText(listing.id || listing.privateListingId || listing.private_listing_id)
     const propertyAddress = firstDocumentRunText(
       listing.propertyAddress,
@@ -4331,7 +4337,7 @@ export default function SettingsSigningTemplatesPage({
     isRequiredDefault: false,
     isActive: true,
   })
-  const [previewState, setPreviewState] = useState({ loading: false, html: '', warnings: [], critical: [], error: '' })
+  const [previewState, setPreviewState] = useState({ loading: false, html: '', warnings: [], critical: [], dataRequirements: [], error: '' })
   const [mergeFieldSearch, setMergeFieldSearch] = useState('')
   const [mergeFieldCategory, setMergeFieldCategory] = useState('all')
   const [activeStudioArea, setActiveStudioArea] = useState('templates')
@@ -4588,7 +4594,7 @@ export default function SettingsSigningTemplatesPage({
         setTemplateDetail(null)
         setForm(toTemplateForm(null))
         setHasUnsavedChanges(false)
-        setPreviewState({ loading: false, html: '', warnings: [], critical: [], error: '' })
+        setPreviewState({ loading: false, html: '', warnings: [], critical: [], dataRequirements: [], error: '' })
         return
       }
 
@@ -4599,7 +4605,7 @@ export default function SettingsSigningTemplatesPage({
         setTemplateDetail(detail)
         setForm(toTemplateForm(detail))
         setHasUnsavedChanges(false)
-        setPreviewState({ loading: false, html: '', warnings: [], critical: [], error: '' })
+        setPreviewState({ loading: false, html: '', warnings: [], critical: [], dataRequirements: [], error: '' })
       } catch (detailError) {
         if (active) {
           setError(detailError?.message || 'Unable to load template details.')
@@ -4859,6 +4865,10 @@ export default function SettingsSigningTemplatesPage({
   }, [canonicalFields, mergeFieldSearch])
   const resolvedFieldCount = Math.max(validationSummary.tokenCount - validationSummary.unknownTokens.length, 0)
   const unresolvedFieldCount = validationSummary.unknownTokens.length + validationSummary.missingRequired.length
+  const previewReadinessIssueCount = previewState.critical.length
+    + previewState.warnings.length
+    + validationSummary.blockers.length
+    + validationSummary.warnings.length
   const liveTemplate = useMemo(
     () => migrationReport.defaultTemplate?.template || selectedList.find((row) => row?.is_default) || null,
     [migrationReport.defaultTemplate, selectedList],
@@ -5357,7 +5367,7 @@ export default function SettingsSigningTemplatesPage({
     })
     setMessage(useManualDetails
       ? 'Standalone document start is ready. Fill the simple details panel, then preview or create the document.'
-      : 'Saved-details document start is ready. Confirm the linked IDs in More options, then create the document.')
+      : 'Saved-details document start is ready. Confirm the linked IDs in Advanced preview data, then create the document.')
   }
 
   async function refreshAll() {
@@ -5794,7 +5804,7 @@ export default function SettingsSigningTemplatesPage({
       setTestingTemplate(true)
       setError('')
       setMessage('')
-      setPreviewState({ loading: true, html: '', warnings: [], critical: [], error: '' })
+      setPreviewState({ loading: true, html: '', warnings: [], critical: [], dataRequirements: [], error: '' })
       const previewTemplate = buildPreviewTemplateFromForm({
         selectedTemplate,
         templateDetail,
@@ -5809,6 +5819,7 @@ export default function SettingsSigningTemplatesPage({
         context: buildSamplePreviewContext(packetType),
         template: previewTemplate,
         title: `${templateTypeConfig.shortLabel} template validation preview`,
+        validationAction: 'template_preview',
       })
 
       setPreviewState({
@@ -5816,11 +5827,12 @@ export default function SettingsSigningTemplatesPage({
         html: preview?.previewHtml || '',
         warnings: preview?.warnings || [],
         critical: preview?.critical || [],
+        dataRequirements: preview?.dataRequirements || [],
         error: '',
       })
 
       if (preview?.critical?.length) {
-        setMessage('Template preview generated with validation blockers. Review the checklist before activation.')
+        setMessage('Template preview generated with template blockers. Review the checklist before activation.')
       } else {
         setMessage('Preview generated from the current edits using safe example details.')
       }
@@ -5830,6 +5842,7 @@ export default function SettingsSigningTemplatesPage({
         html: '',
         warnings: [],
         critical: [],
+        dataRequirements: [],
         error: previewError?.message || 'Unable to generate template preview.',
       })
     } finally {
@@ -5844,7 +5857,7 @@ export default function SettingsSigningTemplatesPage({
       setTestingTemplate(true)
       setError('')
       setMessage('')
-      setPreviewState({ loading: true, html: '', warnings: [], critical: [], error: '' })
+      setPreviewState({ loading: true, html: '', warnings: [], critical: [], dataRequirements: [], error: '' })
       const runPayload = buildDocumentRunPayload({
         runForm: documentRunForm,
         packetType,
@@ -5868,6 +5881,7 @@ export default function SettingsSigningTemplatesPage({
         html: preview?.previewHtml || '',
         warnings: preview?.warnings || [],
         critical: preview?.critical || [],
+        dataRequirements: [],
         error: '',
         sourceLabel: 'real_run',
       })
@@ -5883,6 +5897,7 @@ export default function SettingsSigningTemplatesPage({
         html: '',
         warnings: [],
         critical: [],
+        dataRequirements: [],
         error: previewError?.message || 'Unable to generate real-context preview.',
       })
     } finally {
@@ -5900,7 +5915,7 @@ export default function SettingsSigningTemplatesPage({
     }
     const addendumReadiness = getAddendumGenerationReadinessForRun(documentRunForm)
     if (autoGenerate && !addendumReadiness.ready) {
-      setError('Complete the addendum readiness checklist before generating. You can still save it as a draft from More options.')
+      setError('Complete the addendum readiness checklist before generating. You can still save it as a draft from Advanced preview data.')
       setActiveStudioArea('documents')
       return null
     }
@@ -5982,7 +5997,7 @@ export default function SettingsSigningTemplatesPage({
       setPacketActionId(`preview:${packet.id}`)
       setError('')
       setMessage('')
-      setPreviewState({ loading: true, html: '', warnings: [], critical: [], error: '' })
+      setPreviewState({ loading: true, html: '', warnings: [], critical: [], dataRequirements: [], error: '' })
       const context = buildDocumentRunContextFromPacket(packet)
       const template = await resolveTemplateForLibraryPacket(packet)
       const preview = await renderPacketPreview({
@@ -5996,6 +6011,7 @@ export default function SettingsSigningTemplatesPage({
         html: preview?.previewHtml || '',
         warnings: preview?.warnings || [],
         critical: preview?.critical || [],
+        dataRequirements: [],
         error: '',
         sourceLabel: 'library_packet',
       })
@@ -6008,6 +6024,7 @@ export default function SettingsSigningTemplatesPage({
         html: '',
         warnings: [],
         critical: [],
+        dataRequirements: [],
         error: previewError?.message || 'Unable to preview document.',
       })
       setError(previewError?.message || 'Unable to preview document.')
@@ -8157,7 +8174,7 @@ export default function SettingsSigningTemplatesPage({
                 <TemplateStudioPanel
                   eyebrow="Preview"
                   title="Document Preview"
-                  description="See how the current template will look with safe examples or linked details."
+                  description="See how the current template will look with safe sample details."
                   actions={
                     <button
                       type="button"
@@ -8183,20 +8200,6 @@ export default function SettingsSigningTemplatesPage({
                           <SettingsBanner tone="error">{previewState.error}</SettingsBanner>
                         ) : previewState.html ? (
                           <div className="space-y-3 text-sm leading-6 text-[#233246]">
-                            {previewState.critical.length ? (
-                              <div className="space-y-2">
-                                {previewState.critical.map((issue, index) => (
-                                  <ValidationIssueCard key={`live-preview-critical-${index}`} issue={issue} tone="error" label="Section" />
-                                ))}
-                              </div>
-                            ) : null}
-                            {previewState.warnings.length ? (
-                              <div className="space-y-2">
-                                {previewState.warnings.map((issue, index) => (
-                                  <ValidationIssueCard key={`live-preview-warning-${index}`} issue={issue} tone="warning" label="Section" />
-                                ))}
-                              </div>
-                            ) : null}
                             <div dangerouslySetInnerHTML={{ __html: previewState.html }} />
                           </div>
                         ) : (
@@ -8207,6 +8210,11 @@ export default function SettingsSigningTemplatesPage({
                         )}
                       </div>
                     </div>
+                    {previewState.html || previewState.critical.length || previewState.warnings.length ? (
+                      <div className="mt-4">
+                        <PreviewIssueSummary critical={previewState.critical} warnings={previewState.warnings} compact />
+                      </div>
+                    ) : null}
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[#dbe7f3] bg-white/90 px-4 py-3 text-sm text-[#6b7c93]">
                       <span>Preview uses the current editor values without changing live documents.</span>
                       <button
@@ -8217,18 +8225,6 @@ export default function SettingsSigningTemplatesPage({
                       >
                         <Eye size={14} />
                         <span>{testingTemplate ? 'Previewing…' : 'Preview'}</span>
-                      </button>
-                      <button
-                        type="button"
-                        className={studioSecondaryButtonClass}
-                        onClick={() => {
-                          setActiveTab('preview')
-                          requestAnimationFrame(() => void handleTestGenerateFromRun())
-                        }}
-                        disabled={testingTemplate}
-                      >
-                      <FileSignature size={14} />
-                      <span>{testingTemplate ? 'Previewing…' : 'Preview linked record'}</span>
                       </button>
                     </div>
                   </div>
@@ -8956,63 +8952,50 @@ export default function SettingsSigningTemplatesPage({
 
       {activeStudioArea === 'templates' && activeTab === 'preview' ? (
         selectedTemplate ? (
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
             <TemplateStudioPanel
               eyebrow="Preview"
               title="Document Preview"
-              description="See how the current template will look with safe examples or linked details."
+              description="Preview the current template with safe sample details. Linked-record testing and draft creation live in Documents."
               actions={
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className={studioSecondaryButtonClass}
-                    onClick={() => void handleTestGenerateFromRun()}
-                    disabled={testingTemplate}
-                  >
-                    <FileSignature size={14} />
-                    <span>{testingTemplate ? 'Previewing...' : 'Preview linked record'}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={studioPrimaryButtonClass}
-                    onClick={() => void handleTestGenerate()}
-                    disabled={testingTemplate}
-                  >
-                    <Eye size={14} />
-                    <span>{testingTemplate ? 'Previewing...' : 'Preview'}</span>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  className={studioPrimaryButtonClass}
+                  onClick={() => void handleTestGenerate()}
+                  disabled={testingTemplate}
+                >
+                  <Eye size={14} />
+                  <span>{testingTemplate ? 'Previewing...' : 'Refresh preview'}</span>
+                </button>
               }
             >
-              <div className="rounded-[24px] border border-[#dbe7f3] bg-[#f5f7fb] p-5">
-                <div className="flex min-h-[620px] items-start justify-center overflow-auto rounded-[22px] border border-[#e7eef6] bg-[radial-gradient(circle_at_top,_#ffffff_0%,_#f5f7fb_100%)] p-5">
-                  <div className="w-full max-w-[760px] rounded-[20px] border border-[#e2eaf3] bg-white p-8 shadow-[0_26px_48px_rgba(15,23,42,0.12)]">
+              <div className="rounded-[20px] border border-[#dbe7f3] bg-[#f6f8fb] p-3 sm:p-5" data-testid="sample-preview-stage">
+                <div className="flex min-h-[560px] items-start justify-center overflow-auto rounded-[16px] border border-[#e2eaf3] bg-[#eef3f8] p-3 sm:p-6">
+                  <div className="w-full max-w-[760px] rounded-[10px] border border-[#e2eaf3] bg-white px-5 py-6 shadow-[0_18px_34px_rgba(15,23,42,0.10)] sm:px-10 sm:py-12" data-testid="sample-preview-page">
                     {previewState.loading ? (
                       <SettingsLoadingState compact label="Preparing document preview…" />
                     ) : previewState.error ? (
                       <SettingsBanner tone="error">{previewState.error}</SettingsBanner>
                     ) : previewState.html ? (
                       <div className="space-y-4 text-sm leading-6 text-[#233246]">
-                        {previewState.critical.length ? (
-                          <div className="space-y-2">
-                            {previewState.critical.map((issue, index) => (
-                              <ValidationIssueCard key={`test-preview-critical-${index}`} issue={issue} tone="error" label="Section" />
-                            ))}
-                          </div>
-                        ) : null}
-                        {previewState.warnings.length ? (
-                          <div className="space-y-2">
-                            {previewState.warnings.map((issue, index) => (
-                              <ValidationIssueCard key={`test-preview-warning-${index}`} issue={issue} tone="warning" label="Section" />
-                            ))}
-                          </div>
-                        ) : null}
                         <div dangerouslySetInnerHTML={{ __html: previewState.html }} />
                       </div>
                     ) : (
                       <SettingsEmptyState
                         title="No preview generated yet"
                         description="Run a preview to inspect the current template layout without affecting live transactions."
+                        action={(
+                          <button
+                            type="button"
+                            className={studioPrimaryButtonClass}
+                            onClick={() => void handleTestGenerate()}
+                            disabled={testingTemplate}
+                            aria-label="Generate sample preview"
+                          >
+                            <Eye size={14} />
+                            <span>{testingTemplate ? 'Preparing preview...' : 'Generate sample preview'}</span>
+                          </button>
+                        )}
                       />
                     )}
                   </div>
@@ -9021,182 +9004,12 @@ export default function SettingsSigningTemplatesPage({
             </TemplateStudioPanel>
 
             <div className="space-y-6">
-              <TemplateStudioPanel
-                eyebrow="Linked Details"
-                title="Preview With Real Details"
-                description="Link a record, add any missing details, then create a draft document when it is ready."
-              >
-                <div className="space-y-4">
-                  <div className="grid gap-2">
-                    {DOCUMENT_RUN_SOURCE_OPTIONS.map((option) => {
-                      const active = documentRunForm.sourceType === option.key
-                      return (
-                        <button
-                          key={option.key}
-                          type="button"
-                          onClick={() => setDocumentRunForm((previous) => ({
-                            ...previous,
-                            sourceType: option.key,
-                            documentStartSourceMode: option.key === 'manual'
-                              ? DOCUMENT_START_SOURCE_MODES.manual
-                              : previous.documentStartSourceMode,
-                          }))}
-                          className={`rounded-[16px] border px-4 py-3 text-left transition ${
-                            active
-                              ? 'border-[#96d7ad] bg-[#f3fbf6] shadow-[0_10px_22px_rgba(18,134,66,0.08)]'
-                              : 'border-[#dbe7f3] bg-white hover:border-[#bfd5f5] hover:bg-[#f8fbff]'
-                          }`}
-                        >
-                          <span className="block text-sm font-semibold text-[#102033]">{option.label}</span>
-                          <span className="mt-1 block text-xs leading-5 text-[#6b7c93]">{option.description}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-
-                  <label className={settingsFieldClass}>
-                    Document title
-                    <input
-                      type="text"
-                      value={documentRunForm.title}
-                      onChange={(event) => setDocumentRunForm((previous) => ({ ...previous, title: event.target.value }))}
-                      placeholder={`${templateTypeConfig.shortLabel} document run`}
-                    />
-                  </label>
-
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <label className={settingsFieldClass}>
-                      Transaction ID
-                      <input
-                        type="text"
-                        value={documentRunForm.transactionId}
-                        onChange={(event) => setDocumentRunForm((previous) => ({ ...previous, transactionId: event.target.value }))}
-                        placeholder="UUID"
-                      />
-                    </label>
-                    <label className={settingsFieldClass}>
-                      Lead ID
-                      <input
-                        type="text"
-                        value={documentRunForm.leadId}
-                        onChange={(event) => setDocumentRunForm((previous) => ({ ...previous, leadId: event.target.value }))}
-                        placeholder="UUID"
-                      />
-                    </label>
-                    <label className={settingsFieldClass}>
-                      Deal ID
-                      <input
-                        type="text"
-                        value={documentRunForm.dealId}
-                        onChange={(event) => setDocumentRunForm((previous) => ({ ...previous, dealId: event.target.value }))}
-                        placeholder="UUID"
-                      />
-                    </label>
-                    <label className={settingsFieldClass}>
-                      Unit ID
-                      <input
-                        type="text"
-                        value={documentRunForm.unitId}
-                        onChange={(event) => setDocumentRunForm((previous) => ({ ...previous, unitId: event.target.value }))}
-                        placeholder="UUID"
-                      />
-                    </label>
-                  </div>
-
-                  <label className="flex items-start gap-3 rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] px-4 py-3 text-sm text-[#445b73]">
-                    <input
-                      type="checkbox"
-                      className="mt-1"
-                      checked={Boolean(documentRunForm.useSampleFallback)}
-                      onChange={(event) => setDocumentRunForm((previous) => ({ ...previous, useSampleFallback: event.target.checked }))}
-                    />
-                      <span>
-                      <span className="block font-semibold text-[#102033]">Use safe example values</span>
-                      <span className="mt-1 block leading-5 text-[#6b7c93]">Keeps previews readable while you add linked details. Turn off to find missing fields.</span>
-                    </span>
-                  </label>
-
-                  <label className={settingsFieldClass}>
-                    Extra details JSON
-                    <textarea
-                      rows={8}
-                      value={documentRunForm.contextJson}
-                      onChange={(event) => setDocumentRunForm((previous) => ({ ...previous, contextJson: event.target.value }))}
-                      placeholder={'{\n  "transaction": { "purchase_price": 3250000 },\n  "buyer": { "full_name": "Jane Buyer" },\n  "sourceContext": { "property_address": "12 Example Street" }\n}'}
-                    />
-                  </label>
-
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className={studioSecondaryButtonClass}
-                      onClick={() => void handleTestGenerateFromRun()}
-                      disabled={testingTemplate}
-                    >
-                      <FlaskConical size={14} />
-                      <span>{testingTemplate ? 'Previewing...' : 'Preview details'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={studioPrimaryButtonClass}
-                      onClick={() => void handleCreateDocumentPacketFromRun()}
-                      disabled={creatingDocumentPacket || !selectedTemplate || hasUnsavedChanges}
-                    >
-                      <FileSignature size={14} />
-                      <span>{creatingDocumentPacket ? 'Creating...' : 'Create Draft Document'}</span>
-                    </button>
-                  </div>
-
-                  {hasUnsavedChanges ? (
-                    <p className="rounded-[14px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm leading-6 text-[#7d520d]">
-                      Save this template before creating a draft document. Preview can still use the unsaved edits.
-                    </p>
-                  ) : null}
-                </div>
-              </TemplateStudioPanel>
-
-              <TemplateStudioPanel
-                eyebrow="Health"
-                title="Checklist"
-                description="Check whether this template is ready to make live."
-              >
-                <div className="space-y-3">
-                  {validationSummary.blockers.length ? validationSummary.blockers.map((item) => (
-                    <ValidationIssueCard key={`preview-blocker-${item}`} issue={item} tone="error" label="Template" />
-                  )) : (
-                    <p className="flex items-center gap-2 rounded-[16px] border border-[#ccead8] bg-[#f2fbf5] px-4 py-3 text-sm text-[#1f7a45]">
-                      <CheckCircle2 size={16} />
-                      No blocking issues detected.
-                    </p>
-                  )}
-
-                  {validationSummary.warnings.map((item) => (
-                    <ValidationIssueCard key={`preview-warning-${item}`} issue={item} tone="warning" label="Template" />
-                  ))}
-                </div>
-              </TemplateStudioPanel>
-
-              <TemplateStudioPanel
-                eyebrow="Field Coverage"
-                title="Fields Used"
-                description="Variables detected across the current template version."
-              >
-                {validationSummary.tokenList.length ? (
-                  <div className="flex flex-wrap gap-2">
-                    {validationSummary.tokenList.map((token) => (
-                      <span
-                        key={token}
-                        className="inline-flex items-center gap-1 rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]"
-                      >
-                        <CircleDot size={10} />
-                        {token}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm leading-6 text-[#6b7c93]">No merge fields detected yet for this template version.</p>
-                )}
-              </TemplateStudioPanel>
+              <SamplePreviewSupportPanel
+                previewState={previewState}
+                validationSummary={validationSummary}
+                previewReadinessIssueCount={previewReadinessIssueCount}
+                setActiveStudioArea={setActiveStudioArea}
+              />
             </div>
           </div>
         ) : (
