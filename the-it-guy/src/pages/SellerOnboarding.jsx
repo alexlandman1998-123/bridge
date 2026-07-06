@@ -129,6 +129,48 @@ const OWNERSHIP_TYPES = [
   { value: 'other', label: 'Other', description: 'Another ownership structure applies.' },
 ]
 
+const OWNERSHIP_OPTION_ICONS = {
+  individual: UserRound,
+  married_cop: BadgeCheck,
+  married_anc: BadgeCheck,
+  company: Building2,
+  trust: Landmark,
+  deceased_estate: FileCheck2,
+  power_of_attorney: ClipboardCheck,
+  multiple_owners: UserRound,
+  other: Circle,
+}
+
+const PROPERTY_CATEGORY_META = {
+  residential: { icon: Home, description: 'Homes, apartments, townhouses' },
+  commercial: { icon: Building2, description: 'Offices, medical suites, business parks' },
+  industrial: { icon: Building2, description: 'Warehouses, factories, logistics' },
+  retail: { icon: Building2, description: 'Retail stores, showrooms, shopping centres' },
+  agricultural: { icon: Landmark, description: 'Farms, holdings, agricultural land' },
+  mixed_use: { icon: Building2, description: 'Residential and non-residential mix' },
+  vacant_land: { icon: Landmark, description: 'Vacant stands and land' },
+}
+
+const PROPERTY_STRUCTURE_META = {
+  full_title: { icon: Home, description: 'Single title deed for the property.' },
+  sectional_title: { icon: Building2, description: 'Unit in a sectional scheme.' },
+  estate: { icon: ShieldCheck, description: 'Estate or HOA-managed property.' },
+  share_block: { icon: Building2, description: 'Share block ownership structure.' },
+  freehold: { icon: Home, description: 'Freehold ownership.' },
+  agricultural_holding: { icon: Landmark, description: 'Agricultural holding or farm-style title.' },
+  other: { icon: Circle, description: 'Another legal structure.' },
+}
+
+const PROPERTY_STRUCTURES_BY_CATEGORY = {
+  residential: ['full_title', 'sectional_title', 'estate', 'share_block', 'freehold', 'other'],
+  commercial: ['full_title', 'sectional_title', 'freehold', 'estate', 'other'],
+  industrial: ['full_title', 'freehold', 'sectional_title', 'other'],
+  retail: ['full_title', 'sectional_title', 'freehold', 'other'],
+  agricultural: ['agricultural_holding', 'freehold', 'full_title', 'other'],
+  mixed_use: ['full_title', 'sectional_title', 'freehold', 'estate', 'other'],
+  vacant_land: ['full_title', 'freehold', 'agricultural_holding', 'other'],
+}
+
 const OCCUPANCY_STATUSES = [
   { value: 'unknown', label: 'Unknown' },
   { value: 'vacant', label: 'Vacant' },
@@ -276,6 +318,19 @@ function choiceCardClass(isActive) {
       ? 'border-[#138a3d]/55 bg-[#f0fbf4] shadow-[0_12px_28px_rgba(19,138,61,0.10)]'
       : 'border-[#d8e2ec] bg-white hover:border-[#bccddd] hover:bg-[#fbfcfe]'
   }`
+}
+
+function getPropertyStructureOptionsByCategory(category) {
+  const normalizedCategory = normalizePropertyCategory(category, { fallback: 'residential' })
+  const values = PROPERTY_STRUCTURES_BY_CATEGORY[normalizedCategory] || PROPERTY_STRUCTURE_TYPES
+  return values
+    .filter((value) => PROPERTY_STRUCTURE_TYPES.includes(value))
+    .map((value) => ({
+      value,
+      label: getPropertyStructureTypeLabel(value),
+      icon: PROPERTY_STRUCTURE_META[value]?.icon || Circle,
+      description: PROPERTY_STRUCTURE_META[value]?.description || 'Property legal structure.',
+    }))
 }
 
 function chipChoiceClass(isActive) {
@@ -915,12 +970,6 @@ function createBlankPersonRecord(roleTitle = 'Person', index = 0) {
   }
 }
 
-function getOwnershipBranchLabel(value = '') {
-  const normalized = getOwnershipBranch(value)
-  if (normalized === 'married') return 'Married'
-  return OWNERSHIP_TYPES.find((item) => item.value === value)?.label || formatValue(normalized || 'individual')
-}
-
 function getOwnershipFieldLabels(value = '') {
   const branch = getOwnershipBranch(value)
   const isEntityBranch = ['company', 'trust', 'deceased_estate', 'power_of_attorney', 'multiple_owners'].includes(branch)
@@ -1059,6 +1108,19 @@ function normalizeFormData(listing) {
   const resolvedPropertyType = propertyTypeOptions.some((item) => item.value === candidatePropertyType)
     ? candidatePropertyType
     : propertyTypeOptions[0]?.value || candidatePropertyType || 'house'
+  const propertyStructureOptions = getPropertyStructureOptionsByCategory(resolvedPropertyCategory)
+  const candidatePropertyStructureType = normalizePropertyStructureType(
+    existing.propertyStructureType ||
+      canonicalFacts?.property?.property_structure_type ||
+      listing?.propertyStructureType ||
+      listing?.property_structure_type ||
+      existing.propertyType ||
+      '',
+    { fallback: '' },
+  )
+  const resolvedPropertyStructureType = propertyStructureOptions.some((item) => item.value === candidatePropertyStructureType)
+    ? candidatePropertyStructureType
+    : propertyStructureOptions[0]?.value || 'other'
   const propertyAddressDetails = normalizePropertyAddress(
     {
       propertyAddressDetails: existing.propertyAddressDetails || canonicalFacts?.property?.address_details || {},
@@ -1098,7 +1160,7 @@ function normalizeFormData(listing) {
   )
   const canonicalPropertyType = normalizeCanonicalPropertyType({
     propertyCategory: resolvedPropertyCategory,
-    propertyStructureType: existing.propertyStructureType || canonicalFacts?.property?.property_structure_type || listing?.propertyStructureType || listing?.property_structure_type || existing.propertyType,
+    propertyStructureType: resolvedPropertyStructureType,
     propertyType: resolvedPropertyType,
     estateName: existing.estateName || canonicalFacts?.property?.estate_name || existing.estateComplexName,
     estateComplexName: existing.estateComplexName || canonicalFacts?.property?.estate_name,
@@ -1200,7 +1262,7 @@ function normalizeFormData(listing) {
     sellingReason: existing.sellingReason || '',
 
     propertyCategory: resolvedPropertyCategory,
-    propertyStructureType: normalizePropertyStructureType(existing.propertyStructureType || canonicalFacts?.property?.property_structure_type || listing?.propertyStructureType || listing?.property_structure_type || existing.propertyType, { fallback: 'other' }),
+    propertyStructureType: resolvedPropertyStructureType,
     canonicalPropertyType: existing.canonicalPropertyType || canonicalPropertyType || canonicalFacts?.property?.property_type || existing.propertyClassification || '',
     sectionalTitle: Boolean(existing.sectionalTitle || canonicalFacts?.property?.sectional_title || propertyBranch === 'sectional_title'),
     shareBlock: Boolean(existing.shareBlock || canonicalFacts?.property?.share_block || propertyBranch === 'sectional_title'),
@@ -1531,11 +1593,23 @@ function FormSection({ icon, title, description, illustration = '', children, mo
   )
 }
 
-function ChoiceCard({ active, title, description, onClick }) {
+function ChoiceCard({ active, title, description, icon: Icon = Circle, onClick }) {
   return (
-    <button type="button" onClick={onClick} className={`${choiceCardClass(active)} min-h-[58px] sm:min-h-[92px]`}>
-      <span className={`block text-sm font-semibold sm:text-[15px] ${active ? 'text-[#132033]' : 'text-[#35546c]'}`}>{title}</span>
-      {description ? <span className="mt-1 block text-xs leading-5 text-[#6b7d93] sm:mt-1.5">{description}</span> : null}
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`${choiceCardClass(active)} flex min-h-[62px] items-start gap-3 sm:min-h-[92px]`}
+    >
+      <span className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border ${
+        active ? 'border-[#138a3d]/30 bg-white text-[#138a3d]' : 'border-[#dbe6f2] bg-[#f8fbff] text-[#60748b]'
+      }`}>
+        <Icon size={18} strokeWidth={2.2} />
+      </span>
+      <span className="min-w-0">
+        <span className={`block text-sm font-semibold sm:text-[15px] ${active ? 'text-[#132033]' : 'text-[#35546c]'}`}>{title}</span>
+        {description ? <span className="mt-1 block text-xs leading-5 text-[#6b7d93] sm:mt-1.5">{description}</span> : null}
+      </span>
     </button>
   )
 }
@@ -2210,6 +2284,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     () => getPropertyTypeOptionsByCategory(form?.propertyCategory || 'residential'),
     [form?.propertyCategory],
   )
+  const propertyStructureOptions = useMemo(
+    () => getPropertyStructureOptionsByCategory(form?.propertyCategory || 'residential'),
+    [form?.propertyCategory],
+  )
   const propertyTypeLabel = useMemo(() => getPropertyTypeLabel(form?.propertyType || propertyTypeOptions[0]?.value || ''), [form?.propertyType, propertyTypeOptions])
   const addressSuggestions = useMemo(() => {
     const suggestions = []
@@ -2338,6 +2416,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         if (!propertyOptions.some((option) => option.value === next.propertyType)) {
           next.propertyType = propertyOptions[0]?.value || next.propertyType || ''
         }
+        const structureOptions = getPropertyStructureOptionsByCategory(value)
+        if (!structureOptions.some((option) => option.value === next.propertyStructureType)) {
+          next.propertyStructureType = structureOptions[0]?.value || next.propertyStructureType || ''
+        }
       }
       if (
         key === 'propertyCategory' ||
@@ -2431,6 +2513,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       const propertyOptions = getPropertyTypeOptionsByCategory(value)
       if (!propertyOptions.some((option) => option.value === next.propertyType)) {
         next.propertyType = propertyOptions[0]?.value || next.propertyType || ''
+      }
+      const structureOptions = getPropertyStructureOptionsByCategory(value)
+      if (!structureOptions.some((option) => option.value === next.propertyStructureType)) {
+        next.propertyStructureType = structureOptions[0]?.value || next.propertyStructureType || ''
       }
       next.canonicalPropertyType = normalizeCanonicalPropertyType(next)
       return next
@@ -3147,7 +3233,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
   const ownershipBranch = getOwnershipBranch(form.ownershipType)
   const ownershipFieldLabels = getOwnershipFieldLabels(form.ownershipType)
-  const selectedOwnership = OWNERSHIP_TYPES.find((item) => item.value === form.ownershipType) || OWNERSHIP_TYPES[0]
   const isMarriedOwnership = ownershipBranch === 'married'
   const isCompanyOwnership = ownershipBranch === 'company'
   const isTrustOwnership = ownershipBranch === 'trust'
@@ -3342,18 +3427,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 illustration="ownership"
                 mobilePaneIndex={sellerPaneIndexes.ownership}
               >
-                <label className="grid gap-2 text-sm font-medium text-[#2a4057] sm:hidden">
-                  Ownership structure
-                  <select className={DETAIL_INPUT_CLASS} value={form.ownershipType} onChange={(event) => handleOwnershipTypeChange(event.target.value)}>
-                    {OWNERSHIP_TYPES.map((item) => (
-                      <option key={item.value} value={item.value}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <div className="mt-3 hidden grid-cols-1 gap-2 sm:mt-4 sm:grid sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid grid-cols-1 gap-2 sm:mt-4 sm:grid-cols-2 lg:grid-cols-3">
                   {OWNERSHIP_TYPES.map((item) => {
                     const active = form.ownershipType === item.value
                     return (
@@ -3361,6 +3435,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         key={item.value}
                         onClick={() => handleOwnershipTypeChange(item.value)}
                         active={active}
+                        icon={OWNERSHIP_OPTION_ICONS[item.value] || UserRound}
                         title={item.label}
                         description={item.description}
                       />
@@ -3368,16 +3443,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   })}
                 </div>
 
-                <div className="mt-3 sm:mt-4">
-                  <OnboardingSummaryCard badge={getOwnershipBranchLabel(form.ownershipType)} title={selectedOwnership.label}>
-                    {selectedOwnership.description}
-                  </OnboardingSummaryCard>
-                  <p className="mt-2 hidden text-xs font-medium text-[#35546c] sm:block">
-                    {isMarriedOwnership
-                      ? 'Marital regime is derived from your ownership choice and kept internal. We’ll only ask for the spouse details that are actually needed.'
-                      : 'We’ll only show the next questions that fit this ownership structure.'}
-                  </p>
-                </div>
+                <p className="mt-3 text-xs font-medium leading-5 text-[#35546c]">
+                  {isMarriedOwnership
+                    ? 'Marital regime is derived from your ownership choice. We’ll only ask for the spouse details that are actually needed.'
+                    : 'We’ll only show the next questions that fit this ownership structure.'}
+                </p>
               </FormSection>
 
               <FormSection icon={UserRound} title={sellerIdentityCopy.title} description={sellerIdentityCopy.description} mobilePaneIndex={sellerPaneIndexes.identity}>
@@ -3888,46 +3958,20 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   illustration="property_details"
                   mobilePaneIndex={propertyPaneIndexes.category}
                 >
-                  <label className="grid gap-2 text-sm font-medium text-[#2a4057] sm:hidden">
-                    Property category
-                    <select className={DETAIL_INPUT_CLASS} value={form.propertyCategory} onChange={(event) => handlePropertyCategoryChange(event.target.value)}>
-                      {PROPERTY_CATEGORIES.map((category) => (
-                        <option key={category} value={category}>
-                          {getPropertyCategoryLabel(category)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <div className="hidden gap-2 sm:grid sm:grid-cols-2 lg:grid-cols-4">
-                    {PROPERTY_CATEGORIES.map((category) => (
-                      <ChoiceCard
-                        key={category}
-                        active={form.propertyCategory === category}
-                        title={getPropertyCategoryLabel(category)}
-                        description={
-                          category === 'residential'
-                            ? 'Homes, apartments, townhouses'
-                            : category === 'commercial'
-                              ? 'Offices, retail, business'
-                              : category === 'industrial'
-                                ? 'Warehouses, factories, parks'
-                                : category === 'agricultural'
-                                  ? 'Farms and holdings'
-                                  : category === 'mixed_use'
-                                    ? 'Residential and non-residential mix'
-                                    : category === 'vacant_land'
-                                      ? 'Vacant stands and land'
-                                      : 'Other property types'
-                        }
-                        onClick={() => handlePropertyCategoryChange(category)}
-                      />
-                    ))}
-                  </div>
-                  <div className="mt-4">
-                    <OnboardingSummaryCard badge="Selected branch" title={flow.property_branch_label || formatValue(propertyBranch)} icon="property_details" tone="neutral">
-                      Commercial and mixed-use hide residential-only questions. Sectional title and estate / HOA open their own follow-up fields.
-                    </OnboardingSummaryCard>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    {PROPERTY_CATEGORIES.map((category) => {
+                      const meta = PROPERTY_CATEGORY_META[category] || PROPERTY_CATEGORY_META.residential
+                      return (
+                        <ChoiceCard
+                          key={category}
+                          active={form.propertyCategory === category}
+                          icon={meta.icon}
+                          title={getPropertyCategoryLabel(category)}
+                          description={meta.description}
+                          onClick={() => handlePropertyCategoryChange(category)}
+                        />
+                      )
+                    })}
                   </div>
                 </FormSection>
 
@@ -3938,7 +3982,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   illustration="property_details"
                   mobilePaneIndex={propertyPaneIndexes.type}
                 >
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-3">
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       Property Type
                       <select
@@ -3953,28 +3997,25 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         ))}
                       </select>
                     </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Structure Type
-                      <select
-                        className={DETAIL_INPUT_CLASS}
-                        value={form.propertyStructureType}
-                        onChange={(event) => handleFormUpdate('propertyStructureType', event.target.value)}
-                      >
-                        {PROPERTY_STRUCTURE_TYPES.map((structureType) => (
-                          <option key={structureType} value={structureType}>
-                            {getPropertyStructureTypeLabel(structureType)}
-                          </option>
+                    <div className="grid gap-2">
+                      <p className="text-sm font-medium text-[#2a4057]">Legal structure</p>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        {propertyStructureOptions.map((structureType) => (
+                          <ChoiceCard
+                            key={structureType.value}
+                            active={form.propertyStructureType === structureType.value}
+                            icon={structureType.icon}
+                            title={structureType.label}
+                            description={structureType.description}
+                            onClick={() => handleFormUpdate('propertyStructureType', structureType.value)}
+                          />
                         ))}
-                      </select>
-                    </label>
+                      </div>
+                    </div>
                   </div>
-                  <div className="mt-4">
-                    <OnboardingSummaryCard
-                      title={`Selected: ${getPropertyCategoryLabel(form.propertyCategory)} / ${propertyTypeLabel} / ${getPropertyStructureTypeLabel(form.propertyStructureType)}.`}
-                    >
-                      You can update these later if needed.
-                    </OnboardingSummaryCard>
-                  </div>
+                  <p className="mt-3 text-xs font-medium leading-5 text-[#35546c]">
+                    {getPropertyCategoryLabel(form.propertyCategory)} controls the type list. The legal structure controls whether scheme, estate, land, or commercial follow-up fields appear.
+                  </p>
                 </FormSection>
 
                 <FormSection

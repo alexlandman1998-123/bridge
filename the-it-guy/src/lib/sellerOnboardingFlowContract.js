@@ -732,16 +732,15 @@ export function resolveSellerBranch(form = {}, listing = {}, facts = {}) {
 
 export function resolvePropertyBranch(form = {}, listing = {}, facts = {}) {
   const source = normalizeFactsSource(form, listing, facts)
-  const propertyCategory = normalizePropertyCategory(
+  const propertyCategoryCandidate =
     form?.propertyCategory ||
-      listing?.propertyCategory ||
-      listing?.property_category ||
-      source?.property?.category ||
-      source?.property?.property_category ||
-      source?.property?.propertyType ||
-      source?.property?.property_type,
-    { fallback: 'residential' },
-  )
+    listing?.propertyCategory ||
+    listing?.property_category ||
+    source?.property?.category ||
+    source?.property?.property_category ||
+    source?.property?.propertyType ||
+    source?.property?.property_type
+  const propertyCategory = normalizePropertyCategory(propertyCategoryCandidate, { fallback: '' })
   const propertyStructureType = normalizePropertyStructureType(
     form?.propertyStructureType ||
       form?.canonicalPropertyType ||
@@ -764,23 +763,26 @@ export function resolvePropertyBranch(form = {}, listing = {}, facts = {}) {
       source?.property?.estate_complex_name,
   )
 
-  if (['sectional_title', 'share_block'].includes(propertyStructureType) || form?.sectionalTitle || form?.shareBlock) {
-    return 'sectional_title'
-  }
-  if (form?.estateOrHoa || estateName || propertyStructureType === 'estate') {
-    return 'estate_hoa'
-  }
   if (propertyCategory === 'mixed_use') {
     return 'mixed_use'
   }
   if (propertyCategory === 'commercial' || propertyCategory === 'industrial' || propertyCategory === 'retail') {
     return 'commercial'
   }
-  if (propertyCategory === 'agricultural' || propertyStructureType === 'agricultural_holding') {
+  if (propertyCategory === 'agricultural') {
     return 'agricultural'
   }
   if (propertyCategory === 'vacant_land') {
     return 'vacant_land'
+  }
+  if (['sectional_title', 'share_block'].includes(propertyStructureType) || form?.sectionalTitle || form?.shareBlock) {
+    return 'sectional_title'
+  }
+  if (form?.estateOrHoa || estateName || propertyStructureType === 'estate') {
+    return 'estate_hoa'
+  }
+  if (propertyStructureType === 'agricultural_holding') {
+    return 'agricultural'
   }
   return 'residential'
 }

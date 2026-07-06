@@ -69,6 +69,38 @@ test('resolves the married sectional title branch contract', () => {
   assert.ok(flow.document_triggers.includes('gas_compliance_certificate'))
 })
 
+test('resolves broad property category before residential structure refinements', () => {
+  const commercialFlow = resolveSellerOnboardingFlowContract(
+    {
+      ownershipType: 'individual',
+      propertyCategory: 'commercial',
+      propertyType: 'office_building',
+      propertyStructureType: 'sectional_title',
+    },
+    listing,
+  )
+
+  assert.equal(commercialFlow.property_branch, 'commercial')
+  assert.equal(commercialFlow.property_branch_label, 'Commercial')
+  assert.equal(commercialFlow.property_category, 'commercial')
+  assert.equal(commercialFlow.property_structure_type, 'sectional_title')
+  assert.ok(commercialFlow.seller_facing_questions.includes('property.use.description'))
+
+  const residentialFlow = resolveSellerOnboardingFlowContract(
+    {
+      ownershipType: 'individual',
+      propertyCategory: 'residential',
+      propertyType: 'apartment',
+      propertyStructureType: 'sectional_title',
+    },
+    listing,
+  )
+
+  assert.equal(residentialFlow.property_branch, 'sectional_title')
+  assert.equal(residentialFlow.property_branch_label, 'Sectional Title')
+  assert.ok(residentialFlow.seller_facing_questions.includes('property.scheme.name'))
+})
+
 test('shares visible and required fields through the flow helper', () => {
   const flow = resolveSellerOnboardingFlow(
     {
