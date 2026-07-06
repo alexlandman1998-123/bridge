@@ -224,12 +224,6 @@ function getBuyerBondOriginatorRequestMessage(request = null) {
   return ''
 }
 
-function getSellerPortalInitials(value = '', fallback = 'B9') {
-  const parts = String(value || '').trim().split(/\s+/).filter(Boolean)
-  if (!parts.length) return fallback
-  return parts.slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('')
-}
-
 function splitSellerPortalAddress(value = '') {
   const parts = String(value || '').split(',').map((part) => part.trim()).filter(Boolean)
   if (!parts.length) {
@@ -2713,67 +2707,56 @@ function SellerWelcomeHero({
   const heroPrimaryButtonClass = 'inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[14px] bg-[#183b63] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#112d4b]'
   const heroSecondaryButtonClass = 'inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[14px] border border-[#d6e1ec] bg-white px-4 py-2.5 text-sm font-semibold text-[#20384f] transition hover:border-[#bfd0e1] hover:bg-[#f8fbff]'
   const sellerAddressLines = splitSellerPortalAddress(sellerPropertyTitle)
-  const agentInitials = getSellerPortalInitials(sellerAgencyName || sellerAgentName, 'B9')
+  const agentLabel = sellerAgentName && sellerAgentName !== sellerAgencyName
+    ? `${sellerAgencyName || 'Your agent'} · ${sellerAgentName}`
+    : sellerAgencyName || sellerAgentName || 'Your property team'
 
   return (
     <section className="rounded-[24px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fcfdff_100%)] px-6 py-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)] md:px-8 md:py-8">
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-center">
-        <div className="min-w-0">
-          <h1 className="text-[2rem] font-semibold leading-tight tracking-[-0.05em] text-[#142132] sm:text-[2.35rem]">
-            Welcome, {sellerFirstName}
-          </h1>
-          <p className="mt-2 max-w-3xl text-[1rem] font-medium leading-7 text-[#35546c]">
-            Track your property sale from mandate to registration.
+      <div className="min-w-0">
+        <h1 className="text-[2rem] font-semibold leading-tight tracking-[-0.05em] text-[#142132] sm:text-[2.35rem]">
+          Welcome, {sellerFirstName}
+        </h1>
+        <p className="mt-2 max-w-3xl text-[1rem] font-medium leading-7 text-[#35546c]">
+          Track your property sale from mandate to registration.
+        </p>
+        <div className="mt-5 space-y-1.5 text-sm leading-6 text-[#51657b]">
+          {sellerAddressLines.line1 ? (
+            <p>
+              <span className="font-semibold text-[#142132]">Property:</span> {sellerAddressLines.line1}
+              {sellerAddressLines.line2 ? <span className="text-[#64748b]">, {sellerAddressLines.line2}</span> : null}
+            </p>
+          ) : null}
+          <p>
+            <span className="font-semibold text-[#142132]">Agent:</span> {agentLabel}
           </p>
-          <div className="mt-5 rounded-[18px] border border-[#e5edf5] bg-[#f8fbff] px-4 py-3">
-            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Property</span>
-            <p className="mt-1.5 text-base font-semibold text-[#142132]">{sellerAddressLines.line1}</p>
-            {sellerAddressLines.line2 ? (
-              <p className="mt-1 text-sm text-[#64748b]">{sellerAddressLines.line2}</p>
-            ) : null}
-          </div>
+          {sellerAgentPhone ? (
+            <p className="inline-flex items-center gap-2">
+              <PhoneCall size={14} />
+              {sellerAgentPhone}
+            </p>
+          ) : null}
         </div>
-
-        <article className="rounded-[22px] border border-[#dce6ef] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-          <div className="flex items-start gap-3">
-            <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#183b63] text-sm font-semibold text-white">
-              {agentInitials}
-            </span>
-            <div className="min-w-0">
-              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Your Agent</span>
-              <h2 className="mt-1.5 text-base font-semibold text-[#142132]">{sellerAgencyName || sellerAgentName || 'Arch9 Property Team'}</h2>
-              {sellerAgentName && sellerAgentName !== sellerAgencyName ? (
-                <p className="mt-1 text-sm text-[#64748b]">{sellerAgentName}</p>
-              ) : null}
-              {sellerAgentPhone ? (
-                <p className="mt-1.5 inline-flex items-center gap-2 text-sm text-[#51657b]">
-                  <PhoneCall size={14} />
-                  {sellerAgentPhone}
-                </p>
-              ) : null}
-            </div>
-          </div>
-          <div className="mt-5 flex flex-wrap gap-2.5">
-            <SellerPortalAction
-              action={messageAction}
-              token={token}
-              workspaceNavigationScope={workspaceNavigationScope}
-              className={heroPrimaryButtonClass}
-            >
-              <MessageCircle size={15} />
-              <span>Message agent</span>
-            </SellerPortalAction>
-            <SellerPortalAction
-              action={callAction}
-              token={token}
-              workspaceNavigationScope={workspaceNavigationScope}
-              className={heroSecondaryButtonClass}
-            >
-              <PhoneCall size={15} />
-              <span>Call agent</span>
-            </SellerPortalAction>
-          </div>
-        </article>
+        <div className="mt-5 flex flex-wrap gap-2.5">
+          <SellerPortalAction
+            action={messageAction}
+            token={token}
+            workspaceNavigationScope={workspaceNavigationScope}
+            className={heroPrimaryButtonClass}
+          >
+            <MessageCircle size={15} />
+            <span>Message agent</span>
+          </SellerPortalAction>
+          <SellerPortalAction
+            action={callAction}
+            token={token}
+            workspaceNavigationScope={workspaceNavigationScope}
+            className={heroSecondaryButtonClass}
+          >
+            <PhoneCall size={15} />
+            <span>Call agent</span>
+          </SellerPortalAction>
+        </div>
       </div>
     </section>
   )
