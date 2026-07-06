@@ -326,13 +326,11 @@ export function OnboardingStepHeader({
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           {logoUrl ? (
-            <span className="inline-flex h-12 max-w-[190px] shrink-0 items-center justify-center overflow-hidden rounded-[12px] border border-[#dbe5ef] bg-white shadow-[0_12px_24px_rgba(20,32,51,0.08)]">
-              <img
-                src={logoUrl}
-                alt={`${name} logo`}
-                className="h-full w-auto max-w-full object-contain"
-              />
-            </span>
+            <img
+              src={logoUrl}
+              alt={`${name} logo`}
+              className="h-12 w-auto max-w-[205px] shrink-0 object-contain"
+            />
           ) : (
             <>
               <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[15px] bg-[#142033] text-xs font-semibold text-white shadow-[0_12px_24px_rgba(20,32,51,0.16)]">
@@ -345,13 +343,13 @@ export function OnboardingStepHeader({
             </>
           )}
         </div>
-        <span className="inline-flex h-10 shrink-0 items-center rounded-full bg-[#eef4fb] px-3 text-sm font-semibold text-[#4d637a]">
+        <span className="inline-flex h-10 shrink-0 items-center rounded-full border border-[#f7cf22]/45 bg-[#fff8d9] px-3 text-sm font-semibold text-[#002b62]">
           {questionPosition}/{questionTotal}
         </span>
       </div>
 
       <div className="mt-5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#445b73]">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#002b62]">
           Question {questionPosition} of {questionTotal}
         </p>
         <h1 className="mt-2 text-2xl font-semibold leading-[1.1] tracking-normal text-[#132033]">
@@ -362,7 +360,7 @@ export function OnboardingStepHeader({
 
       <div className="mt-5 h-2 overflow-hidden rounded-full bg-[#e9eef5]" aria-hidden="true">
         <span
-          className="block h-full rounded-full bg-[linear-gradient(90deg,#16344a_0%,#2f8f86_100%)] transition-[width] duration-300"
+          className="block h-full rounded-full bg-[linear-gradient(90deg,#002b62_0%,#f7cf22_100%)] transition-[width] duration-300"
           style={{ width: `${progressPercent}%` }}
         />
       </div>
@@ -471,16 +469,16 @@ export function OnboardingOptionCard({
       name={name}
       value={value}
       onClick={onSelect}
-      className={`group flex w-full items-center gap-3 rounded-[18px] border px-3.5 py-3.5 text-left transition duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f8f86]/30 ${
+      className={`group flex w-full items-center gap-3 rounded-[18px] border px-3.5 py-3.5 text-left transition duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f7cf22]/45 ${
         selected
-          ? 'border-[#142033] bg-[#f6fbff] shadow-[0_14px_30px_rgba(20,32,51,0.12)] ring-1 ring-[#142033]/10'
+          ? 'border-[#002b62] bg-[#fffbea] shadow-[0_14px_30px_rgba(0,43,98,0.12)] ring-1 ring-[#f7cf22]/30'
           : 'border-[#dbe5ef] bg-white shadow-[0_10px_22px_rgba(15,23,42,0.045)] hover:border-[#b9cadd] hover:bg-[#fbfdff]'
       }`}
     >
       <span
         className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] border ${
           selected
-            ? 'border-[#b6d7cf] bg-[#e9f8f2] text-[#16344a]'
+            ? 'border-[#f7cf22]/70 bg-[#fff6c7] text-[#002b62]'
             : 'border-[#d8e5ee] bg-[#f7fafc] text-[#35546c]'
         }`}
       >
@@ -489,7 +487,7 @@ export function OnboardingOptionCard({
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2 text-sm font-semibold leading-5 text-[#142033]">
           {label}
-          {selected ? <CheckCircle2 size={15} className="shrink-0 text-[#2f8f86]" aria-hidden="true" /> : null}
+          {selected ? <CheckCircle2 size={15} className="shrink-0 text-[#c99c00]" aria-hidden="true" /> : null}
         </span>
         {description ? <span className="mt-1 block text-xs leading-5 text-[#516981]">{description}</span> : null}
       </span>
@@ -587,7 +585,7 @@ export function StickyOnboardingActions({
             type="button"
             onClick={onPrimary}
             disabled={saving}
-            className="mt-2.5 w-full min-h-[48px] rounded-[14px] bg-[#0f2d46] text-white hover:bg-[#0c2438] md:mt-3 md:min-h-[54px] md:max-w-[320px]"
+            className="mt-2.5 w-full min-h-[48px] rounded-[14px] bg-[#002b62] text-white hover:bg-[#001f4a] focus-visible:ring-[#f7cf22]/45 md:mt-3 md:min-h-[54px] md:max-w-[320px]"
           >
             {primaryActionLabel}
             {primaryActionLabel === 'Submit Onboarding' ? null : <ChevronRight size={14} />}

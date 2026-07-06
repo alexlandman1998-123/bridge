@@ -4398,7 +4398,7 @@ function ClientOnboarding() {
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#eef3f8] md:mt-4 md:h-2.5" aria-hidden="true">
                 <span
                   className="block h-full rounded-full transition-[width] duration-300"
-                  style={{ width: `${mobileProgressPercent}%`, backgroundImage: 'linear-gradient(90deg,#35546c 0%,#2f8f86 100%)' }}
+                  style={{ width: `${mobileProgressPercent}%`, backgroundImage: 'linear-gradient(90deg,#002b62 0%,#f7cf22 100%)' }}
                 />
               </div>
               <div className="mt-3 grid gap-2 md:mt-4 md:grid-cols-4 md:gap-3">
@@ -4413,15 +4413,15 @@ function ClientOnboarding() {
                       <div className="flex items-start justify-between gap-3">
                         <div className={`inline-flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold ${
                           isActive
-                            ? 'border-[#35546c] bg-[#35546c] text-white'
+                            ? 'border-[#002b62] bg-[#002b62] text-white'
                             : isComplete
-                              ? 'border-[#1f9d61] bg-[#edf9f1] text-[#1f9d61]'
+                              ? 'border-[#f7cf22] bg-[#fff8d9] text-[#735800]'
                               : 'border-[#d5e0ec] bg-white text-[#6b7d93]'
                         }`}>
                           {String(index + 1).padStart(2, '0')}
                         </div>
                         {isActive ? (
-                          <span className="inline-flex items-center rounded-full border border-[#cfe3d7] bg-[#eef8f1] px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#2f7a51]">
+                          <span className="inline-flex items-center rounded-full border border-[#f7cf22]/55 bg-[#fff8d9] px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#735800]">
                             Current
                           </span>
                         ) : null}

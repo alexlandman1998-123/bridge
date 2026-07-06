@@ -1327,13 +1327,11 @@ function AgencyMark({ brand, tone = 'dark' }) {
 
   if (logoUrl) {
     return (
-      <span className={`inline-flex h-11 min-w-11 max-w-[190px] items-center justify-center rounded-[14px] px-2 py-1.5 shadow-[0_12px_30px_rgba(0,0,0,0.18)] sm:h-16 sm:min-w-16 sm:max-w-[260px] sm:rounded-[18px] sm:px-3 sm:py-2 ${tone === 'light' ? 'border border-[#dbe5ef] bg-white' : 'border border-white/15 bg-white/5'}`}>
-        <img
-          src={logoUrl}
-          alt={`${brand?.name || 'Agency'} logo`}
-          className="max-h-8 w-auto max-w-[170px] object-contain sm:max-h-12 sm:max-w-[230px]"
-        />
-      </span>
+      <img
+        src={logoUrl}
+        alt={`${brand?.name || 'Agency'} logo`}
+        className={`h-11 w-auto max-w-[190px] object-contain sm:h-16 sm:max-w-[260px] ${tone === 'dark' ? 'drop-shadow-[0_14px_28px_rgba(0,0,0,0.24)]' : ''}`}
+      />
     )
   }
 
