@@ -232,6 +232,7 @@ const STEP_META = [
   },
 ]
 const FINAL_STEP_INDEX = STEPS.length - 1
+const DISCLOSURE_QUESTIONS_PER_MOBILE_PANE = 4
 const MobileQuestionFlowContext = createContext(null)
 
 function resolveSellerOnboardingSubmitError(error) {
@@ -590,6 +591,18 @@ function MobileQuestionPane({ children, className = '', paneIndex = null }) {
       {children}
     </div>
   )
+}
+
+function getDisclosureQuestionPaneCount() {
+  return Math.ceil(PROPERTY_DISCLOSURE_QUESTIONS.length / DISCLOSURE_QUESTIONS_PER_MOBILE_PANE)
+}
+
+function getDisclosureQuestionGroups() {
+  const groups = []
+  for (let index = 0; index < PROPERTY_DISCLOSURE_QUESTIONS.length; index += DISCLOSURE_QUESTIONS_PER_MOBILE_PANE) {
+    groups.push(PROPERTY_DISCLOSURE_QUESTIONS.slice(index, index + DISCLOSURE_QUESTIONS_PER_MOBILE_PANE))
+  }
+  return groups
 }
 
 function getPropertyDisclosureMissingItems(disclosure = {}) {
@@ -1773,6 +1786,9 @@ function PropertyDisclosureSection({
     { key: PROPERTY_DISCLOSURE_ANSWER.no, label: 'No' },
     { key: PROPERTY_DISCLOSURE_ANSWER.unsure, label: 'Unsure' },
   ]
+  const disclosureQuestionGroups = getDisclosureQuestionGroups()
+  const commentsPaneIndex = disclosureQuestionGroups.length + 1
+  const declarationPaneIndex = commentsPaneIndex + 1
 
   return (
     <StepShell
@@ -1794,42 +1810,53 @@ function PropertyDisclosureSection({
           </div>
           </MobileQuestionPane>
           <div className="space-y-3 sm:hidden">
-            {PROPERTY_DISCLOSURE_QUESTIONS.map((question, questionIndex) => {
-              const response = normalized.responses?.[question.key] || {}
+            {disclosureQuestionGroups.map((questions, groupIndex) => {
+              const firstQuestion = questions[0]
+              const lastQuestion = questions[questions.length - 1]
+              const answeredInGroup = questions.filter((question) => normalized.responses?.[question.key]?.answer).length
               return (
-                <MobileQuestionPane key={question.key} paneIndex={questionIndex + 1}>
-                <article key={question.key} className="rounded-[18px] border border-[#dfe8f2] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                  <div className="flex items-start gap-3">
-                    <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#eef6f2] text-sm font-semibold text-[#138a3d]">
-                      {question.number}
-                    </span>
-                    <p className="min-w-0 text-sm font-semibold leading-6 text-[#172334]">{question.text}</p>
+                <MobileQuestionPane key={`${firstQuestion?.key || groupIndex}-group`} paneIndex={groupIndex + 1} className="space-y-3">
+                  <div className="flex items-center justify-between gap-3 rounded-[14px] border border-[#dbe6f2] bg-[#f8fbff] px-3 py-2 text-xs font-semibold text-[#4f6378]">
+                    <span>Questions {firstQuestion?.number}-{lastQuestion?.number}</span>
+                    <span>{answeredInGroup} / {questions.length} answered</span>
                   </div>
-                  {question.extraLabel ? (
-                    <label className="mt-3 grid gap-1.5 text-xs font-semibold text-[#4f6378]">
-                      {question.extraLabel}
-                      <input
-                        className="min-h-11 rounded-[12px] border border-[#d7e2ed] bg-white px-3 text-sm text-[#142334] outline-none focus:border-[#35546c]/40 focus:ring-2 focus:ring-[#35546c]/10"
-                        value={normalized.remoteControlsQuantity}
-                        onChange={(event) => onDisclosureChange('remoteControlsQuantity', event.target.value)}
-                        placeholder="e.g. 2 gate remotes, 1 garage remote"
-                      />
-                    </label>
-                  ) : null}
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    {answerOptions.map((option) => (
-                      <button
-                        key={option.key}
-                        type="button"
-                        aria-pressed={response.answer === option.key}
-                        onClick={() => onAnswerChange(question.key, option.key)}
-                        className={disclosureAnswerClass(response.answer === option.key)}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </article>
+                  {questions.map((question) => {
+                    const response = normalized.responses?.[question.key] || {}
+                    return (
+                      <article key={question.key} className="rounded-[18px] border border-[#dfe8f2] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                        <div className="flex items-start gap-3">
+                          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#eef6f2] text-sm font-semibold text-[#138a3d]">
+                            {question.number}
+                          </span>
+                          <p className="min-w-0 text-sm font-semibold leading-6 text-[#172334]">{question.text}</p>
+                        </div>
+                        {question.extraLabel ? (
+                          <label className="mt-3 grid gap-1.5 text-xs font-semibold text-[#4f6378]">
+                            {question.extraLabel}
+                            <input
+                              className="min-h-11 rounded-[12px] border border-[#d7e2ed] bg-white px-3 text-sm text-[#142334] outline-none focus:border-[#35546c]/40 focus:ring-2 focus:ring-[#35546c]/10"
+                              value={normalized.remoteControlsQuantity}
+                              onChange={(event) => onDisclosureChange('remoteControlsQuantity', event.target.value)}
+                              placeholder="e.g. 2 gate remotes, 1 garage remote"
+                            />
+                          </label>
+                        ) : null}
+                        <div className="mt-3 grid grid-cols-3 gap-2">
+                          {answerOptions.map((option) => (
+                            <button
+                              key={option.key}
+                              type="button"
+                              aria-pressed={response.answer === option.key}
+                              onClick={() => onAnswerChange(question.key, option.key)}
+                              className={disclosureAnswerClass(response.answer === option.key)}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </article>
+                    )
+                  })}
                 </MobileQuestionPane>
               )
             })}
@@ -1883,7 +1910,7 @@ function PropertyDisclosureSection({
               </tbody>
             </table>
           </div>
-          <MobileQuestionPane paneIndex={PROPERTY_DISCLOSURE_QUESTIONS.length + 1}>
+          <MobileQuestionPane paneIndex={commentsPaneIndex}>
             <label className="mt-4 grid gap-2 text-sm font-medium text-[#2a4057]">
               21. Comments or explanation for any of the above
               <textarea
@@ -1901,7 +1928,7 @@ function PropertyDisclosureSection({
             icon={FileCheck2}
             title="Seller Declaration"
             description="Sign only when the disclosure information is true and complete to the best of your knowledge."
-            mobilePaneIndex={PROPERTY_DISCLOSURE_QUESTIONS.length + 2}
+            mobilePaneIndex={declarationPaneIndex}
           >
             <div className="rounded-[18px] border border-[#d8ecdf] bg-[#f5fbf7] p-4 text-sm leading-6 text-[#25603d]">
               I declare that the information provided above is true and complete to the best of my knowledge and that I have disclosed all known material facts relating to the property.
@@ -3288,7 +3315,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     if (currentStep === 1) return propertyPaneIndexes.count
     if (currentStep === 2) {
       const disclosureAnswered = getPropertyDisclosureAnswerSummary(form.propertyDisclosure || {}).answered
-      return 1 + PROPERTY_DISCLOSURE_QUESTIONS.length + 1 + (disclosureAnswered ? 1 : 0)
+      return 1 + getDisclosureQuestionPaneCount() + 1 + (disclosureAnswered ? 1 : 0)
     }
     return 1
   })()
