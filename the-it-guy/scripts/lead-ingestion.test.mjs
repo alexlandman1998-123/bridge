@@ -70,7 +70,7 @@ assert.match(pageSource, /Enquiry History/)
 assert.match(pageSource, /Original Source/)
 assert.match(pageSource, /Latest Source/)
 assert.match(pageSource, /Original Enquiry Listing/)
-for (const copy of ['Create Lead', 'Buyer Lead', 'Seller Lead', 'Other Lead', 'Import Leads', 'Create Buyer Lead', 'Create Seller Lead']) {
+for (const copy of ['Create Lead', 'Buyer Lead', 'Seller Lead', 'Other Lead', 'Import Leads', 'Buyer Leads', 'Seller Leads', 'Quick filters']) {
   assert.match(pageSource, new RegExp(copy), `leads page should render ${copy}`)
 }
 assert.match(pageSource, /buyer-lead-workspace/, 'buyer leads should keep the residential buyer workspace shell')

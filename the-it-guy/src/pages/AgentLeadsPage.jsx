@@ -26,10 +26,12 @@ import {
   Search,
   Send,
   Shield,
+  SlidersHorizontal,
   Tag,
   Target,
   Trash2,
   UserRound,
+  Upload,
 } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -238,15 +240,15 @@ const VIEWING_NEXT_STEP_OPTIONS = [
   'Follow up with buyer',
   'Close out property',
 ]
-const LEAD_CATEGORY_FILTERS = [
-  { key: 'buyer', label: 'Buyer Leads' },
-  { key: 'seller', label: 'Seller Leads' },
-  { key: 'referrals_received', label: 'Referrals Received' },
-  { key: 'referrals_given', label: 'Referrals Given' },
-  { key: 'referral_clients', label: 'Referral Clients' },
-  { key: 'referral_partners', label: 'Referral Partners' },
-  { key: 'referral_insights', label: 'Referral Insights' },
-  { key: 'archived', label: 'Archived' },
+const LEAD_PRIMARY_TABS = [
+  { key: 'buyer', label: 'Buyer Leads', icon: UserRound },
+  { key: 'seller', label: 'Seller Leads', icon: Home },
+]
+const LEAD_QUICK_FILTERS = [
+  { key: 'all', label: 'All Leads' },
+  { key: 'new', label: 'New Leads' },
+  { key: 'hot', label: 'Hot Leads' },
+  { key: 'referrals', label: 'Referrals' },
 ]
 const LEAD_SOURCE_PILL_STYLES = {
   property24: { tone: 'blue', label: 'Property24' },
@@ -733,6 +735,61 @@ function isArchivedLead(row = {}) {
   const safeRow = row && typeof row === 'object' ? row : {}
   const lifecycle = `${safeRow.stage || ''} ${safeRow.status || ''} ${safeRow.lifecycleStatus || safeRow.lifecycle_status || ''}`.toLowerCase()
   return lifecycle.includes('archived')
+}
+
+function getLeadPrimaryView(value = '') {
+  const normalized = normalizeText(value).toLowerCase()
+  return LEAD_PRIMARY_TABS.some((option) => option.key === normalized) ? normalized : 'buyer'
+}
+
+function isNewLead(row = {}) {
+  const lifecycle = `${row?.stage || ''} ${row?.status || ''}`.toLowerCase()
+  return lifecycle.includes('new')
+}
+
+function isHotLead(row = {}) {
+  const text = `${row?.priority || ''} ${row?.temperature || ''} ${row?.leadScoreLabel || ''} ${row?.stage || ''} ${row?.status || ''}`.toLowerCase()
+  return ['hot', 'urgent', 'high'].some((token) => text.includes(token))
+}
+
+function getReferralLeadIdSet(referrals = []) {
+  return new Set((Array.isArray(referrals) ? referrals : []).map((referral) => normalizeText(referral?.sourceLeadId)).filter(Boolean))
+}
+
+function getReferralForLead(row = {}, referrals = []) {
+  const leadId = normalizeText(row?.leadId)
+  if (!leadId) return null
+  return (Array.isArray(referrals) ? referrals : []).find((referral) => normalizeText(referral?.sourceLeadId) === leadId) || null
+}
+
+function isReferralLead(row = {}, referralLeadIds = new Set()) {
+  const leadId = normalizeText(row?.leadId)
+  if (leadId && referralLeadIds.has(leadId)) return true
+  return normalizeText(row?.source).toLowerCase().includes('referral')
+}
+
+function getReferralLeadBadgeLabel(row = {}, referrals = [], organisationId = '') {
+  const referral = getReferralForLead(row, referrals)
+  if (!referral && !normalizeText(row?.source).toLowerCase().includes('referral')) return ''
+  if (!referral) return normalizeText(row?.source) || 'Referral'
+  const direction = getReferralDirection(referral, organisationId)
+  if (direction === 'received') return 'Referral Received'
+  const scope = normalizeText(referral.recipientScope).toLowerCase()
+  if (scope === 'internal') return 'Internal Referral'
+  const referralType = normalizeText(referral.referralType).toLowerCase()
+  if (referralType.includes('client')) return 'Referral Client'
+  return 'Referral Partner'
+}
+
+function applyLeadQuickFilters(rows = [], quickFilters = [], referralLeadIds = new Set()) {
+  const activeFilters = new Set((Array.isArray(quickFilters) ? quickFilters : []).filter((key) => key && key !== 'all'))
+  if (!activeFilters.size) return rows
+  return rows.filter((row) => {
+    if (activeFilters.has('new') && !isNewLead(row)) return false
+    if (activeFilters.has('hot') && !isHotLead(row)) return false
+    if (activeFilters.has('referrals') && !isReferralLead(row, referralLeadIds)) return false
+    return true
+  })
 }
 
 function isUuidLike(value = '') {
@@ -4488,41 +4545,27 @@ function LeadSourcePill({ source = '' }) {
     )
   }
   const sourceStyle = LEAD_SOURCE_PILL_STYLES[sourceKey] || LEAD_SOURCE_PILL_FALLBACK
-  return <StatusPill tone={sourceStyle.tone}>{sourceStyle.label}</StatusPill>
+  const sourceLabel = normalizeText(source)
+  const displayLabel = sourceKey === 'referral' && sourceLabel ? titleCaseLabel(sourceLabel) : sourceStyle.label
+  return <StatusPill tone={sourceStyle.tone}>{displayLabel}</StatusPill>
 }
 
-function LeadTypeTabs({ activeCategory = 'buyer', rows = [], referralCounts = {}, onChange }) {
+function LeadTypeTabs({ activeCategory = 'buyer', rows = [], onChange }) {
+  const activeView = getLeadPrimaryView(activeCategory)
   const counts = rows.reduce((accumulator, row) => {
-    if (isArchivedLead(row)) {
-      accumulator.archived += 1
-    } else {
-      const category = normalizeLeadCategory(row)
-      accumulator[category] = (accumulator[category] || 0) + 1
-      accumulator.active += 1
-    }
+    if (isArchivedLead(row)) return accumulator
+    const category = normalizeLeadCategory(row)
+    accumulator[category] = (accumulator[category] || 0) + 1
     return accumulator
-  }, { active: 0, buyer: 0, seller: 0, other: 0, archived: 0 })
+  }, { buyer: 0, seller: 0, other: 0 })
 
   return (
-    <div className="w-full overflow-visible">
-      <div className="flex min-h-12 flex-wrap items-center gap-x-4 gap-y-2" role="tablist" aria-label="Lead category tabs">
-        {LEAD_CATEGORY_FILTERS.map((option) => {
-          const active = activeCategory === option.key
-          const countValue = option.key === 'referrals_received'
-            ? referralCounts.received || 0
-            : option.key === 'referrals_given'
-              ? referralCounts.given || 0
-              : option.key === 'referral_clients'
-                ? referralCounts.clients || 0
-                : option.key === 'referral_partners'
-                  ? referralCounts.partners || 0
-                  : option.key === 'referral_insights'
-                    ? referralCounts.insights || 0
-                    : option.key === 'archived'
-                      ? counts.archived
-                      : option.key === 'other'
-                        ? counts.other
-                        : counts[option.key] || 0
+    <div className="w-full overflow-x-auto">
+      <div className="flex min-w-max items-center gap-8 px-6" role="tablist" aria-label="Lead workspace views">
+        {LEAD_PRIMARY_TABS.map((option) => {
+          const active = activeView === option.key
+          const countValue = counts[option.key] || 0
+          const Icon = option.icon
           return (
             <button
               key={option.key}
@@ -4530,13 +4573,14 @@ function LeadTypeTabs({ activeCategory = 'buyer', rows = [], referralCounts = {}
               role="tab"
               aria-selected={active}
               onClick={() => onChange((previous) => ({ ...previous, category: option.key }))}
-              className={`relative inline-flex min-h-10 items-center gap-2 whitespace-nowrap rounded-xl px-3 text-sm font-semibold transition ${active ? 'text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
+              className={`relative inline-flex min-h-16 items-center gap-3 whitespace-nowrap px-1 text-sm font-semibold transition ${active ? 'text-blue-700' : 'text-slate-600 hover:text-slate-950'}`}
             >
+              <Icon size={19} strokeWidth={1.9} />
               {option.label}
-              <span className={`inline-flex min-h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs ${active ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
+              <span className={`inline-flex min-h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs font-bold ${active ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
                 {countValue}
               </span>
-              {active ? <span className="absolute inset-x-2 -bottom-3 h-0.5 rounded-full bg-blue-500" aria-hidden="true" /> : null}
+              {active ? <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-blue-600" aria-hidden="true" /> : null}
             </button>
           )
         })}
@@ -6139,7 +6183,7 @@ function RowActionMenu({ row, onOpen, onDelete }) {
     const rect = buttonRef.current?.getBoundingClientRect()
     if (!rect) return
     const menuWidth = 192
-    const menuHeight = canDelete ? 236 : 188
+    const menuHeight = canDelete ? 276 : 228
     const viewportPadding = 12
     const left = Math.max(
       viewportPadding,
@@ -6196,6 +6240,10 @@ function RowActionMenu({ row, onOpen, onDelete }) {
           role="menu"
           aria-label={`More actions for ${rowName}`}
         >
+          <button type="button" onClick={runOpenAction} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50" role="menuitem">
+            <ExternalLink size={15} />
+            Open
+          </button>
           {['Assign', 'Reassign', 'Archive', 'Convert'].map((label) => (
             <button key={label} type="button" onClick={runOpenAction} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50" role="menuitem">{label}</button>
           ))}
@@ -6215,9 +6263,6 @@ function RowActionMenu({ row, onOpen, onDelete }) {
 
   return (
     <div className="flex items-center justify-end gap-2">
-      <button type="button" onClick={onOpen} className="inline-flex min-h-9 items-center gap-2 rounded-xl bg-slate-900 px-3 text-xs font-semibold text-white hover:bg-slate-700">
-        Open <ExternalLink size={13} />
-      </button>
       <button
         ref={buttonRef}
         type="button"
@@ -6235,33 +6280,15 @@ function RowActionMenu({ row, onOpen, onDelete }) {
 }
 
 function getLeadTableColumns(category = 'buyer') {
-  if (category === 'seller') {
-    return [
-      { key: 'lead', label: 'Lead' },
-      { key: 'source', label: 'Source' },
-      { key: 'address', label: 'Address' },
-      { key: 'stage', label: 'Stage' },
-      { key: 'owner', label: 'Owner' },
-      { key: 'activity', label: 'Last Activity' },
-      { key: 'action', label: 'Action' },
-    ]
-  }
   return [
-    { key: 'lead', label: 'Lead' },
-    { key: 'type', label: 'Type' },
-    { key: 'source', label: 'Source' },
-    { key: 'property', label: 'Property Enquired On' },
-    { key: 'stage', label: 'Stage' },
-    { key: 'owner', label: 'Owner' },
-    { key: 'activity', label: 'Last Activity' },
-    { key: 'action', label: 'Action' },
+    { key: 'lead', label: 'Lead', className: 'w-[28%]' },
+    { key: 'source', label: 'Source', className: 'w-[14%]' },
+    { key: 'stage', label: 'Stage', className: 'w-[13%]' },
+    { key: 'agent', label: 'Agent', className: 'w-[13%]' },
+    { key: 'activity', label: 'Last Activity', className: 'w-[15%]' },
+    { key: 'created', label: 'Created', className: 'w-[10%]' },
+    { key: 'actions', label: 'Actions', className: 'w-[7%] text-right' },
   ]
-}
-
-function getLeadTableTypeLabel(category = 'buyer') {
-  if (category === 'seller') return 'Seller'
-  if (category === 'other') return 'Other'
-  return 'Buyer'
 }
 
 function getBuyerPropertyEnquiry(row = {}) {
@@ -6355,9 +6382,8 @@ function EmptyLeadResults({ onCreate, onImport, onAdjustFilters }) {
     <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-10 text-center">
       <p className="text-sm font-semibold text-slate-900">No leads found</p>
       <p className="mx-auto mt-2 max-w-xl text-sm text-slate-500">Create your first buyer or seller lead to start managing the pipeline.</p>
-      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        <button type="button" onClick={() => onCreate('buyer')} className="inline-flex min-h-10 w-full items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white">Create Buyer Lead</button>
-        <button type="button" onClick={() => onCreate('seller')} className="inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Create Seller Lead</button>
+      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+        <CreateLeadDropdown activeCategory="all" onCreate={onCreate} className="w-full" buttonClassName="w-full min-h-10" />
         <button type="button" onClick={onImport} className="inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Import Leads</button>
         <button type="button" onClick={onAdjustFilters} className="inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Adjust Filters</button>
       </div>
@@ -6366,13 +6392,10 @@ function EmptyLeadResults({ onCreate, onImport, onAdjustFilters }) {
 }
 
 function getCreateLeadButtonLabel(category = 'all') {
-  if (category === 'buyer') return 'Create Buyer Lead'
-  if (category === 'seller') return 'Create Seller Lead'
-  if (category === 'other') return 'Create Other Lead'
   return 'Create Lead'
 }
 
-function CreateLeadDropdown({ activeCategory = 'all', onCreate, onImport, className = '', buttonClassName = '' }) {
+function CreateLeadDropdown({ activeCategory = 'all', onCreate, className = '', buttonClassName = '' }) {
   const [open, setOpen] = useState(false)
   const defaultCategory = ['buyer', 'seller', 'other'].includes(activeCategory) ? activeCategory : ''
   const buttonLabel = getCreateLeadButtonLabel(activeCategory)
@@ -6392,7 +6415,7 @@ function CreateLeadDropdown({ activeCategory = 'all', onCreate, onImport, classN
       <button
         type="button"
         onClick={() => defaultCategory ? choose(defaultCategory) : setOpen((previous) => !previous)}
-        className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-700 ${buttonClassName}`.trim()}
+        className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 ${buttonClassName}`.trim()}
         aria-haspopup="menu"
         aria-expanded={open}
       >
@@ -6414,10 +6437,68 @@ function CreateLeadDropdown({ activeCategory = 'all', onCreate, onImport, classN
               <span className="mt-0.5 block text-xs font-medium text-slate-500">{option.helper}</span>
             </button>
           ))}
-          <div className="my-1 border-t border-slate-100" />
-          <button type="button" role="menuitem" onClick={() => { setOpen(false); onImport() }} className="block w-full rounded-xl px-3 py-2.5 text-left hover:bg-slate-50">
-            <span className="block text-sm font-semibold text-slate-950">Import Leads</span>
-            <span className="mt-0.5 block text-xs font-medium text-slate-500">Review imported and manually ingested leads</span>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function LeadHeaderOverflowMenu({ onRefresh }) {
+  const [open, setOpen] = useState(false)
+  const buttonRef = useRef(null)
+  const menuRef = useRef(null)
+
+  useEffect(() => {
+    if (!open) return undefined
+
+    function handlePointerDown(event) {
+      if (buttonRef.current?.contains(event.target) || menuRef.current?.contains(event.target)) return
+      setOpen(false)
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open])
+
+  function runRefresh() {
+    setOpen(false)
+    onRefresh?.()
+  }
+
+  return (
+    <div className="relative">
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="inline-flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50"
+        aria-label="More lead actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        <MoreVertical size={18} />
+      </button>
+      {open ? (
+        <div ref={menuRef} className="absolute right-0 top-[calc(100%+10px)] z-40 w-48 rounded-2xl border border-slate-200 bg-white p-1.5 text-sm font-semibold text-slate-700 shadow-xl" role="menu">
+          <button type="button" onClick={runRefresh} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left hover:bg-slate-50" role="menuitem">
+            <RefreshCw size={15} />
+            Refresh
+          </button>
+          <button type="button" disabled className="flex w-full cursor-not-allowed items-center gap-2 rounded-xl px-3 py-2.5 text-left text-slate-400" role="menuitem">
+            <Download size={15} />
+            Export
+          </button>
+          <button type="button" disabled className="flex w-full cursor-not-allowed items-center gap-2 rounded-xl px-3 py-2.5 text-left text-slate-400" role="menuitem">
+            <SlidersHorizontal size={15} />
+            Bulk Actions
           </button>
         </div>
       ) : null}
@@ -7987,7 +8068,6 @@ function AgentLeadList() {
   const [error, setError] = useState('')
   const [rows, setRows] = useState([])
   const [referrals, setReferrals] = useState([])
-  const [assignmentMetrics, setAssignmentMetrics] = useState({ unassigned: 0, assigned: 0, overdue: 0, escalated: 0, byAgent: [] })
   const [filters, setFilters] = useState({ search: '', category: 'buyer', stage: 'all', source: 'all', agent: 'all', dateAdded: '' })
   const [createCategory, setCreateCategory] = useState('')
   const [createForm, setCreateForm] = useState(EMPTY_LEAD_CREATE_FORM)
@@ -7995,6 +8075,8 @@ function AgentLeadList() {
   const [createError, setCreateError] = useState('')
   const [importOpen, setImportOpen] = useState(false)
   const [importLeadCategory, setImportLeadCategory] = useState('')
+  const [quickFilters, setQuickFilters] = useState(['all'])
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deletingLead, setDeletingLead] = useState(false)
   const [deleteLeadError, setDeleteLeadError] = useState('')
@@ -8003,7 +8085,6 @@ function AgentLeadList() {
     if (!organisationId) {
       setRows([])
       setReferrals([])
-      setAssignmentMetrics({ unassigned: 0, assigned: 0, overdue: 0, escalated: 0, byAgent: [] })
       setLoading(false)
       setError('Select an agency workspace before loading leads.')
       return
@@ -8018,12 +8099,10 @@ function AgentLeadList() {
       if (leadResult.status === 'rejected') throw leadResult.reason
       const result = leadResult.value
       setRows(result.rows)
-      setAssignmentMetrics(result.assignmentMetrics || { unassigned: 0, assigned: 0, overdue: 0, escalated: 0, byAgent: [] })
       setReferrals(referralResult.status === 'fulfilled' ? referralResult.value : [])
     } catch (loadError) {
       setRows([])
       setReferrals([])
-      setAssignmentMetrics({ unassigned: 0, assigned: 0, overdue: 0, escalated: 0, byAgent: [] })
       setError(loadError?.message || 'Unable to load leads right now.')
     } finally {
       setLoading(false)
@@ -8035,33 +8114,45 @@ function AgentLeadList() {
   }, [loadRows])
 
   const options = useMemo(() => getLeadFilterOptions(rows), [rows])
-  const referralMode = filters.category === 'referrals_received'
-    ? 'received'
-    : filters.category === 'referrals_given'
-      ? 'given'
-      : filters.category === 'referral_clients'
-        ? 'clients'
-      : filters.category === 'referral_partners'
-        ? 'partners'
-        : filters.category === 'referral_insights'
-          ? 'insights'
-          : ''
-  const referralCounts = useMemo(() => ({
-    given: referrals.filter((referral) => normalizeText(referral.sourceOrganisationId) === normalizeText(organisationId)).length,
-    received: referrals.filter((referral) => normalizeText(referral.targetOrganisationId) === normalizeText(organisationId)).length,
-    clients: getReferralRelationshipRows(referrals, organisationId, rows).length,
-    partners: getReferralPartnerRows(referrals, organisationId).length,
-    insights: getReferralRelationshipRows(referrals, organisationId, rows).length,
-  }), [organisationId, referrals, rows])
-  const visibleRows = useMemo(() => {
-    if (referralMode) return []
+  const primaryView = getLeadPrimaryView(filters.category)
+  const referralLeadIds = useMemo(() => getReferralLeadIdSet(referrals), [referrals])
+  const baseVisibleRows = useMemo(() => {
     const filtered = filterAgentLeadRows(rows, filters)
-    if (filters.category === 'archived') return filtered.filter(isArchivedLead)
     const activeRows = filtered.filter((row) => !isArchivedLead(row))
-    if (!filters.category || filters.category === 'all') return activeRows
-    return activeRows.filter((row) => normalizeLeadCategory(row) === filters.category)
-  }, [referralMode, rows, filters])
-  const leadTableColumns = useMemo(() => getLeadTableColumns(filters.category === 'seller' ? 'seller' : 'buyer'), [filters.category])
+    return activeRows.filter((row) => normalizeLeadCategory(row) === primaryView)
+  }, [primaryView, rows, filters])
+  const quickFilterCounts = useMemo(() => ({
+    all: baseVisibleRows.length,
+    new: baseVisibleRows.filter(isNewLead).length,
+    hot: baseVisibleRows.filter(isHotLead).length,
+    referrals: baseVisibleRows.filter((row) => isReferralLead(row, referralLeadIds)).length,
+  }), [baseVisibleRows, referralLeadIds])
+  const visibleRows = useMemo(
+    () => applyLeadQuickFilters(baseVisibleRows, quickFilters, referralLeadIds),
+    [baseVisibleRows, quickFilters, referralLeadIds],
+  )
+  const leadTableColumns = useMemo(() => getLeadTableColumns(), [])
+  const formControlClass = 'h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-50'
+
+  function toggleQuickFilter(key) {
+    setQuickFilters((previous) => (
+      previous.includes(key)
+        ? previous.filter((item) => item !== key)
+        : [...previous, key]
+    ))
+  }
+
+  function clearLeadFilters() {
+    setFilters((previous) => ({
+      ...previous,
+      search: '',
+      stage: 'all',
+      source: 'all',
+      agent: 'all',
+      dateAdded: '',
+    }))
+    setQuickFilters(['all'])
+  }
 
   function openCreateLead(category = 'buyer') {
     const normalizedCategory = normalizeCanonicalLeadCategory(category, 'other')
@@ -8075,7 +8166,7 @@ function AgentLeadList() {
   }
 
   function openLeadImport() {
-    const normalizedCategory = normalizeCanonicalLeadCategory(filters.category, '')
+    const normalizedCategory = normalizeCanonicalLeadCategory(primaryView, '')
     setImportLeadCategory(normalizedCategory === 'buyer' || normalizedCategory === 'seller' ? normalizedCategory : '')
     setImportOpen(true)
   }
@@ -8225,231 +8316,211 @@ function AgentLeadList() {
 
   return (
     <main className={leadListShell}>
-      <h1 className="sr-only">Leads</h1>
-
-      <section className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-4">
-        <CompactMetric label="Unassigned" value={assignmentMetrics.unassigned || 0} icon={UserRound} />
-        <CompactMetric label="Assigned" value={assignmentMetrics.assigned || 0} icon={Tag} />
-        <CompactMetric label="Overdue" value={assignmentMetrics.overdue || 0} icon={Clock3} />
-        <CompactMetric label="Escalated" value={assignmentMetrics.escalated || 0} icon={CheckCircle2} />
-      </section>
-
-      <section className={`${panelClass} p-4`}>
-        <div className="flex flex-col gap-3 border-b border-slate-200 pb-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="min-w-0">
-            <LeadTypeTabs activeCategory={filters.category} rows={rows} referralCounts={referralCounts} onChange={setFilters} />
-          </div>
-          <div className="grid w-full gap-2 sm:grid-cols-3 xl:w-auto xl:min-w-[620px]">
-            <CreateLeadDropdown
-              activeCategory={filters.category}
-              onCreate={openCreateLead}
-              onImport={openLeadImport}
-              className="w-full"
-              buttonClassName="w-full"
-            />
-            <button type="button" onClick={openLeadImport} className="inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
-              Import
-            </button>
-            <button type="button" onClick={loadRows} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
-              <RefreshCw size={15} />
-              Refresh
-            </button>
-          </div>
+      <header className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-normal text-slate-950">Leads</h1>
+          <p className="mt-2 text-base font-medium text-slate-500">Manage, qualify and convert your leads.</p>
         </div>
-        {!referralMode ? (
-          <div className="mt-4 grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(130px,1fr))]">
+        <div className="flex flex-wrap items-center gap-3 sm:justify-end">
+          <button
+            type="button"
+            onClick={() => openCreateLead(primaryView)}
+            className="inline-flex h-12 min-w-[156px] items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(15,23,42,0.18)] transition hover:bg-slate-800"
+          >
+            <Plus size={17} />
+            Create Lead
+          </button>
+          <button type="button" onClick={openLeadImport} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50">
+            <Upload size={16} />
+            Import
+          </button>
+          <LeadHeaderOverflowMenu onRefresh={loadRows} />
+        </div>
+      </header>
+
+      <section className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_16px_42px_rgba(15,23,42,0.06)]">
+        <div className="border-b border-slate-200/80">
+          <LeadTypeTabs activeCategory={primaryView} rows={rows} onChange={setFilters} />
+        </div>
+
+        <div className="space-y-5 px-5 py-5 sm:px-6">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-[minmax(260px,1.8fr)_repeat(5,minmax(132px,1fr))]">
             <label className="relative block md:col-span-2 lg:col-span-1">
-              <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search size={17} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
               <input
                 value={filters.search}
                 onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))}
-                className="min-h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm font-medium text-slate-800 outline-none focus:border-blue-300"
+                className={`${formControlClass} pl-11`}
                 placeholder="Search by name, phone, email..."
               />
             </label>
-            <select value={filters.stage} onChange={(event) => setFilters((previous) => ({ ...previous, stage: event.target.value }))} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700">
-              <option value="all">All stages</option>
-              {options.stages.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-            <select value={filters.source} onChange={(event) => setFilters((previous) => ({ ...previous, source: event.target.value }))} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700">
-              <option value="all">All sources</option>
-              {options.sources.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-            <select value={filters.agent} onChange={(event) => setFilters((previous) => ({ ...previous, agent: event.target.value }))} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700">
-              <option value="all">All agents</option>
-              {options.agents.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-            <input type="date" value={filters.dateAdded} onChange={(event) => setFilters((previous) => ({ ...previous, dateAdded: event.target.value }))} className="min-h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700" aria-label="Date added" />
+            <button
+              type="button"
+              onClick={() => setMobileFiltersOpen((current) => !current)}
+              className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 md:hidden"
+              aria-expanded={mobileFiltersOpen}
+            >
+              <SlidersHorizontal size={16} />
+              Filters
+            </button>
+            <div className={`${mobileFiltersOpen ? 'grid' : 'hidden'} grid-cols-1 gap-3 md:contents`}>
+              <select value={filters.stage} onChange={(event) => setFilters((previous) => ({ ...previous, stage: event.target.value }))} className={formControlClass}>
+                <option value="all">All stages</option>
+                {options.stages.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+              <select value={filters.source} onChange={(event) => setFilters((previous) => ({ ...previous, source: event.target.value }))} className={formControlClass}>
+                <option value="all">All sources</option>
+                {options.sources.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+              <select value={filters.agent} onChange={(event) => setFilters((previous) => ({ ...previous, agent: event.target.value }))} className={formControlClass}>
+                <option value="all">All agents</option>
+                {options.agents.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+              <input type="date" value={filters.dateAdded} onChange={(event) => setFilters((previous) => ({ ...previous, dateAdded: event.target.value }))} className={formControlClass} aria-label="Date added" />
+              <button type="button" className="hidden h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 lg:inline-flex">
+                <SlidersHorizontal size={16} />
+                More filters
+              </button>
+            </div>
           </div>
-        ) : null}
-      </section>
 
-      {loading ? <LoadingSkeleton lines={10} className={panelClass} /> : null}
-      {error && !loading ? <EmptyState title="Leads could not be loaded" copy={error} /> : null}
-      {!loading && !error && (referralMode === 'given' || referralMode === 'received') ? (
-        <ReferralLedgerPanel
-          mode={referralMode}
-          referrals={referrals}
-          rows={rows}
-          organisationId={organisationId}
-          actor={actor}
-          onCreated={loadRows}
-        />
-      ) : null}
-      {!loading && !error && referralMode === 'clients' ? (
-        <ReferralClientsPanel
-          referrals={referrals}
-          rows={rows}
-          organisationId={organisationId}
-          actor={actor}
-          onUpdated={loadRows}
-        />
-      ) : null}
-      {!loading && !error && referralMode === 'partners' ? (
-        <ReferralPartnersPanel
-          referrals={referrals}
-          organisationId={organisationId}
-        />
-      ) : null}
-      {!loading && !error && referralMode === 'insights' ? (
-        <ReferralInsightsPanel
-          referrals={referrals}
-          rows={rows}
-          organisationId={organisationId}
-        />
-      ) : null}
-      {!loading && !error && !referralMode ? (
-        <section className={`${panelClass} relative overflow-visible`}>
-          <div className="hidden lg:block overflow-x-auto">
-            <table className="w-full table-fixed text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-400">
-                <tr>
-                  {leadTableColumns.map((column) => (
-                    <th key={column.key} className="px-4 py-2.5 font-semibold">{column.label}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {visibleRows.map((row) => {
-                  const activeCategory = filters.category === 'seller' ? 'seller' : 'buyer'
-                  const latestDate = getLatestActivityDate(row.latestActivity)
-                  const openRow = () => navigate(`/pipeline/leads/${row.leadId}`)
-                  const buyerProperty = getBuyerPropertyEnquiry(row)
-                  const sellerAddress = getSellerAddress(row)
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-center gap-3 overflow-x-auto">
+              <span className="shrink-0 text-sm font-semibold text-slate-700">Quick filters:</span>
+              <div className="flex min-w-max items-center gap-2">
+                {LEAD_QUICK_FILTERS.map((option) => {
+                  const active = quickFilters.includes(option.key)
+                  const count = quickFilterCounts[option.key] || 0
                   return (
-                    <tr key={row.leadId} className="align-middle hover:bg-slate-50/80">
-                      <td className="px-4 py-3">
-                        <LeadIdentityBlock row={row} onOpen={openRow} />
-                      </td>
-                      {activeCategory === 'seller' ? null : (
-                        <>
-                          <td className="px-4 py-3"><StatusPill tone="blue" className="h-6">{getLeadTableTypeLabel(filters.category)}</StatusPill></td>
-                          <td className="px-4 py-3"><LeadSourcePill source={row.source} /></td>
-                        </>
-                      )}
-                      {activeCategory === 'seller' ? (
-                        <>
-                          <td className="px-4 py-3"><LeadSourcePill source={row.source} /></td>
-                          <td className="px-4 py-3">
-                            <p className="truncate text-sm font-semibold text-slate-900">{sellerAddress.first}</p>
-                            <p className="mt-1 text-xs text-slate-500">{sellerAddress.second}</p>
-                          </td>
-                        </>
-                      ) : (
-                        <td className="px-4 py-3">
-                          <p className="text-sm font-semibold text-slate-900">{buyerProperty.title}</p>
-                          <p className="mt-1 text-xs text-slate-500">{buyerProperty.address}</p>
-                          <p className="mt-1 text-xs text-slate-500">{buyerProperty.price !== '—' ? buyerProperty.price : null}</p>
-                        </td>
-                      )}
-                      <td className="px-4 py-3">
-                        <StatusPill tone={getStageTone(row.stage)}>{row.stage}</StatusPill>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="block truncate text-sm font-semibold text-slate-900">{getOwnerName(row)}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="block truncate text-sm font-semibold text-slate-800">{getLatestActivityTitle(row)}</span>
-                        <span className="mt-1 block truncate text-xs text-slate-500">{formatRelativeTime(latestDate, 'No activity yet')}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <RowActionMenu row={row} onOpen={openRow} onDelete={requestDeleteLead} />
-                      </td>
-                    </tr>
+                    <button
+                      key={option.key}
+                      type="button"
+                      onClick={() => toggleQuickFilter(option.key)}
+                      className={`inline-flex h-10 items-center gap-2 rounded-xl border px-3 text-sm font-semibold transition ${active ? 'border-blue-100 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+                      aria-pressed={active}
+                    >
+                      {active ? <CheckCircle2 size={15} /> : null}
+                      {option.label}
+                      {option.key !== 'all' ? (
+                        <span className={`inline-flex min-h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs font-bold ${active ? 'bg-white text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
+                          {count}
+                        </span>
+                      ) : null}
+                    </button>
                   )
                 })}
-              </tbody>
-            </table>
+              </div>
+            </div>
+            <button type="button" onClick={clearLeadFilters} className="self-start text-sm font-semibold text-blue-700 transition hover:text-blue-900 lg:self-auto">
+              Clear all
+            </button>
           </div>
-          <div className="grid gap-3 p-3 lg:hidden">
-            {visibleRows.map((row) => {
-              const activeCategory = filters.category === 'seller' ? 'seller' : 'buyer'
-              const latestDate = getLatestActivityDate(row.latestActivity)
-              const sellerAddress = getSellerAddress(row)
-              const buyerProperty = getBuyerPropertyEnquiry(row)
-              const openRow = () => navigate(`/pipeline/leads/${row.leadId}`)
-              return (
-                <article key={`card-${row.leadId}`} className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <LeadIdentityBlock row={row} onOpen={openRow} />
-                    <StatusPill tone={getStageTone(row.stage)}>{row.stage}</StatusPill>
-                  </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-xl border border-slate-100 p-2.5">
-                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Type</p>
-                      <p className="mt-1">
-                        {activeCategory === 'seller' ? 'Seller' : getLeadTableTypeLabel(filters.category)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Source</p>
-                      <p className="mt-1">
-                        <LeadSourcePill source={row.source} />
-                      </p>
-                    </div>
-                    <div className="sm:col-span-2">
-                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Address</p>
-                      {activeCategory === 'seller' ? (
-                        <>
-                          <p className="mt-1 text-sm font-semibold text-slate-900">{sellerAddress.first}</p>
-                          <p className="text-xs text-slate-500">{sellerAddress.second}</p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="mt-1 text-sm font-semibold text-slate-900">{buyerProperty.title}</p>
-                          <p className="text-xs text-slate-500">{buyerProperty.address}</p>
-                          <p className="text-xs text-slate-500">{buyerProperty.price !== '—' ? buyerProperty.price : null}</p>
-                        </>
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Owner</p>
-                      <p className="mt-1 truncate text-sm font-semibold text-slate-800">{getOwnerName(row)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Latest Activity</p>
-                      <p className="mt-1 truncate text-sm font-semibold text-slate-800">{getLatestActivityTitle(row)}</p>
-                      <p className="mt-1 text-xs text-slate-500">{formatRelativeTime(latestDate, 'No activity yet')}</p>
-                    </div>
-                  </div>
-                  <div className="mt-3 flex justify-end">
-                    <RowActionMenu row={row} onOpen={openRow} onDelete={requestDeleteLead} />
-                  </div>
-                </article>
-              )
-            })}
+        </div>
+
+        {loading ? (
+          <div className="border-t border-slate-100 p-5">
+            <LoadingSkeleton lines={10} className="rounded-xl border border-slate-100 bg-white shadow-none" />
           </div>
-          {!visibleRows.length ? (
-            <div className="p-5">
+        ) : null}
+        {error && !loading ? (
+          <div className="border-t border-slate-100 p-5">
+            <EmptyState title="Leads could not be loaded" copy={error} />
+          </div>
+        ) : null}
+        {!loading && !error ? (
+          <>
+            <div className="hidden overflow-x-auto border-t border-slate-100 lg:block">
+              <table className="w-full table-fixed text-left text-sm">
+                <thead className="bg-slate-50/80 text-xs text-slate-500">
+                  <tr>
+                    {leadTableColumns.map((column) => (
+                      <th key={column.key} className={`px-5 py-4 font-semibold ${column.className || ''}`.trim()}>{column.label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {visibleRows.map((row) => {
+                    const latestDate = getLatestActivityDate(row.latestActivity)
+                    const openRow = () => navigate(`/pipeline/leads/${row.leadId}`)
+                    const sourceLabel = getReferralLeadBadgeLabel(row, referrals, organisationId) || row.source
+                    return (
+                      <tr key={row.leadId} className="align-middle transition hover:bg-slate-50/70">
+                        <td className="px-5 py-4">
+                          <LeadIdentityBlock row={row} onOpen={openRow} />
+                        </td>
+                        <td className="px-5 py-4"><LeadSourcePill source={sourceLabel} /></td>
+                        <td className="px-5 py-4">
+                          <StatusPill tone={getStageTone(row.stage)}>{row.stage}</StatusPill>
+                        </td>
+                        <td className="px-5 py-4">
+                          <span className="block truncate text-sm font-semibold text-slate-900">{getOwnerName(row)}</span>
+                        </td>
+                        <td className="px-5 py-4">
+                          <span className="block truncate text-sm font-semibold text-slate-800">{getLatestActivityTitle(row)}</span>
+                          <span className="mt-1 block truncate text-xs text-slate-500">{formatRelativeTime(latestDate, 'No activity yet')}</span>
+                        </td>
+                        <td className="px-5 py-4">
+                          <span className="block truncate text-sm font-semibold text-slate-800">{formatDate(row.createdAt, '—')}</span>
+                        </td>
+                        <td className="px-5 py-4">
+                          <RowActionMenu row={row} onOpen={openRow} onDelete={requestDeleteLead} />
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="grid gap-3 border-t border-slate-100 p-4 lg:hidden">
+              {visibleRows.map((row) => {
+                const latestDate = getLatestActivityDate(row.latestActivity)
+                const sourceLabel = getReferralLeadBadgeLabel(row, referrals, organisationId) || row.source
+                const openRow = () => navigate(`/pipeline/leads/${row.leadId}`)
+                return (
+                  <article key={`card-${row.leadId}`} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <LeadIdentityBlock row={row} onOpen={openRow} />
+                      <RowActionMenu row={row} onOpen={openRow} onDelete={requestDeleteLead} />
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Source</p>
+                        <p className="mt-1"><LeadSourcePill source={sourceLabel} /></p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Stage</p>
+                        <p className="mt-1"><StatusPill tone={getStageTone(row.stage)}>{row.stage}</StatusPill></p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Agent</p>
+                        <p className="mt-1 truncate text-sm font-semibold text-slate-800">{getOwnerName(row)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Created</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-800">{formatDate(row.createdAt, '—')}</p>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Last Activity</p>
+                        <p className="mt-1 truncate text-sm font-semibold text-slate-800">{getLatestActivityTitle(row)}</p>
+                        <p className="mt-1 text-xs text-slate-500">{formatRelativeTime(latestDate, 'No activity yet')}</p>
+                      </div>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+            {!visibleRows.length ? (
+              <div className="border-t border-slate-100 p-5">
                 <EmptyLeadResults
                   onCreate={openCreateLead}
                   onImport={openLeadImport}
-                  onAdjustFilters={() => setFilters({ search: '', category: filters.category || 'buyer', stage: 'all', source: 'all', agent: 'all', dateAdded: '' })}
+                  onAdjustFilters={clearLeadFilters}
                 />
               </div>
             ) : null}
-        </section>
-      ) : null}
+          </>
+        ) : null}
+      </section>
       <LeadCreateModal
         open={Boolean(createCategory)}
         category={createCategory}

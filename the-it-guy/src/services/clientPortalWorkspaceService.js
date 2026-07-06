@@ -4,6 +4,7 @@ import {
   fetchClientPortalCoreByToken,
   fetchClientPortalMandatePacketSummaryByToken,
 } from '../lib/api'
+import { getDemoClientPortalSeedData } from '../lib/onboardingDemoLinks'
 import { generateClientPortalNextActions } from '../lib/clientPortalNextActionsEngine'
 import {
   buildClientPortalActivityFeedModel,
@@ -1570,7 +1571,166 @@ async function fetchPortalDataForWorkspace(token, mode = 'full', options = {}) {
   }
 }
 
+function buildDemoClientPortalWorkspaceData(token, workspace = 'shared') {
+  const seed = getDemoClientPortalSeedData(token)
+  if (!seed?.portalData) return null
+
+  const contexts = Array.isArray(seed.contexts) ? seed.contexts : []
+  const context = {
+    contexts,
+    hasBuyingContext: seed.hasBuyingContext !== false,
+    hasSellingContext: Boolean(seed.hasSellingContext),
+    workspaceRoles: Array.isArray(seed.workspaceRoles) && seed.workspaceRoles.length
+      ? seed.workspaceRoles
+      : (seed.hasSellingContext ? ['seller'] : ['buyer']),
+  }
+  const workspaceMode = resolveWorkspaceMode({
+    requestedWorkspace: workspace,
+    hasBuyingContext: context.hasBuyingContext,
+    hasSellingContext: context.hasSellingContext,
+  })
+  let portalData = seed.portalData
+  const documentCenter = {
+    ...buildDocumentCenter(portalData, workspaceMode),
+    canonicalRequirements: [],
+  }
+  const sellerPortalJourney = workspaceMode === 'selling'
+    ? buildSellerPortalJourneyView({
+      journey: portalData?.sellerJourney || portalData?.activeSellingContext?.sellerJourney || null,
+      documentCenter,
+      requiredDocuments: portalData?.requiredDocuments || portalData?.requiredDocumentChecklist || [],
+      documents: portalData?.documents || [],
+      offers: [
+        ...(Array.isArray(portalData?.offers) ? portalData.offers : []),
+        ...(Array.isArray(portalData?.activeSellingContext?.offers) ? portalData.activeSellingContext.offers : []),
+      ],
+    })
+    : null
+  if (sellerPortalJourney) {
+    portalData = {
+      ...portalData,
+      sellerPortalJourney,
+      activeSellingContext: {
+        ...(portalData?.activeSellingContext || {}),
+        sellerPortalJourney,
+      },
+    }
+  }
+
+  const appointments = Array.isArray(portalData?.appointments) ? portalData.appointments : []
+  const lifecycle = buildLifecycle(portalData)
+  const timeline = buildTimeline(portalData)
+  const clientRole = workspaceMode === 'selling' ? 'seller' : 'buyer'
+  const nextActions = annotateNextActionsWithEducation(Array.isArray(seed.nextActions) ? seed.nextActions : [])
+  const workflowSummary = seed.workflowSummary || buildWorkflowSummary({
+    workflowReadModel: null,
+    lifecycle,
+    transaction: portalData?.transaction || null,
+    financeType: portalData?.transaction?.finance_type || '',
+    workspaceMode,
+    nextActions,
+  })
+  const activityFeed = Array.isArray(seed.activityFeed) ? seed.activityFeed : []
+  const groupedActivityFeed = seed.groupedActivityFeed || {}
+  const activityFeedSummary = seed.activityFeedSummary || {
+    actionRequired: nextActions.filter((action) => action?.blocking).length,
+    overdue: 0,
+    dueSoon: 0,
+  }
+  const notifications = seed.notifications || { unreadCount: 0, items: [] }
+  const rolePlayers = {
+    attorney: portalData?.attorneyRolePlayers || null,
+    team: portalData?.transaction ? {
+      assignedAgent: portalData.transaction.assigned_agent || null,
+      assignedAttorney: portalData.transaction.attorney || null,
+      assignedBondOriginator: portalData.transaction.bond_originator || null,
+    } : null,
+  }
+  const educationalContent = buildClientPortalEducationalContent({
+    stage: lifecycle?.stage || portalData?.transaction?.stage || '',
+    mainStage: lifecycle?.mainStage || portalData?.transaction?.current_main_stage || '',
+    financeType: portalData?.transaction?.finance_type || '',
+    workspace: workspaceMode,
+    nextActions,
+    requiredDocuments: documentCenter?.requiredDocuments || [],
+  })
+  const stageEducation = getEducationalContentForStage(educationalContent?.currentStage?.stageKey || '')
+  const documentEducation = (documentCenter?.requiredDocuments || []).slice(0, 6).map((item) =>
+    getEducationalContentForDocument(item?.key || item?.label || ''),
+  )
+  const legacyPortalData = buildLegacyPortalPayload({
+    portalData,
+    contexts,
+    hasBuyingContext: context.hasBuyingContext,
+    hasSellingContext: context.hasSellingContext,
+    workspaceMode,
+  })
+
+  return {
+    portalContext: {
+      token,
+      workspace: workspaceMode,
+      requestedWorkspace: normalizeWorkspace(workspace),
+      contexts,
+      hasBuyingContext: context.hasBuyingContext,
+      hasSellingContext: context.hasSellingContext,
+      workspaceRoles: context.workspaceRoles,
+    },
+    client: portalData?.buyer || null,
+    transaction: portalData?.transaction || null,
+    listing: portalData?.listing || null,
+    property: portalData?.unit || null,
+    appointments,
+    rolePlayers,
+    lifecycle,
+    timeline,
+    nextActions,
+    documentCenter,
+    onboarding: portalData?.onboarding || null,
+    mandate: {
+      packet: portalData?.activeSellingContext?.mandatePacket || null,
+    },
+    finance: {
+      type: portalData?.transaction?.finance_type || null,
+      readiness: portalData?.buyerReadiness?.finance || null,
+    },
+    workflowSummary,
+    activityFeed,
+    groupedActivityFeed,
+    activityFeedSummary,
+    notifications,
+    sellerJourney: portalData?.sellerJourney || portalData?.activeSellingContext?.sellerJourney || null,
+    sellerPortalJourney,
+    educationalContent: {
+      ...educationalContent,
+      currentStage: {
+        ...educationalContent?.currentStage,
+        ...stageEducation,
+      },
+      rolePlayerGuidance: buildRoleEducation(rolePlayers),
+      documentGuidance: documentEducation,
+    },
+    visibility: {
+      workspace: workspaceMode,
+      buyerVisible: workspaceMode !== 'selling',
+      sellerVisible: workspaceMode !== 'buying',
+      clientOnly: true,
+    },
+    permissions: {
+      canUploadDocuments: false,
+      canComment: false,
+      canViewActivityFeed: true,
+      demoOnly: true,
+      clientRole,
+    },
+    legacyPortalData,
+  }
+}
+
 export async function getClientPortalWorkspaceData(token, workspace = 'shared', options = {}) {
+  const demoWorkspaceData = buildDemoClientPortalWorkspaceData(token, workspace)
+  if (demoWorkspaceData) return demoWorkspaceData
+
   const { mode = 'full' } = options
   const context = await resolveClientPortalContext(token)
   const workspaceMode = resolveWorkspaceMode({

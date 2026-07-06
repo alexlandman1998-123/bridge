@@ -522,6 +522,41 @@ const DOCUMENT_PACKET_TEMPLATE_QUERY_PLANS = [
   },
 ]
 
+const DOCUMENT_PACKET_TEMPLATE_SCHEMA_COMPAT_COLUMNS = [
+  'is_active',
+  'status',
+  'template_storage_bucket',
+  'template_storage_path',
+  'template_file_name',
+  'version_tag',
+  'description',
+  'change_summary',
+  'content_hash',
+  'updated_by',
+  'published_by',
+  'published_at',
+  'archived_by',
+  'archived_at',
+]
+
+const DOCUMENT_PACKET_TEMPLATE_WRITE_COMPAT_COLUMNS = new Set([
+  'status',
+  'template_storage_bucket',
+  'template_storage_path',
+  'template_file_name',
+  'change_summary',
+  'content_hash',
+  'updated_by',
+  'published_by',
+  'published_at',
+  'archived_by',
+  'archived_at',
+])
+
+function getDocumentPacketTemplateCompatibleMissingColumn(error) {
+  return DOCUMENT_PACKET_TEMPLATE_SCHEMA_COMPAT_COLUMNS.find((columnName) => isMissingColumnError(error, columnName)) || ''
+}
+
 function readDocumentPacketTemplateSelectPlanIndex() {
   if (typeof window === 'undefined') return documentPacketTemplateSelectPlanIndex
   const now = Date.now()
@@ -570,6 +605,112 @@ function rememberDocumentPacketTemplateSelectPlanIndex(index) {
   }
 }
 
+function assignTemplateMetadataCompatibilityValue(metadata, keys = [], value) {
+  if (value === undefined) return
+  const normalizedValue = normalizeNullableText(value)
+  for (const key of keys) {
+    metadata[key] = normalizedValue
+  }
+}
+
+function buildDocumentPacketTemplateMetadata(metadataJson = {}, {
+  templateStorageBucket,
+  templateStoragePath,
+  templateFileName,
+  status,
+} = {}) {
+  const metadata = metadataJson && typeof metadataJson === 'object' ? { ...metadataJson } : {}
+  assignTemplateMetadataCompatibilityValue(metadata, [
+    'template_storage_bucket',
+    'template_bucket',
+    'templateBucket',
+  ], templateStorageBucket)
+  assignTemplateMetadataCompatibilityValue(metadata, [
+    'template_storage_path',
+    'templatePath',
+  ], templateStoragePath)
+  assignTemplateMetadataCompatibilityValue(metadata, [
+    'template_file_name',
+    'template_filename',
+    'templateFilename',
+  ], templateFileName)
+
+  if (status !== undefined) {
+    const normalizedStatus = normalizeNullableText(status)
+    metadata.template_status = normalizedStatus
+    metadata.lifecycle_status = normalizedStatus === 'published' ? 'active' : normalizedStatus
+  }
+
+  return metadata
+}
+
+function omitDocumentPacketTemplateMissingPayloadColumn(payload = {}, error = null) {
+  const missingColumn = getDocumentPacketTemplateCompatibleMissingColumn(error)
+  if (!missingColumn || !DOCUMENT_PACKET_TEMPLATE_WRITE_COMPAT_COLUMNS.has(missingColumn)) {
+    return { payload, omitted: false, missingColumn }
+  }
+  if (!Object.prototype.hasOwnProperty.call(payload, missingColumn)) {
+    return { payload, omitted: false, missingColumn }
+  }
+
+  const nextPayload = { ...payload }
+  delete nextPayload[missingColumn]
+  return { payload: nextPayload, omitted: true, missingColumn }
+}
+
+async function insertDocumentPacketTemplateWithFallback(client, payload = {}) {
+  let nextPayload = { ...payload }
+  let planIndex = readDocumentPacketTemplateSelectPlanIndex()
+  let lastError = null
+
+  for (let attempt = 0; attempt < DOCUMENT_PACKET_TEMPLATE_QUERY_PLANS.length + DOCUMENT_PACKET_TEMPLATE_WRITE_COMPAT_COLUMNS.size; attempt += 1) {
+    const plan = DOCUMENT_PACKET_TEMPLATE_QUERY_PLANS[planIndex] || DOCUMENT_PACKET_TEMPLATE_QUERY_PLANS[DOCUMENT_PACKET_TEMPLATE_QUERY_PLANS.length - 1]
+    const { data, error } = await client
+      .from('document_packet_templates')
+      .insert(nextPayload)
+      .select(plan.select)
+      .single()
+
+    if (!error) {
+      rememberDocumentPacketTemplateSelectPlanIndex(planIndex)
+      return hydrateTemplateRecord(data)
+    }
+
+    lastError = error
+    const fallback = omitDocumentPacketTemplateMissingPayloadColumn(nextPayload, error)
+    if (!fallback.missingColumn) throw error
+    if (fallback.omitted) nextPayload = fallback.payload
+
+    const nextPlanIndex = Math.min(planIndex + 1, DOCUMENT_PACKET_TEMPLATE_QUERY_PLANS.length - 1)
+    if (!fallback.omitted && nextPlanIndex === planIndex) throw error
+    planIndex = nextPlanIndex
+    rememberDocumentPacketTemplateSelectPlanIndex(planIndex)
+  }
+
+  throw lastError || new Error('Unable to create document packet template.')
+}
+
+async function updateDocumentPacketTemplateRowWithFallback(client, templateId, payload = {}) {
+  let nextPayload = { ...payload }
+  let lastError = null
+
+  for (let attempt = 0; attempt < DOCUMENT_PACKET_TEMPLATE_WRITE_COMPAT_COLUMNS.size + 1; attempt += 1) {
+    const { error } = await client
+      .from('document_packet_templates')
+      .update(nextPayload)
+      .eq('id', templateId)
+
+    if (!error) return true
+
+    lastError = error
+    const fallback = omitDocumentPacketTemplateMissingPayloadColumn(nextPayload, error)
+    if (!fallback.omitted) throw error
+    nextPayload = fallback.payload
+  }
+
+  throw lastError || new Error('Unable to update document packet template.')
+}
+
 async function queryDocumentPacketTemplatesWithFallback(client, {
   packetType = null,
   moduleType = null,
@@ -611,14 +752,7 @@ async function queryDocumentPacketTemplatesWithFallback(client, {
     }
 
     lastError = result.error
-    const compatibleMissingColumn =
-      isMissingColumnError(result.error, 'is_active') ||
-      isMissingColumnError(result.error, 'template_storage_bucket') ||
-      isMissingColumnError(result.error, 'template_file_name') ||
-      isMissingColumnError(result.error, 'status') ||
-      isMissingColumnError(result.error, 'template_storage_path') ||
-      isMissingColumnError(result.error, 'version_tag') ||
-      isMissingColumnError(result.error, 'description')
+    const compatibleMissingColumn = getDocumentPacketTemplateCompatibleMissingColumn(result.error)
     if (!compatibleMissingColumn) {
       throw result.error
     }
@@ -1047,6 +1181,19 @@ export async function createDocumentPacketTemplate(input = {}) {
   const versionTag = normalizeText(input.versionTag || 'v1') || 'v1'
   const isActive = input.isActive === undefined ? true : Boolean(input.isActive)
   const isDefault = Boolean(input.isDefault)
+  const templateStatus = normalizeTemplateRegistryStatus(input.status || input.templateStatus, {
+    isActive,
+    isDefault,
+  })
+  const metadataJson = buildDocumentPacketTemplateMetadata(
+    input.metadataJson && typeof input.metadataJson === 'object' ? input.metadataJson : {},
+    {
+      templateStorageBucket: input.templateStorageBucket,
+      templateStoragePath: input.templateStoragePath,
+      templateFileName: input.templateFileName,
+      status: templateStatus,
+    },
+  )
 
   const payload = {
     organisation_id: context.organisationId,
@@ -1060,26 +1207,14 @@ export async function createDocumentPacketTemplate(input = {}) {
     template_file_name: normalizeNullableText(input.templateFileName),
     version_tag: versionTag,
     description: normalizeNullableText(input.description),
-    status: normalizeTemplateRegistryStatus(input.status || input.templateStatus, {
-      isActive,
-      isDefault,
-    }),
+    status: templateStatus,
     is_default: isDefault,
     is_active: isActive,
-    metadata_json: input.metadataJson && typeof input.metadataJson === 'object' ? input.metadataJson : {},
+    metadata_json: metadataJson,
     created_by: context.user.id,
   }
 
-  const { data, error } = await client
-    .from('document_packet_templates')
-    .insert(payload)
-    .select(
-      DOCUMENT_PACKET_TEMPLATE_SELECT_PHASE2,
-    )
-    .single()
-  if (error) throw error
-
-  const template = hydrateTemplateRecord(data)
+  const template = await insertDocumentPacketTemplateWithFallback(client, payload)
   const sections = Array.isArray(input.sections) ? input.sections : []
   if (sections.length) {
     await replaceDocumentTemplateSections(template.id, sections, { organisationId: context.organisationId })
@@ -1096,20 +1231,17 @@ export async function updateDocumentPacketTemplate(templateId, updates = {}) {
     throw new Error('Only Principal/Super Admin/Admin can update signing templates.')
   }
 
-  const { data: existing, error: existingError } = await client
-    .from('document_packet_templates')
-    .select(
-      DOCUMENT_PACKET_TEMPLATE_SELECT_PHASE2,
-    )
-    .eq('id', templateId)
-    .maybeSingle()
-  if (existingError) throw existingError
+  const existing = await queryDocumentPacketTemplatesWithFallback(client, {
+    templateId,
+    organisationId: context.organisationId,
+  })
   if (!existing) throw new Error('Template not found.')
   if (normalizeText(existing.organisation_id) !== normalizeText(context.organisationId)) {
     throw new Error('You can only edit templates owned by your organisation.')
   }
 
   const payload = {}
+  let nextStatus = null
   if (updates.templateLabel !== undefined) payload.template_label = normalizeText(updates.templateLabel)
   if (updates.description !== undefined) payload.description = normalizeNullableText(updates.description)
   if (updates.isActive !== undefined) payload.is_active = Boolean(updates.isActive)
@@ -1120,24 +1252,42 @@ export async function updateDocumentPacketTemplate(templateId, updates = {}) {
   if (updates.templateFormat !== undefined) payload.template_format = normalizeText(updates.templateFormat).toLowerCase() || 'docx'
   if (updates.versionTag !== undefined) payload.version_tag = normalizeText(updates.versionTag) || existing.version_tag
   if (updates.status !== undefined || updates.templateStatus !== undefined || updates.isActive !== undefined || updates.isDefault !== undefined) {
-    payload.status = normalizeTemplateRegistryStatus(updates.status || updates.templateStatus || existing.status, {
+    nextStatus = normalizeTemplateRegistryStatus(updates.status || updates.templateStatus || existing.status, {
       isActive: updates.isActive === undefined ? existing.is_active : updates.isActive,
       isDefault: updates.isDefault === undefined ? existing.is_default : updates.isDefault,
     })
+    payload.status = nextStatus
   }
-  if (updates.metadataJson !== undefined) {
-    payload.metadata_json =
-      updates.metadataJson && typeof updates.metadataJson === 'object'
+
+  const shouldUpdateMetadata =
+    updates.metadataJson !== undefined ||
+    updates.templateStorageBucket !== undefined ||
+    updates.templateStoragePath !== undefined ||
+    updates.templateFileName !== undefined ||
+    nextStatus !== null
+
+  if (shouldUpdateMetadata) {
+    const baseMetadata = updates.metadataJson !== undefined
+      ? updates.metadataJson && typeof updates.metadataJson === 'object'
         ? updates.metadataJson
         : existing.metadata_json || {}
+      : existing.metadata_json || {}
+    payload.metadata_json = buildDocumentPacketTemplateMetadata(baseMetadata, {
+      templateStorageBucket: updates.templateStorageBucket !== undefined
+        ? updates.templateStorageBucket
+        : existing.template_storage_bucket,
+      templateStoragePath: updates.templateStoragePath !== undefined
+        ? updates.templateStoragePath
+        : existing.template_storage_path,
+      templateFileName: updates.templateFileName !== undefined
+        ? updates.templateFileName
+        : existing.template_file_name,
+      status: nextStatus !== null ? nextStatus : existing.status,
+    })
   }
 
   if (Object.keys(payload).length) {
-    const { error } = await client
-      .from('document_packet_templates')
-      .update(payload)
-      .eq('id', templateId)
-    if (error) throw error
+    await updateDocumentPacketTemplateRowWithFallback(client, templateId, payload)
   }
 
   if (Array.isArray(updates.sections)) {

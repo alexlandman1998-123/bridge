@@ -41,6 +41,7 @@ import {
   normalizeCanonicalPropertyType,
   validateSellerOnboardingFacts,
 } from '../services/documents/sellerOnboardingFactTransformer'
+import { getDemoSellerOnboardingListing, isSellerOnboardingDemoToken } from '../lib/onboardingDemoLinks'
 import { resolveSellerOnboardingFlow } from '../lib/sellerOnboardingFlow'
 import {
   getPropertyCategoryLabel,
@@ -2111,7 +2112,8 @@ function SellerCompletedState({ token, listing, form, brand, onDownloadDisclosur
 export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmitted = null }) {
   const params = useParams()
   const token = String(tokenOverride || params?.token || '').trim()
-  const useDbFirstSellerOnboarding = Boolean(isSupabaseConfigured && !MOCK_DATA_ENABLED)
+  const isDemoOnboarding = isSellerOnboardingDemoToken(token)
+  const useDbFirstSellerOnboarding = Boolean(isSupabaseConfigured && !MOCK_DATA_ENABLED && !isDemoOnboarding)
   const [listing, setListing] = useState(null)
   const [form, setForm] = useState(null)
   const [currentStep, setCurrentStep] = useState(0)
@@ -2136,6 +2138,20 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     async function load() {
       if (!token) {
         setError('Invalid seller onboarding link.')
+        setLoading(false)
+        return
+      }
+
+      if (isDemoOnboarding) {
+        const found = getDemoSellerOnboardingListing(token)
+        const nextForm = normalizeFormData(found)
+        lastDraftSignatureRef.current = buildSellerDraftSignature(nextForm, 0)
+        setListing(found)
+        setForm(nextForm)
+        setCurrentStep(0)
+        setLastDraftSavedAt(resolveDraftSavedAt(found))
+        setDraftSyncStatus('saved')
+        setShowWelcome(!embedded)
         setLoading(false)
         return
       }
@@ -2239,7 +2255,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     return () => {
       isMounted = false
     }
-  }, [embedded, token, useDbFirstSellerOnboarding])
+  }, [embedded, isDemoOnboarding, token, useDbFirstSellerOnboarding])
 
   useEffect(() => {
     return () => {
@@ -2367,6 +2383,16 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }
 
   async function persistListingUpdate(updater, options = {}) {
+    if (isDemoOnboarding) {
+      const current = listing || getDemoSellerOnboardingListing(token)
+      const candidate = updater({ ...current })
+      setListing(candidate)
+      if (options.refreshForm) {
+        setForm(normalizeFormData(candidate))
+      }
+      return candidate
+    }
+
     if (useDbFirstSellerOnboarding) {
       const current = listing || {}
       const candidate = updater({ ...current })
@@ -3131,7 +3157,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         throw new Error('Unable to submit onboarding right now.')
       }
 
-      if (!useDbFirstSellerOnboarding) {
+      if (!useDbFirstSellerOnboarding && !isDemoOnboarding) {
         createListingDraftFromSellerLead(updated, { stage: LISTING_STATUS.SELLER_ONBOARDING_COMPLETED })
       }
 

@@ -32,6 +32,7 @@ import {
   saveClientOnboardingDraft,
   submitClientOnboarding,
 } from '../lib/api'
+import { getDemoBuyerOnboardingPayload, isBuyerOnboardingDemoToken } from '../lib/onboardingDemoLinks'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { sendWhatsAppNotification } from '../lib/whatsapp'
 
@@ -1700,6 +1701,7 @@ function ClientOnboarding() {
   const { token = '' } = useParams()
   const [searchParams] = useSearchParams()
   const onboardingRole = String(searchParams.get('role') || '').trim().toLowerCase()
+  const isDemoOnboarding = isBuyerOnboardingDemoToken(token)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -1726,7 +1728,9 @@ function ClientOnboarding() {
     try {
       setLoading(true)
       setError('')
-      const data = await fetchClientOnboardingByToken(token)
+      const data = isDemoOnboarding
+        ? getDemoBuyerOnboardingPayload(token)
+        : await fetchClientOnboardingByToken(token)
       setSubmittedClientPortalPath('')
       const transactionPurchasePriceValue = normalizeInputValue(data?.transaction?.purchase_price)
       const initialFlow =
@@ -1776,7 +1780,7 @@ function ClientOnboarding() {
     } finally {
       setLoading(false)
     }
-  }, [token])
+  }, [isDemoOnboarding, token])
 
   useEffect(() => {
     void loadData()
@@ -2790,6 +2794,19 @@ function ClientOnboarding() {
         financeType: normalizedFinanceType,
         fundingSources,
       })
+      if (isDemoOnboarding) {
+        setPayload((previous) => ({
+          ...(previous || getDemoBuyerOnboardingPayload(token)),
+          formData: submissionData,
+          onboarding: {
+            ...((previous || {}).onboarding || getDemoBuyerOnboardingPayload(token).onboarding),
+            status: 'In Progress',
+            updatedAt: new Date().toISOString(),
+          },
+        }))
+        setFormData((previous) => ({ ...previous, ...submissionData }))
+        return
+      }
       await saveClientOnboardingDraft({
         token,
         formData: submissionData,
@@ -2815,6 +2832,20 @@ function ClientOnboarding() {
         submissionData,
         { transaction: payload?.transaction },
       )
+      if (isDemoOnboarding) {
+        setPayload((previous) => ({
+          ...(previous || getDemoBuyerOnboardingPayload(token)),
+          formData: submissionData,
+          onboarding: {
+            ...((previous || {}).onboarding || getDemoBuyerOnboardingPayload(token).onboarding),
+            status: 'Submitted',
+            submittedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        }))
+        setCompletionBannerVisible(true)
+        return
+      }
       const submitResult = await submitClientOnboarding({
         token,
         formData: submissionData,

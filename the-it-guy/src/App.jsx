@@ -327,6 +327,7 @@ const MobileTransactionDetailPage = lazy(() => import('./pages/mobile/MobileTran
 const MobileWorkspacePage = lazy(() => import('./pages/mobile/MobileWorkspacePage'))
 const NewTransactionPage = lazy(() => import('./pages/NewTransactionPage'))
 const OnboardingProfileSetup = lazy(() => import('./pages/OnboardingProfileSetup'))
+const OnboardingLinksDemoPage = lazy(() => import('./pages/OnboardingLinksDemoPage'))
 const Pipeline = lazy(() => import('./pages/Pipeline'))
 const PipelineCanvassingPage = lazy(() => import('./pages/PipelineCanvassingPage'))
 const PipelineOverviewPage = lazy(() => import('./pages/PipelineOverviewPage'))
@@ -2884,6 +2885,7 @@ function AppRoutes() {
           <Route path="/commercial/landlord-onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="commercial-landlord-onboarding-route" title="Landlord onboarding failed to load"><CommercialLandlordOnboardingPage /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/sign/:token" element={<SignerPortal />} />
           <Route path="/appointment-rsvp/:token" element={<AppointmentRsvpPage />} />
+          <Route path="/demo/onboarding-links" element={<AppErrorBoundary scope="demo-onboarding-links" title="Demo onboarding links failed to load"><OnboardingLinksDemoPage /></AppErrorBoundary>} />
           <Route path="/client/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/buying" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/buying/:section" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
