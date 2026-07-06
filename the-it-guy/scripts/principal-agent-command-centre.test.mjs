@@ -1,8 +1,27 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import {
   getPrincipalAgentCommandCentre,
   getPrincipalAgentDetailCommandCentre,
 } from '../src/modules/agency/agents/principalAgentCommandCentreService.js'
+
+const agentsPageSource = fs.readFileSync(new URL('../src/pages/Agents.jsx', import.meta.url), 'utf8')
+
+assert.match(
+  agentsPageSource,
+  /const \[workspaceOrganisation, setWorkspaceOrganisation\] = useState\(null\)/,
+  'Agents page should keep the live workspace organisation loaded from backend settings.',
+)
+assert.match(
+  agentsPageSource,
+  /resolveOrganisationOptions\(\{ directory: agentDirectory, invites: agentInvites, profile, organisation: workspaceOrganisation \}\)/,
+  'Agents page organisation selector should include the live backend workspace.',
+)
+assert.match(
+  agentsPageSource,
+  /organisationId: organisationFilter === EMPTY_ORGANISATION\.id[\s\S]*workspaceOrganisation\?\.id \|\| agentDirectory\?\.agency\?\.id/,
+  'Agents page should prefer the live workspace id before the legacy local agent directory id.',
+)
 
 const today = new Date()
 const yesterday = new Date(today)

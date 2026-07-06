@@ -1024,7 +1024,7 @@ function createEmptyAgentWorkspaceSnapshot() {
   }
 }
 
-function resolveOrganisationOptions({ directory = null, invites = [], profile = null } = {}) {
+function resolveOrganisationOptions({ directory = null, invites = [], profile = null, organisation = null } = {}) {
   const deduped = new Map()
 
   const register = (id, name) => {
@@ -1041,6 +1041,8 @@ function resolveOrganisationOptions({ directory = null, invites = [], profile = 
       deduped.set(normalizedId, { id: normalizedId, name: normalizedName })
     }
   }
+
+  register(organisation?.id, organisation?.name || organisation?.displayName || organisation?.display_name)
 
   if (Array.isArray(directory?.agencies)) {
     directory.agencies.forEach((agency) => register(agency?.id, agency?.name))
@@ -5270,6 +5272,7 @@ export function AgentsPage() {
   const [agents, setAgents] = useState([])
   const [agentDirectory, setAgentDirectory] = useState(() => readAgentDirectory())
   const [agentInvites, setAgentInvites] = useState(() => readAgentInvites())
+  const [workspaceOrganisation, setWorkspaceOrganisation] = useState(null)
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
   const [inviteSubmitting, setInviteSubmitting] = useState(false)
   const [inviteError, setInviteError] = useState('')
@@ -5341,6 +5344,7 @@ export function AgentsPage() {
       setAppointmentRows([])
       setListingRows([])
       setCommissionStructures([])
+      setWorkspaceOrganisation(null)
       setLoading(false)
       return
     }
@@ -5369,6 +5373,7 @@ export function AgentsPage() {
         }) : Promise.resolve([]),
       ])
       const invites = [...legacyInvites, ...(Array.isArray(canonicalInvites) ? canonicalInvites : [])]
+      const liveOrganisation = performanceSources.organisationSettings?.organisation || null
       const transactionRowsSource = performanceSources.transactions
       const privateListings = performanceSources.listings
       const pipelineRows = performanceSources.leads
@@ -5493,6 +5498,7 @@ export function AgentsPage() {
       setCommissionStructures(Array.isArray(commissionStructureRows) ? commissionStructureRows : [])
       setAgentDirectory(directory)
       setAgentInvites(invites)
+      setWorkspaceOrganisation(liveOrganisation)
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load agents.')
       setAgents([])
@@ -5504,6 +5510,7 @@ export function AgentsPage() {
       setAppointmentRows([])
       setListingRows([])
       setCommissionStructures([])
+      setWorkspaceOrganisation(null)
     } finally {
       setLoading(false)
     }
@@ -5551,8 +5558,8 @@ export function AgentsPage() {
   }, [profile])
 
   const organisationOptions = useMemo(
-    () => resolveOrganisationOptions({ directory: agentDirectory, invites: agentInvites, profile }),
-    [agentDirectory, agentInvites, profile],
+    () => resolveOrganisationOptions({ directory: agentDirectory, invites: agentInvites, profile, organisation: workspaceOrganisation }),
+    [agentDirectory, agentInvites, profile, workspaceOrganisation],
   )
 
   const organisationFilterOptions = useMemo(() => [EMPTY_ORGANISATION, ...organisationOptions], [organisationOptions])
@@ -5672,7 +5679,7 @@ export function AgentsPage() {
     () => getPrincipalAgentCommandCentre({
       principalId: profile?.id || '',
       organisationId: organisationFilter === EMPTY_ORGANISATION.id
-        ? (agentDirectory?.agency?.id || '')
+        ? (workspaceOrganisation?.id || agentDirectory?.agency?.id || '')
         : organisationFilter,
       branchId: branchFilter,
       agents,
@@ -5694,12 +5701,12 @@ export function AgentsPage() {
         sortBy,
       },
     }),
-    [agentDirectory?.agency?.id, agents, appointmentRows, branchFilter, branches, dateRange, effectiveStatusFilter, leadActivities, leadRows, leaderboardMetric, listingRows, officeFilter, organisationFilter, profile?.id, roleFilter, searchTerm, sortBy, taskRows, transactionRows],
+    [agentDirectory?.agency?.id, agents, appointmentRows, branchFilter, branches, dateRange, effectiveStatusFilter, leadActivities, leadRows, leaderboardMetric, listingRows, officeFilter, organisationFilter, profile?.id, roleFilter, searchTerm, sortBy, taskRows, transactionRows, workspaceOrganisation?.id],
   )
 
   const invitedAgentRows = useMemo(() => {
     const selectedOrganisationId = organisationFilter === EMPTY_ORGANISATION.id
-      ? String(agentDirectory?.agency?.id || '').trim().toLowerCase()
+      ? String(workspaceOrganisation?.id || agentDirectory?.agency?.id || '').trim().toLowerCase()
       : String(organisationFilter || '').trim().toLowerCase()
     const selectedBranchId = String(branchFilter || 'all').trim().toLowerCase()
     const selectedOffice = String(officeFilter || 'all').trim().toLowerCase()
@@ -5728,7 +5735,7 @@ export function AgentsPage() {
         ].some((value) => String(value || '').toLowerCase().includes(query))
       })
       .sort((left, right) => (new Date(right?.invitedAt || 0).getTime() || 0) - (new Date(left?.invitedAt || 0).getTime() || 0))
-  }, [agentDirectory?.agency?.id, agents, branchFilter, officeFilter, organisationFilter, roleFilter, searchTerm])
+  }, [agentDirectory?.agency?.id, agents, branchFilter, officeFilter, organisationFilter, roleFilter, searchTerm, workspaceOrganisation?.id])
 
   const offboardingDestinationAgents = useMemo(
     () =>
