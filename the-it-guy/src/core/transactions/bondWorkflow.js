@@ -1,7 +1,12 @@
 import { BOND_STAGE_DEFINITIONS, WORKFLOW_LANE_DEFINITIONS } from '../workflows/definitions'
 import { buildWorkflowLaneSnapshot } from '../workflows/engine'
+import { getAttorneyStageAliases } from '../../constants/attorneyWorkflowStages.js'
 
 export const BOND_WORKFLOW_TEMPLATE = [...BOND_STAGE_DEFINITIONS]
+
+function getStepForStage(stepByKey, stageKey) {
+  return getAttorneyStageAliases(stageKey, 'bond').map((key) => stepByKey.get(key)).find(Boolean) || null
+}
 
 function mapDisplayStatus({ sourceStatus, isCurrent, isLocked }) {
   const normalizedSourceStatus = String(sourceStatus || '').trim().toLowerCase()
@@ -46,17 +51,18 @@ export function resolveBondWorkflowSnapshot({
 
   const stepByKey = new Map((bondProcess?.steps || []).map((step) => [step.step_key, step]))
   const firstPendingIndex = BOND_WORKFLOW_TEMPLATE.findIndex(
-    (step) => (stepByKey.get(step.key)?.status || 'not_started') !== 'completed',
+    (step) => (getStepForStage(stepByKey, step.key)?.status || 'not_started') !== 'completed',
   )
   const complete = firstPendingIndex === -1
   const currentStep = complete ? null : BOND_WORKFLOW_TEMPLATE[firstPendingIndex]
+  const bondRegistered = complete || getStepForStage(stepByKey, 'bond_registered')?.status === 'completed'
 
   const sourceStatusByStageKey = {}
   const sourceStageMetaByKey = {}
   const stageBlockersByKey = {}
 
   BOND_WORKFLOW_TEMPLATE.forEach((definition, index) => {
-    const source = stepByKey.get(definition.key) || null
+    const source = getStepForStage(stepByKey, definition.key)
     const rawStatus = String(source?.status || 'not_started').trim().toLowerCase()
     const isCompleted = rawStatus === 'completed'
     const isCurrent = !complete && index === firstPendingIndex
@@ -127,9 +133,9 @@ export function resolveBondWorkflowSnapshot({
     isActive: true,
     isLocked: laneState.isLocked,
     complete,
-    bondRegistered: complete,
+    bondRegistered,
     currentStepKey: currentStep?.key || null,
-    currentStepId: stepByKey.get(currentStep?.key || '')?.id || null,
+    currentStepId: getStepForStage(stepByKey, currentStep?.key || '')?.id || null,
     nextActionLabel: laneState.availableActions[0]?.label || null,
     summaryText: laneState.summaryText,
     steps,

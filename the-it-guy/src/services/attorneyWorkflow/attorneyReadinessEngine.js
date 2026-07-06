@@ -1,3 +1,5 @@
+import { attorneyStageKeyMatches, normalizeAttorneyStageKey } from '../../constants/attorneyWorkflowStages.js'
+
 const LANE_BY_ROLE = {
   transfer_attorney: {
     laneKey: 'transfer',
@@ -14,7 +16,7 @@ const LANE_BY_ROLE = {
   cancellation_attorney: {
     laneKey: 'cancellation',
     label: 'Cancellation Attorney',
-    requiredStageForLodgement: 'cancellation_lodged',
+    requiredStageForLodgement: 'cancellation_lodgement_ready',
     requiredStageForRegistration: 'cancellation_registered',
   },
 }
@@ -22,9 +24,10 @@ const LANE_BY_ROLE = {
 const ROLE_BY_LANE = Object.fromEntries(Object.entries(LANE_BY_ROLE).map(([role, meta]) => [meta.laneKey, role]))
 
 const WEIGHTS = {
-  workflowStageProgress: 40,
+  workflowStageProgress: 35,
+  data: 10,
   documents: 25,
-  signatures: 20,
+  signatures: 15,
   blockers: 10,
   assignment: 5,
 }
@@ -127,6 +130,7 @@ function nextActionFromBlocker(item) {
 
 function actionTypeForBlocker(item = {}) {
   if (item.category === 'missing_document' || item.source === 'document_requirement') return 'request_document'
+  if (item.category === 'missing_data' || item.source === 'data_requirement') return 'update_matter_data'
   if (item.category === 'unsigned_document') return 'manage_signing'
   if (item.category === 'missing_assignment') return 'assign_attorney'
   if (item.category === 'manual_blocker') return 'resolve_blocker'
@@ -134,8 +138,9 @@ function actionTypeForBlocker(item = {}) {
 }
 
 function stepIsComplete(lane, stepKeys = []) {
-  const keys = new Set(stepKeys)
-  return (lane?.steps || []).some((step) => keys.has(step.stepKey) && normalizeStatus(step.status) === 'completed')
+  return (lane?.steps || []).some(
+    (step) => attorneyStageKeyMatches(step.stepKey, stepKeys, lane.laneKey) && normalizeStatus(step.status) === 'completed',
+  )
 }
 
 function requirementComplete(requirements = [], requirementId) {
@@ -155,6 +160,13 @@ function documentCompletionRatio(requirements = []) {
   return complete.length / required.length
 }
 
+function dataCompletionRatio(requirements = []) {
+  const required = requirements.filter((item) => item.required !== false)
+  if (!required.length) return 1
+  const complete = required.filter((item) => item.complete || normalizeStatus(item.status) === 'complete')
+  return complete.length / required.length
+}
+
 function signatureCompletion(lane = {}) {
   const signingRequirements = (lane.signingRequirements || []).filter((item) => item.required !== false)
   if (!signingRequirements.length) return { completed: 1, total: 1, ratio: 1, outstanding: [] }
@@ -163,10 +175,10 @@ function signatureCompletion(lane = {}) {
   let completed = 0
   for (const requirement of signingRequirements) {
     let isComplete = false
-    if (requirement.id === 'buyer_transfer_signature') {
-      isComplete = stepIsComplete(lane, ['buyer_signed'])
-    } else if (requirement.id === 'seller_transfer_signature') {
-      isComplete = stepIsComplete(lane, ['seller_signed'])
+    if (['buyer_transfer_signature', 'buyer_transfer_documents_signature'].includes(requirement.id)) {
+      isComplete = stepIsComplete(lane, ['buyer_signed_transfer_documents'])
+    } else if (['seller_transfer_signature', 'seller_transfer_documents_signature'].includes(requirement.id)) {
+      isComplete = stepIsComplete(lane, ['seller_signed_transfer_documents'])
     } else if (requirement.id === 'buyer_bond_documents_signature') {
       isComplete = stepIsComplete(lane, ['buyer_signed_bond_documents'])
     } else if (requirement.id === 'seller_cancellation_documents_signature') {
@@ -207,6 +219,29 @@ function detectDocumentBlockers(lane = {}) {
       clientVisibleSafe: ['buyer', 'seller', 'client'].includes(String(requirement.requiredFrom || '').toLowerCase()),
       category: isRejected ? 'rejected_document' : 'missing_document',
       visibility: requirement.visibilityDefault || 'professional_shared',
+    }))
+  }
+  return items
+}
+
+function detectDataBlockers(lane = {}) {
+  const items = []
+  for (const requirement of lane.dataRequirements || []) {
+    if (requirement.required === false) continue
+    if (requirement.complete || normalizeStatus(requirement.status) === 'complete') continue
+    items.push(blocker({
+      id: `${requirement.id}_missing`,
+      label: `${requirement.label} missing`,
+      severity: requirement.severity || 'medium',
+      laneKey: requirement.laneKey || lane.laneKey,
+      attorneyRole: lane.attorneyRole,
+      blockingStage: requirement.stageKey || requirement.stageKeys?.[0] || lane.currentStage,
+      source: 'data_requirement',
+      owner: requirement.owner || 'attorney',
+      recommendedAction: `Capture ${requirement.label}`,
+      clientVisibleSafe: ['buyer', 'seller', 'client'].includes(String(requirement.owner || '').toLowerCase()),
+      category: 'missing_data',
+      visibility: requirement.visibility || 'internal',
     }))
   }
   return items
@@ -305,13 +340,15 @@ function normalizeManualBlockers(manualBlockers = []) {
 
 function calculateLaneReadiness(lane = {}, manualBlockers = []) {
   const assignmentBlockers = detectAssignmentBlocker(lane)
+  const dataBlockers = detectDataBlockers(lane)
   const documentBlockers = detectDocumentBlockers(lane)
   const signatureBlockers = detectSignatureBlockers(lane)
   const workflowBlockers = detectWorkflowBlockers(lane)
   const laneManualBlockers = normalizeManualBlockers(manualBlockers).filter((item) => item.laneKey === lane.laneKey || item.attorneyRole === lane.attorneyRole)
-  const blockers = [...assignmentBlockers, ...documentBlockers, ...signatureBlockers, ...workflowBlockers, ...laneManualBlockers]
+  const blockers = [...assignmentBlockers, ...dataBlockers, ...documentBlockers, ...signatureBlockers, ...workflowBlockers, ...laneManualBlockers]
 
   const workflowScore = Math.round(((lane.summary?.completionPercent || 0) / 100) * WEIGHTS.workflowStageProgress)
+  const dataScore = Math.round(dataCompletionRatio(lane.dataRequirements || []) * WEIGHTS.data)
   const documentScore = Math.round(documentCompletionRatio(lane.documentRequirements || []) * WEIGHTS.documents)
   const signatureScore = Math.round(signatureCompletion(lane).ratio * WEIGHTS.signatures)
   const blockerSeverity = highestSeverity(blockers)
@@ -323,6 +360,7 @@ function calculateLaneReadiness(lane = {}, manualBlockers = []) {
   const assignmentScore = lane.assignment ? WEIGHTS.assignment : 0
   const scoreBreakdown = {
     workflowStageProgress: workflowScore,
+    data: dataScore,
     documents: documentScore,
     signatures: signatureScore,
     blockers: blockerScore,
@@ -358,7 +396,7 @@ function roleReadinessSkeleton(required = false) {
     status: required ? 'not_started' : 'not_required',
     blockers: [],
     nextActions: [],
-    scoreBreakdown: required ? { workflowStageProgress: 0, documents: 0, signatures: 0, blockers: 0, assignment: 0 } : null,
+    scoreBreakdown: required ? { workflowStageProgress: 0, data: 0, documents: 0, signatures: 0, blockers: 0, assignment: 0 } : null,
   }
 }
 
@@ -379,7 +417,11 @@ function calculateAverageReadiness(lanes = {}) {
 
 function stageCompleteForLane(lane = {}, stageKey) {
   if (!stageKey) return false
-  return stepIsComplete(lane, [stageKey]) || lane.currentStage === stageKey || lane.summary?.allComplete
+  return (
+    stepIsComplete(lane, [stageKey]) ||
+    normalizeAttorneyStageKey(lane.currentStage, lane.laneKey) === normalizeAttorneyStageKey(stageKey, lane.laneKey) ||
+    lane.summary?.allComplete
+  )
 }
 
 function calculateLodgementFromOperations(operations = {}, laneResults = {}) {

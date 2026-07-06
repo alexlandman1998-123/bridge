@@ -1,4 +1,5 @@
 import { normalizeAttorneyTransactionRole, normalizeAttorneyVisibility } from './attorneyPermissions.js'
+import { getAttorneyWorkflowUpdateOptions, normalizeAttorneyStageKey } from './attorneyWorkflowStages.js'
 import { resolveTransactionFacts } from '../services/attorneyWorkflow/transactionFactsResolver.js'
 
 export const ATTORNEY_UPDATE_VISIBILITIES = {
@@ -21,6 +22,7 @@ function updateType({
   clientVisibleAllowed = true,
   requiresNote = false,
   description = '',
+  aliases = [],
   appliesWhen = {},
 }) {
   return {
@@ -33,6 +35,7 @@ function updateType({
     clientVisibleAllowed,
     requiresNote,
     description,
+    aliases,
     appliesWhen: {
       financeTypes: appliesWhen.financeTypes || ALL_FINANCE_TYPES,
       transactionTypes: appliesWhen.transactionTypes || ALL_TRANSACTION_TYPES,
@@ -88,36 +91,29 @@ const entity = (id, label, appliesWhen, overrides = {}) =>
     ...overrides,
   })
 
+const workflowUpdatesForLane = (laneKey, builder) =>
+  getAttorneyWorkflowUpdateOptions(laneKey).map((option) =>
+    builder(option.id, option.label, {
+      defaultVisibility: option.defaultVisibility,
+      clientVisibleAllowed: option.clientVisibleAllowed,
+      requiresNote: option.requiresNote,
+      description: option.description,
+      aliases: option.aliases,
+    }),
+  )
+
+const TRANSFER_WORKFLOW_UPDATES = workflowUpdatesForLane('transfer', transfer)
+const BOND_WORKFLOW_UPDATES = workflowUpdatesForLane('bond', bond)
+const CANCELLATION_WORKFLOW_UPDATES = workflowUpdatesForLane('cancellation', cancellation)
+
 export const ATTORNEY_UPDATE_TYPES = [
-  transfer('instruction_received', 'Instruction received'),
-  transfer('fica_requested', 'FICA requested'),
-  transfer('fica_received', 'FICA received'),
-  transfer('transfer_documents_prepared', 'Transfer documents prepared'),
+  ...TRANSFER_WORKFLOW_UPDATES,
   transfer('buyer_transfer_docs_sent', 'Buyer transfer documents sent'),
   transfer('seller_transfer_docs_sent', 'Seller transfer documents sent'),
-  transfer('buyer_signed_transfer_docs', 'Buyer signed transfer documents'),
-  transfer('seller_signed_transfer_docs', 'Seller signed transfer documents'),
   transfer('guarantees_requested', 'Guarantees requested'),
-  transfer('guarantees_received', 'Guarantees received'),
-  transfer('rates_clearance_requested', 'Rates clearance requested'),
-  transfer('rates_clearance_received', 'Rates clearance received'),
-  transfer('levy_clearance_requested', 'Levy clearance requested'),
-  transfer('levy_clearance_received', 'Levy clearance received'),
-  transfer('lodgement_ready', 'Lodgement ready'),
-  transfer('lodged_at_deeds_office', 'Lodged at Deeds Office'),
-  transfer('in_prep', 'In prep'),
-  transfer('registered', 'Registered'),
-  transfer('registration_confirmed', 'Registration confirmed'),
 
-  bond('bond_instruction_received', 'Bond instruction received'),
-  bond('bank_requirements_confirmed', 'Bank requirements confirmed'),
-  bond('bond_documents_prepared', 'Bond documents prepared'),
+  ...BOND_WORKFLOW_UPDATES,
   bond('buyer_bond_docs_sent', 'Buyer bond documents sent'),
-  bond('buyer_signed_bond_docs', 'Buyer signed bond documents'),
-  bond('guarantees_issued', 'Guarantees issued'),
-  bond('bond_lodgement_ready', 'Bond lodgement ready'),
-  bond('bond_lodged', 'Bond lodged'),
-  bond('bond_registered', 'Bond registered'),
   bond('bank_conditions_outstanding', 'Bank conditions outstanding', {
     defaultVisibility: ATTORNEY_UPDATE_VISIBILITIES.internal,
     clientVisibleAllowed: false,
@@ -125,14 +121,8 @@ export const ATTORNEY_UPDATE_TYPES = [
   }),
   bond('bank_conditions_resolved', 'Bank conditions resolved'),
 
-  cancellation('cancellation_instruction_received', 'Cancellation instruction received'),
-  cancellation('cancellation_figures_requested', 'Cancellation figures requested'),
-  cancellation('cancellation_figures_received', 'Cancellation figures received'),
+  ...CANCELLATION_WORKFLOW_UPDATES,
   cancellation('cancellation_guarantees_requested', 'Cancellation guarantees requested'),
-  cancellation('cancellation_guarantees_accepted', 'Cancellation guarantees accepted'),
-  cancellation('cancellation_documents_prepared', 'Cancellation documents prepared'),
-  cancellation('cancellation_lodged', 'Cancellation lodged'),
-  cancellation('cancellation_registered', 'Cancellation registered'),
   cancellation('cancellation_complete', 'Cancellation complete'),
 
   entity('company_resolution_requested', 'Company resolution requested', {
@@ -225,7 +215,10 @@ export const ATTORNEY_UPDATE_TYPES = [
 
 export function getAttorneyUpdateType(updateTypeId) {
   const normalized = String(updateTypeId || '').trim()
-  return ATTORNEY_UPDATE_TYPES.find((type) => type.id === normalized) || null
+  const direct = ATTORNEY_UPDATE_TYPES.find((type) => type.id === normalized || type.aliases?.includes(normalized))
+  if (direct) return direct
+  const canonicalStageKey = normalizeAttorneyStageKey(normalized)
+  return ATTORNEY_UPDATE_TYPES.find((type) => type.id === canonicalStageKey || type.aliases?.includes(canonicalStageKey)) || null
 }
 
 function matchesOneOf(value, allowed = []) {

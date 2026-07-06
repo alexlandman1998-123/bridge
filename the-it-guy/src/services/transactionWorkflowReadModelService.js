@@ -7,6 +7,7 @@ import {
   normalizeFinanceManagedBy,
 } from '../core/transactions/financeType'
 import { getOperationalStepDefinition } from '../core/workflows/operationalStepMapping'
+import { attorneyStageKeyMatches } from '../constants/attorneyWorkflowStages.js'
 import {
   getMainStageLabel,
   getSubprocessTypeLabel,
@@ -401,7 +402,7 @@ function findLaneByKey(lanes = [], laneKey) {
 
 function getStepStatusInLane(lane = null, stepKeys = []) {
   if (!lane || !Array.isArray(lane.steps)) return 'missing'
-  const matchedStep = lane.steps.find((step) => stepKeys.includes(toLower(step.key)))
+  const matchedStep = lane.steps.find((step) => attorneyStageKeyMatches(step.key, stepKeys, lane.laneKey))
   if (!matchedStep) return 'missing'
   return normalizeSubprocessStepStatus(matchedStep.status)
 }

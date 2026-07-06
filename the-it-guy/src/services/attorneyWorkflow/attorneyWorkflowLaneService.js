@@ -14,7 +14,23 @@ import {
 } from '../../constants/attorneyUpdateTypes'
 import { resolveLegalDocumentRequirements } from './attorneyDocumentRequirementsResolver.js'
 import { resolveAttorneyWorkflowForTransaction } from './attorneyWorkflowService'
-import { ATTORNEY_LANE_STAGES } from './attorneyWorkflowResolver.js'
+import {
+  getAttorneyStageDefinition,
+  getAttorneyStageAliases,
+  getAttorneyStageKeysForLane,
+  getAttorneyStageLabel,
+  getAttorneyReadinessGatesForLane,
+  getAttorneyWorkflowStatusLabel,
+  normalizeAttorneyStageKey,
+  resolveAttorneyDataRequirementsForLane,
+  resolveAttorneyWorkflowState,
+} from '../../constants/attorneyWorkflowStages.js'
+import {
+  buildAttorneyLaneUsabilitySnapshot,
+  buildAttorneyWorkflowCoordinationSummary,
+  buildAttorneyWorkflowFollowUpSummary,
+  normalizeAttorneyWorkflowWorkPacket,
+} from '../../constants/attorneyWorkflowUsability.js'
 import { canAdvanceWorkflowStage } from '../documents/canonicalWorkflowGateService'
 
 const LANE_META = {
@@ -89,6 +105,11 @@ function normalizeVisibility(value, fallback = 'internal') {
   return ['internal', 'professional_shared', 'client_visible'].includes(normalized) ? normalized : fallback
 }
 
+function buildWorkPacketMetadata(workPacket = null) {
+  const normalized = normalizeAttorneyWorkflowWorkPacket(workPacket)
+  return normalized ? { workPacket: normalized } : {}
+}
+
 function toTitleLabel(value = '') {
   return String(value || '')
     .split('_')
@@ -97,8 +118,8 @@ function toTitleLabel(value = '') {
     .join(' ')
 }
 
-function getStageLabel(stageKey) {
-  return toTitleLabel(stageKey)
+function getStageLabel(stageKey, laneKey = null) {
+  return getAttorneyStageLabel(stageKey, laneKey) || toTitleLabel(stageKey)
 }
 
 function getUpdateTypeLabel(updateTypeId) {
@@ -113,7 +134,41 @@ function isMissingSchemaError(error) {
 }
 
 function getLaneStages(laneKey) {
-  return ATTORNEY_LANE_STAGES[laneKey] || []
+  return getAttorneyStageKeysForLane(laneKey)
+}
+
+const STEP_STATUS_RANK = {
+  completed: 5,
+  blocked: 4,
+  in_progress: 3,
+  waiting: 2,
+  not_started: 1,
+}
+
+function dedupeStepRowsForLane(rows = [], laneKey, stages = getLaneStages(laneKey)) {
+  const byKey = new Map()
+  const stageOrder = new Map(stages.map((stage, index) => [stage, index + 1]))
+  for (const row of rows || []) {
+    const canonicalStepKey = normalizeAttorneyStageKey(row.step_key, laneKey)
+    const next = {
+      ...row,
+      original_step_key: row.step_key,
+      step_key: canonicalStepKey,
+      step_label: getStageLabel(canonicalStepKey, laneKey) || row.step_label,
+      sort_order: stageOrder.get(canonicalStepKey) || row.sort_order || 0,
+    }
+    const previous = byKey.get(canonicalStepKey)
+    if (!previous) {
+      byKey.set(canonicalStepKey, next)
+      continue
+    }
+    const previousRank = STEP_STATUS_RANK[normalizeStepStatus(previous.status)] || 0
+    const nextRank = STEP_STATUS_RANK[normalizeStepStatus(next.status)] || 0
+    if (nextRank > previousRank || (nextRank === previousRank && new Date(next.updated_at || next.created_at || 0) > new Date(previous.updated_at || previous.created_at || 0))) {
+      byKey.set(canonicalStepKey, next)
+    }
+  }
+  return [...byKey.values()]
 }
 
 function mapAssignmentForLane(assignments = [], laneKey) {
@@ -158,12 +213,19 @@ function summarizeSteps(steps = [], stages = []) {
   }
 }
 
-function mapStep(row) {
+function mapStep(row, laneKey = null) {
+  const definition = laneKey ? getAttorneyStageDefinition(row.step_key, laneKey) : null
   return {
     id: row.id,
     subprocessId: row.subprocess_id,
     stepKey: row.step_key,
-    stepLabel: row.step_label || getStageLabel(row.step_key),
+    stepLabel: getStageLabel(row.step_key, laneKey) || row.step_label,
+    ownerRole: definition?.ownerRole || row.owner_type || 'attorney',
+    ownerLabel: definition?.ownerLabel || 'Attorney',
+    statusBucket: definition?.statusBucket || null,
+    readinessGate: definition?.readinessGate || null,
+    evidenceRequirements: [...(definition?.evidenceRequirements || [])],
+    requiredDocumentKeys: [...(definition?.requiredDocuments || [])],
     status: row.status || 'not_started',
     completedAt: row.completed_at || null,
     comment: row.comment || '',
@@ -244,12 +306,21 @@ function summarizeLaneDocuments(requirements = []) {
 function mapLaneRow(row, steps = [], assignment = null) {
   const laneKey = normalizeLaneKey(row.process_type)
   const stages = getLaneStages(laneKey)
-  const mappedSteps = (steps || []).map(mapStep).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+  const normalizedSteps = dedupeStepRowsForLane(steps, laneKey, stages)
+  const mappedSteps = normalizedSteps.map((step) => mapStep(step, laneKey)).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
   const summary = summarizeSteps(mappedSteps.map((step) => ({
     step_key: step.stepKey,
     status: step.status,
     sort_order: step.sortOrder,
   })), stages)
+  const currentStage = normalizeAttorneyStageKey(row.current_stage || summary.currentStage, laneKey)
+  const laneStatus = normalizeLaneStatus(row.lane_status || row.status || summary.status)
+  const workflowState = resolveAttorneyWorkflowState({
+    laneKey,
+    laneStatus,
+    currentStage,
+    summary,
+  })
 
   return {
     id: row.id,
@@ -260,9 +331,11 @@ function mapLaneRow(row, steps = [], assignment = null) {
     label: LANE_META[laneKey].label,
     assignmentId: row.attorney_assignment_id || assignment?.id || null,
     assignment,
-    currentStage: row.current_stage || summary.currentStage,
-    currentStageLabel: getStageLabel(row.current_stage || summary.currentStage),
-    laneStatus: normalizeLaneStatus(row.lane_status || row.status || summary.status),
+    currentStage,
+    currentStageLabel: getStageLabel(row.current_stage || summary.currentStage, laneKey),
+    laneStatus,
+    workflowState,
+    workflowStateLabel: getAttorneyWorkflowStatusLabel(workflowState),
     dueDate: row.due_date || null,
     completedAt: row.completed_at || null,
     updatedBy: row.updated_by || null,
@@ -490,7 +563,7 @@ function buildTimelineFromSources({ updates = [], history = [], documentRequests
       id: `history_${item.id}`,
       source: 'lane_history',
       type: 'lane_stage_changed',
-      title: `Stage updated to ${getStageLabel(item.new_stage)}`,
+      title: `Stage updated to ${getStageLabel(item.new_stage, laneKey)}`,
       message: item.note || `${LANE_META[laneKey]?.label || 'Attorney'} workflow moved forward.`,
       actor: actorLabel(item.changed_by),
       actorId: item.changed_by || null,
@@ -527,6 +600,9 @@ function buildTimelineFromSources({ updates = [], history = [], documentRequests
       metadata: {
         status,
         requestedFrom: request.requested_from || request.assigned_to_role || '',
+        priority: request.priority || '',
+        dueDate: request.due_date || null,
+        visibility,
       },
     })
   }
@@ -571,33 +647,8 @@ async function createLane(client, { transactionId, laneKey, assignment, actorId 
   if (upsert.error) throw upsert.error
 
   const laneRow = upsert.data
-  const stepRows = stages.map((stage, index) => ({
-    subprocess_id: laneRow.id,
-    step_key: stage,
-    step_label: getStageLabel(stage),
-    status: 'not_started',
-    owner_type: 'attorney',
-    sort_order: index + 1,
-    visibility_scope: 'internal',
-  }))
-
-  if (stepRows.length) {
-    let stepInsert = await client
-      .from('transaction_subprocess_steps')
-      .upsert(stepRows, { onConflict: 'subprocess_id,step_key', ignoreDuplicates: true })
-
-    if (stepInsert.error && isMissingColumnError(stepInsert.error, 'visibility_scope')) {
-      const fallbackRows = stepRows.map((row) => {
-        const next = { ...row }
-        delete next.visibility_scope
-        return next
-      })
-      stepInsert = await client
-        .from('transaction_subprocess_steps')
-        .upsert(fallbackRows, { onConflict: 'subprocess_id,step_key', ignoreDuplicates: true })
-    }
-    if (stepInsert.error) throw stepInsert.error
-  }
+  const stepRows = buildMissingStepRows(laneRow, laneKey, [])
+  await upsertLaneStepRows(client, stepRows)
 
   await insertTransactionEvent(client, {
     transactionId,
@@ -608,6 +659,52 @@ async function createLane(client, { transactionId, laneKey, assignment, actorId 
   }).catch(() => null)
 
   return laneRow
+}
+
+function buildMissingStepRows(laneRow, laneKey, existingSteps = []) {
+  const stages = getLaneStages(laneKey)
+  const existingCanonicalKeys = new Set((existingSteps || []).map((step) => normalizeAttorneyStageKey(step.step_key, laneKey)))
+  return stages
+    .filter((stageKey) => !existingCanonicalKeys.has(stageKey))
+    .map((stageKey, index) => ({
+      subprocess_id: laneRow.id,
+      step_key: stageKey,
+      step_label: getStageLabel(stageKey, laneKey),
+      status: 'not_started',
+      owner_type: 'attorney',
+      sort_order: stages.indexOf(stageKey) + 1 || index + 1,
+      visibility_scope: 'internal',
+    }))
+}
+
+async function upsertLaneStepRows(client, stepRows = []) {
+  if (!stepRows.length) return false
+  let stepInsert = await client
+    .from('transaction_subprocess_steps')
+    .upsert(stepRows, { onConflict: 'subprocess_id,step_key', ignoreDuplicates: true })
+
+  if (stepInsert.error && isMissingColumnError(stepInsert.error, 'visibility_scope')) {
+    const fallbackRows = stepRows.map((row) => {
+      const next = { ...row }
+      delete next.visibility_scope
+      return next
+    })
+    stepInsert = await client
+      .from('transaction_subprocess_steps')
+      .upsert(fallbackRows, { onConflict: 'subprocess_id,step_key', ignoreDuplicates: true })
+  }
+  if (stepInsert.error) throw stepInsert.error
+  return true
+}
+
+async function ensureCanonicalLaneSteps(client, laneRows = [], stepsBySubprocessId = {}) {
+  const stepRows = []
+  for (const row of laneRows) {
+    const laneKey = normalizeLaneKey(row.process_type === 'attorney' ? 'transfer' : row.process_type)
+    if (!['transfer', 'bond', 'cancellation'].includes(laneKey)) continue
+    stepRows.push(...buildMissingStepRows(row, laneKey, stepsBySubprocessId[row.id] || []))
+  }
+  return upsertLaneStepRows(client, stepRows)
 }
 
 export async function getAttorneyWorkflowOperationsForTransaction(transactionId, { initialize = true } = {}) {
@@ -664,17 +761,29 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
   }
 
   const laneIds = laneRows.map((row) => row.id).filter(Boolean)
-  const [steps, updates, history, documentRequests] = await Promise.all([
+  let [steps, updates, history, documentRequests] = await Promise.all([
     fetchSteps(client, laneIds),
     fetchLaneUpdates(client, normalizedTransactionId),
     fetchLaneHistory(client, normalizedTransactionId),
     fetchLaneDocumentRequests(client, normalizedTransactionId),
   ])
-  const stepsBySubprocessId = steps.reduce((accumulator, step) => {
+  let stepsBySubprocessId = steps.reduce((accumulator, step) => {
     if (!accumulator[step.subprocess_id]) accumulator[step.subprocess_id] = []
     accumulator[step.subprocess_id].push(step)
     return accumulator
   }, {})
+
+  if (initialize) {
+    const syncedSteps = await ensureCanonicalLaneSteps(client, laneRows, stepsBySubprocessId)
+    if (syncedSteps) {
+      steps = await fetchSteps(client, laneIds)
+      stepsBySubprocessId = steps.reduce((accumulator, step) => {
+        if (!accumulator[step.subprocess_id]) accumulator[step.subprocess_id] = []
+        accumulator[step.subprocess_id].push(step)
+        return accumulator
+      }, {})
+    }
+  }
 
   const laneContexts = {}
   for (const laneKey of requiredLaneKeys) {
@@ -691,8 +800,9 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
     documentRequests,
     permissionByLane: laneContexts,
   })
+  const coordinationSummaryNow = new Date().toISOString()
 
-  const lanes = laneRows
+  const baseLanes = laneRows
     .map((row) => {
       const laneKey = normalizeLaneKey(row.process_type === 'attorney' ? 'transfer' : row.process_type)
       const assignment = mapAssignmentForLane(assignments, laneKey)
@@ -714,6 +824,31 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
       const laneSigningRequirements = legalDocuments.signingRequirements.filter(
         (requirement) => requirement.laneKey === laneKey || requirement.attorneyRole === lane.attorneyRole,
       )
+      const laneDataRequirements = resolveAttorneyDataRequirementsForLane({
+        laneKey,
+        transaction,
+        facts: workflow.facts,
+      })
+      const workflowUsability = buildAttorneyLaneUsabilitySnapshot({
+        laneKey,
+        label: lane.label,
+        assignment: lane.assignment,
+        laneStatus: lane.laneStatus,
+        currentStage: lane.currentStage,
+        summary: lane.summary,
+        steps: lane.steps,
+        dataRequirements: laneDataRequirements.requirements,
+        documentRequirements: laneRequirements,
+        signingRequirements: laneSigningRequirements,
+      })
+      const laneTimeline = legalTimeline.filter((item) => item.laneKey === laneKey || item.attorneyRole === lane.attorneyRole)
+      const followUpSummary = buildAttorneyWorkflowFollowUpSummary({
+        laneKey,
+        label: lane.label,
+        timeline: laneTimeline,
+        documentRequests: laneDocumentRequests,
+        nextActions: workflowUsability.nextActions,
+      })
       const updateOptions = resolveAttorneyUpdateOptions(transaction, lane.attorneyRole)
       return {
         ...lane,
@@ -732,14 +867,36 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
         },
         updates: visibleUpdates,
         updateOptions,
-        timeline: legalTimeline.filter((item) => item.laneKey === laneKey || item.attorneyRole === lane.attorneyRole).slice(0, 12),
+        coordinationTimeline: laneTimeline,
+        timeline: laneTimeline.slice(0, 12),
         documentRequests: laneDocumentRequests,
         documentRequirements: laneRequirements,
         documentSummary: summarizeLaneDocuments(laneRequirements),
+        dataRequirements: laneDataRequirements.requirements,
+        dataSummary: laneDataRequirements.summary,
+        readinessGates: getAttorneyReadinessGatesForLane(laneKey),
+        workflowUsability,
+        actionSummary: workflowUsability,
+        nextActions: workflowUsability.nextActions,
+        followUpSummary,
+        followUps: followUpSummary.items,
+        readinessChecklist: workflowUsability.readinessChecklist,
+        evidenceChecklist: workflowUsability.evidenceChecklist,
+        attentionSummary: workflowUsability.attentionSummary,
         signingRequirements: laneSigningRequirements,
       }
     })
     .filter((lane) => requiredLaneKeys.includes(lane.laneKey))
+
+  const lanes = baseLanes.map((lane) => ({
+    ...lane,
+    coordinationSummary: buildAttorneyWorkflowCoordinationSummary({
+      laneKey: lane.laneKey,
+      lanes: baseLanes,
+      timeline: lane.coordinationTimeline || lane.timeline,
+      now: coordinationSummaryNow,
+    }),
+  }))
 
   return {
     transaction,
@@ -794,11 +951,15 @@ function buildDocumentRequestPayload({
   description = '',
   requestedFrom = 'client',
   priority = 'required',
+  visibility = null,
+  dueDate = null,
 } = {}) {
   const normalizedLaneKey = normalizeLaneKey(laneKey)
   const meta = LANE_META[normalizedLaneKey]
   const requestAudience = String(requestedFrom || requirement?.requiredFrom || 'client').trim().toLowerCase()
-  const requestVisibility = requirement?.visibilityDefault || (['client', 'buyer', 'seller'].includes(requestAudience) ? 'client_visible' : 'professional_shared')
+  const requestVisibility = normalizeVisibility(
+    visibility || requirement?.visibilityDefault || (['client', 'buyer', 'seller'].includes(requestAudience) ? 'client_visible' : 'professional_shared'),
+  )
   const requestTitle = String(title || requirement?.label || '').trim()
   const requestDescription = description || requirement?.description || requirement?.reason || null
 
@@ -809,6 +970,7 @@ function buildDocumentRequestPayload({
     title: requestTitle,
     description: requestDescription,
     priority: priority || (requirement?.required === false ? 'optional' : 'required'),
+    due_date: dueDate || null,
     assigned_to_role: requestAudience || 'client',
     status: 'requested',
     requires_review: requirement?.reviewRequired !== false,
@@ -831,6 +993,7 @@ async function insertDocumentRequest(client, payload) {
     (isMissingColumnError(insert.error, 'lane_key') ||
       isMissingColumnError(insert.error, 'review_status') ||
       isMissingColumnError(insert.error, 'visibility_scope') ||
+      isMissingColumnError(insert.error, 'due_date') ||
       isMissingColumnError(insert.error, 'requirement_id'))
   ) {
     const fallback = { ...payload }
@@ -840,11 +1003,75 @@ async function insertDocumentRequest(client, payload) {
     delete fallback.requested_by
     delete fallback.review_status
     delete fallback.visibility_scope
+    delete fallback.due_date
     delete fallback.requirement_id
     insert = await client.from('document_requests').insert(fallback).select('id').maybeSingle()
   }
   if (insert.error) throw insert.error
   return insert.data
+}
+
+async function insertFollowUpActionMarker(client, {
+  transactionId,
+  lane = null,
+  laneKey,
+  actorId,
+  visibility = 'internal',
+  message = '',
+  documentId = null,
+  signingPacketId = null,
+  workPacket = null,
+} = {}) {
+  const workPacketMetadata = buildWorkPacketMetadata(workPacket)
+  if (!workPacketMetadata.workPacket?.sourceFollowUpId) return null
+
+  const normalizedLaneKey = normalizeLaneKey(laneKey)
+  const normalizedVisibility = normalizeVisibility(visibility)
+  const updateType = UPDATE_TYPE_BY_VISIBILITY[normalizedVisibility] || UPDATE_TYPE_BY_VISIBILITY.internal
+  const normalizedMessage = String(message || `${workPacketMetadata.workPacket.title} action started from follow-up queue.`).trim()
+  const payload = {
+    transaction_id: transactionId,
+    subprocess_id: lane?.id || null,
+    lane_key: normalizedLaneKey,
+    attorney_role: LANE_META[normalizedLaneKey].attorneyRole,
+    update_type: updateType,
+    visibility: normalizedVisibility,
+    message: normalizedMessage,
+    created_by: actorId,
+    related_document_id: documentId || null,
+    related_signing_packet_id: signingPacketId || null,
+    client_recipients: [],
+    metadata: {
+      updateTypeLabel: getUpdateTypeLabel(updateType),
+      updateCategory: 'follow_up_action',
+      documentId: documentId || null,
+      signingPacketId: signingPacketId || null,
+      ...workPacketMetadata,
+    },
+  }
+
+  try {
+    let insert = await client.from('transaction_attorney_lane_updates').insert(payload)
+    if (
+      insert.error &&
+      (isMissingColumnError(insert.error, 'related_document_id') ||
+        isMissingColumnError(insert.error, 'related_signing_packet_id') ||
+        isMissingColumnError(insert.error, 'client_recipients') ||
+        isMissingColumnError(insert.error, 'metadata'))
+    ) {
+      const fallback = { ...payload }
+      delete fallback.related_document_id
+      delete fallback.related_signing_packet_id
+      delete fallback.client_recipients
+      delete fallback.metadata
+      insert = await client.from('transaction_attorney_lane_updates').insert(fallback)
+    }
+    if (insert.error && !isMissingSchemaError(insert.error)) throw insert.error
+  } catch {
+    return null
+  }
+
+  return null
 }
 
 async function fetchLaneForUpdate(client, transactionId, laneKey) {
@@ -875,7 +1102,7 @@ export async function updateAttorneyWorkflowLaneStage({
   const actor = await getAuthenticatedUser(client)
   const normalizedTransactionId = String(transactionId || '').trim()
   const normalizedLaneKey = normalizeLaneKey(laneKey)
-  const normalizedStageKey = String(stageKey || '').trim()
+  const normalizedStageKey = normalizeAttorneyStageKey(stageKey, normalizedLaneKey)
   const stages = getLaneStages(normalizedLaneKey)
   const targetIndex = stages.indexOf(normalizedStageKey)
   if (!normalizedTransactionId) throw new Error('Transaction id is required.')
@@ -889,7 +1116,7 @@ export async function updateAttorneyWorkflowLaneStage({
   })
   assertCanPublishVisibility(permissionContext, visibility)
   const lane = await fetchLaneForUpdate(client, normalizedTransactionId, normalizedLaneKey)
-  const currentStage = lane.current_stage || stages[0]
+  const currentStage = normalizeAttorneyStageKey(lane.current_stage || stages[0], normalizedLaneKey)
   const currentIndex = stages.indexOf(currentStage)
   const isRegression = currentIndex >= 0 && targetIndex < currentIndex
   const normalizedNote = String(note || '').trim()
@@ -926,7 +1153,7 @@ export async function updateAttorneyWorkflowLaneStage({
   const stepRows = stages.map((stage, index) => ({
     subprocess_id: lane.id,
     step_key: stage,
-    step_label: getStageLabel(stage),
+    step_label: getStageLabel(stage, normalizedLaneKey),
     status: finalStage || index < targetIndex ? 'completed' : index === targetIndex ? nextLaneStatus === 'blocked' ? 'blocked' : 'in_progress' : 'not_started',
     completed_at: finalStage || index < targetIndex ? nowIso : null,
     comment: index === targetIndex ? normalizedNote || null : null,
@@ -1017,15 +1244,17 @@ export async function updateAttorneyWorkflowStepStatus({
   status = 'in_progress',
   note = '',
   visibility = 'internal',
+  workPacket = null,
 } = {}) {
   const client = requireClient()
   const actor = await getAuthenticatedUser(client)
   const normalizedTransactionId = String(transactionId || '').trim()
   const normalizedLaneKey = normalizeLaneKey(laneKey)
-  const normalizedStepKey = String(stepKey || '').trim()
+  const normalizedStepKey = normalizeAttorneyStageKey(stepKey, normalizedLaneKey)
   const normalizedStatus = normalizeStepStatus(status, 'not_started')
   const normalizedNote = String(note || '').trim()
   const normalizedVisibility = normalizeVisibility(visibility)
+  const workPacketMetadata = buildWorkPacketMetadata(workPacket)
   if (!normalizedTransactionId) throw new Error('Transaction id is required.')
   if (!stepId && !normalizedStepKey) throw new Error('Workflow step is required.')
 
@@ -1043,7 +1272,7 @@ export async function updateAttorneyWorkflowStepStatus({
     .select('id, subprocess_id, step_key, step_label, status, completed_at, comment, owner_type, sort_order, updated_at, created_at')
     .eq('subprocess_id', lane.id)
 
-  stepQuery = stepId ? stepQuery.eq('id', stepId) : stepQuery.eq('step_key', normalizedStepKey)
+  stepQuery = stepId ? stepQuery.eq('id', stepId) : stepQuery.in('step_key', getAttorneyStageAliases(normalizedStepKey, normalizedLaneKey)).limit(1)
   const stepResult = await stepQuery.maybeSingle()
   if (stepResult.error) {
     if (isMissingSchemaError(stepResult.error)) throw new Error('Attorney workflow steps are not set up yet.')
@@ -1135,7 +1364,7 @@ export async function updateAttorneyWorkflowStepStatus({
     note: normalizedNote || null,
     visibility: normalizedVisibility,
     source: 'attorney_workspace_step_drawer',
-    metadata: { stepId: updateStep.data.id, stepLabel: updateStep.data.step_label || null },
+    metadata: { stepId: updateStep.data.id, stepLabel: updateStep.data.step_label || null, ...workPacketMetadata },
   }).catch(() => null)
 
   await insertTransactionEvent(client, {
@@ -1158,6 +1387,7 @@ export async function updateAttorneyWorkflowStepStatus({
       stepLabel: updateStep.data.step_label,
       status: normalizedStatus,
       note: normalizedNote || null,
+      ...workPacketMetadata,
     },
   })
 
@@ -1182,6 +1412,7 @@ export async function addAttorneyTransactionUpdate({
   clientRecipients = [],
   documentId = null,
   signingPacketId = null,
+  workPacket = null,
 } = {}) {
   const client = requireClient()
   const actor = await getAuthenticatedUser(client)
@@ -1190,6 +1421,7 @@ export async function addAttorneyTransactionUpdate({
   const meta = LANE_META[normalizedLaneKey]
   const normalizedAttorneyRole = meta.attorneyRole
   const normalizedMessage = String(message || '').trim()
+  const workPacketMetadata = buildWorkPacketMetadata(workPacket)
   if (!normalizedMessage) throw new Error('Unable to save attorney update.')
 
   const transaction = await fetchTransaction(client, normalizedTransactionId)
@@ -1236,6 +1468,7 @@ export async function addAttorneyTransactionUpdate({
       clientVisibleAllowed: Boolean(registryType?.clientVisibleAllowed),
       documentId: documentId || null,
       signingPacketId: signingPacketId || null,
+      ...workPacketMetadata,
     },
   }
 
@@ -1275,6 +1508,7 @@ export async function addAttorneyTransactionUpdate({
       relatedDocumentId: documentId || null,
       relatedSigningPacketId: signingPacketId || null,
       clientRecipients: payload.client_recipients,
+      ...workPacketMetadata,
     },
   })
 
@@ -1292,6 +1526,9 @@ export async function requestAttorneyWorkflowLaneDocument({
   description = '',
   requestedFrom = 'client',
   priority = 'required',
+  visibility = null,
+  dueDate = null,
+  workPacket = null,
 } = {}) {
   const client = requireClient()
   const actor = await getAuthenticatedUser(client)
@@ -1299,9 +1536,10 @@ export async function requestAttorneyWorkflowLaneDocument({
   const normalizedLaneKey = normalizeLaneKey(laneKey)
   const normalizedTitle = String(title || '').trim()
   if (!normalizedTitle) throw new Error('Document title is required.')
+  const workPacketMetadata = buildWorkPacketMetadata(workPacket)
 
   await assertCanRequestLaneDocument({ user: actor, transactionId: normalizedTransactionId, laneKey: normalizedLaneKey })
-  await fetchLaneForUpdate(client, normalizedTransactionId, normalizedLaneKey)
+  const lane = await fetchLaneForUpdate(client, normalizedTransactionId, normalizedLaneKey)
 
   const payload = buildDocumentRequestPayload({
     transactionId: normalizedTransactionId,
@@ -1311,15 +1549,36 @@ export async function requestAttorneyWorkflowLaneDocument({
     description,
     requestedFrom,
     priority,
+    visibility,
+    dueDate,
   })
-  await insertDocumentRequest(client, payload)
+  const insertedRequest = await insertDocumentRequest(client, payload)
+
+  await insertFollowUpActionMarker(client, {
+    transactionId: normalizedTransactionId,
+    lane,
+    laneKey: normalizedLaneKey,
+    actorId: actor.id,
+    visibility: payload.visibility_scope,
+    message: `${normalizedTitle} requested from ${toTitleLabel(payload.requested_from)}.`,
+    documentId: insertedRequest?.id || null,
+    workPacket,
+  })
 
   await insertTransactionEvent(client, {
     transactionId: normalizedTransactionId,
     eventType: 'AttorneyLaneDocumentRequested',
     actorId: actor.id,
     visibility: payload.visibility_scope,
-    eventData: { laneKey: normalizedLaneKey, attorneyRole: payload.attorney_role, title: normalizedTitle, requestedFrom: payload.requested_from },
+    eventData: {
+      laneKey: normalizedLaneKey,
+      attorneyRole: payload.attorney_role,
+      title: normalizedTitle,
+      requestedFrom: payload.requested_from,
+      priority: payload.priority,
+      dueDate: payload.due_date,
+      ...workPacketMetadata,
+    },
   })
 
   return getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })

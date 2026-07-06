@@ -64,6 +64,7 @@ export function resolveAttorneyWorkflowForTransaction(transaction = {}, assignme
     assignedAttorneyRoles: assignedRoles,
     missingRequiredRoles,
     documentRequirements: legalRequirements.documentRequirements,
+    dataRequirements: legalRequirements.dataRequirements,
     updateOptions: legalRequirements.updateOptions,
     signingRequirements: legalRequirements.signingRequirements,
     warnings: legalRequirements.warnings,
@@ -89,6 +90,7 @@ export async function getLegalRequirementsForTransaction(transactionId) {
   return {
     requiredAttorneyRoles: workflow.requiredAttorneyRoles,
     documentRequirements: workflow.documentRequirements,
+    dataRequirements: workflow.dataRequirements,
     updateOptions: workflow.updateOptions,
     signingRequirements: workflow.signingRequirements,
     warnings: workflow.warnings,

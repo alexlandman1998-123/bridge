@@ -66,6 +66,12 @@ import {
   requestAttorneyWorkflowLaneDocument,
   updateAttorneyWorkflowStepStatus,
 } from '../services/attorneyWorkflow/attorneyWorkflowLaneService'
+import { getAttorneyStageDefinitionsForLane, normalizeAttorneyStageKey } from '../constants/attorneyWorkflowStages.js'
+import {
+  buildAttorneyWorkflowActionCommand,
+  buildAttorneyWorkflowCoordinationCommand,
+  buildAttorneyWorkflowFollowUpCommand,
+} from '../constants/attorneyWorkflowUsability.js'
 import {
   addTransactionDiscussionComment,
   addBondApplication,
@@ -1078,41 +1084,19 @@ const WORKFLOW_STATUS_META = {
   not_started: { label: 'Not Started', dot: 'bg-slate-300', text: 'text-slate-500', bg: 'bg-slate-50', border: 'border-slate-200' },
 }
 
+function buildLegalWorkflowStageCatalog(laneKey) {
+  return getAttorneyStageDefinitionsForLane(laneKey).map((definition) => ({
+    key: definition.key,
+    label: definition.label,
+    description: definition.description,
+    appliesWhen: definition.key === 'guarantees_received' ? ({ facts }) => !facts?.isCashDeal : undefined,
+  }))
+}
+
 const LEGAL_WORKFLOW_STAGE_CATALOG = {
-  transfer: [
-    { key: 'instruction_received', label: 'Instruction', description: 'Sale instruction and source documents received.' },
-    { key: 'fica_requested', label: 'FICA Requested', description: 'Buyer and seller compliance packs requested.' },
-    { key: 'fica_received', label: 'FICA Received', description: 'Required identity and authority documents received.' },
-    { key: 'transfer_documents_prepared', label: 'Drafting', description: 'Transfer documents prepared for signature.' },
-    { key: 'buyer_signed', label: 'Buyer Signed', description: 'Buyer transfer signing completed.' },
-    { key: 'seller_signed', label: 'Seller Signed', description: 'Seller transfer signing completed.' },
-    { key: 'guarantees_received', label: 'Guarantees', description: 'Guarantees or cash undertaking confirmed.', appliesWhen: ({ facts }) => !facts?.isCashDeal },
-    { key: 'clearances_requested', label: 'Clearances Requested', description: 'Rates, levy, HOA, or compliance clearances requested.' },
-    { key: 'clearances_received', label: 'Clearances Received', description: 'Required transfer clearances received.' },
-    { key: 'lodgement_ready', label: 'Lodgement Ready', description: 'Transfer pack ready for deeds office lodgement.' },
-    { key: 'lodged', label: 'Lodged', description: 'Matter lodged at deeds office.' },
-    { key: 'prep', label: 'Prep', description: 'On prep for registration.' },
-    { key: 'registered', label: 'Registered', description: 'Transfer registered and close-out can begin.' },
-  ],
-  bond: [
-    { key: 'bond_instruction_received', label: 'Instruction', description: 'Bond attorney instruction received from finance.' },
-    { key: 'bank_requirements_confirmed', label: 'Bank Requirements', description: 'Bank conditions and attorney requirements confirmed.' },
-    { key: 'bond_documents_prepared', label: 'Bond Documents', description: 'Bond documents prepared for buyer signature.' },
-    { key: 'buyer_signed_bond_documents', label: 'Buyer Signed', description: 'Buyer signed bond documents.' },
-    { key: 'guarantees_issued', label: 'Guarantees Issued', description: 'Guarantees issued to the transfer attorney.' },
-    { key: 'bond_lodgement_ready', label: 'Lodgement Ready', description: 'Bond pack ready to lodge with transfer.' },
-    { key: 'bond_lodged', label: 'Bond Lodged', description: 'Bond lodged at deeds office.' },
-    { key: 'bond_registered', label: 'Bond Registered', description: 'Bond registered.' },
-  ],
-  cancellation: [
-    { key: 'cancellation_instruction_received', label: 'Instruction', description: 'Cancellation instruction received.' },
-    { key: 'cancellation_figures_requested', label: 'Figures Requested', description: 'Settlement/cancellation figures requested from bank.' },
-    { key: 'cancellation_figures_received', label: 'Figures Received', description: 'Cancellation figures received and checked.' },
-    { key: 'guarantees_accepted', label: 'Guarantees Accepted', description: 'Cancellation guarantees accepted.' },
-    { key: 'cancellation_documents_prepared', label: 'Documents Prepared', description: 'Cancellation documents prepared.' },
-    { key: 'cancellation_lodged', label: 'Cancellation Lodged', description: 'Cancellation lodged with the linked transfer.' },
-    { key: 'cancellation_registered', label: 'Cancellation Registered', description: 'Seller bond cancellation registered.' },
-  ],
+  transfer: buildLegalWorkflowStageCatalog('transfer'),
+  bond: buildLegalWorkflowStageCatalog('bond'),
+  cancellation: buildLegalWorkflowStageCatalog('cancellation'),
 }
 
 const LEGAL_WORKFLOW_REASON_LABELS = {
@@ -1144,6 +1128,18 @@ const WORKFLOW_STEP_STATUS_OPTIONS = [
   { value: 'completed', label: 'Completed' },
 ]
 
+const WORKFLOW_DOCUMENT_PRIORITY_OPTIONS = [
+  { value: 'required', label: 'Required' },
+  { value: 'urgent', label: 'Urgent' },
+  { value: 'optional', label: 'Optional' },
+]
+
+const WORKFLOW_DOCUMENT_VISIBILITY_OPTIONS = [
+  { value: 'client_visible', label: 'Client Visible' },
+  { value: 'professional_shared', label: 'Professional Shared' },
+  { value: 'internal', label: 'Internal' },
+]
+
 const LANE_ACCENTS = {
   transfer: {
     ring: 'border-l-blue-600',
@@ -1169,15 +1165,20 @@ const WORKFLOW_STEP_LABEL_OVERRIDES = {
   instruction_received: 'Instruction Received',
   fica_received: 'FICA Received',
   transfer_documents_prepared: 'Transfer Docs Prepared',
-  buyer_signed: 'Buyer Signed Docs',
-  seller_signed: 'Seller Signed Docs',
+  buyer_signed: 'Buyer Signed Transfer Documents',
+  buyer_signed_transfer_documents: 'Buyer Signed Transfer Documents',
+  seller_signed: 'Seller Signed Transfer Documents',
+  seller_signed_transfer_documents: 'Seller Signed Transfer Documents',
   guarantees_received: 'Guarantees Received',
-  lodgement_submitted: 'Lodgement Submitted',
-  registration_confirmed: 'Registration Confirmed',
+  lodgement_submitted: 'Lodged at Deeds Office',
+  lodged_at_deeds_office: 'Lodged at Deeds Office',
+  registration_confirmed: 'Registered',
+  registered: 'Registered',
   bond_instruction_received: 'Bond Instruction Received',
   buyer_fica_received: 'Buyer FICA Received',
   bond_documents_prepared: 'Bond Docs Prepared',
-  buyer_signed_bond_docs: 'Buyer Signed Bond Docs',
+  buyer_signed_bond_docs: 'Buyer Signed Bond Documents',
+  buyer_signed_bond_documents: 'Buyer Signed Bond Documents',
   guarantees_issued: 'Guarantees Issued',
   bond_lodged: 'Bond Lodged',
   bond_registered: 'Bond Registered',
@@ -1185,6 +1186,7 @@ const WORKFLOW_STEP_LABEL_OVERRIDES = {
   settlement_figures_requested: 'Settlement Figures Requested',
   settlement_figures_received: 'Settlement Figures Received',
   guarantees_provided: 'Guarantees Provided',
+  cancellation_guarantees_accepted: 'Cancellation Guarantees Accepted',
   cancellation_docs_prepared: 'Cancellation Docs Prepared',
   cancellation_lodged: 'Cancellation Lodged',
   bond_cancelled: 'Bond Cancelled',
@@ -1194,6 +1196,7 @@ function normalizeWorkspaceStatus(value) {
   const normalized = String(value || '').trim().toLowerCase()
   if (normalized === 'complete') return 'completed'
   if (normalized === 'pending' || normalized === 'requested' || normalized === 'under_review') return 'waiting'
+  if (normalized === 'waiting_on_party') return 'waiting'
   if (normalized === 'at_risk') return 'delayed'
   return WORKFLOW_STATUS_META[normalized] ? normalized : 'not_started'
 }
@@ -1247,6 +1250,8 @@ function getWorkflowHealthLabel(lane = {}) {
 }
 
 function getWorkflowExplanation(lane = {}) {
+  const usability = getLaneUsability(lane)
+  if (usability?.attentionSummary && usability.attentionSummary !== 'No immediate workflow blockers visible.') return usability.attentionSummary
   const currentStep = getCurrentWorkflowStep(lane)
   const status = normalizeWorkspaceStatus(currentStep?.status || lane?.laneStatus || lane?.summary?.status)
   if (currentStep?.comment) return currentStep.comment
@@ -1254,6 +1259,277 @@ function getWorkflowExplanation(lane = {}) {
   if (status === 'waiting') return 'Capture who or what the workflow is waiting on, then follow up from the action drawer.'
   if (lane?.documentSummary?.missing) return `${lane.documentSummary.missing} required document item(s) still need attention.`
   return lane?.summary?.nextAction ? `Next action: ${lane.summary.nextAction}` : 'Keep the lane moving by updating the active step or adding a workflow note.'
+}
+
+function getLaneUsability(lane = {}) {
+  return lane?.workflowUsability || lane?.actionSummary || {}
+}
+
+function getWorkflowActionCommand(action = {}, lane = {}) {
+  return buildAttorneyWorkflowActionCommand(action, {
+    laneKey: lane?.laneKey || lane?.processType,
+    stageKey: lane?.currentStage || lane?.summary?.currentStage,
+  })
+}
+
+function getActionPriorityMeta(priority = 'medium') {
+  const normalized = String(priority || '').trim().toLowerCase()
+  if (normalized === 'critical' || normalized === 'high') return WORKFLOW_STATUS_META.blocked
+  if (normalized === 'medium') return WORKFLOW_STATUS_META.waiting
+  return WORKFLOW_STATUS_META.completed
+}
+
+function getReadinessChecklistMeta(item = {}) {
+  if (item.complete) return WORKFLOW_STATUS_META.completed
+  if (item.severity === 'critical' || item.severity === 'high') return WORKFLOW_STATUS_META.blocked
+  return WORKFLOW_STATUS_META.waiting
+}
+
+function WorkflowWorkPacketSummary({ packet = null }) {
+  if (!packet) return null
+  const details = [
+    ['Owner', packet.laneLabel],
+    ['Audience', packet.audienceLabel],
+    ['Priority', packet.priorityLabel],
+    ['Due', formatDate(packet.dueDate, 'No date')],
+    ['Visibility', packet.visibilityLabel],
+  ].filter(([, value]) => value)
+  const checklist = Array.isArray(packet.checklist) ? packet.checklist.filter(Boolean).slice(0, 4) : []
+
+  return (
+    <div className="rounded-[14px] border border-primary/15 bg-white p-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <strong className="block text-sm text-textStrong">{packet.title || 'Workflow action'}</strong>
+          {packet.stageLabel ? <span className="mt-1 block text-xs text-textMuted">{packet.stageLabel}</span> : null}
+        </div>
+        <span className="inline-flex w-fit rounded-full border border-primary/20 bg-primarySoft px-2.5 py-1 text-[0.68rem] font-semibold text-primary">
+          Work packet
+        </span>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-5">
+        {details.map(([label, value]) => (
+          <div key={label} className="min-w-0 rounded-[10px] border border-borderSoft bg-surfaceAlt px-2.5 py-2">
+            <span className="block truncate text-[0.62rem] font-semibold uppercase tracking-[0.06em] text-textMuted">{label}</span>
+            <strong className="mt-1 block truncate text-xs text-textStrong">{value}</strong>
+          </div>
+        ))}
+      </div>
+      {checklist.length ? (
+        <div className="mt-3 grid gap-1.5">
+          {checklist.map((item) => (
+            <div key={item} className="flex items-start gap-2 text-xs leading-5 text-textMuted">
+              <CheckCircle2 size={13} className="mt-1 shrink-0 text-primary" />
+              <span>{item}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function WorkflowActivityPacketMeta({ item = {} }) {
+  const packet = item?.metadata?.workPacket || null
+  const details = packet
+    ? [
+        ['Owner', packet.laneLabel],
+        ['Audience', packet.audienceLabel],
+        ['Priority', packet.priorityLabel],
+        ['Due', formatDate(packet.dueDate, 'No date')],
+      ]
+    : [
+        ['Audience', item?.metadata?.requestedFrom ? toTitle(item.metadata.requestedFrom) : ''],
+        ['Priority', item?.metadata?.priority ? toTitle(item.metadata.priority) : ''],
+        ['Due', formatDate(item?.metadata?.dueDate, '')],
+      ]
+  const visibleDetails = details.filter(([, value]) => value)
+  const checklist = Array.isArray(packet?.checklist) ? packet.checklist.filter(Boolean).slice(0, 3) : []
+  if (!visibleDetails.length && !checklist.length) return null
+
+  return (
+    <div className="mt-3 rounded-[10px] border border-borderSoft bg-white px-3 py-2">
+      {visibleDetails.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {visibleDetails.map(([label, value]) => (
+            <span key={label} className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-2 py-0.5 text-[0.65rem] font-semibold text-textMuted">
+              {label}: {value}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {checklist.length ? (
+        <div className="mt-2 grid gap-1">
+          {checklist.map((entry) => (
+            <div key={entry} className="flex items-start gap-2 text-[0.68rem] leading-4 text-textMuted">
+              <CheckCircle2 size={12} className="mt-0.5 shrink-0 text-primary" />
+              <span>{entry}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function getFollowUpStatusMeta(status = 'open') {
+  if (['needs_correction', 'overdue'].includes(status)) return WORKFLOW_STATUS_META.blocked
+  if (['due_today', 'due_soon', 'urgent', 'review_pending'].includes(status)) return WORKFLOW_STATUS_META.waiting
+  if (status === 'open') return WORKFLOW_STATUS_META.in_progress
+  return WORKFLOW_STATUS_META.not_started
+}
+
+function LegalWorkflowFollowUpQueue({ summary = null, compact = false, onExecuteFollowUp = null }) {
+  const items = Array.isArray(summary?.items) ? summary.items : []
+  if (!summary || (!items.length && compact)) return null
+  const counts = summary.counts || {}
+  const attentionCount = (counts.needsCorrection || 0) + (counts.overdue || 0) + (counts.dueToday || 0) + (counts.dueSoon || 0)
+
+  return (
+    <section className={compact ? 'mt-4 border-t border-borderSoft pt-4' : 'rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]'}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-textStrong">Follow-up Queue</h3>
+          <p className="mt-1 text-xs leading-5 text-textMuted">
+            {items.length
+              ? `${items.length} open follow-up${items.length === 1 ? '' : 's'} across requests, packet notes, and next actions.`
+              : 'No overdue or scheduled follow-ups are visible for this lane.'}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${attentionCount ? 'border-warning/30 bg-warningSoft text-warning' : 'border-success/30 bg-successSoft text-success'}`}>
+            {attentionCount} attention
+          </span>
+          <span className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-2.5 py-1 text-[0.68rem] font-semibold text-textMuted">
+            {counts.urgent || 0} urgent
+          </span>
+          {counts.actioned ? (
+            <span className="inline-flex rounded-full border border-success/30 bg-successSoft px-2.5 py-1 text-[0.68rem] font-semibold text-success">
+              {counts.actioned} actioned
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      {items.length ? (
+        <div className="mt-3 grid gap-2">
+          {items.slice(0, compact ? 4 : 6).map((item) => {
+            const meta = getFollowUpStatusMeta(item.status)
+            const command = buildAttorneyWorkflowFollowUpCommand(item, { laneKey: summary.laneKey })
+            return (
+              <article key={item.id} className={`rounded-[12px] border px-3 py-3 ${meta.border} ${meta.bg}`}>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <strong className={`text-sm ${meta.text}`}>{item.title}</strong>
+                      <span className={`rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold ${meta.border} bg-white/75 ${meta.text}`}>
+                        {item.statusLabel}
+                      </span>
+                    </div>
+                    {item.description ? <p className={`mt-1 line-clamp-2 text-xs leading-5 ${meta.text}`}>{item.description}</p> : null}
+                    <div className={`mt-2 flex flex-wrap gap-1.5 text-[0.66rem] font-semibold ${meta.text}`}>
+                      {item.audienceLabel ? <span>{item.audienceLabel}</span> : null}
+                      {item.priorityLabel ? <span>{item.priorityLabel}</span> : null}
+                      {item.dueDate ? <span>Due {formatDate(item.dueDate)}</span> : <span>No due date</span>}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
+                    <span className={`text-[0.68rem] font-semibold ${meta.text}`}>{toTitle(item.source || 'workflow')}</span>
+                    {onExecuteFollowUp ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => onExecuteFollowUp(item, command)}
+                      >
+                        {command.label}
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+function getCoordinationStatusMeta(status = 'waiting') {
+  if (status === 'escalation') return WORKFLOW_STATUS_META.blocked
+  if (status === 'ready') return WORKFLOW_STATUS_META.completed
+  if (status === 'blocked') return WORKFLOW_STATUS_META.blocked
+  if (status === 'clear') return WORKFLOW_STATUS_META.completed
+  return WORKFLOW_STATUS_META.waiting
+}
+
+function LegalWorkflowCoordinationPanel({ summary = null, compact = false, stageKey = '', onExecuteCoordination = null }) {
+  const items = Array.isArray(summary?.items) ? summary.items : []
+  if (!summary || (!items.length && compact)) return null
+  const counts = summary.counts || {}
+  const healthMeta = getCoordinationStatusMeta(summary.health)
+
+  return (
+    <section className={compact ? 'mt-4 border-t border-borderSoft pt-4' : 'rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]'}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-textStrong">Coordination</h3>
+          <p className="mt-1 text-xs leading-5 text-textMuted">
+            {items.length
+              ? `${counts.waiting || 0} waiting, ${counts.blocked || 0} blocked, ${counts.escalationNeeded || 0} need escalation, and ${counts.actioned || 0} already requested.`
+              : 'No cross-lane legal dependencies are required for this workflow.'}
+          </p>
+        </div>
+        <span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${healthMeta.border} ${healthMeta.bg} ${healthMeta.text}`}>
+          {summary.health === 'clear' ? 'Clear' : toTitle(summary.health)}
+        </span>
+      </div>
+
+      {items.length ? (
+        <div className="mt-3 grid gap-2">
+          {items.slice(0, compact ? 3 : 6).map((item) => {
+            const meta = getCoordinationStatusMeta(item.escalationNeeded ? 'escalation' : item.status)
+            const command = buildAttorneyWorkflowCoordinationCommand(item, { laneKey: summary.laneKey, stageKey })
+            return (
+              <article key={item.id} className={`rounded-[12px] border px-3 py-3 ${meta.border} ${meta.bg}`}>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <strong className={`text-sm ${meta.text}`}>{item.title}</strong>
+                      <span className={`rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold ${meta.border} bg-white/75 ${meta.text}`}>
+                        {item.statusLabel}
+                      </span>
+                    </div>
+                    <p className={`mt-1 text-xs leading-5 ${meta.text}`}>{item.description}</p>
+                    <div className={`mt-2 flex flex-wrap gap-1.5 text-[0.66rem] font-semibold ${meta.text}`}>
+                      <span>{item.laneLabel}</span>
+                      {item.currentStageLabel ? <span>Current: {item.currentStageLabel}</span> : null}
+                      {item.targetStageLabel ? <span>Needed: {item.targetStageLabel}</span> : null}
+                      {item.actionedAt ? <span>Requested {formatShortDayMonth(item.actionedAt)}</span> : null}
+                      {item.actionedDueDate ? <span>{item.escalationNeeded ? 'Escalation due' : 'Escalate by'} {formatShortDayMonth(item.actionedDueDate)}</span> : null}
+                      {item.escalatedAt ? <span>Escalated {formatShortDayMonth(item.escalatedAt)}</span> : null}
+                    </div>
+                  </div>
+                  {onExecuteCoordination && item.status !== 'ready' && (!item.actioned || item.escalationNeeded) ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="shrink-0"
+                      onClick={() => onExecuteCoordination(item, command)}
+                    >
+                      {command.label}
+                    </Button>
+                  ) : null}
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      ) : null}
+    </section>
+  )
 }
 
 function normalizeLegalWorkflowDetailKey(value = '') {
@@ -1363,10 +1639,10 @@ function getLegalWorkflowStageDefinitions(workflowKey = 'transfer', facts = {}) 
 function buildLegalWorkflowProgressSteps({ workflowKey = 'transfer', lane = null, facts = {} } = {}) {
   const laneSteps = Array.isArray(lane?.steps) ? lane.steps : []
   const laneStepMap = new Map(
-    laneSteps.map((step) => [String(step.stepKey || step.step_key || '').trim(), step]),
+    laneSteps.map((step) => [normalizeAttorneyStageKey(step.stepKey || step.step_key || '', workflowKey), step]),
   )
   const currentStep = lane ? getCurrentWorkflowStep(lane) : null
-  const currentKey = currentStep?.stepKey || currentStep?.step_key || lane?.currentStage || lane?.summary?.currentStage || ''
+  const currentKey = normalizeAttorneyStageKey(currentStep?.stepKey || currentStep?.step_key || lane?.currentStage || lane?.summary?.currentStage || '', workflowKey)
   let currentIndex = -1
 
   const steps = getLegalWorkflowStageDefinitions(workflowKey, facts).map((definition, index) => {
@@ -1501,6 +1777,96 @@ function LegalWorkflowProgressBar({ workflow = null, diagnostics = null }) {
       <div className="mt-5 h-2 overflow-hidden rounded-full bg-[#edf2f7]">
         <div className="h-full rounded-full bg-[#155eef]" style={{ width: `${progress}%` }} />
       </div>
+    </section>
+  )
+}
+
+function LegalWorkflowActionPanel({ workflow = null, onExecuteAction = null, onExecuteFollowUp = null }) {
+  const actionSummary = workflow?.actionSummary || {}
+  const primaryAction = actionSummary.primaryNextAction || null
+  const nextActions = actionSummary.nextActions || []
+  const readinessChecklist = actionSummary.readinessChecklist || []
+  const evidenceChecklist = actionSummary.evidenceChecklist || []
+  const lane = workflow?.lane || {}
+  if (!primaryAction && !readinessChecklist.length && !evidenceChecklist.length) return null
+
+  return (
+    <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.6fr)]">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-textStrong">Next Actions</h3>
+            {primaryAction ? (
+              <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getActionPriorityMeta(primaryAction.priority).border} ${getActionPriorityMeta(primaryAction.priority).bg} ${getActionPriorityMeta(primaryAction.priority).text}`}>
+                {toTitle(primaryAction.priority)}
+              </span>
+            ) : null}
+          </div>
+          <div className="mt-3 grid gap-2">
+            {(nextActions.length ? nextActions : primaryAction ? [primaryAction] : []).slice(0, 5).map((item) => {
+              const meta = getActionPriorityMeta(item.priority)
+              const command = getWorkflowActionCommand(item, lane)
+              return (
+                <article key={item.id} className={`rounded-[12px] border px-3 py-3 ${meta.border} ${meta.bg}`}>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <strong className={`block text-sm ${meta.text}`}>{item.label}</strong>
+                      <p className={`mt-1 text-xs leading-5 ${meta.text}`}>{item.description || toTitle(item.type)}</p>
+                    </div>
+                    {onExecuteAction ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="shrink-0"
+                        onClick={() => onExecuteAction(item, command)}
+                      >
+                        {command.label}
+                      </Button>
+                    ) : null}
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="grid gap-3">
+          {readinessChecklist.length ? (
+            <div>
+              <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">Readiness</h4>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {readinessChecklist.map((item) => {
+                  const meta = getReadinessChecklistMeta(item)
+                  return (
+                    <div key={item.id} className={`rounded-[12px] border px-3 py-2 ${meta.border} ${meta.bg}`}>
+                      <span className={`block truncate text-[0.66rem] font-semibold uppercase tracking-[0.06em] ${meta.text}`}>{item.label}</span>
+                      <strong className={`mt-1 block text-xs ${meta.text}`}>{item.complete ? 'Ready' : `${item.missingCount} missing`}</strong>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {evidenceChecklist.length ? (
+            <div>
+              <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">Current Evidence</h4>
+              <div className="mt-2 space-y-2">
+                {evidenceChecklist.slice(0, 3).map((item) => (
+                  <div key={item.id} className="flex items-start gap-2 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2">
+                    <span className={`mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full ${item.complete ? 'bg-successSoft text-success' : 'bg-warningSoft text-warning'}`}>
+                      {item.complete ? <CheckCircle2 size={13} /> : <Clock3 size={13} />}
+                    </span>
+                    <span className="min-w-0 text-xs leading-5 text-textMuted">{item.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+      <LegalWorkflowFollowUpQueue summary={workflow?.lane?.followUpSummary} compact onExecuteFollowUp={onExecuteFollowUp} />
     </section>
   )
 }
@@ -3496,9 +3862,13 @@ function MatterOverviewHeader({
     </div>
   )
 }
-function LegalWorkflowHubCard({ workflow, onOpen }) {
+function LegalWorkflowHubCard({ workflow, onOpen, onExecuteAction = null }) {
   const accent = LANE_ACCENTS[workflow?.accentKey] || LANE_ACCENTS.transfer
   const statusMeta = WORKFLOW_STATUS_META[workflow?.statusKey] || WORKFLOW_STATUS_META.not_started
+  const actionSummary = workflow?.actionSummary || {}
+  const primaryAction = actionSummary.primaryNextAction || null
+  const readinessChecklist = (actionSummary.readinessChecklist || []).filter((item) => ['data', 'documents', 'signatures'].includes(item.id))
+  const primaryCommand = primaryAction ? getWorkflowActionCommand(primaryAction, workflow?.lane || {}) : null
 
   return (
     <article className={`flex h-full min-w-0 flex-col overflow-hidden rounded-[18px] border border-borderDefault border-l-4 bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:p-5 ${accent.ring}`}>
@@ -3533,21 +3903,48 @@ function LegalWorkflowHubCard({ workflow, onOpen }) {
       </div>
 
       <div className="mt-4 min-h-[3.5rem]">
-        {workflow.blockers.length ? (
+        {primaryAction ? (
+          <div className={`rounded-[14px] border px-3 py-3 text-sm ${getActionPriorityMeta(primaryAction.priority).border} ${getActionPriorityMeta(primaryAction.priority).bg} ${getActionPriorityMeta(primaryAction.priority).text}`}>
+            <strong className="block text-xs uppercase tracking-[0.08em]">Next Action</strong>
+            <span className="mt-1 block font-semibold">{primaryAction.label}</span>
+            {primaryAction.description ? <span className="mt-1 block text-xs leading-5">{primaryAction.description}</span> : null}
+          </div>
+        ) : workflow.blockers.length ? (
           <div className="rounded-[14px] border border-warning/30 bg-warningSoft px-3 py-3 text-sm text-warning">
             {workflow.blockers[0]}
           </div>
         ) : null}
       </div>
 
+      {readinessChecklist.length ? (
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          {readinessChecklist.map((item) => {
+            const meta = getReadinessChecklistMeta(item)
+            return (
+              <div key={item.id} className={`min-w-0 rounded-[12px] border px-2.5 py-2 ${meta.border} ${meta.bg}`}>
+                <span className={`block truncate text-[0.66rem] font-semibold uppercase tracking-[0.06em] ${meta.text}`}>{item.label}</span>
+                <strong className={`mt-1 block text-xs ${meta.text}`}>{item.complete ? 'Ready' : `${item.missingCount} missing`}</strong>
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
+
       <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-4">
         <span className="text-xs font-medium text-textMuted">
           {workflow.activityCount} legal update{workflow.activityCount === 1 ? '' : 's'}
         </span>
-        <Button type="button" size="sm" onClick={onOpen}>
-          Open Workflow
-          <ChevronRight size={14} />
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {primaryAction && onExecuteAction ? (
+            <Button type="button" size="sm" variant="secondary" onClick={() => onExecuteAction(workflow.lane, primaryAction, primaryCommand)}>
+              {primaryCommand.label}
+            </Button>
+          ) : null}
+          <Button type="button" size="sm" onClick={onOpen}>
+            Open Workflow
+            <ChevronRight size={14} />
+          </Button>
+        </div>
       </div>
     </article>
   )
@@ -3973,6 +4370,9 @@ function WorkflowDetailsDrawer({
   onSubmitDocument,
   onUploadDocument,
   onScheduleSigning,
+  onExecuteAction,
+  onExecuteFollowUp,
+  onExecuteCoordination,
 }) {
   if (!open || !lane) return null
   const steps = Array.isArray(lane.steps) ? lane.steps : []
@@ -3981,6 +4381,17 @@ function WorkflowDetailsDrawer({
   const healthKey = getWorkflowHealthKey(lane)
   const healthMeta = WORKFLOW_STATUS_META[healthKey] || WORKFLOW_STATUS_META.not_started
   const laneActivity = lane.timeline || lane.updates || []
+  const missingDataCount = lane.dataSummary?.missing || 0
+  const usability = getLaneUsability(lane)
+  const primaryAction = usability.primaryNextAction || null
+  const primaryCommand = primaryAction ? getWorkflowActionCommand(primaryAction, lane) : null
+  const nextActions = usability.nextActions || []
+  const readinessChecklist = usability.readinessChecklist || []
+  const evidenceChecklist = usability.evidenceChecklist || currentStep?.evidenceRequirements?.map((label, index) => ({
+    id: `${currentStep.stepKey || 'current'}_${index}`,
+    label,
+    complete: normalizeWorkspaceStatus(currentStep.status) === 'completed',
+  })) || []
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/28 no-print" onMouseDown={(event) => event.target === event.currentTarget && onClose?.()}>
@@ -4003,7 +4414,7 @@ function WorkflowDetailsDrawer({
               <X size={16} />
             </button>
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="mt-4 grid gap-3 sm:grid-cols-4">
             <article className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2">
               <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Progress</span>
               <strong className="mt-1 block text-sm text-textStrong">{progress}%</strong>
@@ -4018,15 +4429,124 @@ function WorkflowDetailsDrawer({
                 {lane.documentSummary?.missing || 0} missing
               </strong>
             </article>
+            <article className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2">
+              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Data</span>
+              <strong className="mt-1 block text-sm text-textStrong">{missingDataCount} missing</strong>
+            </article>
           </div>
         </header>
 
         <div className="flex-1 overflow-y-auto px-5 py-5">
-          <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+          <section className="mt-4 rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-textStrong">Next Action</h3>
+                <p className="mt-1 text-sm font-semibold text-textStrong">{primaryAction?.label || 'Review workflow'}</p>
+                <p className="mt-1 text-xs leading-5 text-textMuted">{primaryAction?.description || usability.attentionSummary || getWorkflowExplanation(lane)}</p>
+              </div>
+              {primaryAction ? (
+                <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
+                  <span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getActionPriorityMeta(primaryAction.priority).border} ${getActionPriorityMeta(primaryAction.priority).bg} ${getActionPriorityMeta(primaryAction.priority).text}`}>
+                    {toTitle(primaryAction.priority)}
+                  </span>
+                  {onExecuteAction ? (
+                    <Button type="button" size="sm" onClick={() => onExecuteAction(lane, primaryAction, primaryCommand)}>
+                      {primaryCommand.label}
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {nextActions.slice(0, 4).map((item) => {
+                const meta = getActionPriorityMeta(item.priority)
+                const command = getWorkflowActionCommand(item, lane)
+                return (
+                  <article key={item.id} className={`rounded-[12px] border px-3 py-2 ${meta.border} ${meta.bg}`}>
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle size={14} className={`mt-0.5 shrink-0 ${meta.text}`} />
+                      <div className="min-w-0">
+                        <strong className={`block text-xs ${meta.text}`}>{item.label}</strong>
+                        <p className={`mt-1 line-clamp-2 text-[0.72rem] leading-5 ${meta.text}`}>{item.description || toTitle(item.type)}</p>
+                      </div>
+                    </div>
+                    {onExecuteAction ? (
+                      <div className="mt-3 flex justify-end">
+                        <Button type="button" size="sm" variant="secondary" onClick={() => onExecuteAction(lane, item, command)}>
+                          {command.label}
+                        </Button>
+                      </div>
+                    ) : null}
+                  </article>
+                )
+              })}
+            </div>
+
+            {readinessChecklist.length ? (
+              <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                {readinessChecklist.map((item) => {
+                  const meta = getReadinessChecklistMeta(item)
+                  return (
+                    <div key={item.id} className={`rounded-[12px] border px-3 py-2 ${meta.border} ${meta.bg}`}>
+                      <span className={`block truncate text-[0.66rem] font-semibold uppercase tracking-[0.06em] ${meta.text}`}>{item.label}</span>
+                      <strong className={`mt-1 block text-xs ${meta.text}`}>{item.complete ? 'Ready' : `${item.missingCount} missing`}</strong>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : null}
+          </section>
+
+          <LegalWorkflowFollowUpQueue
+            summary={lane.followUpSummary}
+            onExecuteFollowUp={(followUp, command) => onExecuteFollowUp?.(lane, followUp, command)}
+          />
+          <LegalWorkflowCoordinationPanel
+            summary={lane.coordinationSummary}
+            compact
+            stageKey={lane.currentStage || lane.summary?.currentStage || ''}
+            onExecuteCoordination={(item, command) => onExecuteCoordination?.(lane, item, command)}
+          />
+
+          <section className="mt-4 rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-textStrong">Current Stage Evidence</h3>
+                <p className="mt-1 text-xs text-textMuted">{usability.currentStageLabel || (currentStep ? getWorkflowStepLabel(currentStep) : 'Not started')}</p>
+              </div>
+              <span className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-2.5 py-1 text-[0.68rem] font-semibold text-textMuted">
+                {evidenceChecklist.filter((item) => !item.complete).length} open
+              </span>
+            </div>
+            <div className="mt-3 grid gap-2">
+              {evidenceChecklist.length ? evidenceChecklist.map((item) => {
+                const complete = Boolean(item.complete)
+                const meta = complete ? WORKFLOW_STATUS_META.completed : WORKFLOW_STATUS_META.waiting
+                return (
+                  <div key={item.id} className="flex items-start gap-3 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2">
+                    <span className={`mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full ${complete ? 'bg-successSoft text-success' : 'bg-warningSoft text-warning'}`}>
+                      {complete ? <CheckCircle2 size={13} /> : <Clock3 size={13} />}
+                    </span>
+                    <div className="min-w-0">
+                      <strong className="block text-sm text-textStrong">{item.label}</strong>
+                      <span className={`mt-1 block text-xs font-semibold ${meta.text}`}>{complete ? 'Captured' : 'Required'}</span>
+                    </div>
+                  </div>
+                )
+              }) : (
+                <p className="rounded-[12px] border border-dashed border-borderSoft bg-surfaceAlt px-3 py-4 text-sm text-textMuted">
+                  No evidence checklist is configured for this stage.
+                </p>
+              )}
+            </div>
+          </section>
+
+          <section className="mt-4 rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-semibold text-textStrong">Steps</h3>
-                <p className="mt-1 text-xs text-textMuted">Phase 1 allows assigned matter users to update every active workflow.</p>
+                <p className="mt-1 text-xs text-textMuted">{usability.workflowStateLabel || getWorkflowHealthLabel(lane)}</p>
               </div>
               {currentStep ? (
                 <div className="flex flex-wrap gap-2">
@@ -4085,6 +4605,7 @@ function WorkflowDetailsDrawer({
 
             {stepDraft ? (
               <form onSubmit={onSubmitStep} className="mt-4 rounded-[14px] border border-primary/20 bg-primarySoft p-4">
+                <WorkflowWorkPacketSummary packet={stepDraft.workPacket} />
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <strong className="text-sm text-textStrong">
                     Set {getWorkflowStepLabel(stepDraft.step)} to {toTitle(stepDraft.status)}
@@ -4123,7 +4644,7 @@ function WorkflowDetailsDrawer({
                 <Button type="button" size="sm" variant="secondary" onClick={() => onNoteDraftChange?.({ laneKey: lane.laneKey, message: '', visibility: 'internal' })}>
                   Add Note
                 </Button>
-                <Button type="button" size="sm" variant="secondary" onClick={() => onDocumentDraftChange?.({ laneKey: lane.laneKey, title: '', description: '', requestedFrom: 'client' })}>
+                <Button type="button" size="sm" variant="secondary" onClick={() => onDocumentDraftChange?.({ laneKey: lane.laneKey, title: '', description: '', requestedFrom: 'client', priority: 'required', visibility: 'client_visible', dueDate: '' })}>
                   Request Document
                 </Button>
                 <Button type="button" size="sm" variant="secondary" onClick={onUploadDocument}>
@@ -4140,6 +4661,7 @@ function WorkflowDetailsDrawer({
 
             {noteDraft ? (
               <form onSubmit={onSubmitNote} className="mt-4 rounded-[14px] border border-borderSoft bg-surfaceAlt p-4">
+                <WorkflowWorkPacketSummary packet={noteDraft.workPacket} />
                 <label className="grid gap-1.5 text-sm font-medium text-textStrong">
                   Note visibility
                   <Field as="select" value={noteDraft.visibility} onChange={(event) => onNoteDraftChange?.({ ...noteDraft, visibility: event.target.value })}>
@@ -4165,6 +4687,7 @@ function WorkflowDetailsDrawer({
 
             {documentDraft ? (
               <form onSubmit={onSubmitDocument} className="mt-4 rounded-[14px] border border-borderSoft bg-surfaceAlt p-4">
+                <WorkflowWorkPacketSummary packet={documentDraft.workPacket} />
                 <label className="grid gap-1.5 text-sm font-medium text-textStrong">
                   Document name
                   <Field value={documentDraft.title} onChange={(event) => onDocumentDraftChange?.({ ...documentDraft, title: event.target.value })} />
@@ -4180,6 +4703,28 @@ function WorkflowDetailsDrawer({
                     <option value="bank">Bank</option>
                   </Field>
                 </label>
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <label className="grid gap-1.5 text-sm font-medium text-textStrong">
+                    Priority
+                    <Field as="select" value={documentDraft.priority || 'required'} onChange={(event) => onDocumentDraftChange?.({ ...documentDraft, priority: event.target.value })}>
+                      {WORKFLOW_DOCUMENT_PRIORITY_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </Field>
+                  </label>
+                  <label className="grid gap-1.5 text-sm font-medium text-textStrong">
+                    Visibility
+                    <Field as="select" value={documentDraft.visibility || 'client_visible'} onChange={(event) => onDocumentDraftChange?.({ ...documentDraft, visibility: event.target.value })}>
+                      {WORKFLOW_DOCUMENT_VISIBILITY_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </Field>
+                  </label>
+                  <label className="grid gap-1.5 text-sm font-medium text-textStrong">
+                    Due date
+                    <Field type="date" value={documentDraft.dueDate || ''} onChange={(event) => onDocumentDraftChange?.({ ...documentDraft, dueDate: event.target.value })} />
+                  </label>
+                </div>
                 <label className="mt-3 grid gap-1.5 text-sm font-medium text-textStrong">
                   Description
                   <Field as="textarea" rows={3} value={documentDraft.description} onChange={(event) => onDocumentDraftChange?.({ ...documentDraft, description: event.target.value })} />
@@ -4194,6 +4739,29 @@ function WorkflowDetailsDrawer({
                 </div>
               </form>
             ) : null}
+          </section>
+
+          <section className="mt-4 rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+            <h3 className="text-sm font-semibold text-textStrong">Required Data</h3>
+            <div className="mt-3 space-y-2">
+              {(lane.dataRequirements || []).slice(0, 8).map((item) => {
+                const complete = Boolean(item.complete)
+                const optional = item.required === false
+                const meta = complete ? WORKFLOW_STATUS_META.completed : optional ? WORKFLOW_STATUS_META.not_started : WORKFLOW_STATUS_META.waiting
+                return (
+                  <div key={item.id} className="flex items-start justify-between gap-3 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2">
+                    <div className="min-w-0">
+                      <strong className="block truncate text-sm text-textStrong">{item.label}</strong>
+                      <p className="mt-1 text-xs text-textMuted">{item.description || 'Required matter data.'}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold ${meta.border} ${meta.bg} ${meta.text}`}>
+                      {complete ? 'Captured' : optional ? 'Optional' : 'Missing'}
+                    </span>
+                  </div>
+                )
+              })}
+              {!(lane.dataRequirements || []).length ? <p className="text-sm text-textMuted">No required data fields are configured for this lane.</p> : null}
+            </div>
           </section>
 
           <section className="mt-4 rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
@@ -4227,6 +4795,7 @@ function WorkflowDetailsDrawer({
                     <div className="min-w-0">
                       <strong className="block truncate text-sm text-textStrong">{item.title || toTitle(item.updateType || item.type || 'Workflow update')}</strong>
                       <p className="mt-1 line-clamp-2 text-xs leading-5 text-textMuted">{item.message || item.body || 'Workflow update recorded.'}</p>
+                      <WorkflowActivityPacketMeta item={item} />
                     </div>
                     <span className="shrink-0 text-xs text-textMuted">{formatShortDayMonth(item.timestamp || item.createdAt)}</span>
                   </div>
@@ -6054,6 +6623,7 @@ function AttorneyTransactionDetail() {
         status: workflowStepDraft.status,
         note: workflowStepDraft.note,
         visibility: 'internal',
+        workPacket: workflowStepDraft.workPacket || null,
       })
       setWorkflowStepDraft(null)
       await refreshWorkflowAfterChange(next)
@@ -6076,6 +6646,7 @@ function AttorneyTransactionDetail() {
         updateType: 'internal_note',
         visibility: workflowNoteDraft.visibility || 'internal',
         message: workflowNoteDraft.message,
+        workPacket: workflowNoteDraft.workPacket || null,
       })
       setWorkflowNoteDraft(null)
       await refreshWorkflowAfterChange(next)
@@ -6098,6 +6669,10 @@ function AttorneyTransactionDetail() {
         title: workflowDocumentDraft.title,
         description: workflowDocumentDraft.description,
         requestedFrom: workflowDocumentDraft.requestedFrom,
+        priority: workflowDocumentDraft.priority || 'required',
+        visibility: workflowDocumentDraft.visibility || 'client_visible',
+        dueDate: workflowDocumentDraft.dueDate || null,
+        workPacket: workflowDocumentDraft.workPacket || null,
       })
       setWorkflowDocumentDraft(null)
       await refreshWorkflowAfterChange(next)
@@ -6190,6 +6765,133 @@ function AttorneyTransactionDetail() {
       message: 'Signing appointment to be scheduled.',
     })
   }, [workflowLanes])
+
+  function findWorkflowStepForActionCommand(lane = {}, action = {}, command = {}) {
+    const laneKey = lane?.laneKey || command?.laneKey || action?.laneKey || 'transfer'
+    const stageKey = normalizeAttorneyStageKey(command?.stageKey || action?.stageKey || '', laneKey)
+    const steps = Array.isArray(lane?.steps) ? lane.steps : []
+    if (stageKey) {
+      const matchingStep = steps.find((step) =>
+        normalizeAttorneyStageKey(step.stepKey || step.step_key || step.key, laneKey) === stageKey,
+      )
+      if (matchingStep) return matchingStep
+    }
+    return getCurrentWorkflowStep(lane)
+  }
+
+  function handleWorkflowActionCommand(lane = null, action = {}, providedCommand = null) {
+    const laneKey = lane?.laneKey || action?.laneKey || providedCommand?.laneKey || workflowDrawerLaneKey
+    const targetLane =
+      (lane?.laneKey ? lane : null) ||
+      workflowLanes.find((item) => item.laneKey === laneKey) ||
+      workflowLanes[0] ||
+      null
+    const command = providedCommand || getWorkflowActionCommand(action, targetLane || { laneKey })
+
+    setWorkflowError('')
+    setWorkflowStepDraft(null)
+    setWorkflowNoteDraft(null)
+    setWorkflowDocumentDraft(null)
+
+    if (command.commandType === 'open_assignments') {
+      setWorkflowDrawerLaneKey('')
+      setWorkspaceMenu('stakeholders')
+      openRoleplayerConfirmation()
+      return
+    }
+
+    if (!targetLane) {
+      setWorkspaceMenu('transfer')
+      return
+    }
+
+    const activeLaneKey = targetLane.laneKey || command.laneKey || 'transfer'
+    setWorkflowDrawerLaneKey(activeLaneKey)
+
+    if (command.commandType === 'request_document') {
+      setWorkflowDocumentDraft({
+        laneKey: activeLaneKey,
+        title: command.draft?.title || '',
+        description: command.draft?.description || '',
+        requestedFrom: command.draft?.requestedFrom || 'client',
+        priority: command.draft?.priority || command.workPacket?.priority || 'required',
+        visibility: command.draft?.visibility || command.workPacket?.visibility || 'client_visible',
+        dueDate: command.draft?.dueDate || command.workPacket?.dueDate || '',
+        workPacket: command.draft?.workPacket || command.workPacket || null,
+      })
+      return
+    }
+
+    if (command.commandType === 'complete_step') {
+      const step = findWorkflowStepForActionCommand(targetLane, action, command)
+      if (step) {
+        setWorkflowStepDraft({
+          laneKey: activeLaneKey,
+          step,
+          status: command.draft?.status || 'completed',
+          note: command.draft?.note || '',
+          workPacket: command.draft?.workPacket || command.workPacket || null,
+        })
+        return
+      }
+    }
+
+    setWorkflowNoteDraft({
+      laneKey: activeLaneKey,
+      visibility: command.draft?.visibility || 'internal',
+      message: command.draft?.message || command.description || action?.description || action?.label || '',
+      workPacket: command.draft?.workPacket || command.workPacket || null,
+    })
+  }
+
+  function handleWorkflowFollowUpCommand(lane = null, followUp = {}, providedCommand = null) {
+    const targetLane =
+      (lane?.laneKey ? lane : null) ||
+      workflowLanes.find((item) => item.laneKey === followUp?.laneKey) ||
+      workflowLanes[0] ||
+      null
+    const command = providedCommand || buildAttorneyWorkflowFollowUpCommand(followUp, {
+      laneKey: targetLane?.laneKey || followUp?.laneKey || workflowDrawerLaneKey || 'transfer',
+      stageKey: followUp?.stageKey || targetLane?.currentStage || targetLane?.summary?.currentStage || '',
+    })
+    const action = {
+      id: followUp?.id || command.actionId || command.id,
+      label: followUp?.title || command.workPacket?.title || command.label,
+      description: followUp?.description || command.description,
+      type: command.actionType || 'review_workflow',
+      target: followUp?.audience || command.workPacket?.audience || 'attorney',
+      priority: followUp?.priority === 'urgent' ? 'high' : followUp?.priority === 'optional' ? 'low' : 'medium',
+      laneKey: targetLane?.laneKey || followUp?.laneKey || command.laneKey,
+      stageKey: followUp?.stageKey || command.stageKey,
+      relatedId: followUp?.relatedId || command.relatedId,
+    }
+    handleWorkflowActionCommand(targetLane, action, command)
+  }
+
+  function handleWorkflowCoordinationCommand(lane = null, item = {}, providedCommand = null) {
+    const targetLane =
+      (lane?.laneKey ? lane : null) ||
+      workflowLanes.find((candidate) => candidate.laneKey === item?.ownerLaneKey) ||
+      workflowLanes.find((candidate) => candidate.laneKey === workflowDrawerLaneKey) ||
+      workflowLanes[0] ||
+      null
+    const command = providedCommand || buildAttorneyWorkflowCoordinationCommand(item, {
+      laneKey: targetLane?.laneKey || workflowDrawerLaneKey || 'transfer',
+      stageKey: targetLane?.currentStage || targetLane?.summary?.currentStage || '',
+    })
+    const action = {
+      id: item?.id || command.actionId || command.id,
+      label: item?.title || command.workPacket?.title || command.label,
+      description: item?.description || command.description,
+      type: command.actionType || (item?.status === 'blocked' ? 'assign_attorney' : 'request_coordination_update'),
+      target: 'attorney',
+      priority: item?.status === 'blocked' ? 'high' : 'medium',
+      laneKey: targetLane?.laneKey || command.laneKey,
+      stageKey: targetLane?.currentStage || command.stageKey,
+      relatedId: item?.id || command.relatedId,
+    }
+    handleWorkflowActionCommand(targetLane, action, command)
+  }
 
   const openAgentSalesAgreementWorkspace = useCallback(() => {
     if (!transaction?.id) {
@@ -6761,6 +7463,7 @@ function AttorneyTransactionDetail() {
       route: `${transactionWorkspaceBasePath}/transfer/transfer`,
       activityCount: activityFeed.filter((entry) => (entry?.filterKeys || []).includes('transfer')).length,
       reasonChips: buildLegalWorkflowReasonChips(routingFacts, 'transfer'),
+      actionSummary: getLaneUsability(transferWorkflowLane),
       blockers: [
         !transferAttorney && !transaction?.attorney ? 'Transfer attorney still needs to be assigned.' : '',
         ...(Array.isArray(transferWorkflowLane?.summary?.blockers) ? transferWorkflowLane.summary.blockers : []),
@@ -6807,6 +7510,7 @@ function AttorneyTransactionDetail() {
       route: `${transactionWorkspaceBasePath}/transfer/bond-registration`,
       activityCount: activityFeed.filter((entry) => (entry?.filterKeys || []).includes('bond')).length,
       reasonChips: buildLegalWorkflowReasonChips(routingFacts, 'bond'),
+      actionSummary: getLaneUsability(bondAttorneyWorkflowLane),
       blockers: requiresBondRegistrationWorkflow
         ? [
             !bondAttorney ? 'Bond attorney still needs to be assigned.' : '',
@@ -6853,6 +7557,7 @@ function AttorneyTransactionDetail() {
       route: `${transactionWorkspaceBasePath}/transfer/bond-cancellation`,
       activityCount: activityFeed.filter((entry) => (entry?.filterKeys || []).includes('cancellation')).length,
       reasonChips: buildLegalWorkflowReasonChips(routingFacts, 'cancellation'),
+      actionSummary: getLaneUsability(cancellationWorkflowLane),
       blockers: requiresCancellationWorkflow
         ? [
             !cancellationAttorney ? 'Cancellation attorney still needs to be assigned.' : '',
@@ -8378,18 +9083,59 @@ function AttorneyTransactionDetail() {
                           </section>
 
                           <LegalWorkflowProgressBar workflow={workflow} diagnostics={routingDiagnostics} />
+                          <LegalWorkflowActionPanel
+                            workflow={workflow}
+                            onExecuteAction={(action, command) => handleWorkflowActionCommand(lane, action, command)}
+                            onExecuteFollowUp={(followUp, command) => handleWorkflowFollowUpCommand(lane, followUp, command)}
+                          />
+                          <LegalWorkflowCoordinationPanel
+                            summary={lane?.coordinationSummary}
+                            stageKey={lane?.currentStage || lane?.summary?.currentStage || ''}
+                            onExecuteCoordination={(item, command) => handleWorkflowCoordinationCommand(lane, item, command)}
+                          />
 
                           <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.55fr)]">
                             <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
                               <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div>
-                                  <h3 className="text-sm font-semibold text-textStrong">Required Documents</h3>
-                                  <p className="mt-1 text-sm text-textMuted">Conditional requirements for this routed legal workflow.</p>
+                                  <h3 className="text-sm font-semibold text-textStrong">Workflow Requirements</h3>
+                                  <p className="mt-1 text-sm text-textMuted">Matter data and documents required for this routed legal workflow.</p>
                                 </div>
                                 <span className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-xs font-semibold text-textMuted">
-                                  {(lane?.documentRequirements || []).length} item{(lane?.documentRequirements || []).length === 1 ? '' : 's'}
+                                  {(lane?.dataSummary?.missing || 0) + (lane?.documentSummary?.missing || 0)} missing
                                 </span>
                               </div>
+                              <div className="mt-4">
+                                <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">Required Data</h4>
+                                <div className="mt-2 grid gap-2 md:grid-cols-2">
+                                  {(lane?.dataRequirements || []).length ? (
+                                    lane.dataRequirements.map((item) => {
+                                      const complete = Boolean(item.complete)
+                                      const optional = item.required === false
+                                      const itemStatusMeta = complete ? WORKFLOW_STATUS_META.completed : optional ? WORKFLOW_STATUS_META.not_started : WORKFLOW_STATUS_META.waiting
+                                      return (
+                                        <article key={item.id || item.key} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+                                          <div className="flex items-start justify-between gap-3">
+                                            <div className="min-w-0">
+                                              <strong className="block text-sm text-textStrong">{item.label}</strong>
+                                              <p className="mt-1 text-xs leading-5 text-textMuted">{item.description || 'Required matter data.'}</p>
+                                            </div>
+                                            <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${itemStatusMeta.border} ${itemStatusMeta.bg} ${itemStatusMeta.text}`}>
+                                              {complete ? 'Captured' : optional ? 'Optional' : 'Missing'}
+                                            </span>
+                                          </div>
+                                        </article>
+                                      )
+                                    })
+                                  ) : (
+                                    <p className="rounded-[12px] border border-dashed border-borderSoft bg-surfaceAlt px-3 py-4 text-sm text-textMuted md:col-span-2">
+                                      No required data fields are configured for this workflow yet.
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="mt-5">
+                                <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">Required Documents</h4>
                               <div className="mt-4 grid gap-2 md:grid-cols-2">
                                 {(lane?.documentRequirements || []).length ? (
                                   lane.documentRequirements.map((item) => {
@@ -8416,6 +9162,7 @@ function AttorneyTransactionDetail() {
                                     No required documents are configured for this workflow yet.
                                   </p>
                                 )}
+                              </div>
                               </div>
                             </section>
 
@@ -8474,6 +9221,7 @@ function AttorneyTransactionDetail() {
                               key={workflow.key}
                               workflow={workflow}
                               onOpen={() => openLegalWorkflowDetail(workflow.detailKey)}
+                              onExecuteAction={handleWorkflowActionCommand}
                             />
                           ))}
                         </div>
@@ -10523,6 +11271,9 @@ function AttorneyTransactionDetail() {
           setWorkflowDrawerLaneKey('')
         }}
         onScheduleSigning={handleQuickScheduleSigning}
+        onExecuteAction={handleWorkflowActionCommand}
+        onExecuteFollowUp={handleWorkflowFollowUpCommand}
+        onExecuteCoordination={handleWorkflowCoordinationCommand}
       />
 
       <Modal

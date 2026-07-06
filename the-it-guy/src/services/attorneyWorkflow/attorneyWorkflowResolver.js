@@ -1,74 +1,38 @@
 import { resolveTransactionFacts } from './transactionFactsResolver.js'
+import {
+  ATTORNEY_LANE_STAGES,
+  getAttorneyDataRequirementsForLane,
+  getAttorneyDocumentRequirementKeysForLane,
+  getAttorneyReadinessGatesForLane,
+  getAttorneyWorkflowUpdateOptions,
+} from '../../constants/attorneyWorkflowStages.js'
 
-export const ATTORNEY_LANE_STAGES = {
-  transfer: [
-    'instruction_received',
-    'fica_requested',
-    'fica_received',
-    'transfer_documents_prepared',
-    'buyer_signed',
-    'seller_signed',
-    'guarantees_received',
-    'clearances_requested',
-    'clearances_received',
-    'lodgement_ready',
-    'lodged',
-    'prep',
-    'registered',
-  ],
-  bond: [
-    'bond_instruction_received',
-    'bank_requirements_confirmed',
-    'bond_documents_prepared',
-    'buyer_signed_bond_documents',
-    'guarantees_issued',
-    'bond_lodgement_ready',
-    'bond_lodged',
-    'bond_registered',
-  ],
-  cancellation: [
-    'cancellation_instruction_received',
-    'cancellation_figures_requested',
-    'cancellation_figures_received',
-    'guarantees_accepted',
-    'cancellation_documents_prepared',
-    'cancellation_lodged',
-    'cancellation_registered',
-  ],
-}
+export { ATTORNEY_LANE_STAGES }
 
-const TRANSFER_UPDATE_OPTIONS = [
-  ['instruction_received', 'Instruction received'],
-  ['fica_requested', 'FICA requested'],
-  ['fica_received', 'FICA received'],
-  ['transfer_documents_prepared', 'Transfer documents prepared'],
-  ['buyer_signed', 'Buyer signed transfer documents'],
-  ['seller_signed', 'Seller signed transfer documents'],
-  ['guarantees_received', 'Guarantees received'],
-  ['lodgement_ready', 'Lodgement ready'],
-  ['lodged', 'Transfer lodged'],
-  ['registered', 'Transfer registered'],
-]
+const TRANSFER_UPDATE_OPTIONS = getAttorneyWorkflowUpdateOptions('transfer')
+const BOND_UPDATE_OPTIONS = getAttorneyWorkflowUpdateOptions('bond')
+const CANCELLATION_UPDATE_OPTIONS = getAttorneyWorkflowUpdateOptions('cancellation')
 
-const BOND_UPDATE_OPTIONS = [
-  ['bond_instruction_received', 'Bond instruction received'],
-  ['bank_requirements_confirmed', 'Bank requirements confirmed'],
-  ['bond_documents_prepared', 'Bond documents prepared'],
-  ['buyer_signed_bond_documents', 'Buyer signed bond documents'],
-  ['guarantees_issued', 'Guarantees issued'],
-  ['bond_lodged', 'Bond lodged'],
-  ['bond_registered', 'Bond registered'],
-]
+function buildUpdateOption(optionOrTuple, { category = 'workflow_update', attorneyRole, clientVisibleAllowed = true } = {}) {
+  if (!Array.isArray(optionOrTuple)) {
+    const option = optionOrTuple || {}
+    return {
+      id: option.id,
+      label: option.label,
+      category: option.category || category,
+      attorneyRole: option.attorneyRole || attorneyRole,
+      laneKey: option.laneKey,
+      defaultVisibility: option.defaultVisibility,
+      clientVisibleAllowed: option.clientVisibleAllowed ?? clientVisibleAllowed,
+      requiresNote: option.requiresNote || false,
+      description: option.description || '',
+      aliases: option.aliases || [],
+      statusBucket: option.statusBucket || null,
+      readinessGate: option.readinessGate || null,
+    }
+  }
 
-const CANCELLATION_UPDATE_OPTIONS = [
-  ['cancellation_figures_requested', 'Cancellation figures requested'],
-  ['cancellation_figures_received', 'Cancellation figures received'],
-  ['guarantees_accepted', 'Cancellation guarantees accepted'],
-  ['cancellation_lodged', 'Cancellation lodged'],
-  ['cancellation_registered', 'Cancellation registered'],
-]
-
-function buildUpdateOption([id, label], { category = 'workflow_update', attorneyRole, clientVisibleAllowed = true } = {}) {
+  const [id, label] = optionOrTuple
   return {
     id,
     label,
@@ -123,6 +87,9 @@ export function resolveAttorneyLanes(transactionOrFacts = {}) {
       label: 'Transfer Attorney',
       reason: 'All property transfers require transfer attorney handling.',
       stages: ATTORNEY_LANE_STAGES.transfer,
+      dataRequirements: getAttorneyDataRequirementsForLane('transfer', facts),
+      documentRequirementKeys: getAttorneyDocumentRequirementKeysForLane('transfer'),
+      readinessGates: getAttorneyReadinessGatesForLane('transfer'),
     },
     bond: {
       required: Boolean(facts.requiresBondAttorney),
@@ -134,6 +101,9 @@ export function resolveAttorneyLanes(transactionOrFacts = {}) {
           ? 'Not required for a cash transaction.'
           : 'Not required until finance type clearly indicates bond or hybrid finance.',
       stages: ATTORNEY_LANE_STAGES.bond,
+      dataRequirements: getAttorneyDataRequirementsForLane('bond', facts),
+      documentRequirementKeys: getAttorneyDocumentRequirementKeysForLane('bond'),
+      readinessGates: getAttorneyReadinessGatesForLane('bond'),
     },
     cancellation: {
       required: Boolean(facts.requiresCancellationAttorney),
@@ -143,6 +113,9 @@ export function resolveAttorneyLanes(transactionOrFacts = {}) {
         ? 'Required because seller bond cancellation is flagged for this transaction.'
         : 'Not required because no seller existing bond or cancellation flag is set.',
       stages: ATTORNEY_LANE_STAGES.cancellation,
+      dataRequirements: getAttorneyDataRequirementsForLane('cancellation', facts),
+      documentRequirementKeys: getAttorneyDocumentRequirementKeysForLane('cancellation'),
+      readinessGates: getAttorneyReadinessGatesForLane('cancellation'),
     },
     warnings,
   }
@@ -634,11 +607,18 @@ export function resolveLegalRequirements(transactionOrFacts = {}) {
     )
   }
 
+  const dataRequirements = Object.fromEntries(
+    Object.entries(lanes)
+      .filter(([, lane]) => lane?.required)
+      .map(([laneKey, lane]) => [laneKey, lane.dataRequirements || getAttorneyDataRequirementsForLane(laneKey, facts)]),
+  )
+
   return {
     facts,
     lanes,
     requiredAttorneyRoles,
     documentRequirements,
+    dataRequirements,
     updateOptions,
     signingRequirements,
     warnings: [...(facts.confidenceWarnings || []), ...(lanes.warnings || [])],

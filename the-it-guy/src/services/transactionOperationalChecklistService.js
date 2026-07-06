@@ -13,9 +13,21 @@ import { processWorkflowEvidence } from '../../server/services/workflowEvidenceM
 
 const WARNING_PREFIX = '[operational-checklist]'
 const LEGACY_TRANSFER_STEP_ALIASES = {
-  fica_review: 'fica_received',
+  fica_received: 'fica_review',
+  buyer_fica_requested: 'fica_requested',
+  buyer_fica_received: 'fica_received',
+  seller_fica_requested: 'fica_requested',
+  seller_fica_received: 'fica_received',
+  seller_fica_approved: 'fica_review',
   buyer_signed_transfer_documents: 'buyer_signed_documents',
   seller_signed_transfer_documents: 'seller_signed_documents',
+  rates_figures_requested: 'rates_clearance_requested',
+  rates_clearance_received: 'rates_clearance_uploaded',
+  levy_clearance_received: 'levy_clearance_uploaded',
+  lodgement_ready: 'lodgement_pack_prepared',
+  lodged_at_deeds_office: 'lodgement_submitted',
+  registered: 'registration_confirmed',
+  matter_closed: 'registration_confirmed',
 }
 
 function toLower(value) {
@@ -102,8 +114,8 @@ function resolveWorkflowEvidenceKeyFromChecklist({ parsed = null, definition = n
   const stepKey = toLower(parsed?.stepKey)
   if (lane === 'transfer' && stepKey === 'transfer_documents_prepared') return 'transfer_documents_prepared'
   if (lane === 'transfer' && ['buyer_signed_transfer_documents', 'seller_signed_transfer_documents'].includes(stepKey)) return 'transfer_signatures_complete'
-  if (lane === 'transfer' && ['rates_clearance_uploaded', 'levy_clearance_uploaded'].includes(stepKey)) return 'transfer_clearance_complete'
-  if (lane === 'transfer' && stepKey === 'lodgement_submitted') return 'lodgement_confirmed'
+  if (lane === 'transfer' && ['rates_clearance_uploaded', 'rates_clearance_received', 'levy_clearance_uploaded', 'levy_clearance_received'].includes(stepKey)) return 'transfer_clearance_complete'
+  if (lane === 'transfer' && ['lodgement_submitted', 'lodged_at_deeds_office'].includes(stepKey)) return 'lodgement_confirmed'
   if (lane === 'finance' && stepKey === 'ready_for_transfer') return 'ready_for_transfer'
   if (lane === 'agent_oversight' && stepKey === 'onboarding_completed') return 'buyer_onboarding_complete'
   if (lane === 'agent_oversight' && stepKey === 'otp_signed') return 'signed_otp'

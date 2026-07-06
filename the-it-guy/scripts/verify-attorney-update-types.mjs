@@ -21,7 +21,8 @@ function verifyCashIndividualTransfer() {
   const bond = optionIds(resolveAttorneyUpdateOptions(transaction, 'bond_attorney'))
   const cancellation = optionIds(resolveAttorneyUpdateOptions(transaction, 'cancellation_attorney'))
 
-  assert.equal(transfer.has('fica_requested'), true)
+  assert.equal(transfer.has('buyer_fica_requested'), true)
+  assert.equal(transfer.has('seller_fica_requested'), true)
   assert.equal(transfer.has('marital_status_confirmed'), true)
   assert.equal(bond.size, 0)
   assert.equal(cancellation.size, 0)
@@ -60,7 +61,7 @@ function verifyTrustAndCancellationOptions() {
   assert.equal(transfer.has('letters_of_authority_received'), true)
   assert.equal(transfer.has('beneficial_ownership_requested'), true)
   assert.equal(cancellation.has('cancellation_figures_requested'), true)
-  assert.equal(cancellation.has('cancellation_complete'), true)
+  assert.equal(cancellation.has('cancellation_close_out_complete'), true)
 }
 
 function verifyRegistryMetadata() {
@@ -75,4 +76,3 @@ verifyTrustAndCancellationOptions()
 verifyRegistryMetadata()
 
 console.log('Attorney update registry verification passed.')
-

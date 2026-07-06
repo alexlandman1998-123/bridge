@@ -1,11 +1,11 @@
 import { TRANSFER_STAGE_DEFINITIONS, WORKFLOW_LANE_DEFINITIONS } from '../workflows/definitions'
 import { buildWorkflowLaneSnapshot } from '../workflows/engine'
+import { getAttorneyStageAliases } from '../../constants/attorneyWorkflowStages.js'
 
 export const TRANSFER_WORKFLOW_TEMPLATE = [...TRANSFER_STAGE_DEFINITIONS]
-const LEGACY_TRANSFER_STEP_ALIASES = {
-  fica_review: 'fica_received',
-  buyer_signed_transfer_documents: 'buyer_signed_documents',
-  seller_signed_transfer_documents: 'seller_signed_documents',
+
+function getStepForStage(stepByKey, stageKey) {
+  return getAttorneyStageAliases(stageKey, 'transfer').map((key) => stepByKey.get(key)).find(Boolean) || null
 }
 
 function mapDisplayStatus({ sourceStatus, isCurrent, isLocked }) {
@@ -38,24 +38,20 @@ export function resolveTransferWorkflowSnapshot({
   const stepByKey = new Map((transferProcess?.steps || []).map((step) => [step.step_key, step]))
   const firstPendingIndex = TRANSFER_WORKFLOW_TEMPLATE.findIndex(
     (step) => {
-      const source =
-        stepByKey.get(step.key) ||
-        stepByKey.get(LEGACY_TRANSFER_STEP_ALIASES[step.key] || '')
+      const source = getStepForStage(stepByKey, step.key)
       return (source?.status || 'not_started') !== 'completed'
     },
   )
   const complete = firstPendingIndex === -1
   const currentStep = complete ? null : TRANSFER_WORKFLOW_TEMPLATE[firstPendingIndex]
+  const registrationConfirmed = complete || getStepForStage(stepByKey, 'registered')?.status === 'completed'
 
   const sourceStatusByStageKey = {}
   const sourceStageMetaByKey = {}
   const stageBlockersByKey = {}
 
   TRANSFER_WORKFLOW_TEMPLATE.forEach((definition, index) => {
-    const source =
-      stepByKey.get(definition.key) ||
-      stepByKey.get(LEGACY_TRANSFER_STEP_ALIASES[definition.key] || '') ||
-      null
+    const source = getStepForStage(stepByKey, definition.key)
     const rawStatus = String(source?.status || 'not_started').trim().toLowerCase()
     const isCompleted = rawStatus === 'completed'
     const isCurrent = !complete && index === firstPendingIndex
@@ -125,12 +121,9 @@ export function resolveTransferWorkflowSnapshot({
   return {
     isLocked: laneState.isLocked,
     complete,
-    registrationConfirmed: complete,
+    registrationConfirmed,
     currentStepKey: currentStep?.key || null,
-    currentStepId:
-      stepByKey.get(currentStep?.key || '')?.id ||
-      stepByKey.get(LEGACY_TRANSFER_STEP_ALIASES[currentStep?.key || ''] || '')?.id ||
-      null,
+    currentStepId: getStepForStage(stepByKey, currentStep?.key || '')?.id || null,
     nextActionLabel: laneState.availableActions[0]?.label || null,
     summaryText: laneState.summaryText,
     steps,
