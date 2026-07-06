@@ -1,4 +1,4 @@
-import { Bookmark, ChevronRight, Clock3, Home, Search, ShieldCheck } from 'lucide-react'
+import { Bookmark, ChevronRight, Clock3, Home, ShieldCheck } from 'lucide-react'
 
 const DEFAULT_BACKGROUND_IMAGES = {
   buyer: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1400&q=82',
@@ -11,20 +11,14 @@ const CONTENT = {
     headlinePrefix: 'Let’s get your property',
     headlineAccent: 'purchase started.',
     subtext: 'A quick and easy buyer intake to help us get the right details for your purchase.',
-    cardTitle: "I'm a Buyer",
-    cardText: 'I want to buy a property',
     cta: 'Start buyer onboarding',
-    icon: Search,
   },
   seller: {
     label: 'SELLER ONBOARDING',
     headlinePrefix: 'Let’s get your property',
     headlineAccent: 'sale started.',
     subtext: 'A quick and easy seller intake to help us get your property sale on the move.',
-    cardTitle: "I'm a Seller",
-    cardText: 'I want to sell my property',
     cta: 'Start seller onboarding',
-    icon: Home,
   },
 }
 
@@ -79,17 +73,12 @@ export default function PremiumOnboardingLanding({
   portalType = 'buyer',
   agencyLogo = '',
   agencyName = '',
-  personName = '',
-  propertyAddress = '',
   backgroundImage = '',
   onStart,
 }) {
   const type = normalizePortalType(portalType)
   const content = CONTENT[type]
-  const Icon = content.icon
   const resolvedBackgroundImage = backgroundImage || DEFAULT_BACKGROUND_IMAGES[type]
-  const preparedFor = String(personName || '').trim()
-  const address = String(propertyAddress || '').trim()
 
   return (
     <section className="relative isolate min-h-[calc(100dvh-1.5rem)] overflow-hidden rounded-[32px] border border-[#f7cf22]/20 bg-[#001a3d] text-white shadow-[0_28px_72px_rgba(0,16,45,0.38)] sm:min-h-[760px]">
@@ -119,24 +108,7 @@ export default function PremiumOnboardingLanding({
             </p>
           </div>
 
-          <article className="mt-9 rounded-[28px] border border-[#f7cf22]/24 bg-[#001f4d]/62 p-5 shadow-[0_22px_56px_rgba(0,10,31,0.38)] backdrop-blur-2xl sm:max-w-[480px]">
-            <div className="flex items-center justify-between gap-4">
-              <span className="inline-flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-[#f7cf22]/45 bg-[#f7cf22]/14 text-[#f7cf22] shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
-                <Icon size={31} strokeWidth={1.8} />
-              </span>
-              <ChevronRight size={24} className="shrink-0 text-[#f7cf22]" />
-            </div>
-            <h2 className="mt-5 text-2xl font-semibold leading-tight text-white">{content.cardTitle}</h2>
-            <p className="mt-2 text-base leading-6 text-white/70">{content.cardText}</p>
-            {preparedFor || address ? (
-              <div className="mt-5 rounded-[20px] border border-[#f7cf22]/18 bg-[#000f27]/34 px-4 py-3 text-sm leading-6 text-white/72">
-                {preparedFor ? <p className="font-semibold text-white/90">Prepared for {preparedFor}</p> : null}
-                {address ? <p className={`${preparedFor ? 'mt-1 ' : ''}text-white/70`}>{address}</p> : null}
-              </div>
-            ) : null}
-          </article>
-
-          <div className="mt-8 space-y-5 sm:max-w-[500px]">
+          <div className="mt-9 space-y-5 sm:max-w-[500px]">
             {REASSURANCE_ROWS.map((item) => {
               const RowIcon = item.icon
               return (
