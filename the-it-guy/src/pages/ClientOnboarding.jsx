@@ -2,19 +2,17 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Clock3,
   CreditCard,
   FileText,
-  Home,
   MapPin,
   Plus,
-  ShieldCheck,
   Trash2,
   UserRound,
 } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { deriveFinanceManagedBy, normalizeFinanceType } from '../core/transactions/financeType'
+import PremiumOnboardingLanding from '../components/onboarding/PremiumOnboardingLanding'
 import Button from '../components/ui/Button'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { resolveBuyerOnboardingFlow } from '../lib/buyerOnboardingFlow.js'
@@ -1496,13 +1494,13 @@ function resolveBuyerLandingBrand(payload = {}) {
     : payload?.unit?.development
   const name =
     String(
-      branding.senderName ||
-        branding.organisationName ||
+      branding.organisationName ||
         branding.agencyName ||
         organisation.display_name ||
         organisation.name ||
-        payload?.transaction?.assigned_agent ||
         development?.name ||
+        branding.senderName ||
+        payload?.transaction?.assigned_agent ||
         '',
     ).trim() || 'Your property team'
   const logoUrl = String(
@@ -1538,106 +1536,51 @@ function resolveBuyerLandingName(payload = {}, formData = {}) {
   return rawName.split(/\s+/)[0] || rawName
 }
 
-function BuyerLandingBrandMark({ brand }) {
-  if (brand?.logoUrl) {
-    return (
-      <span className="inline-flex h-14 min-w-14 max-w-[220px] items-center justify-center rounded-[18px] border border-white/20 bg-white px-3 py-2 shadow-[0_18px_40px_rgba(0,0,0,0.22)]">
-        <img
-          src={brand.logoUrl}
-          alt={`${brand.name || 'Agency'} logo`}
-          className="max-h-10 w-auto max-w-[190px] object-contain"
-        />
-      </span>
-    )
+function resolveBuyerWelcomeImageUrl(payload = {}) {
+  const directCandidates = [
+    payload?.coverImageUrl,
+    payload?.cover_image_url,
+    payload?.heroImageUrl,
+    payload?.hero_image_url,
+    payload?.imageUrl,
+    payload?.image_url,
+    payload?.propertyImageUrl,
+    payload?.property_image_url,
+    payload?.listing?.coverImageUrl,
+    payload?.listing?.cover_image_url,
+    payload?.listing?.heroImageUrl,
+    payload?.listing?.hero_image_url,
+    payload?.listing?.imageUrl,
+    payload?.listing?.image_url,
+    payload?.unit?.coverImageUrl,
+    payload?.unit?.cover_image_url,
+    payload?.unit?.imageUrl,
+    payload?.unit?.image_url,
+    payload?.unit?.propertyImageUrl,
+    payload?.unit?.property_image_url,
+  ]
+  const direct = directCandidates.find((candidate) => String(candidate || '').trim())
+  if (direct) return String(direct).trim()
+
+  const collectionCandidates = [
+    payload?.images,
+    payload?.photos,
+    payload?.media,
+    payload?.listing?.images,
+    payload?.listing?.photos,
+    payload?.unit?.images,
+    payload?.unit?.photos,
+  ]
+  for (const collection of collectionCandidates) {
+    if (!Array.isArray(collection)) continue
+    const item = collection.find(Boolean)
+    const url = typeof item === 'string'
+      ? item
+      : item?.url || item?.src || item?.imageUrl || item?.image_url || item?.publicUrl || item?.public_url
+    if (String(url || '').trim()) return String(url).trim()
   }
 
-  return (
-    <span className="inline-flex h-14 w-14 items-center justify-center rounded-[18px] border border-white/20 bg-white/10 text-base font-semibold text-white shadow-[0_18px_40px_rgba(0,0,0,0.22)]">
-      {brand?.initials || 'B9'}
-    </span>
-  )
-}
-
-function BuyerOnboardingLanding({ brand, buyerName, propertyLabel, isResume, onStart }) {
-  const expectationItems = [
-    { label: 'Takes about 10 minutes', icon: Clock3 },
-    { label: 'Information is secure', icon: ShieldCheck },
-    { label: 'Save and continue later', icon: CheckCircle2 },
-  ]
-
-  return (
-    <section className="relative min-h-[calc(100dvh-1.5rem)] overflow-hidden rounded-[30px] bg-[#101a18] text-white shadow-[0_24px_60px_rgba(15,23,42,0.24)] md:min-h-[720px]">
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            'linear-gradient(145deg, rgba(10,18,22,0.96) 0%, rgba(19,56,42,0.9) 54%, rgba(9,15,18,0.96) 100%)',
-        }}
-      />
-      <div
-        className="absolute inset-0 opacity-40"
-        style={{
-          backgroundImage:
-            'linear-gradient(135deg, rgba(255,255,255,0.08) 0 1px, transparent 1px 56px)',
-        }}
-      />
-      <div className="relative flex min-h-[calc(100dvh-1.5rem)] flex-col px-5 py-6 md:min-h-[720px] md:px-10 md:py-9">
-        <div className="flex items-center justify-between gap-4">
-          <BuyerLandingBrandMark brand={brand} />
-          <span className="inline-flex min-h-9 items-center rounded-full border border-white/20 bg-white/10 px-3 text-xs font-semibold text-white/85 backdrop-blur">
-            Buyer onboarding
-          </span>
-        </div>
-
-        <div className="flex flex-1 flex-col justify-end pb-5 pt-14 md:max-w-[560px] md:pb-7 md:pt-20">
-          <p className="text-sm font-semibold text-white/80">{brand?.name}</p>
-          <h1 className="mt-4 text-[2.45rem] font-semibold leading-[1.02] tracking-normal text-white md:text-6xl">
-            Welcome, <span className="text-[#34c66f]">{buyerName}.</span>
-          </h1>
-          <p className="mt-4 max-w-md text-base leading-7 text-white/80">
-            Let us get your property purchase journey started.
-          </p>
-
-          <div className="mt-8 rounded-[22px] border border-white/20 bg-white/95 p-3 text-[#142132] shadow-[0_20px_48px_rgba(0,0,0,0.22)] backdrop-blur">
-            <div className="flex items-start gap-3 rounded-[16px] border border-[#e1e8ef] bg-[#f8fbfd] p-3">
-              <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-[#eaf7ef] text-[#16834a]">
-                <Home size={20} />
-              </span>
-              <div>
-                <p className="text-sm font-semibold text-[#142132]">Buyer</p>
-                <p className="mt-1 text-xs leading-5 text-[#65788f]">
-                  {propertyLabel || 'Your selected property'}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-4 space-y-3 px-1">
-              {expectationItems.map((item) => {
-                const Icon = item.icon
-                return (
-                  <div key={item.label} className="flex items-center gap-3 text-sm font-medium text-[#2f4358]">
-                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#eef8f2] text-[#16834a]">
-                      <Icon size={15} />
-                    </span>
-                    <span>{item.label}</span>
-                  </div>
-                )
-              })}
-            </div>
-
-            <Button type="button" onClick={onStart} className="mt-5 w-full min-h-[52px] bg-[#168f43] text-white hover:bg-[#117a38]">
-              {isResume ? 'Resume buyer onboarding' : 'Start buyer onboarding'}
-              <ChevronRight size={16} />
-            </Button>
-          </div>
-
-          <p className="mt-6 text-center text-sm font-medium leading-6 text-white/80 md:text-left">
-            Your information is secure and protected.
-          </p>
-        </div>
-      </div>
-    </section>
-  )
+  return ''
 }
 
 function isVisibleDetailField(fieldConfig, context) {
@@ -1925,9 +1868,7 @@ function ClientOnboarding() {
   const submissionComplete = completionBannerVisible || payload?.onboarding?.status === 'Submitted'
   const onboardingBrand = useMemo(() => resolveBuyerLandingBrand(payload), [payload])
   const buyerLandingName = useMemo(() => resolveBuyerLandingName(payload, formData), [payload, formData])
-  const isResumingOnboarding = Boolean(
-    payload?.onboarding?.status && !['Not Started', 'Submitted'].includes(payload.onboarding.status),
-  )
+  const buyerLandingBackgroundImage = useMemo(() => resolveBuyerWelcomeImageUrl(payload), [payload])
   const showLandingPage = !submissionComplete && !landingDismissed
   const mobileDetailPanes = useMemo(() => {
     const panes = []
@@ -4245,15 +4186,21 @@ function ClientOnboarding() {
     )
   }
 
+  const onboardingMainClass = showLandingPage
+    ? 'min-h-screen overflow-x-hidden bg-[#02070b] px-3 py-3 pb-3 md:px-4 md:py-5 md:pb-5'
+    : `min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f9fbfd_0%,#eef4fb_44%,#e7eef7_100%)] px-3 py-3 ${!submissionComplete ? 'pb-40' : 'pb-24'} md:px-4 md:py-5 md:pb-12`
+
   return (
-    <main className={`min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f9fbfd_0%,#eef4fb_44%,#e7eef7_100%)] px-3 py-3 ${!submissionComplete && !showLandingPage ? 'pb-40' : 'pb-24'} md:px-4 md:py-5 md:pb-12`}>
+    <main className={onboardingMainClass}>
       <div className={`${PAGE_CONTAINER_CLASS} space-y-4 md:space-y-5`}>
         {showLandingPage ? (
-          <BuyerOnboardingLanding
-            brand={onboardingBrand}
-            buyerName={buyerLandingName}
-            propertyLabel={onboardingLocationLabel}
-            isResume={isResumingOnboarding}
+          <PremiumOnboardingLanding
+            portalType="buyer"
+            agencyLogo={onboardingBrand.logoUrl}
+            agencyName={onboardingBrand.name}
+            personName={buyerLandingName === 'there' ? '' : buyerLandingName}
+            propertyAddress={onboardingLocationLabel}
+            backgroundImage={buyerLandingBackgroundImage}
             onStart={() => setLandingDismissed(true)}
           />
         ) : submissionComplete ? (

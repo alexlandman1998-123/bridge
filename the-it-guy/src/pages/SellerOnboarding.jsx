@@ -19,6 +19,7 @@ import {
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
+import PremiumOnboardingLanding from '../components/onboarding/PremiumOnboardingLanding'
 import Button from '../components/ui/Button'
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
 import { getEdgeFunctionInvokeError, invokeEdgeFunction } from '../lib/supabaseClient'
@@ -1392,127 +1393,23 @@ function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
   )
 }
 
-function SellerWelcomeScreen({ brand, listing, form, currentStep = 0, onContinue }) {
+function SellerWelcomeScreen({ brand, listing, form, onContinue }) {
   const sellerName = getSellerDisplayName(listing, form)
   const propertyAddress = getPropertyDisplayAddress(listing, form)
-  const agentName = resolveAgentName(listing)
-  const welcomeImageUrl = resolveSellerWelcomeImageUrl(listing)
   const welcomeName = sellerName && sellerName !== 'Seller'
     ? sellerName.split(/\s+/).filter(Boolean)[0]
-    : 'Seller'
-  const expectationItems = [
-    'Takes about 10 minutes',
-    'Your progress can be saved',
-    'We only ask what applies to this sale',
-    `${agentName} will be notified when you submit`,
-  ]
-  const actionLabel = currentStep > 0 ? 'Resume seller onboarding' : 'Start seller onboarding'
+    : ''
 
   return (
-    <section className="overflow-hidden rounded-[30px] border border-[#d9e4ec] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.12)] sm:rounded-[34px] lg:grid lg:min-h-[720px] lg:grid-cols-[0.9fr_1.1fr]">
-      <div className="relative min-h-[calc(100dvh-24px)] overflow-hidden bg-[#0e1b2b] text-white sm:min-h-[720px] lg:min-h-full">
-        {welcomeImageUrl ? (
-          <img
-            src={welcomeImageUrl}
-            alt=""
-            className="absolute inset-0 h-full w-full object-cover"
-          />
-        ) : (
-          <div aria-hidden className="absolute inset-0 bg-[linear-gradient(150deg,#0b1626_0%,#172b3e_48%,#31506a_100%)]" />
-        )}
-        <div aria-hidden className="absolute inset-0 bg-[linear-gradient(180deg,rgba(7,15,26,0.62)_0%,rgba(7,15,26,0.28)_35%,rgba(7,15,26,0.78)_100%)]" />
-        <div className="relative z-10 flex min-h-[calc(100dvh-24px)] flex-col p-5 sm:min-h-[720px] sm:p-7 lg:min-h-full">
-          <SellerBrandBar brand={brand} />
-          <div className="mt-auto pt-10">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/70">Seller onboarding</p>
-            <h1 className="mt-3 max-w-[460px] text-[2.35rem] font-semibold leading-[1.04] tracking-normal text-white sm:text-5xl">
-              Welcome, <span className="text-[#37c871]">{welcomeName}</span>
-            </h1>
-            <p className="mt-3 max-w-[420px] text-sm leading-6 text-white/80 sm:text-base">
-              Let’s get your property sale journey started with a guided seller intake.
-            </p>
-
-            <div className="mt-5 space-y-3">
-              <article className="flex items-start gap-3 rounded-[20px] border border-white/20 bg-white/95 p-4 text-[#142334] shadow-[0_18px_34px_rgba(0,0,0,0.18)] backdrop-blur-xl">
-                <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] bg-[#e9f8ee] text-[#138a3d]">
-                  <Home size={20} />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-[#142334]">Seller onboarding</p>
-                  <p className="mt-1 break-words text-xs leading-5 text-[#60748b]">{propertyAddress}</p>
-                </div>
-              </article>
-              <div className="rounded-[20px] border border-white/20 bg-white/10 p-4 text-sm leading-6 text-white/80 backdrop-blur-xl">
-                Your information is secure and protected.
-              </div>
-            </div>
-
-            <div className="mt-5 rounded-[22px] border border-white/20 bg-white/95 p-4 text-[#142334] shadow-[0_18px_34px_rgba(0,0,0,0.18)] backdrop-blur-xl lg:hidden">
-              <p className="text-sm font-semibold">What to expect</p>
-              <ul className="mt-3 space-y-2.5">
-                {expectationItems.map((item) => (
-                  <li key={item} className="flex items-start gap-2.5 text-xs leading-5 text-[#4f6378]">
-                    <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-[#138a3d]" />
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <Button
-              type="button"
-              onClick={onContinue}
-              className="mt-5 min-h-[52px] w-full rounded-[16px] bg-[#138a3d] text-white shadow-[0_16px_32px_rgba(19,138,61,0.24)] hover:bg-[#0f7533] lg:hidden"
-            >
-              {actionLabel}
-              <ChevronRight size={16} />
-            </Button>
-            <p className="mt-3 text-center text-xs leading-5 text-white/70 lg:hidden">
-              Powered by arch9 for {brand?.name || 'your agency'}.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="hidden flex-col justify-center bg-white p-5 sm:p-8 lg:flex lg:p-10">
-        <div className="mx-auto w-full max-w-[440px]">
-          <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-[28px] border border-[#dce7ef] bg-[#f7fbff] text-[#138a3d] shadow-[0_18px_38px_rgba(15,23,42,0.08)]">
-            <Home size={42} strokeWidth={1.7} />
-          </div>
-          <div className="mt-6 text-center">
-            <h2 className="text-2xl font-semibold tracking-normal text-[#132033] sm:text-3xl">Let’s get you started</h2>
-            <p className="mx-auto mt-2 max-w-[320px] text-sm leading-6 text-[#60748b]">
-              We’ll guide you through the seller, property, disclosure, and compliance details.
-            </p>
-          </div>
-
-          <div className="mt-6 rounded-[22px] border border-[#dfe8f1] bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] sm:p-5">
-            <p className="text-sm font-semibold text-[#142334]">What to expect</p>
-            <ul className="mt-4 space-y-3">
-              {expectationItems.map((item) => (
-                <li key={item} className="flex items-start gap-3 text-sm leading-5 text-[#4f6378]">
-                  <CheckCircle2 size={17} className="mt-0.5 shrink-0 text-[#138a3d]" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <Button
-            type="button"
-            onClick={onContinue}
-            className="mt-6 min-h-[52px] w-full rounded-[16px] bg-[#138a3d] text-white shadow-[0_16px_32px_rgba(19,138,61,0.22)] hover:bg-[#0f7533]"
-          >
-            {actionLabel}
-            <ChevronRight size={16} />
-          </Button>
-
-          <p className="mt-4 text-center text-xs leading-5 text-[#7a8da3]">
-            Powered by arch9 for {brand?.name || 'your agency'}.
-          </p>
-        </div>
-      </div>
-    </section>
+    <PremiumOnboardingLanding
+      portalType="seller"
+      agencyLogo={brand?.logoUrl || ''}
+      agencyName={brand?.name || ''}
+      personName={welcomeName}
+      propertyAddress={propertyAddress}
+      backgroundImage={resolveSellerWelcomeImageUrl(listing)}
+      onStart={onContinue}
+    />
   )
 }
 
@@ -4792,13 +4689,19 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     return <div className="w-full">{content}</div>
   }
 
+  const sellerMainClass = shouldShowWelcome
+    ? 'relative min-h-screen overflow-x-hidden bg-[#02070b] px-3 py-3 font-sans antialiased text-white sm:px-5 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8'
+    : 'relative min-h-screen overflow-x-hidden bg-[#e4ebf3] px-3 py-3 pb-40 font-sans antialiased text-[#132033] sm:px-5 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8 lg:pb-10'
+
   return (
-    <main className={`relative min-h-screen overflow-x-hidden bg-[#e4ebf3] px-3 py-3 font-sans antialiased text-[#132033] sm:px-5 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8 ${shouldShowWelcome ? 'pb-3 sm:pb-5 lg:pb-8' : 'pb-40 lg:pb-10'}`}>
-      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -left-24 top-10 h-72 w-72 rounded-full bg-white/40 blur-3xl" />
-        <div className="absolute right-[-7rem] top-28 h-96 w-96 rounded-full bg-[#d7e2ee]/60 blur-3xl" />
-        <div className="absolute bottom-[-9rem] left-1/3 h-[28rem] w-[28rem] rounded-full bg-white/30 blur-3xl" />
-      </div>
+    <main className={sellerMainClass}>
+      {!shouldShowWelcome ? (
+        <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="absolute -left-24 top-10 h-72 w-72 rounded-full bg-white/40 blur-3xl" />
+          <div className="absolute right-[-7rem] top-28 h-96 w-96 rounded-full bg-[#d7e2ee]/60 blur-3xl" />
+          <div className="absolute bottom-[-9rem] left-1/3 h-[28rem] w-[28rem] rounded-full bg-white/30 blur-3xl" />
+        </div>
+      ) : null}
       <div className={PAGE_CONTAINER_CLASS}>
         {content}
       </div>
