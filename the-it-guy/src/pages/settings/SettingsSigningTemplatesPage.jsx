@@ -39,6 +39,11 @@ import {
   validateTemplateTokensAgainstRegistry,
 } from '../../core/documents/mergeFieldRegistry'
 import {
+  VISIBILITY_VALUELESS_OPERATORS,
+  buildVisibilityConditionJson,
+  normalizeVisibilityConditionInput,
+} from '../../core/documents/sectionVisibilityRules'
+import {
   archiveDocumentPacket,
   createDocumentPacket,
   createDocumentPacketTemplate,
@@ -215,7 +220,7 @@ const CONTRACT_CLAUSE_LIBRARY_ITEMS = [
     defaultCondition: {
       enabled: false,
       field: 'commission_structure',
-      operator: 'is not empty',
+      operator: 'exists',
       value: '',
       label: 'Use when a commission structure exists',
     },
@@ -234,7 +239,7 @@ const CONTRACT_CLAUSE_LIBRARY_ITEMS = [
     defaultCondition: {
       enabled: false,
       field: 'property_address',
-      operator: 'is not empty',
+      operator: 'exists',
       value: '',
       label: 'Use when property details are available',
     },
@@ -255,19 +260,236 @@ const CONTRACT_CLAUSE_LIBRARY_ITEMS = [
     defaultCondition: {
       enabled: false,
       field: 'witness_signature',
-      operator: 'is required',
+      operator: 'exists',
       value: '',
       label: 'Use when witness signing is required',
+    },
+  },
+  {
+    key: 'seller_company_authority_pack',
+    category: 'Seller authority',
+    title: 'Seller company authority pack',
+    description: 'Registration, representative capacity and resolution wording for company or close corporation sellers.',
+    status: 'Principal approved',
+    locked: true,
+    snippet: [
+      'Where the Seller is a company or close corporation, the person signing for the Seller warrants that they are duly authorised to sign this document and bind the Seller.',
+      '',
+      'Seller Registration Number: {{seller_company_registration_number}}',
+      'Representative: {{seller_representative_name}}',
+      'Representative Capacity: {{seller_representative_capacity}}',
+      'Resolution Date: {{seller_resolution_date}}',
+      'Authority Basis: {{seller_authority_basis}}',
+    ].join('\n'),
+    defaultCondition: {
+      enabled: true,
+      field: 'seller_entity_type',
+      operator: 'in',
+      value: 'company, close_corporation',
+      label: 'Only include for company or close corporation sellers',
+    },
+  },
+  {
+    key: 'seller_individual_capacity_pack',
+    category: 'Seller capacity',
+    title: 'Individual seller capacity pack',
+    description: 'Personal capacity and marital-status wording for individual sellers.',
+    status: 'Ready to use',
+    locked: true,
+    snippet: [
+      'Where the Seller is an individual, the Seller warrants that the marital status recorded below is correct and that the Seller has full contractual capacity to sign.',
+      '',
+      'Seller Marital Status: {{seller_marital_status}}',
+      'Spouse Consent Required: {{seller_spouse_consent_required}}',
+    ].join('\n'),
+    defaultCondition: {
+      enabled: true,
+      field: 'seller_entity_type',
+      operator: 'equals',
+      value: 'individual',
+      label: 'Only include for individual sellers',
+    },
+  },
+  {
+    key: 'seller_trust_authority_pack',
+    category: 'Seller authority',
+    title: 'Seller trust authority pack',
+    description: 'Trust registration, trustee and authority wording for trust sellers.',
+    status: 'Principal approved',
+    locked: true,
+    snippet: [
+      'Where the Seller is a trust, the trustees or authorised representative warrant that the trust is duly authorised to enter into this document.',
+      '',
+      'Trust Registration Number: {{seller_trust_registration_number}}',
+      'Trustees: {{seller_trustee_names}}',
+      'Representative: {{seller_representative_name}}',
+      'Representative Capacity: {{seller_representative_capacity}}',
+      'Authority Basis: {{seller_authority_basis}}',
+    ].join('\n'),
+    defaultCondition: {
+      enabled: true,
+      field: 'seller_entity_type',
+      operator: 'equals',
+      value: 'trust',
+      label: 'Only include for trust sellers',
+    },
+  },
+  {
+    key: 'seller_spouse_consent_pack',
+    category: 'Seller capacity',
+    title: 'Seller spouse consent pack',
+    description: 'Consent and co-signature wording for sellers married in community of property.',
+    status: 'Legal reviewed',
+    locked: true,
+    snippet: [
+      'Where spousal consent is required, the Seller confirms that the spouse recorded below consents to this document and will sign where required.',
+      '',
+      'Seller Spouse: {{seller_spouse_full_name}}',
+      'Spouse ID Number: {{seller_spouse_id_number}}',
+      'Spouse Email: {{seller_spouse_email}}',
+    ].join('\n'),
+    defaultCondition: {
+      enabled: true,
+      field: 'seller_spouse_consent_required',
+      operator: 'equals',
+      value: 'Yes',
+      label: 'Only include when seller spouse consent is required',
+    },
+  },
+  {
+    key: 'buyer_individual_capacity_pack',
+    category: 'Buyer capacity',
+    title: 'Individual buyer capacity pack',
+    description: 'Personal capacity and marital-status wording for individual buyers.',
+    status: 'Ready to use',
+    locked: true,
+    snippet: [
+      'Where the Purchaser is an individual, the Purchaser warrants that the marital status recorded below is correct and that the Purchaser has full contractual capacity to sign.',
+      '',
+      'Purchaser Marital Status: {{buyer_marital_status}}',
+      'Spouse Consent Required: {{buyer_spouse_consent_required}}',
+    ].join('\n'),
+    defaultCondition: {
+      enabled: true,
+      field: 'buyer_entity_type',
+      operator: 'equals',
+      value: 'individual',
+      label: 'Only include for individual buyers',
+    },
+  },
+  {
+    key: 'buyer_company_authority_pack',
+    category: 'Buyer authority',
+    title: 'Buyer company authority pack',
+    description: 'Registration, representative capacity and resolution wording for company or close corporation buyers.',
+    status: 'Principal approved',
+    locked: true,
+    snippet: [
+      'Where the Purchaser is a company or close corporation, the person signing for the Purchaser warrants that they are duly authorised to sign this agreement and bind the Purchaser.',
+      '',
+      'Purchaser Registration Number: {{buyer_company_registration_number}}',
+      'Representative: {{buyer_representative_name}}',
+      'Representative Capacity: {{buyer_representative_capacity}}',
+      'Resolution Date: {{buyer_resolution_date}}',
+      'Authority Basis: {{buyer_authority_basis}}',
+    ].join('\n'),
+    defaultCondition: {
+      enabled: true,
+      field: 'buyer_entity_type',
+      operator: 'in',
+      value: 'company, close_corporation',
+      label: 'Only include for company or close corporation buyers',
+    },
+  },
+  {
+    key: 'buyer_trust_authority_pack',
+    category: 'Buyer authority',
+    title: 'Buyer trust authority pack',
+    description: 'Trust registration, trustee and authority wording for trust buyers.',
+    status: 'Principal approved',
+    locked: true,
+    snippet: [
+      'Where the Purchaser is a trust, the trustees or authorised representative warrant that the trust is duly authorised to enter into this agreement.',
+      '',
+      'Trust Registration Number: {{buyer_trust_registration_number}}',
+      'Trustees: {{buyer_trustee_names}}',
+      'Representative: {{buyer_representative_name}}',
+      'Representative Capacity: {{buyer_representative_capacity}}',
+      'Authority Basis: {{buyer_authority_basis}}',
+    ].join('\n'),
+    defaultCondition: {
+      enabled: true,
+      field: 'buyer_entity_type',
+      operator: 'equals',
+      value: 'trust',
+      label: 'Only include for trust buyers',
+    },
+  },
+  {
+    key: 'buyer_spouse_consent_pack',
+    category: 'Buyer capacity',
+    title: 'Buyer spouse consent pack',
+    description: 'Consent and co-signature wording for buyers married in community of property.',
+    status: 'Legal reviewed',
+    locked: true,
+    snippet: [
+      'Where spousal consent is required, the Purchaser confirms that the spouse recorded below consents to this agreement and will sign where required.',
+      '',
+      'Purchaser Spouse: {{buyer_spouse_full_name}}',
+      'Spouse ID Number: {{buyer_spouse_id_number}}',
+      'Spouse Email: {{buyer_spouse_email}}',
+    ].join('\n'),
+    defaultCondition: {
+      enabled: true,
+      field: 'buyer_spouse_consent_required',
+      operator: 'equals',
+      value: 'Yes',
+      label: 'Only include when buyer spouse consent is required',
+    },
+  },
+  {
+    key: 'cash_sale_pack',
+    category: 'Finance',
+    title: 'Cash sale payment pack',
+    description: 'Cash-sale proof-of-funds and payment undertaking wording.',
+    status: 'Ready to use',
+    locked: true,
+    snippet: [
+      'Where this is a cash sale, the Purchaser must provide proof of funds or acceptable cash payment undertakings within the required period.',
+      '',
+      'Finance Type: {{finance_type}}',
+      'Cash Amount: {{cash_amount}}',
+    ].join('\n'),
+    defaultCondition: {
+      enabled: true,
+      field: 'finance_type',
+      operator: 'equals',
+      value: 'cash',
+      label: 'Only include for cash sale transactions',
     },
   },
 ]
 const CONDITION_OPERATORS = [
   { key: 'equals', label: 'equals' },
-  { key: 'does not equal', label: 'does not equal' },
+  { key: 'not_equals', label: 'does not equal' },
   { key: 'contains', label: 'contains' },
-  { key: 'is not empty', label: 'is not empty' },
-  { key: 'is required', label: 'is required' },
+  { key: 'in', label: 'is one of' },
+  { key: 'not_in', label: 'is not one of' },
+  { key: 'exists', label: 'is not empty' },
+  { key: 'missing', label: 'is empty' },
 ]
+const CONDITION_OPERATOR_LABELS = Object.fromEntries(CONDITION_OPERATORS.map((operator) => [operator.key, operator.label]))
+
+function createConditionalPackCondition({ field = '', operator = 'equals', value = '', label = '' } = {}) {
+  return buildVisibilityConditionJson({
+    enabled: true,
+    field,
+    operator,
+    value,
+    label,
+  })
+}
+
 const SIGNER_ROLE_OPTIONS = [
   { key: 'purchaser_1', label: 'Buyer' },
   { key: 'purchaser_2', label: 'Second buyer' },
@@ -512,9 +734,6 @@ This Offer to Purchase becomes a deed of sale when accepted by the Seller in wri
 | Telephone | {{buyer_phone}} |
 | Marital Status | {{buyer_marital_status}} |
 | Entity Type | {{buyer_entity_type}} |
-| Representative | {{buyer_representative_name}} |
-| Representative Capacity | {{buyer_representative_capacity}} |
-| Trust Registration Number | {{buyer_trust_registration_number}} |
 
 The Purchaser warrants that the information supplied in this schedule is true and correct and that the Purchaser has the necessary legal capacity and authority to enter into this Agreement.
 
@@ -587,8 +806,6 @@ The Property is sold together with all fixtures and fittings of a permanent natu
 | Seller | {{seller_full_name}} |
 | Identity / Registration Number | {{seller_id_number}} |
 | Entity Type | {{seller_entity_type}} |
-| Representative | {{seller_representative_name}} |
-| Representative Capacity | {{seller_representative_capacity}} |
 | Domicilium Address | {{seller_domicilium_address}} |
 | Email | {{seller_email}} |
 | Telephone | {{seller_phone}} |
@@ -627,6 +844,131 @@ Bond Amount
 2.3 FICA and Verification
 
 The parties shall provide all documents and information reasonably required for FICA, identity verification, source-of-funds verification, conveyancing, finance, record keeping and transaction administration.`,
+  cash_sale_pack: `CASH SALE PAYMENT REQUIREMENTS
+
+Where this transaction is recorded as a cash sale, the Purchaser must provide proof of funds or acceptable cash payment undertakings to the Seller, Agent or Conveyancing Attorneys within the required period.
+
+Finance Type
+{{finance_type}}
+
+Cash Amount
+{{cash_amount}}
+
+The Seller may require reasonable confirmation that the cash portion of the Purchase Price is available before transfer documentation proceeds.`,
+  buyer_individual_capacity_pack: `PURCHASER INDIVIDUAL CAPACITY
+
+Where the Purchaser is an individual, the Purchaser warrants that the marital status recorded in this agreement is correct and that the Purchaser has full contractual capacity to enter into this agreement.
+
+Purchaser Marital Status
+{{buyer_marital_status}}
+
+Spouse Consent Required
+{{buyer_spouse_consent_required}}`,
+  buyer_company_authority_pack: `PURCHASER COMPANY AUTHORITY
+
+Where the Purchaser is a company or close corporation, the signatory warrants that they are duly authorised to sign this agreement and bind the Purchaser.
+
+Company / CC Registration Number
+{{buyer_company_registration_number}}
+
+Representative
+{{buyer_representative_name}}
+
+Representative Capacity
+{{buyer_representative_capacity}}
+
+Resolution Date
+{{buyer_resolution_date}}
+
+Authority Basis
+{{buyer_authority_basis}}`,
+  buyer_trust_authority_pack: `PURCHASER TRUST AUTHORITY
+
+Where the Purchaser is a trust, the trustees or authorised representative warrant that the trust is duly authorised to enter into this agreement and that all required trustee approvals have been obtained.
+
+Trust Registration Number
+{{buyer_trust_registration_number}}
+
+Trustees
+{{buyer_trustee_names}}
+
+Representative
+{{buyer_representative_name}}
+
+Representative Capacity
+{{buyer_representative_capacity}}
+
+Authority Basis
+{{buyer_authority_basis}}`,
+  buyer_spouse_consent_pack: `PURCHASER SPOUSE CONSENT
+
+Where the Purchaser is married in community of property or spouse consent is otherwise required, the spouse recorded below consents to this agreement and will sign where required.
+
+Purchaser Spouse
+{{buyer_spouse_full_name}}
+
+Spouse ID Number
+{{buyer_spouse_id_number}}
+
+Spouse Email
+{{buyer_spouse_email}}`,
+  seller_individual_capacity_pack: `SELLER INDIVIDUAL CAPACITY
+
+Where the Seller is an individual, the Seller warrants that the marital status recorded below is correct and that the Seller has full contractual capacity to sell the Property and enter into this agreement.
+
+Seller Marital Status
+{{seller_marital_status}}
+
+Spouse Consent Required
+{{seller_spouse_consent_required}}`,
+  seller_company_authority_pack: `SELLER COMPANY AUTHORITY
+
+Where the Seller is a company or close corporation, the signatory warrants that they are duly authorised to sell the Property and bind the Seller to this agreement.
+
+Company / CC Registration Number
+{{seller_company_registration_number}}
+
+Representative
+{{seller_representative_name}}
+
+Representative Capacity
+{{seller_representative_capacity}}
+
+Resolution Date
+{{seller_resolution_date}}
+
+Authority Basis
+{{seller_authority_basis}}`,
+  seller_trust_authority_pack: `SELLER TRUST AUTHORITY
+
+Where the Seller is a trust, the trustees or authorised representative warrant that the trust is duly authorised to sell the Property and enter into this agreement.
+
+Trust Registration Number
+{{seller_trust_registration_number}}
+
+Trustees
+{{seller_trustee_names}}
+
+Representative
+{{seller_representative_name}}
+
+Representative Capacity
+{{seller_representative_capacity}}
+
+Authority Basis
+{{seller_authority_basis}}`,
+  seller_spouse_consent_pack: `SELLER SPOUSE CONSENT
+
+Where the Seller is married in community of property or spouse consent is otherwise required, the spouse recorded below consents to the sale and will sign where required.
+
+Seller Spouse
+{{seller_spouse_full_name}}
+
+Spouse ID Number
+{{seller_spouse_id_number}}
+
+Spouse Email
+{{seller_spouse_email}}`,
   definitions: `DEFINITIONS
 
 In this Agreement, unless the context indicates otherwise:
@@ -1082,8 +1424,6 @@ Seller:
 {{seller_full_name}}
 Identity / Registration Number: {{seller_id_number}}
 Entity Type: {{seller_entity_type}}
-Representative: {{seller_representative_name}}
-Representative Capacity: {{seller_representative_capacity}}
 Domicilium Address: {{seller_domicilium_address}}
 
 Agency:
@@ -1110,12 +1450,67 @@ ID / Registration Number: {{seller_id_number}}
 Email: {{seller_email}}
 Phone: {{seller_phone}}
 Entity Type: {{seller_entity_type}}
-Representative Name: {{seller_representative_name}}
-Representative Capacity: {{seller_representative_capacity}}
-Trust Registration Number: {{seller_trust_registration_number}}
+Marital Status: {{seller_marital_status}}
 Domicilium Address: {{seller_domicilium_address}}
 
 The Seller confirms that the information supplied to the Agency is true and correct to the best of the Seller's knowledge.`,
+  seller_individual_capacity_pack: `INDIVIDUAL SELLER CAPACITY
+
+Where the Seller is an individual, the Seller warrants that the Seller has full contractual capacity to grant this mandate and that the marital status recorded below is correct.
+
+Seller Marital Status
+{{seller_marital_status}}
+
+Spouse Consent Required
+{{seller_spouse_consent_required}}`,
+  seller_company_authority_pack: `SELLER COMPANY AUTHORITY
+
+Where the Seller is a company or close corporation, the signatory warrants that they are duly authorised to appoint the Agency and bind the Seller to this mandate.
+
+Company / CC Registration Number
+{{seller_company_registration_number}}
+
+Representative
+{{seller_representative_name}}
+
+Representative Capacity
+{{seller_representative_capacity}}
+
+Resolution Date
+{{seller_resolution_date}}
+
+Authority Basis
+{{seller_authority_basis}}`,
+  seller_trust_authority_pack: `SELLER TRUST AUTHORITY
+
+Where the Seller is a trust, the trustees or authorised representative warrant that the trust is duly authorised to appoint the Agency and grant this mandate.
+
+Trust Registration Number
+{{seller_trust_registration_number}}
+
+Trustees
+{{seller_trustee_names}}
+
+Representative
+{{seller_representative_name}}
+
+Representative Capacity
+{{seller_representative_capacity}}
+
+Authority Basis
+{{seller_authority_basis}}`,
+  seller_spouse_consent_pack: `SELLER SPOUSE CONSENT
+
+Where the Seller is married in community of property or spouse consent is otherwise required, the spouse recorded below consents to this mandate and will sign where required.
+
+Seller Spouse
+{{seller_spouse_full_name}}
+
+Spouse ID Number
+{{seller_spouse_id_number}}
+
+Spouse Email
+{{seller_spouse_email}}`,
   property_details: `PROPERTY DETAILS
 
 Property Address: {{property_address}}
@@ -1580,7 +1975,7 @@ function createStarterSections(packetType = 'otp') {
         sectionLabel: 'Introduction and Purpose',
         sectionType: 'legal_text',
         legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.introduction_purpose,
-        placeholderKeysText: 'seller_full_name, seller_id_number, seller_entity_type, seller_representative_name, seller_representative_capacity, seller_domicilium_address, agency_legal_name, organisation_name, agency_registration_number, agency_vat_number, agency_fsp_number, agency_address, agent_full_name, agent_email, agent_phone, agent_ffc_number',
+        placeholderKeysText: 'seller_full_name, seller_id_number, seller_entity_type, seller_domicilium_address, agency_legal_name, organisation_name, agency_registration_number, agency_vat_number, agency_fsp_number, agency_address, agent_full_name, agent_email, agent_phone, agent_ffc_number',
         isRequired: true,
         sortOrder: 0,
       },
@@ -1589,9 +1984,69 @@ function createStarterSections(packetType = 'otp') {
         sectionLabel: 'Parties',
         sectionType: 'dynamic_fields',
         legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.parties,
-        placeholderKeysText: 'seller_full_name, seller_id_number, seller_email, seller_phone, seller_entity_type, seller_representative_name, seller_representative_capacity, seller_trust_registration_number, seller_domicilium_address',
+        placeholderKeysText: 'seller_full_name, seller_id_number, seller_email, seller_phone, seller_entity_type, seller_marital_status, seller_domicilium_address',
         isRequired: true,
         sortOrder: 1,
+      },
+      {
+        sectionKey: 'seller_individual_capacity_pack',
+        sectionLabel: 'Individual Seller Capacity Pack',
+        sectionType: 'legal_text',
+        legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.seller_individual_capacity_pack,
+        placeholderKeysText: 'seller_entity_type, seller_marital_status, seller_spouse_consent_required',
+        conditionJson: createConditionalPackCondition({
+          field: 'seller_entity_type',
+          operator: 'equals',
+          value: 'individual',
+          label: 'Only include for individual sellers',
+        }),
+        isRequired: false,
+        sortOrder: 2,
+      },
+      {
+        sectionKey: 'seller_company_authority_pack',
+        sectionLabel: 'Seller Company Authority Pack',
+        sectionType: 'legal_text',
+        legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.seller_company_authority_pack,
+        placeholderKeysText: 'seller_entity_type, seller_company_registration_number, seller_representative_name, seller_representative_capacity, seller_resolution_date, seller_authority_basis',
+        conditionJson: createConditionalPackCondition({
+          field: 'seller_entity_type',
+          operator: 'in',
+          value: 'company, close_corporation',
+          label: 'Only include for company or close corporation sellers',
+        }),
+        isRequired: false,
+        sortOrder: 3,
+      },
+      {
+        sectionKey: 'seller_trust_authority_pack',
+        sectionLabel: 'Seller Trust Authority Pack',
+        sectionType: 'legal_text',
+        legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.seller_trust_authority_pack,
+        placeholderKeysText: 'seller_entity_type, seller_trust_registration_number, seller_trustee_names, seller_representative_name, seller_representative_capacity, seller_authority_basis',
+        conditionJson: createConditionalPackCondition({
+          field: 'seller_entity_type',
+          operator: 'equals',
+          value: 'trust',
+          label: 'Only include for trust sellers',
+        }),
+        isRequired: false,
+        sortOrder: 4,
+      },
+      {
+        sectionKey: 'seller_spouse_consent_pack',
+        sectionLabel: 'Seller Spouse Consent Pack',
+        sectionType: 'legal_text',
+        legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.seller_spouse_consent_pack,
+        placeholderKeysText: 'seller_spouse_consent_required, seller_spouse_full_name, seller_spouse_id_number, seller_spouse_email',
+        conditionJson: createConditionalPackCondition({
+          field: 'seller_spouse_consent_required',
+          operator: 'equals',
+          value: 'Yes',
+          label: 'Only include when seller spouse consent is required',
+        }),
+        isRequired: false,
+        sortOrder: 5,
       },
       {
         sectionKey: 'property_details',
@@ -1600,7 +2055,7 @@ function createStarterSections(packetType = 'otp') {
         legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.property_details,
         placeholderKeysText: 'property_address, property_display_address, property_suburb, property_city, property_type, property_unit_number, property_section_number, sectional_title_number, property_complex_name, property_estate_name',
         isRequired: true,
-        sortOrder: 2,
+        sortOrder: 6,
       },
       {
         sectionKey: 'mandate_terms',
@@ -1609,7 +2064,7 @@ function createStarterSections(packetType = 'otp') {
         legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.mandate_terms,
         placeholderKeysText: 'mandate_type, mandate_start_date, mandate_end_date, mandate_introduction_purpose, mandate_authority_granted, mandate_access_instructions',
         isRequired: true,
-        sortOrder: 3,
+        sortOrder: 7,
       },
       {
         sectionKey: 'commission_terms',
@@ -1618,7 +2073,7 @@ function createStarterSections(packetType = 'otp') {
         legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.commission_terms,
         placeholderKeysText: 'commission_structure, mandate_commission_percent, mandate_commission_amount, vat_handling, asking_price',
         isRequired: true,
-        sortOrder: 4,
+        sortOrder: 8,
       },
       {
         sectionKey: 'marketing_listing_terms',
@@ -1627,7 +2082,7 @@ function createStarterSections(packetType = 'otp') {
         legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.marketing_listing_terms,
         placeholderKeysText: 'mandate_marketing_permissions',
         isRequired: false,
-        sortOrder: 5,
+        sortOrder: 9,
       },
       {
         sectionKey: 'special_conditions',
@@ -1636,7 +2091,7 @@ function createStarterSections(packetType = 'otp') {
         legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.special_conditions,
         placeholderKeysText: 'special_conditions, annexures_list',
         isRequired: false,
-        sortOrder: 6,
+        sortOrder: 10,
       },
       {
         sectionKey: 'signature_pages',
@@ -1645,7 +2100,7 @@ function createStarterSections(packetType = 'otp') {
         legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.signature_pages,
         placeholderKeysText: 'seller_full_name, seller_signature, seller_initials, signed_date, agent_full_name, organisation_name, agent_ffc_number, witness_signature, document_reference, transaction_reference, generated_date, template_version',
         isRequired: true,
-        sortOrder: 7,
+        sortOrder: 11,
       },
     ]
   }
@@ -1716,18 +2171,159 @@ function createStarterSections(packetType = 'otp') {
       sectionLabel: 'Schedule 1 - Transaction Particulars',
       sectionType: 'dynamic_fields',
       legalText: OTP_DEFAULT_LEGAL_TEXT.schedule_1,
-      placeholderKeysText: 'buyer_full_name, buyer_id_number, buyer_domicilium_address, buyer_email, buyer_phone, buyer_marital_status, buyer_entity_type, buyer_representative_name, buyer_representative_capacity, buyer_trust_registration_number, property_address, property_display_address, property_suburb, property_city, property_type, erf_number, property_unit_number, property_section_number, sectional_title_number, property_complex_name, property_estate_name, parking_bay, storeroom, property_nhbrc_certificate_number, purchase_price, deposit_amount, finance_type, bond_amount, cash_amount, additional_costs_note, suspensive_conditions, occupation_date, transfer_date, organisation_name, agency_legal_name, agency_registration_number, agency_vat_number, agency_address, agent_full_name, agent_email, agent_phone, agent_ffc_number, seller_full_name, seller_id_number, seller_entity_type, seller_representative_name, seller_representative_capacity, seller_domicilium_address, seller_email, seller_phone, attorney_firm_name, conveyancer_name, conveyancer_email, conveyancer_reference',
+      placeholderKeysText: 'buyer_full_name, buyer_id_number, buyer_domicilium_address, buyer_email, buyer_phone, buyer_marital_status, buyer_entity_type, property_address, property_display_address, property_suburb, property_city, property_type, erf_number, property_unit_number, property_section_number, sectional_title_number, property_complex_name, property_estate_name, parking_bay, storeroom, property_nhbrc_certificate_number, purchase_price, deposit_amount, finance_type, bond_amount, cash_amount, additional_costs_note, suspensive_conditions, occupation_date, transfer_date, organisation_name, agency_legal_name, agency_registration_number, agency_vat_number, agency_address, agent_full_name, agent_email, agent_phone, agent_ffc_number, seller_full_name, seller_id_number, seller_entity_type, seller_domicilium_address, seller_email, seller_phone, attorney_firm_name, conveyancer_name, conveyancer_email, conveyancer_reference',
       isRequired: true,
       sortOrder: 1,
     },
     {
+      sectionKey: 'buyer_individual_capacity_pack',
+      sectionLabel: 'Buyer Individual Capacity Pack',
+      sectionType: 'legal_text',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.buyer_individual_capacity_pack,
+      placeholderKeysText: 'buyer_entity_type, buyer_marital_status, buyer_spouse_consent_required',
+      conditionJson: createConditionalPackCondition({
+        field: 'buyer_entity_type',
+        operator: 'equals',
+        value: 'individual',
+        label: 'Only include for individual buyers',
+      }),
+      isRequired: false,
+      sortOrder: 2,
+    },
+    {
+      sectionKey: 'buyer_company_authority_pack',
+      sectionLabel: 'Buyer Company Authority Pack',
+      sectionType: 'legal_text',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.buyer_company_authority_pack,
+      placeholderKeysText: 'buyer_entity_type, buyer_company_registration_number, buyer_representative_name, buyer_representative_capacity, buyer_resolution_date, buyer_authority_basis',
+      conditionJson: createConditionalPackCondition({
+        field: 'buyer_entity_type',
+        operator: 'in',
+        value: 'company, close_corporation',
+        label: 'Only include for company or close corporation buyers',
+      }),
+      isRequired: false,
+      sortOrder: 3,
+    },
+    {
+      sectionKey: 'buyer_trust_authority_pack',
+      sectionLabel: 'Buyer Trust Authority Pack',
+      sectionType: 'legal_text',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.buyer_trust_authority_pack,
+      placeholderKeysText: 'buyer_entity_type, buyer_trust_registration_number, buyer_trustee_names, buyer_representative_name, buyer_representative_capacity, buyer_authority_basis',
+      conditionJson: createConditionalPackCondition({
+        field: 'buyer_entity_type',
+        operator: 'equals',
+        value: 'trust',
+        label: 'Only include for trust buyers',
+      }),
+      isRequired: false,
+      sortOrder: 4,
+    },
+    {
+      sectionKey: 'buyer_spouse_consent_pack',
+      sectionLabel: 'Buyer Spouse Consent Pack',
+      sectionType: 'legal_text',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.buyer_spouse_consent_pack,
+      placeholderKeysText: 'buyer_spouse_consent_required, buyer_spouse_full_name, buyer_spouse_id_number, buyer_spouse_email',
+      conditionJson: createConditionalPackCondition({
+        field: 'buyer_spouse_consent_required',
+        operator: 'equals',
+        value: 'Yes',
+        label: 'Only include when buyer spouse consent is required',
+      }),
+      isRequired: false,
+      sortOrder: 5,
+    },
+    {
+      sectionKey: 'seller_individual_capacity_pack',
+      sectionLabel: 'Seller Individual Capacity Pack',
+      sectionType: 'legal_text',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.seller_individual_capacity_pack,
+      placeholderKeysText: 'seller_entity_type, seller_marital_status, seller_spouse_consent_required',
+      conditionJson: createConditionalPackCondition({
+        field: 'seller_entity_type',
+        operator: 'equals',
+        value: 'individual',
+        label: 'Only include for individual sellers',
+      }),
+      isRequired: false,
+      sortOrder: 6,
+    },
+    {
+      sectionKey: 'seller_company_authority_pack',
+      sectionLabel: 'Seller Company Authority Pack',
+      sectionType: 'legal_text',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.seller_company_authority_pack,
+      placeholderKeysText: 'seller_entity_type, seller_company_registration_number, seller_representative_name, seller_representative_capacity, seller_resolution_date, seller_authority_basis',
+      conditionJson: createConditionalPackCondition({
+        field: 'seller_entity_type',
+        operator: 'in',
+        value: 'company, close_corporation',
+        label: 'Only include for company or close corporation sellers',
+      }),
+      isRequired: false,
+      sortOrder: 7,
+    },
+    {
+      sectionKey: 'seller_trust_authority_pack',
+      sectionLabel: 'Seller Trust Authority Pack',
+      sectionType: 'legal_text',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.seller_trust_authority_pack,
+      placeholderKeysText: 'seller_entity_type, seller_trust_registration_number, seller_trustee_names, seller_representative_name, seller_representative_capacity, seller_authority_basis',
+      conditionJson: createConditionalPackCondition({
+        field: 'seller_entity_type',
+        operator: 'equals',
+        value: 'trust',
+        label: 'Only include for trust sellers',
+      }),
+      isRequired: false,
+      sortOrder: 8,
+    },
+    {
+      sectionKey: 'seller_spouse_consent_pack',
+      sectionLabel: 'Seller Spouse Consent Pack',
+      sectionType: 'legal_text',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.seller_spouse_consent_pack,
+      placeholderKeysText: 'seller_spouse_consent_required, seller_spouse_full_name, seller_spouse_id_number, seller_spouse_email',
+      conditionJson: createConditionalPackCondition({
+        field: 'seller_spouse_consent_required',
+        operator: 'equals',
+        value: 'Yes',
+        label: 'Only include when seller spouse consent is required',
+      }),
+      isRequired: false,
+      sortOrder: 9,
+    },
+    {
       sectionKey: 'schedule_2',
-      sectionLabel: 'Schedule 2 - Bond Requirements',
+      sectionLabel: 'Bond Finance Pack - Bond Requirements',
       sectionType: 'dynamic_fields',
       legalText: OTP_DEFAULT_LEGAL_TEXT.schedule_2,
       placeholderKeysText: 'buyer_initials, finance_type, bond_amount',
-      isRequired: true,
-      sortOrder: 2,
+      conditionJson: createConditionalPackCondition({
+        field: 'finance_type',
+        operator: 'in',
+        value: 'bond, combination',
+        label: 'Only include when bond finance applies',
+      }),
+      isRequired: false,
+      sortOrder: 10,
+    },
+    {
+      sectionKey: 'cash_sale_pack',
+      sectionLabel: 'Cash Sale Payment Pack',
+      sectionType: 'legal_text',
+      legalText: OTP_DEFAULT_LEGAL_TEXT.cash_sale_pack,
+      placeholderKeysText: 'finance_type, cash_amount',
+      conditionJson: createConditionalPackCondition({
+        field: 'finance_type',
+        operator: 'equals',
+        value: 'cash',
+        label: 'Only include for cash sale transactions',
+      }),
+      isRequired: false,
+      sortOrder: 11,
     },
     {
       sectionKey: 'definitions',
@@ -1736,7 +2332,7 @@ function createStarterSections(packetType = 'otp') {
       legalText: OTP_DEFAULT_LEGAL_TEXT.definitions,
       placeholderKeysText: '',
       isRequired: true,
-      sortOrder: 3,
+      sortOrder: 12,
     },
     {
       sectionKey: 'interpretation',
@@ -1745,7 +2341,7 @@ function createStarterSections(packetType = 'otp') {
       legalText: OTP_DEFAULT_LEGAL_TEXT.interpretation,
       placeholderKeysText: '',
       isRequired: true,
-      sortOrder: 4,
+      sortOrder: 13,
     },
     {
       sectionKey: 'sale_acceptance',
@@ -1754,7 +2350,7 @@ function createStarterSections(packetType = 'otp') {
       legalText: OTP_DEFAULT_LEGAL_TEXT.sale_acceptance,
       placeholderKeysText: '',
       isRequired: true,
-      sortOrder: 5,
+      sortOrder: 14,
     },
     {
       sectionKey: 'purchase_price',
@@ -1763,7 +2359,7 @@ function createStarterSections(packetType = 'otp') {
       legalText: OTP_DEFAULT_LEGAL_TEXT.purchase_price,
       placeholderKeysText: 'purchase_price, deposit_amount, bond_amount, cash_amount',
       isRequired: true,
-      sortOrder: 6,
+      sortOrder: 15,
     },
     {
       sectionKey: 'property_risk_transfer',
@@ -1772,7 +2368,7 @@ function createStarterSections(packetType = 'otp') {
       legalText: OTP_DEFAULT_LEGAL_TEXT.property_risk_transfer,
       placeholderKeysText: '',
       isRequired: true,
-      sortOrder: 7,
+      sortOrder: 16,
     },
     {
       sectionKey: 'occupation',
@@ -1781,7 +2377,7 @@ function createStarterSections(packetType = 'otp') {
       legalText: OTP_DEFAULT_LEGAL_TEXT.occupation,
       placeholderKeysText: 'occupation_date',
       isRequired: true,
-      sortOrder: 8,
+      sortOrder: 17,
     },
     {
       sectionKey: 'suspensive_conditions',
@@ -1790,7 +2386,7 @@ function createStarterSections(packetType = 'otp') {
       legalText: OTP_DEFAULT_LEGAL_TEXT.suspensive_conditions,
       placeholderKeysText: 'suspensive_conditions',
       isRequired: true,
-      sortOrder: 9,
+      sortOrder: 18,
     },
     {
       sectionKey: 'warranties_capacity',
@@ -1799,7 +2395,7 @@ function createStarterSections(packetType = 'otp') {
       legalText: OTP_DEFAULT_LEGAL_TEXT.warranties_capacity,
       placeholderKeysText: '',
       isRequired: true,
-      sortOrder: 10,
+      sortOrder: 19,
     },
     {
       sectionKey: 'commission_certificates',
@@ -1808,7 +2404,7 @@ function createStarterSections(packetType = 'otp') {
       legalText: OTP_DEFAULT_LEGAL_TEXT.commission_certificates,
       placeholderKeysText: 'gross_commission_percentage, gross_commission_amount, agency_commission_amount, agent_commission_amount',
       isRequired: true,
-      sortOrder: 11,
+      sortOrder: 20,
     },
     {
       sectionKey: 'rates_breach_cooling',
@@ -1817,7 +2413,7 @@ function createStarterSections(packetType = 'otp') {
       legalText: OTP_DEFAULT_LEGAL_TEXT.rates_breach_cooling,
       placeholderKeysText: '',
       isRequired: true,
-      sortOrder: 12,
+      sortOrder: 21,
     },
     {
       sectionKey: 'notices_jurisdiction_marital',
@@ -1826,7 +2422,7 @@ function createStarterSections(packetType = 'otp') {
       legalText: OTP_DEFAULT_LEGAL_TEXT.notices_jurisdiction_marital,
       placeholderKeysText: 'buyer_marital_status',
       isRequired: true,
-      sortOrder: 13,
+      sortOrder: 22,
     },
     {
       sectionKey: 'special_conditions',
@@ -1835,7 +2431,7 @@ function createStarterSections(packetType = 'otp') {
       legalText: OTP_DEFAULT_LEGAL_TEXT.special_conditions,
       placeholderKeysText: 'special_conditions',
       isRequired: false,
-      sortOrder: 14,
+      sortOrder: 23,
     },
     {
       sectionKey: 'costs_general_terms',
@@ -1844,7 +2440,7 @@ function createStarterSections(packetType = 'otp') {
       legalText: OTP_DEFAULT_LEGAL_TEXT.costs_general_terms,
       placeholderKeysText: '',
       isRequired: true,
-      sortOrder: 15,
+      sortOrder: 24,
     },
     {
       sectionKey: 'signature_pages',
@@ -1853,7 +2449,7 @@ function createStarterSections(packetType = 'otp') {
       legalText: OTP_DEFAULT_LEGAL_TEXT.signature_pages,
       placeholderKeysText: 'buyer_full_name, buyer_signature, buyer_initials, signed_date, witness_signature, seller_full_name, seller_signature, seller_initials, organisation_name, agent_full_name, agent_ffc_number, buyer_phone, buyer_email, seller_phone, seller_email, agent_phone, agent_email, document_reference, transaction_reference, generated_date, template_version, annexures_list',
       isRequired: true,
-      sortOrder: 16,
+      sortOrder: 25,
     },
   ]
 }
@@ -2020,6 +2616,15 @@ function getDefaultSectionLegalText(packetType = 'otp', section = {}) {
     cover_page: OTP_DEFAULT_LEGAL_TEXT.cover_page,
     schedule_1: OTP_DEFAULT_LEGAL_TEXT.schedule_1,
     schedule_2: OTP_DEFAULT_LEGAL_TEXT.schedule_2,
+    cash_sale_pack: OTP_DEFAULT_LEGAL_TEXT.cash_sale_pack,
+    buyer_individual_capacity_pack: OTP_DEFAULT_LEGAL_TEXT.buyer_individual_capacity_pack,
+    buyer_company_authority_pack: OTP_DEFAULT_LEGAL_TEXT.buyer_company_authority_pack,
+    buyer_trust_authority_pack: OTP_DEFAULT_LEGAL_TEXT.buyer_trust_authority_pack,
+    buyer_spouse_consent_pack: OTP_DEFAULT_LEGAL_TEXT.buyer_spouse_consent_pack,
+    seller_individual_capacity_pack: OTP_DEFAULT_LEGAL_TEXT.seller_individual_capacity_pack,
+    seller_company_authority_pack: OTP_DEFAULT_LEGAL_TEXT.seller_company_authority_pack,
+    seller_trust_authority_pack: OTP_DEFAULT_LEGAL_TEXT.seller_trust_authority_pack,
+    seller_spouse_consent_pack: OTP_DEFAULT_LEGAL_TEXT.seller_spouse_consent_pack,
     definitions: OTP_DEFAULT_LEGAL_TEXT.definitions,
     interpretation: OTP_DEFAULT_LEGAL_TEXT.interpretation,
     sale_acceptance: OTP_DEFAULT_LEGAL_TEXT.sale_acceptance,
@@ -2051,6 +2656,10 @@ function getDefaultSectionLegalText(packetType = 'otp', section = {}) {
   const mandateDefaults = {
     introduction_purpose: SALES_MANDATE_DEFAULT_LEGAL_TEXT.introduction_purpose,
     parties: SALES_MANDATE_DEFAULT_LEGAL_TEXT.parties,
+    seller_individual_capacity_pack: SALES_MANDATE_DEFAULT_LEGAL_TEXT.seller_individual_capacity_pack,
+    seller_company_authority_pack: SALES_MANDATE_DEFAULT_LEGAL_TEXT.seller_company_authority_pack,
+    seller_trust_authority_pack: SALES_MANDATE_DEFAULT_LEGAL_TEXT.seller_trust_authority_pack,
+    seller_spouse_consent_pack: SALES_MANDATE_DEFAULT_LEGAL_TEXT.seller_spouse_consent_pack,
     property_details: SALES_MANDATE_DEFAULT_LEGAL_TEXT.property_details,
     mandate_terms: SALES_MANDATE_DEFAULT_LEGAL_TEXT.mandate_terms,
     commission_terms: SALES_MANDATE_DEFAULT_LEGAL_TEXT.commission_terms,
@@ -2533,10 +3142,34 @@ function buildSamplePreviewContext(packetType = 'otp') {
         seller_name: 'Sample Seller',
         seller_email: 'seller@example.com',
         seller_phone: '0820000000',
+        sellerOnboarding: {
+          status: 'sample',
+          formData: {
+            sellerFullName: 'Sample Seller',
+            entityType: 'company',
+            companyRegistrationNumber: '2020/123456/07',
+            maritalStatus: 'Married In Community',
+            spouseFullName: 'Taylor Seller',
+            spouseIdNumber: '7902025009088',
+            spouseEmail: 'seller.spouse@example.com',
+            spouseConsentRequired: true,
+            representativeName: 'Casey Representative',
+            representativeCapacity: 'Director',
+            trusteeNames: 'Casey Trustee; Sam Trustee',
+            resolutionDate: '2026-07-01',
+            authorityBasis: 'Board resolution dated 2026-07-01',
+          },
+        },
       },
       mandateDraft: {
         selling_price: 4500000,
         mandate_type: 'sole',
+        sellerEntityType: 'company',
+        sellerRegistrationNumber: '2020/123456/07',
+        sellerRepresentativeName: 'Casey Representative',
+        sellerRepresentativeCapacity: 'Director',
+        sellerResolutionDate: '2026-07-01',
+        sellerAuthorityBasis: 'Board resolution dated 2026-07-01',
         special_conditions: 'No special conditions captured in sample mode.',
       },
       generatedByName: 'Arch9 Template Tester',
@@ -2606,6 +3239,8 @@ function buildSamplePreviewContext(packetType = 'otp') {
       purchase_price: 3250000,
       stage: 'Offer',
       finance_type: 'bond',
+      bond_amount: 2900000,
+      cash_amount: 350000,
       buyer_name: 'Sample Buyer',
     },
     unit: {
@@ -2617,6 +3252,42 @@ function buildSamplePreviewContext(packetType = 'otp') {
       full_name: 'Sample Buyer',
       email: 'buyer@example.com',
       phone: '0830000000',
+    },
+    onboardingFormData: {
+      purchaserType: 'company',
+      fullName: 'Sample Buyer Pty Ltd',
+      companyRegistrationNumber: '2022/123456/07',
+      maritalStatus: 'Married In Community',
+      spouseFullName: 'Taylor Buyer',
+      spouseIdNumber: '9102025009088',
+      spouseEmail: 'buyer.spouse@example.com',
+      spouseConsentRequired: true,
+      authorisedRepresentativeName: 'Jordan Representative',
+      authorisedRepresentativeCapacity: 'Director',
+      trusteeNames: 'Jordan Trustee; Taylor Trustee',
+      trustRegistrationNumber: 'IT1234/2020',
+      resolutionDate: '2026-07-01',
+      authorityBasis: 'Board resolution dated 2026-07-01',
+    },
+    sellerDetails: {
+      entityType: 'company',
+      legalName: 'Sample Seller Pty Ltd',
+      registrationNumber: '2020/123456/07',
+      maritalStatus: 'Married In Community',
+      spouseFullName: 'Taylor Seller',
+      spouseIdNumber: '7902025009088',
+      spouseEmail: 'seller.spouse@example.com',
+      spouseConsentRequired: true,
+      trusteeNames: 'Casey Trustee; Sam Trustee',
+      resolutionDate: '2026-07-01',
+      authorityBasis: 'Board resolution dated 2026-07-01',
+      signatory: {
+        fullName: 'Casey Representative',
+        role: 'Director',
+        signingCapacity: 'Director',
+        email: 'seller@example.com',
+        phone: '0820000000',
+      },
     },
     specialConditions: 'Sample preview condition.',
     generatedByName: 'Arch9 Template Tester',
@@ -2887,8 +3558,16 @@ function createDefaultManualDocumentDraft(packetType = 'otp') {
       sellerEmail: '',
       sellerPhone: '',
       sellerDomiciliumAddress: '',
+      sellerMaritalStatus: '',
+      sellerSpouseFullName: '',
+      sellerSpouseIdNumber: '',
+      sellerSpouseEmail: '',
+      sellerSpouseConsentRequired: '',
       sellerRepresentativeName: '',
       sellerRepresentativeCapacity: '',
+      sellerTrusteeNames: '',
+      sellerResolutionDate: '',
+      sellerAuthorityBasis: '',
       propertyAddress: '',
       propertySuburb: '',
       propertyCity: '',
@@ -2915,8 +3594,18 @@ function createDefaultManualDocumentDraft(packetType = 'otp') {
     buyerEmail: '',
     buyerPhone: '',
     buyerDomiciliumAddress: '',
+    buyerMaritalStatus: '',
+    buyerSpouseFullName: '',
+    buyerSpouseIdNumber: '',
+    buyerSpouseEmail: '',
+    buyerSpouseConsentRequired: '',
+    buyerCompanyRegistrationNumber: '',
     buyerRepresentativeName: '',
     buyerRepresentativeCapacity: '',
+    buyerTrustRegistrationNumber: '',
+    buyerTrusteeNames: '',
+    buyerResolutionDate: '',
+    buyerAuthorityBasis: '',
     coBuyerFullName: '',
     coBuyerEmail: '',
     coBuyerPhone: '',
@@ -2927,11 +3616,19 @@ function createDefaultManualDocumentDraft(packetType = 'otp') {
     sellerEmail: '',
     sellerPhone: '',
     sellerRegisteredAddress: '',
+    sellerMaritalStatus: '',
+    sellerSpouseFullName: '',
+    sellerSpouseIdNumber: '',
+    sellerSpouseEmail: '',
+    sellerSpouseConsentRequired: '',
     sellerRepresentativeName: '',
     sellerRepresentativeCapacity: '',
     sellerRepresentativeEmail: '',
     sellerRepresentativePhone: '',
     sellerRepresentativeIdNumber: '',
+    sellerTrusteeNames: '',
+    sellerResolutionDate: '',
+    sellerAuthorityBasis: '',
     propertyAddress: '',
     propertySuburb: '',
     propertyCity: '',
@@ -2966,8 +3663,17 @@ function buildMandateManualDocumentContext(manualDraft = {}) {
     email: draft.sellerEmail,
     phone: draft.sellerPhone,
     domiciliumAddress: draft.sellerDomiciliumAddress,
+    maritalStatus: draft.sellerMaritalStatus,
+    spouseFullName: draft.sellerSpouseFullName,
+    spouseName: draft.sellerSpouseFullName,
+    spouseIdNumber: draft.sellerSpouseIdNumber,
+    spouseEmail: draft.sellerSpouseEmail,
+    spouseConsentRequired: draft.sellerSpouseConsentRequired,
     representativeName: draft.sellerRepresentativeName,
     representativeCapacity: draft.sellerRepresentativeCapacity,
+    trusteeNames: draft.sellerTrusteeNames,
+    resolutionDate: draft.sellerResolutionDate,
+    authorityBasis: draft.sellerAuthorityBasis,
   })
   const property = compactDocumentRunObject({
     address: draft.propertyAddress,
@@ -3009,9 +3715,20 @@ function buildMandateManualDocumentContext(manualDraft = {}) {
     sellerPhone: draft.sellerPhone,
     entityType: sellerEntityType,
     sellerType: sellerEntityType,
+    companyRegistrationNumber: sellerEntityType === 'trust' ? '' : draft.sellerIdNumber,
+    trustRegistrationNumber: sellerEntityType === 'trust' ? draft.sellerIdNumber : '',
     domiciliumAddress: draft.sellerDomiciliumAddress,
+    maritalStatus: draft.sellerMaritalStatus,
+    spouseFullName: draft.sellerSpouseFullName,
+    spouseName: draft.sellerSpouseFullName,
+    spouseIdNumber: draft.sellerSpouseIdNumber,
+    spouseEmail: draft.sellerSpouseEmail,
+    spouseConsentRequired: draft.sellerSpouseConsentRequired,
     representativeName: draft.sellerRepresentativeName,
     representativeCapacity: draft.sellerRepresentativeCapacity,
+    trusteeNames: draft.sellerTrusteeNames,
+    resolutionDate: draft.sellerResolutionDate,
+    authorityBasis: draft.sellerAuthorityBasis,
     propertyAddress: draft.propertyAddress,
     property_address: draft.propertyAddress,
     suburb: draft.propertySuburb,
@@ -3093,9 +3810,21 @@ function buildOtpManualDocumentContext(manualDraft = {}) {
     email: draft.buyerEmail,
     phone: draft.buyerPhone,
     idNumber: draft.buyerIdNumber,
+    registrationNumber: draft.buyerCompanyRegistrationNumber || draft.buyerTrustRegistrationNumber || draft.buyerIdNumber,
+    companyRegistrationNumber: draft.buyerCompanyRegistrationNumber,
+    trustRegistrationNumber: draft.buyerTrustRegistrationNumber,
     entityType: buyerEntityType,
+    maritalStatus: draft.buyerMaritalStatus,
+    spouseFullName: draft.buyerSpouseFullName,
+    spouseName: draft.buyerSpouseFullName,
+    spouseIdNumber: draft.buyerSpouseIdNumber,
+    spouseEmail: draft.buyerSpouseEmail,
+    spouseConsentRequired: draft.buyerSpouseConsentRequired,
     representativeName: draft.buyerRepresentativeName,
     representativeCapacity: draft.buyerRepresentativeCapacity,
+    trusteeNames: draft.buyerTrusteeNames,
+    resolutionDate: draft.buyerResolutionDate,
+    authorityBasis: draft.buyerAuthorityBasis,
     domiciliumAddress: draft.buyerDomiciliumAddress,
   })
   const seller = compactDocumentRunObject({
@@ -3107,11 +3836,20 @@ function buildOtpManualDocumentContext(manualDraft = {}) {
     email: draft.sellerEmail,
     phone: draft.sellerPhone,
     registeredAddress: draft.sellerRegisteredAddress,
+    maritalStatus: draft.sellerMaritalStatus,
+    spouseFullName: draft.sellerSpouseFullName,
+    spouseName: draft.sellerSpouseFullName,
+    spouseIdNumber: draft.sellerSpouseIdNumber,
+    spouseEmail: draft.sellerSpouseEmail,
+    spouseConsentRequired: draft.sellerSpouseConsentRequired,
     representativeName: draft.sellerRepresentativeName,
     representativeCapacity: draft.sellerRepresentativeCapacity,
     representativeEmail: draft.sellerRepresentativeEmail || draft.sellerEmail,
     representativePhone: draft.sellerRepresentativePhone || draft.sellerPhone,
     representativeIdNumber: draft.sellerRepresentativeIdNumber,
+    trusteeNames: draft.sellerTrusteeNames,
+    resolutionDate: draft.sellerResolutionDate,
+    authorityBasis: draft.sellerAuthorityBasis,
   })
   const property = compactDocumentRunObject({
     address: draft.propertyAddress,
@@ -3151,12 +3889,23 @@ function buildOtpManualDocumentContext(manualDraft = {}) {
     buyerEmail: draft.buyerEmail,
     phone: draft.buyerPhone,
     buyerPhone: draft.buyerPhone,
+    maritalStatus: draft.buyerMaritalStatus,
+    spouseFullName: draft.buyerSpouseFullName,
+    spouseName: draft.buyerSpouseFullName,
+    spouseIdNumber: draft.buyerSpouseIdNumber,
+    spouseEmail: draft.buyerSpouseEmail,
+    spouseConsentRequired: draft.buyerSpouseConsentRequired,
+    companyRegistrationNumber: draft.buyerCompanyRegistrationNumber,
+    trustRegistrationNumber: draft.buyerTrustRegistrationNumber,
     residentialAddress: draft.buyerDomiciliumAddress,
     physicalAddress: draft.buyerDomiciliumAddress,
     authorizedRepresentativeName: draft.buyerRepresentativeName,
     authorisedRepresentativeName: draft.buyerRepresentativeName,
     authorizedRepresentativeCapacity: draft.buyerRepresentativeCapacity,
     authorisedRepresentativeCapacity: draft.buyerRepresentativeCapacity,
+    trusteeNames: draft.buyerTrusteeNames,
+    resolutionDate: draft.buyerResolutionDate,
+    authorityBasis: draft.buyerAuthorityBasis,
     co_buyer_name: draft.coBuyerFullName,
     coBuyerName: draft.coBuyerFullName,
     co_buyer_email: draft.coBuyerEmail,
@@ -3229,6 +3978,8 @@ function buildOtpManualDocumentContext(manualDraft = {}) {
       legalName: draft.sellerFullName,
       tradingName: draft.sellerFullName,
       registrationNumber: draft.sellerIdNumber,
+      companyRegistrationNumber: sellerEntityType === 'trust' ? '' : draft.sellerIdNumber,
+      trustRegistrationNumber: sellerEntityType === 'trust' ? draft.sellerIdNumber : '',
       signatory: compactDocumentRunObject({
         fullName: draft.sellerRepresentativeName,
         role: draft.sellerRepresentativeCapacity,
@@ -3941,17 +4692,10 @@ function getFieldOptionLabel(field = {}, tokenLabelByKey = {}) {
 }
 
 function normalizeConditionRule(condition = {}, fallbackField = '') {
-  const source = condition && typeof condition === 'object' ? condition : {}
-  const rule = source.rule && typeof source.rule === 'object' ? source.rule : source
-  const field = normalizeTemplateTokenKey(rule.field || rule.placeholderKey || rule.placeholder_key || fallbackField)
-  const operator = normalizeText(rule.operator || 'equals').toLowerCase()
-  const safeOperator = CONDITION_OPERATORS.some((item) => item.key === operator) ? operator : 'equals'
+  const normalized = normalizeVisibilityConditionInput(condition, normalizeTemplateTokenKey(fallbackField), { defaultOperator: 'equals' })
   return {
-    enabled: Boolean(source.enabled ?? rule.enabled ?? field),
-    field,
-    operator: safeOperator,
-    value: normalizeText(rule.value),
-    label: normalizeText(source.label || rule.label),
+    ...normalized,
+    field: normalizeTemplateTokenKey(normalized.field),
   }
 }
 
@@ -3959,10 +4703,11 @@ function describeConditionRule(condition = {}, tokenLabelByKey = {}) {
   const rule = normalizeConditionRule(condition)
   if (!rule.enabled || !rule.field) return 'Always include this section.'
   const fieldLabel = tokenLabelByKey[rule.field] || humanizeKey(rule.field)
-  if (['is not empty', 'is required'].includes(rule.operator)) {
-    return `Include when ${fieldLabel} ${rule.operator}.`
+  const operatorLabel = CONDITION_OPERATOR_LABELS[rule.operator] || rule.operator
+  if (VISIBILITY_VALUELESS_OPERATORS.includes(rule.operator)) {
+    return `Include when ${fieldLabel} ${operatorLabel}.`
   }
-  return `Include when ${fieldLabel} ${rule.operator} ${rule.value || 'the chosen value'}.`
+  return `Include when ${fieldLabel} ${operatorLabel} ${rule.value || 'the chosen value'}.`
 }
 
 function normalizeSigningFieldType(value = '') {
@@ -4708,7 +5453,29 @@ export default function SettingsSigningTemplatesPage({
       'mandate_type',
       'property_address',
       'seller_entity_type',
+      'seller_marital_status',
+      'seller_spouse_full_name',
+      'seller_spouse_name',
+      'seller_spouse_consent_required',
+      'seller_company_registration_number',
+      'seller_trust_registration_number',
+      'seller_trustee_names',
+      'seller_representative_name',
+      'seller_representative_capacity',
+      'seller_resolution_date',
+      'seller_authority_basis',
       'buyer_entity_type',
+      'buyer_marital_status',
+      'buyer_spouse_full_name',
+      'buyer_spouse_name',
+      'buyer_spouse_consent_required',
+      'buyer_company_registration_number',
+      'buyer_trust_registration_number',
+      'buyer_trustee_names',
+      'buyer_representative_name',
+      'buyer_representative_capacity',
+      'buyer_resolution_date',
+      'buyer_authority_basis',
       'witness_signature',
     ]
     const byKey = new Map(canonicalFields.map((field) => [normalizeTemplateTokenKey(field.key), field]))
@@ -6456,18 +7223,12 @@ export default function SettingsSigningTemplatesPage({
         .filter(Boolean),
       nextCondition.enabled ? nextCondition.field : '',
     ].filter(Boolean)))
+    const conditionJson = buildVisibilityConditionJson({
+      ...nextCondition,
+      label: nextCondition.label || describeConditionRule(nextCondition, tokenLabelByKey),
+    })
     updateSection(selectedSectionIndex, {
-      conditionJson: nextCondition.enabled && nextCondition.field
-        ? {
-            enabled: true,
-            rule: {
-              field: nextCondition.field,
-              operator: nextCondition.operator,
-              value: nextCondition.value,
-            },
-            label: nextCondition.label || describeConditionRule(nextCondition, tokenLabelByKey),
-          }
-        : {},
+      conditionJson,
       placeholderKeysText: nextPlaceholderKeys.join(', '),
       placeholderKeys: nextPlaceholderKeys,
     })
@@ -6591,19 +7352,13 @@ export default function SettingsSigningTemplatesPage({
       ...tokenScan.tokens.map((item) => normalizeTemplateTokenKey(item)).filter(Boolean),
       normalizedCondition.enabled ? normalizedCondition.field : '',
     ].filter(Boolean)))
+    const nextConditionJson = buildVisibilityConditionJson({
+      ...normalizedCondition,
+      label: normalizedCondition.label || describeConditionRule(normalizedCondition, tokenLabelByKey),
+    })
     updateSection(selectedSectionIndex, {
       legalText: nextValue,
-      conditionJson: normalizedCondition.enabled && normalizedCondition.field
-        ? {
-            enabled: true,
-            rule: {
-              field: normalizedCondition.field,
-              operator: normalizedCondition.operator,
-              value: normalizedCondition.value,
-            },
-            label: normalizedCondition.label || describeConditionRule(normalizedCondition, tokenLabelByKey),
-          }
-        : selectedSection.conditionJson || {},
+      conditionJson: nextConditionJson || selectedSection.conditionJson || {},
       placeholderKeysText: nextPlaceholderKeys.join(', '),
       placeholderKeys: nextPlaceholderKeys,
     })
@@ -7397,7 +8152,7 @@ export default function SettingsSigningTemplatesPage({
                       </select>
                     </label>
 
-                    {!['is not empty', 'is required'].includes(selectedSectionCondition.operator) ? (
+                    {!VISIBILITY_VALUELESS_OPERATORS.includes(selectedSectionCondition.operator) ? (
                       <label className={settingsFieldClass}>
                         Value
                         <input
@@ -7405,7 +8160,7 @@ export default function SettingsSigningTemplatesPage({
                           value={selectedSectionCondition.value}
                           disabled={!selectedSection || !canEdit || !selectedSectionCondition.enabled}
                           onChange={(event) => updateSelectedSectionCondition({ value: event.target.value })}
-                          placeholder="Bond, Cash, Company..."
+                          placeholder={['in', 'not_in'].includes(selectedSectionCondition.operator) ? 'company, trust, individual' : 'Bond, Cash, Company...'}
                         />
                       </label>
                     ) : null}

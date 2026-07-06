@@ -4,6 +4,11 @@ import {
   renderBridgeIntroParagraphs,
   renderBridgeSummaryCard,
 } from "../content/bridgeEmailLayout.ts";
+import {
+  markEmailDeliveryFailed,
+  markEmailDeliverySent,
+  prepareEmailDelivery,
+} from "../services/communicationDeliveryLogging.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import type { SendTransactionPartnerInvitationPayload } from "../types.ts";
 import { jsonResponse } from "../utils/http.ts";
@@ -29,9 +34,13 @@ export async function handleTransactionPartnerInvitationEmail(
     return jsonResponse(400, { error: "Missing required field: to" });
   }
 
-  const invitationLink = normalizeText(payload.invitationLink ?? payload.invitation_link);
+  const invitationLink = normalizeText(
+    payload.invitationLink ?? payload.invitation_link,
+  );
   if (!invitationLink) {
-    return jsonResponse(400, { error: "Missing required field: invitationLink" });
+    return jsonResponse(400, {
+      error: "Missing required field: invitationLink",
+    });
   }
 
   const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
@@ -39,19 +48,37 @@ export async function handleTransactionPartnerInvitationEmail(
     return jsonResponse(500, { error: "Missing RESEND_API_KEY secret." });
   }
 
-  const companyName = normalizeText(payload.companyName ?? payload.company_name) || "your firm";
-  const contactName = normalizeText(payload.contactName ?? payload.contact_name) || "there";
-  const organisationName = normalizeText(payload.invitedByOrganisation ?? payload.invited_by_organisation) || "Arch9";
+  const companyName =
+    normalizeText(payload.companyName ?? payload.company_name) || "your firm";
+  const contactName =
+    normalizeText(payload.contactName ?? payload.contact_name) || "there";
+  const organisationName = normalizeText(
+    payload.invitedByOrganisation ?? payload.invited_by_organisation,
+  ) || "Arch9";
   const roleLabel = resolveRoleLabel(payload);
-  const transactionId = normalizeText(payload.transactionId ?? payload.transaction_id);
-  const transactionReference = normalizeText(payload.transactionReference ?? payload.transaction_reference) ||
+  const transactionId = normalizeText(
+    payload.transactionId ?? payload.transaction_id,
+  );
+  const transactionReference = normalizeText(
+    payload.transactionReference ?? payload.transaction_reference,
+  ) ||
     transactionId;
-  const propertyLabel = normalizeText(payload.propertyLabel ?? payload.property_label);
+  const propertyLabel = normalizeText(
+    payload.propertyLabel ?? payload.property_label,
+  );
   const buyerLabel = normalizeText(payload.buyerLabel ?? payload.buyer_label);
-  const deliveryKind = normalizeText(payload.deliveryKind ?? payload.delivery_kind).toLowerCase();
+  const roleType = normalizeText(payload.roleType ?? payload.role_type);
+  const deliveryKind = normalizeText(
+    payload.deliveryKind ?? payload.delivery_kind,
+  ).toLowerCase();
   const isResend = deliveryKind === "resend";
-  const reusedProspect = payload.reusedProspect === true || payload.reused_prospect === true ||
-    Boolean(normalizeText(payload.partnerProspectId ?? payload.partner_prospect_id ?? ""));
+  const reusedProspect = payload.reusedProspect === true ||
+    payload.reused_prospect === true ||
+    Boolean(
+      normalizeText(
+        payload.partnerProspectId ?? payload.partner_prospect_id ?? "",
+      ),
+    );
   const from = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
     "Arch9 <no-reply@arch9.co.za>";
   const subject = isResend
@@ -79,14 +106,17 @@ export async function handleTransactionPartnerInvitationEmail(
     greeting: `Hi ${contactName},`,
     contentHtml: [
       renderBridgeIntroParagraphs(introParagraphs),
-      renderBridgeSummaryCard([
-        { label: "Role", value: roleLabel },
-        { label: "Company", value: companyName },
-        { label: "Invited By", value: organisationName },
-        { label: "Transaction", value: transactionReference },
-        { label: "Property", value: propertyLabel },
-        { label: "Buyer", value: buyerLabel },
-      ].filter((field) => field.value), "Invitation Details"),
+      renderBridgeSummaryCard(
+        [
+          { label: "Role", value: roleLabel },
+          { label: "Company", value: companyName },
+          { label: "Invited By", value: organisationName },
+          { label: "Transaction", value: transactionReference },
+          { label: "Property", value: propertyLabel },
+          { label: "Buyer", value: buyerLabel },
+        ].filter((field) => field.value),
+        "Invitation Details",
+      ),
       renderBridgeCta("Open Secure Invite", invitationLink),
     ].join(""),
     securityBody:
@@ -110,6 +140,38 @@ export async function handleTransactionPartnerInvitationEmail(
     "",
     "This invitation grants access only to the transaction that generated the link.",
   ].filter(Boolean).join("\n");
+  const recipientRole = roleType === "bond_originator"
+    ? "bond_originator"
+    : roleType.endsWith("_attorney") || roleType === "attorney"
+    ? "attorney"
+    : "transaction_partner";
+
+  const delivery = await prepareEmailDelivery(
+    payload as Record<string, unknown>,
+    {
+      communicationType: "transaction_partner_invitation",
+      recipient: recipientEmail,
+      recipientRole,
+      subject,
+      messagePreview: text,
+      context: {
+        organisationId: normalizeText(
+          payload.organisationId ?? payload.organisation_id,
+        ),
+        transactionId,
+        metadata: {
+          invitationLink,
+          roleType,
+          roleLabel,
+          deliveryKind: deliveryKind || "new",
+          partnerProspectId: normalizeText(
+            payload.partnerProspectId ?? payload.partner_prospect_id,
+          ) || null,
+          reusedProspect,
+        },
+      },
+    },
+  );
 
   const sendResult = await sendViaResendApi({
     apiKey: resendApiKey,
@@ -121,6 +183,10 @@ export async function handleTransactionPartnerInvitationEmail(
   });
 
   if (!sendResult.ok) {
+    await markEmailDeliveryFailed(delivery?.id || "", {
+      errorMessage: sendResult.error?.message ||
+        "Failed to send transaction partner invitation email.",
+    });
     return jsonResponse(502, {
       error: "Resend rejected the transaction partner invitation email.",
       details: sendResult.error,
@@ -128,12 +194,17 @@ export async function handleTransactionPartnerInvitationEmail(
     });
   }
 
+  await markEmailDeliverySent(delivery?.id || "", {
+    emailId: sendResult.data?.id || null,
+  });
+
   return jsonResponse(200, {
     ok: true,
     type: "transaction_partner_invitation",
     sent: true,
     transactionId,
     recipientEmail,
+    deliveryId: delivery?.id || null,
     provider: "resend",
     providerResponse: sendResult.data,
   });

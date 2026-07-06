@@ -5,6 +5,13 @@ import {
   isMissingTableError,
 } from "../utils/db.ts";
 import { normalizeText } from "../utils/text.ts";
+import { resolveNotificationAutomation } from "./notificationAutomationContract.ts";
+import {
+  linkNotificationEventDelivery,
+  markNotificationEventFailed,
+  markNotificationEventSent,
+  prepareNotificationEvent,
+} from "./notificationEventLogging.ts";
 
 type DeliveryContext = {
   organisationId?: string;
@@ -32,8 +39,11 @@ type PrepareEmailDeliveryInput = {
 
 function normalizeUuid(value: unknown) {
   const normalized = normalizeText(value).toLowerCase();
-  if (!normalized || normalized === "null" || normalized === "undefined") return "";
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)
+  if (!normalized || normalized === "null" || normalized === "undefined") {
+    return "";
+  }
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(normalized)
     ? normalized
     : "";
 }
@@ -75,7 +85,9 @@ function parseTokenFromLink(input: unknown) {
 
 function createServiceRoleClient() {
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
-  const serviceRoleKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceRoleKey = normalizeText(
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+  );
   if (!supabaseUrl || !serviceRoleKey) return null;
   return createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -86,24 +98,46 @@ async function safeInsertCommunicationDelivery(
   supabase: any,
   payload: Record<string, unknown>,
 ) {
-  const { data, error } = await supabase
-    .from("communication_deliveries")
-    .insert(payload)
-    .select("id, status, created_at")
-    .single();
+  const insertDelivery = async (
+    insertPayload: Record<string, unknown>,
+    selectClause: string,
+  ) =>
+    await supabase
+      .from("communication_deliveries")
+      .insert(insertPayload)
+      .select(selectClause)
+      .single();
 
-  if (error) {
-    const missingSupport =
-      isMissingSchemaError(error) ||
-      isMissingTableError(error, "communication_deliveries") ||
-      isMissingColumnError(error);
+  let result = await insertDelivery(
+    payload,
+    "id, status, created_at, notification_event_id",
+  );
+
+  if (
+    result.error &&
+    isMissingColumnError(result.error) &&
+    ("notification_event_id" in payload || "automation_key" in payload)
+  ) {
+    const fallbackPayload = { ...payload };
+    delete fallbackPayload.notification_event_id;
+    delete fallbackPayload.automation_key;
+    result = await insertDelivery(fallbackPayload, "id, status, created_at");
+  }
+
+  if (result.error) {
+    const missingSupport = isMissingSchemaError(result.error) ||
+      isMissingTableError(result.error, "communication_deliveries") ||
+      isMissingColumnError(result.error);
     if (!missingSupport) {
-      console.error("[send-email] communication delivery insert failed", error);
+      console.error(
+        "[send-email] communication delivery insert failed",
+        result.error,
+      );
     }
     return null;
   }
 
-  return data || null;
+  return result.data || null;
 }
 
 async function safeUpdateCommunicationDelivery(
@@ -112,25 +146,35 @@ async function safeUpdateCommunicationDelivery(
   patch: Record<string, unknown>,
 ) {
   if (!deliveryId) return null;
-  const { data, error } = await supabase
-    .from("communication_deliveries")
-    .update(patch)
-    .eq("id", deliveryId)
-    .select("id, status, updated_at")
-    .single();
+  const updateDelivery = async (selectClause: string) =>
+    await supabase
+      .from("communication_deliveries")
+      .update(patch)
+      .eq("id", deliveryId)
+      .select(selectClause)
+      .single();
 
-  if (error) {
-    const missingSupport =
-      isMissingSchemaError(error) ||
-      isMissingTableError(error, "communication_deliveries") ||
-      isMissingColumnError(error);
+  let result = await updateDelivery(
+    "id, status, updated_at, notification_event_id",
+  );
+  if (result.error && isMissingColumnError(result.error)) {
+    result = await updateDelivery("id, status, updated_at");
+  }
+
+  if (result.error) {
+    const missingSupport = isMissingSchemaError(result.error) ||
+      isMissingTableError(result.error, "communication_deliveries") ||
+      isMissingColumnError(result.error);
     if (!missingSupport) {
-      console.error("[send-email] communication delivery update failed", error);
+      console.error(
+        "[send-email] communication delivery update failed",
+        result.error,
+      );
     }
     return null;
   }
 
-  return data || null;
+  return result.data || null;
 }
 
 async function resolveTransactionCommunicationContext(
@@ -142,17 +186,21 @@ async function resolveTransactionCommunicationContext(
 
   const query = await supabase
     .from("transactions")
-    .select("id, organisation_id, listing_id, accepted_offer_id, originating_buyer_lead_id")
+    .select(
+      "id, organisation_id, listing_id, accepted_offer_id, originating_buyer_lead_id",
+    )
     .eq("id", normalizedTransactionId)
     .maybeSingle();
 
   if (query.error) {
-    const missingSupport =
-      isMissingSchemaError(query.error) ||
+    const missingSupport = isMissingSchemaError(query.error) ||
       isMissingTableError(query.error, "transactions") ||
       isMissingColumnError(query.error);
     if (!missingSupport) {
-      console.error("[send-email] transaction delivery context lookup failed", query.error);
+      console.error(
+        "[send-email] transaction delivery context lookup failed",
+        query.error,
+      );
     }
     return null;
   }
@@ -244,12 +292,14 @@ async function resolveOfferPortalCommunicationContext(
     .maybeSingle();
 
   if (query.error) {
-    const missingSupport =
-      isMissingSchemaError(query.error) ||
+    const missingSupport = isMissingSchemaError(query.error) ||
       isMissingTableError(query.error, "offer_portal_sessions") ||
       isMissingColumnError(query.error);
     if (!missingSupport) {
-      console.error("[send-email] offer portal delivery context lookup failed", query.error);
+      console.error(
+        "[send-email] offer portal delivery context lookup failed",
+        query.error,
+      );
     }
     return null;
   }
@@ -279,12 +329,14 @@ async function resolveSellerReviewCommunicationContext(
     .maybeSingle();
 
   if (sessionQuery.error) {
-    const missingSupport =
-      isMissingSchemaError(sessionQuery.error) ||
+    const missingSupport = isMissingSchemaError(sessionQuery.error) ||
       isMissingTableError(sessionQuery.error, "offer_seller_review_sessions") ||
       isMissingColumnError(sessionQuery.error);
     if (!missingSupport) {
-      console.error("[send-email] seller review delivery session lookup failed", sessionQuery.error);
+      console.error(
+        "[send-email] seller review delivery session lookup failed",
+        sessionQuery.error,
+      );
     }
     return null;
   }
@@ -323,16 +375,30 @@ async function resolveEmailDeliveryContext(
   payload: Record<string, unknown>,
 ): Promise<DeliveryContext | null> {
   const explicitContext: DeliveryContext = {
-    organisationId: normalizeUuid(payload.organisationId || payload.organisation_id),
+    organisationId: normalizeUuid(
+      payload.organisationId || payload.organisation_id,
+    ),
     leadId: normalizeUuid(payload.leadId || payload.lead_id),
     listingId: normalizeUuid(payload.listingId || payload.listing_id),
-    transactionId: normalizeUuid(payload.transactionId || payload.transaction_id),
+    transactionId: normalizeUuid(
+      payload.transactionId || payload.transaction_id,
+    ),
     offerId: normalizeUuid(payload.offerId || payload.offer_id),
-    appointmentId: normalizeUuid(payload.appointmentId || payload.appointment_id),
-    portalSessionId: normalizeUuid(payload.portalSessionId || payload.portal_session_id),
-    sellerReviewSessionId: normalizeUuid(payload.sellerReviewSessionId || payload.seller_review_session_id),
-    recipientRole: normalizeText(payload.recipientRole || payload.recipient_role).toLowerCase(),
-    metadata: safeJsonRecord(payload.deliveryMetadata || payload.delivery_metadata),
+    appointmentId: normalizeUuid(
+      payload.appointmentId || payload.appointment_id,
+    ),
+    portalSessionId: normalizeUuid(
+      payload.portalSessionId || payload.portal_session_id,
+    ),
+    sellerReviewSessionId: normalizeUuid(
+      payload.sellerReviewSessionId || payload.seller_review_session_id,
+    ),
+    recipientRole: normalizeText(
+      payload.recipientRole || payload.recipient_role,
+    ).toLowerCase(),
+    metadata: safeJsonRecord(
+      payload.deliveryMetadata || payload.delivery_metadata,
+    ),
   };
 
   if (explicitContext.transactionId && !explicitContext.organisationId) {
@@ -344,7 +410,8 @@ async function resolveEmailDeliveryContext(
       return {
         ...transactionContext,
         ...explicitContext,
-        organisationId: explicitContext.organisationId || transactionContext.organisationId,
+        organisationId: explicitContext.organisationId ||
+          transactionContext.organisationId,
         leadId: explicitContext.leadId || transactionContext.leadId,
         listingId: explicitContext.listingId || transactionContext.listingId,
         offerId: explicitContext.offerId || transactionContext.offerId,
@@ -369,10 +436,13 @@ async function resolveEmailDeliveryContext(
       return {
         ...portalContext,
         ...explicitContext,
-        organisationId: explicitContext.organisationId || portalContext.organisationId,
+        organisationId: explicitContext.organisationId ||
+          portalContext.organisationId,
         leadId: explicitContext.leadId || portalContext.leadId,
-        appointmentId: explicitContext.appointmentId || portalContext.appointmentId,
-        portalSessionId: explicitContext.portalSessionId || portalContext.portalSessionId,
+        appointmentId: explicitContext.appointmentId ||
+          portalContext.appointmentId,
+        portalSessionId: explicitContext.portalSessionId ||
+          portalContext.portalSessionId,
         metadata: {
           ...(portalContext.metadata || {}),
           ...(explicitContext.metadata || {}),
@@ -392,13 +462,14 @@ async function resolveEmailDeliveryContext(
       return {
         ...sellerContext,
         ...explicitContext,
-        organisationId: explicitContext.organisationId || sellerContext.organisationId,
+        organisationId: explicitContext.organisationId ||
+          sellerContext.organisationId,
         leadId: explicitContext.leadId || sellerContext.leadId,
         listingId: explicitContext.listingId || sellerContext.listingId,
         offerId: explicitContext.offerId || sellerContext.offerId,
-        transactionId: explicitContext.transactionId || sellerContext.transactionId,
-        sellerReviewSessionId:
-          explicitContext.sellerReviewSessionId ||
+        transactionId: explicitContext.transactionId ||
+          sellerContext.transactionId,
+        sellerReviewSessionId: explicitContext.sellerReviewSessionId ||
           sellerContext.sellerReviewSessionId,
         metadata: {
           ...(sellerContext.metadata || {}),
@@ -441,20 +512,38 @@ export async function prepareEmailDelivery(
     payload,
   );
   const resolvedContext = {
-    organisationId: coalesceText(context?.organisationId, derivedContext?.organisationId),
+    organisationId: coalesceText(
+      context?.organisationId,
+      derivedContext?.organisationId,
+    ),
     branchId: coalesceText(context?.branchId, derivedContext?.branchId),
-    assignedUserId: coalesceText(context?.assignedUserId, derivedContext?.assignedUserId),
+    assignedUserId: coalesceText(
+      context?.assignedUserId,
+      derivedContext?.assignedUserId,
+    ),
     leadId: coalesceText(context?.leadId, derivedContext?.leadId),
     listingId: coalesceText(context?.listingId, derivedContext?.listingId),
-    transactionId: coalesceText(context?.transactionId, derivedContext?.transactionId),
+    transactionId: coalesceText(
+      context?.transactionId,
+      derivedContext?.transactionId,
+    ),
     offerId: coalesceText(context?.offerId, derivedContext?.offerId),
-    appointmentId: coalesceText(context?.appointmentId, derivedContext?.appointmentId),
-    portalSessionId: coalesceText(context?.portalSessionId, derivedContext?.portalSessionId),
+    appointmentId: coalesceText(
+      context?.appointmentId,
+      derivedContext?.appointmentId,
+    ),
+    portalSessionId: coalesceText(
+      context?.portalSessionId,
+      derivedContext?.portalSessionId,
+    ),
     sellerReviewSessionId: coalesceText(
       context?.sellerReviewSessionId,
       derivedContext?.sellerReviewSessionId,
     ),
-    recipientRole: coalesceText(context?.recipientRole, derivedContext?.recipientRole),
+    recipientRole: coalesceText(
+      context?.recipientRole,
+      derivedContext?.recipientRole,
+    ),
     metadata: {
       ...(safeJsonRecord(derivedContext?.metadata)),
       ...(safeJsonRecord(context?.metadata)),
@@ -466,6 +555,51 @@ export async function prepareEmailDelivery(
     await resolveBranchIdForContext(supabase, resolvedContext);
   const assignedUserId = normalizeUuid(resolvedContext?.assignedUserId) ||
     await resolveAssignedUserIdForContext(supabase, resolvedContext);
+  const normalizedRecipientRole = normalizeText(
+    recipientRole || resolvedContext?.recipientRole,
+  ).toLowerCase();
+  const notificationDefinition = resolveNotificationAutomation({
+    communicationType,
+    type: payload.type,
+    roleType: payload.roleType || payload.role_type,
+    roleLabel: payload.roleLabel || payload.role_label,
+    workspaceRole: payload.workspaceRole || payload.workspace_role,
+    emailKind: payload.emailKind || payload.email_kind,
+  });
+  const notificationEvent = notificationDefinition
+    ? await prepareNotificationEvent(supabase, {
+      definition: notificationDefinition,
+      organisationId,
+      branchId,
+      assignedUserId,
+      leadId: resolvedContext?.leadId,
+      listingId: resolvedContext?.listingId,
+      transactionId: resolvedContext?.transactionId,
+      offerId: resolvedContext?.offerId,
+      appointmentId: resolvedContext?.appointmentId,
+      portalSessionId: resolvedContext?.portalSessionId,
+      sellerReviewSessionId: resolvedContext?.sellerReviewSessionId,
+      recipientEmail: recipient,
+      recipientRole: normalizedRecipientRole,
+      subject,
+      messagePreview,
+      provider: "resend",
+      source: "send-email",
+      payload: {
+        communicationType,
+        requestType: normalizeText(payload.type) || null,
+        emailKind: normalizeText(payload.emailKind || payload.email_kind) ||
+          null,
+        roleType: normalizeText(payload.roleType || payload.role_type) || null,
+        roleLabel: normalizeText(payload.roleLabel || payload.role_label) ||
+          null,
+        workspaceRole:
+          normalizeText(payload.workspaceRole || payload.workspace_role) ||
+          null,
+      },
+      metadata: safeJsonRecord(resolvedContext?.metadata),
+    })
+    : null;
 
   const insertPayload: Record<string, unknown> = {
     organisation_id: organisationId,
@@ -479,11 +613,11 @@ export async function prepareEmailDelivery(
     seller_review_session_id:
       normalizeUuid(resolvedContext?.sellerReviewSessionId) || null,
     communication_type: communicationType,
+    automation_key: notificationDefinition?.key || null,
+    notification_event_id: notificationEvent?.id || null,
     channel: "email",
     recipient: normalizeText(recipient).toLowerCase(),
-    recipient_role: normalizeText(
-      recipientRole || resolvedContext?.recipientRole,
-    ).toLowerCase() || null,
+    recipient_role: normalizedRecipientRole || null,
     subject: normalizeText(subject) || null,
     message_preview: clipPreview(messagePreview) || null,
     status: "prepared",
@@ -497,7 +631,19 @@ export async function prepareEmailDelivery(
     },
   };
 
-  return await safeInsertCommunicationDelivery(supabase, insertPayload);
+  const delivery = await safeInsertCommunicationDelivery(
+    supabase,
+    insertPayload,
+  );
+  if (notificationEvent?.id && delivery?.id) {
+    await linkNotificationEventDelivery(
+      supabase,
+      notificationEvent.id,
+      delivery.id,
+    );
+  }
+
+  return delivery;
 }
 
 export async function markEmailDeliverySent(
@@ -510,11 +656,17 @@ export async function markEmailDeliverySent(
 ) {
   const supabase = createServiceRoleClient();
   if (!supabase || !deliveryId) return null;
-  return await safeUpdateCommunicationDelivery(supabase, deliveryId, {
+  const delivery = await safeUpdateCommunicationDelivery(supabase, deliveryId, {
     status: "sent",
     provider_message_id: normalizeText(emailId) || null,
     sent_at: new Date().toISOString(),
   });
+  if (delivery?.notification_event_id) {
+    await markNotificationEventSent(supabase, delivery.notification_event_id, {
+      providerMessageId: emailId,
+    });
+  }
+  return delivery;
 }
 
 export async function markEmailDeliveryFailed(
@@ -527,9 +679,19 @@ export async function markEmailDeliveryFailed(
 ) {
   const supabase = createServiceRoleClient();
   if (!supabase || !deliveryId) return null;
-  return await safeUpdateCommunicationDelivery(supabase, deliveryId, {
+  const delivery = await safeUpdateCommunicationDelivery(supabase, deliveryId, {
     status: "failed",
     error_message: normalizeText(errorMessage) || null,
     failed_at: new Date().toISOString(),
   });
+  if (delivery?.notification_event_id) {
+    await markNotificationEventFailed(
+      supabase,
+      delivery.notification_event_id,
+      {
+        errorMessage,
+      },
+    );
+  }
+  return delivery;
 }

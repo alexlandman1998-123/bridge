@@ -52,6 +52,9 @@ import {
   COMMERCIAL_DOCUMENT_PACKET_TYPES,
   resolveCommercialDocumentContext,
 } from '../../services/documents/commercialDocumentAdapterService'
+import { classifySellerParty } from './documentPartyClassification'
+import { resolveConditionalPackAudit } from './conditionalPackAudit'
+import { evaluateVisibilityRules } from './sectionVisibilityRules'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -120,6 +123,25 @@ function dedupeValidationRequirements(issues = []) {
     if (seen.has(key)) continue
     seen.add(key)
     rows.push(normalized)
+  }
+
+  return rows
+}
+
+function dedupeValidationIssues(issues = []) {
+  const seen = new Set()
+  const rows = []
+
+  for (const issue of issues) {
+    const placeholderKey = normalizeText(issue?.placeholderKey || issue?.placeholder_key || issue?.field || issue?.key).toLowerCase()
+    const sectionKey = normalizeText(issue?.sectionKey || issue?.section_key || issue?.groupKey || issue?.source).toLowerCase()
+    const message = normalizeText(issue?.message).toLowerCase()
+    const key = placeholderKey
+      ? `placeholder|${placeholderKey}`
+      : `message|${sectionKey}|${message}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    rows.push(issue)
   }
 
   return rows
@@ -802,14 +824,18 @@ function resolveSignerSeed({ role, placeholders = {}, context = {} } = {}) {
       ? context.onboardingFormData
       : {}),
   }
-  const sellerEntityType = normalizeText(
-    placeholders['seller.entity_type_raw'] ||
-      placeholders.seller_entity_type ||
-      onboarding?.seller_entity_type ||
-      onboarding?.entityType ||
-      onboarding?.entity_type,
-  ).toLowerCase()
-  const sellerIsLegalEntity = ['company', 'trust', 'close_corporation', 'cc'].includes(sellerEntityType)
+  const sellerClassification = classifySellerParty({
+    placeholders,
+    context: {
+      ...context,
+      seller: {
+        ...(context?.seller && typeof context.seller === 'object' ? context.seller : {}),
+        entityType: onboarding?.entityType,
+        entity_type: onboarding?.entity_type || onboarding?.seller_entity_type,
+      },
+    },
+  })
+  const sellerIsLegalEntity = sellerClassification.isLegalEntity
   const sellerDisplayName = firstResolvedText(
     sellerIsLegalEntity ? placeholders.seller_representative_name : '',
     sellerIsLegalEntity ? placeholders.representative_name : '',
@@ -1144,58 +1170,6 @@ function humanizePlaceholderKey(value) {
     .replace(/\b\w/g, (character) => character.toUpperCase())
 }
 
-function isMeaningfullyPresent(value) {
-  return !(value === null || value === undefined || value === '')
-}
-
-function evaluateVisibilityPredicate(rule = {}, placeholders = {}) {
-  const key = normalizeText(rule.key || rule.placeholder || rule.field)
-  const operator = normalizeText(rule.operator || 'exists').toLowerCase()
-  const expected = rule.value
-  const current = key ? placeholders?.[key] : undefined
-  const currentText = normalizeText(current).toLowerCase()
-
-  if (!key) return true
-
-  if (operator === 'exists') return isMeaningfullyPresent(current)
-  if (operator === 'missing') return !isMeaningfullyPresent(current)
-  if (operator === 'truthy') return Boolean(current)
-  if (operator === 'falsy') return !current
-  if (operator === 'eq' || operator === 'equals') return currentText === normalizeText(expected).toLowerCase()
-  if (operator === 'ne' || operator === 'not_equals') return currentText !== normalizeText(expected).toLowerCase()
-  if (operator === 'in') {
-    const values = Array.isArray(expected) ? expected : [expected]
-    return values.map((item) => normalizeText(item).toLowerCase()).includes(currentText)
-  }
-  if (operator === 'not_in') {
-    const values = Array.isArray(expected) ? expected : [expected]
-    return !values.map((item) => normalizeText(item).toLowerCase()).includes(currentText)
-  }
-
-  return true
-}
-
-function evaluateVisibilityRules(ruleSet = null, placeholders = {}) {
-  if (!ruleSet) return true
-  if (typeof ruleSet === 'boolean') return ruleSet
-  if (Array.isArray(ruleSet)) {
-    return ruleSet.every((item) => evaluateVisibilityRules(item, placeholders))
-  }
-  if (typeof ruleSet !== 'object') return true
-
-  if (Array.isArray(ruleSet.all)) {
-    return ruleSet.all.every((item) => evaluateVisibilityRules(item, placeholders))
-  }
-  if (Array.isArray(ruleSet.any)) {
-    return ruleSet.any.some((item) => evaluateVisibilityRules(item, placeholders))
-  }
-  if (ruleSet.not !== undefined) {
-    return !evaluateVisibilityRules(ruleSet.not, placeholders)
-  }
-
-  return evaluateVisibilityPredicate(ruleSet, placeholders)
-}
-
 function mapTemplateSectionToManifest(section = {}, placeholders = {}) {
   const metadata = section?.metadata_json && typeof section.metadata_json === 'object' ? section.metadata_json : {}
   const placeholderLabels = metadata?.placeholder_labels && typeof metadata.placeholder_labels === 'object'
@@ -1311,6 +1285,9 @@ function buildValidationSummary(validation = {}) {
     aliasHits: validation?.aliasHits || [],
     unknownFields: validation?.unknownFields || [],
     mandateValidation: validation?.mandateValidation || null,
+    conditionalPackDataRequirements: validation?.conditionalPackDataRequirements || [],
+    conditionalPackMissingPlaceholders: validation?.conditionalPackMissingPlaceholders || [],
+    conditionalPackAudit: validation?.conditionalPackAudit || null,
   }
 }
 
@@ -1402,6 +1379,14 @@ export async function validatePacket({
     placeholders,
     sectionManifest,
   })
+  const conditionalPackAudit = resolveConditionalPackAudit({
+    packetType: normalizedPacketType,
+    placeholders,
+  })
+  const conditionalPackPreflight = conditionalPackAudit.preflight || {}
+  const conditionalPackDataRequirements = conditionalPackPreflight.dataRequirements || []
+  const conditionalPackMissingPlaceholders = conditionalPackPreflight.missingPlaceholders || []
+  const conditionalPackMissingKeys = conditionalPackPreflight.missingKeys || new Set()
   const sellerValidation = validateSellerPartyReadiness({
     packetType: normalizedPacketType,
     placeholders,
@@ -1449,6 +1434,10 @@ export async function validatePacket({
   const ruleWarnings = ruleValidation.warnings || []
   const missingPlaceholderWarnings = ruleWarnings.filter((issue) => isMissingPlaceholderWarning(issue, missingPlaceholderKeys))
   const structuralRuleWarnings = ruleWarnings.filter((issue) => !isMissingPlaceholderWarning(issue, missingPlaceholderKeys))
+  const nonConditionalRuleWarnings = ruleWarnings.filter((issue) => {
+    const placeholderKey = normalizeText(issue?.placeholderKey || issue?.placeholder_key).toLowerCase()
+    return !placeholderKey || !conditionalPackMissingKeys.has(placeholderKey)
+  })
   const sellerCriticalIssues = sellerValidation.critical || []
   const sellerWarningIssues = sellerValidation.warnings || []
   const mandateBlockingIssues = (mandateValidation?.blockingErrors || []).map(mapMandateValidationIssue)
@@ -1475,24 +1464,37 @@ export async function validatePacket({
           ...issue,
           source: 'mandate_readiness',
         })),
+        ...conditionalPackMissingPlaceholders.map((issue) => ({
+          ...issue,
+          source: 'conditional_pack',
+        })),
       ])
     : []
   const criticalIssues = isTemplatePreview
     ? [...ruleCritical]
     : allowMandateGenerationGaps
-      ? [...sellerCriticalIssues]
+      ? [
+          ...sellerCriticalIssues,
+          ...conditionalPackMissingPlaceholders,
+        ]
       : [
           ...ruleCritical,
           ...sellerCriticalIssues,
           ...mandateBlockingIssues,
+          ...conditionalPackMissingPlaceholders,
         ]
   const warningIssues = isTemplatePreview
     ? [...structuralRuleWarnings]
     : [
-        ...ruleWarnings,
+        ...nonConditionalRuleWarnings,
         ...sellerWarningIssues,
         ...mandateWarningIssues,
       ]
+  const missingPlaceholders = dedupeValidationIssues([
+    ...conditionalPackMissingPlaceholders,
+    ...(ruleValidation.missingPlaceholders || []),
+  ])
+  const conditionalPackCanProceed = Boolean(conditionalPackPreflight.canProceed)
 
   return {
     packetType: normalizedPacketType,
@@ -1502,14 +1504,18 @@ export async function validatePacket({
     critical: criticalIssues,
     warnings: warningIssues,
     dataRequirements: previewDataRequirements,
-    missingPlaceholders: ruleValidation.missingPlaceholders,
+    conditionalPackDataRequirements,
+    conditionalPackMissingPlaceholders,
+    conditionalPackAudit,
+    missingPlaceholders,
     aliasHits: ruleValidation.aliasHits || [],
     unknownFields: ruleValidation.unknownFields || [],
     isValidForGeneration: isTemplatePreview
       ? ruleValidation.isValidForGeneration
       : isCommercialPacket
-      ? ruleValidation.isValidForGeneration
+      ? ruleValidation.isValidForGeneration && conditionalPackCanProceed
       : (
+          conditionalPackCanProceed &&
           sellerValidation.canProceed &&
           (allowMandateGenerationGaps || (ruleValidation.isValidForGeneration && (!mandateValidation || mandateValidation.canProceed)))
         ),
@@ -1715,7 +1721,8 @@ export async function generatePacketVersion({
   const { packet, validation } = prepared
   const effectiveTemplate = prepared.template || template || null
   const isMandatePacket = validation.packetType === 'mandate'
-  const allowGenerationBypass = isMandatePacket || forceGenerate
+  const hasConditionalPackBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'conditional_pack')
+  const allowGenerationBypass = (isMandatePacket && !hasConditionalPackBlockingIssues) || forceGenerate
   if (!validation.isValidForGeneration && !allowGenerationBypass) {
     const error = createPacketError(
       'VALIDATION_BLOCKED',

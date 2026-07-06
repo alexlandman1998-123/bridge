@@ -16,6 +16,7 @@ import { calculateLaunchReadiness } from '../services/release/launchReadiness'
 import { getUniversalPartnerRoutingDiagnosticsSnapshot } from '../services/universalPartnerRoutingService'
 import { getUniversalAssignmentDiagnosticsSnapshot } from '../services/universalAssignmentService'
 import { applyCanonicalInviteReconciliation, getCanonicalInviteHealth, reconcileCanonicalInvites } from '../services/inviteOperationsService'
+import { dispatchNotificationReminders, getNotificationAutomationHealth } from '../services/notificationAutomationOperationsService'
 
 function StatCard({ label, value, tone = 'neutral' }) {
   const toneClass =
@@ -68,6 +69,24 @@ function sumActionCounts(actions = []) {
   return (Array.isArray(actions) ? actions : []).reduce((total, action) => total + Number(action?.count || 0), 0)
 }
 
+function formatDiagnosticDate(value) {
+  if (!value) return 'Not recorded'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Not recorded'
+  return date.toLocaleString()
+}
+
+function getDiagnosticStatusTone(status) {
+  if (status === 'critical' || status === 'forbidden' || status === 'not_configured') return 'critical'
+  if (status === 'warning' || status === 'attention' || status === 'not_installed') return 'warning'
+  if (status === 'healthy') return 'success'
+  return 'neutral'
+}
+
+function asDiagnosticObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
 export default function PlatformDiagnosticsPage() {
   const { authState } = useAuthSession()
   const { currentWorkspace } = useWorkspace()
@@ -91,6 +110,10 @@ export default function PlatformDiagnosticsPage() {
   const [inviteLoading, setInviteLoading] = useState(false)
   const [inviteApplyLoading, setInviteApplyLoading] = useState(false)
   const [inviteApplyResult, setInviteApplyResult] = useState(null)
+  const [notificationHealth, setNotificationHealth] = useState(null)
+  const [notificationLoading, setNotificationLoading] = useState(false)
+  const [notificationDispatchLoading, setNotificationDispatchLoading] = useState(false)
+  const [notificationDispatchResult, setNotificationDispatchResult] = useState(null)
 
   useEffect(() => {
     if (entityType === 'user') setEntityId(authState.user?.id || '')
@@ -101,6 +124,14 @@ export default function PlatformDiagnosticsPage() {
   const issues = result?.issues || []
   const inviteReconciliationActionCount = sumActionCounts(inviteReconciliation?.actions)
   const inviteAppliedActionCount = sumActionCounts(inviteApplyResult?.actions)
+
+  async function refreshNotificationAutomationHealth() {
+    const snapshot = await getNotificationAutomationHealth({
+      organisationId: currentWorkspace?.id || '',
+    })
+    setNotificationHealth(snapshot)
+    return snapshot
+  }
 
   async function loadOperationsCenter() {
     try {
@@ -202,6 +233,61 @@ export default function PlatformDiagnosticsPage() {
     }
   }
 
+  async function loadNotificationAutomationDiagnostics() {
+    try {
+      setNotificationLoading(true)
+      setError('')
+      setNotificationDispatchResult(null)
+      await refreshNotificationAutomationHealth()
+    } catch (notificationError) {
+      setError(notificationError?.message || 'Notification automation diagnostics failed.')
+    } finally {
+      setNotificationLoading(false)
+    }
+  }
+
+  async function runNotificationReminderDryRun() {
+    try {
+      setNotificationDispatchLoading(true)
+      setError('')
+      const dryRun = await dispatchNotificationReminders({
+        dryRun: true,
+        limit: 25,
+        queueDue: true,
+        queueLimit: 50,
+        resetStale: true,
+      })
+      setNotificationDispatchResult(dryRun)
+      await refreshNotificationAutomationHealth()
+    } catch (notificationError) {
+      setError(notificationError?.message || 'Notification reminder dry-run failed.')
+    } finally {
+      setNotificationDispatchLoading(false)
+    }
+  }
+
+  async function runNotificationReminderDispatch() {
+    const confirmed = window.confirm('Dispatch queued notification reminder emails now? This can send live buyer, seller, attorney, bond originator, and agent reminders.')
+    if (!confirmed) return
+    try {
+      setNotificationDispatchLoading(true)
+      setError('')
+      const dispatched = await dispatchNotificationReminders({
+        dryRun: false,
+        limit: 25,
+        queueDue: true,
+        queueLimit: 50,
+        resetStale: true,
+      })
+      setNotificationDispatchResult(dispatched)
+      await refreshNotificationAutomationHealth()
+    } catch (notificationError) {
+      setError(notificationError?.message || 'Notification reminder dispatch failed.')
+    } finally {
+      setNotificationDispatchLoading(false)
+    }
+  }
+
   async function applyInviteReconciliation() {
     const pendingActionCount = sumActionCounts(inviteReconciliation?.actions)
     if (!pendingActionCount) return
@@ -247,6 +333,14 @@ export default function PlatformDiagnosticsPage() {
       setLoading(false)
     }
   }
+
+  const notificationIssues = notificationHealth?.issues || []
+  const notificationQueueResult = asDiagnosticObject(notificationDispatchResult?.queueResult)
+  const notificationAutomationCounts = Object.entries(notificationHealth?.countsByAutomation || {}).slice(0, 8)
+  const notificationRunRows = notificationHealth?.recentRuns || []
+  const notificationFailureRows = notificationHealth?.recentFailures || []
+  const notificationPremiumControls = notificationHealth?.premiumControls || null
+  const notificationReminderPolicies = notificationHealth?.reminderPolicies || []
 
   return (
     <section className="page">
@@ -416,6 +510,201 @@ export default function PlatformDiagnosticsPage() {
               </div>
             </div>
           ) : null}
+        </div>
+
+        <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-white p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Notification automation diagnostics</h2>
+              <p className="mt-2 text-sm text-[#60758d]">
+                Monitor automation coverage, queued reminders, dispatch runs, and failed notification email events.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="header-secondary-cta" onClick={loadNotificationAutomationDiagnostics} disabled={notificationLoading}>
+                {notificationLoading ? 'Checking notifications...' : 'Run notification diagnostics'}
+              </button>
+              <button type="button" className="header-secondary-cta" onClick={runNotificationReminderDryRun} disabled={notificationDispatchLoading}>
+                {notificationDispatchLoading ? 'Running...' : 'Dry-run reminders'}
+              </button>
+              <button type="button" className="header-primary-cta" onClick={runNotificationReminderDispatch} disabled={notificationDispatchLoading}>
+                {notificationDispatchLoading ? 'Dispatching...' : 'Dispatch reminders'}
+              </button>
+            </div>
+          </div>
+
+          {notificationHealth ? (
+            <div className="grid gap-4">
+              <div className="grid gap-3 md:grid-cols-4">
+                <StatCard label="Automation health" value={notificationHealth.status || 'unknown'} tone={getDiagnosticStatusTone(notificationHealth.status)} />
+                <StatCard label="Active automations" value={notificationHealth.totals?.activeDefinitions || 0} tone={(notificationHealth.totals?.activeDefinitions || 0) >= 17 ? 'success' : 'warning'} />
+                <StatCard label="Queued reminders" value={notificationHealth.totals?.queuedReminders || 0} tone={notificationHealth.totals?.queuedReminders ? 'warning' : 'success'} />
+                <StatCard label="Failed reminders" value={notificationHealth.totals?.failedReminders || 0} tone={notificationHealth.totals?.failedReminders ? 'critical' : 'success'} />
+              </div>
+              <div className="grid gap-3 md:grid-cols-4">
+                <StatCard label="Sent events" value={notificationHealth.totals?.sentEvents || 0} tone="success" />
+                <StatCard label="Failed events" value={notificationHealth.totals?.failedEvents || 0} tone={notificationHealth.totals?.failedEvents ? 'warning' : 'success'} />
+                <StatCard label="Stale processing" value={notificationHealth.totals?.staleProcessingReminders || 0} tone={notificationHealth.totals?.staleProcessingReminders ? 'critical' : 'success'} />
+                <StatCard label="Planned automations" value={notificationHealth.totals?.plannedDefinitions || 0} tone={notificationHealth.totals?.plannedDefinitions ? 'warning' : 'success'} />
+              </div>
+              {notificationPremiumControls ? (
+                <div className="grid gap-3 md:grid-cols-4">
+                  <StatCard label="Premium controls" value={notificationPremiumControls.ready ? 'ready' : 'needs setup'} tone={notificationPremiumControls.ready ? 'success' : 'warning'} />
+                  <StatCard label="Cadence policies" value={`${notificationPremiumControls.cadenceConfigured || 0}/${notificationPremiumControls.totalReminderAutomations || 0}`} tone={(notificationPremiumControls.missingControls || 0) ? 'warning' : 'success'} />
+                  <StatCard label="Quiet hours" value={`${notificationPremiumControls.quietHoursConfigured || 0}/${notificationPremiumControls.totalReminderAutomations || 0}`} tone={(notificationPremiumControls.quietHoursConfigured || 0) === (notificationPremiumControls.totalReminderAutomations || 0) ? 'success' : 'warning'} />
+                  <StatCard label="Escalations" value={`${notificationPremiumControls.escalationConfigured || 0}/${notificationPremiumControls.totalReminderAutomations || 0}`} tone={(notificationPremiumControls.escalationConfigured || 0) === (notificationPremiumControls.totalReminderAutomations || 0) ? 'success' : 'warning'} />
+                </div>
+              ) : null}
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Health details</h3>
+                  <ul className="mt-3 space-y-2 text-sm text-[#60758d]">
+                    <li className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f6] py-2">
+                      <span>Last event</span>
+                      <span className="font-semibold text-[#31485e]">{formatDiagnosticDate(notificationHealth.totals?.lastEventAt)}</span>
+                    </li>
+                    <li className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f6] py-2">
+                      <span>Last reminder dispatch</span>
+                      <span className="font-semibold text-[#31485e]">{formatDiagnosticDate(notificationHealth.totals?.lastDispatchAt)}</span>
+                    </li>
+                    <li className="flex flex-wrap items-center justify-between gap-3 py-2">
+                      <span>Events since</span>
+                      <span className="font-semibold text-[#31485e]">{formatDiagnosticDate(notificationHealth.since)}</span>
+                    </li>
+                  </ul>
+                </div>
+                <div className="rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Automation issues</h3>
+                  {notificationIssues.length ? (
+                    <ul className="mt-3 space-y-2 text-sm text-[#60758d]">
+                      {notificationIssues.map((issue) => (
+                        <li key={issue.code} className="flex items-start justify-between gap-3 border-b border-[#edf1f6] py-2 last:border-0">
+                          <span>{String(issue.code || '').replace(/_/g, ' ')}</span>
+                          <span className="font-semibold text-[#31485e]">{issue.count || 0}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-sm text-[#60758d]">No notification automation issues detected.</p>
+                  )}
+                </div>
+              </div>
+
+              {notificationDispatchResult ? (
+                <div className={`rounded-[14px] border p-4 ${notificationDispatchResult.dryRun ? 'border-[#f5d3a4] bg-[#fff8ec]' : 'border-[#cfe8d8] bg-[#effaf3]'}`}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">
+                        {notificationDispatchResult.dryRun ? 'Reminder dry-run result' : 'Reminder dispatch result'}
+                      </h3>
+                      <p className="mt-2 text-sm text-[#60758d]">
+                        {notificationDispatchResult.dryRun ? 'No emails were sent.' : 'Live reminder dispatch finished.'}
+                      </p>
+                    </div>
+                    <span className="text-sm font-semibold text-[#31485e]">{notificationDispatchResult.type || 'notification_reminder_dispatch'}</span>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-5">
+                    <StatCard label="Due candidates" value={notificationQueueResult.candidateCount || 0} />
+                    <StatCard label="Queued" value={notificationQueueResult.queuedCount || 0} />
+                    <StatCard label="Claimed" value={notificationDispatchResult.claimedCount || 0} />
+                    <StatCard label={notificationDispatchResult.dryRun ? 'Ready' : 'Sent'} value={notificationDispatchResult.dryRun ? notificationDispatchResult.claimedCount || 0 : notificationDispatchResult.dispatchedCount || 0} tone="success" />
+                    <StatCard label="Failed" value={notificationDispatchResult.failedCount || 0} tone={notificationDispatchResult.failedCount ? 'critical' : 'success'} />
+                  </div>
+                  <p className="mt-3 text-sm text-[#60758d]">
+                    Quiet-hour deferred: {notificationQueueResult.quietHoursDeferredCount || 0}. Stale claims reset: {notificationDispatchResult.staleResetCount || 0}. Skipped queue candidates: {notificationQueueResult.skippedCount || 0}.
+                  </p>
+                </div>
+              ) : null}
+
+              {notificationReminderPolicies.length ? (
+                <div className="rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Premium reminder controls</h3>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    {notificationReminderPolicies.map((policy) => {
+                      const cadenceDays = Array.isArray(policy.cadenceDays) ? policy.cadenceDays : []
+                      const quietHours = asDiagnosticObject(policy.quietHours)
+                      const escalation = asDiagnosticObject(policy.escalation)
+                      return (
+                        <div key={policy.automationKey} className="rounded-[12px] border border-[#dde4ee] bg-white p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-sm font-semibold text-[#31485e]">{String(policy.displayName || policy.automationKey || '').replace(/_/g, ' ')}</p>
+                            <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#60758d]">{policy.status || 'unknown'}</span>
+                          </div>
+                          <p className="mt-2 text-xs leading-5 text-[#60758d]">
+                            Cadence: {cadenceDays.length ? cadenceDays.map((day) => `day ${day}`).join(', ') : 'Not configured'}.
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-[#60758d]">
+                            Quiet hours: {quietHours.enabled ? `${quietHours.startHour}:00-${quietHours.endHour}:00 ${quietHours.timezone || ''}` : 'Off'}.
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-[#60758d]">
+                            Escalation: {escalation.enabled ? escalation.label || escalation.recipientRole || 'Enabled' : 'Off'}.
+                          </p>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Automation volume</h3>
+                  {notificationAutomationCounts.length ? (
+                    <ul className="mt-3 space-y-2 text-sm text-[#60758d]">
+                      {notificationAutomationCounts.map(([automationKey, count]) => (
+                        <li key={automationKey} className="flex items-center justify-between gap-3 border-b border-[#edf1f6] py-2 last:border-0">
+                          <span>{String(automationKey).replace(/_/g, ' ')}</span>
+                          <span className="font-semibold text-[#31485e]">{count}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-sm text-[#60758d]">No notification events in the selected window.</p>
+                  )}
+                </div>
+                <div className="rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Recent dispatch runs</h3>
+                  {notificationRunRows.length ? (
+                    <ul className="mt-3 space-y-2 text-sm text-[#60758d]">
+                      {notificationRunRows.map((run) => (
+                        <li key={run.id} className="border-b border-[#edf1f6] py-2 last:border-0">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <span>{run.dry_run ? 'Dry-run' : 'Dispatch'} · {run.status || 'unknown'}</span>
+                            <span className="font-semibold text-[#31485e]">{formatDiagnosticDate(run.started_at || run.startedAt)}</span>
+                          </div>
+                          <p className="mt-1 text-xs text-[#60758d]">Queued {run.queued_count ?? run.queuedCount ?? 0} · skipped {run.skipped_count ?? run.skippedCount ?? 0}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-sm text-[#60758d]">No reminder dispatch runs recorded yet.</p>
+                  )}
+                </div>
+                <div className="rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Recent failures</h3>
+                  {notificationFailureRows.length ? (
+                    <ul className="mt-3 space-y-2 text-sm text-[#60758d]">
+                      {notificationFailureRows.map((failure) => (
+                        <li key={failure.id} className="border-b border-[#edf1f6] py-2 last:border-0">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <span>{String(failure.automation_key || 'notification').replace(/_/g, ' ')}</span>
+                            <span className="font-semibold text-[#31485e]">{formatDiagnosticDate(failure.failed_at || failure.created_at)}</span>
+                          </div>
+                          <p className="mt-1 text-xs text-[#60758d]">{failure.error_message || failure.last_dispatch_error || failure.subject || 'No failure detail recorded.'}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-sm text-[#60758d]">No notification failures in the selected window.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="rounded-[14px] border border-dashed border-[#d7e2ee] bg-[#f9fbfe] px-4 py-6 text-center text-sm text-[#60758d]">
+              Run notification diagnostics to view automation health and reminder dispatch readiness.
+            </p>
+          )}
         </div>
 
         <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-white p-4">

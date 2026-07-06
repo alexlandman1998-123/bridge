@@ -290,7 +290,10 @@ function InviteBrandStrip({ workspaceName = '', workspaceLogoUrl = '' }) {
       </div>
 
       <div className="flex shrink-0 items-center justify-end">
-        <img src="/brand/bridge_9_white_background.png" alt="Arch9" className="h-20 w-36 object-contain object-right sm:h-24 sm:w-44" />
+        <div className="flex h-20 w-36 items-center justify-end gap-3 sm:h-24 sm:w-44" aria-label="Arch9">
+          <img src="/favicon-light.svg" alt="" className="h-10 w-10 rounded-[9px] object-contain shadow-surface" />
+          <span className="text-[1.65rem] font-bold leading-none text-[#173047] sm:text-[1.9rem]">Arch9</span>
+        </div>
       </div>
     </div>
   )

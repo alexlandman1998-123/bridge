@@ -166,6 +166,10 @@ export type SendWorkspaceInvitePayload = {
   inviter_name?: string;
   organisationName?: string;
   organisation_name?: string;
+  organisationId?: string;
+  organisation_id?: string;
+  branchId?: string;
+  branch_id?: string;
   organisationLogoUrl?: string;
   organisation_logo_url?: string;
   organisationLogoIconUrl?: string;
@@ -178,10 +182,34 @@ export type SendWorkspaceInvitePayload = {
   support_email?: string;
 };
 
+export type SendNotificationReminderDispatchPayload = {
+  type:
+    | "notification_reminder_dispatch"
+    | "notification_reminder_dispatcher"
+    | "dispatch_notification_reminders"
+    | "notification_reminders_dispatch";
+  eventId?: string;
+  event_id?: string;
+  limit?: number;
+  dispatchLimit?: number;
+  dispatch_limit?: number;
+  queueDue?: boolean;
+  queue_due?: boolean;
+  queueLimit?: number;
+  queue_limit?: number;
+  resetStale?: boolean;
+  reset_stale?: boolean;
+  dryRun?: boolean;
+  dry_run?: boolean;
+  now?: string;
+};
+
 export type SendTransactionPartnerInvitationPayload = {
   type: "transaction_partner_invitation" | "partner_transaction_invite";
   transactionId?: string;
   transaction_id?: string;
+  organisationId?: string;
+  organisation_id?: string;
   to: string;
   roleType?: string;
   role_type?: string;
@@ -210,7 +238,11 @@ export type SendTransactionPartnerInvitationPayload = {
 };
 
 export type SendOrganisationPartnerInvitationPayload = {
-  type: "organisation_partner_invitation" | "organization_partner_invitation" | "partner_organisation_invitation" | "partner_organization_invitation";
+  type:
+    | "organisation_partner_invitation"
+    | "organization_partner_invitation"
+    | "partner_organisation_invitation"
+    | "partner_organization_invitation";
   to: string;
   invitationLink?: string;
   invitation_link?: string;

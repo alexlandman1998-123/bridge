@@ -173,6 +173,7 @@ const PURCHASER_BRANCH_RULES = Object.freeze({
       'buyer.person.spouse_email',
       'buyer.person.spouse_phone',
       'buyer.person.spouse_residential_address',
+      'buyer.person.spouse_consent_required',
       'buyer.person.marriage_date',
     ]),
     requiredFields: Object.freeze([
@@ -181,6 +182,7 @@ const PURCHASER_BRANCH_RULES = Object.freeze({
       'buyer.person.marital_regime',
       'buyer.person.spouse_email',
       'buyer.person.spouse_phone',
+      'buyer.person.spouse_consent_required',
     ]),
     optionalFields: Object.freeze([
       'buyer.person.spouse_residential_address',
@@ -294,6 +296,8 @@ const PURCHASER_BRANCH_RULES = Object.freeze({
       'buyer.company.authorised_signatory.capacity',
       'buyer.company.directors',
       'buyer.company.board_resolution_available',
+      'buyer.company.resolution_date',
+      'buyer.company.authority_basis',
     ]),
     requiredFields: Object.freeze([
       'buyer.company.name',
@@ -307,6 +311,8 @@ const PURCHASER_BRANCH_RULES = Object.freeze({
       'buyer.company.authorised_signatory.capacity',
       'buyer.company.directors',
       'buyer.company.board_resolution_available',
+      'buyer.company.resolution_date',
+      'buyer.company.authority_basis',
     ]),
     optionalFields: Object.freeze([
       'buyer.company.business_address',
@@ -343,6 +349,8 @@ const PURCHASER_BRANCH_RULES = Object.freeze({
       'buyer.trust.authorised_trustee.identity_number_or_passport_number',
       'buyer.trust.authorised_trustee.email',
       'buyer.trust.authorised_trustee.phone',
+      'buyer.trust.authorised_trustee.capacity',
+      'buyer.trust.authority_basis',
       'buyer.trust.trust_deed_available',
       'buyer.trust.letters_of_authority_available',
       'buyer.trust.resolution_available',
@@ -359,6 +367,8 @@ const PURCHASER_BRANCH_RULES = Object.freeze({
       'buyer.trust.authorised_trustee.identity_number_or_passport_number',
       'buyer.trust.authorised_trustee.email',
       'buyer.trust.authorised_trustee.phone',
+      'buyer.trust.authorised_trustee.capacity',
+      'buyer.trust.authority_basis',
       'buyer.trust.trust_deed_available',
       'buyer.trust.letters_of_authority_available',
       'buyer.trust.resolution_available',

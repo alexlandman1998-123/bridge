@@ -47,7 +47,7 @@ export async function handleBondOriginatorBuyerIntroEmail(
   const title = normalizeText(payload.title) ||
     "Your bond application has been assigned";
   const from = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <no-reply@bridge9.app>";
+    "Arch9 <no-reply@arch9.co.za>";
 
   const fields = [
     { label: "Bond Originator", value: consultantName },

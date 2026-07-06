@@ -144,7 +144,7 @@ function companyForm({ purchaseFinanceType = 'bond', bondHelpRequested = 'no' } 
     purchaser_type: 'company',
     purchaser_entity_type: 'company',
     company: {
-      company_name: 'Bridge Nine Properties (Pty) Ltd',
+      company_name: 'Arch9 Properties (Pty) Ltd',
       company_registration_number: '2024/123456/07',
       registered_address: '54 Menlyn Avenue, Waterkloof Glen, Pretoria, 0181',
       business_address: '54 Menlyn Avenue, Waterkloof Glen, Pretoria, 0181',
@@ -162,7 +162,7 @@ function companyForm({ purchaseFinanceType = 'bond', bondHelpRequested = 'no' } 
       ],
       board_resolution_available: 'yes',
     },
-    company_name: 'Bridge Nine Properties (Pty) Ltd',
+    company_name: 'Arch9 Properties (Pty) Ltd',
     company_registration_number: '2024/123456/07',
     authorised_signatory_name: 'Alex Principal',
     authorised_signatory_identity_number: '9001015009083',

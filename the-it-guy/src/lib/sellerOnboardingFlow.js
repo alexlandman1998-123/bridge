@@ -1,4 +1,10 @@
 import {
+  getConditionalPackDocumentTriggers,
+  getConditionalPackRequiredMergeFields,
+  getConditionalPackRequiredOnboardingFields,
+  resolveConditionalPackDataRequirements,
+} from '../core/documents/conditionalPackDataRules.js'
+import {
   resolvePropertyBranch,
   resolveSellerBranch,
   resolveSellerOnboardingFlowContract,
@@ -58,7 +64,23 @@ function buildBranchSummary(flow = {}) {
   }
 }
 
+function buildSellerConditionalPackOptions(flow = {}, form = {}, listing = {}, facts = {}, options = {}) {
+  return {
+    packetType: options.packetType || options.packet_type || 'mandate',
+    flow,
+    form,
+    transaction: listing,
+    facts,
+  }
+}
+
 function normalizeResolvedFlow(flow = {}) {
+  const conditionalPackOptions = buildSellerConditionalPackOptions(flow)
+  const conditionalPackDataRequirements = resolveConditionalPackDataRequirements(conditionalPackOptions)
+  const conditionalPackRequiredFields = getConditionalPackRequiredOnboardingFields(conditionalPackOptions)
+  const conditionalPackRequiredMergeFields = getConditionalPackRequiredMergeFields(conditionalPackOptions)
+  const conditionalPackDocumentTriggers = getConditionalPackDocumentTriggers(conditionalPackOptions)
+
   return {
     ...flow,
     visible_fields: buildVisibleFields(flow),
@@ -66,6 +88,10 @@ function normalizeResolvedFlow(flow = {}) {
     required_fields: mergeUnique(flow.required_fields),
     optional_fields: mergeUnique(flow.optional_fields),
     document_triggers: mergeUnique(flow.document_triggers),
+    conditional_pack_data_requirements: conditionalPackDataRequirements,
+    conditional_pack_required_fields: conditionalPackRequiredFields,
+    conditional_pack_required_merge_fields: conditionalPackRequiredMergeFields,
+    conditional_pack_document_triggers: conditionalPackDocumentTriggers,
     branch_summary: buildBranchSummary(flow),
   }
 }
@@ -92,6 +118,24 @@ export function getSellerOnboardingDocumentTriggers(flowOrForm = {}, listing = {
 export function getSellerOnboardingBranchSummary(flowOrForm = {}, listing = {}, facts = {}) {
   const flow = isFlowRecord(flowOrForm) ? flowOrForm : resolveSellerOnboardingFlow(flowOrForm, listing, facts)
   return flow.branch_summary || buildBranchSummary(flow)
+}
+
+export function getSellerConditionalPackDataRequirements(flowOrForm = {}, listing = {}, facts = {}, options = {}) {
+  const flow = isFlowRecord(flowOrForm) ? normalizeResolvedFlow(flowOrForm) : resolveSellerOnboardingFlow(flowOrForm, listing, facts)
+  const form = isFlowRecord(flowOrForm) ? {} : flowOrForm
+  return resolveConditionalPackDataRequirements(buildSellerConditionalPackOptions(flow, form, listing, facts, options))
+}
+
+export function getSellerConditionalPackRequiredFields(flowOrForm = {}, listing = {}, facts = {}, options = {}) {
+  const flow = isFlowRecord(flowOrForm) ? normalizeResolvedFlow(flowOrForm) : resolveSellerOnboardingFlow(flowOrForm, listing, facts)
+  const form = isFlowRecord(flowOrForm) ? {} : flowOrForm
+  return getConditionalPackRequiredOnboardingFields(buildSellerConditionalPackOptions(flow, form, listing, facts, options))
+}
+
+export function getSellerConditionalPackRequiredMergeFields(flowOrForm = {}, listing = {}, facts = {}, options = {}) {
+  const flow = isFlowRecord(flowOrForm) ? normalizeResolvedFlow(flowOrForm) : resolveSellerOnboardingFlow(flowOrForm, listing, facts)
+  const form = isFlowRecord(flowOrForm) ? {} : flowOrForm
+  return getConditionalPackRequiredMergeFields(buildSellerConditionalPackOptions(flow, form, listing, facts, options))
 }
 
 export { resolvePropertyBranch, resolveSellerBranch }

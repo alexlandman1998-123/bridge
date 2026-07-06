@@ -13,8 +13,6 @@ import { renderPacketPreviewHtml } from '../core/documents/packetWorkflow'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
-const BRIDGE9_LOGO_URL = '/brand/bridge_9_white_background.png'
-
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -99,11 +97,11 @@ function getFieldId(field = null) {
   return normalizeText(field?.id)
 }
 
-function BridgeMark() {
+function Arch9Mark() {
   return (
     <div className="flex min-w-0 items-center gap-3">
-      <span className="flex h-11 w-32 items-center justify-center overflow-hidden rounded-[14px] border border-[#d8e3ef] bg-white px-2 shadow-[0_10px_24px_rgba(17,47,80,0.10)] sm:w-40">
-        <img src={BRIDGE9_LOGO_URL} alt="Arch9" className="max-h-8 w-full object-contain" />
+      <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[14px] border border-[#d8e3ef] bg-white shadow-[0_10px_24px_rgba(17,47,80,0.10)]">
+        <img src="/favicon-light.svg" alt="" className="h-8 w-8 object-contain" />
       </span>
       <div>
         <p className="text-sm font-bold leading-none text-[#142132]">Arch9</p>
@@ -691,7 +689,7 @@ export default function SignerPortal() {
     <main className="min-h-screen bg-[#eef3f8] text-[#142132]">
       <header className="sticky top-0 z-40 border-b border-[#d7e2ef] bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3">
-          <BridgeMark />
+          <Arch9Mark />
           <div className="min-w-0 flex-1 text-center md:flex-none">
             <h1 className="truncate text-sm font-bold text-[#142132] sm:text-base">{packet?.title || 'Document Packet'}</h1>
             <p className="text-xs text-[#607387]">Version {version?.version_number || '—'} · {signer?.signer_name || 'Signer'}</p>

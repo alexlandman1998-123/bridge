@@ -28,10 +28,11 @@ import {
   handleTransactionRoleplayerIntroEmail,
 } from "./handlers/transactionRoleplayerIntro.ts";
 import { handleTransactionPartnerInvitationEmail } from "./handlers/transactionPartnerInvitation.ts";
+import { handleNotificationReminderDispatchEmail } from "./handlers/notificationReminderDispatch.ts";
 import type {
+  SendAppointmentEmailPayload,
   SendArch9LaunchConfirmationPayload,
   SendArch9LaunchInternalNotificationPayload,
-  SendAppointmentEmailPayload,
   SendBondIntakeNotificationPayload,
   SendBondOriginatorBuyerIntroPayload,
   SendBuyerOfferLinkPayload,
@@ -39,11 +40,12 @@ import type {
   SendClientOnboardingPayload,
   SendCommercialAccessNotificationPayload,
   SendCommercialLandlordOnboardingPayload,
-  SendLegacyTestPayload,
   SendLeadPropertySharePayload,
+  SendLegacyTestPayload,
+  SendNotificationReminderDispatchPayload,
   SendOfferDecisionNotificationPayload,
-  SendOrganisationPartnerInvitationPayload,
   SendOnboardingSubmittedPayload,
+  SendOrganisationPartnerInvitationPayload,
   SendReservationDepositPayload,
   SendReservationDepositReceivedPayload,
   SendSellerMandateSentPayload,
@@ -51,9 +53,9 @@ import type {
   SendSellerOfferReviewPayload,
   SendSellerOnboardingPayload,
   SendSellerOnboardingSubmittedPayload,
+  SendTransactionPartnerInvitationPayload,
   SendTransactionRoleplayerHandoffPayload,
   SendTransactionRoleplayerIntroPayload,
-  SendTransactionPartnerInvitationPayload,
   SendWorkspaceInvitePayload,
 } from "./types.ts";
 import { corsHeaders, jsonResponse } from "./utils/http.ts";
@@ -175,7 +177,10 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    if ("client_portal_link" === type || "client_portal" === type || "portal_link" === type) {
+    if (
+      "client_portal_link" === type || "client_portal" === type ||
+      "portal_link" === type
+    ) {
       console.log("[send-email] routing template", {
         route: "client_portal_link",
         recipient: recipient || null,
@@ -209,16 +214,25 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    if (["seller_onboarding", "seller_onboarding_link", "seller_portal_link"].includes(type)) {
+    if (
+      ["seller_onboarding", "seller_onboarding_link", "seller_portal_link"]
+        .includes(type)
+    ) {
       console.log("[send-email] routing template", {
-        route: type === "seller_portal_link" ? "seller_portal_link" : "seller_onboarding",
+        route: type === "seller_portal_link"
+          ? "seller_portal_link"
+          : "seller_onboarding",
         recipient: recipient || null,
       });
       return await handleSellerOnboardingEmail(
         {
           ...(payload as SendSellerOnboardingPayload),
-          type: type === "seller_portal_link" ? "seller_portal_link" : (payload as SendSellerOnboardingPayload).type,
-          emailKind: type === "seller_portal_link" ? "portal_documents" : (payload as SendSellerOnboardingPayload).emailKind,
+          type: type === "seller_portal_link"
+            ? "seller_portal_link"
+            : (payload as SendSellerOnboardingPayload).type,
+          emailKind: type === "seller_portal_link"
+            ? "portal_documents"
+            : (payload as SendSellerOnboardingPayload).emailKind,
         },
       );
     }
@@ -490,7 +504,29 @@ Deno.serve(async (req: Request) => {
     }
 
     if (
-      ["workspace_invite", "team_invite", "branch_invite", "agent_invite"].includes(type) &&
+      [
+        "notification_reminder_dispatch",
+        "notification_reminder_dispatcher",
+        "dispatch_notification_reminders",
+        "notification_reminders_dispatch",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "notification_reminder_dispatch",
+        requestedType: type,
+      });
+      return await handleNotificationReminderDispatchEmail(
+        req,
+        {
+          ...(payload as SendNotificationReminderDispatchPayload),
+          type: "notification_reminder_dispatch",
+        },
+      );
+    }
+
+    if (
+      ["workspace_invite", "team_invite", "branch_invite", "agent_invite"]
+        .includes(type) &&
       (payload as SendWorkspaceInvitePayload).to
     ) {
       console.log("[send-email] routing template", {
@@ -498,7 +534,9 @@ Deno.serve(async (req: Request) => {
         requestedType: type,
         recipient: recipient || null,
       });
-      return await handleWorkspaceInviteEmail(payload as SendWorkspaceInvitePayload);
+      return await handleWorkspaceInviteEmail(
+        payload as SendWorkspaceInvitePayload,
+      );
     }
 
     if (
@@ -578,6 +616,7 @@ Deno.serve(async (req: Request) => {
           "workspace_invite",
           "branch_invite",
           "agent_invite",
+          "notification_reminder_dispatch",
           "appointment_scheduled",
           "appointment_confirmed",
           "appointment_updated",
@@ -621,6 +660,7 @@ Deno.serve(async (req: Request) => {
         "workspace_invite",
         "branch_invite",
         "agent_invite",
+        "notification_reminder_dispatch",
         "appointment_scheduled",
         "appointment_confirmed",
         "appointment_updated",

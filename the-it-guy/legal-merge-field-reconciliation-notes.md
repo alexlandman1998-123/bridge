@@ -87,8 +87,8 @@ Updated the Legal Document Workspace merge checklist to show:
 ## Branding Architecture
 
 Bridge logo assets added:
-- `public/brand/bridge_9_dark_background.png`
-- `public/brand/bridge_9_white_background.png`
+- `public/favicon-dark.svg`
+- `public/favicon-light.svg`
 
 Workspace branding source:
 - Primary source: packet branding snapshot / resolved `organisation_branding`.
@@ -98,18 +98,18 @@ Workspace branding source:
 Legal workspace header now shows:
 - top-left agency logo or initials plus organisation name
 - center document title, transaction reference, status, last updated
-- top-right Bridge Legal / Powered by Bridge 9 treatment using the light-background Bridge 9 logo
+- top-right Arch9 Legal treatment using the light-background Arch9 mark
 - primary action controls kept in the header
 
 Future PDF readiness:
 - Canonical branding placeholders now exist for `organisation_logo_url`, `organisation_logo_dark_url`, `bridge_legal_logo_light_url`, and `bridge_legal_logo_dark_url`.
-- Packet preview branding now supports Bridge 9 logo rendering.
+- Packet preview branding now supports Arch9 mark rendering.
 - Full branded PDF generation was not rebuilt in this pass.
 
 ## Files Changed
 
-- `public/brand/bridge_9_dark_background.png`
-- `public/brand/bridge_9_white_background.png`
+- `public/favicon-dark.svg`
+- `public/favicon-light.svg`
 - `src/core/documents/mergeFieldRegistry.js`
 - `src/core/documents/packetWorkflow.js`
 - `src/core/documents/packetService.js`

@@ -309,6 +309,26 @@ function extractMandateValidationPayload(error = null) {
   return null
 }
 
+function groupConditionalPackIssues(issues = []) {
+  const groups = new Map()
+  for (const issue of issues || []) {
+    const key = normalizeText(issue?.packKey || issue?.sectionKey || issue?.source || 'conditional_pack')
+    const label = normalizeText(issue?.packLabel || issue?.sectionLabel || 'Conditional clause pack')
+    const fieldLabel = normalizeText(issue?.placeholderLabel || issue?.placeholderKey || issue?.message)
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        label,
+        fields: [],
+      })
+    }
+    if (fieldLabel && !groups.get(key).fields.includes(fieldLabel)) {
+      groups.get(key).fields.push(fieldLabel)
+    }
+  }
+  return Array.from(groups.values())
+}
+
 function toFriendlyWorkspaceError(error = null, fallback = 'Unable to complete this legal action right now.') {
   const code = normalizeText(error?.code).toUpperCase()
   const raw = normalizeText(error?.message || error)
@@ -330,6 +350,17 @@ function toFriendlyWorkspaceError(error = null, fallback = 'Unable to complete t
   if (code === 'MISSING_TEMPLATE_FILE') return 'The active legal template is not available for rendering. Check the current template configuration first.'
   if (code === 'NATIVE_TEMPLATE_NOT_RENDERABLE') return 'The active native template is not renderable yet. Cover the required sections and merge fields first.'
   if (code === 'VALIDATION_BLOCKED') {
+    const conditionalPackMissing = Array.isArray(error?.validation?.conditionalPackMissingPlaceholders)
+      ? error.validation.conditionalPackMissingPlaceholders
+      : []
+    if (conditionalPackMissing.length) {
+      const grouped = groupConditionalPackIssues(conditionalPackMissing)
+      return [
+        'Conditional Pack Data Missing',
+        ...grouped.slice(0, 6).map((group) => `- ${group.label}: ${group.fields.slice(0, 6).join(', ')}`),
+        'Complete the missing information before continuing.',
+      ].join('\n')
+    }
     const missingFields = Array.isArray(error?.validation?.critical)
       ? error.validation.critical
         .map((item) => normalizeText(item?.placeholderLabel || item?.field || item?.message))

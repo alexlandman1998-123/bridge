@@ -382,6 +382,8 @@ async function sendInviteEmail({ invite, inviteLink }) {
       to: invite.email,
       inviteeName: invite.name || getInviteeName(invite),
       inviterName: invite.invitedByName || '',
+      organisationId: invite.organisationId || '',
+      branchId: invite.branchId || '',
       organisationName: invite.organisationName || 'Arch9 Organisation',
       workspaceRole: invite.roleLabel || formatRoleLabel(invite.role),
       supportEmail: invite.supportEmail || '',

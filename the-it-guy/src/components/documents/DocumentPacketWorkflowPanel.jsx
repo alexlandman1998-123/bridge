@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Button from '../ui/Button'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { isOrganisationAdminMembershipRole } from '../../lib/organisationAccess'
@@ -24,6 +24,22 @@ function normalizeText(value) {
 function resolvePacketErrorFeedback(error = null) {
   const code = normalizeText(error?.code)
   if (code === 'VALIDATION_BLOCKED') {
+    const packMissing = Array.isArray(error?.validation?.conditionalPackMissingPlaceholders)
+      ? error.validation.conditionalPackMissingPlaceholders
+      : []
+    if (packMissing.length) {
+      const grouped = groupConditionalPackIssues(packMissing)
+      const summary = grouped
+        .slice(0, 3)
+        .map((group) => `${group.label}: ${group.fields.slice(0, 3).join(', ')}`)
+        .join('; ')
+      return {
+        label: 'Conditional pack data missing',
+        message: summary
+          ? `Complete the active clause pack fields before generating: ${summary}.`
+          : 'Complete the active conditional clause pack fields before generating the document.',
+      }
+    }
     return {
       label: 'Validation blocked',
       message: 'Fix the critical missing fields before generating the document.',
@@ -140,6 +156,70 @@ function resolvePacketErrorFeedback(error = null) {
   }
 }
 
+function groupConditionalPackIssues(issues = []) {
+  const groups = new Map()
+  for (const issue of issues || []) {
+    const key = normalizeText(issue?.packKey || issue?.sectionKey || issue?.source || 'conditional_pack')
+    const label = normalizeText(issue?.packLabel || issue?.sectionLabel || 'Conditional clause pack')
+    const fieldLabel = normalizeText(issue?.placeholderLabel || issue?.placeholderKey || issue?.message)
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        label,
+        fields: [],
+      })
+    }
+    if (fieldLabel && !groups.get(key).fields.includes(fieldLabel)) {
+      groups.get(key).fields.push(fieldLabel)
+    }
+  }
+  return Array.from(groups.values())
+}
+
+function getConditionalPackIssueCount(pack = {}, groupedMissing = []) {
+  const keys = [
+    normalizeText(pack?.key),
+    normalizeText(pack?.packKey),
+    ...(Array.isArray(pack?.sectionKeys) ? pack.sectionKeys.map((item) => normalizeText(item)) : []),
+  ].filter(Boolean)
+  const keySet = new Set(keys)
+  return groupedMissing
+    .filter((group) => keySet.has(normalizeText(group.key)))
+    .reduce((count, group) => count + group.fields.length, 0)
+}
+
+function getConditionalPackAuditMissingFields(pack = {}) {
+  const missingPlaceholders = Array.isArray(pack?.missingPlaceholders) ? pack.missingPlaceholders : []
+  const requiredMergeFields = Array.isArray(pack?.requiredMergeFields) ? pack.requiredMergeFields : []
+  const labels = [
+    ...missingPlaceholders.map((issue) => normalizeText(issue?.placeholderLabel || issue?.placeholderKey)),
+    ...requiredMergeFields
+      .filter((field) => field?.missing)
+      .map((field) => normalizeText(field?.label || field?.key)),
+  ].filter(Boolean)
+  return Array.from(new Set(labels))
+}
+
+function getConditionalPackAuditRequiredFields(pack = {}) {
+  const requiredMergeFields = Array.isArray(pack?.requiredMergeFields) ? pack.requiredMergeFields : []
+  return requiredMergeFields
+    .map((field) => normalizeText(field?.label || field?.key))
+    .filter(Boolean)
+}
+
+function buildConditionalPackAuditSignalRows(signals = {}) {
+  return Object.entries(signals || {})
+    .map(([key, value]) => ({
+      key,
+      label: key
+        .replace(/([A-Z])/g, ' $1')
+        .replace(/\s+/g, ' ')
+        .replace(/^./, (character) => character.toUpperCase()),
+      value: normalizeText(value),
+    }))
+    .filter((row) => row.value)
+}
+
 function resolveVersionStatus(version = {}) {
   const renderStatus = normalizeText(version?.render_status).toLowerCase()
   if (renderStatus === 'generated') return 'document generated'
@@ -156,9 +236,30 @@ function resolveTemplateId(templates = [], templateId = '') {
   return templates[0]?.id || ''
 }
 
-function ValidationSummary({ validation = null }) {
+function ValidationSummary({ validation = null, showAuditDetails = false }) {
   const critical = validation?.critical || []
   const warnings = validation?.warnings || []
+  const conditionalPackDataRequirements = Array.isArray(validation?.conditionalPackDataRequirements)
+    ? validation.conditionalPackDataRequirements
+    : []
+  const conditionalPackMissingPlaceholders = Array.isArray(validation?.conditionalPackMissingPlaceholders)
+    ? validation.conditionalPackMissingPlaceholders
+    : []
+  const conditionalPackAudit = validation?.conditionalPackAudit && typeof validation.conditionalPackAudit === 'object'
+    ? validation.conditionalPackAudit
+    : null
+  const activePackAudits = Array.isArray(conditionalPackAudit?.activePacks)
+    ? conditionalPackAudit.activePacks
+    : []
+  const inactivePackAudits = Array.isArray(conditionalPackAudit?.inactivePacks)
+    ? conditionalPackAudit.inactivePacks
+    : []
+  const conditionalPackRows = activePackAudits.length ? activePackAudits : conditionalPackDataRequirements
+  const auditSignalRows = buildConditionalPackAuditSignalRows(conditionalPackAudit?.activationSignals)
+  const auditDocumentTriggers = Array.isArray(conditionalPackAudit?.documentTriggers)
+    ? conditionalPackAudit.documentTriggers
+    : []
+  const groupedConditionalMissing = groupConditionalPackIssues(conditionalPackMissingPlaceholders)
 
   return (
     <section className="rounded-[14px] border border-[#dfe8f2] bg-white p-3.5">
@@ -170,15 +271,121 @@ function ValidationSummary({ validation = null }) {
         <span className={`inline-flex items-center rounded-full border px-2.5 py-1 ${warnings.length ? 'border-[#f4e2bf] bg-[#fff8ec] text-[#9a640f]' : 'border-[#d7e9dd] bg-[#eefaf1] text-[#1c7d45]'}`}>
           Warnings: {warnings.length}
         </span>
+        {conditionalPackRows.length ? (
+          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 ${conditionalPackMissingPlaceholders.length ? 'border-[#f3d1ce] bg-[#fff4f3] text-[#b42318]' : 'border-[#d7e9dd] bg-[#eefaf1] text-[#1c7d45]'}`}>
+            Active packs: {conditionalPackRows.length}
+          </span>
+        ) : null}
       </div>
+      {conditionalPackRows.length ? (
+        <div className="mt-3 rounded-[12px] border border-[#e1eaf4] bg-[#fbfdff] p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6e8399]">Active Conditional Packs</p>
+            <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
+              conditionalPackMissingPlaceholders.length
+                ? 'border-[#f3d1ce] bg-[#fff4f3] text-[#b42318]'
+                : 'border-[#d7e9dd] bg-[#eefaf1] text-[#1c7d45]'
+            }`}>
+              {conditionalPackMissingPlaceholders.length ? `${conditionalPackMissingPlaceholders.length} missing` : 'Ready'}
+            </span>
+          </div>
+          <div className="mt-2 grid gap-2">
+            {conditionalPackRows.map((pack) => {
+              const auditMissingFields = getConditionalPackAuditMissingFields(pack)
+              const missingCount = activePackAudits.length
+                ? auditMissingFields.length
+                : getConditionalPackIssueCount(pack, groupedConditionalMissing)
+              const requiredFields = getConditionalPackAuditRequiredFields(pack)
+              return (
+                <article key={pack.key || pack.packKey} className={`rounded-[10px] border px-2.5 py-2 text-xs ${
+                  missingCount
+                    ? 'border-[#f3d1ce] bg-[#fff8f7] text-[#8e1f15]'
+                    : 'border-[#d7e9dd] bg-white text-[#1c7d45]'
+                }`}>
+                  <p className="font-semibold">{pack.label || pack.key}</p>
+                  <p className="mt-0.5">
+                    {missingCount ? `${missingCount} required field${missingCount === 1 ? '' : 's'} missing` : 'Required pack data is present'}
+                  </p>
+                  {showAuditDetails && normalizeText(pack.reason) ? (
+                    <p className="mt-1 text-[0.68rem] text-[#607387]">{pack.reason}</p>
+                  ) : null}
+                  {showAuditDetails && requiredFields.length ? (
+                    <p className="mt-1 text-[0.68rem] text-[#607387]">
+                      Fields: {requiredFields.slice(0, 6).join(', ')}
+                    </p>
+                  ) : null}
+                </article>
+              )
+            })}
+          </div>
+          {groupedConditionalMissing.length ? (
+            <div className="mt-3 space-y-2 border-t border-[#e6eef7] pt-3">
+              {groupedConditionalMissing.map((group) => (
+                <div key={`conditional-pack-missing-${group.key}`} className="rounded-[10px] border border-[#f3d1ce] bg-white px-2.5 py-2 text-xs text-[#8e1f15]">
+                  <p className="font-semibold">{group.label}</p>
+                  <p className="mt-0.5">{group.fields.join(', ')}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {showAuditDetails && conditionalPackAudit ? (
+            <details className="mt-3 border-t border-[#e6eef7] pt-3 text-xs text-[#607387]">
+              <summary className="cursor-pointer font-semibold text-[#2f455c]">Clause Pack Trace</summary>
+              <div className="mt-2 space-y-3">
+                <div className="flex flex-wrap gap-2">
+                  <span className="rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 font-semibold text-[#2f455c]">
+                    Ready: {conditionalPackAudit?.summary?.readyPackCount || 0}
+                  </span>
+                  <span className="rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 font-semibold text-[#2f455c]">
+                    Blocked: {conditionalPackAudit?.summary?.blockedPackCount || 0}
+                  </span>
+                  <span className="rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 font-semibold text-[#2f455c]">
+                    Inactive: {inactivePackAudits.length}
+                  </span>
+                </div>
+                {auditSignalRows.length ? (
+                  <div>
+                    <p className="font-semibold text-[#2f455c]">Activation signals</p>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {auditSignalRows.map((signal) => (
+                        <span key={signal.key} className="rounded-full border border-[#dce6f2] bg-white px-2 py-1 text-[0.68rem]">
+                          {signal.label}: {signal.value}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {auditDocumentTriggers.length ? (
+                  <div>
+                    <p className="font-semibold text-[#2f455c]">Document triggers</p>
+                    <p className="mt-1 text-[0.68rem]">{auditDocumentTriggers.slice(0, 10).join(', ')}</p>
+                  </div>
+                ) : null}
+                {inactivePackAudits.length ? (
+                  <div>
+                    <p className="font-semibold text-[#2f455c]">Inactive packs</p>
+                    <div className="mt-1 space-y-1">
+                      {inactivePackAudits.slice(0, 6).map((pack) => (
+                        <p key={`inactive-pack-${pack.key}`} className="text-[0.68rem]">
+                          <span className="font-semibold">{pack.label || pack.key}:</span> {pack.reason || 'No matching activation signal.'}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </details>
+          ) : null}
+        </div>
+      ) : null}
       <div className="mt-3 space-y-2">
         {critical.map((item) => (
-          <p key={`critical-${item.placeholderKey}`} className="rounded-[10px] border border-[#f3d1ce] bg-[#fff4f3] px-2.5 py-2 text-xs text-[#8e1f15]">
+          <p key={`critical-${item.placeholderKey || item.message}`} className="rounded-[10px] border border-[#f3d1ce] bg-[#fff4f3] px-2.5 py-2 text-xs text-[#8e1f15]">
             {item.message}
           </p>
         ))}
         {warnings.map((item) => (
-          <p key={`warning-${item.placeholderKey}`} className="rounded-[10px] border border-[#f4e2bf] bg-[#fff8ec] px-2.5 py-2 text-xs text-[#7d520d]">
+          <p key={`warning-${item.placeholderKey || item.message}`} className="rounded-[10px] border border-[#f4e2bf] bg-[#fff8ec] px-2.5 py-2 text-xs text-[#7d520d]">
             {item.message}
           </p>
         ))}
@@ -313,9 +520,13 @@ export default function DocumentPacketWorkflowPanel({
   const [canManagePacketAdminActions, setCanManagePacketAdminActions] = useState(false)
   const [conversionHealth, setConversionHealth] = useState(null)
   const { role } = useWorkspace()
+  const selectedTemplate = useMemo(
+    () => templates.find((item) => String(item?.id || '') === String(selectedTemplateId || '')) || null,
+    [templates, selectedTemplateId],
+  )
 
   useEffect(() => {
-    setSelectedTemplateId(resolveTemplateId(templates, selectedTemplateId))
+    setSelectedTemplateId((currentTemplateId) => resolveTemplateId(templates, currentTemplateId))
   }, [templates])
 
   useEffect(() => {
@@ -342,7 +553,7 @@ export default function DocumentPacketWorkflowPanel({
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [packetType, heading, selectedTemplateId, JSON.stringify(context)])
+  }, [context, heading, packetType, selectedTemplate])
 
   useEffect(() => {
     let active = true
@@ -390,11 +601,6 @@ export default function DocumentPacketWorkflowPanel({
     }
   }, [canManagePacketAdminActions])
 
-  const selectedTemplate = useMemo(
-    () => templates.find((item) => String(item?.id || '') === String(selectedTemplateId || '')) || null,
-    [templates, selectedTemplateId],
-  )
-
   const sectionManifest = previewState?.sectionManifest || []
   const previewHtml = previewState?.previewHtml || ''
   const latestFinalVersion = (versions || []).find(
@@ -410,14 +616,14 @@ export default function DocumentPacketWorkflowPanel({
     (signingSummary?.allRequiredFieldsCompleted ||
       Number(signingSummary?.completedRequiredFieldCount || 0) === Number(signingSummary?.requiredFieldCount || 0))
 
-  async function refreshVersions(nextPacketId = '') {
+  const refreshVersions = useCallback(async (nextPacketId = '') => {
     const resolvedPacketId = normalizeText(nextPacketId || packetState?.id || packetId)
     if (!resolvedPacketId) return
     const rows = await listPacketVersions(resolvedPacketId)
     setVersions(rows || [])
-  }
+  }, [packetId, packetState?.id])
 
-  async function refreshSigningSummary(nextPacketId = '') {
+  const refreshSigningSummary = useCallback(async (nextPacketId = '') => {
     const resolvedPacketId = normalizeText(nextPacketId || packetState?.id || packetId)
     if (!resolvedPacketId) {
       setSigningSummary(null)
@@ -425,7 +631,7 @@ export default function DocumentPacketWorkflowPanel({
     }
     const summary = await getPacketSigningSummary({ packetId: resolvedPacketId })
     setSigningSummary(summary)
-  }
+  }, [packetId, packetState?.id])
 
   async function handleSaveDraft() {
     try {
@@ -658,7 +864,7 @@ export default function DocumentPacketWorkflowPanel({
   useEffect(() => {
     void refreshSigningSummary(packetState?.id || packetId)
     void refreshVersions(packetState?.id || packetId)
-  }, [packetState?.id, packetId])
+  }, [packetId, packetState?.id, refreshSigningSummary, refreshVersions])
 
   return (
     <div className={`grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)_minmax(0,1.1fr)] ${className}`}>
@@ -699,7 +905,7 @@ export default function DocumentPacketWorkflowPanel({
           </label>
         </div>
 
-        <ValidationSummary validation={previewState} />
+        <ValidationSummary validation={previewState} showAuditDetails={canManagePacketAdminActions} />
         <SigningFieldsSummary summary={signingSummary} />
         {canManagePacketAdminActions && conversionHealth ? (
           <div

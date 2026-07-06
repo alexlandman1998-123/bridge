@@ -5,6 +5,19 @@ import {
   validateTemplateTokensAgainstRegistry,
 } from './mergeFieldRegistry'
 import { mapSellerOnboardingToMandateData } from './mandateDataMapper'
+import {
+  classifySellerParty,
+  isBondSale,
+  isCashSale,
+  isIndividualBuyer,
+  isIndividualSeller,
+  isCompanyBuyer,
+  isCompanySeller,
+  isMarriedInCommunityBuyer,
+  isMarriedInCommunitySeller,
+  isTrustBuyer,
+  isTrustSeller,
+} from './documentPartyClassification'
 
 const ZAR_CURRENCY = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -31,6 +44,14 @@ function firstText(...values) {
     if (text) return text
   }
   return ''
+}
+
+function firstPresent(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined || value === '') continue
+    return value
+  }
+  return null
 }
 
 function asRecord(value) {
@@ -81,6 +102,34 @@ function normalizeClauseText(value) {
     return Object.values(value).map((item) => normalizeText(item)).filter(Boolean).join('\n')
   }
   return normalizeText(value)
+}
+
+function normalizeNameList(value) {
+  if (Array.isArray(value)) {
+    return compactUniqueJoin(value.map((item) => {
+      if (!item || typeof item !== 'object') return item
+      return firstText(
+        item.fullName,
+        item.full_name,
+        item.displayName,
+        item.display_name,
+        item.name,
+        combineName(item.firstName, item.lastName),
+        combineName(item.first_name, item.last_name),
+      )
+    }), '; ')
+  }
+  return normalizeText(value)
+}
+
+function normalizeYesNoFlag(value, fallback = false) {
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  const text = normalizeText(value)
+  if (!text) return fallback ? 'Yes' : 'No'
+  const normalized = text.toLowerCase().replace(/[^a-z0-9]+/g, '_')
+  if (['yes', 'y', 'true', 'required', 'requires_consent', 'consent_required', '1'].includes(normalized)) return 'Yes'
+  if (['no', 'n', 'false', 'not_required', 'none', '0'].includes(normalized)) return 'No'
+  return fallback ? 'Yes' : 'No'
 }
 
 function resolvePropertyDisclosureAnnexureFromSource(source = {}) {
@@ -529,52 +578,114 @@ const OTP_SECTION_DEFINITIONS = [
     key: 'finance_clause_bond',
     label: 'Finance Clause (Bond)',
     required: false,
-    condition: ({ placeholders }) => ['bond', 'combination', 'hybrid'].includes(String(placeholders.finance_type || placeholders['transaction.finance_type_raw'] || '').toLowerCase()),
+    condition: ({ placeholders }) => isBondSale(placeholders),
     placeholders: [
       ['bond_amount', 'Bond Amount'],
       ['finance_type', 'Finance Type'],
     ],
   }),
   createPacketSection({
+    key: 'finance_clause_cash',
+    label: 'Cash Sale Payment Clause',
+    required: false,
+    condition: ({ placeholders }) => isCashSale(placeholders),
+    placeholders: [
+      ['cash_amount', 'Cash Amount'],
+      ['finance_type', 'Finance Type'],
+    ],
+  }),
+  createPacketSection({
+    key: 'entity_clause_individual',
+    label: 'Individual Buyer Capacity Clause',
+    required: false,
+    condition: ({ placeholders }) => isIndividualBuyer(placeholders),
+    placeholders: [
+      ['buyer_marital_status', 'Buyer Marital Status'],
+      ['buyer_spouse_consent_required', 'Spouse Consent Required'],
+    ],
+  }),
+  createPacketSection({
     key: 'entity_clause_company',
     label: 'Company Authority Clause',
     required: false,
-    condition: ({ placeholders }) => String(placeholders.buyer_entity_type || placeholders['buyer.entity_type_raw'] || '').toLowerCase() === 'company',
+    condition: ({ placeholders }) => isCompanyBuyer(placeholders),
     placeholders: [
+      ['buyer_company_registration_number', 'Buyer Registration Number'],
       ['buyer_representative_name', 'Authorised Representative'],
       ['buyer_representative_capacity', 'Representative Capacity'],
+      ['buyer_resolution_date', 'Resolution Date'],
+      ['buyer_authority_basis', 'Authority Basis'],
     ],
   }),
   createPacketSection({
     key: 'entity_clause_trust',
     label: 'Trust Authority Clause',
     required: false,
-    condition: ({ placeholders }) => String(placeholders.buyer_entity_type || placeholders['buyer.entity_type_raw'] || '').toLowerCase() === 'trust',
+    condition: ({ placeholders }) => isTrustBuyer(placeholders),
     placeholders: [
       ['buyer_trust_registration_number', 'Trust Registration Number'],
+      ['buyer_trustee_names', 'Trustee Names'],
       ['buyer_representative_name', 'Trustee Representative'],
+      ['buyer_representative_capacity', 'Trustee Capacity'],
+    ],
+  }),
+  createPacketSection({
+    key: 'buyer_spouse_consent',
+    label: 'Buyer Spouse Consent Clause',
+    required: false,
+    condition: ({ placeholders }) => isMarriedInCommunityBuyer(placeholders),
+    placeholders: [
+      ['buyer_spouse_full_name', 'Buyer Spouse Full Name'],
+      ['buyer_spouse_id_number', 'Buyer Spouse ID Number'],
+      ['buyer_spouse_email', 'Buyer Spouse Email'],
+      ['buyer_spouse_consent_required', 'Buyer Spouse Consent Required'],
+    ],
+  }),
+  createPacketSection({
+    key: 'seller_entity_clause_individual',
+    label: 'Seller Individual Capacity Clause',
+    required: false,
+    condition: ({ placeholders }) => isIndividualSeller(placeholders),
+    placeholders: [
+      ['seller_marital_status', 'Seller Marital Status'],
+      ['seller_spouse_consent_required', 'Spouse Consent Required'],
     ],
   }),
   createPacketSection({
     key: 'seller_entity_clause_company',
     label: 'Seller Company Authority Clause',
     required: false,
-    condition: ({ placeholders }) => ['company', 'close_corporation', 'cc'].includes(String(placeholders.seller_entity_type || placeholders['seller.entity_type_raw'] || '').toLowerCase()),
+    condition: ({ placeholders }) => isCompanySeller(placeholders),
     placeholders: [
       ['seller_company_registration_number', 'Seller Registration Number'],
       ['seller_representative_name', 'Authorised Seller Representative'],
       ['seller_representative_capacity', 'Seller Representative Capacity'],
+      ['seller_resolution_date', 'Resolution Date'],
+      ['seller_authority_basis', 'Authority Basis'],
     ],
   }),
   createPacketSection({
     key: 'seller_entity_clause_trust',
     label: 'Seller Trust Authority Clause',
     required: false,
-    condition: ({ placeholders }) => String(placeholders.seller_entity_type || placeholders['seller.entity_type_raw'] || '').toLowerCase() === 'trust',
+    condition: ({ placeholders }) => isTrustSeller(placeholders),
     placeholders: [
       ['seller_trust_registration_number', 'Trust Registration Number'],
+      ['seller_trustee_names', 'Trustee Names'],
       ['seller_representative_name', 'Trustee Representative'],
       ['seller_representative_capacity', 'Trustee Capacity'],
+    ],
+  }),
+  createPacketSection({
+    key: 'seller_spouse_consent',
+    label: 'Seller Spouse Consent Clause',
+    required: false,
+    condition: ({ placeholders }) => isMarriedInCommunitySeller(placeholders),
+    placeholders: [
+      ['seller_spouse_full_name', 'Seller Spouse Full Name'],
+      ['seller_spouse_id_number', 'Seller Spouse ID Number'],
+      ['seller_spouse_email', 'Seller Spouse Email'],
+      ['seller_spouse_consent_required', 'Seller Spouse Consent Required'],
     ],
   }),
   createPacketSection({
@@ -666,23 +777,50 @@ const MANDATE_SECTION_DEFINITIONS = [
     ],
   }),
   createPacketSection({
+    key: 'entity_clause_individual',
+    label: 'Individual Seller Capacity Clause',
+    required: false,
+    condition: ({ placeholders }) => isIndividualSeller(placeholders),
+    placeholders: [
+      ['seller_marital_status', 'Seller Marital Status'],
+      ['seller_spouse_consent_required', 'Spouse Consent Required'],
+    ],
+  }),
+  createPacketSection({
     key: 'entity_clause_company',
     label: 'Company Authority Clause',
     required: false,
-    condition: ({ placeholders }) => String(placeholders.seller_entity_type || placeholders['seller.entity_type_raw'] || '').toLowerCase() === 'company',
+    condition: ({ placeholders }) => isCompanySeller(placeholders),
     placeholders: [
+      ['seller_company_registration_number', 'Seller Registration Number'],
       ['seller_representative_name', 'Authorised Representative'],
       ['seller_representative_capacity', 'Representative Capacity'],
+      ['seller_resolution_date', 'Resolution Date'],
+      ['seller_authority_basis', 'Authority Basis'],
     ],
   }),
   createPacketSection({
     key: 'entity_clause_trust',
     label: 'Trust Authority Clause',
     required: false,
-    condition: ({ placeholders }) => String(placeholders.seller_entity_type || placeholders['seller.entity_type_raw'] || '').toLowerCase() === 'trust',
+    condition: ({ placeholders }) => isTrustSeller(placeholders),
     placeholders: [
       ['seller_trust_registration_number', 'Trust Registration Number'],
+      ['seller_trustee_names', 'Trustee Names'],
       ['seller_representative_name', 'Trustee Representative'],
+      ['seller_representative_capacity', 'Trustee Capacity'],
+    ],
+  }),
+  createPacketSection({
+    key: 'seller_spouse_consent',
+    label: 'Seller Spouse Consent Clause',
+    required: false,
+    condition: ({ placeholders }) => isMarriedInCommunitySeller(placeholders),
+    placeholders: [
+      ['seller_spouse_full_name', 'Seller Spouse Full Name'],
+      ['seller_spouse_id_number', 'Seller Spouse ID Number'],
+      ['seller_spouse_email', 'Seller Spouse Email'],
+      ['seller_spouse_consent_required', 'Seller Spouse Consent Required'],
     ],
   }),
   createPacketSection({
@@ -732,14 +870,23 @@ function normalizeDevelopmentSellerDetails(value = {}) {
   return {
     mode: source.mode || '',
     entityType: source.entityType || source.entity_type || '',
-    legalName: source.legalName || source.legal_name || source.name || '',
+    legalName: source.legalName || source.legal_name || source.fullName || source.full_name || source.name || '',
     tradingName: source.tradingName || source.trading_name || '',
-    registrationNumber: source.registrationNumber || source.registration_number || source.companyRegistrationNumber || '',
+    registrationNumber: source.registrationNumber || source.registration_number || source.companyRegistrationNumber || source.company_registration_number || source.trustRegistrationNumber || source.trust_registration_number || '',
     vatNumber: source.vatNumber || source.vat_number || '',
     registeredAddress: source.registeredAddress || source.registered_address || source.address || '',
     postalAddress: source.postalAddress || source.postal_address || '',
     email: source.email || '',
     phone: source.phone || source.mobile || '',
+    maritalStatus: source.maritalStatus || source.marital_status || '',
+    maritalRegime: source.maritalRegime || source.marital_regime || source.marriageType || source.marriage_type || '',
+    spouseFullName: source.spouseFullName || source.spouse_full_name || source.spouseName || source.spouse_name || '',
+    spouseIdNumber: source.spouseIdNumber || source.spouse_id_number || '',
+    spouseEmail: source.spouseEmail || source.spouse_email || '',
+    spouseConsentRequired: firstPresent(source.spouseConsentRequired, source.spouse_consent_required, ''),
+    trusteeNames: normalizeNameList(source.trusteeNames || source.trustee_names || source.trustees),
+    resolutionDate: source.resolutionDate || source.resolution_date || source.companyResolutionDate || source.company_resolution_date || '',
+    authorityBasis: source.authorityBasis || source.authority_basis || source.authorityGranted || source.authority_granted || '',
     vatTreatment: source.vatTreatment || source.vat_treatment || '',
     notes: source.notes || '',
     signatory: {
@@ -793,10 +940,9 @@ export function validateSellerPartyReadiness({ packetType = 'otp', placeholders 
   const sellerName = valueFor('seller_full_name')
   const sellerEmail = valueFor('seller_email')
   const sellerIdNumber = valueFor('seller_id_number')
-  const sellerEntityType = normalizeText(valueFor('seller.entity_type_raw') || valueFor('seller_entity_type')).toLowerCase().replace(/\s+/g, '_')
-  const sellerIsCompany = ['company', 'close_corporation', 'cc'].includes(sellerEntityType)
-  const sellerIsTrust = sellerEntityType === 'trust'
-  const sellerIsLegalEntity = sellerIsCompany || sellerIsTrust
+  const sellerClassification = classifySellerParty(normalizedPayload)
+  const sellerIsTrust = sellerClassification.isTrust
+  const sellerIsLegalEntity = sellerClassification.isLegalEntity
   const representativeName = valueFor('seller_representative_name') || valueFor('representative_name')
   const representativeCapacity = valueFor('seller_representative_capacity') || valueFor('representative_capacity')
   const representativeEmail = valueFor('seller_representative_email') || valueFor('representative_email')
@@ -999,6 +1145,88 @@ export function resolveOtpPacketPlaceholders({
   const organisationProfile = asRecord(organisation)
   const agentProfile = asRecord(agent)
   const agencyMetadata = asRecord(agencyProfile.metadata_json || agencyProfile.metadata || organisationProfile.metadata_json || organisationProfile.metadata)
+  const buyerCompanyRegistrationNumber = normalizeNullableText(firstText(
+    onboarding.companyRegistrationNumber,
+    onboarding.company_registration_number,
+    onboarding.entityRegistrationNumber,
+    onboarding.entity_registration_number,
+  ))
+  const buyerTrustRegistrationNumber = normalizeNullableText(firstText(
+    onboarding.trustRegistrationNumber,
+    onboarding.trust_registration_number,
+    buyerEntityTypeRaw === 'trust' ? onboarding.entityRegistrationNumber || onboarding.entity_registration_number : '',
+  ))
+  const buyerRepresentativeName = normalizeNullableText(firstText(
+    onboarding.authorizedRepresentativeName,
+    onboarding.authorisedRepresentativeName,
+    onboarding.representativeName,
+    onboarding.representative_name,
+    onboarding.companyRepresentativeName,
+    onboarding.company_representative_name,
+    onboarding.trustRepresentativeName,
+    onboarding.trust_representative_name,
+    onboarding.trusteeName,
+    onboarding.trustee_name,
+  ))
+  const buyerRepresentativeCapacity = normalizeNullableText(firstText(
+    onboarding.authorizedRepresentativeCapacity,
+    onboarding.authorisedRepresentativeCapacity,
+    onboarding.representativeCapacity,
+    onboarding.representative_capacity,
+    onboarding.companyRepresentativeCapacity,
+    onboarding.company_representative_capacity,
+    onboarding.trustRepresentativeCapacity,
+    onboarding.trust_representative_capacity,
+    onboarding.trusteeCapacity,
+    onboarding.trustee_capacity,
+  ))
+  const buyerMaritalStatus = normalizeNullableText(firstText(onboarding.maritalStatus, onboarding.marital_status))
+  const buyerSpouseFullName = normalizeNullableText(firstText(
+    onboarding.spouseFullName,
+    onboarding.spouse_full_name,
+    onboarding.spouseName,
+    onboarding.spouse_name,
+  ))
+  const buyerSpouseConsentRequired = normalizeYesNoFlag(
+    firstPresent(onboarding.spouseConsentRequired, onboarding.spouse_consent_required),
+    isMarriedInCommunityBuyer({
+      buyer_marital_status: buyerMaritalStatus,
+      buyer_spouse_consent_required: firstPresent(onboarding.spouseConsentRequired, onboarding.spouse_consent_required),
+    }),
+  )
+  const sellerMaritalStatus = normalizeNullableText(firstText(
+    sourceSeller.maritalStatus,
+    sourceSeller.marital_status,
+    developmentSeller.maritalStatus,
+    transaction?.seller_marital_status,
+  ))
+  const sellerMaritalRegime = normalizeNullableText(firstText(
+    sourceSeller.maritalRegime,
+    sourceSeller.marital_regime,
+    sourceSeller.marriageType,
+    sourceSeller.marriage_type,
+    developmentSeller.maritalRegime,
+    transaction?.seller_marital_regime,
+  ))
+  const sellerSpouseFullName = normalizeNullableText(firstText(
+    sourceSeller.spouseFullName,
+    sourceSeller.spouse_full_name,
+    sourceSeller.spouseName,
+    sourceSeller.spouse_name,
+    developmentSeller.spouseFullName,
+  ))
+  const sellerSpouseConsentRequired = normalizeYesNoFlag(
+    firstPresent(sourceSeller.spouseConsentRequired, sourceSeller.spouse_consent_required, developmentSeller.spouseConsentRequired),
+    isMarriedInCommunitySeller({
+      seller_marital_status: sellerMaritalStatus,
+      seller_marital_regime: sellerMaritalRegime,
+      seller_spouse_consent_required: firstPresent(sourceSeller.spouseConsentRequired, sourceSeller.spouse_consent_required, developmentSeller.spouseConsentRequired),
+    }),
+  )
+  const sellerTrusteeNames = normalizeNullableText(firstText(
+    normalizeNameList(firstPresent(sourceSeller.trusteeNames, sourceSeller.trustee_names, sourceSeller.trustees)),
+    developmentSeller.trusteeNames,
+  ))
 
   return {
     buyer_parties: buyerParties,
@@ -1006,18 +1234,25 @@ export function resolveOtpPacketPlaceholders({
     buyer_id_number:
       normalizeNullableText(primaryBuyer.idNumber) ||
       normalizeNullableText(onboarding.idNumber) ||
-      normalizeNullableText(onboarding.companyRegistrationNumber) ||
-      normalizeNullableText(onboarding.trustRegistrationNumber) ||
+      (buyerEntityTypeRaw === 'trust' ? buyerTrustRegistrationNumber : buyerCompanyRegistrationNumber) ||
       null,
     buyer_email: normalizeNullableText(primaryBuyer.email) || normalizeNullableText(buyer?.email) || null,
     buyer_phone: normalizeNullableText(primaryBuyer.phone) || normalizeNullableText(buyer?.phone) || null,
-    buyer_marital_status: normalizeNullableText(onboarding.maritalStatus || onboarding.marital_status),
-    buyer_spouse_name: normalizeNullableText(onboarding.spouseName || onboarding.spouse_name),
+    buyer_marital_status: buyerMaritalStatus,
+    buyer_spouse_full_name: buyerSpouseFullName,
+    buyer_spouse_name: buyerSpouseFullName,
+    buyer_spouse_id_number: normalizeNullableText(firstText(onboarding.spouseIdNumber, onboarding.spouse_id_number)),
+    buyer_spouse_email: normalizeNullableText(firstText(onboarding.spouseEmail, onboarding.spouse_email)),
+    buyer_spouse_consent_required: buyerSpouseConsentRequired,
     buyer_entity_type: toTitleCase(buyerEntityTypeRaw || 'individual'),
     'buyer.entity_type_raw': buyerEntityTypeRaw || 'individual',
-    buyer_representative_name: normalizeNullableText(onboarding.authorizedRepresentativeName || onboarding.authorisedRepresentativeName),
-    buyer_representative_capacity: normalizeNullableText(onboarding.authorizedRepresentativeCapacity || onboarding.authorisedRepresentativeCapacity),
-    buyer_trust_registration_number: normalizeNullableText(onboarding.trustRegistrationNumber),
+    buyer_company_registration_number: buyerEntityTypeRaw === 'trust' ? null : buyerCompanyRegistrationNumber,
+    buyer_representative_name: buyerRepresentativeName,
+    buyer_representative_capacity: buyerRepresentativeCapacity,
+    buyer_resolution_date: normalizeNullableText(firstText(onboarding.resolutionDate, onboarding.resolution_date, onboarding.companyResolutionDate, onboarding.company_resolution_date)),
+    buyer_authority_basis: normalizeNullableText(firstText(onboarding.authorityBasis, onboarding.authority_basis, onboarding.authorityGranted, onboarding.authority_granted)),
+    buyer_trust_registration_number: buyerTrustRegistrationNumber,
+    buyer_trustee_names: normalizeNullableText(normalizeNameList(firstPresent(onboarding.trusteeNames, onboarding.trustee_names, onboarding.trustees))),
     buyer_marketing_opt_in: normalizeNullableText(onboarding.marketingConsent),
     buyer_domicilium_address:
       normalizeNullableText(onboarding.residentialAddress) ||
@@ -1031,6 +1266,13 @@ export function resolveOtpPacketPlaceholders({
     seller_phone: normalizeNullableText(primarySeller.phone) || normalizeNullableText(developmentSeller.phone) || null,
     seller_entity_type: toTitleCase(sellerEntityTypeRaw || 'company'),
     'seller.entity_type_raw': sellerEntityTypeRaw || 'company',
+    seller_marital_status: sellerMaritalStatus,
+    seller_marital_regime: sellerMaritalRegime,
+    seller_spouse_full_name: sellerSpouseFullName,
+    seller_spouse_name: sellerSpouseFullName,
+    seller_spouse_id_number: normalizeNullableText(firstText(sourceSeller.spouseIdNumber, sourceSeller.spouse_id_number, developmentSeller.spouseIdNumber)),
+    seller_spouse_email: normalizeNullableText(firstText(sourceSeller.spouseEmail, sourceSeller.spouse_email, developmentSeller.spouseEmail)),
+    seller_spouse_consent_required: sellerSpouseConsentRequired,
     seller_representative_name: normalizeNullableText(sellerSignatory.fullName),
     representative_name: normalizeNullableText(sellerSignatory.fullName),
     seller_representative_email: normalizeNullableText(sellerSignatory.email),
@@ -1042,6 +1284,9 @@ export function resolveOtpPacketPlaceholders({
     representative_id_number: normalizeNullableText(sellerSignatory.idNumber),
     seller_company_registration_number: sellerEntityTypeRaw === 'trust' ? null : sellerRegistrationNumber,
     seller_trust_registration_number: sellerEntityTypeRaw === 'trust' ? sellerRegistrationNumber : null,
+    seller_trustee_names: sellerTrusteeNames,
+    seller_resolution_date: normalizeNullableText(firstText(sourceSeller.resolutionDate, sourceSeller.resolution_date, sourceSeller.companyResolutionDate, sourceSeller.company_resolution_date, developmentSeller.resolutionDate)),
+    seller_authority_basis: normalizeNullableText(firstText(sourceSeller.authorityBasis, sourceSeller.authority_basis, sourceSeller.authorityGranted, sourceSeller.authority_granted, developmentSeller.authorityBasis)),
     seller_vat_number: normalizeNullableText(developmentSeller.vatNumber),
     seller_registered_address: normalizeNullableText(developmentSeller.registeredAddress),
     seller_postal_address: normalizeNullableText(developmentSeller.postalAddress),

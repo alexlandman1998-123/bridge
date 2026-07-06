@@ -496,7 +496,7 @@ function BridgeHeader({ currentPath }) {
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-8">
           <Link to="/bridge" className="flex items-center gap-3 text-[1.05rem] font-semibold tracking-[0.16em] text-marketing-ink">
-            <img src="/brand/bridge_9_white_background.png" alt="" className="h-7 w-auto rounded-md" />
+            <img src="/favicon-light.svg" alt="" className="h-7 w-7 rounded-md" />
             ARCH9
           </Link>
 

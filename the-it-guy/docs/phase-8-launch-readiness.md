@@ -28,8 +28,8 @@ Rules:
 
 Suggested domains:
 
-- `demo.bridge9.io`
-- `staging.bridge9.io`
+- `demo.arch9.co.za`
+- `staging.arch9.co.za`
 
 ### Production
 

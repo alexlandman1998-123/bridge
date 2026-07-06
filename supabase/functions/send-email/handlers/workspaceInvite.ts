@@ -1,4 +1,9 @@
 import type { SendWorkspaceInvitePayload } from "../types.ts";
+import {
+  markEmailDeliveryFailed,
+  markEmailDeliverySent,
+  prepareEmailDelivery,
+} from "../services/communicationDeliveryLogging.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
@@ -14,7 +19,8 @@ function escapeHtml(value: string) {
 
 function getInitials(value: string) {
   const parts = value.split(/\s+/).map((part) => part.trim()).filter(Boolean);
-  const initials = parts.slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join("");
+  const initials = parts.slice(0, 2).map((part) => part.charAt(0).toUpperCase())
+    .join("");
   return initials || "B";
 }
 
@@ -25,7 +31,9 @@ function normalizeBrandColor(value: string) {
   return "#12344d";
 }
 
-export async function handleWorkspaceInviteEmail(payload: SendWorkspaceInvitePayload) {
+export async function handleWorkspaceInviteEmail(
+  payload: SendWorkspaceInvitePayload,
+) {
   const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
   if (!resendApiKey) {
     return jsonResponse(500, { error: "Missing RESEND_API_KEY secret." });
@@ -37,23 +45,38 @@ export async function handleWorkspaceInviteEmail(payload: SendWorkspaceInvitePay
       payload.onboarding_link,
   );
   if (!to) return jsonResponse(400, { error: "Missing required field: to" });
-  if (!inviteLink) return jsonResponse(400, { error: "Missing required field: inviteLink" });
+  if (!inviteLink) {
+    return jsonResponse(400, { error: "Missing required field: inviteLink" });
+  }
 
-  const organisationName = normalizeText(payload.organisationName || payload.organisation_name) || "Arch9 workspace";
+  const organisationName =
+    normalizeText(payload.organisationName || payload.organisation_name) ||
+    "Arch9 workspace";
   const inviteeName = normalizeText(
     payload.inviteeName || payload.invitee_name || payload.agentName ||
       payload.agent_name,
   ) || "there";
-  const inviterName = normalizeText(payload.inviterName || payload.inviter_name) || "your workspace admin";
-  const workspaceRole = normalizeText(payload.workspaceRole || payload.workspace_role).replaceAll("_", " ") || "team member";
-  const supportEmail = normalizeText(payload.supportEmail || payload.support_email);
-  const organisationLogoUrl = normalizeText(payload.organisationLogoUrl || payload.organisation_logo_url);
-  const organisationLogoIconUrl = normalizeText(payload.organisationLogoIconUrl || payload.organisation_logo_icon_url);
+  const inviterName =
+    normalizeText(payload.inviterName || payload.inviter_name) ||
+    "your workspace admin";
+  const workspaceRole =
+    normalizeText(payload.workspaceRole || payload.workspace_role).replaceAll(
+      "_",
+      " ",
+    ) || "team member";
+  const supportEmail = normalizeText(
+    payload.supportEmail || payload.support_email,
+  );
+  const organisationLogoUrl = normalizeText(
+    payload.organisationLogoUrl || payload.organisation_logo_url,
+  );
+  const organisationLogoIconUrl = normalizeText(
+    payload.organisationLogoIconUrl || payload.organisation_logo_icon_url,
+  );
   const brandPrimaryColor = normalizeBrandColor(
     payload.brandPrimaryColor || payload.brand_primary_color || "",
   );
-  const sender =
-    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+  const sender = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
     "Arch9 <onboarding@resend.dev>";
 
   const safeOrganisationName = escapeHtml(organisationName);
@@ -62,7 +85,9 @@ export async function handleWorkspaceInviteEmail(payload: SendWorkspaceInvitePay
   const safeWorkspaceRole = escapeHtml(workspaceRole);
   const safeInviteLink = escapeHtml(inviteLink);
   const safeSupportEmail = escapeHtml(supportEmail);
-  const safeLogoUrl = escapeHtml(organisationLogoUrl || organisationLogoIconUrl);
+  const safeLogoUrl = escapeHtml(
+    organisationLogoUrl || organisationLogoIconUrl,
+  );
   const safeBrandColor = escapeHtml(brandPrimaryColor);
   const safeInitials = escapeHtml(getInitials(organisationName));
   const currentYear = new Date().getFullYear();
@@ -154,26 +179,66 @@ export async function handleWorkspaceInviteEmail(payload: SendWorkspaceInvitePay
       </tr>
     </table>
   `;
+  const subject = `You're invited to join ${organisationName} on Arch9`;
+  const text =
+    `Hi ${inviteeName}, ${inviterName} invited you to join ${organisationName} on Arch9 as ${workspaceRole}. Accept the invite: ${inviteLink}`;
+  const rawPayload = payload as Record<string, unknown>;
+  const requestType = normalizeText(payload.type).toLowerCase() ||
+    "workspace_invite";
+  const delivery = await prepareEmailDelivery(rawPayload, {
+    communicationType: requestType,
+    recipient: to,
+    recipientRole: workspaceRole.toLowerCase().includes("agent") ||
+        requestType === "agent_invite"
+      ? "agent"
+      : "workspace_user",
+    subject,
+    messagePreview: text,
+    context: {
+      organisationId: normalizeText(
+        rawPayload.organisationId || rawPayload.organisation_id,
+      ),
+      branchId: normalizeText(rawPayload.branchId || rawPayload.branch_id),
+      metadata: {
+        inviteLink,
+        inviteeName,
+        inviterName,
+        organisationName,
+        workspaceRole,
+        emailPurpose: requestType,
+      },
+    },
+  });
 
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
     from: sender,
     to,
-    subject: `You're invited to join ${organisationName} on Arch9`,
+    subject,
     html,
-    text: `Hi ${inviteeName}, ${inviterName} invited you to join ${organisationName} on Arch9 as ${workspaceRole}. Accept the invite: ${inviteLink}`,
+    text,
   });
 
   if (!emailResult.ok) {
+    await markEmailDeliveryFailed(delivery?.id || "", {
+      errorMessage: emailResult.error?.message ||
+        "Failed to send workspace invite email.",
+    });
     return jsonResponse(500, {
-      error: emailResult.error?.message || "Failed to send workspace invite email.",
+      error: emailResult.error?.message ||
+        "Failed to send workspace invite email.",
       details: emailResult.error,
     });
   }
+
+  await markEmailDeliverySent(delivery?.id || "", {
+    emailId: emailResult.data?.id || null,
+  });
 
   return jsonResponse(200, {
     ok: true,
     type: "workspace_invite",
     emailId: emailResult.data?.id || null,
+    deliveryId: delivery?.id || null,
   });
 }

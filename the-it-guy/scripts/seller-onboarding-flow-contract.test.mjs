@@ -199,7 +199,7 @@ test('generates company sectional title document requirements', () => {
       sellerSurname: 'Principal',
       email: 'alex@example.com',
       phone: '0820000000',
-      companyName: 'Bridge Nine Properties (Pty) Ltd',
+      companyName: 'Arch9 Properties (Pty) Ltd',
       companyRegistrationNumber: '2024/123456/07',
       companyRegisteredAddress: '54 Menlyn Avenue, Waterkloof Glen, Pretoria',
       companyDirectorName: 'Alex Principal',

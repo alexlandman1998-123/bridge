@@ -44,7 +44,7 @@ export async function handleBondIntakeNotificationEmail(
   }
 
   const from = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <no-reply@bridge9.app>";
+    "Arch9 <no-reply@arch9.co.za>";
   const subject = normalizeText(payload.subject) || "Bond application update";
   const title = normalizeText(payload.title) || "Bond application update";
   const recipientName = normalizeText(payload.recipientName) || "there";

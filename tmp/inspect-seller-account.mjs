@@ -1,4 +1,4 @@
-const email = 'seller.demo@bridgenine.co.za'
+const email = 'seller.demo@arch9.co.za'
 const baseUrl = process.env.SUPABASE_URL
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 

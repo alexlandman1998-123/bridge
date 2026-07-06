@@ -14,7 +14,7 @@ This pass focused on visual clarity, hierarchy, spacing, and demo confidence onl
 ### 1) Homepage Hero / Premium Marketing Layout
 - Replaced hero headline and body copy with the requested concise messaging:
   - "Property transactions. Finally connected."
-  - "Bridge 9 connects developers, agents, conveyancers, bond originators, and clients in one shared workspace."
+  - "Arch9 connects developers, agents, conveyancers, bond originators, and clients in one shared workspace."
 - Added a new 4-card horizontal benefit strip above hero content (desktop row, responsive collapse on smaller screens):
   - Workflow & ownership
   - Clients stay informed

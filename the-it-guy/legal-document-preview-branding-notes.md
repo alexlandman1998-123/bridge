@@ -24,8 +24,8 @@ Refined the mandate preview/rendering paths used by the Legal Document Workspace
   - `branding.logoLightUrl`
   - fallback to organisation name.
 - Top-right uses Bridge branding from the existing static asset flow:
-  - `/brand/bridge_9_white_background.png`
-  - fallback label: `Bridge 9`.
+  - `/favicon-light.svg`
+  - fallback label: `Arch9`.
 
 ## Footer Branding
 
@@ -77,8 +77,8 @@ Sections render with legal numbering, labels, paragraphs, and signature lines ra
   - agency onboarding branding fallback
   - organisation name fallback
 - Bridge logos use existing static frontend assets:
-  - `public/brand/bridge_9_white_background.png`
-  - `public/brand/bridge_9_dark_background.png`
+  - `public/favicon-light.svg`
+  - `public/favicon-dark.svg`
 - No schema changes were introduced for branding.
 
 ## PDF / Print Readiness

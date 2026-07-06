@@ -24,7 +24,7 @@ export default function MobileHeader() {
     normalizeText(branding.organisationLabel) ||
     normalizeText(simpleWorkspace.displayName || simpleWorkspace.display_name || simpleWorkspace.name) ||
     normalizeText(currentWorkspace.displayName || currentWorkspace.display_name || currentWorkspace.name) ||
-    'Bridge9 Realty'
+    'Arch9 Realty'
   const logoUrl =
     normalizeText(branding.logoIconUrl) ||
     normalizeText(branding.logoUrl) ||

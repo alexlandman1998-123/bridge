@@ -91,7 +91,7 @@ test('captures company and trust authority data in the contract', () => {
   const companyFlow = resolveBuyerOnboardingFlowContract({
     purchaser_type: 'company',
     purchaser_entity_type: 'company',
-    company_name: 'Bridge Nine Properties (Pty) Ltd',
+    company_name: 'Arch9 Properties (Pty) Ltd',
     company_registration_number: '2024/123456/07',
     authorised_signatory_name: 'Alex Principal',
     authorised_signatory_identity_number: '9001015009083',
@@ -178,7 +178,7 @@ test('normalizes the shared buyer flow wrapper', () => {
   const flow = resolveBuyerOnboardingFlowWrapper({
     purchaser_type: 'company',
     purchaser_entity_type: 'company',
-    company_name: 'Bridge Nine Properties (Pty) Ltd',
+    company_name: 'Arch9 Properties (Pty) Ltd',
     company_registration_number: '2024/123456/07',
     authorised_signatory_name: 'Alex Principal',
     authorised_signatory_identity_number: '9001015009083',
@@ -257,7 +257,7 @@ test('hydrates the same flow contract through derived buyer profiles', () => {
   const formData = {
     purchaser_type: 'company',
     purchaser_entity_type: 'company',
-    company_name: 'Bridge Nine Properties (Pty) Ltd',
+    company_name: 'Arch9 Properties (Pty) Ltd',
     company_registration_number: '2024/123456/07',
     authorised_signatory_name: 'Alex Principal',
     authorised_signatory_identity_number: '9001015009083',

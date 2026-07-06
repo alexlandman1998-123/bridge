@@ -50,7 +50,7 @@ export async function handleCommercialAccessNotificationEmail(
   }
 
   const from = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <no-reply@bridge9.app>";
+    "Arch9 <no-reply@arch9.co.za>";
   const recipientName = normalizeText(payload.recipientName || payload.recipient_name) || "there";
   const requesterName = normalizeText(payload.requesterName || payload.requester_name) || "A workspace user";
   const requesterEmail = normalizeText(payload.requesterEmail || payload.requester_email);

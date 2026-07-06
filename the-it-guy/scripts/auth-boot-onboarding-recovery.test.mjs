@@ -26,7 +26,7 @@ try {
   const workspace = {
     id: 'workspace-1',
     type: 'agency',
-    name: 'Bridge9 Realty',
+    name: 'Arch9 Realty',
   }
   const membership = {
     id: 'membership-1',

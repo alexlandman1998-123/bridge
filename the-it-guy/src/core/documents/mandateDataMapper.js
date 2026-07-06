@@ -51,6 +51,56 @@ function firstText(...values) {
   return ''
 }
 
+function firstPresent(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined || value === '') continue
+    return value
+  }
+  return null
+}
+
+function normalizeNameList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => {
+      if (!item || typeof item !== 'object') return normalizeText(item)
+      return firstText(
+        item.fullName,
+        item.full_name,
+        item.displayName,
+        item.display_name,
+        item.name,
+        [item.firstName || item.first_name, item.lastName || item.last_name || item.surname].filter(Boolean).join(' '),
+      )
+    }).filter(Boolean).join('; ')
+  }
+  return normalizeText(value)
+}
+
+function valueRequiresSpouseConsent(...values) {
+  const normalized = values
+    .map((value) => normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '_'))
+    .filter(Boolean)
+    .join('_')
+  if (!normalized) return false
+  if (/(^|_)(no|false|not_required|out_of_community|anc|antenuptial)($|_)/.test(normalized)) return false
+  return (
+    /(^|_)yes($|_)/.test(normalized) ||
+    normalized.includes('consent_required') ||
+    normalized.includes('in_community') ||
+    normalized.includes('community_of_property') ||
+    /(^|_)cop($|_)/.test(normalized)
+  )
+}
+
+function normalizeYesNoFlag(value, fallback = false) {
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  const normalized = normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '_')
+  if (!normalized) return fallback ? 'Yes' : 'No'
+  if (['yes', 'y', 'true', 'required', 'requires_consent', 'consent_required', '1'].includes(normalized)) return 'Yes'
+  if (['no', 'n', 'false', 'not_required', 'none', '0'].includes(normalized)) return 'No'
+  return fallback ? 'Yes' : 'No'
+}
+
 function firstNumber(...values) {
   for (const value of values) {
     if (value === null || value === undefined || value === '') continue
@@ -298,6 +348,17 @@ function resolveSellerProfile(onboarding = {}, lead = {}, contact = {}, mandateD
     : isTrust
       ? firstText(mandateDraft.sellerRegistrationNumber, mandateDraft.sellerIdNumber, onboarding.trustRegistrationNumber, onboarding.entityRegistrationNumber, onboarding.seller_id_number)
       : firstText(mandateDraft.sellerIdNumber, mandateDraft.sellerIdentityNumber, onboarding.idNumber, onboarding.passportNumber, onboarding.seller_id_number, lead.sellerIdNumber)
+  const maritalStatus = firstText(mandateDraft.sellerMaritalStatus, onboarding.maritalStatus, valueIndicatesMarried(ownershipType) ? 'married' : '')
+  const maritalRegime = firstText(mandateDraft.sellerMaritalRegime, onboarding.marriageType, onboarding.marriageRegime, onboarding.maritalRegime, onboarding.antenuptialContract, valueIndicatesMarried(ownershipType) ? ownershipType : '')
+  const spouseFullName = firstText(
+    mandateDraft.sellerSpouseFullName,
+    mandateDraft.spouseFullName,
+    mandateDraft.spouseName,
+    onboarding.spouseFullName,
+    onboarding.spouse_full_name,
+    onboarding.spouseName,
+    onboarding.spouse_name,
+  )
 
   return {
     entityType,
@@ -322,11 +383,16 @@ function resolveSellerProfile(onboarding = {}, lead = {}, contact = {}, mandateD
       contact.address,
       lead.address,
     ),
-    maritalStatus: firstText(mandateDraft.sellerMaritalStatus, onboarding.maritalStatus, valueIndicatesMarried(ownershipType) ? 'married' : ''),
-    maritalRegime: firstText(mandateDraft.sellerMaritalRegime, onboarding.marriageType, onboarding.marriageRegime, onboarding.maritalRegime, onboarding.antenuptialContract, valueIndicatesMarried(ownershipType) ? ownershipType : ''),
-    spouseName: firstText(mandateDraft.spouseName, onboarding.spouseName),
-    spouseIdNumber: firstText(mandateDraft.spouseIdNumber, onboarding.spouseIdNumber),
-    spouseEmail: firstText(mandateDraft.spouseEmail, onboarding.spouseEmail),
+    maritalStatus,
+    maritalRegime,
+    spouseFullName,
+    spouseName: spouseFullName,
+    spouseIdNumber: firstText(mandateDraft.sellerSpouseIdNumber, mandateDraft.spouseIdNumber, onboarding.spouseIdNumber, onboarding.spouse_id_number),
+    spouseEmail: firstText(mandateDraft.sellerSpouseEmail, mandateDraft.spouseEmail, onboarding.spouseEmail, onboarding.spouse_email),
+    spouseConsentRequired: normalizeYesNoFlag(
+      firstPresent(mandateDraft.sellerSpouseConsentRequired, mandateDraft.spouseConsentRequired, onboarding.spouseConsentRequired, onboarding.spouse_consent_required),
+      valueRequiresSpouseConsent(maritalStatus, maritalRegime),
+    ),
     representativeName: isCompany
       ? firstText(mandateDraft.sellerRepresentativeName, onboarding.representativeName, onboarding.companyRepresentativeName, onboarding.companyDirectorName, onboarding.authorisedRepresentativeName, onboarding.authorizedRepresentativeName, onboarding.entityRepresentative)
       : isTrust
@@ -340,6 +406,12 @@ function resolveSellerProfile(onboarding = {}, lead = {}, contact = {}, mandateD
         : firstText(mandateDraft.sellerRepresentativeCapacity, onboarding.representativeCapacity, onboarding.authorisedRepresentativeCapacity, onboarding.authorizedRepresentativeCapacity),
     trustRegistrationNumber: firstText(mandateDraft.sellerRegistrationNumber, onboarding.trustRegistrationNumber),
     companyRegistrationNumber: firstText(mandateDraft.sellerRegistrationNumber, onboarding.companyRegistrationNumber),
+    trusteeNames: firstText(
+      normalizeNameList(firstPresent(mandateDraft.sellerTrusteeNames, mandateDraft.trusteeNames, onboarding.trusteeNames, onboarding.trustee_names, onboarding.trustees)),
+      onboarding.trusteeName,
+    ),
+    resolutionDate: firstText(mandateDraft.sellerResolutionDate, mandateDraft.resolutionDate, onboarding.resolutionDate, onboarding.resolution_date, onboarding.companyResolutionDate, onboarding.company_resolution_date),
+    authorityBasis: firstText(mandateDraft.sellerAuthorityBasis, mandateDraft.authorityBasis, onboarding.authorityBasis, onboarding.authority_basis, onboarding.authorityGranted, onboarding.authority_granted),
     multipleOwners: Array.isArray(mandateDraft.sellerParties)
       ? mandateDraft.sellerParties
       : Array.isArray(onboarding.multipleOwners) ? onboarding.multipleOwners : [],
@@ -705,9 +777,11 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     'seller.entity_type_raw': seller.entityType || 'individual',
     seller_marital_status: safePlaceholder(seller.maritalStatus),
     seller_marital_regime: safePlaceholder(seller.maritalRegime),
-    seller_spouse_name: safePlaceholder(seller.spouseName),
+    seller_spouse_full_name: safePlaceholder(seller.spouseFullName || seller.spouseName),
+    seller_spouse_name: safePlaceholder(seller.spouseFullName || seller.spouseName),
     seller_spouse_id_number: safePlaceholder(seller.spouseIdNumber),
     seller_spouse_email: safePlaceholder(seller.spouseEmail),
+    seller_spouse_consent_required: safePlaceholder(seller.spouseConsentRequired),
     seller_representative_name: safePlaceholder(seller.representativeName),
     representative_name: safePlaceholder(seller.representativeName),
     representative_id_number: safePlaceholder(seller.representativeIdNumber),
@@ -715,6 +789,9 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     representative_capacity: safePlaceholder(seller.representativeCapacity),
     seller_trust_registration_number: safePlaceholder(seller.trustRegistrationNumber),
     seller_company_registration_number: safePlaceholder(seller.companyRegistrationNumber),
+    seller_trustee_names: safePlaceholder(seller.trusteeNames),
+    seller_resolution_date: safePlaceholder(seller.resolutionDate),
+    seller_authority_basis: safePlaceholder(seller.authorityBasis),
 
     property_address: safePlaceholder(property.fullAddress),
     property_type: safePlaceholder(property.propertyType),
