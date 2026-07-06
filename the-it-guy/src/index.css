@@ -3557,6 +3557,23 @@ body.sidebar-compact .ui-main-region {
   overflow: auto;
 }
 
+.client-onboarding-date-input {
+  min-height: 58px;
+  padding-top: 0.95rem;
+  padding-bottom: 0.85rem;
+  line-height: 1.25;
+  color-scheme: light;
+}
+
+.client-onboarding-date-input::-webkit-date-and-time-value {
+  min-height: 1.45em;
+  text-align: left;
+}
+
+.client-onboarding-date-input::-webkit-calendar-picker-indicator {
+  margin-inline-start: 0.25rem;
+}
+
 .auth-shell {
   width: min(1160px, 100%);
   height: min(760px, calc(100dvh - clamp(1.44rem, 4vw, 2.4rem)));

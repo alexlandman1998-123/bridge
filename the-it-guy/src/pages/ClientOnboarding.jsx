@@ -3386,13 +3386,14 @@ function ClientOnboarding() {
     const showError = Boolean(errorMessage && fieldTouched)
     const hasValue = normalizeInputValue(value).length > 0
     const showSuccess = fieldTouched && !showError && hasValue
+    const isDateField = fieldConfig.type === 'date'
     const baseInputClass = `${DETAIL_INPUT_CLASS} ${
       showError
         ? 'border-[#d92d20] focus:border-[#d92d20] focus:ring-[#d92d20]/12'
         : showSuccess
           ? 'border-[#1f9d61]/45 focus:border-[#1f9d61] focus:ring-[#1f9d61]/12'
           : ''
-    }`
+    } ${isDateField ? 'client-onboarding-date-input' : ''}`
 
     return (
       <label key={fieldPath} className={`flex flex-col gap-1.5 text-sm font-medium text-[#233247] ${className}`}>
