@@ -12,6 +12,11 @@ import {
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { deriveFinanceManagedBy, normalizeFinanceType } from '../core/transactions/financeType'
+import {
+  OnboardingStepHeader,
+  OnboardingVisualStep,
+  StickyOnboardingActions,
+} from '../components/onboarding/OnboardingVisualStep'
 import PremiumOnboardingLanding from '../components/onboarding/PremiumOnboardingLanding'
 import Button from '../components/ui/Button'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
@@ -73,6 +78,44 @@ const NATURAL_PURCHASER_MODE_OPTIONS = [
     description: 'You are purchasing with another person',
   },
 ]
+
+const PURCHASER_ENTITY_VISUAL_META = {
+  individual: { icon: 'person' },
+  foreign_purchaser: { icon: 'globe' },
+  company: { icon: 'building' },
+  trust: { icon: 'people' },
+}
+
+const FINANCE_TYPE_VISUAL_OPTIONS = [
+  {
+    value: 'bond',
+    label: 'Bond',
+    description: 'Mortgage finance with bank / lender workflow.',
+    icon: 'bank',
+  },
+  {
+    value: 'cash',
+    label: 'Cash',
+    description: 'Cash-funded purchase with proof-of-funds requirement.',
+    icon: 'wallet',
+  },
+  {
+    value: 'combination',
+    label: 'Hybrid',
+    description: 'Part bond, part cash contribution.',
+    icon: 'split',
+  },
+]
+
+const PURCHASE_MODE_VISUAL_META = {
+  individual: { icon: 'person' },
+  co_purchasing: { icon: 'people' },
+}
+
+const FINANCE_NEXT_INFO_CARD = {
+  title: 'What happens next',
+  copy: 'We’ll activate the right checklist and connect you with the correct role players.',
+}
 
 const RESIDENCY_STATUS_OPTIONS = [
   { value: '', label: 'Select status' },
@@ -1519,6 +1562,24 @@ function resolveBuyerLandingBrand(payload = {}) {
   }
 }
 
+function resolveBuyerQuestionHeaderIdentity(payload = {}) {
+  const branding = payload?.branding || {}
+  const name =
+    String(
+      branding.senderName ||
+        payload?.transaction?.assigned_agent ||
+        payload?.assignedAgentName ||
+        branding.organisationName ||
+        branding.agencyName ||
+        '',
+    ).trim() || 'Your property team'
+
+  return {
+    name,
+    initials: getBuyerLandingInitials(name),
+  }
+}
+
 function resolveBuyerLandingName(payload = {}, formData = {}) {
   const firstStructuredPurchaser = Array.isArray(formData.purchasers) ? formData.purchasers[0] : null
   const rawName = String(
@@ -1867,6 +1928,7 @@ function ClientOnboarding() {
   const mobileStepLabel = journeySteps[mobileProgressStepIndex]?.shortLabel || journeySteps[0]?.shortLabel || 'Step'
   const submissionComplete = completionBannerVisible || payload?.onboarding?.status === 'Submitted'
   const onboardingBrand = useMemo(() => resolveBuyerLandingBrand(payload), [payload])
+  const onboardingQuestionHeaderIdentity = useMemo(() => resolveBuyerQuestionHeaderIdentity(payload), [payload])
   const buyerLandingName = useMemo(() => resolveBuyerLandingName(payload, formData), [payload, formData])
   const buyerLandingBackgroundImage = useMemo(() => resolveBuyerWelcomeImageUrl(payload), [payload])
   const showLandingPage = !submissionComplete && !landingDismissed
@@ -3602,43 +3664,110 @@ function ClientOnboarding() {
     )
   }
 
-  function renderNaturalPurchaseModeCard() {
+  function renderBuyerPurchaserVisualStep() {
+    return (
+      <OnboardingVisualStep
+        helperTitle="Choose the purchaser type first."
+        helperCopy="We will only ask the questions relevant to that structure."
+        illustration="property_people"
+        optionGroupName="buyer-purchaser-type"
+        selectedValue={purchaserEntityType}
+        options={PURCHASER_ENTITY_OPTIONS.map((option) => ({
+          value: option.value,
+          label: option.label,
+          description: option.caption,
+          icon: PURCHASER_ENTITY_VISUAL_META[option.value]?.icon || 'person',
+        }))}
+        onSelect={updatePurchaserEntityType}
+      />
+    )
+  }
+
+  function renderBuyerFinanceVisualStep() {
+    return (
+      <OnboardingVisualStep
+        helperTitle="Select your finance structure so we can request the right supporting information."
+        illustration="finance_security"
+        optionGroupName="buyer-finance-type"
+        selectedValue={normalizedFinanceType}
+        options={FINANCE_TYPE_VISUAL_OPTIONS}
+        infoCard={FINANCE_NEXT_INFO_CARD}
+        onSelect={(value) => {
+          updateFinanceType(value)
+          if (value === 'cash') {
+            updateFinanceField('bond_help_requested', '')
+          }
+        }}
+      />
+    )
+  }
+
+  function renderBuyerPurchaseModeVisualStep() {
     const modeError = fieldErrors.natural_person_purchase_mode
     const showModeError = Boolean(modeError && touchedFields.natural_person_purchase_mode)
 
     return (
-      <section className="rounded-[18px] border border-[#e2eaf3] bg-white p-3 shadow-[0_10px_22px_rgba(15,23,42,0.04)] md:rounded-[20px] md:p-4">
-        <h4 className="text-base font-semibold tracking-normal text-[#142132] md:text-lg">
-          Are you purchasing this unit alone or with a co-purchaser?
-        </h4>
-        <p className="mt-2 text-sm leading-6 text-[#6b7d93]">
-          This is used to prepare your sale agreement and matching compliance requirements.
-        </p>
-        <div className="mt-3 grid gap-2 md:mt-4 md:grid-cols-2 md:gap-3">
-          {NATURAL_PURCHASER_MODE_OPTIONS.map((option) => {
-            const active = naturalPersonPurchaseMode === option.value
-            return (
-              <button
-                key={option.value}
-                type="button"
-                className={`w-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out md:px-4 md:py-4 ${
-                  active
-                    ? 'border-[#35546c] bg-[#f3f8ff] shadow-[0_10px_24px_rgba(53,84,108,0.14)]'
-                    : 'border-[#dbe5ef] bg-white hover:border-[#b6c9de] hover:bg-[#fafcff]'
-                }`}
-                onClick={() => {
-                  markFieldTouched('natural_person_purchase_mode')
-                  updateNaturalPurchaseMode(option.value)
-                }}
-              >
-                <strong className="block text-sm font-semibold text-[#142132]">{option.title}</strong>
-                <span className="mt-1 block text-xs leading-5 text-[#6b7d93] md:text-sm md:leading-6">{option.description}</span>
-              </button>
-            )
-          })}
-        </div>
-        {showModeError ? <p className="mt-3 text-xs font-medium text-[#d92d20]">{modeError}</p> : null}
-      </section>
+      <OnboardingVisualStep
+        helperTitle="Are you purchasing this unit alone or with a co-purchaser?"
+        helperCopy="This is used to prepare your sale agreement and matching compliance requirements."
+        illustration="purchase_mode"
+        optionGroupName="buyer-purchase-mode"
+        selectedValue={naturalPersonPurchaseMode}
+        options={NATURAL_PURCHASER_MODE_OPTIONS.map((option) => ({
+          value: option.value,
+          label: option.title,
+          description: option.description,
+          icon: PURCHASE_MODE_VISUAL_META[option.value]?.icon || 'person',
+        }))}
+        error={showModeError ? modeError : ''}
+        onSelect={(value) => {
+          markFieldTouched('natural_person_purchase_mode')
+          updateNaturalPurchaseMode(value)
+        }}
+      />
+    )
+  }
+
+  function renderNaturalPurchaseModeCard({ includeMobileVisual = true } = {}) {
+    const modeError = fieldErrors.natural_person_purchase_mode
+    const showModeError = Boolean(modeError && touchedFields.natural_person_purchase_mode)
+
+    return (
+      <>
+        {includeMobileVisual ? renderBuyerPurchaseModeVisualStep() : null}
+        <section className="hidden rounded-[18px] border border-[#e2eaf3] bg-white p-3 shadow-[0_10px_22px_rgba(15,23,42,0.04)] md:block md:rounded-[20px] md:p-4">
+          <h4 className="text-base font-semibold tracking-normal text-[#142132] md:text-lg">
+            Are you purchasing this unit alone or with a co-purchaser?
+          </h4>
+          <p className="mt-2 text-sm leading-6 text-[#6b7d93]">
+            This is used to prepare your sale agreement and matching compliance requirements.
+          </p>
+          <div className="mt-3 grid gap-2 md:mt-4 md:grid-cols-2 md:gap-3">
+            {NATURAL_PURCHASER_MODE_OPTIONS.map((option) => {
+              const active = naturalPersonPurchaseMode === option.value
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`w-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out md:px-4 md:py-4 ${
+                    active
+                      ? 'border-[#35546c] bg-[#f3f8ff] shadow-[0_10px_24px_rgba(53,84,108,0.14)]'
+                      : 'border-[#dbe5ef] bg-white hover:border-[#b6c9de] hover:bg-[#fafcff]'
+                  }`}
+                  onClick={() => {
+                    markFieldTouched('natural_person_purchase_mode')
+                    updateNaturalPurchaseMode(option.value)
+                  }}
+                >
+                  <strong className="block text-sm font-semibold text-[#142132]">{option.title}</strong>
+                  <span className="mt-1 block text-xs leading-5 text-[#6b7d93] md:text-sm md:leading-6">{option.description}</span>
+                </button>
+              )
+            })}
+          </div>
+          {showModeError ? <p className="mt-3 text-xs font-medium text-[#d92d20]">{modeError}</p> : null}
+        </section>
+      </>
     )
   }
 
@@ -3794,7 +3923,7 @@ function ClientOnboarding() {
           <div className="md:hidden">{renderMobileDetailPane()}</div>
           <div className="hidden md:block">
             <div className={DETAIL_FLOW_WRAP_CLASS}>
-              {renderNaturalPurchaseModeCard()}
+              {renderNaturalPurchaseModeCard({ includeMobileVisual: false })}
 
               {structuredPurchasers[0] ? <div>{renderNaturalPurchaserCard(structuredPurchasers[0], 0)}</div> : null}
 
@@ -3824,55 +3953,16 @@ function ClientOnboarding() {
 
   function renderMobileFlowHeader() {
     return (
-      <section className="md:hidden rounded-[20px] border border-[#dbe5ef] bg-white/95 p-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            {onboardingBrand.logoUrl ? (
-              <span className="inline-flex h-11 min-w-11 max-w-[130px] shrink-0 items-center justify-center rounded-[14px] border border-[#dce6f0] bg-white px-2 py-1.5">
-                <img
-                  src={onboardingBrand.logoUrl}
-                  alt={`${onboardingBrand.name || 'Agency'} logo`}
-                  className="max-h-8 w-auto max-w-[112px] object-contain"
-                />
-              </span>
-            ) : (
-              <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-[#172334] text-xs font-semibold text-white">
-                {onboardingBrand.initials}
-              </span>
-            )}
-            <div className="min-w-0">
-              <p className="truncate text-xs font-semibold text-[#52677e]">{onboardingBrand.name}</p>
-              <p className="mt-0.5 truncate text-[0.7rem] font-medium text-[#7a8ca1]">Buyer onboarding</p>
-            </div>
-          </div>
-          <span className="inline-flex h-9 shrink-0 items-center rounded-full bg-[#eef5fb] px-3 text-xs font-semibold text-[#4d637a]">
-            {mobileQuestionPosition}/{mobileQuestionTotal}
-          </span>
-        </div>
-
-        <div className="mt-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6a7f96]">
-            Question {mobileQuestionPosition} of {mobileQuestionTotal}
-          </p>
-          <h1 className="mt-1.5 text-xl font-semibold leading-tight tracking-normal text-[#142132]">
-            {mobileQuestionTitle}
-          </h1>
-          {mobileQuestionDescription ? (
-            <p className="mt-2 text-sm leading-6 text-[#637790]">{mobileQuestionDescription}</p>
-          ) : null}
-        </div>
-
-        <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#eef3f8]" aria-hidden="true">
-          <span
-            className="block h-full rounded-full bg-[linear-gradient(90deg,#35546c_0%,#2f8f86_100%)] transition-[width] duration-300"
-            style={{ width: `${mobileQuestionProgressPercent}%` }}
-          />
-        </div>
-
-        {onboardingLocationLabel ? (
-          <p className="mt-3 line-clamp-2 text-xs leading-5 text-[#70849b]">{onboardingLocationLabel}</p>
-        ) : null}
-      </section>
+      <OnboardingStepHeader
+        brand={onboardingQuestionHeaderIdentity}
+        typeLabel="Buyer onboarding"
+        questionPosition={mobileQuestionPosition}
+        questionTotal={mobileQuestionTotal}
+        title={mobileQuestionTitle}
+        description={mobileQuestionDescription}
+        progressPercent={mobileQuestionProgressPercent}
+        address={onboardingLocationLabel}
+      />
     )
   }
 
@@ -4073,63 +4163,63 @@ function ClientOnboarding() {
 
     if (activeStep.key === 'purchaser_entity') {
       return (
-        <section className={INNER_PANEL_CLASS}>
-          <p className={MUTED_TEXT_CLASS}>Choose the purchaser type first. We will only ask the questions relevant to that structure.</p>
-          <div className="mt-4 grid gap-2 md:mt-5 md:grid-cols-2 md:gap-3">
-            {PURCHASER_ENTITY_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={choiceCardClass(purchaserEntityType === option.value)}
-                onClick={() => updatePurchaserEntityType(option.value)}
-              >
-                <strong className="block text-sm font-semibold md:text-base">{option.label}</strong>
-                <span className={`mt-1.5 block text-xs leading-5 md:mt-3 md:text-sm md:leading-6 ${purchaserEntityType === option.value ? 'text-[#4e6278]' : 'text-[#6b7d93]'}`}>{option.caption}</span>
-              </button>
-            ))}
-          </div>
-        </section>
+        <>
+          {renderBuyerPurchaserVisualStep()}
+          <section className={`${INNER_PANEL_CLASS} hidden md:block`}>
+            <p className={MUTED_TEXT_CLASS}>Choose the purchaser type first. We will only ask the questions relevant to that structure.</p>
+            <div className="mt-4 grid gap-2 md:mt-5 md:grid-cols-2 md:gap-3">
+              {PURCHASER_ENTITY_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={choiceCardClass(purchaserEntityType === option.value)}
+                  onClick={() => updatePurchaserEntityType(option.value)}
+                >
+                  <strong className="block text-sm font-semibold md:text-base">{option.label}</strong>
+                  <span className={`mt-1.5 block text-xs leading-5 md:mt-3 md:text-sm md:leading-6 ${purchaserEntityType === option.value ? 'text-[#4e6278]' : 'text-[#6b7d93]'}`}>{option.caption}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        </>
       )
     }
 
     if (activeStep.key === 'finance_type') {
       return (
-        <section className={INNER_PANEL_CLASS}>
-          <p className="mb-3 text-sm leading-6 text-[#6b7d93]">
-            Select your finance structure so we can request the right supporting information.
-          </p>
-          <div className="grid gap-2 md:grid-cols-3 md:gap-3">
-            {[
-              { value: 'bond', label: 'Bond', caption: 'Mortgage finance with bank / lender workflow' },
-              { value: 'cash', label: 'Cash', caption: 'Cash-funded purchase with proof-of-funds requirement' },
-              { value: 'combination', label: 'Hybrid', caption: 'Part bond, part cash contribution' },
-            ].map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={choiceCardClass(normalizedFinanceType === option.value)}
-                onClick={() => {
-                  updateFinanceType(option.value)
-                  if (option.value === 'cash') {
-                    updateFinanceField('bond_help_requested', '')
-                  }
-                }}
-              >
-                <strong className="block text-sm font-semibold md:text-base">{option.label}</strong>
-                <span className={`mt-1.5 block text-xs leading-5 md:mt-3 md:text-sm md:leading-6 ${normalizedFinanceType === option.value ? 'text-[#4e6278]' : 'text-[#6b7d93]'}`}>{option.caption}</span>
-              </button>
-            ))}
-          </div>
+        <>
+          {renderBuyerFinanceVisualStep()}
+          <section className={`${INNER_PANEL_CLASS} hidden md:block`}>
+            <p className="mb-3 text-sm leading-6 text-[#6b7d93]">
+              Select your finance structure so we can request the right supporting information.
+            </p>
+            <div className="grid gap-2 md:grid-cols-3 md:gap-3">
+              {FINANCE_TYPE_VISUAL_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={choiceCardClass(normalizedFinanceType === option.value)}
+                  onClick={() => {
+                    updateFinanceType(option.value)
+                    if (option.value === 'cash') {
+                      updateFinanceField('bond_help_requested', '')
+                    }
+                  }}
+                >
+                  <strong className="block text-sm font-semibold md:text-base">{option.label}</strong>
+                  <span className={`mt-1.5 block text-xs leading-5 md:mt-3 md:text-sm md:leading-6 ${normalizedFinanceType === option.value ? 'text-[#4e6278]' : 'text-[#6b7d93]'}`}>{option.description}</span>
+                </button>
+              ))}
+            </div>
 
-          {['bond', 'combination'].includes(normalizedFinanceType) ? (
             <div className="mt-4 rounded-[18px] border border-[#dde4ee] bg-[#f8fbff] p-3 md:mt-5 md:rounded-[20px] md:p-5">
-              <h5 className="text-base font-semibold text-[#142132]">What happens next</h5>
+              <h5 className="text-base font-semibold text-[#142132]">{FINANCE_NEXT_INFO_CARD.title}</h5>
               <p className={`mt-2 ${MUTED_TEXT_CLASS}`}>
-                In the next step we’ll ask for the bond bank, affordability confirmation, and originator assistance details if needed.
+                {FINANCE_NEXT_INFO_CARD.copy}
               </p>
             </div>
-          ) : null}
-        </section>
+          </section>
+        </>
       )
     }
 
@@ -4341,33 +4431,15 @@ function ClientOnboarding() {
       </div>
 
       {!submissionComplete && !showLandingPage ? (
-        <div className="fixed inset-x-0 bottom-0 z-40 bg-[linear-gradient(180deg,rgba(249,251,253,0)_0%,rgba(255,255,255,0.92)_20%,rgba(255,255,255,0.98)_100%)] backdrop-blur-xl md:static md:mt-5 md:bg-transparent md:backdrop-blur-0">
-          <div className={`${PAGE_CONTAINER_CLASS} px-3 pt-2 pb-[max(8px,env(safe-area-inset-bottom))] md:px-0 md:pt-0 md:pb-0`}>
-            <div className="rounded-t-[20px] border border-[#dbe5ef] bg-white/95 px-3 py-2 shadow-[0_-12px_28px_rgba(15,23,42,0.08)] md:rounded-none md:border-0 md:bg-transparent md:px-0 md:py-0 md:shadow-none">
-              <div className="flex items-center justify-between gap-2 md:justify-start md:gap-3">
-                <Button type="button" variant="ghost" onClick={() => void handleSaveDraft()} disabled={saving} className="min-h-[38px] md:min-h-[50px]">
-                  Save Draft
-                </Button>
-                {shouldShowBackButton ? (
-                  <Button type="button" variant="ghost" onClick={handleFooterBack} className="min-h-[38px] md:min-h-[50px]">
-                    <ChevronLeft size={14} /> Back
-                  </Button>
-                ) : (
-                  <span />
-                )}
-              </div>
-              <Button
-                type="button"
-                onClick={handleFooterPrimaryAction}
-                disabled={saving}
-                className="mt-2 w-full min-h-[46px] md:mt-3 md:min-h-[54px] md:max-w-[320px]"
-              >
-                {primaryActionLabel}
-                {primaryActionLabel === 'Submit Onboarding' ? null : <ChevronRight size={14} />}
-              </Button>
-            </div>
-          </div>
-        </div>
+        <StickyOnboardingActions
+          pageContainerClass={PAGE_CONTAINER_CLASS}
+          saving={saving}
+          showBackButton={shouldShowBackButton}
+          primaryActionLabel={primaryActionLabel}
+          onSaveDraft={() => void handleSaveDraft()}
+          onBack={handleFooterBack}
+          onPrimary={handleFooterPrimaryAction}
+        />
       ) : null}
     </main>
   )

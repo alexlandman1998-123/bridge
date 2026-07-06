@@ -19,6 +19,11 @@ import {
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
+import {
+  OnboardingSectionHeader,
+  OnboardingSummaryCard,
+  SellerOnboardingIllustration,
+} from '../components/onboarding/OnboardingVisualStep'
 import PremiumOnboardingLanding from '../components/onboarding/PremiumOnboardingLanding'
 import Button from '../components/ui/Button'
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
@@ -154,7 +159,7 @@ const SECTION_CARD_CLASS =
 const INNER_PANEL_CLASS =
   'rounded-none border-0 bg-transparent p-0 shadow-none sm:rounded-[22px] sm:border sm:border-[#dce6ef] sm:bg-white/95 sm:p-5 sm:shadow-[0_12px_28px_rgba(15,23,42,0.04)] sm:backdrop-blur-xl lg:rounded-[26px] lg:p-7'
 const DETAIL_INPUT_CLASS =
-  'w-full min-h-[50px] rounded-[14px] border border-[#d7e2ed] bg-white px-4 py-3 text-base text-[#142334] outline-none transition duration-150 ease-out placeholder:text-[#93a4b8] focus:border-[#35546c]/40 focus:ring-2 focus:ring-[#35546c]/10'
+  'w-full min-h-[52px] rounded-[16px] border border-[#d7e2ed] bg-white px-4 py-3 text-base font-medium text-[#142334] shadow-[0_8px_18px_rgba(15,23,42,0.035)] outline-none transition duration-150 ease-out placeholder:text-[#93a4b8] focus:border-[#138a3d]/45 focus:ring-2 focus:ring-[#138a3d]/10 sm:rounded-[18px]'
 const SELLER_ONBOARDING_NOTIFICATION_TIMEOUT_MS = 8000
 const CANONICAL_SELLER_FACTS_FLAG = 'VITE_CANONICAL_SELLER_FACTS_ENABLED'
 const STEP_META = [
@@ -1415,15 +1420,15 @@ function SellerWelcomeScreen({ brand, listing, form, onContinue }) {
 
 function SellerStepProgress({ currentStep, progress }) {
   return (
-    <section className="border-b border-[#edf2f7] pb-4 sm:rounded-[28px] sm:border sm:border-[#dce6ef] sm:bg-white/90 sm:p-5 sm:shadow-[0_12px_30px_rgba(15,23,42,0.04)] sm:backdrop-blur-xl lg:rounded-[30px] lg:p-6 lg:shadow-[0_22px_50px_rgba(15,23,42,0.06)]">
+    <section className="rounded-[24px] border border-[#dce6ef] bg-white/95 p-4 shadow-[0_14px_34px_rgba(15,23,42,0.07)] backdrop-blur-xl sm:rounded-[28px] sm:bg-white/90 sm:p-5 sm:shadow-[0_12px_30px_rgba(15,23,42,0.04)] lg:rounded-[30px] lg:p-6 lg:shadow-[0_22px_50px_rgba(15,23,42,0.06)]">
       <div className="flex items-start justify-between gap-3 sm:hidden">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6f8298]">Step {currentStep + 1} of {STEPS.length}</p>
-          <h2 className="mt-1 break-words text-[1.35rem] font-semibold leading-tight tracking-normal text-[#142132]">{STEP_META[currentStep]?.label}</h2>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#137a4a]">Step {currentStep + 1} of {STEPS.length}</p>
+          <h2 className="mt-1 break-words text-[1.45rem] font-semibold leading-tight tracking-normal text-[#142132]">{STEP_META[currentStep]?.label}</h2>
         </div>
-        <span className="shrink-0 rounded-full bg-[#f0fbf4] px-3 py-1.5 text-xs font-semibold text-[#126b34]">{progress}%</span>
+        <span className="shrink-0 rounded-full bg-[#eaf8ef] px-3 py-1.5 text-xs font-semibold text-[#126b34]">{progress}%</span>
       </div>
-      <p className="mt-2 text-[13px] leading-5 text-[#6b7d93] sm:hidden">{STEP_META[currentStep]?.helper}</p>
+      <p className="mt-2 text-[13px] leading-5 text-[#516981] sm:hidden">{STEP_META[currentStep]?.helper}</p>
 
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#eef3f8] sm:hidden">
         <span
@@ -1503,20 +1508,16 @@ function StepShell({ eyebrow, title, description, children }) {
   )
 }
 
-function FormSection({ icon, title, description, children, mobilePane = true, mobilePaneIndex = null }) {
-  const SectionIcon = icon || Circle
+function FormSection({ icon, title, description, illustration = '', children, mobilePane = true, mobilePaneIndex = null }) {
   const { paneIndex, mobilePaneClassName } = useMobileQuestionPane(mobilePane, mobilePaneIndex)
   return (
     <section data-mobile-question-pane={mobilePane ? paneIndex : undefined} className={`rounded-none border-0 bg-transparent p-0 sm:rounded-[22px] sm:border sm:border-[#dfe7f1] sm:bg-[#fbfcfe] sm:p-5 lg:rounded-[24px] lg:p-6 ${mobilePaneClassName}`}>
-      <div className="flex items-start gap-3">
-        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-[#dbe5ef] bg-white text-[#35546c] shadow-[0_10px_22px_rgba(15,23,42,0.05)] sm:h-11 sm:w-11 sm:rounded-[16px]">
-          <SectionIcon size={17} />
-        </span>
-        <div>
-          <h3 className="text-[1.15rem] font-semibold leading-tight text-[#162435] sm:text-[1.1rem]">{title}</h3>
-          {description ? <p className="mt-1.5 text-sm leading-5 text-[#6b7d93]">{description}</p> : null}
+      {illustration ? (
+        <div className="mb-5 sm:hidden">
+          <SellerOnboardingIllustration variant={illustration} />
         </div>
-      </div>
+      ) : null}
+      <OnboardingSectionHeader icon={icon || Circle} title={title} description={description} accent="green" />
       <div className="mt-4 sm:mt-5">{children}</div>
     </section>
   )
@@ -3326,7 +3327,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               description="Confirm the seller identity, ownership structure, and sale context."
             >
               <div className="space-y-6 sm:space-y-4">
-              <FormSection icon={Landmark} title="Who owns this property?" description="Choose the ownership structure first. We’ll show the right follow-up fields from here." mobilePaneIndex={sellerPaneIndexes.ownership}>
+              <FormSection
+                icon={Landmark}
+                title="Who owns this property?"
+                description="Choose the ownership structure first. We’ll show the right follow-up fields from here."
+                illustration="ownership"
+                mobilePaneIndex={sellerPaneIndexes.ownership}
+              >
                 <label className="grid gap-2 text-sm font-medium text-[#2a4057] sm:hidden">
                   Ownership structure
                   <select className={DETAIL_INPUT_CLASS} value={form.ownershipType} onChange={(event) => handleOwnershipTypeChange(event.target.value)}>
@@ -3353,21 +3360,15 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   })}
                 </div>
 
-                <div className="mt-3 rounded-[14px] border border-[#dbe6f2] bg-[#f7fbff] px-3 py-3 text-sm leading-6 text-[#4f6378] sm:mt-4 sm:px-4">
-                  <div className="flex items-start gap-2.5 sm:gap-3">
-                    <span className="inline-flex shrink-0 items-center rounded-full border border-[#d6e1ee] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#35546c] sm:px-3 sm:text-xs">
-                      {getOwnershipBranchLabel(form.ownershipType)}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-[#22364a]">{selectedOwnership.label}</p>
-                      <p className="mt-1 text-sm leading-5 text-[#60748b]">{selectedOwnership.description}</p>
-                      <p className="mt-2 hidden text-xs font-medium text-[#35546c] sm:block">
-                        {isMarriedOwnership
-                          ? 'Marital regime is derived from your ownership choice and kept internal. We’ll only ask for the spouse details that are actually needed.'
-                          : 'We’ll only show the next questions that fit this ownership structure.'}
-                      </p>
-                    </div>
-                  </div>
+                <div className="mt-3 sm:mt-4">
+                  <OnboardingSummaryCard badge={getOwnershipBranchLabel(form.ownershipType)} title={selectedOwnership.label}>
+                    {selectedOwnership.description}
+                  </OnboardingSummaryCard>
+                  <p className="mt-2 hidden text-xs font-medium text-[#35546c] sm:block">
+                    {isMarriedOwnership
+                      ? 'Marital regime is derived from your ownership choice and kept internal. We’ll only ask for the spouse details that are actually needed.'
+                      : 'We’ll only show the next questions that fit this ownership structure.'}
+                  </p>
                 </div>
               </FormSection>
 
@@ -3811,7 +3812,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 </FormSection>
               ) : null}
 
-              <FormSection icon={Building2} title="Selling Context" description="Light qualification details help your agent prepare the next step." mobilePaneIndex={sellerPaneIndexes.sellingContext}>
+              <FormSection
+                icon={FileCheck2}
+                title="Selling details"
+                description="Help us understand your plans so we can guide you better."
+                illustration="selling_context"
+                mobilePaneIndex={sellerPaneIndexes.sellingContext}
+              >
                 <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     Mandate Type
@@ -3849,6 +3856,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     </select>
                   </label>
                 </div>
+                <div className="mt-4">
+                  <OnboardingSummaryCard title="What happens next" icon="calendar" tone="neutral">
+                    Your agent will use this to prepare the correct next step and supporting documents.
+                  </OnboardingSummaryCard>
+                </div>
               </FormSection>
               </div>
             </StepShell>
@@ -3865,6 +3877,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   icon={Building2}
                   title="Property category"
                   description="Choose the broad category first. It controls the type options and the rest of the flow."
+                  illustration="property_details"
                   mobilePaneIndex={propertyPaneIndexes.category}
                 >
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057] sm:hidden">
@@ -3903,8 +3916,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       />
                     ))}
                   </div>
-                  <div className="mt-4 rounded-[14px] border border-[#dbe6f2] bg-[#f7fbff] px-4 py-3 text-sm leading-6 text-[#4f6378]">
-                    The selected branch is <strong className="text-[#22364a]">{flow.property_branch_label || formatValue(propertyBranch)}</strong>. Commercial and mixed-use hide residential-only questions. Sectional title and estate / HOA open their own follow-up fields.
+                  <div className="mt-4">
+                    <OnboardingSummaryCard badge="Selected branch" title={flow.property_branch_label || formatValue(propertyBranch)} icon="property_details" tone="neutral">
+                      Commercial and mixed-use hide residential-only questions. Sectional title and estate / HOA open their own follow-up fields.
+                    </OnboardingSummaryCard>
                   </div>
                 </FormSection>
 
@@ -3912,6 +3927,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   icon={Home}
                   title="Property type & structure"
                   description="Choose the specific property type and the legal structure."
+                  illustration="property_details"
                   mobilePaneIndex={propertyPaneIndexes.type}
                 >
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -3944,8 +3960,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       </select>
                     </label>
                   </div>
-                  <div className="mt-4 rounded-[14px] border border-[#dbe6f2] bg-white px-4 py-3 text-sm leading-6 text-[#60748b]">
-                    Selected: {getPropertyCategoryLabel(form.propertyCategory)} / {propertyTypeLabel} / {getPropertyStructureTypeLabel(form.propertyStructureType)}.
+                  <div className="mt-4">
+                    <OnboardingSummaryCard
+                      title={`Selected: ${getPropertyCategoryLabel(form.propertyCategory)} / ${propertyTypeLabel} / ${getPropertyStructureTypeLabel(form.propertyStructureType)}.`}
+                    >
+                      You can update these later if needed.
+                    </OnboardingSummaryCard>
                   </div>
                 </FormSection>
 
