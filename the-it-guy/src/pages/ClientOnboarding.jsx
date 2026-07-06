@@ -1564,18 +1564,33 @@ function resolveBuyerLandingBrand(payload = {}) {
 
 function resolveBuyerQuestionHeaderIdentity(payload = {}) {
   const branding = payload?.branding || {}
-  const name =
+  const logoUrl = String(
+    branding.logoLightUrl ||
+      branding.logoUrl ||
+      branding.logoDarkUrl ||
+      payload?.organisation?.logo_url ||
+      payload?.organisation?.logoUrl ||
+      '',
+  ).trim()
+  const agencyName = String(
+    branding.organisationName ||
+      branding.agencyName ||
+      payload?.organisation?.display_name ||
+      payload?.organisation?.name ||
+      '',
+  ).trim()
+  const senderName =
     String(
       branding.senderName ||
         payload?.transaction?.assigned_agent ||
         payload?.assignedAgentName ||
-        branding.organisationName ||
-        branding.agencyName ||
         '',
-    ).trim() || 'Your property team'
+    ).trim()
+  const name = (logoUrl ? agencyName : senderName || agencyName) || 'Your property team'
 
   return {
     name,
+    logoUrl,
     initials: getBuyerLandingInitials(name),
   }
 }
@@ -4291,7 +4306,12 @@ function ClientOnboarding() {
             personName={buyerLandingName === 'there' ? '' : buyerLandingName}
             propertyAddress={onboardingLocationLabel}
             backgroundImage={buyerLandingBackgroundImage}
-            onStart={() => setLandingDismissed(true)}
+            onStart={() => {
+              setLandingDismissed(true)
+              if (typeof window !== 'undefined') {
+                window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'auto' }))
+              }
+            }}
           />
         ) : submissionComplete ? (
           <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-5 py-8 text-center shadow-[0_20px_44px_rgba(15,23,42,0.08)]">

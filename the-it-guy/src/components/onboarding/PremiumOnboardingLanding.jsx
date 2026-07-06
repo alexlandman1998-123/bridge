@@ -56,11 +56,11 @@ function AgencyLogo({ logoUrl = '', agencyName = '' }) {
   if (logoUrl) {
     return (
       <div className="flex min-w-0 items-center gap-3">
-        <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] border border-white/20 bg-white/90 p-2 shadow-[0_18px_42px_rgba(0,0,0,0.28)]">
+        <span className="inline-flex h-14 max-w-[210px] shrink-0 items-center justify-center overflow-hidden rounded-[12px] border border-white/10 bg-transparent shadow-[0_18px_42px_rgba(0,0,0,0.28)] sm:h-16 sm:max-w-[250px]">
           <img
             src={logoUrl}
             alt={`${safeName} logo`}
-            className="max-h-8 w-auto max-w-8 object-contain"
+            className="h-full w-auto max-w-full object-contain"
           />
         </span>
         <span className="hidden min-w-0 text-sm font-semibold leading-5 text-white sm:block">
@@ -119,9 +119,11 @@ export default function PremiumOnboardingLanding({
       <div aria-hidden className="absolute inset-x-0 bottom-0 h-1/2 bg-[linear-gradient(180deg,transparent_0%,rgba(2,8,13,0.92)_100%)]" />
 
       <div className="relative z-10 flex min-h-[calc(100dvh-1.5rem)] flex-col px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6 sm:min-h-[760px] sm:px-8 sm:py-8">
-        <header className="flex items-center justify-between gap-4">
+        <header className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <AgencyLogo logoUrl={agencyLogo} agencyName={agencyName} />
-          <PoweredByPill />
+          <div className="self-end sm:self-auto">
+            <PoweredByPill />
+          </div>
         </header>
 
         <div className="flex flex-1 flex-col justify-end pt-10">

@@ -319,18 +319,31 @@ export function OnboardingStepHeader({
 }) {
   const name = String(brand.name || '').trim() || 'Your property team'
   const initials = String(brand.initials || name.charAt(0) || 'B').trim().slice(0, 3).toUpperCase()
+  const logoUrl = String(brand.logoUrl || '').trim()
 
   return (
     <section className="md:hidden rounded-[22px] border border-[#dbe5ef] bg-white/95 p-4 shadow-[0_14px_34px_rgba(15,23,42,0.07)] backdrop-blur-xl">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[15px] bg-[#142033] text-xs font-semibold text-white shadow-[0_12px_24px_rgba(20,32,51,0.16)]">
-            {initials}
-          </span>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold leading-5 text-[#20324a]">{name}</p>
-            <p className="mt-0.5 truncate text-xs font-medium leading-4 text-[#516981]">{typeLabel}</p>
-          </div>
+          {logoUrl ? (
+            <span className="inline-flex h-12 max-w-[190px] shrink-0 items-center justify-center overflow-hidden rounded-[12px] border border-[#dbe5ef] bg-white shadow-[0_12px_24px_rgba(20,32,51,0.08)]">
+              <img
+                src={logoUrl}
+                alt={`${name} logo`}
+                className="h-full w-auto max-w-full object-contain"
+              />
+            </span>
+          ) : (
+            <>
+              <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[15px] bg-[#142033] text-xs font-semibold text-white shadow-[0_12px_24px_rgba(20,32,51,0.16)]">
+                {initials}
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold leading-5 text-[#20324a]">{name}</p>
+                <p className="mt-0.5 truncate text-xs font-medium leading-4 text-[#516981]">{typeLabel}</p>
+              </div>
+            </>
+          )}
         </div>
         <span className="inline-flex h-10 shrink-0 items-center rounded-full bg-[#eef4fb] px-3 text-sm font-semibold text-[#4d637a]">
           {questionPosition}/{questionTotal}

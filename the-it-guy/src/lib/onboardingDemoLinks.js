@@ -5,15 +5,15 @@ export const SELLER_PORTAL_DEMO_TOKEN = 'demo-seller-portal'
 
 const DEMO_BRAND = {
   organisationId: 'demo-arch9-agency',
-  organisationName: 'Arch9 Demo Agency',
-  agencyName: 'Arch9 Demo Agency',
+  organisationName: 'Kingstons Real Estate',
+  agencyName: 'Kingstons Real Estate',
   senderName: 'Sarah Williams',
-  logoUrl: '',
-  logoDarkUrl: '',
-  logoLightUrl: '',
+  logoUrl: '/brand/kingstons-logo-cover.png',
+  logoDarkUrl: '/brand/kingstons-logo-cover.png',
+  logoLightUrl: '/brand/kingstons-logo-form.png',
   primaryColour: '',
   secondaryColour: '',
-  initials: 'A9',
+  initials: 'K',
 }
 
 const DEMO_PROPERTY_ADDRESS = {

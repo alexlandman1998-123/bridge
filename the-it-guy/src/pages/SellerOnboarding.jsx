@@ -327,22 +327,28 @@ function resolveAgencyBrand(listing = {}) {
       listing?.assignedAgencyName ||
       '',
     ).trim() || 'Your Agency'
-  const logoUrl =
-    String(
-      listing?.agencyLogoDarkUrl ||
+  const logoDarkUrl = String(
+    listing?.agencyLogoDarkUrl ||
       listing?.organisationLogoDarkUrl ||
       listing?.branding?.logoDarkUrl ||
       listing?.branding?.logoDark ||
-      listing?.agencyLogoUrl ||
+      '',
+  ).trim()
+  const logoLightUrl = String(
+    listing?.branding?.logoLightUrl ||
+      listing?.branding?.logoLight ||
+      '',
+  ).trim()
+  const fallbackLogoUrl = String(
+    listing?.agencyLogoUrl ||
       listing?.organisationLogoUrl ||
       listing?.agency?.logoUrl ||
       listing?.organisation?.logoUrl ||
       listing?.branding?.logoUrl ||
-      listing?.branding?.logoLightUrl ||
-      listing?.branding?.logoLight ||
       '',
-    ).trim()
-  return { name: agencyName, logoUrl, initials: getInitials(agencyName) }
+  ).trim()
+  const logoUrl = logoDarkUrl || fallbackLogoUrl || logoLightUrl
+  return { name: agencyName, logoUrl, logoDarkUrl, logoLightUrl, initials: getInitials(agencyName) }
 }
 
 function resolveAgentName(listing = {}) {
@@ -1315,11 +1321,15 @@ function normalizeFormData(listing) {
 }
 
 function AgencyMark({ brand, tone = 'dark' }) {
-  if (brand?.logoUrl) {
+  const logoUrl = tone === 'light'
+    ? brand?.logoLightUrl || brand?.logoUrl || brand?.logoDarkUrl
+    : brand?.logoDarkUrl || brand?.logoUrl || brand?.logoLightUrl
+
+  if (logoUrl) {
     return (
       <span className={`inline-flex h-11 min-w-11 max-w-[190px] items-center justify-center rounded-[14px] px-2 py-1.5 shadow-[0_12px_30px_rgba(0,0,0,0.18)] sm:h-16 sm:min-w-16 sm:max-w-[260px] sm:rounded-[18px] sm:px-3 sm:py-2 ${tone === 'light' ? 'border border-[#dbe5ef] bg-white' : 'border border-white/15 bg-white/5'}`}>
         <img
-          src={brand.logoUrl}
+          src={logoUrl}
           alt={`${brand?.name || 'Agency'} logo`}
           className="max-h-8 w-auto max-w-[170px] object-contain sm:max-h-12 sm:max-w-[230px]"
         />
