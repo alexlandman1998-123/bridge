@@ -4,12 +4,17 @@ import path from 'node:path'
 
 const root = process.cwd()
 const statusSharePath = path.join(root, 'src/pages/TransactionStatusShare.jsx')
+const agentLeadsPath = path.join(root, 'src/pages/AgentLeadsPage.jsx')
 const migrationPath = path.join(root, '../supabase/migrations/202605250013_browser_verification_entry_blockers.sql')
 
 const statusShare = fs.readFileSync(statusSharePath, 'utf8')
+const agentLeads = fs.readFileSync(agentLeadsPath, 'utf8')
 assert.match(statusShare, /getClientStageExplainer/, 'TransactionStatusShare must import/use getClientStageExplainer')
 assert.match(statusShare, /const\s+stageExplainer\s*=\s*getClientStageExplainer/, 'TransactionStatusShare must define stageExplainer before render')
 assert.match(statusShare, /mainStage\s*\|\|\s*stage/, 'stage explainer should fall back from mainStage to detailed stage')
+
+assert.match(agentLeads, /function\s+normalizeLeadCategory\(row\s*=\s*\{\}\)\s*\{\s*const\s+safeRow\s*=\s*row\s*&&\s*typeof\s+row\s*===\s*'object'\s*\?\s*row\s*:\s*\{\}/s, 'Agent leads category normalization must tolerate null lead rows')
+assert.match(agentLeads, /const\s+category\s*=\s*normalizeLeadCategory\(lead\)[\s\S]*?<Modal\s+open=\{Boolean\(lead\)\}/, 'Closed delete lead modal must not crash when its lead prop is null')
 
 const migration = fs.readFileSync(migrationPath, 'utf8')
 assert.match(migration, /appt\.listing_id\s*=\s*v_listing\.id::text/, 'seller portal RPC must compare text listing_id to uuid listing id via text cast')

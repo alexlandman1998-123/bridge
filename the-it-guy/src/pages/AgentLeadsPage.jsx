@@ -722,14 +722,16 @@ function formatSlaStatus(status = '') {
 }
 
 function normalizeLeadCategory(row = {}) {
-  const raw = normalizeText(row.leadCategory || row.lead_category || row.leadDirection || row.lead_direction || row.type).toLowerCase()
+  const safeRow = row && typeof row === 'object' ? row : {}
+  const raw = normalizeText(safeRow.leadCategory || safeRow.lead_category || safeRow.leadDirection || safeRow.lead_direction || safeRow.type).toLowerCase()
   if (raw.includes('seller') || raw.includes('vendor') || raw.includes('landlord')) return 'seller'
   if (raw.includes('buyer') || raw.includes('purchaser')) return 'buyer'
   return 'other'
 }
 
 function isArchivedLead(row = {}) {
-  const lifecycle = `${row.stage || ''} ${row.status || ''} ${row.lifecycleStatus || row.lifecycle_status || ''}`.toLowerCase()
+  const safeRow = row && typeof row === 'object' ? row : {}
+  const lifecycle = `${safeRow.stage || ''} ${safeRow.status || ''} ${safeRow.lifecycleStatus || safeRow.lifecycle_status || ''}`.toLowerCase()
   return lifecycle.includes('archived')
 }
 
