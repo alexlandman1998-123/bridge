@@ -2708,7 +2708,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   ])
 
   const reloadRecords = useCallback(
-    async (orgId) => {
+    async (orgId, options = {}) => {
+      const { applyLocalSnapshot = true } = options && typeof options === 'object' ? options : {}
       if (reloadTimerRef.current && typeof window !== 'undefined') {
         window.clearTimeout(reloadTimerRef.current)
         reloadTimerRef.current = null
@@ -2760,7 +2761,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         })
       }
 
-      if (requestId === reloadRequestRef.current) {
+      if (applyLocalSnapshot && requestId === reloadRequestRef.current) {
         applySnapshotRecords(snapshot)
       }
       if (isSupabaseConfigured && supabase && isUuidLike(orgId)) {
@@ -6013,7 +6014,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setSelectedLeadId(createdLead?.leadId || '')
       clearLeadForm()
       setShowLeadForm(false)
-      void reloadRecords(organisationId)
+      void reloadRecords(organisationId, { applyLocalSnapshot: false })
     } catch (createError) {
       setError(createError?.message || 'Unable to create lead right now.')
     } finally {

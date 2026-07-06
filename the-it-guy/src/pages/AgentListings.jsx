@@ -1554,6 +1554,7 @@ function AgentListings({ initialTab = null } = {}) {
   const [quickAddDuplicateOverride, setQuickAddDuplicateOverride] = useState(false)
   const [quickAddDuplicateAction, setQuickAddDuplicateAction] = useState('')
   const [quickAddSuccess, setQuickAddSuccess] = useState(null)
+  const [isListingSaving, setIsListingSaving] = useState(false)
 
   const [form, setForm] = useState(() => buildInitialListingLeadForm(profile, workspace))
 
@@ -2181,9 +2182,7 @@ function AgentListings({ initialTab = null } = {}) {
     }
   }
 
-  async function handleSaveListing(event) {
-    event.preventDefault()
-
+  async function performSaveListing() {
     const sellerName = form.sellerName.trim()
     const sellerSurname = form.sellerSurname.trim()
     const sellerEmail = form.sellerEmail.trim()
@@ -2331,7 +2330,7 @@ function AgentListings({ initialTab = null } = {}) {
           organisationId,
           branchId: resolvedBranchId || null,
           assignedAgentId: resolvedAssignedAgentId || null,
-          listingStatus: resolvedListingStatus,
+          listingStatus: resolvedListingIsActive ? 'listing_review' : resolvedListingStatus,
           sellerOnboardingStatus: 'not_started',
           mandateStatus: initialMandateStatus,
           listingVisibility: resolveQuickListingVisibility(form.visibility, resolvedListingStatus),
@@ -2828,6 +2827,23 @@ function AgentListings({ initialTab = null } = {}) {
         : 'Seller lead created. Onboarding link generated. The listing now appears in Listings in Progress under seller onboarding pending.',
     )
     window.dispatchEvent(new Event('itg:listings-updated'))
+  }
+
+  async function handleSaveListing(event) {
+    event.preventDefault()
+    if (isListingSaving) return
+
+    setIsListingSaving(true)
+    setError('')
+    setWorkflowMessage('')
+    try {
+      await performSaveListing()
+    } catch (saveError) {
+      console.error('[Listings] listing save failed', saveError)
+      setError(saveError?.message || 'Unable to create listing right now.')
+    } finally {
+      setIsListingSaving(false)
+    }
   }
 
   async function handleDeleteListing(card, event) {
@@ -3720,6 +3736,17 @@ function AgentListings({ initialTab = null } = {}) {
               }
             />
 
+            {error ? (
+              <p className="mt-4 rounded-[14px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#b42318]">
+                {error}
+              </p>
+            ) : null}
+            {workflowMessage && showNewListingModal ? (
+              <p className="mt-4 rounded-[14px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-3 text-sm font-semibold text-[#1f7d44]">
+                {workflowMessage}
+              </p>
+            ) : null}
+
             {isManualListingFlow ? (
               <div className="mt-5 rounded-[16px] border border-[#d8e6f2] bg-[#f6fbff] px-4 py-3">
                 <p className="text-sm font-semibold text-[#22374d]">Quick Add is for manual or external listings.</p>
@@ -3824,7 +3851,7 @@ function AgentListings({ initialTab = null } = {}) {
               </div>
             ) : null}
 
-            <form className="mt-5 space-y-6" onSubmit={handleSaveListing}>
+            <form className="mt-5 space-y-6" onSubmit={handleSaveListing} noValidate>
               <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                 <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Seller</h4>
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -4397,7 +4424,7 @@ function AgentListings({ initialTab = null } = {}) {
               </div>
 
               <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[#e6edf5] pt-4">
-                <Button type="button" variant="secondary" onClick={() => setShowNewListingModal(false)}>
+                <Button type="button" variant="secondary" onClick={() => setShowNewListingModal(false)} disabled={isListingSaving}>
                   Cancel
                 </Button>
                 {isManualListingFlow ? (
@@ -4405,12 +4432,14 @@ function AgentListings({ initialTab = null } = {}) {
                     type="button"
                     variant="secondary"
                     onClick={() => updateForm('quickStep', quickAddMandatePanelOpen ? 'property' : 'mandate')}
+                    disabled={isListingSaving}
                   >
                     {quickAddMandatePanelOpen ? 'Hide mandate details' : 'Add mandate details'}
                   </Button>
                 ) : null}
-                <Button type="submit">
-                  {isManualListingFlow ? 'Create Listing' : 'Save Seller Lead & Send Onboarding'}
+                <Button type="submit" disabled={isListingSaving}>
+                  {isListingSaving ? <Loader2 size={16} className="animate-spin" /> : null}
+                  {isListingSaving ? 'Saving...' : isManualListingFlow ? 'Create Listing' : 'Save Seller Lead & Send Onboarding'}
                 </Button>
               </div>
             </form>

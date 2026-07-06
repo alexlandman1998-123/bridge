@@ -71,6 +71,7 @@ import {
 import { normalizeLeadCategory as normalizeCanonicalLeadCategory } from '../lib/leadCategory'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
+  buildAgentLeadRows,
   fetchAgentLeadWorkspace,
   filterAgentLeadRows,
   getLeadFilterOptions,
@@ -8081,7 +8082,7 @@ function AgentLeadList() {
   const [deletingLead, setDeletingLead] = useState(false)
   const [deleteLeadError, setDeleteLeadError] = useState('')
 
-  const loadRows = useCallback(async () => {
+  const loadRows = useCallback(async ({ showLoading = true, preserveRowsOnError = false, preserveLeadIds = [] } = {}) => {
     if (!organisationId) {
       setRows([])
       setReferrals([])
@@ -8090,7 +8091,7 @@ function AgentLeadList() {
       return
     }
     try {
-      setLoading(true)
+      if (showLoading) setLoading(true)
       setError('')
       const [leadResult, referralResult] = await Promise.allSettled([
         listAgentLeadWorkspaceRows({ organisationId, actor }),
@@ -8098,14 +8099,29 @@ function AgentLeadList() {
       ])
       if (leadResult.status === 'rejected') throw leadResult.reason
       const result = leadResult.value
-      setRows(result.rows)
+      const nextRows = Array.isArray(result.rows) ? result.rows : []
+      const preserveLeadIdSet = new Set(preserveLeadIds.map(normalizeText).filter(Boolean))
+      if (preserveLeadIdSet.size) {
+        setRows((current) => {
+          const nextLeadIds = new Set(nextRows.map((row) => normalizeText(row?.leadId)).filter(Boolean))
+          const preservedRows = current.filter((row) => {
+            const leadId = normalizeText(row?.leadId)
+            return preserveLeadIdSet.has(leadId) && !nextLeadIds.has(leadId)
+          })
+          return [...preservedRows, ...nextRows]
+        })
+      } else {
+        setRows(nextRows)
+      }
       setReferrals(referralResult.status === 'fulfilled' ? referralResult.value : [])
     } catch (loadError) {
-      setRows([])
-      setReferrals([])
+      if (!preserveRowsOnError) {
+        setRows([])
+        setReferrals([])
+      }
       setError(loadError?.message || 'Unable to load leads right now.')
     } finally {
-      setLoading(false)
+      if (showLoading) setLoading(false)
     }
   }, [actor, organisationId])
 
@@ -8291,18 +8307,57 @@ function AgentLeadList() {
         { actor },
       )
       const addressValue = category === 'seller' ? buildCreateLeadAddressValue(createForm) : null
+      const optimisticRows = buildAgentLeadRows({
+        leads: [{
+          ...createdLead,
+          firstName: nameParts.firstName || 'Lead',
+          lastName: nameParts.lastName,
+          phone: normalizeText(createForm.phone),
+          email: normalizeText(createForm.email).toLowerCase(),
+          sellerName: category === 'seller' ? nameParts.firstName || 'Lead' : createdLead?.sellerName,
+          sellerSurname: category === 'seller' ? nameParts.lastName : createdLead?.sellerSurname,
+          sellerPhone: category === 'seller' ? normalizeText(createForm.phone) : createdLead?.sellerPhone,
+          sellerEmail: category === 'seller' ? normalizeText(createForm.email).toLowerCase() : createdLead?.sellerEmail,
+        }],
+        contacts: [{
+          contactId: normalizeText(createdLead?.contactId || createdLead?.contact_id),
+          firstName: nameParts.firstName || 'Lead',
+          lastName: nameParts.lastName,
+          phone: normalizeText(createForm.phone),
+          email: normalizeText(createForm.email).toLowerCase(),
+          contactType: category,
+        }],
+      })
+      const optimisticRow = optimisticRows[0] || null
+      if (optimisticRow?.leadId) {
+        setRows((current) => [
+          optimisticRow,
+          ...current.filter((row) => normalizeText(row?.leadId) !== normalizeText(optimisticRow.leadId)),
+        ])
+      }
+      setFilters((previous) => ({
+        ...previous,
+        search: '',
+        category: getLeadPrimaryView(category),
+        stage: 'all',
+        source: 'all',
+        agent: 'all',
+        dateAdded: '',
+      }))
+      setQuickFilters(['all'])
       setCreateCategory('')
       setCreateError('')
       setCreateForm(EMPTY_LEAD_CREATE_FORM)
-      if (createdLead?.leadId) navigate(`/pipeline/leads/${createdLead.leadId}`)
       void (async () => {
         try {
           if (addressValue) {
             await upsertAreaFromAddress(addressValue, { incrementListingCount: false })
           }
-          if (!createdLead?.leadId) {
-            await loadRows()
-          }
+          await loadRows({
+            showLoading: false,
+            preserveRowsOnError: true,
+            preserveLeadIds: optimisticRow?.leadId ? [optimisticRow.leadId] : [],
+          })
         } catch (postCreateError) {
           console.warn('[AgentLeadsPage] Lead post-create refresh failed.', postCreateError)
         }
