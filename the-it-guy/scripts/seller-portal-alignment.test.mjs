@@ -6,6 +6,11 @@ const serviceSource = await fs.readFile(new URL('../src/services/clientPortalWor
 assert.match(serviceSource, /buildSellerJourney/)
 assert.match(serviceSource, /buildSellerPortalJourneyView/)
 assert.match(serviceSource, /sellerPortalStatusCards/)
+assert.match(
+  serviceSource,
+  /if \(isSellerOnboardingToken\(token\)\) \{[\s\S]*return fetchSellerClientPortalDataByToken\(token/,
+  'seller portal links should use the password-gated seller workspace loader before generic client portal loading',
+)
 
 const privateListingServiceSource = await fs.readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
 const sellerOnboardingLoader = privateListingServiceSource.match(/export async function getSellerOnboardingByToken[\s\S]*?\n}\n\nasync function maybeResolveCanonicalSellerRequirements/)?.[0] || ''

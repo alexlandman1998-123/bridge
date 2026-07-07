@@ -97,6 +97,11 @@ assertContract(
   /deliveryId: delivery\?\.id \|\| null/,
   'Seller-facing onboarding/portal emails should return delivery ids.',
 )
+assertContract(
+  sellerEmailHandler,
+  /logo_dark_url\)[\s\S]*logo_light_url\)/,
+  'Seller-facing onboarding/portal emails should prefer dark-header organisation logos.',
+)
 
 const sellerEmailContent = await readWorkspaceFile('supabase/functions/send-email/content/sellerOnboarding.ts')
 assertContract(

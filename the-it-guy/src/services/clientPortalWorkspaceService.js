@@ -1599,18 +1599,15 @@ export async function resolveClientPortalContext(token) {
 }
 
 async function fetchPortalDataForWorkspace(token, mode = 'full', options = {}) {
-  try {
-    return mode === 'core'
-      ? await fetchClientPortalCoreByToken(token)
-      : await fetchClientPortalByToken(token)
-  } catch (error) {
-    if (isSellerOnboardingToken(token) && isInvalidClientPortalLinkError(error)) {
-      return fetchSellerClientPortalDataByToken(token, {
-        sellerPortalAccessToken: options?.sellerPortalAccessToken,
-      })
-    }
-    throw error
+  if (isSellerOnboardingToken(token)) {
+    return fetchSellerClientPortalDataByToken(token, {
+      sellerPortalAccessToken: options?.sellerPortalAccessToken,
+    })
   }
+
+  return mode === 'core'
+    ? await fetchClientPortalCoreByToken(token)
+    : await fetchClientPortalByToken(token)
 }
 
 function buildDemoClientPortalWorkspaceData(token, workspace = 'shared') {

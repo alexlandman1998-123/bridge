@@ -16,7 +16,7 @@ import {
   Trash2,
   UserRound,
 } from 'lucide-react'
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, createElement, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import {
@@ -75,12 +75,8 @@ import {
   isPropertyDisclosureDigitallyComplete,
   normalizePropertyDisclosure,
 } from '../lib/propertyDisclosure'
-import {
-  buildSellerRequirementProfile,
-  getRequiredSellerDocuments,
-} from '../lib/privateListingRequirementEngine'
 
-const STEPS = ['Seller Information', 'Property Details', 'Property Disclosure', 'FICA & Compliance', 'Review & Submit']
+const STEPS = ['Seller Information', 'Property Details', 'Property Disclosure', 'Review & Submit']
 
 const SELLER_STATUS_LABELS = {
   [SELLER_ONBOARDING_STATUS.NOT_STARTED]: 'Not Started',
@@ -101,21 +97,6 @@ const PROPERTY_FEATURES = [
   { key: 'flatlet', label: 'Flatlet / Second Dwelling' },
   { key: 'staff_quarters', label: 'Staff Quarters' },
 ]
-
-const COMPLIANCE_GROUP_LABELS = {
-  financial: 'Bond & finance',
-  property_finance_existing_bond: 'Bond & finance',
-  tenant_occupancy: 'Tenant occupancy',
-  occupancy: 'Occupancy',
-  property_compliance: 'Property compliance',
-  sectional_title_body_corporate: 'Sectional title',
-  estate_hoa: 'Estate / HOA',
-  property: 'Property',
-  seller_authority: 'Seller authority',
-  seller_identity_fica: 'Seller identity',
-  compliance: 'General compliance',
-  other: 'Other tasks',
-}
 
 const OWNERSHIP_TYPES = [
   { value: 'individual', label: 'Individual', description: 'I own the property in my own name.' },
@@ -189,9 +170,21 @@ const MARITAL_REGIMES = [
 ]
 
 const MANDATE_TYPE_OPTIONS = [
-  { value: 'open', label: 'Open mandate' },
-  { value: 'sole', label: 'Sole mandate' },
-  { value: 'exclusive', label: 'Exclusive mandate' },
+  { value: 'sole', label: 'Sole' },
+  { value: 'dual', label: 'Dual' },
+  { value: 'tri_mandate', label: 'Tri-Mandate' },
+]
+
+const SELLING_REASON_OPTIONS = [
+  { value: 'upgrade', label: 'Upgrading' },
+  { value: 'downsize', label: 'Downsizing' },
+  { value: 'relocation', label: 'Relocation' },
+  { value: 'divorce', label: 'Divorce' },
+  { value: 'immigrating', label: 'Immigrating' },
+  { value: 'deceased_estate', label: 'Deceased Estate' },
+  { value: 'investment_exit', label: 'Investment Exit' },
+  { value: 'financial_change', label: 'Financial Change' },
+  { value: 'other', label: 'Other' },
 ]
 
 const PAGE_CONTAINER_CLASS = 'mx-auto w-full max-w-[560px] lg:max-w-[1184px]'
@@ -219,11 +212,6 @@ const STEP_META = [
     label: 'Property Disclosure',
     helper: 'Capture known material facts and seller declaration.',
     icon: ClipboardCheck,
-  },
-  {
-    label: 'FICA & Compliance',
-    helper: 'Review document requirements for your seller profile.',
-    icon: ShieldCheck,
   },
   {
     label: 'Review & Submit',
@@ -370,41 +358,59 @@ function getInitials(value = '') {
   return parts.slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('')
 }
 
+function pickBrandText(...values) {
+  for (const value of values) {
+    if (typeof value !== 'string' && typeof value !== 'number') continue
+    const text = String(value).trim()
+    if (text) return text
+  }
+  return ''
+}
+
 function resolveAgencyBrand(listing = {}) {
-  const agencyName =
-    String(
-      listing?.branding?.organisationName ||
-      listing?.branding?.agencyName ||
-      listing?.agencyOrganisation ||
-      listing?.organisationName ||
-      listing?.agencyName ||
-      listing?.agency?.name ||
-      listing?.organisation?.name ||
-      listing?.assignedAgencyName ||
-      '',
-    ).trim() || 'Your Agency'
-  const logoDarkUrl = String(
-    listing?.agencyLogoDarkUrl ||
-      listing?.organisationLogoDarkUrl ||
-      listing?.branding?.logoDarkUrl ||
-      listing?.branding?.logoDark ||
-      '',
-  ).trim()
-  const logoLightUrl = String(
-    listing?.branding?.logoLightUrl ||
-      listing?.branding?.logoLight ||
-      '',
-  ).trim()
-  const fallbackLogoUrl = String(
-    listing?.agencyLogoUrl ||
-      listing?.organisationLogoUrl ||
-      listing?.agency?.logoUrl ||
-      listing?.organisation?.logoUrl ||
-      listing?.branding?.logoUrl ||
-      '',
-  ).trim()
+  const onboardingBranding = listing?.sellerOnboarding?.formData?.portalBranding || {}
+  const agencyName = pickBrandText(
+    listing?.branding?.organisationName,
+    listing?.branding?.agencyName,
+    listing?.branding?.name,
+    onboardingBranding?.organisationName,
+    onboardingBranding?.agencyName,
+    listing?.agencyOrganisation,
+    listing?.organisationName,
+    listing?.agencyName,
+    listing?.agency?.displayName,
+    listing?.agency?.name,
+    listing?.organisation?.displayName,
+    listing?.organisation?.name,
+    listing?.assignedAgencyName,
+  )
+  const brandName = agencyName || 'Arch9'
+  const logoDarkUrl = pickBrandText(
+    listing?.agencyLogoDarkUrl,
+    listing?.organisationLogoDarkUrl,
+    listing?.branding?.logoDarkUrl,
+    listing?.branding?.logoDark,
+    onboardingBranding?.logoDarkUrl,
+    onboardingBranding?.logoDark,
+  )
+  const logoLightUrl = pickBrandText(
+    listing?.agencyLogoLightUrl,
+    listing?.organisationLogoLightUrl,
+    listing?.branding?.logoLightUrl,
+    listing?.branding?.logoLight,
+    onboardingBranding?.logoLightUrl,
+    onboardingBranding?.logoLight,
+  )
+  const fallbackLogoUrl = pickBrandText(
+    listing?.agencyLogoUrl,
+    listing?.organisationLogoUrl,
+    listing?.agency?.logoUrl,
+    listing?.organisation?.logoUrl,
+    listing?.branding?.logoUrl,
+    onboardingBranding?.logoUrl,
+  )
   const logoUrl = logoDarkUrl || fallbackLogoUrl || logoLightUrl
-  return { name: agencyName, logoUrl, logoDarkUrl, logoLightUrl, initials: getInitials(agencyName) }
+  return { name: brandName, logoUrl, logoDarkUrl, logoLightUrl, initials: getInitials(brandName), isFallback: !agencyName }
 }
 
 function resolveAgentName(listing = {}) {
@@ -771,55 +777,6 @@ function buildResidentialAddressPatch(value = null) {
       source: 'google_places',
     },
   }
-}
-
-function buildComplianceDocuments(listing = {}, fallbackRequirements = []) {
-  const rows = [
-    ...(Array.isArray(listing?.documentRequirements) ? listing.documentRequirements : []),
-    ...(Array.isArray(listing?.requiredDocuments) ? listing.requiredDocuments : []),
-  ].filter(Boolean)
-
-  if (rows.length) {
-    return rows.map((row, index) => ({
-      key: row?.key || row?.requirement_key || row?.id || `document-${index}`,
-      label: row?.label || row?.requirement_name || formatValue(row?.key || row?.requirement_key, 'Document'),
-      description: row?.requirement_description || row?.description || 'Your agent may request this before mandate completion.',
-      status: row?.status || 'required',
-      fileName: row?.fileName || row?.document_name || '',
-      group: row?.group || row?.requirement_group || '',
-      groupLabel: row?.groupLabel || row?.requirement_group_label || getComplianceGroupLabel(row?.group || row?.requirement_group || ''),
-    }))
-  }
-
-  return fallbackRequirements.map((requirement, index) => {
-    if (typeof requirement === 'string') {
-      return {
-        key: requirement,
-        label: formatValue(requirement, requirement),
-        description: 'Required for this seller profile.',
-        status: 'required',
-        fileName: '',
-        group: '',
-        groupLabel: '',
-      }
-    }
-
-    return {
-      key: requirement?.key || requirement?.requirement_key || requirement?.id || `document-${index}`,
-      label: requirement?.label || requirement?.name || formatValue(requirement?.key || requirement?.requirement_key, 'Document'),
-      description: requirement?.requirement_description || requirement?.description || 'Required for this seller profile.',
-      status: requirement?.status || requirement?.documentStatus || 'required',
-      fileName: requirement?.fileName || requirement?.document_name || '',
-      group: requirement?.group || requirement?.requirement_group || '',
-      groupLabel: requirement?.groupLabel || requirement?.requirement_group_label || getComplianceGroupLabel(requirement?.group || requirement?.requirement_group || ''),
-    }
-  })
-}
-
-function getComplianceGroupLabel(group = '') {
-  const normalized = String(group || '').trim().toLowerCase()
-  if (!normalized) return ''
-  return COMPLIANCE_GROUP_LABELS[normalized] || formatValue(normalized, normalized)
 }
 
 function buildBondComplianceSummary(form = {}) {
@@ -1410,6 +1367,14 @@ function AgencyMark({ brand, tone = 'dark' }) {
     )
   }
 
+  if (brand?.isFallback) {
+    return (
+      <span className={`inline-flex h-10 items-center justify-center rounded-[14px] px-3 text-sm font-semibold shadow-[0_12px_30px_rgba(0,0,0,0.12)] sm:h-14 sm:px-4 sm:text-base ${tone === 'light' ? 'border border-[#dbe5ef] bg-white text-[#172334]' : 'border border-white/15 bg-white/10 text-white'}`}>
+        arch9
+      </span>
+    )
+  }
+
   return (
     <span className={`inline-flex h-10 w-10 items-center justify-center rounded-[14px] text-xs font-semibold shadow-[0_12px_30px_rgba(0,0,0,0.18)] sm:h-16 sm:w-16 sm:rounded-[18px] sm:text-base ${tone === 'light' ? 'border border-[#dbe5ef] bg-[#172334] text-white' : 'border border-white/15 bg-white/10 text-white'}`}>
       {brand?.initials || 'AG'}
@@ -1606,7 +1571,7 @@ function FormSection({ icon, title, description, illustration = '', children, mo
   )
 }
 
-function ChoiceCard({ active, title, description, icon: Icon = Circle, onClick }) {
+function ChoiceCard({ active, title, description, icon = Circle, onClick }) {
   return (
     <button
       type="button"
@@ -1617,7 +1582,7 @@ function ChoiceCard({ active, title, description, icon: Icon = Circle, onClick }
       <span className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border ${
         active ? 'border-[#138a3d]/30 bg-white text-[#138a3d]' : 'border-[#dbe6f2] bg-[#f8fbff] text-[#60748b]'
       }`}>
-        <Icon size={18} strokeWidth={2.2} />
+        {createElement(icon, { size: 18, strokeWidth: 2.2 })}
       </span>
       <span className="min-w-0">
         <span className={`block text-sm font-semibold sm:text-[15px] ${active ? 'text-[#132033]' : 'text-[#35546c]'}`}>{title}</span>
@@ -1967,8 +1932,7 @@ function PropertyDisclosureSection({
   )
 }
 
-function SellerCompletedState({ token, listing, form, brand, onDownloadDisclosure }) {
-  const clientSellingPath = `/client/${token}/selling/documents`
+function SellerCompletedState({ listing, form, brand, onDownloadDisclosure }) {
   const mandateTypeLabel = MANDATE_TYPE_OPTIONS.find((item) => item.value === form.mandateType)?.label || 'Not selected'
   const sellerName = getSellerDisplayName(listing, form)
   const propertyAddress = getPropertyDisplayAddress(listing, form)
@@ -1999,15 +1963,15 @@ function SellerCompletedState({ token, listing, form, brand, onDownloadDisclosur
       complete: false,
     },
     {
-      label: 'Documents upload',
-      status: 'Open portal',
-      detail: 'Upload FICA, mandate, and property compliance files in the seller portal.',
-      complete: false,
-    },
-    {
       label: 'Mandate preparation',
       status: 'Upcoming',
       detail: 'Your agent prepares the mandate and sends the secure signing link.',
+      complete: false,
+    },
+    {
+      label: 'Agent follow-up',
+      status: 'If needed',
+      detail: `${agentName} will contact you if anything needs to be corrected or added.`,
       complete: false,
     },
   ]
@@ -2025,28 +1989,25 @@ function SellerCompletedState({ token, listing, form, brand, onDownloadDisclosur
           <h2 className="mt-2 text-2xl font-semibold tracking-normal text-[#14532d] sm:text-3xl">You're all set</h2>
           <p className="mt-2 text-sm font-semibold text-[#25603d]">Thank you, {sellerName}.</p>
           <p className="mx-auto mt-3 max-w-[420px] text-sm leading-6 text-[#25603d] lg:mx-0">
-            Your seller information has been submitted. Your seller portal is ready now for document uploads while {agentName} reviews the file.
+            Your seller information has been submitted. {agentName} will review the details and prepare the next mandate step.
           </p>
 
           <div className="mt-5 rounded-[20px] border border-[#cfe8da] bg-white/80 p-4 text-left">
             <div className="flex items-start gap-3">
               <AgencyMark brand={brand} tone="light" />
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-[#172334]">{brand?.name || 'Your Agency'}</p>
+                <p className="text-sm font-semibold text-[#172334]">{brand?.name || 'Arch9'}</p>
                 <p className="mt-1 text-sm leading-5 text-[#60748b]">{propertyAddress}</p>
               </div>
             </div>
           </div>
 
           <div className="mt-5 flex flex-col gap-2 sm:flex-row lg:flex-col xl:flex-row">
-            <Link to={clientSellingPath} className="inline-flex min-h-[52px] w-full items-center justify-center rounded-[16px] bg-[#172334] px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)]">
-              Open Seller Portal
-            </Link>
             {disclosureComplete ? (
               <button
                 type="button"
                 onClick={onDownloadDisclosure}
-                className="inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-[16px] border border-[#b7dfc3] bg-white px-4 py-3 text-sm font-semibold text-[#14532d]"
+                className="inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-[16px] border border-[#b7dfc3] bg-white px-4 py-3 text-sm font-semibold text-[#14532d] shadow-[0_12px_24px_rgba(31,125,68,0.08)]"
               >
                 <Download size={15} />
                 Download Disclosure
@@ -2103,7 +2064,7 @@ function SellerCompletedState({ token, listing, form, brand, onDownloadDisclosur
             </span>
             <div>
               <p className="text-sm font-semibold text-[#172334]">Need help?</p>
-              <p className="mt-1 text-sm leading-5 text-[#6b7d93]">Contact {agentName} if anything looks incorrect or if you need help with document uploads.</p>
+              <p className="mt-1 text-sm leading-5 text-[#6b7d93]">Contact {agentName} if anything looks incorrect or if you need help with the next step.</p>
             </div>
           </div>
 
@@ -2367,18 +2328,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }, [listing, propertyAddressDetails])
 
   const agencyBrand = useMemo(() => resolveAgencyBrand(listing || {}), [listing])
-  const complianceRequirementProfile = useMemo(
-    () => buildSellerRequirementProfile(form || {}, listing || {}),
-    [form, listing],
-  )
-  const complianceRequirementDocuments = useMemo(
-    () => getRequiredSellerDocuments(complianceRequirementProfile),
-    [complianceRequirementProfile],
-  )
-  const complianceDocuments = useMemo(
-    () => buildComplianceDocuments(listing || {}, complianceRequirementDocuments),
-    [complianceRequirementDocuments, listing],
-  )
   const bondComplianceSummary = useMemo(() => buildBondComplianceSummary(form || {}), [form])
   const tenantComplianceSummary = useMemo(() => buildTenantComplianceSummary(form || {}), [form])
 
@@ -2642,6 +2591,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
   async function handleDownloadDisclosurePdf() {
     if (!form?.propertyDisclosure) return
+    let pdfStage = null
+    let styleElement = null
     try {
       setError('')
       const normalizedDisclosure = normalizePropertyDisclosure(form.propertyDisclosure || {}, {
@@ -2652,15 +2603,59 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         return
       }
       const { default: html2pdf } = await import('html2pdf.js/src/index.js')
+      const agencyBrand = resolveAgencyBrand(listing)
+      const propertyAddress = getPropertyDisplayAddress(listing, form)
       const markup = buildPropertyDisclosureDocumentMarkup(normalizedDisclosure, {
         sellerName: getSellerDisplayName(listing, form),
-        propertyAddress: getPropertyDisplayAddress(listing, form),
+        propertyAddress,
         listingId: String(listing?.id || '').trim(),
+        documentReference: String(
+          listing?.listingReference ||
+            listing?.listing_reference ||
+            listing?.reference ||
+            listing?.privateListingReference ||
+            listing?.private_listing_reference ||
+            listing?.id ||
+            propertyAddress ||
+            '',
+        ).trim(),
+        assetBaseUrl: window.location.origin,
+        branding: {
+          ...(listing?.branding || {}),
+          organisationName: agencyBrand.name,
+          agencyName: agencyBrand.name,
+          logoUrl: agencyBrand.logoUrl,
+          logoDarkUrl: agencyBrand.logoDarkUrl,
+          logoLightUrl: agencyBrand.logoLightUrl,
+        },
       })
       const pdfDocument = new window.DOMParser().parseFromString(markup, 'text/html')
       const documentBody = pdfDocument.body
       const style = pdfDocument.head.querySelector('style')
-      const printableMarkup = `${style?.outerHTML || ''}${documentBody.innerHTML}`
+      styleElement = document.createElement('style')
+      styleElement.setAttribute('data-seller-disclosure-pdf-style', 'true')
+      styleElement.textContent = style?.textContent || ''
+      pdfStage = document.createElement('div')
+      pdfStage.setAttribute('data-seller-disclosure-pdf-stage', 'true')
+      pdfStage.style.position = 'fixed'
+      pdfStage.style.left = '-10000px'
+      pdfStage.style.top = '0'
+      pdfStage.style.width = '210mm'
+      pdfStage.style.background = '#ffffff'
+      pdfStage.style.pointerEvents = 'none'
+      pdfStage.innerHTML = documentBody.innerHTML
+      document.head.appendChild(styleElement)
+      document.body.appendChild(pdfStage)
+      const imageLoads = Array.from(pdfStage.querySelectorAll('img')).map((image) => {
+        if (image.complete) return Promise.resolve()
+        return new Promise((resolve) => {
+          image.onload = resolve
+          image.onerror = resolve
+        })
+      })
+      await Promise.all(imageLoads)
+      await new Promise((resolve) => window.requestAnimationFrame(resolve))
+      const exportTarget = pdfStage.querySelector('.property-disclosure-document') || pdfStage
       await html2pdf()
         .set({
           margin: 0,
@@ -2670,16 +2665,19 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
             scale: 2,
             useCORS: true,
             backgroundColor: '#ffffff',
-            windowWidth: 816,
-            windowHeight: 1056,
+            windowWidth: 794,
+            windowHeight: 1123,
           },
-          jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
           pagebreak: { mode: ['css', 'legacy'] },
         })
-        .from(printableMarkup, 'string')
+        .from(exportTarget)
         .save()
     } catch (downloadError) {
       setError(downloadError?.message || 'Unable to download the disclosure PDF right now.')
+    } finally {
+      pdfStage?.remove()
+      styleElement?.remove()
     }
   }
 
@@ -3043,12 +3041,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       }
     }
 
-    if (currentStep === 3) {
-      if (!form.ownershipType) {
-        return 'Please confirm ownership structure before submitting compliance requirements.'
-      }
-    }
-
     return ''
   }
 
@@ -3182,7 +3174,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
       setListing(updated)
       setCurrentStep(FINAL_STEP_INDEX)
-      setSuccess('Your property details have been submitted.\nYour seller portal is ready now. Open the client portal selling module to upload the required seller documents.')
+      setSuccess('Your property details have been submitted.\nYour agent will review the details and prepare the next mandate step.')
       scrollSellerOnboardingToTop()
       if (typeof window !== 'undefined') {
         window.dispatchEvent(
@@ -3400,7 +3392,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     { label: 'Property disclosure', missing: disclosureMissing, onEdit: () => setCurrentStep(2) },
     ...(bondComplianceSummary ? [{ label: 'Bond follow-up', missing: bondComplianceSummary.missing, onEdit: () => setCurrentStep(1) }] : []),
     ...(tenantComplianceSummary ? [{ label: 'Tenant follow-up', missing: tenantComplianceSummary.missing, onEdit: () => setCurrentStep(1) }] : []),
-    { label: 'Document portal', missing: [], onEdit: () => setCurrentStep(3) },
   ]
 
   const shouldShowWelcome = !embedded && !isCompleted && showWelcome
@@ -3414,7 +3405,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       ) : null}
 
       {isCompleted ? (
-        <SellerCompletedState token={token} listing={listing} form={form} brand={agencyBrand} onDownloadDisclosure={handleDownloadDisclosurePdf} />
+        <SellerCompletedState listing={listing} form={form} brand={agencyBrand} onDownloadDisclosure={handleDownloadDisclosurePdf} />
       ) : (
         <section className={SECTION_CARD_CLASS}>
         <SellerStepProgress currentStep={currentStep} progress={progress} />
@@ -3952,12 +3943,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     Reason for Selling (optional)
                     <select className={DETAIL_INPUT_CLASS} value={form.sellingReason} onChange={(event) => handleFormUpdate('sellingReason', event.target.value)}>
                       <option value="">Select reason</option>
-                      <option value="upgrade">Upgrading</option>
-                      <option value="downsize">Downsizing</option>
-                      <option value="relocation">Relocation</option>
-                      <option value="investment_exit">Investment Exit</option>
-                      <option value="financial_change">Financial Change</option>
-                      <option value="other">Other</option>
+                      {SELLING_REASON_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
                     </select>
                   </label>
                 </div>
@@ -4572,67 +4562,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
           {currentStep === 3 ? (
             <StepShell
-              eyebrow="FICA & Compliance"
-              title="Documents upload next"
-              description="Once you submit, your seller portal is ready immediately. FICA and compliance uploads happen securely there."
-            >
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.05fr_0.95fr]">
-                <FormSection
-                  icon={ShieldCheck}
-                  title="Upload FICA and compliance documents in the seller portal"
-                  description="You do not need to upload documents during this onboarding step."
-                  mobilePaneIndex={0}
-                >
-                  <div className="rounded-[18px] border border-[#dbe6f2] bg-[#f7fbff] p-4 sm:p-5">
-                    <p className="text-sm leading-6 text-[#35546c]">
-                      After you submit this onboarding, your seller portal is available immediately for document uploads. You’ll be asked there for FICA, ownership, mandate, and property compliance documents that match your seller file.
-                    </p>
-                    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                      {['Submit onboarding', 'Upload documents in portal', 'Agent reviews file'].map((item, index) => (
-                        <div key={item} className="rounded-[16px] border border-[#dbe6f2] bg-white px-3 py-3">
-                          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#172334] text-xs font-semibold text-white">{index + 1}</span>
-                          <p className="mt-2 text-sm font-semibold text-[#22364a]">{item}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </FormSection>
-
-                <div className="space-y-4">
-                  <article className="rounded-[22px] border border-[#dbe6f2] bg-white/95 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-5">
-                    <span className="inline-flex h-11 w-11 items-center justify-center rounded-[15px] bg-[#eefbf3] text-[#1f7d44]">
-                      <FileCheck2 size={20} />
-                    </span>
-                    <h3 className="mt-4 text-lg font-semibold tracking-[-0.02em] text-[#172334]">Nothing to upload here</h3>
-                    <p className="mt-2 text-sm leading-6 text-[#60748b]">
-                      This page only captures the seller and property facts. The seller portal handles secure file uploads later, so this step stays quick and uncluttered.
-                    </p>
-                  </article>
-
-                  {bondComplianceSummary ? (
-                    <ReviewCard
-                      title="Existing bond follow-up"
-                      onEdit={() => setCurrentStep(1)}
-                      missing={bondComplianceSummary.missing}
-                      items={bondComplianceSummary.items}
-                    />
-                  ) : null}
-
-                  {tenantComplianceSummary ? (
-                    <ReviewCard
-                      title="Tenant occupancy follow-up"
-                      onEdit={() => setCurrentStep(1)}
-                      missing={tenantComplianceSummary.missing}
-                      items={tenantComplianceSummary.items}
-                    />
-                  ) : null}
-                </div>
-              </div>
-            </StepShell>
-          ) : null}
-
-          {currentStep === 4 ? (
-            <StepShell
               eyebrow="Review & Submit"
               title="Check your seller file"
               description="Once submitted, your agent will review the information and prepare the next step in your selling journey."
@@ -4703,22 +4632,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     { label: 'Declaration', value: form.propertyDisclosure?.declarationAccepted ? 'Signed' : 'Not signed' },
                   ]}
                 />
-                <ReviewCard
-                  title="Compliance Summary"
-                  onEdit={() => setCurrentStep(3)}
-                  collapsible
-                  items={[
-                    { label: 'Seller Profile', value: OWNERSHIP_TYPES.find((item) => item.value === form.ownershipType)?.label || 'Individual' },
-                    { label: 'Branch Tasks', value: `${complianceDocuments.length} item${complianceDocuments.length === 1 ? '' : 's'} identified` },
-                    { label: 'Next Step', value: 'Upload documents in seller portal' },
-                  ]}
-                />
               </div>
               <div className="mt-5 rounded-[20px] border border-[#dbe6f2] bg-[#f7fbff] p-4">
                 <div className="flex items-start gap-3">
                   <Sparkles size={18} className="mt-0.5 text-[#35546c]" />
                   <p className="text-sm leading-6 text-[#35546c]">
-                    Submit when everything looks correct. Your seller portal opens immediately for document uploads while your agent reviews the file.
+                    Submit when everything looks correct. Your agent will review the details and prepare the next mandate step.
                   </p>
                 </div>
               </div>
@@ -4786,7 +4705,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }
 
   const sellerMainClass = shouldShowWelcome
-    ? 'relative min-h-screen overflow-x-hidden bg-[#02070b] px-3 py-3 font-sans antialiased text-white sm:px-5 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8'
+    ? 'relative min-h-screen overflow-x-hidden bg-[#02070b] font-sans antialiased text-white'
     : 'relative min-h-screen overflow-x-hidden bg-[#e4ebf3] px-3 py-3 pb-40 font-sans antialiased text-[#132033] sm:px-5 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8 lg:pb-10'
 
   return (
@@ -4798,7 +4717,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           <div className="absolute bottom-[-9rem] left-1/3 h-[28rem] w-[28rem] rounded-full bg-white/30 blur-3xl" />
         </div>
       ) : null}
-      <div className={PAGE_CONTAINER_CLASS}>
+      <div className={shouldShowWelcome ? 'relative z-10 w-full' : PAGE_CONTAINER_CLASS}>
         {content}
       </div>
       {!shouldShowWelcome && !isCompleted ? (

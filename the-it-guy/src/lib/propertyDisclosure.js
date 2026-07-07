@@ -203,6 +203,104 @@ function escapeHtml(value = '') {
     .replace(/'/g, '&#39;')
 }
 
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    const text = normalizeText(value)
+    if (text) return text
+  }
+  return ''
+}
+
+function resolveDocumentAssetUrl(value = '', assetBaseUrl = '') {
+  const raw = normalizeText(value)
+  if (!raw) return ''
+  if (/^(https?:|data:|blob:)/i.test(raw)) return raw
+  const path = raw.startsWith('/') ? raw : `/${raw}`
+  const base = normalizeText(assetBaseUrl).replace(/\/+$/, '')
+  return base ? `${base}${path}` : path
+}
+
+function resolvePropertyDisclosureBranding(context = {}) {
+  const branding = context.branding && typeof context.branding === 'object' ? context.branding : {}
+  const organisationName = firstNonEmpty(
+    branding.organisationName,
+    branding.organisation_name,
+    branding.agencyName,
+    branding.agency_name,
+    branding.name,
+    context.organisationName,
+    context.agencyName,
+    'Agency Workspace',
+  )
+  const agencyLogoUrl = resolveDocumentAssetUrl(
+    firstNonEmpty(
+      branding.logoLightUrl,
+      branding.logo_light_url,
+      branding.logoLight,
+      branding.organisationLogoUrl,
+      branding.organisation_logo_url,
+      branding.logoUrl,
+      branding.logo_url,
+      branding.logoDarkUrl,
+      branding.logoDark,
+      context.logoUrl,
+    ),
+    context.assetBaseUrl,
+  )
+  const bridgeLogoUrl = resolveDocumentAssetUrl(
+    firstNonEmpty(
+      branding.bridgeLogoLightUrl,
+      branding.bridge_logo_light_url,
+      branding.bridgeLogoUrl,
+      context.bridgeLogoUrl,
+    ),
+    context.assetBaseUrl,
+  )
+
+  return {
+    organisationName,
+    agencyLogoUrl,
+    bridgeLogoUrl,
+  }
+}
+
+function renderPlatformWordmark() {
+  return '<span class="platform-wordmark"><strong>arch</strong><em>9</em></span>'
+}
+
+function renderDisclosureHeader(branding = {}) {
+  const agencyBrand = branding.agencyLogoUrl
+    ? `<img src="${escapeHtml(branding.agencyLogoUrl)}" alt="${escapeHtml(branding.organisationName)} logo" />`
+    : escapeHtml(branding.organisationName)
+  const platformBrand = branding.bridgeLogoUrl
+    ? `<img src="${escapeHtml(branding.bridgeLogoUrl)}" alt="Arch9" />`
+    : renderPlatformWordmark()
+
+  return `
+    <header class="doc-header">
+      <span class="agency-brand">${agencyBrand}</span>
+      <span class="bridge-brand">${platformBrand}</span>
+    </header>
+  `
+}
+
+function renderDisclosureFooter(branding = {}, pageNumber = 1, pageTotal = 1) {
+  const agencyBrand = branding.agencyLogoUrl
+    ? `<img src="${escapeHtml(branding.agencyLogoUrl)}" alt="${escapeHtml(branding.organisationName)} logo" />`
+    : escapeHtml(branding.organisationName)
+  const platformBrand = branding.bridgeLogoUrl
+    ? `<img src="${escapeHtml(branding.bridgeLogoUrl)}" alt="Arch9" />`
+    : renderPlatformWordmark()
+
+  return `
+    <footer class="doc-footer">
+      <span class="footer-brand">${agencyBrand}</span>
+      <span class="page-no">Page ${pageNumber} of ${pageTotal}</span>
+      <span class="footer-bridge">${platformBrand}</span>
+    </footer>
+  `
+}
+
 export function createBlankDisclosureIssue(categoryKey = '') {
   return {
     id: `disclosure-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -391,19 +489,50 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
   const snapshot = buildPropertyDisclosureAnnexureSnapshot(disclosure, context)
   const sellerName = normalizeText(context.sellerName || snapshot.sellerSignature || 'Seller')
   const propertyAddress = normalizeText(context.propertyAddress)
-  const year = normalizeText(snapshot.sellerSignedAt).slice(0, 4) || String(new Date().getFullYear())
-  const answerCell = (answer, value) => (answer === value ? '&#10003;' : '')
+  const documentReference = firstNonEmpty(context.documentReference, context.listingReference, context.listingId, propertyAddress, snapshot.title)
+  const branding = resolvePropertyDisclosureBranding(context)
+  const answerCell = (answer, value) => (answer === value ? '<span class="answer-mark">&#10003;</span>' : '&nbsp;')
+  const pageTotal = 3
   const renderRows = (items) => items.map((item) => `
     <tr>
-      <td class="question"><span class="number">${item.number}</span> ${escapeHtml(item.question)}${item.extraLabel ? `<div class="extra">${escapeHtml(item.extraLabel)}: ${escapeHtml(item.extraValue)}</div>` : ''}</td>
-      <td>${answerCell(item.answer, PROPERTY_DISCLOSURE_ANSWER.yes)}</td>
-      <td>${answerCell(item.answer, PROPERTY_DISCLOSURE_ANSWER.no)}</td>
-      <td>${answerCell(item.answer, PROPERTY_DISCLOSURE_ANSWER.unsure)}</td>
+      <td class="question-cell">
+        <span class="question-number">${item.number}.</span>
+        <span class="question-text">${escapeHtml(item.question)}</span>
+        ${item.extraLabel ? `<span class="question-extra">${escapeHtml(item.extraLabel)}: ${escapeHtml(item.extraValue)}</span>` : ''}
+      </td>
+      <td class="answer-cell">${answerCell(item.answer, PROPERTY_DISCLOSURE_ANSWER.yes)}</td>
+      <td class="answer-cell">${answerCell(item.answer, PROPERTY_DISCLOSURE_ANSWER.no)}</td>
+      <td class="answer-cell">${answerCell(item.answer, PROPERTY_DISCLOSURE_ANSWER.unsure)}</td>
     </tr>
   `).join('')
-  const pageOneRows = renderRows(snapshot.answers.filter((item) => Number(item.number) <= 17))
-  const pageTwoRows = renderRows(snapshot.answers.filter((item) => Number(item.number) > 17))
+  const pageOneRows = renderRows(snapshot.answers.filter((item) => Number(item.number) <= 10))
+  const pageTwoRows = renderRows(snapshot.answers.filter((item) => Number(item.number) > 10))
   const comments = escapeHtml(snapshot.comments).replace(/\n/g, '<br />')
+  const renderTitle = (subtitle = '') => `
+    <section class="doc-title">
+      <h1>Declaration by Seller - Annexure A</h1>
+      <p>Document reference: ${escapeHtml(documentReference)}${subtitle ? `<br />${escapeHtml(subtitle)}` : ''}</p>
+    </section>
+  `
+  const renderQuestionTable = (rows) => `
+    <table class="annexure-table">
+      <colgroup>
+        <col class="question-col" />
+        <col class="answer-col" />
+        <col class="answer-col" />
+        <col class="answer-col" />
+      </colgroup>
+      <thead>
+        <tr>
+          <th scope="col">Disclosure question</th>
+          <th scope="col">Yes</th>
+          <th scope="col">No</th>
+          <th scope="col">Unsure</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `
 
   return `<!doctype html>
 <html>
@@ -412,81 +541,126 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
   <title>${escapeHtml(snapshot.title)}</title>
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; background: #f3f4f6; color: #000; font-family: Arial, Helvetica, sans-serif; }
-    .page { width: 8.5in; min-height: 11in; margin: 0 auto 18px; padding: 0.72in 0.72in 0.45in; background: #fff; page-break-after: always; position: relative; }
-    .page:last-child { page-break-after: auto; }
-    h1 { margin: 0 0 24px; text-align: center; font-size: 19px; text-decoration: underline; }
-    .intro { margin: 0 0 4px; font-size: 13px; line-height: 1.25; }
-    .meta { margin: 0 0 10px; font-size: 11px; color: #222; }
-    table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12.4px; }
-    th, td { border: 1px solid #000; vertical-align: top; padding: 4px 6px; }
-    th { background: #d9d9d9; text-align: center; font-weight: 700; }
-    td:not(.question) { text-align: center; font-size: 14px; font-weight: 700; }
-    .question { width: 74%; line-height: 1.22; }
-    .number { display: inline-block; min-width: 18px; }
-    .extra { margin-top: 5px; }
-    .comments-title { font-weight: 700; }
-    .comments-box { min-height: 145px; line-height: 1.35; }
-    .signature-block { margin-top: 34px; font-size: 14px; }
-    .line { display: inline-block; min-width: 185px; border-bottom: 1px solid #000; height: 18px; vertical-align: bottom; }
-    .signature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 38px 72px; margin-top: 28px; align-items: end; }
-    .signature-line { border-bottom: 1px solid #000; height: 22px; }
-    .signature-label { margin-top: 3px; text-align: right; font-size: 13px; }
-    .footer { position: absolute; left: 0.72in; right: 0.72in; bottom: 0.22in; text-align: center; font-size: 10px; line-height: 1.2; }
-    .page-number { position: absolute; right: 0.72in; bottom: 0.39in; font-size: 11px; }
+    :root { color-scheme: light; font-family: Helvetica, Arial, sans-serif; }
+    body { margin: 0; padding: 0; background: #ffffff; color: #1f2937; font-family: Helvetica, Arial, sans-serif; }
+    .property-disclosure-document { width: 210mm; margin: 0 auto; background: #ffffff; }
+    .property-disclosure-page { width: 210mm; height: 296mm; min-height: 296mm; margin: 0 auto; background: #ffffff; color: #1f2937; position: relative; overflow: hidden; }
+    .doc-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 18mm 18mm 8mm; border-bottom: 1px solid #d7d7d7; }
+    .agency-brand, .bridge-brand { display: inline-flex; align-items: center; min-width: 0; color: #1f2937; font-size: 16px; font-weight: 800; letter-spacing: 0; }
+    .agency-brand img { max-width: 42mm; max-height: 15mm; object-fit: contain; }
+    .bridge-brand { justify-content: flex-end; color: #68727d; }
+    .bridge-brand img { max-width: 36mm; max-height: 12mm; object-fit: contain; }
+    .platform-wordmark { display: inline-flex; align-items: baseline; gap: 1px; color: #142132; font-size: 32px; font-weight: 800; letter-spacing: 0; text-transform: lowercase; }
+    .platform-wordmark strong { font: inherit; color: #142132; }
+    .platform-wordmark em { font: inherit; font-style: normal; color: #31d08a; }
+    .doc-title { padding: 8mm 18mm 5mm; text-align: center; border-bottom: 1px solid #e4e4e4; }
+    .doc-title h1 { margin: 0; color: #111827; font-size: 22px; font-weight: 700; letter-spacing: 0; line-height: 1.2; text-transform: uppercase; }
+    .doc-title p { margin: 6px 0 0; color: #5c6670; font-size: 11.5px; line-height: 1.45; }
+    .doc-body { padding: 7mm 18mm 24mm; }
+    .intro { margin: 0 0 3mm; color: #1f2937; font-size: 11.5px; line-height: 1.5; }
+    .meta { margin: 0 0 5mm; color: #3f4a56; font-size: 11px; line-height: 1.45; }
+    .annexure-table { width: 100%; border-collapse: collapse; table-layout: fixed; color: #1f2937; font-size: 9.35pt; line-height: 1.34; }
+    .annexure-table th, .annexure-table td { border: 1px solid #d7d7d7; vertical-align: top; padding: 2mm 2.3mm; }
+    .annexure-table th { background: #f6f7f8; color: #111827; font-size: 8.7pt; font-weight: 700; text-align: left; text-transform: uppercase; }
+    .annexure-table th:not(:first-child) { text-align: center; }
+    .question-col { width: 76%; }
+    .answer-col { width: 8%; }
+    .question-cell { color: #1f2937; }
+    .question-number { display: inline-block; min-width: 5mm; color: #111827; font-weight: 700; }
+    .question-extra { display: block; margin-top: 1.5mm; padding-left: 5mm; color: #3f4a56; font-size: 8.8pt; }
+    .answer-cell { text-align: center; vertical-align: middle; color: #111827; }
+    .answer-mark { display: inline-block; font-size: 12pt; font-weight: 700; line-height: 1; }
+    .comments-title { color: #111827; font-weight: 700; text-transform: uppercase; }
+    .comments-box { min-height: 32mm; color: #1f2937; line-height: 1.45; }
+    .initial-block { margin-top: 8mm; display: flex; justify-content: flex-end; color: #1f2937; font-size: 10.5px; }
+    .initial-line { display: inline-flex; align-items: flex-end; justify-content: flex-end; min-width: 38mm; border-bottom: 1px solid #111827; padding-bottom: 1.5mm; font-weight: 700; }
+    .signature-section { margin-top: 8mm; color: #1f2937; font-size: 10.5pt; line-height: 1.5; }
+    .signature-section h2 { margin: 0 0 4mm; padding-bottom: 2mm; border-bottom: 1px solid #d7d7d7; color: #111827; font-size: 11pt; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+    .signature-block { margin-top: 6mm; break-inside: avoid; page-break-inside: avoid; }
+    .signed-line { display: grid; grid-template-columns: auto minmax(38mm, 1fr) auto minmax(32mm, 0.8fr); gap: 2mm; align-items: end; }
+    .line { display: inline-block; min-height: 7mm; border-bottom: 1px solid #111827; padding: 0 2mm 1mm; }
+    .signature-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8mm 16mm; margin-top: 5mm; align-items: end; }
+    .signature-line { min-height: 8mm; border-bottom: 1px solid #111827; padding-bottom: 1mm; }
+    .signature-label { margin-top: 1.5mm; color: #3f4a56; font-size: 10px; font-weight: 700; text-align: right; text-transform: uppercase; }
+    .doc-footer { position: absolute; left: 18mm; right: 18mm; bottom: 6mm; display: flex; align-items: center; justify-content: space-between; gap: 8mm; padding-top: 4mm; border-top: 1px solid #d8d8d8; color: #606a75; font-size: 10px; }
+    .footer-brand, .footer-bridge { display: inline-flex; align-items: center; min-width: 34mm; max-width: 44mm; }
+    .footer-bridge { justify-content: flex-end; }
+    .doc-footer img { max-width: 34mm; max-height: 9mm; object-fit: contain; }
+    .doc-footer .platform-wordmark { font-size: 20px; }
+    .page-no { flex: 1; text-align: center; font-weight: 700; }
     @media print {
       body { background: #fff; }
-      .page { margin: 0; box-shadow: none; }
+      .property-disclosure-document, .property-disclosure-page { margin: 0; box-shadow: none; }
     }
   </style>
 </head>
 <body>
-  <section class="page">
-    <h1>DECLARATION BY SELLER - ANNEXURE A</h1>
-    <p class="intro">This statement declares the actual current state of the property according to the best of my knowledge. I/ We declare that as far as we are concerned no material defects to the building or equipment exist except those as stated below.</p>
-    <p class="intro">Please answer Yes or No, and where necessary provide an explanation in clause 21 hereunder:</p>
-    ${propertyAddress ? `<p class="meta">Property: ${escapeHtml(propertyAddress)}</p>` : ''}
-    <table>
-      <thead><tr><th class="question"></th><th>YES</th><th>NO</th><th>UNSURE</th></tr></thead>
-      <tbody>${pageOneRows}</tbody>
-    </table>
-    <div class="signature-block"><span class="line"></span><br /><strong style="float:right">Initial</strong></div>
-    <div class="footer">Prepared by: Jan L Jordaan Inc.<br />Registration number: 2012/018715/21<br />Tel no: 011 748 4500, Physical Address: 1 Forster Street, Rynfield, Benoni</div>
-    <div class="page-number">1</div>
-  </section>
-  <section class="page">
-    <div style="text-align:right; margin-bottom:18px;">Page 2</div>
-    <table>
-      <thead><tr><th class="question"></th><th>YES</th><th>NO</th><th>UNSURE</th></tr></thead>
-      <tbody>
-        ${pageTwoRows}
-        <tr><td class="comments-title" colspan="4">21 COMMENTS OR EXPLANATION FOR ANY OF THE ABOVE</td></tr>
-        <tr><td class="comments-box" colspan="4">${comments || '&nbsp;'}</td></tr>
-      </tbody>
-    </table>
-    <div class="signature-block">
-      SIGNED AT <span class="line">${escapeHtml(snapshot.sellerSignedPlace)}</span> ON <span class="line">${escapeHtml(snapshot.sellerSignedAt)}</span> ${escapeHtml(year)}
-      <p>As Witnesses:</p>
-      <div class="signature-grid">
-        <div>1. <span class="line">${escapeHtml(snapshot.sellerWitness1)}</span></div>
-        <div><div class="signature-line">${escapeHtml(sellerName)}</div><div class="signature-label">SELLER</div></div>
-        <div>2. <span class="line">${escapeHtml(snapshot.sellerWitness2)}</span></div>
-        <div><div class="signature-line"></div><div class="signature-label">SELLER</div></div>
-      </div>
-    </div>
-    <div class="signature-block">
-      SIGNED AT <span class="line">${escapeHtml(snapshot.purchaserSignedPlace)}</span> ON <span class="line">${escapeHtml(snapshot.purchaserSignedAt)}</span> ${escapeHtml(year)}
-      <p>As Witnesses:</p>
-      <div class="signature-grid">
-        <div>1. <span class="line">${escapeHtml(snapshot.purchaserWitness1)}</span></div>
-        <div><div class="signature-line">${escapeHtml(snapshot.purchaserSignature1)}</div><div class="signature-label">PURCHASER</div></div>
-        <div>2. <span class="line">${escapeHtml(snapshot.purchaserWitness2)}</span></div>
-        <div><div class="signature-line">${escapeHtml(snapshot.purchaserSignature2)}</div><div class="signature-label">PURCHASER</div></div>
-      </div>
-    </div>
-    <div class="footer">Prepared by: Jan L Jordaan Inc.<br />Registration number: 2012/018715/21<br />Tel no: 011 748 4500, Physical Address: 1 Forster Street, Rynfield, Benoni</div>
-    <div class="page-number">2</div>
-  </section>
+  <main class="property-disclosure-document">
+    <section class="property-disclosure-page">
+      ${renderDisclosureHeader(branding)}
+      ${renderTitle()}
+      <section class="doc-body">
+        <p class="intro">This statement declares the actual current state of the property according to the best of my knowledge. I/ We declare that as far as we are concerned no material defects to the building or equipment exist except those as stated below.</p>
+        <p class="intro">Please answer Yes, No, or Unsure, and where necessary provide an explanation in clause 21 hereunder.</p>
+        ${propertyAddress ? `<p class="meta"><strong>Property:</strong> ${escapeHtml(propertyAddress)}</p>` : ''}
+        ${renderQuestionTable(pageOneRows)}
+        <div class="initial-block"><span class="initial-line">Initial</span></div>
+      </section>
+      ${renderDisclosureFooter(branding, 1, pageTotal)}
+    </section>
+    <section class="property-disclosure-page">
+      ${renderDisclosureHeader(branding)}
+      ${renderTitle('Continuation and comments section')}
+      <section class="doc-body">
+        ${renderQuestionTable(`${pageTwoRows}
+          <tr><td class="comments-title" colspan="4">21. Comments or explanation for any of the above</td></tr>
+          <tr><td class="comments-box" colspan="4">${comments || '&nbsp;'}</td></tr>
+        `)}
+        <div class="initial-block"><span class="initial-line">Initial</span></div>
+      </section>
+      ${renderDisclosureFooter(branding, 2, pageTotal)}
+    </section>
+    <section class="property-disclosure-page">
+      ${renderDisclosureHeader(branding)}
+      ${renderTitle('Signature section')}
+      <section class="doc-body">
+        <section class="signature-section">
+          <h2>Seller and purchaser signatures</h2>
+          <div class="signature-block">
+            <div class="signed-line">
+              <span>Signed at</span>
+              <span class="line">${escapeHtml(snapshot.sellerSignedPlace)}</span>
+              <span>on</span>
+              <span class="line">${escapeHtml(snapshot.sellerSignedAt)}</span>
+            </div>
+            <p>As witnesses:</p>
+            <div class="signature-grid">
+              <div>1. <span class="line">${escapeHtml(snapshot.sellerWitness1)}</span></div>
+              <div><div class="signature-line">${escapeHtml(sellerName)}</div><div class="signature-label">Seller</div></div>
+              <div>2. <span class="line">${escapeHtml(snapshot.sellerWitness2)}</span></div>
+              <div><div class="signature-line"></div><div class="signature-label">Seller</div></div>
+            </div>
+          </div>
+          <div class="signature-block">
+            <div class="signed-line">
+              <span>Signed at</span>
+              <span class="line">${escapeHtml(snapshot.purchaserSignedPlace)}</span>
+              <span>on</span>
+              <span class="line">${escapeHtml(snapshot.purchaserSignedAt)}</span>
+            </div>
+            <p>As witnesses:</p>
+            <div class="signature-grid">
+              <div>1. <span class="line">${escapeHtml(snapshot.purchaserWitness1)}</span></div>
+              <div><div class="signature-line">${escapeHtml(snapshot.purchaserSignature1)}</div><div class="signature-label">Purchaser</div></div>
+              <div>2. <span class="line">${escapeHtml(snapshot.purchaserWitness2)}</span></div>
+              <div><div class="signature-line">${escapeHtml(snapshot.purchaserSignature2)}</div><div class="signature-label">Purchaser</div></div>
+            </div>
+          </div>
+        </section>
+      </section>
+      ${renderDisclosureFooter(branding, 3, pageTotal)}
+    </section>
+  </main>
 </body>
 </html>`
 }

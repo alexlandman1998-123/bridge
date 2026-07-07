@@ -1,4 +1,4 @@
-import { Bookmark, ChevronRight, Clock3, Home, ShieldCheck } from 'lucide-react'
+import { Bookmark, ChevronRight, ClipboardCheck, Clock3, Home, MapPin, ShieldCheck } from 'lucide-react'
 
 const DEFAULT_BACKGROUND_IMAGES = {
   buyer: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1400&q=82',
@@ -73,66 +73,101 @@ export default function PremiumOnboardingLanding({
   portalType = 'buyer',
   agencyLogo = '',
   agencyName = '',
+  personName = '',
+  propertyAddress = '',
   backgroundImage = '',
   onStart,
 }) {
   const type = normalizePortalType(portalType)
   const content = CONTENT[type]
   const resolvedBackgroundImage = backgroundImage || DEFAULT_BACKGROUND_IMAGES[type]
+  const safePersonName = String(personName || '').trim()
+  const safePropertyAddress = String(propertyAddress || '').trim()
+  const contextRows = [
+    safePropertyAddress ? { icon: MapPin, label: 'Property', value: safePropertyAddress } : null,
+    { icon: ClipboardCheck, label: 'Process', value: type === 'seller' ? 'Seller intake and property details' : 'Buyer intake and purchase details' },
+  ].filter(Boolean)
 
   return (
-    <section className="relative isolate min-h-[calc(100dvh-1.5rem)] overflow-hidden rounded-[32px] border border-[#f7cf22]/20 bg-[#001a3d] text-white shadow-[0_28px_72px_rgba(0,16,45,0.38)] sm:min-h-[760px]">
+    <section className="relative isolate min-h-screen overflow-hidden bg-[#001a3d] text-white">
       <div
         aria-hidden
         className="absolute inset-0 bg-cover bg-center"
         style={{ backgroundImage: `url("${resolvedBackgroundImage}")` }}
       />
-      <div aria-hidden className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,20,52,0.82)_0%,rgba(0,31,74,0.62)_36%,rgba(0,13,35,0.94)_100%)]" />
-      <div aria-hidden className="absolute inset-0 bg-[radial-gradient(circle_at_24%_14%,rgba(247,207,34,0.18),transparent_34%),linear-gradient(128deg,rgba(0,22,56,0.94)_0%,rgba(0,35,79,0.82)_50%,rgba(0,12,33,0.96)_100%)]" />
-      <div aria-hidden className="absolute inset-x-0 bottom-0 h-1/2 bg-[linear-gradient(180deg,transparent_0%,rgba(0,12,33,0.94)_100%)]" />
+      <div aria-hidden className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,13,35,0.96)_0%,rgba(0,27,64,0.9)_42%,rgba(0,26,61,0.68)_72%,rgba(0,13,35,0.88)_100%)]" />
+      <div aria-hidden className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,12,32,0.28)_0%,rgba(0,12,32,0.74)_100%)]" />
 
-      <div className="relative z-10 flex min-h-[calc(100dvh-1.5rem)] flex-col px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6 sm:min-h-[760px] sm:px-8 sm:py-8">
-        <header className="flex items-start">
+      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-[1440px] flex-col px-5 py-5 sm:px-8 sm:py-7 lg:px-10 lg:py-8">
+        <header className="flex items-center justify-between gap-4">
           <AgencyLogo logoUrl={agencyLogo} agencyName={agencyName} />
+          <span className="hidden rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-semibold uppercase text-white/75 backdrop-blur-xl sm:inline-flex">
+            Secure intake
+          </span>
         </header>
 
-        <div className="flex flex-1 flex-col justify-end pt-10">
-          <div className="max-w-[620px]">
+        <div className="grid flex-1 items-center gap-8 py-9 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-12 lg:py-8 xl:grid-cols-[minmax(0,1fr)_400px]">
+          <div className="max-w-[720px]">
+            {safePersonName ? <p className="mb-4 text-base font-semibold text-white/80">Hi {safePersonName},</p> : null}
             <p className="text-sm font-semibold uppercase text-[#f7cf22]">{content.label}</p>
-            <h1 className="mt-5 text-[3.35rem] font-semibold leading-[1.02] text-white max-[380px]:text-[2.85rem] sm:text-[4.5rem]">
-              {content.headlinePrefix}
+            <h1 className="mt-4 max-w-[700px] text-[3.2rem] font-semibold leading-none text-white">
+              {content.headlinePrefix}{' '}
               <span className="block text-[#f7cf22]">{content.headlineAccent}</span>
             </h1>
-            <p className="mt-5 max-w-[460px] text-[1.05rem] leading-7 text-white/80 sm:text-xl sm:leading-8">
+            <p className="mt-5 max-w-[540px] text-lg leading-8 text-white/80">
               {content.subtext}
             </p>
+
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+              {REASSURANCE_ROWS.map((item) => {
+                const RowIcon = item.icon
+                return (
+                  <div key={item.title} className="flex min-h-[74px] min-w-[190px] flex-1 items-center gap-3 rounded-lg border border-white/15 bg-white/10 px-4 py-3 backdrop-blur-xl sm:max-w-[230px]">
+                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f7cf22]/14 text-[#f7cf22]">
+                      <RowIcon size={20} strokeWidth={1.9} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold leading-5 text-white">{item.title}</span>
+                      <span className="mt-0.5 block text-xs leading-5 text-white/60">{item.description}</span>
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={onStart}
+              className="mt-8 inline-flex min-h-[58px] w-full items-center justify-center gap-3 rounded-[18px] bg-[#f7cf22] px-6 py-4 text-base font-semibold text-[#001b44] shadow-[0_18px_38px_rgba(247,207,34,0.28)] transition hover:bg-[#ffd943] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ffe66b] focus-visible:ring-offset-2 focus-visible:ring-offset-[#001a3d] sm:w-auto sm:min-w-[270px]"
+            >
+              {content.cta}
+              <ChevronRight size={21} />
+            </button>
           </div>
 
-          <div className="mt-9 space-y-5 sm:max-w-[500px]">
-            {REASSURANCE_ROWS.map((item) => {
-              const RowIcon = item.icon
-              return (
-                <div key={item.title} className="flex items-start gap-4">
-                  <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#f7cf22]/14 text-[#f7cf22]">
-                    <RowIcon size={24} strokeWidth={1.9} />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-base font-semibold leading-6 text-white">{item.title}</span>
-                    <span className="mt-0.5 block text-sm leading-6 text-white/60">{item.description}</span>
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-
-          <button
-            type="button"
-            onClick={onStart}
-            className="mt-8 inline-flex min-h-[60px] w-full items-center justify-center gap-3 rounded-[18px] bg-[#f7cf22] px-5 py-4 text-base font-semibold text-[#001b44] shadow-[0_18px_38px_rgba(247,207,34,0.28)] transition hover:bg-[#ffd943] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ffe66b] focus-visible:ring-offset-2 focus-visible:ring-offset-[#001a3d] sm:max-w-[500px]"
-          >
-            {content.cta}
-            <ChevronRight size={21} />
-          </button>
+          <aside className="rounded-lg border border-white/15 bg-white/10 p-5 shadow-[0_24px_58px_rgba(0,0,0,0.28)] backdrop-blur-2xl lg:p-6">
+            <p className="text-xs font-semibold uppercase text-[#f7cf22]">Before you start</p>
+            <h2 className="mt-2 text-2xl font-semibold leading-tight text-white">A few details, captured once.</h2>
+            <div className="mt-5 grid gap-3">
+              {contextRows.map((row) => {
+                const RowIcon = row.icon
+                return (
+                  <div key={row.label} className="flex items-start gap-3 rounded-lg border border-white/10 bg-[#001a3d]/40 p-4">
+                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-[#f7cf22]">
+                      <RowIcon size={19} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-xs font-semibold uppercase text-white/50">{row.label}</span>
+                      <span className="mt-1 block text-sm font-semibold leading-6 text-white">{row.value}</span>
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+            <p className="mt-5 text-sm leading-6 text-white/60">
+              You can save and continue later. Your agent will use this information to prepare the listing, mandate, and document checklist.
+            </p>
+          </aside>
         </div>
       </div>
     </section>

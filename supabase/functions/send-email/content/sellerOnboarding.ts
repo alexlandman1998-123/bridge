@@ -128,9 +128,9 @@ export function buildSellerOnboardingEmailHtml({
   const introParagraphs = pickLines(templateOverrides?.introParagraphs, [
     ...(portalDocumentsMode
       ? [
-        "Your seller onboarding has been submitted and your seller portal is ready.",
-        "Use the secure link below to open your seller portal. You will set a password before uploading the documents needed for FICA, mandate preparation, and listing readiness.",
-        "Your agent can review the file in parallel while you complete the uploads.",
+        "Your seller onboarding has been submitted. The next step is to create a password for your secure seller portal before any documents can be viewed or uploaded.",
+        "The link will ask you to set a password before uploading the documents, then guide you through the items normally needed for FICA, proof of ownership or authority, mandate preparation, and listing readiness.",
+        "Upload what you have now. Your agent will review the file, confirm what is complete, and let you know if anything needs to be replaced or added.",
       ]
       : [
         "Your agent has invited you to complete the seller onboarding process for your property.",
@@ -141,10 +141,11 @@ export function buildSellerOnboardingEmailHtml({
   const processSteps = pickLines(templateOverrides?.processSteps, [
     ...(portalDocumentsMode
       ? [
-        "Open your secure seller portal and set your password.",
-        "Upload the requested FICA, ownership, and property documents.",
-        "Your agent reviews the file and prepares the next mandate step.",
-        "You will receive secure updates as the sale progresses.",
+        "Open your secure seller portal and set your password before the document centre unlocks.",
+        "Review the checklist created from your seller type and property details.",
+        "Upload the requested FICA, proof of address, ownership or authority, rates, levy, bond, and property documents that apply to your sale.",
+        "Your agent reviews the uploads, marks anything outstanding, and prepares the next mandate or listing step.",
+        "Return to the same secure portal for updates and any follow-up document requests.",
       ]
       : [
         "Complete your seller information.",
@@ -153,11 +154,13 @@ export function buildSellerOnboardingEmailHtml({
         "We'll keep you updated as your sale progresses.",
       ]),
   ]);
-  const ctaLabel = pickText(templateOverrides?.ctaLabel, portalDocumentsMode ? "Open Seller Portal" : "Complete Seller Information");
+  const ctaLabel = pickText(templateOverrides?.ctaLabel, portalDocumentsMode ? "Set Password & Upload Documents" : "Complete Seller Information");
   const securityTitle = pickText(templateOverrides?.securityTitle, "Trust & Security");
   const securityBody = pickText(
     templateOverrides?.securityBody,
-    "Your information is securely stored and only shared with authorised parties involved in your property sale.",
+    portalDocumentsMode
+      ? "Because this portal may contain identity, ownership, and property records, the document centre is password protected and only shared with authorised parties involved in your sale."
+      : "Your information is securely stored and only shared with authorised parties involved in your property sale.",
   );
   const helpBody = pickText(
     templateOverrides?.helpBody,
@@ -189,7 +192,7 @@ export function buildSellerOnboardingEmailHtml({
     preheader: pickText(
       templateOverrides?.preheader,
       portalDocumentsMode
-        ? "Your seller portal is ready for secure document uploads."
+        ? "Create your seller portal password first, then upload the documents needed for FICA, mandate preparation, and listing readiness."
         : "Your agent has invited you to complete seller information for your property.",
     ),
     title: pickText(templateOverrides?.title, portalDocumentsMode ? "Upload Seller Documents" : "Your Property Sale Starts Here"),
@@ -245,9 +248,9 @@ export function buildSellerOnboardingEmailText({
   const introParagraphs = pickLines(templateOverrides?.introParagraphs, [
     ...(portalDocumentsMode
       ? [
-        "Your seller onboarding has been submitted and your seller portal is ready.",
-        "Use the secure link below to open your seller portal. You will set a password before uploading the documents needed for FICA, mandate preparation, and listing readiness.",
-        "Your agent can review the file in parallel while you complete the uploads.",
+        "Your seller onboarding has been submitted. The next step is to create a password for your secure seller portal before any documents can be viewed or uploaded.",
+        "The link will ask you to set a password before uploading the documents, then guide you through the items normally needed for FICA, proof of ownership or authority, mandate preparation, and listing readiness.",
+        "Upload what you have now. Your agent will review the file, confirm what is complete, and let you know if anything needs to be replaced or added.",
       ]
       : [
         "Your agent has invited you to complete the seller onboarding process for your property.",
@@ -258,10 +261,11 @@ export function buildSellerOnboardingEmailText({
   const processSteps = pickLines(templateOverrides?.processSteps, [
     ...(portalDocumentsMode
       ? [
-        "Open your secure seller portal and set your password.",
-        "Upload the requested FICA, ownership, and property documents.",
-        "Your agent reviews the file and prepares the next mandate step.",
-        "You will receive secure updates as the sale progresses.",
+        "Open your secure seller portal and set your password before the document centre unlocks.",
+        "Review the checklist created from your seller type and property details.",
+        "Upload the requested FICA, proof of address, ownership or authority, rates, levy, bond, and property documents that apply to your sale.",
+        "Your agent reviews the uploads, marks anything outstanding, and prepares the next mandate or listing step.",
+        "Return to the same secure portal for updates and any follow-up document requests.",
       ]
       : [
         "Complete your seller information.",
@@ -270,10 +274,12 @@ export function buildSellerOnboardingEmailText({
         "We'll keep you updated as your sale progresses.",
       ]),
   ]);
-  const ctaLabel = pickText(templateOverrides?.ctaLabel, portalDocumentsMode ? "Open Seller Portal" : "Complete Seller Information");
+  const ctaLabel = pickText(templateOverrides?.ctaLabel, portalDocumentsMode ? "Set Password & Upload Documents" : "Complete Seller Information");
   const securityBody = pickText(
     templateOverrides?.securityBody,
-    "Your information is securely stored and only shared with authorised parties involved in your property sale.",
+    portalDocumentsMode
+      ? "Because this portal may contain identity, ownership, and property records, the document centre is password protected and only shared with authorised parties involved in your sale."
+      : "Your information is securely stored and only shared with authorised parties involved in your property sale.",
   );
   const helpBody = pickText(
     templateOverrides?.helpBody,

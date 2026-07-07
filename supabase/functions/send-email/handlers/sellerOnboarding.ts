@@ -109,8 +109,8 @@ async function resolveSenderOrganisationBranding(
   ) {
     senderOrganisationName = normalizeText(brandingQuery.data?.organisation_display_name) ||
       senderOrganisationName;
-    senderOrganisationLogoUrl = normalizeText(brandingQuery.data?.logo_light_url) ||
-      normalizeText(brandingQuery.data?.logo_dark_url) ||
+    senderOrganisationLogoUrl = normalizeText(brandingQuery.data?.logo_dark_url) ||
+      normalizeText(brandingQuery.data?.logo_light_url) ||
       senderOrganisationLogoUrl;
   } else if (brandingQuery.error) {
     console.error("[seller_onboarding] organisation branding lookup failed", brandingQuery.error);
@@ -131,12 +131,14 @@ async function resolveSenderOrganisationBranding(
     const settings = toRecord(settingsQuery.data?.settings_json);
     const agencyOnboarding = toRecord(settings.agencyOnboarding || settings.agency_onboarding);
     const branding = toRecord(agencyOnboarding.branding || settings.branding);
-    senderOrganisationLogoUrl = normalizeText(branding.logoLight) ||
-      normalizeText(branding.logoLightUrl) ||
+    senderOrganisationLogoUrl = normalizeText(branding.logoDark) ||
+      normalizeText(branding.logoDarkUrl) ||
+      normalizeText(branding.logoHighContrast) ||
+      normalizeText(branding.logoHighContrastUrl) ||
       normalizeText(branding.logo_url) ||
       normalizeText(branding.logoUrl) ||
-      normalizeText(branding.logoDark) ||
-      normalizeText(branding.logoDarkUrl) ||
+      normalizeText(branding.logoLight) ||
+      normalizeText(branding.logoLightUrl) ||
       senderOrganisationLogoUrl;
   } else if (settingsQuery.error) {
     console.error("[seller_onboarding] organisation settings lookup failed", settingsQuery.error);
