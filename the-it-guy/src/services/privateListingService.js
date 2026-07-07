@@ -3520,7 +3520,7 @@ export async function sendSellerOnboarding(
   }
 
   const currentLifecycle = getPrivateListingLifecycleState(listing)
-  if (currentLifecycle === 'seller_lead') {
+  if (currentLifecycle === 'seller_lead' && !deferStatusTransition) {
     const transitionSellerLead = async () => {
       let transitionPerformedBy = performedByUserId
       if (!transitionPerformedBy) {
@@ -3541,13 +3541,7 @@ export async function sendSellerOnboarding(
         includeRequirementsAndDocuments: false,
       })
     }
-    if (deferStatusTransition) {
-      void transitionSellerLead().catch((transitionError) => {
-        console.warn('[Private Listings] seller onboarding status transition deferred after link creation', transitionError)
-      })
-    } else {
-      await transitionSellerLead()
-    }
+    await transitionSellerLead()
   }
 
   const leadOrganisationId = normalizeText(listing?.organisationId)
@@ -3556,26 +3550,91 @@ export async function sendSellerOnboarding(
     normalizeText(listing?.originatingCrmLeadId),
   ].filter(Boolean)))
   const sentAtIso = new Date().toISOString()
-  void syncSellerJourneyLeadStage(client, {
-    organisationId: leadOrganisationId,
-    leadIds: leadIdsToSync,
-    onboardingToken: token,
-    listingId: listing.id,
-    targetStage: 'Seller Onboarding Sent',
-    targetStatus: 'Sent',
-    extraPayload: {
-      seller_onboarding_status: 'sent',
-      seller_onboarding_token: normalizeNullableText(token),
-      listing_id: listing.id,
-      updated_at: sentAtIso,
-    },
-  }).catch(() => false)
+  if (!deferStatusTransition) {
+    void syncSellerJourneyLeadStage(client, {
+      organisationId: leadOrganisationId,
+      leadIds: leadIdsToSync,
+      onboardingToken: token,
+      listingId: listing.id,
+      targetStage: 'Seller Onboarding Sent',
+      targetStatus: 'Sent',
+      extraPayload: {
+        seller_onboarding_status: 'sent',
+        seller_onboarding_token: normalizeNullableText(token),
+        listing_id: listing.id,
+        updated_at: sentAtIso,
+      },
+    }).catch(() => false)
+  }
 
   return {
     onboarding: upsert.data,
     token,
     link: buildSellerOnboardingLink(token),
     expiresAt,
+  }
+}
+
+export async function markSellerOnboardingSent(
+  listingId,
+  {
+    onboardingToken = '',
+    sellerContactEmail = '',
+    sellerContactPhone = '',
+    performedBy = '',
+  } = {},
+) {
+  const client = requireClient()
+  const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
+  if (!listing?.id) throw new Error('Private listing not found.')
+
+  const token = normalizeText(onboardingToken || listing?.sellerOnboarding?.token || listing?.seller_onboarding_token)
+  const currentLifecycle = getPrivateListingLifecycleState(listing)
+
+  if (currentLifecycle === 'seller_lead') {
+    return transitionPrivateListingStatus(listing.id, 'onboarding_sent', {
+      metadata: {
+        onboardingToken: token,
+        sellerContactEmail,
+        sellerContactPhone,
+      },
+      performedBy: normalizeText(performedBy),
+      patch: {
+        sellerOnboardingStatus: 'sent',
+      },
+      allowOverride: false,
+      includeRequirementsAndDocuments: false,
+    })
+  }
+
+  if (currentLifecycle === 'onboarding_sent') {
+    const updatedListing = await updatePrivateListing(listing.id, {
+      sellerOnboardingStatus: 'sent',
+    }, { includeRequirementsAndDocuments: false })
+    await syncSellerJourneyLeadStageFromListing(client, {
+      organisationId: normalizeText(updatedListing?.organisationId || listing?.organisationId),
+      leadIds: [
+        normalizeText(updatedListing?.sellerLeadId || listing?.sellerLeadId),
+        normalizeText(updatedListing?.originatingCrmLeadId || listing?.originatingCrmLeadId),
+      ].filter(Boolean),
+      onboardingToken: token,
+      listingId: updatedListing?.id || listing.id,
+      listing: updatedListing,
+    }).catch((syncError) => {
+      console.warn('[Private Listings] seller onboarding sent lead sync skipped', syncError)
+      return false
+    })
+    return {
+      listing: updatedListing,
+      skippedTransition: true,
+      reason: 'already_sent',
+    }
+  }
+
+  return {
+    listing,
+    skippedTransition: true,
+    reason: 'already_progressed',
   }
 }
 

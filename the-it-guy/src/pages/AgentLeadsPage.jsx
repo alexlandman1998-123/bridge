@@ -90,6 +90,7 @@ import {
 import {
   createPrivateListing,
   createPrivateListingActivity,
+  markSellerOnboardingSent,
   sendSellerOnboarding,
   submitSellerOnboarding,
   updatePrivateListing,
@@ -197,7 +198,7 @@ const leadListShell = 'mx-auto flex w-full min-w-0 max-w-[1760px] flex-col gap-5
 const panelClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm'
 const buyerWorkspaceCardClass = `${panelClass} rounded-[24px] border-slate-200/80 bg-white p-6 shadow-[0_16px_36px_rgba(15,23,42,0.05)]`
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const SELLER_ONBOARDING_EMAIL_TIMEOUT_MS = 20000
+const SELLER_ONBOARDING_EMAIL_TIMEOUT_MS = 60000
 const LEAD_APPOINTMENT_TYPES = [
   { value: 'viewing', label: 'Viewing' },
   { value: 'buyer_consultation', label: 'Buyer Consultation' },
@@ -324,11 +325,46 @@ function withActionTimeout(promise, message, timeoutMs) {
   return Promise.race([
     promise,
     new Promise((_, reject) => {
-      timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs)
+      timeoutId = setTimeout(() => {
+        const timeoutError = new Error(message)
+        timeoutError.code = 'action_timeout'
+        reject(timeoutError)
+      }, timeoutMs)
     }),
   ]).finally(() => {
     if (timeoutId) clearTimeout(timeoutId)
   })
+}
+
+function getEdgeActionError(result, fallbackMessage = 'Request failed.') {
+  if (!result) return new Error(fallbackMessage)
+  const rawError = result.error || result.data?.error || null
+  if (rawError) {
+    const message = typeof rawError === 'string'
+      ? rawError
+      : rawError.message || rawError.error || fallbackMessage
+    const error = new Error(message)
+    if (typeof rawError === 'object') {
+      error.code = rawError.code || ''
+      error.status = rawError.status || result.data?.status || null
+      error.details = rawError.details || result.data?.details || null
+    }
+    return error
+  }
+  if (result.data?.ok === false || result.data?.sent === false) {
+    const error = new Error(result.data?.message || result.data?.reason || fallbackMessage)
+    error.code = result.data?.code || ''
+    error.status = result.data?.status || null
+    error.details = result.data?.details || null
+    return error
+  }
+  return null
+}
+
+function assertEdgeActionSuccess(result, fallbackMessage = 'Request failed.') {
+  const error = getEdgeActionError(result, fallbackMessage)
+  if (error) throw error
+  return result
 }
 
 function splitName(fullName = '') {
@@ -8371,11 +8407,7 @@ function AgentLeadList() {
 
   return (
     <main className={leadListShell}>
-      <header className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-normal text-slate-950">Leads</h1>
-          <p className="mt-2 text-base font-medium text-slate-500">Manage, qualify and convert your leads.</p>
-        </div>
+      <header className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-end">
         <div className="flex flex-wrap items-center gap-3 sm:justify-end">
           <button
             type="button"
@@ -18678,14 +18710,24 @@ function AgentLeadWorkspace() {
       return
     }
 
+    const debugContext = {
+      leadId: normalizeText(row.leadId),
+      organisationId: normalizeText(organisationId),
+      hasLinkedListing: Boolean(linkedSellerListing?.id || row.listingId || row.listing_id),
+      recipientDomain: sellerEmail.split('@')[1] || '',
+    }
+    let sendPhase = 'initialise'
+
     try {
       sellerOnboardingInFlightRef.current = true
       setSendingSellerOnboarding(true)
       setSellerActionError('')
       setSellerActionMessage('Preparing seller onboarding link...')
+      console.info('[Seller onboarding] send requested', debugContext)
       let listingId = normalizeText(linkedSellerListing?.id || row.listingId || row.listing_id)
       let sellerListingForEmail = linkedSellerListing
       if (!listingId) {
+        sendPhase = 'create_listing'
         setSellerActionMessage('Creating seller listing shell...')
         const created = await createPrivateListing({
           organisationId,
@@ -18714,6 +18756,7 @@ function AgentLeadWorkspace() {
       }
       if (!listingId) throw new Error('Create or link a seller listing before sending onboarding.')
 
+      sendPhase = 'create_onboarding_link'
       setSellerActionMessage('Creating seller onboarding link...')
       const onboarding = await sendSellerOnboarding(listingId, {
         sellerContactEmail: sellerEmail,
@@ -18722,6 +18765,13 @@ function AgentLeadWorkspace() {
         deferStatusTransition: true,
         performedBy: normalizeText(actor.userId || actor.id),
       })
+      console.info('[Seller onboarding] link ready', {
+        ...debugContext,
+        listingId,
+        hasToken: Boolean(onboarding?.token),
+        hasLink: Boolean(onboarding?.link),
+      })
+      sendPhase = 'send_email'
       setSellerActionMessage('Sending seller onboarding email...')
       const onboardingEmail = await withActionTimeout(
         invokeEdgeFunction('send-email', {
@@ -18734,16 +18784,16 @@ function AgentLeadWorkspace() {
             workspaceName,
           }),
         }),
-        'Seller onboarding email is taking too long. Please try again in a moment.',
+        'Seller onboarding email did not confirm within 60 seconds. The link was created, but delivery was not confirmed. Check communications before retrying.',
         SELLER_ONBOARDING_EMAIL_TIMEOUT_MS,
       )
-      if (onboardingEmail?.error || onboardingEmail?.data?.error) {
-        throw new Error(
-          onboardingEmail?.error?.message ||
-            onboardingEmail?.data?.error ||
-            'Seller onboarding email could not be sent.',
-        )
-      }
+      assertEdgeActionSuccess(onboardingEmail, 'Seller onboarding email could not be sent.')
+      console.info('[Seller onboarding] email confirmed', {
+        ...debugContext,
+        listingId,
+        deliveryId: onboardingEmail?.data?.deliveryId || null,
+        communicationType: onboardingEmail?.data?.communicationType || null,
+      })
       const sentLeadPatch = {
         stage: 'Seller Onboarding Sent',
         status: 'Sent',
@@ -18752,6 +18802,39 @@ function AgentLeadWorkspace() {
         sellerOnboardingStatus: 'sent',
         listingId,
       }
+      let statusSyncWarning = ''
+      sendPhase = 'mark_sent'
+      setSellerActionMessage('Confirming seller onboarding status...')
+      try {
+        await markSellerOnboardingSent(listingId, {
+          onboardingToken: onboarding?.token,
+          sellerContactEmail: sellerEmail,
+          sellerContactPhone: normalizeText(row.phone || row.contact?.phone),
+          performedBy: normalizeText(actor.userId || actor.id),
+        })
+      } catch (statusError) {
+        statusSyncWarning = statusError?.message || 'Seller onboarding status could not be confirmed.'
+        console.warn('[Seller onboarding] listing status sync failed after email confirmation', {
+          ...debugContext,
+          listingId,
+          error: statusSyncWarning,
+        })
+      }
+
+      sendPhase = 'sync_lead'
+      try {
+        await updateAgencyCrmLeadRecord(organisationId, row.leadId, {
+          ...sentLeadPatch,
+        })
+      } catch (leadSyncError) {
+        statusSyncWarning = statusSyncWarning || leadSyncError?.message || 'Seller lead status could not be confirmed.'
+        console.warn('[Seller onboarding] lead status sync failed after email confirmation', {
+          ...debugContext,
+          listingId,
+          error: leadSyncError?.message || leadSyncError,
+        })
+      }
+
       setData((previous) => {
         if (!previous?.row) return previous
         return {
@@ -18762,12 +18845,14 @@ function AgentLeadWorkspace() {
           },
         }
       })
-      setSellerActionMessage('Seller onboarding email sent.')
+      setSellerActionMessage(statusSyncWarning
+        ? 'Seller onboarding email sent. Status sync is catching up.'
+        : 'Seller onboarding email sent.')
+      if (statusSyncWarning) {
+        setSellerActionError(`Email sent, but status sync could not be confirmed: ${statusSyncWarning}`)
+      }
       void (async () => {
         try {
-          await updateAgencyCrmLeadRecord(organisationId, row.leadId, {
-            ...sentLeadPatch,
-          })
           await createAgencyCrmLeadActivity(organisationId, row.leadId, {
             agent: { id: actor.id, name: actor.fullName || actor.name, email: actor.email },
             activityType: 'Seller Onboarding Sent',
@@ -18781,6 +18866,12 @@ function AgentLeadWorkspace() {
         }
       })()
     } catch (actionError) {
+      console.warn('[Seller onboarding] send failed', {
+        ...debugContext,
+        phase: sendPhase,
+        error: actionError?.message || actionError,
+      })
+      setSellerActionMessage('')
       setSellerActionError(actionError?.message || 'Unable to send seller onboarding right now.')
     } finally {
       sellerOnboardingInFlightRef.current = false
@@ -18933,16 +19024,10 @@ function AgentLeadWorkspace() {
             emailKind: 'portal_documents',
           }),
         }),
-        'Seller portal email is taking too long. Please try again in a moment.',
+        'Seller portal email did not confirm within 60 seconds. Check communications before retrying.',
         SELLER_ONBOARDING_EMAIL_TIMEOUT_MS,
       )
-      if (portalEmail?.error || portalEmail?.data?.error) {
-        throw new Error(
-          portalEmail?.error?.message ||
-            portalEmail?.data?.error ||
-            'Seller portal email could not be sent.',
-        )
-      }
+      assertEdgeActionSuccess(portalEmail, 'Seller portal email could not be sent.')
       setSellerActionMessage('Seller portal link resent.')
       void createAgencyCrmLeadActivity(organisationId, row.leadId, {
         agent: { id: actor.id, name: actor.fullName || actor.name, email: actor.email },
@@ -18954,6 +19039,7 @@ function AgentLeadWorkspace() {
         console.warn('[AgentLeadsPage] Seller portal resend activity sync failed.', postResendError)
       })
     } catch (actionError) {
+      setSellerActionMessage('')
       setSellerActionError(actionError?.message || 'Unable to resend the seller portal link right now.')
     } finally {
       setSendingSellerPortalLink(false)

@@ -21,6 +21,8 @@ import {
 } from "../utils/db.ts";
 import { normalizeText } from "../utils/text.ts";
 
+const SELLER_ONBOARDING_RESEND_TIMEOUT_MS = 45_000;
+
 function toRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -302,6 +304,7 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
     subject,
     html,
     text,
+    timeoutMs: SELLER_ONBOARDING_RESEND_TIMEOUT_MS,
   });
 
   if (!emailResult.ok) {

@@ -807,10 +807,24 @@ function getPartnerInvitationBaseUrl() {
 
 function buildPartnerInvitationLink(invitationId = '') {
   const id = encodeURIComponent(normalizeText(invitationId))
-  const url = new URL('/partners', getPartnerInvitationBaseUrl())
-  url.searchParams.set('tab', 'invitations')
-  if (id) url.searchParams.set('invitation', id)
+  const url = new URL(`/partners/invite/${id}`, getPartnerInvitationBaseUrl())
   return url.toString()
+}
+
+function isMissingPartnerInvitationFunctionError(error = null) {
+  const status = Number(error?.status || error?.details?.status || 0)
+  const code = normalizeLower(error?.code || '')
+  const message = normalizeLower(error?.message || error?.error || '')
+  if (code && code !== 'function_not_found') return false
+  return message.includes('function not found') || (status === 404 && message.includes('edge function'))
+}
+
+function buildPartnerInvitationFunctionError(error = null, fallback = 'Unable to accept partner invitation.') {
+  const message = normalizeText(error?.message || error?.error || fallback)
+  const nextError = new Error(message)
+  if (error?.code) nextError.code = error.code
+  if (error?.details) nextError.details = error.details
+  return nextError
 }
 
 async function sendPartnerInvitationEmail(invitation = {}) {
@@ -826,6 +840,8 @@ async function sendPartnerInvitationEmail(invitation = {}) {
     body: {
       type: 'organisation_partner_invitation',
       to: recipientEmail,
+      organisationId: invitation.fromOrganisationId,
+      invitationId: invitation.id,
       invitationLink: buildPartnerInvitationLink(invitation.id),
       invitedByOrganisation: invitation.fromOrganisationName,
       partnerOrganisationName: invitation.toOrganisationName || recipientEmail,
@@ -839,6 +855,12 @@ async function sendPartnerInvitationEmail(invitation = {}) {
   })
   if (error) throw new Error(error.message || 'Partner invitation email could not be sent.')
   return data || { sent: true }
+}
+
+function assertPartnerInvitationEmailSent(result, expectedEmail = '') {
+  if (normalizeText(expectedEmail) && result?.sent === false) {
+    throw new Error('Partner invitation email could not be sent because no external recipient email was available.')
+  }
 }
 
 async function fetchInvitationRows(scopedOrganisationId) {
@@ -1278,7 +1300,8 @@ export async function createPartnerInvitation({
 
   if (existingResult.data) {
     const existingInvitation = mapInvitation(existingResult.data)
-    await sendPartnerInvitationEmail(existingInvitation)
+    const emailResult = await sendPartnerInvitationEmail(existingInvitation)
+    assertPartnerInvitationEmailSent(emailResult, email)
     return existingInvitation
   }
   if (existingResult.error && !isRecoverablePartnerSchemaError(existingResult.error)) throw existingResult.error
@@ -1328,14 +1351,16 @@ export async function createPartnerInvitation({
         fromWorkspaceType: normalizeOrganisationType(workspaceType),
         toWorkspaceType: fallbackType,
       }
-      await sendPartnerInvitationEmail(fallbackInvitation)
+      const emailResult = await sendPartnerInvitationEmail(fallbackInvitation)
+      assertPartnerInvitationEmailSent(emailResult, email)
       return fallbackInvitation
     }
     throw result.error
   }
 
   const invitation = mapInvitation(result.data)
-  await sendPartnerInvitationEmail(invitation)
+  const emailResult = await sendPartnerInvitationEmail(invitation)
+  assertPartnerInvitationEmailSent(emailResult, email)
   return invitation
 }
 
@@ -1465,8 +1490,16 @@ export async function deletePartnerInvitation({
   assertSentInvitationManagementAccess(invitation, organisationId)
   if ((normalizeLower(invitation.status) || 'pending') === 'accepted') throw new Error('Accepted invitations cannot be deleted.')
 
-  const result = await supabase.from('partner_invitations').delete().eq('id', id)
+  const result = await supabase
+    .from('partner_invitations')
+    .delete({ count: 'exact' })
+    .eq('id', id)
+    .eq('sender_organisation_id', normalizeText(organisationId))
+    .neq('status', 'accepted')
   if (result.error) throw result.error
+  if (Number(result.count || 0) < 1) {
+    throw new Error('Partner invitation could not be deleted. Refresh the page and try again.')
+  }
   return true
 }
 
@@ -1619,6 +1652,46 @@ async function fetchInvitationForResponse(id) {
     .single()
 }
 
+export async function previewPartnerInvitationAcceptance({
+  invitationId = '',
+  organisationId = '',
+} = {}) {
+  const id = normalizeText(invitationId)
+  if (!id) throw new Error('A partner invitation is required.')
+  if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is required to preview partner invitations.')
+
+  const { data, error } = await invokeEdgeFunction('accept-partner-invitation', {
+    body: {
+      action: 'preview',
+      invitationId: id,
+      organisationId: normalizeText(organisationId),
+    },
+  })
+
+  if (error || data?.error) throw buildPartnerInvitationFunctionError(error || data)
+  return data
+}
+
+export async function acceptPartnerInvitationByLink({
+  invitationId = '',
+  organisationId = '',
+} = {}) {
+  const id = normalizeText(invitationId)
+  if (!id) throw new Error('A partner invitation is required.')
+  if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is required to accept partner invitations.')
+
+  const { data, error } = await invokeEdgeFunction('accept-partner-invitation', {
+    body: {
+      action: 'accept',
+      invitationId: id,
+      organisationId: normalizeText(organisationId),
+    },
+  })
+
+  if (error || data?.error) throw buildPartnerInvitationFunctionError(error || data)
+  return data
+}
+
 export async function acceptPartnerInvitation({
   invitationId = '',
   organisationId = '',
@@ -1661,6 +1734,16 @@ export async function acceptPartnerInvitation({
     }
     writeDemoState(state)
     return true
+  }
+
+  try {
+    await acceptPartnerInvitationByLink({
+      invitationId: id,
+      organisationId: normalizeText(organisationId),
+    })
+    return true
+  } catch (edgeError) {
+    if (!isMissingPartnerInvitationFunctionError(edgeError)) throw edgeError
   }
 
   const invitationQuery = await fetchInvitationForResponse(id)

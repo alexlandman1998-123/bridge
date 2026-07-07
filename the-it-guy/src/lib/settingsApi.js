@@ -3852,8 +3852,21 @@ export async function removeOrganisationPreferredPartner(partnerId) {
     return true
   }
 
-  const removeResult = await client.from('organisation_preferred_partners').delete().eq('id', normalizedId)
+  const removeResult = await client
+    .from('organisation_preferred_partners')
+    .delete({ count: 'exact' })
+    .eq('id', normalizedId)
+    .eq('organisation_id', context.organisation.id)
   if (!removeResult.error) {
+    if (Number(removeResult.count || 0) < 1) {
+      const existing = readPreferredPartnersFromSettings(context.organisationSettings)
+      if (existing.some((item) => String(item.id) === normalizedId)) {
+        const next = existing.filter((item) => String(item.id) !== normalizedId)
+        await persistPreferredPartnersToSettings(client, context, next)
+        return true
+      }
+      throw new Error('Third party could not be removed. Refresh the page and try again.')
+    }
     return true
   }
 

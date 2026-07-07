@@ -142,7 +142,9 @@ export async function handleCommercialLandlordOnboardingEmail(
 
   const fromAddress = normalizeText(
     Deno.env.get("BRIDGE_FROM_EMAIL") || Deno.env.get("FROM_EMAIL") ||
-      "Arch9 Commercial <commercial@updates.arch9.co>",
+      Deno.env.get("ARCH9_RESEND_FROM_EMAIL") ||
+      Deno.env.get("RESEND_FROM_EMAIL") ||
+      "Arch9 Commercial <onboarding@resend.dev>",
   );
   const replyTo = normalizeText(payload.brokerEmail) || undefined;
   const copy = buildMessageCopy(payload);

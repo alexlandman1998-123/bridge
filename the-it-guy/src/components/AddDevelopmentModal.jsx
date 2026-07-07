@@ -284,7 +284,7 @@ function buildDeveloperAccessLink(token) {
     typeof window !== 'undefined' && window.location?.origin
       ? window.location.origin
       : 'https://app.arch9.co.za'
-  return `${origin}/auth?developer_invite=${encodeURIComponent(token)}`
+  return `${origin}/developer/access-invite/${encodeURIComponent(token)}`
 }
 
 function getResolvedDevelopmentLocation(details) {
@@ -1150,9 +1150,13 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
           body: {
             type: 'developer_access_invite',
             to: normalizedEmail,
+            inviteeName: safeContactName,
+            organisationName: safeCompanyName,
+            workspaceRole: 'developer',
             developerName: safeContactName,
             developmentName: details.name,
             companyName: safeCompanyName,
+            inviteLink: onboardingLink,
             onboardingLink,
           },
         })

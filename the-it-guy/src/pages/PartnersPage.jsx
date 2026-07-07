@@ -1985,6 +1985,7 @@ export default function PartnersPage() {
   const connectingPartnerIdsRef = useRef(new Set())
   const profilePanelRef = useRef(null)
   const lastTabSearchRef = useRef(location.search)
+  const hasLoadedSnapshotRef = useRef(false)
 
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteOrganisationQuery, setInviteOrganisationQuery] = useState('')
@@ -2046,8 +2047,11 @@ export default function PartnersPage() {
 
   const inviteScopeNeedsTarget = Boolean(selectedInviteScope?.requiresTarget)
   const loadSnapshot = useCallback(async () => {
+    const shouldShowSnapshotLoader = !hasLoadedSnapshotRef.current
     try {
-      setLoading(true)
+      if (shouldShowSnapshotLoader) {
+        setLoading(true)
+      }
       setError('')
       setDiscoverDirectory([])
       const [nextSnapshot, nextPreferredRoutingRules] = await Promise.all([
@@ -2061,10 +2065,13 @@ export default function PartnersPage() {
       ])
       setSnapshot(nextSnapshot)
       setPreferredRoutingRules(Array.isArray(nextPreferredRoutingRules) ? nextPreferredRoutingRules : [])
+      hasLoadedSnapshotRef.current = true
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load partner network.')
     } finally {
-      setLoading(false)
+      if (shouldShowSnapshotLoader) {
+        setLoading(false)
+      }
     }
   }, [accessContext, organisationId, profile?.id, resolvedWorkspaceType])
 
@@ -2456,6 +2463,8 @@ export default function PartnersPage() {
   )
   const isPartnerProfilePage = Boolean(normalizeText(partnerId)) && !isBondPartnersRoute
   const isSimplifiedThirdPartyWorkspace = !isBondPartnersRoute && !isPartnerProfilePage
+  const shouldShowPartnersBlockingLoader =
+    loading || (isSimplifiedThirdPartyWorkspace && thirdPartyDirectoryLoading && thirdPartyDirectoryRows.length === 0)
 
   const openThirdPartyInvite = useCallback((partnerType = 'transfer_attorney') => {
     setEditingThirdPartyId('')
@@ -2602,6 +2611,7 @@ export default function PartnersPage() {
       setError('')
       setMessage('')
       await removeOrganisationPreferredPartner(partner.id)
+      setThirdPartyDirectoryRows((rows) => rows.filter((row) => String(row.id) !== String(partner.id)))
       await loadThirdPartyDirectory()
       setMessage('Third party removed.')
     } catch (removeError) {
@@ -2939,6 +2949,14 @@ export default function PartnersPage() {
         targetType: 'partner_invitation',
         targetId: invitation.id,
       })
+      setSnapshot((previous) =>
+        previous
+          ? {
+              ...previous,
+              invitations: (previous.invitations || []).filter((item) => String(item.id) !== String(invitation.id)),
+            }
+          : previous,
+      )
       setMessage('Partner invitation deleted.')
       await loadSnapshot()
     } catch (deleteError) {
@@ -3280,7 +3298,7 @@ export default function PartnersPage() {
         </>
       )}
 
-      {loading || (isSimplifiedThirdPartyWorkspace && thirdPartyDirectoryLoading) ? (
+      {shouldShowPartnersBlockingLoader ? (
         <section className="mt-5 rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm font-semibold text-[#60758d]">
           {isSimplifiedThirdPartyWorkspace ? 'Loading third parties...' : 'Loading partner network...'}
         </section>

@@ -4,6 +4,11 @@ import {
   renderBridgeIntroParagraphs,
   renderBridgeSummaryCard,
 } from "../content/bridgeEmailLayout.ts";
+import {
+  markEmailDeliveryFailed,
+  markEmailDeliverySent,
+  prepareEmailDelivery,
+} from "../services/communicationDeliveryLogging.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import type { SendOrganisationPartnerInvitationPayload } from "../types.ts";
 import { jsonResponse } from "../utils/http.ts";
@@ -90,6 +95,33 @@ export async function handleOrganisationPartnerInvitationEmail(
     `Review invite: ${invitationLink}`,
   ].filter(Boolean).join("\n");
 
+  const delivery = await prepareEmailDelivery(
+    payload as Record<string, unknown>,
+    {
+      communicationType: "organisation_partner_invitation",
+      recipient: recipientEmail,
+      recipientRole: "partner",
+      subject,
+      messagePreview: text,
+      context: {
+        organisationId: normalizeText(
+          payload.organisationId ?? payload.organisation_id,
+        ),
+        metadata: {
+          partnerInvitationId: normalizeText(
+            payload.invitationId ?? payload.invitation_id,
+          ) || null,
+          partnerType: normalizeText(
+            payload.partnerType ?? payload.partner_type,
+          ) || null,
+          relationshipType,
+          scopeType,
+          scopeName: scopeName || null,
+        },
+      },
+    },
+  );
+
   const sendResult = await sendViaResendApi({
     apiKey: resendApiKey,
     from,
@@ -100,6 +132,10 @@ export async function handleOrganisationPartnerInvitationEmail(
   });
 
   if (!sendResult.ok) {
+    await markEmailDeliveryFailed(delivery?.id || "", {
+      errorMessage: sendResult.error?.message ||
+        "Failed to send organisation partner invitation email.",
+    });
     return jsonResponse(502, {
       error: "Resend rejected the organisation partner invitation email.",
       details: sendResult.error,
@@ -107,10 +143,15 @@ export async function handleOrganisationPartnerInvitationEmail(
     });
   }
 
+  await markEmailDeliverySent(delivery?.id || "", {
+    emailId: sendResult.data?.id || null,
+  });
+
   return jsonResponse(200, {
     ok: true,
     type: "organisation_partner_invitation",
     sent: true,
+    deliveryId: delivery?.id || null,
     recipientEmail,
     provider: "resend",
     providerResponse: sendResult.data,

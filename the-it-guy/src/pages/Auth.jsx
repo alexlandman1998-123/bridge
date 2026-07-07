@@ -120,6 +120,28 @@ function ensureInviteAutoAcceptPath(path = '') {
   }
 }
 
+function isPublicInviteReturnPath(path = '') {
+  const safePath = String(path || '').trim()
+  return (
+    safePath.startsWith('/invite/') ||
+    safePath.startsWith('/agent/invite/') ||
+    safePath.startsWith('/partners/invite/') ||
+    safePath.startsWith('/developer/access-invite/') ||
+    safePath.startsWith('/developer/partner-invite/') ||
+    safePath.startsWith('/transaction-invite/') ||
+    safePath.startsWith('/referrals/invite/') ||
+    safePath.startsWith('/partner-portal/') ||
+    safePath.startsWith('/partners/portal/') ||
+    safePath.startsWith('/commercial/portal/') ||
+    safePath.startsWith('/commercial/onboarding/') ||
+    safePath.startsWith('/commercial/landlord-onboarding/') ||
+    safePath.startsWith('/client/') ||
+    safePath.startsWith('/seller/onboarding/') ||
+    safePath.startsWith('/mobile/buyer-onboarding/') ||
+    safePath.startsWith('/mobile/seller-onboarding/')
+  )
+}
+
 async function resolveFounderLoginTarget(fallbackTarget = '/dashboard') {
   const target = String(fallbackTarget || '/dashboard').trim() || '/dashboard'
   if (!['/', '/dashboard'].includes(target)) return target
@@ -502,6 +524,8 @@ function Auth({ onDevBypass = null }) {
       const emailRedirectTo = resolveEmailVerificationRedirectTo(
         mode === 'signup' && inviteDrivenSignup
           ? inviteVerificationRedirectTo
+          : mode === 'signup' && isPublicInviteReturnPath(redirectTo)
+            ? redirectTo
           : mode === 'signup' && currentIntent
             ? resolveSignupIntentRoute(currentIntent)
             : '/setup',
@@ -585,7 +609,7 @@ function Auth({ onDevBypass = null }) {
 
       if (data?.session) {
         const pendingInvitePath = resolvePendingInvitePath(location)
-        const target = pendingInvitePath || resolveSignupIntentRoute(intentWithEmail)
+        const target = pendingInvitePath || (isPublicInviteReturnPath(redirectTo) ? redirectTo : resolveSignupIntentRoute(intentWithEmail))
         clearPostLoginRedirect()
         console.debug('[REDIRECT] signup:session-created', { target, pendingInvite: Boolean(pendingInvitePath) })
         navigate(target, { replace: true })
@@ -628,7 +652,12 @@ function Auth({ onDevBypass = null }) {
       setResendLoading(true)
       setError('')
       const emailRedirectTo = resolveEmailVerificationRedirectTo(
-        resolvePendingInvitePath(location) || (currentIntent ? resolveSignupIntentRoute(currentIntent) : '/setup'),
+        resolvePendingInvitePath(location) ||
+          (isPublicInviteReturnPath(redirectTo)
+            ? redirectTo
+            : currentIntent
+              ? resolveSignupIntentRoute(currentIntent)
+              : '/setup'),
       )
       const { error: resendError } = await supabase.auth.resend({
         type: 'signup',

@@ -525,7 +525,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (
-      ["workspace_invite", "team_invite", "branch_invite", "agent_invite"]
+      ["workspace_invite", "team_invite", "branch_invite", "agent_invite", "developer_access_invite"]
         .includes(type) &&
       (payload as SendWorkspaceInvitePayload).to
     ) {
@@ -616,6 +616,7 @@ Deno.serve(async (req: Request) => {
           "workspace_invite",
           "branch_invite",
           "agent_invite",
+          "developer_access_invite",
           "notification_reminder_dispatch",
           "appointment_scheduled",
           "appointment_confirmed",
@@ -660,6 +661,7 @@ Deno.serve(async (req: Request) => {
         "workspace_invite",
         "branch_invite",
         "agent_invite",
+        "developer_access_invite",
         "notification_reminder_dispatch",
         "appointment_scheduled",
         "appointment_confirmed",

@@ -152,7 +152,7 @@ export type SendArch9LaunchInternalNotificationPayload = {
 };
 
 export type SendWorkspaceInvitePayload = {
-  type: "workspace_invite" | "team_invite" | "branch_invite" | "agent_invite";
+  type: "workspace_invite" | "team_invite" | "branch_invite" | "agent_invite" | "developer_access_invite";
   to: string;
   inviteLink?: string;
   invite_link?: string;
@@ -244,6 +244,10 @@ export type SendOrganisationPartnerInvitationPayload = {
     | "partner_organisation_invitation"
     | "partner_organization_invitation";
   to: string;
+  organisationId?: string;
+  organisation_id?: string;
+  invitationId?: string;
+  invitation_id?: string;
   invitationLink?: string;
   invitation_link?: string;
   invitedByOrganisation?: string;

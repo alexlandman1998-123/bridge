@@ -22,9 +22,31 @@ function resolvePendingInvitePath() {
   return `/invite/${token}`
 }
 
+function isPublicInviteReturnPath(path = '') {
+  const safePath = String(path || '').trim()
+  return (
+    safePath.startsWith('/invite/') ||
+    safePath.startsWith('/agent/invite/') ||
+    safePath.startsWith('/partners/invite/') ||
+    safePath.startsWith('/developer/access-invite/') ||
+    safePath.startsWith('/developer/partner-invite/') ||
+    safePath.startsWith('/transaction-invite/') ||
+    safePath.startsWith('/referrals/invite/') ||
+    safePath.startsWith('/partner-portal/') ||
+    safePath.startsWith('/partners/portal/') ||
+    safePath.startsWith('/commercial/portal/') ||
+    safePath.startsWith('/commercial/onboarding/') ||
+    safePath.startsWith('/commercial/landlord-onboarding/') ||
+    safePath.startsWith('/client/') ||
+    safePath.startsWith('/seller/onboarding/') ||
+    safePath.startsWith('/mobile/buyer-onboarding/') ||
+    safePath.startsWith('/mobile/seller-onboarding/')
+  )
+}
+
 function resolveCallbackInvitePath(search = '') {
   const nextPath = resolveSafeNextPath(search)
-  return nextPath.startsWith('/invite/') ? nextPath : ''
+  return isPublicInviteReturnPath(nextPath) ? nextPath : ''
 }
 
 export default function AuthCallback() {
