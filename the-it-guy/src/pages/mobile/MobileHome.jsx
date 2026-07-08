@@ -8,7 +8,6 @@ import {
   Clock3,
   FileText,
   ListChecks,
-  RefreshCw,
   Sparkles,
   Target,
 } from 'lucide-react'
@@ -196,7 +195,7 @@ function AgencyCommandCard({ snapshot, priority, onOpen }) {
   )
 }
 
-function CommandActions({ actions = [], onAction, onRefresh }) {
+function CommandActions({ actions = [], onAction }) {
   return (
     <div className="grid grid-cols-2 gap-2.5">
       {actions.slice(0, 4).map((action) => (
@@ -210,14 +209,6 @@ function CommandActions({ actions = [], onAction, onRefresh }) {
           <span className="truncate">{action.label}</span>
         </button>
       ))}
-      <button
-        type="button"
-        className="flex min-h-[50px] items-center justify-center gap-2 rounded-[16px] border border-[#dfe7ef] bg-[#f8fafc] px-3 text-[13px] font-semibold text-[#60758d]"
-        onClick={onRefresh}
-      >
-        <RefreshCw className="h-4 w-4" />
-        Refresh
-      </button>
     </div>
   )
 }
@@ -331,6 +322,36 @@ function ActiveWorkCard({ item, onOpen }) {
         </span>
       </span>
     </button>
+  )
+}
+
+function ActiveTransactionsRail({
+  items = [],
+  title = 'Active Transactions',
+  actionTo = '',
+  emptyTitle = 'No active transactions yet.',
+  emptyBody = 'Your active transactions will appear here once work is in motion.',
+  emptyActionLabel = 'Create Transaction',
+  onOpen,
+  onEmptyAction,
+}) {
+  return (
+    <section>
+      <SectionHeader title={title} actionTo={actionTo} />
+      {items.length ? (
+        <div className="-mx-5 overflow-x-auto px-5 pb-2 [-webkit-overflow-scrolling:touch]">
+          <div className="flex snap-x gap-3">
+            {items.map((item) => (
+              <div key={item.id} className="w-[82vw] min-w-[280px] max-w-[330px] shrink-0 snap-start">
+                <ActiveWorkCard item={item} onOpen={onOpen} />
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <EmptyCompact title={emptyTitle} body={emptyBody} actionLabel={emptyActionLabel} onAction={onEmptyAction} />
+      )}
+    </section>
   )
 }
 
@@ -542,20 +563,23 @@ export default function MobileHome() {
         {snapshot.summaryCards.map((card) => <KpiCard key={card.key} card={card} />)}
       </section>
 
-      <CommandActions actions={snapshot.quickActions} onAction={handleQuickAction} onRefresh={load} />
+      <CommandActions actions={snapshot.quickActions} onAction={handleQuickAction} />
+
+      <ActiveTransactionsRail
+        items={snapshot.activeWork}
+        title={snapshot.copy.workloadLabel || snapshot.copy.workTitle || 'Active Transactions'}
+        actionTo={workPath}
+        emptyTitle={snapshot.copy.workEmptyTitle}
+        emptyBody={snapshot.copy.workEmptyBody}
+        emptyActionLabel={snapshot.quickActions.find((action) => action.key === 'create_transaction')?.label || snapshot.quickActions[0]?.label || ''}
+        onOpen={handleActiveWorkOpen}
+        onEmptyAction={() => {
+          const createTransaction = snapshot.quickActions.find((action) => action.key === 'create_transaction') || snapshot.quickActions[0]
+          if (createTransaction) handleQuickAction(createTransaction)
+        }}
+      />
 
       <TodayQueue snapshot={snapshot} priority={priority} onOpen={handlePriorityOpen} />
-
-      <section>
-        <SectionHeader title={snapshot.copy.workTitle} actionTo={workPath} />
-        {snapshot.activeWork.length ? (
-          <div className="space-y-3">
-            {snapshot.activeWork.slice(0, 4).map((item) => <ActiveWorkCard key={item.id} item={item} onOpen={handleActiveWorkOpen} />)}
-          </div>
-        ) : (
-          <EmptyCompact title={snapshot.copy.workEmptyTitle} body={snapshot.copy.workEmptyBody} actionLabel={snapshot.quickActions[0]?.label || ''} onAction={snapshot.quickActions[0] ? () => handleQuickAction(snapshot.quickActions[0]) : null} />
-        )}
-      </section>
 
       {snapshot.tasks.length ? (
         <section>

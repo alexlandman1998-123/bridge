@@ -13,9 +13,10 @@ import {
   X,
 } from 'lucide-react'
 import { useState } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { getMobileNavItems } from '../../config/mobileShell'
 import { useWorkspace } from '../../context/WorkspaceContext'
+import { isMobileCreateType } from './mobileCreateConfig'
 
 const ICONS = {
   home: Home,
@@ -40,8 +41,11 @@ const CREATE_ACTIONS = [
 export default function MobileBottomNav() {
   const workspace = useWorkspace()
   const navigate = useNavigate()
+  const location = useLocation()
   const items = getMobileNavItems(workspace)
   const [createOpen, setCreateOpen] = useState(false)
+  const activeCreateType = new URLSearchParams(location.search).get('create') || ''
+  const createSheetOpen = isMobileCreateType(activeCreateType)
 
   function openAction(action) {
     setCreateOpen(false)
@@ -98,44 +102,46 @@ export default function MobileBottomNav() {
         </div>
       ) : null}
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2" aria-label="Mobile navigation" data-mobile-bottom-nav>
-        <div className="mx-auto grid max-w-[520px] grid-cols-5 items-end gap-1 rounded-[24px] border border-[#dfe7ef]/80 bg-white/92 px-2 py-1.5 shadow-[0_-10px_28px_rgba(15,23,42,0.10)] backdrop-blur-xl">
-          {items.map((item) => {
-            const Icon = ICONS[item.key] || LayoutGrid
-            if (item.key === 'create') {
+      {!createSheetOpen ? (
+        <nav className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2" aria-label="Mobile navigation" data-mobile-bottom-nav>
+          <div className="mx-auto grid max-w-[520px] grid-cols-5 items-end gap-1 rounded-[24px] border border-[#dfe7ef]/80 bg-white/92 px-2 py-1.5 shadow-[0_-10px_28px_rgba(15,23,42,0.10)] backdrop-blur-xl">
+            {items.map((item) => {
+              const Icon = ICONS[item.key] || LayoutGrid
+              if (item.key === 'create') {
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    className="-mt-6 flex flex-col items-center justify-center gap-1 text-[10px] font-semibold text-[#1f7a5a]"
+                    onClick={() => setCreateOpen(true)}
+                    aria-label="Open create menu"
+                  >
+                    <span className="flex h-14 w-14 items-center justify-center rounded-full border-[4px] border-[#f6f8fb] bg-[#1f7a5a] text-white shadow-[0_12px_24px_rgba(31,122,90,0.26)]">
+                      <Plus className="h-6 w-6" />
+                    </span>
+                    <span className="sr-only">Create</span>
+                  </button>
+                )
+              }
               return (
-                <button
+                <NavLink
                   key={item.key}
-                  type="button"
-                  className="-mt-6 flex flex-col items-center justify-center gap-1 text-[10px] font-semibold text-[#1f7a5a]"
-                  onClick={() => setCreateOpen(true)}
-                  aria-label="Open create menu"
+                  to={item.to}
+                  className={({ isActive }) =>
+                    [
+                      'flex min-h-[50px] flex-col items-center justify-center gap-1 rounded-[18px] px-0.5 text-[10px] font-semibold transition',
+                      isActive ? 'bg-[#e8f6ef] text-[#1f7a5a]' : 'text-[#60758d] active:bg-[#f1f5f9]',
+                    ].join(' ')
+                  }
                 >
-                  <span className="flex h-14 w-14 items-center justify-center rounded-full border-[4px] border-[#f6f8fb] bg-[#1f7a5a] text-white shadow-[0_12px_24px_rgba(31,122,90,0.26)]">
-                    <Plus className="h-6 w-6" />
-                  </span>
-                  <span className="sr-only">Create</span>
-                </button>
+                  <Icon className="h-5 w-5" />
+                  <span className="max-w-full">{item.label}</span>
+                </NavLink>
               )
-            }
-            return (
-              <NavLink
-                key={item.key}
-                to={item.to}
-                className={({ isActive }) =>
-                  [
-                    'flex min-h-[50px] flex-col items-center justify-center gap-1 rounded-[18px] px-0.5 text-[10px] font-semibold transition',
-                    isActive ? 'bg-[#e8f6ef] text-[#1f7a5a]' : 'text-[#60758d] active:bg-[#f1f5f9]',
-                  ].join(' ')
-                }
-              >
-                <Icon className="h-5 w-5" />
-                <span className="max-w-full">{item.label}</span>
-              </NavLink>
-            )
-          })}
-        </div>
-      </nav>
+            })}
+          </div>
+        </nav>
+      ) : null}
     </>
   )
 }

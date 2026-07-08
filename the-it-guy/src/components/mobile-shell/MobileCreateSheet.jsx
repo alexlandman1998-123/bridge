@@ -1,94 +1,9 @@
-import { Check, Clock3, FileText, MessageCircle, Plus, ScrollText, UsersRound, X } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { Check, Plus, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { addOfflineDraft } from '../../services/mobileProductivityService'
 import { trackMobileMetric } from '../../services/observability/monitoring'
 import { MobileCard } from './MobileShellStates'
-
-const CREATE_CONFIG = {
-  lead: {
-    eyebrow: 'Lead Capture',
-    title: 'New lead',
-    body: 'Capture the first contact details and sync it back to the agency pipeline.',
-    module: 'lead',
-    draftType: 'Lead Capture',
-    primaryLabel: 'Lead name',
-    primaryPlaceholder: 'Buyer or seller name',
-    secondaryLabel: 'Phone or email',
-    secondaryPlaceholder: 'Contact detail',
-    notesLabel: 'Need or next step',
-    notesPlaceholder: 'Budget, area, property interest, next call...',
-    submitLabel: 'Save Lead',
-    icon: UsersRound,
-  },
-  prospect: {
-    eyebrow: 'Prospecting',
-    title: 'Add prospect',
-    body: 'Record a canvassing prospect before it becomes a qualified lead.',
-    module: 'lead',
-    draftType: 'Prospect Capture',
-    primaryLabel: 'Prospect name',
-    primaryPlaceholder: 'Owner, buyer, landlord or company',
-    secondaryLabel: 'Source or area',
-    secondaryPlaceholder: 'Canvassing, referral, suburb...',
-    notesLabel: 'Prospecting note',
-    notesPlaceholder: 'What was discussed and when to follow up...',
-    submitLabel: 'Save Prospect',
-    icon: FileText,
-  },
-  transaction: {
-    eyebrow: 'Deal Capture',
-    title: 'New transaction',
-    body: 'Start a transaction draft from the field and sync the details when ready.',
-    module: 'transaction',
-    draftType: 'Transaction Draft',
-    primaryLabel: 'Client or deal name',
-    primaryPlaceholder: 'Buyer, seller or transaction name',
-    secondaryLabel: 'Property or reference',
-    secondaryPlaceholder: 'Address, unit, listing or mandate',
-    notesLabel: 'Deal note',
-    notesPlaceholder: 'Price, stage, parties, next step...',
-    submitLabel: 'Save Transaction Draft',
-    icon: ScrollText,
-  },
-  note: {
-    eyebrow: 'Activity Note',
-    title: 'Add note',
-    body: 'Capture a quick field update for the shared activity stream.',
-    module: 'activity',
-    draftType: 'Note',
-    primaryLabel: 'Note title',
-    primaryPlaceholder: 'Short summary',
-    secondaryLabel: 'Related item',
-    secondaryPlaceholder: 'Lead, transaction, matter...',
-    notesLabel: 'Note',
-    notesPlaceholder: 'What happened?',
-    submitLabel: 'Save Note',
-    icon: MessageCircle,
-  },
-  'follow-up': {
-    eyebrow: 'Task Capture',
-    title: 'Schedule follow-up',
-    body: 'Queue a reminder for yourself or the next owner.',
-    module: 'task',
-    draftType: 'Follow-up',
-    primaryLabel: 'Follow-up title',
-    primaryPlaceholder: 'Call buyer, send documents...',
-    secondaryLabel: 'Due',
-    secondaryPlaceholder: 'Today 16:00, tomorrow morning...',
-    notesLabel: 'Reminder detail',
-    notesPlaceholder: 'What needs to happen?',
-    submitLabel: 'Save Follow-up',
-    icon: Clock3,
-  },
-}
-
-export function isMobileCreateType(type = '') {
-  return Boolean(CREATE_CONFIG[String(type || '').trim()])
-}
-
-export function getMobileCreateConfig(type = '') {
-  return CREATE_CONFIG[String(type || '').trim()] || null
-}
+import { getMobileCreateConfig } from './mobileCreateConfig'
 
 function createInitialForm() {
   return {
@@ -96,15 +11,6 @@ function createInitialForm() {
     secondary: '',
     notes: '',
   }
-}
-
-export function mobileDraftMatchesModule(draft = {}, moduleKey = '') {
-  const module = String(draft.module || '').trim()
-  if (moduleKey === 'transactions') return module === 'transaction'
-  if (moduleKey === 'leads') return module === 'lead'
-  if (moduleKey === 'tasks') return module === 'task'
-  if (moduleKey === 'activity') return module === 'activity'
-  return module === moduleKey
 }
 
 export function MobileDraftCard({ draft, actionLabel = 'Pending sync' }) {
@@ -128,18 +34,34 @@ export function MobileDraftCard({ draft, actionLabel = 'Pending sync' }) {
 }
 
 export default function MobileCreateSheet({ open = false, type = '', route = '', onClose, onSaved }) {
-  const config = useMemo(() => getMobileCreateConfig(type), [type])
-  const [form, setForm] = useState(() => createInitialForm())
-  const [savedDraft, setSavedDraft] = useState(null)
+  const config = getMobileCreateConfig(type)
 
   useEffect(() => {
-    if (!open) return
-    setForm(createInitialForm())
-    setSavedDraft(null)
-  }, [open, type])
+    if (!open || typeof document === 'undefined') return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [open])
 
   if (!open || !config) return null
 
+  return (
+    <MobileCreateSheetForm
+      key={type}
+      config={config}
+      type={type}
+      route={route}
+      onClose={onClose}
+      onSaved={onSaved}
+    />
+  )
+}
+
+function MobileCreateSheetForm({ config, type, route, onClose, onSaved }) {
+  const [form, setForm] = useState(() => createInitialForm())
+  const [savedDraft, setSavedDraft] = useState(null)
   const Icon = config.icon || Plus
 
   function updateField(field, value) {
@@ -169,14 +91,17 @@ export default function MobileCreateSheet({ open = false, type = '', route = '',
   }
 
   return (
-    <div className="fixed inset-0 z-[85] flex items-end bg-[#10243a]/35 px-4 pb-[max(1rem,env(safe-area-inset-bottom))]" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-[85] flex items-end overflow-hidden bg-[#10243a]/42 px-4 pb-[max(0.875rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))]"
+      onClick={onClose}
+    >
       <form
-        className="mx-auto w-full max-w-[520px] rounded-[28px] bg-white p-5 shadow-[0_24px_64px_rgba(15,23,42,0.28)]"
+        className="mx-auto flex max-h-[calc(100dvh-2rem)] w-full max-w-[520px] flex-col overflow-hidden rounded-[28px] bg-white shadow-[0_24px_64px_rgba(15,23,42,0.28)]"
         onClick={(event) => event.stopPropagation()}
         onSubmit={handleSubmit}
         data-mobile-create-sheet={type}
       >
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex shrink-0 items-start justify-between gap-3 px-5 pt-5">
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[#1f7a5a]">{config.eyebrow}</p>
             <h2 className="mt-1 text-[24px] font-semibold text-[#10243a]">{config.title}</h2>
@@ -187,50 +112,54 @@ export default function MobileCreateSheet({ open = false, type = '', route = '',
           </button>
         </div>
 
-        <div className="mt-5 space-y-4">
-          <label className="block">
-            <span className="text-xs font-semibold uppercase text-[#60758d]">{config.primaryLabel}</span>
-            <input
-              className="mt-2 min-h-12 w-full rounded-2xl border border-[#d7e0ea] bg-white px-3 text-sm font-semibold text-[#10243a] outline-none focus:border-[#1f7a5a]"
-              value={form.primary}
-              onChange={(event) => updateField('primary', event.target.value)}
-              placeholder={config.primaryPlaceholder}
-              autoFocus
-            />
-          </label>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4 pt-5 [-webkit-overflow-scrolling:touch]">
+          <div className="space-y-4">
+            <label className="block">
+              <span className="text-xs font-semibold uppercase text-[#60758d]">{config.primaryLabel}</span>
+              <input
+                className="mt-2 min-h-12 w-full rounded-2xl border border-[#d7e0ea] bg-white px-3 text-sm font-semibold text-[#10243a] outline-none focus:border-[#1f7a5a]"
+                value={form.primary}
+                onChange={(event) => updateField('primary', event.target.value)}
+                placeholder={config.primaryPlaceholder}
+                autoFocus
+              />
+            </label>
 
-          <label className="block">
-            <span className="text-xs font-semibold uppercase text-[#60758d]">{config.secondaryLabel}</span>
-            <input
-              className="mt-2 min-h-12 w-full rounded-2xl border border-[#d7e0ea] bg-white px-3 text-sm font-semibold text-[#10243a] outline-none focus:border-[#1f7a5a]"
-              value={form.secondary}
-              onChange={(event) => updateField('secondary', event.target.value)}
-              placeholder={config.secondaryPlaceholder}
-            />
-          </label>
+            <label className="block">
+              <span className="text-xs font-semibold uppercase text-[#60758d]">{config.secondaryLabel}</span>
+              <input
+                className="mt-2 min-h-12 w-full rounded-2xl border border-[#d7e0ea] bg-white px-3 text-sm font-semibold text-[#10243a] outline-none focus:border-[#1f7a5a]"
+                value={form.secondary}
+                onChange={(event) => updateField('secondary', event.target.value)}
+                placeholder={config.secondaryPlaceholder}
+              />
+            </label>
 
-          <label className="block">
-            <span className="text-xs font-semibold uppercase text-[#60758d]">{config.notesLabel}</span>
-            <textarea
-              className="mt-2 min-h-[92px] w-full rounded-2xl border border-[#d7e0ea] bg-white px-3 py-3 text-sm font-semibold text-[#10243a] outline-none focus:border-[#1f7a5a]"
-              value={form.notes}
-              onChange={(event) => updateField('notes', event.target.value)}
-              placeholder={config.notesPlaceholder}
-            />
-          </label>
+            <label className="block">
+              <span className="text-xs font-semibold uppercase text-[#60758d]">{config.notesLabel}</span>
+              <textarea
+                className="mt-2 min-h-[92px] w-full rounded-2xl border border-[#d7e0ea] bg-white px-3 py-3 text-sm font-semibold text-[#10243a] outline-none focus:border-[#1f7a5a]"
+                value={form.notes}
+                onChange={(event) => updateField('notes', event.target.value)}
+                placeholder={config.notesPlaceholder}
+              />
+            </label>
+          </div>
+
+          {savedDraft ? (
+            <div className="mt-4 rounded-[20px] border border-[#d9eadf] bg-[#f5fbf7] p-4 text-[#1f7a5a]">
+              <div className="flex items-center gap-2 text-sm font-semibold"><Check className="h-4 w-4" /> Saved for sync</div>
+              <p className="mt-1 text-xs">{savedDraft.title} is now visible on this mobile page.</p>
+            </div>
+          ) : null}
         </div>
 
-        {savedDraft ? (
-          <div className="mt-4 rounded-[20px] border border-[#d9eadf] bg-[#f5fbf7] p-4 text-[#1f7a5a]">
-            <div className="flex items-center gap-2 text-sm font-semibold"><Check className="h-4 w-4" /> Saved for sync</div>
-            <p className="mt-1 text-xs">{savedDraft.title} is now visible on this mobile page.</p>
-          </div>
-        ) : null}
-
-        <button type="submit" className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#10243a] px-4 text-sm font-semibold text-white">
-          <Icon className="h-4 w-4 text-[#9fe0bd]" />
-          {config.submitLabel}
-        </button>
+        <div className="shrink-0 border-t border-[#e6edf3] bg-white px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4">
+          <button type="submit" className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#10243a] px-4 text-sm font-semibold text-white">
+            <Icon className="h-4 w-4 text-[#9fe0bd]" />
+            {config.submitLabel}
+          </button>
+        </div>
       </form>
     </div>
   )

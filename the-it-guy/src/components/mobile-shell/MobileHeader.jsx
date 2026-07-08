@@ -1,4 +1,5 @@
 import { Bell, UserCircle } from 'lucide-react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useOptionalOrganisation } from '../../context/OrganisationContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -25,29 +26,46 @@ export default function MobileHeader() {
     normalizeText(simpleWorkspace.displayName || simpleWorkspace.display_name || simpleWorkspace.name) ||
     normalizeText(currentWorkspace.displayName || currentWorkspace.display_name || currentWorkspace.name) ||
     'Arch9 Realty'
-  const logoUrl =
-    normalizeText(branding.logoIconUrl) ||
+  const primaryLogoUrl =
     normalizeText(branding.logoUrl) ||
-    normalizeText(simpleWorkspace.logoIconUrl || simpleWorkspace.logo_icon_url || simpleWorkspace.logoUrl || simpleWorkspace.logo_url) ||
-    normalizeText(currentWorkspace.logoIconUrl || currentWorkspace.logo_icon_url || currentWorkspace.logoUrl || currentWorkspace.logo_url || currentWorkspace.raw?.logo_url)
+    normalizeText(simpleWorkspace.logoUrl || simpleWorkspace.logo_url) ||
+    normalizeText(currentWorkspace.logoUrl || currentWorkspace.logo_url || currentWorkspace.raw?.logo_url)
+  const iconLogoUrl =
+    normalizeText(branding.logoIconUrl) ||
+    normalizeText(simpleWorkspace.logoIconUrl || simpleWorkspace.logo_icon_url) ||
+    normalizeText(currentWorkspace.logoIconUrl || currentWorkspace.logo_icon_url)
+  const logoUrl = primaryLogoUrl || iconLogoUrl
   const initials = getInitials(workspaceName)
+  const [logoLoadFailure, setLogoLoadFailure] = useState({ url: '', failed: false })
+  const showLogo = Boolean(logoUrl) && !(logoLoadFailure.url === logoUrl && logoLoadFailure.failed)
   const unreadCount = 3
 
   return (
     <header className="sticky top-0 z-30 border-b border-[#e6edf3]/80 bg-[#f6f8fb]/92 px-5 pb-3 pt-[max(0.875rem,env(safe-area-inset-top))] backdrop-blur-xl" data-mobile-header>
       <div className="mx-auto flex max-w-[520px] items-center gap-3">
-        <Link to="/mobile/home" className="flex min-w-0 flex-1 items-center gap-3 text-inherit">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[14px] border border-[#d9e3eb] bg-white text-sm font-bold text-[#10243a] shadow-[0_8px_18px_rgba(15,23,42,0.08)]">
-            {logoUrl ? (
-              <img src={logoUrl} alt={`${workspaceName} logo`} className="h-full w-full object-contain p-1.5" />
-            ) : (
-              <span className="flex h-full w-full items-center justify-center bg-[#10243a] text-[13px] text-white">{initials}</span>
-            )}
-          </span>
-          <span className="min-w-0">
-            <span className="block max-w-[210px] truncate text-[14px] font-semibold leading-tight text-[#10243a]">{workspaceName}</span>
-            <span className="block text-[11px] font-semibold uppercase text-[#6f8192]">Agency workspace</span>
-          </span>
+        <Link to="/mobile/home" className="flex min-w-0 flex-1 items-center text-inherit" aria-label={`${workspaceName} mobile home`}>
+          {showLogo ? (
+            <span className="flex h-12 min-w-0 max-w-[190px] items-center">
+              <img
+                key={logoUrl}
+                src={logoUrl}
+                alt={`${workspaceName} logo`}
+                className="block max-h-10 w-auto max-w-full object-contain object-left"
+                onLoad={() => setLogoLoadFailure({ url: logoUrl, failed: false })}
+                onError={() => setLogoLoadFailure({ url: logoUrl, failed: true })}
+              />
+            </span>
+          ) : (
+            <>
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[14px] border border-[#d9e3eb] bg-white text-sm font-bold text-[#10243a] shadow-[0_8px_18px_rgba(15,23,42,0.08)]">
+                <span className="flex h-full w-full items-center justify-center bg-[#10243a] text-[13px] text-white">{initials}</span>
+              </span>
+              <span className="ml-3 min-w-0">
+                <span className="block max-w-[210px] truncate text-[14px] font-semibold leading-tight text-[#10243a]">{workspaceName}</span>
+                <span className="block text-[11px] font-semibold uppercase text-[#6f8192]">Agency workspace</span>
+              </span>
+            </>
+          )}
         </Link>
 
         <Link
