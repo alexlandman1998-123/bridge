@@ -35,6 +35,7 @@ import {
   ResidentialCommandCenterGrid,
   ResidentialDashboardModeToggle,
 } from '../components/residential/ResidentialDashboard'
+import PartnerBusinessDistributionPanel from '../components/dashboard/PartnerBusinessDistributionPanel'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
@@ -2233,26 +2234,29 @@ function PrincipalPremiumCommandCenter({ data, mode = 'sales', profile, dateRang
   )
 
   return (
-    <ResidentialCommandCenterGrid
-      model={model}
-      scope="principal"
-      mode={mode}
-      kpiIcons={[ArrowRightLeft, BriefcaseBusiness, WalletCards, Landmark, Users]}
-      organisationId={data?.meta?.agencyId || ''}
-      userId={profile?.id || profile?.userId || ''}
-      userEmail={profile?.email || ''}
-      includeAllAppointments
-      canManageAppointments
-      appointmentRefreshKey={`${data?.meta?.agencyId || ''}:${dateRange}:${mode}:${branchId}`}
-      commissionTracker={data?.companyCommissionTracker || data?.revenue?.companyCommissionTracker || null}
-      onViewTransactions={onViewTransactions}
-      onOpenTransaction={onOpenTransaction}
-      onViewCalendar={onViewCalendar}
-      onOpenCalendar={onOpenCalendar}
-      onManageAppointment={onManageAppointment}
-      onOpenAppointment={onOpenAppointment}
-      onScheduleAppointment={onScheduleAppointment}
-    />
+    <>
+      <ResidentialCommandCenterGrid
+        model={model}
+        scope="principal"
+        mode={mode}
+        kpiIcons={[ArrowRightLeft, BriefcaseBusiness, WalletCards, Landmark, Users]}
+        organisationId={data?.meta?.agencyId || ''}
+        userId={profile?.id || profile?.userId || ''}
+        userEmail={profile?.email || ''}
+        includeAllAppointments
+        canManageAppointments
+        appointmentRefreshKey={`${data?.meta?.agencyId || ''}:${dateRange}:${mode}:${branchId}`}
+        commissionTracker={data?.companyCommissionTracker || data?.revenue?.companyCommissionTracker || null}
+        onViewTransactions={onViewTransactions}
+        onOpenTransaction={onOpenTransaction}
+        onViewCalendar={onViewCalendar}
+        onOpenCalendar={onOpenCalendar}
+        onManageAppointment={onManageAppointment}
+        onOpenAppointment={onOpenAppointment}
+        onScheduleAppointment={onScheduleAppointment}
+      />
+      <PartnerBusinessDistributionPanel distribution={data?.partnerBusinessDistribution} scope="principal" />
+    </>
   )
 }
 

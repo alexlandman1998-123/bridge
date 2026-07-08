@@ -8,6 +8,9 @@ import {
 export const DEFAULT_COMPANY_MONTHLY_TARGET = 500000
 export const DEFAULT_AGENT_MONTHLY_TARGET = 75000
 
+export const COMMISSION_TARGET_PERIODS = ['monthly', 'quarterly', 'yearly']
+export const COMMISSION_TARGET_METRICS = ['company_commission', 'agent_commission', 'gross_commission']
+
 export const DEFAULT_COMMISSION_LEVELS = [
   { key: 'standard', name: 'Standard', agentPercentage: 60, agencyPercentage: 40, monthlyTarget: null, annualTarget: null, isDefault: true, isActive: true },
   { key: 'senior', name: 'Senior', agentPercentage: 70, agencyPercentage: 30, monthlyTarget: null, annualTarget: null, isDefault: false, isActive: true },
@@ -34,8 +37,13 @@ const COMMISSION_SELECT_FIELDS =
 const LEVEL_SELECT_FIELDS =
   'id, organisation_id, name, agent_percentage, agency_percentage, monthly_target, annual_target, is_default, is_active, created_at, updated_at'
 
-const TARGET_SELECT_FIELDS =
+const TARGET_SELECT_FIELDS_WITH_METRIC =
+  'id, organisation_id, branch_id, user_id, target_type, target_metric, period, target_amount, start_month, is_active, created_at, updated_at'
+
+const TARGET_SELECT_FIELDS_LEGACY =
   'id, organisation_id, branch_id, user_id, target_type, period, target_amount, start_month, is_active, created_at, updated_at'
+
+const TARGET_SELECT_FIELDS = [TARGET_SELECT_FIELDS_WITH_METRIC, TARGET_SELECT_FIELDS_LEGACY]
 
 const REFERRAL_RULE_SELECT_FIELDS =
   'id, organisation_id, name, referral_type, percentage, basis, is_default, is_active, created_at, updated_at'
@@ -46,6 +54,16 @@ function normalizeText(value) {
 
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+function normalizeTargetPeriod(value, fallback = 'monthly') {
+  const normalized = normalizeKey(value || fallback || 'monthly')
+  return COMMISSION_TARGET_PERIODS.includes(normalized) ? normalized : 'monthly'
+}
+
+function normalizeTargetMetric(value, fallback = 'company_commission') {
+  const normalized = normalizeKey(value || fallback || 'company_commission')
+  return COMMISSION_TARGET_METRICS.includes(normalized) ? normalized : 'company_commission'
 }
 
 function toNumber(value, fallback = 0) {
@@ -82,12 +100,46 @@ function addMonths(date, months) {
   return new Date(date.getFullYear(), date.getMonth() + months, 1)
 }
 
+function startOfQuarter(date = new Date()) {
+  const quarterMonth = Math.floor(date.getMonth() / 3) * 3
+  return new Date(date.getFullYear(), quarterMonth, 1)
+}
+
+function startOfYear(date = new Date()) {
+  return new Date(date.getFullYear(), 0, 1)
+}
+
+function resolveTargetPeriodRange(period = 'monthly', now = new Date()) {
+  const normalizedPeriod = normalizeTargetPeriod(period)
+  if (normalizedPeriod === 'yearly') {
+    const start = startOfYear(now)
+    return { period: normalizedPeriod, start, end: new Date(start.getFullYear() + 1, 0, 1) }
+  }
+  if (normalizedPeriod === 'quarterly') {
+    const start = startOfQuarter(now)
+    return { period: normalizedPeriod, start, end: addMonths(start, 3) }
+  }
+  const start = startOfMonth(now)
+  return { period: normalizedPeriod, start, end: addMonths(start, 1) }
+}
+
+function daySpan(start, end) {
+  const milliseconds = Math.max(0, end.getTime() - start.getTime())
+  return Math.max(1, Math.ceil(milliseconds / 86400000))
+}
+
+function daysLeftInRange(now = new Date(), end = addMonths(startOfMonth(now), 1)) {
+  const milliseconds = Math.max(0, end.getTime() - now.getTime())
+  return Math.max(0, Math.ceil(milliseconds / 86400000))
+}
+
 function daysInMonth(date = new Date()) {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
+  const monthStart = startOfMonth(date)
+  return daySpan(monthStart, addMonths(monthStart, 1))
 }
 
 function daysLeftInMonth(date = new Date()) {
-  return Math.max(0, daysInMonth(date) - date.getDate())
+  return daysLeftInRange(date, addMonths(startOfMonth(date), 1))
 }
 
 function isBetween(value, start, end) {
@@ -145,13 +197,16 @@ async function getContext() {
 
 async function safeSelect(table, selectVariants, { organisationId = '', organisationColumn = 'organisation_id', order = 'updated_at', ascending = false, limit = 1000, filters = [] } = {}) {
   if (!isSupabaseConfigured || !supabase) return []
-  const variants = Array.isArray(selectVariants) ? selectVariants : [selectVariants || '*']
+  const variants = (Array.isArray(selectVariants) ? selectVariants : [selectVariants || '*']).map((variant) => (
+    typeof variant === 'string' ? { fields: variant, filters: [] } : { fields: variant?.fields || '*', filters: variant?.filters || [] }
+  ))
   let lastError = null
 
-  for (const fields of variants) {
+  for (const variant of variants) {
+    const fields = variant.fields
     let query = supabase.from(table).select(fields)
     if (organisationId && organisationColumn) query = query.eq(organisationColumn, organisationId)
-    for (const filter of filters) {
+    for (const filter of [...filters, ...variant.filters]) {
       if (!filter || !filter.column) continue
       if (filter.operator === 'is') query = query.is(filter.column, filter.value)
       else if (filter.operator === 'in') query = query.in(filter.column, Array.isArray(filter.value) ? filter.value : [])
@@ -200,13 +255,15 @@ function normalizeCommissionLevel(input = {}, index = 0) {
 }
 
 function normalizeTarget(input = {}, fallback = {}) {
+  const targetType = normalizeKey(input.targetType || input.target_type || fallback.targetType || fallback.target_type || 'company')
   return {
     id: normalizeText(input.id || fallback.id) || createLocalId('target'),
     organisationId: normalizeText(input.organisationId || input.organisation_id || fallback.organisationId || fallback.organisation_id),
     branchId: normalizeText(input.branchId || input.branch_id || fallback.branchId || fallback.branch_id),
     userId: normalizeText(input.userId || input.user_id || fallback.userId || fallback.user_id),
-    targetType: normalizeKey(input.targetType || input.target_type || fallback.targetType || fallback.target_type || 'company'),
-    period: normalizeKey(input.period || fallback.period || 'monthly') || 'monthly',
+    targetType,
+    targetMetric: normalizeTargetMetric(input.targetMetric || input.target_metric || fallback.targetMetric || fallback.target_metric),
+    period: normalizeTargetPeriod(input.period || fallback.period),
     targetAmount: roundMoney(input.targetAmount ?? input.target_amount ?? fallback.targetAmount ?? fallback.target_amount ?? 0),
     startMonth: normalizeText(input.startMonth || input.start_month || fallback.startMonth || fallback.start_month) || new Date().toISOString().slice(0, 7) + '-01',
     isActive: input.isActive ?? input.is_active ?? fallback.isActive ?? fallback.is_active ?? true,
@@ -448,22 +505,36 @@ export async function updateReferralCommissionRule(input = {}) {
   return normalizeReferralRule(result.data)
 }
 
-async function getCommissionTargets({ targetType = '', branchId = '', userId = '' } = {}) {
+async function getCommissionTargets({ targetType = '', targetMetric = '', period = '', branchId = '', userId = '' } = {}) {
   if (!isSupabaseConfigured || !supabase) return []
   const { organisationId } = await getContext()
   if (!organisationId) return []
   const filters = [{ column: 'is_active', value: true }]
   if (targetType) filters.push({ column: 'target_type', value: targetType })
+  if (period) filters.push({ column: 'period', value: normalizeTargetPeriod(period) })
   if (branchId) filters.push({ column: 'branch_id', value: branchId })
   if (userId) filters.push({ column: 'user_id', value: userId })
-  const rows = await safeSelect('commission_targets', TARGET_SELECT_FIELDS, {
+  const normalizedMetric = normalizeTargetMetric(targetMetric || (targetType === 'agent' ? 'agent_commission' : 'company_commission'))
+  const targetSelectVariants = targetMetric
+    ? [
+        {
+          fields: TARGET_SELECT_FIELDS_WITH_METRIC,
+          filters: [{ column: 'target_metric', value: normalizedMetric }],
+        },
+        {
+          fields: TARGET_SELECT_FIELDS_LEGACY,
+          filters: [],
+        },
+      ]
+    : TARGET_SELECT_FIELDS
+  const rows = await safeSelect('commission_targets', targetSelectVariants, {
     organisationId,
     filters,
     order: 'start_month',
     ascending: false,
     limit: 100,
   })
-  return rows.map(normalizeTarget)
+  return rows.map((row) => normalizeTarget(row, targetMetric ? { targetMetric: normalizedMetric } : {}))
 }
 
 export async function updateCommissionTarget(input = {}) {
@@ -474,15 +545,24 @@ export async function updateCommissionTarget(input = {}) {
   if (!organisationId) return normalized
 
   const targetType = normalizeKey(normalized.targetType || 'company')
+  const targetMetric = normalizeTargetMetric(normalized.targetMetric)
   const clearPayload = { is_active: false, updated_at: new Date().toISOString() }
-  let clearQuery = supabase
-    .from('commission_targets')
-    .update(clearPayload)
-    .eq('organisation_id', organisationId)
-    .eq('target_type', targetType)
-  if (targetType === 'branch') clearQuery = clearQuery.eq('branch_id', normalized.branchId)
-  if (targetType === 'agent') clearQuery = clearQuery.eq('user_id', normalized.userId)
-  const clearResult = await clearQuery
+  const buildClearQuery = ({ includeMetric = true } = {}) => {
+    let query = supabase
+      .from('commission_targets')
+      .update(clearPayload)
+      .eq('organisation_id', organisationId)
+      .eq('target_type', targetType)
+    if (includeMetric) query = query.eq('target_metric', targetMetric)
+    if (targetType === 'branch') query = query.eq('branch_id', normalized.branchId)
+    if (targetType === 'agent') query = query.eq('user_id', normalized.userId)
+    return query
+  }
+
+  let clearResult = await buildClearQuery({ includeMetric: true })
+  if (clearResult.error && isMissingSourceError(clearResult.error)) {
+    clearResult = await buildClearQuery({ includeMetric: false })
+  }
   if (clearResult.error && !isMissingSourceError(clearResult.error)) throw clearResult.error
 
   const payload = {
@@ -490,7 +570,8 @@ export async function updateCommissionTarget(input = {}) {
     branch_id: targetType === 'branch' ? normalized.branchId || null : null,
     user_id: targetType === 'agent' ? normalized.userId || null : null,
     target_type: targetType,
-    period: 'monthly',
+    target_metric: targetMetric,
+    period: normalizeTargetPeriod(normalized.period),
     target_amount: normalized.targetAmount,
     start_month: normalized.startMonth,
     is_active: true,
@@ -502,11 +583,20 @@ export async function updateCommissionTarget(input = {}) {
   const result = await supabase
     .from('commission_targets')
     .insert(payload)
-    .select(TARGET_SELECT_FIELDS)
+    .select(TARGET_SELECT_FIELDS_WITH_METRIC)
     .single()
-  if (result.error && isMissingSourceError(result.error)) return normalized
-  if (result.error) throw result.error
-  return normalizeTarget(result.data)
+  if (!result.error) return normalizeTarget(result.data)
+  if (!isMissingSourceError(result.error)) throw result.error
+
+  const { target_metric: _targetMetric, ...legacyPayload } = payload
+  const legacyResult = await supabase
+    .from('commission_targets')
+    .insert(legacyPayload)
+    .select(TARGET_SELECT_FIELDS_LEGACY)
+    .single()
+  if (legacyResult.error && isMissingSourceError(legacyResult.error)) return normalized
+  if (legacyResult.error) throw legacyResult.error
+  return normalizeTarget(legacyResult.data, { targetMetric })
 }
 
 function getDealValue(row = {}) {
@@ -668,10 +758,35 @@ function resolveTargetAmount(target, fallback) {
   return amount > 0 ? amount : fallback
 }
 
-function buildStatus(targetAmount, currentAmount, projectedTotal, now = new Date()) {
+function resolveTargetMetricForScope(scope = 'company', target = null, explicitTargetMetric = '') {
+  if (explicitTargetMetric) return normalizeTargetMetric(explicitTargetMetric)
+  const targetMetric = target?.targetMetric || target?.target_metric
+  if (targetMetric) return normalizeTargetMetric(targetMetric)
+  return scope === 'agent' ? 'agent_commission' : 'company_commission'
+}
+
+function getContributionAmount(amounts = {}, targetMetric = 'company_commission') {
+  const normalized = normalizeTargetMetric(targetMetric)
+  if (normalized === 'agent_commission') return amounts.agentCommission
+  if (normalized === 'gross_commission') return amounts.grossAmount
+  return amounts.companyCommission
+}
+
+function resolveFallbackTargetAmount(scope = 'company', targetMetric = 'company_commission', targetLevel = {}) {
+  const normalizedMetric = normalizeTargetMetric(targetMetric)
+  if (scope === 'agent' && normalizedMetric === 'agent_commission') {
+    return targetLevel.monthlyTarget || DEFAULT_AGENT_MONTHLY_TARGET
+  }
+  if (scope === 'agent' && normalizedMetric === 'company_commission') return 0
+  return DEFAULT_COMPANY_MONTHLY_TARGET
+}
+
+function buildStatus(targetAmount, currentAmount, projectedTotal, now = new Date(), periodRange = resolveTargetPeriodRange('monthly', now)) {
   const achieved = targetAmount > 0 ? Math.round((currentAmount / targetAmount) * 100) : 0
   const projected = targetAmount > 0 ? Math.round((projectedTotal / targetAmount) * 100) : 0
-  const elapsed = Math.round((now.getDate() / daysInMonth(now)) * 100)
+  const elapsedDays = Math.max(1, daySpan(periodRange.start, now))
+  const totalDays = daySpan(periodRange.start, periodRange.end)
+  const elapsed = Math.round((elapsedDays / totalDays) * 100)
   if (targetAmount > 0 && currentAmount >= targetAmount) return { key: 'exceeded', label: 'Exceeded', tone: 'green', percentage: achieved, projectedPercentage: projected }
   if (targetAmount > 0 && (projectedTotal >= targetAmount || achieved >= Math.max(10, elapsed * 0.85))) {
     return { key: 'on_track', label: 'On track', tone: 'green', percentage: achieved, projectedPercentage: projected }
@@ -691,10 +806,12 @@ export function buildCommissionTrackerFromRows({
   userId = '',
   userEmail = '',
   branchId = '',
+  targetMetric = '',
   now = new Date(),
 } = {}) {
-  const monthStart = startOfMonth(now)
-  const monthEnd = addMonths(monthStart, 1)
+  const normalizedTarget = target ? normalizeTarget(target) : null
+  const normalizedTargetMetric = resolveTargetMetricForScope(scope, normalizedTarget, targetMetric)
+  const periodRange = resolveTargetPeriodRange(normalizedTarget?.period || 'monthly', now)
   const commissionByTransaction = new Map((transactionCommissions || []).map((row) => [normalizeText(row.transaction_id), row]))
   const referralByTransaction = buildReferralByTransaction(referralEvents)
   const levelsById = new Map((levels || []).map((level, index) => {
@@ -751,14 +868,10 @@ export function buildCommissionTrackerFromRows({
 
     const bucket = getCommissionStatusBucket(row, commissionRow)
     const dateForPeriod = bucket === 'paid' || bucket === 'due' ? getTransactionCompletedAt(row) || getExpectedCommissionAt(row) : getExpectedCommissionAt(row)
-    const includeInPeriod = isBetween(dateForPeriod, monthStart, monthEnd) || (!isRegisteredTransaction(row) && bucket !== 'cancelled')
+    const includeInPeriod = isBetween(dateForPeriod, periodRange.start, periodRange.end) || (!isRegisteredTransaction(row) && bucket !== 'cancelled')
     if (!includeInPeriod) continue
 
-    const contribution = scope === 'agent'
-      ? amounts.agentCommission
-      : scope === 'company'
-        ? amounts.companyCommission
-        : amounts.agencyCommission
+    const contribution = getContributionAmount(amounts, normalizedTargetMetric)
     buckets[bucket] = roundMoney((buckets[bucket] || 0) + contribution)
     counts[bucket] = (counts[bucket] || 0) + 1
     grossCommission = roundMoney(grossCommission + amounts.grossAmount)
@@ -786,13 +899,25 @@ export function buildCommissionTrackerFromRows({
   const currentAmount = roundMoney(buckets.confirmed + buckets.due + buckets.paid)
   const pendingAmount = roundMoney(buckets.confirmed + buckets.due)
   const projectedCommission = roundMoney(currentAmount + buckets.projected)
-  const fallbackTarget = scope === 'agent' ? (targetLevel.monthlyTarget || DEFAULT_AGENT_MONTHLY_TARGET) : DEFAULT_COMPANY_MONTHLY_TARGET
-  const targetAmount = resolveTargetAmount(target, fallbackTarget)
-  const status = buildStatus(targetAmount, currentAmount, projectedCommission, now)
+  const fallbackTarget = resolveFallbackTargetAmount(scope, normalizedTargetMetric, targetLevel)
+  const targetAmount = resolveTargetAmount(normalizedTarget, fallbackTarget)
+  const status = buildStatus(targetAmount, currentAmount, projectedCommission, now, periodRange)
 
   return {
     scope,
-    title: scope === 'agent' ? 'My Commission' : scope === 'branch' ? 'Branch Commission' : 'Company Commission',
+    title: scope === 'agent'
+      ? normalizedTargetMetric === 'company_commission'
+        ? 'Company Contribution'
+        : 'My Commission'
+      : scope === 'branch'
+        ? 'Branch Commission'
+        : 'Company Commission',
+    targetMetric: normalizedTargetMetric,
+    targetMetricLabel: normalizedTargetMetric.replaceAll('_', ' '),
+    period: periodRange.period,
+    periodLabel: periodRange.period.charAt(0).toUpperCase() + periodRange.period.slice(1),
+    periodStart: periodRange.start.toISOString(),
+    periodEnd: periodRange.end.toISOString(),
     targetAmount,
     currentAmount,
     confirmedAmount: buckets.confirmed,
@@ -807,6 +932,7 @@ export function buildCommissionTrackerFromRows({
     projectedPercentage: status.projectedPercentage,
     progressPercent: Math.max(0, Math.min(100, status.percentage)),
     daysLeftInMonth: daysLeftInMonth(now),
+    daysLeftInPeriod: daysLeftInRange(now, periodRange.end),
     status: status.key,
     statusLabel: status.label,
     statusTone: status.tone,
@@ -851,7 +977,7 @@ export async function getCompanyCommissionTracker() {
   }
   const [levels, targets, sourceRows] = await Promise.all([
     getCommissionLevels(),
-    getCommissionTargets({ targetType: 'company' }),
+    getCommissionTargets({ targetType: 'company', targetMetric: 'company_commission' }),
     getTrackerSourceRows(organisationId),
   ])
   return buildCommissionTrackerFromRows({
@@ -859,6 +985,7 @@ export async function getCompanyCommissionTracker() {
     levels,
     target: targets[0] || { targetAmount: DEFAULT_COMPANY_MONTHLY_TARGET },
     scope: 'company',
+    targetMetric: 'company_commission',
   })
 }
 
@@ -867,14 +994,16 @@ export async function getAgentCommissionTracker(userId = '', options = {}) {
     return buildCommissionTrackerFromRows({ scope: 'agent', target: { targetAmount: DEFAULT_AGENT_MONTHLY_TARGET } })
   }
   const context = await getContext()
-  const resolvedUserId = normalizeText(userId || options.userId || context.userId)
-  const resolvedEmail = normalizeText(options.userEmail || context.email).toLowerCase()
+  const explicitUserId = normalizeText(userId || options.userId)
+  const explicitEmail = normalizeText(options.userEmail || options.email).toLowerCase()
+  const resolvedUserId = normalizeText(explicitUserId || (explicitEmail ? '' : context.userId))
+  const resolvedEmail = normalizeText(explicitEmail || context.email).toLowerCase()
   if (!context.organisationId) {
     return buildCommissionTrackerFromRows({ scope: 'agent', target: { targetAmount: DEFAULT_AGENT_MONTHLY_TARGET }, userId: resolvedUserId, userEmail: resolvedEmail })
   }
   const [levels, targets, sourceRows] = await Promise.all([
     getCommissionLevels(),
-    resolvedUserId ? getCommissionTargets({ targetType: 'agent', userId: resolvedUserId }) : Promise.resolve([]),
+    resolvedUserId ? getCommissionTargets({ targetType: 'agent', targetMetric: 'agent_commission', userId: resolvedUserId }) : Promise.resolve([]),
     getTrackerSourceRows(context.organisationId),
   ])
   return buildCommissionTrackerFromRows({
@@ -882,6 +1011,47 @@ export async function getAgentCommissionTracker(userId = '', options = {}) {
     levels,
     target: targets[0] || null,
     scope: 'agent',
+    targetMetric: 'agent_commission',
+    userId: resolvedUserId,
+    userEmail: resolvedEmail,
+  })
+}
+
+export async function getAgentCompanyContributionTracker(userId = '', options = {}) {
+  if (!isSupabaseConfigured || !supabase) {
+    return buildCommissionTrackerFromRows({
+      scope: 'agent',
+      target: { targetAmount: 0, targetMetric: 'company_commission', period: options.period || 'monthly' },
+      targetMetric: 'company_commission',
+      userId,
+      userEmail: options.userEmail || '',
+    })
+  }
+  const context = await getContext()
+  const explicitUserId = normalizeText(userId || options.userId)
+  const explicitEmail = normalizeText(options.userEmail || options.email).toLowerCase()
+  const resolvedUserId = normalizeText(explicitUserId || (explicitEmail ? '' : context.userId))
+  const resolvedEmail = normalizeText(explicitEmail || context.email).toLowerCase()
+  if (!context.organisationId) {
+    return buildCommissionTrackerFromRows({
+      scope: 'agent',
+      target: { targetAmount: 0, targetMetric: 'company_commission', period: options.period || 'monthly' },
+      targetMetric: 'company_commission',
+      userId: resolvedUserId,
+      userEmail: resolvedEmail,
+    })
+  }
+  const [levels, targets, sourceRows] = await Promise.all([
+    getCommissionLevels(),
+    resolvedUserId ? getCommissionTargets({ targetType: 'agent', targetMetric: 'company_commission', userId: resolvedUserId }) : Promise.resolve([]),
+    getTrackerSourceRows(context.organisationId),
+  ])
+  return buildCommissionTrackerFromRows({
+    ...sourceRows,
+    levels,
+    target: targets[0] || { targetAmount: 0, targetMetric: 'company_commission', period: options.period || 'monthly' },
+    scope: 'agent',
+    targetMetric: 'company_commission',
     userId: resolvedUserId,
     userEmail: resolvedEmail,
   })
@@ -898,7 +1068,7 @@ export async function getBranchCommissionTracker(branchId = '') {
   }
   const [levels, targets, sourceRows] = await Promise.all([
     getCommissionLevels(),
-    normalizedBranchId ? getCommissionTargets({ targetType: 'branch', branchId: normalizedBranchId }) : Promise.resolve([]),
+    normalizedBranchId ? getCommissionTargets({ targetType: 'branch', targetMetric: 'company_commission', branchId: normalizedBranchId }) : Promise.resolve([]),
     getTrackerSourceRows(context.organisationId),
   ])
   return buildCommissionTrackerFromRows({
@@ -906,6 +1076,7 @@ export async function getBranchCommissionTracker(branchId = '') {
     levels,
     target: targets[0] || { targetAmount: DEFAULT_COMPANY_MONTHLY_TARGET },
     scope: 'branch',
+    targetMetric: 'company_commission',
     branchId: normalizedBranchId,
   })
 }
@@ -922,6 +1093,133 @@ export async function calculateTransactionCommission(transactionId) {
     filters: [{ column: 'transaction_id', value: normalizedTransactionId }],
   })
   return calculateCommissionAmounts({ transaction: transaction || {}, commissionRow: commissionRow || {} })
+}
+
+function findCommissionProfileForIdentity(profiles = [], { organisationUserId = '', userId = '', userEmail = '' } = {}) {
+  const normalizedOrganisationUserId = normalizeText(organisationUserId).toLowerCase()
+  const normalizedUserId = normalizeText(userId).toLowerCase()
+  const normalizedEmail = normalizeText(userEmail).toLowerCase()
+  return (profiles || []).find((profile) => {
+    const profileOrganisationUserId = normalizeText(profile?.organisation_user_id || profile?.organisationUserId).toLowerCase()
+    const profileUserId = normalizeText(profile?.user_id || profile?.userId).toLowerCase()
+    const profileEmail = normalizeText(profile?.email_address || profile?.email).toLowerCase()
+    return Boolean(
+      (normalizedOrganisationUserId && profileOrganisationUserId === normalizedOrganisationUserId) ||
+      (normalizedUserId && profileUserId === normalizedUserId) ||
+      (normalizedEmail && profileEmail === normalizedEmail),
+    )
+  }) || null
+}
+
+function findById(rows = [], id = '') {
+  const normalizedId = normalizeText(id)
+  if (!normalizedId) return null
+  return (rows || []).find((row) => normalizeText(row?.id) === normalizedId) || null
+}
+
+function formatListingCommission(structure = null) {
+  const type = normalizeKey(structure?.listingCommissionType || structure?.listing_commission_type || 'percentage')
+  if (type === 'fixed') {
+    return {
+      label: `Fixed ${roundMoney(structure?.listingCommissionAmount ?? structure?.listing_commission_amount ?? 0)}`,
+      basis: 'Fixed amount',
+      type,
+    }
+  }
+  const percentage = normalizePercentage(structure?.listingCommissionPercentage ?? structure?.listing_commission_percentage, 7.5)
+  return {
+    label: `${percentage}%`,
+    basis: 'Selling price',
+    type: 'percentage',
+  }
+}
+
+export function buildAgentCommissionSummary({
+  agent = {},
+  structures = [],
+  levels = [],
+  profiles = [],
+  companyContributionTracker = null,
+} = {}) {
+  const organisationUserId = normalizeText(agent.organisationUserId || agent.organisation_user_id)
+  const userId = normalizeText(agent.userId || agent.user_id || agent.id)
+  const userEmail = normalizeText(agent.email || agent.email_address).toLowerCase()
+  const profile = findCommissionProfileForIdentity(profiles, { organisationUserId, userId, userEmail })
+  const activeStructures = (structures || []).filter((structure) => structure?.isActive !== false)
+  const defaultStructure = activeStructures.find((structure) => structure?.isDefault) || activeStructures[0] || null
+  const explicitStructureId = normalizeText(
+    profile?.commission_structure_id ||
+      profile?.commissionStructureId ||
+      agent.commissionStructureId ||
+      agent.commission_structure_id,
+  )
+  const appliedStructure = findById(activeStructures, explicitStructureId) || defaultStructure
+  const activeLevels = (levels || []).filter((level) => level?.isActive !== false)
+  const defaultLevel = activeLevels.find((level) => level?.isDefault) || activeLevels[0] || normalizeCommissionLevel(DEFAULT_COMMISSION_LEVELS[0])
+  const explicitLevelId = normalizeText(profile?.commission_level_id || profile?.commissionLevelId || agent.commissionLevelId || agent.commission_level_id)
+  const appliedLevel = findById(activeLevels, explicitLevelId) || defaultLevel
+  const overrideSplit = nullableNumber(profile?.override_agent_split_percentage ?? profile?.overrideAgentSplitPercentage ?? agent.overrideAgentSplitPercentage)
+  const structureSplit = nullableNumber(appliedStructure?.agentSplitPercentage ?? appliedStructure?.agent_split_percentage)
+  const levelSplit = nullableNumber(appliedLevel?.agentPercentage ?? appliedLevel?.agent_percentage)
+  const agentSplitPercentage = normalizePercentage(overrideSplit ?? levelSplit ?? structureSplit, 60)
+  const companySplitPercentage = normalizePercentage(100 - agentSplitPercentage, 40)
+  const listingCommission = formatListingCommission(appliedStructure)
+  const tracker = companyContributionTracker || buildCommissionTrackerFromRows({
+    scope: 'agent',
+    target: { targetAmount: 0, targetMetric: 'company_commission', period: 'monthly' },
+    targetMetric: 'company_commission',
+    userId,
+    organisationUserId,
+    userEmail,
+  })
+
+  return {
+    userId,
+    userEmail,
+    commissionProfileId: normalizeText(profile?.id),
+    commissionEffectiveFrom: profile?.effective_from || profile?.effectiveFrom || agent.commissionEffectiveFrom || null,
+    commissionStructureId: normalizeText(appliedStructure?.id || explicitStructureId),
+    commissionStructureName: normalizeText(appliedStructure?.name) || 'Default commission structure',
+    commissionLevelId: normalizeText(appliedLevel?.id || explicitLevelId),
+    commissionLevelName: normalizeText(appliedLevel?.name) || 'Standard',
+    listingCommissionLabel: listingCommission.label,
+    listingCommissionBasis: listingCommission.basis,
+    listingCommissionType: listingCommission.type,
+    agentSplitPercentage,
+    companySplitPercentage,
+    splitOverrideApplied: overrideSplit !== null,
+    companyTargetAmount: tracker.targetAmount || 0,
+    companyTargetPeriod: tracker.period || 'monthly',
+    companyTargetMetric: tracker.targetMetric || 'company_commission',
+    companyContributionAmount: tracker.currentAmount || 0,
+    companyContributionProjectedAmount: tracker.projectedCommission || 0,
+    companyContributionProgress: tracker.percentageAchieved || 0,
+    companyContributionProjectedProgress: tracker.projectedPercentage || 0,
+    companyTargetStatus: tracker.status || 'no_target',
+    companyTargetStatusLabel: tracker.statusLabel || 'No target set',
+    companyContributionTracker: tracker,
+  }
+}
+
+export async function getAgentCommissionSummary(userId = '', options = {}) {
+  const context = await getContext()
+  const explicitUserId = normalizeText(userId || options.userId)
+  const explicitEmail = normalizeText(options.userEmail || options.email).toLowerCase()
+  const resolvedUserId = normalizeText(explicitUserId || (explicitEmail ? '' : context.userId))
+  const resolvedEmail = normalizeText(explicitEmail || context.email).toLowerCase()
+  const [structures, levels, profiles, companyContributionTracker] = await Promise.all([
+    listOrganisationCommissionStructures().catch(() => []),
+    getCommissionLevels(),
+    context.organisationId ? getCommissionProfileRows(context.organisationId) : Promise.resolve([]),
+    getAgentCompanyContributionTracker(resolvedUserId, { userEmail: resolvedEmail, period: options.period }),
+  ])
+  return buildAgentCommissionSummary({
+    agent: { id: resolvedUserId, userId: resolvedUserId, email: resolvedEmail },
+    structures,
+    levels,
+    profiles,
+    companyContributionTracker,
+  })
 }
 
 export async function getCommissionOverview() {

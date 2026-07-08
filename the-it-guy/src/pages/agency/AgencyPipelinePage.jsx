@@ -9675,7 +9675,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         if (isLeadWorkspaceRoute) navigate('/pipeline/leads')
       }
       setMessage('Lead deleted permanently.')
-      await reloadRecords(targetOrganisationId)
+      void reloadRecords(targetOrganisationId, { applyLocalSnapshot: false }).catch((reloadError) => {
+        console.warn('[PIPELINE] background reload after lead delete failed.', reloadError)
+      })
     } catch (deleteError) {
       const deleteMessage = deleteError?.message || 'Unable to delete lead right now.'
       setLeadDeleteModal((previous) => ({ ...previous, error: deleteMessage }))
@@ -11349,7 +11351,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                              </div>
 	                            ) : null}
 	                          </div>
-	                          <Button type="button" variant="ghost" size="sm" className="hidden h-10 w-10 px-0 xl:inline-flex" title="More lead actions" onClick={() => openDeleteLeadModal(selectedLead.leadId)}>
+	                          <Button
+	                            type="button"
+	                            variant="ghost"
+	                            size="sm"
+	                            className="hidden h-10 w-10 px-0 xl:inline-flex"
+	                            title="More lead actions"
+	                            onClick={() => setLeadActionsMenuOpen((value) => !value)}
+	                            aria-haspopup="menu"
+	                            aria-expanded={leadActionsMenuOpen}
+	                          >
 	                            <MoreHorizontal className="h-4 w-4" />
 	                          </Button>
 	                        </div>

@@ -12,6 +12,7 @@ const server = await createServer({
 })
 
 const {
+  buildAgentCommissionSummary,
   buildCommissionTrackerFromRows,
   calculateCommissionAmounts,
   getCommissionStatusBucket,
@@ -116,6 +117,125 @@ assert.equal(tracker.percentageAchieved, 46)
 assert.equal(tracker.status, 'on_track')
 assert.equal(tracker.activeDealsCount, 2)
 assert.equal(tracker.topContributors[0].name, 'Ava Agent')
+
+const quarterlyCompanyContribution = buildCommissionTrackerFromRows({
+  now,
+  target: { targetAmount: 120000, period: 'quarterly', targetMetric: 'company_commission' },
+  scope: 'agent',
+  targetMetric: 'company_commission',
+  userEmail: 'ava@example.test',
+  levels: [{ id: 'standard', name: 'Standard', agentPercentage: 60, agencyPercentage: 40, isDefault: true }],
+  transactions: [
+    {
+      id: 'tx-quarter',
+      purchase_price: 1000000,
+      assigned_agent: 'Ava Agent',
+      assigned_agent_email: 'ava@example.test',
+      gross_commission_percentage: 10,
+      registered_at: '2026-08-15T08:00:00Z',
+      stage: 'Registered',
+    },
+    {
+      id: 'tx-before-quarter',
+      purchase_price: 1000000,
+      assigned_agent: 'Ava Agent',
+      assigned_agent_email: 'ava@example.test',
+      gross_commission_percentage: 10,
+      registered_at: '2026-06-30T08:00:00Z',
+      stage: 'Registered',
+    },
+  ],
+  transactionCommissions: [
+    {
+      transaction_id: 'tx-quarter',
+      gross_commission_amount: 100000,
+      agent_commission_amount: 60000,
+      agency_commission_amount: 40000,
+    },
+    {
+      transaction_id: 'tx-before-quarter',
+      gross_commission_amount: 100000,
+      agent_commission_amount: 60000,
+      agency_commission_amount: 40000,
+    },
+  ],
+})
+
+assert.equal(quarterlyCompanyContribution.period, 'quarterly')
+assert.equal(quarterlyCompanyContribution.targetMetric, 'company_commission')
+assert.equal(quarterlyCompanyContribution.currentAmount, 40000)
+assert.equal(quarterlyCompanyContribution.dueAmount, 40000)
+assert.equal(quarterlyCompanyContribution.percentageAchieved, 33)
+
+const yearlyGrossTracker = buildCommissionTrackerFromRows({
+  now,
+  target: { targetAmount: 200000, period: 'yearly', targetMetric: 'gross_commission' },
+  scope: 'company',
+  targetMetric: 'gross_commission',
+  levels: [{ id: 'standard', name: 'Standard', agentPercentage: 60, agencyPercentage: 40, isDefault: true }],
+  transactions: [
+    {
+      id: 'tx-year',
+      purchase_price: 1000000,
+      assigned_agent: 'Ava Agent',
+      assigned_agent_email: 'ava@example.test',
+      gross_commission_percentage: 10,
+      registered_at: '2026-02-15T08:00:00Z',
+      stage: 'Registered',
+    },
+  ],
+  transactionCommissions: [
+    {
+      transaction_id: 'tx-year',
+      gross_commission_amount: 100000,
+      agent_commission_amount: 60000,
+      agency_commission_amount: 40000,
+    },
+  ],
+})
+
+assert.equal(yearlyGrossTracker.period, 'yearly')
+assert.equal(yearlyGrossTracker.targetMetric, 'gross_commission')
+assert.equal(yearlyGrossTracker.currentAmount, 100000)
+assert.equal(yearlyGrossTracker.percentageAchieved, 50)
+
+const summary = buildAgentCommissionSummary({
+  agent: { id: 'agent-1', userId: 'agent-1', email: 'ava@example.test' },
+  structures: [
+    {
+      id: 'structure-1',
+      name: 'Standard Residential',
+      listingCommissionType: 'percentage',
+      listingCommissionPercentage: 7.5,
+      agentSplitPercentage: 60,
+      agencySplitPercentage: 40,
+      isDefault: true,
+      isActive: true,
+    },
+  ],
+  levels: [{ id: 'standard', name: 'Standard', agentPercentage: 60, agencyPercentage: 40, isDefault: true, isActive: true }],
+  profiles: [
+    {
+      id: 'profile-1',
+      user_id: 'agent-1',
+      email_address: 'ava@example.test',
+      commission_structure_id: 'structure-1',
+      override_agent_split_percentage: 65,
+      effective_from: '2026-07-01',
+    },
+  ],
+  companyContributionTracker: quarterlyCompanyContribution,
+})
+
+assert.equal(summary.listingCommissionLabel, '7.5%')
+assert.equal(summary.listingCommissionBasis, 'Selling price')
+assert.equal(summary.commissionStructureName, 'Standard Residential')
+assert.equal(summary.agentSplitPercentage, 65)
+assert.equal(summary.companySplitPercentage, 35)
+assert.equal(summary.splitOverrideApplied, true)
+assert.equal(summary.companyTargetPeriod, 'quarterly')
+assert.equal(summary.companyTargetAmount, 120000)
+assert.equal(summary.companyContributionAmount, 40000)
 
 await server.close()
 

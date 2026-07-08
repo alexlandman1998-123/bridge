@@ -12,6 +12,7 @@ import {
   DEFAULT_COMPANY_MONTHLY_TARGET,
   buildCommissionTrackerFromRows,
 } from './commissionService'
+import { buildPartnerBusinessDistribution } from './partnerBusinessDistributionService'
 
 const COMPLETED_STATES = ['registered', 'closed', 'completed']
 const RISK_DOCUMENT_STATUSES = ['requested', 'pending', 'missing', 'rejected', 'overdue']
@@ -338,6 +339,10 @@ function isRegisteredTransaction(row = {}) {
 
 function getTransactionCompletedAt(row = {}) {
   return row.registered_at || row.registration_date || row.completed_at || null
+}
+
+function getPartnerBusinessDistributionDate(row = {}) {
+  return row.created_at || row.createdAt || getTransactionCompletedAt(row) || row.updated_at || row.updatedAt || null
 }
 
 function getExpectedRegistrationAt(row = {}) {
@@ -1386,6 +1391,7 @@ export function getResidentialDashboardMetrics({
 }
 
 function buildEmptyDashboard() {
+  const partnerBusinessDistribution = buildPartnerBusinessDistribution()
   return {
     filters: {
       availableBranches: [{ id: ALL_BRANCHES_ID, label: 'All Branches', name: 'All Branches', type: 'all' }],
@@ -1505,6 +1511,7 @@ function buildEmptyDashboard() {
       revenue: {},
     },
     pipelineByType: {},
+    partnerBusinessDistribution,
     agentPerformance: [],
     attentionRequired: {
       stuckTransactions: 0,
@@ -1560,8 +1567,8 @@ export async function getPrincipalDashboardData({
   assertResolvedWorkspaceContext({ organisationId: resolvedAgencyId, appRole: 'agent' }, { service: 'principalDashboardService.getPrincipalDashboardData' })
   const range = resolveDateRange(dateRangePreset || dateRange, new Date(), { startDate, endDate })
   const transactionFields = [
-    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, lifecycle_state, operational_state, risk_status, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, assigned_attorney_email, assigned_bond_originator_email, bank, next_action, waiting_on_role, seller_name, seller_names, owner_name, owner_names, tenant_name, landlord_name, property_image_url, listing_image_url, primary_image_url, cover_image_url, image_url, photo_url, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, deleted_at, entered_stage_at, stage_entered_at, current_stage_entered_at, stage_changed_at, last_stage_changed_at, last_meaningful_activity_at, updated_at, created_at, is_active',
-    'id, organisation_id, development_id, unit_id, buyer_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_email, next_action, seller_name, seller_names, owner_name, owner_names, tenant_name, landlord_name, property_image_url, listing_image_url, primary_image_url, cover_image_url, image_url, photo_url, expected_transfer_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, updated_at, created_at, is_active',
+    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, lifecycle_state, operational_state, risk_status, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, cash_amount, bond_amount, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, waiting_on_role, seller_name, seller_names, owner_name, owner_names, tenant_name, landlord_name, property_image_url, listing_image_url, primary_image_url, cover_image_url, image_url, photo_url, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, deleted_at, entered_stage_at, stage_entered_at, current_stage_entered_at, stage_changed_at, last_stage_changed_at, last_meaningful_activity_at, updated_at, created_at, is_active',
+    'id, organisation_id, development_id, unit_id, buyer_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, cash_amount, bond_amount, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, seller_name, seller_names, owner_name, owner_names, tenant_name, landlord_name, property_image_url, listing_image_url, primary_image_url, cover_image_url, image_url, photo_url, expected_transfer_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, updated_at, created_at, is_active',
   ]
 
   const [
@@ -1586,7 +1593,7 @@ export async function getPrincipalDashboardData({
       'id, organisation_id, user_id, first_name, last_name, email, role, status, last_active_at, created_at, updated_at',
     ], { agencyId: resolvedAgencyId, order: 'updated_at', limit: 500 }),
     safeSelect('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
-    safeSelect('commission_targets', 'id, organisation_id, branch_id, user_id, target_type, period, target_amount, start_month, is_active, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'start_month', ascending: false, limit: 100 }),
+    safeSelect('commission_targets', 'id, organisation_id, branch_id, user_id, target_type, target_metric, period, target_amount, start_month, is_active, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'start_month', ascending: false, limit: 100 }),
     safeSelect('organisation_branches', 'id, organisation_id, name, location, city, is_head_office, is_active, updated_at, created_at', { agencyId: resolvedAgencyId, order: 'name', ascending: true, limit: 200 }),
   ])
 
@@ -1622,6 +1629,7 @@ export async function getPrincipalDashboardData({
     documents,
     subprocesses,
     tasks,
+    transactionRolePlayers,
     linkedDocumentPackets,
     linkedTransactionCommissions,
   ] = await Promise.all([
@@ -1629,6 +1637,10 @@ export async function getPrincipalDashboardData({
     safeSelectByIds('documents', 'id, transaction_id, name, category, uploaded_by_email, uploaded_by_role, created_at', [...transactionIds], { order: 'created_at', limit: 300 }),
     safeSelectByIds('transaction_subprocesses', 'id, transaction_id, process_type, owner_type, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200 }),
     safeSelectByIds('tasks', 'task_id, id, transaction_id, lead_id, title, due_date, status, priority, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1000 }),
+    safeSelectByIds('transaction_role_players', [
+      'id, transaction_id, role_type, selection_source, preferred_partner_id, partner_relationship_id, organisation_id, partner_name, contact_person, email_address, phone_number, status, assignment_status, removed_at, snapshot_json, created_at, updated_at',
+      'id, transaction_id, role_type, selection_source, partner_name, contact_person, email_address, phone_number, snapshot_json, created_at, updated_at',
+    ], [...transactionIds], { order: 'updated_at', limit: 3000 }),
     safeSelectByIds('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1000 }),
     safeSelectByIds('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200 }),
   ])
@@ -1640,7 +1652,11 @@ export async function getPrincipalDashboardData({
   const transactionCommissions = dedupeRowsById([...allTransactionCommissions, ...linkedTransactionCommissions])
     .filter((row) => selectedBranchId === ALL_BRANCHES_ID || transactionIds.has(normalizeText(row.transaction_id)))
   const activeCompanyTarget =
-    (allCommissionTargets || []).find((row) => normalizeKey(row.target_type) === 'company' && row.is_active !== false) ||
+    (allCommissionTargets || []).find((row) => (
+      normalizeKey(row.target_type) === 'company' &&
+      normalizeKey(row.target_metric || 'company_commission') === 'company_commission' &&
+      row.is_active !== false
+    )) ||
     { target_amount: DEFAULT_COMPANY_MONTHLY_TARGET }
   const scopedDocumentRequests = documentRequests.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
   const scopedDocuments = documents.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
@@ -1653,6 +1669,11 @@ export async function getPrincipalDashboardData({
   const cancelledTransactions = transactions.filter((row) => {
     const status = getTransactionStatusText(row)
     return ['cancel', 'lost', 'archive'].some((state) => status.includes(state))
+  })
+  const partnerDistributionTransactions = transactions.filter((row) => isBetween(getPartnerBusinessDistributionDate(row), range.start, range.end))
+  const partnerBusinessDistribution = buildPartnerBusinessDistribution({
+    transactions: partnerDistributionTransactions,
+    rolePlayers: transactionRolePlayers,
   })
 
   const pipelineValue = getDashboardPipelineValue(activeTransactions)
@@ -2071,6 +2092,7 @@ export async function getPrincipalDashboardData({
       ...residentialMetrics.overview,
     },
     pipelineByType: financeTypes,
+    partnerBusinessDistribution,
     agentPerformance,
     attentionRequired: {
       stuckTransactions,

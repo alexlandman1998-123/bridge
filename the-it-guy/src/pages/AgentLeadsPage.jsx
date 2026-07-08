@@ -8375,7 +8375,10 @@ function AgentLeadList() {
       await deleteAgencyCrmLeadRecord(organisationId, targetLeadId)
       setRows((current) => current.filter((row) => normalizeText(row.leadId) !== targetLeadId))
       setDeleteTarget(null)
-      void loadRows()
+      void loadRows({
+        showLoading: false,
+        preserveRowsOnError: true,
+      })
     } catch (deleteError) {
       setDeleteLeadError(deleteError?.message || 'Unable to delete this lead right now.')
     } finally {

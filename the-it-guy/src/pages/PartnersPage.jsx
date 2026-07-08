@@ -107,6 +107,33 @@ const SECONDARY_PARTNER_VIEWS = [
   { key: 'discover', label: 'Discover' },
 ]
 
+const SIMPLIFIED_PARTNER_VIEW_COPY = {
+  preferred: {
+    eyebrow: 'Organisation',
+    title: 'Third parties',
+    description: 'Attorneys, bond originators, and referral agencies your team can reuse during transactions.',
+    actionLabel: 'Add third party',
+  },
+  connected: {
+    eyebrow: 'Network',
+    title: 'Connections',
+    description: 'Reusable organisation relationships connected to this workspace.',
+    actionLabel: 'Add third party',
+  },
+  invitations: {
+    eyebrow: 'Network',
+    title: 'Invitations',
+    description: 'Sent and received partner requests for reusable third-party relationships.',
+    actionLabel: 'Add third party',
+  },
+  discover: {
+    eyebrow: 'Network',
+    title: 'Discover',
+    description: 'Find organisations that can become reusable partners for repeat transaction work.',
+    actionLabel: 'Add third party',
+  },
+}
+
 const ATTORNEY_PREFERRED_PARTNER_TYPES = new Set(['transfer_attorney', 'bond_attorney', 'cancellation_attorney'])
 const THIRD_PARTY_DIRECTORY_TYPES = PREFERRED_PARTNER_TYPES.map((option) =>
   option.value === 'agency' ? { ...option, label: 'Referral Agency' } : option,
@@ -124,7 +151,18 @@ const INVITATION_STATUS_OPTIONS = [
   { value: 'accepted', label: 'Accepted' },
   { value: 'declined', label: 'Declined' },
   { value: 'revoked', label: 'Revoked' },
+  { value: 'expired', label: 'Expired' },
+  { value: 'cancelled', label: 'Cancelled' },
 ]
+
+const DEFAULT_INVITATION_FILTERS = {
+  direction: 'all',
+  status: 'all',
+  query: '',
+  type: '',
+}
+
+const SENT_INVITATION_DELETABLE_STATUSES = new Set(['declined', 'revoked', 'expired', 'cancelled'])
 
 function formatNumber(value) {
   return new Intl.NumberFormat('en-ZA', { maximumFractionDigits: 0 }).format(Number(value || 0))
@@ -167,6 +205,10 @@ function createThirdPartyDraft(partnerType = 'transfer_attorney') {
     isPreferredDefault: false,
     sendInvite: true,
   }
+}
+
+function getSimplifiedPartnerViewCopy(activeTab = 'preferred') {
+  return SIMPLIFIED_PARTNER_VIEW_COPY[activeTab] || SIMPLIFIED_PARTNER_VIEW_COPY.preferred
 }
 
 function getThirdPartyInviteWorkspaceType(partnerType = '') {
@@ -1559,6 +1601,171 @@ function invitationPartnerType(invitation, currentOrganisationId) {
   return getPartnerTypeLabel(direction || 'agency')
 }
 
+function invitationStatusLabel(status = '') {
+  const normalized = normalizeLower(status) || 'pending'
+  const labels = {
+    accepted: 'Accepted',
+    cancelled: 'Cancelled',
+    declined: 'Declined',
+    expired: 'Expired',
+    pending: 'Pending',
+    rejected: 'Declined',
+    revoked: 'Revoked',
+  }
+  if (labels[normalized]) return labels[normalized]
+  return normalized
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(' ')
+}
+
+function invitationTimelineLabel(invitation = {}, status = '') {
+  const normalizedStatus = normalizeLower(status) || 'pending'
+  if ((normalizedStatus === 'accepted' || normalizedStatus === 'declined' || normalizedStatus === 'rejected') && invitation.respondedAt) {
+    return `Responded ${formatDate(invitation.respondedAt)}`
+  }
+  if (normalizedStatus === 'expired' && invitation.expiresAt) {
+    return `Expired ${formatDate(invitation.expiresAt)}`
+  }
+  return `Sent ${formatDate(invitation.createdAt)}`
+}
+
+function invitationStatusSummary({ isReceived = false, status = '' } = {}) {
+  const normalizedStatus = normalizeLower(status) || 'pending'
+  if (normalizedStatus === 'pending' && isReceived) return 'Needs your response.'
+  if (normalizedStatus === 'pending') return 'Waiting for a response.'
+  if (normalizedStatus === 'accepted') return 'Connection accepted.'
+  if (normalizedStatus === 'declined' || normalizedStatus === 'rejected') return 'Invitation declined.'
+  if (normalizedStatus === 'revoked') return 'Invitation revoked.'
+  if (normalizedStatus === 'expired') return 'Invitation expired.'
+  if (normalizedStatus === 'cancelled') return 'Invitation cancelled.'
+  return 'Invitation history.'
+}
+
+function PartnerInvitationCard({
+  invitation,
+  organisationId,
+  invitationAction,
+  onAccept,
+  onDecline,
+  onResend,
+  onRevoke,
+  onDelete,
+}) {
+  const isReceived = normalizeLower(invitation.toOrganisationId) === normalizeLower(organisationId)
+  const status = normalizeLower(invitation.status) || 'pending'
+  const organisationName = invitationPartnerName(invitation, organisationId)
+  const organisationType = invitationPartnerType(invitation, organisationId)
+  const activeAction = invitationAction.id === invitation.id ? invitationAction.type : ''
+  const inviteActionBusy = Boolean(invitationAction.id)
+  const isCardActionBusy = Boolean(activeAction)
+  const canManageSentInvitation = !isReceived && status === 'pending'
+  const canDeleteSentInvitation = !isReceived && SENT_INVITATION_DELETABLE_STATUSES.has(status)
+  const directionLabel = isReceived ? 'Received' : 'Sent'
+  const statusLabel = invitationStatusLabel(status)
+  const statusSummary = invitationStatusSummary({ isReceived, status })
+  const timelineLabel = invitationTimelineLabel(invitation, status)
+  const message = normalizeText(invitation.message)
+
+  return (
+    <article
+      aria-busy={isCardActionBusy}
+      className="rounded-[8px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)] transition hover:border-[#c8d8e8] hover:shadow-[0_14px_34px_rgba(15,23,42,0.07)]"
+    >
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_236px]">
+        <div className="flex min-w-0 gap-3">
+          <PartnerLogo partner={{ name: organisationName }} />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h3 className="min-w-0 truncate text-base font-semibold text-[#10243a]">{organisationName}</h3>
+              <span className="rounded-full border border-[#e4ebf4] bg-[#f8fafc] px-2 py-0.5 text-xs font-semibold text-[#60758d]">
+                {organisationType}
+              </span>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <StatusBadge className={isReceived ? 'border-[#d9e7ff] bg-[#f3f7ff] text-[#1e4d82]' : 'border-[#e4ebf4] bg-[#f8fafc] text-[#52677f]'}>
+                {directionLabel}
+              </StatusBadge>
+              {invitation.preferred ? <StatusBadge className={relationshipBadgeClass('preferred')}>Preferred</StatusBadge> : null}
+              <span className="text-xs font-medium text-[#7a8ba3]">{timelineLabel}</span>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-[#40556c]">{message || statusSummary}</p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-[#e8eff6] pt-4 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <StatusBadge className={statusBadgeClass(status)}>{statusLabel}</StatusBadge>
+            <span className="text-xs font-semibold text-[#60758d]">{statusSummary}</span>
+          </div>
+
+          {isReceived && status === 'pending' ? (
+            <div className="flex flex-wrap gap-2 lg:justify-end">
+              <button
+                type="button"
+                onClick={() => onAccept(invitation)}
+                disabled={inviteActionBusy}
+                className="inline-flex h-9 min-w-[104px] items-center justify-center gap-2 rounded-[8px] bg-[#10243a] px-3 text-sm font-semibold text-white transition hover:bg-[#173a5e] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <CheckCircle2 size={14} />
+                {activeAction === 'accept' ? 'Accepting...' : 'Accept'}
+              </button>
+              <button
+                type="button"
+                onClick={() => onDecline(invitation)}
+                disabled={inviteActionBusy}
+                className="inline-flex h-9 min-w-[104px] items-center justify-center gap-2 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm font-semibold text-[#35546c] transition hover:bg-[#f8fafc] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <XCircle size={14} />
+                {activeAction === 'decline' ? 'Declining...' : 'Decline'}
+              </button>
+            </div>
+          ) : null}
+
+          {canManageSentInvitation || canDeleteSentInvitation ? (
+            <div className="flex flex-wrap gap-2 lg:justify-end">
+              {canManageSentInvitation ? (
+                <button
+                  type="button"
+                  onClick={() => onResend(invitation)}
+                  disabled={inviteActionBusy}
+                  className="inline-flex h-9 min-w-[104px] items-center justify-center gap-2 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm font-semibold text-[#35546c] transition hover:bg-[#f8fafc] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Send size={14} />
+                  {activeAction === 'resend' ? 'Resending...' : 'Resend'}
+                </button>
+              ) : null}
+              {canManageSentInvitation ? (
+                <button
+                  type="button"
+                  onClick={() => onRevoke(invitation)}
+                  disabled={inviteActionBusy}
+                  className="inline-flex h-9 min-w-[104px] items-center justify-center gap-2 rounded-[8px] border border-[#f0d4d4] bg-white px-3 text-sm font-semibold text-[#9b2c2c] transition hover:bg-[#fff5f5] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <XCircle size={14} />
+                  {activeAction === 'revoke' ? 'Revoking...' : 'Revoke'}
+                </button>
+              ) : null}
+              {canDeleteSentInvitation ? (
+                <button
+                  type="button"
+                  onClick={() => onDelete(invitation)}
+                  disabled={inviteActionBusy}
+                  className="inline-flex h-9 min-w-[104px] items-center justify-center gap-2 rounded-[8px] border border-[#f0d4d4] bg-white px-3 text-sm font-semibold text-[#9b2c2c] transition hover:bg-[#fff5f5] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Trash2 size={14} />
+                  {activeAction === 'delete' ? 'Deleting...' : 'Delete'}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </article>
+  )
+}
+
 function ThirdPartyDirectoryModal({
   isOpen,
   onClose,
@@ -1581,21 +1788,23 @@ function ThirdPartyDirectoryModal({
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-[8px] border border-[#d9e4ef] hover:bg-[#f8fafc]"
+            disabled={saving}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-[8px] border border-[#d9e4ef] hover:bg-[#f8fafc] disabled:cursor-not-allowed disabled:opacity-60"
             aria-label="Close third-party form"
           >
             <X size={16} />
           </button>
         </div>
 
-        <form onSubmit={onSubmit} className="mt-5 grid gap-3">
+        <form onSubmit={onSubmit} className="mt-5 grid gap-3" aria-busy={saving}>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1.5">
               <span className="text-sm font-semibold text-[#35546c]">Type</span>
               <select
                 value={form.partnerType}
                 onChange={(event) => onChange('partnerType', event.target.value)}
-                className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+                disabled={saving}
+                className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:text-[#8ba0b8]"
               >
                 {THIRD_PARTY_DIRECTORY_TYPES.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -1609,7 +1818,8 @@ function ThirdPartyDirectoryModal({
               <input
                 value={form.companyName}
                 onChange={(event) => onChange('companyName', event.target.value)}
-                className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+                disabled={saving}
+                className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:text-[#8ba0b8]"
                 placeholder="Firm, originator, or agency"
               />
             </label>
@@ -1618,7 +1828,8 @@ function ThirdPartyDirectoryModal({
               <input
                 value={form.contactPerson}
                 onChange={(event) => onChange('contactPerson', event.target.value)}
-                className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+                disabled={saving}
+                className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:text-[#8ba0b8]"
                 placeholder="Optional"
               />
             </label>
@@ -1628,7 +1839,8 @@ function ThirdPartyDirectoryModal({
                 type="email"
                 value={form.email}
                 onChange={(event) => onChange('email', event.target.value)}
-                className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+                disabled={saving}
+                className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:text-[#8ba0b8]"
                 placeholder="Optional"
               />
             </label>
@@ -1637,7 +1849,8 @@ function ThirdPartyDirectoryModal({
               <input
                 value={form.phone}
                 onChange={(event) => onChange('phone', event.target.value)}
-                className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+                disabled={saving}
+                className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:text-[#8ba0b8]"
                 placeholder="Optional"
               />
             </label>
@@ -1646,7 +1859,8 @@ function ThirdPartyDirectoryModal({
               <select
                 value={form.province}
                 onChange={(event) => onChange('province', event.target.value)}
-                className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+                disabled={saving}
+                className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:text-[#8ba0b8]"
               >
                 {PREFERRED_PARTNER_PROVINCES.map((province) => (
                   <option key={province} value={province}>
@@ -1660,7 +1874,8 @@ function ThirdPartyDirectoryModal({
               <input
                 value={form.website}
                 onChange={(event) => onChange('website', event.target.value)}
-                className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+                disabled={saving}
+                className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:text-[#8ba0b8]"
                 placeholder="Optional"
               />
             </label>
@@ -1669,7 +1884,8 @@ function ThirdPartyDirectoryModal({
               <input
                 value={form.physicalAddress}
                 onChange={(event) => onChange('physicalAddress', event.target.value)}
-                className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+                disabled={saving}
+                className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:text-[#8ba0b8]"
                 placeholder="Optional"
               />
             </label>
@@ -1678,7 +1894,8 @@ function ThirdPartyDirectoryModal({
               <textarea
                 value={form.notes}
                 onChange={(event) => onChange('notes', event.target.value)}
-                className="min-h-[72px] rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+                disabled={saving}
+                className="min-h-[72px] rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:text-[#8ba0b8]"
                 placeholder="Optional internal note"
               />
             </label>
@@ -1690,7 +1907,8 @@ function ThirdPartyDirectoryModal({
                 type="checkbox"
                 checked={Boolean(form.isActive)}
                 onChange={(event) => onChange('isActive', event.target.checked)}
-                className="h-4 w-4 rounded border-[#c8d6e5] text-[#10243a]"
+                disabled={saving}
+                className="h-4 w-4 rounded border-[#c8d6e5] text-[#10243a] disabled:cursor-not-allowed disabled:opacity-50"
               />
               Active
             </label>
@@ -1699,7 +1917,8 @@ function ThirdPartyDirectoryModal({
                 type="checkbox"
                 checked={Boolean(form.isPreferredDefault)}
                 onChange={(event) => onChange('isPreferredDefault', event.target.checked)}
-                className="h-4 w-4 rounded border-[#c8d6e5] text-[#10243a]"
+                disabled={saving}
+                className="h-4 w-4 rounded border-[#c8d6e5] text-[#10243a] disabled:cursor-not-allowed disabled:opacity-50"
               />
               Default for this role
             </label>
@@ -1712,9 +1931,9 @@ function ThirdPartyDirectoryModal({
                 <input
                   type="checkbox"
                   checked={Boolean(normalizeText(form.email) && form.sendInvite !== false)}
-                  disabled={!normalizeText(form.email)}
+                  disabled={saving || !normalizeText(form.email)}
                   onChange={(event) => onChange('sendInvite', event.target.checked)}
-                  className="h-4 w-4 rounded border-[#c8d6e5] text-[#10243a] disabled:opacity-50"
+                  className="h-4 w-4 rounded border-[#c8d6e5] text-[#10243a] disabled:cursor-not-allowed disabled:opacity-50"
                 />
                 Send invite
               </label>
@@ -1726,14 +1945,14 @@ function ThirdPartyDirectoryModal({
               type="button"
               onClick={onClose}
               disabled={saving}
-              className="inline-flex h-10 items-center rounded-[8px] border border-[#d9e4ef] bg-white px-4 text-sm font-semibold text-[#35546c] hover:bg-[#f8fafc] disabled:opacity-60"
+              className="inline-flex h-10 items-center rounded-[8px] border border-[#d9e4ef] bg-white px-4 text-sm font-semibold text-[#35546c] hover:bg-[#f8fafc] disabled:cursor-not-allowed disabled:opacity-60"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white transition hover:bg-[#173a5e] disabled:opacity-60"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white transition hover:bg-[#173a5e] disabled:cursor-not-allowed disabled:opacity-60"
             >
               <InviteIcon size={15} />
               {saving ? 'Saving...' : editing ? 'Save changes' : 'Add third party'}
@@ -1775,6 +1994,7 @@ function PartnerInviteModal({
   selectedInviteScope,
   allowedScopes,
   selectInviteOrganisation,
+  saving = false,
 }) {
   if (!isOpen) return null
   const isThirdPartyVariant = variant === 'third-party'
@@ -1788,16 +2008,22 @@ function PartnerInviteModal({
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-[8px] border border-[#d9e4ef] hover:bg-[#f8fafc]"
+            disabled={saving}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-[8px] border border-[#d9e4ef] hover:bg-[#f8fafc] disabled:cursor-not-allowed disabled:opacity-60"
             aria-label="Close invite form"
           >
             <X size={16} />
           </button>
         </div>
 
-        <form onSubmit={onSubmit} className="mt-4 grid gap-2">
+        <form onSubmit={onSubmit} className="mt-4 grid gap-2" aria-busy={saving}>
           {isThirdPartyVariant ? (
-            <select value={inviteType} onChange={(event) => setInviteType(event.target.value)} className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm">
+            <select
+              value={inviteType}
+              onChange={(event) => setInviteType(event.target.value)}
+              disabled={saving}
+              className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:text-[#8ba0b8]"
+            >
               {partnerTypeOptions.map((type) => (
                 <option key={type.value} value={type.value}>
                   {type.label}
@@ -1815,7 +2041,8 @@ function PartnerInviteModal({
               }
             }}
             placeholder="Partner email"
-            className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+            disabled={saving}
+            className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:text-[#8ba0b8]"
           />
           <input
             type="text"
@@ -1827,19 +2054,26 @@ function PartnerInviteModal({
               }
             }}
             placeholder="Search existing organisation by name"
-            className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+            disabled={saving}
+            className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:text-[#8ba0b8]"
           />
           <textarea
             value={inviteNote}
             onChange={(event) => setInviteNote(event.target.value)}
             placeholder="Optional message"
-            className="min-h-[72px] rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+            disabled={saving}
+            className="min-h-[72px] rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:text-[#8ba0b8]"
           />
 
           {!isThirdPartyVariant || inviteScopeNeedsTarget ? (
           <div className="grid gap-2 sm:grid-cols-2">
             {!isThirdPartyVariant ? (
-            <select value={inviteType} onChange={(event) => setInviteType(event.target.value)} className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm">
+            <select
+              value={inviteType}
+              onChange={(event) => setInviteType(event.target.value)}
+              disabled={saving}
+              className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:text-[#8ba0b8]"
+            >
               {partnerTypeOptions.map((type) => (
                 <option key={type.value} value={type.value}>
                   {type.label}
@@ -1850,7 +2084,8 @@ function PartnerInviteModal({
             <select
               value={inviteScopeValue}
               onChange={(event) => setInviteScopeValue(event.target.value)}
-              className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
+              disabled={saving}
+              className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:text-[#8ba0b8]"
               aria-label="Partner relationship scope"
             >
               {allowedScopes.map((scope) => (
@@ -1869,14 +2104,16 @@ function PartnerInviteModal({
                 value={inviteScopeTargetId}
                 onChange={(event) => setInviteScopeTargetId(event.target.value)}
                 placeholder={`${selectedInviteScope.label} target id`}
-                className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+                disabled={saving}
+                className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:text-[#8ba0b8]"
               />
               <input
                 type="text"
                 value={inviteScopeTargetName}
                 onChange={(event) => setInviteScopeTargetName(event.target.value)}
                 placeholder="Target display name"
-                className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+                disabled={saving}
+                className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:text-[#8ba0b8]"
               />
             </div>
           ) : null}
@@ -1887,7 +2124,8 @@ function PartnerInviteModal({
               type="checkbox"
               checked={invitePreferred}
               onChange={(event) => setInvitePreferred(event.target.checked)}
-              className="h-4 w-4 rounded border-[#c8d6e5] text-[#10243a]"
+              disabled={saving}
+              className="h-4 w-4 rounded border-[#c8d6e5] text-[#10243a] disabled:cursor-not-allowed disabled:opacity-50"
             />
             Preferred
           </label>
@@ -1910,7 +2148,8 @@ function PartnerInviteModal({
                     type="button"
                     key={organisation.id}
                     onClick={() => selectInviteOrganisation(organisation.id)}
-                    className="flex min-w-0 items-center gap-2 rounded-[8px] border border-[#dbe5f0] bg-white p-2 text-left text-sm text-[#10243a] hover:bg-[#f6f9ff]"
+                    disabled={saving}
+                    className="flex min-w-0 items-center gap-2 rounded-[8px] border border-[#dbe5f0] bg-white p-2 text-left text-sm text-[#10243a] hover:bg-[#f6f9ff] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <OrganisationAvatar organisation={organisation} size="sm" />
                     <span className="min-w-0">
@@ -1926,14 +2165,16 @@ function PartnerInviteModal({
           <div className="flex items-center gap-2 pt-1">
             <button
               type="submit"
-              className="inline-flex h-10 items-center gap-2 rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white"
+              disabled={saving}
+              className="inline-flex h-10 items-center gap-2 rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <InviteIcon size={15} /> Send invite
+              <InviteIcon size={15} /> {saving ? 'Sending...' : 'Send invite'}
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex h-10 items-center rounded-[8px] border border-[#d9e4ef] bg-white px-4 text-sm font-semibold text-[#35546c] hover:bg-[#f8fafc]"
+              disabled={saving}
+              className="inline-flex h-10 items-center rounded-[8px] border border-[#d9e4ef] bg-white px-4 text-sm font-semibold text-[#35546c] hover:bg-[#f8fafc] disabled:cursor-not-allowed disabled:opacity-60"
             >
               Cancel
             </button>
@@ -1964,6 +2205,7 @@ export default function PartnersPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
+  const [inviteSubmitting, setInviteSubmitting] = useState(false)
   const [isThirdPartyModalOpen, setIsThirdPartyModalOpen] = useState(false)
   const [thirdPartyDirectoryRows, setThirdPartyDirectoryRows] = useState([])
   const [thirdPartyDirectoryLoading, setThirdPartyDirectoryLoading] = useState(false)
@@ -2010,12 +2252,7 @@ export default function PartnersPage() {
     specialty: '',
     preferredOnly: false,
   })
-  const [invitationFilters, setInvitationFilters] = useState({
-    direction: 'all',
-    status: 'all',
-    query: '',
-    type: '',
-  })
+  const [invitationFilters, setInvitationFilters] = useState(DEFAULT_INVITATION_FILTERS)
   const [invitationAction, setInvitationAction] = useState({ id: '', type: '' })
 
   const accessContext = useMemo(
@@ -2327,6 +2564,29 @@ export default function PartnersPage() {
     () => invitations.filter((invitation) => (normalizeLower(invitation.status) || 'pending') === 'pending').length,
     [invitations],
   )
+  const invitationCounts = useMemo(() => {
+    const currentOrganisationId = normalizeLower(organisationId)
+    return invitations.reduce(
+      (counts, invitation) => {
+        const isReceived = normalizeLower(invitation.toOrganisationId) === currentOrganisationId
+        const status = normalizeLower(invitation.status) || 'pending'
+        counts.total += 1
+        if (isReceived) counts.received += 1
+        else counts.sent += 1
+        if (status === 'pending') counts.pending += 1
+        return counts
+      },
+      { total: 0, pending: 0, received: 0, sent: 0 },
+    )
+  }, [invitations, organisationId])
+  const hasInvitationFilters = useMemo(
+    () =>
+      invitationFilters.direction !== DEFAULT_INVITATION_FILTERS.direction ||
+      invitationFilters.status !== DEFAULT_INVITATION_FILTERS.status ||
+      normalizeText(invitationFilters.query) !== DEFAULT_INVITATION_FILTERS.query ||
+      invitationFilters.type !== DEFAULT_INVITATION_FILTERS.type,
+    [invitationFilters.direction, invitationFilters.query, invitationFilters.status, invitationFilters.type],
+  )
   const thirdPartyGroups = useMemo(() => {
     const groups = thirdPartyDirectoryRows.reduce((accumulator, row) => {
       const key = getThirdPartyGroupLabel(row)
@@ -2463,6 +2723,9 @@ export default function PartnersPage() {
   )
   const isPartnerProfilePage = Boolean(normalizeText(partnerId)) && !isBondPartnersRoute
   const isSimplifiedThirdPartyWorkspace = !isBondPartnersRoute && !isPartnerProfilePage
+  const simplifiedWorkspaceCopy = getSimplifiedPartnerViewCopy(activeTab)
+  const shouldShowThirdPartyActionCards = isSimplifiedThirdPartyWorkspace && activeTab === 'preferred'
+  const shouldShowPartnerProfileRail = activeTab !== 'invitations'
   const shouldShowPartnersBlockingLoader =
     loading || (isSimplifiedThirdPartyWorkspace && thirdPartyDirectoryLoading && thirdPartyDirectoryRows.length === 0)
 
@@ -2519,6 +2782,8 @@ export default function PartnersPage() {
 
   async function handleSaveThirdParty(event) {
     event.preventDefault()
+    if (thirdPartySaving) return
+
     try {
       validateThirdPartyForm()
       setThirdPartySaving(true)
@@ -2621,24 +2886,27 @@ export default function PartnersPage() {
 
   async function handleInvite(event) {
     event.preventDefault()
+    if (inviteSubmitting) return
 
     const email = normalizeText(inviteEmail).toLowerCase()
     const targetId = selectedInviteOrganisation?.id || ''
+    const scope = selectedInviteScope
+    const resolvedScopeId = inviteScopeNeedsTarget ? normalizeText(inviteScopeTargetId) : scope.scopeId
 
     if (!targetId && !email) {
       setError('Choose an organisation or enter a destination email.')
       return
     }
 
+    if (inviteScopeNeedsTarget && !resolvedScopeId) {
+      setError('Enter the region, branch, or team target id before sending this scoped invite.')
+      return
+    }
+
+    setInviteSubmitting(true)
     try {
       setError('')
       setMessage('')
-      const scope = selectedInviteScope
-      const resolvedScopeId = inviteScopeNeedsTarget ? normalizeText(inviteScopeTargetId) : scope.scopeId
-      if (inviteScopeNeedsTarget && !resolvedScopeId) {
-        setError('Enter the region, branch, or team target id before sending this scoped invite.')
-        return
-      }
       await createPartnerInvitation({
         organisationId,
         organisationName: organisation?.name,
@@ -2672,6 +2940,8 @@ export default function PartnersPage() {
       await loadSnapshot()
     } catch (inviteError) {
       setError(inviteError?.message || 'Unable to send partner invitation.')
+    } finally {
+      setInviteSubmitting(false)
     }
   }
 
@@ -2841,8 +3111,12 @@ export default function PartnersPage() {
   }
 
   async function handleAcceptInvitation(invitation) {
+    if (!invitation?.id || invitationAction.id) return
+
     try {
       setError('')
+      setMessage('')
+      setInvitationAction({ id: invitation.id, type: 'accept' })
       await acceptPartnerInvitation({
         invitationId: invitation.id,
         organisationId,
@@ -2853,12 +3127,18 @@ export default function PartnersPage() {
       await loadSnapshot()
     } catch (acceptError) {
       setError(acceptError?.message || 'Unable to accept partner invitation.')
+    } finally {
+      setInvitationAction({ id: '', type: '' })
     }
   }
 
   async function handleDeclineInvitation(invitation) {
+    if (!invitation?.id || invitationAction.id) return
+
     try {
       setError('')
+      setMessage('')
+      setInvitationAction({ id: invitation.id, type: 'decline' })
       await declinePartnerInvitation({
         invitationId: invitation.id,
         organisationId,
@@ -2869,6 +3149,8 @@ export default function PartnersPage() {
       await loadSnapshot()
     } catch (declineError) {
       setError(declineError?.message || 'Unable to decline partner invitation.')
+    } finally {
+      setInvitationAction({ id: '', type: '' })
     }
   }
 
@@ -3150,8 +3432,13 @@ export default function PartnersPage() {
     <div className="min-h-full bg-[#f6f8fb] pb-10 text-[#10243a]">
       <PartnerInviteModal
         isOpen={isInviteModalOpen}
-        onClose={() => setIsInviteModalOpen(false)}
+        onClose={() => {
+          if (!inviteSubmitting) {
+            setIsInviteModalOpen(false)
+          }
+        }}
         onSubmit={handleInvite}
+        saving={inviteSubmitting}
         variant={isSimplifiedThirdPartyWorkspace ? 'third-party' : 'default'}
         title={isSimplifiedThirdPartyWorkspace ? 'Add third party' : 'Invite partner'}
         inviteEmail={inviteEmail}
@@ -3181,7 +3468,11 @@ export default function PartnersPage() {
       />
       <ThirdPartyDirectoryModal
         isOpen={isThirdPartyModalOpen}
-        onClose={closeThirdPartyModal}
+        onClose={() => {
+          if (!thirdPartySaving) {
+            closeThirdPartyModal()
+          }
+        }}
         onSubmit={handleSaveThirdParty}
         form={thirdPartyForm}
         onChange={updateThirdPartyFormField}
@@ -3202,14 +3493,12 @@ export default function PartnersPage() {
       ) : null}
 
       {isSimplifiedThirdPartyWorkspace ? (
-        <section className="space-y-5">
+        <section className="space-y-4">
           <div className="flex flex-col gap-4 border-b border-[#dce6f0] bg-white px-5 py-5 md:flex-row md:items-end md:justify-between">
             <div className="max-w-3xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Organisation</p>
-              <h1 className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-[#10243a]">Third parties</h1>
-              <p className="mt-2 text-sm leading-6 text-[#60758d]">
-                Attorneys, bond originators, and referral agencies your team can reuse during transactions.
-              </p>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">{simplifiedWorkspaceCopy.eyebrow}</p>
+              <h1 className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-[#10243a]">{simplifiedWorkspaceCopy.title}</h1>
+              <p className="mt-2 text-sm leading-6 text-[#60758d]">{simplifiedWorkspaceCopy.description}</p>
             </div>
             <button
               type="button"
@@ -3217,23 +3506,11 @@ export default function PartnersPage() {
               className="inline-flex h-10 items-center justify-center gap-2 rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white transition hover:bg-[#173a5e]"
             >
               <InviteIcon size={15} />
-              Add third party
+              {simplifiedWorkspaceCopy.actionLabel}
             </button>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-3">
-            <ThirdPartyMetric label="Third parties" value={formatNumber(thirdPartyDirectoryRows.length)} hint={`${formatNumber(thirdPartyCounts.active)} active`} />
-            <ThirdPartyMetric label="Attorneys" value={formatNumber(thirdPartyCounts.attorneys)} hint="transfer, bond, cancellation" />
-            <ThirdPartyMetric label="Pending invites" value={formatNumber(pendingInvitationCount)} hint={`${formatNumber(metrics.newPartnerGrowth)} new in 30 days`} />
-          </div>
-
-          <div className="grid gap-3 lg:grid-cols-3">
-            {THIRD_PARTY_ACTIONS.map((action) => (
-              <ThirdPartyActionCard key={action.key} action={action} onAdd={openThirdPartyInvite} />
-            ))}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 border-b border-[#dce6f0] pb-3">
+          <div className="flex flex-wrap items-center gap-2 border-b border-[#dce6f0] pb-4">
             <button
               type="button"
               onClick={() => setActiveTab('preferred')}
@@ -3256,6 +3533,22 @@ export default function PartnersPage() {
               </button>
             ))}
           </div>
+
+          {shouldShowThirdPartyActionCards ? (
+            <>
+              <div className="grid gap-3 md:grid-cols-3">
+                <ThirdPartyMetric label="Third parties" value={formatNumber(thirdPartyDirectoryRows.length)} hint={`${formatNumber(thirdPartyCounts.active)} active`} />
+                <ThirdPartyMetric label="Attorneys" value={formatNumber(thirdPartyCounts.attorneys)} hint="transfer, bond, cancellation" />
+                <ThirdPartyMetric label="Pending invites" value={formatNumber(pendingInvitationCount)} hint={`${formatNumber(metrics.newPartnerGrowth)} new in 30 days`} />
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-3">
+                {THIRD_PARTY_ACTIONS.map((action) => (
+                  <ThirdPartyActionCard key={action.key} action={action} onAdd={openThirdPartyInvite} />
+                ))}
+              </div>
+            </>
+          ) : null}
         </section>
       ) : (
         <>
@@ -3352,7 +3645,7 @@ export default function PartnersPage() {
           )}
         </section>
       ) : (
-        <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className={shouldShowPartnerProfileRail ? 'mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]' : 'mt-5'}>
           <main className="min-w-0">
             {activeTab === 'connected' ? (
               <section>
@@ -3502,137 +3795,98 @@ export default function PartnersPage() {
             ) : null}
 
             {activeTab === 'invitations' ? (
-              <section className="space-y-3">
-                <div className="mb-4 space-y-3">
-                  <div className="flex flex-wrap gap-2">
-                    <ToolbarFilterPills
-                      ariaLabel="Invitation direction filter"
-                      value={invitationFilters.direction}
-                      options={INVITATION_DIRECTION_OPTIONS}
-                      onChange={(value) => setInvitationFilters((previous) => ({ ...previous, direction: value }))}
-                    />
-                    <ToolbarFilterPills
-                      ariaLabel="Invitation status filter"
-                      value={invitationFilters.status}
-                      options={INVITATION_STATUS_OPTIONS}
-                      onChange={(value) => setInvitationFilters((previous) => ({ ...previous, status: value }))}
-                    />
+              <section className="space-y-4">
+                <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <h2 className="text-lg font-semibold text-[#10243a]">Partner invitations</h2>
+                      <p className="mt-1 text-sm text-[#60758d]">
+                        {formatNumber(filteredInvitations.length)} matching of {formatNumber(invitationCounts.total)} total
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <span className="rounded-full border border-[#f0dfb8] bg-[#fff9ec] px-2.5 py-1 text-xs font-semibold text-[#8a5a12]">
+                        {formatNumber(invitationCounts.pending)} pending
+                      </span>
+                      <span className="rounded-full border border-[#e4ebf4] bg-[#f8fafc] px-2.5 py-1 text-xs font-semibold text-[#52677f]">
+                        {formatNumber(invitationCounts.sent)} sent
+                      </span>
+                      <span className="rounded-full border border-[#d9e7ff] bg-[#f3f7ff] px-2.5 py-1 text-xs font-semibold text-[#1e4d82]">
+                        {formatNumber(invitationCounts.received)} received
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <label className="relative min-w-0 flex-1">
-                      <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8ba0b8]" />
-                      <input
-                        value={invitationFilters.query}
-                        onChange={(event) => setInvitationFilters((previous) => ({ ...previous, query: event.target.value }))}
-                        placeholder="Search invitations"
-                        className="h-10 w-full rounded-[8px] border border-[#d7e2ee] bg-white pl-9 pr-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+
+                  <div className="mt-4 grid gap-3">
+                    <div className="flex flex-wrap gap-2">
+                      <ToolbarFilterPills
+                        ariaLabel="Invitation direction filter"
+                        value={invitationFilters.direction}
+                        options={INVITATION_DIRECTION_OPTIONS}
+                        onChange={(value) => setInvitationFilters((previous) => ({ ...previous, direction: value }))}
                       />
-                    </label>
-                    <select
-                      className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
-                      value={invitationFilters.type}
-                      onChange={(event) => setInvitationFilters((previous) => ({ ...previous, type: event.target.value }))}
-                    >
-                      <option value="">All partner types</option>
-                      {PARTNER_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
-                    </select>
+                      <ToolbarFilterPills
+                        ariaLabel="Invitation status filter"
+                        value={invitationFilters.status}
+                        options={INVITATION_STATUS_OPTIONS}
+                        onChange={(value) => setInvitationFilters((previous) => ({ ...previous, status: value }))}
+                      />
+                    </div>
+                    <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_220px_auto]">
+                      <label className="relative min-w-0">
+                        <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8ba0b8]" />
+                        <input
+                          value={invitationFilters.query}
+                          onChange={(event) => setInvitationFilters((previous) => ({ ...previous, query: event.target.value }))}
+                          placeholder="Search invitations"
+                          className="h-10 w-full rounded-[8px] border border-[#d7e2ee] bg-white pl-9 pr-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+                        />
+                      </label>
+                      <select
+                        className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#35546c]"
+                        value={invitationFilters.type}
+                        onChange={(event) => setInvitationFilters((previous) => ({ ...previous, type: event.target.value }))}
+                      >
+                        <option value="">All partner types</option>
+                        {PARTNER_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setInvitationFilters(DEFAULT_INVITATION_FILTERS)}
+                        disabled={!hasInvitationFilters}
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm font-semibold text-[#35546c] transition hover:bg-[#f8fafc] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <X size={14} />
+                        Reset
+                      </button>
+                    </div>
                   </div>
                 </div>
 
-                {filteredInvitations.map((invitation) => {
-                  const isReceived = normalizeLower(invitation.toOrganisationId) === normalizeLower(organisationId)
-                  const status = normalizeLower(invitation.status) || 'pending'
-                  const organisationName = invitationPartnerName(invitation, organisationId)
-                  const organisationType = invitationPartnerType(invitation, organisationId)
-                  const activeAction = invitationAction.id === invitation.id ? invitationAction.type : ''
-                  const inviteActionBusy = Boolean(invitationAction.id)
-                  const canManageSentInvitation = !isReceived && status === 'pending'
-                  const canDeleteSentInvitation = !isReceived && status !== 'accepted'
-                  return (
-                    <div
-                      key={invitation.id}
-                      className="rounded-[8px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]"
-                    >
-                      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                        <div className="flex min-w-0 gap-3">
-                          <PartnerLogo partner={{ name: organisationName }} />
-                          <div>
-                            <p className="font-semibold text-[#10243a]">{organisationName}</p>
-                            <p className="text-sm text-[#60758d]">{organisationType}</p>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              <StatusBadge className={isReceived ? 'border-[#d9e7ff] bg-[#f3f7ff] text-[#1e4d82]' : 'border-[#e4ebf4] bg-[#f8fafc] text-[#52677f]'}>
-                                {isReceived ? 'Received' : 'Sent'}
-                              </StatusBadge>
-                              <PartnerScopeBadge relationship={invitation} />
-                              {invitation.preferred ? <StatusBadge className={relationshipBadgeClass('preferred')}>Preferred</StatusBadge> : null}
-                            </div>
-                            <p className="mt-2 text-sm text-[#40556c]">{invitation.message || 'Wants to connect with your organisation.'}</p>
-                            <p className="mt-1 text-xs text-[#6f7f95]">Sent {formatDate(invitation.createdAt)}</p>
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-2">
-                          <StatusBadge className={statusBadgeClass(status)}>{status}</StatusBadge>
-                          {isReceived && status === 'pending' ? (
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() => handleAcceptInvitation(invitation)}
-                                className="inline-flex h-10 items-center justify-center rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white transition hover:bg-[#173a5e]"
-                              >
-                                Accept
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeclineInvitation(invitation)}
-                                className="inline-flex h-10 items-center justify-center rounded-[8px] border border-[#d7e2ee] bg-white px-4 text-sm font-semibold text-[#35546c] transition hover:bg-[#f8fafc]"
-                              >
-                                Decline
-                              </button>
-                            </div>
-                          ) : null}
-                          {canManageSentInvitation || canDeleteSentInvitation ? (
-                            <div className="flex flex-wrap justify-end gap-2">
-                              {canManageSentInvitation ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleResendInvitation(invitation)}
-                                  disabled={inviteActionBusy}
-                                  className="inline-flex h-9 items-center justify-center gap-2 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-xs font-semibold text-[#35546c] transition hover:bg-[#f8fafc] disabled:opacity-60"
-                                >
-                                  <Send size={13} />
-                                  {activeAction === 'resend' ? 'Resending...' : 'Resend'}
-                                </button>
-                              ) : null}
-                              {canManageSentInvitation ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleRevokeInvitation(invitation)}
-                                  disabled={inviteActionBusy}
-                                  className="inline-flex h-9 items-center justify-center gap-2 rounded-[8px] border border-[#f0d4d4] bg-white px-3 text-xs font-semibold text-[#9b2c2c] transition hover:bg-[#fff5f5] disabled:opacity-60"
-                                >
-                                  <XCircle size={13} />
-                                  {activeAction === 'revoke' ? 'Revoking...' : 'Revoke'}
-                                </button>
-                              ) : null}
-                              {canDeleteSentInvitation ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteInvitation(invitation)}
-                                  disabled={inviteActionBusy}
-                                  className="inline-flex h-9 items-center justify-center gap-2 rounded-[8px] border border-[#f0d4d4] bg-white px-3 text-xs font-semibold text-[#9b2c2c] transition hover:bg-[#fff5f5] disabled:opacity-60"
-                                >
-                                  <Trash2 size={13} />
-                                  {activeAction === 'delete' ? 'Deleting...' : 'Delete'}
-                                </button>
-                              ) : null}
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
+                {filteredInvitations.map((invitation) => (
+                  <PartnerInvitationCard
+                    key={invitation.id}
+                    invitation={invitation}
+                    organisationId={organisationId}
+                    invitationAction={invitationAction}
+                    onAccept={handleAcceptInvitation}
+                    onDecline={handleDeclineInvitation}
+                    onResend={handleResendInvitation}
+                    onRevoke={handleRevokeInvitation}
+                    onDelete={handleDeleteInvitation}
+                  />
+                ))}
+                {!filteredInvitations.length ? (
+                  <div className="rounded-[8px] border border-dashed border-[#cfdcea] bg-white p-8 text-center">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-[8px] bg-[#eef5f8] text-[#274c69]">
+                      <InviteIcon size={20} />
                     </div>
-                  )
-                })}
-                {!filteredInvitations.length ? <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">No invitations found</div> : null}
+                    <h3 className="mt-4 text-base font-semibold text-[#10243a]">No invitations found</h3>
+                    <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-[#60758d]">
+                      {hasInvitationFilters ? 'No invitations match the current filters.' : 'No partner invitations have been sent or received yet.'}
+                    </p>
+                  </div>
+                ) : null}
               </section>
             ) : null}
 
@@ -3704,34 +3958,36 @@ export default function PartnersPage() {
 
           </main>
 
-          <div ref={profilePanelRef} className="space-y-5 scroll-mt-4">
-            <ProfilePanel
-              isOpen={profilePanelOpen}
-              partner={profilePanelOpen ? selectedPartner : null}
-              relationship={profilePanelOpen ? selectedRelationship : null}
-              people={profilePanelOpen ? selectedPartnerPeople : []}
-              peopleLoading={Boolean(selectedPartnerPeopleMeta?.loading)}
-              peopleMessage={selectedPartnerPeopleMeta?.message || ''}
-              routingRulesByRole={selectedPartnerRoutingRulesByRole}
-              routingSelectionValues={routingSelectionValues}
-              routingSavingRoleKeys={savingRoutingRoleKeys}
-              onSelectRoutingPreference={
-                selectedRelationship
-                  ? (roleType, targetUserId) => saveOperationalRoutingPreference(selectedRelationship, roleType, targetUserId)
-                  : null
-              }
-            />
-            <section className="rounded-[8px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
-              <div className="flex items-center gap-2 text-sm font-semibold text-[#10243a]">
-                <Network size={16} /> Collaboration model
-              </div>
-              <div className="mt-4 space-y-3 text-sm text-[#40556c]">
-                <p className="flex items-center gap-2"><CheckCircle2 size={15} className="text-[#17613d]" /> Organisation connections are reusable company relationships</p>
-                <p className="flex items-center gap-2"><CheckCircle2 size={15} className="text-[#17613d]" /> Operational partners are preferred people for repeat work</p>
-                <p className="flex items-center gap-2"><LockKeyhole size={15} className="text-[#52677f]" /> Shared transactions can include invited collaborators without a formal connection</p>
-              </div>
-            </section>
-          </div>
+          {shouldShowPartnerProfileRail ? (
+            <div ref={profilePanelRef} className="space-y-5 scroll-mt-4">
+              <ProfilePanel
+                isOpen={profilePanelOpen}
+                partner={profilePanelOpen ? selectedPartner : null}
+                relationship={profilePanelOpen ? selectedRelationship : null}
+                people={profilePanelOpen ? selectedPartnerPeople : []}
+                peopleLoading={Boolean(selectedPartnerPeopleMeta?.loading)}
+                peopleMessage={selectedPartnerPeopleMeta?.message || ''}
+                routingRulesByRole={selectedPartnerRoutingRulesByRole}
+                routingSelectionValues={routingSelectionValues}
+                routingSavingRoleKeys={savingRoutingRoleKeys}
+                onSelectRoutingPreference={
+                  selectedRelationship
+                    ? (roleType, targetUserId) => saveOperationalRoutingPreference(selectedRelationship, roleType, targetUserId)
+                    : null
+                }
+              />
+              <section className="rounded-[8px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
+                <div className="flex items-center gap-2 text-sm font-semibold text-[#10243a]">
+                  <Network size={16} /> Collaboration model
+                </div>
+                <div className="mt-4 space-y-3 text-sm text-[#40556c]">
+                  <p className="flex items-center gap-2"><CheckCircle2 size={15} className="text-[#17613d]" /> Organisation connections are reusable company relationships</p>
+                  <p className="flex items-center gap-2"><CheckCircle2 size={15} className="text-[#17613d]" /> Operational partners are preferred people for repeat work</p>
+                  <p className="flex items-center gap-2"><LockKeyhole size={15} className="text-[#52677f]" /> Shared transactions can include invited collaborators without a formal connection</p>
+                </div>
+              </section>
+            </div>
+          ) : null}
         </div>
       )}
     </div>

@@ -1,6 +1,7 @@
 import {
   Building2,
   CalendarPlus,
+  Check,
   ChevronDown,
   ClipboardList,
   DoorOpen,
@@ -20,7 +21,7 @@ import { createAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
 import { inferLeadCategoryFromRecord, normalizeLeadCategory } from '../lib/leadCategory'
 import { readAgentPrivateListings } from '../lib/agentListingStorage'
 import { createAppointmentAsync } from '../lib/agencyPipelineService'
-import { fetchOrganisationSettings } from '../lib/settingsApi'
+import { fetchOrganisationSettings, listOrganisationUsers } from '../lib/settingsApi'
 import { getOrganisationPrivateListings } from '../services/privateListingService'
 import Modal from './ui/Modal'
 
@@ -329,6 +330,9 @@ const INITIAL_FORMS = {
     listingId: '',
     notes: '',
     assignedAgent: '',
+    assignedAgentId: '',
+    assignedAgentEmail: '',
+    assignedAgentAvatarUrl: '',
   },
   prospect: {
     name: '',
@@ -339,6 +343,9 @@ const INITIAL_FORMS = {
     timeline: '',
     notes: '',
     assignedAgent: '',
+    assignedAgentId: '',
+    assignedAgentEmail: '',
+    assignedAgentAvatarUrl: '',
   },
   appointment: {
     title: '',
@@ -391,6 +398,10 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function normalizeKey(value) {
+  return normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
+}
+
 function isValidEmail(value) {
   const email = normalizeText(value)
   if (!email) return true
@@ -423,6 +434,177 @@ function isBuyerStyleLeadType(value = '') {
 function normalizeLeadSource(value = '') {
   const normalized = normalizeText(value)
   return LEAD_SOURCE_OPTIONS.includes(normalized) ? normalized : LEAD_SOURCE_OPTIONS[0]
+}
+
+const ASSIGNABLE_AGENT_ROLES = new Set([
+  'agent',
+  'sales_agent',
+  'principal',
+  'owner',
+  'director',
+  'partner',
+  'branch_manager',
+  'sales_manager',
+  'team_lead',
+  'manager',
+])
+
+const INACTIVE_AGENT_STATUSES = new Set([
+  'inactive',
+  'invited',
+  'pending',
+  'pending_approval',
+  'pending_invite',
+  'suspended',
+  'disabled',
+  'declined',
+  'removed',
+  'archived',
+])
+
+function getProfileAvatarUrl(source = {}) {
+  return normalizeText(
+    source.avatarUrl ||
+      source.avatar_url ||
+      source.profilePhotoUrl ||
+      source.profile_photo_url ||
+      source.photoUrl ||
+      source.photo_url ||
+      source.profile?.avatar_url ||
+      source.user_metadata?.avatar_url,
+  )
+}
+
+function getAgentName(source = {}) {
+  return (
+    normalizeText(source.name || source.fullName || source.full_name) ||
+    [source.firstName || source.first_name, source.lastName || source.last_name].map(normalizeText).filter(Boolean).join(' ') ||
+    normalizeText(source.email) ||
+    'Agent'
+  )
+}
+
+function getAgentRoleLabel(source = {}) {
+  const role = normalizeKey(source.workspaceRole || source.workspace_role || source.organisationRole || source.organisation_role || source.role)
+  const labels = {
+    agent: 'Agent',
+    sales_agent: 'Agent',
+    principal: 'Principal',
+    owner: 'Owner',
+    director: 'Director',
+    partner: 'Partner',
+    branch_manager: 'Branch Manager',
+    sales_manager: 'Sales Manager',
+    team_lead: 'Team Lead',
+    manager: 'Manager',
+  }
+  return labels[role] || (role ? role.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Agent')
+}
+
+function isAssignableAgent(source = {}) {
+  const role = normalizeKey(source.workspaceRole || source.workspace_role || source.organisationRole || source.organisation_role || source.role)
+  const status = normalizeKey(source.membershipStatus || source.membership_status || source.status)
+  if (INACTIVE_AGENT_STATUSES.has(status)) return false
+  return ASSIGNABLE_AGENT_ROLES.has(role) || role.includes('agent')
+}
+
+function getAgentOptionKey(option = {}) {
+  return normalizeText(option.id || option.userId || option.email || option.name)
+}
+
+function buildActorAgentOption(actor = {}) {
+  const id = normalizeText(actor.userId || actor.id)
+  return {
+    id,
+    userId: id,
+    name: normalizeText(actor.name) || 'Current user',
+    email: normalizeText(actor.email).toLowerCase(),
+    avatarUrl: getProfileAvatarUrl(actor),
+    roleLabel: 'Agent',
+    branchId: normalizeText(actor.branchId),
+    isCurrentUser: true,
+  }
+}
+
+function mapDirectoryUserToAgentOption(user = {}) {
+  const userId = normalizeText(user.userId || user.user_id || user.profile?.id)
+  const id = normalizeText(userId || user.id)
+  return {
+    id,
+    userId: normalizeText(userId || id),
+    membershipId: normalizeText(user.id),
+    name: getAgentName(user),
+    email: normalizeText(user.email).toLowerCase(),
+    avatarUrl: getProfileAvatarUrl(user),
+    roleLabel: getAgentRoleLabel(user),
+    branchId: normalizeText(user.branchId || user.branch_id),
+    status: normalizeText(user.membershipStatus || user.membership_status || user.status),
+  }
+}
+
+function buildAgentOptions(users = [], actor = {}) {
+  const actorOption = buildActorAgentOption(actor)
+  const actorUserId = normalizeText(actorOption.userId || actorOption.id).toLowerCase()
+  const actorEmail = normalizeText(actorOption.email).toLowerCase()
+  const options = [
+    ...users.filter(isAssignableAgent).map((user) => {
+      const option = mapDirectoryUserToAgentOption(user)
+      const optionUserId = normalizeText(option.userId || option.id).toLowerCase()
+      const optionEmail = normalizeText(option.email).toLowerCase()
+      return {
+        ...option,
+        isCurrentUser: Boolean(
+          (actorUserId && optionUserId === actorUserId) ||
+            (actorEmail && optionEmail === actorEmail),
+        ),
+      }
+    }),
+    actorOption,
+  ].filter((option) => normalizeText(option.name || option.email || option.id))
+
+  const seen = new Set()
+  return options
+    .filter((option) => {
+      const key = normalizeText(option.userId || option.id || option.email || option.name).toLowerCase()
+      if (!key || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .sort((left, right) => {
+      if (left.isCurrentUser && !right.isCurrentUser) return -1
+      if (!left.isCurrentUser && right.isCurrentUser) return 1
+      return left.name.localeCompare(right.name)
+    })
+}
+
+function getSelectedAgentOption(form = {}, agentOptions = [], actor = {}) {
+  const selectedKey = normalizeText(form.assignedAgentId || form.assignedAgentEmail || form.assignedAgent)
+  const selectedKeyLower = selectedKey.toLowerCase()
+  const selected =
+    agentOptions.find((agent) => getAgentOptionKey(agent) === selectedKey) ||
+    agentOptions.find((agent) => normalizeText(agent.email).toLowerCase() === selectedKeyLower) ||
+    agentOptions.find((agent) => normalizeText(agent.name).toLowerCase() === selectedKeyLower)
+
+  if (selected) return selected
+
+  return {
+    ...buildActorAgentOption(actor),
+    name: normalizeText(form.assignedAgent) || normalizeText(actor.name) || 'Current user',
+    email: normalizeText(form.assignedAgentEmail || actor.email).toLowerCase(),
+    avatarUrl: normalizeText(form.assignedAgentAvatarUrl) || getProfileAvatarUrl(actor),
+  }
+}
+
+function getAgentInitials(agent = {}) {
+  const label = getAgentName(agent)
+  const initials = label
+    .split(/\s+/)
+    .map((part) => part[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
+  return initials || 'A'
 }
 
 function isCurrentListing(listing = {}) {
@@ -481,6 +663,130 @@ function FormField({ label, children, className = '' }) {
 const inputClass =
   'min-h-[42px] rounded-[12px] border border-[#d8e3ef] bg-white px-3 py-2 text-sm font-medium text-[#162334] outline-none transition focus:border-[#22445e] focus:ring-2 focus:ring-[#22445e]/10'
 
+function AgentAvatar({ agent, className = 'h-10 w-10' }) {
+  const avatarUrl = getProfileAvatarUrl(agent)
+  return (
+    <span className={`${className} inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#dce9f4] text-xs font-bold text-[#26445c] ring-2 ring-white`.trim()}>
+      {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : getAgentInitials(agent)}
+    </span>
+  )
+}
+
+function AgentOptionContent({ agent, selected = false }) {
+  return (
+    <>
+      <AgentAvatar agent={agent} />
+      <span className="min-w-0 flex-1">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-semibold text-[#162334]">{getAgentName(agent)}</span>
+          {agent.isCurrentUser ? (
+            <span className="shrink-0 rounded-full bg-[#edf8f1] px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.08em] text-[#1f7a45]">
+              You
+            </span>
+          ) : null}
+        </span>
+        <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium text-[#6b7d93]">
+          <span className="truncate">{agent.email || 'No email on profile'}</span>
+          <span className="hidden text-[#a3b2c2] sm:inline">•</span>
+          <span className="shrink-0">{agent.roleLabel || 'Agent'}</span>
+        </span>
+      </span>
+      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition ${selected ? 'bg-[#0f2742] text-white' : 'bg-[#eef4fb] text-[#8aa0b4]'}`}>
+        {selected ? <Check size={14} /> : <UserPlus size={13} />}
+      </span>
+    </>
+  )
+}
+
+function AgentDropdownSelect({ value = '', agents = [], loading = false, onChange }) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef(null)
+  const selectedAgent =
+    agents.find((agent) => getAgentOptionKey(agent) === normalizeText(value)) ||
+    agents.find((agent) => normalizeText(agent.email) === normalizeText(value).toLowerCase()) ||
+    agents[0] ||
+    null
+
+  useEffect(() => {
+    function onClickOutside(event) {
+      if (rootRef.current && !rootRef.current.contains(event.target)) {
+        setOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [])
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        className="flex min-h-[58px] w-full items-center gap-3 rounded-[14px] border border-[#cfdae6] bg-gradient-to-b from-white to-[#f8fbfd] px-3 py-2 text-left shadow-[0_1px_0_rgba(255,255,255,0.88)] outline-none transition hover:border-[#b7c6d5] focus:border-[#22445e] focus:ring-2 focus:ring-[#22445e]/10 disabled:cursor-not-allowed disabled:opacity-70"
+        onClick={() => setOpen((previous) => !previous)}
+        disabled={loading && !agents.length}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        {selectedAgent ? (
+          <AgentOptionContent agent={selectedAgent} selected />
+        ) : (
+          <>
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#eef4fb] text-[#49657c]">
+              <UsersRound size={16} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-[#162334]">{loading ? 'Loading agents...' : 'Choose an agent'}</span>
+              <span className="block text-xs font-medium text-[#6b7d93]">Select from your agency directory</span>
+            </span>
+          </>
+        )}
+        <ChevronDown size={15} className={`shrink-0 text-[#71879b] transition ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open ? (
+        <div
+          className="absolute left-0 right-0 z-[70] mt-2 max-h-[292px] overflow-y-auto rounded-[16px] border border-[#d8e3ef] bg-white p-2 shadow-[0_22px_55px_rgba(15,39,66,0.18)]"
+          role="listbox"
+        >
+          {loading ? (
+            <div className="flex items-center gap-2 px-3 py-3 text-sm font-semibold text-[#597086]">
+              <Loader2 size={15} className="animate-spin" />
+              Loading agency agents...
+            </div>
+          ) : null}
+          {!loading && !agents.length ? (
+            <div className="rounded-[12px] bg-[#f6f9fc] px-3 py-3 text-sm font-medium text-[#597086]">
+              No assignable agents found for this workspace.
+            </div>
+          ) : null}
+          {agents.map((agent) => {
+            const key = getAgentOptionKey(agent)
+            const selected = selectedAgent ? getAgentOptionKey(selectedAgent) === key : false
+            return (
+              <button
+                key={key}
+                type="button"
+                className={`flex w-full items-center gap-3 rounded-[12px] px-3 py-2.5 text-left transition ${
+                  selected ? 'bg-[#eef4fb]' : 'hover:bg-[#f7fafc]'
+                }`}
+                role="option"
+                aria-selected={selected}
+                onClick={() => {
+                  onChange(agent)
+                  setOpen(false)
+                }}
+              >
+                <AgentOptionContent agent={agent} selected={selected} />
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function QuickCreateAudienceModal({ kind, onClose, onChoose }) {
   const choices = QUICK_CREATE_AUDIENCE_CHOICES[kind] || []
   if (!kind || !choices.length) {
@@ -537,7 +843,19 @@ function QuickCreateAudienceModal({ kind, onClose, onChoose }) {
   )
 }
 
-function QuickCreateModal({ type, form, setForm, onClose, onSubmit, saving, feedback, listingOptions = [], listingOptionsLoading = false }) {
+function QuickCreateModal({
+  type,
+  form,
+  setForm,
+  onClose,
+  onSubmit,
+  saving,
+  feedback,
+  listingOptions = [],
+  listingOptionsLoading = false,
+  agentOptions = [],
+  agentOptionsLoading = false,
+}) {
   const isLead = type === 'lead'
   const isProspect = type === 'prospect'
   const isAppointment = type === 'appointment'
@@ -555,6 +873,16 @@ function QuickCreateModal({ type, form, setForm, onClose, onSubmit, saving, feed
       ...previous,
       [field]: value,
       ...(field === 'leadType' && !isBuyerStyleLeadType(value) ? { listingId: '' } : {}),
+    }))
+  }
+
+  function updateAssignedAgent(agent) {
+    setForm((previous) => ({
+      ...previous,
+      assignedAgent: getAgentName(agent),
+      assignedAgentId: normalizeText(agent.userId || agent.id),
+      assignedAgentEmail: normalizeText(agent.email).toLowerCase(),
+      assignedAgentAvatarUrl: getProfileAvatarUrl(agent),
     }))
   }
 
@@ -668,11 +996,11 @@ function QuickCreateModal({ type, form, setForm, onClose, onSubmit, saving, feed
                 </>
               )}
               <FormField label="Assigned agent">
-                <input
-                  className={inputClass}
-                  value={form.assignedAgent}
-                  onChange={(event) => updateField('assignedAgent', event.target.value)}
-                  placeholder="Agent name"
+                <AgentDropdownSelect
+                  value={normalizeText(form.assignedAgentId || form.assignedAgentEmail || form.assignedAgent)}
+                  agents={agentOptions}
+                  loading={agentOptionsLoading}
+                  onChange={updateAssignedAgent}
                 />
               </FormField>
               {shouldShowListingSelect ? (
@@ -798,6 +1126,8 @@ function QuickCreateDropdown({ className = '' }) {
   const [feedback, setFeedback] = useState({ kind: '', message: '' })
   const [listingOptions, setListingOptions] = useState([])
   const [listingOptionsLoading, setListingOptionsLoading] = useState(false)
+  const [agentOptions, setAgentOptions] = useState([])
+  const [agentOptionsLoading, setAgentOptionsLoading] = useState(false)
   const containerRef = useRef(null)
 
   const actor = useMemo(() => {
@@ -807,9 +1137,10 @@ function QuickCreateDropdown({ className = '' }) {
       userId: normalizeText(profile?.id),
       name: fullName || 'Current user',
       email: normalizeText(profile?.email),
+      avatarUrl: getProfileAvatarUrl(profile),
       branchId: '',
     }
-  }, [profile?.email, profile?.firstName, profile?.fullName, profile?.id, profile?.lastName])
+  }, [profile])
 
   const quickCreateGroups = useMemo(
     () => {
@@ -900,11 +1231,46 @@ function QuickCreateDropdown({ className = '' }) {
     }
   }, [activeType])
 
+  useEffect(() => {
+    if (activeType !== 'lead' && activeType !== 'prospect') return undefined
+    let isCancelled = false
+
+    async function loadAgentOptions() {
+      setAgentOptions(buildAgentOptions([], actor))
+      setAgentOptionsLoading(true)
+
+      try {
+        const users = await listOrganisationUsers()
+        if (!isCancelled) {
+          setAgentOptions(buildAgentOptions(Array.isArray(users) ? users : [], actor))
+        }
+      } catch {
+        if (!isCancelled) {
+          setAgentOptions(buildAgentOptions([], actor))
+        }
+      } finally {
+        if (!isCancelled) {
+          setAgentOptionsLoading(false)
+        }
+      }
+    }
+
+    void loadAgentOptions()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [activeType, actor])
+
   function openModal(type, initialForm = {}) {
     const resolvedType = type || 'lead'
+    const actorOption = buildActorAgentOption(actor)
     const nextForm = {
       ...INITIAL_FORMS[resolvedType],
-      assignedAgent: actor.name === 'Current user' ? '' : actor.name,
+      assignedAgent: actorOption.name === 'Current user' ? '' : actorOption.name,
+      assignedAgentId: actorOption.id,
+      assignedAgentEmail: actorOption.email,
+      assignedAgentAvatarUrl: actorOption.avatarUrl,
       ...initialForm,
     }
     setOpen(false)
@@ -1023,11 +1389,12 @@ function QuickCreateDropdown({ className = '' }) {
       if (activeType === 'lead') {
         const nameParts = splitName(form.name)
         const selectedListing = listingOptions.find((option) => option.id === normalizeText(form.listingId)) || null
+        const selectedAssignedAgent = getSelectedAgentOption(form, agentOptions, actor)
         await createAgencyCrmLeadRecord(
           organisationId,
           {
-            assignedAgent: actor,
-            assignedUserId: normalizeText(actor.userId || actor.id),
+            assignedAgent: selectedAssignedAgent,
+            assignedUserId: normalizeText(selectedAssignedAgent.userId || selectedAssignedAgent.id),
             createdBy: normalizeText(actor.userId || actor.id),
             contact: {
               firstName: nameParts.firstName,
@@ -1056,11 +1423,12 @@ function QuickCreateDropdown({ className = '' }) {
         const nameParts = splitName(form.name)
         const prospectType = normalizeText(form.prospectType) || 'Buyer'
         const leadCategory = inferLeadCategoryFromRecord({ leadCategory: prospectType, leadSource: 'Manual Entry' }, 'buyer')
+        const selectedAssignedAgent = getSelectedAgentOption(form, agentOptions, actor)
         await createAgencyCrmLeadRecord(
           organisationId,
           {
-            assignedAgent: actor,
-            assignedUserId: normalizeText(actor.userId || actor.id),
+            assignedAgent: selectedAssignedAgent,
+            assignedUserId: normalizeText(selectedAssignedAgent.userId || selectedAssignedAgent.id),
             createdBy: normalizeText(actor.userId || actor.id),
             contact: {
               firstName: nameParts.firstName,
@@ -1135,6 +1503,9 @@ function QuickCreateDropdown({ className = '' }) {
       setForm({
         ...INITIAL_FORMS[activeType],
         assignedAgent: actor.name === 'Current user' ? '' : actor.name,
+        assignedAgentId: actor.id,
+        assignedAgentEmail: actor.email,
+        assignedAgentAvatarUrl: getProfileAvatarUrl(actor),
         ...(activeType === 'lead' ? { source: LEAD_SOURCE_OPTIONS[0], listingId: '' } : {}),
       })
     } catch {
@@ -1216,6 +1587,8 @@ function QuickCreateDropdown({ className = '' }) {
         feedback={feedback}
         listingOptions={listingOptions}
         listingOptionsLoading={listingOptionsLoading}
+        agentOptions={agentOptions}
+        agentOptionsLoading={agentOptionsLoading}
       />
 
       <QuickCreateAudienceModal

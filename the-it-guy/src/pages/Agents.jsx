@@ -30,6 +30,7 @@ import { createElement, useCallback, useEffect, useMemo, useRef, useState } from
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import AgentTransactionsTable from '../components/AgentTransactionsTable'
+import PartnerBusinessDistributionPanel from '../components/dashboard/PartnerBusinessDistributionPanel'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
@@ -68,6 +69,8 @@ import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../l
 import { LEADERBOARD_METRICS } from '../modules/agency/agents/agentPerformanceUtils'
 import { loadAgentPerformanceSources } from '../modules/agency/agents/agentPerformanceDataService'
 import { getPrincipalAgentCommandCentre, getPrincipalAgentDetailCommandCentre } from '../modules/agency/agents/principalAgentCommandCentreService'
+import { buildAgentCommissionSummary, getAgentCommissionSummary, updateCommissionTarget } from '../services/commissionService'
+import { buildPartnerBusinessDistribution } from '../services/partnerBusinessDistributionService'
 import {
   discoverAgentOffboardingAssets,
   executeAgentAssetReassignment,
@@ -1015,6 +1018,7 @@ function createEmptyAgentWorkspaceSnapshot() {
     branches: [],
     leads: [],
     transactions: [],
+    transactionRolePlayers: [],
     listings: [],
     appointments: [],
     tasks: [],
@@ -1022,6 +1026,33 @@ function createEmptyAgentWorkspaceSnapshot() {
     canvassingProspects: [],
     canvassingActivities: [],
   }
+}
+
+function getAgentDealTransactionId(row = {}) {
+  return normalizeAgentRecordId(
+    row?.transaction?.id ||
+      row?.transaction_id ||
+      row?.transactionId ||
+      row?.id,
+  )
+}
+
+function getRolePlayerTransactionId(row = {}) {
+  return normalizeAgentRecordId(row?.transaction_id || row?.transactionId)
+}
+
+function getRolePlayersForAgentDeals(deals = [], rolePlayers = []) {
+  const transactionIds = new Set((Array.isArray(deals) ? deals : []).map(getAgentDealTransactionId).filter(Boolean))
+  if (!transactionIds.size) return []
+  return (Array.isArray(rolePlayers) ? rolePlayers : []).filter((row) => transactionIds.has(getRolePlayerTransactionId(row)))
+}
+
+function buildAgentPartnerBusinessDistribution(agent = {}, rolePlayers = []) {
+  const transactions = Array.isArray(agent?.deals) ? agent.deals : []
+  return buildPartnerBusinessDistribution({
+    transactions,
+    rolePlayers: getRolePlayersForAgentDeals(transactions, rolePlayers),
+  })
 }
 
 function resolveOrganisationOptions({ directory = null, invites = [], profile = null, organisation = null } = {}) {
@@ -1093,7 +1124,7 @@ function normalizeDealStatus(row) {
   return 'active'
 }
 
-function computeAgentWorkspaceData({ transactions, privateListings, pipelineRows, appointments = [], agentDirectory = null }) {
+function computeAgentWorkspaceData({ transactions, transactionRolePlayers = [], privateListings, pipelineRows, appointments = [], agentDirectory = null }) {
   const groupedByAgent = new Map()
 
   for (const row of transactions) {
@@ -1297,6 +1328,7 @@ function computeAgentWorkspaceData({ transactions, privateListings, pipelineRows
         averageDealTime: avgDealTime,
       },
       recentDeals,
+      partnerBusinessDistribution: buildAgentPartnerBusinessDistribution({ deals: agent.deals }, transactionRolePlayers),
     }
   })
 
@@ -3474,6 +3506,128 @@ function AgentManagementCard({ title, actionLabel, onAction, children, className
   )
 }
 
+const COMMISSION_TARGET_PERIOD_LABELS = {
+  monthly: 'Monthly',
+  quarterly: 'Quarterly',
+  yearly: 'Yearly',
+}
+
+function getCommissionPeriodLabel(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  return COMMISSION_TARGET_PERIOD_LABELS[normalized] || 'Monthly'
+}
+
+function getCommissionTargetPeriodStart(period = 'monthly') {
+  const now = new Date()
+  const normalized = String(period || '').trim().toLowerCase()
+  const month = normalized === 'yearly' ? 0 : normalized === 'quarterly' ? Math.floor(now.getMonth() / 3) * 3 : now.getMonth()
+  const start = new Date(now.getFullYear(), month, 1)
+  const year = start.getFullYear()
+  const monthText = String(start.getMonth() + 1).padStart(2, '0')
+  return `${year}-${monthText}-01`
+}
+
+function getCommissionTargetStatusClass(status = '') {
+  const normalized = String(status || '').trim().toLowerCase()
+  if (['exceeded', 'on_track'].includes(normalized)) {
+    return 'border-[#bdebd0] bg-[#eefaf2] text-[#16894f]'
+  }
+  if (normalized === 'behind') {
+    return 'border-[#f5d8a8] bg-[#fff8ed] text-[#b86708]'
+  }
+  return 'border-[#dce5ef] bg-[#f7fafc] text-[#60758d]'
+}
+
+function CommissionSummaryRow({ label, value, valueClassName = '' }) {
+  return (
+    <div className="grid min-w-0 grid-cols-[minmax(104px,0.5fr)_minmax(0,1fr)] gap-3 py-1.5">
+      <span className="min-w-0 truncate text-xs font-semibold text-[#6f839a]">{label}</span>
+      <span className={`min-w-0 truncate text-sm font-semibold text-[#20364d] ${valueClassName}`} title={String(value || '—')}>{value || '—'}</span>
+    </div>
+  )
+}
+
+function CommissionSummarySection({ title, children }) {
+  return (
+    <section className="min-w-0 border-b border-[#edf2f7] pb-3 last:border-0 last:pb-0">
+      <h4 className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{title}</h4>
+      {children}
+    </section>
+  )
+}
+
+function AgentCommissionStructureSummary({ summary, statusLabel = 'Active', loading = false }) {
+  const achievedProgress = Math.max(0, Number(summary?.companyContributionProgress || 0))
+  const progress = Math.min(100, achievedProgress)
+  const projectedProgress = Math.max(0, Number(summary?.companyContributionProjectedProgress || 0))
+  const targetAmount = Number(summary?.companyTargetAmount || 0)
+  const period = String(summary?.companyTargetPeriod || 'monthly').toLowerCase()
+  const tracker = summary?.companyContributionTracker || {}
+
+  return (
+    <div className="min-w-0 space-y-3">
+      <CommissionSummarySection title="Listing Commission">
+        <CommissionSummaryRow label="Current plan" value={summary?.commissionStructureName || 'Default commission structure'} />
+        <CommissionSummaryRow label="Listing commission" value={summary?.listingCommissionLabel || '—'} />
+        <CommissionSummaryRow label="Basis" value={summary?.listingCommissionBasis || '—'} />
+        <CommissionSummaryRow label="Effective from" value={summary?.commissionEffectiveFrom ? formatDate(summary.commissionEffectiveFrom) : '—'} />
+      </CommissionSummarySection>
+
+      <CommissionSummarySection title="Sales Commission Split">
+        <div className="grid min-w-0 grid-cols-2 gap-2">
+          <div className="min-w-0 rounded-xl border border-[#e2eaf3] bg-[#fbfcfe] px-3 py-2">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Agent</p>
+            <p className="mt-1 truncate text-lg font-semibold tracking-[-0.03em] text-[#10243a]">{formatPercent(summary?.agentSplitPercentage)}</p>
+          </div>
+          <div className="min-w-0 rounded-xl border border-[#e2eaf3] bg-[#fbfcfe] px-3 py-2">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Company</p>
+            <p className="mt-1 truncate text-lg font-semibold tracking-[-0.03em] text-[#10243a]">{formatPercent(summary?.companySplitPercentage)}</p>
+          </div>
+        </div>
+        <CommissionSummaryRow label="Split source" value={summary?.splitOverrideApplied ? 'Agent override' : summary?.commissionLevelName || 'Structure default'} />
+        <CommissionSummaryRow label="Status" value={statusLabel} />
+      </CommissionSummarySection>
+
+      <CommissionSummarySection title="Commission to Company Target">
+        <div className="mb-3 grid min-w-0 grid-cols-3 overflow-hidden rounded-xl border border-[#dfe8f3] bg-[#f8fbff] p-1">
+          {['monthly', 'quarterly', 'yearly'].map((item) => (
+            <span
+              key={item}
+              className={`truncate rounded-lg px-2 py-1.5 text-center text-[0.68rem] font-semibold ${item === period ? 'bg-white text-[#10243a] shadow-sm' : 'text-[#6f839a]'}`}
+              title={getCommissionPeriodLabel(item)}
+            >
+              {getCommissionPeriodLabel(item)}
+            </span>
+          ))}
+        </div>
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{getCommissionPeriodLabel(period)} target</p>
+            <p className="mt-1 truncate text-xl font-semibold tracking-[-0.035em] text-[#10243a]" title={formatCurrency(targetAmount)}>
+              {targetAmount > 0 ? formatCurrency(targetAmount) : 'No target set'}
+            </p>
+          </div>
+          <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getCommissionTargetStatusClass(summary?.companyTargetStatus)}`}>
+            {summary?.companyTargetStatusLabel || 'No target set'}
+          </span>
+        </div>
+        <div className="mt-3">
+          <div className="h-2 overflow-hidden rounded-full bg-[#e9eff6]">
+            <div className="h-full rounded-full bg-[#1f7a68]" style={{ width: `${targetAmount > 0 ? progress : 0}%` }} />
+          </div>
+          <div className="mt-2 flex min-w-0 items-center justify-between gap-3 text-xs font-semibold text-[#60758d]">
+            <span className="truncate">{formatCurrency(summary?.companyContributionAmount || 0)} captured</span>
+            <span className="shrink-0">{targetAmount > 0 ? `${Math.round(achievedProgress)}%` : '—'}</span>
+          </div>
+        </div>
+        <CommissionSummaryRow label="Forecast" value={targetAmount > 0 ? `${formatCurrency(summary?.companyContributionProjectedAmount || 0)} (${Math.round(projectedProgress)}%)` : formatCurrency(summary?.companyContributionProjectedAmount || 0)} />
+        <CommissionSummaryRow label="Period ends" value={tracker.periodEnd ? formatDate(tracker.periodEnd) : '—'} />
+        {loading ? <p className="mt-2 text-xs font-semibold text-[#8294aa]">Syncing saved commission data…</p> : null}
+      </CommissionSummarySection>
+    </div>
+  )
+}
+
 function PrincipalAgentTabShell({ title, description, actionLabel, onAction, children }) {
   return (
     <section className="min-w-0 overflow-hidden rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-sm sm:p-5">
@@ -3826,6 +3980,8 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     commissionStructureId: '',
     overrideAgentSplitPercentage: '',
     effectiveFrom: '',
+    companyTargetPeriod: 'monthly',
+    companyTargetAmount: '',
   })
   const [commissionSaving, setCommissionSaving] = useState(false)
   const [commissionError, setCommissionError] = useState('')
@@ -3839,10 +3995,20 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
   const selectedCommissionStructure =
     activeCommissionStructures.find((structure) => normalizeAgentRecordId(structure.id) === normalizeAgentRecordId(commissionForm.commissionStructureId)) ||
     (!commissionForm.commissionStructureId ? defaultCommissionStructure : null)
+  const fallbackCommissionSummary = useMemo(
+    () => agent.commissionSummary || buildAgentCommissionSummary({ agent, structures: commissionStructures }),
+    [agent, commissionStructures],
+  )
+  const [remoteCommissionSummary, setRemoteCommissionSummary] = useState(null)
+  const [commissionSummaryLoading, setCommissionSummaryLoading] = useState(false)
+  const commissionSummary = remoteCommissionSummary || fallbackCommissionSummary
+  const commissionTargetUserId = normalizeAgentRecordId(agent.userId || agent.user_id)
+  const commissionTargetEmail = normalizeIdentityEmail(agent.email)
 
   useEffect(() => {
     if (modalMode !== 'commission') return
     setCommissionError('')
+    const targetAmount = Number(commissionSummary?.companyTargetAmount || 0)
     setCommissionForm({
       commissionStructureId: agent.commissionStructureId || '',
       overrideAgentSplitPercentage:
@@ -3850,8 +4016,17 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
           ? ''
           : String(agent.overrideAgentSplitPercentage),
       effectiveFrom: agent.commissionEffectiveFrom ? String(agent.commissionEffectiveFrom).slice(0, 10) : new Date().toISOString().slice(0, 10),
+      companyTargetPeriod: commissionSummary?.companyTargetPeriod || 'monthly',
+      companyTargetAmount: targetAmount > 0 ? String(targetAmount) : '',
     })
-  }, [agent.commissionEffectiveFrom, agent.commissionStructureId, agent.overrideAgentSplitPercentage, modalMode])
+  }, [
+    agent.commissionEffectiveFrom,
+    agent.commissionStructureId,
+    agent.overrideAgentSplitPercentage,
+    commissionSummary?.companyTargetAmount,
+    commissionSummary?.companyTargetPeriod,
+    modalMode,
+  ])
 
   useEffect(() => {
     if (modalMode !== 'permissions') return
@@ -3859,10 +4034,49 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     setPermissionsForm({ role: agent.role || 'agent' })
   }, [agent.role, modalMode])
 
+  useEffect(() => {
+    const agentUserId = normalizeAgentRecordId(agent.userId || agent.user_id)
+    const agentEmail = normalizeIdentityEmail(agent.email)
+    if (!agentUserId && !agentEmail) {
+      setRemoteCommissionSummary(null)
+      setCommissionSummaryLoading(false)
+      return undefined
+    }
+
+    let cancelled = false
+    setCommissionSummaryLoading(true)
+    getAgentCommissionSummary(agentUserId, { userEmail: agentEmail })
+      .then((summary) => {
+        if (!cancelled) setRemoteCommissionSummary(summary)
+      })
+      .catch((summaryError) => {
+        if (!cancelled) {
+          console.warn('[Agents] Agent commission summary failed', summaryError)
+          setRemoteCommissionSummary(null)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setCommissionSummaryLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    agent.commissionEffectiveFrom,
+    agent.commissionProfileId,
+    agent.commissionStructureId,
+    agent.email,
+    agent.overrideAgentSplitPercentage,
+    agent.userId,
+    agent.user_id,
+  ])
+
   const {
     branches = [],
     leads = [],
     transactions = [],
+    transactionRolePlayers = [],
     listings = [],
     appointments = [],
     tasks = [],
@@ -3906,6 +4120,14 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
         canvassingActivities,
       }),
     [agent, appointments, branches, canvassingActivities, canvassingProspects, leadActivities, leads, listings, tasks, transactions],
+  )
+  const partnerBusinessDistribution = useMemo(
+    () =>
+      buildAgentPartnerBusinessDistribution(agent, [
+        ...transactionRolePlayers,
+        ...(workspaceSnapshot?.rolePlayers || []),
+      ]),
+    [agent, transactionRolePlayers, workspaceSnapshot?.rolePlayers],
   )
   const agentDisplayName = getAgentPrimaryName(agent)
   const agentRoleTitle = getAgentRoleTitle(agent)
@@ -3972,15 +4194,6 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     ['Last Login', getWorkspaceDisplayValue(agent.lastActiveAt, formatDateTime)],
   ]
 
-  const commissionPlanRows = [
-    ['Current plan', getWorkspaceDisplayValue(agent.commissionStructureName || agent.commissionPlanName)],
-    ['Effective from', getWorkspaceDisplayValue(agent.commissionEffectiveFrom, formatDate)],
-    ['Base commission', getWorkspaceDisplayValue(agent.baseCommissionRate)],
-    ['Split', getWorkspaceDisplayValue(agent.commissionSplit)],
-    ['Performance tier', getWorkspaceDisplayValue(agent.performanceTier)],
-    ['Status', getAgentStatusMeta(agent).label],
-  ]
-
   const teamAllocationRows = [
     ['Team size', getWorkspaceDisplayValue(agent.teamSize)],
     ['Listings assigned', allListings.length],
@@ -4002,6 +4215,12 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     ['Agency Settings', getWorkspaceDisplayValue(agent.permissions?.agencySettings || roleAccessSummary.agencySettings)],
     ['Commission Visibility', getWorkspaceDisplayValue(agent.permissions?.commissionVisibility || roleAccessSummary.commissionVisibility)],
   ]
+  const draftAgentSplitPercentage = selectedCommissionStructure
+    ? Number(commissionForm.overrideAgentSplitPercentage || selectedCommissionStructure.agentSplitPercentage)
+    : Number(commissionSummary?.agentSplitPercentage || 0)
+  const draftCompanySplitPercentage = Number.isFinite(draftAgentSplitPercentage) ? 100 - draftAgentSplitPercentage : NaN
+  const draftCompanyTargetAmount = Number(commissionForm.companyTargetAmount || 0)
+  const draftCompanyTargetPeriod = commissionForm.companyTargetPeriod || commissionSummary?.companyTargetPeriod || 'monthly'
 
   const confirmDescriptions = {
     deactivate: `Deactivate ${agent.name || 'this agent'} so they can no longer work as an active agent in this organisation.`,
@@ -4026,6 +4245,16 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
       setCommissionError('Override split must be between 0 and 100.')
       return
     }
+    const targetValue = String(commissionForm.companyTargetAmount || '').trim()
+    const parsedTargetAmount = targetValue === '' ? 0 : Number(targetValue)
+    if (!Number.isFinite(parsedTargetAmount) || parsedTargetAmount < 0) {
+      setCommissionError('Company target amount must be zero or more.')
+      return
+    }
+    if (parsedTargetAmount > 0 && !commissionTargetUserId) {
+      setCommissionError('This agent needs a linked user account before a company target can be saved.')
+      return
+    }
 
     try {
       setCommissionSaving(true)
@@ -4038,7 +4267,20 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
         overrideAgentSplitPercentage: parsedOverride,
         effectiveFrom: commissionForm.effectiveFrom || new Date().toISOString().slice(0, 10),
       })
-      setActionNotice('Commission assignment updated.')
+      const savedCompanyTarget = Boolean(commissionTargetUserId)
+      if (savedCompanyTarget) {
+        await updateCommissionTarget({
+          targetType: 'agent',
+          targetMetric: 'company_commission',
+          userId: commissionTargetUserId,
+          period: commissionForm.companyTargetPeriod || 'monthly',
+          targetAmount: parsedTargetAmount,
+          startMonth: getCommissionTargetPeriodStart(commissionForm.companyTargetPeriod),
+        })
+        const refreshedSummary = await getAgentCommissionSummary(commissionTargetUserId, { userEmail: commissionTargetEmail })
+        setRemoteCommissionSummary(refreshedSummary)
+      }
+      setActionNotice(savedCompanyTarget ? 'Commission assignment and company target updated.' : 'Commission assignment updated.')
       setModalMode('')
       await onRefresh?.()
     } catch (saveError) {
@@ -4433,6 +4675,8 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
               </div>
             )}
           </WorkspaceCard>
+
+          <PartnerBusinessDistributionPanel distribution={partnerBusinessDistribution} scope="agent" />
         </section>
       ) : null}
 
@@ -4618,11 +4862,11 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
                 </div>
               </AgentManagementCard>
               <AgentManagementCard title="Sales Commission Structure" actionLabel="Manage" onAction={() => openPlaceholder('commission')}>
-                <div className="space-y-1">
-                  {commissionPlanRows.map(([label, value]) => (
-                    <DetailInfoRow key={label} label={label} value={value} />
-                  ))}
-                </div>
+                <AgentCommissionStructureSummary
+                  summary={commissionSummary}
+                  statusLabel={getAgentStatusMeta(agent).label}
+                  loading={commissionSummaryLoading}
+                />
               </AgentManagementCard>
               <AgentManagementCard title="Profile & Permissions" actionLabel="Manage" onAction={() => openPlaceholder('permissions')}>
                 <div className="space-y-1">
@@ -4715,11 +4959,11 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
             </AgentManagementCard>
 
             <AgentManagementCard title="Sales Commission Structure" actionLabel="Manage" onAction={() => openPlaceholder('commission')}>
-              <div className="space-y-1">
-                {commissionPlanRows.map(([label, value]) => (
-                  <DetailInfoRow key={label} label={label} value={value} />
-                ))}
-              </div>
+              <AgentCommissionStructureSummary
+                summary={commissionSummary}
+                statusLabel={getAgentStatusMeta(agent).label}
+                loading={commissionSummaryLoading}
+              />
             </AgentManagementCard>
 
             <AgentManagementCard title="Notification Settings">
@@ -4777,7 +5021,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
         }
         subtitle={
           modalMode === 'commission'
-            ? 'Assign a sales commission structure, optional split override and effective date for this agent.'
+            ? 'Assign the structure, split override, effective date and company target for this agent.'
             : modalMode === 'permissions'
               ? 'Update the agent role and review the workspace access it grants.'
             : 'This management surface is ready for the connected workflow.'
@@ -4790,7 +5034,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
               <Button
                 type="button"
                 onClick={handleSaveCommissionAssignment}
-                disabled={!canManageSettings || commissionSaving || !activeCommissionStructures.length}
+                disabled={!canManageSettings || commissionSaving || commissionSummaryLoading || !activeCommissionStructures.length}
               >
                 {commissionSaving ? 'Saving…' : 'Save Commission'}
               </Button>
@@ -4876,6 +5120,40 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
                       onChange={(event) => updateCommissionForm('effectiveFrom', event.target.value)}
                     />
                   </label>
+
+                  <div className="grid gap-3 border-t border-[#edf2f7] pt-4 sm:col-span-2 sm:grid-cols-2">
+                    <label className="grid gap-1.5">
+                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Company Target Period</span>
+                      <Field
+                        as="select"
+                        value={commissionForm.companyTargetPeriod}
+                        disabled={!canManageSettings || commissionSaving || !commissionTargetUserId}
+                        onChange={(event) => updateCommissionForm('companyTargetPeriod', event.target.value)}
+                      >
+                        <option value="monthly">Monthly</option>
+                        <option value="quarterly">Quarterly</option>
+                        <option value="yearly">Yearly</option>
+                      </Field>
+                    </label>
+
+                    <label className="grid gap-1.5">
+                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Commission to Company Target</span>
+                      <Field
+                        type="number"
+                        min="0"
+                        step="1000"
+                        value={commissionForm.companyTargetAmount}
+                        disabled={!canManageSettings || commissionSaving || !commissionTargetUserId}
+                        onChange={(event) => updateCommissionForm('companyTargetAmount', event.target.value)}
+                        placeholder="0"
+                      />
+                    </label>
+                    {!commissionTargetUserId ? (
+                      <div className="rounded-xl border border-[#f0dfc2] bg-[#fffbf3] px-4 py-3 text-sm font-medium text-[#7a5a16] sm:col-span-2">
+                        Link this agent to a user account before saving a company target.
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
 
                 <div className="rounded-2xl border border-[#dfe8f2] bg-[#fbfcfe] p-4">
@@ -4895,25 +5173,31 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
                     ) : null}
                   </div>
 
-                  <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <AgentMetricCard
+                      label="Listing Commission"
+                      value={commissionSummary?.listingCommissionLabel || '—'}
+                      helper={commissionSummary?.listingCommissionBasis || 'Current plan'}
+                    />
                     <AgentMetricCard
                       label="Agent Split"
-                      value={selectedCommissionStructure ? formatPercent(commissionForm.overrideAgentSplitPercentage || selectedCommissionStructure.agentSplitPercentage) : '—'}
+                      value={Number.isFinite(draftAgentSplitPercentage) ? formatPercent(draftAgentSplitPercentage) : '—'}
                       helper={commissionForm.overrideAgentSplitPercentage ? 'Override' : 'Structure'}
                     />
                     <AgentMetricCard
-                      label="Agency Split"
-                      value={
-                        selectedCommissionStructure
-                          ? formatPercent(100 - Number(commissionForm.overrideAgentSplitPercentage || selectedCommissionStructure.agentSplitPercentage))
-                          : '—'
-                      }
+                      label="Company Split"
+                      value={Number.isFinite(draftCompanySplitPercentage) ? formatPercent(draftCompanySplitPercentage) : '—'}
                       helper="Calculated"
                     />
                     <AgentMetricCard
-                      label="Assigned Agents"
-                      value={selectedCommissionStructure?.assignedAgentsCount ?? '—'}
-                      helper="Current plan"
+                      label="Company Target"
+                      value={draftCompanyTargetAmount > 0 ? formatCurrency(draftCompanyTargetAmount) : 'No target'}
+                      helper={getCommissionPeriodLabel(draftCompanyTargetPeriod)}
+                    />
+                    <AgentMetricCard
+                      label="Captured"
+                      value={formatCurrency(commissionSummary?.companyContributionAmount || 0)}
+                      helper={commissionSummary?.companyTargetStatusLabel || 'Current period'}
                     />
                     <AgentMetricCard
                       label="Status"
@@ -5379,6 +5663,7 @@ export function AgentsPage() {
       const pipelineRows = performanceSources.leads
       const mapped = computeAgentWorkspaceData({
         transactions: transactionRowsSource,
+        transactionRolePlayers: performanceSources.transactionRolePlayers,
         privateListings,
         pipelineRows,
         appointments: performanceSources.appointments,
@@ -6775,6 +7060,7 @@ export function AgentWorkspacePage() {
       const agentDirectory = readAgentDirectory()
       const mappedAgents = computeAgentWorkspaceData({
         transactions: Array.isArray(performanceSources.transactions) ? performanceSources.transactions : [],
+        transactionRolePlayers: Array.isArray(performanceSources.transactionRolePlayers) ? performanceSources.transactionRolePlayers : [],
         privateListings: Array.isArray(performanceSources.listings) ? performanceSources.listings : [],
         pipelineRows: Array.isArray(performanceSources.leads) ? performanceSources.leads : [],
         appointments: Array.isArray(performanceSources.appointments) ? performanceSources.appointments : [],
@@ -6802,6 +7088,7 @@ export function AgentWorkspacePage() {
           branches: performanceSources.branches || [],
           leads: performanceSources.leads || [],
           transactions: performanceSources.transactions || [],
+          transactionRolePlayers: performanceSources.transactionRolePlayers || [],
           listings: performanceSources.listings || [],
           appointments: performanceSources.appointments || [],
           tasks: performanceSources.tasks || [],

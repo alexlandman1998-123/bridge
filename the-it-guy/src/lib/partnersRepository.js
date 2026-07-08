@@ -819,6 +819,44 @@ function isMissingPartnerInvitationFunctionError(error = null) {
   return message.includes('function not found') || (status === 404 && message.includes('edge function'))
 }
 
+function isMissingPartnerInvitationDeleteRpcError(error = null) {
+  const code = normalizeLower(error?.code || '')
+  const message = normalizeLower(`${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`)
+  return (
+    code === 'pgrst202' ||
+    code === '42883' ||
+    (message.includes('bridge_delete_partner_invitation') && message.includes('function'))
+  )
+}
+
+function buildPartnerInvitationDeleteRpcError(payload = {}) {
+  const code = normalizeLower(payload?.code || payload?.reason)
+  const messages = {
+    accepted: 'Accepted invitations cannot be deleted.',
+    invitation_accepted: 'Accepted invitations cannot be deleted.',
+    missing_invitation_id: 'A partner invitation is required.',
+    not_authorized: 'You do not have permission to delete this partner invitation.',
+    not_found: 'This partner invitation is no longer available.',
+    stale: 'Partner invitation could not be deleted. Refresh the page and try again.',
+  }
+  const error = new Error(messages[code] || 'Partner invitation could not be deleted. Refresh the page and try again.')
+  if (code) error.code = code
+  return error
+}
+
+async function deletePartnerInvitationWithRpc(invitationId = '') {
+  const result = await supabase.rpc('bridge_delete_partner_invitation', { p_invitation_id: invitationId })
+  if (result.error) {
+    if (isMissingPartnerInvitationDeleteRpcError(result.error)) return null
+    throw result.error
+  }
+
+  if (result.data === true) return true
+  const payload = result.data || {}
+  if (payload.success === true || payload.deleted === true) return true
+  throw buildPartnerInvitationDeleteRpcError(payload)
+}
+
 function buildPartnerInvitationFunctionError(error = null, fallback = 'Unable to accept partner invitation.') {
   const message = normalizeText(error?.message || error?.error || fallback)
   const nextError = new Error(message)
@@ -1490,6 +1528,9 @@ export async function deletePartnerInvitation({
   assertSentInvitationManagementAccess(invitation, organisationId)
   if ((normalizeLower(invitation.status) || 'pending') === 'accepted') throw new Error('Accepted invitations cannot be deleted.')
 
+  const rpcDeleted = await deletePartnerInvitationWithRpc(id)
+  if (rpcDeleted === true) return true
+
   const result = await supabase
     .from('partner_invitations')
     .delete({ count: 'exact' })
@@ -1498,7 +1539,7 @@ export async function deletePartnerInvitation({
     .neq('status', 'accepted')
   if (result.error) throw result.error
   if (Number(result.count || 0) < 1) {
-    throw new Error('Partner invitation could not be deleted. Refresh the page and try again.')
+    throw new Error('Partner invitation could not be deleted. Confirm sender admin access, refresh the page, and try again.')
   }
   return true
 }

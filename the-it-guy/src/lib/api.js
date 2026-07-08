@@ -27277,15 +27277,21 @@ export async function enrichRowsWithBondIntakeContext(rows = []) {
   const rolePlayersPromise = (async () => {
     let query = await client
       .from('transaction_role_players')
-      .select('id, transaction_id, role_type, selection_source, preferred_partner_id, partner_name, contact_person, email_address, organisation_id, organisation_name, workspace_id, snapshot_json, created_at, updated_at')
+      .select('id, transaction_id, role_type, selection_source, preferred_partner_id, partner_relationship_id, organisation_id, partner_name, contact_person, email_address, phone_number, status, assignment_status, activation_trigger, removed_at, organisation_name, workspace_id, snapshot_json, created_at, updated_at')
       .in('transaction_id', transactionIds)
     if (
       query.error &&
       (isMissingColumnError(query.error, 'selection_source') ||
         isMissingColumnError(query.error, 'preferred_partner_id') ||
+        isMissingColumnError(query.error, 'partner_relationship_id') ||
         isMissingColumnError(query.error, 'partner_name') ||
         isMissingColumnError(query.error, 'contact_person') ||
         isMissingColumnError(query.error, 'email_address') ||
+        isMissingColumnError(query.error, 'phone_number') ||
+        isMissingColumnError(query.error, 'status') ||
+        isMissingColumnError(query.error, 'assignment_status') ||
+        isMissingColumnError(query.error, 'activation_trigger') ||
+        isMissingColumnError(query.error, 'removed_at') ||
         isMissingColumnError(query.error, 'organisation_id') ||
         isMissingColumnError(query.error, 'organisation_name') ||
         isMissingColumnError(query.error, 'workspace_id') ||
