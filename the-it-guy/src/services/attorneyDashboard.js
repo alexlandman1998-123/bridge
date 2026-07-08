@@ -799,7 +799,25 @@ function toPercent(count = 0, total = 0) {
   return Math.round((Number(count || 0) / Number(total || 0)) * 100)
 }
 
-function buildPartnerAnalytics({ uniqueMatters = [], isDalawyerDemo = false, organisationNamesById = {} } = {}) {
+function getInitials(value = '') {
+  const parts = String(value || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+  if (!parts.length) return 'PA'
+  return parts.slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('')
+}
+
+function inferPartnerType(value = '') {
+  const normalized = toLower(value)
+  if (normalized.includes('bond') || normalized.includes('home loan') || normalized.includes('ooba') || normalized.includes('betterbond')) return 'Bond Originator'
+  if (normalized.includes('develop') || normalized.includes('properties') || normalized.includes('homes')) return 'Developer'
+  if (normalized.includes('realty') || normalized.includes('estate') || normalized.includes('property') || normalized.includes('agency') || normalized.includes('exp')) return 'Agency'
+  if (normalized.includes('jacobs') || normalized.includes('landman') || normalized.includes('wyk')) return 'Estate Agent'
+  return 'Referral Partner'
+}
+
+export function getPartnerAnalytics({ uniqueMatters = [], isDalawyerDemo = false, organisationNamesById = {} } = {}) {
   const monthStart = startOfMonth(new Date())
   const rowsByPartner = new Map()
 
@@ -810,34 +828,42 @@ function buildPartnerAnalytics({ uniqueMatters = [], isDalawyerDemo = false, org
 
     if (!rowsByPartner.has(partnerName)) {
       rowsByPartner.set(partnerName, {
+        partnerId: partnerName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
         partner: partnerName,
+        partnerName,
+        partnerType: inferPartnerType(partnerName),
+        avatar: getInitials(partnerName),
         activeMatters: 0,
         newThisMonth: 0,
         revenuePipeline: 0,
+        pipelineValue: 0,
+        matterCount: 0,
       })
     }
 
     const row = rowsByPartner.get(partnerName)
     row.activeMatters += 1
+    row.matterCount += 1
     row.newThisMonth += isAfter(getInstructionDate(transaction), monthStart) ? 1 : 0
-    row.revenuePipeline += getTransactionValue(transaction)
+    row.pipelineValue += getTransactionValue(transaction)
+    row.revenuePipeline = row.pipelineValue
   })
 
   const rows = [...rowsByPartner.values()]
-    .sort((left, right) => Number(right.revenuePipeline || 0) - Number(left.revenuePipeline || 0))
+    .sort((left, right) => Number(right.pipelineValue || 0) - Number(left.pipelineValue || 0))
     .slice(0, 6)
-  const maxRevenuePipeline = rows.reduce((max, row) => Math.max(max, Number(row.revenuePipeline || 0)), 0)
+  const maxRevenuePipeline = rows.reduce((max, row) => Math.max(max, Number(row.pipelineValue || 0)), 0)
 
   return {
     status: rows.length ? 'available' : 'empty',
     rows: rows.map((row) => ({
       ...row,
-      revenueShare: maxRevenuePipeline ? Math.round((Number(row.revenuePipeline || 0) / maxRevenuePipeline) * 100) : 0,
+      revenueShare: maxRevenuePipeline ? Math.round((Number(row.pipelineValue || 0) / maxRevenuePipeline) * 100) : 0,
     })),
   }
 }
 
-function buildConveyancingPerformance({ uniqueMatters = [], businessIntelligence = {} } = {}) {
+export function getConveyancingPerformance({ uniqueMatters = [], businessIntelligence = {} } = {}) {
   const now = new Date()
   const weekStart = startOfWeek(now)
   const weekEnd = endOfDay(addDays(weekStart, 6))
@@ -873,7 +899,7 @@ function buildConveyancingPerformance({ uniqueMatters = [], businessIntelligence
   }
 }
 
-function buildMatterHealth({ uniqueMatters = [] } = {}) {
+export function calculateMatterHealth({ uniqueMatters = [] } = {}) {
   const total = uniqueMatters.length
   const critical = uniqueMatters.filter((matter) => matter.flags?.delayed || daysSince(getLastActivityDate(matter.transaction)) >= 21)
   const criticalIds = new Set(critical.map((matter) => matter.transactionId))
@@ -1319,16 +1345,16 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
     organisationNamesById,
   })
   const attentionMetrics = buildAttentionMetrics({ uniqueMatters, kpis })
-  const partnerAnalytics = buildPartnerAnalytics({
+  const partnerAnalytics = getPartnerAnalytics({
     uniqueMatters,
     isDalawyerDemo,
     organisationNamesById,
   })
-  const conveyancingPerformance = buildConveyancingPerformance({
+  const conveyancingPerformance = getConveyancingPerformance({
     uniqueMatters,
     businessIntelligence,
   })
-  const matterHealth = buildMatterHealth({ uniqueMatters })
+  const matterHealth = calculateMatterHealth({ uniqueMatters })
 
   return {
     firm: {

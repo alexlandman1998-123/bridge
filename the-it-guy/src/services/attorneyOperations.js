@@ -229,7 +229,7 @@ async function fetchTransactions(client, ids = []) {
   if (!transactionIds.length) return []
 
   const primarySelect =
-    'id, organisation_id, buyer_id, matter_number, transaction_reference, stage, current_main_stage, current_sub_stage_summary, finance_type, risk_status, operational_state, attorney_stage, next_action, updated_at, created_at, assigned_attorney_email, attorney, property_description, property_address_line_1, property_address_line_2, suburb, city, province, seller_name, seller_email, seller_phone, seller_has_existing_bond, current_bond_bank, current_bond_account_number, estimated_settlement_amount, purchase_price, sales_price, expected_transfer_date, registration_date, registered_at, lifecycle_state, is_active'
+    'id, organisation_id, development_id, unit_id, buyer_id, matter_number, transaction_reference, stage, current_main_stage, current_sub_stage_summary, finance_type, risk_status, operational_state, attorney_stage, next_action, next_action_due_at, updated_at, created_at, assigned_attorney_email, attorney, assigned_agent, assigned_agent_email, assigned_agent_id, bond_originator, assigned_bond_originator_email, bank, property_description, property_address_line_1, property_address_line_2, suburb, city, province, erf_number, seller_name, seller_email, seller_phone, seller_has_existing_bond, current_bond_bank, current_bond_account_number, estimated_settlement_amount, purchase_price, sales_price, expected_transfer_date, target_registration_date, registration_date, registered_at, lifecycle_state, last_meaningful_activity_at, is_active'
 
   let query = await client
     .from('transactions')
@@ -241,11 +241,23 @@ async function fetchTransactions(client, ids = []) {
     (isMissingColumnError(query.error, 'current_main_stage') ||
       isMissingColumnError(query.error, 'matter_number') ||
       isMissingColumnError(query.error, 'assigned_attorney_email') ||
+      isMissingColumnError(query.error, 'assigned_agent') ||
+      isMissingColumnError(query.error, 'assigned_agent_email') ||
+      isMissingColumnError(query.error, 'assigned_agent_id') ||
+      isMissingColumnError(query.error, 'assigned_bond_originator_email') ||
+      isMissingColumnError(query.error, 'bond_originator') ||
+      isMissingColumnError(query.error, 'bank') ||
       isMissingColumnError(query.error, 'operational_state') ||
       isMissingColumnError(query.error, 'attorney_stage') ||
       isMissingColumnError(query.error, 'property_description') ||
+      isMissingColumnError(query.error, 'development_id') ||
+      isMissingColumnError(query.error, 'unit_id') ||
+      isMissingColumnError(query.error, 'erf_number') ||
       isMissingColumnError(query.error, 'seller_has_existing_bond') ||
       isMissingColumnError(query.error, 'current_bond_bank') ||
+      isMissingColumnError(query.error, 'next_action_due_at') ||
+      isMissingColumnError(query.error, 'target_registration_date') ||
+      isMissingColumnError(query.error, 'last_meaningful_activity_at') ||
       isMissingColumnError(query.error, 'is_active'))
   ) {
     query = await client
@@ -269,6 +281,73 @@ async function fetchBuyersById(client, ids = []) {
   const query = await client.from('buyers').select('id, name, email').in('id', buyerIds)
   if (query.error) {
     if (isMissingTableError(query.error, 'buyers')) {
+      return {}
+    }
+    throw query.error
+  }
+
+  return (query.data || []).reduce((accumulator, row) => {
+    accumulator[row.id] = row
+    return accumulator
+  }, {})
+}
+
+async function fetchUnitsById(client, ids = []) {
+  const unitIds = [...new Set((ids || []).filter(Boolean))]
+  if (!unitIds.length) return {}
+
+  let query = await client
+    .from('units')
+    .select('id, development_id, unit_number, unit_label, phase, block, status')
+    .in('id', unitIds)
+
+  if (
+    query.error &&
+    (isMissingColumnError(query.error, 'unit_label') ||
+      isMissingColumnError(query.error, 'block') ||
+      isMissingColumnError(query.error, 'phase'))
+  ) {
+    query = await client
+      .from('units')
+      .select('id, development_id, unit_number, status')
+      .in('id', unitIds)
+  }
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'units')) {
+      return {}
+    }
+    throw query.error
+  }
+
+  return (query.data || []).reduce((accumulator, row) => {
+    accumulator[row.id] = row
+    return accumulator
+  }, {})
+}
+
+async function fetchDevelopmentsById(client, ids = []) {
+  const developmentIds = [...new Set((ids || []).filter(Boolean))]
+  if (!developmentIds.length) return {}
+
+  let query = await client
+    .from('developments')
+    .select('id, name, development_name, code')
+    .in('id', developmentIds)
+
+  if (
+    query.error &&
+    (isMissingColumnError(query.error, 'development_name') ||
+      isMissingColumnError(query.error, 'code'))
+  ) {
+    query = await client
+      .from('developments')
+      .select('id, name')
+      .in('id', developmentIds)
+  }
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'developments')) {
       return {}
     }
     throw query.error
@@ -695,6 +774,17 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
     return accumulator
   }, {})
 
+  const unitIds = [...new Set(transactions.map((transaction) => transaction.unit_id).filter(Boolean))]
+  const transactionDevelopmentIds = [...new Set(transactions.map((transaction) => transaction.development_id).filter(Boolean))]
+  const unitsById = await fetchUnitsById(client, unitIds)
+  const developmentIds = [
+    ...new Set([
+      ...transactionDevelopmentIds,
+      ...Object.values(unitsById).map((unit) => unit.development_id).filter(Boolean),
+    ]),
+  ]
+  const developmentsById = await fetchDevelopmentsById(client, developmentIds)
+
   const [buyersById, checklistItems, documentRequests, appointments, packetSigners] = await Promise.all([
     fetchBuyersById(client, transactions.map((transaction) => transaction.buyer_id).filter(Boolean)),
     fetchChecklistItems(client, transactionIds),
@@ -718,6 +808,8 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
       if (!transaction) return null
       if (transaction.is_active === false) return null
 
+      const unit = unitsById[transaction.unit_id] || null
+      const development = developmentsById[transaction.development_id || unit?.development_id] || null
       const flags = resolveMatterFlags(transaction)
       const matterType = resolveMatterType(transaction, assignment.assignmentType)
       const status = flags.delayed
@@ -746,6 +838,8 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
         assignmentId: assignment.id,
         matterId: transaction.id,
         organisationId: transaction.organisation_id || null,
+        developmentId: transaction.development_id || unit?.development_id || null,
+        unitId: transaction.unit_id || null,
         matterReference: getMatterReference(transaction, transaction.id),
         clientName,
         buyerName: clientName,
@@ -753,8 +847,12 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
         propertyLabel:
           transaction.property_description ||
           [transaction.property_address_line_1, transaction.suburb, transaction.city].filter(Boolean).join(', ') ||
+          (unit?.unit_number ? `Unit ${unit.unit_number}` : '') ||
           'Property pending',
-        developmentName: transaction.development_name || 'Standalone matter',
+        developmentName: transaction.development_name || development?.development_name || development?.name || 'Standalone matter',
+        unitNumber: unit?.unit_label || unit?.unit_number || '',
+        phase: unit?.phase || unit?.block || '',
+        erfNumber: transaction.erf_number || '',
         financeType: transaction.finance_type || 'cash',
         purchasePrice: Number(transaction.purchase_price || transaction.sales_price || 0),
         sellerHasExistingBond:
@@ -763,10 +861,14 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
           toLower(transaction.seller_existing_bond) === 'true',
         currentBondBank: transaction.current_bond_bank || '',
         estimatedSettlementAmount: Number(transaction.estimated_settlement_amount || 0),
+        expectedRegistrationDate: transaction.target_registration_date || transaction.expected_transfer_date || transaction.registration_date || transaction.registered_at || null,
+        expectedLodgementDate: transaction.expected_lodgement_date || transaction.expected_lodgement_at || null,
+        nextActionDueAt: transaction.next_action_due_at || null,
         registrationDate: transaction.registration_date || transaction.registered_at || null,
         lifecycleState: transaction.lifecycle_state || null,
         matterType,
         currentStage: buildStageLabel(transaction),
+        nextAction: transaction.next_action || '',
         assignedRole: assignmentRole,
         assignedUserId: assignment.primaryAttorneyId || null,
         assignedAttorneyId: assignment.primaryAttorneyId || null,
@@ -775,8 +877,16 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
         assignedAttorneyName: assignment.primaryAttorney?.name || assignment.firm?.name || null,
         assignedSecretaryName: assignment.secretary?.name || null,
         assignedAdminHandlerName: assignment.adminHandler?.name || null,
+        assignedAgentId: transaction.assigned_agent_id || null,
+        assignedAgentName: transaction.assigned_agent || transaction.assigned_agent_email || '',
+        assignedAgentEmail: transaction.assigned_agent_email || '',
+        bondOriginatorName: transaction.bond_originator || transaction.assigned_bond_originator_email || '',
+        assignedBondOriginatorEmail: transaction.assigned_bond_originator_email || '',
+        bank: transaction.bank || transaction.current_bond_bank || '',
         assignedDepartmentId: assignment.departmentId || null,
+        createdAt: transaction.created_at || null,
         lastUpdated: transaction.updated_at || transaction.created_at || null,
+        lastMeaningfulActivityAt: transaction.last_meaningful_activity_at || transaction.updated_at || transaction.created_at || null,
         status,
         flags,
         actionLabel: 'Open Matter',

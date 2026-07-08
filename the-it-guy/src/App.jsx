@@ -1676,7 +1676,7 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['attorney']}>
                     <AttorneyFirmRoute>
-                      <Navigate to="/attorney/transactions/active" replace />
+                      <Navigate to="/attorney/matters/all" replace />
                     </AttorneyFirmRoute>
                   </RoleRoute>
                 }
@@ -1686,7 +1686,7 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['attorney']}>
                     <AttorneyFirmRoute>
-                      <Navigate to="/attorney/transactions/active" replace />
+                      <Navigate to="/attorney/transactions/all" replace />
                     </AttorneyFirmRoute>
                   </RoleRoute>
                 }

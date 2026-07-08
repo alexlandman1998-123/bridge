@@ -2356,6 +2356,8 @@ const DISCUSSION_VISIBILITY_VALUES = [
   'shared',
   'internal',
   'client_safe',
+  'professional_shared',
+  'shared_role_players',
   'shared_transaction',
   'internal_only',
   'client_visible',
@@ -2376,12 +2378,16 @@ function parseDiscussionMetadata(rawText) {
       body: '',
       discussionType: 'operational',
       visibility: 'shared',
+      hasDiscussionTypeTag: false,
+      hasVisibilityTag: false,
     }
   }
 
   const typeTags = new Set(DISCUSSION_TYPES)
   const visibilityMap = {
     shared: 'shared',
+    professional_shared: 'shared',
+    shared_role_players: 'shared',
     shared_transaction: 'shared_transaction',
     internal: 'internal',
     internal_only: 'internal',
@@ -2425,6 +2431,8 @@ function parseDiscussionMetadata(rawText) {
     body: remaining || sourceText,
     discussionType: parsedType || 'operational',
     visibility: parsedVisibility || 'shared',
+    hasDiscussionTypeTag: Boolean(parsedType),
+    hasVisibilityTag: Boolean(parsedVisibility),
   }
 }
 
@@ -2437,7 +2445,7 @@ function normalizeDiscussionVisibility(value, fallback = 'shared') {
   }
   if (normalized === 'internal_only') return 'internal'
   if (normalized === 'client_visible' || normalized === 'buyer_visible') return 'client_safe'
-  if (['shared_transaction', 'attorney_visible', 'bond_originator_visible', 'developer_visible'].includes(normalized)) {
+  if (['professional_shared', 'shared_role_players', 'shared_transaction', 'attorney_visible', 'bond_originator_visible', 'developer_visible'].includes(normalized)) {
     return 'shared'
   }
   return normalized
@@ -9231,7 +9239,11 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
 function normalizeTransactionCommentRow(row, options = {}) {
   const role = normalizeRoleType(row?.author_role || 'developer')
   const metadata = parseDiscussionMetadata(row?.comment_text || '')
-  const visibility = normalizeDiscussionVisibility(options.visibility || row?.visibility_scope, metadata.visibility)
+  const rawVisibility = String(options.visibility || row?.visibility_scope || '').trim().toLowerCase()
+  const visibility =
+    metadata.hasVisibilityTag && (!rawVisibility || rawVisibility === 'shared' || rawVisibility === 'shared_transaction')
+      ? normalizeDiscussionVisibility(metadata.visibility, 'shared')
+      : normalizeDiscussionVisibility(rawVisibility, metadata.visibility || 'shared')
   const rowUpdateType = String(row?.update_type || '').trim().toLowerCase()
   const discussionType = DISCUSSION_TYPES.includes(options.discussionType)
     ? options.discussionType
@@ -9286,7 +9298,13 @@ function filterDiscussionRowsByViewer(discussion, viewer = 'internal') {
     return discussion
   }
 
-  return discussion.filter((item) => normalizeDiscussionVisibility(item.visibility) !== 'internal')
+  return discussion.filter((item) => {
+    const visibility = normalizeDiscussionVisibility(item.visibility)
+    if (viewer === 'client') {
+      return visibility === 'client_safe'
+    }
+    return visibility !== 'internal'
+  })
 }
 
 function normalizeTransactionEventRow(row) {
@@ -31669,7 +31687,7 @@ export async function addTransactionDiscussionComment({
   unitId = null,
   developmentId = null,
   organisationId = null,
-  visibilityScope = 'shared_transaction',
+  visibilityScope = null,
   updateType = null,
   relatedEntityType = null,
   relatedEntityId = null,
@@ -31690,8 +31708,8 @@ export async function addTransactionDiscussionComment({
   const normalizedUpdateType = DISCUSSION_TYPES.includes(String(updateType || '').trim().toLowerCase())
     ? String(updateType || '').trim().toLowerCase()
     : parsedDiscussion.discussionType || 'operational'
-  const normalizedVisibilityScope =
-    String(visibilityScope || '').trim().toLowerCase() || 'shared_transaction'
+  const normalizedVisibilityScope = normalizeDiscussionVisibility(visibilityScope, parsedDiscussion.visibility || 'shared')
+  const normalizedCommentBody = parsedDiscussion.body || normalizedText
 
   const richPayload = {
     transaction_id: transactionId,
@@ -31704,7 +31722,7 @@ export async function addTransactionDiscussionComment({
     author_organisation_name: normalizeNullableText(authorOrganisationName),
     visibility_scope: normalizedVisibilityScope,
     update_type: normalizedUpdateType,
-    comment_text: normalizedText,
+    comment_text: normalizedCommentBody,
     related_entity_type: normalizeNullableText(relatedEntityType),
     related_entity_id: relatedEntityId || null,
     attachment_ids: Array.isArray(attachmentIds) ? attachmentIds : [],
@@ -31714,7 +31732,7 @@ export async function addTransactionDiscussionComment({
     transaction_id: transactionId,
     author_name: normalizedAuthorName,
     author_role: normalizedRole,
-    comment_text: normalizedText,
+    comment_text: normalizedCommentBody,
   }
 
   let insertResult = await client
@@ -31748,7 +31766,7 @@ export async function addTransactionDiscussionComment({
 
   if (insertResult.error) {
     if (isMissingTableError(insertResult.error, 'transaction_comments')) {
-      const fallback = await createNote(transactionId, `[${TRANSACTION_ROLE_LABELS[normalizedRole] || normalizedRole}] ${normalizedText}`, unitId)
+      const fallback = await createNote(transactionId, `[${TRANSACTION_ROLE_LABELS[normalizedRole] || normalizedRole}] ${normalizedCommentBody}`, unitId)
       await logTransactionEventIfPossible(client, {
         transactionId,
         eventType: 'CommentAdded',
@@ -31756,18 +31774,25 @@ export async function addTransactionDiscussionComment({
         eventData: {
           source: 'legacy_notes',
           noteId: fallback?.id || null,
-          text: normalizedText,
-          discussionType: 'operational',
+          text: normalizedCommentBody,
+          discussionType: normalizedUpdateType,
+          visibilityScope: normalizedVisibilityScope,
         },
       })
-      return normalizeTransactionCommentRow({
-        id: fallback.id,
-        transaction_id: transactionId,
-        author_name: normalizedAuthorName,
-        author_role: normalizedRole,
-        comment_text: normalizedText,
-        created_at: fallback.created_at,
-      })
+      return normalizeTransactionCommentRow(
+        {
+          id: fallback.id,
+          transaction_id: transactionId,
+          author_name: normalizedAuthorName,
+          author_role: normalizedRole,
+          comment_text: normalizedCommentBody,
+          created_at: fallback.created_at,
+        },
+        {
+          visibility: normalizedVisibilityScope,
+          discussionType: normalizedUpdateType,
+        },
+      )
     }
 
     throw insertResult.error
@@ -31780,8 +31805,9 @@ export async function addTransactionDiscussionComment({
     eventData: {
       source: 'transaction_comments',
       commentId: insertResult.data?.id || null,
-      text: normalizedText,
-      discussionType: 'operational',
+      text: normalizedCommentBody,
+      discussionType: normalizedUpdateType,
+      visibilityScope: normalizedVisibilityScope,
     },
   })
 

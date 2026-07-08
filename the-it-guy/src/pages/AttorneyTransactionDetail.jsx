@@ -319,8 +319,8 @@ const DOCUMENT_RELATED_WORKFLOW_OPTIONS = [
 ]
 
 const DOCUMENT_VISIBILITY_OPTIONS = [
-  { key: 'client_visible', label: 'Client visible' },
-  { key: 'shared', label: 'Shared with roleplayers' },
+  { key: 'client_visible', label: 'Buyer & seller visible' },
+  { key: 'shared', label: 'Professional / roleplayers only' },
   { key: 'internal', label: 'Internal only' },
 ]
 
@@ -336,8 +336,8 @@ const ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS = [
 ]
 
 const ADDITIONAL_DOCUMENT_VISIBILITY_OPTIONS = [
-  { value: 'client_visible', label: 'Client visible' },
-  { value: 'shared_role_players', label: 'Shared roleplayers' },
+  { value: 'client_visible', label: 'Buyer & seller visible' },
+  { value: 'shared_role_players', label: 'Professional / roleplayers only' },
   { value: 'internal_only', label: 'Internal only' },
 ]
 
@@ -610,10 +610,52 @@ const DISCUSSION_TYPES = [
   { key: 'client_update', label: 'Client Update' },
 ]
 const DISCUSSION_VISIBILITY_OPTIONS = [
-  { key: 'internal', label: 'Internal Only' },
-  { key: 'shared', label: 'Shared with Roleplayers' },
-  { key: 'client_visible', label: 'Buyer and Seller Visible' },
+  { key: 'internal', label: 'Internal only' },
+  { key: 'shared', label: 'Professional / roleplayers only' },
+  { key: 'client_visible', label: 'Buyer & seller visible' },
 ]
+
+const ATTORNEY_QUICK_ACTIONS = [
+  {
+    key: 'quick_internal_note',
+    updateType: 'internal_note',
+    label: 'Internal note',
+    groupLabel: 'Quick Actions',
+    defaultVisibility: 'internal',
+    fixedVisibility: 'internal',
+    clientVisibleAllowed: false,
+  },
+  {
+    key: 'quick_professional_update',
+    updateType: 'internal_note',
+    label: 'Professional update',
+    groupLabel: 'Quick Actions',
+    defaultVisibility: 'professional_shared',
+    fixedVisibility: 'shared',
+    clientVisibleAllowed: false,
+  },
+]
+
+function getDiscussionVisibilityScope(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'client_visible') return 'client_safe'
+  if (normalized === 'internal') return 'internal'
+  return 'shared'
+}
+
+function getDiscussionVisibilityKey(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'client_visible' || normalized === 'client_safe' || normalized === 'buyer_visible') return 'client_visible'
+  if (normalized === 'internal' || normalized === 'internal_only') return 'internal'
+  return 'shared'
+}
+
+function getAttorneyUpdateVisibility(value = '') {
+  const normalized = getDiscussionVisibilityKey(value)
+  if (normalized === 'client_visible') return 'client_visible'
+  if (normalized === 'internal') return 'internal'
+  return 'professional_shared'
+}
 
 const EMPTY_ARRAY = []
 const LIFECYCLE_STATES = ['active', 'registered', 'completed', 'archived', 'cancelled']
@@ -1135,8 +1177,8 @@ const WORKFLOW_DOCUMENT_PRIORITY_OPTIONS = [
 ]
 
 const WORKFLOW_DOCUMENT_VISIBILITY_OPTIONS = [
-  { value: 'client_visible', label: 'Client Visible' },
-  { value: 'professional_shared', label: 'Professional Shared' },
+  { value: 'client_visible', label: 'Buyer & seller visible' },
+  { value: 'professional_shared', label: 'Professional / roleplayers only' },
   { value: 'internal', label: 'Internal' },
 ]
 
@@ -1158,6 +1200,50 @@ const LANE_ACCENTS = {
     icon: 'bg-orange-50 text-orange-700 ring-orange-100',
     badge: 'border-orange-200 bg-orange-50 text-orange-700',
     fill: 'bg-orange-500',
+  },
+}
+
+const ATTORNEY_ROLE_WORKSPACE_ORDER = ['transfer', 'bond', 'cancellation']
+
+const ATTORNEY_ROLE_WORKSPACE_CONTENT = {
+  transfer: {
+    roleTitle: 'Transfer Attorney',
+    laneLabel: 'Transfer lane',
+    summary: 'Parties, property facts, transfer documents, guarantees, clearances, signing, lodgement, and registration.',
+    defaultDocumentAudience: 'client',
+    focusItems: [
+      'Buyer, seller, and property facts',
+      'FICA and entity documents',
+      'Transfer documents and signing',
+      'Guarantees, rates, and levy clearance',
+      'Lodgement and registration updates',
+    ],
+  },
+  bond: {
+    roleTitle: 'Bond Attorney',
+    laneLabel: 'Bond registration lane',
+    summary: 'Bank instruction, bond amount, conditions, bond documents, signing, guarantees, lodgement, and bond registration.',
+    defaultDocumentAudience: 'bank',
+    focusItems: [
+      'Bank instruction and bond amount',
+      'Bank conditions and supporting documents',
+      'Bond documents and buyer signing',
+      'Guarantees issued to transfer attorney',
+      'Bond lodgement and registration',
+    ],
+  },
+  cancellation: {
+    roleTitle: 'Cancellation Attorney',
+    laneLabel: 'Bond cancellation lane',
+    summary: 'Seller bond cancellation, settlement figures, title deed release, guarantees, readiness, and cancellation registration.',
+    defaultDocumentAudience: 'seller',
+    focusItems: [
+      'Cancellation instruction confirmed',
+      'Settlement figures requested or received',
+      'Title deed and bank release tracked',
+      'Guarantees received from transfer attorney',
+      'Cancellation ready for lodgement',
+    ],
   },
 }
 
@@ -1283,6 +1369,232 @@ function getReadinessChecklistMeta(item = {}) {
   if (item.complete) return WORKFLOW_STATUS_META.completed
   if (item.severity === 'critical' || item.severity === 'high') return WORKFLOW_STATUS_META.blocked
   return WORKFLOW_STATUS_META.waiting
+}
+
+function getAttorneyRoleWorkspaceKey(workflow = {}) {
+  const rawKey = String(workflow?.accentKey || workflow?.key || workflow?.lane?.laneKey || '').trim().toLowerCase()
+  if (rawKey.includes('bond') && !rawKey.includes('cancellation')) return 'bond'
+  if (rawKey.includes('cancel')) return 'cancellation'
+  return 'transfer'
+}
+
+function getAttorneyRoleWorkspaceContent(workflow = {}) {
+  return ATTORNEY_ROLE_WORKSPACE_CONTENT[getAttorneyRoleWorkspaceKey(workflow)] || ATTORNEY_ROLE_WORKSPACE_CONTENT.transfer
+}
+
+function countNumber(value = 0) {
+  const count = Number(value || 0)
+  return Number.isFinite(count) ? count : 0
+}
+
+function roleWorkspaceRequirementComplete(requirement = {}) {
+  const status = String(requirement.status || requirement.reviewStatus || requirement.review_status || '').trim().toLowerCase()
+  return Boolean(requirement.complete || requirement.completed || requirement.captured || PRESENT_WORKFLOW_DOCUMENT_STATUSES.has(status))
+}
+
+function countOpenRoleWorkspaceItems(items = []) {
+  return (Array.isArray(items) ? items : []).filter((item) => item?.required !== false && !roleWorkspaceRequirementComplete(item)).length
+}
+
+function getRoleWorkspaceOpenSignatureCount(workflow = {}) {
+  const lane = workflow?.lane || {}
+  const actionSummary = workflow?.actionSummary || getLaneUsability(lane)
+  const signaturesReadiness = (actionSummary?.readinessChecklist || []).find((item) => String(item?.id || '').includes('signature'))
+  if (signaturesReadiness && !signaturesReadiness.complete) return countNumber(signaturesReadiness.missingCount || 1)
+  return countOpenRoleWorkspaceItems(lane?.signingRequirements || [])
+}
+
+function getRoleWorkspaceMetrics(workflow = {}) {
+  const lane = workflow?.lane || {}
+  return {
+    missingData: countNumber(lane?.dataSummary?.missing) || countOpenRoleWorkspaceItems(lane?.dataRequirements || []),
+    missingDocuments: countNumber(lane?.documentSummary?.missing) || countOpenRoleWorkspaceItems(lane?.documentRequirements || []),
+    openSignatures: getRoleWorkspaceOpenSignatureCount(workflow),
+    blockers: Array.isArray(workflow?.blockers) ? workflow.blockers.length : 0,
+    activityCount: countNumber(workflow?.activityCount),
+  }
+}
+
+function getNextMissingWorkflowDocumentRequirement(workflow = {}) {
+  const requirements = Array.isArray(workflow?.lane?.documentRequirements) ? workflow.lane.documentRequirements : []
+  return requirements.find((item) => item?.required !== false && !roleWorkspaceRequirementComplete(item)) || null
+}
+
+function buildRoleWorkspaceDocumentAction(workflow = {}) {
+  const lane = workflow?.lane || null
+  if (!lane?.laneKey) return null
+  const content = getAttorneyRoleWorkspaceContent(workflow)
+  const requirement = getNextMissingWorkflowDocumentRequirement(workflow)
+  if (!requirement) return null
+  const title = requirement.label || requirement.title || requirement.documentType || requirement.document_type || 'Required document'
+  const target = requirement.expectedFromRole || requirement.requiredFromRole || requirement.requestedFrom || requirement.requested_from || content.defaultDocumentAudience
+  const priority = requirement.priority || (requirement.isBlocking ? 'high' : 'medium')
+  return {
+    id: `${lane.laneKey}_${normalizeDetailKey(title)}_request`,
+    label: `Request ${title}`,
+    description: requirement.reason || requirement.description || `Request the next missing document for the ${content.laneLabel}.`,
+    type: 'request_document',
+    target,
+    priority,
+    laneKey: lane.laneKey,
+    stageKey: lane.currentStage || lane.summary?.currentStage || '',
+    relatedId: requirement.id || requirement.key || requirement.requirementId || '',
+  }
+}
+
+function AttorneyRoleWorkspacePanel({
+  workflows = [],
+  onOpenWorkflow = null,
+  onExecuteAction = null,
+  onRequestDocuments = null,
+}) {
+  const orderedWorkflows = [
+    ...ATTORNEY_ROLE_WORKSPACE_ORDER
+      .map((roleKey) => workflows.find((workflow) => getAttorneyRoleWorkspaceKey(workflow) === roleKey))
+      .filter(Boolean),
+    ...workflows.filter((workflow) => !ATTORNEY_ROLE_WORKSPACE_ORDER.includes(getAttorneyRoleWorkspaceKey(workflow))),
+  ]
+  if (!orderedWorkflows.length) return null
+
+  const activeCount = orderedWorkflows.filter((workflow) => workflow.required).length
+
+  return (
+    <section className="rounded-[18px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:p-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex size-9 items-center justify-center rounded-[12px] bg-primarySoft text-primary ring-1 ring-primary/10">
+              <Workflow size={16} />
+            </span>
+            <h3 className="text-sm font-semibold text-textStrong">Attorney Role Workspaces</h3>
+          </div>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-textMuted">
+            Transfer, bond, and cancellation ownership for this matter.
+          </p>
+        </div>
+        <span className="inline-flex w-fit rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-xs font-semibold text-textMuted">
+          {activeCount} active lane{activeCount === 1 ? '' : 's'}
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-3">
+        {orderedWorkflows.map((workflow) => {
+          const roleKey = getAttorneyRoleWorkspaceKey(workflow)
+          const content = getAttorneyRoleWorkspaceContent(workflow)
+          const accent = LANE_ACCENTS[roleKey] || LANE_ACCENTS.transfer
+          const statusMeta = WORKFLOW_STATUS_META[workflow?.statusKey] || WORKFLOW_STATUS_META.not_started
+          const metrics = getRoleWorkspaceMetrics(workflow)
+          const primaryAction = workflow?.required ? workflow?.actionSummary?.primaryNextAction : null
+          const primaryCommand = primaryAction ? getWorkflowActionCommand(primaryAction, workflow?.lane || { laneKey: roleKey }) : null
+          const documentAction = workflow?.required ? buildRoleWorkspaceDocumentAction(workflow) : null
+          const attentionCount = metrics.missingData + metrics.missingDocuments + metrics.openSignatures + metrics.blockers
+
+          return (
+            <article
+              key={workflow.key}
+              className={`flex min-h-full min-w-0 flex-col rounded-[16px] border border-borderDefault border-l-4 p-4 ${accent.ring} ${workflow.required ? 'bg-white' : 'bg-surfaceAlt/70'}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`inline-flex size-9 shrink-0 items-center justify-center rounded-[12px] ring-1 ${accent.icon}`}>
+                      <UsersRound size={16} />
+                    </span>
+                    <h4 className="min-w-0 text-base font-semibold text-textStrong">{content.roleTitle}</h4>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-textMuted">{content.summary}</p>
+                </div>
+                <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${workflow.required ? `${statusMeta.border} ${statusMeta.bg} ${statusMeta.text}` : 'border-borderSoft bg-mutedBg text-textMuted'}`}>
+                  {workflow.required ? workflow.statusLabel : 'Not required'}
+                </span>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                {[
+                  ['Stage', workflow.nextStep || 'Pending'],
+                  [workflow.assignedLabel || 'Assigned Attorney', workflow.assignedDisplay || 'Not assigned'],
+                  ['Progress', `${workflow.progressPercent || 0}%`],
+                  ['Updates', `${metrics.activityCount}`],
+                ].map(([label, value]) => (
+                  <div key={`${workflow.key}-${label}`} className="min-w-0 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2">
+                    <span className="block truncate text-[0.64rem] font-semibold uppercase tracking-[0.06em] text-textMuted">{label}</span>
+                    <strong className="mt-1 block truncate text-xs text-textStrong">{value}</strong>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                {[
+                  ['Facts', metrics.missingData],
+                  ['Docs', metrics.missingDocuments],
+                  ['Signing', metrics.openSignatures],
+                  ['Blockers', metrics.blockers],
+                ].map(([label, value]) => {
+                  const hasAttention = workflow.required && value > 0
+                  return (
+                    <div key={`${workflow.key}-${label}-attention`} className={`rounded-[12px] border px-3 py-2 ${hasAttention ? 'border-warning/30 bg-warningSoft text-warning' : 'border-success/25 bg-successSoft text-success'}`}>
+                      <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.06em]">{label}</span>
+                      <strong className="mt-1 block text-xs">{workflow.required ? `${value} open` : 'Clear'}</strong>
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="mt-4 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+                <span className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Role Focus</span>
+                <div className="mt-2 grid gap-1.5">
+                  {content.focusItems.map((item) => (
+                    <div key={`${workflow.key}-${item}`} className="flex items-start gap-2 text-xs leading-5 text-textMuted">
+                      <CheckCircle2 size={13} className="mt-0.5 shrink-0 text-primary" />
+                      <span>{item}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 min-h-[4.25rem]">
+                {workflow.required && primaryAction ? (
+                  <div className={`rounded-[12px] border px-3 py-3 ${getActionPriorityMeta(primaryAction.priority).border} ${getActionPriorityMeta(primaryAction.priority).bg}`}>
+                    <span className={`block text-[0.66rem] font-semibold uppercase tracking-[0.08em] ${getActionPriorityMeta(primaryAction.priority).text}`}>Next Action</span>
+                    <strong className={`mt-1 block text-sm ${getActionPriorityMeta(primaryAction.priority).text}`}>{primaryAction.label}</strong>
+                    {primaryAction.description ? <p className={`mt-1 text-xs leading-5 ${getActionPriorityMeta(primaryAction.priority).text}`}>{primaryAction.description}</p> : null}
+                  </div>
+                ) : workflow.required && attentionCount ? (
+                  <div className="rounded-[12px] border border-warning/30 bg-warningSoft px-3 py-3 text-sm text-warning">
+                    {attentionCount} open item{attentionCount === 1 ? '' : 's'} need attention in this lane.
+                  </div>
+                ) : (
+                  <div className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3 text-sm text-textMuted">
+                    {workflow.required ? 'No immediate lane blockers visible.' : 'This lane is not required by the current routing profile.'}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-auto flex flex-wrap items-center justify-end gap-2 pt-4">
+                {documentAction && onRequestDocuments ? (
+                  <Button type="button" size="sm" variant="secondary" onClick={() => onRequestDocuments(workflow, documentAction)}>
+                    <Paperclip size={14} />
+                    Request Docs
+                  </Button>
+                ) : null}
+                {primaryAction && primaryCommand && onExecuteAction ? (
+                  <Button type="button" size="sm" variant="secondary" onClick={() => onExecuteAction(workflow.lane, primaryAction, primaryCommand)}>
+                    {primaryCommand.label}
+                  </Button>
+                ) : null}
+                {onOpenWorkflow ? (
+                  <Button type="button" size="sm" onClick={() => onOpenWorkflow(workflow)}>
+                    {workflow.required ? 'Open Lane' : 'Review Route'}
+                    <ChevronRight size={14} />
+                  </Button>
+                ) : null}
+              </div>
+            </article>
+          )
+        })}
+      </div>
+    </section>
+  )
 }
 
 function WorkflowWorkPacketSummary({ packet = null }) {
@@ -2184,7 +2496,7 @@ function humanizeTransactionEvent(event = {}) {
   } else if (lowerType.includes('clientvisible')) {
     category = 'notes'
     title = 'Client update published'
-    detail = detail || 'A client-visible update was published.'
+    detail = detail || 'A buyer/seller visible update was published.'
   } else if (lowerType.includes('roleplayerintro')) {
     category = 'notes'
     extraFilterKeys.push('roleplayers')
@@ -2813,9 +3125,9 @@ function getRollupHeaderActionVariant(action = {}) {
 function getConversationVisibilityLabel(value = '') {
   const normalized = normalizeDetailKey(value)
   if (normalized === 'internal') return 'Internal only'
-  if (normalized === 'client_visible' || normalized === 'client_safe') return 'Buyer and seller visible'
+  if (normalized === 'client_visible' || normalized === 'client_safe') return 'Buyer & seller visible'
   if (normalized === 'system') return 'System'
-  return 'Shared with roleplayers'
+  return 'Professional / roleplayers only'
 }
 
 function getConversationVisibilityClasses(value = '') {
@@ -2838,6 +3150,153 @@ function getConversationTypeLabel(value = '') {
   if (normalized === 'feedback') return 'Feedback'
   if (normalized === 'question') return 'Question'
   return 'Comment'
+}
+
+function DiscussionVisibilityHint({ visibility }) {
+  if (visibility !== 'client_visible') return null
+  return (
+    <p className="mt-2 text-xs font-medium normal-case tracking-normal text-emerald-700">
+      This update will be visible to the buyer and seller. Keep the wording client-safe.
+    </p>
+  )
+}
+
+function getAttorneyLaneActionOptions(lane = {}) {
+  if (!lane?.laneKey) return []
+  const permissions = lane.permissions || {}
+  const quickActions = ATTORNEY_QUICK_ACTIONS.filter((action) => {
+    if (action.fixedVisibility === 'internal') return permissions.canAddInternalNote
+    if (action.fixedVisibility === 'shared') return permissions.canAddSharedUpdate
+    return true
+  })
+  const registryActions = (lane.updateOptions?.groups || []).flatMap((group) =>
+    (group.options || []).map((option) => ({
+      key: `registry:${option.id}`,
+      updateType: option.id,
+      label: option.label,
+      groupLabel: group.label || 'Workflow Updates',
+      defaultVisibility: option.defaultVisibility || 'professional_shared',
+      fixedVisibility: '',
+      clientVisibleAllowed: Boolean(option.clientVisibleAllowed),
+      description: option.description || '',
+      requiresNote: Boolean(option.requiresNote),
+    })),
+  )
+  return [...quickActions, ...registryActions]
+}
+
+function getAttorneyActionVisibilityOptions(lane = {}, action = null) {
+  const permissions = lane?.permissions || {}
+  const fixedVisibility = getDiscussionVisibilityKey(action?.fixedVisibility || '')
+  if (action?.fixedVisibility) {
+    const fixedOption = DISCUSSION_VISIBILITY_OPTIONS.find((option) => option.key === fixedVisibility)
+    if (!fixedOption) return []
+    if (fixedVisibility === 'internal' && !permissions.canAddInternalNote) return []
+    if (fixedVisibility === 'shared' && !permissions.canAddSharedUpdate) return []
+    if (fixedVisibility === 'client_visible' && !permissions.canPublishClientVisibleUpdate) return []
+    return [fixedOption]
+  }
+  return DISCUSSION_VISIBILITY_OPTIONS.filter((option) => {
+    if (option.key === 'internal') return permissions.canAddInternalNote
+    if (option.key === 'shared') return permissions.canAddSharedUpdate
+    if (option.key === 'client_visible') return permissions.canPublishClientVisibleUpdate && action?.clientVisibleAllowed
+    return true
+  })
+}
+
+function groupComposerActionOptions(options = []) {
+  return options.reduce((groups, option) => {
+    const key = option.groupLabel || 'Updates'
+    if (!groups[key]) groups[key] = []
+    groups[key].push(option)
+    return groups
+  }, {})
+}
+
+function DiscussionComposerControls({
+  structured = false,
+  discussionType = '',
+  setDiscussionType,
+  discussionVisibility = '',
+  setDiscussionVisibility,
+  visibilityOptions = [],
+  laneOptions = [],
+  discussionLaneKey = '',
+  setDiscussionLaneKey,
+  actionOptions = [],
+  discussionActionKey = '',
+  setDiscussionActionKey,
+}) {
+  if (structured) {
+    const groupedActions = groupComposerActionOptions(actionOptions)
+    return (
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <label className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">
+          Lane
+          <Field as="select" value={discussionLaneKey} onChange={(event) => setDiscussionLaneKey(event.target.value)} className="mt-1 min-h-9 text-xs" disabled={!laneOptions.length}>
+            {laneOptions.length ? (
+              laneOptions.map((lane) => (
+                <option key={lane.laneKey} value={lane.laneKey}>{lane.label}</option>
+              ))
+            ) : (
+              <option value="">No editable lane</option>
+            )}
+          </Field>
+        </label>
+        <label className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">
+          Action
+          <Field as="select" value={discussionActionKey} onChange={(event) => setDiscussionActionKey(event.target.value)} className="mt-1 min-h-9 text-xs" disabled={!actionOptions.length}>
+            {actionOptions.length ? (
+              Object.entries(groupedActions).map(([groupLabel, options]) => (
+                <optgroup key={groupLabel} label={groupLabel}>
+                  {options.map((option) => (
+                    <option key={option.key} value={option.key}>{option.label}</option>
+                  ))}
+                </optgroup>
+              ))
+            ) : (
+              <option value="">No actions available</option>
+            )}
+          </Field>
+        </label>
+        <label className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">
+          Audience
+          <Field as="select" value={discussionVisibility} onChange={(event) => setDiscussionVisibility(event.target.value)} className="mt-1 min-h-9 text-xs" disabled={!visibilityOptions.length}>
+            {visibilityOptions.length ? (
+              visibilityOptions.map((item) => (
+                <option key={item.key} value={item.key}>{item.label}</option>
+              ))
+            ) : (
+              <option value="">No audience available</option>
+            )}
+          </Field>
+          <DiscussionVisibilityHint visibility={discussionVisibility} />
+        </label>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-4 grid gap-3 md:grid-cols-2">
+      <label className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">
+        Update Type
+        <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)} className="mt-1 min-h-9 text-xs">
+          {DISCUSSION_TYPES.map((item) => (
+            <option key={item.key} value={item.key}>{item.label}</option>
+          ))}
+        </Field>
+      </label>
+      <label className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">
+        Visibility
+        <Field as="select" value={discussionVisibility} onChange={(event) => setDiscussionVisibility(event.target.value)} className="mt-1 min-h-9 text-xs">
+          {visibilityOptions.map((item) => (
+            <option key={item.key} value={item.key}>{item.label}</option>
+          ))}
+        </Field>
+        <DiscussionVisibilityHint visibility={discussionVisibility} />
+      </label>
+    </div>
+  )
 }
 
 function buildMatterPreviewShell(matterPreview, transactionId) {
@@ -3568,11 +4027,16 @@ function BondMatterConversationPanel({
   discussionVisibility = '',
   setDiscussionVisibility,
   availableDiscussionVisibilityOptions = [],
+  structuredDiscussionComposer = false,
+  discussionLaneKey = '',
+  setDiscussionLaneKey,
+  discussionLaneOptions = [],
+  discussionActionKey = '',
+  setDiscussionActionKey,
+  discussionActionOptions = [],
+  discussionSubmitDisabled = false,
   overviewConversationEntries = [],
   saving = false,
-  canPostInternalDiscussion = false,
-  canPostSharedDiscussion = false,
-  canPublishClientVisibleDiscussion = false,
   onAttachDocument,
   onViewActivity,
 }) {
@@ -3593,24 +4057,20 @@ function BondMatterConversationPanel({
           placeholder="Write an update, note, or @mention someone..."
           className="mt-4"
         />
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <label className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">
-            Update Type
-            <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)} className="mt-1 min-h-9 text-xs">
-              {DISCUSSION_TYPES.map((item) => (
-                <option key={item.key} value={item.key}>{item.label}</option>
-              ))}
-            </Field>
-          </label>
-          <label className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">
-            Visibility
-            <Field as="select" value={discussionVisibility} onChange={(event) => setDiscussionVisibility(event.target.value)} className="mt-1 min-h-9 text-xs">
-              {availableDiscussionVisibilityOptions.map((item) => (
-                <option key={item.key} value={item.key}>{item.label}</option>
-              ))}
-            </Field>
-          </label>
-        </div>
+        <DiscussionComposerControls
+          structured={structuredDiscussionComposer}
+          discussionType={discussionType}
+          setDiscussionType={setDiscussionType}
+          discussionVisibility={discussionVisibility}
+          setDiscussionVisibility={setDiscussionVisibility}
+          visibilityOptions={availableDiscussionVisibilityOptions}
+          laneOptions={discussionLaneOptions}
+          discussionLaneKey={discussionLaneKey}
+          setDiscussionLaneKey={setDiscussionLaneKey}
+          actionOptions={discussionActionOptions}
+          discussionActionKey={discussionActionKey}
+          setDiscussionActionKey={setDiscussionActionKey}
+        />
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <Button type="button" variant="secondary" size="sm" onClick={onAttachDocument}>
             <Paperclip size={14} />
@@ -3619,13 +4079,7 @@ function BondMatterConversationPanel({
           <Button
             type="submit"
             size="sm"
-            disabled={
-              saving ||
-              !discussionBody.trim() ||
-              (discussionVisibility === 'internal' && !canPostInternalDiscussion) ||
-              (discussionVisibility === 'shared' && !canPostSharedDiscussion) ||
-              (discussionVisibility === 'client_visible' && !canPublishClientVisibleDiscussion)
-            }
+            disabled={discussionSubmitDisabled}
           >
             <Send size={14} />
             {saving ? 'Posting...' : 'Post Update'}
@@ -4663,11 +5117,10 @@ function WorkflowDetailsDrawer({
               <form onSubmit={onSubmitNote} className="mt-4 rounded-[14px] border border-borderSoft bg-surfaceAlt p-4">
                 <WorkflowWorkPacketSummary packet={noteDraft.workPacket} />
                 <label className="grid gap-1.5 text-sm font-medium text-textStrong">
-                  Note visibility
+                  Note audience
                   <Field as="select" value={noteDraft.visibility} onChange={(event) => onNoteDraftChange?.({ ...noteDraft, visibility: event.target.value })}>
                     <option value="internal">Internal</option>
-                    <option value="professional_shared">Professional Shared</option>
-                    <option value="client_visible">Client Visible</option>
+                    <option value="professional_shared">Professional / roleplayers only</option>
                   </Field>
                 </label>
                 <label className="mt-3 grid gap-1.5 text-sm font-medium text-textStrong">
@@ -4830,6 +5283,8 @@ function AttorneyTransactionDetail() {
   const [discussionBody, setDiscussionBody] = useState('')
   const [discussionType, setDiscussionType] = useState('operational')
   const [discussionVisibility, setDiscussionVisibility] = useState('shared')
+  const [discussionLaneKey, setDiscussionLaneKey] = useState('')
+  const [discussionActionKey, setDiscussionActionKey] = useState('quick_professional_update')
   const [activeDocumentLibraryCategory, setActiveDocumentLibraryCategory] = useState('all')
   const [documentLibrarySearch, setDocumentLibrarySearch] = useState('')
   const [uploadInputVersion, setUploadInputVersion] = useState(0)
@@ -6094,6 +6549,97 @@ function AttorneyTransactionDetail() {
     () => (Array.isArray(workflowOperations?.lanes) ? workflowOperations.lanes : EMPTY_ARRAY),
     [workflowOperations?.lanes],
   )
+  const structuredDiscussionComposer = workspaceRole === 'attorney'
+  const discussionLaneOptions = useMemo(
+    () =>
+      workflowLanes
+        .filter((lane) => {
+          const permissions = lane?.permissions || {}
+          return permissions.canAddInternalNote || permissions.canAddSharedUpdate || permissions.canPublishClientVisibleUpdate
+        })
+        .map((lane) => ({
+          laneKey: lane.laneKey,
+          label: getWorkflowLaneTitle(lane),
+        })),
+    [workflowLanes],
+  )
+  const activeDiscussionLane = useMemo(
+    () =>
+      workflowLanes.find((lane) => lane.laneKey === discussionLaneKey) ||
+      workflowLanes.find((lane) => discussionLaneOptions.some((option) => option.laneKey === lane.laneKey)) ||
+      null,
+    [discussionLaneKey, discussionLaneOptions, workflowLanes],
+  )
+  const discussionActionOptions = useMemo(
+    () => (structuredDiscussionComposer && activeDiscussionLane ? getAttorneyLaneActionOptions(activeDiscussionLane) : EMPTY_ARRAY),
+    [activeDiscussionLane, structuredDiscussionComposer],
+  )
+  const selectedDiscussionAction = useMemo(
+    () =>
+      discussionActionOptions.find((option) => option.key === discussionActionKey) ||
+      discussionActionOptions[0] ||
+      null,
+    [discussionActionKey, discussionActionOptions],
+  )
+  const attorneyDiscussionVisibilityOptions = useMemo(
+    () =>
+      structuredDiscussionComposer && activeDiscussionLane && selectedDiscussionAction
+        ? getAttorneyActionVisibilityOptions(activeDiscussionLane, selectedDiscussionAction)
+        : EMPTY_ARRAY,
+    [activeDiscussionLane, selectedDiscussionAction, structuredDiscussionComposer],
+  )
+  const effectiveDiscussionVisibilityOptions = structuredDiscussionComposer
+    ? attorneyDiscussionVisibilityOptions
+    : availableDiscussionVisibilityOptions
+  const canUseSelectedDiscussionAudience = useMemo(() => {
+    if (structuredDiscussionComposer) {
+      return Boolean(
+        activeDiscussionLane &&
+          selectedDiscussionAction &&
+          effectiveDiscussionVisibilityOptions.some((option) => option.key === discussionVisibility),
+      )
+    }
+    if (discussionVisibility === 'internal') return canPostInternalDiscussion
+    if (discussionVisibility === 'shared') return canPostSharedDiscussion
+    if (discussionVisibility === 'client_visible') return canPublishClientVisibleDiscussion
+    return false
+  }, [
+    activeDiscussionLane,
+    canPostInternalDiscussion,
+    canPostSharedDiscussion,
+    canPublishClientVisibleDiscussion,
+    discussionVisibility,
+    effectiveDiscussionVisibilityOptions,
+    selectedDiscussionAction,
+    structuredDiscussionComposer,
+  ])
+  const discussionSubmitDisabled = saving || !discussionBody.trim() || !canUseSelectedDiscussionAudience
+  useEffect(() => {
+    if (!structuredDiscussionComposer || !discussionLaneOptions.length) return
+    if (discussionLaneOptions.some((option) => option.laneKey === discussionLaneKey)) return
+    setDiscussionLaneKey(discussionLaneOptions[0].laneKey)
+  }, [discussionLaneKey, discussionLaneOptions, structuredDiscussionComposer])
+
+  useEffect(() => {
+    if (!structuredDiscussionComposer || !discussionActionOptions.length) return
+    if (discussionActionOptions.some((option) => option.key === discussionActionKey)) return
+    setDiscussionActionKey(discussionActionOptions[0].key)
+  }, [discussionActionKey, discussionActionOptions, structuredDiscussionComposer])
+
+  useEffect(() => {
+    if (!structuredDiscussionComposer || !attorneyDiscussionVisibilityOptions.length) return
+    if (attorneyDiscussionVisibilityOptions.some((option) => option.key === discussionVisibility)) return
+    const preferredVisibility = getDiscussionVisibilityKey(
+      selectedDiscussionAction?.fixedVisibility || selectedDiscussionAction?.defaultVisibility || '',
+    )
+    const preferredOption = attorneyDiscussionVisibilityOptions.find((option) => option.key === preferredVisibility)
+    setDiscussionVisibility((preferredOption || attorneyDiscussionVisibilityOptions[0]).key)
+  }, [
+    attorneyDiscussionVisibilityOptions,
+    discussionVisibility,
+    selectedDiscussionAction,
+    structuredDiscussionComposer,
+  ])
   const workflowBlockedCount = workflowLanes.filter((lane) => getWorkflowHealthKey(lane) === 'blocked').length
   const workflowWaitingCount = workflowLanes.filter((lane) => getWorkflowHealthKey(lane) === 'waiting').length
   const workflowDelayedCount = workflowLanes.filter((lane) => getWorkflowHealthKey(lane) === 'delayed').length
@@ -6160,7 +6706,7 @@ function AttorneyTransactionDetail() {
       category: row.category || 'finance',
       categoryLabel: row.categoryLabel || getDocumentCommandCategoryLabel(row.category || 'finance'),
       status: row.status || 'missing',
-      visibility: 'Client visible',
+      visibility: 'Buyer & seller visible',
       requiredParty: row.requiredParty || 'Buyer',
       uploadedBy: row.requiredParty || 'Buyer',
       uploadedAt: row.linkedDocument?.created_at || row.linkedDocument?.uploaded_at || row.updatedAt || '',
@@ -6187,7 +6733,7 @@ function AttorneyTransactionDetail() {
       category: 'bank_requested',
       categoryLabel: bankName || 'Bank Requested',
       status: request.status || 'missing',
-      visibility: request.clientVisible ? 'Client visible' : 'Shared',
+      visibility: request.clientVisible ? 'Buyer & seller visible' : 'Professional / roleplayers only',
       requiredParty: getAdditionalRequestOptionLabel(ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS, request.requestedFrom, 'Buyer'),
       uploadedBy: bankName || 'Bank request',
       uploadedAt: request.createdAt || '',
@@ -6640,6 +7186,10 @@ function AttorneyTransactionDetail() {
     setWorkflowSaving(true)
     setWorkflowError('')
     try {
+      if (workflowNoteDraft.visibility === 'client_visible') {
+        setWorkflowError('Use a client-safe update type when publishing to the buyer and seller.')
+        return
+      }
       const next = await addAttorneyTransactionUpdate({
         transactionId: transaction.id,
         laneKey: workflowNoteDraft.laneKey,
@@ -8749,6 +9299,33 @@ function AttorneyTransactionDetail() {
     try {
       setSaving(true)
       setError('')
+      const normalizedDiscussion = discussionBody.trim()
+      if (structuredDiscussionComposer) {
+        if (!activeDiscussionLane?.laneKey || !selectedDiscussionAction?.updateType) {
+          setError('Choose an attorney lane and action before posting.')
+          return
+        }
+        if (!canUseSelectedDiscussionAudience) {
+          setError('You do not have permission to post this attorney update for the selected audience.')
+          return
+        }
+        if (discussionVisibility === 'client_visible') {
+          const confirmed = window.confirm('This update will be visible to the buyer and seller. Publish it only if the wording is client-safe.')
+          if (!confirmed) return
+        }
+
+        const next = await addAttorneyTransactionUpdate({
+          transactionId: transaction.id,
+          laneKey: activeDiscussionLane.laneKey,
+          updateType: selectedDiscussionAction.updateType,
+          visibility: getAttorneyUpdateVisibility(discussionVisibility),
+          message: normalizedDiscussion,
+        })
+        setDiscussionBody('')
+        await refreshWorkflowAfterChange(next)
+        return
+      }
+
       if (discussionVisibility === 'internal' && !canPostInternalDiscussion) {
         setError('You do not have permission to post internal attorney notes.')
         return
@@ -8758,17 +9335,21 @@ function AttorneyTransactionDetail() {
         return
       }
       if (discussionVisibility === 'client_visible' && !canPublishClientVisibleDiscussion) {
-        setError('You do not have permission to publish client-visible updates.')
+        setError('You do not have permission to publish buyer/seller visible updates.')
         return
       }
-      const normalizedDiscussion = discussionBody.trim()
-      const prefixedDiscussion = `[${discussionType}] [${discussionVisibility}] ${normalizedDiscussion}`
+      if (discussionVisibility === 'client_visible') {
+        const confirmed = window.confirm('This update will be visible to the buyer and seller. Publish it only if the wording is client-safe.')
+        if (!confirmed) return
+      }
 
       await addTransactionDiscussionComment({
         transactionId: transaction.id,
         authorName: profile?.fullName || profile?.email || 'Arch9 Conveyancing',
         authorRole: 'attorney',
-        commentText: prefixedDiscussion,
+        commentText: normalizedDiscussion,
+        updateType: discussionType,
+        visibilityScope: getDiscussionVisibilityScope(discussionVisibility),
         unitId: unit?.id || null,
       })
       setDiscussionBody('')
@@ -8943,24 +9524,20 @@ function AttorneyTransactionDetail() {
                     onChange={(event) => setDiscussionBody(event.target.value)}
                     placeholder="Write an update, note, or @mention someone..."
                   />
-                  <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    <label className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">
-                      Update Type
-                      <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)} className="mt-1 min-h-9 text-xs">
-                        {DISCUSSION_TYPES.map((item) => (
-                          <option key={item.key} value={item.key}>{item.label}</option>
-                        ))}
-                      </Field>
-                    </label>
-                    <label className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">
-                      Visibility
-                      <Field as="select" value={discussionVisibility} onChange={(event) => setDiscussionVisibility(event.target.value)} className="mt-1 min-h-9 text-xs">
-                        {availableDiscussionVisibilityOptions.map((item) => (
-                          <option key={item.key} value={item.key}>{item.label}</option>
-                        ))}
-                      </Field>
-                    </label>
-                  </div>
+                  <DiscussionComposerControls
+                    structured={structuredDiscussionComposer}
+                    discussionType={discussionType}
+                    setDiscussionType={setDiscussionType}
+                    discussionVisibility={discussionVisibility}
+                    setDiscussionVisibility={setDiscussionVisibility}
+                    visibilityOptions={effectiveDiscussionVisibilityOptions}
+                    laneOptions={discussionLaneOptions}
+                    discussionLaneKey={activeDiscussionLane?.laneKey || discussionLaneKey}
+                    setDiscussionLaneKey={setDiscussionLaneKey}
+                    actionOptions={discussionActionOptions}
+                    discussionActionKey={selectedDiscussionAction?.key || discussionActionKey}
+                    setDiscussionActionKey={setDiscussionActionKey}
+                  />
                   <div className="mt-4 flex flex-wrap justify-end gap-2">
                     <Button type="button" variant="secondary" size="sm" onClick={() => openWorkspaceMenu('documents')}>
                       <Paperclip size={14} />
@@ -8969,13 +9546,7 @@ function AttorneyTransactionDetail() {
                     <Button
                       type="submit"
                       size="sm"
-                      disabled={
-                        saving ||
-                        !discussionBody.trim() ||
-                        (discussionVisibility === 'internal' && !canPostInternalDiscussion) ||
-                        (discussionVisibility === 'shared' && !canPostSharedDiscussion) ||
-                        (discussionVisibility === 'client_visible' && !canPublishClientVisibleDiscussion)
-                      }
+                      disabled={discussionSubmitDisabled}
                     >
                       <Send size={14} />
                       {saving ? 'Posting...' : 'Post Update'}
@@ -9027,6 +9598,14 @@ function AttorneyTransactionDetail() {
                     onOpenAppointment={() => void handleQuickScheduleSigning()}
                     onScheduleAppointment={() => void handleQuickScheduleSigning()}
                     refreshKey={`${transactionId}:${String(transaction?.organisation_id || currentMembership?.organisation_id || '').trim()}`}
+                  />
+                ) : null}
+                {activeWorkspaceMenu === 'overview' ? (
+                  <AttorneyRoleWorkspacePanel
+                    workflows={legalWorkflowModels}
+                    onOpenWorkflow={(workflow) => openLegalWorkflowDetail(workflow.detailKey)}
+                    onExecuteAction={handleWorkflowActionCommand}
+                    onRequestDocuments={(workflow, action) => handleWorkflowActionCommand(workflow?.lane, action)}
                   />
                 ) : null}
                 {activeWorkspaceMenu !== 'overview' ? (
@@ -9334,25 +9913,21 @@ function AttorneyTransactionDetail() {
                         onChange={(event) => setDiscussionBody(event.target.value)}
                         placeholder="Write a message or update..."
                       />
-                      <div className="mt-3 flex flex-wrap items-end gap-2">
-                        <label className="min-w-[160px] flex-1 text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">
-                          Update Type
-                          <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)} className="mt-1 min-h-9 text-xs">
-                            {DISCUSSION_TYPES.map((item) => (
-                              <option key={item.key} value={item.key}>{item.label}</option>
-                            ))}
-                          </Field>
-                        </label>
-                        <label className="min-w-[200px] flex-1 text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">
-                          Visibility
-                          <Field as="select" value={discussionVisibility} onChange={(event) => setDiscussionVisibility(event.target.value)} className="mt-1 min-h-9 text-xs">
-                            {availableDiscussionVisibilityOptions.map((item) => (
-                              <option key={item.key} value={item.key}>
-                                {item.label}
-                              </option>
-                            ))}
-                          </Field>
-                        </label>
+                      <DiscussionComposerControls
+                        structured={structuredDiscussionComposer}
+                        discussionType={discussionType}
+                        setDiscussionType={setDiscussionType}
+                        discussionVisibility={discussionVisibility}
+                        setDiscussionVisibility={setDiscussionVisibility}
+                        visibilityOptions={effectiveDiscussionVisibilityOptions}
+                        laneOptions={discussionLaneOptions}
+                        discussionLaneKey={activeDiscussionLane?.laneKey || discussionLaneKey}
+                        setDiscussionLaneKey={setDiscussionLaneKey}
+                        actionOptions={discussionActionOptions}
+                        discussionActionKey={selectedDiscussionAction?.key || discussionActionKey}
+                        setDiscussionActionKey={setDiscussionActionKey}
+                      />
+                      <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                         <Button type="button" variant="secondary" size="sm" onClick={() => openWorkspaceMenu('documents')}>
                           <Paperclip size={14} />
                           Upload Document
@@ -9360,13 +9935,7 @@ function AttorneyTransactionDetail() {
                         <Button
                           type="submit"
                           size="sm"
-                          disabled={
-                            saving ||
-                            !discussionBody.trim() ||
-                            (discussionVisibility === 'internal' && !canPostInternalDiscussion) ||
-                            (discussionVisibility === 'shared' && !canPostSharedDiscussion) ||
-                            (discussionVisibility === 'client_visible' && !canPublishClientVisibleDiscussion)
-                          }
+                          disabled={discussionSubmitDisabled}
                         >
                           <Send size={14} />
                           {saving ? 'Sending...' : 'Send'}
@@ -10568,6 +11137,7 @@ function AttorneyTransactionDetail() {
                 onRecordDecision={(quote) => quote?.id ? void handleApproveBondHybridQuote(quote.id) : null}
                 onAddNote={() => {
                   setDiscussionType('internal_note')
+                  setDiscussionActionKey('quick_professional_update')
                   setDiscussionVisibility('shared')
                   setDiscussionBody('Buyer decision note: ')
                 }}
@@ -10582,12 +11152,17 @@ function AttorneyTransactionDetail() {
               setDiscussionType={setDiscussionType}
               discussionVisibility={discussionVisibility}
               setDiscussionVisibility={setDiscussionVisibility}
-              availableDiscussionVisibilityOptions={availableDiscussionVisibilityOptions}
+              availableDiscussionVisibilityOptions={effectiveDiscussionVisibilityOptions}
+              structuredDiscussionComposer={structuredDiscussionComposer}
+              discussionLaneKey={activeDiscussionLane?.laneKey || discussionLaneKey}
+              setDiscussionLaneKey={setDiscussionLaneKey}
+              discussionLaneOptions={discussionLaneOptions}
+              discussionActionKey={selectedDiscussionAction?.key || discussionActionKey}
+              setDiscussionActionKey={setDiscussionActionKey}
+              discussionActionOptions={discussionActionOptions}
+              discussionSubmitDisabled={discussionSubmitDisabled}
               overviewConversationEntries={overviewConversationEntries}
               saving={saving}
-              canPostInternalDiscussion={canPostInternalDiscussion}
-              canPostSharedDiscussion={canPostSharedDiscussion}
-              canPublishClientVisibleDiscussion={canPublishClientVisibleDiscussion}
               onAttachDocument={() => openWorkspaceMenu('documents')}
               onViewActivity={() => openWorkspaceMenu('activity')}
             />
@@ -10858,26 +11433,20 @@ function AttorneyTransactionDetail() {
                 <form onSubmit={handleAddDiscussion} className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
                   <h3 className="text-sm font-semibold text-textStrong">Add Update</h3>
                   <div className="mt-4 grid gap-3">
-                    <label className="grid gap-1.5 text-sm font-medium text-[#35546c]">
-                      <span>Update Type</span>
-                      <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)}>
-                        {DISCUSSION_TYPES.map((item) => (
-                          <option key={item.key} value={item.key}>
-                            {item.label}
-                          </option>
-                        ))}
-                      </Field>
-                    </label>
-                    <label className="grid gap-1.5 text-sm font-medium text-[#35546c]">
-                      <span>Visibility</span>
-                      <Field as="select" value={discussionVisibility} onChange={(event) => setDiscussionVisibility(event.target.value)}>
-                        {availableDiscussionVisibilityOptions.map((item) => (
-                          <option key={item.key} value={item.key}>
-                            {item.label}
-                          </option>
-                        ))}
-                      </Field>
-                    </label>
+                    <DiscussionComposerControls
+                      structured={structuredDiscussionComposer}
+                      discussionType={discussionType}
+                      setDiscussionType={setDiscussionType}
+                      discussionVisibility={discussionVisibility}
+                      setDiscussionVisibility={setDiscussionVisibility}
+                      visibilityOptions={effectiveDiscussionVisibilityOptions}
+                      laneOptions={discussionLaneOptions}
+                      discussionLaneKey={activeDiscussionLane?.laneKey || discussionLaneKey}
+                      setDiscussionLaneKey={setDiscussionLaneKey}
+                      actionOptions={discussionActionOptions}
+                      discussionActionKey={selectedDiscussionAction?.key || discussionActionKey}
+                      setDiscussionActionKey={setDiscussionActionKey}
+                    />
                     <Field
                       as="textarea"
                       rows={5}
@@ -10899,13 +11468,7 @@ function AttorneyTransactionDetail() {
                       </div>
                       <Button
                         type="submit"
-                        disabled={
-                          saving ||
-                          !discussionBody.trim() ||
-                          (discussionVisibility === 'internal' && !canPostInternalDiscussion) ||
-                          (discussionVisibility === 'shared' && !canPostSharedDiscussion) ||
-                          (discussionVisibility === 'client_visible' && !canPublishClientVisibleDiscussion)
-                        }
+                        disabled={discussionSubmitDisabled}
                       >
                         <Send size={14} />
                         {saving ? 'Posting...' : 'Post Update'}
@@ -10923,6 +11486,7 @@ function AttorneyTransactionDetail() {
                       ['Generate Sales Agreement', FileText, openAgentSalesAgreementWorkspace],
                       ['Add Internal Note', MessageSquarePlus, () => {
                         setDiscussionType('internal_note')
+                        setDiscussionActionKey('quick_internal_note')
                         setDiscussionVisibility('internal')
                       }],
                     ].map(([label, Icon, action]) => (

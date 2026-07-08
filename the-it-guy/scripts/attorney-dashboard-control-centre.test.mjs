@@ -5,7 +5,6 @@ const pageSource = readFileSync(new URL('../src/pages/AttorneyDashboardPage.jsx'
 const serviceSource = readFileSync(new URL('../src/services/attorneyDashboard.js', import.meta.url), 'utf8')
 
 const requiredPageCopy = [
-  'Conveyancing Matter Control Centre',
   'Good morning',
   'You have',
   'Active Matters',
@@ -15,7 +14,8 @@ const requiredPageCopy = [
   'Document Requests',
   'Revenue Pipeline',
   'Needs Attention',
-  'Active Matters by Type',
+  'ActiveMatterStrip',
+  'No active matters yet.',
   'Transfer Matters',
   'Bond Matters',
   'Cancellation Matters',
@@ -23,8 +23,21 @@ const requiredPageCopy = [
   'Conveyancing Performance',
   'Matter Health',
   'No active transfer matters yet.',
-  'Partner analytics appears once matters are linked to referring partners.',
-  'Performance appears once completed registered matters are available.',
+  'AttorneyAnalyticsSection',
+  'PartnerAnalyticsCard',
+  'MatterHealthCard',
+  'ConveyancingPerformanceCard',
+  'PerformanceKPIs',
+  'RegistrationForecastCard',
+  'MatterDistributionCard',
+  'Track which partners are bringing the most work.',
+  'Overview of all active matters.',
+  'Measure firm performance and forecast upcoming registrations.',
+  'Partner analytics will appear once matters are linked to referring partners.',
+  'Matter health will appear once work begins.',
+  'Performance statistics will appear once the firm starts registering matters.',
+  'Partner analytics updates automatically as matters are linked.',
+  'Matter health is automatically calculated based on deadlines, activity and risks.',
 ]
 
 for (const expected of requiredPageCopy) {
@@ -32,6 +45,9 @@ for (const expected of requiredPageCopy) {
 }
 
 const removedPageCopy = [
+  'Conveyancing Matter Control Centre',
+  'Search matters, clients, documents...',
+  'Active Matters by Type',
   'Create Matter',
   'Request Document',
   'Schedule Appointment',
@@ -48,9 +64,13 @@ const requiredServiceFields = [
   'originating_partner_organisation_id',
   'referral_source_organisation_id',
   'buildAttentionMetrics',
-  'buildPartnerAnalytics',
-  'buildConveyancingPerformance',
-  'buildMatterHealth',
+  'getPartnerAnalytics',
+  'getConveyancingPerformance',
+  'calculateMatterHealth',
+  'partnerType',
+  'avatar',
+  'pipelineValue',
+  'matterCount',
   'attentionMetrics',
   'partnerAnalytics',
   'conveyancingPerformance',

@@ -405,7 +405,7 @@ alter table if exists transaction_events add column if not exists visibility_sco
 alter table transaction_comments drop constraint if exists transaction_comments_visibility_scope_check;
 alter table transaction_comments
   add constraint transaction_comments_visibility_scope_check
-  check (visibility_scope in ('shared', 'internal'));
+  check (visibility_scope in ('shared', 'internal', 'client_safe'));
 
 alter table transaction_events drop constraint if exists transaction_events_visibility_scope_check;
 alter table transaction_events
@@ -660,7 +660,11 @@ for select to authenticated
 using (
   bridge_has_transaction_access(transaction_id)
   and (
-    visibility_scope = 'shared'
+    visibility_scope = 'client_safe'
+    or (
+      visibility_scope = 'shared'
+      and coalesce(bridge_current_profile_role(), '') <> 'client'
+    )
     or bridge_is_internal_user()
   )
 );
@@ -917,7 +921,7 @@ with check (
   and (
     (
       bridge_current_profile_role() = 'client'
-      and visibility_scope = 'shared'
+      and visibility_scope = 'client_safe'
     )
     or bridge_is_internal_user()
     or bridge_is_admin()

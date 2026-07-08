@@ -636,7 +636,13 @@ function HeaderBar({ onLogout, user }) {
   const userInitials = getUserInitials(user)
   const userAvatarUrl = getUserAvatarUrl(user)
   const isAgentsDirectoryRoute = location.pathname === '/agency/agents'
-  const hideQuickCreateInHeader = location.pathname === '/settings/legal-templates' || location.pathname === '/settings/signing-templates'
+  const isAttorneyMatterWorkspaceRoute =
+    role === 'attorney' &&
+    (location.pathname.startsWith('/attorney/matters') || location.pathname.startsWith('/attorney/transactions'))
+  const hideQuickCreateInHeader =
+    location.pathname === '/settings/legal-templates' ||
+    location.pathname === '/settings/signing-templates' ||
+    isAttorneyMatterWorkspaceRoute
   const isAgentWorkspaceRole = role === 'agent' || role === 'principal' || role === 'headquarters'
   const showPersonaSwitcher = role !== 'bond_originator' && !isAgentWorkspaceRole && !isAgentsDirectoryRoute
   const unreadDisplay = notificationState.unreadCount > 99 ? '99+' : String(notificationState.unreadCount || 0)
@@ -995,17 +1001,30 @@ function HeaderBar({ onLogout, user }) {
 
         {!isClientRole && !hideSearchInHeader ? (
           <div
-            className={`ui-shell-search min-h-[42px] ${isAgentsDirectoryRoute ? 'min-w-[320px] xl:min-w-[520px]' : 'min-w-[280px]'}`}
+            className={`ui-shell-search min-h-[42px] ${
+              isAgentsDirectoryRoute || isAttorneyMatterWorkspaceRoute
+                ? 'min-w-[320px] xl:min-w-[520px]'
+                : 'min-w-[280px]'
+            }`}
             aria-label="Search"
           >
             <Search size={16} className="shrink-0 text-textSoft" />
             <input
               className="min-w-0 flex-1 border-0 bg-transparent p-0 text-secondary text-textStrong outline-none"
               type="search"
-              placeholder={isAgentsDirectoryRoute ? 'Search agents by name, email, branch...' : 'Search unit, buyer, stage...'}
+              placeholder={
+                isAttorneyMatterWorkspaceRoute
+                  ? 'Search matter, buyer, seller, erf, unit, attorney...'
+                  : isAgentsDirectoryRoute
+                    ? 'Search agents by name, email, branch...'
+                    : 'Search unit, buyer, stage...'
+              }
               onChange={(event) => {
                 if (isAgentsDirectoryRoute) {
                   window.dispatchEvent(new CustomEvent('itg:agents-search', { detail: { value: event.target.value } }))
+                }
+                if (isAttorneyMatterWorkspaceRoute) {
+                  window.dispatchEvent(new CustomEvent('itg:attorney-matters-search', { detail: { value: event.target.value } }))
                 }
               }}
             />

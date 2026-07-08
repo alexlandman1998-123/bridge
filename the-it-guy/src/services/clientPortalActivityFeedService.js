@@ -7,15 +7,15 @@ function normalize(value = '') {
   return toText(value).toLowerCase()
 }
 
-function normalizeVisibility(value = '') {
+function normalizeVisibility(value = '', fallback = 'internal_only') {
   const normalized = normalize(value)
   if (['client_visible', 'internal_only', 'shared_role_players'].includes(normalized)) {
     return normalized
   }
-  if (normalized === 'client') return 'client_visible'
+  if (normalized === 'client' || normalized === 'client_safe' || normalized === 'buyer_visible') return 'client_visible'
   if (normalized === 'internal' || normalized === 'internal_note') return 'internal_only'
   if (normalized === 'professional_shared' || normalized === 'shared_professional_update' || normalized === 'shared') return 'shared_role_players'
-  return 'client_visible'
+  return fallback
 }
 
 function resolveEventVisibility(source = {}, metadata = {}) {
@@ -44,6 +44,7 @@ function resolveEventVisibility(source = {}, metadata = {}) {
       metadata?.visibility ||
       metadata?.visibility_scope ||
       metadata?.event_visibility,
+    metadata?.fallbackVisibility || 'internal_only',
   )
 }
 
@@ -391,7 +392,7 @@ function buildDiscussionEvents(portalData = {}) {
       actor: toText(item?.authorName || item?.author_name, 'Arch9'),
       actorRole: item?.authorRoleLabel || item?.authorRole || item?.author_role || '',
       visibility: resolveEventVisibility(item, {
-        visibility: item?.visibility || item?.visibility_scope || item?.comment_visibility || 'client_visible',
+        visibility: item?.visibility || item?.visibility_scope || item?.comment_visibility,
       }),
       metadata: {
         displayType: 'update',
@@ -470,7 +471,7 @@ function buildDocumentReminderEvents({ requiredDocuments = [], additionalRequest
       actor: 'Arch9',
       actorRole: 'System',
       visibility: resolveEventVisibility(document, {
-        visibility: document?.visibility || document?.visibility_scope || document?.document_visibility || 'client_visible',
+        visibility: document?.visibility || document?.visibility_scope || document?.document_visibility,
       }),
       relatedEntityType: 'required_document',
       relatedEntityId: documentId,
@@ -503,7 +504,7 @@ function buildDocumentReminderEvents({ requiredDocuments = [], additionalRequest
       actor: 'Arch9',
       actorRole: 'System',
       visibility: resolveEventVisibility(request, {
-        visibility: request?.visibility || request?.visibility_scope || 'client_visible',
+        visibility: request?.visibility || request?.visibility_scope,
       }),
       relatedEntityType: 'additional_document_request',
       relatedEntityId: requestId,
@@ -545,7 +546,7 @@ function buildDocumentEvents(portalData = {}, clientRole = 'buyer') {
       actor: toText(document?.requested_by_name, 'Arch9'),
       actorRole: document?.requested_by_role || 'System',
       visibility: resolveEventVisibility(document, {
-        visibility: document?.visibility || document?.visibility_scope || document?.document_visibility || 'client_visible',
+        visibility: document?.visibility || document?.visibility_scope || document?.document_visibility,
       }),
       relatedEntityType: 'required_document',
       relatedEntityId: documentId,
@@ -578,7 +579,7 @@ function buildDocumentEvents(portalData = {}, clientRole = 'buyer') {
       actor: toText(request?.requestedByName || request?.createdByName || request?.requested_by_name, 'Transaction Team'),
       actorRole: request?.requestedByRole || request?.createdByRole || request?.requested_by_role || '',
       visibility: resolveEventVisibility(request, {
-        visibility: request?.visibility || request?.visibility_scope || 'client_visible',
+        visibility: request?.visibility || request?.visibility_scope,
       }),
       relatedEntityType: 'additional_document_request',
       relatedEntityId: requestId,
@@ -771,7 +772,7 @@ function buildAppointmentEvents(portalData = {}, clientRole = 'buyer') {
       timestamp: appointment?.dateTime || appointment?.updatedAt || appointment?.createdAt || portalData?.lastUpdated,
       actor: toText(appointment?.requestedBy || 'Arch9'),
       actorRole: toText(appointment?.requestedByRole || 'System'),
-      visibility: normalizeVisibility(appointment?.visibility || appointment?.visibility_scope || 'client_visible'),
+      visibility: normalizeVisibility(appointment?.visibility || appointment?.visibility_scope),
       metadata: {
         title: `${toText(appointment?.title || appointment?.appointmentTypeLabel || appointment?.appointmentType || 'Appointment')} ${status === 'completed' ? 'completed' : status ? `(${status})` : ''}`.trim(),
         description:
