@@ -46,10 +46,28 @@ function startOfMonth(date = new Date()) {
   return cloned
 }
 
+function endOfDay(date = new Date()) {
+  const cloned = new Date(date)
+  cloned.setHours(23, 59, 59, 999)
+  return cloned
+}
+
+function addDays(date = new Date(), days = 0) {
+  const cloned = new Date(date)
+  cloned.setDate(cloned.getDate() + Number(days || 0))
+  return cloned
+}
+
 function isAfter(value, thresholdDate) {
   const timestamp = new Date(value || '').getTime()
   if (!Number.isFinite(timestamp)) return false
   return timestamp >= thresholdDate.getTime()
+}
+
+function isBetweenDates(value, startDate, endDate) {
+  const timestamp = new Date(value || '').getTime()
+  if (!Number.isFinite(timestamp)) return false
+  return timestamp >= startDate.getTime() && timestamp <= endDate.getTime()
 }
 
 function resolveMatterTypeFromTransaction(transaction = {}) {
@@ -125,7 +143,7 @@ function resolveAttentionIssue(flags = {}) {
 
 async function fetchTransactionsForDashboard(client) {
   const primarySelect =
-    'id, organisation_id, buyer_id, matter_number, transaction_reference, title, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, finance_type, onboarding_status, next_action, risk_status, operational_state, attorney_stage, updated_at, created_at, property_description, property_address_line_1, property_address_line_2, suburb, city, province, seller_name, seller_email, seller_has_existing_bond, current_bond_bank, purchase_price, sales_price, bond_amount, deposit_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, lifecycle_state, last_meaningful_activity_at'
+    'id, organisation_id, buyer_id, matter_number, transaction_reference, title, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, finance_type, onboarding_status, next_action, risk_status, operational_state, attorney_stage, updated_at, created_at, property_description, property_address_line_1, property_address_line_2, suburb, city, province, seller_name, seller_email, seller_has_existing_bond, current_bond_bank, purchase_price, sales_price, bond_amount, deposit_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, lifecycle_state, last_meaningful_activity_at, originating_partner_organisation_id, referral_source_organisation_id, partner_relationship_id'
 
   let query = await client
     .from('transactions')
@@ -146,6 +164,9 @@ async function fetchTransactionsForDashboard(client) {
       isMissingColumnError(query.error, 'purchase_price') ||
       isMissingColumnError(query.error, 'target_registration_date') ||
       isMissingColumnError(query.error, 'last_meaningful_activity_at') ||
+      isMissingColumnError(query.error, 'originating_partner_organisation_id') ||
+      isMissingColumnError(query.error, 'referral_source_organisation_id') ||
+      isMissingColumnError(query.error, 'partner_relationship_id') ||
       isMissingColumnError(query.error, 'is_active'))
   ) {
     query = await client
@@ -183,6 +204,30 @@ async function fetchBuyerMap(client, buyerIds = []) {
 
   return (query.data || []).reduce((accumulator, row) => {
     accumulator[row.id] = row
+    return accumulator
+  }, {})
+}
+
+async function fetchOrganisationNameMap(client, organisationIds = []) {
+  const ids = [...new Set((organisationIds || []).filter(Boolean))]
+  if (!ids.length) {
+    return {}
+  }
+
+  const query = await client
+    .from('organisations')
+    .select('id, name, display_name')
+    .in('id', ids)
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'organisations')) {
+      return {}
+    }
+    throw query.error
+  }
+
+  return (query.data || []).reduce((accumulator, row) => {
+    accumulator[row.id] = String(row.display_name || row.name || '').trim()
     return accumulator
   }, {})
 }
@@ -371,9 +416,17 @@ export function getAttorneyMatterStats({ kpis = {}, matterRoleSummaries = [] } =
   const roleCounts = getMattersByLegalRole({ matterRoleSummaries })
   return {
     activeMatters: Number(kpis.activeMatters || 0),
+    newThisWeek: Number(kpis.newThisWeek || 0),
     lodgementsPending: Number(kpis.lodgementsPending || 0),
+    lodgementsToday: Number(kpis.lodgementsToday || 0),
+    registrationsThisWeek: Number(kpis.registrationsThisWeek || 0),
     registeredThisMonth: Number(kpis.registeredThisMonth || 0),
     delayedMatters: Number(kpis.delayedMatters || 0),
+    awaitingFica: Number(kpis.awaitingFica || 0),
+    awaitingSignatures: Number(kpis.awaitingSignatures || 0),
+    awaitingGuarantees: Number(kpis.awaitingGuarantees || 0),
+    documentRequestsOutstanding: Number(kpis.documentRequestsOutstanding || 0),
+    revenuePipelineValue: Number(kpis.revenuePipelineValue || 0),
     averageTransferTimeDays: Number(kpis.averageTransferTimeDays || 0),
     bondMatters: roleCounts.bondOnly + roleCounts.dualRole + roleCounts.allThreeRoles,
     cancellationMatters: roleCounts.cancellationOnly + roleCounts.allThreeRoles,
@@ -464,6 +517,50 @@ function daysSince(value) {
   return Math.max(0, Math.floor(delta / 86400000))
 }
 
+function getInstructionDate(transaction = {}) {
+  return transaction.instructed_at || transaction.instruction_date || transaction.created_at || transaction.updated_at || null
+}
+
+function getLastActivityDate(transaction = {}) {
+  return transaction.last_meaningful_activity_at || transaction.updated_at || transaction.created_at || null
+}
+
+function getExpectedRegistrationDate(transaction = {}) {
+  return transaction.target_registration_date || transaction.expected_transfer_date || transaction.registration_date || transaction.registered_at || null
+}
+
+function getMatterText(transaction = {}) {
+  return [
+    transaction.stage,
+    transaction.current_main_stage,
+    transaction.current_sub_stage_summary,
+    transaction.attorney_stage,
+    transaction.next_action,
+    transaction.risk_status,
+    transaction.operational_state,
+  ].map(toLower).join(' ')
+}
+
+function isAwaitingClearance(transaction = {}) {
+  const haystack = getMatterText(transaction)
+  return haystack.includes('clearance') || haystack.includes('rates certificate') || haystack.includes('levy certificate')
+}
+
+function isInvoiceOutstanding(transaction = {}) {
+  const haystack = getMatterText(transaction)
+  return haystack.includes('invoice overdue') || haystack.includes('overdue invoice') || haystack.includes('unpaid invoice') || haystack.includes('outstanding invoice')
+}
+
+function isMatterRegistered(matter = {}) {
+  const transaction = matter.transaction || {}
+  const haystack = getMatterText(transaction)
+  return Boolean(transaction.registered_at || transaction.registration_date || haystack.includes('registered'))
+}
+
+function isMatterStalled(matter = {}) {
+  return matter.flags?.delayed || daysSince(getLastActivityDate(matter.transaction)) >= 14
+}
+
 function riskToneFromMatter(matter = {}) {
   if (matter.flags?.delayed) return 'high'
   if (matter.flags?.awaitingGuarantees || matter.flags?.awaitingFica || matter.flags?.awaitingSignatures) return 'attention'
@@ -490,19 +587,25 @@ function buildOperationalMatterLanes({ matterRoleSummaries = [], buyersById = {}
       [transaction.property_address_line_1, transaction.suburb, transaction.city].filter(Boolean).join(', ') ||
       'Property address pending'
     const buyerName = buyer.name || buyer.email || 'Client pending'
+    const sellerName = transaction.seller_name || transaction.seller || 'Seller pending'
     const card = {
       id: summary.transactionId,
       reference,
       propertyAddress,
       buyerName,
+      buyerSellerName: sellerName && sellerName !== 'Seller pending' ? `${buyerName} / ${sellerName}` : buyerName,
       contextLine: `${propertyAddress} - ${buyerName}`,
-      sellerName: transaction.seller_name || transaction.seller || 'Seller pending',
+      sellerName,
       bank: transaction.bank || transaction.bond_bank || transaction.financing_bank || 'Bank pending',
       linkedReference: reference,
       currentStage,
       progress: Math.min(100, Math.max(12, Math.round(((daysSince(transaction.created_at) + 1) / 90) * 100))),
       assignedStaff: assignedProfile?.fullName || transaction.assigned_attorney_email || 'Unassigned',
       daysInStage: daysSince(transaction.updated_at || transaction.created_at),
+      instructedAt: getInstructionDate(transaction),
+      expectedRegistrationDate: getExpectedRegistrationDate(transaction),
+      lastActivityAt: getLastActivityDate(transaction),
+      value: getTransactionValue(transaction),
       riskTone: riskToneFromMatter(primaryUnit),
       statusLabel: primaryUnit.issue || (primaryUnit.flags?.delayed ? 'Delayed' : 'On track'),
       href: `/transactions/${summary.transactionId}`,
@@ -533,7 +636,7 @@ function getBankName(transaction = {}) {
   return bank || 'Bank not captured'
 }
 
-function getMatterSourceName({ transaction = {}, index = 0, isDalawyerDemo = false } = {}) {
+function getMatterSourceName({ transaction = {}, index = 0, isDalawyerDemo = false, organisationNamesById = {} } = {}) {
   const explicit = String(
     transaction.referring_agent_name ||
       transaction.referring_agent ||
@@ -542,6 +645,11 @@ function getMatterSourceName({ transaction = {}, index = 0, isDalawyerDemo = fal
       '',
   ).trim()
   if (explicit) return explicit
+
+  const partnerOrganisationId = transaction.originating_partner_organisation_id || transaction.referral_source_organisation_id || ''
+  if (partnerOrganisationId && organisationNamesById[partnerOrganisationId]) {
+    return organisationNamesById[partnerOrganisationId]
+  }
 
   if (isDalawyerDemo) {
     const demoSources = ['UrbanLink Realty', 'Northside Properties', 'Prime Estate Partners', 'Blue Crane Realty', 'Summit Homes']
@@ -567,7 +675,7 @@ function toLeaderboardRows(map, sortKey = 'count', limit = 5) {
     .slice(0, limit)
 }
 
-function buildBusinessIntelligence({ uniqueMatters = [], matterRoleSummaries = [], isDalawyerDemo = false } = {}) {
+function buildBusinessIntelligence({ uniqueMatters = [], matterRoleSummaries = [], isDalawyerDemo = false, organisationNamesById = {} } = {}) {
   const sourceMap = new Map()
   const bankMap = new Map()
   const financeMap = new Map()
@@ -588,7 +696,7 @@ function buildBusinessIntelligence({ uniqueMatters = [], matterRoleSummaries = [
   uniqueMatters.forEach((matter, index) => {
     const transaction = matter.transaction || {}
     const value = getTransactionValue(transaction)
-    const sourceName = getMatterSourceName({ transaction, index, isDalawyerDemo })
+    const sourceName = getMatterSourceName({ transaction, index, isDalawyerDemo, organisationNamesById })
     pushAggregate(sourceMap, sourceName, value)
     pushAggregate(bankMap, getBankName(transaction), Number(transaction.bond_amount || 0) || value)
     pushAggregate(financeMap, getFinanceBucket(transaction), value)
@@ -623,6 +731,181 @@ function buildBusinessIntelligence({ uniqueMatters = [], matterRoleSummaries = [
     })),
     averageRegistrationDays,
     registrationSampleSize: registrationDurations.length,
+  }
+}
+
+function getOldestInactiveDays(matters = [], predicate = () => false) {
+  return matters.reduce((oldest, matter) => {
+    if (!predicate(matter)) return oldest
+    return Math.max(oldest, daysSince(getLastActivityDate(matter.transaction)))
+  }, 0)
+}
+
+function buildAttentionMetrics({ uniqueMatters = [], kpis = {} } = {}) {
+  const clearanceCount = uniqueMatters.filter((matter) => isAwaitingClearance(matter.transaction)).length
+  const invoiceCount = uniqueMatters.filter((matter) => isInvoiceOutstanding(matter.transaction)).length
+  const stalledCount = uniqueMatters.filter((matter) => isMatterStalled(matter)).length
+
+  return [
+    {
+      key: 'signatures',
+      label: 'Signatures Pending',
+      count: Number(kpis.awaitingSignatures || 0),
+      helper: getOldestInactiveDays(uniqueMatters, (matter) => matter.flags?.awaitingSignatures)
+        ? `Oldest ${getOldestInactiveDays(uniqueMatters, (matter) => matter.flags?.awaitingSignatures)} days`
+        : 'Ready to chase',
+      tone: 'red',
+    },
+    {
+      key: 'guarantees',
+      label: 'Guarantees Outstanding',
+      count: Number(kpis.awaitingGuarantees || 0),
+      helper: 'Banks waiting',
+      tone: 'red',
+    },
+    {
+      key: 'clearance',
+      label: 'Clearance Certificates',
+      count: clearanceCount,
+      helper: clearanceCount ? 'Expiring soon' : 'No blocker',
+      tone: 'amber',
+    },
+    {
+      key: 'client-documents',
+      label: 'Client Documents',
+      count: Number(kpis.awaitingFica || 0),
+      helper: 'Need follow-up',
+      tone: 'red',
+    },
+    {
+      key: 'invoices',
+      label: 'Invoices Overdue',
+      count: invoiceCount,
+      helper: invoiceCount ? 'Total invoices' : 'No overdue invoices',
+      tone: 'red',
+    },
+    {
+      key: 'stalled',
+      label: 'Matters Stalled',
+      count: stalledCount,
+      helper: 'No movement >14 days',
+      tone: 'red',
+    },
+  ]
+}
+
+function toPercent(count = 0, total = 0) {
+  if (!total) return 0
+  return Math.round((Number(count || 0) / Number(total || 0)) * 100)
+}
+
+function buildPartnerAnalytics({ uniqueMatters = [], isDalawyerDemo = false, organisationNamesById = {} } = {}) {
+  const monthStart = startOfMonth(new Date())
+  const rowsByPartner = new Map()
+
+  uniqueMatters.forEach((matter, index) => {
+    const transaction = matter.transaction || {}
+    const partnerName = getMatterSourceName({ transaction, index, isDalawyerDemo, organisationNamesById })
+    if (!partnerName) return
+
+    if (!rowsByPartner.has(partnerName)) {
+      rowsByPartner.set(partnerName, {
+        partner: partnerName,
+        activeMatters: 0,
+        newThisMonth: 0,
+        revenuePipeline: 0,
+      })
+    }
+
+    const row = rowsByPartner.get(partnerName)
+    row.activeMatters += 1
+    row.newThisMonth += isAfter(getInstructionDate(transaction), monthStart) ? 1 : 0
+    row.revenuePipeline += getTransactionValue(transaction)
+  })
+
+  const rows = [...rowsByPartner.values()]
+    .sort((left, right) => Number(right.revenuePipeline || 0) - Number(left.revenuePipeline || 0))
+    .slice(0, 6)
+  const maxRevenuePipeline = rows.reduce((max, row) => Math.max(max, Number(row.revenuePipeline || 0)), 0)
+
+  return {
+    status: rows.length ? 'available' : 'empty',
+    rows: rows.map((row) => ({
+      ...row,
+      revenueShare: maxRevenuePipeline ? Math.round((Number(row.revenuePipeline || 0) / maxRevenuePipeline) * 100) : 0,
+    })),
+  }
+}
+
+function buildConveyancingPerformance({ uniqueMatters = [], businessIntelligence = {} } = {}) {
+  const now = new Date()
+  const weekStart = startOfWeek(now)
+  const weekEnd = endOfDay(addDays(weekStart, 6))
+  const nextWeekStart = startOfWeek(addDays(now, 7))
+  const nextWeekEnd = endOfDay(addDays(nextWeekStart, 6))
+  const monthStart = startOfMonth(now)
+  const nextMonthStart = startOfMonth(addDays(monthStart, 35))
+  const monthEnd = endOfDay(addDays(nextMonthStart, -1))
+
+  const registeredCount = uniqueMatters.filter((matter) => isMatterRegistered(matter)).length
+  const delayedCount = uniqueMatters.filter((matter) => matter.flags?.delayed).length
+  const completionSample = registeredCount + delayedCount
+  const registrationSuccessRate = completionSample ? Math.round((registeredCount / completionSample) * 1000) / 10 : 0
+
+  const expectedDates = uniqueMatters.map((matter) => getExpectedRegistrationDate(matter.transaction)).filter(Boolean)
+  const distribution = (businessIntelligence.businessBreakdown || []).map((row) => ({
+    label: row.label,
+    count: Number(row.count || 0),
+    percentage: Number(row.percentage || 0),
+  }))
+
+  return {
+    averageDaysToRegistration: Number(businessIntelligence.averageRegistrationDays || 0),
+    registrationSampleSize: Number(businessIntelligence.registrationSampleSize || 0),
+    registrationSuccessRate,
+    averageDocumentTurnaroundDays: 0,
+    registrationForecast: {
+      thisWeek: expectedDates.filter((date) => isBetweenDates(date, weekStart, weekEnd)).length,
+      nextWeek: expectedDates.filter((date) => isBetweenDates(date, nextWeekStart, nextWeekEnd)).length,
+      thisMonth: expectedDates.filter((date) => isBetweenDates(date, monthStart, monthEnd)).length,
+    },
+    matterDistribution: distribution,
+  }
+}
+
+function buildMatterHealth({ uniqueMatters = [] } = {}) {
+  const total = uniqueMatters.length
+  const critical = uniqueMatters.filter((matter) => matter.flags?.delayed || daysSince(getLastActivityDate(matter.transaction)) >= 21)
+  const criticalIds = new Set(critical.map((matter) => matter.transactionId))
+  const attention = uniqueMatters.filter((matter) => {
+    if (criticalIds.has(matter.transactionId)) return false
+    return (
+      matter.flags?.awaitingFica ||
+      matter.flags?.awaitingSignatures ||
+      matter.flags?.awaitingGuarantees ||
+      matter.flags?.awaitingLodgement ||
+      isAwaitingClearance(matter.transaction) ||
+      isInvoiceOutstanding(matter.transaction) ||
+      daysSince(getLastActivityDate(matter.transaction)) >= 14
+    )
+  })
+  const attentionIds = new Set(attention.map((matter) => matter.transactionId))
+  const onTrack = uniqueMatters.filter((matter) => !criticalIds.has(matter.transactionId) && !attentionIds.has(matter.transactionId))
+
+  return {
+    total,
+    onTrack: {
+      count: onTrack.length,
+      percentage: toPercent(onTrack.length, total),
+    },
+    attention: {
+      count: attention.length,
+      percentage: toPercent(attention.length, total),
+    },
+    critical: {
+      count: critical.length,
+      percentage: toPercent(critical.length, total),
+    },
   }
 }
 
@@ -704,7 +987,11 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
     return accumulator
   }, {})
 
-  const [memberProfilesById, buyersById] = await Promise.all([
+  const partnerOrganisationIds = Object.values(transactionsById)
+    .flatMap((transaction) => [transaction.originating_partner_organisation_id, transaction.referral_source_organisation_id])
+    .filter(Boolean)
+
+  const [memberProfilesById, buyersById, organisationNamesById] = await Promise.all([
     readDashboardDependency('member profiles', fetchMemberProfilesMap(client, members), {}),
     readDashboardDependency('buyer summaries', fetchBuyerMap(
       client,
@@ -712,6 +999,7 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
         .map((transaction) => transaction.buyer_id)
         .filter(Boolean),
     ), {}),
+    readDashboardDependency('partner organisation names', fetchOrganisationNameMap(client, partnerOrganisationIds), {}),
   ])
 
   const firmNameToken = toLower(resolvedFirm.name)
@@ -801,6 +1089,10 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
   }
 
   const weekStart = startOfWeek(new Date())
+  const weekEnd = endOfDay(addDays(weekStart, 6))
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  const todayEnd = endOfDay(new Date())
   const monthStart = startOfMonth(new Date())
 
   const uniqueTransactionIds = [...new Set(matterUnits.map((item) => item.transactionId).filter(Boolean))]
@@ -816,10 +1108,15 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
 
   const kpis = {
     activeMatters: uniqueMatters.length,
+    newThisWeek: uniqueMatters.filter((matter) => isAfter(getInstructionDate(matter.transaction), weekStart)).length,
     transferMatters: transferAssignments.length,
     bondMatters: bondAssignments.length,
     cancellationMatters: scopedMatterRoleSummaries.filter((summary) => summary.roles.has('cancellation')).length,
     lodgementsPending: uniqueMatters.filter((matter) => resolvePipelineStage(matter.transaction) === 'lodgement').length,
+    lodgementsToday: uniqueMatters.filter((matter) => (
+      resolvePipelineStage(matter.transaction) === 'lodgement' &&
+      isBetweenDates(matter.transaction?.updated_at || matter.transaction?.created_at, todayStart, todayEnd)
+    )).length,
     lodgedThisWeek: uniqueMatters.filter((matter) => {
       const stage = toLower(matter.transaction?.stage)
       const mainStage = toLower(matter.transaction?.current_main_stage)
@@ -827,6 +1124,7 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
       const lodged = stage.includes('lodged') || mainStage.includes('lodged') || attorneyStage === 'lodgement'
       return lodged && isAfter(matter.transaction?.updated_at || matter.transaction?.created_at, weekStart)
     }).length,
+    registrationsThisWeek: uniqueMatters.filter((matter) => isBetweenDates(getExpectedRegistrationDate(matter.transaction), weekStart, weekEnd)).length,
     registeredThisMonth: uniqueMatters.filter((matter) => {
       const stage = toLower(matter.transaction?.stage)
       const mainStage = toLower(matter.transaction?.current_main_stage)
@@ -838,6 +1136,8 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
     awaitingFica: uniqueMatters.filter((matter) => matter.flags.awaitingFica).length,
     awaitingSignatures: uniqueMatters.filter((matter) => matter.flags.awaitingSignatures).length,
     awaitingGuarantees: uniqueMatters.filter((matter) => matter.flags.awaitingGuarantees).length,
+    documentRequestsOutstanding: uniqueMatters.filter((matter) => matter.flags.awaitingFica || matter.flags.awaitingSignatures).length,
+    revenuePipelineValue: uniqueMatters.reduce((sum, matter) => sum + getTransactionValue(matter.transaction), 0),
     averageTransferTimeDays: 0, // TODO: calculate from instruction to registration once dated attorney milestones are stored consistently.
   }
 
@@ -1016,7 +1316,19 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
     uniqueMatters,
     matterRoleSummaries: scopedMatterRoleSummaries,
     isDalawyerDemo,
+    organisationNamesById,
   })
+  const attentionMetrics = buildAttentionMetrics({ uniqueMatters, kpis })
+  const partnerAnalytics = buildPartnerAnalytics({
+    uniqueMatters,
+    isDalawyerDemo,
+    organisationNamesById,
+  })
+  const conveyancingPerformance = buildConveyancingPerformance({
+    uniqueMatters,
+    businessIntelligence,
+  })
+  const matterHealth = buildMatterHealth({ uniqueMatters })
 
   return {
     firm: {
@@ -1055,5 +1367,9 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
     financialSnapshot,
     matterLanes,
     businessIntelligence,
+    attentionMetrics,
+    partnerAnalytics,
+    conveyancingPerformance,
+    matterHealth,
   }
 }

@@ -138,6 +138,7 @@
     "test:attorney-onboarding-completion-redirect": "node scripts/attorney-onboarding-completion-redirect.test.mjs",
     "test:organisation-settings-idempotency": "node scripts/organisation-settings-idempotency.test.mjs",
     "test:developer-partner-invite-binding": "node scripts/developer-partner-invite-binding.test.mjs",
+    "test:attorney-dashboard-control-centre": "node scripts/attorney-dashboard-control-centre.test.mjs",
     "test:document-request-scenario-matrix": "node scripts/document-request-scenario-matrix.test.mjs",
     "test:buyer-onboarding-flow-contract": "node scripts/buyer-onboarding-flow-contract.test.mjs",
     "test:buyer-onboarding-sa-scenarios": "node scripts/buyer-onboarding-south-african-scenarios.test.mjs",
