@@ -1,9 +1,19 @@
-import { ArrowLeft, ArrowRight, CheckCircle2, Save } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowRight, Check, CheckCircle2, Circle, Clock3, Save, ShieldCheck } from 'lucide-react'
+import AttorneyFirmLivePreview from './AttorneyFirmLivePreview'
+
+const STATUS_META = {
+  active: { label: 'In progress', icon: null },
+  complete: { label: 'Ready', icon: Check },
+  optional: { label: 'Optional', icon: Clock3 },
+  recommended: { label: 'Recommended', icon: Clock3 },
+  needs_attention: { label: 'Needs attention', icon: AlertCircle },
+  pending: { label: 'Pending', icon: Circle },
+}
 
 function AttorneyOnboardingLayout({
   steps = [],
   currentStepIndex = 0,
-  title = 'Attorney Firm Onboarding',
+  title = 'Attorney Firm Setup Studio',
   subtitle = '',
   children,
   onBack,
@@ -14,139 +24,168 @@ function AttorneyOnboardingLayout({
   canNext = true,
   nextLabel = 'Continue',
   backLabel = 'Back',
-  confirmLabel = 'Confirm Setup',
+  confirmLabel = 'Activate Workspace',
+  confirmDisabledReason = '',
   isFinalStep = false,
   isSubmitting = false,
   draftSavedAt = '',
   errorMessage = '',
+  preview = null,
+  readiness = null,
+  stepStatuses = {},
+  onStepSelect,
 }) {
   const progressPercent = steps.length ? Math.round(((currentStepIndex + 1) / steps.length) * 100) : 0
+  const readinessPercent = typeof readiness?.percent === 'number' ? readiness.percent : progressPercent
+  const readinessItems = Array.isArray(readiness?.items) ? readiness.items : []
+  const currentStep = steps[currentStepIndex] || {}
+  const taskTitle = isFinalStep ? 'Prepare to activate your firm workspace' : 'Shape your firm workspace'
+  const taskDescription = currentStep.label
+    ? `${currentStep.label}${currentStep.description ? ` - ${currentStep.description}` : ''}`
+    : currentStep.description || ''
 
   return (
-    <section className="page" style={{ maxWidth: '1120px' }}>
-      <div className="ui-panel" style={{ display: 'grid', gap: '1rem', padding: '1.1rem' }}>
-        <div style={{ display: 'grid', gap: '0.35rem' }}>
-          <h2 style={{ margin: 0 }}>{title}</h2>
-          {subtitle ? (
-            <p className="status-message" style={{ margin: 0 }}>
-              {subtitle}
-            </p>
-          ) : null}
-          <div style={{ display: 'grid', gap: '0.35rem', marginTop: '0.2rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.6rem' }}>
-              <span className="status-message" style={{ fontWeight: 700 }}>Step {currentStepIndex + 1} of {steps.length}</span>
-              <span className="status-message">{progressPercent}% complete</span>
-            </div>
-            <div style={{ width: '100%', height: 8, borderRadius: 999, background: 'rgba(21, 42, 72, 0.12)' }}>
-              <div
-                style={{
-                  width: `${progressPercent}%`,
-                  height: '100%',
-                  borderRadius: 999,
-                  background: 'linear-gradient(90deg, #274c69, #3f7298)',
-                  transition: 'width 220ms ease',
-                }}
-              />
-            </div>
+    <section className="attorney-setup-studio">
+      <div className="attorney-setup-topbar">
+        <div className="attorney-setup-title-block">
+          <span className="attorney-setup-kicker">
+            <ShieldCheck size={14} aria-hidden="true" />
+            Attorney onboarding
+          </span>
+          <h1>{title}</h1>
+          {subtitle ? <p>{subtitle}</p> : null}
+        </div>
+        <div className="attorney-setup-progress-card" aria-label="Onboarding progress">
+          <span>{readinessPercent}%</span>
+          <strong>{readiness?.label || 'Workspace configured'}</strong>
+          {readiness?.nextAction ? <em>{readiness.nextAction}</em> : null}
+          <div className="attorney-setup-progress-track">
+            <span style={{ width: `${readinessPercent}%` }} />
           </div>
         </div>
+      </div>
 
-        <div
-          style={{
-            display: 'grid',
-            gap: '1.25rem',
-            gridTemplateColumns: 'minmax(220px, 280px) minmax(0, 1fr)',
-            alignItems: 'start',
-          }}
-        >
-          <aside className="ui-panel-muted" style={{ padding: '0.9rem', display: 'grid', gap: '0.55rem' }}>
+      <div className="attorney-setup-shell">
+        <aside className="attorney-setup-rail" aria-label="Attorney setup steps">
+          <div className="attorney-setup-rail-head">
+            <span>Setup Studio</span>
+            <strong>{currentStepIndex + 1} / {steps.length}</strong>
+          </div>
+          <div className="attorney-setup-step-list">
             {steps.map((step, index) => {
               const isActive = index === currentStepIndex
-              const isComplete = index < currentStepIndex
+              const stepState = stepStatuses[step.key] || {}
+              const rawStatus = stepState.status || (index < currentStepIndex ? 'complete' : 'pending')
+              const visualStatus = isActive ? 'active' : rawStatus
+              const meta = STATUS_META[visualStatus] || STATUS_META.pending
+              const StatusIcon = meta.icon
               return (
-                <div
-                  key={step.key || step.label || index}
-                  style={{
-                    display: 'grid',
-                    gap: '0.1rem',
-                    padding: '0.45rem 0.55rem',
-                    borderRadius: '0.7rem',
-                    border: isActive ? '1px solid rgba(22, 103, 179, 0.35)' : '1px solid transparent',
-                    background: isActive ? 'rgba(22, 103, 179, 0.08)' : isComplete ? 'rgba(18, 183, 106, 0.08)' : 'transparent',
-                  }}
-                >
-                  <span className="status-message" style={{ margin: 0, fontWeight: 700, color: isActive ? '#11497b' : '#4f5f79' }}>
-                    {index + 1}. {step.label}
-                  </span>
-                  {step.description ? (
-                    <span className="status-message" style={{ margin: 0, fontSize: '0.82rem' }}>
-                      {step.description}
-                    </span>
-                  ) : null}
-                </div>
-              )
-            })}
-          </aside>
-
-          <div style={{ display: 'grid', gap: '0.95rem', minWidth: 0 }}>
-            <div>{children}</div>
-
-            {errorMessage ? (
-              <p className="status-message" style={{ margin: 0, color: '#b42318' }}>
-                {errorMessage}
-              </p>
-            ) : null}
-
-            <div className="attorney-onboarding-actions">
-              <div className="attorney-onboarding-actions-group">
                 <button
                   type="button"
-                  className="ui-button-secondary"
-                  onClick={onBack}
-                  disabled={!canBack || isSubmitting}
+                  key={step.key || step.label || index}
+                  className={`attorney-setup-step is-${visualStatus} ${isActive ? 'is-active' : ''}`}
+                  aria-current={isActive ? 'step' : undefined}
+                  onClick={() => onStepSelect?.(index)}
+                  disabled={!onStepSelect || isSubmitting}
                 >
-                  <ArrowLeft size={16} aria-hidden="true" />
-                  {backLabel}
+                  <span className="attorney-setup-step-node" aria-hidden="true">
+                    {isActive ? String(index + 1) : StatusIcon ? <StatusIcon size={14} /> : <Circle size={8} />}
+                  </span>
+                  <span className="attorney-setup-step-copy">
+                    <strong>{step.label}</strong>
+                    {step.description ? <span>{step.description}</span> : null}
+                    <em>{stepState.label || meta.label}</em>
+                  </span>
                 </button>
-                {onSaveDraft ? (
-                  <button
-                    type="button"
-                    className="ui-button-secondary"
-                    onClick={onSaveDraft}
-                    disabled={isSubmitting}
-                  >
-                    <Save size={16} aria-hidden="true" />
-                    Save Draft
-                  </button>
-                ) : null}
-              </div>
-
-              <div className="attorney-onboarding-primary-action">
-                {isFinalStep ? (
-                  <button
-                    type="button"
-                    className="ui-button-primary"
-                    onClick={onConfirm}
-                    disabled={!canNext || isSubmitting}
-                  >
-                    <CheckCircle2 size={16} aria-hidden="true" />
-                    {isSubmitting ? 'Completing setup…' : confirmLabel}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="ui-button-primary"
-                    onClick={onNext}
-                    disabled={!canNext || isSubmitting}
-                  >
-                    <ArrowRight size={16} aria-hidden="true" />
-                    {nextLabel}
-                  </button>
-                )}
-                {draftSavedAt ? <span className="status-message">Draft saved {draftSavedAt}</span> : null}
-              </div>
-            </div>
+              )
+            })}
           </div>
+          <div className="attorney-setup-rail-note">
+            <strong>{readiness?.headline || 'Firm workspace'}</strong>
+            <span>{readiness?.summary || 'Branding, workflows, team access, and client-facing surfaces are prepared together.'}</span>
+            {readinessItems.length ? (
+              <div className="attorney-setup-readiness-list">
+                {readinessItems.slice(0, 4).map((item) => (
+                  <span key={item.key} className={`is-${item.state}`}>
+                    {item.state === 'complete' || item.state === 'optional' ? <Check size={12} aria-hidden="true" /> : <AlertCircle size={12} aria-hidden="true" />}
+                    {item.label}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </aside>
+
+        <main className="attorney-setup-workbench">
+          <div className="attorney-setup-workbench-head">
+            <span>Step {currentStepIndex + 1} of {steps.length}</span>
+            <h2>{taskTitle}</h2>
+            {taskDescription ? <p>{taskDescription}</p> : null}
+          </div>
+          <div className="attorney-setup-content">{children}</div>
+        </main>
+
+        <AttorneyFirmLivePreview preview={preview} progressPercent={readinessPercent} readiness={readiness} />
+      </div>
+
+      {errorMessage ? (
+        <p className="attorney-setup-error" role="alert">
+          {errorMessage}
+        </p>
+      ) : null}
+
+      <div className="attorney-setup-actionbar">
+        <div className="attorney-setup-actionbar-left">
+          <button
+            type="button"
+            className="attorney-setup-secondary-action"
+            onClick={onBack}
+            disabled={!canBack || isSubmitting}
+          >
+            <ArrowLeft size={16} aria-hidden="true" />
+            {backLabel}
+          </button>
+          {onSaveDraft ? (
+            <button
+              type="button"
+              className="attorney-setup-secondary-action"
+              onClick={onSaveDraft}
+              disabled={isSubmitting}
+            >
+              <Save size={16} aria-hidden="true" />
+              Save Draft
+            </button>
+          ) : null}
+        </div>
+
+        <div className="attorney-setup-actionbar-right">
+          {isFinalStep && confirmDisabledReason ? (
+            <span className="attorney-setup-confirm-note" role="status">
+              <AlertCircle size={14} aria-hidden="true" />
+              {confirmDisabledReason}
+            </span>
+          ) : draftSavedAt ? <span>Draft saved {draftSavedAt}</span> : <span>Autosave-ready studio</span>}
+          {isFinalStep ? (
+            <button
+              type="button"
+              className="attorney-setup-primary-action"
+              onClick={onConfirm}
+              disabled={!canNext || isSubmitting}
+            >
+              <CheckCircle2 size={17} aria-hidden="true" />
+              {isSubmitting ? 'Activating workspace...' : confirmLabel}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="attorney-setup-primary-action"
+              onClick={onNext}
+              disabled={!canNext || isSubmitting}
+            >
+              {nextLabel}
+              <ArrowRight size={17} aria-hidden="true" />
+            </button>
+          )}
         </div>
       </div>
     </section>

@@ -1,4 +1,4 @@
-import { Image, Trash2, Upload } from 'lucide-react'
+import { CheckCircle2, FileText, Image, Monitor, Palette, Trash2, Upload } from 'lucide-react'
 
 function UploadCard({
   title,
@@ -9,58 +9,71 @@ function UploadCard({
   onUpload,
   onRemove,
   inputId,
+  tone = 'light',
+  canRemove = Boolean(logoUrl),
 }) {
   return (
-    <div className="ui-panel-muted" style={{ display: 'grid', gap: '0.7rem', padding: '0.95rem' }}>
-      <div style={{ display: 'grid', gap: '0.2rem' }}>
-        <strong>{title}</strong>
-        <span className="status-message">{description}</span>
-      </div>
-
+    <div className={`attorney-brand-upload-card is-${tone}`}>
       <input
         id={inputId}
         type="file"
         accept="image/png,image/jpeg,image/jpg,image/svg+xml"
-        style={{ display: 'none' }}
-        onChange={(event) => void onUpload(event.target.files?.[0] || null)}
+        className="attorney-hidden-file-input"
+        onChange={(event) => void onUpload?.(event.target.files?.[0] || null)}
       />
 
-      <div style={{ display: 'flex', gap: '0.55rem', flexWrap: 'wrap' }}>
-        <label htmlFor={inputId} className="ui-button-primary" style={{ cursor: isUploading ? 'wait' : 'pointer', opacity: isUploading ? 0.8 : 1 }}>
-          <Upload size={16} aria-hidden="true" />
-          {isUploading ? 'Uploading...' : 'Upload Logo'}
-        </label>
+      <div className="attorney-brand-upload-preview">
         {logoUrl ? (
-          <button type="button" className="ui-button-secondary" onClick={onRemove} disabled={isUploading}>
-            <Trash2 size={16} aria-hidden="true" />
-            Remove Logo
-          </button>
-        ) : null}
-      </div>
-
-      <span className="status-message">{logoName ? `Uploaded: ${logoName}` : 'PNG, JPG, or SVG. Up to 8MB.'}</span>
-
-      <div
-        style={{
-          minHeight: '88px',
-          borderRadius: '0.9rem',
-          border: '1px dashed rgba(18, 34, 62, 0.2)',
-          display: 'grid',
-          placeItems: 'center',
-          background: '#fff',
-          padding: '0.6rem',
-        }}
-      >
-        {logoUrl ? (
-          <img src={logoUrl} alt="Firm logo preview" style={{ maxHeight: '72px', maxWidth: '100%', objectFit: 'contain' }} />
+          <img src={logoUrl} alt="Firm logo preview" />
         ) : (
-          <span className="status-message" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
-            <Image size={16} aria-hidden="true" />
-            No logo uploaded yet.
+          <span>
+            <Image size={22} aria-hidden="true" />
           </span>
         )}
       </div>
+
+      <div className="attorney-brand-upload-copy">
+        <span className="attorney-step-kicker">{title}</span>
+        <strong>{logoName || 'Logo pending'}</strong>
+        <p>{description}</p>
+      </div>
+
+      <div className="attorney-brand-upload-actions">
+        <label
+          htmlFor={inputId}
+          className={`attorney-inline-action is-primary ${isUploading ? 'is-loading' : ''}`}
+          aria-disabled={isUploading ? 'true' : undefined}
+        >
+          <Upload size={15} aria-hidden="true" />
+          {isUploading ? 'Uploading...' : 'Upload'}
+        </label>
+        {canRemove ? (
+          <button type="button" className="attorney-inline-action" onClick={onRemove} disabled={isUploading}>
+            <Trash2 size={15} aria-hidden="true" />
+            Remove
+          </button>
+        ) : null}
+      </div>
     </div>
+  )
+}
+
+function ColourCard({ label, description, value, onChange }) {
+  return (
+    <label className="attorney-colour-card" style={{ '--attorney-colour-card-swatch': value || '#0f4c81' }}>
+      <span>
+        <Palette size={14} aria-hidden="true" />
+        {label}
+      </span>
+      <strong>{value}</strong>
+      <p>{description}</p>
+      <input
+        type="color"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        aria-label={label}
+      />
+    </label>
   )
 }
 
@@ -77,139 +90,127 @@ function BrandingStep({
   uploadError = '',
 }) {
   const previewName = firmName || 'Your Firm Name'
+  const primaryColour = values.primaryColour || '#0f4c81'
+  const secondaryColour = values.secondaryColour || '#1e2a44'
 
   return (
-    <div style={{ display: 'grid', gap: '0.95rem' }}>
-      <div style={{ display: 'grid', gap: '0.2rem' }}>
-        <h3 style={{ margin: 0 }}>Branding</h3>
-        <p className="status-message" style={{ margin: 0 }}>
-          Configure your legal identity for client communications, templates, and email signatures.
-        </p>
-      </div>
-
-      {uploadError ? <p className="status-message" style={{ margin: 0, color: '#b42318' }}>{uploadError}</p> : null}
-
-      <div style={{ display: 'grid', gap: '0.85rem', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
-        <UploadCard
-          title="Primary Logo"
-          description="Used on client-facing documents and portal views."
-          logoUrl={values.logoUrl}
-          logoName={values.logoFileName}
-          isUploading={uploadingTarget === 'light'}
-          onUpload={onUploadLightLogo}
-          onRemove={onRemoveLightLogo}
-          inputId="attorney-onboarding-logo-light"
-        />
-        <UploadCard
-          title="Dark Surface Logo"
-          description="Optional alternate logo for dark backgrounds."
-          logoUrl={values.logoDarkUrl || values.logoUrl}
-          logoName={values.logoDarkFileName}
-          isUploading={uploadingTarget === 'dark'}
-          onUpload={onUploadDarkLogo}
-          onRemove={onRemoveDarkLogo}
-          inputId="attorney-onboarding-logo-dark"
-        />
-      </div>
-
-      <div style={{ display: 'grid', gap: '0.85rem', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
-        <label className="form-field">
-          <span>Primary Colour</span>
-          <span className="attorney-colour-control">
-            <input
-              type="color"
-              className="attorney-colour-swatch"
-              value={values.primaryColour}
-              onChange={(event) => onChange('primaryColour', event.target.value)}
-              aria-label="Primary colour"
-            />
-            <span className="attorney-colour-value">{values.primaryColour}</span>
+    <div className="attorney-step-flow">
+      <div className="attorney-step-hero attorney-brand-hero">
+        <div className="attorney-step-hero-copy">
+          <span className="attorney-step-kicker">
+            <Palette size={14} aria-hidden="true" />
+            Brand system
           </span>
-          {errors.primaryColour ? <small style={{ color: '#b42318' }}>{errors.primaryColour}</small> : null}
-        </label>
-
-        <label className="form-field">
-          <span>Secondary Colour</span>
-          <span className="attorney-colour-control">
-            <input
-              type="color"
-              className="attorney-colour-swatch"
-              value={values.secondaryColour}
-              onChange={(event) => onChange('secondaryColour', event.target.value)}
-              aria-label="Secondary colour"
-            />
-            <span className="attorney-colour-value">{values.secondaryColour}</span>
-          </span>
-          {errors.secondaryColour ? <small style={{ color: '#b42318' }}>{errors.secondaryColour}</small> : null}
-        </label>
-      </div>
-
-      <div
-        className="ui-panel-muted"
-        style={{
-          padding: '1rem',
-          borderRadius: '1rem',
-          display: 'grid',
-          gap: '0.85rem',
-          border: `1px solid ${values.secondaryColour || 'rgba(11, 19, 43, 0.15)'}`,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.8rem', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-            {values.logoUrl ? (
-              <img
-                src={values.logoUrl}
-                alt="Firm logo preview"
-                style={{ width: 52, height: 52, objectFit: 'contain', borderRadius: '0.6rem', background: '#fff', border: '1px solid rgba(16, 34, 57, 0.12)' }}
-              />
-            ) : (
-              <div
-                style={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: '0.6rem',
-                  border: '1px dashed rgba(30, 42, 68, 0.4)',
-                  display: 'grid',
-                  placeItems: 'center',
-                  fontSize: '0.75rem',
-                  color: '#68768f',
-                }}
-              >
-                Logo
-              </div>
-            )}
-            <div>
-              <p style={{ margin: 0, fontWeight: 700 }}>{previewName}</p>
-              <p className="status-message" style={{ margin: 0 }}>Powered by Arch9</p>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: '0.4rem' }}>
-            <span
-              title="Primary colour"
-              style={{ width: 18, height: 18, borderRadius: '999px', background: values.primaryColour || '#0f4c81', border: '1px solid rgba(15, 25, 45, 0.2)' }}
-            />
-            <span
-              title="Secondary colour"
-              style={{ width: 18, height: 18, borderRadius: '999px', background: values.secondaryColour || '#1e2a44', border: '1px solid rgba(15, 25, 45, 0.2)' }}
-            />
-          </div>
+          <h3>Make every legal surface feel unmistakably yours.</h3>
+          <p>
+            Logos and colors feed the document header, email signature, client portal, and matter workspace preview.
+          </p>
         </div>
-
-        <div style={{ display: 'grid', gap: '0.65rem' }}>
-          <div className="ui-panel" style={{ padding: '0.7rem' }}>
-            <strong style={{ display: 'block', marginBottom: '0.25rem' }}>Email signature preview</strong>
-            <p className="status-message" style={{ margin: 0 }}>{previewName} | Conveyancing & Legal Operations</p>
-          </div>
-          <div className="ui-panel" style={{ padding: '0.7rem' }}>
-            <strong style={{ display: 'block', marginBottom: '0.25rem' }}>Document header preview</strong>
-            <div style={{ height: 6, borderRadius: 999, background: values.primaryColour || '#0f4c81' }} />
-          </div>
-          <div className="ui-panel" style={{ padding: '0.7rem' }}>
-            <strong style={{ display: 'block', marginBottom: '0.25rem' }}>Client portal preview</strong>
-            <p className="status-message" style={{ margin: 0 }}>Calm legal workspace branding will be applied after setup.</p>
-          </div>
+        <div className="attorney-brand-hero-card" style={{ '--brand-primary': primaryColour, '--brand-secondary': secondaryColour }}>
+          <span />
+          <strong>{previewName}</strong>
+          <em>Powered by Arch9</em>
         </div>
       </div>
+
+      {uploadError ? <p className="attorney-step-alert">{uploadError}</p> : null}
+
+      <section className="attorney-step-section">
+        <div className="attorney-step-section-head">
+          <span>01</span>
+          <div>
+            <h4>Logo Assets</h4>
+            <p>Primary and dark-surface marks keep the firm polished across white documents and dark navigation.</p>
+          </div>
+        </div>
+        <div className="attorney-brand-upload-grid">
+          <UploadCard
+            title="Primary mark"
+            description="Used on documents, portals, and client communication."
+            logoUrl={values.logoUrl}
+            logoName={values.logoFileName}
+            isUploading={uploadingTarget === 'light'}
+            onUpload={onUploadLightLogo}
+            onRemove={onRemoveLightLogo}
+            inputId="attorney-onboarding-logo-light"
+          />
+          <UploadCard
+            title="Dark-surface mark"
+            description="Optional alternate for deep navigation and workspace surfaces."
+            logoUrl={values.logoDarkUrl || values.logoUrl}
+            logoName={values.logoDarkFileName || (values.logoUrl ? 'Using primary mark' : '')}
+            isUploading={uploadingTarget === 'dark'}
+            onUpload={onUploadDarkLogo}
+            onRemove={onRemoveDarkLogo}
+            inputId="attorney-onboarding-logo-dark"
+            tone="dark"
+            canRemove={Boolean(values.logoDarkUrl)}
+          />
+        </div>
+      </section>
+
+      <section className="attorney-step-section">
+        <div className="attorney-step-section-head">
+          <span>02</span>
+          <div>
+            <h4>Color Direction</h4>
+            <p>Choose the anchor colors that carry status, hierarchy, and branded accents.</p>
+          </div>
+        </div>
+        <div className="attorney-colour-grid">
+          <ColourCard
+            label="Primary Colour"
+            description="Main action, progress, and document rule."
+            value={primaryColour}
+            onChange={(value) => onChange('primaryColour', value)}
+          />
+          <ColourCard
+            label="Secondary Colour"
+            description="Navigation, logo fallback, and executive accents."
+            value={secondaryColour}
+            onChange={(value) => onChange('secondaryColour', value)}
+          />
+        </div>
+        {errors.primaryColour || errors.secondaryColour ? (
+          <p className="attorney-step-alert">{errors.primaryColour || errors.secondaryColour}</p>
+        ) : null}
+      </section>
+
+      <section className="attorney-step-section">
+        <div className="attorney-step-section-head">
+          <span>03</span>
+          <div>
+            <h4>Brand Surfaces</h4>
+            <p>A quick confidence check before the brand kit is applied across the workspace.</p>
+          </div>
+        </div>
+        <div className="attorney-brand-surface-grid" style={{ '--brand-primary': primaryColour, '--brand-secondary': secondaryColour }}>
+          <article>
+            <span>
+              <FileText size={15} aria-hidden="true" />
+              Letterhead
+            </span>
+            <strong>{previewName}</strong>
+            <div className="attorney-brand-surface-rule" />
+          </article>
+          <article>
+            <span>
+              <CheckCircle2 size={15} aria-hidden="true" />
+              Email Signature
+            </span>
+            <strong>{previewName}</strong>
+            <p>Conveyancing & Legal Operations</p>
+          </article>
+          <article>
+            <span>
+              <Monitor size={15} aria-hidden="true" />
+              Client Portal
+            </span>
+            <strong>Secure matter workspace</strong>
+            <p>Branded client-facing experience.</p>
+          </article>
+        </div>
+      </section>
     </div>
   )
 }

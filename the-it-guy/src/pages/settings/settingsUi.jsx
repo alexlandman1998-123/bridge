@@ -1,5 +1,5 @@
 export const settingsPageClass =
-  'space-y-5'
+  'mx-auto w-full max-w-[1220px] space-y-6'
 export const settingsCardClass = 'rounded-[12px] border border-[#e4ebf2] bg-white p-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)]'
 export const settingsGridClass = 'grid gap-3 md:grid-cols-2'
 export const settingsFieldClass = 'grid gap-2 [&_.ui-input]:px-3.5 [&_.ui-input]:py-2.5 [&_.ui-select]:px-3.5 [&_.ui-select]:py-2.5 [&_.ui-textarea]:px-3.5 [&_.ui-textarea]:py-2.5'
@@ -97,28 +97,39 @@ export function SettingsToggleRow({ title, description, checked, disabled, onCha
   )
 }
 
-export function SettingsStickySaveBar({ dirty = false, saving = false, onDiscard, onSave }) {
+export function SettingsStickySaveBar({
+  dirty = false,
+  saving = false,
+  message = 'You have unsaved changes',
+  discardLabel = 'Discard changes',
+  saveLabel = 'Save changes',
+  onDiscard,
+  onSave,
+}) {
+  if (!dirty) return null
+
   return (
-    <div className="pointer-events-none sticky bottom-4 z-30 flex justify-end">
-      <div className="pointer-events-auto inline-flex flex-wrap justify-end gap-2 rounded-[14px] border border-[#dce7f1] bg-white/95 p-2 shadow-[0_18px_42px_rgba(15,23,42,0.14)] backdrop-blur">
-        {dirty ? (
+    <div className="pointer-events-none sticky bottom-4 z-30 mt-6 flex justify-end">
+      <div className="pointer-events-auto flex w-full flex-col gap-3 rounded-[18px] border border-[#dce7f1] bg-white/95 p-3 shadow-[0_18px_42px_rgba(15,23,42,0.14)] backdrop-blur sm:w-auto sm:min-w-[480px] sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm font-semibold text-[#24364b]">{message}</p>
+        <div className="flex flex-wrap justify-end gap-2">
           <button
             type="button"
             className="inline-flex min-h-10 items-center justify-center rounded-[10px] border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc]"
             onClick={onDiscard}
             disabled={saving}
           >
-            Discard changes
+            {discardLabel}
           </button>
-        ) : null}
-        <button
-          type="button"
-          className="inline-flex min-h-10 items-center justify-center rounded-[10px] border border-[#0f7f4f] bg-[#0f7f4f] px-4 text-sm font-semibold text-white shadow-[0_8px_16px_rgba(15,127,79,0.2)] transition hover:bg-[#0d6f45] disabled:border-[#cbd8e5] disabled:bg-[#eef2f6] disabled:text-[#8391a2] disabled:shadow-none"
-          onClick={onSave}
-          disabled={!dirty || saving}
-        >
-          {saving ? 'Saving...' : 'Save Changes'}
-        </button>
+          <button
+            type="button"
+            className="inline-flex min-h-10 items-center justify-center rounded-[10px] border border-[#0f7f4f] bg-[#0f7f4f] px-4 text-sm font-semibold text-white shadow-[0_8px_16px_rgba(15,127,79,0.2)] transition hover:bg-[#0d6f45] disabled:border-[#cbd8e5] disabled:bg-[#eef2f6] disabled:text-[#8391a2] disabled:shadow-none"
+            onClick={onSave}
+            disabled={saving}
+          >
+            {saving ? 'Saving...' : saveLabel}
+          </button>
+        </div>
       </div>
     </div>
   )

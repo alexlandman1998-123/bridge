@@ -1,3 +1,5 @@
+import { BriefcaseBusiness, CheckCircle2, Circle, Landmark, LockKeyhole, Scale, ShieldCheck, Users } from 'lucide-react'
+
 const LABELS = {
   transfer: 'Transfer Department',
   bond: 'Bond Department',
@@ -12,80 +14,84 @@ const LABELS = {
 const DESCRIPTIONS = {
   transfer: 'Transfer matters, registration, and conveyancing workflow.',
   bond: 'Bond registration and mortgage-related workflow.',
-  admin: 'Operations, admin support, and coordination tasks.',
-  management: 'Leadership, oversight, and firm governance.',
+  admin: 'Operations, support, finance handoffs, and coordination tasks.',
+  management: 'Leadership, oversight, reporting, and firm governance.',
   litigation: 'Disputes, court process, and legal representation workflow.',
   estates: 'Estate planning and deceased estate administration workflow.',
   commercial: 'Commercial agreements and corporate legal support.',
   developments: 'Development legal workflow, transfers, and deal coordination.',
 }
 
-const ICONS = {
-  transfer: 'TR',
-  bond: 'BD',
-  admin: 'AD',
-  management: 'MG',
+const METADATA = {
+  transfer: { icon: Scale, accent: 'Conveyancing', lanes: ['Sale transfer', 'Documents', 'Registration'] },
+  bond: { icon: Landmark, accent: 'Finance', lanes: ['Bond instruction', 'Guarantees', 'Lodgement'] },
+  admin: { icon: Users, accent: 'Operations', lanes: ['Intake', 'Billing', 'Scheduling'] },
+  management: { icon: BriefcaseBusiness, accent: 'Governance', lanes: ['Oversight', 'Reporting', 'Permissions'] },
 }
 
 function DepartmentCard({ type, active, disabled, onToggle }) {
+  const meta = METADATA[type] || { icon: BriefcaseBusiness, accent: 'Workflow', lanes: [] }
+  const Icon = meta.icon
+
   return (
     <button
       type="button"
-      onClick={() => onToggle(type)}
-      disabled={disabled}
-      style={{
-        textAlign: 'left',
-        width: '100%',
-        display: 'grid',
-        gridTemplateRows: disabled ? 'auto 1fr auto' : 'auto 1fr',
-        minHeight: '13rem',
-        gap: '0.7rem',
-        borderRadius: '0.9rem',
-        border: active ? '1px solid rgba(22, 103, 179, 0.42)' : '1px solid rgba(20, 33, 61, 0.13)',
-        padding: '1.05rem',
-        background: active ? 'rgba(22, 103, 179, 0.08)' : '#fff',
-        opacity: disabled ? 0.75 : 1,
-        boxShadow: active ? '0 8px 24px rgba(17, 73, 123, 0.08)' : '0 2px 8px rgba(15, 30, 60, 0.06)',
+      className={`attorney-department-card ${active ? 'is-active' : ''} ${disabled ? 'is-locked' : ''}`}
+      onClick={() => {
+        if (!disabled) onToggleDepartmentSafe(onToggle, type)
       }}
+      disabled={disabled}
+      aria-pressed={active}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.85rem', alignItems: 'flex-start' }}>
-        <strong style={{ display: 'inline-flex', gap: '0.6rem', alignItems: 'center', minWidth: 0 }}>
-          <span aria-hidden style={{ flex: '0 0 auto', fontWeight: 800, color: '#294862' }}>{ICONS[type] || '--'}</span>
-          <span style={{ lineHeight: 1.2 }}>{LABELS[type]}</span>
-        </strong>
-        <span
-          className="status-message"
-          style={{
-            flex: '0 0 auto',
-            border: '1px solid rgba(20, 33, 61, 0.1)',
-            borderRadius: '0.75rem',
-            background: '#fff',
-            color: active ? '#294862' : '#7b8794',
-            fontWeight: 700,
-            padding: '0.35rem 0.55rem',
-          }}
-        >
-          {active ? 'Active' : 'Inactive'}
+      <span className="attorney-department-card-top">
+        <span className="attorney-department-icon">
+          <Icon size={20} aria-hidden="true" />
         </span>
-      </div>
-      <span className="status-message" style={{ display: 'block', margin: 0, lineHeight: 1.45 }}>{DESCRIPTIONS[type]}</span>
-      {disabled ? (
-        <span className="status-message" style={{ display: 'block', margin: 0, borderRadius: '0.75rem', background: '#fff', padding: '0.7rem' }}>
-          Management must always remain active.
+        <span className="attorney-department-state">
+          {disabled ? <LockKeyhole size={13} aria-hidden="true" /> : active ? <CheckCircle2 size={13} aria-hidden="true" /> : <Circle size={12} aria-hidden="true" />}
+          {disabled ? 'Required' : active ? 'Active' : 'Inactive'}
         </span>
-      ) : null}
+      </span>
+
+      <span className="attorney-department-copy">
+        <em>{meta.accent}</em>
+        <strong>{LABELS[type]}</strong>
+        <span>{DESCRIPTIONS[type]}</span>
+      </span>
+
+      <span className="attorney-department-lanes" aria-label={`${LABELS[type]} workflow lanes`}>
+        {meta.lanes.map((lane) => (
+          <span key={lane}>{lane}</span>
+        ))}
+      </span>
     </button>
   )
 }
 
+function onToggleDepartmentSafe(onToggle, type) {
+  if (typeof onToggle === 'function') onToggle(type)
+}
+
 function DepartmentsStep({ selectedDepartments = {}, onToggleDepartment }) {
+  const activeCount = ['transfer', 'bond', 'admin', 'management'].filter((departmentType) => Boolean(selectedDepartments[departmentType])).length
+
   return (
-    <div style={{ display: 'grid', gap: '0.9rem' }}>
-      <div style={{ display: 'grid', gap: '0.2rem' }}>
-        <h3 style={{ margin: 0 }}>Active Departments</h3>
-        <p className="status-message" style={{ margin: 0 }}>
-          Choose which departments are active for your firm. This controls early permissions and dashboard defaults.
-        </p>
+    <div className="attorney-step-flow">
+      <div className="attorney-step-hero">
+        <div className="attorney-step-hero-copy">
+          <span className="attorney-step-kicker">
+            <ShieldCheck size={14} aria-hidden="true" />
+            Workflow architecture
+          </span>
+          <h3>Switch on the legal lanes your firm will operate from day one.</h3>
+          <p>
+            Department choices shape routing defaults, dashboard modules, permissions, and the team invites that follow.
+          </p>
+        </div>
+        <div className="attorney-department-count-card">
+          <strong>{activeCount}</strong>
+          <span>active lanes</span>
+        </div>
       </div>
 
       <div className="attorney-departments-grid">

@@ -2737,6 +2737,7 @@ function AppRoutes() {
                 <Route path="security" element={<SettingsAccountPage section="security" />} />
                 <Route path="notifications" element={<SettingsAccountPage section="notifications" />} />
                 <Route path="preferences" element={<SettingsAccountPage section="preferences" />} />
+                <Route path="danger-zone" element={<SettingsAccountPage section="danger" />} />
                 <Route
                   path="organisation"
                   element={
@@ -2790,6 +2791,14 @@ function AppRoutes() {
                   element={
                     <RoleRoute allowedRoles={['agent']}>
                       <SettingsLeadCapturePage />
+                    </RoleRoute>
+                  }
+                />
+                <Route
+                  path="commission"
+                  element={
+                    <RoleRoute allowedRoles={['developer', 'agent']}>
+                      <SettingsCommissionStructuresPage />
                     </RoleRoute>
                   }
                 />

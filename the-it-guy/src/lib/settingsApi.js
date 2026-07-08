@@ -71,10 +71,29 @@ const PARTNER_ROUTING_DEMO_MODE = Boolean(
 )
 
 const DEFAULT_NOTIFICATION_PREFERENCES = {
+  emailEnabled: true,
   emailMentions: true,
   emailDocumentUploads: true,
   emailWorkflowChanges: true,
+  inAppEnabled: true,
   inAppNotifications: true,
+  inAppTransactionUpdates: true,
+  inAppTaskReminders: true,
+  inAppAppointments: true,
+  inAppPartnerActivity: true,
+  smsEnabled: true,
+  smsCriticalAlerts: true,
+  smsOtpVerification: true,
+  smsAppointmentReminders: false,
+  desktopNotificationsEnabled: false,
+  desktopBrowserNotifications: false,
+  desktopTransactionAssigned: false,
+  desktopDocumentSigned: false,
+  notificationDigest: 'weekly',
+  quietHoursEnabled: false,
+  quietHoursStart: '22:00',
+  quietHoursEnd: '07:00',
+  quietHoursTimezone: 'Africa/Johannesburg',
 }
 
 export const DEFAULT_DEVELOPER_PROFILE_SETTINGS = {
@@ -136,7 +155,7 @@ export function normalizeOrganisationDeveloperProfile(profile = {}) {
 }
 
 const PROFILE_AVATAR_UPLOAD_CONTENT_TYPE = 'image/jpeg'
-const ORGANISATION_LOGO_MAX_BYTES = 5 * 1024 * 1024
+const ORGANISATION_LOGO_MAX_BYTES = 10 * 1024 * 1024
 const ORGANISATION_LOGO_UPLOAD_TIMEOUT_MS = 30000
 const ORGANISATION_LOGO_URL_TIMEOUT_MS = 12000
 const MOCK_PARTNER_ROUTING_RULES_STORAGE_KEY = 'itg:mock-partner-routing-rules:v1'
@@ -2126,11 +2145,32 @@ function normalizeAccountSettings(row, profile) {
     avatarUrl: normalizeText(row?.avatar_url) || profile?.avatarUrl || '',
     companyName: normalizeText(row?.company_name) || profile?.companyName || '',
     title: normalizeText(row?.title),
+    bio: normalizeText(row?.bio),
+    department: normalizeText(row?.department),
+    office: normalizeText(row?.office),
     timezone: normalizeText(row?.timezone) || 'Africa/Johannesburg',
+    language: normalizeText(row?.language) || 'en-ZA',
     dateFormat: normalizeText(row?.date_format) || 'DD MMM YYYY',
+    theme: normalizeText(row?.theme) || 'system',
     role: normalizeAppRole(row?.role || profile?.role),
-    notificationPreferences: safeJson(row?.notification_preferences_json, DEFAULT_NOTIFICATION_PREFERENCES),
+    notificationPreferences: {
+      ...DEFAULT_NOTIFICATION_PREFERENCES,
+      ...safeJson(row?.notification_preferences_json, DEFAULT_NOTIFICATION_PREFERENCES),
+    },
   }
+}
+
+function isMissingAccountProfileColumn(error) {
+  return [
+    'title',
+    'notification_preferences_json',
+    'avatar_url',
+    'bio',
+    'department',
+    'office',
+    'language',
+    'theme',
+  ].some((column) => isMissingColumnError(error, column))
 }
 
 async function getAuthenticatedUser() {
@@ -2848,15 +2888,20 @@ export async function fetchAccountSettings() {
       avatar_url,
       role,
       title,
+      bio,
+      department,
+      office,
       timezone,
+      language,
       date_format,
+      theme,
       notification_preferences_json
     `)
     .eq('id', user.id)
     .maybeSingle()
 
   if (error) {
-    if (isMissingTableError(error, 'profiles') || isMissingColumnError(error, 'title') || isMissingColumnError(error, 'avatar_url')) {
+    if (isMissingTableError(error, 'profiles') || isMissingAccountProfileColumn(error)) {
       return normalizeAccountSettings({}, profile)
     }
     throw error
@@ -2878,8 +2923,13 @@ export async function updateAccountSettings(input = {}) {
     phone_number: normalizeNullableText(input.phoneNumber),
     avatar_url: normalizeNullableText(input.avatarUrl),
     title: normalizeNullableText(input.title),
+    bio: normalizeNullableText(input.bio),
+    department: normalizeNullableText(input.department),
+    office: normalizeNullableText(input.office),
     timezone: normalizeNullableText(input.timezone) || 'Africa/Johannesburg',
+    language: normalizeNullableText(input.language) || 'en-ZA',
     date_format: normalizeNullableText(input.dateFormat) || 'DD MMM YYYY',
+    theme: normalizeNullableText(input.theme) || 'system',
     notification_preferences_json: {
       ...DEFAULT_NOTIFICATION_PREFERENCES,
       ...(input.notificationPreferences || {}),
@@ -2900,14 +2950,19 @@ export async function updateAccountSettings(input = {}) {
       avatar_url,
       role,
       title,
+      bio,
+      department,
+      office,
       timezone,
+      language,
       date_format,
+      theme,
       notification_preferences_json
     `)
     .single()
 
   if (error) {
-    if (isMissingColumnError(error, 'title') || isMissingColumnError(error, 'notification_preferences_json') || isMissingColumnError(error, 'avatar_url')) {
+    if (isMissingAccountProfileColumn(error)) {
       await updateUserProfile({
         userId: user.id,
         firstName: input.firstName,
@@ -3134,6 +3189,26 @@ async function hydrateAgencyOnboardingBrandingUrls(client, onboarding = {}) {
     path: branding.logoDarkPath,
     fallbackUrl: branding.logoDark,
   })
+  const faviconUrl = await resolveBrandingAssetUrl(client, {
+    bucket: branding.faviconBucket,
+    path: branding.faviconPath,
+    fallbackUrl: branding.favicon,
+  })
+  const portalIconUrl = await resolveBrandingAssetUrl(client, {
+    bucket: branding.portalIconBucket,
+    path: branding.portalIconPath,
+    fallbackUrl: branding.portalIcon,
+  })
+  const mobileIconUrl = await resolveBrandingAssetUrl(client, {
+    bucket: branding.mobileIconBucket,
+    path: branding.mobileIconPath,
+    fallbackUrl: branding.mobileIcon,
+  })
+  const browserTileUrl = await resolveBrandingAssetUrl(client, {
+    bucket: branding.browserTileBucket,
+    path: branding.browserTilePath,
+    fallbackUrl: branding.browserTile,
+  })
 
   return {
     ...onboarding,
@@ -3142,6 +3217,10 @@ async function hydrateAgencyOnboardingBrandingUrls(client, onboarding = {}) {
       logoLight: lightUrl || normalizeText(branding.logoLight),
       logoIcon: iconUrl || normalizeText(branding.logoIcon || branding.logoIconUrl),
       logoDark: darkUrl || normalizeText(branding.logoDark),
+      favicon: faviconUrl || normalizeText(branding.favicon),
+      portalIcon: portalIconUrl || normalizeText(branding.portalIcon),
+      mobileIcon: mobileIconUrl || normalizeText(branding.mobileIcon),
+      browserTile: browserTileUrl || normalizeText(branding.browserTile),
     },
   }
 }
@@ -3155,7 +3234,7 @@ export async function uploadOrganisationBrandingAsset({ file, variant = 'light' 
     throw new Error('Upload a PNG, JPG, WebP, or SVG logo file.')
   }
   if (Number(selectedFile.size || 0) > ORGANISATION_LOGO_MAX_BYTES) {
-    throw new Error('Logo file is too large. Please upload a logo smaller than 5 MB.')
+    throw new Error('Logo file is too large. Please upload a logo smaller than 10 MB.')
   }
 
   const client = requireClient()

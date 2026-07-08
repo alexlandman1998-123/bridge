@@ -9,9 +9,25 @@ import BrandingStep from '../components/attorney/onboarding/BrandingStep'
 import DepartmentsStep from '../components/attorney/onboarding/DepartmentsStep'
 import TeamInvitesStep from '../components/attorney/onboarding/TeamInvitesStep'
 import {
-  getAllowedDepartmentsForRole,
-  normalizeInviteForRole,
-} from '../components/attorney/onboarding/teamInviteUtils'
+  ONBOARDING_STEPS,
+  DEFAULT_FIRM_INFORMATION,
+  DEFAULT_BRANDING,
+  DEFAULT_DEPARTMENTS,
+  buildBrandingFromFirm,
+  buildDraftPayload,
+  buildDraftStorageKey,
+  buildFirmInformationFromFirm,
+  buildOnboardingGuidance,
+  buildSelectedDepartmentsFromRows,
+  createEmptyInvite,
+  formatSavedTime,
+  getActiveDepartmentTypes,
+  getValidationErrorsForStep,
+  hasValidationErrors,
+  normalizeHexColour,
+  parseDraftPayload,
+} from '../components/attorney/onboarding/attorneyOnboardingGuidance'
+import { normalizeInviteForRole } from '../components/attorney/onboarding/teamInviteUtils'
 import ReviewConfirmStep from '../components/attorney/onboarding/ReviewConfirmStep'
 import {
   completeAttorneyFirmOnboarding,
@@ -21,69 +37,6 @@ import {
   uploadAttorneyFirmBrandingAsset,
 } from '../services/attorneyFirms'
 import { normalizeWebsite } from '../services/attorneyFirmServiceShared'
-
-const ONBOARDING_STEPS = [
-  {
-    key: 'firm_information',
-    label: 'Firm Information',
-    description: 'Core profile and contact details.',
-  },
-  {
-    key: 'branding',
-    label: 'Branding',
-    description: 'Logo, colours, and identity preview.',
-  },
-  {
-    key: 'departments',
-    label: 'Active Departments',
-    description: 'Choose transfer, bond, admin, and management lanes.',
-  },
-  {
-    key: 'team_invites',
-    label: 'Invite Team Members',
-    description: 'Optional setup of initial staff invites.',
-  },
-  {
-    key: 'review_confirm',
-    label: 'Review & Confirm',
-    description: 'Verify setup before activation.',
-  },
-]
-
-const DEFAULT_FIRM_INFORMATION = {
-  name: '',
-  registrationNumber: '',
-  vatNumber: '',
-  email: '',
-  phone: '',
-  website: '',
-  addressLine1: '',
-  addressLine2: '',
-  city: '',
-  province: '',
-  postalCode: '',
-  country: 'South Africa',
-}
-
-const DEFAULT_BRANDING = {
-  logoUrl: '',
-  logoFileName: '',
-  logoBucket: '',
-  logoPath: '',
-  logoDarkUrl: '',
-  logoDarkFileName: '',
-  logoDarkBucket: '',
-  logoDarkPath: '',
-  primaryColour: '#0f4c81',
-  secondaryColour: '#1e2a44',
-}
-
-const DEFAULT_DEPARTMENTS = {
-  transfer: true,
-  bond: true,
-  admin: true,
-  management: true,
-}
 
 const ATTORNEY_ONBOARDING_LOAD_TIMEOUT_MS = 15000
 
@@ -97,156 +50,6 @@ function withAttorneyOnboardingTimeout(task, message, timeoutMs = ATTORNEY_ONBOA
   ]).finally(() => {
     if (timeoutId) clearTimeout(timeoutId)
   })
-}
-
-function buildInviteId() {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-  return `invite-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
-}
-
-function createEmptyInvite(defaultDepartmentType = '') {
-  return {
-    id: buildInviteId(),
-    email: '',
-    role: '',
-    departmentType: defaultDepartmentType,
-  }
-}
-
-function isValidEmail(value) {
-  const email = String(value || '').trim().toLowerCase()
-  if (!email) return false
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-}
-
-function isValidWebsite(value) {
-  return !value || Boolean(normalizeWebsite(value))
-}
-
-function normalizeHexColour(value, fallback) {
-  const normalized = String(value || '').trim()
-  if (!normalized) return fallback
-  const match = normalized.match(/^#([0-9a-fA-F]{6})$/)
-  return match ? `#${match[1]}`.toLowerCase() : fallback
-}
-
-function buildFirmInformationFromFirm(firm = {}) {
-  return {
-    name: firm.name || '',
-    registrationNumber: firm.registrationNumber || '',
-    vatNumber: firm.vatNumber || '',
-    email: firm.email || '',
-    phone: firm.phone || '',
-    website: firm.website || '',
-    addressLine1: firm.addressLine1 || '',
-    addressLine2: firm.addressLine2 || '',
-    city: firm.city || '',
-    province: firm.province || '',
-    postalCode: firm.postalCode || '',
-    country: firm.country || 'South Africa',
-  }
-}
-
-function buildBrandingFromFirm(firm = {}) {
-  return {
-    ...DEFAULT_BRANDING,
-    logoUrl: firm.logoUrl || '',
-    primaryColour: firm.primaryColour || DEFAULT_BRANDING.primaryColour,
-    secondaryColour: firm.secondaryColour || DEFAULT_BRANDING.secondaryColour,
-  }
-}
-
-function buildSelectedDepartmentsFromRows(rows = []) {
-  if (!Array.isArray(rows) || !rows.length) return DEFAULT_DEPARTMENTS
-  return rows.reduce(
-    (accumulator, department) => {
-      const type = String(department?.departmentType || '').trim()
-      if (type) accumulator[type] = department.isActive !== false
-      return accumulator
-    },
-    { ...DEFAULT_DEPARTMENTS, transfer: false, bond: false, admin: false, management: true },
-  )
-}
-
-function getActiveDepartmentTypes(selectedDepartments = {}) {
-  return ['transfer', 'bond', 'admin', 'management'].filter((type) => Boolean(selectedDepartments[type]))
-}
-
-function validateFirmInformation(values) {
-  const errors = {}
-  if (!String(values.name || '').trim()) {
-    errors.name = 'Firm name is required.'
-  }
-  if (values.email && !isValidEmail(values.email)) {
-    errors.email = 'Please enter a valid email address.'
-  }
-  if (values.website && !isValidWebsite(values.website)) {
-    errors.website = 'Please enter a valid domain, such as arch9.co.za.'
-  }
-  return errors
-}
-
-function validateBranding(values) {
-  const errors = {}
-  if (values.primaryColour && !/^#[0-9a-fA-F]{6}$/.test(values.primaryColour)) {
-    errors.primaryColour = 'Use a valid hex colour.'
-  }
-  if (values.secondaryColour && !/^#[0-9a-fA-F]{6}$/.test(values.secondaryColour)) {
-    errors.secondaryColour = 'Use a valid hex colour.'
-  }
-  return errors
-}
-
-function validateInvites(invites = [], activeDepartmentTypes = []) {
-  const errors = {}
-  const emailSeen = new Set()
-
-  for (const invite of invites) {
-    const rowErrors = {}
-    const normalizedEmail = String(invite.email || '').trim().toLowerCase()
-
-    if (!normalizedEmail) {
-      rowErrors.email = 'Email is required.'
-    } else if (!isValidEmail(normalizedEmail)) {
-      rowErrors.email = 'Please enter a valid email address.'
-    } else if (emailSeen.has(normalizedEmail)) {
-      rowErrors.email = 'Duplicate invitation email.'
-    } else {
-      emailSeen.add(normalizedEmail)
-    }
-
-    if (!invite.role) {
-      rowErrors.role = 'Role is required.'
-    } else if (invite.role === 'firm_admin') {
-      rowErrors.role = 'Firm admin invitations are not allowed during onboarding.'
-    }
-
-    const allowedDepartments = getAllowedDepartmentsForRole(invite.role, activeDepartmentTypes)
-    if (!invite.departmentType) {
-      rowErrors.departmentType = 'Department is required.'
-    } else if (!allowedDepartments.includes(invite.departmentType)) {
-      rowErrors.departmentType = 'Selected department is not valid for this role.'
-    }
-
-    if (Object.keys(rowErrors).length) {
-      errors[invite.id] = rowErrors
-    }
-  }
-
-  return errors
-}
-
-function formatSavedTime(iso = '') {
-  if (!iso) return ''
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return ''
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
-function buildDraftStorageKey(profileId = '') {
-  return `itg:attorney-onboarding-draft:${String(profileId || 'anonymous').trim() || 'anonymous'}`
 }
 
 function AttorneyOnboardingPage() {
@@ -266,9 +69,21 @@ function AttorneyOnboardingPage() {
   const [uploadingLogoTarget, setUploadingLogoTarget] = useState('')
   const [uploadError, setUploadError] = useState('')
   const [draftSavedAt, setDraftSavedAt] = useState('')
+  const [draftHydrated, setDraftHydrated] = useState(false)
 
   const activeDepartmentTypes = useMemo(() => getActiveDepartmentTypes(selectedDepartments), [selectedDepartments])
   const draftStorageKey = useMemo(() => buildDraftStorageKey(profile?.id), [profile?.id])
+  const onboardingGuidance = useMemo(
+    () => buildOnboardingGuidance({ firmInformation, branding, activeDepartmentTypes, invites }),
+    [firmInformation, branding, activeDepartmentTypes, invites],
+  )
+  const draftSnapshot = useMemo(() => ({
+    currentStepIndex,
+    firmInformation,
+    branding,
+    selectedDepartments,
+    invites,
+  }), [currentStepIndex, firmInformation, branding, selectedDepartments, invites])
 
   function openAttorneyDashboard() {
     authState.refreshAuthState?.()
@@ -334,35 +149,42 @@ function AttorneyOnboardingPage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
+    setDraftHydrated(false)
     try {
       const raw = window.localStorage.getItem(draftStorageKey)
-      if (!raw) return
-      const parsed = JSON.parse(raw)
-      if (parsed?.firmInformation && typeof parsed.firmInformation === 'object') {
-        setFirmInformation((previous) => ({ ...previous, ...parsed.firmInformation }))
+      if (raw) {
+        const parsed = parseDraftPayload(raw)
+        if (parsed) {
+          setFirmInformation((previous) => ({ ...previous, ...parsed.firmInformation }))
+          setBranding((previous) => ({ ...previous, ...parsed.branding }))
+          setSelectedDepartments((previous) => ({ ...previous, ...parsed.selectedDepartments }))
+          setInvites(parsed.invites)
+          setCurrentStepIndex(parsed.currentStepIndex)
+          setDraftSavedAt(formatSavedTime(parsed.savedAt))
+        }
       }
-      if (parsed?.branding && typeof parsed.branding === 'object') {
-        setBranding((previous) => ({ ...previous, ...parsed.branding }))
-      }
-      if (parsed?.selectedDepartments && typeof parsed.selectedDepartments === 'object') {
-        setSelectedDepartments((previous) => ({ ...previous, ...parsed.selectedDepartments, management: true }))
-      }
-      if (Array.isArray(parsed?.invites)) {
-        setInvites(parsed.invites.map((invite) => ({
-          id: invite.id || buildInviteId(),
-          email: String(invite.email || ''),
-          role: String(invite.role || ''),
-          departmentType: String(invite.departmentType || ''),
-        })))
-      }
-      if (typeof parsed?.currentStepIndex === 'number') {
-        setCurrentStepIndex(Math.max(0, Math.min(ONBOARDING_STEPS.length - 1, parsed.currentStepIndex)))
-      }
-      setDraftSavedAt(formatSavedTime(parsed?.savedAt))
     } catch {
       // Ignore malformed draft payloads and continue with defaults.
+    } finally {
+      setDraftHydrated(true)
     }
   }, [draftStorageKey])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !draftHydrated || submitting) return undefined
+    const timeoutId = window.setTimeout(() => {
+      const savedAt = new Date().toISOString()
+      try {
+        const payload = buildDraftPayload({ ...draftSnapshot, savedAt })
+        window.localStorage.setItem(draftStorageKey, JSON.stringify(payload))
+        setDraftSavedAt(formatSavedTime(savedAt))
+      } catch {
+        // Draft autosave should never block setup.
+      }
+    }, 900)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [draftHydrated, draftSnapshot, draftStorageKey, submitting])
 
   function setStepErrors(stepKey, errors) {
     setErrorsByStep((previous) => ({
@@ -474,49 +296,49 @@ function AttorneyOnboardingPage() {
 
   function saveDraft() {
     if (typeof window === 'undefined') return
-    const payload = {
-      currentStepIndex,
-      firmInformation,
-      branding,
-      selectedDepartments,
-      invites,
-      savedAt: new Date().toISOString(),
-    }
+    const savedAt = new Date().toISOString()
+    const payload = buildDraftPayload({ ...draftSnapshot, savedAt })
     window.localStorage.setItem(draftStorageKey, JSON.stringify(payload))
-    setDraftSavedAt(formatSavedTime(payload.savedAt))
+    setDraftSavedAt(formatSavedTime(savedAt))
   }
 
-  function validateCurrentStep() {
-    const stepKey = ONBOARDING_STEPS[currentStepIndex]?.key
+  function validateStep(stepKey, { commitErrors = true } = {}) {
+    const errors = getValidationErrorsForStep(stepKey, {
+      firmInformation,
+      branding,
+      invites,
+      activeDepartmentTypes,
+    })
+    if (commitErrors) setStepErrors(stepKey, errors)
+    return !hasValidationErrors(errors)
+  }
 
-    if (stepKey === 'firm_information') {
-      const errors = validateFirmInformation(firmInformation)
-      setStepErrors(stepKey, errors)
-      return Object.keys(errors).length === 0
+  function validateStepsBefore(targetIndex) {
+    const boundedTargetIndex = Math.max(0, Math.min(targetIndex, ONBOARDING_STEPS.length - 1))
+    let firstInvalidIndex = -1
+
+    for (let index = 0; index < boundedTargetIndex; index += 1) {
+      const stepKey = ONBOARDING_STEPS[index]?.key
+      if (stepKey && !validateStep(stepKey)) {
+        firstInvalidIndex = index
+        break
+      }
     }
 
-    if (stepKey === 'branding') {
-      const errors = validateBranding(branding)
-      setStepErrors(stepKey, errors)
-      return Object.keys(errors).length === 0
+    if (firstInvalidIndex >= 0) {
+      setCurrentStepIndex(firstInvalidIndex)
+      setSubmitError('Complete the highlighted setup item before jumping ahead.')
+      return false
     }
 
-    if (stepKey === 'team_invites') {
-      const errors = validateInvites(invites, activeDepartmentTypes)
-      setStepErrors(stepKey, errors)
-      return Object.keys(errors).length === 0
-    }
-
-    setStepErrors(stepKey, {})
     return true
   }
 
   function handleNext() {
     setSubmitError('')
-    if (!validateCurrentStep()) {
-      return
-    }
-    setCurrentStepIndex((previous) => Math.min(previous + 1, ONBOARDING_STEPS.length - 1))
+    const targetIndex = Math.min(currentStepIndex + 1, ONBOARDING_STEPS.length - 1)
+    if (!validateStepsBefore(targetIndex)) return
+    setCurrentStepIndex(targetIndex)
   }
 
   function handleBack() {
@@ -524,10 +346,38 @@ function AttorneyOnboardingPage() {
     setCurrentStepIndex((previous) => Math.max(previous - 1, 0))
   }
 
+  function handleStepSelect(targetIndex) {
+    const boundedTargetIndex = Math.max(0, Math.min(targetIndex, ONBOARDING_STEPS.length - 1))
+    if (boundedTargetIndex === currentStepIndex) return
+    setSubmitError('')
+    if (boundedTargetIndex < currentStepIndex || validateStepsBefore(boundedTargetIndex)) {
+      setCurrentStepIndex(boundedTargetIndex)
+    }
+  }
+
+  function handleReviewStepRequest(stepKey) {
+    const targetIndex = ONBOARDING_STEPS.findIndex((step) => step.key === stepKey)
+    if (targetIndex < 0) return
+    setSubmitError('')
+    setCurrentStepIndex(targetIndex)
+    if (typeof window !== 'undefined') {
+      window.requestAnimationFrame?.(() => {
+        document.querySelector('.attorney-setup-workbench')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+      })
+    }
+  }
+
   async function handleConfirm() {
     setSubmitError('')
-    const validStep = validateCurrentStep()
-    if (!validStep) return
+    const setupReady = validateStepsBefore(ONBOARDING_STEPS.length - 1)
+    if (!setupReady) return
+
+    const currentActivationGuard = onboardingGuidance.activationDossier?.activationGuard
+    if (currentActivationGuard && !currentActivationGuard.canActivate) {
+      if (currentActivationGuard.stepKey) handleReviewStepRequest(currentActivationGuard.stepKey)
+      setSubmitError(currentActivationGuard.message || 'Resolve required setup items before activating the workspace.')
+      return
+    }
 
     setSubmitting(true)
     try {
@@ -562,6 +412,10 @@ function AttorneyOnboardingPage() {
   }
 
   const currentStep = ONBOARDING_STEPS[currentStepIndex]
+  const activationGuard = onboardingGuidance.activationDossier?.activationGuard
+  const isFinalStep = currentStepIndex === ONBOARDING_STEPS.length - 1
+  const finalActivationBlocked = Boolean(isFinalStep && activationGuard && !activationGuard.canActivate)
+  const activationBlockedMessage = finalActivationBlocked ? activationGuard.message : ''
 
   let stepContent = null
   if (currentStep.key === 'firm_information') {
@@ -605,6 +459,8 @@ function AttorneyOnboardingPage() {
         branding={branding}
         activeDepartmentTypes={activeDepartmentTypes}
         invites={invites}
+        activationDossier={onboardingGuidance.activationDossier}
+        onNavigateToStep={handleReviewStepRequest}
       />
     )
   }
@@ -636,13 +492,24 @@ function AttorneyOnboardingPage() {
       onNext={handleNext}
       onConfirm={handleConfirm}
       onSaveDraft={saveDraft}
+      onStepSelect={handleStepSelect}
       canBack={currentStepIndex > 0}
-      canNext={!submitting}
-      isFinalStep={currentStepIndex === ONBOARDING_STEPS.length - 1}
+      canNext={!submitting && !finalActivationBlocked}
+      confirmLabel={finalActivationBlocked ? 'Activation Blocked' : 'Activate Workspace'}
+      confirmDisabledReason={activationBlockedMessage}
+      isFinalStep={isFinalStep}
       isSubmitting={submitting}
       errorMessage={submitError}
       draftSavedAt={draftSavedAt}
       nextLabel={currentStepIndex === ONBOARDING_STEPS.length - 2 ? 'Review Setup' : 'Continue'}
+      readiness={onboardingGuidance.readiness}
+      stepStatuses={onboardingGuidance.stepStatuses}
+      preview={{
+        firmInformation,
+        branding,
+        activeDepartmentTypes,
+        invites,
+      }}
     >
       {stepContent}
     </AttorneyOnboardingLayout>
