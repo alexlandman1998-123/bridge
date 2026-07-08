@@ -1338,6 +1338,10 @@ export async function deleteAgencyCrmLeadRecord(organisationId, leadId) {
   const normalizedLeadId = normalizeText(leadId)
   const dbLeadId = normalizeLeadUuid(normalizedLeadId)
 
+  if (!dbLeadId && !isUnsafeFallbackAllowed()) {
+    throw new Error('This lead is not backed by a persisted CRM lead record. Delete the linked listing or draft record instead.')
+  }
+
   if (isSupabaseConfigured && supabase && isUuidLike(normalizedOrganisationId) && dbLeadId) {
     let remoteDeleted = false
     let remoteDeleteError = null

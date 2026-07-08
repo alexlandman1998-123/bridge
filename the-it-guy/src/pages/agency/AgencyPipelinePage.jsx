@@ -72,7 +72,7 @@ import {
 } from '../../lib/agentListingStorage'
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
-import { activatePrivateListing, createPrivateListing, createPrivateListingActivity, getOrganisationPrivateListings, getSellerOnboardingByToken, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
+import { activatePrivateListing, createPrivateListing, createPrivateListingActivity, deletePrivateListing, getOrganisationPrivateListings, getSellerOnboardingByToken, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
 import { buildSellerJourney, getSellerJourneyMetrics } from '../../services/sellerJourneyService'
 import { buildSellerReadinessSummary } from '../../services/sellerReadinessService'
 import { generatePacketVersion, generateSigningLinks, prepareSigningFields, resolveActiveTemplate } from '../../core/documents/packetService'
@@ -9649,10 +9649,35 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const leadForDelete = records.leads.find((row) => normalizeLeadIdentityKey(row?.leadId || row?.id) === leadIdentityKey) || null
     const targetOrganisationId = normalizeText(organisationId || leadForDelete?.organisationId)
     if (!targetOrganisationId) throw new Error('A resolved workspace is required before deleting a lead.')
+    const isSellerLeadDelete = resolveLeadCategoryView(leadForDelete) === 'seller'
+    const privateListingDeleteId = isSellerLeadDelete
+      ? normalizeLeadUuid(
+          leadForDelete?.privateListingId ||
+            leadForDelete?.private_listing_id ||
+            leadForDelete?.listingId ||
+            leadForDelete?.listing_id,
+        )
+      : ''
+    const privateListingIdentityKey = normalizeLeadIdentityKey(privateListingDeleteId)
+    const shouldRemoveDeletedLeadRow = (row = {}) => {
+      if (normalizeLeadIdentityKey(row?.leadId || row?.id) === leadIdentityKey) return true
+      if (!privateListingIdentityKey) return false
+      const rowPrivateListingKey = normalizeLeadIdentityKey(
+        row?.privateListingId ||
+          row?.private_listing_id ||
+          row?.listingId ||
+          row?.listing_id,
+      )
+      return rowPrivateListingKey === privateListingIdentityKey
+    }
     setError('')
     try {
-      await deleteAgencyCrmLeadRecord(targetOrganisationId, leadId)
-      if (resolveLeadCategoryView(leadForDelete) === 'seller') {
+      if (privateListingDeleteId) {
+        await deletePrivateListing(privateListingDeleteId, { organisationId: targetOrganisationId })
+      } else {
+        await deleteAgencyCrmLeadRecord(targetOrganisationId, leadId)
+      }
+      if (isSellerLeadDelete) {
         const sellerWorkflowIds = [
           leadId,
           normalizeText(leadId).replace(/^lead_/i, ''),
@@ -9666,7 +9691,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       setRecords((previous) => ({
         ...previous,
-        leads: previous.leads.filter((row) => normalizeLeadIdentityKey(row?.leadId) !== leadIdentityKey),
+        leads: previous.leads.filter((row) => !shouldRemoveDeletedLeadRow(row)),
         leadActivities: previous.leadActivities.filter((row) => normalizeLeadIdentityKey(row?.leadId) !== leadIdentityKey),
         tasks: previous.tasks.filter((row) => normalizeLeadIdentityKey(row?.leadId) !== leadIdentityKey),
         appointments: previous.appointments.map((row) =>
