@@ -294,6 +294,12 @@ function buildInvitationAcceptanceError(result = {}) {
     invitation_declined: 'This invitation has already been declined.',
     invitation_expired: 'This invitation has expired.',
     email_mismatch: 'This invitation is locked to a different email address.',
+    organisation_required: 'Complete workspace setup before accepting this transaction invitation.',
+    not_active_member: 'You must be an active member of the accepting workspace before accepting this invitation.',
+    wrong_workspace: 'This invitation belongs to another workspace.',
+    self_relationship: 'The accepting workspace must be different from the transaction owner workspace.',
+    transaction_owner_missing: 'This transaction is missing its owner workspace.',
+    transaction_not_found: 'This transaction is no longer available.',
   }
   const error = new Error(messages[code] || 'Unable to accept this invitation.')
   error.code = code || 'acceptance_failed'
@@ -956,11 +962,12 @@ export async function getTransactionPartnerInvitationByToken(token) {
   return result.data || { ok: false, reason: 'not_found' }
 }
 
-export async function acceptTransactionPartnerInvitation({ token, profile = {} } = {}) {
+export async function acceptTransactionPartnerInvitation({ token, profile = {}, organisationId = '', organisation_id = '' } = {}) {
   const client = requireClient()
   const result = await client.rpc('bridge_accept_transaction_partner_invitation', {
     p_token: normalizeText(token),
     p_profile: profile && typeof profile === 'object' ? profile : {},
+    p_organisation_id: normalizeText(organisationId || organisation_id) || null,
   })
   if (result.error) throw result.error
   if (!result.data?.success) {

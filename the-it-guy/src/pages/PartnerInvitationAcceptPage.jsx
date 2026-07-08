@@ -12,7 +12,7 @@ import {
   ShieldCheck,
   UsersRound,
 } from 'lucide-react'
-import { createElement, useEffect, useMemo, useRef, useState } from 'react'
+import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import { useAuthSession } from '../context/AuthSessionContext'
@@ -207,7 +207,7 @@ export default function PartnerInvitationAcceptPage() {
     }
   }, [invitationId, session, workspaceId])
 
-  async function handleAccept() {
+  const handleAccept = useCallback(async function handleAccept() {
     try {
       setAccepting(true)
       setError('')
@@ -223,13 +223,12 @@ export default function PartnerInvitationAcceptPage() {
     } finally {
       setAccepting(false)
     }
-  }
+  }, [invitationId, preview, returnPath, workspaceId])
 
   useEffect(() => {
     if (
       !autoAccept ||
       autoAcceptAttemptedRef.current ||
-      accepted ||
       accepting ||
       loadingPreview ||
       error ||
@@ -242,7 +241,7 @@ export default function PartnerInvitationAcceptPage() {
 
     autoAcceptAttemptedRef.current = true
     void handleAccept()
-  }, [accepted, accepting, autoAccept, error, loadingPreview, preview, session, workspaceId])
+  }, [accepting, autoAccept, error, handleAccept, loadingPreview, preview, session, workspaceId])
 
   function openPartners() {
     navigate('/partners?tab=invitations', { replace: true })

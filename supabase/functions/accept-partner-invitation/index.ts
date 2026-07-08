@@ -96,6 +96,10 @@ function getInvitationEmail(invitation: JsonRecord) {
   return normalizeLower(invitation.recipient_email || invitation.invited_email);
 }
 
+function isInvitationAccepted(invitation: JsonRecord) {
+  return normalizeLower(invitation.status) === "accepted" || Boolean(invitation.accepted_at);
+}
+
 async function getUserForRequest(supabase: SupabaseServiceClient, req: Request) {
   const accessToken = getBearerToken(req);
   if (!accessToken) {
@@ -448,10 +452,26 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    if (status === "accepted") {
+    if (isInvitationAccepted(invitation)) {
+      const relationshipId = await ensureOrganisationRelationship({
+        supabase,
+        invitation,
+        recipientOrganisationId: organisationId,
+        userId,
+      });
+      if (!existingRecipientOrganisationId) {
+        await updateInvitationAccepted({
+          supabase,
+          invitationId,
+          recipientOrganisationId: organisationId,
+          userId,
+        });
+      }
       return jsonResponse(200, {
         ok: true,
         alreadyAccepted: true,
+        repaired: Boolean(relationshipId),
+        relationshipId,
         invitation: preview,
         redirectTo: "/partners?tab=invitations",
       });

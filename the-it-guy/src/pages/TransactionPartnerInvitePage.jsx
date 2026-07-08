@@ -9,6 +9,7 @@ import {
   getTransactionPartnerRoleLabel,
 } from '../services/transactionPartnerInvitationService'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { useWorkspace } from '../context/WorkspaceContext'
 
 const PROFESSIONAL_ROLE_OPTIONS = [
   { value: 'attorney', professionalRole: 'transfer_attorney', label: 'Transfer Attorney' },
@@ -41,8 +42,10 @@ function TransactionPartnerInvitePage() {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
   const [message, setMessage] = useState('')
+  const workspaceContext = useWorkspace()
   const invitation = context?.invitation || null
   const defaultRole = defaultAppRoleForInvitation(invitation?.roleType)
+  const workspaceId = normalizeText(workspaceContext.currentWorkspace?.id || workspaceContext.workspace?.id)
   const [form, setForm] = useState({
     firstName: '',
     lastName: '',
@@ -123,8 +126,12 @@ function TransactionPartnerInvitePage() {
   }
 
   async function acceptWithCurrentSession(user = sessionUser) {
+    if (!workspaceId) {
+      throw new Error('Complete workspace setup before accepting this transaction invitation.')
+    }
     const accepted = await acceptTransactionPartnerInvitation({
       token,
+      organisationId: workspaceId,
       profile: {
         firstName: form.firstName,
         lastName: form.lastName,
