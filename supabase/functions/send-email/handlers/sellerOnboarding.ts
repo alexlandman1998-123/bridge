@@ -173,11 +173,24 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
   const portalDocumentsMode = emailKind.toLowerCase() === "portal_documents" ||
     normalizeText(payload.type).toLowerCase() === "seller_portal_link";
   let onboardingLink = portalDocumentsMode
-    ? normalizeText(payload.portalLink) || normalizeText(payload.onboardingLink)
-    : normalizeText(payload.onboardingLink);
+    ? normalizeText(payload.portalLink) ||
+      normalizeText(payload.onboardingUrl ?? payload.onboarding_url) ||
+      normalizeText(payload.onboardingLink)
+    : normalizeText(payload.onboardingUrl ?? payload.onboarding_url) ||
+      normalizeText(payload.onboardingLink);
   const legacyOnboardingLink = onboardingLink;
   const agentName = normalizeText(payload.agentName);
-  const organisationName = normalizeText(payload.organisationName) || "Arch9";
+  const agentEmail = normalizeText(payload.agentEmail ?? payload.agent_email);
+  const agentPhone = normalizeText(payload.agentPhone ?? payload.agent_phone);
+  const organisationName = normalizeText(payload.agencyName ?? payload.agency_name) ||
+    normalizeText(payload.organisationName) ||
+    "Arch9";
+  const payloadAgencyLogoUrl = normalizeText(
+    payload.agencyLogoUrl ?? payload.agency_logo_url ??
+      payload.agencyLogo ?? payload.agency_logo,
+  );
+  const expiryDays = normalizeText(payload.expiryDays ?? payload.expiry_days);
+  const expiresAt = normalizeText(payload.expiresAt ?? payload.expires_at);
   const organisationId = normalizeText(payload.organisationId);
   let supportEmail = normalizeText(payload.supportEmail);
   let supportPhone = normalizeText(payload.supportPhone);
@@ -211,7 +224,7 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
 
   let templateOverrides = null;
   let senderOrganisationName = organisationName;
-  let senderOrganisationLogoUrl = "";
+  let senderOrganisationLogoUrl = payloadAgencyLogoUrl;
   if (organisationId && supabase) {
     try {
       const resolvedOrganisation = await resolveSenderOrganisationBranding(
@@ -220,7 +233,8 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
         organisationName,
       );
       senderOrganisationName = resolvedOrganisation.senderOrganisationName;
-      senderOrganisationLogoUrl = resolvedOrganisation.senderOrganisationLogoUrl;
+      senderOrganisationLogoUrl = resolvedOrganisation.senderOrganisationLogoUrl ||
+        senderOrganisationLogoUrl;
       if (!supportEmail) {
         supportEmail = resolvedOrganisation.supportEmail;
       }
@@ -257,7 +271,11 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
     senderOrganisationLogoUrl,
     supportEmail,
     supportPhone,
+    expiryDays,
+    expiresAt,
     templateOverrides: templateOverrides || undefined,
+    agentEmail,
+    agentPhone,
   });
   const text = buildSellerOnboardingEmailText({
     sellerName,
@@ -267,9 +285,13 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
     onboardingLink,
     emailKind,
     agentName,
+    agentEmail,
+    agentPhone,
     organisationName: senderOrganisationName || organisationName,
     supportEmail,
     supportPhone,
+    expiryDays,
+    expiresAt,
     templateOverrides: templateOverrides || undefined,
   });
 
@@ -294,6 +316,10 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
         canonicalInviteToken: canonicalClientInvite?.token || null,
         canonicalInviteLink: canonicalClientInvite?.inviteLink || null,
         legacyOnboardingLink,
+        expiryDays: expiryDays || null,
+        expiresAt: expiresAt || null,
+        agentEmail: agentEmail || null,
+        agentPhone: agentPhone || null,
         emailPurpose: communicationType,
       },
     },

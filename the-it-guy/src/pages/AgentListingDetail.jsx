@@ -2888,7 +2888,10 @@ function AgentListingDetail() {
                 propertyType: listingRecord?.propertyType || marketingDraft.propertyType || '',
                 transactionReference: listingRecord?.listingCode || listingRecord?.listingReference || '',
                 onboardingLink,
+                onboardingUrl: onboardingLink,
+                expiresAt: response?.expiresAt || '',
                 agentName: agentDisplayName,
+                agentEmail: getCanonicalOfferActor().email,
               },
             })
             if (emailResponse?.error || emailResponse?.data?.error) {

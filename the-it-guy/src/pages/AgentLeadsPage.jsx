@@ -14971,11 +14971,16 @@ function buildSellerOnboardingEmailPayload({ row = {}, listing = null, onboardin
     propertyTitle,
     propertyType: normalizeText(row?.propertyType || row?.property_type || listing?.propertyType || listing?.property_type),
     onboardingLink: normalizedEmailKind === 'portal_documents' ? normalizedPortalLink : normalizedOnboardingLink,
+    onboardingUrl: normalizedEmailKind === 'portal_documents' ? normalizedPortalLink : normalizedOnboardingLink,
     portalLink: normalizedPortalLink,
+    expiresAt: normalizeText(onboarding?.expiresAt || onboarding?.expires_at),
     transactionReference: getLeadDisplayReference(row),
     agentName: normalizeText(row.assignedAgentName || actor.fullName || actor.name || actor.email),
+    agentEmail: normalizeText(actor.email).toLowerCase(),
+    agentPhone: normalizeText(actor.phone || actor.mobile || actor.contactNumber || actor.contact_number),
     organisationName: normalizeText(workspaceName),
     supportEmail: normalizeText(actor.email),
+    supportPhone: normalizeText(actor.phone || actor.mobile || actor.contactNumber || actor.contact_number),
   }
 }
 

@@ -64,11 +64,22 @@ export function isValidWebsite(value) {
 
 export function isMissingTableError(error, tableName = '') {
   if (!error) return false
-  const message = String(error.message || '').toLowerCase()
+  const code = String(error.code || '').toLowerCase()
+  const expectedTable = String(tableName || '').toLowerCase()
+  const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
+  const referencesExpectedTable = Boolean(expectedTable && message.includes(expectedTable))
+  const hasMissingSchemaLanguage =
+    message.includes('does not exist') ||
+    message.includes('not found') ||
+    message.includes('could not find') ||
+    message.includes('schema cache') ||
+    message.includes('undefined table') ||
+    message.includes('unknown table')
+
   return (
-    String(error.code || '').toLowerCase() === '42p01' ||
-    String(error.code || '').toLowerCase() === 'pgrst205' ||
-    (message.includes('table') && message.includes(String(tableName || '').toLowerCase()))
+    code === '42p01' ||
+    code === 'pgrst205' ||
+    (referencesExpectedTable && hasMissingSchemaLanguage)
   )
 }
 

@@ -114,6 +114,28 @@ assertContract(
   /Open your secure seller portal and set your password/,
   'Seller portal email steps should mention password setup.',
 )
+for (const token of [
+  'buildPremiumSellerOnboardingInvitationHtml',
+  'Welcome to your property transaction workspace.',
+  'Complete Seller Onboarding',
+  'Seller Onboarding',
+  'Valuation',
+  'Mandate',
+  'Listing',
+  'Sold',
+  'Why we need this information',
+  'Verify ownership',
+  "What you'll have access to",
+  'Your information remains secure.',
+  'This secure link expires in',
+  'Onboarding URL',
+]) {
+  assertContract(
+    sellerEmailContent,
+    new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+    `Premium seller onboarding email should include ${token}.`,
+  )
+}
 
 const migration = await readWorkspaceFile('supabase/migrations/202606220002_seller_portal_password_access_phase3.sql')
 for (const field of [

@@ -112,25 +112,25 @@ const SIMPLIFIED_PARTNER_VIEW_COPY = {
     eyebrow: 'Organisation',
     title: 'Third parties',
     description: 'Attorneys, bond originators, and referral agencies your team can reuse during transactions.',
-    actionLabel: 'Add third party',
+    actionLabel: 'Invite third party',
   },
   connected: {
     eyebrow: 'Network',
     title: 'Connections',
     description: 'Reusable organisation relationships connected to this workspace.',
-    actionLabel: 'Add third party',
+    actionLabel: 'Invite third party',
   },
   invitations: {
     eyebrow: 'Network',
     title: 'Invitations',
     description: 'Sent and received partner requests for reusable third-party relationships.',
-    actionLabel: 'Add third party',
+    actionLabel: 'Invite third party',
   },
   discover: {
     eyebrow: 'Network',
     title: 'Discover',
     description: 'Find organisations that can become reusable partners for repeat transaction work.',
-    actionLabel: 'Add third party',
+    actionLabel: 'Invite third party',
   },
 }
 
@@ -1853,7 +1853,7 @@ function ThirdPartyDirectoryModal({
       <div className="w-full max-w-2xl rounded-[8px] border border-[#d9e4ef] bg-white p-4 shadow-[0_24px_60px_rgba(15,23,42,0.15)] sm:p-6">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#10243a]">{editing ? 'Edit third party' : 'Add third party'}</h2>
+            <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#10243a]">{editing ? 'Edit third party' : 'Invite third party'}</h2>
             <p className="mt-1 text-sm text-[#60758d]">Saved third parties become reusable role-player defaults during deal setup.</p>
           </div>
           <button
@@ -2026,7 +2026,7 @@ function ThirdPartyDirectoryModal({
               className="inline-flex h-10 items-center justify-center gap-2 rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white transition hover:bg-[#173a5e] disabled:cursor-not-allowed disabled:opacity-60"
             >
               <InviteIcon size={15} />
-              {saving ? 'Saving...' : editing ? 'Save changes' : 'Add third party'}
+              {saving ? 'Saving...' : editing ? 'Save changes' : 'Invite third party'}
             </button>
           </div>
         </form>
@@ -2326,6 +2326,7 @@ export default function PartnersPage() {
   const [invitationFilters, setInvitationFilters] = useState(DEFAULT_INVITATION_FILTERS)
   const [invitationAction, setInvitationAction] = useState({ id: '', type: '' })
   const [invitationConfirmation, setInvitationConfirmation] = useState({ type: '', invitation: null })
+  const [deletedInvitationIds, setDeletedInvitationIds] = useState(() => new Set())
 
   const accessContext = useMemo(
     () => ({
@@ -2597,7 +2598,11 @@ export default function PartnersPage() {
     [connectedRelationships, directoryFilters, preferredRoutingRuleByPartnerOrgId],
   )
 
-  const invitations = useMemo(() => snapshot?.invitations || [], [snapshot?.invitations])
+  const invitations = useMemo(() => {
+    const rows = snapshot?.invitations || []
+    if (!deletedInvitationIds.size) return rows
+    return rows.filter((invitation) => !deletedInvitationIds.has(normalizeText(invitation.id)))
+  }, [deletedInvitationIds, snapshot?.invitations])
   const pendingSentConnectionPartnerIds = useMemo(() => {
     const currentOrganisationId = normalizeLower(organisationId)
     return new Set(
@@ -3314,23 +3319,30 @@ export default function PartnersPage() {
 
   async function confirmDeleteInvitation(invitation) {
     if (!invitation?.id || invitationAction.id) return
+    const invitationId = normalizeText(invitation.id)
     const previousSnapshot = snapshot
 
     try {
       setError('')
       setMessage('')
-      setInvitationAction({ id: invitation.id, type: 'delete' })
+      setInvitationAction({ id: invitationId, type: 'delete' })
       setInvitationConfirmation({ type: '', invitation: null })
+      setDeletedInvitationIds((previous) => {
+        if (previous.has(invitationId)) return previous
+        const next = new Set(previous)
+        next.add(invitationId)
+        return next
+      })
       setSnapshot((previous) =>
         previous
           ? {
               ...previous,
-              invitations: (previous.invitations || []).filter((item) => String(item.id) !== String(invitation.id)),
+              invitations: (previous.invitations || []).filter((item) => normalizeText(item.id) !== invitationId),
             }
           : previous,
       )
       await deletePartnerInvitation({
-        invitationId: invitation.id,
+        invitationId,
         organisationId,
         workspaceType: resolvedWorkspaceType,
       })
@@ -3339,10 +3351,16 @@ export default function PartnersPage() {
         userId: profile?.id || '',
         workspaceId: organisationId,
         targetType: 'partner_invitation',
-        targetId: invitation.id,
+        targetId: invitationId,
       }).catch(() => {})
       void loadSnapshot()
     } catch (deleteError) {
+      setDeletedInvitationIds((previous) => {
+        if (!previous.has(invitationId)) return previous
+        const next = new Set(previous)
+        next.delete(invitationId)
+        return next
+      })
       if (previousSnapshot) setSnapshot(previousSnapshot)
       setError(deleteError?.message || 'Unable to delete partner invitation.')
     } finally {
@@ -3553,7 +3571,7 @@ export default function PartnersPage() {
         onSubmit={handleInvite}
         saving={inviteSubmitting}
         variant={isSimplifiedThirdPartyWorkspace ? 'third-party' : 'default'}
-        title={isSimplifiedThirdPartyWorkspace ? 'Add third party' : 'Invite partner'}
+        title={isSimplifiedThirdPartyWorkspace ? 'Invite third party' : 'Invite partner'}
         inviteEmail={inviteEmail}
         setInviteEmail={setInviteEmail}
         inviteOrganisationQuery={inviteOrganisationQuery}
@@ -3768,7 +3786,7 @@ export default function PartnersPage() {
                 className="mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white transition hover:bg-[#173a5e]"
               >
                 <InviteIcon size={15} />
-                Add third party
+                Invite third party
               </button>
             </section>
           )}

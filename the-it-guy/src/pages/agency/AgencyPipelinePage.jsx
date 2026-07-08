@@ -7162,7 +7162,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               return explicitReference
             })(),
             onboardingLink,
+            onboardingUrl: onboardingLink,
             agentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email),
+            agentEmail: normalizeText(currentAgent.email).toLowerCase(),
+            agentPhone: normalizeText(currentAgent.phone || currentAgent.mobile || currentAgent.contactNumber || currentAgent.contact_number),
+            supportEmail: normalizeText(currentAgent.email).toLowerCase(),
+            supportPhone: normalizeText(currentAgent.phone || currentAgent.mobile || currentAgent.contactNumber || currentAgent.contact_number),
           }
           void invokeEdgeFunction('send-email', {
             body: {
