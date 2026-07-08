@@ -1,4 +1,5 @@
 import { createScopedSupabaseClient, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../../lib/supabaseClient'
+import { uploadToStorageCandidateBuckets } from '../../../lib/storageFallbacks'
 import {
   buildLandlordOnboardingSummary,
   calculateLandlordOnboardingProgress,
@@ -1240,16 +1241,20 @@ export async function submitCommercialLandlordOnboarding(token, formInput = {}) 
 async function uploadPortalFile(client, { accessId, file }) {
   if (!file) throw new Error('Choose a document to upload.')
   const objectPath = ['commercial-landlord-onboarding', safeFileName(accessId), `${Date.now()}-${safeFileName(file.name || 'document')}`].join('/')
-  for (const bucket of COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES) {
-    const upload = await client.storage.from(bucket).upload(objectPath, file, {
-      cacheControl: '3600',
-      contentType: file.type || undefined,
-      upsert: false,
-    })
-    if (!upload.error) return { bucket, path: objectPath }
-    if (!/bucket|not found|does not exist/i.test(String(upload.error.message || ''))) throw upload.error
-  }
-  throw new Error('Commercial document storage is not configured.')
+  const { bucket } = await uploadToStorageCandidateBuckets({
+    bucketCandidates: COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES,
+    upload: (bucketName) =>
+      client.storage.from(bucketName).upload(objectPath, file, {
+        cacheControl: '3600',
+        contentType: file.type || undefined,
+        upsert: false,
+      }),
+    missingBucketMessage: `Commercial document storage is not configured. Checked: ${COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES.join(', ')}.`,
+    accessDeniedMessage: 'Commercial document storage is not ready yet. Please retry after storage access is refreshed.',
+    accessDeniedCode: 'commercial_document_storage_access_not_ready',
+    genericMessage: 'Unable to upload commercial document.',
+  })
+  return { bucket, path: objectPath }
 }
 
 export async function uploadCommercialLandlordOnboardingDocument({

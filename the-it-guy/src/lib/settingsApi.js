@@ -63,6 +63,7 @@ import { isUnsafeFallbackAllowed } from './envValidation'
 import { MOCK_DATA_ENABLED } from './mockData'
 import { loadSignupIntentForUser } from './signupIntent'
 import { isActiveMembershipStatus, normalizeMembershipStatus } from '../constants/membershipStatuses'
+import { uploadToStorageCandidateBuckets } from './storageFallbacks'
 
 const importMetaEnv = import.meta.env || {}
 const PARTNER_ROUTING_DEMO_MODE = Boolean(
@@ -474,17 +475,6 @@ function normalizeStorageSafeName(value = '') {
     .replace(/[^a-z0-9-]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 64)
-}
-
-function isMissingStorageBucketError(error) {
-  if (!error) return false
-  const message = String(error.message || '').toLowerCase()
-  const code = String(error.code || '').toLowerCase()
-  return (
-    message.includes('bucket') &&
-    (message.includes('not found') || message.includes('does not exist') || message.includes('unknown')) ||
-    code === 'bucket_not_found'
-  )
 }
 
 function isAllowedOrganisationLogoType(file = {}) {
@@ -3011,37 +3001,19 @@ export async function uploadAccountAvatar({ file } = {}) {
   const extension = normalizeFileExtension(file?.name, 'jpg')
   const safeExtension = extension === 'jpeg' ? 'jpg' : extension
   const objectPath = `${user.id}/avatar-${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${safeExtension}`
-  let uploadedBucket = ''
-  let uploadError = null
-
-  for (const bucketName of PROFILE_AVATAR_BUCKET_CANDIDATES) {
-    const { error } = await client.storage.from(bucketName).upload(objectPath, selectedFile, {
-      upsert: true,
-      cacheControl: '31536000',
-      contentType: selectedFile.type || PROFILE_AVATAR_UPLOAD_CONTENT_TYPE,
-    })
-
-    if (!error) {
-      uploadedBucket = bucketName
-      uploadError = null
-      break
-    }
-
-    if (isMissingStorageBucketError(error)) {
-      uploadError = error
-      continue
-    }
-
-    throw error
-  }
-
-  if (!uploadedBucket) {
-    const checked = PROFILE_AVATAR_BUCKET_CANDIDATES.join(', ')
-    if (uploadError) {
-      throw new Error(`Unable to upload profile picture. Checked storage buckets: ${checked}. Run the profile avatar storage migration for this environment.`)
-    }
-    throw new Error('Unable to upload profile picture.')
-  }
+  const { bucket: uploadedBucket } = await uploadToStorageCandidateBuckets({
+    bucketCandidates: PROFILE_AVATAR_BUCKET_CANDIDATES,
+    upload: (bucketName) =>
+      client.storage.from(bucketName).upload(objectPath, selectedFile, {
+        upsert: true,
+        cacheControl: '31536000',
+        contentType: selectedFile.type || PROFILE_AVATAR_UPLOAD_CONTENT_TYPE,
+      }),
+    missingBucketMessage: `Unable to upload profile picture. Checked storage buckets: ${PROFILE_AVATAR_BUCKET_CANDIDATES.join(', ')}. Run the profile avatar storage migration for this environment.`,
+    accessDeniedMessage: 'Profile picture storage is not ready yet. Please retry after storage access is refreshed.',
+    accessDeniedCode: 'profile_avatar_storage_access_not_ready',
+    genericMessage: 'Unable to upload profile picture.',
+  })
 
   const { data: publicUrlData } = client.storage.from(uploadedBucket).getPublicUrl(objectPath)
   const publicUrl = normalizeText(publicUrlData?.publicUrl)
@@ -3244,41 +3216,23 @@ export async function uploadOrganisationBrandingAsset({ file, variant = 'light' 
   const extension = normalizeFileExtension(selectedFile.name, 'png')
   const objectPath = `organisations/${organisationScope}/branding/${safeVariant}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${extension}`
 
-  let uploadedBucket = ''
-  let uploadError = null
-
-  for (const bucketName of BRANDING_BUCKET_CANDIDATES) {
-    const { error } = await withTimeout(
-      client.storage.from(bucketName).upload(objectPath, selectedFile, {
-        upsert: true,
-        cacheControl: '3600',
-        contentType: selectedFile.type || undefined,
-      }),
-      ORGANISATION_LOGO_UPLOAD_TIMEOUT_MS,
-      `Logo upload timed out while saving to ${bucketName}. Please retry with a smaller image or check your connection.`,
-    )
-
-    if (!error) {
-      uploadedBucket = bucketName
-      uploadError = null
-      break
-    }
-
-    if (isMissingStorageBucketError(error)) {
-      uploadError = error
-      continue
-    }
-
-    throw error
-  }
-
-  if (!uploadedBucket) {
-    const checked = BRANDING_BUCKET_CANDIDATES.join(', ')
-    if (uploadError) {
-      throw new Error(`Unable to upload organisation logo. Checked storage buckets: ${checked}. Configure a branding bucket for this environment.`)
-    }
-    throw new Error('Unable to upload organisation logo.')
-  }
+  const { bucket: uploadedBucket } = await uploadToStorageCandidateBuckets({
+    bucketCandidates: BRANDING_BUCKET_CANDIDATES,
+    upload: (bucketName) =>
+      withTimeout(
+        client.storage.from(bucketName).upload(objectPath, selectedFile, {
+          upsert: true,
+          cacheControl: '3600',
+          contentType: selectedFile.type || undefined,
+        }),
+        ORGANISATION_LOGO_UPLOAD_TIMEOUT_MS,
+        `Logo upload timed out while saving to ${bucketName}. Please retry with a smaller image or check your connection.`,
+      ),
+    missingBucketMessage: `Unable to upload organisation logo. Checked storage buckets: ${BRANDING_BUCKET_CANDIDATES.join(', ')}. Configure a branding bucket for this environment.`,
+    accessDeniedMessage: 'Organisation logo storage is not ready yet. Please retry after storage access is refreshed.',
+    accessDeniedCode: 'organisation_branding_storage_access_not_ready',
+    genericMessage: 'Unable to upload organisation logo.',
+  })
 
   const signedResult = await withTimeout(
     client.storage.from(uploadedBucket).createSignedUrl(objectPath, 60 * 60 * 24 * 30),

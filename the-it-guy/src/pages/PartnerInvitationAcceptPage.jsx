@@ -50,6 +50,22 @@ function getScopeLabel(invitation = {}) {
   return invitation?.scopeName ? `${scopeType}: ${invitation.scopeName}` : scopeType
 }
 
+function getWorkspaceHomePath(workspaceContext = {}) {
+  const role = normalizeText(workspaceContext.role || workspaceContext.currentWorkspace?.role || workspaceContext.workspace?.role).toLowerCase()
+  const workspaceType = normalizeText(
+    workspaceContext.currentWorkspace?.type ||
+      workspaceContext.currentWorkspace?.workspaceType ||
+      workspaceContext.workspace?.type ||
+      workspaceContext.workspace?.workspaceType,
+  ).toLowerCase()
+
+  if (role === 'attorney' || workspaceType === 'attorney_firm') return '/attorney/dashboard'
+  if (role === 'commercial' || workspaceType === 'commercial') return '/commercial'
+  if (role === 'bond_originator' || workspaceType === 'bond_originator') return '/bond/dashboard'
+  if (role === 'client') return '/client'
+  return '/dashboard'
+}
+
 function StatusPanel({ tone = 'info', icon: Icon = ShieldCheck, title, children }) {
   const tones = {
     success: {
@@ -87,27 +103,90 @@ function StatusPanel({ tone = 'info', icon: Icon = ShieldCheck, title, children 
 
 function DetailRow({ label, value, icon: Icon = BadgeCheck }) {
   return (
-    <div className="grid grid-cols-[32px_minmax(0,1fr)] gap-3 py-3.5">
-      <span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-[8px] border border-[#dfe8ee] bg-[#fbfcf8] text-[#5f735f]">
+    <div className="grid grid-cols-[36px_minmax(0,1fr)] gap-3 py-4">
+      <span className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-[10px] border border-[#dfe8e0] bg-[#fbfcf7] text-[#1f6a57]">
         {createElement(Icon, { size: 16 })}
       </span>
       <div className="min-w-0">
-        <dt className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7a897e]">{label}</dt>
+        <dt className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#77857c]">{label}</dt>
         <dd className="mt-1 break-words text-sm font-semibold leading-5 text-[#172033]">{value || 'Not recorded'}</dd>
       </div>
     </div>
   )
 }
 
-function TrustItem({ icon: Icon, title, children }) {
+function ExplanationRow({ icon: Icon, title, children }) {
   return (
-    <div className="grid grid-cols-[36px_minmax(0,1fr)] gap-3">
-      <span className="flex h-9 w-9 items-center justify-center rounded-[8px] border border-[#d8dfd4] bg-[#fffdf8] text-[#1d3d33]">
-        {createElement(Icon, { size: 17 })}
+    <div className="grid grid-cols-[42px_minmax(0,1fr)] gap-4 rounded-[16px] border border-white/10 bg-white/[0.045] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+      <span className="flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#b7d7ca]/25 bg-[#d8f3e8]/10 text-[#8fd7be]">
+        {createElement(Icon, { size: 18 })}
       </span>
       <div>
-        <p className="text-sm font-semibold text-[#182235]">{title}</p>
-        <p className="mt-1 text-sm leading-6 text-[#5e6d78]">{children}</p>
+        <p className="text-[0.98rem] font-semibold text-[#f8fbf7]">{title}</p>
+        <p className="mt-1.5 text-[0.95rem] leading-6 text-[#c8d5ce]">{children}</p>
+      </div>
+    </div>
+  )
+}
+
+function ConnectorLabel({ children }) {
+  return (
+    <div className="grid justify-items-center gap-2 py-1 text-center">
+      <span className="h-7 w-px bg-gradient-to-b from-[#d6e8df] to-[#1f7a66]" />
+      <span className="rounded-full border border-[#d8e5dc] bg-[#fbfaf4] px-3 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-[#577064]">
+        {children}
+      </span>
+      <span className="h-7 w-px bg-gradient-to-b from-[#1f7a66] to-[#d6e8df]" />
+    </div>
+  )
+}
+
+function RelationshipDiagram({ fromOrganisationName = '', invitedWorkspaceName = '' }) {
+  const sourceName = fromOrganisationName || 'Kingston Real Estate'
+  const destinationName = invitedWorkspaceName || 'Your Business'
+  const checklist = ['Future referrals', 'Shared transactions', 'Secure messaging', 'Document sharing']
+
+  return (
+    <div className="rounded-[26px] border border-[#d8e1d8] bg-[#fffdf8]/95 p-4 shadow-[0_26px_70px_rgba(20,35,31,0.12)] sm:p-5">
+      <div className="rounded-[20px] border border-[#dce6dc] bg-white p-4 shadow-[0_12px_28px_rgba(23,32,51,0.06)]">
+        <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7a897f]">Inviting Organisation</p>
+        <p className="mt-2 text-base font-semibold text-[#14221d]">{sourceName}</p>
+      </div>
+
+      <ConnectorLabel>Invites</ConnectorLabel>
+
+      <div className="rounded-[20px] border border-[#b9d7ca] bg-[#f2fbf6] p-4 shadow-[0_12px_28px_rgba(31,122,102,0.1)]">
+        <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#1f6a57]">Your Business</p>
+        <p className="mt-2 text-base font-semibold text-[#14221d]">{destinationName}</p>
+      </div>
+
+      <ConnectorLabel>Once Accepted</ConnectorLabel>
+
+      <div className="rounded-[20px] border border-[#dce6dc] bg-white p-4">
+        <div className="grid gap-2">
+          {checklist.map((item) => (
+            <div key={item} className="flex items-center gap-2 text-sm font-medium text-[#34443d]">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#e3f5ed] text-[#1f7a66]">
+                <CheckCircle2 size={13} />
+              </span>
+              {item}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ReviewItem({ title, children }) {
+  return (
+    <div className="grid grid-cols-[28px_minmax(0,1fr)] gap-3">
+      <span className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-[#cfe4da] bg-[#f0fbf6] text-[#1f7a66]">
+        <CheckCircle2 size={15} />
+      </span>
+      <div>
+        <p className="text-sm font-semibold text-[#172033]">{title}</p>
+        <p className="mt-1 text-sm leading-5 text-[#65746c]">{children}</p>
       </div>
     </div>
   )
@@ -137,6 +216,7 @@ export default function PartnerInvitationAcceptPage() {
   const autoAcceptAttemptedRef = useRef(false)
   const returnPath = useMemo(() => buildReturnPath(location), [location])
   const autoAccept = useMemo(() => new URLSearchParams(location.search).get('accept') === '1', [location.search])
+  const autoAcceptRedirectPath = useMemo(() => getWorkspaceHomePath(workspaceContext), [workspaceContext])
   const authPath = `/auth?next=${encodeURIComponent(returnPath)}`
   const signupPath = `/auth?mode=signup&next=${encodeURIComponent(returnPath)}`
   const session = authState.session
@@ -147,19 +227,6 @@ export default function PartnerInvitationAcceptPage() {
   const invitedWorkspaceName = workspaceName || normalizeText(preview?.toOrganisationName)
   const partnerTypeLabel = titleize(preview?.partnerType || 'partner')
   const relationshipLabel = titleize(preview?.relationshipType || 'approved')
-  const panelTitle = accepted
-    ? 'Partner connection confirmed'
-    : !session
-      ? 'Sign in to review the invitation'
-      : preview
-        ? `${fromOrganisationName || 'A partner'} wants to connect`
-        : 'Review your partner invitation'
-  const panelCopy = accepted
-    ? 'This partner relationship is now active inside Arch9.'
-    : !session
-      ? 'This secure invitation needs to be accepted by a user from the invited workspace.'
-      : 'Accepting creates the workspace connection used for referrals, routing, and transaction coordination.'
-
   useEffect(() => {
     rememberPendingPartnerInvitePath(returnPath)
   }, [returnPath])
@@ -207,7 +274,7 @@ export default function PartnerInvitationAcceptPage() {
     }
   }, [invitationId, session, workspaceId])
 
-  const handleAccept = useCallback(async function handleAccept() {
+  const handleAccept = useCallback(async function handleAccept({ redirectOnSuccess = false } = {}) {
     try {
       setAccepting(true)
       setError('')
@@ -218,12 +285,15 @@ export default function PartnerInvitationAcceptPage() {
       setPreview(result?.invitation || preview)
       setAccepted(true)
       clearPendingPartnerInvitePath(returnPath)
+      if (redirectOnSuccess) {
+        navigate(autoAcceptRedirectPath, { replace: true })
+      }
     } catch (acceptError) {
       setError(acceptError?.message || 'Unable to accept this partner invitation.')
     } finally {
       setAccepting(false)
     }
-  }, [invitationId, preview, returnPath, workspaceId])
+  }, [autoAcceptRedirectPath, invitationId, navigate, preview, returnPath, workspaceId])
 
   useEffect(() => {
     if (
@@ -240,7 +310,7 @@ export default function PartnerInvitationAcceptPage() {
     }
 
     autoAcceptAttemptedRef.current = true
-    void handleAccept()
+    void handleAccept({ redirectOnSuccess: true })
   }, [accepting, autoAccept, error, handleAccept, loadingPreview, preview, session, workspaceId])
 
   function openPartners() {
@@ -248,173 +318,213 @@ export default function PartnerInvitationAcceptPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f4f6f1] text-[#172033]">
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-5 sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-[#f4f1ea] text-[#172033]">
+      <div className="mx-auto flex min-h-screen w-full max-w-[1480px] flex-col px-4 py-5 sm:px-6 lg:px-8">
         <header className="flex items-center justify-between gap-4">
           <div>
-            <p className="font-display text-2xl font-semibold tracking-[-0.03em] text-[#111827]">Arch9</p>
-            <p className="mt-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#778276]">Partner Invitation</p>
+            <p className="font-display text-2xl font-semibold tracking-[-0.03em] text-[#101814]">Arch9</p>
+            <p className="mt-1 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#68776f]">PRIVATE PROPERTY NETWORK</p>
           </div>
-          <div className="hidden items-center gap-2 rounded-[8px] border border-[#d8dfd4] bg-[#fffdf8] px-3 py-2 text-xs font-semibold text-[#44544c] shadow-[0_12px_30px_rgba(23,32,51,0.06)] sm:flex">
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#d6ded2] bg-[#fffdf8] px-3.5 py-2 text-xs font-semibold text-[#3c4f46] shadow-[0_12px_30px_rgba(23,32,51,0.06)]">
             <LockKeyhole size={14} />
             Workspace-secured
           </div>
         </header>
 
-        <div className="grid flex-1 items-center gap-7 py-7 lg:grid-cols-[0.92fr_1.08fr] lg:gap-10">
-          <aside className="order-2 lg:order-1">
-            <div className="max-w-xl">
-              <div className="inline-flex items-center gap-2 rounded-[8px] border border-[#d6ded2] bg-[#fffdf8] px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#536156]">
-                <Network size={14} />
-                Private property network
-              </div>
-              <h1 className="mt-6 max-w-lg font-display text-4xl font-semibold leading-[1.05] tracking-[-0.04em] text-[#121927] sm:text-5xl">
-                The partner layer for serious property work.
-              </h1>
-              <p className="mt-5 max-w-lg text-base leading-7 text-[#5e6d78]">
-                Arch9 brings agencies, developers, finance teams, and legal partners into one controlled operating network, so referrals and transactions move with context instead of scattered follow-ups.
-              </p>
-
-              <div className="mt-7 grid gap-4">
-                <TrustItem icon={ShieldCheck} title="Workspace controlled">
-                  This invitation is accepted from the active workspace that owns the relationship.
-                </TrustItem>
-                <TrustItem icon={Handshake} title="Built for collaboration">
-                  Partner routing, preferred relationships, and shared transaction context can live in one place.
-                </TrustItem>
-                <TrustItem icon={UsersRound} title="Clear handover">
-                  Accepting confirms the connection and keeps the next steps visible inside Partners.
-                </TrustItem>
-              </div>
-            </div>
-          </aside>
-
-          <section className="order-1 overflow-hidden rounded-[8px] border border-[#d8dfd4] bg-[#fffdf8] shadow-[0_28px_80px_rgba(23,32,51,0.12)] lg:order-2">
-            <div className="border-b border-white/10 bg-[#121927] px-5 py-6 text-white sm:px-7 sm:py-7">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-2 rounded-[8px] border border-[#d7f8e6]/20 bg-white/8 px-3 py-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.13em] text-[#ccebdc]">
-                  <ShieldCheck size={14} />
-                  Secure partner connection
+        <div className="grid flex-1 items-center gap-6 py-7 lg:grid-cols-[minmax(0,1fr)_minmax(390px,0.76fr)] lg:gap-8">
+          <div className="order-2 grid min-w-0 gap-5 lg:order-1 xl:grid-cols-[minmax(0,1fr)_310px] xl:items-center">
+            <aside className="order-2 flex min-h-[620px] flex-col overflow-hidden rounded-[30px] border border-white/10 bg-[#071611] p-6 text-white shadow-[0_34px_90px_rgba(10,24,20,0.28)] sm:p-8 lg:order-1">
+              <div>
+                <span className="inline-flex rounded-full border border-[#8fd7be]/25 bg-[#d8f3e8]/10 px-3 py-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#9ee1ca]">
+                  YOU&apos;VE BEEN INVITED
                 </span>
-                {accepted ? (
-                  <span className="inline-flex items-center gap-2 rounded-[8px] border border-[#d7f8e6]/20 bg-[#d7f8e6]/10 px-3 py-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.13em] text-[#dff7e9]">
-                    <CheckCircle2 size={14} />
-                    Accepted
-                  </span>
-                ) : null}
+                <h1 className="mt-7 max-w-xl font-display text-4xl font-semibold leading-[1.02] tracking-[-0.04em] text-[#f9fbf7] sm:text-5xl">
+                  One invitation.
+                  <br />
+                  Every future transaction.
+                </h1>
+                <p className="mt-6 max-w-xl text-base leading-7 text-[#d6e0da]">
+                  Someone has invited your business into their trusted Arch9 network.
+                </p>
+                <p className="mt-4 max-w-xl text-base leading-7 text-[#bac9c2]">
+                  Once connected, referrals, matters, shared transactions, and communication happen from one secure workspace.
+                </p>
               </div>
-              <h2 className="mt-5 font-display text-3xl font-semibold leading-tight tracking-[-0.035em] text-white sm:text-[2.35rem]">
-                {panelTitle}
-              </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-[#d7e1ec]">
-                {panelCopy}
-              </p>
+
+              <div className="mt-8 grid gap-3">
+                <ExplanationRow icon={Handshake} title="Trusted connection">
+                  Accept once. Work together across every future transaction without spreadsheets, WhatsApp groups, or endless emails.
+                </ExplanationRow>
+                <ExplanationRow icon={Network} title="Shared context">
+                  Everyone sees what they need. Documents, milestones, and communication stay attached to the transaction.
+                </ExplanationRow>
+                <ExplanationRow icon={BadgeCheck} title="Built for professionals">
+                  Designed specifically for South African property professionals &mdash; not generic project management software.
+                </ExplanationRow>
+              </div>
+
+              <div className="mt-auto pt-8">
+                <div className="rounded-[18px] border border-white/10 bg-white/[0.045] p-4">
+                  <p className="text-sm font-semibold text-[#f5faf7]">Trusted by professionals across South Africa.</p>
+                  <p className="mt-2 text-[0.76rem] font-semibold uppercase tracking-[0.12em] text-[#9fb1a8]">
+                    Agencies | Attorneys | Bond Originators | Developers
+                  </p>
+                </div>
+              </div>
+            </aside>
+
+            <div className="order-1 lg:order-2">
+              <RelationshipDiagram fromOrganisationName={fromOrganisationName} invitedWorkspaceName={invitedWorkspaceName} />
             </div>
+          </div>
 
-            <div className="space-y-5 p-5 sm:p-7">
-              {!invitationId ? (
-                <StatusPanel tone="danger" icon={AlertCircle} title="Invitation unavailable">
-                  This partner invitation link is missing its invitation id. Ask the sender to resend it from Arch9.
-                </StatusPanel>
-              ) : authLoading ? (
-                <StatusPanel icon={ShieldCheck} title="Checking your session">
-                  Preparing your secure invitation view.
-                </StatusPanel>
-              ) : !session ? (
-                <>
-                  <StatusPanel icon={Mail} title="Sign in to continue">
-                    Sign in with the account that belongs to the invited workspace. Arch9 will bring you back to this invitation afterwards.
+          <section className="order-1 overflow-hidden rounded-[30px] border border-[#d8dfd4] bg-[#fffdf8] shadow-[0_30px_90px_rgba(23,32,51,0.14)] lg:order-2">
+            <div className="p-6 sm:p-8">
+              <span className="inline-flex items-center gap-2 rounded-full border border-[#cfe4da] bg-[#f1fbf6] px-3 py-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#1f6a57]">
+                <ShieldCheck size={14} />
+                Secure invitation
+              </span>
+
+              <h2 className="mt-6 font-display text-3xl font-semibold leading-tight tracking-[-0.035em] text-[#101814] sm:text-[2.55rem]">
+                Review your invitation
+              </h2>
+              <p className="mt-4 text-base leading-7 text-[#5f6f66]">
+                Before joining, you&apos;ll be able to see all the details and understand exactly what this connection means.
+              </p>
+
+              <div className="mt-8 rounded-[22px] border border-[#e0e7dc] bg-white p-5 shadow-[0_16px_40px_rgba(23,32,51,0.06)]">
+                <p className="text-sm font-semibold text-[#172033]">Here&apos;s what you&apos;ll see before deciding:</p>
+                <div className="mt-5 grid gap-4">
+                  <ReviewItem title="Who invited you">
+                    The organisation and person who sent the invite
+                  </ReviewItem>
+                  <ReviewItem title="Which organisation they'll connect with">
+                    The workspace you&apos;ll be joining
+                  </ReviewItem>
+                  <ReviewItem title="The relationship they'll create">
+                    How your businesses will be connected
+                  </ReviewItem>
+                  <ReviewItem title="What access you'll have">
+                    Your role and permissions in the workspace
+                  </ReviewItem>
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-[18px] border border-[#cfe4da] bg-[#f2fbf6] p-4 text-sm leading-6 text-[#36534a]">
+                <p className="font-semibold text-[#183d33]">Nothing is accepted automatically.</p>
+                <p className="mt-1">
+                  You&apos;ll have the opportunity to review every detail before deciding whether to join.
+                </p>
+              </div>
+
+              <div className="mt-6 space-y-5">
+                {!invitationId ? (
+                  <StatusPanel tone="danger" icon={AlertCircle} title="Invitation unavailable">
+                    This partner invitation link is missing its invitation id. Ask the sender to resend it from Arch9.
                   </StatusPanel>
-                  <div className="rounded-[8px] border border-[#e0e7dc] bg-[#fbfcf8] px-4 py-3 text-sm leading-6 text-[#53616f]">
-                    You will be able to review the sender, relationship type, scope, and invited workspace before accepting.
-                  </div>
-                  <div className="flex flex-wrap gap-3">
-                    <Button asChild size="lg" className="min-w-[140px] rounded-[8px]">
-                      <Link to={authPath}>
-                        Sign in
-                        <ArrowRight size={17} />
-                      </Link>
-                    </Button>
-                    <Button asChild variant="secondary" size="lg" className="rounded-[8px]">
-                      <Link to={signupPath}>Create account</Link>
-                    </Button>
-                  </div>
-                </>
-              ) : !workspaceId ? (
-                <>
-                  <StatusPanel tone="warning" icon={Building2} title="Workspace required">
-                    Your account is signed in, but there is no active workspace available for this partner connection.
+                ) : authLoading ? (
+                  <StatusPanel icon={ShieldCheck} title="Checking your session">
+                    Preparing your secure invitation view.
                   </StatusPanel>
-                  <Button asChild variant="secondary" size="lg" className="rounded-[8px]">
-                    <Link to="/onboarding/profile">Open workspace setup</Link>
-                  </Button>
-                </>
-              ) : loadingPreview ? (
-                <>
-                  <StatusPanel icon={ShieldCheck} title="Loading invitation">
-                    Checking this invitation against {workspaceName || 'your active workspace'}.
-                  </StatusPanel>
-                  <LoadingSkeleton />
-                </>
-              ) : error ? (
-                <>
-                  <StatusPanel tone="danger" icon={AlertCircle} title="Invitation cannot be opened">
-                    {error}
-                  </StatusPanel>
-                  <div className="flex flex-wrap gap-3">
-                    <Button asChild variant="secondary" size="lg" className="rounded-[8px]">
-                      <Link to="/partners?tab=invitations">Open Partners</Link>
-                    </Button>
-                    <Button asChild variant="ghost" size="lg" className="rounded-[8px]">
-                      <Link to={authPath}>Use another account</Link>
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  {accepted ? (
-                    <StatusPanel tone="success" icon={CheckCircle2} title="Connection confirmed">
-                      This partner relationship is active for {invitedWorkspaceName || 'your workspace'}.
+                ) : !session ? (
+                  <>
+                    <StatusPanel icon={Mail} title="Sign in to continue">
+                      Sign in with the account that belongs to the invited workspace. Arch9 will bring you back to this invitation afterwards.
                     </StatusPanel>
-                  ) : (
-                    <StatusPanel icon={Building2} title="Ready to accept">
-                      You are accepting this invite for {invitedWorkspaceName || 'your active workspace'}.
+                    <div className="grid gap-3">
+                      <Button asChild size="lg" className="min-h-12 w-full rounded-[14px] bg-[#0c332a] px-5 text-white shadow-[0_16px_34px_rgba(12,51,42,0.22)] hover:bg-[#0f4538]">
+                        <Link to={authPath}>
+                          Review Invitation
+                          <ArrowRight size={17} />
+                        </Link>
+                      </Button>
+                      <Button asChild variant="secondary" size="lg" className="min-h-12 w-full whitespace-normal rounded-[14px] border-[#d8dfd4] bg-[#fffdf8] px-5 py-3 text-center leading-5 text-[#24342e]">
+                        <Link to={signupPath}>New to Arch9? Create your workspace</Link>
+                      </Button>
+                    </div>
+                  </>
+                ) : !workspaceId ? (
+                  <>
+                    <StatusPanel tone="warning" icon={Building2} title="Workspace required">
+                      Your account is signed in, but there is no active workspace available for this partner connection.
                     </StatusPanel>
-                  )}
-
-                  <div className="rounded-[8px] border border-[#dfe8ee] bg-white px-4 py-1 shadow-[0_10px_26px_rgba(23,32,51,0.04)]">
-                    <dl className="divide-y divide-[#e8eee6]">
-                      <DetailRow label="Invited by" value={fromOrganisationName} icon={Building2} />
-                      <DetailRow label="Your workspace" value={invitedWorkspaceName} icon={UsersRound} />
-                      <DetailRow label="Partner type" value={partnerTypeLabel} icon={Handshake} />
-                      <DetailRow label="Relationship" value={preview?.preferred ? `${relationshipLabel} preferred partner` : relationshipLabel} icon={BadgeCheck} />
-                      <DetailRow label="Scope" value={getScopeLabel(preview)} icon={Network} />
-                      <DetailRow label="Invite expires" value={formatDate(preview?.expiresAt)} icon={CalendarClock} />
-                    </dl>
-                  </div>
-
-                  <div className="rounded-[8px] border border-[#e0e7dc] bg-[#fbfcf8] px-4 py-3 text-sm leading-6 text-[#53616f]">
-                    Accepting links the two workspaces for partner coordination. You can manage the connection later from Partners.
-                  </div>
-
-                  <div className="flex flex-wrap gap-3">
+                    <div className="grid gap-3">
+                      <Button asChild size="lg" className="min-h-12 w-full rounded-[14px] bg-[#0c332a] text-white hover:bg-[#0f4538]">
+                        <Link to="/onboarding/profile">Open workspace setup</Link>
+                      </Button>
+                      <Button asChild variant="secondary" size="lg" className="min-h-12 w-full whitespace-normal rounded-[14px] border-[#d8dfd4] bg-[#fffdf8] px-5 py-3 text-center leading-5 text-[#24342e]">
+                        <Link to={signupPath}>New to Arch9? Create your workspace</Link>
+                      </Button>
+                    </div>
+                  </>
+                ) : loadingPreview ? (
+                  <>
+                    <StatusPanel icon={ShieldCheck} title="Loading invitation">
+                      Checking this invitation against {workspaceName || 'your active workspace'}.
+                    </StatusPanel>
+                    <LoadingSkeleton />
+                  </>
+                ) : error ? (
+                  <>
+                    <StatusPanel tone="danger" icon={AlertCircle} title="Invitation cannot be opened">
+                      {error}
+                    </StatusPanel>
+                    <div className="flex flex-wrap gap-3">
+                      <Button asChild variant="secondary" size="lg" className="rounded-[14px] border-[#d8dfd4] bg-[#fffdf8]">
+                        <Link to="/partners?tab=invitations">Open Partners</Link>
+                      </Button>
+                      <Button asChild variant="ghost" size="lg" className="rounded-[14px]">
+                        <Link to={authPath}>Use another account</Link>
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
                     {accepted ? (
-                      <Button onClick={openPartners} size="lg" className="rounded-[8px]">
-                        Open Partners
-                        <ArrowRight size={17} />
-                      </Button>
+                      <StatusPanel tone="success" icon={CheckCircle2} title="Connection confirmed">
+                        This partner relationship is active for {invitedWorkspaceName || 'your workspace'}.
+                      </StatusPanel>
                     ) : (
-                      <Button onClick={handleAccept} disabled={accepting} size="lg" className="rounded-[8px]">
-                        {accepting ? 'Accepting...' : 'Accept invitation'}
-                        <CheckCircle2 size={17} />
-                      </Button>
+                      <StatusPanel icon={Building2} title="Invitation details ready">
+                        Review the sender, workspace, relationship, scope, and expiry before accepting this connection.
+                      </StatusPanel>
                     )}
-                    <Button asChild variant="secondary" size="lg" className="rounded-[8px]">
-                      <Link to="/partners?tab=invitations">Review in Partners</Link>
-                    </Button>
-                  </div>
-                </>
-              )}
+
+                    <div className="rounded-[22px] border border-[#dfe8ee] bg-white px-4 py-1 shadow-[0_12px_32px_rgba(23,32,51,0.05)]">
+                      <dl className="divide-y divide-[#e8eee6]">
+                        <DetailRow label="Invited by" value={fromOrganisationName} icon={Building2} />
+                        <DetailRow label="Your workspace" value={invitedWorkspaceName} icon={UsersRound} />
+                        <DetailRow label="Partner type" value={partnerTypeLabel} icon={Handshake} />
+                        <DetailRow label="Relationship" value={preview?.preferred ? `${relationshipLabel} preferred partner` : relationshipLabel} icon={BadgeCheck} />
+                        <DetailRow label="Scope" value={getScopeLabel(preview)} icon={Network} />
+                        <DetailRow label="Invite expires" value={formatDate(preview?.expiresAt)} icon={CalendarClock} />
+                      </dl>
+                    </div>
+
+                    <div className="flex flex-wrap gap-3">
+                      {accepted ? (
+                        <Button onClick={openPartners} size="lg" className="rounded-[14px] bg-[#0c332a] text-white hover:bg-[#0f4538]">
+                          Open Partners
+                          <ArrowRight size={17} />
+                        </Button>
+                      ) : (
+                        <Button onClick={() => void handleAccept()} disabled={accepting} size="lg" className="rounded-[14px] bg-[#0c332a] text-white hover:bg-[#0f4538]">
+                          {accepting ? 'Accepting...' : 'Accept invitation'}
+                          <CheckCircle2 size={17} />
+                        </Button>
+                      )}
+                      <Button asChild variant="secondary" size="lg" className="rounded-[14px] border-[#d8dfd4] bg-[#fffdf8] text-[#24342e]">
+                        <Link to="/partners?tab=invitations">Review in Partners</Link>
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="mt-6 flex items-center gap-2 border-t border-[#e5e8df] pt-4 text-xs font-medium text-[#6b7b72]">
+                <LockKeyhole size={14} />
+                Your information is secure and encrypted
+              </div>
             </div>
           </section>
         </div>

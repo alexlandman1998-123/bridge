@@ -1,4 +1,5 @@
 import { createScopedSupabaseClient, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../../lib/supabaseClient'
+import { uploadToStorageCandidateBuckets } from '../../../lib/storageFallbacks'
 import { formatCurrency, formatDate, formatNumber, titleize } from '../commercialFormatters'
 import { buildCommercialTransactions } from './commercialPlatformApi'
 
@@ -1103,16 +1104,20 @@ function chooseUploadTarget(workspace = {}, { category = '', documentRequestId =
 async function uploadPortalFile(client, { accessId, file }) {
   if (!file) return { bucket: '', path: '' }
   const objectPath = ['commercial-portal', safeFileName(accessId), `${Date.now()}-${safeFileName(file.name || 'document')}`].join('/')
-  for (const bucket of COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES) {
-    const { error } = await client.storage.from(bucket).upload(objectPath, file, {
-      cacheControl: '3600',
-      contentType: file.type || undefined,
-      upsert: false,
-    })
-    if (!error) return { bucket, path: objectPath }
-    if (!/bucket|not found|does not exist/i.test(String(error.message || ''))) throw error
-  }
-  throw new Error('Commercial portal document storage is not configured.')
+  const { bucket } = await uploadToStorageCandidateBuckets({
+    bucketCandidates: COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES,
+    upload: (bucketName) =>
+      client.storage.from(bucketName).upload(objectPath, file, {
+        cacheControl: '3600',
+        contentType: file.type || undefined,
+        upsert: false,
+      }),
+    missingBucketMessage: `Commercial portal document storage is not configured. Checked: ${COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES.join(', ')}.`,
+    accessDeniedMessage: 'Commercial portal document storage is not ready yet. Please retry after storage access is refreshed.',
+    accessDeniedCode: 'commercial_portal_document_storage_access_not_ready',
+    genericMessage: 'Unable to upload commercial portal document.',
+  })
+  return { bucket, path: objectPath }
 }
 
 export async function uploadCommercialPortalDocument({ token = '', file = null, category = 'Supporting Documentation', documentRequestId = '', notes = '' } = {}) {

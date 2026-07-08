@@ -56,6 +56,21 @@ assert.doesNotMatch(
   /!autoAccept \|\|[\s\S]*?accepted \|\|[\s\S]*?accepting/,
   'auto-accept must not be blocked by alreadyAccepted preview state',
 )
+assertIncludes(
+  acceptPage,
+  "if (role === 'attorney' || workspaceType === 'attorney_firm') return '/attorney/dashboard'",
+  'auto-accepted attorney partner invites should return to the attorney dashboard',
+)
+assertIncludes(
+  acceptPage,
+  'void handleAccept({ redirectOnSuccess: true })',
+  'auto-accept should redirect only after the accept call succeeds',
+)
+assert.match(
+  acceptPage,
+  /if \(redirectOnSuccess\) \{[\s\S]*?navigate\(autoAcceptRedirectPath, \{ replace: true \}\)/,
+  'auto-accept success should navigate to the resolved workspace home',
+)
 
 assertIncludes(
   pendingHelper,

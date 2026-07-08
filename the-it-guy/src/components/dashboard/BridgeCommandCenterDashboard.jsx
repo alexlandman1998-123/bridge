@@ -651,10 +651,6 @@ function OperationalCard({ title, badge, children, footer }) {
 function BridgeCommandCenterDashboard({
   rows = [],
   profile = {},
-  personaOptions = [],
-  role = 'developer',
-  rolePreviewActive = false,
-  onPersonaChange = null,
   onNavigate = null,
 }) {
   const model = useMemo(() => buildDashboardModel(rows, profile), [profile, rows])
@@ -680,21 +676,6 @@ function BridgeCommandCenterDashboard({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            {personaOptions.length ? (
-              <label className="inline-flex h-11 items-center gap-2 rounded-[14px] border border-[#dce6f2] bg-white px-3 text-sm font-semibold text-[#273b53] shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
-                <span className="text-[#6b7d93]">View</span>
-                <select
-                  className="appearance-none border-0 bg-transparent p-0 text-sm font-semibold outline-none"
-                  value={role}
-                  onChange={(event) => onPersonaChange?.(event.target.value)}
-                >
-                  {personaOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-                {rolePreviewActive ? <em className="text-[0.72rem] not-italic text-[#1769e8]">Preview</em> : null}
-              </label>
-            ) : null}
             <button type="button" className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] border border-[#dce6f2] bg-white px-4 text-sm font-semibold text-[#17324b] shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-[#c9d8e8]">
               <Download size={16} />
               Export Report

@@ -25,11 +25,6 @@ async function main() {
     const rawId = '11111111-1111-4111-8111-111111111111'
     const markup = render(BridgeCommandCenterDashboard, {
       profile: { name: 'John Smith', organisationName: 'Bond Originator' },
-      role: 'developer',
-      personaOptions: [
-        { value: 'developer', label: 'Developer' },
-        { value: 'agent', label: 'Agent' },
-      ],
       rows: [
         {
           transaction: {
@@ -63,6 +58,8 @@ async function main() {
 
     assert.match(markup, /Welcome back, John Smith/)
     assert.match(markup, /Export Report/)
+    assert.doesNotMatch(markup, /<select/)
+    assert.doesNotMatch(markup, /Preview/)
     assert.doesNotMatch(markup, /Create Application/)
 
     const kpiOrder = [
@@ -81,7 +78,7 @@ async function main() {
     assert.match(markup, /files tracked/)
 
     assert.match(markup, /Transaction Pipeline/)
-    assert.match(markup, /New Leads/)
+    assert.match(markup, /Buyer Leads/)
     assert.match(markup, /OTP Signed/)
     assert.match(markup, /Finance/)
     assert.match(markup, /Attorney/)
@@ -107,10 +104,12 @@ async function main() {
     assert.doesNotMatch(markup, new RegExp(rawId))
 
     const fallbackMarkup = render(BridgeCommandCenterDashboard, {})
-    assert.match(fallbackMarkup, /148/)
+    assert.match(fallbackMarkup, /Welcome back, John/)
+    assert.match(fallbackMarkup, /Active Transactions/)
     assert.match(fallbackMarkup, /Registration Pipeline Value/)
-    assert.match(fallbackMarkup, /82/)
-    assert.match(fallbackMarkup, /Bond approved by Nedbank/)
+    assert.match(fallbackMarkup, /R0/)
+    assert.doesNotMatch(fallbackMarkup, /<select/)
+    assert.doesNotMatch(fallbackMarkup, /Bond approved by Nedbank/)
 
     console.log('BridgeCommandCenterDashboard component tests passed')
   } finally {

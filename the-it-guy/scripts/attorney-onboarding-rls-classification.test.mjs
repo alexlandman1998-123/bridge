@@ -123,6 +123,16 @@ try {
   )
   assert.match(
     attorneyFirmServiceSource,
+    /uploadToStorageCandidateBuckets/,
+    'Attorney logo uploads should use the shared storage fallback helper.',
+  )
+  assert.match(
+    attorneyFirmServiceSource,
+    /accessDeniedCode:\s*'attorney_branding_storage_rls'/,
+    'Attorney logo uploads should only show storage-refresh guidance after every bucket candidate fails.',
+  )
+  assert.match(
+    attorneyFirmServiceSource,
     /resolvedUrl: publicUrl \|\| signedUrl/,
     'Attorney logo uploads should prefer durable public URLs over expiring signed URLs.',
   )

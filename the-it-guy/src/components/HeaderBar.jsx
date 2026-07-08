@@ -412,7 +412,7 @@ function HeaderBar({ onLogout, user }) {
   const navigate = useNavigate()
   const location = useLocation()
   const workspaceContext = useWorkspace()
-  const { role, rolePreviewActive, setActivePersona, personaOptions, agencyWorkflowMode } = workspaceContext
+  const { role, agencyWorkflowMode } = workspaceContext
   const [open, setOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [notificationState, setNotificationState] = useState({
@@ -643,8 +643,6 @@ function HeaderBar({ onLogout, user }) {
     location.pathname === '/settings/legal-templates' ||
     location.pathname === '/settings/signing-templates' ||
     isAttorneyMatterWorkspaceRoute
-  const isAgentWorkspaceRole = role === 'agent' || role === 'principal' || role === 'headquarters'
-  const showPersonaSwitcher = role !== 'bond_originator' && !isAgentWorkspaceRole && !isAgentsDirectoryRoute
   const unreadDisplay = notificationState.unreadCount > 99 ? '99+' : String(notificationState.unreadCount || 0)
   const isClientsWorkspaceRoute = location.pathname === '/clients' || location.pathname === '/bond/clients'
   const isAttorneyDashboardRoute = role === 'attorney' && location.pathname === '/attorney/dashboard'
@@ -888,30 +886,6 @@ function HeaderBar({ onLogout, user }) {
         ) : null}
 
         <div className="ui-shell-actions ui-shell-actions-premium">
-          {showPersonaSwitcher ? (
-            <div
-              className="ui-shell-role-switch ui-shell-role-switch-premium min-h-[44px] min-w-[196px] shrink-0"
-              aria-label="Active persona"
-            >
-              <span>View</span>
-              <select
-                className="flex-1"
-                value={role}
-                onChange={(event) => {
-                  setActivePersona(event.target.value)
-                  navigate('/dashboard')
-                }}
-              >
-                {personaOptions.map((option) => (
-                  <option value={option.value} key={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              {rolePreviewActive ? <em>Preview</em> : null}
-            </div>
-          ) : null}
-
           {showPrincipalDashboardHeaderControls ? (
             <div className="ui-shell-dashboard-filters" aria-label="Dashboard filters">
               <HeaderFilterSelect
@@ -974,30 +948,6 @@ function HeaderBar({ onLogout, user }) {
 
       <div className="ui-shell-actions">
         {!hideQuickCreateInHeader ? <QuickCreateDropdown /> : null}
-
-        {showPersonaSwitcher ? (
-          <div
-            className="ui-shell-role-switch min-h-[42px] min-w-[212px] shrink-0"
-            aria-label="Active persona"
-          >
-            <span>View</span>
-            <select
-              className="flex-1"
-              value={role}
-              onChange={(event) => {
-                setActivePersona(event.target.value)
-                navigate('/dashboard')
-              }}
-            >
-              {personaOptions.map((option) => (
-                <option value={option.value} key={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            {rolePreviewActive ? <em>Preview</em> : null}
-          </div>
-        ) : null}
 
         {!isClientRole && !hideSearchInHeader ? (
           <div

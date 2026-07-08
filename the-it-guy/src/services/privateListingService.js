@@ -24,6 +24,7 @@ import {
 } from '../lib/privateListingRequirementEngine'
 import { DOCUMENTS_BUCKET_CANDIDATES, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
+import { uploadToStorageCandidateBuckets } from '../lib/storageFallbacks'
 import {
   normalizeListingSource,
   normalizePropertyCategory,
@@ -715,19 +716,15 @@ function isStorageBucketNotFoundError(error) {
 }
 
 async function uploadToPrivateListingDocumentsBucket(client, filePath, file, options = undefined) {
-  let lastError = null
-  for (const bucketName of DOCUMENTS_BUCKET_CANDIDATES) {
-    const { error } = await client.storage.from(bucketName).upload(filePath, file, options)
-    if (!error) return bucketName
-    lastError = error
-    if (isStorageBucketNotFoundError(error)) continue
-    throw error
-  }
-  const error = new Error(
-    `Storage bucket not found for seller document upload. Checked: ${DOCUMENTS_BUCKET_CANDIDATES.join(', ')}.`,
-  )
-  error.cause = lastError
-  throw error
+  const { bucket } = await uploadToStorageCandidateBuckets({
+    bucketCandidates: DOCUMENTS_BUCKET_CANDIDATES,
+    upload: (bucketName) => client.storage.from(bucketName).upload(filePath, file, options),
+    missingBucketMessage: `Storage bucket not found for seller document upload. Checked: ${DOCUMENTS_BUCKET_CANDIDATES.join(', ')}.`,
+    accessDeniedMessage: 'Seller document storage is not ready yet. Please retry after storage access is refreshed.',
+    accessDeniedCode: 'seller_document_storage_access_not_ready',
+    genericMessage: 'Unable to upload seller document.',
+  })
+  return bucket
 }
 
 async function createPrivateListingDocumentSignedUrl(client, filePath, expiresInSeconds = 120) {

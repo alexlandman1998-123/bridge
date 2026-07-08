@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { updateUserProfile } from '../lib/api'
 import { useAuthSession } from './AuthSessionContext'
 import { deriveOnboardingSetupState } from '../lib/onboardingRouting'
-import { APP_ROLE_LABELS, DEFAULT_APP_ROLE, INTERNAL_APP_ROLES, normalizeAppRole } from '../lib/roles'
+import { DEFAULT_APP_ROLE, normalizeAppRole } from '../lib/roles'
 import { can, canAll, canAny, createPermissionResolver, getPermissionScope } from '../auth/permissions/permissionResolver'
 import { completeOnboarding } from '../services/onboarding/onboardingEngine'
 
@@ -216,12 +216,8 @@ export function WorkspaceProvider({ children }) {
       allWorkspace: UNRESOLVED_WORKSPACE,
       role,
       baseRole,
-      rolePreviewActive: false,
-      activePersona: role,
-      setActivePersona: () => {},
       agencyWorkflowMode,
       setAgencyWorkflowMode,
-      personaOptions: INTERNAL_APP_ROLES.map((item) => ({ value: item, label: APP_ROLE_LABELS[item] || item })),
       profile,
       signupIntent,
       onboardingState,

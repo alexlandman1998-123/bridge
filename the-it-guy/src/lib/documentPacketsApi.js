@@ -6,6 +6,7 @@ import {
   resolveMandateSpouseRequirementFromFields,
 } from './mandateSignatureRules'
 import { DOCUMENTS_BUCKET_CANDIDATES, LEGAL_TEMPLATES_BUCKET_CANDIDATES, supabase } from './supabaseClient'
+import { uploadToStorageCandidateBuckets } from './storageFallbacks'
 import { linkPacketToRequirement } from '../services/documents/canonicalDocumentLifecycleService'
 
 export const DOCUMENT_PACKET_TYPES = ['otp', 'mandate', 'addendum', 'supporting_legal', 'custom', 'commercial_sale', 'commercial_lease']
@@ -328,15 +329,6 @@ function isPermissionDeniedError(error) {
   const message = normalizeText(error?.message).toLowerCase()
   const details = normalizeText(error?.details).toLowerCase()
   return code === '42501' || message.includes('row-level security') || details.includes('row-level security')
-}
-
-function isStorageBucketMissingError(error) {
-  const code = normalizeText(error?.code).toLowerCase()
-  const message = normalizeText(error?.message).toLowerCase()
-  return (
-    code === 'bucket_not_found' ||
-    (message.includes('bucket') && (message.includes('not found') || message.includes('does not exist')))
-  )
 }
 
 function normalizeBoolean(value, fallback = false) {
@@ -1092,36 +1084,19 @@ export async function uploadDocumentPacketTemplateAsset({
   const safeVersionTag = normalizeStorageSafeName(versionTag, 'v1')
   const objectPath = `organisations/${context.organisationId}/${normalizedModuleType}/${normalizedPacketType}/${safeTemplateKey}/${safeVersionTag}/${Date.now()}-${normalizeStorageSafeName(selectedFile.name, `${normalizedPacketType}.docx`)}`
 
-  let uploadedBucket = ''
-  let lastError = null
-  for (const bucketName of LEGAL_TEMPLATES_BUCKET_CANDIDATES) {
-    const { error } = await client.storage.from(bucketName).upload(objectPath, selectedFile, {
-      upsert: true,
-      cacheControl: '3600',
-      contentType: selectedFile.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    })
-    if (!error) {
-      uploadedBucket = bucketName
-      lastError = null
-      break
-    }
-
-    if (isStorageBucketMissingError(error)) {
-      lastError = error
-      continue
-    }
-
-    throw error
-  }
-
-  if (!uploadedBucket) {
-    if (lastError) {
-      throw new Error(
-        `Unable to upload legal template. Checked buckets: ${LEGAL_TEMPLATES_BUCKET_CANDIDATES.join(', ')}.`,
-      )
-    }
-    throw new Error('Unable to upload legal template.')
-  }
+  const { bucket: uploadedBucket } = await uploadToStorageCandidateBuckets({
+    bucketCandidates: LEGAL_TEMPLATES_BUCKET_CANDIDATES,
+    upload: (bucketName) =>
+      client.storage.from(bucketName).upload(objectPath, selectedFile, {
+        upsert: true,
+        cacheControl: '3600',
+        contentType: selectedFile.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }),
+    missingBucketMessage: `Unable to upload legal template. Checked buckets: ${LEGAL_TEMPLATES_BUCKET_CANDIDATES.join(', ')}.`,
+    accessDeniedMessage: 'Legal template storage is not ready yet. Please retry after storage access is refreshed.',
+    accessDeniedCode: 'legal_template_storage_access_not_ready',
+    genericMessage: 'Unable to upload legal template.',
+  })
 
   const signedResult = await client.storage.from(uploadedBucket).createSignedUrl(objectPath, 60 * 60 * 24 * 30)
   const signedUrl = normalizeText(signedResult?.data?.signedUrl)
@@ -1859,29 +1834,19 @@ export async function uploadFinalSignedPacketArtifact({
   const relatedSegment = normalizeStorageSafeName(packetRecord?.lead_id || packetRecord?.transaction_id || packetId, 'packet')
   const versionSegment = packetVersionId ? `${normalizeStorageSafeName(packetVersionId, 'version')}-` : ''
   const objectPath = `mandates/${organisationSegment}/${relatedSegment}/signed/${Date.now()}-${versionSegment}${safeName}`
-  let uploadedBucket = ''
-  let lastError = null
-
-  for (const bucketName of FINAL_SIGNED_BUCKET_CANDIDATES) {
-    const { error } = await client.storage.from(bucketName).upload(objectPath, file, {
-      cacheControl: '3600',
-      upsert: false,
-      contentType: file.type || 'application/pdf',
-    })
-    if (!error) {
-      uploadedBucket = bucketName
-      break
-    }
-    if (isStorageBucketMissingError(error)) {
-      lastError = error
-      continue
-    }
-    throw error
-  }
-
-  if (!uploadedBucket) {
-    throw lastError || new Error('Unable to upload final signed document.')
-  }
+  const { bucket: uploadedBucket } = await uploadToStorageCandidateBuckets({
+    bucketCandidates: FINAL_SIGNED_BUCKET_CANDIDATES,
+    upload: (bucketName) =>
+      client.storage.from(bucketName).upload(objectPath, file, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: file.type || 'application/pdf',
+      }),
+    missingBucketMessage: `Unable to upload final signed document. Checked buckets: ${FINAL_SIGNED_BUCKET_CANDIDATES.join(', ')}.`,
+    accessDeniedMessage: 'Final signed document storage is not ready yet. Please retry after storage access is refreshed.',
+    accessDeniedCode: 'final_signed_document_storage_access_not_ready',
+    genericMessage: 'Unable to upload final signed document.',
+  })
 
   const signedResult = await client.storage.from(uploadedBucket).createSignedUrl(objectPath, 60 * 60 * 24 * 30)
 

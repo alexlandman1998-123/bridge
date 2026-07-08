@@ -7,7 +7,6 @@ import {
   CircleDollarSign,
   CalendarDays,
   FileCheck2,
-  FileText,
   Flag,
   HeartPulse,
   Landmark,
@@ -20,7 +19,7 @@ import {
   UsersRound,
   WalletCards,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { createElement, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
@@ -161,22 +160,6 @@ function DashboardIntro({ profile = {}, stats = {} }) {
   )
 }
 
-function MiniTrend({ tone = 'green' }) {
-  const stroke = tone === 'amber' ? '#f59e0b' : '#1b8065'
-  return (
-    <svg viewBox="0 0 88 30" aria-hidden="true" className="h-8 w-20">
-      <polyline
-        points="2,22 14,19 25,23 37,14 49,17 61,9 74,12 86,5"
-        fill="none"
-        stroke={stroke}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="2.5"
-      />
-    </svg>
-  )
-}
-
 function KpiCards({ stats = {}, performance = {} }) {
   const cards = [
     {
@@ -212,14 +195,6 @@ function KpiCards({ stats = {}, performance = {} }) {
       tone: 'green',
     },
     {
-      key: 'documents',
-      label: 'Document Requests',
-      value: formatNumber(stats.documentRequestsOutstanding),
-      helper: 'Outstanding',
-      icon: FileText,
-      tone: 'amber',
-    },
-    {
       key: 'revenue',
       label: 'Revenue Pipeline',
       value: formatCurrency(stats.revenuePipelineValue),
@@ -230,16 +205,15 @@ function KpiCards({ stats = {}, performance = {} }) {
   ]
 
   return (
-    <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+    <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
       {cards.map((card) => {
         const Icon = card.icon
         return (
           <article key={card.key} className={`${surfaceClass} min-h-[146px] p-4`}>
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
               <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-[#e5f1ed] text-[#1c6b55]">
                 <Icon size={18} />
               </span>
-              <MiniTrend tone={card.tone} />
             </div>
             <p className="mt-4 text-sm font-semibold text-slate-800">{card.label}</p>
             <strong className="mt-2 block text-3xl font-semibold leading-none tracking-[-0.03em] text-slate-950">{card.value}</strong>
@@ -267,7 +241,6 @@ function NeedsAttentionSection({ metrics = [] }) {
 
   return (
     <section className="grid gap-3">
-      <SectionHeading title="Needs Attention" actionHref="/attorney/matters/delayed" actionLabel="View all" />
       <div className={`${surfaceClass} grid overflow-hidden sm:grid-cols-2 xl:grid-cols-6`}>
         {rows.map((item) => {
           const Icon = iconMap[item.key] || AlertTriangle
@@ -367,13 +340,13 @@ function ActiveMatterStrip({ lanes = {} }) {
   )
 }
 
-function MatterTableCard({ title, count, rows = [], href, emptyLabel, icon: Icon }) {
+function MatterTableCard({ title, count, rows = [], href, emptyLabel, icon }) {
   return (
     <article className={`${surfaceClass} flex min-h-[304px] flex-col p-4`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-[#e5f1ed] text-[#1c6b55]">
-            <Icon size={15} />
+            {icon ? createElement(icon, { size: 15 }) : null}
           </span>
           <div className="min-w-0">
             <h3 className="truncate text-sm font-semibold text-slate-950">{title}</h3>
@@ -464,12 +437,12 @@ function ActiveMattersByType({ lanes = {} }) {
   )
 }
 
-function AnalyticsCardHeader({ icon: Icon, title, subtitle, actionHref, actionLabel = 'View report' }) {
+function AnalyticsCardHeader({ icon, title, subtitle, actionHref, actionLabel = 'View report' }) {
   return (
     <div className="flex items-start justify-between gap-4">
       <div className="flex min-w-0 items-start gap-3">
         <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl bg-[#e5f1ed] text-[#0f684f]">
-          <Icon size={21} />
+          {icon ? createElement(icon, { size: 21 }) : null}
         </span>
         <span className="min-w-0">
           <h2 className="text-xl font-semibold tracking-[-0.02em] text-slate-950">{title}</h2>
@@ -867,8 +840,8 @@ function AttorneyDashboardPage() {
 
       <DashboardIntro profile={profile} stats={stats} />
       <KpiCards stats={stats} performance={performance} />
-      <NeedsAttentionSection metrics={dashboard.attentionMetrics || []} />
       <ActiveMatterStrip lanes={lanes} />
+      <NeedsAttentionSection metrics={dashboard.attentionMetrics || []} />
       <ActiveMattersByType lanes={lanes} />
       <AttorneyAnalyticsSection
         partnerAnalytics={dashboard.partnerAnalytics || EMPTY_DASHBOARD.partnerAnalytics}

@@ -1,5 +1,6 @@
 import { fetchOrganisationSettings, listOrganisationUsers, updateWorkflowSettings } from '../../../lib/settingsApi'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../../lib/supabaseClient'
+import { uploadToStorageCandidateBuckets } from '../../../lib/storageFallbacks'
 import { recordSecurityAuditEvent } from '../../../services/auditLogService'
 import { createBranch, getBranches } from '../../../services/agencyBranchService'
 import { isActiveMembershipStatus, normalizeMembershipStatus } from '../../../constants/membershipStatuses'
@@ -2886,20 +2887,20 @@ async function uploadCommercialFile({ file, organisationId, entityType, entityId
     entityId,
     fileName: file.name || 'commercial-document',
   })
-  const checkedBuckets = []
-
-  for (const bucket of COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES) {
-    checkedBuckets.push(bucket)
-    const { error } = await supabase.storage.from(bucket).upload(objectPath, file, {
-      cacheControl: '3600',
-      contentType: file.type || undefined,
-      upsert: false,
-    })
-    if (!error) return { bucket, path: objectPath }
-    if (!/bucket|not found|does not exist/i.test(String(error.message || ''))) throw error
-  }
-
-  throw new Error(`Commercial document storage is not configured. Checked: ${checkedBuckets.join(', ')}.`)
+  const { bucket } = await uploadToStorageCandidateBuckets({
+    bucketCandidates: COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES,
+    upload: (bucketName) =>
+      supabase.storage.from(bucketName).upload(objectPath, file, {
+        cacheControl: '3600',
+        contentType: file.type || undefined,
+        upsert: false,
+      }),
+    missingBucketMessage: `Commercial document storage is not configured. Checked: ${COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES.join(', ')}.`,
+    accessDeniedMessage: 'Commercial document storage is not ready yet. Please retry after storage access is refreshed.',
+    accessDeniedCode: 'commercial_document_storage_access_not_ready',
+    genericMessage: 'Unable to upload commercial document.',
+  })
+  return { bucket, path: objectPath }
 }
 
 async function createCommercialActivity(payload = {}) {

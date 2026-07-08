@@ -1700,7 +1700,7 @@ function DeveloperLandingCommandCenter({ model, onNavigate = () => {} }) {
 function Dashboard() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { workspace, role, profile, personaOptions, setActivePersona, rolePreviewActive, currentMembership } = useWorkspace()
+  const { workspace, role, profile, currentMembership } = useWorkspace()
   const {
     organisation,
     loading: organisationLoading,
@@ -4649,13 +4649,6 @@ function renderActiveTransactionsBlock({
             <BridgeCommandCenterDashboard
               rows={rows}
               profile={profile}
-              role={role}
-              personaOptions={personaOptions}
-              rolePreviewActive={rolePreviewActive}
-              onPersonaChange={(nextRole) => {
-                setActivePersona(nextRole)
-                navigate('/dashboard')
-              }}
               onNavigate={(target) => navigate(target)}
             />
           ) : null}

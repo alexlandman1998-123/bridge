@@ -11,10 +11,9 @@ const requiredPageCopy = [
   'Awaiting Client',
   'Registrations',
   'Lodgements',
-  'Document Requests',
   'Revenue Pipeline',
-  'Needs Attention',
   'ActiveMatterStrip',
+  'NeedsAttentionSection',
   'No active matters yet.',
   'Transfer Matters',
   'Bond Matters',
@@ -43,6 +42,27 @@ const requiredPageCopy = [
 for (const expected of requiredPageCopy) {
   assert.ok(pageSource.includes(expected), `Attorney dashboard should render "${expected}".`)
 }
+
+assert.ok(
+  pageSource.indexOf('<ActiveMatterStrip lanes={lanes} />') < pageSource.indexOf('<NeedsAttentionSection metrics={dashboard.attentionMetrics || []} />'),
+  'Attorney dashboard should render Active Matters before the needs-attention metrics strip.',
+)
+assert.ok(
+  !pageSource.includes('<SectionHeading title="Needs Attention"'),
+  'Attorney dashboard should not render the top Needs Attention heading above the metrics strip.',
+)
+assert.ok(
+  !pageSource.includes("label: 'Document Requests'"),
+  'Attorney dashboard header should not render Document Requests as a KPI card.',
+)
+assert.ok(
+  !pageSource.includes('MiniTrend'),
+  'Attorney dashboard KPI cards should not render decorative static trend lines.',
+)
+assert.ok(
+  pageSource.includes('2xl:grid-cols-5'),
+  'Attorney dashboard KPI cards should fill the header row as five columns on wide screens.',
+)
 
 const removedPageCopy = [
   'Conveyancing Matter Control Centre',

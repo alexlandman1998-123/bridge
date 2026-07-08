@@ -3693,35 +3693,6 @@
     --tw-ring-color: var(--color-ring-primary);
   }
 
-  .ui-shell-role-switch {
-    @apply inline-flex min-h-[42px] min-w-0 items-center gap-2 rounded-control border border-borderDefault bg-surface px-4 py-2 text-secondary text-textStrong;
-    box-shadow: var(--shadow-soft-edge);
-    flex: 0 1 auto;
-    white-space: nowrap;
-  }
-
-  .ui-shell-role-switch span {
-    @apply text-label font-semibold uppercase text-textMuted;
-  }
-
-  .ui-shell-role-switch select {
-    @apply min-w-[132px] border-0 bg-transparent px-0 py-0 text-secondary font-semibold text-textStrong outline-none;
-  }
-
-  .ui-shell-role-switch em {
-    @apply not-italic text-helper font-semibold text-info;
-  }
-
-  .ui-shell-role-switch-premium {
-    border-color: rgba(208, 220, 232, 0.9);
-    background: rgba(255, 255, 255, 0.78);
-    box-shadow: 0 12px 28px rgba(25, 46, 69, 0.065);
-    flex: 0 1 270px;
-    min-width: 180px;
-    min-height: 44px;
-    border-radius: 14px;
-  }
-
   .ui-shell-search {
     @apply flex min-h-[42px] min-w-[220px] flex-1 items-center gap-3 rounded-control border border-borderDefault bg-surface px-4;
     box-shadow: var(--shadow-soft-edge);
@@ -3861,8 +3832,7 @@
       flex-wrap: wrap;
     }
 
-    .ui-shell-search-premium,
-    .ui-shell-role-switch-premium {
+    .ui-shell-search-premium {
       width: 100%;
       min-width: 0;
       max-width: none;
@@ -5812,10 +5782,6 @@ body.sidebar-compact .ui-main-region {
     max-width: none;
   }
 
-  .ui-shell-role-switch {
-    flex: 1 1 220px;
-  }
-
   .ui-shell-create-button {
     flex: 0 0 auto;
   }
@@ -5838,8 +5804,7 @@ body.sidebar-compact .ui-main-region {
     margin-left: 0;
   }
 
-  .ui-shell-search,
-  .ui-shell-role-switch {
+  .ui-shell-search {
     min-width: 0 !important;
     max-width: none !important;
   }
@@ -5858,9 +5823,6 @@ body.sidebar-compact .ui-main-region {
     flex-basis: 100%;
   }
 
-  .ui-shell-role-switch {
-    flex: 1 1 auto;
-  }
 }
 
 /* Auth pages are rendered before the app shell, so keep their critical styles

@@ -14,18 +14,18 @@ assert.equal(
 
 assert.match(
   source,
-  /const isAgentWorkspaceRole = role === 'agent' \|\| role === 'principal' \|\| role === 'headquarters'/,
-  'header should identify agent workspace roles',
+  /const \{ role, agencyWorkflowMode \} = workspaceContext/,
+  'header should only read the active role fields it needs',
 )
-assert.match(
+assert.doesNotMatch(
   source,
-  /const showPersonaSwitcher = role !== 'bond_originator' && !isAgentWorkspaceRole && !isAgentsDirectoryRoute/,
-  'header should hide the persona switcher in agent workspaces',
+  /showPersonaSwitcher|setActivePersona|personaOptions|rolePreviewActive/,
+  'header should not keep persona-switcher state or visibility logic',
 )
-assert.match(
+assert.doesNotMatch(
   source,
-  /\{showPersonaSwitcher \? \(\s*<div\s+className="ui-shell-role-switch ui-shell-role-switch-premium/,
-  'premium headers should also respect the persona switcher visibility rule',
+  /ui-shell-role-switch|aria-label="Active persona"|<span>View<\/span>/,
+  'header should not render the View role switcher',
 )
 
-console.log('header-persona-switcher tests passed')
+console.log('header persona switcher removal tests passed')

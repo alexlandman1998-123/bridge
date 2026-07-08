@@ -6,6 +6,7 @@ import {
   invokeEdgeFunction,
   supabase,
 } from './supabaseClient'
+import { uploadToStorageCandidateBuckets } from './storageFallbacks'
 import {
   MAIN_PROCESS_STAGES,
   STAGES,
@@ -15554,33 +15555,17 @@ function isStorageBucketNotFoundError(error) {
 }
 
 async function uploadToDocumentsBucket(client, filePath, file, options = undefined) {
-  let missingBucketDetected = false
-  let lastError = null
-
-  for (const bucketName of DOCUMENTS_BUCKET_CANDIDATES) {
-    const { error } = await client.storage.from(bucketName).upload(filePath, file, options)
-    if (!error) {
-      return bucketName
-    }
-
-    if (isStorageBucketNotFoundError(error)) {
-      missingBucketDetected = true
-      lastError = error
-      continue
-    }
-
-    throw error
-  }
-
-  if (missingBucketDetected) {
-    throw new Error(
-      `Storage bucket not found for document upload. Checked: ${DOCUMENTS_BUCKET_CANDIDATES.join(
-        ', ',
-      )}. Configure VITE_SUPABASE_DOCUMENTS_BUCKET (or legacy VITE_SUPABASE_DOCUMENT_BUCKET) to the correct bucket name.`,
-    )
-  }
-
-  throw lastError || new Error('Unable to upload document.')
+  const { bucket } = await uploadToStorageCandidateBuckets({
+    bucketCandidates: DOCUMENTS_BUCKET_CANDIDATES,
+    upload: (bucketName) => client.storage.from(bucketName).upload(filePath, file, options),
+    missingBucketMessage: `Storage bucket not found for document upload. Checked: ${DOCUMENTS_BUCKET_CANDIDATES.join(
+      ', ',
+    )}. Configure VITE_SUPABASE_DOCUMENTS_BUCKET (or legacy VITE_SUPABASE_DOCUMENT_BUCKET) to the correct bucket name.`,
+    accessDeniedMessage: 'Document storage is not ready yet. Please retry after storage access is refreshed.',
+    accessDeniedCode: 'document_storage_access_not_ready',
+    genericMessage: 'Unable to upload document.',
+  })
+  return bucket
 }
 
 async function getSignedUrl(filePath) {

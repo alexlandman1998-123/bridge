@@ -11,6 +11,7 @@ import {
 } from '../lib/attorneyDemoContext'
 import { BRANDING_BUCKET_CANDIDATES } from '../lib/supabaseClient'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
+import { uploadToStorageCandidateBuckets } from '../lib/storageFallbacks'
 import {
   DEFAULT_ATTORNEY_DEPARTMENTS,
   getAuthenticatedUser,
@@ -135,16 +136,6 @@ function normalizeFileExtension(fileName = '', fallback = 'png') {
   const extension = normalized.slice(dotIndex + 1).replace(/[^a-z0-9]/g, '')
   if (!extension) return fallback
   return extension
-}
-
-function isMissingStorageBucketError(error) {
-  const message = String(error?.message || '').toLowerCase()
-  return (
-    String(error?.statusCode || '') === '404' ||
-    String(error?.status || '') === '404' ||
-    message.includes('bucket') ||
-    message.includes('not found')
-  )
 }
 
 function isMissingRpcError(error, rpcName = '') {
@@ -471,42 +462,19 @@ export async function uploadAttorneyFirmBrandingAsset({ file, variant = 'light' 
   const extension = normalizeFileExtension(selectedFile.name, 'png')
   const objectPath = `attorney-firms/${user.id}/branding/${safeVariant}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${extension}`
 
-  let uploadedBucket = ''
-  let latestBucketError = null
-
-  for (const bucketName of ATTORNEY_BRANDING_BUCKET_CANDIDATES) {
-    const uploadResult = await client.storage.from(bucketName).upload(objectPath, selectedFile, {
-      upsert: true,
-      cacheControl: '3600',
-      contentType: selectedFile.type || undefined,
-    })
-    if (!uploadResult.error) {
-      uploadedBucket = bucketName
-      latestBucketError = null
-      break
-    }
-    if (isMissingStorageBucketError(uploadResult.error)) {
-      latestBucketError = uploadResult.error
-      continue
-    }
-    if (isPermissionDeniedError(uploadResult.error)) {
-      const storageAccessError = new Error(
-        'Logo storage is not ready for attorney firm branding yet. Please retry after storage access is refreshed.',
-      )
-      storageAccessError.code = uploadResult.error.code || 'attorney_branding_storage_rls'
-      storageAccessError.cause = uploadResult.error
-      throw storageAccessError
-    }
-    throw uploadResult.error
-  }
-
-  if (!uploadedBucket) {
-    const checked = ATTORNEY_BRANDING_BUCKET_CANDIDATES.join(', ')
-    if (latestBucketError) {
-      throw new Error(`Unable to upload logo. Checked buckets: ${checked}.`)
-    }
-    throw new Error('Unable to upload logo. Please try again.')
-  }
+  const { bucket: uploadedBucket } = await uploadToStorageCandidateBuckets({
+    bucketCandidates: ATTORNEY_BRANDING_BUCKET_CANDIDATES,
+    upload: (bucketName) =>
+      client.storage.from(bucketName).upload(objectPath, selectedFile, {
+        upsert: true,
+        cacheControl: '3600',
+        contentType: selectedFile.type || undefined,
+      }),
+    missingBucketMessage: `Unable to upload logo. Checked buckets: ${ATTORNEY_BRANDING_BUCKET_CANDIDATES.join(', ')}.`,
+    accessDeniedMessage: 'Logo storage is not ready for attorney firm branding yet. Please retry after storage access is refreshed.',
+    accessDeniedCode: 'attorney_branding_storage_rls',
+    genericMessage: 'Unable to upload logo. Please try again.',
+  })
 
   const signedResult = await client.storage.from(uploadedBucket).createSignedUrl(objectPath, 60 * 60 * 24 * 30)
   const signedUrl = normalizeText(signedResult?.data?.signedUrl)
