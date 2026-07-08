@@ -714,7 +714,7 @@ function resolveBuyerDisplayName({ buyer = null, transaction = null, onboardingF
 }
 
 function getRequirementPartyLabel(requirement = {}) {
-  const normalized = String(requirement?.expectedFromRole || requirement?.requiredFromRole || '').trim().toLowerCase()
+  const normalized = String(requirement?.expectedFromRole || requirement?.requiredFromRole || requirement?.requestedFrom || requirement?.requested_from || '').trim().toLowerCase()
   if (!normalized || normalized === 'client' || normalized === 'buyer') return 'Buyer'
   if (normalized === 'seller') return 'Seller'
   if (normalized === 'agent') return 'Agent'
@@ -1442,6 +1442,783 @@ function buildRoleWorkspaceDocumentAction(workflow = {}) {
   }
 }
 
+function getAttorneyCoordinationWorkflowItems(workflows = []) {
+  return workflows
+    .filter((workflow) => workflow?.required)
+    .flatMap((workflow) => {
+      const summary = workflow?.lane?.coordinationSummary || {}
+      const items = Array.isArray(summary.items) ? summary.items : []
+      return items.map((item) => ({
+        key: `${workflow.key}-${item.id}`,
+        workflow,
+        item,
+        summary,
+      }))
+    })
+    .sort((left, right) => {
+      const priority = (entry) => {
+        const item = entry.item || {}
+        if (item.escalationNeeded) return 0
+        if (item.status === 'blocked') return 1
+        if (item.status === 'waiting' && !item.actioned) return 2
+        if (item.status === 'waiting') return 3
+        if (item.escalated) return 4
+        return 5
+      }
+      return priority(left) - priority(right)
+    })
+}
+
+function getAttorneyCoordinationFollowUpItems(workflows = []) {
+  return workflows
+    .filter((workflow) => workflow?.required)
+    .flatMap((workflow) => {
+      const summary = workflow?.lane?.followUpSummary || {}
+      const items = Array.isArray(summary.items) ? summary.items : []
+      return items.map((item) => ({
+        key: `${workflow.key}-${item.id}`,
+        workflow,
+        item,
+        summary,
+      }))
+    })
+    .sort((left, right) => {
+      const priority = (entry) => {
+        const status = String(entry?.item?.status || '').trim().toLowerCase()
+        if (status === 'overdue' || status === 'needs_correction') return 0
+        if (status === 'due_today' || status === 'urgent') return 1
+        if (status === 'due_soon' || status === 'review_pending') return 2
+        if (status === 'open') return 3
+        return 4
+      }
+      return priority(left) - priority(right)
+    })
+}
+
+function getAttorneyCoordinationOverview(workflows = []) {
+  const activeWorkflows = workflows.filter((workflow) => workflow?.required)
+  const coordinationCounts = activeWorkflows.reduce((accumulator, workflow) => {
+    const counts = workflow?.lane?.coordinationSummary?.counts || {}
+    accumulator.total += countNumber(counts.total)
+    accumulator.ready += countNumber(counts.ready)
+    accumulator.waiting += countNumber(counts.waiting)
+    accumulator.blocked += countNumber(counts.blocked)
+    accumulator.actioned += countNumber(counts.actioned)
+    accumulator.escalationNeeded += countNumber(counts.escalationNeeded)
+    accumulator.escalationDueToday += countNumber(counts.escalationDueToday)
+    accumulator.escalated += countNumber(counts.escalated)
+    return accumulator
+  }, {
+    total: 0,
+    ready: 0,
+    waiting: 0,
+    blocked: 0,
+    actioned: 0,
+    escalationNeeded: 0,
+    escalationDueToday: 0,
+    escalated: 0,
+  })
+  const followUpCounts = activeWorkflows.reduce((accumulator, workflow) => {
+    const counts = workflow?.lane?.followUpSummary?.counts || {}
+    accumulator.total += countNumber(counts.total)
+    accumulator.urgent += countNumber(counts.urgent)
+    accumulator.needsCorrection += countNumber(counts.needsCorrection)
+    accumulator.overdue += countNumber(counts.overdue)
+    accumulator.dueToday += countNumber(counts.dueToday)
+    accumulator.dueSoon += countNumber(counts.dueSoon)
+    accumulator.actioned += countNumber(counts.actioned)
+    return accumulator
+  }, {
+    total: 0,
+    urgent: 0,
+    needsCorrection: 0,
+    overdue: 0,
+    dueToday: 0,
+    dueSoon: 0,
+    actioned: 0,
+  })
+  const followUpAttention = followUpCounts.urgent + followUpCounts.needsCorrection + followUpCounts.overdue + followUpCounts.dueToday + followUpCounts.dueSoon
+  const health = coordinationCounts.escalationNeeded || coordinationCounts.escalationDueToday || followUpCounts.overdue || followUpCounts.needsCorrection
+    ? 'escalation'
+    : coordinationCounts.blocked
+      ? 'blocked'
+      : coordinationCounts.waiting || followUpAttention
+        ? 'waiting'
+        : coordinationCounts.total
+          ? 'ready'
+          : 'clear'
+
+  return {
+    activeLaneCount: activeWorkflows.length,
+    coordinationCounts,
+    followUpCounts,
+    followUpAttention,
+    health,
+    readyPercent: coordinationCounts.total ? Math.round((coordinationCounts.ready / coordinationCounts.total) * 100) : 100,
+  }
+}
+
+function getAttorneyQueuePriorityMeta(item = {}) {
+  const priority = String(item.priority || '').trim().toLowerCase()
+  const status = String(item.status || '').trim().toLowerCase()
+  if (item.kind === 'coordination' && (item.escalationNeeded || status === 'escalation')) return WORKFLOW_STATUS_META.blocked
+  if (['critical', 'high', 'urgent', 'blocked', 'overdue', 'needs_correction'].includes(priority) || ['blocked', 'overdue', 'needs_correction'].includes(status)) {
+    return WORKFLOW_STATUS_META.blocked
+  }
+  if (['medium', 'required', 'waiting', 'due_today', 'due_soon', 'review_pending'].includes(priority) || ['waiting', 'due_today', 'due_soon', 'review_pending'].includes(status)) {
+    return WORKFLOW_STATUS_META.waiting
+  }
+  return WORKFLOW_STATUS_META.in_progress
+}
+
+function getAttorneyQueueRank(item = {}) {
+  const priority = String(item.priority || '').trim().toLowerCase()
+  const status = String(item.status || '').trim().toLowerCase()
+  if (item.kind === 'coordination' && item.escalationNeeded) return 0
+  if (status === 'overdue' || status === 'needs_correction') return 1
+  if (status === 'blocked' || priority === 'critical' || priority === 'high' || priority === 'urgent') return 2
+  if (status === 'due_today' || status === 'review_pending') return 3
+  if (item.kind === 'coordination' && status === 'waiting' && !item.actioned) return 4
+  if (item.kind === 'document') return 5
+  if (status === 'due_soon' || priority === 'medium' || priority === 'required') return 6
+  return 7
+}
+
+function buildAttorneyDailyActionQueueItems(workflows = []) {
+  const items = []
+
+  workflows.filter((workflow) => workflow?.required).forEach((workflow) => {
+    const lane = workflow?.lane || {}
+    const actionSummary = workflow?.actionSummary || {}
+    const primaryAction = actionSummary.primaryNextAction || null
+    if (primaryAction) {
+      items.push({
+        id: `workflow-${workflow.key}-${primaryAction.id || primaryAction.type || primaryAction.label}`,
+        kind: 'workflow',
+        kindLabel: 'Lane action',
+        workflow,
+        lane,
+        title: primaryAction.label || 'Review workflow action',
+        description: primaryAction.description || workflow.nextStep || workflow.summary || '',
+        priority: primaryAction.priority || 'medium',
+        status: lane.laneStatus || workflow.statusKey || 'waiting',
+        action: primaryAction,
+        command: getWorkflowActionCommand(primaryAction, lane),
+      })
+    }
+
+    const documentAction = buildRoleWorkspaceDocumentAction(workflow)
+    if (documentAction) {
+      items.push({
+        id: `document-${workflow.key}-${documentAction.id}`,
+        kind: 'document',
+        kindLabel: 'Missing document',
+        workflow,
+        lane,
+        title: documentAction.label || 'Request missing document',
+        description: documentAction.description || 'Request the next missing document for this legal lane.',
+        priority: documentAction.priority || 'medium',
+        status: 'waiting',
+        action: documentAction,
+        command: getWorkflowActionCommand(documentAction, lane),
+      })
+    }
+  })
+
+  getAttorneyCoordinationWorkflowItems(workflows)
+    .filter((entry) => entry.item?.status !== 'ready' && (!entry.item?.actioned || entry.item?.escalationNeeded))
+    .forEach((entry) => {
+      const workflow = entry.workflow
+      const item = entry.item
+      const lane = workflow?.lane || {}
+      const command = buildAttorneyWorkflowCoordinationCommand(item, {
+        laneKey: entry.summary?.laneKey || lane.laneKey,
+        stageKey: lane.currentStage || lane.summary?.currentStage || '',
+      })
+      items.push({
+        id: `coordination-${entry.key}`,
+        kind: 'coordination',
+        kindLabel: item.escalationNeeded ? 'Escalation' : 'Handoff',
+        workflow,
+        lane,
+        title: item.escalationNeeded ? `Escalate ${item.title}` : item.title,
+        description: item.description || 'Coordinate the linked legal workflow.',
+        priority: item.escalationNeeded || item.status === 'blocked' ? 'high' : 'medium',
+        status: item.escalationNeeded ? 'escalation' : item.status || 'waiting',
+        escalationNeeded: Boolean(item.escalationNeeded),
+        actioned: Boolean(item.actioned),
+        coordinationItem: item,
+        command,
+      })
+    })
+
+  getAttorneyCoordinationFollowUpItems(workflows)
+    .slice(0, 8)
+    .forEach((entry) => {
+      const workflow = entry.workflow
+      const item = entry.item
+      const lane = workflow?.lane || {}
+      const command = buildAttorneyWorkflowFollowUpCommand(item, { laneKey: entry.summary?.laneKey || lane.laneKey })
+      items.push({
+        id: `follow-up-${entry.key}`,
+        kind: 'follow_up',
+        kindLabel: 'Follow-up',
+        workflow,
+        lane,
+        title: item.title || 'Workflow follow-up',
+        description: item.description || 'Follow up on the open workflow item.',
+        priority: item.priority || item.status || 'medium',
+        status: item.status || 'open',
+        dueDate: item.dueDate || '',
+        followUpItem: item,
+        command,
+      })
+    })
+
+  const seen = new Set()
+  return items
+    .filter((item) => {
+      const signature = `${item.kind}:${item.workflow?.key || ''}:${item.title}:${item.status}`
+      if (seen.has(signature)) return false
+      seen.add(signature)
+      return true
+    })
+    .sort((left, right) => getAttorneyQueueRank(left) - getAttorneyQueueRank(right))
+}
+
+function getAttorneyBriefComposerSelection(lane = {}, audience = 'professional') {
+  if (!lane?.laneKey) return null
+  const options = getAttorneyLaneActionOptions(lane)
+  const preferredVisibility = audience === 'client' ? 'client_visible' : 'shared'
+  const preferredAction = audience === 'client'
+    ? options.find((option) => option.clientVisibleAllowed && getAttorneyActionVisibilityOptions(lane, option).some((item) => item.key === preferredVisibility))
+    : options.find((option) => option.key === 'quick_professional_update') ||
+      options.find((option) => getAttorneyActionVisibilityOptions(lane, option).some((item) => item.key === preferredVisibility))
+  if (!preferredAction) return null
+  const visibilityOptions = getAttorneyActionVisibilityOptions(lane, preferredAction)
+  const visibility = visibilityOptions.find((item) => item.key === preferredVisibility)?.key || visibilityOptions[0]?.key || ''
+  if (!visibility) return null
+  return {
+    actionKey: preferredAction.key,
+    updateType: preferredAction.updateType,
+    laneKey: lane.laneKey,
+    visibility,
+  }
+}
+
+function getAttorneyBriefComposerTarget(workflows = [], audience = 'professional') {
+  const activeWorkflows = workflows.filter((workflow) => workflow?.required && workflow?.lane?.laneKey)
+  for (const workflow of activeWorkflows) {
+    const selection = getAttorneyBriefComposerSelection(workflow.lane, audience)
+    if (selection) return { workflow, ...selection }
+  }
+  return null
+}
+
+function formatAttorneyBriefLaneLine(workflow = {}, audience = 'professional') {
+  const content = getAttorneyRoleWorkspaceContent(workflow)
+  const metrics = getRoleWorkspaceMetrics(workflow)
+  const nextStep = workflow.nextStep || 'Workflow review'
+  if (audience === 'client') {
+    const status = workflow.statusLabel || 'In progress'
+    return `${content.roleTitle}: ${status}. Current focus: ${nextStep}.`
+  }
+  const openItems = [
+    metrics.missingData ? `${metrics.missingData} fact${metrics.missingData === 1 ? '' : 's'}` : '',
+    metrics.missingDocuments ? `${metrics.missingDocuments} document${metrics.missingDocuments === 1 ? '' : 's'}` : '',
+    metrics.openSignatures ? `${metrics.openSignatures} signature${metrics.openSignatures === 1 ? '' : 's'}` : '',
+    metrics.blockers ? `${metrics.blockers} blocker${metrics.blockers === 1 ? '' : 's'}` : '',
+  ].filter(Boolean)
+  return `${content.roleTitle}: ${workflow.statusLabel || 'In progress'}, ${workflow.progressPercent || 0}% complete. Next: ${nextStep}. Open: ${openItems.length ? openItems.join(', ') : 'none visible'}.`
+}
+
+function buildAttorneyStatusBrief(workflows = [], audience = 'professional') {
+  const activeWorkflows = workflows.filter((workflow) => workflow?.required)
+  if (!activeWorkflows.length) return ''
+  const overview = getAttorneyCoordinationOverview(workflows)
+  const lines = audience === 'client'
+    ? ['Buyer/seller update:']
+    : ['Professional matter update:']
+
+  activeWorkflows.forEach((workflow) => {
+    lines.push(formatAttorneyBriefLaneLine(workflow, audience))
+  })
+
+  if (audience === 'client') {
+    if (overview.coordinationCounts.blocked || overview.coordinationCounts.waiting || overview.followUpAttention) {
+      lines.push('We are attending to the current workflow items and will share the next update once the linked requirements move forward.')
+    } else {
+      lines.push('No client-facing blockers are visible right now.')
+    }
+  } else {
+    const coordinationParts = [
+      overview.coordinationCounts.waiting ? `${overview.coordinationCounts.waiting} waiting handoff${overview.coordinationCounts.waiting === 1 ? '' : 's'}` : '',
+      overview.coordinationCounts.blocked ? `${overview.coordinationCounts.blocked} blocked handoff${overview.coordinationCounts.blocked === 1 ? '' : 's'}` : '',
+      overview.coordinationCounts.escalationNeeded ? `${overview.coordinationCounts.escalationNeeded} escalation${overview.coordinationCounts.escalationNeeded === 1 ? '' : 's'} due` : '',
+      overview.followUpAttention ? `${overview.followUpAttention} follow-up${overview.followUpAttention === 1 ? '' : 's'} need attention` : '',
+    ].filter(Boolean)
+    lines.push(`Coordination: ${coordinationParts.length ? coordinationParts.join(', ') : 'all visible handoffs clear'}.`)
+  }
+
+  return lines.join('\n')
+}
+
+function getRequirementDisplayLabel(requirement = {}, fallback = 'Requirement') {
+  return requirement.label ||
+    requirement.title ||
+    requirement.name ||
+    requirement.documentType ||
+    requirement.document_type ||
+    requirement.key ||
+    fallback
+}
+
+function getRequirementDescription(requirement = {}, fallback = '') {
+  return requirement.description ||
+    requirement.reason ||
+    requirement.helpText ||
+    requirement.helperText ||
+    requirement.notes ||
+    fallback
+}
+
+function getRequirementStatusDisplay(requirement = {}, fallback = 'Missing') {
+  if (roleWorkspaceRequirementComplete(requirement)) return 'Complete'
+  if (requirement.required === false) return 'Optional'
+  return toTitle(requirement.status || requirement.reviewStatus || requirement.review_status || fallback)
+}
+
+function getRoleWorkspaceOpenItems(items = [], limit = 3) {
+  return (Array.isArray(items) ? items : [])
+    .filter((item) => item?.required !== false && !roleWorkspaceRequirementComplete(item))
+    .slice(0, limit)
+}
+
+function getWorkflowBlockerPreview(workflow = {}, limit = 3) {
+  return (Array.isArray(workflow?.blockers) ? workflow.blockers : [])
+    .slice(0, limit)
+    .map((blocker, index) => {
+      if (typeof blocker === 'string') {
+        return {
+          id: `blocker-${index}`,
+          label: blocker,
+          description: '',
+          status: 'blocked',
+        }
+      }
+      return {
+        id: blocker.id || blocker.key || `blocker-${index}`,
+        label: blocker.title || blocker.label || blocker.message || blocker.reason || 'Workflow blocker',
+        description: blocker.description || blocker.detail || blocker.reason || '',
+        status: blocker.status || blocker.priority || 'blocked',
+      }
+    })
+}
+
+function getWorkflowRequirementPreview(workflow = {}) {
+  const lane = workflow?.lane || {}
+  return {
+    data: getRoleWorkspaceOpenItems(lane.dataRequirements || [], 3),
+    documents: getRoleWorkspaceOpenItems(lane.documentRequirements || [], 3),
+    signatures: getRoleWorkspaceOpenItems(lane.signingRequirements || [], 2),
+    blockers: getWorkflowBlockerPreview(workflow, 3),
+  }
+}
+
+function AttorneyDailyActionQueue({
+  workflows = [],
+  onOpenWorkflow = null,
+  onExecuteAction = null,
+  onRequestDocuments = null,
+  onExecuteCoordination = null,
+  onExecuteFollowUp = null,
+}) {
+  const queueItems = buildAttorneyDailyActionQueueItems(workflows)
+  const visibleItems = queueItems.slice(0, 6)
+  const urgentCount = queueItems.filter((item) => getAttorneyQueueRank(item) <= 3).length
+  const activeLaneCount = workflows.filter((workflow) => workflow?.required).length
+  if (!activeLaneCount) return null
+
+  const handleQueueAction = (item) => {
+    if (item.kind === 'document') {
+      onRequestDocuments?.(item.workflow, item.action)
+      return
+    }
+    if (item.kind === 'coordination') {
+      onExecuteCoordination?.(item.workflow?.lane, item.coordinationItem, item.command)
+      return
+    }
+    if (item.kind === 'follow_up') {
+      onExecuteFollowUp?.(item.workflow?.lane, item.followUpItem, item.command)
+      return
+    }
+    if (item.kind === 'workflow') {
+      onExecuteAction?.(item.workflow?.lane, item.action, item.command)
+      return
+    }
+    onOpenWorkflow?.(item.workflow)
+  }
+
+  return (
+    <section className="rounded-[18px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:p-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex size-9 items-center justify-center rounded-[12px] bg-warningSoft text-warning ring-1 ring-warning/10">
+              <Clock3 size={16} />
+            </span>
+            <h3 className="text-sm font-semibold text-textStrong">Today&apos;s Attorney Action Queue</h3>
+          </div>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-textMuted">
+            Prioritized lane actions, handoffs, follow-ups, blockers, and missing documents.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${urgentCount ? 'border-warning/30 bg-warningSoft text-warning' : 'border-success/25 bg-successSoft text-success'}`}>
+            {urgentCount} urgent
+          </span>
+          <span className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-xs font-semibold text-textMuted">
+            {queueItems.length} open
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2">
+        {visibleItems.length ? visibleItems.map((item, index) => {
+          const meta = getAttorneyQueuePriorityMeta(item)
+          const commandLabel = item.command?.label || (item.kind === 'document' ? 'Request Docs' : 'Start')
+          return (
+            <article key={item.id} className={`rounded-[14px] border px-3 py-3 ${meta.border} ${meta.bg}`}>
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`inline-flex size-6 items-center justify-center rounded-full border text-[0.68rem] font-bold ${meta.border} bg-white/75 ${meta.text}`}>
+                      {index + 1}
+                    </span>
+                    <strong className={`text-sm ${meta.text}`}>{item.title}</strong>
+                    <span className={`inline-flex rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold ${meta.border} bg-white/75 ${meta.text}`}>
+                      {item.kindLabel}
+                    </span>
+                  </div>
+                  {item.description ? <p className={`mt-1 text-xs leading-5 ${meta.text}`}>{item.description}</p> : null}
+                  <div className={`mt-2 flex flex-wrap gap-1.5 text-[0.66rem] font-semibold ${meta.text}`}>
+                    <span>{item.workflow?.title || 'Legal workflow'}</span>
+                    {item.dueDate ? <span>Due {formatDate(item.dueDate)}</span> : null}
+                    {item.status ? <span>{item.status === 'escalation' ? 'Needs escalation' : toTitle(item.status)}</span> : null}
+                  </div>
+                </div>
+                <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                  {onOpenWorkflow ? (
+                    <Button type="button" size="sm" variant="ghost" onClick={() => onOpenWorkflow(item.workflow)}>
+                      Open Lane
+                    </Button>
+                  ) : null}
+                  <Button type="button" size="sm" variant="secondary" onClick={() => handleQueueAction(item)}>
+                    {commandLabel}
+                  </Button>
+                </div>
+              </div>
+            </article>
+          )
+        }) : (
+          <p className="rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm text-textMuted">
+            No urgent attorney actions are visible right now. Review the role workspaces below for lane status.
+          </p>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function AttorneyStatusBriefPanel({
+  workflows = [],
+  onDraftBrief = null,
+}) {
+  const professionalBrief = buildAttorneyStatusBrief(workflows, 'professional')
+  const clientBrief = buildAttorneyStatusBrief(workflows, 'client')
+  const professionalTarget = getAttorneyBriefComposerTarget(workflows, 'professional')
+  const clientTarget = getAttorneyBriefComposerTarget(workflows, 'client')
+  if (!professionalBrief && !clientBrief) return null
+
+  return (
+    <section className="rounded-[18px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:p-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex size-9 items-center justify-center rounded-[12px] bg-primarySoft text-primary ring-1 ring-primary/10">
+              <Send size={16} />
+            </span>
+            <h3 className="text-sm font-semibold text-textStrong">Attorney Status Briefs</h3>
+          </div>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-textMuted">
+            Prepared updates from the current lane, handoff, and follow-up state.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 xl:grid-cols-2">
+        {[
+          {
+            key: 'professional',
+            title: 'Professional brief',
+            body: professionalBrief,
+            target: professionalTarget,
+            visibilityLabel: 'Professional / roleplayers only',
+          },
+          {
+            key: 'client',
+            title: 'Buyer/seller brief',
+            body: clientBrief,
+            target: clientTarget,
+            visibilityLabel: 'Buyer & seller visible',
+          },
+        ].map((item) => (
+          <article key={item.key} className="flex min-h-full min-w-0 flex-col rounded-[14px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h4 className="text-sm font-semibold text-textStrong">{item.title}</h4>
+              <span className="inline-flex rounded-full border border-borderSoft bg-white px-2.5 py-1 text-[0.66rem] font-semibold text-textMuted">
+                {item.visibilityLabel}
+              </span>
+            </div>
+            <p className="mt-3 min-h-[7rem] whitespace-pre-wrap rounded-[12px] border border-borderSoft bg-white px-3 py-3 text-xs leading-5 text-textBody">
+              {item.body || 'No active workflow brief is available yet.'}
+            </p>
+            <div className="mt-auto flex justify-end pt-3">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={!item.target || !item.body}
+                onClick={() => onDraftBrief?.({ audience: item.key, body: item.body, target: item.target })}
+              >
+                Draft Update
+              </Button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function AttorneyRequirementsBoard({
+  workflows = [],
+  onOpenWorkflow = null,
+  onRequestDocuments = null,
+}) {
+  const activeWorkflows = [
+    ...ATTORNEY_ROLE_WORKSPACE_ORDER
+      .map((roleKey) => workflows.find((workflow) => workflow?.required && getAttorneyRoleWorkspaceKey(workflow) === roleKey))
+      .filter(Boolean),
+    ...workflows.filter((workflow) => workflow?.required && !ATTORNEY_ROLE_WORKSPACE_ORDER.includes(getAttorneyRoleWorkspaceKey(workflow))),
+  ]
+  if (!activeWorkflows.length) return null
+
+  const totals = activeWorkflows.reduce((accumulator, workflow) => {
+    const metrics = getRoleWorkspaceMetrics(workflow)
+    accumulator.facts += metrics.missingData
+    accumulator.documents += metrics.missingDocuments
+    accumulator.signatures += metrics.openSignatures
+    accumulator.blockers += metrics.blockers
+    return accumulator
+  }, {
+    facts: 0,
+    documents: 0,
+    signatures: 0,
+    blockers: 0,
+  })
+  const totalOpen = totals.facts + totals.documents + totals.signatures + totals.blockers
+
+  return (
+    <section className="rounded-[18px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:p-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex size-9 items-center justify-center rounded-[12px] bg-dangerSoft text-danger ring-1 ring-danger/10">
+              <AlertTriangle size={16} />
+            </span>
+            <h3 className="text-sm font-semibold text-textStrong">Attorney Unblocker Board</h3>
+          </div>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-textMuted">
+            Exact open facts, documents, signatures, and blockers by legal lane.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {[
+            ['Facts', totals.facts],
+            ['Docs', totals.documents],
+            ['Signing', totals.signatures],
+            ['Blockers', totals.blockers],
+          ].map(([label, value]) => (
+            <span
+              key={label}
+              className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${value ? 'border-warning/30 bg-warningSoft text-warning' : 'border-success/25 bg-successSoft text-success'}`}
+            >
+              {value} {label}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-3">
+        {activeWorkflows.map((workflow) => {
+          const roleKey = getAttorneyRoleWorkspaceKey(workflow)
+          const content = getAttorneyRoleWorkspaceContent(workflow)
+          const accent = LANE_ACCENTS[roleKey] || LANE_ACCENTS.transfer
+          const metrics = getRoleWorkspaceMetrics(workflow)
+          const preview = getWorkflowRequirementPreview(workflow)
+          const documentAction = buildRoleWorkspaceDocumentAction(workflow)
+          const laneOpenCount = metrics.missingData + metrics.missingDocuments + metrics.openSignatures + metrics.blockers
+          const laneStatusMeta = laneOpenCount ? WORKFLOW_STATUS_META.waiting : WORKFLOW_STATUS_META.completed
+          const sections = [
+            {
+              key: 'facts',
+              label: 'Facts',
+              count: metrics.missingData,
+              items: preview.data,
+              icon: CheckCircle2,
+              fallback: 'Required fact',
+              empty: 'No missing facts visible.',
+              meta: (item) => getRequirementDescription(item, 'Matter data still needs to be captured.'),
+            },
+            {
+              key: 'documents',
+              label: 'Documents',
+              count: metrics.missingDocuments,
+              items: preview.documents,
+              icon: FileText,
+              fallback: 'Required document',
+              empty: 'No missing documents visible.',
+              meta: (item) => `${getRequirementPartyLabel(item)} • ${getRequirementDescription(item, 'Required for this legal route.')}`,
+            },
+            {
+              key: 'signatures',
+              label: 'Signing',
+              count: metrics.openSignatures,
+              items: preview.signatures,
+              icon: Send,
+              fallback: 'Signing requirement',
+              empty: 'No open signing items visible.',
+              meta: (item) => getRequirementDescription(item, 'Signature step still needs attention.'),
+            },
+            {
+              key: 'blockers',
+              label: 'Blockers',
+              count: metrics.blockers,
+              items: preview.blockers,
+              icon: AlertTriangle,
+              fallback: 'Workflow blocker',
+              empty: 'No lane blockers visible.',
+              meta: (item) => item.description || getRequirementStatusDisplay(item, 'Blocked'),
+            },
+          ]
+
+          return (
+            <article key={workflow.key} className={`flex min-h-full min-w-0 flex-col rounded-[16px] border border-borderDefault border-l-4 bg-surfaceAlt/70 p-4 ${accent.ring}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`inline-flex size-9 shrink-0 items-center justify-center rounded-[12px] ring-1 ${accent.icon}`}>
+                      <Workflow size={16} />
+                    </span>
+                    <h4 className="text-sm font-semibold text-textStrong">{content.roleTitle}</h4>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-textMuted">{workflow.nextStep || content.laneLabel}</p>
+                </div>
+                <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${laneStatusMeta.border} ${laneStatusMeta.bg} ${laneStatusMeta.text}`}>
+                  {laneOpenCount ? `${laneOpenCount} open` : 'Clear'}
+                </span>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                {[
+                  ['Facts', metrics.missingData],
+                  ['Docs', metrics.missingDocuments],
+                  ['Signing', metrics.openSignatures],
+                  ['Blockers', metrics.blockers],
+                ].map(([label, value]) => (
+                  <div
+                    key={`${workflow.key}-unblocker-${label}`}
+                    className={`rounded-[12px] border px-3 py-2 ${value ? 'border-warning/30 bg-warningSoft text-warning' : 'border-success/25 bg-successSoft text-success'}`}
+                  >
+                    <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.06em]">{label}</span>
+                    <strong className="mt-1 block text-xs">{value} open</strong>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 grid gap-3">
+                {sections.map((section) => {
+                  const Icon = section.icon
+                  const hiddenCount = Math.max(0, section.count - section.items.length)
+                  return (
+                    <div key={`${workflow.key}-${section.key}`} className="rounded-[13px] border border-borderSoft bg-white px-3 py-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Icon size={14} className="shrink-0 text-textMuted" />
+                          <h5 className="truncate text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">{section.label}</h5>
+                        </div>
+                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold ${section.count ? 'border-warning/30 bg-warningSoft text-warning' : 'border-success/25 bg-successSoft text-success'}`}>
+                          {section.count}
+                        </span>
+                      </div>
+                      <div className="mt-2 grid gap-2">
+                        {section.items.length ? section.items.map((item, index) => (
+                          <div key={item.id || item.key || `${workflow.key}-${section.key}-${index}`} className="rounded-[10px] border border-borderSoft bg-surfaceAlt px-3 py-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <strong className="min-w-0 break-words text-xs text-textStrong">
+                                {getRequirementDisplayLabel(item, section.fallback)}
+                              </strong>
+                              <span className="shrink-0 rounded-full border border-borderSoft bg-white px-2 py-0.5 text-[0.62rem] font-semibold text-textMuted">
+                                {getRequirementStatusDisplay(item)}
+                              </span>
+                            </div>
+                            <p className="mt-1 line-clamp-2 text-[0.7rem] leading-4 text-textMuted">{section.meta(item)}</p>
+                          </div>
+                        )) : (
+                          <p className="rounded-[10px] border border-dashed border-borderSoft bg-surfaceAlt px-3 py-2 text-xs leading-5 text-textMuted">
+                            {section.count ? `${section.count} open ${section.label.toLowerCase()} item${section.count === 1 ? '' : 's'} counted in the lane summary.` : section.empty}
+                          </p>
+                        )}
+                        {hiddenCount ? (
+                          <p className="px-1 text-[0.68rem] font-semibold text-textMuted">
+                            +{hiddenCount} more in lane detail
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="mt-auto flex flex-wrap items-center justify-end gap-2 pt-4">
+                {documentAction && onRequestDocuments ? (
+                  <Button type="button" size="sm" variant="secondary" onClick={() => onRequestDocuments(workflow, documentAction)}>
+                    <Paperclip size={14} />
+                    Request Next Doc
+                  </Button>
+                ) : null}
+                {onOpenWorkflow ? (
+                  <Button type="button" size="sm" onClick={() => onOpenWorkflow(workflow)}>
+                    Open Lane
+                    <ChevronRight size={14} />
+                  </Button>
+                ) : null}
+              </div>
+            </article>
+          )
+        })}
+      </div>
+
+      {!totalOpen ? (
+        <p className="mt-4 rounded-[14px] border border-success/25 bg-successSoft px-4 py-3 text-sm font-semibold text-success">
+          All visible legal-lane requirements are clear right now.
+        </p>
+      ) : null}
+    </section>
+  )
+}
+
 function AttorneyRoleWorkspacePanel({
   workflows = [],
   onOpenWorkflow = null,
@@ -1592,6 +2369,186 @@ function AttorneyRoleWorkspacePanel({
             </article>
           )
         })}
+      </div>
+    </section>
+  )
+}
+
+function AttorneyCoordinationBoard({
+  workflows = [],
+  onOpenWorkflow = null,
+  onExecuteCoordination = null,
+  onExecuteFollowUp = null,
+}) {
+  const overview = getAttorneyCoordinationOverview(workflows)
+  const coordinationItems = getAttorneyCoordinationWorkflowItems(workflows)
+  const followUpItems = getAttorneyCoordinationFollowUpItems(workflows)
+  if (!overview.activeLaneCount) return null
+
+  const healthMeta = getCoordinationStatusMeta(overview.health)
+  const hasCoordinationItems = coordinationItems.length > 0
+  const hasFollowUpItems = followUpItems.length > 0
+
+  return (
+    <section className="rounded-[18px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:p-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex size-9 items-center justify-center rounded-[12px] bg-surfaceAlt text-primary ring-1 ring-primary/10">
+              <Bell size={16} />
+            </span>
+            <h3 className="text-sm font-semibold text-textStrong">Attorney Coordination Board</h3>
+          </div>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-textMuted">
+            Cross-lane handoffs, escalation risk, and follow-ups across transfer, bond, and cancellation.
+          </p>
+        </div>
+        <span className={`inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${healthMeta.border} ${healthMeta.bg} ${healthMeta.text}`}>
+          <span className={`h-2 w-2 rounded-full ${healthMeta.dot}`} />
+          {overview.health === 'clear' ? 'Clear' : overview.health === 'escalation' ? 'Needs escalation' : toTitle(overview.health)}
+        </span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-5">
+        {[
+          ['Ready', `${overview.coordinationCounts.ready}/${overview.coordinationCounts.total || 0}`, overview.coordinationCounts.ready === overview.coordinationCounts.total ? 'success' : 'neutral'],
+          ['Waiting', overview.coordinationCounts.waiting, overview.coordinationCounts.waiting ? 'warning' : 'success'],
+          ['Blocked', overview.coordinationCounts.blocked, overview.coordinationCounts.blocked ? 'danger' : 'success'],
+          ['Escalations', overview.coordinationCounts.escalationNeeded + overview.coordinationCounts.escalationDueToday + overview.coordinationCounts.escalated, overview.coordinationCounts.escalationNeeded || overview.coordinationCounts.escalationDueToday ? 'danger' : 'neutral'],
+          ['Follow-ups', overview.followUpAttention, overview.followUpAttention ? 'warning' : 'success'],
+        ].map(([label, value, tone]) => {
+          const className = tone === 'danger'
+            ? 'border-danger/25 bg-dangerSoft text-danger'
+            : tone === 'warning'
+              ? 'border-warning/30 bg-warningSoft text-warning'
+              : tone === 'success'
+                ? 'border-success/25 bg-successSoft text-success'
+                : 'border-borderSoft bg-surfaceAlt text-textMuted'
+          return (
+            <div key={label} className={`min-w-0 rounded-[12px] border px-3 py-2 ${className}`}>
+              <span className="block truncate text-[0.64rem] font-semibold uppercase tracking-[0.06em]">{label}</span>
+              <strong className="mt-1 block text-sm">{value}</strong>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="mt-4 h-2 overflow-hidden rounded-full bg-surfaceAlt">
+        <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, overview.readyPercent))}%` }} />
+      </div>
+
+      <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.75fr)]">
+        <div className="min-w-0 rounded-[14px] border border-borderSoft bg-surfaceAlt p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">Cross-lane handoffs</h4>
+            <span className="text-xs font-semibold text-textMuted">{coordinationItems.length} dependency{coordinationItems.length === 1 ? '' : 'ies'}</span>
+          </div>
+          <div className="mt-3 grid gap-2">
+            {hasCoordinationItems ? coordinationItems.slice(0, 6).map((entry) => {
+              const item = entry.item
+              const workflow = entry.workflow
+              const meta = getCoordinationStatusMeta(item.escalationNeeded ? 'escalation' : item.status)
+              const command = buildAttorneyWorkflowCoordinationCommand(item, {
+                laneKey: entry.summary?.laneKey || workflow?.lane?.laneKey,
+                stageKey: workflow?.lane?.currentStage || workflow?.lane?.summary?.currentStage || '',
+              })
+              const canAct = item.status !== 'ready' && (!item.actioned || item.escalationNeeded)
+              return (
+                <article key={entry.key} className={`rounded-[12px] border bg-white px-3 py-3 ${meta.border}`}>
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <strong className="text-sm text-textStrong">{item.title}</strong>
+                        <span className={`inline-flex rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold ${meta.border} ${meta.bg} ${meta.text}`}>
+                          {item.statusLabel}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-textMuted">{item.description}</p>
+                      <div className="mt-2 flex flex-wrap gap-1.5 text-[0.66rem] font-semibold text-textMuted">
+                        <span>{workflow.title} needs {item.laneLabel}</span>
+                        {item.currentStageLabel ? <span>Current: {item.currentStageLabel}</span> : null}
+                        {item.targetStageLabel ? <span>Needed: {item.targetStageLabel}</span> : null}
+                        {item.actionedAt ? <span>Requested {formatShortDayMonth(item.actionedAt)}</span> : null}
+                        {item.escalatedAt ? <span>Escalated {formatShortDayMonth(item.escalatedAt)}</span> : null}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                      {canAct && onExecuteCoordination ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => onExecuteCoordination(workflow.lane, item, command)}
+                        >
+                          {command.label}
+                        </Button>
+                      ) : null}
+                      {onOpenWorkflow ? (
+                        <Button type="button" size="sm" variant="ghost" onClick={() => onOpenWorkflow(workflow)}>
+                          Open Lane
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                </article>
+              )
+            }) : (
+              <p className="rounded-[12px] border border-dashed border-borderSoft bg-white px-3 py-4 text-sm text-textMuted">
+                No cross-lane legal handoffs are required for the current routing profile.
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="min-w-0 rounded-[14px] border border-borderSoft bg-surfaceAlt p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">Follow-up queue</h4>
+            <span className="text-xs font-semibold text-textMuted">{overview.followUpAttention} attention</span>
+          </div>
+          <div className="mt-3 grid gap-2">
+            {hasFollowUpItems ? followUpItems.slice(0, 4).map((entry) => {
+              const item = entry.item
+              const workflow = entry.workflow
+              const meta = getFollowUpStatusMeta(item.status)
+              const command = buildAttorneyWorkflowFollowUpCommand(item, { laneKey: entry.summary?.laneKey || workflow?.lane?.laneKey })
+              return (
+                <article key={entry.key} className={`rounded-[12px] border bg-white px-3 py-3 ${meta.border}`}>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <strong className="text-sm text-textStrong">{item.title}</strong>
+                        <span className={`inline-flex rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold ${meta.border} ${meta.bg} ${meta.text}`}>
+                          {item.statusLabel}
+                        </span>
+                      </div>
+                      {item.description ? <p className="mt-1 line-clamp-2 text-xs leading-5 text-textMuted">{item.description}</p> : null}
+                      <div className="mt-2 flex flex-wrap gap-1.5 text-[0.66rem] font-semibold text-textMuted">
+                        <span>{workflow.title}</span>
+                        {item.audienceLabel ? <span>{item.audienceLabel}</span> : null}
+                        {item.dueDate ? <span>Due {formatDate(item.dueDate)}</span> : <span>No due date</span>}
+                      </div>
+                    </div>
+                    {onExecuteFollowUp ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="shrink-0"
+                        onClick={() => onExecuteFollowUp(workflow.lane, item, command)}
+                      >
+                        {command.label}
+                      </Button>
+                    ) : null}
+                  </div>
+                </article>
+              )
+            }) : (
+              <p className="rounded-[12px] border border-dashed border-borderSoft bg-white px-3 py-4 text-sm text-textMuted">
+                No scheduled attorney follow-ups need attention right now.
+              </p>
+            )}
+          </div>
+        </div>
       </div>
     </section>
   )
@@ -8142,6 +9099,19 @@ function AttorneyTransactionDetail() {
     () => legalWorkflowModels.find((item) => item.detailKey === activeLegalWorkflowDetailKey) || null,
     [activeLegalWorkflowDetailKey, legalWorkflowModels],
   )
+  const handleDraftAttorneyStatusBrief = useCallback(({ audience = 'professional', body = '', target = null } = {}) => {
+    const nextTarget = target || getAttorneyBriefComposerTarget(legalWorkflowModels, audience)
+    if (!nextTarget?.laneKey || !nextTarget?.actionKey || !nextTarget?.visibility) {
+      setError('No permitted attorney update action is available for this status brief.')
+      return
+    }
+    setWorkspaceMenu('overview')
+    setDiscussionLaneKey(nextTarget.laneKey)
+    setDiscussionActionKey(nextTarget.actionKey)
+    setDiscussionVisibility(nextTarget.visibility)
+    setDiscussionType(audience === 'client' ? 'client_update' : 'workflow')
+    setDiscussionBody(String(body || '').trim())
+  }, [legalWorkflowModels])
   const transactionContactRows = [
     {
       key: 'buyer',
@@ -9601,11 +10571,42 @@ function AttorneyTransactionDetail() {
                   />
                 ) : null}
                 {activeWorkspaceMenu === 'overview' ? (
+                  <AttorneyDailyActionQueue
+                    workflows={legalWorkflowModels}
+                    onOpenWorkflow={(workflow) => openLegalWorkflowDetail(workflow.detailKey)}
+                    onExecuteAction={handleWorkflowActionCommand}
+                    onRequestDocuments={(workflow, action) => handleWorkflowActionCommand(workflow?.lane, action)}
+                    onExecuteCoordination={handleWorkflowCoordinationCommand}
+                    onExecuteFollowUp={handleWorkflowFollowUpCommand}
+                  />
+                ) : null}
+                {activeWorkspaceMenu === 'overview' ? (
+                  <AttorneyStatusBriefPanel
+                    workflows={legalWorkflowModels}
+                    onDraftBrief={handleDraftAttorneyStatusBrief}
+                  />
+                ) : null}
+                {activeWorkspaceMenu === 'overview' ? (
+                  <AttorneyRequirementsBoard
+                    workflows={legalWorkflowModels}
+                    onOpenWorkflow={(workflow) => openLegalWorkflowDetail(workflow.detailKey)}
+                    onRequestDocuments={(workflow, action) => handleWorkflowActionCommand(workflow?.lane, action)}
+                  />
+                ) : null}
+                {activeWorkspaceMenu === 'overview' ? (
                   <AttorneyRoleWorkspacePanel
                     workflows={legalWorkflowModels}
                     onOpenWorkflow={(workflow) => openLegalWorkflowDetail(workflow.detailKey)}
                     onExecuteAction={handleWorkflowActionCommand}
                     onRequestDocuments={(workflow, action) => handleWorkflowActionCommand(workflow?.lane, action)}
+                  />
+                ) : null}
+                {activeWorkspaceMenu === 'overview' ? (
+                  <AttorneyCoordinationBoard
+                    workflows={legalWorkflowModels}
+                    onOpenWorkflow={(workflow) => openLegalWorkflowDetail(workflow.detailKey)}
+                    onExecuteCoordination={handleWorkflowCoordinationCommand}
+                    onExecuteFollowUp={handleWorkflowFollowUpCommand}
                   />
                 ) : null}
                 {activeWorkspaceMenu !== 'overview' ? (
