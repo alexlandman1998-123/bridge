@@ -25,6 +25,88 @@ function toNumber(value) {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+const TERMINAL_TRANSACTION_STATUSES = new Set(['registered', 'cancelled', 'canceled', 'archived', 'completed'])
+const INACTIVE_LISTING_STATUSES = new Set(['withdrawn', 'sold', 'archived', 'cancelled', 'canceled', 'completed', 'inactive'])
+
+function clampPercent(value) {
+  return Math.max(0, Math.min(100, Math.round(value)))
+}
+
+function getRecordDate(row = {}) {
+  const date = new Date(row?.created_at || row?.createdAt || row?.updated_at || row?.updatedAt || '')
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function getLatestRecordDate(row = {}) {
+  const date = new Date(row?.updated_at || row?.updatedAt || row?.created_at || row?.createdAt || '')
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function getTransactionBranchId(row = {}) {
+  return normalizeText(row?.assigned_branch_id || row?.branch_id || row?.branchId || row?.assignedBranchId)
+}
+
+function getTransactionStatus(row = {}) {
+  return normalizeLower(row?.lifecycle_state || row?.stage || row?.status)
+}
+
+function isActiveTransaction(row = {}) {
+  if (row?.registered_at || row?.registeredAt) return false
+  const status = getTransactionStatus(row)
+  return !TERMINAL_TRANSACTION_STATUSES.has(status)
+}
+
+function isActiveListing(row = {}) {
+  const status = normalizeLower(row?.listing_status || row?.stage || row?.status)
+  return !INACTIVE_LISTING_STATUSES.has(status)
+}
+
+function getListingValue(row = {}) {
+  return toNumber(row?.estimated_value || row?.estimatedValue || row?.asking_price || row?.askingPrice || row?.price)
+}
+
+function getTransactionValue(row = {}) {
+  return toNumber(row?.sales_price || row?.purchase_price || row?.sale_price || row?.asking_price || row?.estimated_value)
+}
+
+function getStoredCommissionValue(row = {}) {
+  const direct = toNumber(
+    row?.gross_commission_amount ||
+      row?.commission_amount ||
+      row?.commission_value ||
+      row?.projected_commission_amount ||
+      row?.estimated_commission_amount,
+  )
+  if (direct > 0) return direct
+
+  const splitAmount = toNumber(row?.agent_commission_amount) + toNumber(row?.agency_commission_amount)
+  return splitAmount > 0 ? splitAmount : 0
+}
+
+function getCommissionPercent(row = {}) {
+  return toNumber(
+    row?.gross_commission_percentage ||
+      row?.commission_percentage ||
+      row?.commission_percent ||
+      row?.mandate_commission_percent ||
+      row?.commission_rate,
+  )
+}
+
+function getProjectedCommission(row = {}, value = 0) {
+  const storedValue = getStoredCommissionValue(row)
+  if (storedValue > 0) {
+    return { value: storedValue, hasData: true }
+  }
+
+  const percent = getCommissionPercent(row)
+  if (percent > 0 && value > 0) {
+    return { value: value * (percent / 100), hasData: true }
+  }
+
+  return { value: 0, hasData: false }
+}
+
 function isSchemaMismatchError(error) {
   const code = normalizeText(error?.code).toUpperCase()
   const message = normalizeLower(error?.message)
@@ -233,39 +315,54 @@ async function listOrganisationUsers(client, organisationId) {
 }
 
 async function listOrganisationTransactions(client, organisationId) {
-  const query = await client
-    .from('transactions')
-    .select('id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, lifecycle_state, sales_price, purchase_price, registered_at, created_at, updated_at')
-    .eq('organisation_id', organisationId)
+  const selectAttempts = [
+    'id, organisation_id, branch_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, status, lifecycle_state, sales_price, purchase_price, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, created_at, updated_at',
+    'id, organisation_id, branch_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, status, lifecycle_state, sales_price, purchase_price, registered_at, created_at, updated_at',
+    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, lifecycle_state, sales_price, purchase_price, registered_at, created_at, updated_at',
+    'id, organisation_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, lifecycle_state, sales_price, purchase_price, registered_at, created_at, updated_at',
+  ]
 
-  if (query.error) {
-    if (isMissingTableError(query.error)) return []
-    if (isSchemaMismatchError(query.error)) {
-      const fallbackQuery = await client
-        .from('transactions')
-        .select('id, organisation_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, lifecycle_state, sales_price, purchase_price, registered_at, created_at, updated_at')
-        .eq('organisation_id', organisationId)
-      if (fallbackQuery.error) {
-        if (isMissingTableError(fallbackQuery.error)) return []
-        throw fallbackQuery.error
-      }
-      return (fallbackQuery.data || []).map((row) => ({ ...row, assigned_branch_id: null }))
+  for (const selectColumns of selectAttempts) {
+    const query = await client
+      .from('transactions')
+      .select(selectColumns)
+      .eq('organisation_id', organisationId)
+
+    if (!query.error) {
+      return (query.data || []).map((row) => ({
+        ...row,
+        assigned_branch_id: row?.assigned_branch_id || row?.branch_id || null,
+      }))
     }
-    throw query.error
+
+    if (isMissingTableError(query.error)) return []
+    if (!isSchemaMismatchError(query.error)) throw query.error
   }
 
-  return query.data || []
+  return []
 }
 
 async function listOrganisationPrivateListings(client, organisationId) {
   const query = await client
     .from('private_listings')
-    .select('id, organisation_id, branch_id, assigned_agent_email, assigned_agent_name, listing_title, asking_price, listing_status, stage, created_at, updated_at')
+    .select('id, organisation_id, branch_id, assigned_agent_id, assigned_agent_email, assigned_agent_name, listing_title, title, asking_price, estimated_value, listing_status, stage, created_at, updated_at')
     .eq('organisation_id', organisationId)
     .neq('listing_status', 'withdrawn')
 
   if (query.error) {
-    if (isMissingTableError(query.error) || isSchemaMismatchError(query.error)) return []
+    if (isMissingTableError(query.error)) return []
+    if (isSchemaMismatchError(query.error)) {
+      const fallbackQuery = await client
+        .from('private_listings')
+        .select('id, organisation_id, branch_id, assigned_agent_email, assigned_agent_name, listing_title, asking_price, listing_status, stage, created_at, updated_at')
+        .eq('organisation_id', organisationId)
+        .neq('listing_status', 'withdrawn')
+      if (fallbackQuery.error) {
+        if (isMissingTableError(fallbackQuery.error) || isSchemaMismatchError(fallbackQuery.error)) return []
+        throw fallbackQuery.error
+      }
+      return (fallbackQuery.data || []).filter((row) => normalizeLower(row?.listing_status || row?.stage) !== 'withdrawn')
+    }
     throw query.error
   }
 
@@ -294,25 +391,25 @@ function buildBranchViewModel(branch = {}, related = {}) {
 
   const activeMembers = members.filter((member) => normalizeLower(member?.status) === 'active')
   const headcount = buildRoleHeadcount(members)
-  const branchTransactions = transactions.filter((row) => normalizeText(row?.assigned_branch_id) === normalizeText(branch?.id))
+  const branchTransactions = transactions.filter((row) => getTransactionBranchId(row) === normalizeText(branch?.id))
   const branchListings = listings.filter((row) => normalizeText(row?.branch_id) === normalizeText(branch?.id))
   const branchLeads = leads.filter((row) => normalizeText(row?.branch_id) === normalizeText(branch?.id))
 
-  const activeTransactions = branchTransactions.filter((row) => {
-    const lifecycle = normalizeLower(row?.lifecycle_state)
-    return lifecycle !== 'completed' && lifecycle !== 'archived' && lifecycle !== 'cancelled'
-  })
+  const activeTransactions = branchTransactions.filter(isActiveTransaction)
   const registeredTransactions = branchTransactions.filter((row) => Boolean(row?.registered_at)).length
 
-  const pipelineValue = activeTransactions.reduce((sum, row) => {
-    const value = toNumber(row?.sales_price || row?.purchase_price)
-    return sum + value
-  }, 0)
+  const activeListingRows = branchListings.filter(isActiveListing)
+  const activeListingPipeline = activeListingRows.reduce((sum, row) => sum + getListingValue(row), 0)
+  const activeTransactionPipeline = activeTransactions.reduce((sum, row) => sum + getTransactionValue(row), 0)
+  const pipelineValue = activeListingPipeline + activeTransactionPipeline
 
-  const activeListings = branchListings.filter((row) => {
-    const status = normalizeLower(row?.listing_status || row?.stage)
-    return !status.includes('archived') && !status.includes('sold')
-  }).length
+  const projectedCommission = [...activeListingRows, ...activeTransactions].reduce((summary, row) => {
+    const sourceValue = branchTransactions.includes(row) ? getTransactionValue(row) : getListingValue(row)
+    const commission = getProjectedCommission(row, sourceValue)
+    summary.value += commission.value
+    summary.hasData = summary.hasData || commission.hasData
+    return summary
+  }, { value: 0, hasData: false })
 
   const closedDeals = branchTransactions.length ? registeredTransactions : 0
   const conversionRate = branchLeads.length ? Math.round((closedDeals / branchLeads.length) * 100) : 0
@@ -363,10 +460,15 @@ function buildBranchViewModel(branch = {}, related = {}) {
       activeManagers: headcount.activeManagers,
       activeSupportUsers: headcount.activeSupportUsers,
       activeOperationalUsers: headcount.activeOperationalUsers,
+      activeProductionUsers: headcount.activeAgents + headcount.activePrincipals + headcount.activeManagers,
       activeMembers: activeMembers.length,
-      activeListings,
+      activeListings: activeListingRows.length,
       activeTransactions: activeTransactions.length,
       pipelineValue,
+      listingPipelineValue: activeListingPipeline,
+      transactionPipelineValue: activeTransactionPipeline,
+      projectedCommission: projectedCommission.value,
+      hasProjectedCommissionData: projectedCommission.hasData,
       registeredDeals: registeredTransactions,
       conversionRate,
     },
@@ -617,6 +719,280 @@ export async function deleteBranch(branchId) {
 export async function getBranchKPIs(branchId) {
   const branch = await getBranch(branchId)
   return branch?.kpis || null
+}
+
+function getLatestBranchActivityDate(branch = {}) {
+  const candidates = [
+    branch.updatedAt,
+    branch.createdAt,
+    ...(branch.members || []).flatMap((row) => [row?.last_active_at, row?.updated_at, row?.accepted_at, row?.created_at]),
+    ...(branch.transactions || []).flatMap((row) => [row?.updated_at, row?.created_at]),
+    ...(branch.listings || []).flatMap((row) => [row?.updated_at, row?.created_at]),
+    ...(branch.leads || []).flatMap((row) => [row?.updated_at, row?.created_at]),
+  ]
+    .map((value) => {
+      const date = new Date(value || '')
+      return Number.isNaN(date.getTime()) ? null : date
+    })
+    .filter(Boolean)
+
+  return candidates.length ? candidates.sort((left, right) => right.getTime() - left.getTime())[0] : null
+}
+
+function getDaysSince(date) {
+  if (!date) return 999
+  return Math.max(0, Math.floor((Date.now() - date.getTime()) / 86400000))
+}
+
+function getBranchProductionUsers(branch = {}) {
+  const kpis = branch.kpis || {}
+  return toNumber(kpis.activeProductionUsers || (toNumber(kpis.activeAgents) + toNumber(kpis.activePrincipals) + toNumber(kpis.activeManagers)))
+}
+
+function getBranchHealthOverview(branch = {}) {
+  if (branch?.isActive === false) {
+    return { label: 'Inactive', statusKey: 'inactive', tone: 'slate', score: 0, daysSinceActivity: 999 }
+  }
+
+  const kpis = branch.kpis || {}
+  const activeAgents = getBranchProductionUsers(branch)
+  const activeListings = toNumber(kpis.activeListings)
+  const activeTransactions = toNumber(kpis.activeTransactions)
+  const latestActivity = getLatestBranchActivityDate(branch)
+  const daysSinceActivity = getDaysSince(latestActivity)
+  const hasRecentActivity = daysSinceActivity <= 30
+  const hasListingsOrTransactions = activeListings > 0 || activeTransactions > 0
+  const stalePenalty = daysSinceActivity > 30 ? Math.min(24, Math.round((daysSinceActivity - 30) / 4)) : 0
+  const score = clampPercent(
+    10 +
+      Math.min(activeAgents, 3) * 12 +
+      (hasRecentActivity ? 20 : daysSinceActivity <= 60 ? 10 : 0) +
+      Math.min(activeListings, 5) * 4 +
+      Math.min(activeTransactions, 4) * 5 -
+      stalePenalty,
+  )
+
+  if (!activeAgents || !hasListingsOrTransactions || daysSinceActivity > 30) {
+    return { label: 'Needs Attention', statusKey: 'needs_attention', tone: 'red', score, daysSinceActivity }
+  }
+
+  if (!activeTransactions || !activeListings || !hasRecentActivity || daysSinceActivity > 14) {
+    return { label: 'Watch', statusKey: 'watch', tone: 'gold', score, daysSinceActivity }
+  }
+
+  return { label: 'Healthy', statusKey: 'healthy', tone: 'green', score, daysSinceActivity }
+}
+
+function startOfDay(date) {
+  const next = new Date(date)
+  next.setHours(0, 0, 0, 0)
+  return next
+}
+
+function addDays(date, days) {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
+function startOfMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1)
+}
+
+function endOfPreviousMoment(date) {
+  return new Date(date.getTime() - 1)
+}
+
+function resolveOverviewPeriod(period = 'this_month', now = new Date()) {
+  const today = startOfDay(now)
+  const currentMonthStart = startOfMonth(today)
+
+  if (period === 'last_month') {
+    const currentStart = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+    const currentEnd = endOfPreviousMoment(currentMonthStart)
+    const previousStart = new Date(today.getFullYear(), today.getMonth() - 2, 1)
+    const previousEnd = endOfPreviousMoment(currentStart)
+    return { key: period, currentStart, currentEnd, previousStart, previousEnd }
+  }
+
+  if (period === '90_days') {
+    const currentStart = addDays(today, -89)
+    const currentEnd = now
+    const previousStart = addDays(currentStart, -90)
+    const previousEnd = endOfPreviousMoment(currentStart)
+    return { key: period, currentStart, currentEnd, previousStart, previousEnd }
+  }
+
+  const previousStart = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+  const previousEnd = endOfPreviousMoment(currentMonthStart)
+  return { key: 'this_month', currentStart: currentMonthStart, currentEnd: now, previousStart, previousEnd }
+}
+
+function isWithinWindow(date, start, end) {
+  if (!date) return false
+  return date.getTime() >= start.getTime() && date.getTime() <= end.getTime()
+}
+
+function getChangePercent(currentValue, previousValue) {
+  const current = toNumber(currentValue)
+  const previous = toNumber(previousValue)
+  if (!current && !previous) return null
+  if (!previous) return 100
+  return Math.round(((current - previous) / previous) * 100)
+}
+
+function buildSparkline(records = [], window = {}, valueGetter = () => 1, fallbackValue = 0) {
+  const bucketCount = 8
+  const buckets = Array.from({ length: bucketCount }, () => 0)
+  const start = window.currentStart
+  const end = window.currentEnd
+  const span = Math.max(1, end.getTime() - start.getTime())
+
+  for (const row of records) {
+    const date = getRecordDate(row)
+    if (!isWithinWindow(date, start, end)) continue
+    const ratio = (date.getTime() - start.getTime()) / span
+    const index = Math.max(0, Math.min(bucketCount - 1, Math.floor(ratio * bucketCount)))
+    buckets[index] += Math.max(0, toNumber(valueGetter(row)))
+  }
+
+  if (buckets.some((value) => value > 0)) return buckets
+  return Array.from({ length: bucketCount }, () => Math.max(0, toNumber(fallbackValue)))
+}
+
+function buildPeriodMetric(records = [], window = {}, valueGetter = () => 1) {
+  const currentValue = records.reduce((sum, row) => {
+    const date = getRecordDate(row)
+    return isWithinWindow(date, window.currentStart, window.currentEnd) ? sum + Math.max(0, toNumber(valueGetter(row))) : sum
+  }, 0)
+  const previousValue = records.reduce((sum, row) => {
+    const date = getRecordDate(row)
+    return isWithinWindow(date, window.previousStart, window.previousEnd) ? sum + Math.max(0, toNumber(valueGetter(row))) : sum
+  }, 0)
+
+  return {
+    value: currentValue,
+    previousValue,
+    changePercent: getChangePercent(currentValue, previousValue),
+    sparkline: buildSparkline(records, window, valueGetter),
+  }
+}
+
+function getBranchTrendRecords(branch = {}) {
+  return [
+    ...(branch.listings || []).filter(isActiveListing).map((row) => ({ ...row, branchTrendValue: getListingValue(row) })),
+    ...(branch.transactions || []).filter(isActiveTransaction).map((row) => ({ ...row, branchTrendValue: getTransactionValue(row) })),
+  ]
+}
+
+function calculateCompanyHealth(branches = []) {
+  const activeBranches = branches.filter((branch) => branch?.isActive !== false)
+  if (!activeBranches.length) return 0
+
+  const total = activeBranches.length
+  const percent = (count) => (count / total) * 100
+  const recentBranches = activeBranches.filter((branch) => getDaysSince(getLatestBranchActivityDate(branch)) <= 30).length
+  const transactionBranches = activeBranches.filter((branch) => toNumber(branch?.kpis?.activeTransactions) > 0).length
+  const listingBranches = activeBranches.filter((branch) => toNumber(branch?.kpis?.activeListings) > 0).length
+  const coveredBranches = activeBranches.filter((branch) => getBranchProductionUsers(branch) > 0).length
+  const staleBranches = activeBranches.filter((branch) => getDaysSince(getLatestBranchActivityDate(branch)) > 30).length
+
+  const branchActivity = percent(recentBranches)
+  const transactionActivity = percent(transactionBranches)
+  const listingActivity = percent(listingBranches)
+  const agentCoverage = percent(coveredBranches)
+  const stalePenalty = percent(staleBranches)
+
+  return clampPercent(
+    branchActivity * 0.3 +
+      transactionActivity * 0.25 +
+      listingActivity * 0.2 +
+      agentCoverage * 0.15 +
+      10 -
+      stalePenalty * 0.1,
+  )
+}
+
+function buildOverviewBranchRows(branches = [], window = {}) {
+  return branches
+    .map((branch) => {
+      const trendRecords = getBranchTrendRecords(branch)
+      const trend = buildPeriodMetric(trendRecords, window, (row) => row.branchTrendValue)
+      const health = getBranchHealthOverview(branch)
+
+      return {
+        ...branch,
+        activeAgents: getBranchProductionUsers(branch),
+        activeListings: toNumber(branch?.kpis?.activeListings),
+        activeTransactions: toNumber(branch?.kpis?.activeTransactions),
+        pipelineValue: toNumber(branch?.kpis?.pipelineValue),
+        projectedCommission: toNumber(branch?.kpis?.projectedCommission),
+        hasProjectedCommissionData: Boolean(branch?.kpis?.hasProjectedCommissionData),
+        health,
+        trend: {
+          changePercent: trend.changePercent,
+          sparkline: trend.sparkline,
+        },
+      }
+    })
+    .sort((left, right) =>
+      toNumber(right.pipelineValue) - toNumber(left.pipelineValue) ||
+      toNumber(right.activeTransactions) - toNumber(left.activeTransactions) ||
+      toNumber(right.activeListings) - toNumber(left.activeListings) ||
+      normalizeText(left.name).localeCompare(normalizeText(right.name)),
+    )
+    .map((branch, index) => ({ ...branch, rank: index + 1 }))
+}
+
+export function buildAgencyBranchOverview(branches = [], { period = 'this_month' } = {}) {
+  const window = resolveOverviewPeriod(period)
+  const branchRows = buildOverviewBranchRows(branches, window)
+  const activeBranchRows = branchRows.filter((branch) => branch?.isActive !== false)
+  const listings = branchRows.flatMap((branch) => (branch.listings || []).filter(isActiveListing).map((row) => ({ ...row, overviewValue: getListingValue(row) })))
+  const transactions = branchRows.flatMap((branch) => (branch.transactions || []).filter(isActiveTransaction).map((row) => ({ ...row, overviewValue: getTransactionValue(row) })))
+  const pipelineRecords = [...listings, ...transactions]
+  const members = branchRows.flatMap((branch) => branch.members || [])
+  const companyPipeline = branchRows.reduce((sum, branch) => sum + toNumber(branch.pipelineValue), 0)
+  const projectedCommission = branchRows.reduce((sum, branch) => sum + toNumber(branch.projectedCommission), 0)
+  const activeAgents = branchRows.reduce((sum, branch) => sum + toNumber(branch.activeAgents), 0)
+  const activeTransactions = branchRows.reduce((sum, branch) => sum + toNumber(branch.activeTransactions), 0)
+  const hasProjectedCommissionData = branchRows.some((branch) => branch.hasProjectedCommissionData)
+
+  return {
+    totals: {
+      branches: activeBranchRows.length,
+      agents: activeAgents,
+      companyPipeline,
+      activeTransactions,
+      projectedCommission,
+      hasProjectedCommissionData,
+      companyHealth: calculateCompanyHealth(branchRows),
+      companyHealthChangePercent: null,
+    },
+    periodMetrics: {
+      pipeline: buildPeriodMetric(pipelineRecords, window, (row) => row.overviewValue),
+      transactions: buildPeriodMetric(transactions, window, () => 1),
+      listings: buildPeriodMetric(listings, window, () => 1),
+      agents: {
+        value: activeAgents,
+        previousValue: activeAgents,
+        changePercent: null,
+        sparkline: buildSparkline(members, window, () => 1, activeAgents),
+      },
+    },
+    branches: branchRows,
+    period: window.key,
+  }
+}
+
+export async function getAgencyBranchOverview(agencyId = '', period = 'this_month') {
+  const branches = await getBranches()
+  const normalizedAgencyId = normalizeText(agencyId)
+  const scopedBranches = normalizedAgencyId
+    ? branches.filter((branch) => normalizeText(branch?.organisationId) === normalizedAgencyId)
+    : branches
+
+  return buildAgencyBranchOverview(scopedBranches, { period })
 }
 
 export async function getBranchTransactions(branchId) {

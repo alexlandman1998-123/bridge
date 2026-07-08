@@ -1,26 +1,23 @@
 import {
-  AlertTriangle,
   ArrowDownRight,
   ArrowRight,
   ArrowRightLeft,
   ArrowUpRight,
   Banknote,
   Building2,
-  CheckCircle2,
-  Clock3,
   Filter,
-  Gauge,
+  HeartPulse,
+  LineChart,
   MapPin,
   MoreHorizontal,
   Plus,
   RefreshCw,
   Search,
   Trash2,
-  Trophy,
   UserRound,
   Users,
 } from 'lucide-react'
-import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import Button from '../../components/ui/Button'
@@ -28,11 +25,50 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import Field from '../../components/ui/Field'
 import Modal from '../../components/ui/Modal'
 import { upsertAreaFromAddress } from '../../lib/location/upsertArea'
-import { createBranch, deleteBranch, getBranches } from '../../services/agencyBranchService'
+import { createBranch, deleteBranch, getAgencyBranchOverview } from '../../services/agencyBranchService'
 
-const PERFORMANCE_FILTERS = [
-  { key: 'all', label: 'All Branches' },
+const PERIOD_OPTIONS = [
+  { value: 'this_month', label: 'This Month' },
+  { value: 'last_month', label: 'Last Month' },
+  { value: '90_days', label: '90 Days' },
 ]
+
+const STATUS_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'healthy', label: 'Healthy' },
+  { value: 'watch', label: 'Watch' },
+  { value: 'needs_attention', label: 'Needs Attention' },
+  { value: 'inactive', label: 'Inactive' },
+]
+
+const SORT_OPTIONS = [
+  { value: 'pipeline', label: 'Pipeline Value' },
+  { value: 'transactions', label: 'Transactions' },
+  { value: 'listings', label: 'Listings' },
+  { value: 'agents', label: 'Agents' },
+  { value: 'health', label: 'Health' },
+  { value: 'name', label: 'A-Z' },
+]
+
+const EMPTY_OVERVIEW = {
+  totals: {
+    branches: 0,
+    agents: 0,
+    companyPipeline: 0,
+    activeTransactions: 0,
+    projectedCommission: 0,
+    hasProjectedCommissionData: false,
+    companyHealth: 0,
+    companyHealthChangePercent: null,
+  },
+  periodMetrics: {
+    pipeline: { value: 0, previousValue: 0, changePercent: null, sparkline: [] },
+    transactions: { value: 0, previousValue: 0, changePercent: null, sparkline: [] },
+    listings: { value: 0, previousValue: 0, changePercent: null, sparkline: [] },
+    agents: { value: 0, previousValue: 0, changePercent: null, sparkline: [] },
+  },
+  branches: [],
+}
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -96,31 +132,35 @@ function mergeBranchAddress(previous = {}, value = null) {
   }
 }
 
-function getValidDate(value) {
-  if (!value) return null
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? null : date
+function formatNumber(value) {
+  return new Intl.NumberFormat('en-ZA', { maximumFractionDigits: 0 }).format(toNumber(value))
 }
 
 function formatCurrency(value) {
-  const amount = Number(value || 0)
-  if (!Number.isFinite(amount) || amount <= 0) return 'R 0'
+  const amount = toNumber(value)
+  if (amount <= 0) return 'R0'
   return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(amount)
 }
 
 function formatCompactCurrency(value) {
-  const amount = Number(value || 0)
-  if (!Number.isFinite(amount) || amount <= 0) return 'R 0'
-  if (amount >= 1000000000) return `R ${(amount / 1000000000).toFixed(1).replace(/\.0$/, '')}bn`
-  if (amount >= 1000000) return `R ${(amount / 1000000).toFixed(1).replace(/\.0$/, '')}m`
-  if (amount >= 1000) return `R ${(amount / 1000).toFixed(1).replace(/\.0$/, '')}k`
+  const amount = toNumber(value)
+  if (amount <= 0) return 'R0'
+  if (amount >= 1000000000) return `R${(amount / 1000000000).toFixed(1).replace(/\.0$/, '')}bn`
+  if (amount >= 1000000) return `R${(amount / 1000000).toFixed(1).replace(/\.0$/, '')}m`
+  if (amount >= 1000) return `R${(amount / 1000).toFixed(1).replace(/\.0$/, '')}k`
   return formatCurrency(amount)
 }
 
-function formatPercent(value) {
-  const numeric = Number(value || 0)
-  if (!Number.isFinite(numeric)) return '0%'
-  return `${Math.round(numeric * 10) / 10}%`
+function formatChange(value) {
+  if (value === null || value === undefined) return 'No history yet'
+  const numeric = toNumber(value)
+  if (numeric === 0) return '0%'
+  return `${numeric > 0 ? '+' : ''}${numeric}%`
+}
+
+function getChangeTone(value) {
+  if (value === null || value === undefined || toNumber(value) === 0) return 'text-[#64748b]'
+  return toNumber(value) > 0 ? 'text-[#0f8f52]' : 'text-[#c2410c]'
 }
 
 function getInitials(value = '') {
@@ -129,192 +169,68 @@ function getInitials(value = '') {
   return parts.slice(0, 2).map((part) => part.charAt(0)).join('').toUpperCase()
 }
 
-function isThisMonth(value) {
-  const date = getValidDate(value)
-  if (!date) return false
-  const now = new Date()
-  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()
-}
-
-function getMonthKey(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-}
-
-function getRecentMonthKeys(count = 6) {
-  const keys = []
-  const cursor = new Date()
-  cursor.setDate(1)
-  for (let index = count - 1; index >= 0; index -= 1) {
-    const date = new Date(cursor.getFullYear(), cursor.getMonth() - index, 1)
-    keys.push(getMonthKey(date))
-  }
-  return keys
-}
-
-function buildMonthlySeries(rows = [], valueGetter = () => 1) {
-  const keys = getRecentMonthKeys(6)
-  const bucket = new Map(keys.map((key) => [key, 0]))
-  for (const row of rows) {
-    const date = getValidDate(row?.created_at || row?.createdAt || row?.updated_at || row?.updatedAt)
-    if (!date) continue
-    const key = getMonthKey(date)
-    if (!bucket.has(key)) continue
-    bucket.set(key, bucket.get(key) + Math.max(0, toNumber(valueGetter(row))))
-  }
-  const values = keys.map((key) => bucket.get(key) || 0)
-  return values.some((value) => value > 0) ? values : [1, 1, 1, 1, 1, 1]
-}
-
-function calculateMonthDelta(rows = [], valueGetter = () => 1) {
-  const now = new Date()
-  const currentKey = getMonthKey(now)
-  const previousKey = getMonthKey(new Date(now.getFullYear(), now.getMonth() - 1, 1))
-  let current = 0
-  let previous = 0
-
-  for (const row of rows) {
-    const date = getValidDate(row?.created_at || row?.createdAt || row?.updated_at || row?.updatedAt)
-    if (!date) continue
-    const value = Math.max(0, toNumber(valueGetter(row)))
-    const key = getMonthKey(date)
-    if (key === currentKey) current += value
-    if (key === previousKey) previous += value
-  }
-
-  if (!current && !previous) return 0
-  if (!previous) return current > 0 ? 100 : 0
-  return Math.round(((current - previous) / previous) * 100)
-}
-
-function getLatestActivityDate(branch = {}) {
-  const dates = [
-    branch.updatedAt,
-    branch.createdAt,
-    ...(branch.members || []).map((row) => row.updated_at || row.created_at),
-    ...(branch.transactions || []).map((row) => row.updated_at || row.created_at),
-    ...(branch.listings || []).map((row) => row.updated_at || row.created_at),
-    ...(branch.leads || []).map((row) => row.updated_at || row.created_at),
-  ]
-    .map(getValidDate)
-    .filter(Boolean)
-
-  if (!dates.length) return null
-  return dates.sort((left, right) => right.getTime() - left.getTime())[0]
-}
-
-function getDaysSince(date) {
-  if (!date) return 999
-  return Math.max(0, Math.floor((Date.now() - date.getTime()) / 86400000))
-}
-
-function getHealthStatus(score, isActive = true) {
-  if (!isActive) return { label: 'Inactive', tone: 'slate' }
-  if (score >= 90) return { label: 'Excellent', tone: 'green' }
-  if (score >= 75) return { label: 'Good', tone: 'green' }
-  if (score >= 60) return { label: 'Fair', tone: 'gold' }
-  if (score >= 45) return { label: 'Needs Attention', tone: 'orange' }
-  if (score >= 25) return { label: 'Poor', tone: 'red' }
-  return { label: 'Critical', tone: 'red' }
-}
-
-function deriveBranchHealth(branch = {}, maxPipeline = 0) {
-  if (branch?.isActive === false) {
-    return { score: 0, label: 'Inactive', tone: 'slate', needsAttention: true }
-  }
-
-  const kpis = branch.kpis || {}
-  const pipelineValue = toNumber(kpis.pipelineValue)
-  const latestActivity = getLatestActivityDate(branch)
-  const daysSinceActivity = getDaysSince(latestActivity)
-  const activityScore = daysSinceActivity <= 30 ? 10 : daysSinceActivity <= 90 ? 6 : 2
-  const pipelineScore = maxPipeline > 0 ? Math.min(pipelineValue / maxPipeline, 1) * 28 : 0
-  const agentScore = Math.min(toNumber(kpis.activeAgents) / 3, 1) * 18
-  const listingScore = Math.min(toNumber(kpis.activeListings) / 6, 1) * 16
-  const transactionScore = Math.min(toNumber(kpis.activeTransactions) / 5, 1) * 18
-  const conversionScore = Math.min(toNumber(kpis.conversionRate) / 25, 1) * 10
-  const score = Math.max(0, Math.min(100, Math.round(pipelineScore + agentScore + listingScore + transactionScore + conversionScore + activityScore)))
-  const status = getHealthStatus(score, true)
-
-  return {
-    score,
-    ...status,
-    needsAttention: score < 60 || toNumber(kpis.activeAgents) === 0 || (toNumber(kpis.activeListings) === 0 && toNumber(kpis.activeTransactions) === 0),
-  }
-}
-
-function buildBranchTrend(branch = {}) {
-  const activityRows = [
-    ...(branch.transactions || []).map((row) => ({ ...row, trendValue: toNumber(row.sales_price || row.purchase_price) })),
-    ...(branch.listings || []).map((row) => ({ ...row, trendValue: toNumber(row.asking_price) })),
-    ...(branch.leads || []).map((row) => ({ ...row, trendValue: toNumber(row.estimated_value || row.budget) })),
-  ]
-  return buildMonthlySeries(activityRows, (row) => row.trendValue || 1)
-}
-
-function getTrendTone(delta) {
-  if (delta > 0) return 'text-[#0f9f5f]'
-  if (delta < 0) return 'text-[#d14343]'
-  return 'text-[#7b8ca2]'
-}
-
-function MiniSparkline({ values = [], tone = 'blue' }) {
-  const safeValues = values.length ? values : [1, 1, 1, 1, 1, 1]
+function MiniSparkline({ values = [], tone = 'blue', className = 'h-9 w-24' }) {
+  const safeValues = values.length ? values.map(toNumber) : [0, 0, 0, 0, 0, 0, 0, 0]
   const max = Math.max(...safeValues, 1)
   const min = Math.min(...safeValues, 0)
   const range = Math.max(max - min, 1)
   const points = safeValues.map((value, index) => {
     const x = safeValues.length === 1 ? 100 : (index / (safeValues.length - 1)) * 100
-    const y = 40 - ((value - min) / range) * 34 + 3
+    const y = 34 - ((value - min) / range) * 28 + 3
     return `${x},${y}`
   }).join(' ')
   const stroke = {
-    blue: '#2874dc',
-    green: '#12a05c',
-    gold: '#f59e0b',
-    red: '#d14343',
-    slate: '#7b8ca2',
-    purple: '#7c3aed',
-  }[tone] || '#2874dc'
+    blue: '#2563eb',
+    green: '#16a34a',
+    gold: '#d97706',
+    red: '#dc2626',
+    slate: '#94a3b8',
+  }[tone] || '#2563eb'
 
   return (
-    <svg viewBox="0 0 100 46" className="h-10 w-24 overflow-visible" aria-hidden="true" focusable="false">
+    <svg viewBox="0 0 100 40" className={className} aria-hidden="true" focusable="false">
       <polyline points={points} fill="none" stroke={stroke} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }
 
-function TrendLabel({ value, suffix = 'MoM' }) {
-  const numeric = Number(value || 0)
+function ChangeLabel({ value, suffix = '' }) {
+  const numeric = toNumber(value)
   const Icon = numeric < 0 ? ArrowDownRight : ArrowUpRight
+
+  if (value === null || value === undefined) {
+    return <span className="text-[0.78rem] font-semibold text-[#64748b]">No history yet</span>
+  }
+
   return (
-    <span className={`inline-flex items-center gap-1 text-[0.78rem] font-semibold ${getTrendTone(numeric)}`}>
+    <span className={`inline-flex items-center gap-1 text-[0.78rem] font-semibold ${getChangeTone(value)}`}>
       <Icon size={14} />
-      {numeric > 0 ? '+' : ''}{numeric}% {suffix}
+      {formatChange(value)}{suffix ? ` ${suffix}` : ''}
     </span>
   )
 }
 
-function ExecutiveKpiCard({ label, value, context, icon, tone = 'blue', trendValues = [], trend = null }) {
+function KpiCard({ label, value, helper, icon: Icon, tone = 'blue', sparkline = [], change = null }) {
   const toneClass = {
-    blue: 'bg-[#edf5ff] text-[#1769d1]',
-    green: 'bg-[#edfdf3] text-[#0f8f52]',
-    purple: 'bg-[#f4f0ff] text-[#7046d6]',
-    gold: 'bg-[#fff7e8] text-[#b7791f]',
-    slate: 'bg-[#f3f6fa] text-[#4d6178]',
-  }[tone] || 'bg-[#edf5ff] text-[#1769d1]'
+    blue: 'bg-[#eef6ff] text-[#1d4ed8]',
+    green: 'bg-[#ecfdf3] text-[#15803d]',
+    gold: 'bg-[#fff7ed] text-[#c2410c]',
+    red: 'bg-[#fef2f2] text-[#b91c1c]',
+    slate: 'bg-[#f1f5f9] text-[#475569]',
+  }[tone] || 'bg-[#eef6ff] text-[#1d4ed8]'
 
   return (
-    <article className="min-w-0 rounded-[18px] border border-[#dfe7f1] bg-white px-4 py-4 shadow-[0_12px_28px_rgba(15,35,55,0.055)]">
+    <article className="min-w-0 rounded-lg border border-[#e2e8f0] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
       <div className="flex items-start justify-between gap-3">
-        <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[14px] ${toneClass}`}>
-          {icon ? createElement(icon, { size: 18 }) : null}
+        <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${toneClass}`}>
+          {Icon ? <Icon size={18} /> : null}
         </span>
-        <MiniSparkline values={trendValues} tone={tone} />
+        <MiniSparkline values={sparkline} tone={tone} className="h-8 w-20" />
       </div>
-      <p className="mt-3 text-[0.68rem] font-semibold uppercase tracking-[0.13em] text-[#74879e]">{label}</p>
-      <strong className="mt-1 block truncate text-[1.75rem] font-semibold leading-none tracking-[-0.045em] text-[#0f2135] tabular-nums">{value}</strong>
-      <div className="mt-2 flex min-h-[20px] items-center gap-2 text-[0.78rem] font-medium text-[#62778f]">
-        {trend !== null ? <TrendLabel value={trend} suffix="this month" /> : <span>{context}</span>}
+      <p className="mt-4 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">{label}</p>
+      <strong className="mt-1 block truncate text-[1.45rem] font-semibold leading-none tracking-[-0.035em] text-[#0f172a] tabular-nums">{value}</strong>
+      <div className="mt-2 min-h-[20px] text-sm font-medium text-[#64748b]">
+        {change !== null && change !== undefined ? <ChangeLabel value={change} /> : helper}
       </div>
     </article>
   )
@@ -322,116 +238,65 @@ function ExecutiveKpiCard({ label, value, context, icon, tone = 'blue', trendVal
 
 function StatusBadge({ children, tone = 'slate' }) {
   const toneClass = {
-    green: 'border-[#ccebd8] bg-[#edfdf3] text-[#167444]',
-    blue: 'border-[#cfe0ff] bg-[#edf5ff] text-[#1f63c4]',
-    gold: 'border-[#f7dda5] bg-[#fff8e8] text-[#a16207]',
-    orange: 'border-[#fed7aa] bg-[#fff7ed] text-[#c05621]',
-    red: 'border-[#f8c7c7] bg-[#fff4f4] text-[#c23434]',
-    slate: 'border-[#dbe4ee] bg-[#f7f9fc] text-[#5f7186]',
-  }[tone] || 'border-[#dbe4ee] bg-[#f7f9fc] text-[#5f7186]'
+    green: 'border-[#bbf7d0] bg-[#f0fdf4] text-[#166534]',
+    gold: 'border-[#fed7aa] bg-[#fff7ed] text-[#9a3412]',
+    red: 'border-[#fecaca] bg-[#fef2f2] text-[#991b1b]',
+    slate: 'border-[#e2e8f0] bg-[#f8fafc] text-[#475569]',
+  }[tone] || 'border-[#e2e8f0] bg-[#f8fafc] text-[#475569]'
 
   return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${toneClass}`}>{children}</span>
 }
 
-function HealthRing({ score, label, size = 'lg' }) {
-  const value = Math.max(0, Math.min(100, Number(score || 0)))
-  const dimensionClass = size === 'sm' ? 'h-16 w-16' : size === 'md' ? 'h-20 w-20' : 'h-24 w-24'
-  const labelClass = size === 'sm' ? 'text-[1.05rem]' : size === 'md' ? 'text-[1.45rem]' : 'text-[1.8rem]'
-  const color = value >= 75 ? '#1fb86a' : value >= 60 ? '#f59e0b' : value >= 45 ? '#f97316' : '#ef4444'
-
+function PerformanceMetric({ label, value, changePercent, sparkline, tone = 'blue' }) {
   return (
-    <div
-      className={`grid shrink-0 place-items-center rounded-full ${dimensionClass}`}
-      style={{ background: `conic-gradient(${color} ${value * 3.6}deg, #edf2f7 0deg)` }}
-      aria-label={`${value} health score`}
-    >
-      <div className="grid h-[78%] w-[78%] place-items-center rounded-full bg-white text-center shadow-[inset_0_0_0_1px_rgba(216,226,238,0.75)]">
-        <div>
-          <strong className={`block font-semibold leading-none tracking-[-0.05em] text-[#102236] tabular-nums ${labelClass}`}>{value}</strong>
-          {label ? <span className="mt-1 block text-[0.62rem] font-semibold text-[#17814d]">{label}</span> : null}
+    <article className="min-w-0 rounded-lg border border-[#e2e8f0] bg-[#fbfdff] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">{label}</p>
+          <strong className="mt-2 block truncate text-[1.35rem] font-semibold tracking-[-0.035em] text-[#0f172a] tabular-nums">{value}</strong>
         </div>
+        <MiniSparkline values={sparkline} tone={tone} />
       </div>
-    </div>
-  )
-}
-
-function BranchKpiTile({ label, value, trend = null }) {
-  return (
-    <article className="min-w-0 border-r border-[#e7edf5] px-3 py-1 last:border-r-0">
-      <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{label}</span>
-      <strong className="mt-1 block truncate text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132] tabular-nums">{value}</strong>
-      <span className={`mt-1 inline-flex items-center gap-1 text-[0.72rem] font-semibold ${trend === null ? 'text-[#8aa0b5]' : getTrendTone(trend)}`}>
-        {trend === null ? '-' : (
-          <>
-            {trend < 0 ? <ArrowDownRight size={12} /> : <ArrowUpRight size={12} />}
-            {trend > 0 ? '+' : ''}{trend}%
-          </>
-        )}
-      </span>
+      <div className="mt-3">
+        <ChangeLabel value={changePercent} suffix="vs previous" />
+      </div>
     </article>
   )
 }
 
-function PrincipalAvatar({ name }) {
-  return (
-    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#102236] text-sm font-semibold text-white shadow-[0_8px_18px_rgba(16,34,54,0.18)]">
-      {getInitials(name)}
-    </span>
-  )
-}
+function BranchActionMenu({ branch, onView, onManageAgents, onDelete }) {
+  const [open, setOpen] = useState(false)
 
-function BranchActionMenu({ branch, needsAttention = false, onView, onTakeAction, onManageAgents, onDelete }) {
-  const [menuOpen, setMenuOpen] = useState(false)
-
-  function runAction(action) {
-    setMenuOpen(false)
+  function runAction(event, action) {
+    event.stopPropagation()
+    setOpen(false)
     action?.()
   }
 
   return (
-    <div className="relative shrink-0">
+    <div className="relative">
       <button
         type="button"
-        className="grid h-9 w-9 place-items-center rounded-[12px] border border-[#dde6f0] bg-white text-[#60758d] transition hover:bg-[#f7faff]"
-        aria-label={`Actions for ${branch?.name || 'branch'}`}
+        className="grid h-9 w-9 place-items-center rounded-lg border border-[#dbe4ee] bg-white text-[#64748b] transition hover:bg-[#f8fafc]"
+        aria-label={`More actions for ${branch?.name || 'branch'}`}
         aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        onClick={() => setMenuOpen((previous) => !previous)}
+        aria-expanded={open}
+        onClick={(event) => {
+          event.stopPropagation()
+          setOpen((previous) => !previous)
+        }}
       >
         <MoreHorizontal size={17} />
       </button>
-      {menuOpen ? (
-        <div className="absolute right-0 top-[calc(100%+8px)] z-30 w-52 rounded-2xl border border-[#dce6f0] bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.16)]" role="menu">
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]"
-            role="menuitem"
-            onClick={() => runAction(onView)}
-          >
-            <ArrowRight size={15} />View branch
+      {open ? (
+        <div className="absolute right-0 top-[calc(100%+8px)] z-20 w-48 rounded-lg border border-[#dbe4ee] bg-white p-1.5 shadow-[0_18px_40px_rgba(15,23,42,0.16)]" role="menu">
+          <button type="button" className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f8fafc]" onClick={(event) => runAction(event, onView)}>
+            <ArrowRight size={15} />View
           </button>
-          <button
-            type="button"
-            className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold hover:bg-[#fff7ed] ${needsAttention ? 'text-[#b42318]' : 'text-[#1f3448]'}`}
-            role="menuitem"
-            onClick={() => runAction(onTakeAction)}
-          >
-            <ArrowUpRight size={15} />Take action
-          </button>
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]"
-            role="menuitem"
-            onClick={() => runAction(onManageAgents)}
-          >
+          <button type="button" className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f8fafc]" onClick={(event) => runAction(event, onManageAgents)}>
             <UserRound size={15} />Manage agents
           </button>
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#b42318] hover:bg-[#fff4f4]"
-            role="menuitem"
-            onClick={() => runAction(onDelete)}
-          >
+          <button type="button" className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-semibold text-[#b42318] hover:bg-[#fef2f2]" onClick={(event) => runAction(event, onDelete)}>
             <Trash2 size={15} />Delete branch
           </button>
         </div>
@@ -440,33 +305,62 @@ function BranchActionMenu({ branch, needsAttention = false, onView, onTakeAction
   )
 }
 
-function RankingTable({ rows, onOpenBranch }) {
+function BranchTable({ rows, onView, onManageAgents, onDelete }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-[640px] w-full text-left text-sm">
-        <thead>
-          <tr className="border-b border-[#e6edf5] text-[0.64rem] font-semibold uppercase tracking-[0.13em] text-[#7b8ca2]">
-            <th className="px-3 py-3">Rank</th>
-            <th className="px-3 py-3">Branch</th>
-            <th className="px-3 py-3">Pipeline</th>
-            <th className="px-3 py-3">Transactions</th>
-            <th className="px-3 py-3">Agents</th>
-            <th className="px-3 py-3">Trend</th>
+    <div className="hidden overflow-x-auto rounded-lg border border-[#e2e8f0] bg-white md:block">
+      <table className="min-w-[980px] w-full text-left text-sm">
+        <thead className="border-b border-[#e2e8f0] bg-[#f8fafc] text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
+          <tr>
+            <th className="px-4 py-3">Rank</th>
+            <th className="px-4 py-3">Branch</th>
+            <th className="px-4 py-3">Pipeline Value</th>
+            <th className="px-4 py-3">Transactions</th>
+            <th className="px-4 py-3">Listings</th>
+            <th className="px-4 py-3">Agents</th>
+            <th className="px-4 py-3">Health</th>
+            <th className="px-4 py-3">Trend</th>
+            <th className="px-4 py-3 text-right">Actions</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-[#eef3f8]">
+        <tbody className="divide-y divide-[#edf2f7]">
           {rows.map((branch) => (
-            <tr key={branch.id} className="cursor-pointer transition hover:bg-[#f8fbff]" onClick={() => onOpenBranch(branch.id)}>
-              <td className="px-3 py-4 text-xs font-semibold text-[#687b91]">#{branch.rank}</td>
-              <td className="px-3 py-4">
-                <p className="font-semibold text-[#142132]">{branch.name}</p>
-                <p className="mt-1 text-xs text-[#70859a]">{branch.location}</p>
+            <tr key={branch.id} className="transition hover:bg-[#fbfdff]">
+              <td className="px-4 py-4 text-sm font-semibold text-[#475569]">#{branch.rank}</td>
+              <td className="px-4 py-4">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#102236] text-sm font-semibold text-white">{getInitials(branch.name)}</span>
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-[#0f172a]">{branch.name}</p>
+                    <p className="mt-1 inline-flex max-w-[240px] items-center gap-1 truncate text-xs text-[#64748b]">
+                      <MapPin size={13} className="shrink-0" />
+                      <span className="truncate">{branch.location || 'Location pending'}</span>
+                    </p>
+                  </div>
+                </div>
               </td>
-              <td className="px-3 py-4 font-semibold text-[#142132]">{formatCompactCurrency(branch.kpis.pipelineValue)}</td>
-              <td className="px-3 py-4 text-[#20364d]">{branch.kpis.activeTransactions}</td>
-              <td className="px-3 py-4 text-[#20364d]">{branch.kpis.activeAgents}</td>
-              <td className="px-3 py-4">
-                <MiniSparkline values={branch.trendValues} tone={branch.health.tone === 'red' ? 'red' : 'green'} />
+              <td className="px-4 py-4 font-semibold text-[#0f172a] tabular-nums">{formatCompactCurrency(branch.pipelineValue)}</td>
+              <td className="px-4 py-4 text-[#1f3448] tabular-nums">{formatNumber(branch.activeTransactions)}</td>
+              <td className="px-4 py-4 text-[#1f3448] tabular-nums">{formatNumber(branch.activeListings)}</td>
+              <td className="px-4 py-4 text-[#1f3448] tabular-nums">{formatNumber(branch.activeAgents)}</td>
+              <td className="px-4 py-4">
+                <StatusBadge tone={branch.health?.tone}>{branch.health?.label || 'Watch'}</StatusBadge>
+              </td>
+              <td className="px-4 py-4">
+                <div className="flex items-center gap-2">
+                  <MiniSparkline values={branch.trend?.sparkline} tone={branch.health?.tone === 'red' ? 'red' : branch.health?.tone === 'gold' ? 'gold' : 'green'} className="h-8 w-20" />
+                  <span className={`text-xs font-semibold ${getChangeTone(branch.trend?.changePercent)}`}>{formatChange(branch.trend?.changePercent)}</span>
+                </div>
+              </td>
+              <td className="px-4 py-4">
+                <div className="flex items-center justify-end gap-2">
+                  <Button size="sm" variant="secondary" onClick={() => onView(branch.id)}>View</Button>
+                  <BranchActionMenu
+                    branch={branch}
+                    onView={() => onView(branch.id)}
+                    onManageAgents={() => onManageAgents(branch.id)}
+                    onDelete={() => onDelete(branch)}
+                  />
+                </div>
               </td>
             </tr>
           ))}
@@ -476,32 +370,63 @@ function RankingTable({ rows, onOpenBranch }) {
   )
 }
 
-function BranchHealthList({ rows, onOpenBranch }) {
+function BranchMobileCards({ rows, onView, onManageAgents, onDelete }) {
   return (
-    <div className="space-y-3">
+    <div className="grid gap-3 md:hidden">
       {rows.map((branch) => (
-        <button
-          type="button"
-          key={branch.id}
-          onClick={() => onOpenBranch(branch.id)}
-          className="w-full rounded-[14px] border border-[#e4ebf3] bg-white px-3 py-3 text-left transition hover:border-[#c9d9e8] hover:bg-[#fbfdff]"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <span className="min-w-0 truncate text-sm font-semibold text-[#162334]">{branch.name}</span>
-            <span className="shrink-0 text-sm font-semibold text-[#162334] tabular-nums">{branch.health.score}</span>
-          </div>
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#edf2f7]">
-            <div
-              className={`h-full rounded-full ${branch.health.tone === 'green' ? 'bg-[#19aa61]' : branch.health.tone === 'gold' ? 'bg-[#f59e0b]' : branch.health.tone === 'orange' ? 'bg-[#f97316]' : branch.health.tone === 'red' ? 'bg-[#ef4444]' : 'bg-[#94a3b8]'}`}
-              style={{ width: `${Math.max(branch.health.score, 3)}%` }}
+        <article key={branch.id} className="rounded-lg border border-[#e2e8f0] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-[#f1f5f9] px-2.5 py-1 text-xs font-semibold text-[#475569]">#{branch.rank}</span>
+                <StatusBadge tone={branch.health?.tone}>{branch.health?.label || 'Watch'}</StatusBadge>
+              </div>
+              <h3 className="mt-3 truncate text-[1rem] font-semibold text-[#0f172a]">{branch.name}</h3>
+              <p className="mt-1 flex items-center gap-1 truncate text-sm text-[#64748b]">
+                <MapPin size={14} className="shrink-0" />
+                <span className="truncate">{branch.location || 'Location pending'}</span>
+              </p>
+            </div>
+            <BranchActionMenu
+              branch={branch}
+              onView={() => onView(branch.id)}
+              onManageAgents={() => onManageAgents(branch.id)}
+              onDelete={() => onDelete(branch)}
             />
           </div>
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-[#6d8299]">{branch.health.label}</span>
-            {branch.health.needsAttention ? <StatusBadge tone="red">Attention</StatusBadge> : <StatusBadge tone="green">On track</StatusBadge>}
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <MobileMetric label="Pipeline" value={formatCompactCurrency(branch.pipelineValue)} />
+            <MobileMetric label="Transactions" value={formatNumber(branch.activeTransactions)} />
+            <MobileMetric label="Agents" value={formatNumber(branch.activeAgents)} />
+            <MobileMetric label="Listings" value={formatNumber(branch.activeListings)} />
           </div>
-        </button>
+          <Button size="sm" className="mt-4 w-full" onClick={() => onView(branch.id)}>View Branch <ArrowRight size={15} /></Button>
+        </article>
       ))}
+    </div>
+  )
+}
+
+function MobileMetric({ label, value }) {
+  return (
+    <div className="rounded-lg border border-[#e2e8f0] bg-[#fbfdff] px-3 py-2">
+      <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#64748b]">{label}</p>
+      <p className="mt-1 truncate text-sm font-semibold text-[#0f172a]">{value}</p>
+    </div>
+  )
+}
+
+function EmptyState({ onCreate }) {
+  return (
+    <div className="rounded-lg border border-dashed border-[#cbd5e1] bg-[#fbfdff] px-6 py-10 text-center">
+      <div className="mx-auto grid h-12 w-12 place-items-center rounded-lg bg-[#eef6ff] text-[#1d4ed8]">
+        <Filter size={20} />
+      </div>
+      <h3 className="mt-4 text-[1.05rem] font-semibold text-[#0f172a]">No branches match these filters</h3>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#64748b]">Adjust the filters or add a branch to start tracking company-wide performance.</p>
+      <div className="mt-5 flex justify-center">
+        <Button onClick={onCreate}><Plus size={16} />New Branch</Button>
+      </div>
     </div>
   )
 }
@@ -560,21 +485,21 @@ function NewBranchModal({ open, onClose, onCreated }) {
       footer={(
         <div className="flex items-center justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button type="button" onClick={handleCreate} disabled={saving}>{saving ? 'Creating…' : 'Create Branch'}</Button>
+          <Button type="button" onClick={handleCreate} disabled={saving}>{saving ? 'Creating...' : 'Create Branch'}</Button>
         </div>
       )}
     >
       <div className="grid gap-4 md:grid-cols-2">
         <label className="grid gap-1.5 md:col-span-2">
-          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Branch Name</span>
-          <Field value={form.name} onChange={(event) => setForm((previous) => ({ ...previous, name: event.target.value }))} placeholder="e.g. Samlin Realty — Bartlett" />
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#64748b]">Branch Name</span>
+          <Field value={form.name} onChange={(event) => setForm((previous) => ({ ...previous, name: event.target.value }))} placeholder="e.g. Samlin Realty Bartlett" />
         </label>
         <label className="grid gap-1.5">
-          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">City</span>
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#64748b]">City</span>
           <Field value={form.city} onChange={(event) => setForm((previous) => ({ ...previous, city: event.target.value }))} placeholder="e.g. Boksburg" />
         </label>
         <label className="grid gap-1.5">
-          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Province</span>
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#64748b]">Province</span>
           <Field value={form.province} onChange={(event) => setForm((previous) => ({ ...previous, province: event.target.value }))} placeholder="e.g. Gauteng" />
         </label>
         <div className="md:col-span-2">
@@ -587,183 +512,87 @@ function NewBranchModal({ open, onClose, onCreated }) {
           />
         </div>
         <label className="grid gap-1.5">
-          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Suburb</span>
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#64748b]">Suburb</span>
           <Field value={form.suburb} onChange={(event) => setForm((previous) => ({ ...previous, suburb: event.target.value }))} placeholder="e.g. Bedfordview" />
         </label>
         <label className="grid gap-1.5">
-          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Postal Code</span>
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#64748b]">Postal Code</span>
           <Field value={form.postalCode} onChange={(event) => setForm((previous) => ({ ...previous, postalCode: event.target.value }))} placeholder="e.g. 2007" />
         </label>
         <label className="grid gap-1.5">
-          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Principal / Manager</span>
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#64748b]">Principal / Manager</span>
           <Field value={form.managerName} onChange={(event) => setForm((previous) => ({ ...previous, managerName: event.target.value }))} placeholder="Name" />
         </label>
         <label className="grid gap-1.5">
-          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Branch Email</span>
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#64748b]">Branch Email</span>
           <Field type="email" value={form.email} onChange={(event) => setForm((previous) => ({ ...previous, email: event.target.value }))} placeholder="branch@agency.com" />
         </label>
         <label className="grid gap-1.5 md:col-span-2">
-          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Branch Phone</span>
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#64748b]">Branch Phone</span>
           <Field value={form.phone} onChange={(event) => setForm((previous) => ({ ...previous, phone: event.target.value }))} placeholder="Contact number" />
         </label>
       </div>
-      {error ? <p className="mt-4 rounded-[12px] border border-[#f2d7d7] bg-[#fff6f6] px-3 py-2 text-sm text-[#b42318]">{error}</p> : null}
+      {error ? <p className="mt-4 rounded-lg border border-[#fecaca] bg-[#fef2f2] px-3 py-2 text-sm text-[#991b1b]">{error}</p> : null}
     </Modal>
   )
 }
 
 export default function AgencyBranchesPage() {
   const navigate = useNavigate()
-  const [rows, setRows] = useState([])
+  const [overview, setOverview] = useState(EMPTY_OVERVIEW)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [period, setPeriod] = useState('this_month')
   const [searchTerm, setSearchTerm] = useState('')
-  const [organisationFilter, setOrganisationFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [provinceFilter, setProvinceFilter] = useState('all')
-  const [performanceFilter, setPerformanceFilter] = useState('all')
+  const [sortBy, setSortBy] = useState('pipeline')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [deleteDialog, setDeleteDialog] = useState({ open: false, branch: null, error: '' })
   const [deletingBranchId, setDeletingBranchId] = useState('')
 
-  const loadBranches = useCallback(async () => {
+  const loadOverview = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      const branchRows = await getBranches()
-      setRows(branchRows)
+      const nextOverview = await getAgencyBranchOverview('', period)
+      setOverview(nextOverview || EMPTY_OVERVIEW)
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load branches right now.')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [period])
 
   useEffect(() => {
-    void loadBranches()
-  }, [loadBranches])
-
-  const organisationOptions = useMemo(() => {
-    const map = new Map()
-    for (const row of rows) {
-      const id = normalizeText(row?.organisationId)
-      if (!id) continue
-      if (!map.has(id)) {
-        map.set(id, id)
-      }
-    }
-    return [...map.entries()].map(([id, label]) => ({ id, label }))
-  }, [rows])
+    void loadOverview()
+  }, [loadOverview])
 
   const provinceOptions = useMemo(() => {
-    const values = [...new Set(rows.map((row) => normalizeText(row?.province)).filter(Boolean))]
+    const values = [...new Set((overview.branches || []).map((row) => normalizeText(row?.province)).filter(Boolean))]
     return values.sort((left, right) => left.localeCompare(right))
-  }, [rows])
-
-  const enrichedRows = useMemo(() => {
-    const maxPipeline = rows.reduce((max, row) => Math.max(max, toNumber(row?.kpis?.pipelineValue)), 0)
-    const mapped = rows.map((branch) => {
-      const trendValues = buildBranchTrend(branch)
-      return {
-        ...branch,
-        trendValues,
-        health: deriveBranchHealth(branch, maxPipeline),
-        pipelineDelta: calculateMonthDelta(branch.transactions || [], (row) => toNumber(row.sales_price || row.purchase_price)),
-        listingDelta: calculateMonthDelta(branch.listings || []),
-        transactionDelta: calculateMonthDelta(branch.transactions || []),
-        agentDelta: calculateMonthDelta(branch.members || []),
-      }
-    })
-
-    return [...mapped]
-      .sort((left, right) =>
-        toNumber(right?.kpis?.pipelineValue) - toNumber(left?.kpis?.pipelineValue) ||
-        toNumber(right?.kpis?.activeTransactions) - toNumber(left?.kpis?.activeTransactions) ||
-        toNumber(right?.kpis?.activeListings) - toNumber(left?.kpis?.activeListings) ||
-        left.name.localeCompare(right.name),
-      )
-      .map((branch, index) => ({ ...branch, rank: index + 1 }))
-  }, [rows])
-
-  const network = useMemo(() => {
-    const branches = enrichedRows
-    const transactions = branches.flatMap((branch) => branch.transactions || [])
-    const listings = branches.flatMap((branch) => branch.listings || [])
-    const leads = branches.flatMap((branch) => branch.leads || [])
-    const members = branches.flatMap((branch) => branch.members || [])
-    const activeBranches = branches.filter((row) => row?.isActive !== false).length
-    const activeAgents = branches.reduce((sum, row) => sum + toNumber(row?.kpis?.activeAgents), 0)
-    const activeTransactions = branches.reduce((sum, row) => sum + toNumber(row?.kpis?.activeTransactions), 0)
-    const pipelineValue = branches.reduce((sum, row) => sum + toNumber(row?.kpis?.pipelineValue), 0)
-    const registeredDeals = branches.reduce((sum, row) => sum + toNumber(row?.kpis?.registeredDeals), 0)
-    const conversionRate = leads.length ? (registeredDeals / leads.length) * 100 : 0
-    const listingCycleRows = listings
-      .map((listing) => {
-        const start = getValidDate(listing.created_at || listing.createdAt)
-        const end = getValidDate(listing.updated_at || listing.updatedAt)
-        if (!start || !end || end < start) return null
-        return Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000))
-      })
-      .filter((value) => Number.isFinite(value))
-    const avgListingDays = listingCycleRows.length
-      ? Math.round(listingCycleRows.reduce((sum, value) => sum + value, 0) / listingCycleRows.length)
-      : 0
-    const avgHealth = branches.length
-      ? Math.round(branches.reduce((sum, row) => sum + toNumber(row.health?.score), 0) / branches.length)
-      : 0
-    const agencyHealth = Math.round(Math.min(100, (avgHealth * 0.72) + (activeBranches ? 10 : 0) + (activeAgents ? 10 : 0) + (activeTransactions ? 8 : 0)))
-    const topBranches = branches.filter((row) => row.health.score >= 75).length
-    const stableBranches = branches.filter((row) => row.health.score >= 60 && row.health.score < 75).length
-    const attentionBranches = branches.filter((row) => row.health.needsAttention).length
-
-    return {
-      activeBranches,
-      activeAgents,
-      activeTransactions,
-      pipelineValue,
-      conversionRate,
-      avgListingDays,
-      agencyHealth,
-      topBranches,
-      stableBranches,
-      attentionBranches,
-      branchGrowth: rows.filter((row) => isThisMonth(row.createdAt)).length,
-      agentGrowth: members.filter((row) => isThisMonth(row.created_at || row.createdAt)).length,
-      transactionGrowth: transactions.filter((row) => isThisMonth(row.created_at || row.createdAt)).length,
-      pipelineTrend: calculateMonthDelta(transactions, (row) => toNumber(row.sales_price || row.purchase_price)),
-      conversionTrend: calculateMonthDelta(leads),
-      listingTimeTrend: -calculateMonthDelta(listings),
-      branchTrendValues: buildMonthlySeries(rows),
-      agentTrendValues: buildMonthlySeries(members),
-      transactionTrendValues: buildMonthlySeries(transactions),
-      pipelineTrendValues: buildMonthlySeries(transactions, (row) => toNumber(row.sales_price || row.purchase_price)),
-      conversionTrendValues: buildMonthlySeries(leads),
-      listingTimeTrendValues: buildMonthlySeries(listings),
-    }
-  }, [enrichedRows, rows])
-
-  const topBranch = enrichedRows[0] || null
-  const attentionBranch = useMemo(() => {
-    return [...enrichedRows]
-      .filter((row) => row.health?.needsAttention)
-      .sort((left, right) => toNumber(left.health?.score) - toNumber(right.health?.score))[0] || null
-  }, [enrichedRows])
+  }, [overview.branches])
 
   const filteredRows = useMemo(() => {
     const query = normalizeText(searchTerm).toLowerCase()
-    return enrichedRows.filter((row) => {
-      const organisationMatch = organisationFilter === 'all' ? true : normalizeText(row?.organisationId) === organisationFilter
-      const provinceMatch = provinceFilter === 'all' ? true : normalizeText(row?.province).toLowerCase() === provinceFilter.toLowerCase()
-      const performanceMatch =
-        performanceFilter === 'all' ||
-        (performanceFilter === 'top' && row.health.score >= 75) ||
-        (performanceFilter === 'stable' && row.health.score >= 60 && row.health.score < 75) ||
-        (performanceFilter === 'attention' && row.health.needsAttention)
+    const rows = (overview.branches || []).filter((row) => {
+      const statusMatch = statusFilter === 'all' || row?.health?.statusKey === statusFilter
+      const provinceMatch = provinceFilter === 'all' || normalizeText(row?.province).toLowerCase() === provinceFilter.toLowerCase()
       const searchMatch = !query
         ? true
-        : `${row?.name || ''} ${row?.city || ''} ${row?.province || ''} ${row?.principalName || ''}`.toLowerCase().includes(query)
-      return organisationMatch && provinceMatch && performanceMatch && searchMatch
+        : `${row?.name || ''} ${row?.location || ''} ${row?.city || ''} ${row?.province || ''} ${row?.principalName || ''}`.toLowerCase().includes(query)
+      return statusMatch && provinceMatch && searchMatch
     })
-  }, [enrichedRows, organisationFilter, performanceFilter, provinceFilter, searchTerm])
+
+    return [...rows].sort((left, right) => {
+      if (sortBy === 'transactions') return toNumber(right.activeTransactions) - toNumber(left.activeTransactions) || left.rank - right.rank
+      if (sortBy === 'listings') return toNumber(right.activeListings) - toNumber(left.activeListings) || left.rank - right.rank
+      if (sortBy === 'agents') return toNumber(right.activeAgents) - toNumber(left.activeAgents) || left.rank - right.rank
+      if (sortBy === 'health') return toNumber(right.health?.score) - toNumber(left.health?.score) || left.rank - right.rank
+      if (sortBy === 'name') return normalizeText(left.name).localeCompare(normalizeText(right.name))
+      return toNumber(right.pipelineValue) - toNumber(left.pipelineValue) || left.rank - right.rank
+    })
+  }, [overview.branches, provinceFilter, searchTerm, sortBy, statusFilter])
 
   function openBranch(branchId) {
     navigate(`/agency/branches/${branchId}`)
@@ -796,8 +625,8 @@ export default function AgencyBranchesPage() {
     setDeleteDialog((previous) => ({ ...previous, error: '' }))
     try {
       await deleteBranch(branch.id)
-      setRows((previous) => previous.filter((row) => normalizeText(row?.id) !== normalizeText(branch.id)))
       setDeleteDialog({ open: false, branch: null, error: '' })
+      void loadOverview()
     } catch (deleteError) {
       const message = deleteError?.message || 'Unable to delete this branch right now.'
       setDeleteDialog((previous) => ({ ...previous, error: message }))
@@ -807,237 +636,110 @@ export default function AgencyBranchesPage() {
     }
   }
 
+  const totals = overview.totals || EMPTY_OVERVIEW.totals
+  const periodMetrics = overview.periodMetrics || EMPTY_OVERVIEW.periodMetrics
+  const projectedCommissionValue = totals.hasProjectedCommissionData ? formatCompactCurrency(totals.projectedCommission) : 'No data yet'
+
   return (
     <section className="flex flex-col gap-5 pb-8">
-      <div className="flex flex-wrap justify-end gap-2">
-        <Button variant="secondary" onClick={openPrincipalManagerInvite}>
-          <Users size={16} />Invite Principal / Manager
-        </Button>
-        <Button onClick={() => setShowCreateModal(true)}>
-          <Plus size={16} />New Branch
-        </Button>
-      </div>
+      <header className="flex flex-col gap-4 rounded-lg border border-[#e2e8f0] bg-white px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)] lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-[1.85rem] font-semibold leading-tight tracking-[-0.04em] text-[#0f172a]">Branches</h1>
+          <p className="mt-1 text-sm leading-6 text-[#64748b]">Manage every branch across your organisation.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" onClick={openPrincipalManagerInvite}>
+            <Users size={16} />Invite Principal / Manager
+          </Button>
+          <Button onClick={() => setShowCreateModal(true)}>
+            <Plus size={16} />New Branch
+          </Button>
+        </div>
+      </header>
 
-      {error ? <p className="rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{error}</p> : null}
-      {loading ? <p className="rounded-[16px] border border-[#dde4ee] bg-white px-5 py-4 text-sm text-[#6b7d93]">Loading branch performance...</p> : null}
+      {error ? <p className="rounded-lg border border-[#fecaca] bg-[#fef2f2] px-5 py-4 text-sm text-[#991b1b]">{error}</p> : null}
+      {loading ? <p className="rounded-lg border border-[#e2e8f0] bg-white px-5 py-4 text-sm text-[#64748b]">Loading company branch overview...</p> : null}
 
       {!loading ? (
         <>
-          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6" aria-label="Executive branch metrics">
-            <ExecutiveKpiCard label="Branches" value={network.activeBranches} context="Active branches" icon={Building2} tone="blue" trend={network.branchGrowth} trendValues={network.branchTrendValues} />
-            <ExecutiveKpiCard label="Agents" value={network.activeAgents} context="Active agents" icon={Users} tone="purple" trend={network.agentGrowth} trendValues={network.agentTrendValues} />
-            <ExecutiveKpiCard label="Transactions" value={network.activeTransactions} context="Active transactions" icon={ArrowRightLeft} tone="green" trend={network.transactionGrowth} trendValues={network.transactionTrendValues} />
-            <ExecutiveKpiCard label="Pipeline Value" value={formatCompactCurrency(network.pipelineValue)} context="Total pipeline" icon={Banknote} tone="gold" trend={network.pipelineTrend} trendValues={network.pipelineTrendValues} />
-            <ExecutiveKpiCard label="Conversion Rate" value={formatPercent(network.conversionRate)} context="Network conversion" icon={Gauge} tone="blue" trend={network.conversionTrend} trendValues={network.conversionTrendValues} />
-            <ExecutiveKpiCard label="Avg Listing Time" value={network.avgListingDays ? `${network.avgListingDays} Days` : 'No cycle'} context="Lead to live" icon={Clock3} tone="slate" trend={network.listingTimeTrend} trendValues={network.listingTimeTrendValues} />
+          <section className="grid grid-cols-2 gap-3 xl:grid-cols-6" aria-label="Company branch metrics">
+            <KpiCard label="Branches" value={formatNumber(totals.branches)} helper="Active branches" icon={Building2} tone="blue" sparkline={periodMetrics.listings?.sparkline} />
+            <KpiCard label="Agents" value={formatNumber(totals.agents)} helper="Branch-linked agents" icon={Users} tone="green" sparkline={periodMetrics.agents?.sparkline} />
+            <KpiCard label="Company Pipeline" value={formatCompactCurrency(totals.companyPipeline)} helper="Open listings and transactions" icon={LineChart} tone="gold" sparkline={periodMetrics.pipeline?.sparkline} />
+            <KpiCard label="Active Transactions" value={formatNumber(totals.activeTransactions)} helper="Open branch transactions" icon={ArrowRightLeft} tone="blue" sparkline={periodMetrics.transactions?.sparkline} />
+            <KpiCard label="Projected Commission" value={projectedCommissionValue} helper={totals.hasProjectedCommissionData ? 'Estimated commission' : 'No data yet'} icon={Banknote} tone={totals.hasProjectedCommissionData ? 'green' : 'slate'} sparkline={periodMetrics.pipeline?.sparkline} />
+            <KpiCard label="Company Health" value={`${formatNumber(totals.companyHealth)}%`} helper={totals.companyHealthChangePercent === null ? 'No previous snapshot' : 'Vs last month'} icon={HeartPulse} tone={totals.companyHealth >= 75 ? 'green' : totals.companyHealth >= 55 ? 'gold' : 'red'} sparkline={periodMetrics.transactions?.sparkline} change={totals.companyHealthChangePercent} />
           </section>
 
-          <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)]">
-            <article className="rounded-[20px] border border-[#cfeedd] bg-[#f7fffb] p-5 shadow-[0_14px_34px_rgba(17,94,89,0.07)]">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="inline-flex items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.13em] text-[#09864f]"><Trophy size={15} />Top Performing Branch</p>
-                  <h2 className="mt-4 text-[1.18rem] font-semibold tracking-[-0.03em] text-[#0f3428]">{topBranch?.name || 'No branch data yet'}</h2>
-                  <p className="mt-2 text-[1rem] font-semibold text-[#123427]">{formatCompactCurrency(topBranch?.kpis?.pipelineValue)} Pipeline</p>
-                  <div className="mt-2"><TrendLabel value={topBranch?.pipelineDelta || 0} suffix="vs last month" /></div>
-                </div>
-                <span className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-[#fff8e8] text-[#d89412] shadow-[inset_0_0_0_1px_rgba(245,158,11,0.24)]">
-                  <Trophy size={26} />
-                </span>
+          <section className="rounded-lg border border-[#e2e8f0] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h2 className="text-[1.15rem] font-semibold tracking-[-0.03em] text-[#0f172a]">Company Performance</h2>
               </div>
-              <Button size="sm" variant="secondary" className="mt-5" onClick={() => topBranch && openBranch(topBranch.id)} disabled={!topBranch}>View Branch</Button>
-            </article>
-
-            <article className="rounded-[20px] border border-[#f3dfc6] bg-[#fffaf1] p-5 shadow-[0_14px_34px_rgba(146,64,14,0.07)]">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="inline-flex items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.13em] text-[#b45309]"><AlertTriangle size={15} />Attention Required</p>
-                  <h2 className="mt-4 text-[1.18rem] font-semibold tracking-[-0.03em] text-[#102236]">{attentionBranch?.name || 'No branches need attention'}</h2>
-                  <p className="mt-2 text-sm font-semibold text-[#24384e]">
-                    {attentionBranch?.kpis?.activeAgents ? `${attentionBranch.kpis.activeAgents} active agents` : 'No active agents'}
-                  </p>
-                  <p className="mt-1 text-sm text-[#61758d]">{attentionBranch?.kpis?.activeListings || 0} listings • {attentionBranch?.kpis?.activeTransactions || 0} transactions</p>
-                </div>
-                <HealthRing score={attentionBranch?.health?.score || 0} size="sm" />
+              <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-[#dbe4ee] bg-[#f8fafc] p-1">
+                {PERIOD_OPTIONS.map((option) => (
+                  <button
+                    type="button"
+                    key={option.value}
+                    onClick={() => setPeriod(option.value)}
+                    className={`min-h-[34px] rounded-md px-3 text-sm font-semibold transition ${period === option.value ? 'bg-white text-[#0f172a] shadow-[0_6px_16px_rgba(15,23,42,0.08)]' : 'text-[#64748b] hover:text-[#0f172a]'}`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
-              <Button size="sm" variant="secondary" className="mt-5 border-[#f4c5a6] text-[#8a3b12]" onClick={() => attentionBranch && openBranch(attentionBranch.id)} disabled={!attentionBranch}>Take Action</Button>
-            </article>
-
-            <article className="rounded-[20px] border border-[#cfe0ff] bg-[#f8fbff] p-5 shadow-[0_14px_34px_rgba(40,116,220,0.08)]">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-                <HealthRing score={network.agencyHealth} label={network.agencyHealth >= 75 ? 'Good' : network.agencyHealth >= 60 ? 'Fair' : 'Watch'} size="md" />
-                <div className="min-w-0">
-                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.13em] text-[#2874dc]">Agency Health Score</p>
-                  <h2 className="mt-2 text-[1rem] font-semibold text-[#102236]">{network.agencyHealth >= 75 ? 'Your network is performing well' : network.agencyHealth >= 60 ? 'Your network is stable' : 'Your network needs intervention'}</h2>
-                  <div className="mt-3 grid gap-2 text-sm text-[#50667e]">
-                    <span className="inline-flex items-center gap-2"><CheckCircle2 size={15} className="text-[#12a05c]" />{network.activeBranches} active branches</span>
-                    <span className="inline-flex items-center gap-2"><CheckCircle2 size={15} className="text-[#12a05c]" />{network.activeAgents} active agents</span>
-                    <span className="inline-flex items-center gap-2"><CheckCircle2 size={15} className="text-[#12a05c]" />{network.attentionBranches} branch{network.attentionBranches === 1 ? '' : 'es'} need attention</span>
-                  </div>
-                </div>
-              </div>
-            </article>
-          </section>
-
-          <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.75fr)]">
-            <article className="flex h-full flex-col rounded-[20px] border border-[#dfe7f1] bg-white p-5 shadow-[0_14px_32px_rgba(15,35,55,0.06)]">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.13em] text-[#7b8ca2]">Branch Performance</p>
-                  <h2 className="mt-1 text-[1.12rem] font-semibold tracking-[-0.03em] text-[#102236]">Ranked by pipeline value</h2>
-                </div>
-                <StatusBadge tone="blue">{enrichedRows.length} branches</StatusBadge>
-              </div>
-              <div className="mt-4 flex-1">
-                {enrichedRows.length ? <RankingTable rows={enrichedRows} onOpenBranch={openBranch} /> : (
-                  <div className="rounded-[16px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-8 text-center text-sm text-[#66758b]">No branch performance data yet.</div>
-                )}
-              </div>
-              <Button variant="secondary" className="mt-4 w-full" onClick={() => navigate('/agency/analytics')}>View Full Analytics <ArrowRight size={15} /></Button>
-            </article>
-
-            <article className="flex h-full flex-col rounded-[20px] border border-[#dfe7f1] bg-white p-5 shadow-[0_14px_32px_rgba(15,35,55,0.06)]">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.13em] text-[#7b8ca2]">Branch Health</p>
-                  <h2 className="mt-1 text-[1.12rem] font-semibold tracking-[-0.03em] text-[#102236]">Intervention order</h2>
-                </div>
-                <Gauge size={20} className="text-[#315f8f]" />
-              </div>
-              <div className="mt-4 flex-1">
-                {enrichedRows.length ? (
-                  <BranchHealthList rows={[...enrichedRows].sort((left, right) => left.health.score - right.health.score)} onOpenBranch={openBranch} />
-                ) : (
-                  <div className="rounded-[16px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-8 text-center text-sm text-[#66758b]">Health scores will appear once branches exist.</div>
-                )}
-              </div>
-            </article>
-          </section>
-
-          <section className="rounded-[20px] border border-[#dfe7f1] bg-white p-4 shadow-[0_14px_32px_rgba(15,35,55,0.06)]">
-            <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-center 2xl:justify-between">
-              <div className="flex min-w-0 flex-wrap gap-2">
-                {PERFORMANCE_FILTERS.map((filter) => {
-                  const count = filter.key === 'all'
-                    ? enrichedRows.length
-                    : filter.key === 'top'
-                      ? network.topBranches
-                      : filter.key === 'stable'
-                        ? network.stableBranches
-                        : network.attentionBranches
-                  return (
-                    <button
-                      type="button"
-                      key={filter.key}
-                      onClick={() => setPerformanceFilter(filter.key)}
-                      className={`rounded-[11px] border px-4 py-2 text-sm font-semibold transition ${performanceFilter === filter.key ? 'border-[#17324d] bg-[#17324d] text-white shadow-[0_10px_18px_rgba(23,50,77,0.16)]' : 'border-[#dce6f0] bg-white text-[#38536d] hover:bg-[#f7faff]'}`}
-                    >
-                      {filter.label} ({count})
-                    </button>
-                  )
-                })}
-              </div>
-
-              <div className="grid min-w-0 gap-2 lg:grid-cols-[minmax(220px,1fr)_minmax(160px,0.6fr)_minmax(160px,0.6fr)_auto]">
-                <label className="flex h-[42px] min-w-0 items-center gap-3 rounded-[12px] border border-[#dce6f0] bg-white px-3 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
-                  <Search size={16} className="shrink-0 text-[#8ca0b6]" />
-                  <input
-                    type="search"
-                    value={searchTerm}
-                    onChange={(event) => setSearchTerm(event.target.value)}
-                    placeholder="Search branches..."
-                    className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-[#162334] outline-none placeholder:text-[#96a6b8]"
-                  />
-                </label>
-                <Field as="select" value={provinceFilter} onChange={(event) => setProvinceFilter(event.target.value)} className="h-[42px]">
-                  <option value="all">All Provinces</option>
-                  {provinceOptions.map((province) => (
-                    <option key={province} value={province}>{province}</option>
-                  ))}
-                </Field>
-                <Field as="select" value={organisationFilter} onChange={(event) => setOrganisationFilter(event.target.value)} className="h-[42px]">
-                  <option value="all">All Organisations</option>
-                  {organisationOptions.map((item) => (
-                    <option key={item.id} value={item.id}>{item.label}</option>
-                  ))}
-                </Field>
-                <Button variant="ghost" size="sm" onClick={loadBranches} disabled={loading}><RefreshCw size={15} />Refresh</Button>
-              </div>
+            </div>
+            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <PerformanceMetric label="Pipeline Value" value={formatCompactCurrency(periodMetrics.pipeline?.value)} changePercent={periodMetrics.pipeline?.changePercent} sparkline={periodMetrics.pipeline?.sparkline} tone="gold" />
+              <PerformanceMetric label="Transactions" value={formatNumber(periodMetrics.transactions?.value)} changePercent={periodMetrics.transactions?.changePercent} sparkline={periodMetrics.transactions?.sparkline} tone="green" />
+              <PerformanceMetric label="Listings" value={formatNumber(periodMetrics.listings?.value)} changePercent={periodMetrics.listings?.changePercent} sparkline={periodMetrics.listings?.sparkline} tone="blue" />
+              <PerformanceMetric label="Agents" value={formatNumber(periodMetrics.agents?.value)} changePercent={periodMetrics.agents?.changePercent} sparkline={periodMetrics.agents?.sparkline} tone="slate" />
             </div>
           </section>
 
-          <section className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-3">
-            {!filteredRows.length ? (
-              <div className="rounded-[20px] border border-dashed border-[#d7e1ec] bg-[#fbfdff] p-10 text-center xl:col-span-2 2xl:col-span-3">
-                <div className="mx-auto grid h-12 w-12 place-items-center rounded-[16px] bg-[#edf5ff] text-[#315f8f]">
-                  <Filter size={20} />
-                </div>
-                <h3 className="mt-4 text-[1.04rem] font-semibold text-[#1a2a3d]">No branches match these filters</h3>
-                <p className="mt-2 text-sm text-[#66758b]">Widen the search or create a branch to start tracking network performance.</p>
-                <div className="mt-4 flex justify-center">
-                  <Button onClick={() => setShowCreateModal(true)}><Plus size={16} />New Branch</Button>
-                </div>
-              </div>
-            ) : filteredRows.map((branch) => {
-              const needsAttention = branch.health.needsAttention
-              return (
-                <article
-                  key={branch.id}
-                  className={`rounded-[20px] border bg-white p-5 shadow-[0_12px_30px_rgba(15,35,55,0.055)] transition duration-150 ease-out hover:-translate-y-[1px] hover:shadow-[0_18px_34px_rgba(15,35,55,0.08)] ${needsAttention ? 'border-[#f3c7c7] bg-[#fffafa]' : 'border-[#dfe7f1]'}`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-xs font-semibold ${branch.rank <= 3 ? 'bg-[#fff2d4] text-[#b7791f]' : 'bg-[#eef3f8] text-[#63758b]'}`}>#{branch.rank}</span>
-                        <StatusBadge tone={branch.isActive ? 'green' : 'slate'}>{branch.isActive ? 'Active' : 'Suspended'}</StatusBadge>
-                        {needsAttention ? <StatusBadge tone="red">Attention</StatusBadge> : null}
-                      </div>
-                      <h3 className="mt-3 truncate text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">{branch.name}</h3>
-                      <p className="mt-1 inline-flex min-w-0 items-center gap-2 text-sm text-[#60758d]"><MapPin size={14} className="shrink-0" /><span className="truncate">{branch.location}</span></p>
-                    </div>
-                    <BranchActionMenu
-                      branch={branch}
-                      needsAttention={needsAttention}
-                      onView={() => openBranch(branch.id)}
-                      onTakeAction={() => openBranch(branch.id)}
-                      onManageAgents={() => openManageAgents(branch.id)}
-                      onDelete={() => openDeleteBranch(branch)}
-                    />
-                  </div>
+          <section className="rounded-lg border border-[#e2e8f0] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+            <div className="grid gap-2 lg:grid-cols-[minmax(220px,1fr)_160px_180px_180px_auto]">
+              <label className="flex h-[42px] min-w-0 items-center gap-3 rounded-lg border border-[#dbe4ee] bg-white px-3">
+                <Search size={16} className="shrink-0 text-[#94a3b8]" />
+                <input
+                  type="search"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Search branches"
+                  className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-[#0f172a] outline-none placeholder:text-[#94a3b8]"
+                />
+              </label>
+              <Field as="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-[42px]">
+                {STATUS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </Field>
+              <Field as="select" value={provinceFilter} onChange={(event) => setProvinceFilter(event.target.value)} className="h-[42px]">
+                <option value="all">Province</option>
+                {provinceOptions.map((province) => (
+                  <option key={province} value={province}>{province}</option>
+                ))}
+              </Field>
+              <Field as="select" value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="h-[42px]">
+                {SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>Sort: {option.label}</option>
+                ))}
+              </Field>
+              <Button variant="secondary" size="sm" onClick={loadOverview} disabled={loading}>
+                <RefreshCw size={15} />Refresh
+              </Button>
+            </div>
+          </section>
 
-                  <div className="mt-5 flex items-center justify-between gap-4">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <PrincipalAvatar name={branch.principalName} />
-                      <div className="min-w-0">
-                        <p className="text-[0.64rem] font-semibold uppercase tracking-[0.13em] text-[#7b8ca2]">Principal</p>
-                        <p className="truncate text-sm font-semibold text-[#142132]">{branch.principalName}</p>
-                      </div>
-                    </div>
-                    <div className="min-w-[132px] text-right">
-                      <p className="text-[0.64rem] font-semibold uppercase tracking-[0.13em] text-[#7b8ca2]">Pipeline Value</p>
-                      <p className="mt-1 text-[1.05rem] font-semibold text-[#142132]">{formatCompactCurrency(branch.kpis.pipelineValue)}</p>
-                      <MiniSparkline values={branch.trendValues} tone={needsAttention ? 'red' : 'green'} />
-                    </div>
-                  </div>
-
-                  <div className="mt-5 grid grid-cols-4 overflow-hidden rounded-[15px] border border-[#e4ebf3] bg-[#fbfcfe] py-3">
-                    <BranchKpiTile label="Agents" value={branch.kpis.activeAgents} trend={branch.agentDelta} />
-                    <BranchKpiTile label="Listings" value={branch.kpis.activeListings} trend={branch.listingDelta} />
-                    <BranchKpiTile label="Transactions" value={branch.kpis.activeTransactions} trend={branch.transactionDelta} />
-                    <BranchKpiTile label="Conversion" value={formatPercent(branch.kpis.conversionRate)} trend={branch.pipelineDelta} />
-                  </div>
-
-                  <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-[#e5ebf4] pt-4">
-                    <Button size="sm" variant="secondary" onClick={() => openBranch(branch.id)}>View Branch <ArrowRight size={15} /></Button>
-                    {needsAttention ? (
-                      <Button size="sm" variant="secondary" className="border-[#f1bebe] text-[#b42318]" onClick={() => openBranch(branch.id)}>Take Action <ArrowUpRight size={15} /></Button>
-                    ) : (
-                      <Button size="sm" variant="secondary" onClick={() => openManageAgents(branch.id)}><UserRound size={15} />Manage Agents</Button>
-                    )}
-                  </div>
-                </article>
-              )
-            })}
+          <section>
+            {filteredRows.length ? (
+              <>
+                <BranchTable rows={filteredRows} onView={openBranch} onManageAgents={openManageAgents} onDelete={openDeleteBranch} />
+                <BranchMobileCards rows={filteredRows} onView={openBranch} onManageAgents={openManageAgents} onDelete={openDeleteBranch} />
+              </>
+            ) : (
+              <EmptyState onCreate={() => setShowCreateModal(true)} />
+            )}
           </section>
         </>
       ) : null}
@@ -1046,7 +748,7 @@ export default function AgencyBranchesPage() {
         open={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         onCreated={() => {
-          void loadBranches()
+          void loadOverview()
         }}
       />
       <ConfirmDialog

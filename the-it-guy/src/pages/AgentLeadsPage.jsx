@@ -37,6 +37,14 @@ import {
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import AgentAssignmentSelect from '../components/AgentAssignmentSelect'
+import {
+  buildActorAgentOption,
+  buildAgentOptions,
+  getAgentDisplayName,
+  getAgentProfileAvatarUrl,
+  getSelectedAgentOption,
+} from '../components/agentAssignmentSelectModel'
 import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import StartDocumentModal from '../components/documents/StartDocumentModal'
 import LoadingSkeleton from '../components/LoadingSkeleton'
@@ -70,6 +78,7 @@ import {
   normalizeDocumentStatus,
 } from '../lib/clientPortalDocumentStatus'
 import { normalizeLeadCategory as normalizeCanonicalLeadCategory } from '../lib/leadCategory'
+import { listOrganisationUsers } from '../lib/settingsApi'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
   buildAgentLeadRows,
@@ -314,6 +323,9 @@ const EMPTY_LEAD_CREATE_FORM = {
   googlePlaceId: '',
   estimatedValue: '',
   assignedAgent: '',
+  assignedAgentId: '',
+  assignedAgentEmail: '',
+  assignedAgentAvatarUrl: '',
   notes: '',
 }
 
@@ -720,6 +732,7 @@ function getActor(profile = {}) {
     email: normalizeText(profile?.email).toLowerCase(),
     name: normalizeText(profile?.fullName || profile?.full_name || [profile?.firstName, profile?.lastName].filter(Boolean).join(' ')),
     fullName: normalizeText(profile?.fullName || profile?.full_name || [profile?.firstName, profile?.lastName].filter(Boolean).join(' ')),
+    avatarUrl: getAgentProfileAvatarUrl(profile),
     role: normalizeText(profile?.role || profile?.workspaceRole || profile?.workspace_role || profile?.organisationRole || profile?.organisation_role),
     workspaceRole: normalizeText(profile?.workspaceRole || profile?.workspace_role || profile?.organisationRole || profile?.organisation_role || profile?.role),
     branchId: normalizeText(profile?.branchId || profile?.branch_id || profile?.primaryBranchId || profile?.primary_branch_id),
@@ -6354,7 +6367,7 @@ function RowActionMenu({ row, onOpen, onDelete }) {
 
   useEffect(() => {
     if (!open) return undefined
-    updateMenuPosition()
+    const frameId = window.requestAnimationFrame(updateMenuPosition)
 
     function handlePointerDown(event) {
       if (buttonRef.current?.contains(event.target) || menuRef.current?.contains(event.target)) return
@@ -6370,6 +6383,7 @@ function RowActionMenu({ row, onOpen, onDelete }) {
     window.addEventListener('resize', updateMenuPosition)
     window.addEventListener('scroll', updateMenuPosition, true)
     return () => {
+      window.cancelAnimationFrame(frameId)
       document.removeEventListener('pointerdown', handlePointerDown)
       document.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('resize', updateMenuPosition)
@@ -6435,7 +6449,7 @@ function RowActionMenu({ row, onOpen, onDelete }) {
   )
 }
 
-function getLeadTableColumns(category = 'buyer') {
+function getLeadTableColumns() {
   return [
     { key: 'lead', label: 'Lead', className: 'w-[28%]' },
     { key: 'source', label: 'Source', className: 'w-[14%]' },
@@ -6547,14 +6561,14 @@ function EmptyLeadResults({ onCreate, onImport, onAdjustFilters }) {
   )
 }
 
-function getCreateLeadButtonLabel(category = 'all') {
+function getCreateLeadButtonLabel() {
   return 'Create Lead'
 }
 
 function CreateLeadDropdown({ activeCategory = 'all', onCreate, className = '', buttonClassName = '' }) {
   const [open, setOpen] = useState(false)
   const defaultCategory = ['buyer', 'seller', 'other'].includes(activeCategory) ? activeCategory : ''
-  const buttonLabel = getCreateLeadButtonLabel(activeCategory)
+  const buttonLabel = getCreateLeadButtonLabel()
   const createOptions = [
     { category: 'buyer', label: 'Buyer Lead', helper: 'Buyer enquiry with budget and area context' },
     { category: 'seller', label: 'Seller Lead', helper: 'Seller enquiry with property and value context' },
@@ -6662,7 +6676,7 @@ function LeadHeaderOverflowMenu({ onRefresh }) {
   )
 }
 
-function LeadCreateModal({ open, category = 'buyer', form, setForm, saving, error, onClose, onSubmit }) {
+function LeadCreateModal({ open, category = 'buyer', form, setForm, saving, error, onClose, onSubmit, agentOptions = [], agentOptionsLoading = false }) {
   const normalizedCategory = normalizeCanonicalLeadCategory(category, 'other')
   const isBuyer = normalizedCategory === 'buyer'
   const isSeller = normalizedCategory === 'seller'
@@ -6676,6 +6690,16 @@ function LeadCreateModal({ open, category = 'buyer', form, setForm, saving, erro
 
   function update(field, value) {
     setForm((previous) => ({ ...previous, [field]: value }))
+  }
+
+  function updateAssignedAgent(agent) {
+    setForm((previous) => ({
+      ...previous,
+      assignedAgent: getAgentDisplayName(agent),
+      assignedAgentId: normalizeText(agent.userId || agent.id),
+      assignedAgentEmail: normalizeText(agent.email).toLowerCase(),
+      assignedAgentAvatarUrl: getAgentProfileAvatarUrl(agent),
+    }))
   }
 
   const footer = (
@@ -6750,7 +6774,12 @@ function LeadCreateModal({ open, category = 'buyer', form, setForm, saving, erro
           ) : null}
           <label className={`grid gap-1.5 text-sm font-semibold text-slate-600 ${isOther ? '' : 'md:col-span-2'}`}>
             Assigned agent
-            <input value={form.assignedAgent} onChange={(event) => update('assignedAgent', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-300" placeholder="Agent name" />
+            <AgentAssignmentSelect
+              value={normalizeText(form.assignedAgentId || form.assignedAgentEmail || form.assignedAgent)}
+              agents={agentOptions}
+              loading={agentOptionsLoading}
+              onChange={updateAssignedAgent}
+            />
           </label>
         </div>
         <label className="grid gap-1.5 text-sm font-semibold text-slate-600">
@@ -8229,6 +8258,8 @@ function AgentLeadList() {
   const [createForm, setCreateForm] = useState(EMPTY_LEAD_CREATE_FORM)
   const [creatingLead, setCreatingLead] = useState(false)
   const [createError, setCreateError] = useState('')
+  const [agentOptions, setAgentOptions] = useState([])
+  const [agentOptionsLoading, setAgentOptionsLoading] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [importLeadCategory, setImportLeadCategory] = useState('')
   const [quickFilters, setQuickFilters] = useState(['all'])
@@ -8284,6 +8315,36 @@ function AgentLeadList() {
     void loadRows()
   }, [loadRows])
 
+  useEffect(() => {
+    let isCancelled = false
+
+    async function loadAgentOptions() {
+      setAgentOptions(buildAgentOptions([], actor))
+      setAgentOptionsLoading(true)
+
+      try {
+        const users = await listOrganisationUsers()
+        if (!isCancelled) {
+          setAgentOptions(buildAgentOptions(Array.isArray(users) ? users : [], actor))
+        }
+      } catch {
+        if (!isCancelled) {
+          setAgentOptions(buildAgentOptions([], actor))
+        }
+      } finally {
+        if (!isCancelled) {
+          setAgentOptionsLoading(false)
+        }
+      }
+    }
+
+    void loadAgentOptions()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [actor])
+
   const options = useMemo(() => getLeadFilterOptions(rows), [rows])
   const primaryView = getLeadPrimaryView(filters.category)
   const referralLeadIds = useMemo(() => getReferralLeadIdSet(referrals), [referrals])
@@ -8327,12 +8388,16 @@ function AgentLeadList() {
 
   function openCreateLead(category = 'buyer') {
     const normalizedCategory = normalizeCanonicalLeadCategory(category, 'other')
+    const actorOption = buildActorAgentOption(actor)
     setCreateCategory(normalizedCategory)
     setCreateError('')
     setCreateForm({
       ...EMPTY_LEAD_CREATE_FORM,
       source: normalizedCategory === 'seller' ? 'Canvassing' : 'Manual Entry',
-      assignedAgent: actor.name || '',
+      assignedAgent: actorOption.name === 'Current user' ? '' : actorOption.name,
+      assignedAgentId: actorOption.id,
+      assignedAgentEmail: actorOption.email,
+      assignedAgentAvatarUrl: actorOption.avatarUrl,
     })
   }
 
@@ -8410,14 +8475,7 @@ function AgentLeadList() {
 
     const category = normalizeCanonicalLeadCategory(createCategory, 'other')
     const nameParts = splitName(createForm.name)
-    const assignedAgentName = normalizeText(createForm.assignedAgent)
-    const assignedAgent = {
-      id: actor.id,
-      userId: actor.userId || actor.id,
-      name: assignedAgentName || actor.name,
-      fullName: assignedAgentName || actor.fullName || actor.name,
-      email: actor.email,
-    }
+    const assignedAgent = getSelectedAgentOption(createForm, agentOptions, actor)
     const sellerStage = 'Contacted'
 
     try {
@@ -8427,7 +8485,7 @@ function AgentLeadList() {
         organisationId,
         {
           assignedAgent,
-          assignedUserId: normalizeText(actor.userId || actor.id),
+          assignedUserId: normalizeText(assignedAgent.userId || assignedAgent.id),
           createdBy: normalizeText(actor.userId || actor.id),
           contact: {
             firstName: nameParts.firstName || 'Lead',
@@ -8465,17 +8523,28 @@ function AgentLeadList() {
         { actor },
       )
       const addressValue = category === 'seller' ? buildCreateLeadAddressValue(createForm) : null
+      const enrichedCreatedLead = {
+        ...createdLead,
+        assignedAgentId: normalizeText(assignedAgent.userId || assignedAgent.id),
+        assignedUserId: normalizeText(assignedAgent.userId || assignedAgent.id),
+        assignedAgentName: getAgentDisplayName(assignedAgent),
+        assignedAgentEmail: normalizeText(assignedAgent.email).toLowerCase(),
+        assigned_agent_id: normalizeText(assignedAgent.userId || assignedAgent.id),
+        assigned_user_id: normalizeText(assignedAgent.userId || assignedAgent.id),
+        assigned_agent_name: getAgentDisplayName(assignedAgent),
+        assigned_agent_email: normalizeText(assignedAgent.email).toLowerCase(),
+      }
       const optimisticRows = buildAgentLeadRows({
         leads: [{
-          ...createdLead,
+          ...enrichedCreatedLead,
           firstName: nameParts.firstName || 'Lead',
           lastName: nameParts.lastName,
           phone: normalizeText(createForm.phone),
           email: normalizeText(createForm.email).toLowerCase(),
-          sellerName: category === 'seller' ? nameParts.firstName || 'Lead' : createdLead?.sellerName,
-          sellerSurname: category === 'seller' ? nameParts.lastName : createdLead?.sellerSurname,
-          sellerPhone: category === 'seller' ? normalizeText(createForm.phone) : createdLead?.sellerPhone,
-          sellerEmail: category === 'seller' ? normalizeText(createForm.email).toLowerCase() : createdLead?.sellerEmail,
+          sellerName: category === 'seller' ? nameParts.firstName || 'Lead' : enrichedCreatedLead?.sellerName,
+          sellerSurname: category === 'seller' ? nameParts.lastName : enrichedCreatedLead?.sellerSurname,
+          sellerPhone: category === 'seller' ? normalizeText(createForm.phone) : enrichedCreatedLead?.sellerPhone,
+          sellerEmail: category === 'seller' ? normalizeText(createForm.email).toLowerCase() : enrichedCreatedLead?.sellerEmail,
         }],
         contacts: [{
           contactId: normalizeText(createdLead?.contactId || createdLead?.contact_id),
@@ -8739,6 +8808,8 @@ function AgentLeadList() {
         error={createError}
         onClose={closeCreateLead}
         onSubmit={submitCreateLead}
+        agentOptions={agentOptions}
+        agentOptionsLoading={agentOptionsLoading}
       />
       <LeadImportModal
         open={importOpen}

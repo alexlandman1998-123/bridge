@@ -829,17 +829,33 @@ function isMissingPartnerInvitationDeleteRpcError(error = null) {
   )
 }
 
-function buildPartnerInvitationDeleteRpcError(payload = {}) {
+function isMissingPartnerInvitationRevokeRpcError(error = null) {
+  const code = normalizeLower(error?.code || '')
+  const message = normalizeLower(`${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`)
+  return (
+    code === 'pgrst202' ||
+    code === '42883' ||
+    (message.includes('bridge_revoke_partner_invitation') && message.includes('function'))
+  )
+}
+
+function buildPartnerInvitationManagementRpcError(
+  payload = {},
+  fallback = 'Partner invitation could not be updated. Refresh the page and try again.',
+  action = 'manage',
+) {
   const code = normalizeLower(payload?.code || payload?.reason)
+  const acceptedMessage = action === 'revoke' ? 'Accepted invitations cannot be revoked.' : 'Accepted invitations cannot be deleted.'
   const messages = {
-    accepted: 'Accepted invitations cannot be deleted.',
-    invitation_accepted: 'Accepted invitations cannot be deleted.',
+    accepted: acceptedMessage,
+    already_revoked: 'Partner invitation is already revoked.',
+    invitation_accepted: acceptedMessage,
     missing_invitation_id: 'A partner invitation is required.',
-    not_authorized: 'You do not have permission to delete this partner invitation.',
+    not_authorized: 'You do not have permission to manage this partner invitation.',
     not_found: 'This partner invitation is no longer available.',
     stale: 'Partner invitation could not be deleted. Refresh the page and try again.',
   }
-  const error = new Error(messages[code] || 'Partner invitation could not be deleted. Refresh the page and try again.')
+  const error = new Error(messages[code] || fallback)
   if (code) error.code = code
   return error
 }
@@ -854,7 +870,20 @@ async function deletePartnerInvitationWithRpc(invitationId = '') {
   if (result.data === true) return true
   const payload = result.data || {}
   if (payload.success === true || payload.deleted === true) return true
-  throw buildPartnerInvitationDeleteRpcError(payload)
+  throw buildPartnerInvitationManagementRpcError(payload, 'Partner invitation could not be deleted. Refresh the page and try again.', 'delete')
+}
+
+async function revokePartnerInvitationWithRpc(invitationId = '') {
+  const result = await supabase.rpc('bridge_revoke_partner_invitation', { p_invitation_id: invitationId })
+  if (result.error) {
+    if (isMissingPartnerInvitationRevokeRpcError(result.error)) return null
+    throw result.error
+  }
+
+  if (result.data === true) return true
+  const payload = result.data || {}
+  if (payload.success === true || payload.revoked === true) return true
+  throw buildPartnerInvitationManagementRpcError(payload, 'Partner invitation could not be revoked. Refresh the page and try again.', 'revoke')
 }
 
 function buildPartnerInvitationFunctionError(error = null, fallback = 'Unable to accept partner invitation.') {
@@ -1432,7 +1461,8 @@ async function fetchInvitationForManagement(id) {
 
 function assertSentInvitationManagementAccess(invitation = {}, organisationId = '') {
   if (!invitation?.id) throw new Error('Invitation not found.')
-  if (normalizeText(invitation.fromOrganisationId) !== normalizeText(organisationId)) {
+  const senderOrganisationId = normalizeText(invitation.fromOrganisationId || invitation.senderOrganisationId || invitation.sender_organisation_id)
+  if (senderOrganisationId !== normalizeText(organisationId)) {
     throw new Error('Only the sending organisation can manage this invitation.')
   }
 }
@@ -1497,6 +1527,9 @@ export async function revokePartnerInvitation({
     return true
   }
 
+  const rpcRevoked = await revokePartnerInvitationWithRpc(id)
+  if (rpcRevoked === true) return true
+
   const invitation = await fetchInvitationForManagement(id)
   assertSentInvitationManagementAccess(invitation, organisationId)
   if ((normalizeLower(invitation.status) || 'pending') === 'accepted') throw new Error('Accepted invitations cannot be revoked.')
@@ -1524,12 +1557,12 @@ export async function deletePartnerInvitation({
     return true
   }
 
+  const rpcDeleted = await deletePartnerInvitationWithRpc(id)
+  if (rpcDeleted === true) return true
+
   const invitation = await fetchInvitationForManagement(id)
   assertSentInvitationManagementAccess(invitation, organisationId)
   if ((normalizeLower(invitation.status) || 'pending') === 'accepted') throw new Error('Accepted invitations cannot be deleted.')
-
-  const rpcDeleted = await deletePartnerInvitationWithRpc(id)
-  if (rpcDeleted === true) return true
 
   const result = await supabase
     .from('partner_invitations')

@@ -1643,6 +1643,77 @@ function invitationStatusSummary({ isReceived = false, status = '' } = {}) {
   return 'Invitation history.'
 }
 
+function PartnerInvitationActionDialog({
+  action,
+  invitation,
+  organisationId,
+  confirming = false,
+  onCancel,
+  onConfirm,
+}) {
+  if (!action || !invitation) return null
+
+  const partnerName = invitationPartnerName(invitation, organisationId)
+  const isDelete = action === 'delete'
+  const title = isDelete ? 'Delete invitation' : 'Revoke invitation'
+  const description = isDelete
+    ? `Delete the invitation for ${partnerName}? This removes it from your invite history.`
+    : `Revoke the invitation for ${partnerName}? The recipient will no longer be able to accept it.`
+  const confirmLabel = isDelete ? 'Delete invitation' : 'Revoke invitation'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#10243a]/55 px-4 py-6">
+      <section
+        className="w-full max-w-md rounded-[8px] border border-[#d9e4ef] bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.22)]"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="partner-invitation-action-title"
+        aria-describedby="partner-invitation-action-description"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 id="partner-invitation-action-title" className="text-lg font-semibold text-[#10243a]">
+              {title}
+            </h2>
+            <p id="partner-invitation-action-description" className="mt-2 text-sm leading-6 text-[#60758d]">
+              {description}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={confirming}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] border border-[#d9e4ef] text-[#52677f] hover:bg-[#f8fafc] disabled:cursor-not-allowed disabled:opacity-60"
+            aria-label="Close confirmation"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={confirming}
+            className="inline-flex h-10 items-center justify-center rounded-[8px] border border-[#d9e4ef] bg-white px-4 text-sm font-semibold text-[#35546c] hover:bg-[#f8fafc] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={confirming}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-[8px] border border-[#f0d4d4] bg-[#9b2c2c] px-4 text-sm font-semibold text-white transition hover:bg-[#842424] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isDelete ? <Trash2 size={15} /> : <XCircle size={15} />}
+            {confirming ? (isDelete ? 'Deleting...' : 'Revoking...') : confirmLabel}
+          </button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 function PartnerInvitationCard({
   invitation,
   organisationId,
@@ -2254,6 +2325,7 @@ export default function PartnersPage() {
   })
   const [invitationFilters, setInvitationFilters] = useState(DEFAULT_INVITATION_FILTERS)
   const [invitationAction, setInvitationAction] = useState({ id: '', type: '' })
+  const [invitationConfirmation, setInvitationConfirmation] = useState({ type: '', invitation: null })
 
   const accessContext = useMemo(
     () => ({
@@ -3181,56 +3253,74 @@ export default function PartnersPage() {
     }
   }
 
-  async function handleRevokeInvitation(invitation) {
+  function handleRevokeInvitation(invitation) {
     if (!invitation?.id || invitationAction.id) return
-    if (typeof window !== 'undefined' && !window.confirm(`Revoke the invitation for ${invitationPartnerName(invitation, organisationId)}? The recipient will no longer be able to accept it.`)) {
-      return
-    }
+    setInvitationConfirmation({ type: 'revoke', invitation })
+  }
+
+  async function confirmRevokeInvitation(invitation) {
+    if (!invitation?.id || invitationAction.id) return
+    const previousSnapshot = snapshot
+    const now = new Date().toISOString()
+
     try {
       setError('')
       setMessage('')
       setInvitationAction({ id: invitation.id, type: 'revoke' })
+      setInvitationConfirmation({ type: '', invitation: null })
+      setSnapshot((previous) =>
+        previous
+          ? {
+              ...previous,
+              invitations: (previous.invitations || []).map((item) =>
+                String(item.id) === String(invitation.id)
+                  ? {
+                      ...item,
+                      status: 'revoked',
+                      respondedAt: now,
+                      respondedByUserId: profile?.id || item.respondedByUserId,
+                    }
+                  : item,
+              ),
+            }
+          : previous,
+      )
       await revokePartnerInvitation({
         invitationId: invitation.id,
         organisationId,
         userId: profile?.id || '',
         workspaceType: resolvedWorkspaceType,
       })
-      await recordWorkspaceAuditEvent('partner_invite_revoked', {
+      setMessage('Partner invitation revoked.')
+      void recordWorkspaceAuditEvent('partner_invite_revoked', {
         userId: profile?.id || '',
         workspaceId: organisationId,
         targetType: 'partner_invitation',
         targetId: invitation.id,
-      })
-      setMessage('Partner invitation revoked.')
-      await loadSnapshot()
+      }).catch(() => {})
+      void loadSnapshot()
     } catch (revokeError) {
+      if (previousSnapshot) setSnapshot(previousSnapshot)
       setError(revokeError?.message || 'Unable to revoke partner invitation.')
     } finally {
       setInvitationAction({ id: '', type: '' })
     }
   }
 
-  async function handleDeleteInvitation(invitation) {
+  function handleDeleteInvitation(invitation) {
     if (!invitation?.id || invitationAction.id) return
-    if (typeof window !== 'undefined' && !window.confirm(`Delete the invitation for ${invitationPartnerName(invitation, organisationId)}? This removes it from your invite history.`)) {
-      return
-    }
+    setInvitationConfirmation({ type: 'delete', invitation })
+  }
+
+  async function confirmDeleteInvitation(invitation) {
+    if (!invitation?.id || invitationAction.id) return
+    const previousSnapshot = snapshot
+
     try {
       setError('')
       setMessage('')
       setInvitationAction({ id: invitation.id, type: 'delete' })
-      await deletePartnerInvitation({
-        invitationId: invitation.id,
-        organisationId,
-        workspaceType: resolvedWorkspaceType,
-      })
-      await recordWorkspaceAuditEvent('partner_invite_deleted', {
-        userId: profile?.id || '',
-        workspaceId: organisationId,
-        targetType: 'partner_invitation',
-        targetId: invitation.id,
-      })
+      setInvitationConfirmation({ type: '', invitation: null })
       setSnapshot((previous) =>
         previous
           ? {
@@ -3239,12 +3329,35 @@ export default function PartnersPage() {
             }
           : previous,
       )
+      await deletePartnerInvitation({
+        invitationId: invitation.id,
+        organisationId,
+        workspaceType: resolvedWorkspaceType,
+      })
       setMessage('Partner invitation deleted.')
-      await loadSnapshot()
+      void recordWorkspaceAuditEvent('partner_invite_deleted', {
+        userId: profile?.id || '',
+        workspaceId: organisationId,
+        targetType: 'partner_invitation',
+        targetId: invitation.id,
+      }).catch(() => {})
+      void loadSnapshot()
     } catch (deleteError) {
+      if (previousSnapshot) setSnapshot(previousSnapshot)
       setError(deleteError?.message || 'Unable to delete partner invitation.')
     } finally {
       setInvitationAction({ id: '', type: '' })
+    }
+  }
+
+  function confirmInvitationAction() {
+    const { type, invitation } = invitationConfirmation
+    if (type === 'revoke') {
+      void confirmRevokeInvitation(invitation)
+      return
+    }
+    if (type === 'delete') {
+      void confirmDeleteInvitation(invitation)
     }
   }
 
@@ -3478,6 +3591,22 @@ export default function PartnersPage() {
         onChange={updateThirdPartyFormField}
         saving={thirdPartySaving}
         editing={Boolean(editingThirdPartyId)}
+      />
+      <PartnerInvitationActionDialog
+        action={invitationConfirmation.type}
+        invitation={invitationConfirmation.invitation}
+        organisationId={organisationId}
+        confirming={
+          Boolean(invitationConfirmation.invitation?.id) &&
+          invitationAction.id === invitationConfirmation.invitation.id &&
+          invitationAction.type === invitationConfirmation.type
+        }
+        onCancel={() => {
+          if (!invitationAction.id) {
+            setInvitationConfirmation({ type: '', invitation: null })
+          }
+        }}
+        onConfirm={confirmInvitationAction}
       />
 
       {snapshot?.source === 'demo' || error || message ? (
