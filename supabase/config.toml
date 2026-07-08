@@ -41,6 +41,34 @@ enable_confirmations = true
 max_frequency = "1m0s"
 otp_length = 8
 
+[auth.email.smtp]
+admin_email = "no-reply@arch9.co.za"
+sender_name = "Arch9"
+
+[auth.email.template.confirmation]
+subject = "Confirm your Arch9 email address"
+content_path = "./supabase/templates/auth/confirmation.html"
+
+[auth.email.template.magic_link]
+subject = "Your Arch9 sign-in link"
+content_path = "./supabase/templates/auth/magic_link.html"
+
+[auth.email.template.recovery]
+subject = "Reset your Arch9 password"
+content_path = "./supabase/templates/auth/recovery.html"
+
+[auth.email.template.invite]
+subject = "You have been invited to Arch9"
+content_path = "./supabase/templates/auth/invite.html"
+
+[auth.email.template.email_change]
+subject = "Confirm your new Arch9 email address"
+content_path = "./supabase/templates/auth/email_change.html"
+
+[auth.email.template.reauthentication]
+subject = "{{ .Token }} is your Arch9 verification code"
+content_path = "./supabase/templates/auth/reauthentication.html"
+
 [functions.send-email]
 enabled = true
 verify_jwt = true

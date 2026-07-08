@@ -17,7 +17,7 @@ function UploadCard({
       <input
         id={inputId}
         type="file"
-        accept="image/png,image/jpeg,image/jpg,image/svg+xml"
+        accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"
         className="attorney-hidden-file-input"
         onChange={(event) => void onUpload?.(event.target.files?.[0] || null)}
       />

@@ -47,7 +47,7 @@ function buildAddress(firmInformation = {}) {
     .join(', ')
 }
 
-function AttorneyFirmLivePreview({ preview = null, progressPercent = 0, readiness = null }) {
+function AttorneyFirmLivePreview({ preview = null, progressPercent = 0, readiness = null, variant = '' }) {
   const firmInformation = preview?.firmInformation || {}
   const branding = preview?.branding || {}
   const activeDepartmentTypes = Array.isArray(preview?.activeDepartmentTypes) ? preview.activeDepartmentTypes : []
@@ -62,10 +62,11 @@ function AttorneyFirmLivePreview({ preview = null, progressPercent = 0, readines
   const website = normalizeText(firmInformation.website) || 'www.yourfirm.co.za'
   const visibleDepartments = activeDepartmentTypes.length ? activeDepartmentTypes : ['transfer', 'bond', 'management']
   const visibleInvites = invites.filter((invite) => normalizeText(invite.email)).slice(0, 3)
+  const previewClassName = variant ? `attorney-firm-preview is-${variant}` : 'attorney-firm-preview'
 
   return (
     <aside
-      className="attorney-firm-preview"
+      className={previewClassName}
       style={{
         '--attorney-preview-primary': primaryColour,
         '--attorney-preview-secondary': secondaryColour,

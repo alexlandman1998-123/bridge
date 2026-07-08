@@ -8,6 +8,7 @@ import FirmInfoStep from '../components/attorney/onboarding/FirmInfoStep'
 import BrandingStep from '../components/attorney/onboarding/BrandingStep'
 import DepartmentsStep from '../components/attorney/onboarding/DepartmentsStep'
 import TeamInvitesStep from '../components/attorney/onboarding/TeamInvitesStep'
+import WorkspacePreviewStep from '../components/attorney/onboarding/WorkspacePreviewStep'
 import {
   ONBOARDING_STEPS,
   DEFAULT_FIRM_INFORMATION,
@@ -77,6 +78,12 @@ function AttorneyOnboardingPage() {
     () => buildOnboardingGuidance({ firmInformation, branding, activeDepartmentTypes, invites }),
     [firmInformation, branding, activeDepartmentTypes, invites],
   )
+  const previewSnapshot = useMemo(() => ({
+    firmInformation,
+    branding,
+    activeDepartmentTypes,
+    invites,
+  }), [firmInformation, branding, activeDepartmentTypes, invites])
   const draftSnapshot = useMemo(() => ({
     currentStepIndex,
     firmInformation,
@@ -416,6 +423,13 @@ function AttorneyOnboardingPage() {
   const isFinalStep = currentStepIndex === ONBOARDING_STEPS.length - 1
   const finalActivationBlocked = Boolean(isFinalStep && activationGuard && !activationGuard.canActivate)
   const activationBlockedMessage = finalActivationBlocked ? activationGuard.message : ''
+  const readinessPercent = typeof onboardingGuidance.readiness?.percent === 'number' ? onboardingGuidance.readiness.percent : 0
+  const nextStep = ONBOARDING_STEPS[Math.min(currentStepIndex + 1, ONBOARDING_STEPS.length - 1)]
+  const nextStepLabel = nextStep?.key === 'review_confirm'
+    ? 'Review Setup'
+    : nextStep?.key === 'workspace_preview'
+      ? 'Preview Workspace'
+      : 'Continue'
 
   let stepContent = null
   if (currentStep.key === 'firm_information') {
@@ -452,7 +466,7 @@ function AttorneyOnboardingPage() {
         errors={errorsByStep.team_invites || {}}
       />
     )
-  } else {
+  } else if (currentStep.key === 'review_confirm') {
     stepContent = (
       <ReviewConfirmStep
         firmInformation={firmInformation}
@@ -460,6 +474,16 @@ function AttorneyOnboardingPage() {
         activeDepartmentTypes={activeDepartmentTypes}
         invites={invites}
         activationDossier={onboardingGuidance.activationDossier}
+        onNavigateToStep={handleReviewStepRequest}
+      />
+    )
+  } else {
+    stepContent = (
+      <WorkspacePreviewStep
+        preview={previewSnapshot}
+        readiness={onboardingGuidance.readiness}
+        progressPercent={readinessPercent}
+        activationGuard={activationGuard}
         onNavigateToStep={handleReviewStepRequest}
       />
     )
@@ -501,15 +525,9 @@ function AttorneyOnboardingPage() {
       isSubmitting={submitting}
       errorMessage={submitError}
       draftSavedAt={draftSavedAt}
-      nextLabel={currentStepIndex === ONBOARDING_STEPS.length - 2 ? 'Review Setup' : 'Continue'}
+      nextLabel={nextStepLabel}
       readiness={onboardingGuidance.readiness}
       stepStatuses={onboardingGuidance.stepStatuses}
-      preview={{
-        firmInformation,
-        branding,
-        activeDepartmentTypes,
-        invites,
-      }}
     >
       {stepContent}
     </AttorneyOnboardingLayout>

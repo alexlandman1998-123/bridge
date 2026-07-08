@@ -153,6 +153,7 @@
     "test:attorney-onboarding-phase6": "node scripts/attorney-onboarding-phase6.test.mjs",
     "test:attorney-onboarding-phase7": "node scripts/attorney-onboarding-phase7.test.mjs",
     "test:attorney-onboarding-phase8": "node scripts/attorney-onboarding-phase8.test.mjs",
+    "test:attorney-onboarding-preview-step": "node scripts/attorney-onboarding-preview-step.test.mjs",
     "test:organisation-settings-idempotency": "node scripts/organisation-settings-idempotency.test.mjs",
     "test:developer-partner-invite-binding": "node scripts/developer-partner-invite-binding.test.mjs",
     "test:attorney-dashboard-control-centre": "node scripts/attorney-dashboard-control-centre.test.mjs",

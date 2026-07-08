@@ -16,6 +16,9 @@ import {
 
 const allDepartmentTypes = getActiveDepartmentTypes(DEFAULT_DEPARTMENTS)
 
+assert.equal(ONBOARDING_STEPS.at(-2).key, 'review_confirm')
+assert.equal(ONBOARDING_STEPS.at(-1).key, 'workspace_preview')
+
 const emptyGuidance = buildOnboardingGuidance({
   firmInformation: {
     name: '',
@@ -32,6 +35,7 @@ assert.equal(emptyGuidance.readiness.nextAction, 'Firm profile', 'Firm profile s
 assert.equal(emptyGuidance.stepStatuses.firm_information.status, 'needs_attention')
 assert.equal(emptyGuidance.stepStatuses.team_invites.status, 'optional')
 assert.equal(emptyGuidance.stepStatuses.review_confirm.status, 'pending')
+assert.equal(emptyGuidance.stepStatuses.workspace_preview.status, 'pending')
 
 const completeGuidance = buildOnboardingGuidance({
   firmInformation: {
@@ -59,6 +63,7 @@ assert.equal(completeGuidance.readiness.percent, 100, 'Complete required setup s
 assert.equal(completeGuidance.readiness.nextAction, 'Activate workspace')
 assert.equal(completeGuidance.stepStatuses.branding.label, 'Ready')
 assert.equal(completeGuidance.stepStatuses.review_confirm.status, 'complete')
+assert.equal(completeGuidance.stepStatuses.workspace_preview.label, 'Activate')
 
 const inviteErrors = validateInvites(
   [

@@ -33,10 +33,34 @@ import { completeOnboarding } from './onboarding/onboardingEngine'
 
 const ATTORNEY_FIRM_SELECT_COLUMNS =
   'id, organisation_id, name, registration_number, vat_number, website, email, phone, address_line_1, address_line_2, city, province, postal_code, country, logo_url, primary_colour, secondary_colour, created_by, created_at, updated_at, is_active'
+const ATTORNEY_FIRM_BRANDING_SELECT_COLUMNS =
+  'firm_id, logo_url, logo_bucket, logo_path, logo_dark_url, logo_dark_bucket, logo_dark_path, primary_colour, secondary_colour'
 const ATTORNEY_FIRM_RECOVERY_CACHE_KEY_PREFIX = 'itg:attorney-firm-recovery'
+const ATTORNEY_FIRM_LOGO_MAX_BYTES = 5 * 1024 * 1024
+const ATTORNEY_BRANDING_BUCKET_CANDIDATES = Array.from(
+  new Set([
+    ...BRANDING_BUCKET_CANDIDATES.filter((bucketName) => bucketName !== 'documents'),
+    'organisation-branding',
+    ...BRANDING_BUCKET_CANDIDATES.filter((bucketName) => bucketName === 'documents'),
+  ].filter(Boolean)),
+)
+const ATTORNEY_BRANDING_PAYLOAD_KEYS = [
+  'logoUrl',
+  'logoBucket',
+  'logoPath',
+  'logoDarkUrl',
+  'logoDarkBucket',
+  'logoDarkPath',
+  'primaryColour',
+  'secondaryColour',
+]
 
 function buildAttorneyFirmRecoveryCacheKey(userId = '') {
   return `${ATTORNEY_FIRM_RECOVERY_CACHE_KEY_PREFIX}:${normalizeText(userId) || 'anonymous'}`
+}
+
+function hasAttorneyBrandingPayload(payload = {}) {
+  return ATTORNEY_BRANDING_PAYLOAD_KEYS.some((key) => Object.prototype.hasOwnProperty.call(payload, key))
 }
 
 function rememberAttorneyFirmRecovery(userId = '', firm = null) {
@@ -179,6 +203,133 @@ function buildMembershipBootstrapError(message, cause = null) {
   return error
 }
 
+function mapBrandingRow(row) {
+  if (!row) return null
+  return {
+    logoUrl: normalizeText(row.logo_url),
+    logoBucket: normalizeText(row.logo_bucket),
+    logoPath: normalizeText(row.logo_path),
+    logoDarkUrl: normalizeText(row.logo_dark_url),
+    logoDarkBucket: normalizeText(row.logo_dark_bucket),
+    logoDarkPath: normalizeText(row.logo_dark_path),
+    primaryColour: normalizeText(row.primary_colour),
+    secondaryColour: normalizeText(row.secondary_colour),
+  }
+}
+
+function mergeFirmRowWithBranding(firmRow, brandingRow = null) {
+  if (!firmRow || !brandingRow) return firmRow
+  return {
+    ...firmRow,
+    logo_url: brandingRow.logo_url || firmRow.logo_url,
+    logo_bucket: brandingRow.logo_bucket || firmRow.logo_bucket,
+    logo_path: brandingRow.logo_path || firmRow.logo_path,
+    logo_dark_url: brandingRow.logo_dark_url || firmRow.logo_dark_url,
+    logo_dark_bucket: brandingRow.logo_dark_bucket || firmRow.logo_dark_bucket,
+    logo_dark_path: brandingRow.logo_dark_path || firmRow.logo_dark_path,
+    primary_colour: brandingRow.primary_colour || firmRow.primary_colour,
+    secondary_colour: brandingRow.secondary_colour || firmRow.secondary_colour,
+  }
+}
+
+function mergeFirmWithBranding(firm, branding = null) {
+  if (!firm || !branding) return firm
+  return {
+    ...firm,
+    logoUrl: branding.logoUrl || firm.logoUrl,
+    logoBucket: branding.logoBucket || firm.logoBucket || '',
+    logoPath: branding.logoPath || firm.logoPath || '',
+    logoDarkUrl: branding.logoDarkUrl || firm.logoDarkUrl || '',
+    logoDarkBucket: branding.logoDarkBucket || firm.logoDarkBucket || '',
+    logoDarkPath: branding.logoDarkPath || firm.logoDarkPath || '',
+    primaryColour: branding.primaryColour || firm.primaryColour,
+    secondaryColour: branding.secondaryColour || firm.secondaryColour,
+  }
+}
+
+async function getAttorneyFirmBrandingRow(client, firmId) {
+  const normalizedFirmId = normalizeText(firmId)
+  if (!normalizedFirmId) return null
+
+  const query = await client
+    .from('attorney_firm_branding')
+    .select(ATTORNEY_FIRM_BRANDING_SELECT_COLUMNS)
+    .eq('firm_id', normalizedFirmId)
+    .maybeSingle()
+
+  if (query.error) {
+    if (
+      isMissingTableError(query.error, 'attorney_firm_branding') ||
+      isMissingColumnError(query.error, 'logo_bucket') ||
+      isPermissionDeniedError(query.error)
+    ) {
+      return null
+    }
+    throw query.error
+  }
+
+  return query.data || null
+}
+
+function buildBrandingPayload(firmId, branding = {}, userId = null, { includeMetadata = true } = {}) {
+  const normalizedFirmId = normalizeText(firmId)
+  if (!normalizedFirmId) {
+    throw new Error('Firm id is required to save branding.')
+  }
+
+  return {
+    firm_id: normalizedFirmId,
+    logo_url: normalizeNullableText(branding.logoUrl),
+    ...(includeMetadata
+      ? {
+          logo_bucket: normalizeNullableText(branding.logoBucket),
+          logo_path: normalizeNullableText(branding.logoPath),
+          logo_dark_url: normalizeNullableText(branding.logoDarkUrl),
+          logo_dark_bucket: normalizeNullableText(branding.logoDarkBucket),
+          logo_dark_path: normalizeNullableText(branding.logoDarkPath),
+        }
+      : {
+          logo_dark_url: normalizeNullableText(branding.logoDarkUrl),
+        }),
+    primary_colour: normalizeNullableText(branding.primaryColour),
+    secondary_colour: normalizeNullableText(branding.secondaryColour),
+    ...(userId ? { created_by: userId } : {}),
+  }
+}
+
+async function saveAttorneyFirmBranding(client, firmId, branding = {}, userId = null) {
+  const savePayload = buildBrandingPayload(firmId, branding, userId)
+  const query = await client
+    .from('attorney_firm_branding')
+    .upsert(savePayload, { onConflict: 'firm_id' })
+    .select(ATTORNEY_FIRM_BRANDING_SELECT_COLUMNS)
+    .maybeSingle()
+
+  if (!query.error) {
+    return mapBrandingRow(query.data)
+  }
+
+  if (isMissingColumnError(query.error, 'logo_bucket')) {
+    const fallbackPayload = buildBrandingPayload(firmId, branding, userId, { includeMetadata: false })
+    const fallbackQuery = await client
+      .from('attorney_firm_branding')
+      .upsert(fallbackPayload, { onConflict: 'firm_id' })
+      .select('firm_id, logo_url, logo_dark_url, primary_colour, secondary_colour')
+      .maybeSingle()
+
+    if (!fallbackQuery.error) {
+      return mapBrandingRow(fallbackQuery.data)
+    }
+    throw fallbackQuery.error
+  }
+
+  if (isMissingTableError(query.error, 'attorney_firm_branding')) {
+    return null
+  }
+
+  throw query.error
+}
+
 async function ensureAttorneyFirmBackingOrganisation(client, firmId) {
   const normalizedFirmId = normalizeText(firmId)
   if (!normalizedFirmId) return null
@@ -306,9 +457,12 @@ export async function uploadAttorneyFirmBrandingAsset({ file, variant = 'light' 
     throw new Error('Select a valid logo file before uploading.')
   }
 
-  const supportedMime = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml'])
+  const supportedMime = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml', 'image/webp'])
   if (!supportedMime.has(String(selectedFile.type || '').toLowerCase())) {
-    throw new Error('Upload a PNG, JPG, or SVG logo.')
+    throw new Error('Upload a PNG, JPG, WebP, or SVG logo.')
+  }
+  if (Number(selectedFile.size || 0) > ATTORNEY_FIRM_LOGO_MAX_BYTES) {
+    throw new Error('Logo file is too large. Please upload a logo smaller than 5 MB.')
   }
 
   const client = requireClient()
@@ -320,7 +474,7 @@ export async function uploadAttorneyFirmBrandingAsset({ file, variant = 'light' 
   let uploadedBucket = ''
   let latestBucketError = null
 
-  for (const bucketName of BRANDING_BUCKET_CANDIDATES) {
+  for (const bucketName of ATTORNEY_BRANDING_BUCKET_CANDIDATES) {
     const uploadResult = await client.storage.from(bucketName).upload(objectPath, selectedFile, {
       upsert: true,
       cacheControl: '3600',
@@ -335,11 +489,19 @@ export async function uploadAttorneyFirmBrandingAsset({ file, variant = 'light' 
       latestBucketError = uploadResult.error
       continue
     }
+    if (isPermissionDeniedError(uploadResult.error)) {
+      const storageAccessError = new Error(
+        'Logo storage is not ready for attorney firm branding yet. Please retry after storage access is refreshed.',
+      )
+      storageAccessError.code = uploadResult.error.code || 'attorney_branding_storage_rls'
+      storageAccessError.cause = uploadResult.error
+      throw storageAccessError
+    }
     throw uploadResult.error
   }
 
   if (!uploadedBucket) {
-    const checked = BRANDING_BUCKET_CANDIDATES.join(', ')
+    const checked = ATTORNEY_BRANDING_BUCKET_CANDIDATES.join(', ')
     if (latestBucketError) {
       throw new Error(`Unable to upload logo. Checked buckets: ${checked}.`)
     }
@@ -357,7 +519,7 @@ export async function uploadAttorneyFirmBrandingAsset({ file, variant = 'light' 
     fileName: selectedFile.name,
     publicUrl,
     signedUrl,
-    resolvedUrl: signedUrl || publicUrl,
+    resolvedUrl: publicUrl || signedUrl,
   }
 }
 
@@ -558,6 +720,7 @@ export async function createAttorneyFirm(payload = {}) {
   const firmPayload = buildFirmPayload(payload, user.id)
   const firmName = normalizeText(firmPayload.name)
   let firm = null
+  let matchedExistingFirm = false
 
   if (firmName) {
     const existingResult = await client
@@ -573,6 +736,7 @@ export async function createAttorneyFirm(payload = {}) {
       throw existingResult.error
     }
     firm = existingResult.data || null
+    matchedExistingFirm = Boolean(firm)
   }
 
   if (!firm) {
@@ -593,25 +757,30 @@ export async function createAttorneyFirm(payload = {}) {
   }
   const nowIso = new Date().toISOString()
 
-  if (firm && firm.is_active === false) {
-    const reactivateResult = await client
+  await ensureCurrentUserAttorneyFirmAdminMembership(firm.id)
+
+  if (matchedExistingFirm) {
+    const updatePayload = {
+      ...firmPayload,
+      is_active: true,
+      updated_at: nowIso,
+    }
+    delete updatePayload.created_by
+
+    const updateResult = await client
       .from('attorney_firms')
-      .update({
-        is_active: true,
-        updated_at: nowIso,
-      })
+      .update(updatePayload)
       .eq('id', firm.id)
       .select(ATTORNEY_FIRM_SELECT_COLUMNS)
       .single()
 
-    if (reactivateResult.error) {
-      throw reactivateResult.error
+    if (updateResult.error) {
+      throw updateResult.error
     }
 
-    firm = reactivateResult.data
+    firm = updateResult.data
   }
 
-  await ensureCurrentUserAttorneyFirmAdminMembership(firm.id)
   const backingOrganisationId = await ensureAttorneyFirmBackingOrganisation(client, firm.id)
 
   await createDefaultAttorneyDepartments(firm.id)
@@ -692,7 +861,8 @@ export async function getAttorneyFirmById(firmId) {
     throw query.error
   }
 
-  return mapFirmRow(query.data)
+  const brandingRow = await getAttorneyFirmBrandingRow(client, normalizedFirmId)
+  return mapFirmRow(mergeFirmRowWithBranding(query.data, brandingRow))
 }
 
 async function getCurrentUserOwnedAttorneyFirm(client, userId) {
@@ -718,7 +888,8 @@ async function getCurrentUserOwnedAttorneyFirm(client, userId) {
     throw query.error
   }
 
-  return mapFirmRow(query.data)
+  const brandingRow = await getAttorneyFirmBrandingRow(client, query.data?.id)
+  return mapFirmRow(mergeFirmRowWithBranding(query.data, brandingRow))
 }
 
 export async function getCurrentUserAttorneyFirms() {
@@ -853,11 +1024,16 @@ export async function getCurrentUserAttorneyFirms() {
     return accumulator
   }, {})
 
-  return (firmsQuery.data || []).map((firmRow) => {
+  const brandingRows = await Promise.all((firmsQuery.data || []).map((firmRow) =>
+    getAttorneyFirmBrandingRow(client, firmRow.id).catch(() => null),
+  ))
+
+  return (firmsQuery.data || []).map((firmRow, index) => {
     const firm = mapFirmRow(firmRow)
+    const firmWithBranding = mergeFirmWithBranding(firm, mapBrandingRow(brandingRows[index]))
     const membership = roleByFirmId[firm.id] || {}
     return {
-      ...firm,
+      ...firmWithBranding,
       membershipRole: membership.role || null,
       membershipStatus: membership.status || null,
       membershipJoinedAt: membership.joinedAt || null,
@@ -952,7 +1128,10 @@ export async function updateAttorneyFirm(firmId, payload = {}) {
     throw query.error
   }
 
-  return mapFirmRow(query.data)
+  const branding = hasAttorneyBrandingPayload(payload)
+    ? await saveAttorneyFirmBranding(client, normalizedFirmId, payload)
+    : mapBrandingRow(await getAttorneyFirmBrandingRow(client, normalizedFirmId))
+  return mergeFirmWithBranding(mapFirmRow(query.data), branding)
 }
 
 export async function completeAttorneyFirmOnboarding({
@@ -967,8 +1146,10 @@ export async function completeAttorneyFirmOnboarding({
   }
 
   try {
-    const createdFirm = await createAttorneyFirm(combinedFirmPayload)
+    let createdFirm = await createAttorneyFirm(combinedFirmPayload)
     const authUser = await getAuthenticatedUser(requireClient()).catch(() => null)
+    const brandingRecord = await saveAttorneyFirmBranding(requireClient(), createdFirm.id, branding, authUser?.id || null)
+    createdFirm = mergeFirmWithBranding(createdFirm, brandingRecord)
     rememberAttorneyFirmRecovery(authUser?.id || '', createdFirm)
     const updatedDepartments = await setAttorneyFirmDepartmentActivation(createdFirm.id, activeDepartmentTypes)
     const activeDepartments = updatedDepartments.filter((department) => department.isActive)

@@ -1,5 +1,4 @@
 import { AlertCircle, ArrowLeft, ArrowRight, Check, CheckCircle2, Circle, Clock3, Save, ShieldCheck } from 'lucide-react'
-import AttorneyFirmLivePreview from './AttorneyFirmLivePreview'
 
 const STATUS_META = {
   active: { label: 'In progress', icon: null },
@@ -30,7 +29,6 @@ function AttorneyOnboardingLayout({
   isSubmitting = false,
   draftSavedAt = '',
   errorMessage = '',
-  preview = null,
   readiness = null,
   stepStatuses = {},
   onStepSelect,
@@ -124,8 +122,6 @@ function AttorneyOnboardingLayout({
           </div>
           <div className="attorney-setup-content">{children}</div>
         </main>
-
-        <AttorneyFirmLivePreview preview={preview} progressPercent={readinessPercent} readiness={readiness} />
       </div>
 
       {errorMessage ? (

@@ -27,6 +27,11 @@ export const ONBOARDING_STEPS = [
     label: 'Review & Confirm',
     description: 'Verify setup before activation.',
   },
+  {
+    key: 'workspace_preview',
+    label: 'Workspace Preview',
+    description: 'Preview client-facing surfaces before activation.',
+  },
 ]
 
 export const DEFAULT_FIRM_INFORMATION = {
@@ -135,6 +140,11 @@ export function buildBrandingFromFirm(firm = {}) {
   return {
     ...DEFAULT_BRANDING,
     logoUrl: firm.logoUrl || '',
+    logoBucket: firm.logoBucket || '',
+    logoPath: firm.logoPath || '',
+    logoDarkUrl: firm.logoDarkUrl || '',
+    logoDarkBucket: firm.logoDarkBucket || '',
+    logoDarkPath: firm.logoDarkPath || '',
     primaryColour: firm.primaryColour || DEFAULT_BRANDING.primaryColour,
     secondaryColour: firm.secondaryColour || DEFAULT_BRANDING.secondaryColour,
   }
@@ -618,6 +628,10 @@ export function buildOnboardingGuidance({
       review_confirm: {
         status: percent === 100 ? 'complete' : 'pending',
         label: percent === 100 ? 'Ready' : 'Review',
+      },
+      workspace_preview: {
+        status: percent === 100 ? 'complete' : 'pending',
+        label: percent === 100 ? 'Activate' : 'Preview',
       },
     },
   }
