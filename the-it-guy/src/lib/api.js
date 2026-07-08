@@ -42729,6 +42729,7 @@ export async function acceptDeveloperPartnerInvitationByToken(token, input = {})
     p_token: safeToken,
     p_partner_display_name: normalizeNullableText(input.partnerDisplayName || input.partner_display_name),
     p_partner_email: normalizeEmailAddress(input.partnerEmail || input.partner_email || input.email) || null,
+    p_partner_organisation_id: normalizeNullableUuid(input.partnerOrganisationId || input.partner_organisation_id || input.organisationId),
   })
   if (result.error) throw result.error
   if (!result.data?.ok) {
@@ -42738,6 +42739,16 @@ export async function acceptDeveloperPartnerInvitationByToken(token, input = {})
         ? 'This partner invite has expired.'
         : reason === 'relationship_unavailable'
           ? 'This partner relationship is no longer available.'
+          : reason === 'authentication_required'
+            ? 'Sign in before accepting this partner invite.'
+            : reason === 'organisation_required'
+              ? 'Complete workspace setup before accepting this partner invite.'
+              : reason === 'not_workspace_admin'
+                ? 'Only a workspace admin can accept this partner invite.'
+                : reason === 'wrong_workspace'
+                  ? 'This invite is linked to another workspace. Switch workspace and retry.'
+                  : reason === 'self_relationship'
+                    ? 'You cannot accept a partner invite into the developer workspace that sent it.'
           : 'Unable to accept this partner invite.',
     )
     error.reason = reason

@@ -160,14 +160,12 @@ export const APP_NAV_BY_ROLE = {
         { key: 'attorney_incoming_matters', label: 'Incoming Matters', to: '/attorney/matters/active' },
       ],
     },
-    { key: 'attorney_workflow_board', label: 'Workflow', to: '/attorney/operations' },
     { key: 'scheduling', label: 'Calendar', to: '/attorney/scheduling' },
     { key: 'clients', label: 'Clients & Parties', to: '/clients' },
     { key: 'documents', label: 'Documents', to: '/documents' },
     { key: 'partners', label: 'Partners', to: '/partners' },
     { key: 'financials', label: 'Finance', to: '/financials' },
     { key: 'team_departments', label: 'Team', to: '/users' },
-    { key: 'reports', label: 'Reports', to: '/reports' },
     ...(SHOW_INTELLIGENCE_BETA
       ? [
           {

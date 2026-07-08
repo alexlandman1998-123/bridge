@@ -378,6 +378,32 @@ function isUniqueConstraintError(error) {
   return code === '23505' || message.includes('duplicate key') || details.includes('duplicate key')
 }
 
+function buildOrganisationContextResult({
+  organisation,
+  organisationSettings,
+  membership,
+  membershipRole,
+  membershipStatus,
+  onboardingMode,
+  profile,
+  persisted,
+} = {}) {
+  return {
+    organisation,
+    organisationSettings,
+    membershipRole,
+    membershipStatus,
+    membership,
+    membershipId: membership?.id || null,
+    membershipBranchId: membership?.branch_id || membership?.primary_branch_id || null,
+    membershipPrimaryBranchId: membership?.primary_branch_id || membership?.branch_id || null,
+    membershipBranchScope: membership?.branch_scope || null,
+    onboardingMode,
+    profile,
+    persisted,
+  }
+}
+
 async function upsertByDevelopmentIdWithFallback(client, table, payload) {
   const updateResult = await client
     .from(table)
@@ -2621,6 +2647,46 @@ async function ensureOrganisationContext(client) {
         .single()
 
       if (insertSettings.error) {
+        if (isUniqueConstraintError(insertSettings.error)) {
+          const existingSettings = await client
+            .from('organisation_settings')
+            .select('settings_json')
+            .eq('organisation_id', organisation.id)
+            .maybeSingle()
+
+          if (!existingSettings.error && existingSettings.data) {
+            return buildOrganisationContextResult({
+              organisation,
+              organisationSettings: safeJson(existingSettings.data.settings_json, DEFAULT_ORGANISATION_SETTINGS),
+              membershipRole: normalizeOrganisationMembershipRole(membership?.role || profile.role),
+              membershipStatus: membership?.status || 'active',
+              membership,
+              onboardingMode: resolvedOnboardingMode,
+              profile,
+              persisted: true,
+            })
+          }
+
+          if (
+            !existingSettings.error ||
+            isMissingTableError(existingSettings.error, 'organisation_settings') ||
+            isRlsPolicyError(existingSettings.error)
+          ) {
+            return buildOrganisationContextResult({
+              organisation,
+              organisationSettings: { ...DEFAULT_ORGANISATION_SETTINGS },
+              membershipRole: normalizeOrganisationMembershipRole(membership?.role || profile.role),
+              membershipStatus: membership?.status || 'active',
+              membership,
+              onboardingMode: resolvedOnboardingMode,
+              profile,
+              persisted: false,
+            })
+          }
+
+          throw existingSettings.error
+        }
+
         if (
           !isMissingTableError(insertSettings.error, 'organisation_settings')
           && !isRlsPolicyError(insertSettings.error)
@@ -2629,36 +2695,28 @@ async function ensureOrganisationContext(client) {
         }
       }
 
-      return {
+      return buildOrganisationContextResult({
         organisation,
         organisationSettings: safeJson(insertSettings.data?.settings_json, DEFAULT_ORGANISATION_SETTINGS),
         membershipRole: normalizeOrganisationMembershipRole(membership?.role || profile.role),
         membershipStatus: membership?.status || 'active',
         membership,
-        membershipId: membership?.id || null,
-        membershipBranchId: membership?.branch_id || membership?.primary_branch_id || null,
-        membershipPrimaryBranchId: membership?.primary_branch_id || membership?.branch_id || null,
-        membershipBranchScope: membership?.branch_scope || null,
         onboardingMode: resolvedOnboardingMode,
         profile,
         persisted: !insertSettings.error,
-      }
+      })
     }
 
-    return {
+    return buildOrganisationContextResult({
       organisation,
       organisationSettings: safeJson(settingsQuery.data.settings_json, DEFAULT_ORGANISATION_SETTINGS),
       membershipRole: normalizeOrganisationMembershipRole(membership?.role || profile.role),
       membershipStatus: membership?.status || 'active',
       membership,
-      membershipId: membership?.id || null,
-      membershipBranchId: membership?.branch_id || membership?.primary_branch_id || null,
-      membershipPrimaryBranchId: membership?.primary_branch_id || membership?.branch_id || null,
-      membershipBranchScope: membership?.branch_scope || null,
       onboardingMode: resolvedOnboardingMode,
       profile,
       persisted: true,
-    }
+    })
   } catch (error) {
     console.error('[ONBOARDING] org-context:failed', error)
     if (

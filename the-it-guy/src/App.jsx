@@ -17,6 +17,7 @@ import {
 import { getRuntimeEnvValidation } from './lib/envValidation'
 import { markRouteFirstVisibleContent, markRouteRendered } from './lib/performanceTrace'
 import { isOnboardingRoute } from './lib/onboardingRouting'
+import { buildPartnerInviteAutoAcceptPath, readPendingPartnerInvitePath } from './lib/pendingPartnerInvite'
 import { ONBOARDING_REQUIRED_REASONS } from './constants/onboardingStatuses'
 import { resolveSignupIntentRoute } from './lib/signupIntent'
 import { storePostLoginRedirect } from './lib/resolveMobileAwareRedirect'
@@ -978,7 +979,10 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
   }
 
   if (onAnyOnboardingRoute && onboardingCompleted) {
-    const target = hasCommercialAccess ? '/commercial' : baseRole === 'attorney' ? '/attorney/dashboard' : '/dashboard'
+    const pendingPartnerInvitePath = readPendingPartnerInvitePath()
+    const target = pendingPartnerInvitePath
+      ? buildPartnerInviteAutoAcceptPath(pendingPartnerInvitePath)
+      : hasCommercialAccess ? '/commercial' : baseRole === 'attorney' ? '/attorney/dashboard' : '/dashboard'
     return <Navigate to={target} replace />
   }
 
@@ -1377,6 +1381,8 @@ function AppRoutes() {
   const { session, authLoading, authError, retryAuthBootstrap, logout, devAuthRole, setDevAuthRole } = useAuthSession()
   const pendingInvitePath = (() => {
     if (typeof window === 'undefined') return ''
+    const partnerInvitePath = readPendingPartnerInvitePath()
+    if (partnerInvitePath) return partnerInvitePath
     const token = String(window.sessionStorage.getItem('itg:pending-org-invite-token') || '').trim()
     if (!token) return ''
     return `/invite/${token}`

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Building2, Plus, Users } from 'lucide-react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { buildPartnerInviteAutoAcceptPath, readPendingPartnerInvitePath } from '../lib/pendingPartnerInvite'
 import AttorneyOnboardingLayout from '../components/attorney/onboarding/AttorneyOnboardingLayout'
 import FirmInfoStep from '../components/attorney/onboarding/FirmInfoStep'
 import BrandingStep from '../components/attorney/onboarding/BrandingStep'
@@ -266,18 +266,21 @@ function AttorneyOnboardingPage() {
   const [uploadingLogoTarget, setUploadingLogoTarget] = useState('')
   const [uploadError, setUploadError] = useState('')
   const [draftSavedAt, setDraftSavedAt] = useState('')
-  const [completedOnboarding, setCompletedOnboarding] = useState(null)
 
   const activeDepartmentTypes = useMemo(() => getActiveDepartmentTypes(selectedDepartments), [selectedDepartments])
   const draftStorageKey = useMemo(() => buildDraftStorageKey(profile?.id), [profile?.id])
 
   function openAttorneyDashboard() {
     authState.refreshAuthState?.()
+    const pendingPartnerInvitePath = readPendingPartnerInvitePath()
+    const target = pendingPartnerInvitePath
+      ? buildPartnerInviteAutoAcceptPath(pendingPartnerInvitePath)
+      : '/attorney/dashboard'
     if (typeof window !== 'undefined') {
-      window.location.assign('/attorney/dashboard')
+      window.location.replace(target)
       return
     }
-    navigate('/attorney/dashboard', { replace: true })
+    navigate(target, { replace: true })
   }
 
   useEffect(() => {
@@ -546,11 +549,11 @@ function AttorneyOnboardingPage() {
         })),
       }
 
-      const completion = await completeAttorneyFirmOnboarding(onboardingPayload)
+      await completeAttorneyFirmOnboarding(onboardingPayload)
       if (typeof window !== 'undefined') {
         window.localStorage.removeItem(draftStorageKey)
       }
-      setCompletedOnboarding(completion)
+      openAttorneyDashboard()
     } catch (submitFailure) {
       setSubmitError(resolveAttorneyOnboardingErrorMessage(submitFailure))
     } finally {
@@ -615,41 +618,6 @@ function AttorneyOnboardingPage() {
       <section className="page">
         <div className="ui-panel" style={{ padding: '1rem' }}>
           <p className="status-message" style={{ margin: 0 }}>Loading attorney onboarding workspace...</p>
-        </div>
-      </section>
-    )
-  }
-
-  if (completedOnboarding?.firm?.id) {
-    return (
-      <section className="page" style={{ maxWidth: '1040px' }}>
-        <div className="ui-panel" style={{ display: 'grid', gap: '1rem', padding: '1.1rem' }}>
-          <h2 style={{ margin: 0 }}>Firm setup complete</h2>
-          <p className="status-message" style={{ margin: 0 }}>
-            {completedOnboarding.firm.name} is ready. Your legal workspace, branding, and departments are now active.
-          </p>
-          {Array.isArray(completedOnboarding.inviteWarnings) && completedOnboarding.inviteWarnings.length ? (
-            <div className="ui-panel-muted" style={{ display: 'grid', gap: '0.35rem', padding: '0.85rem' }}>
-              <strong>Invite follow-ups</strong>
-              {completedOnboarding.inviteWarnings.map((warning) => (
-                <p key={warning} className="status-message" style={{ margin: 0 }}>{warning}</p>
-              ))}
-            </div>
-          ) : null}
-          <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
-            <button type="button" className="ui-button-primary" onClick={openAttorneyDashboard}>
-              <Building2 size={16} aria-hidden="true" />
-              Open Attorney Dashboard
-            </button>
-            <button type="button" className="ui-button-secondary" onClick={() => navigate('/transactions')}>
-              <Plus size={16} aria-hidden="true" />
-              Create First Transaction
-            </button>
-            <button type="button" className="ui-button-secondary" onClick={() => navigate('/settings/organisation')}>
-              <Users size={16} aria-hidden="true" />
-              Invite More Team Members
-            </button>
-          </div>
         </div>
       </section>
     )

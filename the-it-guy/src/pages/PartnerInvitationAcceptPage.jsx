@@ -12,11 +12,12 @@ import {
   ShieldCheck,
   UsersRound,
 } from 'lucide-react'
-import { createElement, useEffect, useMemo, useState } from 'react'
+import { createElement, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { clearPendingPartnerInvitePath, rememberPendingPartnerInvitePath } from '../lib/pendingPartnerInvite'
 import {
   acceptPartnerInvitationByLink,
   previewPartnerInvitationAcceptance,
@@ -133,7 +134,9 @@ export default function PartnerInvitationAcceptPage() {
   const [preview, setPreview] = useState(null)
   const [accepted, setAccepted] = useState(false)
   const [error, setError] = useState('')
+  const autoAcceptAttemptedRef = useRef(false)
   const returnPath = useMemo(() => buildReturnPath(location), [location])
+  const autoAccept = useMemo(() => new URLSearchParams(location.search).get('accept') === '1', [location.search])
   const authPath = `/auth?next=${encodeURIComponent(returnPath)}`
   const signupPath = `/auth?mode=signup&next=${encodeURIComponent(returnPath)}`
   const session = authState.session
@@ -156,6 +159,16 @@ export default function PartnerInvitationAcceptPage() {
     : !session
       ? 'This secure invitation needs to be accepted by a user from the invited workspace.'
       : 'Accepting creates the workspace connection used for referrals, routing, and transaction coordination.'
+
+  useEffect(() => {
+    rememberPendingPartnerInvitePath(returnPath)
+  }, [returnPath])
+
+  useEffect(() => {
+    if (accepted) {
+      clearPendingPartnerInvitePath(returnPath)
+    }
+  }, [accepted, returnPath])
 
   useEffect(() => {
     let active = true
@@ -204,12 +217,32 @@ export default function PartnerInvitationAcceptPage() {
       })
       setPreview(result?.invitation || preview)
       setAccepted(true)
+      clearPendingPartnerInvitePath(returnPath)
     } catch (acceptError) {
       setError(acceptError?.message || 'Unable to accept this partner invitation.')
     } finally {
       setAccepting(false)
     }
   }
+
+  useEffect(() => {
+    if (
+      !autoAccept ||
+      autoAcceptAttemptedRef.current ||
+      accepted ||
+      accepting ||
+      loadingPreview ||
+      error ||
+      !session ||
+      !workspaceId ||
+      !preview
+    ) {
+      return
+    }
+
+    autoAcceptAttemptedRef.current = true
+    void handleAccept()
+  }, [accepted, accepting, autoAccept, error, loadingPreview, preview, session, workspaceId])
 
   function openPartners() {
     navigate('/partners?tab=invitations', { replace: true })
