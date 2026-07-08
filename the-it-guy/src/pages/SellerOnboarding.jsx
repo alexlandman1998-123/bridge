@@ -87,10 +87,13 @@ const SELLER_STATUS_LABELS = {
 }
 
 const PROPERTY_FEATURES = [
+  { key: 'solar', label: 'Solar', formKey: 'solarInstallation' },
+  { key: 'inverter_battery', label: 'Inverter / Battery', formKey: 'inverterBattery' },
+  { key: 'gas_geyser', label: 'Gas Geyser', formKey: 'gasGeyser' },
+  { key: 'borehole', label: 'Borehole', formKey: 'boreholeInstallation' },
+  { key: 'water_tank', label: 'Water Tank', formKey: 'waterTank' },
   { key: 'garden', label: 'Garden' },
   { key: 'security', label: 'Security (Estate / Alarm / Electric Fence)' },
-  { key: 'solar', label: 'Solar / Inverter' },
-  { key: 'water', label: 'Borehole / Water Tank' },
   { key: 'fibre', label: 'Fibre' },
   { key: 'aircon', label: 'Aircon' },
   { key: 'fireplace', label: 'Fireplace' },
@@ -98,8 +101,16 @@ const PROPERTY_FEATURES = [
   { key: 'staff_quarters', label: 'Staff Quarters' },
 ]
 
+const WATER_BILLING_OPTIONS = [
+  { value: '', label: 'Select water billing type' },
+  { value: 'prepaid', label: 'Prepaid water' },
+  { value: 'municipal', label: 'Council / municipal water' },
+  { value: 'both', label: 'Prepaid and council / municipal' },
+  { value: 'unknown', label: 'Unknown' },
+]
+
 const OWNERSHIP_TYPES = [
-  { value: 'individual', label: 'Individual', description: 'I own the property in my own name.' },
+  { value: 'individual', label: 'Natural Person', description: 'I own the property in my own name.' },
   { value: 'married_cop', label: 'Married (COP)', description: 'Married in community of property.' },
   { value: 'married_anc', label: 'Married (ANC)', description: 'Married out of community of property.' },
   { value: 'company', label: 'Company', description: 'A company owns the property.' },
@@ -108,6 +119,52 @@ const OWNERSHIP_TYPES = [
   { value: 'power_of_attorney', label: 'Power of attorney', description: 'Someone is acting under authority.' },
   { value: 'multiple_owners', label: 'Multiple owners', description: 'Two or more individuals own the property.' },
   { value: 'other', label: 'Other', description: 'Another ownership structure applies.' },
+]
+
+const OWNER_ENTITY_TYPES = [
+  { value: 'natural_person', label: 'Natural Person', description: 'An individual, spouse, estate, POA, or multiple natural-person owners.' },
+  { value: 'company', label: 'Company', description: 'A company owns the property and needs authority details.' },
+  { value: 'trust', label: 'Trust', description: 'A trust owns the property and needs trustee authority.' },
+  { value: 'foreign', label: 'Foreign', description: 'A foreign person, company, or trust owns the property.' },
+  { value: 'other', label: 'Other', description: 'Another owner type applies.' },
+]
+
+const OWNER_ENTITY_ICONS = {
+  natural_person: UserRound,
+  company: Building2,
+  trust: Landmark,
+  foreign: ShieldCheck,
+  other: Circle,
+}
+
+const OWNER_STRUCTURE_TYPES_BY_ENTITY = {
+  natural_person: [
+    { value: 'individual', label: 'Single owner', description: 'One natural person owns the property.' },
+    { value: 'married_cop', label: 'Married (COP)', description: 'Married in community of property.' },
+    { value: 'married_anc', label: 'Married (ANC)', description: 'Married out of community of property.' },
+    { value: 'multiple_owners', label: 'Multiple owners', description: 'Two or more natural persons own the property.' },
+    { value: 'deceased_estate', label: 'Deceased estate', description: 'The property forms part of a deceased estate.' },
+    { value: 'power_of_attorney', label: 'Power of attorney', description: 'Someone is acting under authority.' },
+  ],
+  company: [
+    { value: 'company', label: 'Company resolution', description: 'Capture company, director, and signing authority details.' },
+  ],
+  trust: [
+    { value: 'trust', label: 'Trust resolution', description: 'Capture trust, trustee, and authority details.' },
+  ],
+  foreign: [
+    { value: 'foreign_individual', label: 'Foreign natural person', description: 'A non-SA natural person owns the property.' },
+    { value: 'foreign_company', label: 'Foreign company', description: 'A foreign company owns the property.' },
+    { value: 'foreign_trust', label: 'Foreign trust', description: 'A foreign trust owns the property.' },
+  ],
+  other: [
+    { value: 'other', label: 'Other structure', description: 'Capture a structure note for follow-up.' },
+  ],
+}
+
+const MULTIPLE_OWNER_CAPTURE_MODES = [
+  { value: 'capture_now', label: 'Capture all details now', description: 'Enter every owner, share, ID/passport, and consent in this form.' },
+  { value: 'send_onboarding', label: 'Send owner onboarding', description: 'Capture contact details now and let the team send owner follow-up links.' },
 ]
 
 const OWNERSHIP_OPTION_ICONS = {
@@ -119,6 +176,9 @@ const OWNERSHIP_OPTION_ICONS = {
   deceased_estate: FileCheck2,
   power_of_attorney: ClipboardCheck,
   multiple_owners: UserRound,
+  foreign_individual: ShieldCheck,
+  foreign_company: Building2,
+  foreign_trust: Landmark,
   other: Circle,
 }
 
@@ -135,7 +195,6 @@ const PROPERTY_CATEGORY_META = {
 const PROPERTY_STRUCTURE_META = {
   full_title: { icon: Home, description: 'Single title deed for the property.' },
   sectional_title: { icon: Building2, description: 'Unit in a sectional scheme.' },
-  estate: { icon: ShieldCheck, description: 'Estate or HOA-managed property.' },
   share_block: { icon: Building2, description: 'Share block ownership structure.' },
   freehold: { icon: Home, description: 'Freehold ownership.' },
   agricultural_holding: { icon: Landmark, description: 'Agricultural holding or farm-style title.' },
@@ -143,14 +202,16 @@ const PROPERTY_STRUCTURE_META = {
 }
 
 const PROPERTY_STRUCTURES_BY_CATEGORY = {
-  residential: ['full_title', 'sectional_title', 'estate', 'share_block', 'freehold', 'other'],
-  commercial: ['full_title', 'sectional_title', 'freehold', 'estate', 'other'],
+  residential: ['full_title', 'sectional_title', 'share_block', 'freehold', 'other'],
+  commercial: ['full_title', 'sectional_title', 'freehold', 'other'],
   industrial: ['full_title', 'freehold', 'sectional_title', 'other'],
   retail: ['full_title', 'sectional_title', 'freehold', 'other'],
   agricultural: ['agricultural_holding', 'freehold', 'full_title', 'other'],
-  mixed_use: ['full_title', 'sectional_title', 'freehold', 'estate', 'other'],
+  mixed_use: ['full_title', 'sectional_title', 'freehold', 'other'],
   vacant_land: ['full_title', 'freehold', 'agricultural_holding', 'other'],
 }
+
+const SELLER_PROPERTY_STRUCTURE_TYPES = PROPERTY_STRUCTURE_TYPES.filter((value) => value !== 'estate')
 
 const OCCUPANCY_STATUSES = [
   { value: 'unknown', label: 'Unknown' },
@@ -173,6 +234,7 @@ const MANDATE_TYPE_OPTIONS = [
   { value: 'sole', label: 'Sole' },
   { value: 'dual', label: 'Dual' },
   { value: 'tri_mandate', label: 'Tri-Mandate' },
+  { value: 'open', label: 'Open Mandate' },
 ]
 
 const SELLING_REASON_OPTIONS = [
@@ -311,9 +373,9 @@ function choiceCardClass(isActive) {
 
 function getPropertyStructureOptionsByCategory(category) {
   const normalizedCategory = normalizePropertyCategory(category, { fallback: 'residential' })
-  const values = PROPERTY_STRUCTURES_BY_CATEGORY[normalizedCategory] || PROPERTY_STRUCTURE_TYPES
+  const values = PROPERTY_STRUCTURES_BY_CATEGORY[normalizedCategory] || SELLER_PROPERTY_STRUCTURE_TYPES
   return values
-    .filter((value) => PROPERTY_STRUCTURE_TYPES.includes(value))
+    .filter((value) => SELLER_PROPERTY_STRUCTURE_TYPES.includes(value))
     .map((value) => ({
       value,
       label: getPropertyStructureTypeLabel(value),
@@ -716,7 +778,7 @@ function mapGoogleAddressToPropertyAddress(value = null, fallback = {}) {
     ...fallback,
     query: String(value.formattedAddress || line1 || '').trim(),
     line1,
-    line2: '',
+    line2: String(value.line2 || value.addressLine2 || value.subpremise || fallback.line2 || '').trim(),
     suburb: String(value.suburb || '').trim(),
     city: String(value.city || '').trim(),
     province: String(value.province || '').trim(),
@@ -784,20 +846,13 @@ function buildBondComplianceSummary(form = {}) {
 
   const items = [
     { label: 'Bond bank', value: form.bondBank || 'Not provided' },
-    { label: 'Account reference', value: form.bondAccountReference || 'Not provided' },
+    { label: 'Bond account number', value: form.bondAccountReference || 'Not provided' },
     { label: 'Estimated settlement', value: form.estimatedSettlementAmount ? formatCurrency(form.estimatedSettlementAmount) : 'Not provided' },
-    {
-      label: 'Cancellation attorney',
-      value: form.cancellationAttorneyKnown
-        ? (form.cancellationAttorneyDetails || 'Known, but details not captured yet')
-        : 'Not confirmed',
-    },
   ]
   const missing = []
   if (!form.bondBank) missing.push('Bond bank')
-  if (!form.bondAccountReference) missing.push('Account reference')
+  if (!form.bondAccountReference) missing.push('Bond account number')
   if (!form.estimatedSettlementAmount) missing.push('Settlement estimate')
-  if (!form.cancellationAttorneyKnown || !form.cancellationAttorneyDetails) missing.push('Cancellation attorney details')
 
   return { items, missing }
 }
@@ -837,6 +892,13 @@ function getCanonicalSellerFacts(listing = {}) {
 
 function normalizeOwnershipType(existing = {}, canonicalFacts = {}, flow = null) {
   const explicit = String(existing.ownershipType || existing.sellerLegalType || existing.legalType || existing.sellerType || '').toLowerCase()
+  const explicitOwnerEntityType = String(existing.ownerEntityType || existing.owner_entity_type || canonicalFacts?.seller?.owner_entity_type || '').toLowerCase()
+  const explicitOwnerStructureType = String(existing.ownerStructureType || existing.owner_structure_type || canonicalFacts?.seller?.owner_structure_type || '').toLowerCase()
+  if (explicitOwnerEntityType || explicitOwnerStructureType) {
+    const ownerEntityType = OWNER_ENTITY_TYPES.some((item) => item.value === explicitOwnerEntityType) ? explicitOwnerEntityType : deriveOwnerEntityType(explicit, existing, canonicalFacts)
+    const ownerStructureType = normalizeOwnerStructureType(explicitOwnerStructureType, ownerEntityType)
+    return deriveOwnershipTypeFromOwnerModel(ownerEntityType, ownerStructureType)
+  }
   const flowBranch = String(flow?.seller_branch || canonicalFacts?.flow?.seller_branch || '').toLowerCase()
 
   if (explicit === 'individual' || explicit === 'other') {
@@ -866,6 +928,76 @@ function normalizeOwnershipType(existing = {}, canonicalFacts = {}, flow = null)
   }
 
   return explicit || 'individual'
+}
+
+function deriveOwnerEntityType(ownershipType = '', existing = {}, canonicalFacts = {}) {
+  const explicit = String(existing.ownerEntityType || existing.owner_entity_type || canonicalFacts?.seller?.owner_entity_type || '').trim().toLowerCase()
+  if (OWNER_ENTITY_TYPES.some((item) => item.value === explicit)) return explicit
+
+  const structure = String(existing.ownerStructureType || existing.owner_structure_type || canonicalFacts?.seller?.owner_structure_type || '').trim().toLowerCase()
+  if (structure.startsWith('foreign_') || existing.foreignOwner || canonicalFacts?.seller?.foreign_owner) return 'foreign'
+
+  const normalized = String(ownershipType || '').trim().toLowerCase()
+  if (normalized === 'company') return 'company'
+  if (normalized === 'trust') return 'trust'
+  if (normalized === 'other') return 'other'
+  return 'natural_person'
+}
+
+function normalizeOwnerStructureType(value = '', ownerEntityType = 'natural_person') {
+  const normalized = String(value || '').trim().toLowerCase()
+  const options = OWNER_STRUCTURE_TYPES_BY_ENTITY[ownerEntityType] || OWNER_STRUCTURE_TYPES_BY_ENTITY.natural_person
+  if (options.some((item) => item.value === normalized)) return normalized
+  if (ownerEntityType === 'company') return 'company'
+  if (ownerEntityType === 'trust') return 'trust'
+  if (ownerEntityType === 'foreign') return 'foreign_individual'
+  if (ownerEntityType === 'other') return 'other'
+  return 'individual'
+}
+
+function deriveOwnerStructureType(ownershipType = '', ownerEntityType = 'natural_person', existing = {}, canonicalFacts = {}) {
+  const explicit = String(existing.ownerStructureType || existing.owner_structure_type || canonicalFacts?.seller?.owner_structure_type || '').trim().toLowerCase()
+  if (explicit) return normalizeOwnerStructureType(explicit, ownerEntityType)
+
+  const normalized = String(ownershipType || '').trim().toLowerCase()
+  if (ownerEntityType === 'company') return 'company'
+  if (ownerEntityType === 'trust') return 'trust'
+  if (ownerEntityType === 'foreign') {
+    if (normalized === 'company') return 'foreign_company'
+    if (normalized === 'trust') return 'foreign_trust'
+    return 'foreign_individual'
+  }
+  if (ownerEntityType === 'other') return 'other'
+  return normalizeOwnerStructureType(normalized, ownerEntityType)
+}
+
+function deriveOwnershipTypeFromOwnerModel(ownerEntityType = 'natural_person', ownerStructureType = 'individual') {
+  const normalizedEntity = String(ownerEntityType || '').trim().toLowerCase()
+  const normalizedStructure = String(ownerStructureType || '').trim().toLowerCase()
+  if (normalizedEntity === 'company' || normalizedStructure === 'company' || normalizedStructure === 'foreign_company') return 'company'
+  if (normalizedEntity === 'trust' || normalizedStructure === 'trust' || normalizedStructure === 'foreign_trust') return 'trust'
+  if (normalizedStructure === 'foreign_individual') return 'individual'
+  if (normalizedEntity === 'other' || normalizedStructure === 'other') return 'other'
+  return normalizeOwnerStructureType(normalizedStructure, 'natural_person')
+}
+
+function isForeignOwnerModel(ownerEntityType = '', ownerStructureType = '') {
+  return String(ownerEntityType || '').trim().toLowerCase() === 'foreign' || String(ownerStructureType || '').trim().toLowerCase().startsWith('foreign_')
+}
+
+function getOwnerEntityLabel(value = '') {
+  return OWNER_ENTITY_TYPES.find((item) => item.value === value)?.label || 'Natural Person'
+}
+
+function getOwnerStructureLabel(value = '', ownerEntityType = 'natural_person') {
+  const options = OWNER_STRUCTURE_TYPES_BY_ENTITY[ownerEntityType] || []
+  return options.find((item) => item.value === value)?.label || OWNERSHIP_TYPES.find((item) => item.value === value)?.label || 'Single owner'
+}
+
+function getOwnershipSummaryLabel(form = {}) {
+  const entityLabel = getOwnerEntityLabel(form.ownerEntityType)
+  const structureLabel = getOwnerStructureLabel(form.ownerStructureType || form.ownershipType, form.ownerEntityType)
+  return entityLabel === structureLabel ? entityLabel : `${entityLabel} - ${structureLabel}`
 }
 
 function getOwnershipBranch(value = '') {
@@ -1061,7 +1193,7 @@ function normalizeFormData(listing) {
     if (sellerBranch === 'deceased_estate') return canonicalFacts?.seller?.deceased_estate?.estate_reference || existing.idNumber || ''
     if (sellerBranch === 'power_of_attorney') return canonicalFacts?.seller?.power_of_attorney?.reference || existing.idNumber || ''
     if (sellerBranch === 'multiple_owners') return existing.idNumber || ''
-    return existing.idNumber || canonicalFacts?.seller?.id_number || ''
+    return existing.idNumber || existing.foreignPassportNumber || existing.passportNumber || canonicalFacts?.seller?.id_number || canonicalFacts?.seller?.foreign?.passport_number || ''
   }
   const resolveAddress = () => {
     if (sellerBranch === 'company') return canonicalFacts?.seller?.company?.registered_address || canonicalFacts?.seller?.residential_address || existing.residentialAddress || ''
@@ -1079,7 +1211,7 @@ function normalizeFormData(listing) {
     ? candidatePropertyType
     : propertyTypeOptions[0]?.value || candidatePropertyType || 'house'
   const propertyStructureOptions = getPropertyStructureOptionsByCategory(resolvedPropertyCategory)
-  const candidatePropertyStructureType = normalizePropertyStructureType(
+  const rawPropertyStructureType = normalizePropertyStructureType(
     existing.propertyStructureType ||
       canonicalFacts?.property?.property_structure_type ||
       listing?.propertyStructureType ||
@@ -1088,9 +1220,27 @@ function normalizeFormData(listing) {
       '',
     { fallback: '' },
   )
+  const hadLegacyEstateStructure = rawPropertyStructureType === 'estate'
+  const candidatePropertyStructureType = hadLegacyEstateStructure ? 'full_title' : rawPropertyStructureType
   const resolvedPropertyStructureType = propertyStructureOptions.some((item) => item.value === candidatePropertyStructureType)
     ? candidatePropertyStructureType
     : propertyStructureOptions[0]?.value || 'other'
+  const isSectionalStructure = ['sectional_title', 'share_block'].includes(resolvedPropertyStructureType)
+  const isShareBlockStructure = resolvedPropertyStructureType === 'share_block'
+  const legacyFeatureKeys = Array.isArray(existing.features)
+    ? existing.features.map((item) => String(item || '').trim()).filter(Boolean)
+    : []
+  const featureKeys = new Set(legacyFeatureKeys.filter((item) => item !== 'water'))
+  if (legacyFeatureKeys.includes('water')) {
+    featureKeys.add('borehole')
+    featureKeys.add('water_tank')
+  }
+  if (existing.solarInstallation || canonicalFacts?.compliance?.solar_installation) featureKeys.add('solar')
+  if (existing.gasGeyser || existing.gas_geyser || existing.gasInstallation || canonicalFacts?.compliance?.gas_geyser || canonicalFacts?.compliance?.gas_installation) featureKeys.add('gas_geyser')
+  if (existing.inverterBattery || existing.inverter_battery || canonicalFacts?.compliance?.inverter_battery) featureKeys.add('inverter_battery')
+  if (existing.boreholeInstallation || existing.borehole || canonicalFacts?.compliance?.borehole_installation || canonicalFacts?.compliance?.borehole) featureKeys.add('borehole')
+  if (existing.waterTank || existing.water_tank || canonicalFacts?.compliance?.water_tank) featureKeys.add('water_tank')
+  const normalizedFeatures = Array.from(featureKeys)
   const propertyAddressDetails = normalizePropertyAddress(
     {
       propertyAddressDetails: existing.propertyAddressDetails || canonicalFacts?.property?.address_details || {},
@@ -1136,6 +1286,14 @@ function normalizeFormData(listing) {
     estateComplexName: existing.estateComplexName || canonicalFacts?.property?.estate_name,
   })
   const ownershipType = normalizeOwnershipType(existing, canonicalFacts, flow)
+  const ownerEntityType = deriveOwnerEntityType(ownershipType, existing, canonicalFacts)
+  const ownerStructureType = deriveOwnerStructureType(ownershipType, ownerEntityType, existing, canonicalFacts)
+  const foreignOwner = isForeignOwnerModel(ownerEntityType, ownerStructureType)
+  const multipleOwnerCaptureMode =
+    existing.multipleOwnerCaptureMode ||
+    existing.multiple_owner_capture_mode ||
+    canonicalFacts?.seller?.multiple_owner_capture_mode ||
+    'capture_now'
   const ownershipBranch = getOwnershipBranch(ownershipType)
   const isVatEligibleOwnership = ['company', 'trust'].includes(ownershipBranch)
   const resolvedSectionNumber =
@@ -1163,6 +1321,14 @@ function normalizeFormData(listing) {
 
     ownershipType,
     sellerLegalType: ownershipType,
+    ownerEntityType,
+    ownerStructureType,
+    foreignOwner,
+    foreignOwnerCountry: existing.foreignOwnerCountry || existing.foreign_owner_country || canonicalFacts?.seller?.foreign_owner_country || canonicalFacts?.seller?.foreign?.country || '',
+    foreignPassportNumber: existing.foreignPassportNumber || existing.passportNumber || canonicalFacts?.seller?.foreign?.passport_number || '',
+    foreignRegistrationNumber: existing.foreignRegistrationNumber || canonicalFacts?.seller?.foreign?.registration_number || '',
+    foreignResidencyStatus: existing.foreignResidencyStatus || existing.residencyStatus || canonicalFacts?.seller?.foreign?.residency_status || '',
+    multipleOwnerCaptureMode,
     sellerTaxNumber: existing.sellerTaxNumber || canonicalFacts?.seller?.tax_number || existing.taxNumber || '',
     vatRegistered: isVatEligibleOwnership ? Boolean(existing.vatRegistered) : false,
     vatNumber: isVatEligibleOwnership ? (existing.vatNumber || '') : '',
@@ -1234,10 +1400,10 @@ function normalizeFormData(listing) {
     propertyCategory: resolvedPropertyCategory,
     propertyStructureType: resolvedPropertyStructureType,
     canonicalPropertyType: existing.canonicalPropertyType || canonicalPropertyType || canonicalFacts?.property?.property_type || existing.propertyClassification || '',
-    sectionalTitle: Boolean(existing.sectionalTitle || canonicalFacts?.property?.sectional_title || propertyBranch === 'sectional_title'),
-    shareBlock: Boolean(existing.shareBlock || canonicalFacts?.property?.share_block || propertyBranch === 'sectional_title'),
-    estateOrHoa: Boolean(existing.estateOrHoa || canonicalFacts?.property?.estate_or_hoa || propertyBranch === 'estate_hoa'),
-    bodyCorporate: Boolean(existing.bodyCorporate || canonicalFacts?.property?.body_corporate || propertyBranch === 'sectional_title'),
+    sectionalTitle: isSectionalStructure,
+    shareBlock: isShareBlockStructure,
+    estateOrHoa: Boolean(existing.estateOrHoa || canonicalFacts?.property?.estate_or_hoa || propertyBranch === 'estate_hoa' || hadLegacyEstateStructure),
+    bodyCorporate: Boolean(existing.bodyCorporate || canonicalFacts?.property?.body_corporate || isSectionalStructure),
     commercialProperty: Boolean(existing.commercialProperty || canonicalFacts?.property?.commercial_property || ['commercial', 'mixed_use'].includes(propertyBranch)),
     propertyType: resolvedPropertyType,
     propertyAddressDetails,
@@ -1291,7 +1457,9 @@ function normalizeFormData(listing) {
     parkingOpen: existing.parkingOpen || canonicalFacts?.property?.parking_open || '',
     pool: Boolean(existing.pool || canonicalFacts?.property?.pool),
     levies: existing.levies || canonicalFacts?.property?.levies || '',
+    leviesNotApplicable: Boolean(existing.leviesNotApplicable || existing.levies_not_applicable || canonicalFacts?.property?.levies_not_applicable),
     ratesTaxes: existing.ratesTaxes || canonicalFacts?.property?.rates_taxes || '',
+    waterBillingType: existing.waterBillingType || existing.water_billing_type || canonicalFacts?.property?.utilities?.water_billing_type || canonicalFacts?.property?.water_billing_type || '',
     monthlyWaterSpend: existing.monthlyWaterSpend || canonicalFacts?.property?.utilities?.monthly_water_spend || '',
     monthlyElectricitySpend: existing.monthlyElectricitySpend || canonicalFacts?.property?.utilities?.monthly_electricity_spend || '',
     recentAlterations: Boolean(existing.recentAlterations || canonicalFacts?.property?.alterations?.recent),
@@ -1306,7 +1474,7 @@ function normalizeFormData(listing) {
     propertyDisclosure,
     propertyDisclosureStatus: getPropertyDisclosureStatus(propertyDisclosure),
 
-    features: Array.isArray(existing.features) ? existing.features : [],
+    features: normalizedFeatures,
     propertyCondition: existing.propertyCondition || 'good',
     kitchenCondition: existing.kitchenCondition || 'good',
     bathroomCondition: existing.bathroomCondition || 'good',
@@ -1334,12 +1502,15 @@ function normalizeFormData(listing) {
     cancellationAttorneyKnown: Boolean(existing.cancellationAttorneyKnown),
     cancellationAttorneyDetails: existing.cancellationAttorneyDetails || '',
 
-    gasInstallation: Boolean(existing.gasInstallation || canonicalFacts?.compliance?.gas_installation),
+    gasInstallation: Boolean(existing.gasInstallation || existing.gasGeyser || existing.gas_geyser || canonicalFacts?.compliance?.gas_installation || canonicalFacts?.compliance?.gas_geyser),
+    gasGeyser: normalizedFeatures.includes('gas_geyser'),
     electricFence: Boolean(existing.electricFence || canonicalFacts?.compliance?.electric_fence),
-    solarInstallation: Boolean(existing.solarInstallation || canonicalFacts?.compliance?.solar_installation),
+    solarInstallation: normalizedFeatures.includes('solar'),
+    inverterBattery: normalizedFeatures.includes('inverter_battery'),
     swimmingPool: Boolean(existing.swimmingPool || existing.pool || canonicalFacts?.compliance?.swimming_pool),
-    boreholeInstallation: Boolean(existing.boreholeInstallation || existing.borehole || canonicalFacts?.compliance?.borehole_installation || canonicalFacts?.compliance?.borehole),
-    borehole: Boolean(existing.borehole || existing.boreholeInstallation || canonicalFacts?.compliance?.borehole_installation || canonicalFacts?.compliance?.borehole),
+    boreholeInstallation: normalizedFeatures.includes('borehole'),
+    borehole: normalizedFeatures.includes('borehole'),
+    waterTank: normalizedFeatures.includes('water_tank'),
     generatorInstallation: Boolean(existing.generatorInstallation || canonicalFacts?.compliance?.generator_installation),
     beetleCertificateRegion: Boolean(existing.beetleCertificateRegion || canonicalFacts?.compliance?.beetle_certificate_region),
     plumbingCertificateRequired: Boolean(existing.plumbingCertificateRequired || canonicalFacts?.compliance?.plumbing_certificate_required),
@@ -1456,7 +1627,7 @@ function SellerWelcomeScreen({ brand, listing, form, onContinue }) {
   return (
     <PremiumOnboardingLanding
       portalType="seller"
-      agencyLogo={brand?.logoUrl || ''}
+      agencyLogo={brand?.logoLightUrl || brand?.logoUrl || brand?.logoDarkUrl || ''}
       agencyName={brand?.name || ''}
       personName={welcomeName}
       propertyAddress={propertyAddress}
@@ -2045,7 +2216,7 @@ function SellerCompletedState({ listing, form, brand, onDownloadDisclosure }) {
               {[
                 { label: 'Seller', value: sellerName },
                 { label: 'Property', value: propertyAddress },
-                { label: 'Ownership', value: OWNERSHIP_TYPES.find((item) => item.value === form.ownershipType)?.label || 'Individual' },
+                { label: 'Ownership', value: getOwnershipSummaryLabel(form) },
                 { label: 'Mandate Type', value: mandateTypeLabel },
                 { label: 'Asking Price', value: form.askingPrice ? formatCurrency(form.askingPrice) : 'Not provided' },
                 { label: 'Disclosure', value: disclosureComplete ? 'Signed' : 'Not signed' },
@@ -2396,6 +2567,28 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         if (!structureOptions.some((option) => option.value === next.propertyStructureType)) {
           next.propertyStructureType = structureOptions[0]?.value || next.propertyStructureType || ''
         }
+        const nextStructureType = normalizePropertyStructureType(next.propertyStructureType, { fallback: '' })
+        next.sectionalTitle = ['sectional_title', 'share_block'].includes(nextStructureType)
+        next.shareBlock = nextStructureType === 'share_block'
+        next.bodyCorporate = next.sectionalTitle
+      }
+      if (key === 'propertyStructureType') {
+        const nextStructureType = normalizePropertyStructureType(value, { fallback: '' })
+        next.sectionalTitle = ['sectional_title', 'share_block'].includes(nextStructureType)
+        next.shareBlock = nextStructureType === 'share_block'
+        next.bodyCorporate = next.sectionalTitle
+      }
+      if (key === 'estateOrHoa' && !value) {
+        next.estateName = ''
+        next.estateComplexName = ''
+        next.hoaManagementCompany = ''
+        next.hoaContactName = ''
+        next.hoaContactEmail = ''
+        next.hoaContactPhone = ''
+        next.hoaRulesAvailable = false
+      }
+      if (key === 'leviesNotApplicable' && value) {
+        next.levies = ''
       }
       if (
         key === 'propertyCategory' ||
@@ -2494,56 +2687,114 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       if (!structureOptions.some((option) => option.value === next.propertyStructureType)) {
         next.propertyStructureType = structureOptions[0]?.value || next.propertyStructureType || ''
       }
+      const nextStructureType = normalizePropertyStructureType(next.propertyStructureType, { fallback: '' })
+      next.sectionalTitle = ['sectional_title', 'share_block'].includes(nextStructureType)
+      next.shareBlock = nextStructureType === 'share_block'
+      next.bodyCorporate = next.sectionalTitle
       next.canonicalPropertyType = normalizeCanonicalPropertyType(next)
       return next
     })
   }
 
+  function applyOwnershipSelection(next, value, metadata = {}) {
+    const ownerEntityType = metadata.ownerEntityType || next.ownerEntityType || deriveOwnerEntityType(value, next)
+    const ownerStructureType = metadata.ownerStructureType || next.ownerStructureType || deriveOwnerStructureType(value, ownerEntityType, next)
+    const branch = getOwnershipBranch(value)
+    next.ownershipType = value
+    next.sellerLegalType = value
+    next.ownerEntityType = ownerEntityType
+    next.ownerStructureType = ownerStructureType
+    next.foreignOwner = isForeignOwnerModel(ownerEntityType, ownerStructureType)
+    next.maritalStatus = branch === 'married' ? 'married' : 'not_married'
+    next.maritalRegime = value === 'married_cop' ? 'in_community' : value === 'married_anc' ? 'anc' : branch === 'married' ? (next.maritalRegime || 'unknown') : 'not_applicable'
+    if (branch !== 'married') {
+      next.spouseName = ''
+      next.spouseIdNumber = ''
+      next.spouseEmail = ''
+      next.spousePhone = ''
+      next.spouseInvolved = false
+    }
+    if (!['company', 'trust'].includes(branch)) {
+      next.vatRegistered = false
+      next.vatNumber = ''
+    }
+    if (branch === 'company' && !(next.companyDirectors || []).length) {
+      next.companyDirectors = [createBlankPersonRecord('Director')]
+    }
+    if (branch === 'trust' && !(next.trustees || []).length) {
+      next.trustees = [createBlankPersonRecord('Trustee')]
+    }
+    if (branch === 'deceased_estate' && !(next.executors || []).length) {
+      next.executors = [createBlankPersonRecord('Executor')]
+    }
+    if (branch === 'power_of_attorney' && !(next.powerOfAttorneyRepresentatives || []).length) {
+      next.powerOfAttorneyRepresentatives = [createBlankPersonRecord('Representative')]
+    }
+    if (branch === 'multiple_owners' && (next.multipleOwners || []).length < 2) {
+      const currentOwners = Array.isArray(next.multipleOwners) ? next.multipleOwners : []
+      next.multipleOwners = currentOwners.length
+        ? [...currentOwners, createBlankPersonRecord('Owner', currentOwners.length)]
+        : [createBlankPersonRecord('Owner'), createBlankPersonRecord('Owner', 1)]
+    }
+    return next
+  }
+
   function handleOwnershipTypeChange(value) {
     setForm((previous) => {
-      const next = { ...(previous || {}), ownershipType: value, sellerLegalType: value }
-      const branch = getOwnershipBranch(value)
-      next.maritalStatus = branch === 'married' ? 'married' : 'not_married'
-      next.maritalRegime = value === 'married_cop' ? 'in_community' : value === 'married_anc' ? 'anc' : branch === 'married' ? (next.maritalRegime || 'unknown') : 'not_applicable'
-      if (branch !== 'married') {
-        next.spouseName = ''
-        next.spouseIdNumber = ''
-        next.spouseEmail = ''
-        next.spousePhone = ''
-        next.spouseInvolved = false
-      }
-      if (!['company', 'trust'].includes(branch)) {
-        next.vatRegistered = false
-        next.vatNumber = ''
-      }
-      if (branch === 'company' && !(next.companyDirectors || []).length) {
-        next.companyDirectors = [createBlankPersonRecord('Director')]
-      }
-      if (branch === 'trust' && !(next.trustees || []).length) {
-        next.trustees = [createBlankPersonRecord('Trustee')]
-      }
-      if (branch === 'deceased_estate' && !(next.executors || []).length) {
-        next.executors = [createBlankPersonRecord('Executor')]
-      }
-      if (branch === 'power_of_attorney' && !(next.powerOfAttorneyRepresentatives || []).length) {
-        next.powerOfAttorneyRepresentatives = [createBlankPersonRecord('Representative')]
-      }
-      if (branch === 'multiple_owners' && (next.multipleOwners || []).length < 2) {
-        const currentOwners = Array.isArray(next.multipleOwners) ? next.multipleOwners : []
-        next.multipleOwners = currentOwners.length
-          ? [...currentOwners, createBlankPersonRecord('Owner', currentOwners.length)]
-          : [createBlankPersonRecord('Owner'), createBlankPersonRecord('Owner', 1)]
-      }
-      return next
+      const next = { ...(previous || {}) }
+      const ownerEntityType = deriveOwnerEntityType(value, next)
+      const ownerStructureType = deriveOwnerStructureType(value, ownerEntityType, next)
+      return applyOwnershipSelection(next, value, { ownerEntityType, ownerStructureType })
     })
+  }
+
+  function handleOwnerEntityTypeChange(value) {
+    setForm((previous) => {
+      const next = { ...(previous || {}) }
+      const ownerStructureType = normalizeOwnerStructureType('', value)
+      const ownershipType = deriveOwnershipTypeFromOwnerModel(value, ownerStructureType)
+      return applyOwnershipSelection(next, ownershipType, { ownerEntityType: value, ownerStructureType })
+    })
+  }
+
+  function handleOwnerStructureTypeChange(value) {
+    setForm((previous) => {
+      const next = { ...(previous || {}) }
+      const ownerEntityType = next.ownerEntityType || deriveOwnerEntityType(next.ownershipType, next)
+      const ownerStructureType = normalizeOwnerStructureType(value, ownerEntityType)
+      const ownershipType = deriveOwnershipTypeFromOwnerModel(ownerEntityType, ownerStructureType)
+      return applyOwnershipSelection(next, ownershipType, { ownerEntityType, ownerStructureType })
+    })
+  }
+
+  function handleMultipleOwnerCaptureModeChange(value) {
+    setForm((previous) => ({
+      ...(previous || {}),
+      multipleOwnerCaptureMode: value,
+    }))
   }
 
   function handleFeatureToggle(featureKey) {
     setForm((previous) => {
       const prev = previous || {}
       const current = Array.isArray(prev.features) ? prev.features : []
-      const nextFeatures = current.includes(featureKey) ? current.filter((item) => item !== featureKey) : [...current, featureKey]
-      return { ...prev, features: nextFeatures }
+      const feature = PROPERTY_FEATURES.find((item) => item.key === featureKey)
+      const active = current.includes(featureKey) || Boolean(feature?.formKey && prev[feature.formKey])
+      const nextFeatures = active ? current.filter((item) => item !== featureKey) : [...current, featureKey]
+      const next = { ...prev, features: nextFeatures }
+      if (feature?.formKey) {
+        next[feature.formKey] = !active
+      }
+      if (featureKey === 'gas_geyser') {
+        next.gasInstallation = !active
+      }
+      if (featureKey === 'borehole') {
+        next.borehole = !active
+      }
+      if (featureKey === 'solar') {
+        next.solarInstallation = !active
+      }
+      return next
     })
   }
 
@@ -2920,10 +3171,18 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
       const ownershipType = String(form.ownershipType || '')
       if (!ownershipType) return 'Please select ownership structure.'
+      if (!form.ownerEntityType) return 'Please select the owner type.'
+      if (!form.ownerStructureType) return 'Please define the owner structure.'
       const ownershipBranch = getOwnershipBranch(ownershipType)
+      const isForeignOwner = isForeignOwnerModel(form.ownerEntityType, form.ownerStructureType)
+      const multipleOwnerCaptureMode = form.multipleOwnerCaptureMode || 'capture_now'
       const companyDirectors = Array.isArray(form.companyDirectors) ? form.companyDirectors : []
       const trustTrustees = Array.isArray(form.trustees) ? form.trustees : []
       const multipleOwners = Array.isArray(form.multipleOwners) ? form.multipleOwners : []
+
+      if (isForeignOwner && !form.foreignOwnerCountry) {
+        return 'Please provide the foreign country or jurisdiction.'
+      }
 
       if (ownershipBranch === 'individual' || ownershipBranch === 'married') {
         if (!form.idNumber) {
@@ -2990,9 +3249,16 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         if (multipleOwners.length < 2) {
           return 'Please add at least two owners.'
         }
-        const incompleteOwner = multipleOwners.find((owner) => !owner.name || !owner.surname || !owner.idNumber || !owner.consentToSell)
-        if (incompleteOwner) {
-          return 'Each owner needs a name, surname, ID number, and consent to sell.'
+        if (multipleOwnerCaptureMode === 'send_onboarding') {
+          const incompleteOwner = multipleOwners.find((owner) => !owner.name || !owner.surname || !owner.email)
+          if (incompleteOwner) {
+            return 'Each owner needs a name, surname, and email address before onboarding links can be sent.'
+          }
+        } else {
+          const incompleteOwner = multipleOwners.find((owner) => !owner.name || !owner.surname || !owner.idNumber || !owner.consentToSell)
+          if (incompleteOwner) {
+            return 'Each owner needs a name, surname, ID/passport number, and consent to sell.'
+          }
         }
       }
 
@@ -3014,8 +3280,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       if ((propertyBranch === 'sectional_title') && (!form.schemeName || !sectionalIdentifier || !form.schemeManagingAgentName)) {
         return 'Scheme name, unit / section number, and managing agent details are required for sectional title properties.'
       }
-      if (propertyBranch === 'estate_hoa' && (!form.estateName || !form.hoaContactName)) {
-        return 'Estate / HOA name and HOA contact details are required for estate properties.'
+      if (showEstateDetails && (!form.estateName || (!form.hoaManagementCompany && !form.hoaContactName))) {
+        return 'Estate / HOA name and managing agent details are required for estate properties.'
       }
       if ((propertyBranch === 'commercial' || propertyBranch === 'mixed_use') && !form.commercialUseDescription) {
         return 'Please describe the commercial or mixed-use operating context.'
@@ -3025,6 +3291,15 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       }
       if ((propertyBranch === 'agricultural' || propertyBranch === 'vacant_land') && !form.erfSize) {
         return 'Land size is required for vacant land and agricultural properties.'
+      }
+      if (!form.ratesTaxes) {
+        return 'Rates and taxes are required for the property.'
+      }
+      if (!form.leviesNotApplicable && !form.levies) {
+        return 'Please enter the levy amount, or tick that levies are not applicable.'
+      }
+      if (!form.waterBillingType) {
+        return 'Please select the water billing type.'
       }
       if (form.existingBond && !form.bondBank) {
         return 'Bond bank is required when there is an existing bond.'
@@ -3140,8 +3415,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         const submitted = await submitSellerOnboarding(token, {
           status: 'completed',
           formData: submitFormData,
-          sellerType: String(form?.ownershipType || '').trim().toLowerCase() || null,
-          ownershipStructure: String(form?.ownershipType || '').trim().toLowerCase() || null,
+          sellerType: String(form?.ownerEntityType || form?.ownershipType || '').trim().toLowerCase() || null,
+          ownershipStructure: String(form?.ownerStructureType || form?.ownershipType || '').trim().toLowerCase() || null,
           maritalRegime: String(form?.ownershipType || '').trim().toLowerCase().includes('married')
             ? String(form?.ownershipType || '').trim().toLowerCase()
             : null,
@@ -3251,6 +3526,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }
 
   const ownershipBranch = getOwnershipBranch(form.ownershipType)
+  const ownerEntityType = form.ownerEntityType || deriveOwnerEntityType(form.ownershipType, form)
+  const ownerStructureType = form.ownerStructureType || deriveOwnerStructureType(form.ownershipType, ownerEntityType, form)
+  const ownerStructureOptions = OWNER_STRUCTURE_TYPES_BY_ENTITY[ownerEntityType] || OWNER_STRUCTURE_TYPES_BY_ENTITY.natural_person
+  const isForeignOwner = isForeignOwnerModel(ownerEntityType, ownerStructureType)
   const ownershipFieldLabels = getOwnershipFieldLabels(form.ownershipType)
   const isMarriedOwnership = ownershipBranch === 'married'
   const isCompanyOwnership = ownershipBranch === 'company'
@@ -3258,6 +3537,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const isDeceasedEstateOwnership = ownershipBranch === 'deceased_estate'
   const isPowerOfAttorneyOwnership = ownershipBranch === 'power_of_attorney'
   const isMultipleOwners = ownershipBranch === 'multiple_owners'
+  const multipleOwnerCaptureMode = form.multipleOwnerCaptureMode || 'capture_now'
+  const isMultipleOwnerInviteMode = isMultipleOwners && multipleOwnerCaptureMode === 'send_onboarding'
   const showVatFields = ['company', 'trust'].includes(ownershipBranch)
   const showSectionalTitleDetails = propertyBranch === 'sectional_title'
   const hasEstateSignals = Boolean(form.estateOrHoa || form.estateName || form.estateComplexName)
@@ -3278,27 +3559,24 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       category: paneIndex++,
       type: paneIndex++,
       address: paneIndex++,
+      features: paneIndex++,
       sectional: -1,
       estate: -1,
       commercial: -1,
       residential: -1,
       land: -1,
-      alterations: -1,
       valuation: -1,
       documents: -1,
       occupancy: -1,
-      features: -1,
     }
     if (showSectionalTitleDetails) indexes.sectional = paneIndex++
     if (showEstateDetails) indexes.estate = paneIndex++
     if (showCommercialDetails) indexes.commercial = paneIndex++
     if (showResidentialDetails) indexes.residential = paneIndex++
     if (showLandDetails) indexes.land = paneIndex++
-    indexes.alterations = paneIndex++
     indexes.valuation = paneIndex++
     indexes.documents = paneIndex++
     indexes.occupancy = paneIndex++
-    indexes.features = paneIndex++
     indexes.count = paneIndex
     return indexes
   })()
@@ -3441,19 +3719,19 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               <FormSection
                 icon={Landmark}
                 title="Who owns this property?"
-                description="Choose the ownership structure first. We’ll show the right follow-up fields from here."
+                description="Choose the owner type first, then define the legal structure."
                 illustration="ownership"
                 mobilePaneIndex={sellerPaneIndexes.ownership}
               >
-                <div className="grid grid-cols-1 gap-2 sm:mt-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {OWNERSHIP_TYPES.map((item) => {
-                    const active = form.ownershipType === item.value
+                <div className="grid grid-cols-1 gap-2 sm:mt-4 sm:grid-cols-2 lg:grid-cols-4">
+                  {OWNER_ENTITY_TYPES.map((item) => {
+                    const active = ownerEntityType === item.value
                     return (
                       <ChoiceCard
                         key={item.value}
-                        onClick={() => handleOwnershipTypeChange(item.value)}
+                        onClick={() => handleOwnerEntityTypeChange(item.value)}
                         active={active}
-                        icon={OWNERSHIP_OPTION_ICONS[item.value] || UserRound}
+                        icon={OWNER_ENTITY_ICONS[item.value] || UserRound}
                         title={item.label}
                         description={item.description}
                       />
@@ -3461,10 +3739,58 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   })}
                 </div>
 
+                <div className="mt-4 border-t border-[#e4ecf5] pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#60748b]">Define the structure</p>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {ownerStructureOptions.map((item) => {
+                      const active = ownerStructureType === item.value
+                      return (
+                        <ChoiceCard
+                          key={item.value}
+                          onClick={() => handleOwnerStructureTypeChange(item.value)}
+                          active={active}
+                          icon={OWNERSHIP_OPTION_ICONS[item.value] || OWNER_ENTITY_ICONS[ownerEntityType] || UserRound}
+                          title={item.label}
+                          description={item.description}
+                        />
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {isForeignOwner ? (
+                  <div className="mt-4 grid grid-cols-1 gap-3 rounded-[14px] border border-[#dbe6f2] bg-[#f8fbff] p-4 md:grid-cols-2">
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Foreign country / jurisdiction
+                      <input className={DETAIL_INPUT_CLASS} value={form.foreignOwnerCountry} onChange={(event) => handleFormUpdate('foreignOwnerCountry', event.target.value)} />
+                    </label>
+                    {ownerStructureType === 'foreign_individual' ? (
+                      <>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Passport / foreign ID number
+                          <input className={DETAIL_INPUT_CLASS} value={form.idNumber || form.foreignPassportNumber} onChange={(event) => {
+                            handleFormUpdate('idNumber', event.target.value)
+                            handleFormUpdate('foreignPassportNumber', event.target.value)
+                          }} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                          Residency / signing status (optional)
+                          <input className={DETAIL_INPUT_CLASS} value={form.foreignResidencyStatus} onChange={(event) => handleFormUpdate('foreignResidencyStatus', event.target.value)} placeholder="Non-resident, SA resident, signing abroad, etc." />
+                        </label>
+                      </>
+                    ) : (
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Foreign registration / authority number
+                        <input className={DETAIL_INPUT_CLASS} value={form.foreignRegistrationNumber} onChange={(event) => handleFormUpdate('foreignRegistrationNumber', event.target.value)} />
+                      </label>
+                    )}
+                  </div>
+                ) : null}
+
                 <p className="mt-3 text-xs font-medium leading-5 text-[#35546c]">
                   {isMarriedOwnership
-                    ? 'Marital regime is derived from your ownership choice. We’ll only ask for the spouse details that are actually needed.'
-                    : 'We’ll only show the next questions that fit this ownership structure.'}
+                    ? 'Marital regime is derived from the structure choice. We only ask for the spouse details that are actually needed.'
+                    : 'The next questions follow the owner type and structure you selected.'}
                 </p>
               </FormSection>
 
@@ -3823,10 +4149,30 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 {isMultipleOwners ? (
                   <div className="mt-4 space-y-4">
                     <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
+                      <div className="mb-4 rounded-[12px] border border-[#dbe6f2] bg-white p-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#60748b]">Owner capture mode</p>
+                        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          {MULTIPLE_OWNER_CAPTURE_MODES.map((item) => (
+                            <button
+                              key={item.value}
+                              type="button"
+                              onClick={() => handleMultipleOwnerCaptureModeChange(item.value)}
+                              className={choiceCardClass(multipleOwnerCaptureMode === item.value)}
+                            >
+                              <span className="block text-sm font-semibold">{item.label}</span>
+                              <span className="mt-1 block text-xs leading-5 text-[#60748b]">{item.description}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <h3 className="text-sm font-semibold text-[#22364a]">Owner cards</h3>
-                          <p className="mt-1 text-sm leading-5 text-[#60748b]">Capture each owner, their share, and their consent to sell. At least two owners are required.</p>
+                          <p className="mt-1 text-sm leading-5 text-[#60748b]">
+                            {isMultipleOwnerInviteMode
+                              ? 'Capture each owner name and email so follow-up onboarding links can be sent.'
+                              : 'Capture each owner, their share, and their consent to sell. At least two owners are required.'}
+                          </p>
                         </div>
                         <Button type="button" variant="secondary" size="sm" onClick={addMultipleOwner}>
                           <Plus size={14} />
@@ -3857,7 +4203,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                                 <input className={DETAIL_INPUT_CLASS} value={owner.surname} onChange={(event) => updateMultipleOwner(owner.id, 'surname', event.target.value)} />
                               </label>
                               <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                                ID Number
+                                {isMultipleOwnerInviteMode ? 'ID / Passport Number (optional)' : 'ID / Passport Number'}
                                 <input className={DETAIL_INPUT_CLASS} value={owner.idNumber} onChange={(event) => updateMultipleOwner(owner.id, 'idNumber', event.target.value)} />
                               </label>
                               <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
@@ -3872,10 +4218,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                                 Phone (optional)
                                 <input className={DETAIL_INPUT_CLASS} value={owner.phone} onChange={(event) => updateMultipleOwner(owner.id, 'phone', event.target.value)} />
                               </label>
-                              <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057] md:col-span-2">
-                                <input type="checkbox" checked={Boolean(owner.consentToSell)} onChange={(event) => updateMultipleOwner(owner.id, 'consentToSell', event.target.checked)} />
-                                Consent to sell
-                              </label>
+                              {isMultipleOwnerInviteMode ? null : (
+                                <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                                  <input type="checkbox" checked={Boolean(owner.consentToSell)} onChange={(event) => updateMultipleOwner(owner.id, 'consentToSell', event.target.checked)} />
+                                  Consent to sell
+                                </label>
+                              )}
                             </div>
                           </article>
                         ))}
@@ -4029,16 +4377,35 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         ))}
                       </div>
                     </div>
+                    <div className="grid gap-2">
+                      <p className="text-sm font-medium text-[#2a4057]">Is this property in an estate or HOA?</p>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <ChoiceCard
+                          active={Boolean(form.estateOrHoa)}
+                          icon={ShieldCheck}
+                          title="Yes"
+                          description="Ask for estate, levy, and managing agent details."
+                          onClick={() => handleFormUpdate('estateOrHoa', true)}
+                        />
+                        <ChoiceCard
+                          active={!form.estateOrHoa}
+                          icon={Home}
+                          title="No"
+                          description="Treat this as a freestanding property for estate/HOA details."
+                          onClick={() => handleFormUpdate('estateOrHoa', false)}
+                        />
+                      </div>
+                    </div>
                   </div>
                   <p className="mt-3 text-xs font-medium leading-5 text-[#35546c]">
-                    {getPropertyCategoryLabel(form.propertyCategory)} controls the type list. The legal structure controls whether scheme, estate, land, or commercial follow-up fields appear.
+                    {getPropertyCategoryLabel(form.propertyCategory)} controls the type list. The legal structure controls scheme, land, or commercial follow-up fields; estate / HOA details are captured separately.
                   </p>
                 </FormSection>
 
                 <FormSection
                   icon={Landmark}
-                  title="Canonical address"
-                  description="This becomes the source of truth for the listing, mandate, and documents."
+                  title="Property address"
+                  description="This address is used for the listing, mandate, and documents."
                   mobilePaneIndex={propertyPaneIndexes.address}
                 >
                   <div className="grid gap-3">
@@ -4100,9 +4467,29 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         <input className={DETAIL_INPUT_CLASS} value={form.erfNumber} onChange={(event) => handleFormUpdate('erfNumber', event.target.value)} />
                       </label>
                     </div>
-                    <div className="rounded-[14px] border border-[#dbe6f2] bg-[#f7fbff] px-4 py-3 text-sm leading-6 text-[#4f6378]">
-                      Canonical address: <strong className="text-[#22364a]">{formatPropertyAddress(propertyAddressDetails) || 'Enter the address above to build the canonical property address.'}</strong>
-                    </div>
+                  </div>
+                </FormSection>
+
+                <FormSection
+                  icon={Sparkles}
+                  title="Property features"
+                  description="Capture the practical features and installations for publication and compliance."
+                  mobilePaneIndex={propertyPaneIndexes.features}
+                >
+                  <div className="flex flex-wrap gap-2">
+                    {PROPERTY_FEATURES.map((feature) => {
+                      const active = (form.features || []).includes(feature.key) || Boolean(feature.formKey && form[feature.formKey])
+                      return (
+                        <button
+                          key={feature.key}
+                          type="button"
+                          onClick={() => handleFeatureToggle(feature.key)}
+                          className={chipChoiceClass(active)}
+                        >
+                          {feature.label}
+                        </button>
+                      )
+                    })}
                   </div>
                 </FormSection>
 
@@ -4158,7 +4545,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   <FormSection
                     icon={ShieldCheck}
                     title="Estate / HOA details"
-                    description="Estate and HOA branches need the contact details for the body managing the scheme."
+                    description="Estate and HOA properties need levies and managing agent details."
                     mobilePaneIndex={propertyPaneIndexes.estate}
                   >
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -4167,19 +4554,23 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         <input className={DETAIL_INPUT_CLASS} value={form.estateName} onChange={(event) => handleFormUpdate('estateName', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Management company (optional)
+                        Managing agent / management company
                         <input className={DETAIL_INPUT_CLASS} value={form.hoaManagementCompany} onChange={(event) => handleFormUpdate('hoaManagementCompany', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        HOA contact name
+                        Levies (optional)
+                        <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.levies} onChange={(event) => handleFormUpdate('levies', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Managing agent contact name (optional)
                         <input className={DETAIL_INPUT_CLASS} value={form.hoaContactName} onChange={(event) => handleFormUpdate('hoaContactName', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        HOA contact email (optional)
+                        Managing agent email (optional)
                         <input className={DETAIL_INPUT_CLASS} value={form.hoaContactEmail} onChange={(event) => handleFormUpdate('hoaContactEmail', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        HOA contact phone (optional)
+                        Managing agent phone (optional)
                         <input className={DETAIL_INPUT_CLASS} value={form.hoaContactPhone} onChange={(event) => handleFormUpdate('hoaContactPhone', event.target.value)} />
                       </label>
                       <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
@@ -4313,70 +4704,37 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
                 <FormSection
                   icon={ClipboardCheck}
-                  title="Alterations & changes"
-                  description="Tell us about any alterations, additions, or unapproved changes."
-                  mobilePaneIndex={propertyPaneIndexes.alterations}
-                >
-                  <div className="grid grid-cols-1 gap-3">
-                    <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
-                      <input type="checkbox" checked={Boolean(form.recentAlterations)} onChange={(event) => handleFormUpdate('recentAlterations', event.target.checked)} />
-                      There have been alterations, additions, or changes
-                    </label>
-                    {form.recentAlterations ? (
-                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Tell us what changed
-                        <textarea
-                          className={`${DETAIL_INPUT_CLASS} min-h-[120px] resize-y`}
-                          value={form.alterationDetails}
-                          onChange={(event) => handleFormUpdate('alterationDetails', event.target.value)}
-                          placeholder="Extensions, renovations, patios, pool, unapproved works, etc."
-                        />
-                      </label>
-                    ) : null}
-                  </div>
-                </FormSection>
-
-                <FormSection
-                  icon={Sparkles}
-                  title="Valuation factors"
-                  description="These numbers help the agent price the property realistically."
+                  title="Costs & utilities"
+                  description="Rates, levies, and water billing help the transaction team prepare the file."
                   mobilePaneIndex={propertyPaneIndexes.valuation}
                 >
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Property Condition
-                      <select className={DETAIL_INPUT_CLASS} value={form.propertyCondition} onChange={(event) => handleFormUpdate('propertyCondition', event.target.value)}>
-                        <option value="needs_renovation">Needs renovation</option>
-                        <option value="average">Average</option>
-                        <option value="good">Good</option>
-                        <option value="recently_renovated">Recently renovated</option>
-                      </select>
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Kitchen Condition
-                      <select className={DETAIL_INPUT_CLASS} value={form.kitchenCondition} onChange={(event) => handleFormUpdate('kitchenCondition', event.target.value)}>
-                        <option value="needs_renovation">Needs renovation</option>
-                        <option value="average">Average</option>
-                        <option value="good">Good</option>
-                        <option value="recently_renovated">Recently renovated</option>
-                      </select>
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Bathroom Condition
-                      <select className={DETAIL_INPUT_CLASS} value={form.bathroomCondition} onChange={(event) => handleFormUpdate('bathroomCondition', event.target.value)}>
-                        <option value="needs_renovation">Needs renovation</option>
-                        <option value="average">Average</option>
-                        <option value="good">Good</option>
-                        <option value="recently_renovated">Recently renovated</option>
-                      </select>
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Rates & Taxes (optional)
+                      Rates & Taxes
                       <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.ratesTaxes} onChange={(event) => handleFormUpdate('ratesTaxes', event.target.value)} />
                     </label>
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Levies (optional)
-                      <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.levies} onChange={(event) => handleFormUpdate('levies', event.target.value)} />
+                      Levies
+                      <input
+                        className={DETAIL_INPUT_CLASS}
+                        type="number"
+                        min="0"
+                        value={form.leviesNotApplicable ? '' : form.levies}
+                        disabled={Boolean(form.leviesNotApplicable)}
+                        onChange={(event) => handleFormUpdate('levies', event.target.value)}
+                      />
+                    </label>
+                    <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
+                      <input type="checkbox" checked={Boolean(form.leviesNotApplicable)} onChange={(event) => handleFormUpdate('leviesNotApplicable', event.target.checked)} />
+                      No levies / not applicable
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Water billing type
+                      <select className={DETAIL_INPUT_CLASS} value={form.waterBillingType} onChange={(event) => handleFormUpdate('waterBillingType', event.target.value)}>
+                        {WATER_BILLING_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
                     </label>
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       Monthly water spend (optional)
@@ -4392,7 +4750,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     </label>
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
                       Notes (optional)
-                      <textarea className={`${DETAIL_INPUT_CLASS} min-h-[110px] resize-y`} value={form.propertyNotes} onChange={(event) => handleFormUpdate('propertyNotes', event.target.value)} placeholder="Anything your agent should know about condition, upgrades, or pricing" />
+                      <textarea className={`${DETAIL_INPUT_CLASS} min-h-[110px] resize-y`} value={form.propertyNotes} onChange={(event) => handleFormUpdate('propertyNotes', event.target.value)} placeholder="Anything your agent should know about utility accounts, costs, or pricing" />
                     </label>
                   </div>
                 </FormSection>
@@ -4408,7 +4766,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       ['titleDeedAvailable', 'Title deed copy'],
                       ['sgDiagramAvailable', 'SG diagram'],
                       ['erfDiagramAvailable', 'Erf diagram'],
-                      ['approvedBuildingPlansAvailable', 'Building plans'],
                       ['floorPlanAvailable', 'Floor plan'],
                     ].map(([key, label]) => (
                       <label key={key} className="flex min-h-[44px] items-center gap-2 rounded-[10px] border border-[#d6e1ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
@@ -4487,7 +4844,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                             <input className={DETAIL_INPUT_CLASS} value={form.bondBank} onChange={(event) => handleFormUpdate('bondBank', event.target.value)} />
                           </label>
                           <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                            Bond Account / Reference (optional)
+                            Bond account number
                             <input className={DETAIL_INPUT_CLASS} value={form.bondAccountReference} onChange={(event) => handleFormUpdate('bondAccountReference', event.target.value)} />
                           </label>
                           <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
@@ -4506,42 +4863,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                             <input type="checkbox" checked={Boolean(form.cancellationRequired)} onChange={(event) => handleFormUpdate('cancellationRequired', event.target.checked)} />
                             Bond cancellation required
                           </label>
-                          <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
-                            <input type="checkbox" checked={Boolean(form.cancellationAttorneyKnown)} onChange={(event) => handleFormUpdate('cancellationAttorneyKnown', event.target.checked)} />
-                            Cancellation attorney known
-                          </label>
-                          {form.cancellationAttorneyKnown ? (
-                            <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
-                              Cancellation Attorney Details
-                              <input className={DETAIL_INPUT_CLASS} value={form.cancellationAttorneyDetails} onChange={(event) => handleFormUpdate('cancellationAttorneyDetails', event.target.value)} />
-                            </label>
-                          ) : null}
                         </>
                       ) : null}
                     </div>
-                  </div>
-                </FormSection>
-
-                <FormSection
-                  icon={Sparkles}
-                  title="Features"
-                  description="Optional features help with publication and valuation."
-                  mobilePaneIndex={propertyPaneIndexes.features}
-                >
-                  <div className="flex flex-wrap gap-2">
-                    {PROPERTY_FEATURES.map((feature) => {
-                      const active = (form.features || []).includes(feature.key)
-                      return (
-                        <button
-                          key={feature.key}
-                          type="button"
-                          onClick={() => handleFeatureToggle(feature.key)}
-                          className={chipChoiceClass(active)}
-                        >
-                          {feature.label}
-                        </button>
-                      )
-                    })}
                   </div>
                 </FormSection>
 
@@ -4582,7 +4906,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     { label: 'Seller', value: `${form.sellerFirstName} ${form.sellerSurname}`.trim() },
                     { label: 'Email', value: form.email },
                     { label: 'Phone', value: form.phone },
-                    { label: 'Ownership', value: OWNERSHIP_TYPES.find((item) => item.value === form.ownershipType)?.label || 'Individual' },
+                    { label: 'Ownership', value: getOwnershipSummaryLabel(form) },
                   ]}
                 />
                 <ReviewCard

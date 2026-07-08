@@ -2122,13 +2122,69 @@ export default function LegalDocumentWorkspacePage() {
       if (!resolvedOrganisationId) {
         resolvedOrganisationId = normalizeText(settings?.organisation?.id) || null
       }
+      const onboardingSettings = settings?.onboarding && typeof settings.onboarding === 'object' ? settings.onboarding : {}
+      const agencyInformation = onboardingSettings?.agencyInformation && typeof onboardingSettings.agencyInformation === 'object'
+        ? onboardingSettings.agencyInformation
+        : onboardingSettings?.agency_information && typeof onboardingSettings.agency_information === 'object'
+          ? onboardingSettings.agency_information
+          : {}
+      const organisationSettings = settings?.organisation || {}
+      const organisationAddress = firstText(
+        agencyInformation.physicalAddress,
+        agencyInformation.physical_address,
+        organisationSettings.physical_address,
+        organisationSettings.physicalAddress,
+        [
+          organisationSettings.address_line_1 || organisationSettings.addressLine1,
+          organisationSettings.address_line_2 || organisationSettings.addressLine2,
+          organisationSettings.city,
+          organisationSettings.province,
+          organisationSettings.postal_code || organisationSettings.postalCode,
+        ].map(normalizeText).filter(Boolean).join(', '),
+      )
+      const organisationPhone = firstText(
+        agencyInformation.mainOfficeNumber,
+        agencyInformation.main_office_number,
+        agencyInformation.phoneNumber,
+        agencyInformation.phone_number,
+        organisationSettings.companyPhone,
+        organisationSettings.company_phone,
+        organisationSettings.telephone,
+        organisationSettings.phone_number,
+        organisationSettings.phone,
+      )
+      const organisationEmail = firstText(
+        agencyInformation.mainEmailAddress,
+        agencyInformation.main_email_address,
+        agencyInformation.emailAddress,
+        agencyInformation.email_address,
+        agencyInformation.email,
+        organisationSettings.companyEmail,
+        organisationSettings.company_email,
+        organisationSettings.email,
+      )
+      const organisationWebsite = firstText(
+        agencyInformation.website,
+        organisationSettings.website,
+        organisationSettings.companyWebsite,
+        organisationSettings.company_website,
+      )
       const brandingFromSettings = {
         organisationName:
-          normalizeText(settings?.organisation?.display_name) ||
-          normalizeText(settings?.organisation?.displayName) ||
-          normalizeText(settings?.organisation?.name),
-        logoLightUrl: normalizeText(settings?.onboarding?.branding?.logoLight) || normalizeText(settings?.organisation?.logo_url),
-        logoDarkUrl: normalizeText(settings?.onboarding?.branding?.logoDark),
+          normalizeText(organisationSettings.display_name) ||
+          normalizeText(organisationSettings.displayName) ||
+          normalizeText(organisationSettings.name),
+        logoLightUrl: normalizeText(onboardingSettings?.branding?.logoLight) || normalizeText(organisationSettings.logo_url),
+        logoDarkUrl: normalizeText(onboardingSettings?.branding?.logoDark),
+        website: organisationWebsite,
+        organisationWebsite,
+        email: organisationEmail,
+        organisationEmail,
+        physicalAddress: organisationAddress,
+        organisationPhysicalAddress: organisationAddress,
+        telephone: organisationPhone,
+        phoneNumber: organisationPhone,
+        organisationPhone,
       }
       const packetBranding = resolvedOrganisationId
         ? await withLegalWorkspaceTimeout(
@@ -2271,6 +2327,15 @@ export default function LegalDocumentWorkspacePage() {
         organisationName: normalizeText(packetBranding?.organisationName) || brandingFromSettings.organisationName,
         logoLightUrl: normalizeText(packetBranding?.logoLightUrl) || brandingFromSettings.logoLightUrl,
         logoDarkUrl: normalizeText(packetBranding?.logoDarkUrl) || brandingFromSettings.logoDarkUrl,
+        website: normalizeText(packetBranding?.website) || normalizeText(packetBranding?.organisationWebsite) || brandingFromSettings.website,
+        organisationWebsite: normalizeText(packetBranding?.organisationWebsite) || normalizeText(packetBranding?.website) || brandingFromSettings.organisationWebsite,
+        email: normalizeText(packetBranding?.email) || normalizeText(packetBranding?.organisationEmail) || brandingFromSettings.email,
+        organisationEmail: normalizeText(packetBranding?.organisationEmail) || normalizeText(packetBranding?.email) || brandingFromSettings.organisationEmail,
+        physicalAddress: normalizeText(packetBranding?.physicalAddress) || normalizeText(packetBranding?.organisationPhysicalAddress) || brandingFromSettings.physicalAddress,
+        organisationPhysicalAddress: normalizeText(packetBranding?.organisationPhysicalAddress) || normalizeText(packetBranding?.physicalAddress) || brandingFromSettings.organisationPhysicalAddress,
+        telephone: normalizeText(packetBranding?.telephone) || normalizeText(packetBranding?.phoneNumber) || normalizeText(packetBranding?.organisationPhone) || brandingFromSettings.telephone,
+        phoneNumber: normalizeText(packetBranding?.phoneNumber) || normalizeText(packetBranding?.telephone) || normalizeText(packetBranding?.organisationPhone) || brandingFromSettings.phoneNumber,
+        organisationPhone: normalizeText(packetBranding?.organisationPhone) || normalizeText(packetBranding?.phoneNumber) || normalizeText(packetBranding?.telephone) || brandingFromSettings.organisationPhone,
       })
       setWorkspaceSettings(settings)
       setLeadContext(nextLeadContext)

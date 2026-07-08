@@ -368,6 +368,16 @@ function renderDocumentContactRow(items = []) {
   `
 }
 
+function renderDocumentFooterContact(items = []) {
+  const rows = (Array.isArray(items) ? items : []).slice(0, 2)
+  if (!rows.length) return '<span class="legal-preview-footer-company"></span>'
+  return `
+    <span class="legal-preview-footer-company">
+      ${rows.map((item) => `<span>${renderInlineText(item.value)}</span>`).join('\n')}
+    </span>
+  `
+}
+
 function normalizeOptionalNumber(value) {
   if (value === null || value === undefined || value === '') return null
   const parsed = Number(value)
@@ -2232,11 +2242,17 @@ export function renderPacketPreviewHtml({
             font-size: 10.5px;
           }
           .legal-preview-footer-brand,
-          .legal-preview-footer-spacer {
+          .legal-preview-footer-company {
             display: inline-flex;
             align-items: center;
             min-width: 34mm;
             max-width: 44mm;
+          }
+          .legal-preview-footer-company {
+            display: grid;
+            justify-items: end;
+            gap: 1px;
+            text-align: right;
           }
           .legal-preview-footer img {
             max-width: 34mm;
@@ -2308,6 +2324,10 @@ export function renderPacketPreviewHtml({
               justify-content: center;
               text-align: center;
             }
+            .legal-preview-footer-company {
+              justify-items: center;
+              text-align: center;
+            }
           }
         </style>
       </head>
@@ -2337,7 +2357,7 @@ export function renderPacketPreviewHtml({
                 ${organisationLogo ? `<img src="${escapeHtml(organisationLogo)}" alt="${escapeHtml(orgName)} logo" />` : escapeHtml(orgName)}
               </span>
               <span class="legal-preview-page-number">Page 1 of 1 (preview)</span>
-              <span class="legal-preview-footer-spacer"></span>
+              ${renderDocumentFooterContact(contactItems)}
             </footer>
           ` : ''}
         </div>

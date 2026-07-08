@@ -70,6 +70,9 @@ test('transforms seller onboarding into canonical resolver facts', () => {
     existingBond: true,
     bondBank: 'FNB',
     bondAccountReference: 'BOND-123',
+    ratesTaxes: '1850',
+    levies: '2400',
+    waterBillingType: 'municipal',
     gasInstallation: true,
     solarInstallation: true,
     titleDeedAvailable: true,
@@ -90,10 +93,79 @@ test('transforms seller onboarding into canonical resolver facts', () => {
   assert.equal(facts.occupancy.lease_expiry_date, '2026-11-30')
   assert.equal(facts.finance.existing_bond, true)
   assert.equal(facts.finance.bond_bank, 'FNB')
+  assert.equal(facts.property.rates_taxes, 1850)
+  assert.equal(facts.property.levies, 2400)
+  assert.equal(facts.property.utilities.water_billing_type, 'municipal')
   assert.equal(facts.compliance.gas_installation, true)
   assert.equal(facts.compliance.solar_installation, true)
   assert.ok(Array.isArray(facts.document_triggers))
   assert.equal(facts.context.id, listing.id)
+})
+
+test('captures split owner model, foreign metadata, and owner invite mode', () => {
+  const foreignFacts = transformSellerOnboardingToFacts({
+    sellerFirstName: 'Morgan',
+    sellerSurname: 'Passport',
+    email: 'morgan@example.com',
+    phone: '+442000000000',
+    ownerEntityType: 'foreign',
+    ownerStructureType: 'foreign_individual',
+    foreignOwnerCountry: 'United Kingdom',
+    idNumber: 'P-123456',
+    foreignResidencyStatus: 'Signing abroad',
+    residentialAddress: '10 London Road, London',
+    propertyCategory: 'residential',
+    propertyStructureType: 'freehold',
+    mandateType: 'open',
+    ratesTaxes: '1500',
+    leviesNotApplicable: true,
+    waterBillingType: 'municipal',
+    propertyAddressDetails: {
+      line1: '12 Ocean Road',
+      suburb: 'Sea Point',
+      city: 'Cape Town',
+      province: 'Western Cape',
+    },
+  }, listing)
+
+  assert.equal(foreignFacts.seller_branch, 'individual')
+  assert.equal(foreignFacts.seller.owner_entity_type, 'foreign')
+  assert.equal(foreignFacts.seller.owner_structure_type, 'foreign_individual')
+  assert.equal(foreignFacts.seller.foreign_owner, true)
+  assert.equal(foreignFacts.seller.foreign.country, 'United Kingdom')
+  assert.equal(validateSellerOnboardingFacts(foreignFacts, { draft: false }).ok, true)
+
+  const inviteOwnerFacts = transformSellerOnboardingToFacts({
+    sellerFirstName: 'Alex',
+    sellerSurname: 'Owner',
+    email: 'alex@example.com',
+    phone: '0820000000',
+    ownerEntityType: 'natural_person',
+    ownerStructureType: 'multiple_owners',
+    ownershipType: 'multiple_owners',
+    multipleOwnerCaptureMode: 'send_onboarding',
+    multipleOwners: [
+      { name: 'Alex', surname: 'Owner', email: 'alex@example.com', ownershipShare: '50' },
+      { name: 'Kim', surname: 'Owner', email: 'kim@example.com', ownershipShare: '50' },
+    ],
+    propertyCategory: 'residential',
+    propertyStructureType: 'freehold',
+    mandateType: 'sole',
+    ratesTaxes: '1500',
+    leviesNotApplicable: true,
+    waterBillingType: 'municipal',
+    propertyAddressDetails: {
+      line1: '22 Main Road',
+      suburb: 'Claremont',
+      city: 'Cape Town',
+      province: 'Western Cape',
+    },
+  }, listing)
+
+  assert.equal(inviteOwnerFacts.seller_branch, 'multiple_owners')
+  assert.equal(inviteOwnerFacts.seller.multiple_owner_capture_mode, 'send_onboarding')
+  assert.equal(inviteOwnerFacts.seller.owners.length, 2)
+  assert.equal(validateSellerOnboardingFacts(inviteOwnerFacts, { draft: false }).ok, true)
 })
 
 test('captures land-specific details in canonical facts', () => {
@@ -107,6 +179,9 @@ test('captures land-specific details in canonical facts', () => {
     propertyStructureType: 'agricultural_holding',
     propertyType: 'farm',
     mandateType: 'open',
+    ratesTaxes: '950',
+    leviesNotApplicable: true,
+    waterBillingType: 'municipal',
     propertyAddressDetails: {
       query: 'Farm 12, Bela-Bela, Limpopo',
       line1: 'Farm 12',
@@ -146,6 +221,9 @@ test('validation distinguishes draft from final requirements', () => {
     propertyCategory: 'residential',
     propertyStructureType: 'freehold',
     mandateType: 'sole',
+    ratesTaxes: '1500',
+    leviesNotApplicable: true,
+    waterBillingType: 'municipal',
     existingBond: true,
   }, listing)
 
@@ -174,11 +252,14 @@ test('builds canonical payload with readiness and resolver input', () => {
     province: 'GP',
     municipality: 'City of Johannesburg',
     propertyCategory: 'residential',
-    propertyStructureType: 'estate',
-    canonicalPropertyType: 'estate',
+    propertyStructureType: 'full_title',
+    canonicalPropertyType: 'freehold',
     estateOrHoa: true,
     occupancyStatus: 'vacant',
     mandateType: 'exclusive',
+    ratesTaxes: '2100',
+    levies: '1250',
+    waterBillingType: 'prepaid',
     propertyDisclosure: {
       decision: 'none',
       declarationAccepted: true,
@@ -189,6 +270,8 @@ test('builds canonical payload with readiness and resolver input', () => {
 
   assert.equal(payload.canonicalSellerFacts.seller.legal_type, 'trust')
   assert.equal(payload.canonicalSellerFacts.property.estate_or_hoa, true)
+  assert.equal(payload.canonicalSellerFacts.property.property_structure_type, 'full_title')
+  assert.equal(payload.canonicalSellerFacts.property.property_type, 'freehold')
   assert.equal(payload.canonicalSellerFacts.property_disclosure.digitally_complete, true)
   assert.equal(payload.canonicalSellerFactReadiness.validation.ok, true)
   assert.equal(typeof payload.canonicalSellerFactReadiness.percent, 'number')
@@ -222,6 +305,9 @@ test('persists authority details and owner consent in canonical facts', () => {
     province: 'Western Cape',
     propertyCategory: 'residential',
     propertyStructureType: 'freehold',
+    ratesTaxes: '1500',
+    leviesNotApplicable: true,
+    waterBillingType: 'municipal',
   }, listing)
 
   assert.equal(estateFacts.seller.deceased_estate.authority_details, 'Letters of executorship issued by the Master of the High Court.')
@@ -243,6 +329,9 @@ test('persists authority details and owner consent in canonical facts', () => {
     province: 'Limpopo',
     propertyCategory: 'residential',
     propertyStructureType: 'vacant_land',
+    ratesTaxes: '950',
+    leviesNotApplicable: true,
+    waterBillingType: 'municipal',
   }, listing)
 
   assert.equal(poaFacts.seller.power_of_attorney.reference, 'POA-2026-01 / authority note')
@@ -265,6 +354,9 @@ test('persists authority details and owner consent in canonical facts', () => {
     province: 'Western Cape',
     propertyCategory: 'residential',
     propertyStructureType: 'freehold',
+    ratesTaxes: '1500',
+    leviesNotApplicable: true,
+    waterBillingType: 'municipal',
   }, listing)
 
   assert.equal(ownersFacts.seller.owners.length, 2)

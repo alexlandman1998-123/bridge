@@ -68,6 +68,9 @@ function buildBaseForm(overrides = {}) {
     propertyStructureType: 'freehold',
     mandateType: 'sole',
     askingPrice: '2450000',
+    ratesTaxes: '1850',
+    leviesNotApplicable: true,
+    waterBillingType: 'municipal',
     ...baseAddress,
     ...overrides,
   }
@@ -339,7 +342,7 @@ assertScenario({
     cancellationAttorneyKnown: true,
     cancellationAttorneyDetails: 'Meyer & Co Attorneys',
   }),
-  docKeys: ['bond_statement', 'bond_bank_details', 'bond_cancellation_attorney_details', 'settlement_figure'],
+  docKeys: ['bond_statement', 'bond_bank_details', 'settlement_figure'],
   factsChecks: [
     ({ facts }) => assert.equal(facts.finance.existing_bond, true),
     ({ facts }) => assert.equal(facts.finance.bond_bank, 'FNB'),

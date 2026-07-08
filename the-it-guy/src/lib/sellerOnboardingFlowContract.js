@@ -1,6 +1,27 @@
 import { normalizePropertyCategory, normalizePropertyStructureType } from './propertyTaxonomy.js'
 
-export const SELLER_ONBOARDING_FLOW_VERSION = 'seller_onboarding_flow_v1'
+export const SELLER_ONBOARDING_FLOW_VERSION = 'seller_onboarding_flow_v2'
+
+export const SELLER_ONBOARDING_FIELD_ALIASES = Object.freeze({
+  'seller.ownership_type': Object.freeze(['seller.owner_entity_type', 'seller.owner_structure_type']),
+  'property.canonical_property_type': Object.freeze(['property.category', 'property.structure_type', 'property.estate_or_hoa']),
+  'property.property_type': Object.freeze(['property.category', 'property.structure_type']),
+  'property.type': Object.freeze(['property.category', 'property.structure_type']),
+  'property.estate_structure': Object.freeze(['property.estate_or_hoa', 'property.estate.name']),
+  'property.address.canonical': Object.freeze(['property.address.line_1']),
+})
+
+export function getSellerOnboardingFieldAliases(field) {
+  const key = normalizeText(field)
+  if (!key) return []
+  return SELLER_ONBOARDING_FIELD_ALIASES[key] || [key]
+}
+
+export function migrateSellerOnboardingFieldListToV2(fields = []) {
+  return mergeUnique(
+    (Array.isArray(fields) ? fields : [fields]).flatMap((field) => getSellerOnboardingFieldAliases(field)),
+  )
+}
 
 export const SELLER_ONBOARDING_BRANCHES = Object.freeze([
   'individual',
@@ -25,14 +46,16 @@ export const PROPERTY_ONBOARDING_BRANCHES = Object.freeze([
 
 const CORE_SELLER_RULES = Object.freeze({
   sellerFacingQuestions: Object.freeze([
-    'seller.ownership_type',
+    'seller.owner_entity_type',
+    'seller.owner_structure_type',
     'seller.first_name',
     'seller.surname',
     'seller.email',
     'seller.phone',
   ]),
   requiredFields: Object.freeze([
-    'seller.ownership_type',
+    'seller.owner_entity_type',
+    'seller.owner_structure_type',
     'seller.first_name',
     'seller.surname',
     'seller.email',
@@ -42,11 +65,18 @@ const CORE_SELLER_RULES = Object.freeze({
     'seller.tax_number',
     'seller.vat_registered',
     'seller.vat_number',
+    'seller.foreign_owner_country',
+    'seller.foreign.passport_number',
+    'seller.foreign.registration_number',
+    'seller.foreign.residency_status',
   ]),
   internalDerivedFacts: Object.freeze([
     'seller.branch',
     'seller.legal_type',
     'seller.ownership_type',
+    'seller.owner_entity_type',
+    'seller.owner_structure_type',
+    'seller.foreign_owner',
   ]),
   documentTriggers: Object.freeze([
     'identity_documents',
@@ -68,6 +98,10 @@ const CORE_PROPERTY_RULES = Object.freeze({
     'property.address.province',
     'property.address.postal_code',
     'property.municipality',
+    'property.rates_taxes',
+    'property.levies',
+    'property.levies_not_applicable',
+    'property.utilities.water_billing_type',
   ]),
   requiredFields: Object.freeze([
     'property.category',
@@ -77,6 +111,9 @@ const CORE_PROPERTY_RULES = Object.freeze({
     'property.address.suburb',
     'property.address.city',
     'property.province',
+    'property.rates_taxes',
+    'property.levies_or_not_applicable',
+    'property.utilities.water_billing_type',
   ]),
   optionalFields: Object.freeze([
     'property.address.search_query',
@@ -88,8 +125,6 @@ const CORE_PROPERTY_RULES = Object.freeze({
     'property.floor_size',
     'property.utilities.monthly_water_spend',
     'property.utilities.monthly_electricity_spend',
-    'property.alterations.recent',
-    'property.alterations.details',
   ]),
   internalDerivedFacts: Object.freeze([
     'property.branch',
@@ -339,13 +374,14 @@ const SELLER_BRANCH_RULES = Object.freeze({
     label: 'Multiple Owners',
     aliases: Object.freeze(['multiple_owners', 'multiple_individuals', 'multiple', 'joint']),
     sellerFacingQuestions: Object.freeze([
+      'seller.multiple_owner_capture_mode',
       'seller.owners',
       'seller.owners[].ownership_share',
       'seller.owners[].consent_to_sell',
     ]),
     requiredFields: Object.freeze([
+      'seller.multiple_owner_capture_mode',
       'seller.owners',
-      'seller.owners[].consent_to_sell',
     ]),
     optionalFields: Object.freeze([
       'seller.owners[].ownership_share',
@@ -401,7 +437,6 @@ const PROPERTY_BRANCH_RULES = Object.freeze({
       'property.title_deed_available',
       'property.sg_diagram_available',
       'property.erf_diagram_available',
-      'property.approved_building_plans_available',
       'property.floor_plan_available',
       'property.bedrooms',
       'property.bathrooms',
@@ -460,6 +495,7 @@ const PROPERTY_BRANCH_RULES = Object.freeze({
       'property.estate.hoa_contact.email',
       'property.estate.hoa_contact.phone',
       'property.estate.management_company',
+      'property.levies',
       'property.estate.rules',
     ]),
     requiredFields: Object.freeze([
@@ -469,7 +505,7 @@ const PROPERTY_BRANCH_RULES = Object.freeze({
     optionalFields: Object.freeze([
       'property.estate.management_company',
       'property.estate.rules',
-      'property.scheme.levies',
+      'property.levies',
     ]),
     internalDerivedFacts: Object.freeze([
       'property.branch',
@@ -619,6 +655,15 @@ function normalizeBoolean(value) {
   return ['true', 'yes', 'y', '1', 'on', 'enabled'].includes(normalized)
 }
 
+function hasOwnValue(source, key) {
+  return Boolean(source && Object.prototype.hasOwnProperty.call(source, key) && source[key] !== null && source[key] !== undefined && source[key] !== '')
+}
+
+function normalizeSellerStructureType(value, { fallback = null } = {}) {
+  const normalized = normalizePropertyStructureType(value, { fallback })
+  return normalized === 'estate' ? 'full_title' : normalized
+}
+
 function mergeUnique(...groups) {
   const seen = new Set()
   const merged = []
@@ -678,9 +723,9 @@ function mapSellerBranchToLegacySellerType(branch) {
 }
 
 function mapPropertyBranchToLegacyPropertyType(branch, category = '', structureType = '') {
-  if (structureType) return structureType
+  if (structureType && structureType !== 'other') return structureType
   if (branch === 'sectional_title') return 'sectional_title'
-  if (branch === 'estate_hoa') return 'estate'
+  if (branch === 'estate_hoa') return 'full_title'
   if (branch === 'commercial') return normalizePropertyCategory(category, { fallback: 'commercial' })
   if (branch === 'mixed_use') return 'mixed_use'
   if (branch === 'agricultural') return 'agricultural_holding'
@@ -688,8 +733,140 @@ function mapPropertyBranchToLegacyPropertyType(branch, category = '', structureT
   return normalizePropertyCategory(category, { fallback: 'residential' })
 }
 
+function normalizeOwnerEntityType(value, { fallback = '' } = {}) {
+  const normalized = normalizeKey(value)
+  if (!normalized) return fallback
+  if (['company', 'pty', 'pty_ltd', 'corporate'].includes(normalized)) return 'company'
+  if (['trust', 'family_trust'].includes(normalized)) return 'trust'
+  if (['foreign', 'foreign_owner', 'foreign_individual', 'foreign_company', 'foreign_trust', 'non_resident'].includes(normalized)) return 'foreign'
+  if (['other', 'other_legal_entity', 'legal_entity'].includes(normalized)) return 'other'
+  if (
+    [
+      'natural_person',
+      'individual',
+      'single',
+      'sole_owner',
+      'married',
+      'married_cop',
+      'married_anc',
+      'multiple_owners',
+      'deceased_estate',
+      'power_of_attorney',
+      'poa',
+    ].includes(normalized)
+  ) {
+    return 'natural_person'
+  }
+  return fallback
+}
+
+function normalizeOwnerStructureType(value, ownerEntityType = 'natural_person', { fallback = '' } = {}) {
+  const normalized = normalizeKey(value)
+  if (ownerEntityType === 'company') return normalized === 'foreign_company' ? 'foreign_company' : 'company'
+  if (ownerEntityType === 'trust') return normalized === 'foreign_trust' ? 'foreign_trust' : 'trust'
+  if (ownerEntityType === 'foreign') {
+    if (['foreign_company', 'company'].includes(normalized)) return 'foreign_company'
+    if (['foreign_trust', 'trust'].includes(normalized)) return 'foreign_trust'
+    return 'foreign_individual'
+  }
+  if (ownerEntityType === 'other') return 'other'
+  if (!normalized) return fallback || 'individual'
+  if (['single', 'sole_owner', 'natural_person'].includes(normalized)) return 'individual'
+  if (['poa', 'attorney'].includes(normalized)) return 'power_of_attorney'
+  if (['deceased', 'estate'].includes(normalized)) return 'deceased_estate'
+  if (['multiple', 'joint', 'multiple_individuals'].includes(normalized)) return 'multiple_owners'
+  if (
+    [
+      'individual',
+      'married',
+      'married_cop',
+      'married_anc',
+      'multiple_owners',
+      'deceased_estate',
+      'power_of_attorney',
+      'foreign_individual',
+    ].includes(normalized)
+  ) {
+    return normalized
+  }
+  return fallback || 'individual'
+}
+
+function resolveSellerBranchFromOwnerFields(ownerEntityType = '', ownerStructureType = '') {
+  if (ownerStructureType === 'foreign_company' || ownerStructureType === 'company' || ownerEntityType === 'company') return 'company'
+  if (ownerStructureType === 'foreign_trust' || ownerStructureType === 'trust' || ownerEntityType === 'trust') return 'trust'
+  if (ownerStructureType === 'multiple_owners') return 'multiple_owners'
+  if (ownerStructureType === 'deceased_estate') return 'deceased_estate'
+  if (ownerStructureType === 'power_of_attorney') return 'power_of_attorney'
+  if (ownerStructureType === 'married_cop' || ownerStructureType === 'married_anc' || ownerStructureType === 'married') return 'married'
+  if (ownerStructureType === 'other' || ownerEntityType === 'other') return 'other'
+  if (ownerEntityType === 'foreign' || ownerStructureType === 'foreign_individual') return 'individual'
+  if (ownerStructureType === 'individual') return 'individual'
+  return ''
+}
+
+export function resolveSellerOwnershipModel(form = {}, listing = {}, facts = {}) {
+  const source = normalizeFactsSource(form, listing, facts)
+  const legacyOwnershipType = normalizeKey(
+    form?.ownershipType ||
+      form?.ownership_type ||
+      listing?.ownershipType ||
+      listing?.ownership_type ||
+      source?.seller?.ownership_type ||
+      source?.seller?.ownershipType ||
+      '',
+  )
+  const directEntityType = normalizeOwnerEntityType(
+    form?.ownerEntityType ||
+      form?.owner_entity_type ||
+      source?.seller?.owner_entity_type ||
+      source?.seller?.ownerEntityType ||
+      '',
+  )
+  const legacyBranch = resolveBranchFromRules(legacyOwnershipType, SELLER_BRANCH_RULES, '')
+  const ownerEntityType =
+    directEntityType ||
+    normalizeOwnerEntityType(legacyOwnershipType) ||
+    (legacyBranch === 'company' || legacyBranch === 'trust' ? legacyBranch : legacyBranch === 'other' ? 'other' : 'natural_person')
+  const ownerStructureType = normalizeOwnerStructureType(
+    form?.ownerStructureType ||
+      form?.owner_structure_type ||
+      source?.seller?.owner_structure_type ||
+      source?.seller?.ownerStructureType ||
+      legacyOwnershipType,
+    ownerEntityType,
+  )
+  const branch = resolveSellerBranchFromOwnerFields(ownerEntityType, ownerStructureType) || legacyBranch || 'individual'
+
+  return {
+    entity_type: ownerEntityType,
+    structure_type: ownerStructureType,
+    branch,
+    legacy_ownership_type: legacyOwnershipType || mapSellerBranchToLegacySellerType(branch),
+    foreign_owner: ownerEntityType === 'foreign' || ownerStructureType.startsWith('foreign_'),
+  }
+}
+
+function resolveSellerBranchFromOwnerModel(form = {}, source = {}) {
+  const hasOwnerModel =
+    hasOwnValue(form, 'ownerEntityType') ||
+    hasOwnValue(form, 'owner_entity_type') ||
+    hasOwnValue(form, 'ownerStructureType') ||
+    hasOwnValue(form, 'owner_structure_type') ||
+    hasOwnValue(source?.seller || {}, 'owner_entity_type') ||
+    hasOwnValue(source?.seller || {}, 'ownerEntityType') ||
+    hasOwnValue(source?.seller || {}, 'owner_structure_type') ||
+    hasOwnValue(source?.seller || {}, 'ownerStructureType')
+  if (!hasOwnerModel) return ''
+  return resolveSellerOwnershipModel(form, {}, source).branch || ''
+}
+
 export function resolveSellerBranch(form = {}, listing = {}, facts = {}) {
   const source = normalizeFactsSource(form, listing, facts)
+  const ownerModelBranch = resolveSellerBranchFromOwnerModel(form, source)
+  if (ownerModelBranch) {
+    return ownerModelBranch
+  }
   const explicitOwnershipBranch = resolveBranchFromRules(form?.ownershipType, SELLER_BRANCH_RULES, '')
   if (explicitOwnershipBranch) {
     return explicitOwnershipBranch
@@ -730,7 +907,36 @@ export function resolveSellerBranch(form = {}, listing = {}, facts = {}) {
   return 'individual'
 }
 
-export function resolvePropertyBranch(form = {}, listing = {}, facts = {}) {
+function hasEstateHoaOverlay(form = {}, listing = {}, facts = {}) {
+  const legacyStructureType = normalizePropertyStructureType(
+    form?.propertyStructureType ||
+      form?.canonicalPropertyType ||
+      listing?.propertyStructureType ||
+      listing?.property_structure_type ||
+      facts?.property?.structure_type ||
+      facts?.property?.property_structure_type,
+    { fallback: '' },
+  )
+  const estateName = normalizeText(
+    form?.estateName ||
+      form?.estateComplexName ||
+      listing?.estateName ||
+      listing?.estateComplexName ||
+      facts?.property?.estate_name ||
+      facts?.property?.estateName ||
+      facts?.property?.estate_complex_name,
+  )
+
+  if (hasOwnValue(form, 'estateOrHoa')) return normalizeBoolean(form?.estateOrHoa)
+  return Boolean(
+    legacyStructureType === 'estate' ||
+      normalizeBoolean(facts?.property?.estate_or_hoa) ||
+      normalizeBoolean(facts?.property?.hoa) ||
+      estateName,
+  )
+}
+
+export function resolveSellerPropertyModel(form = {}, listing = {}, facts = {}) {
   const source = normalizeFactsSource(form, listing, facts)
   const propertyCategoryCandidate =
     form?.propertyCategory ||
@@ -741,9 +947,9 @@ export function resolvePropertyBranch(form = {}, listing = {}, facts = {}) {
     source?.property?.propertyType ||
     source?.property?.property_type
   const propertyCategory = normalizePropertyCategory(propertyCategoryCandidate, { fallback: '' })
-  const propertyStructureType = normalizePropertyStructureType(
-    form?.propertyStructureType ||
-      form?.canonicalPropertyType ||
+  const explicitStructureType = normalizePropertyStructureType(form?.propertyStructureType, { fallback: '' })
+  const fallbackStructureType = normalizePropertyStructureType(
+    form?.canonicalPropertyType ||
       form?.propertyType ||
       listing?.propertyStructureType ||
       listing?.property_structure_type ||
@@ -753,6 +959,8 @@ export function resolvePropertyBranch(form = {}, listing = {}, facts = {}) {
       source?.property?.property_type,
     { fallback: 'other' },
   )
+  const propertyStructureType = normalizeSellerStructureType(explicitStructureType || fallbackStructureType, { fallback: 'other' })
+  const legacyEstateStructure = explicitStructureType === 'estate' || fallbackStructureType === 'estate'
   const estateName = normalizeText(
     form?.estateName ||
       form?.estateComplexName ||
@@ -762,29 +970,45 @@ export function resolvePropertyBranch(form = {}, listing = {}, facts = {}) {
       source?.property?.estateName ||
       source?.property?.estate_complex_name,
   )
+  const explicitEstateAnswer = hasOwnValue(form, 'estateOrHoa')
+  const estateOrHoa = explicitEstateAnswer
+    ? normalizeBoolean(form?.estateOrHoa)
+    : Boolean(
+        legacyEstateStructure ||
+          normalizeBoolean(source?.property?.estate_or_hoa) ||
+          normalizeBoolean(source?.property?.hoa) ||
+          estateName,
+      )
+  const legacySectionalSignal = !explicitStructureType && Boolean(form?.sectionalTitle || form?.shareBlock)
 
+  let branch = 'residential'
   if (propertyCategory === 'mixed_use') {
-    return 'mixed_use'
+    branch = 'mixed_use'
+  } else if (propertyCategory === 'commercial' || propertyCategory === 'industrial' || propertyCategory === 'retail') {
+    branch = 'commercial'
+  } else if (propertyCategory === 'agricultural') {
+    branch = 'agricultural'
+  } else if (propertyCategory === 'vacant_land') {
+    branch = 'vacant_land'
+  } else if (['sectional_title', 'share_block'].includes(propertyStructureType) || legacySectionalSignal) {
+    branch = 'sectional_title'
+  } else if (estateOrHoa) {
+    branch = 'estate_hoa'
+  } else if (propertyStructureType === 'agricultural_holding') {
+    branch = 'agricultural'
   }
-  if (propertyCategory === 'commercial' || propertyCategory === 'industrial' || propertyCategory === 'retail') {
-    return 'commercial'
+
+  return {
+    branch,
+    category: propertyCategory || 'residential',
+    structure_type: propertyStructureType,
+    estate_or_hoa: estateOrHoa,
+    legacy_property_type: mapPropertyBranchToLegacyPropertyType(branch, propertyCategory, propertyStructureType),
   }
-  if (propertyCategory === 'agricultural') {
-    return 'agricultural'
-  }
-  if (propertyCategory === 'vacant_land') {
-    return 'vacant_land'
-  }
-  if (['sectional_title', 'share_block'].includes(propertyStructureType) || form?.sectionalTitle || form?.shareBlock) {
-    return 'sectional_title'
-  }
-  if (form?.estateOrHoa || estateName || propertyStructureType === 'estate') {
-    return 'estate_hoa'
-  }
-  if (propertyStructureType === 'agricultural_holding') {
-    return 'agricultural'
-  }
-  return 'residential'
+}
+
+export function resolvePropertyBranch(form = {}, listing = {}, facts = {}) {
+  return resolveSellerPropertyModel(form, listing, facts).branch
 }
 
 function resolveBranchContract(branchType, branchKey, baseRules) {
@@ -807,6 +1031,8 @@ function collectDynamicTriggers(form = {}, source = {}) {
   const property = form?.property || source?.property || {}
   const occupancy = form?.occupancy || source?.occupancy || {}
   const finance = form?.finance || source?.finance || {}
+  const disclosureResponses = form?.propertyDisclosure?.responses || form?.property_disclosure?.responses || source?.property_disclosure?.responses || {}
+  const disclosureAnswer = (key) => normalizeKey(disclosureResponses?.[key]?.answer || disclosureResponses?.[key] || '')
   const hasBond = normalizeBoolean(
     form?.existingBond ??
       form?.sellerHasExistingBond ??
@@ -824,7 +1050,6 @@ function collectDynamicTriggers(form = {}, source = {}) {
 
   if (hasBond) triggers.push('bond_statement')
   if (hasBond) triggers.push('bond_bank_details')
-  if (hasBond) triggers.push('bond_cancellation_attorney_details')
   if (hasBond) triggers.push('settlement_figure')
   if (tenantOccupied) {
     triggers.push('lease_agreement', 'tenant_details')
@@ -833,7 +1058,9 @@ function collectDynamicTriggers(form = {}, source = {}) {
   if (
     normalizeBoolean(
       form?.gasInstallation ||
+        form?.gasGeyser ||
         compliance?.gas_installation ||
+        compliance?.gas_geyser ||
         source?.compliance?.gas_installation ||
         false,
     )
@@ -879,6 +1106,8 @@ function collectDynamicTriggers(form = {}, source = {}) {
       form?.recentAlterations ||
         property?.alterations?.recent ||
         source?.property?.alterations?.recent ||
+        ['no', 'unsure'].includes(disclosureAnswer('improvements_on_plans')) ||
+        ['no', 'unsure'].includes(disclosureAnswer('approved_plans_possession')) ||
         false,
     )
   ) {
@@ -890,56 +1119,55 @@ function collectDynamicTriggers(form = {}, source = {}) {
 
 export function resolveSellerOnboardingFlowContract(form = {}, listing = {}, facts = {}) {
   const source = normalizeFactsSource(form, listing, facts)
+  const ownershipModel = resolveSellerOwnershipModel(form, listing, source)
+  const propertyModel = resolveSellerPropertyModel(form, listing, source)
   const sellerBranch = resolveSellerBranch(form, listing, source)
   const propertyBranch = resolvePropertyBranch(form, listing, source)
+  const resolvedOwnershipModel = {
+    ...ownershipModel,
+    branch: sellerBranch,
+    legacy_ownership_type: ownershipModel.legacy_ownership_type || mapSellerBranchToLegacySellerType(sellerBranch),
+  }
+  const resolvedPropertyModel = {
+    ...propertyModel,
+    branch: propertyBranch,
+    legacy_property_type: propertyModel.legacy_property_type || mapPropertyBranchToLegacyPropertyType(propertyBranch, propertyModel.category, propertyModel.structure_type),
+  }
   const sellerDefinition = resolveBranchContract(SELLER_BRANCH_RULES, sellerBranch, CORE_SELLER_RULES)
   const propertyDefinition = resolveBranchContract(PROPERTY_BRANCH_RULES, propertyBranch, CORE_PROPERTY_RULES)
-  const propertyCategory = normalizePropertyCategory(
-    form?.propertyCategory ||
-      listing?.propertyCategory ||
-      listing?.property_category ||
-      source?.property?.category ||
-      source?.property?.property_category ||
-      source?.property?.propertyType ||
-      source?.property?.property_type,
-    { fallback: 'residential' },
-  )
-  const propertyStructureType = normalizePropertyStructureType(
-    form?.propertyStructureType ||
-      form?.canonicalPropertyType ||
-      form?.propertyType ||
-      listing?.propertyStructureType ||
-      listing?.property_structure_type ||
-      source?.property?.structure_type ||
-      source?.property?.property_structure_type ||
-      source?.property?.propertyType ||
-      source?.property?.property_type,
-    { fallback: 'other' },
-  )
+  const propertyCategory = propertyModel.category
+  const propertyStructureType = propertyModel.structure_type
+  const estateOverlayDefinition = propertyModel.estate_or_hoa && propertyBranch !== 'estate_hoa'
+    ? PROPERTY_BRANCH_RULES.estate_hoa
+    : null
   const dynamicTriggers = collectDynamicTriggers(form, source)
-  const sellerFacingQuestions = mergeUnique(
+  const sellerFacingQuestions = migrateSellerOnboardingFieldListToV2(mergeUnique(
     CORE_SELLER_RULES.sellerFacingQuestions,
     sellerDefinition.sellerFacingQuestions,
     CORE_PROPERTY_RULES.sellerFacingQuestions,
     propertyDefinition.sellerFacingQuestions,
-  )
-  const requiredFields = mergeUnique(
+    estateOverlayDefinition?.sellerFacingQuestions,
+  ))
+  const requiredFields = migrateSellerOnboardingFieldListToV2(mergeUnique(
     CORE_SELLER_RULES.requiredFields,
     sellerDefinition.requiredFields,
     CORE_PROPERTY_RULES.requiredFields,
     propertyDefinition.requiredFields,
-  )
-  const optionalFields = mergeUnique(
+    estateOverlayDefinition?.requiredFields,
+  ))
+  const optionalFields = migrateSellerOnboardingFieldListToV2(mergeUnique(
     CORE_SELLER_RULES.optionalFields,
     sellerDefinition.optionalFields,
     CORE_PROPERTY_RULES.optionalFields,
     propertyDefinition.optionalFields,
-  )
+    estateOverlayDefinition?.optionalFields,
+  ))
   const internalDerivedFacts = mergeUnique(
     CORE_SELLER_RULES.internalDerivedFacts,
     sellerDefinition.internalDerivedFacts,
     CORE_PROPERTY_RULES.internalDerivedFacts,
     propertyDefinition.internalDerivedFacts,
+    estateOverlayDefinition?.internalDerivedFacts,
     'flow.version',
     'flow.seller_branch',
     'flow.property_branch',
@@ -949,6 +1177,7 @@ export function resolveSellerOnboardingFlowContract(form = {}, listing = {}, fac
     sellerDefinition.documentTriggers,
     CORE_PROPERTY_RULES.documentTriggers,
     propertyDefinition.documentTriggers,
+    estateOverlayDefinition?.documentTriggers,
     dynamicTriggers,
   )
 
@@ -957,9 +1186,11 @@ export function resolveSellerOnboardingFlowContract(form = {}, listing = {}, fac
     seller_branch: sellerBranch,
     seller_branch_label: sellerDefinition.label,
     seller_legacy_type: mapSellerBranchToLegacySellerType(sellerBranch),
+    seller_owner_entity_type: resolvedOwnershipModel.entity_type,
+    seller_owner_structure_type: resolvedOwnershipModel.structure_type,
     property_branch: propertyBranch,
     property_branch_label: propertyDefinition.label,
-    property_legacy_type: mapPropertyBranchToLegacyPropertyType(propertyBranch, propertyCategory, propertyStructureType),
+    property_legacy_type: resolvedPropertyModel.legacy_property_type,
     property_category: propertyCategory,
     property_structure_type: propertyStructureType,
     seller_facing_questions: sellerFacingQuestions,
@@ -967,6 +1198,9 @@ export function resolveSellerOnboardingFlowContract(form = {}, listing = {}, fac
     optional_fields: optionalFields,
     internal_derived_facts: internalDerivedFacts,
     document_triggers: documentTriggers,
+    field_aliases: SELLER_ONBOARDING_FIELD_ALIASES,
+    ownership_model: resolvedOwnershipModel,
+    property_model: resolvedPropertyModel,
     seller: sellerDefinition,
     property: propertyDefinition,
   }

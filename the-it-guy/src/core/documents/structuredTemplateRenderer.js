@@ -202,6 +202,16 @@ function renderDocumentContactRow(items = []) {
   `
 }
 
+function renderDocumentFooterContact(items = []) {
+  const rows = (Array.isArray(items) ? items : []).slice(0, 2)
+  if (!rows.length) return '<span class="legal-preview-footer-company"></span>'
+  return `
+    <span class="legal-preview-footer-company">
+      ${rows.map((item) => `<span>${renderInlineText(item.value)}</span>`).join('\n')}
+    </span>
+  `
+}
+
 function resolveTemplateMetadata(template = null) {
   return template?.metadata_json && typeof template.metadata_json === 'object'
     ? template.metadata_json
@@ -817,11 +827,12 @@ export function renderStructuredTemplate({
           .legal-signature-line { display: block; border-top: 1px solid #111827; margin-bottom: 3mm; }
           .legal-signature-block strong, .legal-signature-block p, .legal-signature-block small { display: block; margin: 0 0 2mm; }
           .legal-preview-footer { display: flex; align-items: center; justify-content: space-between; gap: 8mm; padding: 5mm 18mm 7mm; border-top: 1px solid #d8d8d8; color: #606a75; font-size: 10.5px; }
-          .legal-preview-footer-brand, .legal-preview-footer-spacer { display: inline-flex; align-items: center; min-width: 34mm; max-width: 44mm; }
+          .legal-preview-footer-brand, .legal-preview-footer-company { display: inline-flex; align-items: center; min-width: 34mm; max-width: 44mm; }
+          .legal-preview-footer-company { display: grid; justify-items: end; gap: 1px; text-align: right; }
           .legal-preview-footer img { max-width: 34mm; max-height: 9mm; object-fit: contain; }
           .legal-preview-page-number { flex: 1; text-align: center; font-weight: 700; }
           @media print { body { padding: 0; background: #ffffff; } .legal-document-preview-shell { width: 210mm; min-height: 297mm; border: 0; box-shadow: none; } }
-          @media (max-width: 780px) { .packet-preview-header { flex-wrap: wrap; } .document-contact-row { justify-content: flex-start; width: 100%; } .document-contact-item { max-width: 100%; } .party-card-grid { grid-template-columns: 1fr; } .party-card-row { grid-template-columns: 1fr; gap: 3px; } }
+          @media (max-width: 780px) { .packet-preview-header { flex-wrap: wrap; } .document-contact-row { justify-content: flex-start; width: 100%; } .document-contact-item { max-width: 100%; } .party-card-grid { grid-template-columns: 1fr; } .party-card-row { grid-template-columns: 1fr; gap: 3px; } .legal-preview-footer { flex-wrap: wrap; justify-content: center; text-align: center; } .legal-preview-footer-company { justify-items: center; text-align: center; } }
         </style>
       </head>
       <body>
@@ -842,7 +853,7 @@ export function renderStructuredTemplate({
           <footer class="legal-preview-footer">
             <span class="legal-preview-footer-brand">${organisationLogo ? `<img src="${escapeHtml(organisationLogo)}" alt="${escapeHtml(orgName)}" />` : escapeHtml(orgName)}</span>
             <span class="legal-preview-page-number">${escapeHtml(documentReference)}</span>
-            <span class="legal-preview-footer-spacer"></span>
+            ${renderDocumentFooterContact(contactItems)}
           </footer>
         </article>
       </body>

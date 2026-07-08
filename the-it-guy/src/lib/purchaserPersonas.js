@@ -119,6 +119,42 @@ function selectField(key, label, options = [], config = {}) {
   })
 }
 
+function multiSelectField(key, label, options = [], config = {}) {
+  return field({
+    key,
+    label,
+    type: 'multi_select',
+    required: false,
+    options,
+    ...config,
+  })
+}
+
+const BUYER_BANK_OPTIONS = Object.freeze([
+  { value: 'absa', label: 'Absa' },
+  { value: 'capitec', label: 'Capitec' },
+  { value: 'discovery_bank', label: 'Discovery Bank' },
+  { value: 'fnb', label: 'FNB' },
+  { value: 'investec', label: 'Investec' },
+  { value: 'nedbank', label: 'Nedbank' },
+  { value: 'standard_bank', label: 'Standard Bank' },
+  { value: 'other', label: 'Other' },
+])
+
+const BUYER_BANK_VALUES = new Set(BUYER_BANK_OPTIONS.map((option) => option.value))
+
+const BUYER_BANK_ALIASES = Object.freeze({
+  absa_bank: 'absa',
+  capitec_bank: 'capitec',
+  discovery: 'discovery_bank',
+  fnb_bank: 'fnb',
+  first_national_bank: 'fnb',
+  nedbank_limited: 'nedbank',
+  standard: 'standard_bank',
+  standardbank: 'standard_bank',
+  standard_bank_limited: 'standard_bank',
+})
+
 function checkboxField(key, label, options = {}) {
   return field({ key, label, type: 'checkbox', required: false, ...options })
 }
@@ -216,8 +252,12 @@ const STRUCTURED_FINANCE_KEYS = [
   'proof_of_funds_available',
   'source_of_funds',
   'bond_bank_name',
+  'buyer_banks',
+  'buyer_banks_other',
   'bond_process_started',
   'bond_current_status',
+  'bond_preapproval_completed',
+  'bond_preapproval_document_available',
   'bond_help_requested',
   'ooba_assist_requested',
   'bond_originator_name',
@@ -227,6 +267,7 @@ const STRUCTURED_FINANCE_KEYS = [
   'cash_contribution_source',
   'bank_statements_available',
   'bond_readiness_consent',
+  'credit_check_consent',
   'joint_bond_application',
   'affordability_confirmed',
   'deposit_required',
@@ -378,7 +419,26 @@ function resolveStructuredFinance(formData = {}, financeType = 'cash') {
   if (!isFilledValue(base.cash_contribution_source) && isFilledValue(base.deposit_source)) {
     base.cash_contribution_source = base.deposit_source
   }
+  const legacyBankName = firstFilledValue([base.bond_bank_name, formData.bond_bank_name])
+  base.buyer_banks = normalizeBuyerBankSelections(base.buyer_banks)
+  if (!base.buyer_banks.length && isFilledValue(legacyBankName)) {
+    base.buyer_banks = normalizeBuyerBankSelections(legacyBankName)
+    if (base.buyer_banks.includes('other') && !isFilledValue(base.buyer_banks_other)) {
+      base.buyer_banks_other = legacyBankName
+    }
+  }
+  if (!base.buyer_banks.includes('other')) {
+    base.buyer_banks_other = ''
+  }
+  base.bond_preapproval_completed = normalizeYesNoChoice(base.bond_preapproval_completed || formData.bond_preapproval_completed)
+  base.bond_preapproval_document_available = normalizeYesNoChoice(base.bond_preapproval_document_available || formData.bond_preapproval_document_available)
   base.bond_help_requested = normalizeYesNoChoice(base.bond_help_requested || base.ooba_assist_requested || formData.bond_help_requested || formData.ooba_assist_requested)
+  if (base.bond_preapproval_completed === 'yes') {
+    base.bond_help_requested = ''
+    base.ooba_assist_requested = ''
+  } else {
+    base.bond_preapproval_document_available = ''
+  }
   base.ooba_assist_requested = normalizeYesNoChoice(base.ooba_assist_requested || base.bond_help_requested)
   if (!isFilledValue(base.bond_originator_name) && isFilledValue(formData.bond_originator_name)) {
     base.bond_originator_name = formData.bond_originator_name
@@ -392,6 +452,8 @@ function resolveStructuredFinance(formData = {}, financeType = 'cash') {
   if (!isFilledValue(base.affordability_confirmed) && isFilledValue(formData.affordability_confirmed)) {
     base.affordability_confirmed = normalizeYesNoChoice(formData.affordability_confirmed)
   }
+  base.credit_check_consent = normalizeYesNoChoice(base.credit_check_consent || base.bond_readiness_consent || formData.credit_check_consent)
+  base.bond_readiness_consent = normalizeYesNoChoice(base.bond_readiness_consent || base.credit_check_consent)
   return {
     purchase_finance_type: financeType,
     ...base,
@@ -406,6 +468,32 @@ function isFilledValue(value) {
   if (Array.isArray(value)) return value.some((item) => isFilledValue(item))
   if (typeof value === 'object') return Object.values(value).some((item) => isFilledValue(item))
   return false
+}
+
+function normalizeBankValue(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  if (!normalized) return ''
+  if (BUYER_BANK_VALUES.has(normalized)) return normalized
+  return BUYER_BANK_ALIASES[normalized] || 'other'
+}
+
+function normalizeBuyerBankSelections(value) {
+  const source = Array.isArray(value)
+    ? value
+    : String(value || '').trim()
+      ? String(value || '').split(/[,;/|]+/)
+      : []
+  const selected = []
+  source.forEach((item) => {
+    const normalized = normalizeBankValue(item)
+    if (normalized && !selected.includes(normalized)) selected.push(normalized)
+  })
+  return selected
 }
 
 function firstFilledValue(values = []) {
@@ -570,7 +658,7 @@ const TRUST_SECTIONS = [
       emailField('trust_contact_email', 'Primary Trust Contact Email', { required: true }),
       phoneField('trust_contact_phone', 'Primary Trust Contact Number', { required: true }),
       yesNoField('trust_deed_available', 'Is the trust deed available?', { required: true }),
-      yesNoField('letters_of_authority_available', 'Are letters of authority available?', { required: true }),
+      yesNoField('letters_of_authority_available', 'Is the letters of authority document available?', { required: true }),
       yesNoField('trust_resolution_available', 'Is a resolution to purchase available?', { required: true }),
       yesNoField('all_trustees_signing', 'Are all trustees signing?', { required: true }),
     ],
@@ -833,17 +921,16 @@ function getFinanceSections(financeType, purchaserType = 'individual') {
       shared.push(
         section(
           'affordability_snapshot',
-          'Affordability Snapshot',
+          'Income Snapshot',
           [
             numberField('number_of_dependants', 'Number of Dependants', { required: true }),
             currencyField('gross_monthly_income', 'Gross Monthly Income', { required: true }),
             currencyField('net_monthly_income', 'Net Monthly Income'),
             currencyField('monthly_credit_commitments', 'Monthly Credit Commitments'),
             currencyField('monthly_living_expenses', 'Monthly Living Expenses', { required: true }),
-            yesNoField('affordability_confirmed', 'Affordability ready / confirmed?', { required: true }),
           ],
           {
-            description: 'These figures help the bond originator assess affordability and identify the correct supporting documents upfront.',
+            description: 'These figures help the finance team identify the correct supporting documents upfront.',
           },
         ),
       )
@@ -935,118 +1022,73 @@ function getFinanceSections(financeType, purchaserType = 'individual') {
             yesNoField('surety_obligations', 'Any surety obligations?', { required: true }),
           ],
           {
-            description: 'These declarations help the originator identify finance risks before bank submission.',
+            description: 'These declarations help the finance team identify bond risks before bank submission.',
           },
         ),
       )
 
       shared.push(
         section(
-          'bond_progress',
-          'Bond Progress',
+          'bond_preapproval',
+          'Bond Pre-Approval',
           [
-            yesNoField('bond_process_started', 'Have you already started the bond process?', { required: true }),
-            selectField(
-              'bond_current_status',
-              'Current Bond Status',
-              [
-                { value: 'not_started', label: 'Not started' },
-                { value: 'pre_approval_only', label: 'Pre-approval only' },
-                { value: 'application_in_progress', label: 'Application in progress' },
-                { value: 'submitted_to_banks', label: 'Submitted to banks' },
-                { value: 'bond_approved', label: 'Bond approved' },
-              ],
-              { required: true },
-            ),
-            textField('bond_bank_name', 'Bank / Bond Provider', {
-              requiredWhen: (values) => normalizeYesNoChoice(values.bond_process_started) === 'yes',
+            multiSelectField('buyer_banks', 'Who do you bank with?', BUYER_BANK_OPTIONS, { required: true }),
+            textField('buyer_banks_other', 'Other bank', {
+              requiredWhen: (values) => normalizeBuyerBankSelections(values.buyer_banks).includes('other'),
+              visibleWhen: (values) => normalizeBuyerBankSelections(values.buyer_banks).includes('other'),
             }),
-            yesNoField('bond_help_requested', 'Would you like bond originator help?', { required: true }),
+            yesNoField('bond_preapproval_completed', 'Have you completed a bond pre-approval?', { required: true }),
+            yesNoField('bond_preapproval_document_available', 'Is your pre-approval available to upload?', {
+              requiredWhen: (values) => normalizeYesNoChoice(values.bond_preapproval_completed) === 'yes',
+              visibleWhen: (values) => normalizeYesNoChoice(values.bond_preapproval_completed) === 'yes',
+            }),
+            yesNoField('bond_help_requested', 'Do you need help with your bond?', {
+              requiredWhen: (values) => normalizeYesNoChoice(values.bond_preapproval_completed) === 'no',
+              visibleWhen: (values) => normalizeYesNoChoice(values.bond_preapproval_completed) === 'no',
+            }),
             yesNoField('joint_bond_application', 'Is this a joint bond application?', { required: true }),
             currencyField('cash_contribution_available', 'Deposit / Cash Contribution Amount', { required: false, allowZero: true }),
             textField('deposit_source', 'Deposit / Cash Contribution Source', {
               requiredWhen: (values) => isFilledValue(values.cash_contribution_available),
             }),
             yesNoField('bank_statements_available', 'Recent Bank Statements Available?', { required: true }),
-            yesNoField('bond_readiness_consent', 'Consent to share this finance snapshot with the bond originator?', { required: true }),
+            yesNoField('credit_check_consent', 'Consent for credit check?', { required: true }),
           ],
           {
-            description: 'These answers determine whether the finance lane and bond-originator support should be activated.',
-          },
-        ),
-      )
-
-      shared.push(
-        section(
-          'bond_originator_support',
-          'Originator Support',
-          [
-            textField('bond_originator_name', 'Bond Originator / Consultant Name', {
-              requiredWhen: (values) => normalizeYesNoChoice(values.bond_help_requested) === 'yes' || normalizeYesNoChoice(values.ooba_assist_requested) === 'yes',
-            }),
-            textField('bond_originator_contact', 'Bond Originator Contact Details', {
-              required: false,
-            }),
-          ],
-          {
-            description: 'Shown when you want an originator-led bond path. Capture the person or team helping with finance.',
-            visibleWhen: (values) => normalizeYesNoChoice(values.bond_help_requested) === 'yes' || normalizeYesNoChoice(values.ooba_assist_requested) === 'yes',
+            description: 'These answers determine whether pre-approval uploads, credit consent, and bond support should be activated.',
           },
         ),
       )
     } else {
       shared.push(
         section(
-          'bond_progress',
-          'Bond Progress',
+          'bond_preapproval',
+          'Bond Pre-Approval',
           [
-            yesNoField('bond_process_started', 'Have you already started the bond process?', { required: true }),
-            selectField(
-              'bond_current_status',
-              'Current Bond Status',
-              [
-                { value: 'not_started', label: 'Not started' },
-                { value: 'pre_approval_only', label: 'Pre-approval only' },
-                { value: 'application_in_progress', label: 'Application in progress' },
-                { value: 'submitted_to_banks', label: 'Submitted to banks' },
-                { value: 'bond_approved', label: 'Bond approved' },
-              ],
-              { required: true },
-            ),
-            textField('bond_bank_name', 'Bank / Bond Provider', {
-              requiredWhen: (values) => normalizeYesNoChoice(values.bond_process_started) === 'yes',
+            multiSelectField('buyer_banks', 'Who do you bank with?', BUYER_BANK_OPTIONS, { required: true }),
+            textField('buyer_banks_other', 'Other bank', {
+              requiredWhen: (values) => normalizeBuyerBankSelections(values.buyer_banks).includes('other'),
+              visibleWhen: (values) => normalizeBuyerBankSelections(values.buyer_banks).includes('other'),
             }),
-            yesNoField('bond_help_requested', 'Would you like bond originator help?', { required: true }),
+            yesNoField('bond_preapproval_completed', 'Have you completed a bond pre-approval?', { required: true }),
+            yesNoField('bond_preapproval_document_available', 'Is your pre-approval available to upload?', {
+              requiredWhen: (values) => normalizeYesNoChoice(values.bond_preapproval_completed) === 'yes',
+              visibleWhen: (values) => normalizeYesNoChoice(values.bond_preapproval_completed) === 'yes',
+            }),
+            yesNoField('bond_help_requested', 'Do you need help with your bond?', {
+              requiredWhen: (values) => normalizeYesNoChoice(values.bond_preapproval_completed) === 'no',
+              visibleWhen: (values) => normalizeYesNoChoice(values.bond_preapproval_completed) === 'no',
+            }),
             yesNoField('joint_bond_application', 'Is this a joint bond application?', { required: true }),
             currencyField('cash_contribution_available', 'Deposit / Cash Contribution Amount', { required: false, allowZero: true }),
             textField('deposit_source', 'Deposit / Cash Contribution Source', {
               requiredWhen: (values) => isFilledValue(values.cash_contribution_available),
             }),
             yesNoField('bank_statements_available', 'Recent Bank Statements Available?', { required: true }),
-            yesNoField('bond_readiness_consent', 'Consent to share this finance snapshot with the bond originator?', { required: true }),
-            yesNoField('affordability_confirmed', 'Affordability ready / confirmed?', { required: true }),
+            yesNoField('credit_check_consent', 'Consent for credit check?', { required: true }),
           ],
           {
-            description: 'These answers determine whether the finance lane and bond-originator support should be activated.',
-          },
-        ),
-      )
-
-      shared.push(
-        section(
-          'bond_originator_support',
-          'Originator Support',
-          [
-            textField('bond_originator_name', 'Bond Originator / Consultant Name', {
-              requiredWhen: (values) => normalizeYesNoChoice(values.bond_help_requested) === 'yes' || normalizeYesNoChoice(values.ooba_assist_requested) === 'yes',
-            }),
-            textField('bond_originator_contact', 'Bond Originator Contact Details', {
-              required: false,
-            }),
-          ],
-          {
-            description: 'Shown when you want an originator-led bond path. Capture the person or team helping with finance.',
-            visibleWhen: (values) => normalizeYesNoChoice(values.bond_help_requested) === 'yes' || normalizeYesNoChoice(values.ooba_assist_requested) === 'yes',
+            description: 'These answers determine whether pre-approval uploads, credit consent, and bond support should be activated.',
           },
         ),
       )
@@ -1854,7 +1896,7 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
   const hasCashComponent = financeType === 'cash' || financeType === 'combination'
   const naturalPersonPurchase = isNaturalPersonPurchaserType(purchaserType)
   const employmentComplexityScore = EMPLOYMENT_COMPLEXITY_SCORE[employmentType] || null
-  const bondOriginatorRequired =
+  const bondHelpWorkflowRequired =
     hasBondComponent &&
     (financeSupportMode === 'originator_led' || isYes(formData.ooba_assist_requested) || isYes(formData.bond_help_requested))
   const companySignatoryCount = purchaserType === 'company' ? (isFilledValue(formData.authorised_signatory_name) ? 1 : 0) + directors.filter((item) => isYes(item.signing_authority)).length : 0
@@ -1876,7 +1918,7 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
       hasBondComponent ? { key: 'bond_component', label: 'Bond component' } : null,
       hasCashComponent ? { key: 'cash_component', label: 'Cash component' } : null,
       financeType === 'combination' ? { key: 'hybrid_funding', label: 'Hybrid funding' } : null,
-      hasBondComponent && financeSupportMode === 'originator_led' ? { key: 'originator_led', label: 'Originator assisted' } : null,
+      hasBondComponent && financeSupportMode === 'originator_led' ? { key: 'bond_help_requested', label: 'Bond help requested' } : null,
       naturalPersonPurchase && hasBondComponent && employmentType
         ? { key: `employment_${employmentType}`, label: `Employment type: ${getEmploymentTypeLabel(employmentType)}` }
         : null,
@@ -1899,12 +1941,10 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
       reason: 'Buyer document collection is active because compliance and transaction documents are required.',
     },
     bondOriginator: {
-      enabled: bondOriginatorRequired,
-      reason: bondOriginatorRequired
-        ? financeSupportMode === 'originator_led'
-          ? 'Bond originator support requested or already active.'
-          : 'Bond process is active and originator support may be needed.'
-        : 'No bond-originator assistance selected.',
+      enabled: bondHelpWorkflowRequired,
+      reason: bondHelpWorkflowRequired
+        ? 'Bond help requested; the transaction team should route finance support.'
+        : 'No bond help requested.',
     },
   }
 
@@ -1944,8 +1984,8 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
           }`,
         ]
       : []),
-    ...(isYes(formData.ooba_assist_requested) ? ['OOBA assistance requested: Yes'] : []),
-    ...(hasBondComponent ? [`Bond support: ${financeSupportMode === 'originator_led' ? 'Originator assisted' : 'Self managed'}`] : []),
+    ...(isYes(formData.ooba_assist_requested) ? ['Bond help requested: Yes'] : []),
+    ...(hasBondComponent ? [`Bond support: ${financeSupportMode === 'originator_led' ? 'Help requested' : 'Self managed'}`] : []),
     `Required document sets: ${[...new Set(requiredDocuments.map((item) => item.groupLabel))].join(', ')}`,
     `Finance workflow: ${workflows.finance.enabled ? 'Enabled' : 'Skipped'}`,
     `Transfer workflow: Enabled`,
@@ -2000,7 +2040,7 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
       finance_branch: flow.finance_branch,
       has_bond_component: hasBondComponent,
       has_cash_component: hasCashComponent,
-      needs_bond_originator: bondOriginatorRequired,
+      needs_bond_originator: bondHelpWorkflowRequired,
       requires_multiple_signatories: multipleSignatories,
       requires_spouse_fica: purchaserType === 'married_coc' || isYes(formData.spouse_is_co_purchaser) || isCoPurchasing(formData),
       requires_entity_documents: ['trust', 'company'].includes(purchaserType),
@@ -2208,7 +2248,7 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
     validateEmailIfPresent(company.authorised_signatory_email, 'Authorised Signatory Email')
     validatePhoneIfPresent(company.authorised_signatory_phone, 'Authorised Signatory Phone')
     validateIdLike(company.authorised_signatory_identity_number, 'Authorised Signatory ID Number')
-    requireYesNo(company.board_resolution_available, 'Board Resolution Available')
+    requireYesNo(company.board_resolution_available, 'Board resolution availability')
     const companyDirectors = getStructuredCollectionEntries(formData, 'company.directors').length
       ? getStructuredCollectionEntries(formData, 'company.directors')
       : formData.directors || []
@@ -2246,9 +2286,9 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
     validateEmailIfPresent(trust.authorised_trustee_email, 'Authorised Trustee Email')
     validatePhoneIfPresent(trust.authorised_trustee_phone, 'Authorised Trustee Phone')
     validateIdLike(trust.authorised_trustee_identity_number, 'Authorised Trustee ID Number')
-    requireYesNo(trust.trust_deed_available, 'Trust Deed Available')
-    requireYesNo(trust.letters_of_authority_available, 'Letters of Authority Available')
-    requireYesNo(trust.trust_resolution_available, 'Trust Resolution Available')
+    requireYesNo(trust.trust_deed_available, 'Trust deed availability')
+    requireYesNo(trust.letters_of_authority_available, 'Letters of authority document availability')
+    requireYesNo(trust.trust_resolution_available, 'Trust resolution availability')
     requireYesNo(trust.all_trustees_signing, 'All Trustees Signing')
     const trustTrustees = getStructuredCollectionEntries(formData, 'trust.trustees').length
       ? getStructuredCollectionEntries(formData, 'trust.trustees')
@@ -2294,18 +2334,19 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
   }
 
   if (financeType === 'bond' || financeType === 'combination') {
-    requireYesNo(finance.bond_process_started, 'Bond Process Started')
-    requireField(finance.bond_current_status, 'Current Bond Status')
-    if (normalizeYesNoChoice(finance.bond_process_started) === 'yes') {
-      requireField(finance.bond_bank_name, 'Bank / Bond Provider')
+    requireField(finance.buyer_banks, 'Who do you bank with')
+    if (normalizeBuyerBankSelections(finance.buyer_banks).includes('other')) {
+      requireField(finance.buyer_banks_other, 'Other Bank')
     }
-    requireYesNo(finance.bond_help_requested, 'Bond Originator Help')
-    if (normalizeYesNoChoice(finance.bond_help_requested) === 'yes') {
-      requireField(finance.bond_originator_name, 'Bond Originator / Consultant Name')
+    requireYesNo(finance.bond_preapproval_completed, 'Bond Pre-Approval')
+    if (normalizeYesNoChoice(finance.bond_preapproval_completed) === 'yes') {
+      requireYesNo(finance.bond_preapproval_document_available, 'Pre-Approval Upload Availability')
+    }
+    if (normalizeYesNoChoice(finance.bond_preapproval_completed) === 'no') {
+      requireYesNo(finance.bond_help_requested, 'Bond help')
     }
     requireYesNo(finance.bank_statements_available, 'Recent Bank Statements Available')
-    requireYesNo(finance.bond_readiness_consent, 'Bond Readiness Consent')
-    requireYesNo(finance.affordability_confirmed, 'Affordability Confirmation')
+    requireYesNo(finance.credit_check_consent, 'Credit Check Consent')
   }
 
   if (financeType === 'combination') {

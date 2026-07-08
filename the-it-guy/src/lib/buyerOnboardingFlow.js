@@ -5,6 +5,9 @@ import {
   resolveConditionalPackDataRequirements,
 } from '../core/documents/conditionalPackDataRules.js'
 import {
+  BUYER_ONBOARDING_FIELD_ALIASES,
+  BUYER_ONBOARDING_FLOW_VERSION,
+  migrateBuyerOnboardingFieldListToV2,
   resolveBuyerBranch,
   resolveBuyerFinanceBranch,
   resolveBuyerOnboardingFlowContract,
@@ -66,7 +69,7 @@ function buildBranchSummary(flow = {}) {
         label: normalizeText(
           flow.buyer_finance_support_mode_label ||
             flow.finance_support_mode_label ||
-            (financeSupportMode === 'originator_led' ? 'Originator Assisted' : 'Self Managed'),
+            (financeSupportMode === 'originator_led' ? 'Bond Help Requested' : 'Self Managed'),
         ),
       },
     },
@@ -112,7 +115,16 @@ function extractPersistedFlowSnapshot(form = {}, facts = {}) {
 }
 
 function normalizeResolvedFlow(flow = {}) {
-  const visibleFields = mergeUnique(flow.visible_fields, flow.buyer_facing_questions, flow.required_fields, flow.optional_fields)
+  const sourceVersion = normalizeText(flow.version || flow.buyer_onboarding_flow_version || flow.onboarding_flow_version)
+  const buyerFacingQuestions = migrateBuyerOnboardingFieldListToV2(flow.buyer_facing_questions)
+  const requiredFields = migrateBuyerOnboardingFieldListToV2(flow.required_fields)
+  const optionalFields = migrateBuyerOnboardingFieldListToV2(flow.optional_fields)
+  const visibleFields = mergeUnique(
+    migrateBuyerOnboardingFieldListToV2(flow.visible_fields),
+    buyerFacingQuestions,
+    requiredFields,
+    optionalFields,
+  )
   const conditionalPackOptions = buildBuyerConditionalPackOptions(flow)
   const conditionalPackDataRequirements = resolveConditionalPackDataRequirements(conditionalPackOptions)
   const conditionalPackRequiredFields = getConditionalPackRequiredOnboardingFields(conditionalPackOptions)
@@ -121,6 +133,8 @@ function normalizeResolvedFlow(flow = {}) {
 
   return {
     ...flow,
+    version: BUYER_ONBOARDING_FLOW_VERSION,
+    source_version: sourceVersion || BUYER_ONBOARDING_FLOW_VERSION,
     buyer_branch: normalizeText(flow.buyer_branch || flow.purchaser_branch),
     buyer_branch_label: normalizeText(flow.buyer_branch_label || flow.purchaser_branch_label || flow.purchaser?.label),
     buyer_purchase_mode: normalizeText(flow.buyer_purchase_mode || flow.purchase_mode),
@@ -132,16 +146,17 @@ function normalizeResolvedFlow(flow = {}) {
       flow.buyer_finance_support_mode_label ||
         flow.finance_support_mode_label ||
         (flow.buyer_finance_support_mode === 'originator_led' || flow.finance_support_mode === 'originator_led'
-          ? 'Originator Assisted'
+          ? 'Bond Help Requested'
           : 'Self Managed'),
     ),
     buyer_legal_type: normalizeText(flow.buyer_legal_type || flow.branch_summary?.purchaser?.legal_type || flow.purchaser?.legal_type),
     visible_fields: visibleFields,
-    buyer_facing_questions: mergeUnique(flow.buyer_facing_questions),
-    required_fields: mergeUnique(flow.required_fields),
-    optional_fields: mergeUnique(flow.optional_fields),
+    buyer_facing_questions: buyerFacingQuestions,
+    required_fields: requiredFields,
+    optional_fields: optionalFields,
     internal_derived_facts: mergeUnique(flow.internal_derived_facts),
     document_triggers: mergeUnique(flow.document_triggers),
+    field_aliases: flow.field_aliases || BUYER_ONBOARDING_FIELD_ALIASES,
     conditional_pack_data_requirements: conditionalPackDataRequirements,
     conditional_pack_required_fields: conditionalPackRequiredFields,
     conditional_pack_required_merge_fields: conditionalPackRequiredMergeFields,
@@ -161,17 +176,22 @@ export function resolveBuyerOnboardingFlow(form = {}, transaction = {}, facts = 
 
 export function getBuyerOnboardingVisibleFields(flowOrForm = {}, transaction = {}, facts = {}) {
   const flow = isFlowRecord(flowOrForm) ? flowOrForm : resolveBuyerOnboardingFlow(flowOrForm, transaction, facts)
-  return mergeUnique(flow.visible_fields, flow.buyer_facing_questions, flow.required_fields, flow.optional_fields)
+  return mergeUnique(
+    migrateBuyerOnboardingFieldListToV2(flow.visible_fields),
+    migrateBuyerOnboardingFieldListToV2(flow.buyer_facing_questions),
+    migrateBuyerOnboardingFieldListToV2(flow.required_fields),
+    migrateBuyerOnboardingFieldListToV2(flow.optional_fields),
+  )
 }
 
 export function getBuyerOnboardingRequiredFields(flowOrForm = {}, transaction = {}, facts = {}) {
   const flow = isFlowRecord(flowOrForm) ? flowOrForm : resolveBuyerOnboardingFlow(flowOrForm, transaction, facts)
-  return mergeUnique(flow.required_fields)
+  return migrateBuyerOnboardingFieldListToV2(flow.required_fields)
 }
 
 export function getBuyerOnboardingOptionalFields(flowOrForm = {}, transaction = {}, facts = {}) {
   const flow = isFlowRecord(flowOrForm) ? flowOrForm : resolveBuyerOnboardingFlow(flowOrForm, transaction, facts)
-  return mergeUnique(flow.optional_fields)
+  return migrateBuyerOnboardingFieldListToV2(flow.optional_fields)
 }
 
 export function getBuyerOnboardingDocumentTriggers(flowOrForm = {}, transaction = {}, facts = {}) {

@@ -5,6 +5,9 @@ import {
   resolveConditionalPackDataRequirements,
 } from '../core/documents/conditionalPackDataRules.js'
 import {
+  SELLER_ONBOARDING_FIELD_ALIASES,
+  SELLER_ONBOARDING_FLOW_VERSION,
+  migrateSellerOnboardingFieldListToV2,
   resolvePropertyBranch,
   resolveSellerBranch,
   resolveSellerOnboardingFlowContract,
@@ -42,10 +45,10 @@ function isFlowRecord(value) {
 
 function buildVisibleFields(flow = {}) {
   return mergeUnique(
-    flow.visible_fields,
-    flow.seller_facing_questions,
-    flow.required_fields,
-    flow.optional_fields,
+    migrateSellerOnboardingFieldListToV2(flow.visible_fields),
+    migrateSellerOnboardingFieldListToV2(flow.seller_facing_questions),
+    migrateSellerOnboardingFieldListToV2(flow.required_fields),
+    migrateSellerOnboardingFieldListToV2(flow.optional_fields),
   )
 }
 
@@ -75,6 +78,10 @@ function buildSellerConditionalPackOptions(flow = {}, form = {}, listing = {}, f
 }
 
 function normalizeResolvedFlow(flow = {}) {
+  const sourceVersion = normalizeText(flow.version || flow.seller_onboarding_flow_version || flow.onboarding_flow_version)
+  const sellerFacingQuestions = migrateSellerOnboardingFieldListToV2(flow.seller_facing_questions)
+  const requiredFields = migrateSellerOnboardingFieldListToV2(flow.required_fields)
+  const optionalFields = migrateSellerOnboardingFieldListToV2(flow.optional_fields)
   const conditionalPackOptions = buildSellerConditionalPackOptions(flow)
   const conditionalPackDataRequirements = resolveConditionalPackDataRequirements(conditionalPackOptions)
   const conditionalPackRequiredFields = getConditionalPackRequiredOnboardingFields(conditionalPackOptions)
@@ -83,11 +90,14 @@ function normalizeResolvedFlow(flow = {}) {
 
   return {
     ...flow,
+    version: SELLER_ONBOARDING_FLOW_VERSION,
+    source_version: sourceVersion || SELLER_ONBOARDING_FLOW_VERSION,
     visible_fields: buildVisibleFields(flow),
-    seller_facing_questions: mergeUnique(flow.seller_facing_questions),
-    required_fields: mergeUnique(flow.required_fields),
-    optional_fields: mergeUnique(flow.optional_fields),
+    seller_facing_questions: sellerFacingQuestions,
+    required_fields: requiredFields,
+    optional_fields: optionalFields,
     document_triggers: mergeUnique(flow.document_triggers),
+    field_aliases: flow.field_aliases || SELLER_ONBOARDING_FIELD_ALIASES,
     conditional_pack_data_requirements: conditionalPackDataRequirements,
     conditional_pack_required_fields: conditionalPackRequiredFields,
     conditional_pack_required_merge_fields: conditionalPackRequiredMergeFields,
@@ -107,7 +117,7 @@ export function getSellerOnboardingVisibleFields(flowOrForm = {}, listing = {}, 
 
 export function getSellerOnboardingRequiredFields(flowOrForm = {}, listing = {}, facts = {}) {
   const flow = isFlowRecord(flowOrForm) ? flowOrForm : resolveSellerOnboardingFlow(flowOrForm, listing, facts)
-  return mergeUnique(flow.required_fields)
+  return migrateSellerOnboardingFieldListToV2(flow.required_fields)
 }
 
 export function getSellerOnboardingDocumentTriggers(flowOrForm = {}, listing = {}, facts = {}) {

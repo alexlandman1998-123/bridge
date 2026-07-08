@@ -85,6 +85,7 @@ export default function MandateDraftIntakePanel({
 }) {
   const readinessChecks = buildReadinessChecks(draft)
   const missingChecks = readinessChecks.filter((item) => !item.complete)
+  const completedCheckCount = readinessChecks.length - missingChecks.length
   const commissionStructure = normalizeKey(draft.commissionStructure || 'percentage') || 'percentage'
   const sourceLabel = getSourceModeLabel(sourceMode)
   const hasManualStart = normalizeKey(sourceMode) === 'manual_details'
@@ -98,7 +99,7 @@ export default function MandateDraftIntakePanel({
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Generate Mandate</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Mandate details</p>
             <span className="rounded-full border border-[#dbeafe] bg-[#eff6ff] px-2.5 py-1 text-xs font-semibold text-[#2563eb]">
               {sourceLabel}
             </span>
@@ -108,9 +109,9 @@ export default function MandateDraftIntakePanel({
               </span>
             ) : null}
           </div>
-          <h2 className="mt-2 text-xl font-semibold text-[#142132]">Check the mandate details</h2>
+          <h2 className="mt-2 text-xl font-semibold text-[#142132]">Review the essentials</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[#607387]">
-            Fill only what is missing. Saved lead and onboarding details are already prefilled where Arch9 can find them.
+            Most details are already prefilled from the lead and seller onboarding. Only change what is missing or incorrect.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -124,167 +125,173 @@ export default function MandateDraftIntakePanel({
         </div>
       </div>
 
-      <div className="mt-5 flex flex-wrap gap-2">
-        {readinessChecks.map((check) => {
-          const Icon = check.complete ? CheckCircle2 : CircleAlert
-          return (
-            <span
-              key={check.key}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${
-                check.complete
-                  ? 'border-[#d8f0e3] bg-[#effaf4] text-[#20895a]'
-                  : 'border-[#fde4de] bg-[#fff5f2] text-[#b64d32]'
-              }`}
-            >
-              <Icon size={14} />
-              {check.complete ? check.label : `${check.label}: ${check.missing}`}
-            </span>
-          )
-        })}
-      </div>
-
-      <div className="mt-6 grid gap-6">
-        <div className="grid gap-3 border-t border-[#edf2f7] pt-5">
-          <div>
-            <h3 className={SECTION_HEADING_CLASS}>Seller</h3>
-            <p className="mt-1 text-xs font-medium text-[#6b7d93]">Capture the seller exactly as it should appear on the mandate.</p>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MandateField label="Seller type">
-              <select value={draft.sellerEntityType || 'individual'} onChange={update('sellerEntityType')} className={FIELD_CLASS}>
-                <option value="individual">Individual</option>
-                <option value="company">Company</option>
-                <option value="trust">Trust</option>
-              </select>
-            </MandateField>
-            <MandateField label="Seller name">
-              <input value={draft.sellerFullName || ''} onChange={update('sellerFullName')} placeholder="Full name or entity name" className={FIELD_CLASS} />
-            </MandateField>
-            <MandateField label="ID / registration no.">
-              <input value={draft.sellerIdNumber || ''} onChange={update('sellerIdNumber')} placeholder="Optional but recommended" className={FIELD_CLASS} />
-            </MandateField>
-            <MandateField label="Email">
-              <input type="email" value={draft.sellerEmail || ''} onChange={update('sellerEmail')} placeholder="seller@example.com" className={FIELD_CLASS} />
-            </MandateField>
-            <MandateField label="Phone">
-              <input value={draft.sellerPhone || ''} onChange={update('sellerPhone')} placeholder="+27..." className={FIELD_CLASS} />
-            </MandateField>
-            <MandateField label="Domicilium address">
-              <input value={draft.sellerDomiciliumAddress || ''} onChange={update('sellerDomiciliumAddress')} placeholder="Address for notices" className={FIELD_CLASS} />
-            </MandateField>
-            <MandateField label="Representative">
-              <input value={draft.sellerRepresentativeName || ''} onChange={update('sellerRepresentativeName')} placeholder="For company or trust" className={FIELD_CLASS} />
-            </MandateField>
-            <MandateField label="Capacity">
-              <input value={draft.sellerRepresentativeCapacity || ''} onChange={update('sellerRepresentativeCapacity')} placeholder="Director, trustee..." className={FIELD_CLASS} />
-            </MandateField>
-          </div>
+      <div className="mt-5 grid gap-3 lg:grid-cols-[0.82fr_1.18fr]">
+        <div className="rounded-[18px] border border-[#d8f0e3] bg-[#f5fbf7] p-4">
+          <p className="text-sm font-semibold text-[#1e6845]">
+            {completedCheckCount}/{readinessChecks.length} essentials ready
+          </p>
+          <p className="mt-1 text-sm leading-5 text-[#47705d]">
+            {missingChecks.length ? `${missingChecks.length} item${missingChecks.length === 1 ? '' : 's'} need a quick check.` : 'Ready for draft generation.'}
+          </p>
         </div>
-
-        <div className="grid gap-3 border-t border-[#edf2f7] pt-5">
-          <div>
-            <h3 className={SECTION_HEADING_CLASS}>Property</h3>
-            <p className="mt-1 text-xs font-medium text-[#6b7d93]">Use the physical address and price that should appear in the mandate.</p>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MandateField label="Property address">
-              <input value={draft.propertyAddress || ''} onChange={update('propertyAddress')} placeholder="Street address" className={FIELD_CLASS} />
-            </MandateField>
-            <MandateField label="Suburb">
-              <input value={draft.propertySuburb || ''} onChange={update('propertySuburb')} placeholder="Suburb" className={FIELD_CLASS} />
-            </MandateField>
-            <MandateField label="City">
-              <input value={draft.propertyCity || ''} onChange={update('propertyCity')} placeholder="City" className={FIELD_CLASS} />
-            </MandateField>
-            <MandateField label="Property type">
-              <input value={draft.propertyType || ''} onChange={update('propertyType')} placeholder="House, apartment..." className={FIELD_CLASS} />
-            </MandateField>
-            <MandateField label="Unit number">
-              <input value={draft.unitNumber || ''} onChange={update('unitNumber')} placeholder="Optional" className={FIELD_CLASS} />
-            </MandateField>
-            <MandateField label="Complex / estate">
-              <input value={draft.complexName || ''} onChange={update('complexName')} placeholder="Optional" className={FIELD_CLASS} />
-            </MandateField>
-            <MandateField label="Erf / section no.">
-              <input value={draft.erfNumber || ''} onChange={update('erfNumber')} placeholder="Optional" className={FIELD_CLASS} />
-            </MandateField>
-            <MandateField label="Asking price">
-              <input type="number" min="0" step="1000" value={draft.askingPrice || ''} onChange={update('askingPrice')} placeholder="0" className={FIELD_CLASS} />
-            </MandateField>
-          </div>
-        </div>
-
-        <div className="grid gap-3 border-t border-[#edf2f7] pt-5">
-          <div>
-            <h3 className={SECTION_HEADING_CLASS}>Mandate and commission</h3>
-            <p className="mt-1 text-xs font-medium text-[#6b7d93]">These values flow into the draft before signature prep.</p>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MandateField label="Mandate type">
-              <select value={draft.mandateType || 'sole'} onChange={update('mandateType')} className={FIELD_CLASS}>
-                <option value="sole">Sole mandate</option>
-                <option value="exclusive">Exclusive mandate</option>
-                <option value="open">Open mandate</option>
-                <option value="dual">Dual mandate</option>
-              </select>
-            </MandateField>
-            <MandateField label="Start date">
-              <input type="date" value={draft.mandateStartDate || ''} onChange={update('mandateStartDate')} className={FIELD_CLASS} />
-            </MandateField>
-            <MandateField label="Expiry date">
-              <input type="date" value={draft.mandateEndDate || ''} onChange={update('mandateEndDate')} className={FIELD_CLASS} />
-            </MandateField>
-            <MandateField label="VAT handling">
-              <select value={draft.vatHandling || 'exclusive'} onChange={update('vatHandling')} className={FIELD_CLASS}>
-                <option value="exclusive">VAT exclusive</option>
-                <option value="inclusive">VAT inclusive</option>
-                <option value="not_applicable">No VAT</option>
-              </select>
-            </MandateField>
-            <MandateField label="Commission structure">
-              <select value={commissionStructure} onChange={update('commissionStructure')} className={FIELD_CLASS}>
-                <option value="percentage">Percentage</option>
-                <option value="fixed">Fixed amount</option>
-              </select>
-            </MandateField>
-            {commissionStructure === 'fixed' ? (
-              <MandateField label="Fixed commission">
-                <input type="number" min="0" step="100" value={draft.commissionAmount || ''} onChange={update('commissionAmount')} placeholder="0" className={FIELD_CLASS} />
-              </MandateField>
-            ) : (
-              <>
-                <MandateField label="Commission %">
-                  <input type="number" min="0" step="0.1" value={draft.commissionPercent || ''} onChange={update('commissionPercent')} placeholder="7.5" className={FIELD_CLASS} />
-                </MandateField>
-                <MandateField label="Amount override">
-                  <input type="number" min="0" step="100" value={draft.commissionAmount || ''} onChange={update('commissionAmount')} placeholder="Optional" className={FIELD_CLASS} />
-                </MandateField>
-              </>
-            )}
-            <div className="hidden xl:block" aria-hidden="true" />
-            <label className="grid gap-1.5 md:col-span-2 xl:col-span-4">
-              <span className={LABEL_CLASS}>Special conditions</span>
-              <textarea
-                rows={3}
-                value={draft.specialConditions || ''}
-                onChange={update('specialConditions')}
-                placeholder="Any additional terms that should appear on the mandate."
-                className="min-h-[92px] w-full rounded-xl border border-[#dbe6f2] bg-white px-3 py-3 text-sm font-medium text-[#102033] outline-none transition placeholder:text-[#9aabba] focus:border-[#0a66ff]"
-              />
-            </label>
-          </div>
+        <div className="flex flex-wrap content-start gap-2 rounded-[18px] border border-[#edf2f7] bg-[#fbfdff] p-4">
+          {readinessChecks.map((check) => {
+            const Icon = check.complete ? CheckCircle2 : CircleAlert
+            return (
+              <span
+                key={check.key}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                  check.complete
+                    ? 'border-[#d8f0e3] bg-[#effaf4] text-[#20895a]'
+                    : 'border-[#fde4de] bg-[#fff5f2] text-[#b64d32]'
+                }`}
+              >
+                <Icon size={14} />
+                {check.complete ? check.label : `${check.label}: ${check.missing}`}
+              </span>
+            )
+          })}
         </div>
       </div>
 
-      {missingChecks.length ? (
-        <p className="mt-5 text-sm font-medium text-[#9a5b1d]">
-          You can still generate a draft with gaps, but filling the red chips first will make the mandate cleaner.
-        </p>
-      ) : (
-        <p className="mt-5 text-sm font-semibold text-[#20895a]">
-          Core mandate details are ready for draft generation.
-        </p>
-      )}
+      <div className="mt-5 rounded-[20px] border border-[#edf2f7] bg-[#fbfdff] p-4">
+        <div>
+          <h3 className={SECTION_HEADING_CLASS}>Core mandate fields</h3>
+          <p className="mt-1 text-xs font-medium text-[#6b7d93]">These are the only fields most mandates need checked before generating.</p>
+        </div>
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <MandateField label="Seller name">
+            <input value={draft.sellerFullName || ''} onChange={update('sellerFullName')} placeholder="Full name or entity name" className={FIELD_CLASS} />
+          </MandateField>
+          <MandateField label="Property address">
+            <input value={draft.propertyAddress || ''} onChange={update('propertyAddress')} placeholder="Street address" className={FIELD_CLASS} />
+          </MandateField>
+          <MandateField label="Asking price">
+            <input type="number" min="0" step="1000" value={draft.askingPrice || ''} onChange={update('askingPrice')} placeholder="0" className={FIELD_CLASS} />
+          </MandateField>
+          <MandateField label="Mandate type">
+            <select value={draft.mandateType || 'sole'} onChange={update('mandateType')} className={FIELD_CLASS}>
+              <option value="sole">Sole mandate</option>
+              <option value="exclusive">Exclusive mandate</option>
+              <option value="open">Open mandate</option>
+              <option value="dual">Dual mandate</option>
+            </select>
+          </MandateField>
+          <MandateField label="Start date">
+            <input type="date" value={draft.mandateStartDate || ''} onChange={update('mandateStartDate')} className={FIELD_CLASS} />
+          </MandateField>
+          <MandateField label="Expiry date">
+            <input type="date" value={draft.mandateEndDate || ''} onChange={update('mandateEndDate')} className={FIELD_CLASS} />
+          </MandateField>
+          <MandateField label="Commission structure">
+            <select value={commissionStructure} onChange={update('commissionStructure')} className={FIELD_CLASS}>
+              <option value="percentage">Percentage</option>
+              <option value="fixed">Fixed amount</option>
+            </select>
+          </MandateField>
+          {commissionStructure === 'fixed' ? (
+            <MandateField label="Fixed commission">
+              <input type="number" min="0" step="100" value={draft.commissionAmount || ''} onChange={update('commissionAmount')} placeholder="0" className={FIELD_CLASS} />
+            </MandateField>
+          ) : (
+            <MandateField label="Commission %">
+              <input type="number" min="0" step="0.1" value={draft.commissionPercent || ''} onChange={update('commissionPercent')} placeholder="7.5" className={FIELD_CLASS} />
+            </MandateField>
+          )}
+        </div>
+      </div>
+
+      <details className="mt-4 rounded-[18px] border border-[#edf2f7] bg-white">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-[#142132]">
+          Seller contact and authority
+          <span className="ml-2 text-xs font-medium text-[#6b7d93]">Email, phone, ID and representative details</span>
+        </summary>
+        <div className="grid gap-4 border-t border-[#edf2f7] p-4 md:grid-cols-2 xl:grid-cols-4">
+          <MandateField label="Seller type">
+            <select value={draft.sellerEntityType || 'individual'} onChange={update('sellerEntityType')} className={FIELD_CLASS}>
+              <option value="individual">Individual</option>
+              <option value="company">Company</option>
+              <option value="trust">Trust</option>
+            </select>
+          </MandateField>
+          <MandateField label="ID / registration no.">
+            <input value={draft.sellerIdNumber || ''} onChange={update('sellerIdNumber')} placeholder="Optional but recommended" className={FIELD_CLASS} />
+          </MandateField>
+          <MandateField label="Email">
+            <input type="email" value={draft.sellerEmail || ''} onChange={update('sellerEmail')} placeholder="seller@example.com" className={FIELD_CLASS} />
+          </MandateField>
+          <MandateField label="Phone">
+            <input value={draft.sellerPhone || ''} onChange={update('sellerPhone')} placeholder="+27..." className={FIELD_CLASS} />
+          </MandateField>
+          <MandateField label="Domicilium address">
+            <input value={draft.sellerDomiciliumAddress || ''} onChange={update('sellerDomiciliumAddress')} placeholder="Address for notices" className={FIELD_CLASS} />
+          </MandateField>
+          <MandateField label="Representative">
+            <input value={draft.sellerRepresentativeName || ''} onChange={update('sellerRepresentativeName')} placeholder="For company or trust" className={FIELD_CLASS} />
+          </MandateField>
+          <MandateField label="Capacity">
+            <input value={draft.sellerRepresentativeCapacity || ''} onChange={update('sellerRepresentativeCapacity')} placeholder="Director, trustee..." className={FIELD_CLASS} />
+          </MandateField>
+        </div>
+      </details>
+
+      <details className="mt-3 rounded-[18px] border border-[#edf2f7] bg-white">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-[#142132]">
+          Property extras
+          <span className="ml-2 text-xs font-medium text-[#6b7d93]">Suburb, city, unit, estate and erf details</span>
+        </summary>
+        <div className="grid gap-4 border-t border-[#edf2f7] p-4 md:grid-cols-2 xl:grid-cols-4">
+          <MandateField label="Suburb">
+            <input value={draft.propertySuburb || ''} onChange={update('propertySuburb')} placeholder="Suburb" className={FIELD_CLASS} />
+          </MandateField>
+          <MandateField label="City">
+            <input value={draft.propertyCity || ''} onChange={update('propertyCity')} placeholder="City" className={FIELD_CLASS} />
+          </MandateField>
+          <MandateField label="Property type">
+            <input value={draft.propertyType || ''} onChange={update('propertyType')} placeholder="House, apartment..." className={FIELD_CLASS} />
+          </MandateField>
+          <MandateField label="Unit number">
+            <input value={draft.unitNumber || ''} onChange={update('unitNumber')} placeholder="Optional" className={FIELD_CLASS} />
+          </MandateField>
+          <MandateField label="Complex / estate">
+            <input value={draft.complexName || ''} onChange={update('complexName')} placeholder="Optional" className={FIELD_CLASS} />
+          </MandateField>
+          <MandateField label="Erf / section no.">
+            <input value={draft.erfNumber || ''} onChange={update('erfNumber')} placeholder="Optional" className={FIELD_CLASS} />
+          </MandateField>
+        </div>
+      </details>
+
+      <details className="mt-3 rounded-[18px] border border-[#edf2f7] bg-white">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-[#142132]">
+          Terms and special conditions
+          <span className="ml-2 text-xs font-medium text-[#6b7d93]">VAT, amount override and extra mandate wording</span>
+        </summary>
+        <div className="grid gap-4 border-t border-[#edf2f7] p-4 md:grid-cols-2 xl:grid-cols-4">
+          <MandateField label="VAT handling">
+            <select value={draft.vatHandling || 'exclusive'} onChange={update('vatHandling')} className={FIELD_CLASS}>
+              <option value="exclusive">VAT exclusive</option>
+              <option value="inclusive">VAT inclusive</option>
+              <option value="not_applicable">No VAT</option>
+            </select>
+          </MandateField>
+          {commissionStructure !== 'fixed' ? (
+            <MandateField label="Amount override">
+              <input type="number" min="0" step="100" value={draft.commissionAmount || ''} onChange={update('commissionAmount')} placeholder="Optional" className={FIELD_CLASS} />
+            </MandateField>
+          ) : null}
+          <label className="grid gap-1.5 md:col-span-2 xl:col-span-4">
+            <span className={LABEL_CLASS}>Special conditions</span>
+            <textarea
+              rows={3}
+              value={draft.specialConditions || ''}
+              onChange={update('specialConditions')}
+              placeholder="Any additional terms that should appear on the mandate."
+              className="min-h-[92px] w-full rounded-xl border border-[#dbe6f2] bg-white px-3 py-3 text-sm font-medium text-[#102033] outline-none transition placeholder:text-[#9aabba] focus:border-[#0a66ff]"
+            />
+          </label>
+        </div>
+      </details>
     </section>
   )
 }

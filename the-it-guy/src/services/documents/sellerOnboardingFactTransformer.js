@@ -194,6 +194,15 @@ export function normalizeProvince(value = '') {
 }
 
 export function normalizeSellerLegalType(form = {}) {
+  const ownerEntityType = normalizeKey(form.ownerEntityType || form.owner_entity_type)
+  const ownerStructureType = normalizeKey(form.ownerStructureType || form.owner_structure_type)
+  if (ownerStructureType === 'foreign_company' || ownerStructureType === 'company' || ownerEntityType === 'company') return 'company'
+  if (ownerStructureType === 'foreign_trust' || ownerStructureType === 'trust' || ownerEntityType === 'trust') return 'trust'
+  if (ownerStructureType === 'multiple_owners') return 'multiple_owners'
+  if (ownerStructureType === 'deceased_estate') return 'deceased_estate'
+  if (ownerStructureType === 'power_of_attorney') return 'power_of_attorney'
+  if (ownerStructureType === 'other' || ownerEntityType === 'other') return 'other'
+
   const explicit = normalizeKey(form.sellerLegalType || form.legalType || form.ownershipType || form.sellerType)
   if (explicit === 'married_cop' || explicit === 'married_anc' || explicit === 'individual_owner') return 'individual'
   if (explicit === 'multiple') return 'multiple_owners'
@@ -209,9 +218,10 @@ export function normalizeMaritalRegime(form = {}) {
   if (explicit === 'out_of_community' || explicit === 'out_of_community_without_accrual' || explicit === 'out_of_community_with_accrual') return 'out_of_community'
   if (explicit === 'foreign' || explicit === 'foreign_marriage') return 'foreign_marriage'
 
-  const ownershipType = normalizeKey(form.ownershipType)
+  const ownershipType = normalizeKey(form.ownerStructureType || form.owner_structure_type || form.ownershipType)
   if (ownershipType === 'married_cop') return 'in_community'
   if (ownershipType === 'married_anc') return 'anc'
+  if (ownershipType === 'foreign_individual') return 'foreign_marriage'
 
   const maritalStatus = normalizeKey(form.maritalStatus)
   if (!maritalStatus || ['single', 'unmarried', 'divorced', 'widowed'].includes(maritalStatus)) return 'not_applicable'
@@ -222,11 +232,10 @@ export function normalizeCanonicalPropertyType(form = {}) {
   const explicit = normalizeKey(form.canonicalPropertyType || form.propertyClassification || form.propertyType)
   const structure = normalizeKey(form.propertyStructureType)
   const category = normalizeKey(form.propertyCategory)
-  const estateName = normalizeText(form.estateName || form.estateComplexName)
 
   if (['sectional_title', 'sectional'].includes(structure) || ['apartment', 'townhouse', 'cluster', 'duplex'].includes(explicit)) return 'sectional_title'
   if (['share_block'].includes(structure) || explicit === 'share_block') return 'share_block'
-  if (estateName || explicit === 'estate') return 'estate'
+  if (structure === 'estate' || explicit === 'estate') return 'freehold'
   if (category === 'commercial' || ['office_building', 'warehouse', 'retail_store', 'commercial'].includes(explicit)) return 'commercial'
   if (explicit === 'farm' || category === 'agricultural') return 'farm'
   if (explicit === 'industrial') return 'industrial'
@@ -281,21 +290,30 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
   const sellerLegalType = normalizeSellerLegalType(form)
   const maritalRegime = normalizeMaritalRegime(form)
   const propertyType = normalizeCanonicalPropertyType(form)
+  const rawPropertyStructureType = normalizePropertyStructureType(form.propertyStructureType || listingSource.propertyStructureType || listingSource.property_structure_type, { fallback: 'other' })
+  const propertyStructureType = rawPropertyStructureType === 'estate' ? 'full_title' : rawPropertyStructureType
   const occupancyStatus = normalizeOccupancyStatus(form)
   const features = Array.isArray(form.features) ? form.features.map(normalizeKey) : []
   const vatEligibleSeller = flow.seller_branch === 'company' || flow.seller_branch === 'trust'
-  const estateOrHoa = normalizeBoolean(form.estateOrHoa, false) || propertyType === 'estate' || Boolean(normalizeText(form.estateName || form.estateComplexName))
+  const estateOrHoa = normalizeBoolean(form.estateOrHoa, false) || rawPropertyStructureType === 'estate' || Boolean(normalizeText(form.estateName || form.estateComplexName))
   const sectionalTitle = normalizeBoolean(form.sectionalTitle, false) || propertyType === 'sectional_title'
   const shareBlock = normalizeBoolean(form.shareBlock, false) || propertyType === 'share_block'
   const commercialProperty = normalizeBoolean(form.commercialProperty, false) || ['commercial', 'industrial', 'mixed_use'].includes(propertyType)
   const bodyCorporate = normalizeBoolean(form.bodyCorporate, false) || sectionalTitle || shareBlock
   const existingBond = normalizeBoolean(form.existingBond ?? form.sellerHasExistingBond ?? form.bondedProperty, false)
-  const gasInstallation = normalizeBoolean(form.gasInstallation, false)
+  const gasInstallation = normalizeBoolean(form.gasInstallation ?? form.gasGeyser, false) || features.includes('gas_geyser')
   const electricFence = normalizeBoolean(form.electricFence, false) || features.includes('security')
   const solarInstallation = normalizeBoolean(form.solarInstallation, false) || features.includes('solar')
   const swimmingPool = normalizeBoolean(form.swimmingPool ?? form.pool, false)
-  const boreholeInstallation = normalizeBoolean(form.boreholeInstallation ?? form.borehole, false) || features.includes('water')
-  const recentAlterations = normalizeBoolean(form.recentAlterations, false)
+  const boreholeInstallation = normalizeBoolean(form.boreholeInstallation ?? form.borehole, false) || features.includes('borehole') || features.includes('water')
+  const inverterBattery = normalizeBoolean(form.inverterBattery ?? form.inverter_battery, false) || features.includes('inverter_battery')
+  const waterTank = normalizeBoolean(form.waterTank ?? form.water_tank, false) || features.includes('water_tank') || features.includes('water')
+  const disclosureResponses = form.propertyDisclosure?.responses || form.property_disclosure?.responses || {}
+  const disclosureAnswer = (key) => normalizeKey(disclosureResponses?.[key]?.answer || disclosureResponses?.[key])
+  const declaredAlterationIssue =
+    ['no', 'unsure'].includes(disclosureAnswer('improvements_on_plans')) ||
+    ['no', 'unsure'].includes(disclosureAnswer('approved_plans_possession'))
+  const recentAlterations = normalizeBoolean(form.recentAlterations, false) || declaredAlterationIssue
   const companyDirectors = normalizePeopleCollection(
     form.companyDirectors || form.directors || [],
     {
@@ -364,6 +382,14 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
   const tenantScheduleAvailable = normalizeBoolean(form.tenantScheduleAvailable, false)
   const disclosureKind = flow.property_branch === 'commercial' || flow.property_branch === 'mixed_use' ? 'commercial' : 'residential'
   const propertyDisclosure = normalizePropertyDisclosure(form.propertyDisclosure || form.property_disclosure || {}, { kind: disclosureKind })
+  const ownerEntityType = normalizeKey(form.ownerEntityType || form.owner_entity_type) || (sellerLegalType === 'company' || sellerLegalType === 'trust' ? sellerLegalType : 'natural_person')
+  const ownerStructureCandidate = normalizeKey(form.ownerStructureType || form.owner_structure_type || form.ownershipType)
+  const ownerStructureType = ownerStructureCandidate || (sellerLegalType === 'individual' ? 'individual' : sellerLegalType)
+  const foreignOwner = normalizeBoolean(form.foreignOwner ?? form.foreign_owner, false) || ownerEntityType === 'foreign' || ownerStructureType.startsWith('foreign_')
+  const multipleOwnerCaptureModeCandidate = normalizeKey(form.multipleOwnerCaptureMode || form.multiple_owner_capture_mode)
+  const multipleOwnerCaptureMode = ['capture_now', 'send_onboarding'].includes(multipleOwnerCaptureModeCandidate)
+    ? multipleOwnerCaptureModeCandidate
+    : 'capture_now'
 
   return {
     seller_branch: flow.seller_branch,
@@ -380,6 +406,18 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       legacy_type: flow.seller_legacy_type,
       legal_type: sellerLegalType,
       ownership_type: normalizeKey(form.ownershipType),
+      owner_entity_type: ownerEntityType,
+      owner_structure_type: ownerStructureType,
+      foreign_owner: foreignOwner,
+      foreign_owner_country: normalizeText(form.foreignOwnerCountry || form.foreign_owner_country),
+      foreign: {
+        owner_type: ownerStructureType,
+        country: normalizeText(form.foreignOwnerCountry || form.foreign_owner_country),
+        passport_number: normalizeText(form.foreignPassportNumber || form.passportNumber),
+        registration_number: normalizeText(form.foreignRegistrationNumber || form.foreign_registration_number),
+        residency_status: normalizeText(form.foreignResidencyStatus || form.residencyStatus || form.foreign_residency_status),
+      },
+      multiple_owner_capture_mode: multipleOwnerCaptureMode,
       number_of_owners: flow.seller_branch === 'multiple_owners' ? Math.max(buildOwnerFacts(form).length, 1) : normalizeNumber(form.numberOfOwners) || 1,
       first_name: normalizeText(form.sellerFirstName),
       surname: normalizeText(form.sellerSurname),
@@ -476,7 +514,7 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       property_type: propertyType,
       property_category: normalizePropertyCategory(form.propertyCategory || listingSource.propertyCategory || listingSource.property_category, { fallback: 'residential' }),
       property_category_label: getPropertyCategoryLabel(form.propertyCategory || listingSource.propertyCategory || listingSource.property_category),
-      property_structure_type: normalizePropertyStructureType(form.propertyStructureType || listingSource.propertyStructureType || listingSource.property_structure_type, { fallback: 'other' }),
+      property_structure_type: propertyStructureType,
       sectional_title: sectionalTitle,
       share_block: shareBlock,
       estate_or_hoa: estateOrHoa,
@@ -547,10 +585,13 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       floor_size: normalizeNumber(form.floorSize),
       rates_taxes: normalizeNumber(form.ratesTaxes),
       levies: normalizeNumber(form.levies),
+      levies_not_applicable: normalizeBoolean(form.leviesNotApplicable ?? form.levies_not_applicable, false),
       utilities: {
+        water_billing_type: normalizeKey(form.waterBillingType || form.water_billing_type),
         monthly_water_spend: normalizeNumber(form.monthlyWaterSpend),
         monthly_electricity_spend: normalizeNumber(form.monthlyElectricitySpend),
       },
+      water_billing_type: normalizeKey(form.waterBillingType || form.water_billing_type),
       alterations: {
         recent: recentAlterations,
         details: normalizeText(form.alterationDetails),
@@ -582,11 +623,14 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
     },
     compliance: {
       gas_installation: gasInstallation,
+      gas_geyser: normalizeBoolean(form.gasGeyser ?? form.gas_geyser, gasInstallation),
       electric_fence: electricFence,
       solar_installation: solarInstallation,
+      inverter_battery: inverterBattery,
       swimming_pool: swimmingPool,
       borehole: boreholeInstallation,
       borehole_installation: boreholeInstallation,
+      water_tank: waterTank,
       generator_installation: normalizeBoolean(form.generatorInstallation, false),
       beetle_certificate_region: normalizeBoolean(form.beetleCertificateRegion, false),
       plumbing_certificate_required: normalizeBoolean(form.plumbingCertificateRequired, false),
@@ -647,6 +691,15 @@ function resolvePropertyBranch(facts = {}) {
 }
 
 function resolveSellerBranchForValidation(facts = {}) {
+  const ownerStructureType = normalizeKey(facts.seller?.owner_structure_type || facts.seller?.ownerStructureType)
+  const ownerEntityType = normalizeKey(facts.seller?.owner_entity_type || facts.seller?.ownerEntityType)
+  if (ownerStructureType === 'foreign_company' || ownerStructureType === 'company' || ownerEntityType === 'company') return 'company'
+  if (ownerStructureType === 'foreign_trust' || ownerStructureType === 'trust' || ownerEntityType === 'trust') return 'trust'
+  if (ownerStructureType === 'multiple_owners') return 'multiple_owners'
+  if (ownerStructureType === 'deceased_estate') return 'deceased_estate'
+  if (ownerStructureType === 'power_of_attorney') return 'power_of_attorney'
+  if (ownerStructureType === 'married_cop' || ownerStructureType === 'married_anc' || ownerStructureType === 'married') return 'married'
+
   const ownershipType = normalizeKey(
     facts.seller?.ownership_type ||
       facts.seller?.ownershipType ||
@@ -675,11 +728,15 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}
 
   const sellerBranch = resolveSellerBranchForValidation(facts)
   const propertyBranch = resolvePropertyBranch(facts)
+  const multipleOwnerInviteMode = facts.seller?.multiple_owner_capture_mode === 'send_onboarding'
 
   push(missingIf(!facts.seller?.first_name, 'seller_first_name_missing', 'Seller name is required.'))
   push(missingIf(!facts.seller?.surname, 'seller_surname_missing', 'Seller surname is required.'))
   push(missingIf(!facts.seller?.email, 'seller_email_missing', 'Seller email is required.'))
   push(missingIf(!facts.seller?.phone, 'seller_phone_missing', 'Seller phone is required.'))
+  push(missingIf(!hasValue(facts.seller?.owner_entity_type), 'owner_entity_type_missing', 'Owner entity type is required.'))
+  push(missingIf(!hasValue(facts.seller?.owner_structure_type), 'owner_structure_type_missing', 'Owner structure type is required.'))
+  push(missingIf(facts.seller?.foreign_owner && !hasValue(facts.seller?.foreign_owner_country || facts.seller?.foreign?.country), 'foreign_owner_country_missing', 'Foreign owner country or jurisdiction is required.'))
   push(missingIf((sellerBranch === 'individual' || sellerBranch === 'married') && !facts.seller?.id_number, 'seller_id_number_missing', 'ID number is required for individual and married sellers.'))
   push(missingIf((sellerBranch === 'individual' || sellerBranch === 'married') && !facts.seller?.residential_address, 'seller_residential_address_missing', 'Residential address is required for individual and married sellers.'))
   push(missingIf((sellerBranch === 'individual' || sellerBranch === 'married') && !facts.seller?.marital_status, 'marital_status_missing', 'Marital status is required for individual and married sellers.'))
@@ -703,6 +760,15 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}
   push(missingIf(sellerBranch === 'multiple_owners' && !(Array.isArray(facts.seller?.owners) && facts.seller.owners.length >= 2), 'multiple_owners_missing', 'At least two owners must be captured for multiple-owner sellers.'))
   push(missingIf(
     sellerBranch === 'multiple_owners' &&
+      multipleOwnerInviteMode &&
+      Array.isArray(facts.seller?.owners) &&
+      facts.seller.owners.some((owner) => !owner.email),
+    'owner_invite_email_missing',
+    'Each owner needs an email address when owner onboarding links are requested.',
+  ))
+  push(missingIf(
+    sellerBranch === 'multiple_owners' &&
+      !multipleOwnerInviteMode &&
       Array.isArray(facts.seller?.owners) &&
       facts.seller.owners.some((owner) => !owner.consent_to_sell),
     'owner_consent_missing',
@@ -716,6 +782,9 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}
   push(missingIf(!hasValue(facts.property?.address_details?.province || facts.property?.province), 'province_missing', 'Province is required for property classification.'))
   push(missingIf(!hasValue(facts.property?.property_category), 'property_category_missing', 'Property category is required.'))
   push(missingIf(!hasValue(facts.property?.property_structure_type), 'property_structure_type_missing', 'Property structure type is required.'))
+  push(missingIf(!hasValue(facts.property?.rates_taxes), 'rates_taxes_missing', 'Rates and taxes are required.'))
+  push(missingIf(!hasValue(facts.property?.levies) && !facts.property?.levies_not_applicable, 'levies_missing', 'Levies are required, or must be marked not applicable.'))
+  push(missingIf(!hasValue(facts.property?.utilities?.water_billing_type || facts.property?.water_billing_type), 'water_billing_type_missing', 'Water billing type is required.'))
   push(missingIf(!hasValue(facts.transaction?.mandate_type), 'mandate_type_missing', 'Mandate type is required.'))
   push(missingIf(
     !facts.property_disclosure?.digitally_complete && !facts.property_disclosure?.uploadedDocumentReviewed && !facts.property_disclosure?.uploaded_document_reviewed,
@@ -760,10 +829,14 @@ function sectionScore(items = []) {
 export function calculateSellerFactReadiness(facts = {}) {
   const sellerBranch = resolveSellerBranchForValidation(facts)
   const propertyBranch = resolvePropertyBranch(facts)
+  const multipleOwnerInviteMode = facts.seller?.multiple_owner_capture_mode === 'send_onboarding'
 
   const sections = {
     seller_identity: sectionScore([
       sellerBranch,
+      facts.seller?.owner_entity_type,
+      facts.seller?.owner_structure_type,
+      facts.seller?.foreign_owner ? (facts.seller?.foreign_owner_country || facts.seller?.foreign?.country) : true,
       facts.seller?.first_name,
       facts.seller?.surname,
       facts.seller?.email,
@@ -800,7 +873,11 @@ export function calculateSellerFactReadiness(facts = {}) {
       sellerBranch === 'power_of_attorney' ? facts.seller?.power_of_attorney?.principal?.id_number : true,
       sellerBranch === 'power_of_attorney' ? (facts.seller?.power_of_attorney?.authority_details || facts.seller?.power_of_attorney?.reference) : true,
       sellerBranch === 'multiple_owners'
-        ? Boolean(Array.isArray(facts.seller?.owners) && facts.seller.owners.length >= 2 && facts.seller.owners.every((owner) => owner.consent_to_sell))
+        ? Boolean(
+            Array.isArray(facts.seller?.owners) &&
+              facts.seller.owners.length >= 2 &&
+              facts.seller.owners.every((owner) => (multipleOwnerInviteMode ? owner.email : owner.consent_to_sell)),
+          )
         : true,
     ]),
     property_classification: sectionScore([

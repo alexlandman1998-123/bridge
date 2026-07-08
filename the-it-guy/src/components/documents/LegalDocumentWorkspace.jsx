@@ -712,6 +712,41 @@ function escapeHtml(value) {
     .replace(/'/g, '&#039;')
 }
 
+function firstPreviewText(...values) {
+  for (const value of values) {
+    const text = normalizeText(value)
+    if (text) return text
+  }
+  return ''
+}
+
+function compactPreviewText(values = []) {
+  return values.map((value) => normalizeText(value)).filter(Boolean).join(', ')
+}
+
+function resolvePreviewCompanyDetails(branding = {}) {
+  const address = firstPreviewText(
+    branding?.physicalAddress,
+    branding?.physical_address,
+    branding?.organisationPhysicalAddress,
+    branding?.organisation_physical_address,
+    branding?.address,
+    compactPreviewText([branding?.addressLine1, branding?.addressLine2, branding?.city, branding?.province, branding?.postalCode]),
+  )
+  return [
+    firstPreviewText(branding?.website, branding?.organisationWebsite, branding?.organisation_website, branding?.companyWebsite),
+    firstPreviewText(branding?.email, branding?.organisationEmail, branding?.organisation_email, branding?.companyEmail),
+    address,
+    firstPreviewText(branding?.telephone, branding?.phoneNumber, branding?.phone_number, branding?.phone, branding?.organisationPhone, branding?.organisation_phone),
+  ].filter(Boolean)
+}
+
+function renderPreviewCompanyDetails(items = [], fallback = '', className = 'company-details') {
+  const rows = items.length ? items : [normalizeText(fallback)].filter(Boolean)
+  if (!rows.length) return ''
+  return `<span class="${className}">${rows.map((item) => `<span>${escapeHtml(item)}</span>`).join('')}</span>`
+}
+
 function normalizePlaceholderTokens(input = []) {
   const rows = Array.isArray(input) ? input : []
   return rows
@@ -854,9 +889,9 @@ function renderEditablePreviewHtml({
     normalizeText(branding?.logoHighContrastUrl) ||
     normalizeText(branding?.organisationLogoDarkUrl) ||
     normalizeText(branding?.organisationLogoHighContrastUrl)
-  const bridgeLogoCandidate = normalizeText(branding?.bridgeLogoLightUrl)
-  const bridgeLogo = bridgeLogoCandidate && !isLegacyBridgeLogoUrl(bridgeLogoCandidate) ? bridgeLogoCandidate : ''
-  const platformWordmarkHtml = '<span class="platform-wordmark"><strong>arch</strong><em>9</em></span>'
+  const companyDetails = resolvePreviewCompanyDetails(branding)
+  const headerCompanyDetailsHtml = renderPreviewCompanyDetails(companyDetails, orgName, 'company-details')
+  const footerCompanyDetailsHtml = renderPreviewCompanyDetails(companyDetails.slice(0, 2), orgName, 'footer-company')
   const renderClauseText = (value) =>
     escapeHtml(value)
       .replace(/{{\s*([a-zA-Z0-9._-]+)\s*}}/g, '<span class="merge-missing">{{$1}}</span>')
@@ -903,13 +938,9 @@ function renderEditablePreviewHtml({
           body { margin: 0; padding: 24px; font-family: Helvetica, Arial, sans-serif; background: #eef2f6; color: #1f2937; }
           .page { box-sizing: border-box; width: min(100%, 210mm); min-height: 286mm; margin: 0 auto; background: #fff; border: 1px solid #d8d8d8; box-shadow: 0 20px 56px rgba(15, 23, 42, 0.12); }
           .doc-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 18mm 18mm 8mm; border-bottom: 1px solid #d7d7d7; }
-          .agency-brand, .bridge-brand { display: inline-flex; align-items: center; min-width: 0; color: #1f2937; font-size: 16px; font-weight: 800; letter-spacing: 0.01em; }
+          .agency-brand { display: inline-flex; align-items: center; min-width: 0; color: #1f2937; font-size: 16px; font-weight: 800; letter-spacing: 0.01em; }
           .agency-brand img { max-width: 42mm; max-height: 15mm; object-fit: contain; }
-          .bridge-brand { justify-content: flex-end; color: #68727d; }
-          .bridge-brand img { max-width: 36mm; max-height: 12mm; object-fit: contain; }
-          .platform-wordmark { display: inline-flex; align-items: baseline; gap: 1px; color: #142132; font-size: 32px; font-weight: 800; letter-spacing: 0; text-transform: lowercase; }
-          .platform-wordmark strong { font: inherit; color: #142132; }
-          .platform-wordmark em { font: inherit; font-style: normal; color: #31d08a; }
+          .company-details { display: grid; justify-items: end; gap: 2px; max-width: 78mm; color: #1f2937; font-size: 10.5px; font-weight: 600; line-height: 1.35; text-align: right; }
           .doc-title { padding: 9mm 18mm 6mm; text-align: center; border-bottom: 1px solid #e4e4e4; }
           .doc-title h1 { margin: 0; color: #111827; font-size: 24px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
           .doc-title p { margin: 7px 0 0; color: #5c6670; font-size: 12px; line-height: 1.45; }
@@ -921,10 +952,9 @@ function renderEditablePreviewHtml({
           .muted { color: #7c8ea4; }
           .merge-missing { color: #8a3b15; background: #fff6df; box-shadow: inset 0 -0.45em 0 rgba(255, 214, 120, 0.32); font-weight: 700; }
           .doc-footer { display: flex; align-items: center; justify-content: space-between; gap: 8mm; padding: 5mm 18mm 7mm; border-top: 1px solid #d8d8d8; color: #606a75; font-size: 10.5px; }
-          .footer-brand, .footer-bridge { display: inline-flex; align-items: center; min-width: 34mm; max-width: 44mm; }
-          .footer-bridge { justify-content: flex-end; }
+          .footer-brand, .footer-company { display: inline-flex; align-items: center; min-width: 34mm; max-width: 44mm; }
+          .footer-company { display: grid; justify-items: end; gap: 1px; text-align: right; }
           .doc-footer img { max-width: 34mm; max-height: 9mm; object-fit: contain; }
-          .doc-footer .platform-wordmark { font-size: 20px; }
           .page-no { flex: 1; text-align: center; font-weight: 700; }
           @media print {
             body { padding: 0; background: #fff; }
@@ -934,7 +964,10 @@ function renderEditablePreviewHtml({
             body { padding: 10px; }
             .page { min-height: 0; }
             .doc-header, .doc-title, .doc-body, .doc-footer { padding-left: 14px; padding-right: 14px; }
+            .doc-header { flex-wrap: wrap; }
+            .company-details { justify-items: start; text-align: left; }
             .doc-footer { flex-wrap: wrap; justify-content: center; text-align: center; }
+            .footer-company { justify-items: center; text-align: center; }
           }
         </style>
       </head>
@@ -942,7 +975,7 @@ function renderEditablePreviewHtml({
         <main class="page">
           <header class="doc-header">
             <span class="agency-brand">${agencyLogo ? `<img src="${escapeHtml(agencyLogo)}" alt="${escapeHtml(orgName)} logo" />` : escapeHtml(orgName)}</span>
-            <span class="bridge-brand">${bridgeLogo ? `<img src="${escapeHtml(bridgeLogo)}" alt="Arch9" />` : platformWordmarkHtml}</span>
+            ${headerCompanyDetailsHtml}
           </header>
           <section class="doc-title">
             <h1>${escapeHtml(title)}</h1>
@@ -954,7 +987,7 @@ function renderEditablePreviewHtml({
           <footer class="doc-footer">
             <span class="footer-brand">${agencyLogo ? `<img src="${escapeHtml(agencyLogo)}" alt="${escapeHtml(orgName)} logo" />` : escapeHtml(orgName)}</span>
             <span class="page-no">Page 1 of 1 (preview)</span>
-            <span class="footer-bridge">${bridgeLogo ? `<img src="${escapeHtml(bridgeLogo)}" alt="Arch9" />` : platformWordmarkHtml}</span>
+            ${footerCompanyDetailsHtml}
           </footer>
         </main>
       </body>
@@ -1084,6 +1117,70 @@ function resolveWorkspaceBranding({
     bridgeLogoDarkUrl: isLegacyBridgeLogoUrl(merged.bridgeLogoDarkUrl || merged.bridge_legal_logo_dark_url)
       ? ''
       : normalizeText(merged.bridgeLogoDarkUrl) || normalizeText(merged.bridge_legal_logo_dark_url),
+    website: resolveFirstBrandingValue(merged, [
+      'website',
+      'organisationWebsite',
+      'organisation_website',
+      'companyWebsite',
+    ]),
+    organisationWebsite: resolveFirstBrandingValue(merged, [
+      'organisationWebsite',
+      'organisation_website',
+      'website',
+      'companyWebsite',
+    ]),
+    email: resolveFirstBrandingValue(merged, [
+      'email',
+      'organisationEmail',
+      'organisation_email',
+      'companyEmail',
+      'contactEmail',
+    ]),
+    organisationEmail: resolveFirstBrandingValue(merged, [
+      'organisationEmail',
+      'organisation_email',
+      'email',
+      'companyEmail',
+      'contactEmail',
+    ]),
+    physicalAddress: resolveFirstBrandingValue(merged, [
+      'physicalAddress',
+      'physical_address',
+      'organisationPhysicalAddress',
+      'organisation_physical_address',
+      'address',
+    ]),
+    organisationPhysicalAddress: resolveFirstBrandingValue(merged, [
+      'organisationPhysicalAddress',
+      'organisation_physical_address',
+      'physicalAddress',
+      'physical_address',
+      'address',
+    ]),
+    telephone: resolveFirstBrandingValue(merged, [
+      'telephone',
+      'phoneNumber',
+      'phone_number',
+      'phone',
+      'organisationPhone',
+      'organisation_phone',
+    ]),
+    phoneNumber: resolveFirstBrandingValue(merged, [
+      'phoneNumber',
+      'phone_number',
+      'telephone',
+      'phone',
+      'organisationPhone',
+      'organisation_phone',
+    ]),
+    organisationPhone: resolveFirstBrandingValue(merged, [
+      'organisationPhone',
+      'organisation_phone',
+      'phoneNumber',
+      'phone_number',
+      'telephone',
+      'phone',
+    ]),
     transactionReference: normalizeText(transactionReference),
   }
 }
@@ -2383,6 +2480,8 @@ export default function LegalDocumentWorkspace({
   const physicalDownloadBusyRef = useRef(false)
   const refreshWorkspacePromiseRef = useRef(null)
   const skippedInitialPageRefreshRef = useRef(false)
+  const centerTabInitializedRef = useRef(false)
+  const centerTabPreferenceRef = useRef(null)
 
   const applyPreparedSigningState = useCallback((prepared, fallbackStatus = statusStateRef.current || statusState) => {
     if (!prepared) return fallbackStatus
@@ -3117,6 +3216,11 @@ export default function LegalDocumentWorkspace({
   }, [open, statusState?.packet?.template_id])
 
   useEffect(() => {
+    centerTabInitializedRef.current = false
+    centerTabPreferenceRef.current = null
+  }, [mode, packetType, transactionId])
+
+  useEffect(() => {
     if (!open) return
     const manifest = Array.isArray(latestVersion?.section_manifest_json)
       ? latestVersion.section_manifest_json
@@ -3135,12 +3239,18 @@ export default function LegalDocumentWorkspace({
     setDraftReviewState(
       normalizeText(editableSnapshot?.review_state) || normalizeText(latestVersion?.validation_summary_json?.review_state) || 'draft',
     )
-    if (sections.length && editableAllowed) {
-      setCenterTab('editor')
-    } else {
-      setCenterTab('preview')
-    }
-  }, [editableAllowed, editableSnapshot, latestVersion?.id, latestVersion?.placeholders_resolved_json, latestVersion?.section_manifest_json, latestVersion?.validation_summary_json?.review_state, open, packetType])
+    setCenterTab((currentTab) => {
+      const preferredTab = centerTabPreferenceRef.current
+      if (preferredTab === 'editor' && sections.length && editableAllowed) return 'editor'
+      if (preferredTab === 'preview') return 'preview'
+      if (currentTab === 'editor' && (!sections.length || !editableAllowed)) return 'preview'
+      if (!centerTabInitializedRef.current) {
+        centerTabInitializedRef.current = true
+        return normalizeKey(mode) === 'edit' && sections.length && editableAllowed ? 'editor' : 'preview'
+      }
+      return currentTab
+    })
+  }, [editableAllowed, editableSnapshot, latestVersion?.id, latestVersion?.placeholders_resolved_json, latestVersion?.section_manifest_json, latestVersion?.validation_summary_json?.review_state, mode, open, packetType])
 
   useEffect(() => {
     if (!open) return
@@ -3301,6 +3411,7 @@ export default function LegalDocumentWorkspace({
       return next
     })
     setCustomSectionLabel('')
+    centerTabPreferenceRef.current = 'editor'
     setCenterTab('editor')
     setLoadError('')
   }
@@ -4500,6 +4611,7 @@ export default function LegalDocumentWorkspace({
         assertWorkspacePermission('canFinalize', 'finalize signed records')
         await handleFinalizeSignedRecord()
       } else if (actionKey === 'view_signing_status') {
+        centerTabPreferenceRef.current = 'preview'
         setCenterTab('preview')
         setActionFeedback('Signer status is shown in the right-side signer checklist.')
       } else if (actionKey === 'resend_signature') {
@@ -4979,6 +5091,7 @@ export default function LegalDocumentWorkspace({
     if (!normalizedSectionKey) return
     setActiveSectionKey(normalizedSectionKey)
     if (editableAllowed) {
+      centerTabPreferenceRef.current = 'editor'
       setCenterTab('editor')
     }
     if (typeof document === 'undefined') return
@@ -4990,6 +5103,7 @@ export default function LegalDocumentWorkspace({
   }, [editableAllowed])
 
   const handleFocusPreview = useCallback(() => {
+    centerTabPreferenceRef.current = 'preview'
     setCenterTab('preview')
   }, [])
 
@@ -5248,7 +5362,10 @@ export default function LegalDocumentWorkspace({
                     onRemoveSection={handleRemoveSection}
                     validationByKey={editableSectionsValidation}
                     editorAvailable={editableAllowed}
-                    onSwitchToEditor={() => setCenterTab('editor')}
+                    onSwitchToEditor={() => {
+                      centerTabPreferenceRef.current = 'editor'
+                      setCenterTab('editor')
+                    }}
                     mergeSummary={(
                       <MergeChecklistSummary
                         packetType={packetType}
@@ -5274,7 +5391,7 @@ export default function LegalDocumentWorkspace({
                       <button
                         type="button"
                         className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold transition ${centerTab === 'preview' ? 'bg-white text-[#102033] shadow-[0_8px_18px_rgba(16,32,51,0.08)]' : 'text-[#6f839b]'}`}
-                        onClick={() => setCenterTab('preview')}
+                        onClick={handleFocusPreview}
                       >
                         <Eye size={13} />
                         Preview
@@ -5282,7 +5399,10 @@ export default function LegalDocumentWorkspace({
                       <button
                         type="button"
                         className={`rounded-full px-4 py-2 text-xs font-semibold transition ${centerTab === 'editor' ? 'bg-white text-[#102033] shadow-[0_8px_18px_rgba(16,32,51,0.08)]' : 'text-[#6f839b]'}`}
-                        onClick={() => setCenterTab('editor')}
+                        onClick={() => {
+                          centerTabPreferenceRef.current = 'editor'
+                          setCenterTab('editor')
+                        }}
                       >
                         Edit
                       </button>

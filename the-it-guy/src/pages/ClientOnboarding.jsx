@@ -153,14 +153,35 @@ const INCOME_FREQUENCY_OPTIONS = [
   { value: 'weekly', label: 'Weekly' },
 ]
 
-const BOND_STATUS_OPTIONS = [
-  { value: '', label: 'Select status' },
-  { value: 'not_started', label: 'Not started' },
-  { value: 'pre_approval_only', label: 'Pre-approval only' },
-  { value: 'application_in_progress', label: 'Application in progress' },
-  { value: 'submitted_to_banks', label: 'Submitted to banks' },
-  { value: 'bond_approved', label: 'Bond approved' },
+const BUYER_BANK_OPTIONS = [
+  { value: 'absa', label: 'Absa' },
+  { value: 'capitec', label: 'Capitec' },
+  { value: 'discovery_bank', label: 'Discovery Bank' },
+  { value: 'fnb', label: 'FNB' },
+  { value: 'investec', label: 'Investec' },
+  { value: 'nedbank', label: 'Nedbank' },
+  { value: 'standard_bank', label: 'Standard Bank' },
+  { value: 'other', label: 'Other' },
 ]
+
+const BUYER_BANK_LABEL_BY_VALUE = Object.freeze(
+  BUYER_BANK_OPTIONS.reduce((acc, option) => {
+    acc[option.value] = option.label
+    return acc
+  }, {}),
+)
+
+const BUYER_BANK_ALIASES = Object.freeze({
+  absa_bank: 'absa',
+  capitec_bank: 'capitec',
+  discovery: 'discovery_bank',
+  fnb_bank: 'fnb',
+  first_national_bank: 'fnb',
+  nedbank_limited: 'nedbank',
+  standard: 'standard_bank',
+  standardbank: 'standard_bank',
+  standard_bank_limited: 'standard_bank',
+})
 
 const PURCHASER_STRUCTURED_KEYS = [
   'first_name',
@@ -219,10 +240,15 @@ const FINANCE_DETAIL_KEYS = [
   'cash_contribution_source',
   'bank_statements_available',
   'bond_readiness_consent',
+  'credit_check_consent',
   'affordability_confirmed',
   'bond_current_status',
   'bond_process_started',
   'bond_bank_name',
+  'buyer_banks',
+  'buyer_banks_other',
+  'bond_preapproval_completed',
+  'bond_preapproval_document_available',
   'bond_help_requested',
   'ooba_assist_requested',
   'joint_bond_application',
@@ -508,7 +534,7 @@ const NATURAL_PURCHASER_SECTIONS = [
         visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
       },
       { key: 'first_time_buyer', label: 'First-time Buyer?', type: 'select', required: true, options: YES_NO_OPTIONS },
-      { key: 'primary_residence', label: 'Primary Residence?', type: 'select', required: true, options: YES_NO_OPTIONS },
+      { key: 'primary_residence', label: 'Will this be your primary residence?', type: 'select', required: true, options: YES_NO_OPTIONS },
       { key: 'investment_purchase', label: 'Investment Purchase?', type: 'select', required: true, options: YES_NO_OPTIONS },
     ],
   },
@@ -570,7 +596,7 @@ const COMPANY_DETAIL_FIELDS = [
   { key: 'authorised_signatory_email', label: 'Authorised Signatory Email', type: 'email', required: true },
   { key: 'authorised_signatory_phone', label: 'Authorised Signatory Phone', type: 'tel', required: true },
   { key: 'authorised_signatory_capacity', label: 'Authorised Signatory Capacity', type: 'text', required: true },
-  { key: 'board_resolution_available', label: 'Board Resolution Available?', type: 'select', required: true, options: YES_NO_OPTIONS },
+  { key: 'board_resolution_available', label: 'Is the board resolution available?', type: 'select', required: true, options: YES_NO_OPTIONS },
 ]
 
 const TRUST_DETAIL_FIELDS = [
@@ -589,10 +615,10 @@ const TRUST_DETAIL_FIELDS = [
   },
   { key: 'authorised_trustee_email', label: 'Authorised Trustee Email', type: 'email', required: true },
   { key: 'authorised_trustee_phone', label: 'Authorised Trustee Phone', type: 'tel', required: true },
-  { key: 'trust_deed_available', label: 'Trust Deed Available?', type: 'select', required: true, options: YES_NO_OPTIONS },
-  { key: 'letters_of_authority_available', label: 'Letters of Authority Available?', type: 'select', required: true, options: YES_NO_OPTIONS },
-  { key: 'trust_resolution_available', label: 'Trust Resolution Available?', type: 'select', required: true, options: YES_NO_OPTIONS },
-  { key: 'all_trustees_signing', label: 'Are All Trustees Signing?', type: 'select', required: true, options: YES_NO_OPTIONS },
+  { key: 'trust_deed_available', label: 'Is the trust deed available?', type: 'select', required: true, options: YES_NO_OPTIONS },
+  { key: 'letters_of_authority_available', label: 'Is the letters of authority document available?', type: 'select', required: true, options: YES_NO_OPTIONS },
+  { key: 'trust_resolution_available', label: 'Is the trust resolution available?', type: 'select', required: true, options: YES_NO_OPTIONS },
+  { key: 'all_trustees_signing', label: 'Are all trustees signing?', type: 'select', required: true, options: YES_NO_OPTIONS },
 ]
 
 const ASSOCIATED_PERSON_FIELDS = [
@@ -673,6 +699,9 @@ function isNaturalPersonEntityType(entityType) {
 }
 
 function normalizeInputValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeInputValue(item)).filter(Boolean).join(', ')
+  }
   return String(value || '').trim()
 }
 
@@ -689,7 +718,50 @@ function isFilledValue(value) {
     return true
   }
 
+  if (Array.isArray(value)) {
+    return value.some((item) => isFilledValue(item))
+  }
+
   return normalizeInputValue(value).length > 0
+}
+
+function normalizeBankValue(value) {
+  const normalized = normalizeInputValue(value)
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  if (!normalized) return ''
+  if (BUYER_BANK_LABEL_BY_VALUE[normalized]) return normalized
+  return BUYER_BANK_ALIASES[normalized] || 'other'
+}
+
+function normalizeBuyerBankSelections(value) {
+  const source = Array.isArray(value)
+    ? value
+    : normalizeInputValue(value)
+      ? normalizeInputValue(value).split(/[,;/|]+/)
+      : []
+  const selected = []
+  source.forEach((item) => {
+    const normalized = normalizeBankValue(item)
+    if (normalized && !selected.includes(normalized)) {
+      selected.push(normalized)
+    }
+  })
+  return selected
+}
+
+function getBuyerBankLabel(value, otherLabel = '') {
+  const normalized = normalizeBankValue(value)
+  if (normalized === 'other') return normalizeInputValue(otherLabel) || 'Other'
+  return BUYER_BANK_LABEL_BY_VALUE[normalized] || formatReviewText(value, 'Other')
+}
+
+function formatBuyerBankSelections(value, otherLabel = '', fallback = 'Not provided') {
+  const selected = normalizeBuyerBankSelections(value)
+  if (!selected.length) return fallback
+  return selected.map((item) => getBuyerBankLabel(item, otherLabel)).join(', ')
 }
 
 function normalizeWhatsappLabel(value, fallback = '') {
@@ -866,10 +938,15 @@ function createEmptyFinance() {
     cash_contribution_source: '',
     bank_statements_available: '',
     bond_readiness_consent: '',
+    credit_check_consent: '',
     affordability_confirmed: '',
     bond_current_status: '',
     bond_process_started: '',
     bond_bank_name: '',
+    buyer_banks: [],
+    buyer_banks_other: '',
+    bond_preapproval_completed: '',
+    bond_preapproval_document_available: '',
     bond_help_requested: '',
     ooba_assist_requested: '',
     joint_bond_application: '',
@@ -965,10 +1042,6 @@ function hasAssociatedPersonData(entry = {}, defaultRole = 'Director') {
   )
 }
 
-function isOriginatorAssistedFinance(finance = {}) {
-  return normalizeYesNoChoice(finance.bond_help_requested || finance.ooba_assist_requested) === 'yes'
-}
-
 const FINANCE_DETAIL_SECTIONS = [
   {
     key: 'finance_totals',
@@ -1030,39 +1103,50 @@ const FINANCE_DETAIL_SECTIONS = [
     ],
   },
   {
-    key: 'bond_progress',
-    title: 'Bond Progress',
-    description: 'Capture the current bond state and the cash contribution, if any.',
+    key: 'bond_preapproval',
+    title: 'Bond Pre-Approval',
+    description: 'Capture banking, pre-approval, and consent details for the bond application.',
     visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
     fields: [
       {
-        key: 'bond_process_started',
-        label: 'Have you already started the bond process?',
+        key: 'buyer_banks',
+        label: 'Who do you bank with?',
+        type: 'multi_select',
+        required: true,
+        options: BUYER_BANK_OPTIONS,
+      },
+      {
+        key: 'buyer_banks_other',
+        label: 'Other bank',
+        type: 'text',
+        required: false,
+        visibleWhen: ({ finance }) => normalizeBuyerBankSelections(finance?.buyer_banks).includes('other'),
+        requiredWhen: ({ finance }) => normalizeBuyerBankSelections(finance?.buyer_banks).includes('other'),
+      },
+      {
+        key: 'bond_preapproval_completed',
+        label: 'Have you completed a bond pre-approval?',
         type: 'select',
         required: true,
         options: YES_NO_OPTIONS,
       },
       {
-        key: 'bond_current_status',
-        label: 'Current Bond Status',
+        key: 'bond_preapproval_document_available',
+        label: 'Is your pre-approval available to upload?',
         type: 'select',
-        required: true,
-        options: BOND_STATUS_OPTIONS,
-      },
-      {
-        key: 'bond_bank_name',
-        label: 'Bank / Bond Provider',
-        type: 'text',
-        required: true,
-        visibleWhen: ({ finance }) => normalizeYesNoChoice(finance?.bond_process_started) === 'yes',
-        requiredWhen: ({ finance }) => normalizeYesNoChoice(finance?.bond_process_started) === 'yes',
+        required: false,
+        options: YES_NO_OPTIONS,
+        visibleWhen: ({ finance }) => normalizeYesNoChoice(finance?.bond_preapproval_completed) === 'yes',
+        requiredWhen: ({ finance }) => normalizeYesNoChoice(finance?.bond_preapproval_completed) === 'yes',
       },
       {
         key: 'bond_help_requested',
-        label: 'Would you like bond originator help?',
+        label: 'Do you need help with your bond?',
         type: 'select',
-        required: true,
+        required: false,
         options: YES_NO_OPTIONS,
+        visibleWhen: ({ finance }) => normalizeYesNoChoice(finance?.bond_preapproval_completed) === 'no',
+        requiredWhen: ({ finance }) => normalizeYesNoChoice(finance?.bond_preapproval_completed) === 'no',
       },
       {
         key: 'joint_bond_application',
@@ -1094,39 +1178,11 @@ const FINANCE_DETAIL_SECTIONS = [
         options: YES_NO_OPTIONS,
       },
       {
-        key: 'bond_readiness_consent',
-        label: 'Consent to share this finance snapshot with the bond originator?',
+        key: 'credit_check_consent',
+        label: 'Consent for credit check?',
         type: 'select',
         required: true,
         options: YES_NO_OPTIONS,
-      },
-      {
-        key: 'affordability_confirmed',
-        label: 'Affordability ready / confirmed?',
-        type: 'select',
-        required: true,
-        options: YES_NO_OPTIONS,
-      },
-    ],
-  },
-  {
-    key: 'bond_originator_support',
-    title: 'Originator Support',
-    description: 'Show the person or team helping with the bond when originator support is requested.',
-    visibleWhen: ({ finance }) => isOriginatorAssistedFinance(finance),
-    fields: [
-      {
-        key: 'bond_originator_name',
-        label: 'Bond Originator / Consultant Name',
-        type: 'text',
-        required: false,
-        requiredWhen: ({ finance }) => isOriginatorAssistedFinance(finance),
-      },
-      {
-        key: 'bond_originator_contact',
-        label: 'Bond Originator Contact Details',
-        type: 'text',
-        required: false,
       },
     ],
   },
@@ -1222,15 +1278,36 @@ function normalizeDetailsState(formData = {}, { purchaserEntityType, financeType
   if (!normalizeInputValue(finance.cash_contribution_source) && normalizeInputValue(finance.deposit_source)) {
     finance.cash_contribution_source = finance.deposit_source
   }
+  const legacyBankName = normalizeInputValue(finance.bond_bank_name || formData.bond_bank_name)
+  finance.buyer_banks = normalizeBuyerBankSelections(finance.buyer_banks)
+  if (!finance.buyer_banks.length && legacyBankName) {
+    finance.buyer_banks = normalizeBuyerBankSelections(legacyBankName)
+    if (finance.buyer_banks.includes('other') && !normalizeInputValue(finance.buyer_banks_other)) {
+      finance.buyer_banks_other = legacyBankName
+    }
+  }
+  finance.buyer_banks_other = normalizeInputValue(finance.buyer_banks_other || formData.buyer_banks_other)
+  if (!finance.buyer_banks.includes('other')) {
+    finance.buyer_banks_other = ''
+  }
   finance.proof_of_funds_available = normalizeYesNoChoice(finance.proof_of_funds_available)
   finance.cash_funds_confirmed = normalizeYesNoChoice(finance.cash_funds_confirmed)
   finance.bond_process_started = normalizeYesNoChoice(finance.bond_process_started)
+  finance.bond_preapproval_completed = normalizeYesNoChoice(finance.bond_preapproval_completed || formData.bond_preapproval_completed)
+  finance.bond_preapproval_document_available = normalizeYesNoChoice(finance.bond_preapproval_document_available || formData.bond_preapproval_document_available)
   finance.bond_help_requested = normalizeYesNoChoice(
     finance.bond_help_requested || formData.bond_help_requested || formData.ooba_assist_requested || finance.ooba_assist_requested,
   )
+  if (finance.bond_preapproval_completed === 'yes') {
+    finance.bond_help_requested = ''
+    finance.ooba_assist_requested = ''
+  } else {
+    finance.bond_preapproval_document_available = ''
+  }
   finance.ooba_assist_requested = normalizeYesNoChoice(finance.ooba_assist_requested || finance.bond_help_requested)
   finance.bank_statements_available = normalizeYesNoChoice(finance.bank_statements_available)
-  finance.bond_readiness_consent = normalizeYesNoChoice(finance.bond_readiness_consent)
+  finance.credit_check_consent = normalizeYesNoChoice(finance.credit_check_consent || finance.bond_readiness_consent || formData.credit_check_consent)
+  finance.bond_readiness_consent = normalizeYesNoChoice(finance.bond_readiness_consent || finance.credit_check_consent)
   finance.affordability_confirmed = normalizeYesNoChoice(finance.affordability_confirmed)
 
   const company = {
@@ -1367,6 +1444,16 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
   })
   cleaned.deposit_source = cleaned.finance.deposit_source ?? cleaned.cash_contribution_source ?? ''
   cleaned.cash_contribution_source = cleaned.finance.cash_contribution_source ?? cleaned.deposit_source ?? ''
+  cleaned.finance.buyer_banks = normalizeBuyerBankSelections(cleaned.finance.buyer_banks)
+  cleaned.buyer_banks = cleaned.finance.buyer_banks
+  cleaned.finance.buyer_banks_other = cleaned.finance.buyer_banks.includes('other') ? normalizeInputValue(cleaned.finance.buyer_banks_other) : ''
+  cleaned.buyer_banks_other = cleaned.finance.buyer_banks_other
+  cleaned.finance.credit_check_consent = normalizeYesNoChoice(cleaned.finance.credit_check_consent || cleaned.finance.bond_readiness_consent)
+  cleaned.credit_check_consent = cleaned.finance.credit_check_consent
+  cleaned.finance.bond_readiness_consent = normalizeYesNoChoice(cleaned.finance.bond_readiness_consent || cleaned.finance.credit_check_consent)
+  cleaned.bond_readiness_consent = cleaned.finance.bond_readiness_consent
+  cleaned.finance.bond_bank_name = formatBuyerBankSelections(cleaned.finance.buyer_banks, cleaned.finance.buyer_banks_other, cleaned.finance.bond_bank_name || '')
+  cleaned.bond_bank_name = cleaned.finance.bond_bank_name
   cleaned.bond_help_requested = normalizeYesNoChoice(cleaned.finance.bond_help_requested)
   cleaned.ooba_assist_requested = normalizeYesNoChoice(cleaned.bond_help_requested || cleaned.finance.ooba_assist_requested)
 
@@ -1423,6 +1510,11 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
     cleaned.cash_funds_confirmed = cleaned.cash_funds_confirmed || ''
     cleaned.bond_process_started = ''
     cleaned.bond_bank_name = ''
+    cleaned.buyer_banks = []
+    cleaned.buyer_banks_other = ''
+    cleaned.bond_preapproval_completed = ''
+    cleaned.bond_preapproval_document_available = ''
+    cleaned.credit_check_consent = ''
     cleaned.bank_statements_available = ''
     cleaned.bond_readiness_consent = ''
     cleaned.affordability_confirmed = ''
@@ -1441,6 +1533,11 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
     cleaned.finance.cash_funds_confirmed = cleaned.cash_funds_confirmed || ''
     cleaned.finance.bond_process_started = ''
     cleaned.finance.bond_bank_name = ''
+    cleaned.finance.buyer_banks = []
+    cleaned.finance.buyer_banks_other = ''
+    cleaned.finance.bond_preapproval_completed = ''
+    cleaned.finance.bond_preapproval_document_available = ''
+    cleaned.finance.credit_check_consent = ''
     cleaned.finance.bank_statements_available = ''
     cleaned.finance.bond_readiness_consent = ''
     cleaned.finance.affordability_confirmed = ''
@@ -1490,7 +1587,21 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
     cleaned.finance.bond_originator_contact = ''
   }
 
-  if (normalizeYesNoChoice(cleaned.bond_process_started) !== 'yes') {
+  if (normalizeYesNoChoice(cleaned.bond_preapproval_completed) === 'yes') {
+    cleaned.bond_help_requested = ''
+    cleaned.ooba_assist_requested = ''
+    cleaned.finance.bond_help_requested = ''
+    cleaned.finance.ooba_assist_requested = ''
+    cleaned.bond_originator_name = ''
+    cleaned.bond_originator_contact = ''
+    cleaned.finance.bond_originator_name = ''
+    cleaned.finance.bond_originator_contact = ''
+  } else {
+    cleaned.bond_preapproval_document_available = ''
+    cleaned.finance.bond_preapproval_document_available = ''
+  }
+
+  if (!cleaned.finance.buyer_banks.length && normalizeYesNoChoice(cleaned.bond_process_started) !== 'yes') {
     cleaned.bond_bank_name = ''
     cleaned.finance.bond_bank_name = ''
   }
@@ -1670,8 +1781,6 @@ function resolveVisibleFinanceSections({
   values = {},
   purchaserEntityType,
   normalizedFinanceType,
-  buyerAppointedBondOriginatorAllowed,
-  buyerAppointedBondOriginatorRequiresApproval,
 } = {}) {
   const details = normalizeDetailsState(values, {
     purchaserEntityType,
@@ -1685,30 +1794,14 @@ function resolveVisibleFinanceSections({
 
   return FINANCE_DETAIL_SECTIONS.filter((sectionConfig) => isVisibleDetailField(sectionConfig, context))
     .map((sectionConfig) => {
-      if (sectionConfig.key === 'bond_originator_support' && !buyerAppointedBondOriginatorAllowed) {
-        return null
-      }
       const nextSection = { ...sectionConfig }
-      if (sectionConfig.key === 'bond_originator_support') {
-        nextSection.title = buyerAppointedBondOriginatorRequiresApproval
-          ? 'Nominate Bond Originator'
-          : 'Your Bond Originator'
-        nextSection.description = buyerAppointedBondOriginatorRequiresApproval
-          ? 'Share the bond originator you would like to use. Your agent/developer will review this before the assigned originator changes.'
-          : 'Share the bond originator you would like to use for this transaction.'
-        nextSection.notice = buyerAppointedBondOriginatorRequiresApproval
-          ? 'This request will be routed for approval before the assigned originator changes.'
-          : 'This originator can be applied immediately when you submit onboarding.'
-      }
       nextSection.fields = (nextSection.fields || [])
         .filter((fieldConfig) => isVisibleDetailField(fieldConfig, context))
         .map((fieldConfig) => {
           if (fieldConfig.key !== 'bond_help_requested') return fieldConfig
           return {
             ...fieldConfig,
-            label: buyerAppointedBondOriginatorAllowed
-              ? 'Would you like to nominate your own bond originator?'
-              : 'Would you like help from the appointed bond originator?',
+            label: 'Do you need help with your bond?',
           }
         })
       return nextSection
@@ -1856,23 +1949,14 @@ function ClientOnboarding() {
   const structuredFinance = detailsState.finance
   const structuredCompany = detailsState.company
   const structuredTrust = detailsState.trust
-  const rolePlayerPolicy = payload?.rolePlayerPolicy || {}
-  const buyerAppointedBondOriginatorAllowed = rolePlayerPolicy.buyerAppointedBondOriginatorAllowed !== false
-  const buyerAppointedBondOriginatorRequiresApproval = Boolean(
-    rolePlayerPolicy.buyerAppointedBondOriginatorRequiresApproval,
-  )
   const visibleFinanceSections = useMemo(
     () =>
       resolveVisibleFinanceSections({
         values: formData,
         purchaserEntityType,
         normalizedFinanceType,
-        buyerAppointedBondOriginatorAllowed,
-        buyerAppointedBondOriginatorRequiresApproval,
       }),
     [
-      buyerAppointedBondOriginatorAllowed,
-      buyerAppointedBondOriginatorRequiresApproval,
       formData,
       normalizedFinanceType,
       purchaserEntityType,
@@ -2298,8 +2382,6 @@ function ClientOnboarding() {
       values,
       purchaserEntityType,
       normalizedFinanceType,
-      buyerAppointedBondOriginatorAllowed,
-      buyerAppointedBondOriginatorRequiresApproval,
     })
   }
 
@@ -2631,21 +2713,44 @@ function ClientOnboarding() {
         ...details.finance,
         [fieldKey]: value,
       }
-      if (fieldKey === 'bond_help_requested') {
-        nextFinance.ooba_assist_requested = normalizeYesNoChoice(value)
-        if (!buyerAppointedBondOriginatorAllowed || normalizeYesNoChoice(value) !== 'yes') {
+      if (fieldKey === 'buyer_banks') {
+        nextFinance.buyer_banks = normalizeBuyerBankSelections(value)
+        if (!nextFinance.buyer_banks.includes('other')) {
+          nextFinance.buyer_banks_other = ''
+        }
+        nextFinance.bond_bank_name = formatBuyerBankSelections(nextFinance.buyer_banks, nextFinance.buyer_banks_other, '')
+      }
+      if (fieldKey === 'buyer_banks_other') {
+        nextFinance.buyer_banks_other = value
+        nextFinance.bond_bank_name = formatBuyerBankSelections(nextFinance.buyer_banks, value, '')
+      }
+      if (fieldKey === 'bond_preapproval_completed') {
+        const normalizedPreapproval = normalizeYesNoChoice(value)
+        nextFinance.bond_preapproval_completed = normalizedPreapproval
+        if (normalizedPreapproval === 'yes') {
+          nextFinance.bond_help_requested = ''
+          nextFinance.ooba_assist_requested = ''
           nextFinance.bond_originator_name = ''
           nextFinance.bond_originator_contact = ''
+        } else {
+          nextFinance.bond_preapproval_document_available = ''
         }
+      }
+      if (fieldKey === 'credit_check_consent') {
+        nextFinance.credit_check_consent = normalizeYesNoChoice(value)
+        nextFinance.bond_readiness_consent = nextFinance.credit_check_consent
+      }
+      if (fieldKey === 'bond_help_requested') {
+        nextFinance.ooba_assist_requested = normalizeYesNoChoice(value)
+        nextFinance.bond_originator_name = ''
+        nextFinance.bond_originator_contact = ''
       }
       if (fieldKey === 'ooba_assist_requested') {
         nextFinance.bond_help_requested = normalizeYesNoChoice(value)
-        if (!buyerAppointedBondOriginatorAllowed || normalizeYesNoChoice(value) !== 'yes') {
-          nextFinance.bond_originator_name = ''
-          nextFinance.bond_originator_contact = ''
-        }
+        nextFinance.bond_originator_name = ''
+        nextFinance.bond_originator_contact = ''
       }
-      if (fieldKey === 'bond_process_started' && normalizeYesNoChoice(value) !== 'yes') {
+      if (fieldKey === 'bond_process_started' && normalizeYesNoChoice(value) !== 'yes' && !nextFinance.buyer_banks.length) {
         nextFinance.bond_bank_name = ''
       }
       if (fieldKey === 'deposit_source') {
@@ -3395,6 +3500,56 @@ function ClientOnboarding() {
           : ''
     } ${isDateField ? 'client-onboarding-date-input' : ''}`
 
+    if (fieldConfig.type === 'multi_select') {
+      const selectedValues = normalizeBuyerBankSelections(value)
+      const toggleValue = (optionValue) => {
+        const nextValues = selectedValues.includes(optionValue)
+          ? selectedValues.filter((item) => item !== optionValue)
+          : [...selectedValues, optionValue]
+        onChange(nextValues)
+        if (typeof onBlur === 'function') {
+          onBlur()
+        }
+      }
+
+      return (
+        <div key={fieldPath} className={`flex flex-col gap-1.5 text-sm font-medium text-[#233247] ${className}`}>
+          <span className="text-[0.86rem]">
+            {fieldConfig.label}
+            {fieldConfig.required ? <span className="ml-1 text-[#d92d20]">*</span> : null}
+          </span>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {(fieldConfig.options || []).map((option) => {
+              const selected = selectedValues.includes(option.value)
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => toggleValue(option.value)}
+                  className={`min-h-[44px] rounded-[14px] border px-3 py-2 text-left text-sm font-semibold transition ${
+                    selected
+                      ? 'border-[#137a4a] bg-[#eefaf3] text-[#126b34] shadow-[0_8px_20px_rgba(19,122,74,0.10)]'
+                      : showError
+                        ? 'border-[#d92d20]/45 bg-white text-[#35546c]'
+                        : 'border-[#d8e2ec] bg-white text-[#35546c] hover:border-[#b9c9d9]'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              )
+            })}
+          </div>
+          {showError ? <span className="text-xs font-medium text-[#d92d20]">{errorMessage}</span> : null}
+          {showSuccess ? (
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-[#1f9d61]">
+              <CheckCircle2 size={12} /> Looks good
+            </span>
+          ) : null}
+        </div>
+      )
+    }
+
     return (
       <label key={fieldPath} className={`flex flex-col gap-1.5 text-sm font-medium text-[#233247] ${className}`}>
         <span className="text-[0.86rem]">
@@ -4037,7 +4192,6 @@ function ClientOnboarding() {
       payload?.transaction?.id ||
       ''
     const sourceOfFundsField = visibleFinanceFields.find((fieldConfig) => fieldConfig.key === 'source_of_funds')
-    const bondStatusField = visibleFinanceFields.find((fieldConfig) => fieldConfig.key === 'bond_current_status')
     const buyerRows = isNaturalPersonPurchase
       ? [
           { label: 'Buyer type', value: purchaserEntityLabel },
@@ -4081,8 +4235,12 @@ function ClientOnboarding() {
       ...(normalizedFinanceType === 'bond' || normalizedFinanceType === 'combination'
         ? [
             { label: 'Bond amount', value: formatReviewCurrency(structuredFinance.bond_amount) },
-            { label: 'Bond status', value: formatReviewOption(bondStatusField?.options, structuredFinance.bond_current_status) },
-            { label: 'Originator help', value: formatReviewYesNo(structuredFinance.bond_help_requested) },
+            { label: 'Banks', value: formatBuyerBankSelections(structuredFinance.buyer_banks, structuredFinance.buyer_banks_other) },
+            { label: 'Pre-approval', value: formatReviewYesNo(structuredFinance.bond_preapproval_completed) },
+            ...(normalizeYesNoChoice(structuredFinance.bond_preapproval_completed) === 'yes'
+              ? [{ label: 'Pre-approval upload', value: formatReviewYesNo(structuredFinance.bond_preapproval_document_available) }]
+              : [{ label: 'Bond help', value: formatReviewYesNo(structuredFinance.bond_help_requested) }]),
+            { label: 'Credit consent', value: formatReviewYesNo(structuredFinance.credit_check_consent) },
           ]
         : []),
     ]

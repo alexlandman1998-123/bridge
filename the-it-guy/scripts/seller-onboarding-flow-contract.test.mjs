@@ -10,7 +10,14 @@ import {
   getSellerOnboardingVisibleFields,
   resolveSellerOnboardingFlow,
 } from '../src/lib/sellerOnboardingFlow.js'
-import { resolveSellerOnboardingFlowContract } from '../src/lib/sellerOnboardingFlowContract.js'
+import {
+  SELLER_ONBOARDING_FIELD_ALIASES,
+  SELLER_ONBOARDING_FLOW_VERSION,
+  migrateSellerOnboardingFieldListToV2,
+  resolveSellerOnboardingFlowContract,
+  resolveSellerOwnershipModel,
+  resolveSellerPropertyModel,
+} from '../src/lib/sellerOnboardingFlowContract.js'
 
 function test(name, fn) {
   try {
@@ -32,6 +39,46 @@ const listing = {
   assignedAgentId: 'agent-1',
   organisationId: 'org-1',
 }
+
+test('formalizes seller onboarding v2 aliases and resolver models', () => {
+  assert.equal(SELLER_ONBOARDING_FLOW_VERSION, 'seller_onboarding_flow_v2')
+  assert.deepEqual(
+    SELLER_ONBOARDING_FIELD_ALIASES['seller.ownership_type'],
+    ['seller.owner_entity_type', 'seller.owner_structure_type'],
+  )
+  assert.deepEqual(
+    migrateSellerOnboardingFieldListToV2([
+      'seller.ownership_type',
+      'property.canonical_property_type',
+      'property.address.canonical',
+    ]),
+    [
+      'seller.owner_entity_type',
+      'seller.owner_structure_type',
+      'property.category',
+      'property.structure_type',
+      'property.estate_or_hoa',
+      'property.address.line_1',
+    ],
+  )
+
+  const ownershipModel = resolveSellerOwnershipModel({
+    ownershipType: 'married_cop',
+  })
+  assert.equal(ownershipModel.entity_type, 'natural_person')
+  assert.equal(ownershipModel.structure_type, 'married_cop')
+  assert.equal(ownershipModel.branch, 'married')
+
+  const propertyModel = resolveSellerPropertyModel({
+    propertyCategory: 'residential',
+    propertyStructureType: 'estate',
+    estateName: 'Waterfall Heights',
+  })
+  assert.equal(propertyModel.category, 'residential')
+  assert.equal(propertyModel.structure_type, 'full_title')
+  assert.equal(propertyModel.estate_or_hoa, true)
+  assert.equal(propertyModel.branch, 'estate_hoa')
+})
 
 test('resolves the married sectional title branch contract', () => {
   const flow = resolveSellerOnboardingFlowContract(
@@ -101,6 +148,51 @@ test('resolves broad property category before residential structure refinements'
   assert.ok(residentialFlow.seller_facing_questions.includes('property.scheme.name'))
 })
 
+test('resolves split seller owner entity and structure fields', () => {
+  const foreignCompanyFlow = resolveSellerOnboardingFlowContract(
+    {
+      ownerEntityType: 'foreign',
+      ownerStructureType: 'foreign_company',
+      sellerFirstName: 'Taylor',
+      sellerSurname: 'Director',
+      email: 'taylor@example.com',
+      phone: '0840000000',
+      foreignOwnerCountry: 'United Kingdom',
+      companyName: 'Foreign Holdco Ltd',
+      companyRegistrationNumber: 'UK-123',
+      propertyCategory: 'residential',
+      propertyStructureType: 'freehold',
+    },
+    listing,
+  )
+
+  assert.equal(foreignCompanyFlow.seller_branch, 'company')
+  assert.ok(foreignCompanyFlow.required_fields.includes('seller.owner_entity_type'))
+  assert.ok(foreignCompanyFlow.required_fields.includes('seller.owner_structure_type'))
+  assert.ok(foreignCompanyFlow.optional_fields.includes('seller.foreign_owner_country'))
+  assert.ok(foreignCompanyFlow.document_triggers.includes('company_registration'))
+
+  const inviteOwnersFlow = resolveSellerOnboardingFlowContract(
+    {
+      ownerEntityType: 'natural_person',
+      ownerStructureType: 'multiple_owners',
+      ownershipType: 'multiple_owners',
+      multipleOwnerCaptureMode: 'send_onboarding',
+      multipleOwners: [
+        { name: 'Alex', surname: 'Owner', email: 'alex@example.com' },
+        { name: 'Kim', surname: 'Owner', email: 'kim@example.com' },
+      ],
+      propertyCategory: 'residential',
+      propertyStructureType: 'freehold',
+    },
+    listing,
+  )
+
+  assert.equal(inviteOwnersFlow.seller_branch, 'multiple_owners')
+  assert.ok(inviteOwnersFlow.required_fields.includes('seller.multiple_owner_capture_mode'))
+  assert.equal(inviteOwnersFlow.required_fields.includes('seller.owners[].consent_to_sell'), false)
+})
+
 test('shares visible and required fields through the flow helper', () => {
   const flow = resolveSellerOnboardingFlow(
     {
@@ -114,7 +206,7 @@ test('shares visible and required fields through the flow helper', () => {
       trustRegisteredAddress: '22 Main Road, Cape Town',
       trusteeName: 'Taylor Trustee',
       propertyCategory: 'residential',
-      propertyStructureType: 'estate',
+      propertyStructureType: 'full_title',
       estateOrHoa: true,
       estateName: 'Waterfall Heights',
       occupancyStatus: 'tenant_occupied',
@@ -130,8 +222,12 @@ test('shares visible and required fields through the flow helper', () => {
   )
 
   assert.equal(flow.seller_branch, 'trust')
+  assert.equal(flow.version, SELLER_ONBOARDING_FLOW_VERSION)
   assert.equal(flow.property_branch, 'estate_hoa')
-  assert.ok(flow.visible_fields.includes('seller.ownership_type'))
+  assert.equal(flow.property_structure_type, 'full_title')
+  assert.equal(flow.visible_fields.includes('seller.ownership_type'), false)
+  assert.ok(flow.visible_fields.includes('seller.owner_entity_type'))
+  assert.ok(flow.visible_fields.includes('seller.owner_structure_type'))
   assert.ok(flow.visible_fields.includes('property.category'))
   assert.ok(flow.visible_fields.includes('property.address.line_1'))
   assert.ok(flow.visible_fields.includes('property.address.postal_code'))
@@ -144,6 +240,9 @@ test('shares visible and required fields through the flow helper', () => {
   assert.ok(flow.required_fields.includes('seller.trust.registration_number'))
   assert.ok(flow.required_fields.includes('property.category'))
   assert.ok(flow.required_fields.includes('property.structure_type'))
+  assert.ok(flow.required_fields.includes('property.rates_taxes'))
+  assert.ok(flow.required_fields.includes('property.levies_or_not_applicable'))
+  assert.ok(flow.required_fields.includes('property.utilities.water_billing_type'))
   assert.ok(flow.document_triggers.includes('hoa_levy_statement'))
   assert.ok(flow.document_triggers.includes('solar_compliance_documents'))
   assert.equal(new Set(flow.visible_fields).size, flow.visible_fields.length)
@@ -219,7 +318,8 @@ test('captures authority details and consent for estate, poa, and multiple owner
     },
     listing,
   )
-  assert.ok(ownersFlow.required_fields.includes('seller.owners[].consent_to_sell'))
+  assert.ok(ownersFlow.required_fields.includes('seller.multiple_owner_capture_mode'))
+  assert.equal(ownersFlow.required_fields.includes('seller.owners[].consent_to_sell'), false)
   assert.ok(ownersFlow.visible_fields.includes('seller.owners[].ownership_share'))
 })
 
@@ -269,12 +369,10 @@ test('generates company sectional title document requirements', () => {
   assert.ok(keys.includes('body_corporate_details'))
   assert.ok(keys.includes('bond_statement'))
   assert.ok(keys.includes('bond_bank_details'))
-  assert.ok(keys.includes('bond_cancellation_attorney_details'))
   assert.ok(keys.includes('settlement_figure'))
   assert.ok(keys.includes('gas_compliance_certificate'))
   assert.ok(profile.documentTriggers.includes('bond_statement'))
   assert.ok(profile.documentTriggers.includes('bond_bank_details'))
-  assert.ok(profile.documentTriggers.includes('bond_cancellation_attorney_details'))
   assert.ok(profile.documentTriggers.includes('settlement_figure'))
 })
 
@@ -293,7 +391,7 @@ test('generates trust estate HOA and tenant documents', () => {
       trusteeEmail: 'taylor@example.com',
       trusteePhone: '0840000000',
       propertyCategory: 'residential',
-      propertyStructureType: 'estate',
+      propertyStructureType: 'full_title',
       estateOrHoa: true,
       estateName: 'Waterfall Heights',
       hoaName: 'Waterfall Heights HOA',

@@ -119,11 +119,15 @@ function companyForm({ purchaseFinanceType = 'bond', bondHelpRequested = 'no' } 
           bond_process_started: 'yes',
           bond_current_status: 'application_in_progress',
           bond_bank_name: 'Standard Bank',
+          buyer_banks: ['standard_bank'],
+          bond_preapproval_completed: bondHelpRequested === 'yes' ? 'no' : 'yes',
+          bond_preapproval_document_available: bondHelpRequested === 'yes' ? '' : 'yes',
           bond_help_requested: bondHelpRequested,
           bond_originator_name: bondHelpRequested === 'yes' ? 'OOBA Finance' : '',
           bond_originator_contact: bondHelpRequested === 'yes' ? 'help@ooba.co.za' : '',
           bank_statements_available: 'yes',
           bond_readiness_consent: 'yes',
+          credit_check_consent: 'yes',
           affordability_confirmed: 'yes',
         }
       : {
@@ -132,11 +136,15 @@ function companyForm({ purchaseFinanceType = 'bond', bondHelpRequested = 'no' } 
           bond_process_started: 'yes',
           bond_current_status: 'application_in_progress',
           bond_bank_name: 'Standard Bank',
+          buyer_banks: ['standard_bank'],
+          bond_preapproval_completed: bondHelpRequested === 'yes' ? 'no' : 'yes',
+          bond_preapproval_document_available: bondHelpRequested === 'yes' ? '' : 'yes',
           bond_help_requested: bondHelpRequested,
           bond_originator_name: bondHelpRequested === 'yes' ? 'OOBA Finance' : '',
           bond_originator_contact: bondHelpRequested === 'yes' ? 'help@ooba.co.za' : '',
           bank_statements_available: 'yes',
           bond_readiness_consent: 'yes',
+          credit_check_consent: 'yes',
           affordability_confirmed: 'yes',
         }
 
@@ -186,11 +194,15 @@ function trustForm({ purchaseFinanceType = 'bond', bondHelpRequested = 'no' } = 
           bond_process_started: 'yes',
           bond_current_status: 'application_in_progress',
           bond_bank_name: 'Nedbank',
+          buyer_banks: ['nedbank'],
+          bond_preapproval_completed: bondHelpRequested === 'yes' ? 'no' : 'yes',
+          bond_preapproval_document_available: bondHelpRequested === 'yes' ? '' : 'yes',
           bond_help_requested: bondHelpRequested,
           bond_originator_name: bondHelpRequested === 'yes' ? 'OOBA Finance' : '',
           bond_originator_contact: bondHelpRequested === 'yes' ? 'help@ooba.co.za' : '',
           bank_statements_available: 'yes',
           bond_readiness_consent: 'yes',
+          credit_check_consent: 'yes',
           affordability_confirmed: 'yes',
         }
       : {
@@ -199,11 +211,15 @@ function trustForm({ purchaseFinanceType = 'bond', bondHelpRequested = 'no' } = 
           bond_process_started: 'yes',
           bond_current_status: 'application_in_progress',
           bond_bank_name: 'Nedbank',
+          buyer_banks: ['nedbank'],
+          bond_preapproval_completed: bondHelpRequested === 'yes' ? 'no' : 'yes',
+          bond_preapproval_document_available: bondHelpRequested === 'yes' ? '' : 'yes',
           bond_help_requested: bondHelpRequested,
           bond_originator_name: bondHelpRequested === 'yes' ? 'OOBA Finance' : '',
           bond_originator_contact: bondHelpRequested === 'yes' ? 'help@ooba.co.za' : '',
           bank_statements_available: 'yes',
           bond_readiness_consent: 'yes',
+          credit_check_consent: 'yes',
           affordability_confirmed: 'yes',
         }
 
@@ -454,7 +470,7 @@ assertBuyerScenario({
     'grant_signed',
     'proof_of_funds_cash_component',
   ],
-  expectedVisibleFields: ['buyer.trust.trustees', 'buyer.trust.authorised_trustee.name', 'finance.bond_originator_name'],
+  expectedVisibleFields: ['buyer.trust.trustees', 'buyer.trust.authorised_trustee.name', 'finance.bond_help_requested'],
   profileChecks: [
     ({ profile }) => {
       assert.equal(profile.requiresEntityDocuments, true)
