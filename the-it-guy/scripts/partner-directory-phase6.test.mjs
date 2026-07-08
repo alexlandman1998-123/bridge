@@ -90,6 +90,13 @@ for (const token of [
   'communicationType: "organisation_partner_invitation"',
   'partnerInvitationId',
   'deliveryId: delivery?.id || null',
+  'renderOrganisationPartnerInvitationEmail',
+  'table role="presentation"',
+  'Invitation URL',
+  'About Arch9',
+  'What accepting means',
+  'Security and privacy',
+  'expiryDays',
 ]) {
   assert(files.sendEmailOrganisationPartnerHandler.includes(token), `organisation partner invite email should log delivery state: ${token}`)
 }
@@ -97,6 +104,11 @@ for (const token of [
 for (const token of [
   'organisationId?: string',
   'invitationId?: string',
+  'invitingOrganisationLogoUrl?: string',
+  'partnerName?: string',
+  'scopeLabel?: string',
+  'expiryDays?: number | string',
+  'arch9Website?: string',
 ]) {
   assert(files.sendEmailTypes.includes(token), `organisation partner invite payload type should expose delivery context: ${token}`)
 }

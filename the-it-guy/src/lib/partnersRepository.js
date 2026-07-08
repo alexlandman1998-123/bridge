@@ -575,9 +575,19 @@ function mapInvitation(row = {}, organisationsById = new Map()) {
     fromOrganisationId: senderOrganisationId,
     toOrganisationId: recipientOrganisationId,
     fromOrganisationName: normalizeText(row.from_organisation_name || row.fromOrganisationName || row.senderOrganisationName) || senderOrganisation?.name || '',
+    fromOrganisationLogoUrl:
+      normalizeText(row.from_organisation_logo_url || row.fromOrganisationLogoUrl || row.senderOrganisationLogoUrl) ||
+      senderOrganisation?.logoUrl ||
+      senderOrganisation?.logoIconUrl ||
+      '',
     toOrganisationName:
       normalizeText(row.to_organisation_name || row.toOrganisationName || row.to_company_name || row.toCompanyName || row.invited_company_name || row.invitedCompanyName) ||
       recipientOrganisation?.name ||
+      '',
+    toOrganisationLogoUrl:
+      normalizeText(row.to_organisation_logo_url || row.toOrganisationLogoUrl || row.recipientOrganisationLogoUrl) ||
+      recipientOrganisation?.logoUrl ||
+      recipientOrganisation?.logoIconUrl ||
       '',
     invitedEmail,
     recipientContactEmail: normalizeText(row.recipient_contact_email || row.recipientContactEmail || recipientOrganisation?.contactEmails?.[0]),
@@ -679,6 +689,16 @@ function enrichInvitations(invitations, organisations) {
           invitedEmail: mapped.invitedEmail,
           direction: 'to',
         }),
+      fromOrganisationLogoUrl:
+        mapped.fromOrganisationLogoUrl ||
+        organisationsById.get(mapped.fromOrganisationId)?.logoUrl ||
+        organisationsById.get(mapped.fromOrganisationId)?.logoIconUrl ||
+        '',
+      toOrganisationLogoUrl:
+        mapped.toOrganisationLogoUrl ||
+        organisationsById.get(mapped.toOrganisationId)?.logoUrl ||
+        organisationsById.get(mapped.toOrganisationId)?.logoIconUrl ||
+        '',
       fromWorkspaceType: mapped.fromWorkspaceType || normalizeOrganisationType(organisationsById.get(mapped.fromOrganisationId)?.type || 'agency'),
       toWorkspaceType: mapped.toWorkspaceType || normalizeOrganisationType(organisationsById.get(mapped.toOrganisationId)?.type || 'agency'),
       recipientContactEmail: mapped.recipientContactEmail || organisationsById.get(mapped.toOrganisationId)?.contactEmails?.[0] || '',
@@ -909,13 +929,22 @@ async function sendPartnerInvitationEmail(invitation = {}) {
       to: recipientEmail,
       organisationId: invitation.fromOrganisationId,
       invitationId: invitation.id,
+      inviteUrl: buildPartnerInvitationLink(invitation.id),
       invitationLink: buildPartnerInvitationLink(invitation.id),
+      invitingOrganisationName: invitation.fromOrganisationName,
+      invitingOrganisationLogoUrl: invitation.fromOrganisationLogoUrl,
       invitedByOrganisation: invitation.fromOrganisationName,
+      invitedByOrganisationLogoUrl: invitation.fromOrganisationLogoUrl,
+      partnerName: invitation.toOrganisationName || recipientEmail,
       partnerOrganisationName: invitation.toOrganisationName || recipientEmail,
+      partnerLogoUrl: invitation.toOrganisationLogoUrl,
+      partnerOrganisationLogoUrl: invitation.toOrganisationLogoUrl,
       partnerType: invitation.toWorkspaceType,
       relationshipType: invitation.relationshipType,
+      scopeLabel: getPartnerScopeBadge(invitation).label,
       scopeType: invitation.scopeType,
       scopeName: invitation.scopeName,
+      expiresAt: invitation.expiresAt,
       preferred: Boolean(invitation.preferred),
       message: invitation.message,
     },
