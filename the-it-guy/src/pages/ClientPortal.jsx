@@ -66,6 +66,10 @@ import {
   markClientPortalNotificationRead,
 } from '../services/clientPortalNotificationsService'
 import {
+  buildClientBrandCssVars,
+  resolveClientBrandTheme,
+} from '../lib/clientBrandTheme'
+import {
   MAIN_PROCESS_STAGES,
   MAIN_STAGE_LABELS,
   getMainStageFromDetailedStage,
@@ -4343,6 +4347,51 @@ function ClientPortal() {
   const selectedJourney = effectiveWorkspace === 'seller' ? 'seller' : 'buyer'
   const canSwitchJourney = hasSellingContext
   const workspaceNavigationScope = effectiveWorkspace === 'seller' ? 'seller' : 'buyer'
+  const clientBrandTheme = useMemo(() => resolveClientBrandTheme({
+    fallback:
+      workspaceData?.clientTheme ||
+      workspaceData?.branding?.clientTheme ||
+      portal?.clientTheme ||
+      portal?.branding?.clientTheme ||
+      {},
+    organisation: portal?.organisation || workspaceData?.organisation || null,
+    organisationSettings: portal?.organisationSettings || workspaceData?.organisationSettings || null,
+    organisationBranding: portal?.organisationBranding || workspaceData?.organisationBranding || null,
+    legacyBranding: portal?.branding || workspaceData?.branding || {},
+    listing: effectiveWorkspace === 'seller'
+      ? (portal?.listing || workspaceData?.listing || activeSellingContext || portal?.unit || workspaceData?.property || {})
+      : (workspaceData?.listing || portal?.unit || workspaceData?.property || {}),
+    unit: portal?.unit || workspaceData?.property || null,
+  }), [
+    activeSellingContext,
+    effectiveWorkspace,
+    portal?.branding,
+    portal?.clientTheme,
+    portal?.listing,
+    portal?.organisation,
+    portal?.organisationBranding,
+    portal?.organisationSettings,
+    portal?.unit,
+    workspaceData?.branding,
+    workspaceData?.clientTheme,
+    workspaceData?.listing,
+    workspaceData?.organisation,
+    workspaceData?.organisationBranding,
+    workspaceData?.organisationSettings,
+    workspaceData?.property,
+  ])
+  const clientPortalBrandStyle = useMemo(() => ({
+    ...buildClientBrandCssVars(clientBrandTheme),
+    '--client-portal-sidebar-bg': `radial-gradient(circle at 18% -6%, color-mix(in srgb, ${clientBrandTheme.accentColor} 24%, transparent) 0%, transparent 34%), linear-gradient(180deg, ${clientBrandTheme.secondaryColor} 0%, ${clientBrandTheme.primaryColor} 100%)`,
+    '--client-portal-hero-bg': `linear-gradient(135deg, ${clientBrandTheme.primaryColor} 0%, ${clientBrandTheme.secondaryColor} 100%)`,
+  }), [clientBrandTheme])
+  const clientBrandName = clientBrandTheme.organisationName || 'Arch9'
+  const clientBrandLogoUrl =
+    clientBrandTheme.logoLightUrl ||
+    clientBrandTheme.logoUrl ||
+    clientBrandTheme.logoDarkUrl ||
+    clientBrandTheme.logoIconUrl ||
+    ''
 
   const handleJourneyChange = useCallback((value) => {
     if (value === 'seller' && !hasSellingContext) {
