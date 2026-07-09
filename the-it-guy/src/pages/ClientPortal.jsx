@@ -4417,7 +4417,7 @@ function ClientPortal() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-[#f3f6fb] px-5 py-8 md:px-8">
+      <main className="min-h-screen bg-[#f3f6fb] px-5 py-8 md:px-8" style={clientPortalBrandStyle}>
         <section className="mx-auto max-w-[760px] rounded-[24px] border border-[#dbe5ef] bg-white px-6 py-7 text-center shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
           <h1 className="text-[1.2rem] font-semibold tracking-[-0.02em] text-[#142132]">Preparing your portal</h1>
           <p className="mt-2 text-sm leading-6 text-[#5f7288]">
@@ -6336,11 +6336,19 @@ function ClientPortal() {
     paths.reduce((total, path) => total + (Number(readBondField(path, 0)) || 0), 0)
 
   return (
-    <main className="min-h-screen bg-[#f3f6fb] text-[#142132]">
+    <main className="min-h-screen bg-[#f3f6fb] text-[#142132]" style={clientPortalBrandStyle}>
       <div className="flex min-h-screen">
-        <aside className="fixed inset-y-0 left-0 z-30 hidden w-[280px] flex-col overflow-y-auto bg-[#152432] px-5 py-4 text-slate-100 [background-image:radial-gradient(circle_at_18%_-6%,rgba(108,152,193,0.18)_0%,transparent_34%),linear-gradient(180deg,#243c4f_0%,#152432_100%)] lg:flex">
+        <aside className="fixed inset-y-0 left-0 z-30 hidden w-[280px] flex-col overflow-y-auto bg-[#152432] px-5 py-4 text-slate-100 lg:flex" style={{ backgroundImage: 'var(--client-portal-sidebar-bg)' }}>
           <div className="border-b border-white/10 pb-3 pt-[1.2rem]">
-            <h1 className="text-[3rem] font-bold leading-none tracking-[-0.05em] text-[#f8fbff]">Arch9</h1>
+            {clientBrandLogoUrl ? (
+              <img
+                src={clientBrandLogoUrl}
+                alt={clientBrandName}
+                className="block h-auto max-h-14 w-auto max-w-[220px] object-contain"
+              />
+            ) : (
+              <h1 className="text-[1.65rem] font-bold leading-tight text-[#f8fbff]">{clientBrandName}</h1>
+            )}
             <p className="mt-2.5 text-[0.82rem] tracking-[0.02em] text-[#c8d5e3]">Client Transaction Workspace</p>
             {effectiveWorkspace === 'seller' ? (
               <div className="mt-4 rounded-[18px] border border-white/10 bg-[rgba(7,14,24,0.34)] px-3.5 py-3.5">
@@ -6397,6 +6405,10 @@ function ClientPortal() {
                   <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-normal [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
                     {item.label}
                   </span>
+                  style={isActive ? {
+                    borderColor: 'color-mix(in srgb, var(--client-brand-accent) 42%, transparent)',
+                    boxShadow: 'inset 3px 0 0 var(--client-brand-accent)',
+                  } : undefined}
                   {navStatus ? (
                     <span
                       className={`ml-auto inline-flex items-center rounded-full border px-2 py-0.5 text-[0.66rem] font-semibold ${
