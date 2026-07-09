@@ -4,6 +4,7 @@ import {
   fetchClientPortalCoreByToken,
   fetchClientPortalMandatePacketSummaryByToken,
 } from '../lib/api'
+import { resolveClientBrandTheme } from '../lib/clientBrandTheme'
 import { getDemoClientPortalSeedData } from '../lib/onboardingDemoLinks'
 import { generateClientPortalNextActions } from '../lib/clientPortalNextActionsEngine'
 import {
@@ -452,6 +453,31 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     ...(Array.isArray(listing?.marketing?.externalLinks) ? listing.marketing.externalLinks : []),
     ...(Array.isArray(formData.externalListingLinks) ? formData.externalListingLinks : []),
   ])
+  const clientTheme = resolveClientBrandTheme({
+    organisation: {
+      id: listing?.organisationId || listing?.organisation_id || null,
+      name: listing?.organisationName || listing?.organisation_name || listing?.agencyName || listing?.agency_name || '',
+      display_name: listing?.organisationDisplayName || listing?.organisation_display_name || listing?.agencyName || listing?.agency_name || '',
+      logo_url: listing?.organisationLogoUrl || listing?.organisation_logo_url || listing?.agencyLogoUrl || listing?.agency_logo_url || '',
+    },
+    listing,
+    legacyBranding: listing?.branding || listing?.brand || {},
+  })
+  const branding = {
+    organisationId: clientTheme.organisationId || listing?.organisationId || listing?.organisation_id || null,
+    organisationName: clientTheme.organisationName || listing?.agencyName || listing?.organisationName || '',
+    agencyName: clientTheme.organisationName || listing?.agencyName || listing?.organisationName || '',
+    logoUrl: clientTheme.logoUrl,
+    logoDarkUrl: clientTheme.logoDarkUrl,
+    logoLightUrl: clientTheme.logoLightUrl,
+    logoIconUrl: clientTheme.logoIconUrl,
+    heroImageUrl: clientTheme.heroImageUrl,
+    primaryColor: clientTheme.primaryColor,
+    secondaryColor: clientTheme.secondaryColor,
+    accentColor: clientTheme.accentColor,
+    neutralColor: clientTheme.neutralColor,
+    clientTheme,
+  }
 
   return {
     link: {
@@ -496,6 +522,8 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
       phone: formData.sellerPhone || listing?.seller?.phone || '',
       email: formData.sellerEmail || listing?.seller?.email || '',
     },
+    branding,
+    clientTheme,
     appointments,
     offers: rawOffers,
     sellerJourney,
@@ -1719,6 +1747,8 @@ function buildDemoClientPortalWorkspaceData(token, workspace = 'shared') {
     transaction: portalData?.transaction || null,
     listing: portalData?.listing || null,
     property: portalData?.unit || null,
+    branding: portalData?.branding || null,
+    clientTheme: portalData?.clientTheme || portalData?.branding?.clientTheme || null,
     appointments,
     rolePlayers,
     lifecycle,
@@ -1977,6 +2007,8 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     transaction: portalData?.transaction || null,
     listing: portalData?.listing || null,
     property: portalData?.unit || null,
+    branding: portalData?.branding || null,
+    clientTheme: portalData?.clientTheme || portalData?.branding?.clientTheme || null,
     appointments,
     rolePlayers,
     lifecycle,
