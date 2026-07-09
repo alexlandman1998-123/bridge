@@ -16,8 +16,14 @@ import {
   resolveAttorneyManualBlocker,
 } from '../../../services/attorneyWorkflow/attorneyReadinessEngine'
 import Button from '../../ui/Button'
+import DocumentAccessSelectionGrid from '../../documents/DocumentAccessSelectionGrid'
 import Field from '../../ui/Field'
 import Modal from '../../ui/Modal'
+import {
+  buildDocumentRequestAccessGrants,
+  buildDocumentRequestTargets,
+  getDefaultDocumentAccessSelections,
+} from '../../../services/documents/documentRequestAccessForm'
 
 const STATUS_CLASS = {
   completed: 'border-success/30 bg-successSoft text-success',
@@ -33,6 +39,12 @@ const SEVERITY_CLASS = {
   high: 'border-danger/30 bg-dangerSoft text-danger',
   critical: 'border-danger bg-danger text-white',
 }
+
+const DOCUMENT_REQUEST_VISIBILITY_OPTIONS = [
+  { value: 'client_visible', label: 'Buyer & seller visible' },
+  { value: 'professional_shared', label: 'Professional / roleplayers only' },
+  { value: 'internal', label: 'Internal' },
+]
 
 function toTitle(value = '') {
   return String(value || '')
@@ -260,6 +272,9 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
         title: documentDraft.title,
         description: documentDraft.description,
         requestedFrom: documentDraft.requestedFrom,
+        visibility: documentDraft.visibility || 'client_visible',
+        targets: buildDocumentRequestTargets(documentDraft),
+        accessGrants: buildDocumentRequestAccessGrants(documentDraft),
       })
       setDocumentDraft(null)
       await refreshAfterChange(next)
@@ -639,7 +654,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                             type="button"
                             variant="secondary"
                             className="w-full"
-                            onClick={() => setDocumentDraft({ laneKey: lane.laneKey, title: '', description: '', requestedFrom: 'client' })}
+                            onClick={() => setDocumentDraft({ laneKey: lane.laneKey, title: '', description: '', requestedFrom: 'client', visibility: 'client_visible', accessSelections: getDefaultDocumentAccessSelections('client_visible') })}
                           >
                             <FileText size={16} />
                             Request Document
@@ -873,6 +888,30 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                 <option value="agent">Agent</option>
               </Field>
             </label>
+            <label className="grid gap-1.5 text-sm font-medium text-textStrong">
+              Visibility
+              <Field
+                as="select"
+                value={documentDraft.visibility || 'client_visible'}
+                onChange={(event) =>
+                  setDocumentDraft((previous) => ({
+                    ...previous,
+                    visibility: event.target.value,
+                    accessSelections: getDefaultDocumentAccessSelections(event.target.value),
+                  }))
+                }
+              >
+                {DOCUMENT_REQUEST_VISIBILITY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Field>
+            </label>
+            <DocumentAccessSelectionGrid
+              selections={documentDraft.accessSelections || getDefaultDocumentAccessSelections(documentDraft.visibility || 'client_visible')}
+              onChange={(nextSelections) => setDocumentDraft((previous) => ({ ...previous, accessSelections: nextSelections }))}
+            />
             <label className="grid gap-1.5 text-sm font-medium text-textStrong">
               Description
               <Field

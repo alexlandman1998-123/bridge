@@ -32,6 +32,7 @@ import {
   normalizeAttorneyWorkflowWorkPacket,
 } from '../../constants/attorneyWorkflowUsability.js'
 import { canAdvanceWorkflowStage } from '../documents/canonicalWorkflowGateService'
+import { syncDocumentRequestPermissionRows } from '../documents/documentAccessGrantService'
 
 const LANE_META = {
   transfer: {
@@ -1527,6 +1528,8 @@ export async function requestAttorneyWorkflowLaneDocument({
   requestedFrom = 'client',
   priority = 'required',
   visibility = null,
+  targets = [],
+  accessGrants = [],
   dueDate = null,
   workPacket = null,
 } = {}) {
@@ -1553,6 +1556,26 @@ export async function requestAttorneyWorkflowLaneDocument({
     dueDate,
   })
   const insertedRequest = await insertDocumentRequest(client, payload)
+  await syncDocumentRequestPermissionRows({
+    client,
+    transactionId: normalizedTransactionId,
+    createdRequests: [{ ...payload, id: insertedRequest?.id || null }],
+    sourceRequests: [
+      {
+        ...payload,
+        targets,
+        accessGrants,
+        requestedFrom: payload.requested_from,
+        requested_from: payload.requested_from,
+        assignedToRole: payload.assigned_to_role,
+        assigned_to_role: payload.assigned_to_role,
+        visibility: payload.visibility_scope,
+        visibility_scope: payload.visibility_scope,
+      },
+    ],
+    actor: { userId: actor.id, role: 'attorney' },
+    createdAt: payload.created_at || null,
+  })
 
   await insertFollowUpActionMarker(client, {
     transactionId: normalizedTransactionId,

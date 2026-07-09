@@ -614,7 +614,23 @@ async function fetchBondPartnerPeopleFallback({ relationship, currentOrganisatio
       principalRows.push(row)
       continue
     }
-    if (permissions.get('can_view_branch_managers') && ['branch_manager', 'manager', 'agency_manager'].includes(role)) {
+    if (
+      permissions.get('can_view_branch_managers') &&
+      [
+        'branch_manager',
+        'manager',
+        'agency_manager',
+        'bond_originator',
+        'consultant',
+        'bond_consultant',
+        'bond_independent_consultant',
+        'processor',
+        'bond_processor',
+        'admin_staff',
+        'regional_manager',
+        'hq_manager',
+      ].includes(role)
+    ) {
       branchManagerRows.push(row)
       continue
     }

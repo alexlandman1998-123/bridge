@@ -15,6 +15,7 @@ import {
   legacyRequirementKeyToCanonicalKey,
   syncCanonicalToTransactionRequiredDocuments,
 } from './canonicalDocumentAdapterService'
+import { syncCanonicalRequirementAccessGrants } from './documentAccessGrantService'
 import {
   DOCUMENT_ROLLOUT_MODES,
   getCanonicalDocumentRolloutMode,
@@ -1063,6 +1064,11 @@ export async function resolveTransactionDocumentRequirements({
     },
     generatedInstances,
     client: db,
+  })
+
+  await syncCanonicalRequirementAccessGrants({
+    client: db,
+    instances: normalizeArray(canonicalSync.instances),
   })
 
   const instancesBySignature = new Map(

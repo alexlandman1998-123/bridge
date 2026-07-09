@@ -661,7 +661,16 @@ export async function universalPartnerRoutingResolver(input = {}) {
     }
 
     const peopleCache = normalizedInput.partnerPeopleByRelationshipId || {}
-    const relationshipId = normalizeText(connection?.id || connection?.relationshipId || rule?.relationshipId || rule?.relationship_id || '')
+    const relationshipId = normalizeText(
+      connection?.relationshipId ||
+        connection?.relationship_id ||
+        rule?.relationshipId ||
+        rule?.relationship_id ||
+        connection?.organisationPartnerId ||
+        connection?.organisation_partner_id ||
+        connection?.id ||
+        '',
+    )
     const peoplePayload =
       relationshipId
         ? peopleCache[relationshipId] ||

@@ -25,6 +25,16 @@ export async function createAdditionalDocumentRequest(payload = {}) {
       requestType: 'additional_document_request',
       status: item.status || 'requested',
       category: item.category || 'Additional Requests',
+      targets: item.targets || item.targetRecipients || item.requestTargets || item.recipients || null,
+      targetParticipantIds: item.targetParticipantIds || item.target_participant_ids || null,
+      targetUserIds: item.targetUserIds || item.target_user_ids || null,
+      targetEmails: item.targetEmails || item.target_emails || null,
+      targetRoles: item.targetRoles || item.target_roles || null,
+      accessGrants: item.accessGrants || item.access_grants || item.permissions || item.documentAccess || null,
+      visibleTo: item.visibleTo || item.visible_to || null,
+      visibleToRoles: item.visibleToRoles || item.visible_to_roles || item.viewerRoles || item.viewer_roles || null,
+      viewers: item.viewers || null,
+      downloaders: item.downloaders || null,
     })),
   })
   return Array.isArray(created) ? created[0] || null : null

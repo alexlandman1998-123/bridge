@@ -244,11 +244,15 @@ export function partnerConnectionSupportsRoleType(connection = {}, roleType = ''
     ? connection.services
     : normalizePartnerServices(connection)
   const requiredServices = ROUTING_ROLE_SERVICES[normalizedRoleType] || []
-  if (requiredServices.length) {
+  const partnerRoleTypes = Array.isArray(connection.partnerRoleTypes) ? connection.partnerRoleTypes : []
+  const partnerRoleType = normalizeRoleType(connection.partnerRoleType || connection.partner_role_type)
+  if (requiredServices.length && services.length) {
     return services.some((service) => service?.isActive !== false && requiredServices.includes(normalizeServiceKey(service.key || service.serviceType || service.service_type)))
   }
-  const partnerRoleTypes = Array.isArray(connection.partnerRoleTypes) ? connection.partnerRoleTypes : []
-  return partnerRoleTypes.includes(normalizedRoleType) || connection.partnerRoleType === normalizedRoleType
+  if (partnerRoleTypes.length || partnerRoleType) {
+    return partnerRoleTypes.map(normalizeRoleType).includes(normalizedRoleType) || partnerRoleType === normalizedRoleType
+  }
+  return true
 }
 
 export function getPartnerServiceTypesForRoleType(roleType = '') {

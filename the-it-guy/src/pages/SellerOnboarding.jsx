@@ -48,6 +48,7 @@ import {
   validateSellerOnboardingFacts,
 } from '../services/documents/sellerOnboardingFactTransformer'
 import { getDemoSellerOnboardingListing, isSellerOnboardingDemoToken } from '../lib/onboardingDemoLinks'
+import { resolveClientBrandTheme } from '../lib/clientBrandTheme.js'
 import { resolveSellerOnboardingFlow } from '../lib/sellerOnboardingFlow'
 import {
   getPropertyCategoryLabel,
@@ -431,7 +432,16 @@ function pickBrandText(...values) {
 
 function resolveAgencyBrand(listing = {}) {
   const onboardingBranding = listing?.sellerOnboarding?.formData?.portalBranding || {}
+  const theme = resolveClientBrandTheme({
+    listing,
+    organisation: listing?.organisation || {},
+    legacyBranding: {
+      ...onboardingBranding,
+      ...(listing?.branding && typeof listing.branding === 'object' ? listing.branding : {}),
+    },
+  })
   const agencyName = pickBrandText(
+    theme.source === 'arch9_default' ? '' : theme.organisationName,
     listing?.branding?.organisationName,
     listing?.branding?.agencyName,
     listing?.branding?.name,
@@ -448,6 +458,8 @@ function resolveAgencyBrand(listing = {}) {
   )
   const brandName = agencyName || 'Arch9'
   const logoDarkUrl = pickBrandText(
+    theme.logoDarkUrl,
+    theme.logoUrl,
     listing?.agencyLogoDarkUrl,
     listing?.organisationLogoDarkUrl,
     listing?.branding?.logoDarkUrl,
@@ -456,6 +468,8 @@ function resolveAgencyBrand(listing = {}) {
     onboardingBranding?.logoDark,
   )
   const logoLightUrl = pickBrandText(
+    theme.logoLightUrl,
+    theme.logoUrl,
     listing?.agencyLogoLightUrl,
     listing?.organisationLogoLightUrl,
     listing?.branding?.logoLightUrl,
@@ -472,7 +486,19 @@ function resolveAgencyBrand(listing = {}) {
     onboardingBranding?.logoUrl,
   )
   const logoUrl = logoDarkUrl || fallbackLogoUrl || logoLightUrl
-  return { name: brandName, logoUrl, logoDarkUrl, logoLightUrl, initials: getInitials(brandName), isFallback: !agencyName }
+  return {
+    name: brandName,
+    logoUrl,
+    logoDarkUrl,
+    logoLightUrl,
+    initials: getInitials(brandName),
+    isFallback: !agencyName,
+    primaryColor: theme.primaryColor,
+    secondaryColor: theme.secondaryColor,
+    accentColor: theme.accentColor,
+    heroImageUrl: theme.heroImageUrl,
+    theme,
+  }
 }
 
 function resolveAgentName(listing = {}) {
@@ -1627,11 +1653,12 @@ function SellerWelcomeScreen({ brand, listing, form, onContinue }) {
   return (
     <PremiumOnboardingLanding
       portalType="seller"
-      agencyLogo={brand?.logoLightUrl || brand?.logoUrl || brand?.logoDarkUrl || ''}
+      agencyLogo={brand?.logoUrl || brand?.logoDarkUrl || brand?.logoLightUrl || ''}
       agencyName={brand?.name || ''}
       personName={welcomeName}
       propertyAddress={propertyAddress}
       backgroundImage={resolveSellerWelcomeImageUrl(listing)}
+      brandTheme={brand?.theme}
       onStart={onContinue}
     />
   )

@@ -8,8 +8,42 @@ export const LEGACY_TRANSACTION_LIFECYCLE_FIELDS = Object.freeze([
   'current_sub_stage_summary',
 ])
 
+const LEGACY_MAIN_STAGE_VALUES = new Set(['AVAIL', 'DEP', 'OTP', 'FIN', 'ATTY', 'XFER', 'REG'])
+
+const DETAILED_STAGE_ALIASES = {
+  'Transfer In Progress': 'Transfer in Progress',
+}
+
+const DETAILED_STAGE_FAMILIES = {
+  SETUP: ['Available'],
+  SALES_OTP: ['Reserved', 'OTP Signed', 'Deposit Paid'],
+  FINANCE: ['Finance Pending', 'Bond Approved / Proof of Funds'],
+  TRANSFER: ['Proceed to Attorneys', 'Transfer in Progress', 'Transfer Lodged'],
+  REGISTRATION: ['Transfer Lodged', 'Registered'],
+  COMPLETE: ['Registered'],
+}
+
+const DEFAULT_DETAILED_STAGE_BY_PARENT = {
+  SETUP: 'Available',
+  SALES_OTP: 'Reserved',
+  FINANCE: 'Finance Pending',
+  TRANSFER: 'Transfer in Progress',
+  REGISTRATION: 'Transfer Lodged',
+  COMPLETE: 'Registered',
+}
+
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function normalizeLegacyMainStage(value = '', fallback = 'AVAIL') {
+  const normalized = normalizeText(value).toUpperCase()
+  return LEGACY_MAIN_STAGE_VALUES.has(normalized) ? normalized : fallback
+}
+
+function normalizeDetailedStage(value = '') {
+  const normalized = normalizeText(value)
+  return DETAILED_STAGE_ALIASES[normalized] || normalized
 }
 
 export function mapParentStageToLegacyStage(parentStage = '', currentMainStage = 'AVAIL') {
@@ -21,16 +55,30 @@ export function mapParentStageToLegacyStage(parentStage = '', currentMainStage =
     case 'FINANCE':
       return 'FIN'
     case 'TRANSFER':
-      return 'TRANSFER'
+      return 'XFER'
     case 'REGISTRATION':
-      return 'REGISTRATION'
+      return 'REG'
     case 'COMPLETE':
-      return 'COMPLETE'
+      return 'REG'
     case 'CANCELLED':
-      return 'CANCELLED'
+      return normalizeLegacyMainStage(currentMainStage)
     default:
-      return normalizeText(currentMainStage) || 'AVAIL'
+      return normalizeLegacyMainStage(currentMainStage)
   }
+}
+
+export function mapParentStageToDetailedStage(parentStage = '', currentDetailedStage = '') {
+  const normalizedParentStage = String(parentStage || '').trim().toUpperCase()
+  const current = normalizeDetailedStage(currentDetailedStage)
+  if (normalizedParentStage === 'CANCELLED') {
+    return current || 'Available'
+  }
+
+  const family = DETAILED_STAGE_FAMILIES[normalizedParentStage] || null
+  if (family?.includes(current)) {
+    return current
+  }
+  return DEFAULT_DETAILED_STAGE_BY_PARENT[normalizedParentStage] || current || 'Available'
 }
 
 export function assertNoLegacyLifecycleFieldWrites(payload = {}, options = {}) {
@@ -72,10 +120,14 @@ function buildSubStageSummary(rollup = {}) {
 export function buildTransactionCompatibilityPayload(transaction = {}, rollup = {}, options = {}) {
   const nowIso = rollup?.derivedAt || options.now || new Date().toISOString()
   const currentMainStage = transaction.current_main_stage || transaction.currentMainStage || 'AVAIL'
-  const legacyStage = mapParentStageToLegacyStage(rollup.parentStage, currentMainStage)
+  const legacyMainStage = mapParentStageToLegacyStage(rollup.parentStage, currentMainStage)
+  const legacyDetailedStage = mapParentStageToDetailedStage(
+    rollup.parentStage,
+    transaction.stage || transaction.stageLabel || '',
+  )
   return {
-    stage: legacyStage,
-    current_main_stage: legacyStage,
+    stage: legacyDetailedStage,
+    current_main_stage: legacyMainStage,
     current_sub_stage_summary: buildSubStageSummary(rollup),
     next_action: normalizeText(rollup.nextAction?.label) || null,
     comment: normalizeText(buildSubStageSummary(rollup)) || null,

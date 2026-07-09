@@ -13,6 +13,24 @@ function isWorkspaceForeignKeyError(error) {
   )
 }
 
+function isMissingSecurityAuditTableError(error) {
+  if (!error) return false
+  const message = `${error.message || ''} ${error.details || ''}`.toLowerCase()
+  return error.code === '42P01' || error.code === 'PGRST205' || message.includes('security_audit_events')
+}
+
+function isMissingSecurityAuditRpcError(error) {
+  if (!error) return false
+  const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
+  return error.code === '42883' || error.code === 'PGRST202' || message.includes('bridge_record_security_audit_event')
+}
+
+function isAuditPolicyBlockedError(error) {
+  if (!error) return false
+  const message = `${error.message || ''} ${error.details || ''}`.toLowerCase()
+  return error.code === '42501' || message.includes('row-level security')
+}
+
 export async function recordSecurityAuditEvent({
   userId = '',
   workspaceId = '',
@@ -34,6 +52,40 @@ export async function recordSecurityAuditEvent({
     target_type: normalizeText(targetType) || null,
     target_id: normalizeText(targetId) || null,
     metadata: metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {},
+  }
+
+  const rpcResult = await supabase.rpc('bridge_record_security_audit_event', {
+    p_user_id: payload.user_id,
+    p_workspace_id: payload.workspace_id,
+    p_action: payload.action,
+    p_target_type: payload.target_type,
+    p_target_id: payload.target_id,
+    p_metadata: payload.metadata,
+  })
+
+  if (!rpcResult.error) {
+    const response = rpcResult.data && typeof rpcResult.data === 'object' ? rpcResult.data : {}
+    if (response.success === false || response.persisted === false) {
+      const reason = response.code || response.reason || 'rpc_rejected'
+      console.warn('[AUDIT] security audit event was not persisted.', {
+        action: safeAction,
+        targetType: payload.target_type,
+        reason,
+      })
+      return { persisted: false, reason }
+    }
+    return { persisted: true, id: response.id || null, via: 'rpc' }
+  }
+
+  if (!isMissingSecurityAuditRpcError(rpcResult.error)) {
+    const reason = rpcResult.error.code || 'rpc_error'
+    console.warn('[AUDIT] security audit event was not persisted.', {
+      action: safeAction,
+      targetType: payload.target_type,
+      reason,
+      message: rpcResult.error.message,
+    })
+    return { persisted: false, reason, error: rpcResult.error }
   }
 
   let result = await supabase
@@ -63,18 +115,31 @@ export async function recordSecurityAuditEvent({
   }
 
   if (result.error) {
-    const message = `${result.error.message || ''} ${result.error.details || ''}`.toLowerCase()
-    if (result.error.code === '42P01' || result.error.code === 'PGRST205' || message.includes('security_audit_events')) {
-      console.warn('[AUDIT] security_audit_events table is not installed; event was not persisted.', {
+    if (isMissingSecurityAuditTableError(result.error)) {
+      console.warn('[AUDIT] security_audit_events table is unavailable; event was not persisted.', {
         action: safeAction,
         targetType: payload.target_type,
       })
       return { persisted: false, reason: 'table_missing' }
     }
-    throw result.error
+    if (isAuditPolicyBlockedError(result.error)) {
+      console.warn('[AUDIT] security audit event insert was blocked by policy; event was not persisted.', {
+        action: safeAction,
+        targetType: payload.target_type,
+        reason: result.error.code || 'policy_blocked',
+      })
+      return { persisted: false, reason: 'policy_blocked', error: result.error }
+    }
+    console.warn('[AUDIT] security audit event was not persisted.', {
+      action: safeAction,
+      targetType: payload.target_type,
+      reason: result.error.code || 'insert_failed',
+      message: result.error.message,
+    })
+    return { persisted: false, reason: result.error.code || 'insert_failed', error: result.error }
   }
 
-  return { persisted: true, id: result.data?.id || null }
+  return { persisted: true, id: result.data?.id || null, via: 'direct_insert' }
 }
 
 export function recordAuthAuditEvent(action, context = {}) {

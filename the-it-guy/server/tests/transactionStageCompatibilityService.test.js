@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   assertNoLegacyLifecycleFieldWrites,
   buildTransactionCompatibilityPayload,
+  mapParentStageToDetailedStage,
   mapParentStageToLegacyStage,
   syncTransactionCompatibilityFields,
 } from '../services/transactionStageCompatibilityService.js'
@@ -115,14 +116,16 @@ const payload = buildTransactionCompatibilityPayload(
   { now: '2026-06-02T10:00:00.000Z' },
 )
 
-assert.equal(payload.stage, 'FIN')
+assert.equal(payload.stage, 'Finance Pending')
 assert.equal(payload.current_main_stage, 'FIN')
 assert.equal(payload.current_sub_stage_summary, 'Upload bond approval')
 assert.equal(payload.updated_at, '2026-06-02T10:00:00.000Z')
-assert.equal(mapParentStageToLegacyStage('TRANSFER'), 'TRANSFER')
-assert.equal(mapParentStageToLegacyStage('REGISTRATION'), 'REGISTRATION')
-assert.equal(mapParentStageToLegacyStage('COMPLETE'), 'COMPLETE')
-assert.equal(mapParentStageToLegacyStage('CANCELLED'), 'CANCELLED')
+assert.equal(mapParentStageToLegacyStage('TRANSFER'), 'XFER')
+assert.equal(mapParentStageToLegacyStage('REGISTRATION'), 'REG')
+assert.equal(mapParentStageToLegacyStage('COMPLETE'), 'REG')
+assert.equal(mapParentStageToLegacyStage('CANCELLED', 'FIN'), 'FIN')
+assert.equal(mapParentStageToDetailedStage('SALES_OTP', 'Reserved'), 'Reserved')
+assert.equal(mapParentStageToDetailedStage('TRANSFER', 'Transfer In Progress'), 'Transfer in Progress')
 
 const blockedPayload = buildTransactionCompatibilityPayload(
   { id: 'tx-2', current_main_stage: 'FIN' },
@@ -134,8 +137,8 @@ const blockedPayload = buildTransactionCompatibilityPayload(
   { now: '2026-06-02T11:00:00.000Z' },
 )
 
-assert.equal(blockedPayload.stage, 'TRANSFER')
-assert.equal(blockedPayload.current_main_stage, 'TRANSFER')
+assert.equal(blockedPayload.stage, 'Transfer in Progress')
+assert.equal(blockedPayload.current_main_stage, 'XFER')
 assert.equal(blockedPayload.current_sub_stage_summary, 'Ignored because blocker comes first')
 
 const client = buildMockClient({
@@ -164,16 +167,16 @@ const syncPayload = await syncTransactionCompatibilityFields(
   },
 )
 
-assert.equal(syncPayload.current_main_stage, 'REGISTRATION')
-assert.equal(syncPayload.stage, 'REGISTRATION')
-assert.equal(client.state.transactions[0].current_main_stage, 'REGISTRATION')
-assert.equal(client.state.transactions[0].stage, 'REGISTRATION')
+assert.equal(syncPayload.current_main_stage, 'REG')
+assert.equal(syncPayload.stage, 'Transfer Lodged')
+assert.equal(client.state.transactions[0].current_main_stage, 'REG')
+assert.equal(client.state.transactions[0].stage, 'Transfer Lodged')
 assert.equal(client.state.transactions[0].current_sub_stage_summary, 'Confirm registration evidence')
-assert.equal(client.state.units[0].status, 'REGISTRATION')
+assert.equal(client.state.units[0].status, 'Transfer Lodged')
 assert.equal(client.state.transaction_workflow_events.length, 1)
 assert.equal(client.state.transaction_workflow_events[0].source, 'rollup_sync')
 assert.equal(client.state.transaction_workflow_events[0].payload_json.previous_current_main_stage, 'OTP')
-assert.equal(client.state.transaction_workflow_events[0].payload_json.new_current_main_stage, 'REGISTRATION')
+assert.equal(client.state.transaction_workflow_events[0].payload_json.new_current_main_stage, 'REG')
 
 assert.throws(
   () =>

@@ -310,15 +310,7 @@ async function runAuthenticatedTableProbes(report, client, sampleLimit) {
 }
 
 async function runExternalIsolationProbes(report, client, sampleLimit) {
-  const isolationTables = [
-    'leads',
-    'contacts',
-    'private_listings',
-    'lead_requirements',
-    'lead_listing_interests',
-    'lead_saved_searches',
-    'tasks',
-  ]
+  const isolationTables = REQUIRED_TABLES.map(({ table }) => table)
 
   for (const table of isolationTables) {
     const { data, error } = await client.from(table).select('*').limit(sampleLimit)

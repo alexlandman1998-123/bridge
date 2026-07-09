@@ -44,13 +44,12 @@ function normalizeRecomputeArgs(transactionIdOrOptions, maybeOptions = {}) {
 async function updateRollupHealth(client, transactionId, patch = {}) {
   if (!transactionId || !patch || !Object.keys(patch).length) return null
 
-  let query = await client.from('transaction_rollups').upsert(
-    {
-      transaction_id: transactionId,
-      ...patch,
-    },
-    { onConflict: 'transaction_id' },
-  )
+  let healthPatch = { ...patch }
+  let query = await client
+    .from('transaction_rollups')
+    .update(healthPatch)
+    .eq('transaction_id', transactionId)
+    .select('transaction_id')
 
   if (
     query.error &&
@@ -60,23 +59,60 @@ async function updateRollupHealth(client, transactionId, patch = {}) {
       isMissingColumnError(query.error, 'last_recompute_attempt_at')
     )
   ) {
-    const fallbackPatch = { transaction_id: transactionId, ...patch }
-    if (isMissingColumnError(query.error, 'is_stale')) delete fallbackPatch.is_stale
-    if (isMissingColumnError(query.error, 'last_error')) delete fallbackPatch.last_error
-    if (isMissingColumnError(query.error, 'last_recompute_attempt_at')) delete fallbackPatch.last_recompute_attempt_at
+    healthPatch = { ...patch }
+    if (isMissingColumnError(query.error, 'is_stale')) delete healthPatch.is_stale
+    if (isMissingColumnError(query.error, 'last_error')) delete healthPatch.last_error
+    if (isMissingColumnError(query.error, 'last_recompute_attempt_at')) delete healthPatch.last_recompute_attempt_at
 
-    if (Object.keys(fallbackPatch).length === 1) {
+    if (!Object.keys(healthPatch).length) {
       return null
     }
 
-    query = await client.from('transaction_rollups').upsert(fallbackPatch, { onConflict: 'transaction_id' })
+    query = await client
+      .from('transaction_rollups')
+      .update(healthPatch)
+      .eq('transaction_id', transactionId)
+      .select('transaction_id')
   }
 
   if (query.error && !isMissingTableError(query.error, 'transaction_rollups')) {
     throw query.error
   }
+  if (query.error) return null
 
-  return query.data || null
+  const updatedRows = Array.isArray(query.data) ? query.data : []
+  if (updatedRows.length || healthPatch.is_stale !== true) {
+    return query.data || null
+  }
+
+  const stalePlaceholder = {
+    transaction_id: transactionId,
+    parent_stage: 'SETUP',
+    parent_status: 'blocked',
+    progress_percent: 0,
+    active_workflow_key: null,
+    active_step_key: null,
+    completed_stages_json: [],
+    blocked_stages_json: [],
+    blockers_json: healthPatch.last_error
+      ? [{
+          type: 'workflow_recompute_failed',
+          title: 'Workflow recompute failed',
+          description: healthPatch.last_error,
+        }]
+      : [],
+    next_action_json: null,
+    derived_from_json: { source: 'workflow_recompute_health' },
+    derived_at: healthPatch.last_recompute_attempt_at || new Date().toISOString(),
+    ...healthPatch,
+  }
+
+  const insert = await client.from('transaction_rollups').insert(stalePlaceholder).select('transaction_id')
+  if (insert.error && !isMissingTableError(insert.error, 'transaction_rollups') && insert.error.code !== '23505') {
+    throw insert.error
+  }
+
+  return insert.data || null
 }
 
 export async function recomputeTransactionWorkflow(transactionIdOrOptions, maybeOptions = {}) {

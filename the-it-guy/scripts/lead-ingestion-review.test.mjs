@@ -56,22 +56,27 @@ assert.match(ingestionServiceSource, /duplicate_of_log_id/)
 assert.match(ingestionServiceSource, /processed_at/)
 
 const pageSource = await fs.readFile(new URL('../src/pages/AgentEnquiriesPage.jsx', import.meta.url), 'utf8')
-assert.match(pageSource, /Enquiries/)
+assert.match(pageSource, /Review Queue/)
 assert.match(pageSource, /Enquiry Review/)
 assert.match(pageSource, /Retry safely/)
 assert.match(pageSource, /Listing could not be matched/)
 assert.match(pageSource, /linkLogToListing/)
+
+const leadsPageSource = await fs.readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
+assert.match(leadsPageSource, /to="\/pipeline\/enquiries"/)
+assert.match(leadsPageSource, /Review Queue/)
 
 const appSource = await fs.readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
 assert.match(appSource, /AgentEnquiriesPage/)
 assert.match(appSource, /path="\/pipeline\/enquiries"/)
 
 const rolesSource = await fs.readFile(new URL('../src/lib/roles.js', import.meta.url), 'utf8')
-assert.match(rolesSource, /key: 'enquiries'/)
+assert.doesNotMatch(rolesSource, /key: 'enquiries'/)
 assert.match(rolesSource, /\/pipeline\/enquiries/)
 
 const sidebarSource = await fs.readFile(new URL('../src/components/Sidebar.jsx', import.meta.url), 'utf8')
-assert.match(sidebarSource, /enquiries: ClipboardList/)
+assert.doesNotMatch(sidebarSource, /\n\s+enquiries: ClipboardList,/)
+assert.doesNotMatch(sidebarSource, /\n\s+pipeline_enquiries: ClipboardList,/)
 
 const server = await createServer({
   root: process.cwd(),

@@ -40,6 +40,7 @@ import TransactionFinanceCommandCenter from '../components/transaction/Transacti
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import FinanceProgressBar from '../components/finance/FinanceProgressBar'
 import FinanceReadinessDashboard from '../components/finance/FinanceReadinessDashboard'
+import DocumentAccessSelectionGrid from '../components/documents/DocumentAccessSelectionGrid'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
@@ -83,6 +84,7 @@ import {
   declineBondQuote,
   fetchTransactionCoreById,
   fetchTransactionById,
+  fetchTransactionDocumentAccessSettings,
   getCompletionBlockers,
   getFinalReportData,
   getTransactionRollup,
@@ -100,6 +102,7 @@ import {
   unarchiveTransactionLifecycle,
   updateBondApplication,
   updateBondHybridFinanceStage,
+  updateTransactionDocumentAccessSettings,
   updateTransactionStakeholderContacts,
   uploadDocument,
 } from '../lib/api'
@@ -117,6 +120,11 @@ import {
   markBondGrantMilestone,
   markBondInstructionSent,
 } from '../services/transactionFinanceService'
+import {
+  buildDocumentRequestAccessGrants,
+  buildDocumentRequestTargets,
+  getDefaultDocumentAccessSelections,
+} from '../services/documents/documentRequestAccessForm'
 import {
   buildTransactionRoutingDiagnostics,
   getTransactionRoutingStatusLabel,
@@ -635,6 +643,11 @@ const ATTORNEY_QUICK_ACTIONS = [
     clientVisibleAllowed: false,
   },
 ]
+
+const DISABLED_ENV_VALUES = new Set(['0', 'false', 'no', 'off', 'disabled'])
+const ENABLE_ATTORNEY_MATTER_COMMAND_CENTER_V2 = !DISABLED_ENV_VALUES.has(
+  String(import.meta.env.VITE_ENABLE_ATTORNEY_MATTER_COMMAND_CENTER_V2 ?? 'true').trim().toLowerCase(),
+)
 
 function getDiscussionVisibilityScope(value = '') {
   const normalized = String(value || '').trim().toLowerCase()
@@ -1204,6 +1217,7 @@ const LANE_ACCENTS = {
 }
 
 const ATTORNEY_ROLE_WORKSPACE_ORDER = ['transfer', 'bond', 'cancellation']
+const ATTORNEY_COMMAND_CENTER_LANE_KEYS = ['transfer', 'bond', 'cancellation']
 
 const ATTORNEY_ROLE_WORKSPACE_CONTENT = {
   transfer: {
@@ -1243,6 +1257,361 @@ const ATTORNEY_ROLE_WORKSPACE_CONTENT = {
       'Title deed and bank release tracked',
       'Guarantees received from transfer attorney',
       'Cancellation ready for lodgement',
+    ],
+  },
+}
+
+const ATTORNEY_LANE_WORKSPACE_TEMPLATES = {
+  transfer: {
+    summary: 'Own the conveyancing lane from instruction through lodgement, registration, and close-out.',
+    readinessLabels: {
+      facts: 'Parties/FICA',
+      documents: 'Transfer docs',
+      signatures: 'Buyer/Seller signing',
+      handoffs: 'Guarantees',
+      blockers: 'Lodgement blockers',
+    },
+    scopeItems: [
+      'OTP and sale instruction',
+      'Buyer, seller, entity, and FICA facts',
+      'Transfer pack and signing',
+      'Bond and cancellation guarantees',
+      'Clearances, lodgement, and registration',
+    ],
+    pathStages: [
+      'instruction_received',
+      'otp_source_docs_checked',
+      'entity_authority_checked',
+      'transfer_documents_prepared',
+      'buyer_signed_transfer_documents',
+      'seller_signed_transfer_documents',
+      'guarantees_received',
+      'lodgement_ready',
+      'registered',
+    ],
+    stageMap: {
+      instruction_received: {
+        label: 'OTP / Sale Agreement',
+        description: 'Source agreement and transfer instruction are available for the conveyancing file.',
+      },
+      otp_source_docs_checked: {
+        label: 'Source Docs Checked',
+        description: 'Sale agreement, parties, price, conditions, and property facts have been checked.',
+      },
+      entity_authority_checked: {
+        label: 'FICA & Authority',
+        description: 'Buyer/seller FICA, entity type, and signing authority are confirmed.',
+      },
+      fica_received: {
+        label: 'Party FICA & Authority',
+        description: 'Buyer, seller, entity, and authority facts are ready for drafting and compliance.',
+      },
+      transfer_documents_prepared: {
+        label: 'Transfer Documents',
+        description: 'Transfer pack is prepared and ready for buyer and seller signature tracking.',
+      },
+      buyer_signed_transfer_documents: {
+        label: 'Buyer Transfer Signing',
+        description: 'Buyer has signed the transfer pack or is being actively followed up.',
+      },
+      seller_signed_transfer_documents: {
+        label: 'Seller Transfer Signing',
+        description: 'Seller has signed the transfer pack or is being actively followed up.',
+      },
+      guarantees_received: {
+        label: 'Guarantees & Clearances',
+        description: 'Bond/cancellation guarantees plus rates, levy, and clearance dependencies are tracked.',
+      },
+      lodgement_ready: {
+        label: 'Ready For Lodgement',
+        description: 'Transfer pack and linked legal lanes are aligned for lodgement.',
+      },
+      lodged_at_deeds_office: {
+        label: 'Lodgement',
+        description: 'Transfer is ready for lodgement or has been lodged with linked lanes aligned.',
+      },
+      registered: {
+        label: 'Registration',
+        description: 'Registration is confirmed and close-out updates can be issued.',
+      },
+    },
+    essentials: [
+      {
+        key: 'otp',
+        label: 'OTP / sale agreement',
+        description: 'Signed source agreement and transaction instruction.',
+        icon: FileText,
+        keywords: ['otp', 'offer', 'sale agreement', 'sales agreement', 'instruction'],
+      },
+      {
+        key: 'party_fica',
+        label: 'Party FICA & authority',
+        description: 'Buyer, seller, entity type, and signing authority.',
+        icon: UsersRound,
+        keywords: ['fica', 'entity', 'authority', 'buyer', 'seller', 'identity', 'address'],
+      },
+      {
+        key: 'transfer_pack',
+        label: 'Transfer pack & signing',
+        description: 'Transfer documents and buyer/seller signatures.',
+        icon: FileCheck2,
+        keywords: ['transfer document', 'transfer docs', 'signature', 'signed', 'signing', 'power of attorney'],
+      },
+      {
+        key: 'guarantees_clearances',
+        label: 'Guarantees & clearances',
+        description: 'Guarantees, rates, levy, and handoffs from linked lanes.',
+        icon: Landmark,
+        keywords: ['guarantee', 'rates', 'levy', 'clearance', 'bond attorney', 'cancellation attorney'],
+      },
+      {
+        key: 'lodgement_registration',
+        label: 'Lodgement & registration',
+        description: 'Lodgement pack, deeds office movement, and registration confirmation.',
+        icon: Workflow,
+        keywords: ['lodgement', 'lodged', 'deeds', 'registration', 'registered'],
+      },
+    ],
+  },
+  bond: {
+    summary: 'Own bond registration readiness from bank instruction through conditions, buyer signing, guarantees, and lodgement.',
+    readinessLabels: {
+      facts: 'Bank facts',
+      documents: 'Bond docs',
+      signatures: 'Buyer signing',
+      handoffs: 'Guarantees',
+      blockers: 'Bank blockers',
+    },
+    scopeItems: [
+      'Bank instruction and grant',
+      'Bond amount and bank conditions',
+      'Buyer bond documents and signing',
+      'Guarantees issued to transfer',
+      'Bond lodgement and registration',
+    ],
+    pathStages: [
+      'bond_instruction_received',
+      'bond_approval_letter_received',
+      'bank_conditions_outstanding',
+      'bank_conditions_resolved',
+      'bond_documents_prepared',
+      'buyer_signed_bond_documents',
+      'guarantees_issued',
+      'bond_lodgement_ready',
+      'bond_registered',
+    ],
+    stageMap: {
+      bond_instruction_received: {
+        label: 'Bank Instruction',
+        description: 'Bank instruction, lender details, and approved bond amount are available.',
+      },
+      bond_approval_letter_received: {
+        label: 'Grant Letter',
+        description: 'Approved bond terms or grant letter have been received.',
+      },
+      bank_conditions_outstanding: {
+        label: 'Bank Conditions',
+        description: 'Outstanding bank conditions are visible and being resolved.',
+      },
+      bank_conditions_resolved: {
+        label: 'Conditions Resolved',
+        description: 'Bank conditions have been resolved for bond document readiness.',
+      },
+      buyer_fica_received: {
+        label: 'Buyer FICA / Bank Facts',
+        description: 'Buyer FICA and bank-required supporting facts are ready for bond documents.',
+      },
+      bond_documents_prepared: {
+        label: 'Bond Documents',
+        description: 'Bond documents are prepared and bank conditions are being tracked.',
+      },
+      buyer_signed_bond_documents: {
+        label: 'Buyer Bond Signing',
+        description: 'Buyer has signed or is being followed up for bond registration documents.',
+      },
+      guarantees_issued: {
+        label: 'Guarantees Issued',
+        description: 'Guarantees have been issued or are being prepared for the transfer attorney.',
+      },
+      bond_lodgement_ready: {
+        label: 'Ready For Lodgement',
+        description: 'Bond registration pack is aligned for simultaneous lodgement.',
+      },
+      bond_lodged: {
+        label: 'Bond Lodgement',
+        description: 'Bond registration pack is aligned for lodgement with transfer.',
+      },
+      bond_registered: {
+        label: 'Bond Registration',
+        description: 'Bond registration is confirmed for the finance lane.',
+      },
+    },
+    essentials: [
+      {
+        key: 'bank_instruction',
+        label: 'Bank instruction',
+        description: 'Bank, lender, grant, instruction, and bond amount details.',
+        icon: Landmark,
+        keywords: ['bank instruction', 'instruction', 'lender', 'bank', 'bond amount', 'grant', 'approval'],
+      },
+      {
+        key: 'bank_conditions',
+        label: 'Bank conditions',
+        description: 'Outstanding lender conditions and supporting requirements.',
+        icon: AlertTriangle,
+        keywords: ['condition', 'bank requirement', 'requirements', 'supporting', 'outstanding'],
+      },
+      {
+        key: 'bond_documents',
+        label: 'Bond documents',
+        description: 'Bond pack, instruction letter, grant letter, and lender documents.',
+        icon: FileText,
+        keywords: ['bond document', 'bond docs', 'grant letter', 'instruction letter', 'bond pack'],
+      },
+      {
+        key: 'buyer_bond_signing',
+        label: 'Buyer bond signing',
+        description: 'Buyer signatures required for bond registration.',
+        icon: FileCheck2,
+        keywords: ['buyer signing', 'buyer signed', 'signature', 'signing', 'bond signature'],
+      },
+      {
+        key: 'guarantees_lodgement',
+        label: 'Guarantees & lodgement',
+        description: 'Guarantees issued to transfer and bond lodgement readiness.',
+        icon: Workflow,
+        keywords: ['guarantee', 'issued', 'transfer attorney', 'lodgement', 'lodged', 'registration'],
+      },
+    ],
+  },
+  cancellation: {
+    summary: 'Own cancellation readiness from bank instruction through figures, title deed release, guarantees, and simultaneous lodgement.',
+    readinessLabels: {
+      facts: 'Cancellation facts',
+      documents: 'Bank release docs',
+      signatures: 'Seller signing',
+      handoffs: 'Transfer guarantees',
+      blockers: 'Lodgement blockers',
+    },
+    scopeItems: [
+      'Cancellation instruction',
+      'Settlement figures',
+      'Title deed and bank release',
+      'Cancellation guarantees',
+      'Readiness for simultaneous lodgement',
+    ],
+    pathStages: [
+      'cancellation_instruction_received',
+      'cancellation_figures_requested',
+      'cancellation_figures_received',
+      'cancellation_guarantees_received',
+      'cancellation_guarantees_accepted',
+      'cancellation_documents_prepared',
+      'cancellation_lodgement_ready',
+      'cancellation_registered',
+    ],
+    stageMap: {
+      cancellation_existing_bond_confirmed: {
+        label: 'Existing Bond Confirmed',
+        description: 'Seller existing bond details are confirmed for cancellation.',
+      },
+      cancellation_instruction_received: {
+        label: 'Cancellation Instruction',
+        description: 'Seller bond cancellation instruction is confirmed.',
+      },
+      cancellation_figures_requested: {
+        label: 'Figures Requested',
+        description: 'Settlement figures have been requested from the existing bondholder.',
+      },
+      cancellation_figures_received: {
+        label: 'Settlement Figures',
+        description: 'Settlement figures are received and usable for cancellation readiness.',
+      },
+      settlement_figures_requested: {
+        label: 'Figures Requested',
+        description: 'Settlement figures have been requested from the existing bondholder.',
+      },
+      settlement_figures_received: {
+        label: 'Settlement Figures',
+        description: 'Settlement figures are received and usable for cancellation readiness.',
+      },
+      guarantees_provided: {
+        label: 'Guarantees Provided',
+        description: 'Guarantees required for cancellation have been provided.',
+      },
+      cancellation_guarantees_requested: {
+        label: 'Guarantees Requested',
+        description: 'Cancellation guarantees have been requested from the transfer lane.',
+      },
+      cancellation_guarantees_received: {
+        label: 'Guarantees Received',
+        description: 'Guarantees required for cancellation have been received.',
+      },
+      cancellation_guarantees_accepted: {
+        label: 'Guarantees Accepted',
+        description: 'Cancellation guarantees have been accepted by the existing bank.',
+      },
+      cancellation_documents_prepared: {
+        label: 'Cancellation Documents',
+        description: 'Cancellation documents, title deed release, and bank release pack are ready.',
+      },
+      cancellation_docs_prepared: {
+        label: 'Cancellation Documents',
+        description: 'Cancellation documents, title deed release, and bank release pack are ready.',
+      },
+      cancellation_lodgement_ready: {
+        label: 'Ready For Lodgement',
+        description: 'Cancellation pack is ready for simultaneous lodgement.',
+      },
+      cancellation_lodged: {
+        label: 'Cancellation Lodgement',
+        description: 'Cancellation is aligned for simultaneous lodgement.',
+      },
+      cancellation_registered: {
+        label: 'Cancellation Registered',
+        description: 'Existing bond cancellation has registered.',
+      },
+      bond_cancelled: {
+        label: 'Cancellation Registered',
+        description: 'Existing bond cancellation has registered.',
+      },
+    },
+    essentials: [
+      {
+        key: 'cancellation_instruction',
+        label: 'Cancellation instruction',
+        description: 'Seller bond cancellation instruction and existing bondholder details.',
+        icon: LockKeyhole,
+        keywords: ['cancellation instruction', 'instruction', 'existing bond', 'bondholder', 'seller bond'],
+      },
+      {
+        key: 'settlement_figures',
+        label: 'Settlement figures',
+        description: 'Figures requested, received, and current enough for lodgement.',
+        icon: CircleDollarSign,
+        keywords: ['settlement figure', 'figures', 'settlement', 'payout', 'bank figures'],
+      },
+      {
+        key: 'title_deed_release',
+        label: 'Title deed / bank release',
+        description: 'Title deed, release documents, and bank release status.',
+        icon: FileText,
+        keywords: ['title deed', 'release', 'bank release', 'deed', 'cancellation document'],
+      },
+      {
+        key: 'cancellation_guarantees',
+        label: 'Cancellation guarantees',
+        description: 'Guarantees provided by transfer and accepted by the cancellation bank.',
+        icon: Landmark,
+        keywords: ['guarantee', 'guarantees accepted', 'transfer attorney', 'accepted'],
+      },
+      {
+        key: 'simultaneous_lodgement',
+        label: 'Simultaneous lodgement',
+        description: 'Cancellation is ready to lodge with transfer and bond where applicable.',
+        icon: Workflow,
+        keywords: ['lodgement', 'lodged', 'simultaneous', 'readiness', 'registration'],
+      },
     ],
   },
 }
@@ -1823,6 +2192,1091 @@ function getWorkflowRequirementPreview(workflow = {}) {
     signatures: getRoleWorkspaceOpenItems(lane.signingRequirements || [], 2),
     blockers: getWorkflowBlockerPreview(workflow, 3),
   }
+}
+
+function getAttorneyCommandCenterLaneIcon(laneKey = '') {
+  if (laneKey === 'bond') return Landmark
+  if (laneKey === 'cancellation') return LockKeyhole
+  return Workflow
+}
+
+function getAttorneyCommandCenterLaneKey(workflow = {}) {
+  return getAttorneyRoleWorkspaceKey(workflow)
+}
+
+function getAttorneyCommandCenterLaneTemplate(value = {}) {
+  const laneKey = typeof value === 'string' ? normalizeDetailKey(value) : getAttorneyCommandCenterLaneKey(value)
+  return ATTORNEY_LANE_WORKSPACE_TEMPLATES[laneKey] || ATTORNEY_LANE_WORKSPACE_TEMPLATES.transfer
+}
+
+function getAttorneyCommandCenterProgress(workflow = {}) {
+  const progress = Number(workflow?.progressPercent || 0)
+  if (!Number.isFinite(progress)) return 0
+  return Math.max(0, Math.min(100, Math.round(progress)))
+}
+
+function getAttorneyCommandCenterCurrentStageLabel(workflow = {}) {
+  const lane = workflow?.lane || {}
+  const currentStep = getCurrentWorkflowStep(lane)
+  if (currentStep) return getWorkflowStepLabel(currentStep)
+  if (workflow?.nextStep) return workflow.nextStep
+  return 'Lane review'
+}
+
+function getAttorneyCommandCenterReadinessItems(workflow = {}) {
+  const template = getAttorneyCommandCenterLaneTemplate(workflow)
+  const metrics = getRoleWorkspaceMetrics(workflow)
+  const coordinationCounts = workflow?.lane?.coordinationSummary?.counts || {}
+  const handoffCount =
+    countNumber(coordinationCounts.waiting) +
+    countNumber(coordinationCounts.blocked) +
+    countNumber(coordinationCounts.escalationNeeded)
+
+  return [
+    {
+      key: 'facts',
+      label: template.readinessLabels?.facts || 'Facts',
+      value: metrics.missingData ? `${metrics.missingData} open` : 'Clear',
+      statusKey: metrics.missingData ? 'waiting' : 'completed',
+      icon: FileText,
+    },
+    {
+      key: 'documents',
+      label: template.readinessLabels?.documents || 'Documents',
+      value: metrics.missingDocuments ? `${metrics.missingDocuments} open` : 'Clear',
+      statusKey: metrics.missingDocuments ? 'waiting' : 'completed',
+      icon: Paperclip,
+    },
+    {
+      key: 'signatures',
+      label: template.readinessLabels?.signatures || 'Signatures',
+      value: metrics.openSignatures ? `${metrics.openSignatures} open` : 'Clear',
+      statusKey: metrics.openSignatures ? 'waiting' : 'completed',
+      icon: FileCheck2,
+    },
+    {
+      key: 'handoffs',
+      label: template.readinessLabels?.handoffs || 'Handoffs',
+      value: handoffCount ? `${handoffCount} waiting` : 'Clear',
+      statusKey: handoffCount ? 'waiting' : 'completed',
+      icon: UsersRound,
+    },
+    {
+      key: 'blockers',
+      label: template.readinessLabels?.blockers || 'Blockers',
+      value: metrics.blockers ? `${metrics.blockers} open` : 'Clear',
+      statusKey: metrics.blockers ? 'blocked' : 'completed',
+      icon: AlertTriangle,
+    },
+  ]
+}
+
+function getAttorneyCommandCenterDependencies(workflow = {}, limit = 4) {
+  if (!workflow?.required) return []
+
+  const lane = workflow?.lane || {}
+  const coordinationItems = getAttorneyCoordinationWorkflowItems([workflow])
+    .filter((entry) => {
+      const status = String(entry?.item?.status || '').trim().toLowerCase()
+      return status !== 'ready' && status !== 'clear'
+    })
+    .map((entry) => ({
+      id: `coordination-${entry.key}`,
+      title: entry.item?.title || 'Workflow handoff',
+      description: entry.item?.description || 'Cross-lane handoff is waiting.',
+      meta: entry.item?.needed ? `Needed: ${entry.item.needed}` : entry.item?.current ? `Current: ${entry.item.current}` : 'Handoff',
+      statusKey: entry.item?.escalationNeeded ? 'blocked' : entry.item?.status === 'blocked' ? 'blocked' : 'waiting',
+    }))
+
+  const followUpItems = getAttorneyCoordinationFollowUpItems([workflow])
+    .filter((entry) => {
+      const status = String(entry?.item?.status || '').trim().toLowerCase()
+      return status !== 'done' && status !== 'completed' && status !== 'clear'
+    })
+    .map((entry) => ({
+      id: `follow-up-${entry.key}`,
+      title: entry.item?.title || 'Workflow follow-up',
+      description: entry.item?.description || 'Follow-up is open.',
+      meta: [entry.item?.source || '', entry.item?.dueDate ? `Due ${formatDateTime(entry.item.dueDate, entry.item.dueDate)}` : ''].filter(Boolean).join(' • ') || 'Follow-up',
+      statusKey: ['overdue', 'needs_correction'].includes(String(entry.item?.status || '').trim().toLowerCase()) ? 'blocked' : 'waiting',
+    }))
+
+  const blockerItems = getWorkflowBlockerPreview(workflow, limit).map((item) => ({
+    id: `blocker-${item.id}`,
+    title: item.label || 'Workflow blocker',
+    description: item.description || 'This lane cannot move until the blocker is resolved.',
+    meta: toTitle(item.status || 'blocked'),
+    statusKey: 'blocked',
+  }))
+
+  const missingRequirementItems = getWorkflowRequirementPreview(workflow)
+    .documents
+    .slice(0, limit)
+    .map((item) => ({
+      id: `document-${item.id || item.key || item.label}`,
+      title: getRequirementDisplayLabel(item, 'Missing document'),
+      description: getRequirementDescription(item, 'Required document is still outstanding.'),
+      meta: getRequirementStatusDisplay(item),
+      statusKey: 'waiting',
+    }))
+
+  const unique = []
+  const seen = new Set()
+  ;[...coordinationItems, ...followUpItems, ...blockerItems, ...missingRequirementItems].forEach((item) => {
+    const signature = `${item.title}:${item.meta}`
+    if (seen.has(signature)) return
+    seen.add(signature)
+    unique.push(item)
+  })
+
+  if (!unique.length && lane?.summary?.nextAction) {
+    unique.push({
+      id: `${lane.laneKey || workflow.key}-next-action`,
+      title: lane.summary.nextAction,
+      description: workflow.summary || 'Lane review is available.',
+      meta: workflow.statusLabel || 'In progress',
+      statusKey: workflow.statusKey || 'in_progress',
+    })
+  }
+
+  return unique.slice(0, limit)
+}
+
+function getAttorneyCommandCenterCriticalPath(workflow = {}) {
+  const laneKey = getAttorneyCommandCenterLaneKey(workflow)
+  const template = getAttorneyCommandCenterLaneTemplate(laneKey)
+  const lane = workflow?.lane || {}
+  const stageDefinitions = getAttorneyStageDefinitionsForLane(laneKey)
+  const visibleStageDefinitions = (template.pathStages || [])
+    .map((stageKey) => {
+      const normalizedStageKey = normalizeAttorneyStageKey(stageKey, laneKey)
+      const existingDefinition = stageDefinitions.find((definition) => definition.key === normalizedStageKey)
+      return existingDefinition || {
+        key: normalizedStageKey,
+        label: template.stageMap?.[normalizedStageKey]?.label || toTitle(normalizedStageKey),
+        description: template.stageMap?.[normalizedStageKey]?.description || '',
+      }
+    })
+    .filter(Boolean)
+  const laneSteps = Array.isArray(lane?.steps) ? lane.steps : []
+  const currentStep = getCurrentWorkflowStep(lane)
+  const currentKey = normalizeAttorneyStageKey(
+    lane?.currentStage || lane?.summary?.currentStage || currentStep?.stepKey || currentStep?.step_key || '',
+    laneKey,
+  )
+  const pathDefinitions = visibleStageDefinitions.length ? visibleStageDefinitions : stageDefinitions
+  const matchedCurrentIndex = pathDefinitions.findIndex((definition) => definition.key === currentKey)
+  const fullCurrentIndex = stageDefinitions.findIndex((definition) => definition.key === currentKey)
+  const closestPathIndex = fullCurrentIndex >= 0
+    ? pathDefinitions.reduce((closest, definition, index) => {
+        const fullDefinitionIndex = stageDefinitions.findIndex((stageDefinition) => stageDefinition.key === definition.key)
+        if (fullDefinitionIndex >= 0 && fullDefinitionIndex <= fullCurrentIndex) return index
+        return closest
+      }, 0)
+    : 0
+  const currentIndex = matchedCurrentIndex >= 0 ? matchedCurrentIndex : closestPathIndex
+
+  return pathDefinitions.map((definition, index) => {
+    const stageTemplate = template.stageMap?.[definition.key] || {}
+    const matchingStep = laneSteps.find((step) => {
+      const stepKey = normalizeAttorneyStageKey(step.stepKey || step.step_key || '', laneKey)
+      return stepKey === definition.key
+    })
+    const rawStatus = normalizeWorkspaceStatus(matchingStep?.status || '')
+    const isCurrent = definition.key === currentKey || (matchedCurrentIndex < 0 && index === currentIndex)
+    const statusKey = rawStatus === 'completed'
+      ? 'completed'
+      : rawStatus === 'blocked'
+        ? 'blocked'
+        : isCurrent
+          ? rawStatus === 'waiting' ? 'waiting' : 'in_progress'
+          : index < currentIndex
+            ? 'completed'
+            : 'not_started'
+
+    return {
+      key: definition.key,
+      label: stageTemplate.label || (matchingStep ? getWorkflowStepLabel(matchingStep) : definition.label),
+      description: matchingStep?.comment || stageTemplate.description || definition.description || '',
+      statusKey,
+      isCurrent,
+    }
+  })
+}
+
+function getAttorneyTemplateText(item = {}) {
+  return normalizeDetailKey([
+    item?.label,
+    item?.title,
+    item?.name,
+    item?.description,
+    item?.reason,
+    item?.category,
+    item?.documentType,
+    item?.document_type,
+    item?.key,
+    item?.id,
+    item?.status,
+    item?.reviewStatus,
+    item?.review_status,
+    item?.expectedFromRole,
+    item?.requiredFromRole,
+    item?.requestedFrom,
+    item?.requested_from,
+    item?.meta,
+  ].filter(Boolean).join(' '))
+}
+
+function getAttorneyTemplateKeywordMatch(item = {}, essentials = []) {
+  const text = getAttorneyTemplateText(item)
+  return essentials.find((essential) =>
+    (essential.keywords || []).some((keyword) => {
+      const normalizedKeyword = normalizeDetailKey(keyword)
+      return normalizedKeyword && text.includes(normalizedKeyword)
+    }),
+  ) || null
+}
+
+function getAttorneyCommandCenterTemplateEssentials(workflow = {}, requirementPreview = null, dependencies = []) {
+  const template = getAttorneyCommandCenterLaneTemplate(workflow)
+  const openItems = [
+    ...(requirementPreview?.data || []),
+    ...(requirementPreview?.documents || []),
+    ...(requirementPreview?.signatures || []),
+    ...(dependencies || []),
+  ]
+
+  return (template.essentials || []).map((essential) => {
+    const matchedItems = openItems.filter((item) => getAttorneyTemplateKeywordMatch(item, [essential]))
+    const blocked = matchedItems.some((item) => {
+      const status = normalizeWorkspaceStatus(item?.status || item?.statusKey || item?.reviewStatus || item?.review_status || '')
+      return status === 'blocked' || status === 'delayed'
+    })
+
+    return {
+      ...essential,
+      openCount: matchedItems.length,
+      statusKey: blocked ? 'blocked' : matchedItems.length ? 'waiting' : 'completed',
+      value: matchedItems.length ? `${matchedItems.length} open` : 'Clear',
+    }
+  })
+}
+
+function getAttorneyCommandCenterOpenItems(workflow = {}, requirementPreview = null, limit = 6) {
+  const template = getAttorneyCommandCenterLaneTemplate(workflow)
+  const essentials = template.essentials || []
+  const sourceItems = [
+    ...(requirementPreview?.data || []).map((item) => ({ ...item, group: 'Fact', groupRank: 1 })),
+    ...(requirementPreview?.documents || []).map((item) => ({ ...item, group: 'Document', groupRank: 2 })),
+    ...(requirementPreview?.signatures || []).map((item) => ({ ...item, group: 'Signing', groupRank: 3 })),
+  ]
+
+  return sourceItems
+    .map((item, index) => {
+      const matchedEssential = getAttorneyTemplateKeywordMatch(item, essentials)
+      const templateRank = matchedEssential ? essentials.findIndex((entry) => entry.key === matchedEssential.key) : essentials.length
+      const statusText = normalizeDetailKey(`${item.status || ''} ${item.reviewStatus || item.review_status || ''} ${item.priority || ''}`)
+      const urgencyRank = /blocked|rejected|urgent|high|required|missing/.test(statusText) ? 0 : 1
+
+      return {
+        ...item,
+        templateLabel: matchedEssential?.label || '',
+        sortRank: (templateRank * 100) + (urgencyRank * 10) + item.groupRank + index / 100,
+      }
+    })
+    .sort((left, right) => left.sortRank - right.sortRank)
+    .slice(0, limit)
+}
+
+function getAttorneyCommandCenterLaneActivity(activity = [], laneKey = '', limit = 3) {
+  const normalizedLaneKey = normalizeDetailKey(laneKey)
+  const sourceActivity = Array.isArray(activity) ? activity : []
+  const aliases = normalizedLaneKey === 'bond'
+    ? ['bond', 'bond_registration', 'finance']
+    : normalizedLaneKey === 'cancellation'
+      ? ['cancellation', 'bond_cancellation', 'cancel']
+      : ['transfer', 'registration', 'lodgement']
+
+  const scoped = sourceActivity.filter((entry) => {
+    const filterKeys = Array.isArray(entry?.filterKeys) ? entry.filterKeys.map((key) => normalizeDetailKey(key)) : []
+    if (filterKeys.some((key) => aliases.includes(key))) return true
+    const text = normalizeDetailKey([
+      entry?.title,
+      entry?.body,
+      entry?.roleLabel,
+      entry?.category,
+      entry?.messageType,
+    ].filter(Boolean).join(' '))
+    return aliases.some((alias) => text.includes(alias))
+  })
+
+  return (scoped.length ? scoped : sourceActivity).slice(0, limit)
+}
+
+function getAttorneyGuidedPlanSummary(queueItems = [], dependencies = [], openItems = [], essentials = []) {
+  const urgentCount = queueItems.filter((item) => getAttorneyQueueRank(item) <= 3).length
+  const waitingCount = dependencies.filter((item) => item?.statusKey !== 'completed').length
+  const collectCount = openItems.length
+  const clearEssentials = essentials.filter((item) => item.statusKey === 'completed').length
+
+  return {
+    urgentCount,
+    waitingCount,
+    collectCount,
+    clearEssentials,
+    attentionCount: urgentCount + waitingCount + collectCount,
+  }
+}
+
+function getAttorneyGuidedPlanCommandLabel(item = {}) {
+  if (item?.command?.label) return item.command.label
+  if (item?.action?.label) return item.action.label
+  if (item?.kind === 'document') return 'Request'
+  if (item?.kind === 'coordination') return item.escalationNeeded ? 'Escalate' : 'Request Handoff'
+  if (item?.kind === 'follow_up') return 'Follow Up'
+  return 'Start'
+}
+
+function getAttorneyMatterPulse(workflows = []) {
+  const activeWorkflows = workflows.filter((workflow) => workflow?.required)
+  const overview = getAttorneyCoordinationOverview(activeWorkflows)
+  const allQueueItems = buildAttorneyDailyActionQueueItems(activeWorkflows)
+  const urgentActionCount = allQueueItems.filter((item) => getAttorneyQueueRank(item) <= 3).length
+  const laneSummaries = activeWorkflows.map((workflow) => {
+    const laneKey = getAttorneyCommandCenterLaneKey(workflow)
+    const content = getAttorneyRoleWorkspaceContent(workflow)
+    const metrics = getRoleWorkspaceMetrics(workflow)
+    const queueItems = buildAttorneyDailyActionQueueItems([workflow])
+    const openCount = metrics.missingData + metrics.missingDocuments + metrics.openSignatures + metrics.blockers
+    const urgentCount = queueItems.filter((item) => getAttorneyQueueRank(item) <= 3).length
+    const rawStatusKey = normalizeWorkspaceStatus(workflow?.statusKey || workflow?.lane?.laneStatus || workflow?.lane?.summary?.status || '')
+    const statusKey = metrics.blockers || rawStatusKey === 'blocked'
+      ? 'blocked'
+      : urgentCount || openCount
+        ? 'waiting'
+        : rawStatusKey === 'not_started'
+          ? 'in_progress'
+          : rawStatusKey
+
+    return {
+      laneKey,
+      roleTitle: content.roleTitle,
+      statusKey,
+      statusLabel: workflow.statusLabel || WORKFLOW_STATUS_META[statusKey]?.label || 'In Progress',
+      progress: getAttorneyCommandCenterProgress(workflow),
+      nextStep: workflow.nextStep || getAttorneyCommandCenterCurrentStageLabel(workflow),
+      openCount,
+      urgentCount,
+      queueCount: queueItems.length,
+    }
+  })
+
+  const blockedLaneCount = laneSummaries.filter((item) => item.statusKey === 'blocked').length
+  const waitingLaneCount = laneSummaries.filter((item) => item.statusKey === 'waiting').length
+  const readyLaneCount = laneSummaries.filter((item) => !item.openCount && !item.queueCount && item.statusKey !== 'blocked').length
+  const handoffAttentionCount =
+    overview.coordinationCounts.waiting +
+    overview.coordinationCounts.blocked +
+    overview.coordinationCounts.escalationNeeded
+  const attentionCount = urgentActionCount + handoffAttentionCount + overview.followUpAttention
+  const healthKey = blockedLaneCount || overview.health === 'escalation' || overview.health === 'blocked'
+    ? 'blocked'
+    : attentionCount || waitingLaneCount
+      ? 'waiting'
+      : activeWorkflows.length && readyLaneCount === activeWorkflows.length
+        ? 'completed'
+        : 'in_progress'
+  const nextAttentionLane =
+    laneSummaries.find((item) => item.statusKey === 'blocked') ||
+    laneSummaries.find((item) => item.urgentCount) ||
+    laneSummaries.find((item) => item.openCount || item.queueCount) ||
+    laneSummaries[0] ||
+    null
+
+  return {
+    activeLaneCount: activeWorkflows.length,
+    readyLaneCount,
+    blockedLaneCount,
+    waitingLaneCount,
+    urgentActionCount,
+    handoffAttentionCount,
+    followUpAttention: overview.followUpAttention,
+    attentionCount,
+    healthKey,
+    healthLabel: healthKey === 'completed'
+      ? 'Ready'
+      : healthKey === 'blocked'
+        ? 'Blocked'
+        : healthKey === 'waiting'
+          ? 'Needs Attention'
+          : 'In Progress',
+    nextAttentionLane,
+    laneSummaries,
+  }
+}
+
+function AttorneyMatterHeaderCompact({
+  title,
+  statusLabel,
+  statusClassName,
+  propertyLabel,
+  buyerName,
+  sellerName,
+  financeTypeLabel,
+  matterHealthLabel,
+  daysActiveLabel,
+  updatedLabel,
+  actionButtons = [],
+}) {
+  return (
+    <section className="rounded-lg border border-borderDefault bg-white px-5 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center rounded-full border border-borderDefault bg-surfaceAlt px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">
+              Attorney Matter
+            </span>
+            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${statusClassName}`}>
+              {statusLabel}
+            </span>
+            <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+              {matterHealthLabel}
+            </span>
+          </div>
+          <div className="mt-3 flex flex-wrap items-end gap-x-4 gap-y-2">
+            <h1 className="truncate text-[1.65rem] font-bold tracking-[-0.03em] text-textStrong md:text-[1.9rem]">{title}</h1>
+            <p className="pb-1 text-sm font-medium text-textMuted">{daysActiveLabel}{updatedLabel ? ` • Updated ${updatedLabel}` : ''}</p>
+          </div>
+          <p className="mt-2 max-w-5xl text-sm font-medium leading-6 text-textBody">{propertyLabel}</p>
+        </div>
+        {actionButtons.length ? (
+          <div className="flex shrink-0 flex-wrap gap-2 xl:justify-end">
+            {actionButtons.slice(0, 3).map((action) => (
+              <Button
+                key={action.actionKey || action.label}
+                type="button"
+                variant={action.variant || 'secondary'}
+                size="sm"
+                onClick={action.onClick}
+                disabled={action.disabled}
+              >
+                {action.icon ? createElement(action.icon, { size: 14 }) : null}
+                {action.busy ? action.busyLabel || 'Preparing...' : action.label}
+              </Button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        {[
+          ['Buyer', buyerName || 'Buyer pending'],
+          ['Seller', sellerName || 'Seller pending'],
+          ['Finance', financeTypeLabel || 'Not captured'],
+          ['Health', matterHealthLabel || 'On Track'],
+        ].map(([label, value]) => (
+          <div key={label} className="min-w-0 rounded-lg border border-borderSoft bg-surfaceAlt px-3 py-2.5">
+            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
+            <strong className="mt-1 block truncate text-sm text-textStrong">{value}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function AttorneyMatterPulsePanel({
+  workflows = [],
+  selectedLaneKey = '',
+  onSelectLane = null,
+}) {
+  const pulse = getAttorneyMatterPulse(workflows)
+  const meta = WORKFLOW_STATUS_META[pulse.healthKey] || WORKFLOW_STATUS_META.in_progress
+
+  if (!pulse.activeLaneCount) return null
+
+  return (
+    <section className={`rounded-lg border bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)] ${meta.border}`}>
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`inline-flex size-9 items-center justify-center rounded-lg ${meta.bg} ${meta.text}`}>
+              <Bell size={16} />
+            </span>
+            <div>
+              <h3 className="text-sm font-semibold text-textStrong">Matter Pulse</h3>
+              <p className="mt-1 text-sm leading-5 text-textMuted">
+                {pulse.nextAttentionLane
+                  ? `${pulse.nextAttentionLane.roleTitle}: ${pulse.nextAttentionLane.nextStep || pulse.nextAttentionLane.statusLabel}`
+                  : 'No active linked legal lanes.'}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${meta.border} ${meta.bg} ${meta.text}`}>
+            {pulse.healthLabel}
+          </span>
+          <span className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-xs font-semibold text-textMuted">
+            {pulse.readyLaneCount}/{pulse.activeLaneCount} lanes clear
+          </span>
+          <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${pulse.attentionCount ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+            {pulse.attentionCount} attention
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        {[
+          ['Urgent actions', pulse.urgentActionCount, AlertTriangle],
+          ['Linked handoffs', pulse.handoffAttentionCount, UsersRound],
+          ['Follow-ups', pulse.followUpAttention, Clock3],
+        ].map(([label, value, Icon]) => {
+          const active = Number(value || 0) > 0
+          return (
+            <div key={label} className={`rounded-lg border px-3 py-3 ${active ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
+              <div className="flex items-center justify-between gap-3">
+                <span className={`inline-flex size-8 items-center justify-center rounded-lg ${active ? 'bg-white text-amber-700 ring-1 ring-amber-200' : 'bg-white text-emerald-700 ring-1 ring-emerald-200'}`}>
+                  {createElement(Icon, { size: 15 })}
+                </span>
+                <strong className={`text-sm ${active ? 'text-amber-700' : 'text-emerald-700'}`}>{value}</strong>
+              </div>
+              <span className="mt-3 block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="mt-4 grid gap-2 lg:grid-cols-3">
+        {pulse.laneSummaries.map((lane) => {
+          const laneMeta = WORKFLOW_STATUS_META[lane.statusKey] || WORKFLOW_STATUS_META.in_progress
+          const selected = lane.laneKey === selectedLaneKey
+          return (
+            <button
+              key={lane.laneKey}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => onSelectLane?.(lane.laneKey)}
+              className={`rounded-lg border px-3 py-3 text-left transition ${
+                selected
+                  ? 'border-primary bg-primarySoft'
+                  : 'border-borderSoft bg-surfaceAlt hover:border-borderStrong hover:bg-white'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className={`inline-flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 ${LANE_ACCENTS[lane.laneKey]?.icon || LANE_ACCENTS.transfer.icon}`}>
+                    {createElement(getAttorneyCommandCenterLaneIcon(lane.laneKey), { size: 15 })}
+                  </span>
+                  <div className="min-w-0">
+                    <strong className="block truncate text-sm text-textStrong">{lane.roleTitle}</strong>
+                    <span className="mt-1 block truncate text-xs text-textMuted">{lane.nextStep}</span>
+                  </div>
+                </div>
+                <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold ${laneMeta.border} ${laneMeta.bg} ${laneMeta.text}`}>
+                  {lane.statusLabel}
+                </span>
+              </div>
+              <div className="mt-3 flex items-center gap-3">
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-borderSoft">
+                  <div className={`h-full rounded-full ${LANE_ACCENTS[lane.laneKey]?.fill || LANE_ACCENTS.transfer.fill}`} style={{ width: `${lane.progress}%` }} />
+                </div>
+                <span className="text-xs font-semibold text-textMuted">{lane.progress}%</span>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function AttorneyGuidedActionPlan({
+  workflow = null,
+  queueItems = [],
+  dependencies = [],
+  openItems = [],
+  essentials = [],
+  onExecuteQueueItem = null,
+  onOpenWorkflow = null,
+  onOpenDocuments = null,
+}) {
+  const visibleQueueItems = queueItems.slice(0, 3)
+  const visibleDependencies = dependencies.slice(0, 3)
+  const visibleOpenItems = openItems.slice(0, 3)
+  const summary = getAttorneyGuidedPlanSummary(queueItems, dependencies, openItems, essentials)
+  const nextClearItem = essentials.find((item) => item.statusKey !== 'completed') || essentials[0] || null
+
+  return (
+    <section className="rounded-lg border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex size-9 items-center justify-center rounded-lg bg-primarySoft text-primary ring-1 ring-primary/10">
+              <Clock3 size={16} />
+            </span>
+            <div>
+              <h3 className="text-sm font-semibold text-textStrong">Today&apos;s Plan</h3>
+              <p className="mt-1 text-sm leading-5 text-textMuted">
+                {workflow?.nextStep || workflow?.summary || 'Lane review'}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${summary.urgentCount ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+            {summary.urgentCount} urgent
+          </span>
+          <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+            {summary.waitingCount} waiting
+          </span>
+          <span className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-xs font-semibold text-textMuted">
+            {summary.collectCount} to collect
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-3">
+        <div className="rounded-lg border border-borderSoft bg-surfaceAlt p-3">
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">Do Now</h4>
+            <span className="text-xs font-semibold text-textMuted">{visibleQueueItems.length || 'Clear'}</span>
+          </div>
+          <div className="mt-3 space-y-2">
+            {visibleQueueItems.map((item) => {
+              const meta = getAttorneyQueuePriorityMeta(item)
+              return (
+                <article key={item.id} className={`rounded-lg border bg-white px-3 py-3 ${meta.border}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className={`inline-flex rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold ${meta.border} ${meta.bg} ${meta.text}`}>
+                        {item.kindLabel}
+                      </span>
+                      <strong className="mt-2 block text-sm leading-5 text-textStrong">{item.title}</strong>
+                      {item.description ? <p className="mt-1 line-clamp-2 text-xs leading-5 text-textMuted">{item.description}</p> : null}
+                    </div>
+                  </div>
+                  <Button type="button" size="sm" className="mt-3 w-full justify-center" onClick={() => onExecuteQueueItem?.(item)}>
+                    <ChevronRight size={14} />
+                    {getAttorneyGuidedPlanCommandLabel(item)}
+                  </Button>
+                </article>
+              )
+            })}
+            {!visibleQueueItems.length ? (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-4 text-sm font-medium text-emerald-700">
+                No immediate lane actions.
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-borderSoft bg-surfaceAlt p-3">
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">Waiting On</h4>
+            <span className="text-xs font-semibold text-textMuted">{visibleDependencies.length || 'Clear'}</span>
+          </div>
+          <div className="mt-3 space-y-2">
+            {visibleDependencies.map((item) => {
+              const meta = WORKFLOW_STATUS_META[item.statusKey] || WORKFLOW_STATUS_META.waiting
+              return (
+                <article key={item.id} className={`rounded-lg border bg-white px-3 py-3 ${meta.border}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <strong className="block text-sm leading-5 text-textStrong">{item.title}</strong>
+                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-textMuted">{item.description}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold ${meta.border} ${meta.bg} ${meta.text}`}>
+                      {item.meta}
+                    </span>
+                  </div>
+                  <Button type="button" variant="secondary" size="sm" className="mt-3 w-full justify-center" onClick={() => onOpenWorkflow?.(workflow)}>
+                    Open Lane
+                  </Button>
+                </article>
+              )
+            })}
+            {!visibleDependencies.length ? (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-4 text-sm font-medium text-emerald-700">
+                No visible waits.
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-borderSoft bg-surfaceAlt p-3">
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">Collect / Review</h4>
+            <span className="text-xs font-semibold text-textMuted">{visibleOpenItems.length || `${summary.clearEssentials}/${essentials.length || 0} clear`}</span>
+          </div>
+          <div className="mt-3 space-y-2">
+            {visibleOpenItems.map((item) => (
+              <article key={`${item.group}-${item.id || item.key || item.label}`} className="rounded-lg border border-amber-200 bg-white px-3 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <span className="text-[0.64rem] font-semibold uppercase tracking-[0.08em] text-textMuted">
+                      {[item.group, item.templateLabel].filter(Boolean).join(' • ')}
+                    </span>
+                    <strong className="mt-1 block text-sm leading-5 text-textStrong">{getRequirementDisplayLabel(item)}</strong>
+                  </div>
+                  <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[0.64rem] font-semibold text-amber-700">
+                    {getRequirementStatusDisplay(item)}
+                  </span>
+                </div>
+                <Button type="button" variant="secondary" size="sm" className="mt-3 w-full justify-center" onClick={onOpenDocuments}>
+                  Documents
+                </Button>
+              </article>
+            ))}
+            {!visibleOpenItems.length ? (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-4 text-sm font-medium text-emerald-700">
+                {nextClearItem ? `${nextClearItem.label} is clear.` : 'No open items visible.'}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function AttorneyMyLaneCriticalPath({ workflow = null }) {
+  const steps = workflow ? getAttorneyCommandCenterCriticalPath(workflow) : []
+  if (!steps.length) return null
+
+  return (
+    <section className="rounded-lg border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-textStrong">My Lane Path</h3>
+          <p className="mt-1 text-sm text-textMuted">Current legal milestones for the selected attorney lane.</p>
+        </div>
+        <span className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-xs font-semibold text-textMuted">
+          {getAttorneyCommandCenterProgress(workflow)}%
+        </span>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {steps.map((step, index) => {
+          const meta = WORKFLOW_STATUS_META[step.statusKey] || WORKFLOW_STATUS_META.not_started
+          return (
+            <article
+              key={step.key}
+              className={`min-h-[118px] rounded-lg border px-3 py-3 ${meta.border} ${step.isCurrent ? meta.bg : 'bg-white'}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <span className={`inline-flex size-7 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${meta.bg} ${meta.text}`}>
+                  {index + 1}
+                </span>
+                <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold ${meta.border} ${step.isCurrent ? 'bg-white/70' : meta.bg} ${meta.text}`}>
+                  {step.isCurrent ? 'Current' : meta.label}
+                </span>
+              </div>
+              <strong className="mt-3 block text-sm leading-5 text-textStrong">{step.label}</strong>
+              {step.description ? <p className="mt-1 line-clamp-2 text-xs leading-5 text-textMuted">{step.description}</p> : null}
+            </article>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function AttorneyLaneEssentialsPanel({ items = [] }) {
+  if (!items.length) return null
+
+  return (
+    <section className="rounded-lg border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-textStrong">Role Essentials</h3>
+          <p className="mt-1 text-sm text-textMuted">The legal workstreams that matter for this attorney lane.</p>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        {items.map((item) => {
+          const meta = WORKFLOW_STATUS_META[item.statusKey] || WORKFLOW_STATUS_META.not_started
+          const Icon = item.icon || CheckCircle2
+          return (
+            <article key={item.key} className={`rounded-lg border px-3 py-3 ${meta.border} ${item.statusKey === 'completed' ? 'bg-white' : meta.bg}`}>
+              <div className="flex items-start justify-between gap-3">
+                <span className={`inline-flex size-8 shrink-0 items-center justify-center rounded-lg ${meta.bg} ${meta.text}`}>
+                  {createElement(Icon, { size: 15 })}
+                </span>
+                <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold ${meta.border} bg-white/70 ${meta.text}`}>
+                  {item.value}
+                </span>
+              </div>
+              <strong className="mt-3 block text-sm leading-5 text-textStrong">{item.label}</strong>
+              <p className="mt-1 line-clamp-2 text-xs leading-5 text-textMuted">{item.description}</p>
+            </article>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function AttorneyContextRail({
+  workflow = null,
+  roleplayerItems = [],
+  readinessItems = [],
+  onOpenDocuments = null,
+  onOpenActivity = null,
+}) {
+  const content = getAttorneyRoleWorkspaceContent(workflow || {})
+  const template = getAttorneyCommandCenterLaneTemplate(workflow || {})
+  const scopeItems = template.scopeItems || content.focusItems || []
+
+  return (
+    <aside className="space-y-4 xl:sticky xl:top-4">
+      <section className="rounded-lg border border-borderDefault bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-textStrong">Role Scope</h3>
+            <p className="mt-1 text-sm leading-5 text-textMuted">{content.laneLabel}</p>
+          </div>
+          <span className="rounded-full border border-borderSoft bg-surfaceAlt px-2.5 py-1 text-[0.68rem] font-semibold text-textMuted">
+            {workflow?.progressPercent ?? 0}%
+          </span>
+        </div>
+        <div className="mt-4 space-y-2">
+          {scopeItems.slice(0, 5).map((item) => (
+            <div key={item} className="flex items-start gap-2 text-sm leading-5 text-textBody">
+              <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-emerald-600" />
+              <span>{item}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {readinessItems.length ? (
+        <section className="rounded-lg border border-borderDefault bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+          <h3 className="text-sm font-semibold text-textStrong">Lane Readiness</h3>
+          <div className="mt-3 space-y-2">
+            {readinessItems.map((item) => {
+              const meta = WORKFLOW_STATUS_META[item.statusKey] || WORKFLOW_STATUS_META.not_started
+              return (
+                <div key={item.key} className="flex items-center justify-between gap-3 rounded-lg border border-borderSoft bg-surfaceAlt px-3 py-2.5">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className={`inline-flex size-7 shrink-0 items-center justify-center rounded-lg ${meta.bg} ${meta.text}`}>
+                      {createElement(item.icon, { size: 13 })}
+                    </span>
+                    <span className="truncate text-sm font-medium text-textBody">{item.label}</span>
+                  </span>
+                  <strong className={`shrink-0 text-xs ${meta.text}`}>{item.value}</strong>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      ) : null}
+
+      <section className="rounded-lg border border-borderDefault bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+        <h3 className="text-sm font-semibold text-textStrong">Matter Team</h3>
+        <div className="mt-3 space-y-2">
+          {roleplayerItems.slice(0, 4).map((item) => (
+            <div key={item.key} className="rounded-lg border border-borderSoft bg-surfaceAlt px-3 py-2.5">
+              <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{item.label}</span>
+              <strong className="mt-1 block truncate text-sm text-textStrong">{item.value}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-borderDefault bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+        <h3 className="text-sm font-semibold text-textStrong">Quick Links</h3>
+        <div className="mt-3 grid gap-2">
+          <Button type="button" variant="secondary" size="sm" className="justify-start" onClick={onOpenDocuments}>
+            <Paperclip size={14} />
+            Documents
+          </Button>
+          <Button type="button" variant="secondary" size="sm" className="justify-start" onClick={onOpenActivity}>
+            <Activity size={14} />
+            Activity
+          </Button>
+        </div>
+      </section>
+    </aside>
+  )
+}
+
+function AttorneyMatterCommandCenterV2({
+  workflows = [],
+  selectedLaneKey = '',
+  onSelectLane = null,
+  onOpenWorkflow = null,
+  onExecuteAction = null,
+  onExecuteCoordination = null,
+  onExecuteFollowUp = null,
+  onOpenDocuments = null,
+  onOpenActivity = null,
+  recentActivity = [],
+  roleplayerItems = [],
+}) {
+  const activeWorkflows = workflows.filter((workflow) => workflow?.required)
+  const selectedWorkflow =
+    activeWorkflows.find((workflow) => getAttorneyCommandCenterLaneKey(workflow) === selectedLaneKey) ||
+    activeWorkflows[0] ||
+    null
+  const content = getAttorneyRoleWorkspaceContent(selectedWorkflow || {})
+  const laneTemplate = getAttorneyCommandCenterLaneTemplate(selectedWorkflow || {})
+  const laneKey = getAttorneyCommandCenterLaneKey(selectedWorkflow || {})
+  const statusMeta = WORKFLOW_STATUS_META[selectedWorkflow?.statusKey] || WORKFLOW_STATUS_META.not_started
+  const progress = getAttorneyCommandCenterProgress(selectedWorkflow || {})
+  const queueItems = selectedWorkflow ? buildAttorneyDailyActionQueueItems([selectedWorkflow]) : []
+  const primaryQueueItem = queueItems[0] || null
+  const readinessItems = selectedWorkflow ? getAttorneyCommandCenterReadinessItems(selectedWorkflow) : []
+  const dependencies = selectedWorkflow ? getAttorneyCommandCenterDependencies(selectedWorkflow) : []
+  const requirementPreview = selectedWorkflow ? getWorkflowRequirementPreview(selectedWorkflow) : null
+  const templateEssentials = selectedWorkflow ? getAttorneyCommandCenterTemplateEssentials(selectedWorkflow, requirementPreview, dependencies) : []
+  const openItems = selectedWorkflow ? getAttorneyCommandCenterOpenItems(selectedWorkflow, requirementPreview) : []
+  const laneActivity = getAttorneyCommandCenterLaneActivity(recentActivity, laneKey)
+
+  const handleQueueItemAction = (item = null) => {
+    if (!selectedWorkflow) return
+    if (!item) {
+      onOpenWorkflow?.(selectedWorkflow)
+      return
+    }
+    if (item.kind === 'coordination') {
+      onExecuteCoordination?.(item.workflow?.lane || selectedWorkflow.lane, item.coordinationItem, item.command)
+      return
+    }
+    if (item.kind === 'follow_up') {
+      onExecuteFollowUp?.(item.workflow?.lane || selectedWorkflow.lane, item.followUpItem, item.command)
+      return
+    }
+    onExecuteAction?.(item.workflow?.lane || selectedWorkflow.lane, item.action, item.command)
+  }
+
+  const handlePrimaryAction = () => {
+    handleQueueItemAction(primaryQueueItem)
+  }
+
+  if (!activeWorkflows.length) {
+    return (
+      <section className="rounded-lg border border-dashed border-borderDefault bg-white px-5 py-8 text-sm text-textMuted">
+        No active legal lanes are configured for this matter yet.
+      </section>
+    )
+  }
+
+  return (
+    <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="space-y-5">
+        <AttorneyMatterPulsePanel workflows={activeWorkflows} selectedLaneKey={laneKey} onSelectLane={onSelectLane} />
+
+        <section className="rounded-lg border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex rounded-full border border-borderDefault bg-surfaceAlt px-3 py-1 text-xs font-semibold text-textMuted">
+                  My Lane
+                </span>
+                <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${LANE_ACCENTS[laneKey]?.badge || LANE_ACCENTS.transfer.badge}`}>
+                  {content.roleTitle}
+                </span>
+                <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${statusMeta.border} ${statusMeta.bg} ${statusMeta.text}`}>
+                  {selectedWorkflow?.statusLabel || statusMeta.label}
+                </span>
+              </div>
+              <h2 className="mt-3 text-xl font-semibold tracking-[-0.02em] text-textStrong">
+                {selectedWorkflow?.nextStep || selectedWorkflow?.summary || 'Lane review'}
+              </h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-textMuted">{laneTemplate.summary || content.summary}</p>
+            </div>
+            <div className="grid min-w-[260px] gap-2">
+              {[
+                ['Current Stage', getAttorneyCommandCenterCurrentStageLabel(selectedWorkflow)],
+                ['Assigned To', selectedWorkflow?.assignedDisplay || selectedWorkflow?.assignedContact || 'Not assigned'],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-lg border border-borderSoft bg-surfaceAlt px-4 py-3">
+                  <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
+                  <strong className="mt-1 block truncate text-sm text-textStrong">{value}</strong>
+                </div>
+              ))}
+              <div className="rounded-lg border border-borderSoft bg-surfaceAlt px-4 py-3">
+                <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Lane Progress</span>
+                <div className="mt-2 flex items-center gap-3">
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-borderSoft">
+                    <div className={`h-full rounded-full ${LANE_ACCENTS[laneKey]?.fill || LANE_ACCENTS.transfer.fill}`} style={{ width: `${progress}%` }} />
+                  </div>
+                  <strong className="text-sm text-textStrong">{progress}%</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {primaryQueueItem ? (
+            <div className="mt-5 flex flex-wrap gap-2">
+              <Button type="button" onClick={handlePrimaryAction}>
+                <ChevronRight size={15} />
+                {getAttorneyGuidedPlanCommandLabel(primaryQueueItem)}
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => onOpenWorkflow?.(selectedWorkflow)}>
+                Open Lane
+              </Button>
+            </div>
+          ) : null}
+        </section>
+
+        <AttorneyGuidedActionPlan
+          workflow={selectedWorkflow}
+          queueItems={queueItems}
+          dependencies={dependencies}
+          openItems={openItems}
+          essentials={templateEssentials}
+          onExecuteQueueItem={handleQueueItemAction}
+          onOpenWorkflow={onOpenWorkflow}
+          onOpenDocuments={onOpenDocuments}
+        />
+
+        <AttorneyMyLaneCriticalPath workflow={selectedWorkflow} />
+
+        <AttorneyLaneEssentialsPanel items={templateEssentials} />
+
+        <section className="rounded-lg border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-textStrong">Recent Lane Activity</h3>
+              <p className="mt-1 text-sm text-textMuted">Latest updates relevant to {content.laneLabel}.</p>
+            </div>
+            <Button type="button" variant="ghost" size="sm" onClick={onOpenActivity}>
+              View All
+            </Button>
+          </div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            {laneActivity.map((entry) => (
+              <article key={entry.id} className="rounded-lg border border-borderSoft bg-surfaceAlt px-4 py-3">
+                <div className="flex items-start gap-3">
+                  <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-white text-textMuted ring-1 ring-borderSoft">
+                    <Activity size={14} />
+                  </span>
+                  <div className="min-w-0">
+                    <strong className="block truncate text-sm text-textStrong">{entry.title}</strong>
+                    <p className="mt-1 line-clamp-2 text-sm leading-5 text-textMuted">{entry.body || entry.authorName}</p>
+                    <span className="mt-2 block text-xs text-textMuted">{formatDateTime(entry.createdAt)}</span>
+                  </div>
+                </div>
+              </article>
+            ))}
+            {!laneActivity.length ? (
+              <div className="rounded-lg border border-dashed border-borderDefault bg-surfaceAlt px-4 py-5 text-sm text-textMuted lg:col-span-3">
+                No lane activity has been recorded yet.
+              </div>
+            ) : null}
+          </div>
+        </section>
+      </div>
+
+      <AttorneyContextRail
+        workflow={selectedWorkflow}
+        roleplayerItems={roleplayerItems}
+        readinessItems={readinessItems}
+        onOpenDocuments={onOpenDocuments}
+        onOpenActivity={onOpenActivity}
+      />
+    </section>
+  )
 }
 
 function AttorneyDailyActionQueue({
@@ -2804,6 +4258,43 @@ function LegalWorkflowCoordinationPanel({ summary = null, compact = false, stage
 function normalizeLegalWorkflowDetailKey(value = '') {
   const normalized = String(value || '').trim().toLowerCase()
   return LEGAL_WORKFLOW_DETAIL_ROUTE_KEYS.includes(normalized) ? normalized : ''
+}
+
+function normalizeAttorneyCommandCenterLaneKey(value = '') {
+  const normalized = normalizeDetailKey(value)
+  if (!normalized) return ''
+  if (normalized.includes('bond') && normalized.includes('cancel')) return 'cancellation'
+  if (normalized.includes('cancel')) return 'cancellation'
+  if (normalized.includes('bond') || normalized.includes('finance')) return 'bond'
+  if (normalized.includes('transfer') || normalized.includes('registration')) return 'transfer'
+  return ATTORNEY_COMMAND_CENTER_LANE_KEYS.includes(normalized) ? normalized : ''
+}
+
+function getAttorneyCommandCenterLaneKeyFromDetail(value = '') {
+  const normalized = normalizeLegalWorkflowDetailKey(value)
+  if (normalized === 'bond-registration') return 'bond'
+  if (normalized === 'bond-cancellation') return 'cancellation'
+  if (normalized === 'transfer') return 'transfer'
+  return ''
+}
+
+function readAttorneyCommandCenterStoredLane(storageKey = '') {
+  if (!storageKey || typeof window === 'undefined') return ''
+  try {
+    return normalizeAttorneyCommandCenterLaneKey(window.sessionStorage?.getItem(storageKey) || '')
+  } catch {
+    return ''
+  }
+}
+
+function writeAttorneyCommandCenterStoredLane(storageKey = '', laneKey = '') {
+  const normalizedLaneKey = normalizeAttorneyCommandCenterLaneKey(laneKey)
+  if (!storageKey || !normalizedLaneKey || typeof window === 'undefined') return
+  try {
+    window.sessionStorage?.setItem(storageKey, normalizedLaneKey)
+  } catch {
+    // Session storage can be unavailable in private or restricted browser contexts.
+  }
 }
 
 function getBondWorkflowStatusKey(workflowData = null) {
@@ -6055,7 +7546,7 @@ function WorkflowDetailsDrawer({
                 <Button type="button" size="sm" variant="secondary" onClick={() => onNoteDraftChange?.({ laneKey: lane.laneKey, message: '', visibility: 'internal' })}>
                   Add Note
                 </Button>
-                <Button type="button" size="sm" variant="secondary" onClick={() => onDocumentDraftChange?.({ laneKey: lane.laneKey, title: '', description: '', requestedFrom: 'client', priority: 'required', visibility: 'client_visible', dueDate: '' })}>
+                <Button type="button" size="sm" variant="secondary" onClick={() => onDocumentDraftChange?.({ laneKey: lane.laneKey, title: '', description: '', requestedFrom: 'client', priority: 'required', visibility: 'client_visible', accessSelections: getDefaultDocumentAccessSelections('client_visible'), dueDate: '' })}>
                   Request Document
                 </Button>
                 <Button type="button" size="sm" variant="secondary" onClick={onUploadDocument}>
@@ -6124,7 +7615,17 @@ function WorkflowDetailsDrawer({
                   </label>
                   <label className="grid gap-1.5 text-sm font-medium text-textStrong">
                     Visibility
-                    <Field as="select" value={documentDraft.visibility || 'client_visible'} onChange={(event) => onDocumentDraftChange?.({ ...documentDraft, visibility: event.target.value })}>
+                    <Field
+                      as="select"
+                      value={documentDraft.visibility || 'client_visible'}
+                      onChange={(event) =>
+                        onDocumentDraftChange?.({
+                          ...documentDraft,
+                          visibility: event.target.value,
+                          accessSelections: getDefaultDocumentAccessSelections(event.target.value),
+                        })
+                      }
+                    >
                       {WORKFLOW_DOCUMENT_VISIBILITY_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>{option.label}</option>
                       ))}
@@ -6134,6 +7635,12 @@ function WorkflowDetailsDrawer({
                     Due date
                     <Field type="date" value={documentDraft.dueDate || ''} onChange={(event) => onDocumentDraftChange?.({ ...documentDraft, dueDate: event.target.value })} />
                   </label>
+                </div>
+                <div className="mt-3">
+                  <DocumentAccessSelectionGrid
+                    selections={documentDraft.accessSelections || getDefaultDocumentAccessSelections(documentDraft.visibility || 'client_visible')}
+                    onChange={(nextSelections) => onDocumentDraftChange?.({ ...documentDraft, accessSelections: nextSelections })}
+                  />
                 </div>
                 <label className="mt-3 grid gap-1.5 text-sm font-medium text-textStrong">
                   Description
@@ -6237,6 +7744,7 @@ function AttorneyTransactionDetail() {
   const [matterAccessAllowed, setMatterAccessAllowed] = useState(workspaceRole !== 'attorney')
   const [saving, setSaving] = useState(false)
   const [workspaceMenu, setWorkspaceMenu] = useState('overview')
+  const [selectedAttorneyLaneKey, setSelectedAttorneyLaneKey] = useState('')
   const [discussionBody, setDiscussionBody] = useState('')
   const [discussionType, setDiscussionType] = useState('operational')
   const [discussionVisibility, setDiscussionVisibility] = useState('shared')
@@ -6248,10 +7756,15 @@ function AttorneyTransactionDetail() {
   const [uploadDocumentModalOpen, setUploadDocumentModalOpen] = useState(false)
   const [requestDocumentModalOpen, setRequestDocumentModalOpen] = useState(false)
   const [documentRequestSaving, setDocumentRequestSaving] = useState(false)
+  const [documentAccessDraft, setDocumentAccessDraft] = useState(null)
+  const [documentAccessLoading, setDocumentAccessLoading] = useState(false)
+  const [documentAccessSaving, setDocumentAccessSaving] = useState(false)
+  const [documentAccessError, setDocumentAccessError] = useState('')
   const [documentRequestForm, setDocumentRequestForm] = useState({
     title: '',
     requestedFrom: 'buyer',
     visibility: 'client_visible',
+    accessSelections: getDefaultDocumentAccessSelections('client_visible'),
     notes: '',
     priority: 'normal',
     dueDate: '',
@@ -6449,6 +7962,7 @@ function AttorneyTransactionDetail() {
     setWorkflowOperations(null)
     setWorkflowError('')
     setWorkflowDrawerLaneKey('')
+    setSelectedAttorneyLaneKey('')
     setLoading(!navigationPreviewData)
   }, [navigationPreviewData, transactionId])
 
@@ -6630,6 +8144,22 @@ function AttorneyTransactionDetail() {
       ? AGENT_WORKSPACE_TABS
       : ATTORNEY_WORKSPACE_TABS
   const activeWorkspaceMenu = availableWorkspaceTabs.some((tab) => tab.id === requestedWorkspaceMenu) ? requestedWorkspaceMenu : 'overview'
+  const attorneyCommandCenterLaneQueryKey = useMemo(() => {
+    const params = new URLSearchParams(location.search || '')
+    return normalizeAttorneyCommandCenterLaneKey(params.get('lane') || '')
+  }, [location.search])
+  const attorneyCommandCenterRouteLaneKey = useMemo(
+    () => getAttorneyCommandCenterLaneKeyFromDetail(activeLegalWorkflowDetailKey),
+    [activeLegalWorkflowDetailKey],
+  )
+  const attorneyCommandCenterStorageKey = useMemo(() => {
+    const scopedUser = cleanDetailEmail(profile?.email) || 'anonymous'
+    return transactionId ? `attorney-command-center:${transactionId}:${scopedUser}:lane` : ''
+  }, [profile?.email, transactionId])
+  const storedAttorneyLaneKey = useMemo(
+    () => readAttorneyCommandCenterStoredLane(attorneyCommandCenterStorageKey),
+    [attorneyCommandCenterStorageKey],
+  )
 
   const loadPartnerInvitations = useCallback(async () => {
     if (!transaction?.id || !canViewPartnerInvitations) {
@@ -7148,6 +8678,8 @@ function AttorneyTransactionDetail() {
             requiredDocumentStatus: linkedRequirement?.status || '',
             requiredDocumentCanonicalId: getRequirementCanonicalId(linkedRequirement) || getDocumentCanonicalId(document) || '',
             documentRequestId: document?.document_request_id || document?.documentRequestId || '',
+            canManage: document?.canManage === true,
+            accessSummary: document?.accessSummary || '',
             satisfiesRequirement: Boolean(linkedRequirement),
             priority: linkedRequirement ? getDocumentPriorityLabel(linkedRequirement) : '',
             blocksStage: Boolean(linkedRequirement?.isBlocking || linkedRequirement?.blocksStage || linkedRequirement?.blocks_stage),
@@ -7677,6 +9209,8 @@ function AttorneyTransactionDetail() {
       requiredDocumentStatus: row.status || '',
       requiredDocumentCanonicalId: row.canonicalRequirementInstanceId || row.id || '',
       documentRequestId: '',
+      canManage: row.linkedDocument?.canManage === true,
+      accessSummary: row.linkedDocument?.accessSummary || '',
       satisfiesRequirement: row.satisfiesRequirement,
       priority: row.priority || '',
       blocksStage: row.blocksStage,
@@ -7704,10 +9238,12 @@ function AttorneyTransactionDetail() {
       requiredDocumentStatus: request.status || '',
       requiredDocumentCanonicalId: '',
       documentRequestId: request.id || '',
+      canManage: request.canManage === true,
+      accessSummary: request.accessSummary || '',
       satisfiesRequirement: false,
       priority: getAdditionalRequestOptionLabel(ADDITIONAL_DOCUMENT_PRIORITY_OPTIONS, request.additionalPriority || request.priority, 'Normal'),
       blocksStage: true,
-      raw: null,
+      raw: request,
     })
 
     let rows = allDocumentLibraryRows
@@ -8178,6 +9714,8 @@ function AttorneyTransactionDetail() {
         requestedFrom: workflowDocumentDraft.requestedFrom,
         priority: workflowDocumentDraft.priority || 'required',
         visibility: workflowDocumentDraft.visibility || 'client_visible',
+        targets: buildDocumentRequestTargets(workflowDocumentDraft),
+        accessGrants: buildDocumentRequestAccessGrants(workflowDocumentDraft),
         dueDate: workflowDocumentDraft.dueDate || null,
         workPacket: workflowDocumentDraft.workPacket || null,
       })
@@ -8221,6 +9759,8 @@ function AttorneyTransactionDetail() {
             category: 'Additional Requests',
             requestedFrom: documentRequestForm.requestedFrom || 'buyer',
             visibility: documentRequestForm.visibility || 'client_visible',
+            targets: buildDocumentRequestTargets(documentRequestForm),
+            accessGrants: buildDocumentRequestAccessGrants(documentRequestForm),
             priority: documentRequestForm.priority || 'normal',
             dueDate: documentRequestForm.dueDate || null,
             status: 'requested',
@@ -8231,6 +9771,7 @@ function AttorneyTransactionDetail() {
         title: '',
         requestedFrom: 'buyer',
         visibility: 'client_visible',
+        accessSelections: getDefaultDocumentAccessSelections('client_visible'),
         notes: '',
         priority: 'normal',
         dueDate: '',
@@ -8242,6 +9783,93 @@ function AttorneyTransactionDetail() {
       setError(requestError?.message || 'Unable to request this document.')
     } finally {
       setDocumentRequestSaving(false)
+    }
+  }
+
+  function getDocumentAccessResourceFromLibraryRow(row = {}) {
+    const raw = row.raw || {}
+    const transactionId = row.transactionId || transaction?.id || raw.transaction_id || raw.transactionId || ''
+    if (row.source === 'document_request' && row.documentRequestId) {
+      return {
+        transactionId,
+        resourceType: 'document_request',
+        resourceId: row.documentRequestId,
+      }
+    }
+    if (raw.id && row.fileUrl) {
+      return {
+        transactionId,
+        resourceType: 'document',
+        resourceId: raw.id,
+      }
+    }
+    return null
+  }
+
+  function canOpenDocumentAccessManager(row = {}) {
+    const resource = getDocumentAccessResourceFromLibraryRow(row)
+    if (!resource?.transactionId || !resource.resourceId) return false
+    const role = String(workspaceRole || '').trim().toLowerCase()
+    if (row.raw?.canManage === true || row.canManage === true) return true
+    return ['developer', 'agent', 'attorney', 'bond_originator', 'internal_admin', 'admin'].includes(role)
+  }
+
+  async function openDocumentAccessManager(row = {}) {
+    const resource = getDocumentAccessResourceFromLibraryRow(row)
+    if (!resource) return
+    const nextDraft = {
+      ...resource,
+      title: row.displayName || 'Document access',
+      requestedFrom: row.raw?.requestedFrom || row.raw?.requested_from || row.requiredParty || '',
+      accessSelections: [],
+      accessSummary: row.accessSummary || '',
+      accessHistory: [],
+      grants: [],
+      skipped: false,
+    }
+    setDocumentAccessDraft(nextDraft)
+    setDocumentAccessError('')
+    setDocumentAccessLoading(true)
+    try {
+      const settings = await fetchTransactionDocumentAccessSettings(resource)
+      setDocumentAccessDraft({
+        ...nextDraft,
+        accessSelections: settings.accessSelections || [],
+        accessSummary: settings.accessSummary || '',
+        accessHistory: settings.accessHistory || [],
+        grants: settings.grants || [],
+        skipped: settings.skipped === true,
+      })
+    } catch (accessError) {
+      setDocumentAccessError(accessError?.message || 'Unable to load document access.')
+    } finally {
+      setDocumentAccessLoading(false)
+    }
+  }
+
+  async function handleSaveDocumentAccess(event) {
+    event.preventDefault()
+    if (!documentAccessDraft?.transactionId || !documentAccessDraft?.resourceId) return
+    setDocumentAccessSaving(true)
+    setDocumentAccessError('')
+    try {
+      await updateTransactionDocumentAccessSettings({
+        transactionId: documentAccessDraft.transactionId,
+        resourceType: documentAccessDraft.resourceType,
+        resourceId: documentAccessDraft.resourceId,
+        actorRole: workspaceRole,
+        accessGrants: buildDocumentRequestAccessGrants({
+          requestedFrom: documentAccessDraft.requestedFrom,
+          accessSelections: documentAccessDraft.accessSelections || [],
+        }),
+      })
+      setDocumentAccessDraft(null)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadData({ background: true })
+    } catch (accessError) {
+      setDocumentAccessError(accessError?.message || 'Unable to update document access.')
+    } finally {
+      setDocumentAccessSaving(false)
     }
   }
 
@@ -9095,10 +10723,115 @@ function AttorneyTransactionDetail() {
     () => legalWorkflowModels.filter((item) => item.required),
     [legalWorkflowModels],
   )
+  const attorneyCommandCenterWorkflows = useMemo(
+    () => legalWorkflowModels.filter((item) => item?.required),
+    [legalWorkflowModels],
+  )
+  const preferredAttorneyLaneKey = useMemo(() => {
+    const profileEmail = cleanDetailEmail(profile?.email)
+    if (!profileEmail) return ''
+
+    const laneAssignments = [
+      {
+        laneKey: 'transfer',
+        emails: [
+          transferAttorney?.participantEmail,
+          transferAttorney?.email,
+          transaction?.assigned_attorney_email,
+          roleplayerForm.attorneyEmail,
+        ],
+      },
+      {
+        laneKey: 'bond',
+        emails: [
+          bondAttorney?.participantEmail,
+          bondAttorney?.email,
+        ],
+      },
+      {
+        laneKey: 'cancellation',
+        emails: [
+          cancellationAttorney?.participantEmail,
+          cancellationAttorney?.email,
+        ],
+      },
+    ]
+
+    return laneAssignments.find((item) => item.emails.some((email) => cleanDetailEmail(email) === profileEmail))?.laneKey || ''
+  }, [
+    bondAttorney?.email,
+    bondAttorney?.participantEmail,
+    cancellationAttorney?.email,
+    cancellationAttorney?.participantEmail,
+    profile?.email,
+    roleplayerForm.attorneyEmail,
+    transaction?.assigned_attorney_email,
+    transferAttorney?.email,
+    transferAttorney?.participantEmail,
+  ])
+  useEffect(() => {
+    if (workspaceRole !== 'attorney' || !ENABLE_ATTORNEY_MATTER_COMMAND_CENTER_V2) return
+
+    const activeLaneKeys = attorneyCommandCenterWorkflows.map((workflow) => getAttorneyCommandCenterLaneKey(workflow))
+    if (!activeLaneKeys.length) return
+    const explicitLaneKey = attorneyCommandCenterRouteLaneKey || attorneyCommandCenterLaneQueryKey
+
+    setSelectedAttorneyLaneKey((previous) => {
+      const candidates = [
+        explicitLaneKey,
+        previous,
+        storedAttorneyLaneKey,
+        preferredAttorneyLaneKey,
+        activeLaneKeys[0],
+      ].filter(Boolean)
+      return candidates.find((candidate) => activeLaneKeys.includes(candidate)) || activeLaneKeys[0]
+    })
+  }, [
+    attorneyCommandCenterLaneQueryKey,
+    attorneyCommandCenterRouteLaneKey,
+    attorneyCommandCenterWorkflows,
+    preferredAttorneyLaneKey,
+    storedAttorneyLaneKey,
+    workspaceRole,
+  ])
+  const attorneyMatterCommandCenterV2Enabled = ENABLE_ATTORNEY_MATTER_COMMAND_CENTER_V2 && workspaceRole === 'attorney'
   const activeLegalWorkflowModel = useMemo(
     () => legalWorkflowModels.find((item) => item.detailKey === activeLegalWorkflowDetailKey) || null,
     [activeLegalWorkflowDetailKey, legalWorkflowModels],
   )
+  const showAttorneyMatterCommandCenterV2 = attorneyMatterCommandCenterV2Enabled && activeWorkspaceMenu === 'overview'
+  const handleSelectAttorneyCommandCenterLane = useCallback((nextLaneKey) => {
+    const normalizedLaneKey = normalizeAttorneyCommandCenterLaneKey(nextLaneKey)
+    if (!normalizedLaneKey) return
+    setSelectedAttorneyLaneKey(normalizedLaneKey)
+  }, [])
+
+  useEffect(() => {
+    if (!attorneyMatterCommandCenterV2Enabled || !selectedAttorneyLaneKey) return
+    writeAttorneyCommandCenterStoredLane(attorneyCommandCenterStorageKey, selectedAttorneyLaneKey)
+  }, [attorneyCommandCenterStorageKey, attorneyMatterCommandCenterV2Enabled, selectedAttorneyLaneKey])
+
+  useEffect(() => {
+    if (!showAttorneyMatterCommandCenterV2 || !selectedAttorneyLaneKey) return
+    const activeLaneKeys = attorneyCommandCenterWorkflows.map((workflow) => getAttorneyCommandCenterLaneKey(workflow))
+    const normalizedLaneKey = normalizeAttorneyCommandCenterLaneKey(selectedAttorneyLaneKey)
+    if (!normalizedLaneKey || !activeLaneKeys.includes(normalizedLaneKey)) return
+    if (attorneyCommandCenterLaneQueryKey === normalizedLaneKey) return
+
+    const params = new URLSearchParams(location.search || '')
+    params.set('lane', normalizedLaneKey)
+    const nextSearch = params.toString()
+    navigate(`${location.pathname}${nextSearch ? `?${nextSearch}` : ''}${location.hash || ''}`, { replace: true })
+  }, [
+    attorneyCommandCenterLaneQueryKey,
+    attorneyCommandCenterWorkflows,
+    location.hash,
+    location.pathname,
+    location.search,
+    navigate,
+    selectedAttorneyLaneKey,
+    showAttorneyMatterCommandCenterV2,
+  ])
   const handleDraftAttorneyStatusBrief = useCallback(({ audience = 'professional', body = '', target = null } = {}) => {
     const nextTarget = target || getAttorneyBriefComposerTarget(legalWorkflowModels, audience)
     if (!nextTarget?.laneKey || !nextTarget?.actionKey || !nextTarget?.visibility) {
@@ -10388,6 +12121,20 @@ function AttorneyTransactionDetail() {
                 owner={transaction?.bond_originator || transaction?.assigned_bond_processor_name || transaction?.processor_name || 'Unassigned'}
                 statusLabel={hydratingDetail ? 'Refreshing' : displayedLifecycleLabel}
               />
+            ) : showAttorneyMatterCommandCenterV2 ? (
+              <AttorneyMatterHeaderCompact
+                title={workspaceReference}
+                statusLabel={hydratingDetail ? 'Refreshing' : displayedLifecycleLabel}
+                statusClassName={displayedLifecycleStatusClassName}
+                propertyLabel={matterHeadline}
+                buyerName={buyerDisplayName}
+                sellerName={sellerDisplayName}
+                financeTypeLabel={financeTypeLabel}
+                matterHealthLabel={displayedMatterHealthLabel}
+                daysActiveLabel={daysBetween(transaction?.created_at)}
+                updatedLabel={displayedUpdatedLabel}
+                actionButtons={headerWorkflowActionButtons}
+              />
             ) : (
               <MatterOverviewHeader
                 title={workspaceReference}
@@ -10550,7 +12297,23 @@ function AttorneyTransactionDetail() {
           </section>
         ) : null}
 
-        {workspaceRole !== 'bond_originator' && ['overview', 'transfer'].includes(activeWorkspaceMenu) ? (
+        {showAttorneyMatterCommandCenterV2 ? (
+          <AttorneyMatterCommandCenterV2
+            workflows={attorneyCommandCenterWorkflows}
+            selectedLaneKey={selectedAttorneyLaneKey}
+            onSelectLane={handleSelectAttorneyCommandCenterLane}
+            onOpenWorkflow={(workflow) => openLegalWorkflowDetail(workflow.detailKey)}
+            onExecuteAction={handleWorkflowActionCommand}
+            onExecuteCoordination={handleWorkflowCoordinationCommand}
+            onExecuteFollowUp={handleWorkflowFollowUpCommand}
+            onOpenDocuments={() => openWorkspaceMenu('documents')}
+            onOpenActivity={() => openWorkspaceMenu('activity')}
+            recentActivity={overviewConversationEntries}
+            roleplayerItems={roleplayerStripItems}
+          />
+        ) : null}
+
+        {workspaceRole !== 'bond_originator' && ['overview', 'transfer'].includes(activeWorkspaceMenu) && !showAttorneyMatterCommandCenterV2 ? (
           <>
             <section className={activeWorkspaceMenu === 'overview' ? 'grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]' : 'space-y-5'}>
               <div className="space-y-4">
@@ -11452,6 +13215,7 @@ function AttorneyTransactionDetail() {
                       <th className="px-4 py-2.5">Category</th>
                       <th className="px-4 py-2.5">Uploaded By</th>
                       <th className="px-4 py-2.5">Date</th>
+                      <th className="px-4 py-2.5">Access</th>
                       <th className="px-4 py-2.5">Status</th>
                       <th className="py-2.5 pl-4 text-right">Actions</th>
                     </tr>
@@ -11470,6 +13234,9 @@ function AttorneyTransactionDetail() {
                             <td className="px-4 py-3 text-[#52677f]">{row.categoryLabel}</td>
                             <td className="px-4 py-3 text-[#52677f]">{row.uploadedBy}</td>
                             <td className="px-4 py-3 text-[#52677f]">{formatDateTime(row.uploadedAt)}</td>
+                            <td className="max-w-[220px] px-4 py-3 text-xs font-medium text-[#52677f]">
+                              <span className="block truncate">{row.accessSummary || row.visibility || 'Managed by policy'}</span>
+                            </td>
                             <td className="px-4 py-3">
                               <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
                                 {getDocumentCommandStatusLabel(row.status)}
@@ -11502,6 +13269,11 @@ function AttorneyTransactionDetail() {
                                     Replace
                                   </Button>
                                 ) : null}
+                                {canOpenDocumentAccessManager(row) ? (
+                                  <Button type="button" variant="secondary" size="sm" onClick={() => openDocumentAccessManager(row)} disabled={saving || documentAccessLoading || documentAccessSaving}>
+                                    Access
+                                  </Button>
+                                ) : null}
                                 <button type="button" className="ui-icon-button h-8 w-8" aria-label={`More actions for ${row.displayName}`}>
                                   <MoreHorizontal size={15} />
                                 </button>
@@ -11512,7 +13284,7 @@ function AttorneyTransactionDetail() {
                       })
                     ) : (
                       <tr>
-                        <td colSpan="6" className="py-8 text-center text-sm text-[#60758d]">
+                        <td colSpan="7" className="py-8 text-center text-sm text-[#60758d]">
                           No uploaded or generated documents match this filter.
                         </td>
                       </tr>
@@ -11571,7 +13343,13 @@ function AttorneyTransactionDetail() {
                     <Field
                       as="select"
                       value={documentRequestForm.visibility}
-                      onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, visibility: event.target.value }))}
+                      onChange={(event) =>
+                        setDocumentRequestForm((previous) => ({
+                          ...previous,
+                          visibility: event.target.value,
+                          accessSelections: getDefaultDocumentAccessSelections(event.target.value),
+                        }))
+                      }
                     >
                       {ADDITIONAL_DOCUMENT_VISIBILITY_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>{option.label}</option>
@@ -11599,6 +13377,10 @@ function AttorneyTransactionDetail() {
                     />
                   </label>
                 </div>
+                <DocumentAccessSelectionGrid
+                  selections={documentRequestForm.accessSelections || getDefaultDocumentAccessSelections(documentRequestForm.visibility)}
+                  onChange={(nextSelections) => setDocumentRequestForm((previous) => ({ ...previous, accessSelections: nextSelections }))}
+                />
                 <label className="flex flex-col gap-1.5">
                   <span className="text-label font-semibold uppercase text-textMuted">Notes</span>
                   <Field
@@ -11612,6 +13394,75 @@ function AttorneyTransactionDetail() {
                 <p className="rounded-[12px] border border-[#dbe8f7] bg-[#f7fbff] px-3 py-2 text-xs leading-5 text-[#60758d]">
                   Buyer-visible requests are shown in the client portal, logged as a system update, and emailed to the buyer or seller when contact details are available.
                 </p>
+              </form>
+            </Modal>
+
+            <Modal
+              open={Boolean(documentAccessDraft)}
+              onClose={documentAccessSaving ? undefined : () => setDocumentAccessDraft(null)}
+              title="Document Access"
+              subtitle={documentAccessDraft?.title || 'Manage who can view and download this document.'}
+              className="max-w-2xl"
+              footer={(
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+                  <Button type="button" variant="secondary" onClick={() => setDocumentAccessDraft(null)} disabled={documentAccessSaving}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" form="transaction-document-access-form" disabled={documentAccessSaving || documentAccessLoading}>
+                    {documentAccessSaving ? 'Saving...' : 'Save Access'}
+                  </Button>
+                </div>
+              )}
+            >
+              <form id="transaction-document-access-form" onSubmit={handleSaveDocumentAccess} className="grid gap-4">
+                {documentAccessLoading ? (
+                  <div className="rounded-[12px] border border-[#dbe8f7] bg-[#f7fbff] px-3 py-3 text-sm text-[#60758d]">
+                    Loading access settings...
+                  </div>
+                ) : null}
+                {documentAccessError ? (
+                  <div className="rounded-[12px] border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700">
+                    {documentAccessError}
+                  </div>
+                ) : null}
+                {documentAccessDraft?.skipped ? (
+                  <div className="rounded-[12px] border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-700">
+                    Access grant tables are not available in this environment yet.
+                  </div>
+                ) : null}
+                {documentAccessDraft?.accessSummary ? (
+                  <div className="rounded-[12px] border border-[#dbe8f7] bg-[#f7fbff] px-3 py-3 text-sm text-[#60758d]">
+                    Current download access: <span className="font-semibold text-[#142132]">{documentAccessDraft.accessSummary}</span>
+                  </div>
+                ) : null}
+                <DocumentAccessSelectionGrid
+                  selections={documentAccessDraft?.accessSelections || []}
+                  onChange={(nextSelections) =>
+                    setDocumentAccessDraft((previous) => previous ? { ...previous, accessSelections: nextSelections } : previous)
+                  }
+                />
+                {documentAccessDraft?.accessHistory?.length ? (
+                  <div className="rounded-[12px] border border-[#dbe8f7] bg-white px-3 py-3">
+                    <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[#60758d]">Recent access changes</div>
+                    <div className="mt-2 grid gap-2">
+                      {documentAccessDraft.accessHistory.slice(0, 5).map((entry, index) => (
+                        <div key={entry.id ? `${entry.id}-${entry.action}` : `${entry.timestamp}-${index}`} className="rounded-[10px] border border-[#edf2f7] px-3 py-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="truncate text-sm font-semibold text-[#142132]">{entry.principalLabel || 'Selected audience'}</span>
+                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.08em] ${entry.action === 'revoked' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                              {entry.action === 'revoked' ? 'Revoked' : 'Granted'}
+                            </span>
+                          </div>
+                          <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[0.72rem] text-[#60758d]">
+                            <span>{entry.permissionSummary || 'Access'}</span>
+                            <span>{entry.sourceLabel || 'Access grant'}</span>
+                            <span>{formatDateTime(entry.timestamp, 'Recently')}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </form>
             </Modal>
 

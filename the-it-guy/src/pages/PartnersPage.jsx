@@ -74,65 +74,49 @@ const THIRD_PARTY_INVITE_TYPES = [
   { value: 'agency_network', label: 'Agency network' },
 ]
 
-const THIRD_PARTY_ACTIONS = [
+const DEFAULT_THIRD_PARTY_CATEGORY = 'attorneys'
+
+const THIRD_PARTY_CATEGORY_OPTIONS = [
   {
     key: 'attorneys',
     partnerType: 'transfer_attorney',
     title: 'Attorneys',
-    description: 'Add transfer, bond, or cancellation attorney firms for repeat transactions.',
+    label: 'Attorneys',
+    singularLabel: 'attorney',
+    currentLabel: 'Current attorneys',
+    emptyTitle: 'No attorneys added yet',
+    emptyAction: 'Invite attorney',
     icon: Landmark,
-    chips: ['Transfer', 'Bond', 'Cancellation'],
+    iconClass: 'bg-[#edf7f4] text-[#17613d]',
+    activeIconClass: 'bg-white/10 text-white',
   },
   {
     key: 'bond_originator',
     partnerType: 'bond_originator',
     title: 'Bond originators',
-    description: 'Add finance partners your agents can use when a buyer needs bond assistance.',
+    label: 'Bond Originators',
+    singularLabel: 'bond originator',
+    currentLabel: 'Current bond originators',
+    emptyTitle: 'No bond originators added yet',
+    emptyAction: 'Invite bond originator',
     icon: BadgeCheck,
-    chips: ['Bond finance'],
+    iconClass: 'bg-[#eef5f8] text-[#274c69]',
+    activeIconClass: 'bg-white/10 text-white',
   },
   {
     key: 'referral_agency',
     partnerType: 'agency',
     title: 'Referral agencies',
-    description: 'Add other agencies you refer to or receive referrals from.',
+    label: 'Referral Agencies',
+    singularLabel: 'referral agency',
+    currentLabel: 'Current referral agencies',
+    emptyTitle: 'No referral agencies added yet',
+    emptyAction: 'Invite referral agency',
     icon: Users,
-    chips: ['Referrals', 'Co-broking'],
+    iconClass: 'bg-[#fff7e6] text-[#8a5a12]',
+    activeIconClass: 'bg-white/10 text-white',
   },
 ]
-
-const SECONDARY_PARTNER_VIEWS = [
-  { key: 'connected', label: 'Connections' },
-  { key: 'invitations', label: 'Invites' },
-  { key: 'discover', label: 'Discover' },
-]
-
-const SIMPLIFIED_PARTNER_VIEW_COPY = {
-  preferred: {
-    eyebrow: 'Organisation',
-    title: 'Third parties',
-    description: 'Attorneys, bond originators, and referral agencies your team can reuse during transactions.',
-    actionLabel: 'Invite third party',
-  },
-  connected: {
-    eyebrow: 'Network',
-    title: 'Connections',
-    description: 'Reusable organisation relationships connected to this workspace.',
-    actionLabel: 'Invite third party',
-  },
-  invitations: {
-    eyebrow: 'Network',
-    title: 'Invitations',
-    description: 'Sent and received partner requests for reusable third-party relationships.',
-    actionLabel: 'Invite third party',
-  },
-  discover: {
-    eyebrow: 'Network',
-    title: 'Discover',
-    description: 'Find organisations that can become reusable partners for repeat transaction work.',
-    actionLabel: 'Invite third party',
-  },
-}
 
 const ATTORNEY_PREFERRED_PARTNER_TYPES = new Set(['transfer_attorney', 'bond_attorney', 'cancellation_attorney'])
 const THIRD_PARTY_DIRECTORY_TYPES = PREFERRED_PARTNER_TYPES.map((option) =>
@@ -207,10 +191,6 @@ function createThirdPartyDraft(partnerType = 'transfer_attorney') {
   }
 }
 
-function getSimplifiedPartnerViewCopy(activeTab = 'preferred') {
-  return SIMPLIFIED_PARTNER_VIEW_COPY[activeTab] || SIMPLIFIED_PARTNER_VIEW_COPY.preferred
-}
-
 function getThirdPartyInviteWorkspaceType(partnerType = '') {
   const normalizedType = normalizePreferredPartnerType(partnerType, partnerType)
   if (ATTORNEY_PREFERRED_PARTNER_TYPES.has(normalizedType) || normalizedType === 'attorney_firm') return 'attorney_firm'
@@ -277,57 +257,48 @@ function MetricCard({ label, value, subtext }) {
   )
 }
 
-function ThirdPartyMetric({ label, value, hint }) {
-  return (
-    <div className="rounded-[8px] border border-[#dde7f2] bg-white px-4 py-3">
-      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8ba3]">{label}</p>
-      <div className="mt-2 flex items-end justify-between gap-3">
-        <strong className="text-2xl font-semibold text-[#10243a]">{value}</strong>
-        {hint ? <span className="pb-1 text-xs font-semibold text-[#60758d]">{hint}</span> : null}
-      </div>
-    </div>
-  )
-}
-
-function ThirdPartyActionCard({ action, onAdd }) {
-  const Icon = action.icon || Building2
-  return (
-    <article className="rounded-[8px] border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-      <div className="flex items-start gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] bg-[#eef5f8] text-[#274c69]">
-          <Icon size={18} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-base font-semibold text-[#10243a]">{action.title}</h3>
-          <p className="mt-1 text-sm leading-6 text-[#60758d]">{action.description}</p>
-        </div>
-      </div>
-      <div className="mt-4 flex flex-wrap gap-2">
-        {action.chips.map((chip) => (
-          <span key={chip} className="rounded-full border border-[#d8e6f1] bg-[#f7fafc] px-2.5 py-1 text-xs font-semibold text-[#35546c]">
-            {chip}
-          </span>
-        ))}
-      </div>
-      <button
-        type="button"
-        onClick={() => onAdd?.(action.partnerType)}
-        className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white transition hover:bg-[#173a5e]"
-      >
-        <InviteIcon size={15} />
-        Add
-      </button>
-    </article>
-  )
-}
-
-function getThirdPartyGroupLabel(row = {}) {
+function getThirdPartyCategoryKey(row = {}) {
   const rawPartnerType = normalizeText(row.partnerType || row.partner?.type)
   const partnerType = normalizePreferredPartnerType(rawPartnerType, rawPartnerType)
-  if (ATTORNEY_PREFERRED_PARTNER_TYPES.has(partnerType) || partnerType === 'attorney_firm') return 'Attorneys'
-  if (partnerType === 'bond_originator') return 'Bond Originators'
-  if (partnerType === 'agency' || partnerType === 'agency_network') return 'Referral Agencies'
-  return 'Other Third Parties'
+  if (ATTORNEY_PREFERRED_PARTNER_TYPES.has(partnerType) || partnerType === 'attorney_firm') return 'attorneys'
+  if (partnerType === 'bond_originator') return 'bond_originator'
+  if (partnerType === 'agency' || partnerType === 'agency_network') return 'referral_agency'
+  return ''
+}
+
+function getThirdPartyCategoryOption(categoryKey = DEFAULT_THIRD_PARTY_CATEGORY) {
+  return THIRD_PARTY_CATEGORY_OPTIONS.find((option) => option.key === categoryKey) || THIRD_PARTY_CATEGORY_OPTIONS[0]
+}
+
+function ThirdPartyCategoryButton({ option, count = 0, active = false, onSelect }) {
+  const Icon = option.icon || Building2
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect?.(option.key)}
+      className={`group flex min-h-[84px] items-center justify-between gap-3 rounded-[8px] border px-4 py-3 text-left transition ${
+        active
+          ? 'border-[#10243a] bg-[#10243a] text-white shadow-[0_16px_34px_rgba(15,23,42,0.16)]'
+          : 'border-[#dbe5f0] bg-white text-[#10243a] shadow-[0_8px_22px_rgba(15,23,42,0.035)] hover:border-[#b8c9dc] hover:shadow-[0_14px_30px_rgba(15,23,42,0.08)]'
+      }`}
+      aria-pressed={active}
+    >
+      <span className="flex min-w-0 items-center gap-3">
+        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] ${active ? option.activeIconClass : option.iconClass}`}>
+          <Icon size={18} />
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold">{option.label}</span>
+          <span className={`mt-1 block text-xs font-semibold ${active ? 'text-white/70' : 'text-[#60758d]'}`}>
+            {formatNumber(count)} saved
+          </span>
+        </span>
+      </span>
+      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${active ? 'bg-white/10 text-white' : 'bg-[#f3f7fb] text-[#52677f]'}`}>
+        {formatNumber(count)}
+      </span>
+    </button>
+  )
 }
 
 function getThirdPartyTypeLabel(row = {}) {
@@ -342,17 +313,24 @@ function getThirdPartyTypeLabel(row = {}) {
 
 function ThirdPartyPartnerCard({ row, selected = false, onView, onEdit, onToggleActive, onRemove }) {
   const canViewProfile = Boolean(row.relationship)
+  const categoryOption = getThirdPartyCategoryOption(getThirdPartyCategoryKey(row))
+  const Icon = categoryOption.icon || Building2
   const typeLabel = getThirdPartyTypeLabel(row)
   const displayName = normalizeText(row.companyName || row.personName || row.organisationName) || 'Third party'
   const detailLine = [row.contactPerson, row.email, row.phone].map(normalizeText).filter(Boolean).join(' · ') || 'Contact details not captured'
   const locationLine = [row.physicalAddress, row.province].map(normalizeText).filter(Boolean).join(', ')
   const canEdit = Boolean(onEdit)
   return (
-    <article className={`rounded-[8px] border bg-white p-4 ${selected ? 'border-[#9eb9d4] shadow-[0_12px_28px_rgba(31,79,120,0.12)]' : 'border-[#dbe5f0]'}`}>
+    <article className={`rounded-[8px] border bg-white p-4 transition ${selected ? 'border-[#9eb9d4] shadow-[0_14px_32px_rgba(31,79,120,0.13)]' : 'border-[#dbe5f0] shadow-[0_10px_24px_rgba(15,23,42,0.045)] hover:border-[#c9d8e7] hover:shadow-[0_16px_34px_rgba(15,23,42,0.07)]'}`}>
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-[#10243a]">{displayName}</p>
-          <p className="mt-1 truncate text-sm text-[#60758d]">{detailLine}</p>
+        <div className="flex min-w-0 items-start gap-3">
+          <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] ${categoryOption.iconClass}`}>
+            <Icon size={18} />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-[#10243a]">{displayName}</p>
+            <p className="mt-1 truncate text-sm text-[#60758d]">{detailLine}</p>
+          </div>
         </div>
         <span className="shrink-0 rounded-full border border-[#d8e6f1] bg-[#f7fafc] px-2.5 py-1 text-xs font-semibold text-[#35546c]">
           {typeLabel}
@@ -1847,13 +1825,14 @@ function ThirdPartyDirectoryModal({
   editing = false,
 }) {
   if (!isOpen) return null
+  const formTypeLabel = getThirdPartyTypeLabel({ partnerType: form.partnerType }).toLowerCase()
 
   return (
     <div className="fixed inset-0 z-40 flex items-start justify-center overflow-auto bg-[#10243a]/50 p-4 py-8 sm:items-center">
       <div className="w-full max-w-2xl rounded-[8px] border border-[#d9e4ef] bg-white p-4 shadow-[0_24px_60px_rgba(15,23,42,0.15)] sm:p-6">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#10243a]">{editing ? 'Edit third party' : 'Invite third party'}</h2>
+            <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#10243a]">{editing ? 'Edit third party' : `Invite ${formTypeLabel}`}</h2>
             <p className="mt-1 text-sm text-[#60758d]">Saved third parties become reusable role-player defaults during deal setup.</p>
           </div>
           <button
@@ -2026,7 +2005,7 @@ function ThirdPartyDirectoryModal({
               className="inline-flex h-10 items-center justify-center gap-2 rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white transition hover:bg-[#173a5e] disabled:cursor-not-allowed disabled:opacity-60"
             >
               <InviteIcon size={15} />
-              {saving ? 'Saving...' : editing ? 'Save changes' : 'Invite third party'}
+              {saving ? 'Saving...' : editing ? 'Save changes' : `Invite ${formTypeLabel}`}
             </button>
           </div>
         </form>
@@ -2283,6 +2262,7 @@ export default function PartnersPage() {
   const [thirdPartySaving, setThirdPartySaving] = useState(false)
   const [editingThirdPartyId, setEditingThirdPartyId] = useState('')
   const [thirdPartyForm, setThirdPartyForm] = useState(() => createThirdPartyDraft())
+  const [selectedThirdPartyCategory, setSelectedThirdPartyCategory] = useState(DEFAULT_THIRD_PARTY_CATEGORY)
   const [discoverDirectory, setDiscoverDirectory] = useState([])
   const [discoverDirectoryLoading, setDiscoverDirectoryLoading] = useState(false)
   const [connectingPartnerIds, setConnectingPartnerIds] = useState(() => new Set())
@@ -2637,10 +2617,6 @@ export default function PartnersPage() {
 
     return listWithType.filter((invitation) => invitationPartnerName(invitation, organisationId).toLowerCase().includes(normalizeLower(invitationFilters.query)))
   }, [invitationFilters.direction, invitationFilters.query, invitationFilters.status, invitationFilters.type, invitations, organisationId])
-  const pendingInvitationCount = useMemo(
-    () => invitations.filter((invitation) => (normalizeLower(invitation.status) || 'pending') === 'pending').length,
-    [invitations],
-  )
   const invitationCounts = useMemo(() => {
     const currentOrganisationId = normalizeLower(organisationId)
     return invitations.reduce(
@@ -2664,30 +2640,41 @@ export default function PartnersPage() {
       invitationFilters.type !== DEFAULT_INVITATION_FILTERS.type,
     [invitationFilters.direction, invitationFilters.query, invitationFilters.status, invitationFilters.type],
   )
-  const thirdPartyGroups = useMemo(() => {
-    const groups = thirdPartyDirectoryRows.reduce((accumulator, row) => {
-      const key = getThirdPartyGroupLabel(row)
-      if (!accumulator[key]) accumulator[key] = []
-      accumulator[key].push(row)
+  const thirdPartyCategoryCounts = useMemo(() => {
+    const counts = THIRD_PARTY_CATEGORY_OPTIONS.reduce((accumulator, option) => {
+      accumulator[option.key] = { total: 0, active: 0 }
       return accumulator
     }, {})
 
-    return ['Attorneys', 'Bond Originators', 'Referral Agencies', 'Other Third Parties']
-      .map((label) => ({ label, rows: groups[label] || [] }))
-      .filter((group) => group.rows.length)
-  }, [thirdPartyDirectoryRows])
-  const thirdPartyCounts = useMemo(() => {
-    const counts = { attorneys: 0, bondOriginators: 0, referralAgencies: 0, active: 0 }
     thirdPartyDirectoryRows.forEach((row) => {
-      const rawPartnerType = normalizeText(row.partnerType || row.partner?.type)
-      const partnerType = normalizePreferredPartnerType(rawPartnerType, rawPartnerType)
-      if (row.isActive !== false) counts.active += 1
-      if (ATTORNEY_PREFERRED_PARTNER_TYPES.has(partnerType)) counts.attorneys += 1
-      if (partnerType === 'bond_originator') counts.bondOriginators += 1
-      if (partnerType === 'agency') counts.referralAgencies += 1
+      const categoryKey = getThirdPartyCategoryKey(row)
+      if (!counts[categoryKey]) return
+      counts[categoryKey].total += 1
+      if (row.isActive !== false) counts[categoryKey].active += 1
     })
+
     return counts
   }, [thirdPartyDirectoryRows])
+  const selectedThirdPartyOption = useMemo(
+    () => getThirdPartyCategoryOption(selectedThirdPartyCategory),
+    [selectedThirdPartyCategory],
+  )
+  const selectedThirdPartyRows = useMemo(
+    () =>
+      thirdPartyDirectoryRows
+        .filter((row) => getThirdPartyCategoryKey(row) === selectedThirdPartyOption.key)
+        .sort((left, right) => {
+          const leftActive = left.isActive === false ? 1 : 0
+          const rightActive = right.isActive === false ? 1 : 0
+          if (leftActive !== rightActive) return leftActive - rightActive
+          return normalizeText(left.companyName || left.personName || left.organisationName).localeCompare(
+            normalizeText(right.companyName || right.personName || right.organisationName),
+          )
+        }),
+    [selectedThirdPartyOption.key, thirdPartyDirectoryRows],
+  )
+  const selectedThirdPartyStats = thirdPartyCategoryCounts[selectedThirdPartyOption.key] || { total: 0, active: 0 }
+  const SelectedThirdPartyIcon = selectedThirdPartyOption.icon || Building2
 
   const metrics = snapshot?.metrics || {}
   const currentType = resolvedWorkspaceType
@@ -2800,9 +2787,7 @@ export default function PartnersPage() {
   )
   const isPartnerProfilePage = Boolean(normalizeText(partnerId)) && !isBondPartnersRoute
   const isSimplifiedThirdPartyWorkspace = !isBondPartnersRoute && !isPartnerProfilePage
-  const simplifiedWorkspaceCopy = getSimplifiedPartnerViewCopy(activeTab)
-  const shouldShowThirdPartyActionCards = isSimplifiedThirdPartyWorkspace && activeTab === 'preferred'
-  const shouldShowPartnerProfileRail = activeTab !== 'invitations'
+  const shouldShowPartnerProfileRail = !isSimplifiedThirdPartyWorkspace && activeTab !== 'invitations'
   const shouldShowPartnersBlockingLoader =
     loading || (isSimplifiedThirdPartyWorkspace && thirdPartyDirectoryLoading && thirdPartyDirectoryRows.length === 0)
 
@@ -3641,61 +3626,44 @@ export default function PartnersPage() {
 
       {isSimplifiedThirdPartyWorkspace ? (
         <section className="space-y-4">
-          <div className="flex flex-col gap-4 border-b border-[#dce6f0] bg-white px-5 py-5 md:flex-row md:items-end md:justify-between">
-            <div className="max-w-3xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">{simplifiedWorkspaceCopy.eyebrow}</p>
-              <h1 className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-[#10243a]">{simplifiedWorkspaceCopy.title}</h1>
-              <p className="mt-2 text-sm leading-6 text-[#60758d]">{simplifiedWorkspaceCopy.description}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => openThirdPartyInvite('transfer_attorney')}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white transition hover:bg-[#173a5e]"
-            >
-              <InviteIcon size={15} />
-              {simplifiedWorkspaceCopy.actionLabel}
-            </button>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 border-b border-[#dce6f0] pb-4">
-            <button
-              type="button"
-              onClick={() => setActiveTab('preferred')}
-              className={`inline-flex h-9 items-center rounded-[8px] px-3 text-sm font-semibold transition ${
-                activeTab === 'preferred' ? 'bg-[#10243a] text-white' : 'border border-[#d7e2ee] bg-white text-[#35546c] hover:bg-[#f8fafc]'
-              }`}
-            >
-              Third parties
-            </button>
-            {SECONDARY_PARTNER_VIEWS.map((view) => (
-              <button
-                key={view.key}
-                type="button"
-                onClick={() => setActiveTab(view.key)}
-                className={`inline-flex h-9 items-center rounded-[8px] px-3 text-sm font-semibold transition ${
-                  activeTab === view.key ? 'bg-[#274c69] text-white' : 'border border-[#d7e2ee] bg-white text-[#35546c] hover:bg-[#f8fafc]'
-                }`}
-              >
-                {view.label}
-              </button>
+          <div className="grid gap-3 lg:grid-cols-3">
+            {THIRD_PARTY_CATEGORY_OPTIONS.map((option) => (
+              <ThirdPartyCategoryButton
+                key={option.key}
+                option={option}
+                count={thirdPartyCategoryCounts[option.key]?.total || 0}
+                active={selectedThirdPartyOption.key === option.key}
+                onSelect={setSelectedThirdPartyCategory}
+              />
             ))}
           </div>
 
-          {shouldShowThirdPartyActionCards ? (
-            <>
-              <div className="grid gap-3 md:grid-cols-3">
-                <ThirdPartyMetric label="Third parties" value={formatNumber(thirdPartyDirectoryRows.length)} hint={`${formatNumber(thirdPartyCounts.active)} active`} />
-                <ThirdPartyMetric label="Attorneys" value={formatNumber(thirdPartyCounts.attorneys)} hint="transfer, bond, cancellation" />
-                <ThirdPartyMetric label="Pending invites" value={formatNumber(pendingInvitationCount)} hint={`${formatNumber(metrics.newPartnerGrowth)} new in 30 days`} />
+          <div className="flex flex-col gap-4 rounded-[8px] border border-[#d9e4ef] bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] md:flex-row md:items-center md:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-[8px] ${selectedThirdPartyOption.iconClass}`}>
+                <SelectedThirdPartyIcon size={20} />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-[#10243a]">{selectedThirdPartyOption.title}</h2>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <span className="rounded-full border border-[#d7e2ee] bg-[#f8fafc] px-2.5 py-1 text-xs font-semibold text-[#52677f]">
+                    {formatNumber(selectedThirdPartyStats.active)} active
+                  </span>
+                  <span className="rounded-full border border-[#d7e2ee] bg-[#f8fafc] px-2.5 py-1 text-xs font-semibold text-[#52677f]">
+                    {formatNumber(selectedThirdPartyStats.total)} saved
+                  </span>
+                </div>
               </div>
-
-              <div className="grid gap-3 lg:grid-cols-3">
-                {THIRD_PARTY_ACTIONS.map((action) => (
-                  <ThirdPartyActionCard key={action.key} action={action} onAdd={openThirdPartyInvite} />
-                ))}
-              </div>
-            </>
-          ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => openThirdPartyInvite(selectedThirdPartyOption.partnerType)}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(15,23,42,0.15)] transition hover:bg-[#173a5e]"
+            >
+              <InviteIcon size={15} />
+              Invite {selectedThirdPartyOption.singularLabel}
+            </button>
+          </div>
         </section>
       ) : (
         <>
@@ -3742,51 +3710,45 @@ export default function PartnersPage() {
         <section className="mt-5 rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm font-semibold text-[#60758d]">
           {isSimplifiedThirdPartyWorkspace ? 'Loading third parties...' : 'Loading partner network...'}
         </section>
-      ) : isSimplifiedThirdPartyWorkspace && activeTab === 'preferred' ? (
-        <section className="mt-5 space-y-5">
-          {thirdPartyGroups.length ? (
-            thirdPartyGroups.map((group) => (
-              <section key={group.label} className="space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-[#52677f]">{group.label}</h2>
-                  <span className="rounded-full border border-[#d7e2ee] bg-white px-2.5 py-1 text-xs font-semibold text-[#60758d]">
-                    {formatNumber(group.rows.length)}
-                  </span>
-                </div>
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {group.rows.map((row) => {
-                    const isSelected = profilePanelOpen && normalizeText(selectedPartner?.id) === normalizeText(row.organisationId)
-                    return (
-                      <ThirdPartyPartnerCard
-                        key={row.id}
-                        row={row}
-                        selected={isSelected}
-                        onView={handleOpenPartnerProfile}
-                        onEdit={startEditThirdParty}
-                        onToggleActive={handleToggleThirdPartyActive}
-                        onRemove={handleRemoveThirdParty}
-                      />
-                    )
-                  })}
-                </div>
-              </section>
-            ))
+      ) : isSimplifiedThirdPartyWorkspace ? (
+        <section className="mt-5 space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-[#52677f]">{selectedThirdPartyOption.currentLabel}</h2>
+            <span className="rounded-full border border-[#d7e2ee] bg-white px-2.5 py-1 text-xs font-semibold text-[#60758d]">
+              {formatNumber(selectedThirdPartyRows.length)}
+            </span>
+          </div>
+
+          {selectedThirdPartyRows.length ? (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {selectedThirdPartyRows.map((row) => {
+                const isSelected = profilePanelOpen && normalizeText(selectedPartner?.id) === normalizeText(row.organisationId)
+                return (
+                  <ThirdPartyPartnerCard
+                    key={row.id}
+                    row={row}
+                    selected={isSelected}
+                    onView={handleOpenPartnerProfile}
+                    onEdit={startEditThirdParty}
+                    onToggleActive={handleToggleThirdPartyActive}
+                    onRemove={handleRemoveThirdParty}
+                  />
+                )
+              })}
+            </div>
           ) : (
-            <section className="rounded-[8px] border border-dashed border-[#cfdcea] bg-white p-8 text-center">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-[8px] bg-[#eef5f8] text-[#274c69]">
-                <InviteIcon size={20} />
+            <section className="rounded-[8px] border border-dashed border-[#cfdcea] bg-white p-8 text-center shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+              <div className={`mx-auto flex h-12 w-12 items-center justify-center rounded-[8px] ${selectedThirdPartyOption.iconClass}`}>
+                <SelectedThirdPartyIcon size={20} />
               </div>
-              <h2 className="mt-4 text-lg font-semibold text-[#10243a]">No third parties added yet</h2>
-              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-[#60758d]">
-                Start with an attorney, bond originator, or referral agency using the add cards above.
-              </p>
+              <h2 className="mt-4 text-lg font-semibold text-[#10243a]">{selectedThirdPartyOption.emptyTitle}</h2>
               <button
                 type="button"
-                onClick={() => openThirdPartyInvite('transfer_attorney')}
+                onClick={() => openThirdPartyInvite(selectedThirdPartyOption.partnerType)}
                 className="mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white transition hover:bg-[#173a5e]"
               >
                 <InviteIcon size={15} />
-                Invite third party
+                {selectedThirdPartyOption.emptyAction}
               </button>
             </section>
           )}

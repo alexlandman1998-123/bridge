@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient'
+import { recordSecurityAuditEvent } from './auditLogService'
 
 const ACTIVE_LEAD_EXCLUSIONS = new Set(['lost', 'archived', 'converted to transaction', 'converted'])
 const ACTIVE_LISTING_EXCLUSIONS = new Set(['withdrawn', 'archived', 'sold_archived', 'deleted'])
@@ -224,16 +225,16 @@ function requireDestination(strategy, assetType) {
 
 async function auditEvent({ actorId, organisationId, action, targetType, targetId, metadata }) {
   if (!isSupabaseConfigured || !supabase) return null
-  const { error } = await supabase.from('security_audit_events').insert({
-    user_id: normalizeUuid(actorId) || null,
-    workspace_id: normalizeUuid(organisationId) || null,
+  const result = await recordSecurityAuditEvent({
+    userId: normalizeUuid(actorId) || null,
+    workspaceId: normalizeUuid(organisationId) || null,
     action,
-    target_type: targetType,
-    target_id: normalizeText(targetId),
+    targetType,
+    targetId: normalizeText(targetId),
     metadata: metadata || {},
   })
-  if (error && !isMissingSchemaError(error)) {
-    console.warn('[Agent Offboarding] audit event skipped', error)
+  if (!result?.persisted && !['table_missing', 'supabase_not_configured'].includes(result?.reason)) {
+    console.warn('[Agent Offboarding] audit event skipped', result?.reason || 'not_persisted')
   }
   return null
 }

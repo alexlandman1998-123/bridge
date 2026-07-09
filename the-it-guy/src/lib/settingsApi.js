@@ -28,6 +28,7 @@ import {
   normalizeBranchAgentCount,
   normalizeBranchManagerName,
 } from './agencyOnboarding'
+import { resolveClientBrandTheme } from './clientBrandTheme.js'
 import {
   PREFERRED_PARTNER_TYPE_VALUES,
   normalizePreferredPartnerType,
@@ -312,6 +313,17 @@ function isMissingColumnError(error, columnName) {
     error.code === '42703' ||
     error.code === 'PGRST204' ||
     (message.includes('column') && message.includes(String(columnName || '').toLowerCase()))
+  )
+}
+
+function isMissingAnyColumnError(error) {
+  if (!error) return false
+  const message = String(error.message || '').toLowerCase()
+  return (
+    error.code === '42703' ||
+    error.code === 'PGRST204' ||
+    Boolean(getMissingColumnNameFromError(error)) ||
+    (message.includes('schema cache') && message.includes('column'))
   )
 }
 
@@ -959,6 +971,7 @@ function normalizePartnerRoutingRuleRecord(input = {}, fallback = {}) {
     targetScopeId: normalizeText(
       input.targetScopeId || input.target_context_id || input.targetContextId || input.target_scope_id || input.targetId || '',
     ),
+    relationshipId: normalizeText(input.relationshipId || input.relationship_id || fallback.relationshipId || fallback.relationship_id || ''),
     targetRegionId: normalizeText(input.targetRegionId || input.target_region_id || ''),
     targetWorkspaceUnitId: normalizeText(input.targetWorkspaceUnitId || input.target_workspace_unit_id || ''),
     targetScopeName: normalizeText(input.targetScopeName || input.target_scope_name || fallback.targetScopeName || fallback.target_scope_name || ''),
@@ -993,6 +1006,7 @@ function normalizePartnerRoutingRuleRow(row = {}) {
     targetScopeType: rawTargetScopeType || null,
     targetRoleType: row.target_role_type || row.targetRoleType || '',
     targetOrganisationId: row.target_organisation_id || row.targetOrganisationId || '',
+    relationshipId: row.relationship_id || row.relationshipId || '',
     targetScopeId: (() => {
       if (String(row.target_scope || '').trim() === PARTNER_ROUTING_TARGET_TYPES.region) {
         return row.target_region_id || ''
@@ -1039,6 +1053,7 @@ function mapPartnerRoutingRuleToRow(rule = {}, organisationId = '') {
   const targetConsultantUserId = normalizeText(
     rule.targetConsultantUserId || rule.target_user_id || rule.targetScope || rule.targetId || '',
   )
+  const relationshipId = normalizeText(rule.relationshipId || rule.relationship_id || '')
   const sourceOrganisationId = normalizeText(rule.sourceOrganisationId || rule.source_organisation_id || organisationId || '')
   const targetOrganisationId = normalizeText(rule.targetOrganisationId || rule.target_organisation_id || organisationId || '')
   const targetRoleType = normalizePartnerRoutingRoleType(rule.targetRoleType || rule.target_role_type || '')
@@ -1060,6 +1075,7 @@ function mapPartnerRoutingRuleToRow(rule = {}, organisationId = '') {
     source_user_id: sourceScopeType === PARTNER_ROUTING_SOURCE_TYPES.agent || sourceScopeType === PARTNER_ROUTING_SOURCE_TYPES.user ? sourceUserId || null : null,
     target_scope: targetScopeType,
     target_role_type: targetRoleType || null,
+    relationship_id: relationshipId || null,
     target_region_id: targetScopeType === PARTNER_ROUTING_TARGET_TYPES.region ? targetRegionId || targetScopeId || null : null,
     target_workspace_unit_id:
       targetScopeType === PARTNER_ROUTING_TARGET_TYPES.branch || targetScopeType === PARTNER_ROUTING_TARGET_TYPES.team
@@ -1924,6 +1940,230 @@ function buildAgencyOnboardingSettings({ context = {}, mergedDraft = {}, commerc
     organisationBranches: mergedDraft.branchStructure?.branches || [],
     organisationPermissions: mergedDraft.permissions || {},
   }
+}
+
+function brandingObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
+function pickBrandingText(...values) {
+  for (const value of values) {
+    const text = normalizeText(value)
+    if (text) return text
+  }
+  return ''
+}
+
+function buildPublishedClientBrandingTheme({ context = {}, mergedDraft = {}, nowIso = '' } = {}) {
+  const organisation = brandingObject(context.organisation)
+  const branding = brandingObject(mergedDraft?.branding)
+  const brandColours = brandingObject(branding.brandColours || branding.brandColors)
+  const suggestedColours = brandingObject(branding.suggestedColours || branding.suggestedColors)
+  const agencyInformation = brandingObject(mergedDraft?.agencyInformation || mergedDraft?.agency_information)
+  const organisationName = pickBrandingText(
+    branding.organisationName,
+    branding.organizationName,
+    branding.agencyName,
+    agencyInformation.tradingName,
+    agencyInformation.agencyName,
+    organisation.displayName,
+    organisation.display_name,
+    organisation.name,
+  )
+
+  const legacyBranding = {
+    ...branding,
+    organisationName,
+    agencyName: organisationName,
+    logoUrl: pickBrandingText(branding.logoUrl, branding.logo_url, branding.logoLight, branding.logoLightUrl, organisation.logoUrl, organisation.logo_url),
+    logoLight: pickBrandingText(branding.logoLight, branding.logoLightUrl, branding.logoUrl, branding.logo_url, organisation.logoUrl, organisation.logo_url),
+    logoDark: pickBrandingText(branding.logoDark, branding.logoDarkUrl, branding.logoHighContrast, branding.logoHighContrastUrl, branding.logoUrl, branding.logo_url, organisation.logoUrl, organisation.logo_url),
+    logoIcon: pickBrandingText(branding.logoIcon, branding.logoIconUrl, branding.logo_icon_url, organisation.logoIconUrl, organisation.logo_icon_url),
+    heroImageUrl: pickBrandingText(
+      branding.heroImageUrl,
+      branding.heroImage,
+      branding.backgroundImageUrl,
+      branding.backgroundImage,
+      branding.coverImageUrl,
+      branding.coverImage,
+    ),
+    primaryColor: pickBrandingText(brandColours.primary, branding.primaryColor, branding.primaryColour, branding.brandPrimaryColor),
+    secondaryColor: pickBrandingText(brandColours.secondary, branding.secondaryColor, branding.secondaryColour),
+    accentColor: pickBrandingText(brandColours.accent, branding.accentColor, branding.accentColour),
+    neutralColor: pickBrandingText(brandColours.neutral, branding.neutralColor, branding.neutralColour),
+    suggestedPrimaryColor: pickBrandingText(suggestedColours.primary, branding.suggestedPrimaryColor, branding.suggestedPrimaryColour),
+    suggestedAccentColor: pickBrandingText(suggestedColours.accent, branding.suggestedAccentColor, branding.suggestedAccentColour),
+  }
+
+  const theme = resolveClientBrandTheme({
+    organisation,
+    organisationSettings: {
+      settings_json: {
+        agencyOnboarding: {
+          ...mergedDraft,
+          branding: legacyBranding,
+        },
+      },
+    },
+    legacyBranding,
+  })
+
+  return {
+    ...theme,
+    organisationId: pickBrandingText(theme.organisationId, organisation.id),
+    organisationName: pickBrandingText(theme.organisationName, organisationName),
+    publishedAt: nowIso || theme.publishedAt,
+    updatedAt: nowIso || theme.updatedAt,
+    metadata: {
+      ...brandingObject(theme.metadata),
+      canonicalThemeVersion: 1,
+      source: 'settings_branding_phase4',
+      settingsSourcePath: 'organisation_settings.settings_json.agencyOnboarding.branding',
+      settingsSyncedAt: nowIso || new Date().toISOString(),
+    },
+  }
+}
+
+function buildOrganisationClientBrandingPayload({
+  context = {},
+  mergedDraft = {},
+  nowIso = new Date().toISOString(),
+  compatibilityMode = false,
+} = {}) {
+  const organisationId = normalizeText(context.organisation?.id)
+  if (!organisationId) return null
+
+  const branding = brandingObject(mergedDraft?.branding)
+  const theme = buildPublishedClientBrandingTheme({ context, mergedDraft, nowIso })
+  const metadata = {
+    ...brandingObject(branding.metadata),
+    ...brandingObject(theme.metadata),
+    syncedBy: 'settings_branding_phase4',
+    logoLightBucket: normalizeText(branding.logoLightBucket),
+    logoLightPath: normalizeText(branding.logoLightPath),
+    logoDarkBucket: normalizeText(branding.logoDarkBucket),
+    logoDarkPath: normalizeText(branding.logoDarkPath),
+    logoIconBucket: normalizeText(branding.logoIconBucket),
+    logoIconPath: normalizeText(branding.logoIconPath),
+    heroImageBucket: normalizeText(branding.heroImageBucket || branding.backgroundImageBucket),
+    heroImagePath: normalizeText(branding.heroImagePath || branding.backgroundImagePath),
+  }
+
+  const compatibilityPayload = {
+    organisation_id: organisationId,
+    organisation_display_name: normalizeNullableText(theme.organisationName),
+    logo_light_url: normalizeNullableText(theme.logoLightUrl || theme.logoUrl),
+    logo_dark_url: normalizeNullableText(theme.logoDarkUrl || theme.logoUrl),
+    primary_brand_color: normalizeNullableText(theme.primaryColor),
+    secondary_brand_color: normalizeNullableText(theme.secondaryColor),
+    accent_brand_color: normalizeNullableText(theme.accentColor),
+    metadata_json: metadata,
+  }
+
+  if (compatibilityMode) return compatibilityPayload
+
+  return {
+    ...compatibilityPayload,
+    logo_icon_url: normalizeNullableText(theme.logoIconUrl),
+    hero_image_url: normalizeNullableText(theme.heroImageUrl),
+    primary_color: normalizeNullableText(theme.primaryColor),
+    secondary_color: normalizeNullableText(theme.secondaryColor),
+    accent_color: normalizeNullableText(theme.accentColor),
+    neutral_color: normalizeNullableText(theme.neutralColor),
+    suggested_primary_color: normalizeNullableText(theme.suggestedPrimaryColor),
+    suggested_accent_color: normalizeNullableText(theme.suggestedAccentColor),
+    logo_light_bucket: normalizeNullableText(branding.logoLightBucket),
+    logo_light_path: normalizeNullableText(branding.logoLightPath),
+    logo_dark_bucket: normalizeNullableText(branding.logoDarkBucket),
+    logo_dark_path: normalizeNullableText(branding.logoDarkPath),
+    logo_icon_bucket: normalizeNullableText(branding.logoIconBucket),
+    logo_icon_path: normalizeNullableText(branding.logoIconPath),
+    hero_image_bucket: normalizeNullableText(branding.heroImageBucket || branding.backgroundImageBucket),
+    hero_image_path: normalizeNullableText(branding.heroImagePath || branding.backgroundImagePath),
+    theme_json: theme,
+    published_at: nowIso,
+  }
+}
+
+function isOptionalClientBrandingSyncError(error) {
+  return (
+    isMissingTableError(error, 'organisation_branding') ||
+    isMissingAnyColumnError(error) ||
+    isPermissionDeniedError(error)
+  )
+}
+
+async function syncOrganisationClientBranding(client, { context = {}, mergedDraft = {} } = {}) {
+  const nowIso = new Date().toISOString()
+  const payload = buildOrganisationClientBrandingPayload({ context, mergedDraft, nowIso })
+  if (!payload) {
+    return {
+      attempted: false,
+      skipped: true,
+      compatibilityMode: false,
+      message: 'No persisted organisation is available for canonical branding sync.',
+    }
+  }
+
+  const fullResult = await client
+    .from('organisation_branding')
+    .upsert(payload, { onConflict: 'organisation_id' })
+
+  if (!fullResult.error) {
+    return {
+      attempted: true,
+      skipped: false,
+      compatibilityMode: false,
+      publishedAt: nowIso,
+      message: '',
+    }
+  }
+
+  if (isMissingAnyColumnError(fullResult.error)) {
+    const compatibilityPayload = buildOrganisationClientBrandingPayload({
+      context,
+      mergedDraft,
+      nowIso,
+      compatibilityMode: true,
+    })
+    const compatibilityResult = await client
+      .from('organisation_branding')
+      .upsert(compatibilityPayload, { onConflict: 'organisation_id' })
+
+    if (!compatibilityResult.error) {
+      return {
+        attempted: true,
+        skipped: false,
+        compatibilityMode: true,
+        publishedAt: nowIso,
+        message: 'Canonical branding synced using the foundation organisation_branding schema.',
+      }
+    }
+
+    if (isOptionalClientBrandingSyncError(compatibilityResult.error)) {
+      console.warn('[Settings] organisation branding compatibility sync skipped.', compatibilityResult.error)
+      return {
+        attempted: true,
+        skipped: true,
+        compatibilityMode: true,
+        message: compatibilityResult.error.message || 'Canonical branding sync was skipped.',
+      }
+    }
+
+    throw compatibilityResult.error
+  }
+
+  if (isOptionalClientBrandingSyncError(fullResult.error)) {
+    console.warn('[Settings] organisation branding sync skipped.', fullResult.error)
+    return {
+      attempted: true,
+      skipped: true,
+      compatibilityMode: false,
+      message: fullResult.error.message || 'Canonical branding sync was skipped.',
+    }
+  }
+
+  throw fullResult.error
 }
 
 async function assertCommercialSignupSchemaInstalled(client) {
@@ -3321,6 +3561,11 @@ export async function saveAgencyOnboardingDraft(input = {}, options = {}) {
     throw error
   }
 
+  const brandingSync = await syncOrganisationClientBranding(client, {
+    context,
+    mergedDraft,
+  })
+
   if (shouldSyncCommercialAccess && commercialSync.installed) {
     const user = await getAuthenticatedUser()
     const settingsActivationIntent = {
@@ -3356,6 +3601,7 @@ export async function saveAgencyOnboardingDraft(input = {}, options = {}) {
     organisation: context.organisation,
     membershipRole: context.membershipRole,
     commercialSync,
+    brandingSync,
     persisted: true,
   }
 }
@@ -3992,7 +4238,7 @@ export async function listOrganisationPartnerRoutingRules() {
   const query = await client
     .from('partner_routing_rules')
     .select(
-      'id, is_active, is_default, assignment_priority, source_organisation_id, target_organisation_id, source_scope, source_context_id, source_user_id, source_scope_name, target_scope, target_role_type, target_region_id, target_workspace_unit_id, target_user_id, assignment_mode, target_scope_name, rule_name, notes, created_at, updated_at',
+      'id, is_active, is_default, assignment_priority, source_organisation_id, target_organisation_id, source_scope, source_context_id, source_user_id, source_scope_name, target_scope, target_role_type, relationship_id, target_region_id, target_workspace_unit_id, target_user_id, assignment_mode, target_scope_name, rule_name, notes, created_at, updated_at',
     )
     .eq('source_organisation_id', context.organisation.id)
     .order('is_default', { ascending: false })
@@ -4001,6 +4247,25 @@ export async function listOrganisationPartnerRoutingRules() {
 
   if (!query.error) {
     return sortNormalizedPartnerRoutingRules((query.data || []).map(normalizePartnerRoutingRuleRow))
+  }
+
+  if (isMissingColumnError(query.error, 'relationship_id')) {
+    const legacyQuery = await client
+      .from('partner_routing_rules')
+      .select(
+        'id, is_active, is_default, assignment_priority, source_organisation_id, target_organisation_id, source_scope, source_context_id, source_user_id, source_scope_name, target_scope, target_role_type, target_region_id, target_workspace_unit_id, target_user_id, assignment_mode, target_scope_name, rule_name, notes, created_at, updated_at',
+      )
+      .eq('source_organisation_id', context.organisation.id)
+      .order('is_default', { ascending: false })
+      .order('assignment_priority', { ascending: true })
+      .order('rule_name', { ascending: true })
+
+    if (!legacyQuery.error) {
+      return sortNormalizedPartnerRoutingRules((legacyQuery.data || []).map(normalizePartnerRoutingRuleRow))
+    }
+    if (!isMissingTableError(legacyQuery.error, 'partner_routing_rules')) {
+      throw legacyQuery.error
+    }
   }
 
   if (
@@ -4012,7 +4277,8 @@ export async function listOrganisationPartnerRoutingRules() {
     !isMissingColumnError(query.error, 'is_default') &&
     !isMissingColumnError(query.error, 'target_scope_name') &&
     !isMissingColumnError(query.error, 'source_organisation_id') &&
-    !isMissingColumnError(query.error, 'target_organisation_id')
+    !isMissingColumnError(query.error, 'target_organisation_id') &&
+    !isMissingColumnError(query.error, 'relationship_id')
   ) {
     throw query.error
   }
@@ -4114,7 +4380,7 @@ export async function saveOrganisationPartnerRoutingRule(input = {}) {
     .from('partner_routing_rules')
     .upsert(rowPayload, { onConflict: 'id' })
     .select(
-      'id, is_active, is_default, assignment_priority, source_organisation_id, target_organisation_id, source_scope, source_context_id, source_user_id, source_scope_name, target_scope, target_role_type, target_region_id, target_workspace_unit_id, target_user_id, assignment_mode, target_scope_name, rule_name, notes, created_at, updated_at',
+      'id, is_active, is_default, assignment_priority, source_organisation_id, target_organisation_id, source_scope, source_context_id, source_user_id, source_scope_name, target_scope, target_role_type, relationship_id, target_region_id, target_workspace_unit_id, target_user_id, assignment_mode, target_scope_name, rule_name, notes, created_at, updated_at',
     )
     .single()
 
@@ -4134,6 +4400,7 @@ export async function saveOrganisationPartnerRoutingRule(input = {}) {
     !isMissingColumnError(saveResult.error, 'rule_name') &&
     !isMissingColumnError(saveResult.error, 'source_organisation_id') &&
     !isMissingColumnError(saveResult.error, 'target_organisation_id') &&
+    !isMissingColumnError(saveResult.error, 'relationship_id') &&
     !isOnConflictConstraintError(saveResult.error, 'id')
   ) {
     throw saveResult.error
@@ -4212,7 +4479,7 @@ export async function listUserPreferredPartnerRoutingRules() {
   const query = await client
     .from('partner_routing_rules')
     .select(
-      'id, is_active, is_default, assignment_priority, source_organisation_id, target_organisation_id, source_scope, source_context_id, source_user_id, source_scope_name, target_scope, target_role_type, target_region_id, target_workspace_unit_id, target_user_id, assignment_mode, target_scope_name, rule_name, notes, created_at, updated_at',
+      'id, is_active, is_default, assignment_priority, source_organisation_id, target_organisation_id, source_scope, source_context_id, source_user_id, source_scope_name, target_scope, target_role_type, relationship_id, target_region_id, target_workspace_unit_id, target_user_id, assignment_mode, target_scope_name, rule_name, notes, created_at, updated_at',
     )
     .eq('source_organisation_id', context.organisation.id)
     .eq('source_user_id', user.id)
@@ -4225,7 +4492,7 @@ export async function listUserPreferredPartnerRoutingRules() {
     return sortNormalizedPartnerRoutingRules((query.data || []).map(normalizePartnerRoutingRuleRow))
   }
 
-  if (isMissingColumnError(query.error, 'target_role_type') || isMissingColumnError(query.error, 'target_scope_name')) {
+  if (isMissingColumnError(query.error, 'target_role_type') || isMissingColumnError(query.error, 'target_scope_name') || isMissingColumnError(query.error, 'relationship_id')) {
     const legacyQuery = await client
       .from('partner_routing_rules')
       .select(
@@ -4255,7 +4522,8 @@ export async function listUserPreferredPartnerRoutingRules() {
     !isMissingColumnError(query.error, 'assignment_mode') &&
     !isMissingColumnError(query.error, 'target_scope_name') &&
     !isMissingColumnError(query.error, 'source_organisation_id') &&
-    !isMissingColumnError(query.error, 'target_organisation_id')
+    !isMissingColumnError(query.error, 'target_organisation_id') &&
+    !isMissingColumnError(query.error, 'relationship_id')
   ) {
     throw query.error
   }
@@ -4347,7 +4615,7 @@ export async function saveUserPreferredPartnerRoutingRule(input = {}) {
     .from('partner_routing_rules')
     .upsert(rowPayload, { onConflict: 'id' })
     .select(
-      'id, is_active, is_default, assignment_priority, source_organisation_id, target_organisation_id, source_scope, source_context_id, source_user_id, source_scope_name, target_scope, target_role_type, target_region_id, target_workspace_unit_id, target_user_id, assignment_mode, target_scope_name, rule_name, notes, created_at, updated_at',
+      'id, is_active, is_default, assignment_priority, source_organisation_id, target_organisation_id, source_scope, source_context_id, source_user_id, source_scope_name, target_scope, target_role_type, relationship_id, target_region_id, target_workspace_unit_id, target_user_id, assignment_mode, target_scope_name, rule_name, notes, created_at, updated_at',
     )
     .single()
 
@@ -4355,10 +4623,11 @@ export async function saveUserPreferredPartnerRoutingRule(input = {}) {
     return normalizePartnerRoutingRuleRecord(saveResult.data)
   }
 
-  if (isMissingColumnError(saveResult.error, 'target_role_type') || isMissingColumnError(saveResult.error, 'target_scope_name')) {
+  if (isMissingColumnError(saveResult.error, 'target_role_type') || isMissingColumnError(saveResult.error, 'target_scope_name') || isMissingColumnError(saveResult.error, 'relationship_id')) {
     const legacyPayload = { ...rowPayload }
     delete legacyPayload.target_role_type
     delete legacyPayload.target_scope_name
+    delete legacyPayload.relationship_id
 
     const legacySaveResult = await client
       .from('partner_routing_rules')
@@ -4387,6 +4656,7 @@ export async function saveUserPreferredPartnerRoutingRule(input = {}) {
     !isMissingColumnError(saveResult.error, 'target_scope_name') &&
     !isMissingColumnError(saveResult.error, 'source_organisation_id') &&
     !isMissingColumnError(saveResult.error, 'target_organisation_id') &&
+    !isMissingColumnError(saveResult.error, 'relationship_id') &&
     !isOnConflictConstraintError(saveResult.error, 'id')
   ) {
     throw saveResult.error

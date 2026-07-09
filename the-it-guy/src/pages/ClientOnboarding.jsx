@@ -19,6 +19,7 @@ import {
 } from '../components/onboarding/OnboardingVisualStep'
 import PremiumOnboardingLanding from '../components/onboarding/PremiumOnboardingLanding'
 import Button from '../components/ui/Button'
+import { resolveClientBrandTheme } from '../lib/clientBrandTheme.js'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { resolveBuyerOnboardingFlow } from '../lib/buyerOnboardingFlow.js'
 import {
@@ -1640,15 +1641,18 @@ function getBuyerLandingInitials(name = '') {
     .join('')
 }
 
-function resolveBuyerLandingBrand(payload = {}) {
+function resolveBuyerLandingBrand(payload = {}, clientTheme = null) {
   const branding = payload?.branding || {}
   const organisation = payload?.organisation || {}
   const development = Array.isArray(payload?.unit?.development)
     ? payload.unit.development[0]
     : payload?.unit?.development
+  const theme = clientTheme || resolveBuyerClientTheme(payload)
+  const themedName = theme?.source === 'arch9_default' ? '' : theme?.organisationName
   const name =
     String(
-      branding.organisationName ||
+      themedName ||
+        branding.organisationName ||
         branding.agencyName ||
         organisation.display_name ||
         organisation.name ||
@@ -1658,7 +1662,9 @@ function resolveBuyerLandingBrand(payload = {}) {
         '',
     ).trim() || 'Your property team'
   const logoUrl = String(
-    branding.logoDarkUrl ||
+    theme?.logoDarkUrl ||
+      theme?.logoUrl ||
+      branding.logoDarkUrl ||
       branding.logoUrl ||
       branding.logoLightUrl ||
       organisation.logo_url ||
@@ -1669,14 +1675,20 @@ function resolveBuyerLandingBrand(payload = {}) {
   return {
     name,
     logoUrl,
+    logoDarkUrl: String(theme?.logoDarkUrl || branding.logoDarkUrl || logoUrl || '').trim(),
+    logoLightUrl: String(theme?.logoLightUrl || branding.logoLightUrl || logoUrl || '').trim(),
     initials: getBuyerLandingInitials(name),
+    theme,
   }
 }
 
-function resolveBuyerQuestionHeaderIdentity(payload = {}) {
+function resolveBuyerQuestionHeaderIdentity(payload = {}, clientTheme = null) {
   const branding = payload?.branding || {}
+  const theme = clientTheme || resolveBuyerClientTheme(payload)
   const logoUrl = String(
-    branding.logoLightUrl ||
+    theme?.logoLightUrl ||
+      theme?.logoUrl ||
+      branding.logoLightUrl ||
       branding.logoUrl ||
       branding.logoDarkUrl ||
       payload?.organisation?.logo_url ||
@@ -1685,6 +1697,7 @@ function resolveBuyerQuestionHeaderIdentity(payload = {}) {
   ).trim()
   const agencyName = String(
     branding.organisationName ||
+      (theme?.source === 'arch9_default' ? '' : theme?.organisationName) ||
       branding.agencyName ||
       payload?.organisation?.display_name ||
       payload?.organisation?.name ||
@@ -1703,6 +1716,7 @@ function resolveBuyerQuestionHeaderIdentity(payload = {}) {
     name,
     logoUrl,
     initials: getBuyerLandingInitials(name),
+    theme,
   }
 }
 
@@ -1768,6 +1782,25 @@ function resolveBuyerWelcomeImageUrl(payload = {}) {
   }
 
   return ''
+}
+
+function resolveBuyerClientTheme(payload = {}) {
+  const branding = payload?.branding || {}
+  if (branding?.clientTheme && typeof branding.clientTheme === 'object' && branding.clientTheme.primaryColor) {
+    return branding.clientTheme
+  }
+
+  return resolveClientBrandTheme({
+    organisation: payload?.organisation || {},
+    listing: {
+      ...(payload?.listing && typeof payload.listing === 'object' ? payload.listing : {}),
+      ...(payload?.unit && typeof payload.unit === 'object' ? payload.unit : {}),
+      heroImageUrl: resolveBuyerWelcomeImageUrl(payload),
+    },
+    organisationSettings: payload?.organisationSettings || payload?.organisation_settings,
+    organisationBranding: payload?.organisationBranding || payload?.organisation_branding,
+    legacyBranding: branding,
+  })
 }
 
 function isVisibleDetailField(fieldConfig, context) {
@@ -2026,10 +2059,11 @@ function ClientOnboarding() {
   const mobileProgressPercent = Math.round(((mobileProgressStepIndex + 1) / totalJourneySteps) * 100)
   const mobileStepLabel = journeySteps[mobileProgressStepIndex]?.shortLabel || journeySteps[0]?.shortLabel || 'Step'
   const submissionComplete = completionBannerVisible || payload?.onboarding?.status === 'Submitted'
-  const onboardingBrand = useMemo(() => resolveBuyerLandingBrand(payload), [payload])
-  const onboardingQuestionHeaderIdentity = useMemo(() => resolveBuyerQuestionHeaderIdentity(payload), [payload])
+  const clientBrandTheme = useMemo(() => resolveBuyerClientTheme(payload), [payload])
+  const onboardingBrand = useMemo(() => resolveBuyerLandingBrand(payload, clientBrandTheme), [payload, clientBrandTheme])
+  const onboardingQuestionHeaderIdentity = useMemo(() => resolveBuyerQuestionHeaderIdentity(payload, clientBrandTheme), [payload, clientBrandTheme])
   const buyerLandingName = useMemo(() => resolveBuyerLandingName(payload, formData), [payload, formData])
-  const buyerLandingBackgroundImage = useMemo(() => resolveBuyerWelcomeImageUrl(payload), [payload])
+  const buyerLandingBackgroundImage = useMemo(() => clientBrandTheme.heroImageUrl || resolveBuyerWelcomeImageUrl(payload), [payload, clientBrandTheme])
   const showLandingPage = !submissionComplete && !landingDismissed
   const mobileDetailPanes = useMemo(() => {
     const panes = []
@@ -4451,12 +4485,12 @@ function ClientOnboarding() {
   }
 
   const onboardingMainClass = showLandingPage
-    ? 'min-h-screen overflow-x-hidden bg-[#02070b] px-3 py-3 pb-3 md:px-4 md:py-5 md:pb-5'
+    ? 'min-h-screen overflow-x-hidden bg-[#02070b]'
     : `min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f9fbfd_0%,#eef4fb_44%,#e7eef7_100%)] px-3 py-3 ${!submissionComplete ? 'pb-40' : 'pb-24'} md:px-4 md:py-5 md:pb-12`
 
   return (
     <main className={onboardingMainClass}>
-      <div className={`${PAGE_CONTAINER_CLASS} space-y-4 md:space-y-5`}>
+      <div className={showLandingPage ? 'w-full' : `${PAGE_CONTAINER_CLASS} space-y-4 md:space-y-5`}>
         {showLandingPage ? (
           <PremiumOnboardingLanding
             portalType="buyer"
@@ -4465,6 +4499,7 @@ function ClientOnboarding() {
             personName={buyerLandingName === 'there' ? '' : buyerLandingName}
             propertyAddress={onboardingLocationLabel}
             backgroundImage={buyerLandingBackgroundImage}
+            brandTheme={clientBrandTheme}
             onStart={() => {
               setLandingDismissed(true)
               if (typeof window !== 'undefined') {

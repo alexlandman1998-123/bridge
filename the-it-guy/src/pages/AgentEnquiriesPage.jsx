@@ -810,8 +810,8 @@ export default function AgentEnquiriesPage() {
       <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Agent Workspace</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-[-0.045em] text-slate-950">Enquiries</h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-500">Operational review for external lead ingestion logs, duplicates, failures, unresolved listings, and safe retries.</p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-[-0.045em] text-slate-950">Review Queue</h1>
+          <p className="mt-2 max-w-3xl text-sm text-slate-500">Operational review for external lead intake logs, duplicates, failures, unresolved listings, and safe retries.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => { setImportLeadCategory(''); setImportOpen(true) }} disabled={!organisationId} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:bg-slate-300">

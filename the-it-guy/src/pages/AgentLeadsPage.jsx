@@ -8,6 +8,7 @@ import {
   CalendarDays,
   ChevronDown,
   CheckCircle2,
+  ClipboardList,
   Clock3,
   Copy,
   CreditCard,
@@ -8666,6 +8667,10 @@ function AgentLeadList() {
             <Upload size={16} />
             Import
           </button>
+          <Link to="/pipeline/enquiries" className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50">
+            <ClipboardList size={16} />
+            Review Queue
+          </Link>
           <LeadHeaderOverflowMenu onRefresh={loadRows} />
         </div>
       </header>

@@ -7,6 +7,7 @@ import {
   supabase,
 } from './supabaseClient'
 import { uploadToStorageCandidateBuckets } from './storageFallbacks'
+import { resolveClientBrandTheme } from './clientBrandTheme.js'
 import {
   MAIN_PROCESS_STAGES,
   STAGES,
@@ -159,6 +160,17 @@ import {
   fetchTransactionDocumentRequirementsByTransactionIds as fetchCanonicalTransactionDocumentRequirementsByTransactionIds,
   maybeResolveTransactionDocumentRequirements,
 } from '../services/documents/transactionCanonicalDocumentRequirementService'
+import {
+  fetchTransactionDocumentAccessGrants,
+  replaceTransactionDocumentManualAccessGrants,
+  resolveTransactionDocumentResourceAccess,
+  resolveDocumentAccessSelectionValues,
+  summarizeDocumentAccessGrantHistory,
+  summarizeDocumentAccessGrants,
+  syncDocumentAccessGrantsFromRequest,
+  syncDocumentAccessGrantsFromRequirement,
+  syncDocumentRequestPermissionRows,
+} from '../services/documents/documentAccessGrantService'
 import { getCanonicalDocumentRolloutMode } from '../services/documents/canonicalDocumentConsolidationService'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService'
 import { buildTransactionRoutingBackfillPlan } from '../services/transactionRoutingGovernanceService'
@@ -3471,12 +3483,26 @@ async function syncTransactionSubprocessOwners(client, transaction, subprocesses
     return subprocesses
   }
 
-  const { error } = await client.from('transaction_subprocesses').upsert(updates, { onConflict: 'id' })
-  if (error) {
-    if (isMissingSchemaError(error)) {
-      return subprocesses
+  const persistedUpdates = updates.filter((update) => isUuidLike(update.id))
+  if (!persistedUpdates.length) {
+    return subprocesses
+  }
+
+  for (const update of persistedUpdates) {
+    const { error } = await client
+      .from('transaction_subprocesses')
+      .update({
+        owner_type: update.owner_type,
+        updated_at: update.updated_at,
+      })
+      .eq('id', update.id)
+
+    if (error) {
+      if (isMissingSchemaError(error)) {
+        return subprocesses
+      }
+      throw error
     }
-    throw error
   }
 
   return ensureTransactionSubprocesses(client, transaction.id)
@@ -9544,12 +9570,12 @@ async function resolveActiveProfileContext(client) {
   try {
     const { data, error } = await client.auth.getSession()
     if (error) {
-      return { userId: null, role: null, firmId: null, firmRole: null }
+      return { userId: null, email: null, role: null, firmId: null, firmRole: null }
     }
 
     const user = data?.session?.user
     if (!user?.id) {
-      return { userId: null, role: null, firmId: null, firmRole: null }
+      return { userId: null, email: null, role: null, firmId: null, firmRole: null }
     }
 
     const profileQuery = await client
@@ -9560,19 +9586,20 @@ async function resolveActiveProfileContext(client) {
       .maybeSingle()
     if (profileQuery.error) {
       if (isMissingSchemaError(profileQuery.error)) {
-        return { userId: user.id, role: null, firmId: null, firmRole: null }
+        return { userId: user.id, email: normalizeEmailAddress(user.email), role: null, firmId: null, firmRole: null }
       }
-      return { userId: user.id, role: null, firmId: null, firmRole: null }
+      return { userId: user.id, email: normalizeEmailAddress(user.email), role: null, firmId: null, firmRole: null }
     }
 
     return {
       userId: user.id,
+      email: normalizeEmailAddress(user.email),
       role: normalizeRoleType(profileQuery.data?.role || 'developer'),
       firmId: profileQuery.data?.firm_id || null,
       firmRole: normalizeFirmRole(profileQuery.data?.firm_role || 'attorney'),
     }
   } catch {
-    return { userId: null, role: null, firmId: null, firmRole: null }
+    return { userId: null, email: null, role: null, firmId: null, firmRole: null }
   }
 }
 
@@ -12636,6 +12663,14 @@ async function updateDocumentRequestFromUploadIfPossible(
   }
 
   const normalizedUpdated = normalizeDocumentRequestRow(update.data)
+  await syncDocumentAccessGrantsFromRequest({
+    client,
+    transactionId,
+    documentId,
+    documentRequestId: normalizedUpdated.id,
+    actorUserId: actorUserId || null,
+    createdAt: now,
+  })
   await logTransactionEventIfPossible(client, {
     transactionId,
     eventType: 'TransactionUpdated',
@@ -12792,9 +12827,10 @@ async function loadTransactionDocumentRequestsByIds(client, transactionIds = [])
     throw query.error
   }
 
+  const normalizedRows = (query.data || []).map((row) => normalizeDocumentRequestRow(row))
+  const accessRows = await applyDocumentRequestAccessToRows(client, normalizedRows)
   const map = {}
-  for (const row of query.data || []) {
-    const normalized = normalizeDocumentRequestRow(row)
+  for (const normalized of accessRows) {
     if (!map[normalized.transactionId]) {
       map[normalized.transactionId] = []
     }
@@ -12816,13 +12852,13 @@ async function fetchClientVisibleAdditionalDocumentRequests(client, transactionI
     return []
   }
 
+  let requestVisibilityFilterAvailable = true
   let query = await client
     .from('document_requests')
     .select(
       'id, transaction_id, category, document_type, title, description, priority, due_date, assigned_to_role, assigned_to_user_id, request_group_id, status, requires_review, requested_document_id, created_by, created_by_role, completed_at, rejected_reason, resend_count, last_resent_at, requested_from, visibility_scope, request_type, notes, created_at, updated_at',
     )
     .eq('transaction_id', transactionId)
-    .eq('visibility_scope', 'client_visible')
     .order('created_at', { ascending: false })
 
   if (
@@ -12832,6 +12868,7 @@ async function fetchClientVisibleAdditionalDocumentRequests(client, transactionI
       isMissingColumnError(query.error, 'request_type') ||
       isMissingColumnError(query.error, 'notes'))
   ) {
+    requestVisibilityFilterAvailable = false
     query = await client
       .from('document_requests')
       .select('id, transaction_id, category, document_type, title, description, priority, due_date, assigned_to_role, status, created_by_role, requested_from, created_at')
@@ -12846,16 +12883,24 @@ async function fetchClientVisibleAdditionalDocumentRequests(client, transactionI
     throw query.error
   }
 
-  return (query.data || [])
-    .map((row) => normalizeDocumentRequestRow(row))
+  const normalizedRows = (query.data || []).map((row) => normalizeDocumentRequestRow(row))
+  const accessRows = await applyDocumentRequestAccessToRows(client, normalizedRows)
+
+  return accessRows
     .filter((request) => {
       const category = String(request.category || '').trim().toLowerCase()
       const clientScopedRole = ['client', 'buyer', 'seller'].includes(
         normalizeRequestRoleScope(request.assignedToRole, 'client'),
       )
+      if (request.accessSource === 'grant') {
+        return (
+          (request.requestType === 'additional_document_request' || category === 'additional requests') &&
+          (request.canView || request.canUpload)
+        )
+      }
       return (
         (request.requestType === 'additional_document_request' || category === 'additional requests') &&
-        (request.clientVisible || clientScopedRole)
+        (request.clientVisible || (!requestVisibilityFilterAvailable && clientScopedRole))
       )
     })
     .map((request) => ({
@@ -13136,12 +13181,23 @@ async function canUserRequestAdditionalDocumentsForTransaction(client, { transac
     return false
   }
 
-  const participantQuery = await client
+  let participantQuery = await client
     .from('transaction_participants')
-    .select('id, user_id, role_type, status, removed_at')
+    .select('id, user_id, role_type, status, removed_at, can_request_documents')
     .eq('transaction_id', transactionId)
     .eq('user_id', userId)
     .maybeSingle()
+
+  let participantCanRequestColumnAvailable = true
+  if (participantQuery.error && isMissingColumnError(participantQuery.error, 'can_request_documents')) {
+    participantCanRequestColumnAvailable = false
+    participantQuery = await client
+      .from('transaction_participants')
+      .select('id, user_id, role_type, status, removed_at')
+      .eq('transaction_id', transactionId)
+      .eq('user_id', userId)
+      .maybeSingle()
+  }
 
   if (!participantQuery.error) {
     const participant = participantQuery.data || null
@@ -13149,7 +13205,7 @@ async function canUserRequestAdditionalDocumentsForTransaction(client, { transac
       participant &&
       normalizeStakeholderStatus(participant?.status, participant?.removed_at ? 'removed' : 'active') === 'active'
     ) {
-      return true
+      return participantCanRequestColumnAvailable ? participant.can_request_documents === true : true
     }
   } else if (
     !isMissingTableError(participantQuery.error, 'transaction_participants') &&
@@ -13183,6 +13239,172 @@ export async function fetchTransactionDocumentRequests(transactionId) {
   if (!transactionId) return []
   const result = await loadTransactionDocumentRequestsByIds(client, [transactionId])
   return result[transactionId] || []
+}
+
+function normalizeTransactionDocumentAccessResourceType(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (['document', 'transaction_document', 'uploaded_document'].includes(normalized)) return 'document'
+  if (['document_request', 'request'].includes(normalized)) return 'document_request'
+  if (['requirement_instance', 'document_requirement_instance', 'canonical_requirement'].includes(normalized)) {
+    return 'requirement_instance'
+  }
+  return ''
+}
+
+async function canManageTransactionDocumentAccessResource(client, {
+  transactionId,
+  resourceType,
+  resourceId,
+  actor,
+} = {}) {
+  const normalizedResourceType = normalizeTransactionDocumentAccessResourceType(resourceType)
+  if (!transactionId || !normalizedResourceType || !resourceId || !actor?.userId) return false
+
+  if (normalizedResourceType === 'document') {
+    const access = await resolveTransactionDocumentResourceAccess({
+      client,
+      actor,
+      documents: [{ id: resourceId, transaction_id: transactionId }],
+    })
+    const resourceAccess = access.documents?.get(resourceId)
+    if (access.available && resourceAccess?.hasGrantRows && resourceAccess.canManage === true) return true
+  } else if (normalizedResourceType === 'document_request') {
+    const access = await resolveTransactionDocumentResourceAccess({
+      client,
+      actor,
+      documentRequests: [{ id: resourceId, transaction_id: transactionId }],
+    })
+    const resourceAccess = access.documentRequests?.get(resourceId)
+    if (access.available && resourceAccess?.hasGrantRows && resourceAccess.canManage === true) return true
+  }
+
+  return canUserRequestAdditionalDocumentsForTransaction(client, {
+    transactionId,
+    actor: {
+      userId: actor.userId || null,
+      role: actor.role || null,
+    },
+  })
+}
+
+export async function fetchTransactionDocumentAccessSettings({
+  transactionId,
+  resourceType,
+  resourceId,
+} = {}) {
+  const client = requireClient()
+  const actor = await resolveActiveProfileContext(client)
+  const normalizedResourceType = normalizeTransactionDocumentAccessResourceType(resourceType)
+  if (!transactionId || !normalizedResourceType || !resourceId) {
+    throw new Error('Document access resource is required.')
+  }
+
+  const canManage = await canManageTransactionDocumentAccessResource(client, {
+    transactionId,
+    resourceType: normalizedResourceType,
+    resourceId,
+    actor,
+  })
+  if (!canManage) {
+    throw new Error('You do not have permission to manage access for this document.')
+  }
+
+  const grants = await fetchTransactionDocumentAccessGrants({
+    client,
+    transactionId,
+    resourceType: normalizedResourceType,
+    resourceId,
+    includeRevoked: true,
+  })
+  const activeGrants = grants.rows.filter((grant) => !grant.revoked_at)
+  const summary = summarizeDocumentAccessGrants(activeGrants)
+
+  return {
+    transactionId,
+    resourceType: normalizedResourceType,
+    resourceId,
+    canManage,
+    accessSelections: resolveDocumentAccessSelectionValues(activeGrants),
+    accessSummary: summary.summary,
+    accessDownloadLabels: summary.downloadLabels,
+    accessUploadSummary: summary.uploadSummary,
+    accessManageSummary: summary.manageSummary,
+    accessHistory: summarizeDocumentAccessGrantHistory(grants.rows),
+    grants: activeGrants,
+    skipped: !grants.available,
+  }
+}
+
+export async function updateTransactionDocumentAccessSettings({
+  transactionId,
+  resourceType,
+  resourceId,
+  accessGrants = [],
+  actorRole = null,
+} = {}) {
+  const client = requireClient()
+  const actor = await resolveActiveProfileContext(client)
+  const normalizedResourceType = normalizeTransactionDocumentAccessResourceType(resourceType)
+  if (!transactionId || !normalizedResourceType || !resourceId) {
+    throw new Error('Document access resource is required.')
+  }
+
+  const canManage = await canManageTransactionDocumentAccessResource(client, {
+    transactionId,
+    resourceType: normalizedResourceType,
+    resourceId,
+    actor,
+  })
+  if (!canManage) {
+    throw new Error('You do not have permission to manage access for this document.')
+  }
+
+  const now = new Date().toISOString()
+  const previousGrants = await fetchTransactionDocumentAccessGrants({
+    client,
+    transactionId,
+    resourceType: normalizedResourceType,
+    resourceId,
+  })
+  const previousSummary = summarizeDocumentAccessGrants(previousGrants.rows)
+
+  const sync = await replaceTransactionDocumentManualAccessGrants({
+    client,
+    transactionId,
+    resourceType: normalizedResourceType,
+    resourceId,
+    accessGrants,
+    actorUserId: actor.userId || null,
+    createdAt: now,
+  })
+
+  const settings = await fetchTransactionDocumentAccessSettings({
+    transactionId,
+    resourceType: normalizedResourceType,
+    resourceId,
+  })
+
+  await logTransactionEventIfPossible(client, {
+    transactionId,
+    eventType: 'TransactionUpdated',
+    createdBy: actor.userId || null,
+    createdByRole: normalizeRoleType(actorRole || actor.role || null),
+    eventData: {
+      source: 'document_access_updated',
+      resourceType: normalizedResourceType,
+      resourceId,
+      grantCount: sync.grantCount,
+      revokedCount: sync.revokedCount,
+      previousAccessSummary: previousSummary.summary,
+      nextAccessSummary: settings.accessSummary,
+      accessSelections: settings.accessSelections,
+    },
+  })
+
+  return {
+    ...settings,
+    sync,
+  }
 }
 
 export async function createTransactionDocumentRequests({
@@ -13341,6 +13563,29 @@ export async function createTransactionDocumentRequests({
   }
 
   const normalizedCreatedRequests = (insert.data || []).map((row) => normalizeDocumentRequestRow(row))
+  const permissionSourceRows = insertRows.map((row, index) => ({
+    ...(requests[index] || {}),
+    ...row,
+    requestedFrom: row.requested_from,
+    requested_from: row.requested_from,
+    assignedToRole: row.assigned_to_role,
+    assigned_to_role: row.assigned_to_role,
+    assignedToUserId: row.assigned_to_user_id,
+    assigned_to_user_id: row.assigned_to_user_id,
+    visibility: row.visibility_scope,
+    visibility_scope: row.visibility_scope,
+  }))
+  await syncDocumentRequestPermissionRows({
+    client,
+    transactionId,
+    createdRequests: normalizedCreatedRequests,
+    sourceRequests: permissionSourceRows,
+    actor: {
+      userId: actor.userId || null,
+      role: normalizedActorRole,
+    },
+    createdAt,
+  })
   const firstRequest = normalizedCreatedRequests[0] || insertRows[0] || {}
   const firstRequestTitle = firstRequest.title || firstRequest.document_type || firstRequest.documentType || 'Additional document'
 
@@ -15599,11 +15844,11 @@ async function getSignedUrl(filePath) {
   return null
 }
 
-async function enrichDocuments(documents) {
+async function enrichDocuments(documents, { respectAccess = false } = {}) {
   return Promise.all(
     documents.map(async (document) => ({
       ...document,
-      url: await getSignedUrl(document.file_path),
+      url: respectAccess && document.canDownload === false ? null : await getSignedUrl(document.file_path),
     })),
   )
 }
@@ -15720,6 +15965,116 @@ function filterSharedDocumentsByViewer(documents, viewer = 'internal', { viewerR
   )
 }
 
+function legacyDocumentAccessMetadata(source = 'legacy_visibility') {
+  return {
+    source,
+    hasGrantRows: false,
+    canView: true,
+    canDownload: true,
+    canUpload: false,
+    canReview: false,
+    canManage: false,
+    summary: '',
+    downloadLabels: [],
+    uploadSummary: '',
+    manageSummary: '',
+  }
+}
+
+function mergeDocumentAccessMetadata(row = {}, access = null) {
+  const metadata = access || legacyDocumentAccessMetadata()
+  return {
+    ...row,
+    access: metadata,
+    documentAccess: metadata,
+    accessSource: metadata.source,
+    canView: metadata.canView !== false,
+    canDownload: metadata.canDownload !== false,
+    canUpload: metadata.canUpload === true,
+    canReview: metadata.canReview === true,
+    canManage: metadata.canManage === true,
+    accessSummary: metadata.summary || '',
+    accessDownloadLabels: metadata.downloadLabels || [],
+    accessUploadSummary: metadata.uploadSummary || '',
+    accessManageSummary: metadata.manageSummary || '',
+  }
+}
+
+async function applyDocumentAccessToRows(client, documents = []) {
+  if (!documents.length) return []
+  const actor = await resolveActiveProfileContext(client)
+  if (!actor.userId && !actor.email) {
+    return documents.map((row) => mergeDocumentAccessMetadata(row, legacyDocumentAccessMetadata('legacy_visibility')))
+  }
+
+  const accessResult = await resolveTransactionDocumentResourceAccess({
+    client,
+    documents,
+    actor,
+  })
+  if (!accessResult.available) {
+    return documents.map((row) => mergeDocumentAccessMetadata(row, legacyDocumentAccessMetadata('legacy_visibility')))
+  }
+
+  return documents
+    .map((row) => {
+      const access = accessResult.documents.get(row.id)
+      if (!access?.hasGrantRows) {
+        return mergeDocumentAccessMetadata(row, legacyDocumentAccessMetadata('legacy_visibility'))
+      }
+      if (!access.canView && !access.canDownload) return null
+      return mergeDocumentAccessMetadata(row, access)
+    })
+    .filter(Boolean)
+}
+
+function mergeDocumentRequestAccessMetadata(row = {}, access = null) {
+  const metadata = access || legacyDocumentAccessMetadata()
+  return {
+    ...row,
+    access: metadata,
+    requestAccess: metadata,
+    accessSource: metadata.source,
+    canView: metadata.canView !== false,
+    canDownload: metadata.canDownload === true,
+    canUpload: metadata.canUpload === true,
+    canReview: metadata.canReview === true,
+    canManage: metadata.canManage === true,
+    accessSummary: metadata.summary || '',
+    accessDownloadLabels: metadata.downloadLabels || [],
+    accessUploadSummary: metadata.uploadSummary || '',
+    accessManageSummary: metadata.manageSummary || '',
+  }
+}
+
+async function applyDocumentRequestAccessToRows(client, requests = []) {
+  if (!requests.length) return []
+  const actor = await resolveActiveProfileContext(client)
+  if (!actor.userId && !actor.email) {
+    return requests.map((row) => mergeDocumentRequestAccessMetadata(row, legacyDocumentAccessMetadata('legacy_visibility')))
+  }
+
+  const accessResult = await resolveTransactionDocumentResourceAccess({
+    client,
+    documentRequests: requests,
+    actor,
+  })
+  if (!accessResult.available) {
+    return requests.map((row) => mergeDocumentRequestAccessMetadata(row, legacyDocumentAccessMetadata('legacy_visibility')))
+  }
+
+  return requests
+    .map((row) => {
+      const access = accessResult.documentRequests.get(row.id)
+      if (!access?.hasGrantRows) {
+        return mergeDocumentRequestAccessMetadata(row, legacyDocumentAccessMetadata('legacy_visibility'))
+      }
+      if (!access.canView && !access.canUpload && !access.canDownload && !access.canManage) return null
+      return mergeDocumentRequestAccessMetadata(row, access)
+    })
+    .filter(Boolean)
+}
+
 async function fetchSharedDocumentRowsByTransactionIds(client, transactionIds = []) {
   const ids = [...new Set((transactionIds || []).filter(Boolean))]
   if (!ids.length) {
@@ -15791,7 +16146,8 @@ async function fetchSharedDocumentRowsByTransactionIds(client, transactionIds = 
 async function loadSharedDocuments(client, { transactionIds = [], viewer = 'internal', viewerRole = null } = {}) {
   const { rows } = await fetchSharedDocumentRowsByTransactionIds(client, transactionIds)
   const visibleRows = filterSharedDocumentsByViewer(rows, viewer, { viewerRole })
-  return enrichDocuments(visibleRows)
+  const accessRows = await applyDocumentAccessToRows(client, visibleRows)
+  return enrichDocuments(accessRows, { respectAccess: true })
 }
 
 async function attemptPromotePendingSellerDocumentsIfPossible(client, listingId) {
@@ -20576,17 +20932,7 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = [], options = {}) {
     'cancellation_attorney',
     ...(relationshipProfile.isDeveloperSale ? ['developer_contact', 'agent'] : ['agent']),
   ])
-  const allowedSources = new Set([
-    'agency_preferred',
-    'buyer_appointed',
-    'manual',
-    'connected_partner',
-    'development_default',
-    'preferred_partner',
-    'partner_prospect',
-    'invited_partner',
-    'transaction_direct',
-  ])
+  const allowedSources = TRANSACTION_ROLEPLAYER_SELECTION_SOURCES
 
   return rolePlayers
     .map((item) => {
@@ -20598,7 +20944,7 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = [], options = {}) {
       const partner = item?.partner && typeof item.partner === 'object' ? item.partner : {}
       const normalizedSource = resolveTransactionRoleplayerSelectionSource(item, partner, {
         allowedSources,
-        fallback: 'transaction_direct',
+        fallback: 'manual',
       })
       const partnerName = normalizeTextValue(
         partner.companyName ||
@@ -20696,21 +21042,36 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = [], options = {}) {
     .filter(Boolean)
 }
 
+const TRANSACTION_ROLEPLAYER_SELECTION_SOURCES = new Set([
+  'agency_preferred',
+  'buyer_appointed',
+  'manual',
+  'connected_partner',
+  'preferred_partner',
+  'partner_prospect',
+  'invited_partner',
+  'recently_used',
+])
+
+const TRANSACTION_ROLEPLAYER_SELECTION_SOURCE_ALIASES = {
+  transaction_direct: 'manual',
+  direct: 'manual',
+  development_default: 'preferred_partner',
+  partner_routing_rule: 'preferred_partner',
+  routing_rule: 'preferred_partner',
+}
+
+function normalizeTransactionRoleplayerStorageSelectionSource(value = '', fallback = 'manual') {
+  const normalized = normalizeTextValue(value).toLowerCase()
+  const aliased = TRANSACTION_ROLEPLAYER_SELECTION_SOURCE_ALIASES[normalized] || normalized
+  if (TRANSACTION_ROLEPLAYER_SELECTION_SOURCES.has(aliased)) return aliased
+  return fallback
+}
+
 function resolveTransactionRoleplayerSelectionSource(item = {}, partner = {}, options = {}) {
   const allowedSources =
     options.allowedSources ||
-    new Set([
-      'agency_preferred',
-      'buyer_appointed',
-      'manual',
-      'connected_partner',
-      'development_default',
-      'preferred_partner',
-      'partner_prospect',
-      'invited_partner',
-      'transaction_direct',
-      'partner_routing_rule',
-    ])
+    TRANSACTION_ROLEPLAYER_SELECTION_SOURCES
   const explicitSource = normalizeTextValue(
     item.source ||
       item.selectionSource ||
@@ -20720,7 +21081,8 @@ function resolveTransactionRoleplayerSelectionSource(item = {}, partner = {}, op
       partner.selection_source ||
       '',
   ).toLowerCase()
-  if (allowedSources.has(explicitSource)) return explicitSource
+  const storageExplicitSource = normalizeTransactionRoleplayerStorageSelectionSource(explicitSource, '')
+  if (storageExplicitSource && allowedSources.has(storageExplicitSource)) return storageExplicitSource
 
   const relationshipId = normalizeNullableUuid(
     item.partnerRelationshipId ||
@@ -20742,7 +21104,19 @@ function resolveTransactionRoleplayerSelectionSource(item = {}, partner = {}, op
   )
   if (prospectId) return 'partner_prospect'
 
-  return options.fallback || 'transaction_direct'
+  const organisationId = normalizeNullableUuid(
+    item.partnerOrganisationId ||
+      item.partner_organisation_id ||
+      item.organisationId ||
+      item.organisation_id ||
+      partner.partnerOrganisationId ||
+      partner.partner_organisation_id ||
+      partner.organisationId ||
+      partner.organisation_id,
+  )
+  if (organisationId) return 'connected_partner'
+
+  return normalizeTransactionRoleplayerStorageSelectionSource(options.fallback || 'manual')
 }
 
 async function insertRecordWithMissingColumnFallback(client, table, payload = {}, select = 'id') {
@@ -20765,6 +21139,14 @@ async function insertRecordWithMissingColumnFallback(client, table, payload = {}
   return result.data || null
 }
 
+function normalizeTransactionRoleplayerDbStatus(value = '', fallback = 'selected') {
+  const normalized = normalizeTextValue(value || fallback).toLowerCase()
+  if (['selected', 'active', 'removed', 'declined', 'rejected'].includes(normalized)) return normalized
+  if (['assigned', 'consultant_assigned', 'accepted', 'accepted_from_intake', 'assigned_from_intake'].includes(normalized)) return 'active'
+  if (['pending', 'pending_assignment', 'organisation_queue', 'organization_queue', 'workspace_queue', 'routing_queue'].includes(normalized)) return 'selected'
+  return fallback
+}
+
 async function persistTransactionRolePlayersIfPossible(client, { transactionId, rolePlayers = [], actorProfile = null } = {}) {
   if (!transactionId || !rolePlayers.length) {
     return []
@@ -20779,6 +21161,9 @@ async function persistTransactionRolePlayersIfPossible(client, { transactionId, 
   for (const item of rolePlayers) {
     const resolvedUserId = item.userId || (item.email ? profileIdByEmail[item.email] || null : null)
     const scope = resolveRoleplayerSelectionScope(item, resolvedUserId)
+    const rawAssignmentStatus = normalizeTextValue(item.assignmentStatus || item.assignment_status || '').toLowerCase()
+    const isPendingAssignment = rawAssignmentStatus === 'pending_assignment'
+    const dbAssignmentStatus = normalizeTransactionRoleplayerDbStatus(rawAssignmentStatus, resolvedUserId ? 'active' : 'selected')
     const payload = {
       transaction_id: transactionId,
       role_type: item.roleType,
@@ -20811,16 +21196,16 @@ async function persistTransactionRolePlayersIfPossible(client, { transactionId, 
       physical_address: item.physicalAddress || null,
       province: item.province || null,
       notes: item.notes || null,
-      status: item.assignmentStatus === 'pending_assignment' ? 'pending' : 'active',
-      assignment_status: item.assignmentStatus || 'active',
-      activation_trigger: item.assignmentStatus === 'pending_assignment' ? 'routing_queue' : 'immediate',
+      status: dbAssignmentStatus,
+      assignment_status: dbAssignmentStatus,
+      activation_trigger: isPendingAssignment ? 'routing_queue' : 'immediate',
       activated_at: nowIso,
       assigned_by: actorProfile?.userId || null,
       removed_at: null,
       snapshot_json: {
         ...(item.snapshot || {}),
         canonicalTransactionId: transactionId,
-        roleplayerStatus: item.assignmentStatus || 'assigned',
+        roleplayerStatus: item.assignmentStatus || dbAssignmentStatus,
         userId: resolvedUserId,
         organisationId: scope.organisationId || item.partnerOrganisationId || null,
         partnerOrganisationId: scope.organisationId || item.partnerOrganisationId || null,
@@ -20876,8 +21261,8 @@ async function persistTransactionRolePlayersIfPossible(client, { transactionId, 
         selectionSource: item.selectionSource || '',
         actorUserId: actorProfile?.userId || null,
         previousOwnerId: null,
-        fallbackUsed: item.assignmentStatus === 'pending_assignment',
-        assignmentStatus: item.assignmentStatus || 'active',
+        fallbackUsed: isPendingAssignment,
+        assignmentStatus: item.assignmentStatus || dbAssignmentStatus,
         metadata: {
           ...(item.snapshot || {}),
         },
@@ -20904,8 +21289,8 @@ async function persistTransactionRolePlayersIfPossible(client, { transactionId, 
       selectionSource: item.selectionSource || '',
       actorUserId: actorProfile?.userId || null,
       previousOwnerId: null,
-      fallbackUsed: item.assignmentStatus === 'pending_assignment',
-      assignmentStatus: item.assignmentStatus || 'active',
+      fallbackUsed: isPendingAssignment,
+      assignmentStatus: item.assignmentStatus || dbAssignmentStatus,
       metadata: {
         ...(item.snapshot || {}),
       },
@@ -21090,6 +21475,18 @@ function attorneyAssignmentTypeForRoleplayer(roleType = '') {
 }
 
 async function resolveAttorneyFirmIdForCreationRoleplayer(client, selection = {}) {
+  const explicitFirmId = normalizeNullableUuid(
+    selection.firmId ||
+      selection.firm_id ||
+      selection.attorneyFirmId ||
+      selection.attorney_firm_id ||
+      selection.snapshot?.firmId ||
+      selection.snapshot?.firm_id ||
+      selection.snapshot?.attorneyFirmId ||
+      selection.snapshot?.attorney_firm_id,
+  )
+  if (explicitFirmId) return explicitFirmId
+
   const organisationId = normalizeNullableUuid(selection.partnerOrganisationId || selection.organisationId)
   if (organisationId) {
     let query = await client
@@ -21105,6 +21502,21 @@ async function resolveAttorneyFirmIdForCreationRoleplayer(client, selection = {}
       throw query.error
     }
     if (query.data?.[0]?.id) return query.data[0].id
+
+    const byId = await client
+      .from('attorney_firms')
+      .select('id')
+      .eq('id', organisationId)
+      .eq('is_active', true)
+      .limit(1)
+    if (byId.error && !isMissingTableError(byId.error, 'attorney_firms') && !isMissingColumnError(byId.error, 'is_active') && !isPermissionDeniedError(byId.error)) {
+      throw byId.error
+    }
+    if (byId.data?.[0]?.id) return byId.data[0].id
+
+    // Attorney firm rows are only selectable to firm members in older schemas.
+    // Partner selections can still carry the firm UUID, and the assignment FK/RLS will validate it.
+    return organisationId
   }
 
   const email = normalizeEmailAddress(selection.email)
@@ -21751,6 +22163,7 @@ async function upsertTransactionRoleplayerSelection(client, { transactionId, sel
   const resolvedUserId = selection.userId || (selection.email ? profileIdByEmail[selection.email] || null : null)
   const scope = resolveRoleplayerSelectionScope(selection, resolvedUserId)
   const selectionSource = selection.selectionSource || 'transaction_direct'
+  const dbAssignmentStatus = normalizeTransactionRoleplayerDbStatus(selection.assignmentStatus || selection.assignment_status || selection.status, resolvedUserId ? 'active' : 'selected')
   const payload = {
     transaction_id: transactionId,
     role_type: selection.roleType,
@@ -21775,10 +22188,10 @@ async function upsertTransactionRoleplayerSelection(client, { transactionId, sel
     contact_person: selection.contactPerson || selection.companyName || null,
     email_address: selection.email || null,
     phone_number: selection.phone || null,
-    status: selection.assignmentStatus || 'selected',
-    assignment_status: selection.assignmentStatus || 'selected',
+    status: dbAssignmentStatus,
+    assignment_status: dbAssignmentStatus,
     activation_trigger: selection.activationTrigger || null,
-    activated_at: selection.assignmentStatus === 'active' ? now : null,
+    activated_at: dbAssignmentStatus === 'active' ? now : null,
     assigned_by: actorProfile?.userId || null,
     snapshot_json: {
       ...(selection.snapshot || {}),
@@ -32236,14 +32649,15 @@ export async function fetchTransactionStatusByToken(token) {
   let transactionQuery = await client
     .from('transactions')
     .select(
-      'id, development_id, unit_id, buyer_id, finance_type, finance_managed_by, purchaser_type, stage, current_main_stage, current_sub_stage_summary, attorney, bond_originator, next_action, comment, updated_at, created_at',
+      'id, organisation_id, development_id, unit_id, buyer_id, finance_type, finance_managed_by, purchaser_type, stage, current_main_stage, current_sub_stage_summary, attorney, bond_originator, next_action, comment, updated_at, created_at',
     )
     .eq('id', link.transaction_id)
     .maybeSingle()
 
   if (
     transactionQuery.error &&
-    (isMissingColumnError(transactionQuery.error, 'finance_managed_by') ||
+    (isMissingColumnError(transactionQuery.error, 'organisation_id') ||
+      isMissingColumnError(transactionQuery.error, 'finance_managed_by') ||
       isMissingColumnError(transactionQuery.error, 'current_sub_stage_summary') ||
       isMissingColumnError(transactionQuery.error, 'purchaser_type') ||
       isMissingColumnError(transactionQuery.error, 'comment'))
@@ -32283,6 +32697,12 @@ export async function fetchTransactionStatusByToken(token) {
     throw buyerQuery.error
   }
 
+  const clientSurfaceBranding = await resolveClientSurfaceBranding(client, {
+    organisationId: transaction.organisation_id,
+    transaction,
+    unit: unitQuery.data || null,
+  })
+
   const discussion = await loadSharedDiscussion(client, {
     transactionId: transaction.id,
     unitId: transaction.unit_id,
@@ -32310,6 +32730,7 @@ export async function fetchTransactionStatusByToken(token) {
     transaction,
     unit: unitQuery.data || null,
     buyer: buyerQuery.data || null,
+    ...clientSurfaceBranding,
     subprocesses,
     stage,
     mainStage,
@@ -33823,7 +34244,141 @@ async function fetchOrganisationBrandContext(client, organisationId) {
   return organisationQuery.data || null
 }
 
-function normalizeBuyerOnboardingBranding({ organisation = null, transaction = null, unit = null } = {}) {
+const BUYER_BRANDING_CANONICAL_SELECT = [
+  'organisation_id',
+  'organisation_display_name',
+  'logo_url',
+  'logo_light_url',
+  'logo_dark_url',
+  'logo_icon_url',
+  'hero_image_url',
+  'primary_color',
+  'secondary_color',
+  'accent_color',
+  'neutral_color',
+  'suggested_primary_color',
+  'suggested_accent_color',
+  'primary_brand_color',
+  'secondary_brand_color',
+  'accent_brand_color',
+  'theme_json',
+  'draft_theme_json',
+  'metadata_json',
+  'published_at',
+  'updated_at',
+].join(', ')
+
+const BUYER_BRANDING_COMPAT_SELECT = [
+  'organisation_id',
+  'organisation_display_name',
+  'logo_light_url',
+  'logo_dark_url',
+  'primary_brand_color',
+  'secondary_brand_color',
+  'accent_brand_color',
+  'metadata_json',
+  'updated_at',
+].join(', ')
+
+function isOptionalBrandingLookupError(error, tableName = '') {
+  return (
+    isMissingSchemaError(error) ||
+    isPermissionDeniedError(error) ||
+    isMissingColumnError(error) ||
+    (tableName ? isMissingTableError(error, tableName) : false)
+  )
+}
+
+async function fetchBuyerOrganisationBrandingContext(client, organisationId = '') {
+  const normalizedOrganisationId = normalizeNullableUuid(organisationId)
+  const context = {
+    organisationSettings: null,
+    organisationBranding: null,
+  }
+
+  if (!client || !normalizedOrganisationId) return context
+
+  const settingsResult = await client
+    .from('organisation_settings')
+    .select('settings_json')
+    .eq('organisation_id', normalizedOrganisationId)
+    .maybeSingle()
+
+  if (!settingsResult.error) {
+    context.organisationSettings = settingsResult.data || null
+  } else if (!isOptionalBrandingLookupError(settingsResult.error, 'organisation_settings')) {
+    console.warn('[Client Onboarding] organisation settings branding snapshot unavailable.', settingsResult.error)
+  }
+
+  let brandingResult = await client
+    .from('organisation_branding')
+    .select(BUYER_BRANDING_CANONICAL_SELECT)
+    .eq('organisation_id', normalizedOrganisationId)
+    .maybeSingle()
+
+  if (brandingResult.error && isMissingColumnError(brandingResult.error)) {
+    brandingResult = await client
+      .from('organisation_branding')
+      .select(BUYER_BRANDING_COMPAT_SELECT)
+      .eq('organisation_id', normalizedOrganisationId)
+      .maybeSingle()
+  }
+
+  if (!brandingResult.error) {
+    context.organisationBranding = brandingResult.data || null
+  } else if (!isOptionalBrandingLookupError(brandingResult.error, 'organisation_branding')) {
+    console.warn('[Client Onboarding] canonical organisation branding snapshot unavailable.', brandingResult.error)
+  }
+
+  return context
+}
+
+async function resolveClientSurfaceBranding(client, {
+  organisation = null,
+  organisationId = '',
+  transaction = null,
+  unit = null,
+  listing = null,
+} = {}) {
+  const normalizedOrganisationId = normalizeNullableUuid(
+    organisation?.id ||
+      organisation?.organisation_id ||
+      organisation?.organisationId ||
+      organisationId ||
+      transaction?.organisation_id ||
+      transaction?.organisationId ||
+      listing?.organisation_id ||
+      listing?.organisationId,
+  )
+  const [resolvedOrganisation, brandingContext] = await Promise.all([
+    organisation
+      ? Promise.resolve(organisation)
+      : fetchOrganisationBrandContext(client, normalizedOrganisationId),
+    fetchBuyerOrganisationBrandingContext(client, normalizedOrganisationId),
+  ])
+  const branding = normalizeBuyerOnboardingBranding({
+    organisation: resolvedOrganisation,
+    transaction,
+    unit: listing || unit,
+    ...brandingContext,
+  })
+
+  return {
+    organisation: resolvedOrganisation,
+    organisationSettings: brandingContext.organisationSettings,
+    organisationBranding: brandingContext.organisationBranding,
+    branding,
+    clientTheme: branding.clientTheme,
+  }
+}
+
+function normalizeBuyerOnboardingBranding({
+  organisation = null,
+  transaction = null,
+  unit = null,
+  organisationSettings = null,
+  organisationBranding = null,
+} = {}) {
   const development = Array.isArray(unit?.development) ? unit.development[0] : unit?.development
   const organisationName =
     normalizeNullableText(organisation?.display_name) ||
@@ -33836,8 +34391,7 @@ function normalizeBuyerOnboardingBranding({ organisation = null, transaction = n
     developmentName ||
     'Your property team'
   const logoUrl = normalizeNullableText(organisation?.logo_url || organisation?.logoUrl)
-
-  return {
+  const fallbackBranding = {
     organisationId: normalizeNullableUuid(organisation?.id || transaction?.organisation_id),
     organisationName,
     agencyName: organisationName,
@@ -33848,12 +34402,50 @@ function normalizeBuyerOnboardingBranding({ organisation = null, transaction = n
     primaryColour: '',
     secondaryColour: '',
   }
+  const theme = resolveClientBrandTheme({
+    organisation,
+    listing: {
+      ...(unit && typeof unit === 'object' ? unit : {}),
+      development,
+    },
+    organisationSettings,
+    organisationBranding,
+    legacyBranding: fallbackBranding,
+  })
+  const themedOrganisationName =
+    theme.source === 'arch9_default'
+      ? organisationName
+      : normalizeNullableText(theme.organisationName) || organisationName
+
+  return {
+    ...fallbackBranding,
+    organisationId: normalizeNullableUuid(theme.organisationId) || fallbackBranding.organisationId,
+    organisationName: themedOrganisationName,
+    agencyName: themedOrganisationName,
+    senderName: themedOrganisationName || senderName,
+    logoUrl: normalizeNullableText(theme.logoUrl) || fallbackBranding.logoUrl,
+    logoDarkUrl: normalizeNullableText(theme.logoDarkUrl) || normalizeNullableText(theme.logoUrl) || fallbackBranding.logoDarkUrl,
+    logoLightUrl: normalizeNullableText(theme.logoLightUrl) || normalizeNullableText(theme.logoUrl) || fallbackBranding.logoLightUrl,
+    logoIconUrl: normalizeNullableText(theme.logoIconUrl),
+    heroImageUrl: normalizeNullableText(theme.heroImageUrl),
+    primaryColor: theme.primaryColor,
+    primaryColour: theme.primaryColor,
+    secondaryColor: theme.secondaryColor,
+    secondaryColour: theme.secondaryColor,
+    accentColor: theme.accentColor,
+    accentColour: theme.accentColor,
+    neutralColor: theme.neutralColor,
+    suggestedPrimaryColor: theme.suggestedPrimaryColor,
+    suggestedAccentColor: theme.suggestedAccentColor,
+    clientTheme: theme,
+  }
 }
 
 export async function fetchClientOnboardingByToken(token) {
   const client = requireOnboardingTokenClient(token)
   const onboarding = await resolveOnboardingTokenContext(client, token)
   const { transaction, unit, buyer, organisation } = await resolveTransactionAndContext(client, onboarding.transactionId)
+  const brandingContext = await fetchBuyerOrganisationBrandingContext(client, organisation?.id || transaction?.organisation_id)
   const formDataRow = await fetchOnboardingFormDataForTransaction(
     client,
     transaction.id,
@@ -33972,7 +34564,9 @@ export async function fetchClientOnboardingByToken(token) {
     unit,
     buyer,
     organisation,
-    branding: normalizeBuyerOnboardingBranding({ organisation, transaction, unit }),
+    organisationSettings: brandingContext.organisationSettings,
+    organisationBranding: brandingContext.organisationBranding,
+    branding: normalizeBuyerOnboardingBranding({ organisation, transaction, unit, ...brandingContext }),
     purchaserType,
     purchaserTypeLabel: getPurchaserTypeLabel(purchaserType),
     formConfig,
@@ -40684,6 +41278,16 @@ export async function uploadDocument({
     canonicalUploadResult?.canonicalKey ||
     canonicalUploadResult?.documentKey ||
     requiredDocumentKey
+
+  if (linkedCanonicalRequirementInstanceId) {
+    await syncDocumentAccessGrantsFromRequirement({
+      client,
+      transactionId,
+      documentId: result.data.id,
+      requirementInstanceId: linkedCanonicalRequirementInstanceId,
+      actorUserId: activeProfile.userId || null,
+    })
+  }
 
   await logTransactionEventIfPossible(client, {
     transactionId,

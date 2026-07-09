@@ -42,11 +42,13 @@ assert(
 for (const token of [
   'ThirdPartyDirectoryModal',
   'thirdPartyDirectoryRows',
+  'THIRD_PARTY_CATEGORY_OPTIONS',
+  'selectedThirdPartyRows',
+  'Invite {selectedThirdPartyOption.singularLabel}',
   'saveOrganisationPreferredPartner',
   'removeOrganisationPreferredPartner',
   "new Set(['transfer_attorney', 'bond_attorney', 'cancellation_attorney'])",
   'Referral Agency',
-  'Add third party',
 ]) {
   assert(files.partnersPage.includes(token), `PartnersPage should preserve simplified third-party directory behavior: ${token}`)
 }

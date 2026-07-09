@@ -4,6 +4,7 @@ import crypto from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 
 const STAGING_PROJECT_REF = 'isdowlnollckzvltkasn'
+const RUN_STARTED_AT = new Date().toISOString()
 const RUN_ID = `tx-prop-${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}`
 
 function parseEnvFile(filePath) {
@@ -311,9 +312,214 @@ async function resolveBondOriginator(service, env) {
   }
 }
 
+async function findPartnerRelationship(service, sourceOrganisationId, targetOrganisationId) {
+  const outgoing = await queryRequired(
+    'partner relationship outgoing lookup',
+    service
+      .from('organisation_partners')
+      .select('*')
+      .eq('organisation_id', sourceOrganisationId)
+      .eq('partner_organisation_id', targetOrganisationId)
+      .limit(1),
+  )
+  if (outgoing[0]?.id) return outgoing[0]
+
+  const incoming = await queryRequired(
+    'partner relationship incoming lookup',
+    service
+      .from('organisation_partners')
+      .select('*')
+      .eq('organisation_id', targetOrganisationId)
+      .eq('partner_organisation_id', sourceOrganisationId)
+      .limit(1),
+  )
+  return incoming[0] || null
+}
+
+async function ensurePartnerRelationship(service, columnsFor, { actor, bondOriginator }) {
+  const sourceOrganisationId = actor.organisationId
+  const targetOrganisationId = bondOriginator.partnerOrganisationId
+  const now = new Date().toISOString()
+  const existing = await findPartnerRelationship(service, sourceOrganisationId, targetOrganisationId)
+  const payload = {
+    organisation_id: sourceOrganisationId,
+    partner_organisation_id: targetOrganisationId,
+    relationship_status: 'accepted',
+    status: 'accepted',
+    relationship_type: 'preferred',
+    partner_type: 'bond_originator',
+    visibility_level: 'preferred_partners',
+    preferred: true,
+    notes: 'Staging transaction propagation smoke partner routing fixture.',
+    accepted_by: actor.userId,
+    accepted_at: now,
+    updated_at: now,
+  }
+
+  if (existing?.id) {
+    const updatePayload = pickColumns(columnsFor('organisation_partners'), payload)
+    const { data, error } = await service
+      .from('organisation_partners')
+      .update(updatePayload)
+      .eq('id', existing.id)
+      .select('*')
+      .maybeSingle()
+    if (error) throw new Error(`partner relationship update failed: ${error.message}`)
+    return data || existing
+  }
+
+  const insertPayload = pickColumns(columnsFor('organisation_partners'), {
+    id: crypto.randomUUID(),
+    ...payload,
+    created_by: actor.userId,
+    created_at: now,
+  })
+  const { data, error } = await service
+    .from('organisation_partners')
+    .insert(insertPayload)
+    .select('*')
+    .maybeSingle()
+  if (error) throw new Error(`partner relationship insert failed: ${error.message}`)
+  return data
+}
+
+async function ensurePartnerVisibilityPermissions(service, columnsFor, { relationshipId, actor }) {
+  const permissions = ['can_view_principal', 'can_view_branch_managers', 'can_view_agents']
+  const rows = []
+  for (const permissionKey of permissions) {
+    const existing = await queryRequired(
+      `partner visibility permission lookup ${permissionKey}`,
+      service
+        .from('partner_visibility_permissions')
+        .select('*')
+        .eq('relationship_id', relationshipId)
+        .eq('permission_key', permissionKey)
+        .limit(1),
+    )
+    const payload = {
+      relationship_id: relationshipId,
+      permission_key: permissionKey,
+      is_enabled: true,
+      granted_by: actor.userId,
+      granted_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+    if (existing[0]?.id) {
+      const { data, error } = await service
+        .from('partner_visibility_permissions')
+        .update(pickColumns(columnsFor('partner_visibility_permissions'), payload))
+        .eq('id', existing[0].id)
+        .select('*')
+        .maybeSingle()
+      if (error) throw new Error(`partner visibility permission update failed: ${error.message}`)
+      rows.push(data || existing[0])
+      continue
+    }
+
+    const { data, error } = await service
+      .from('partner_visibility_permissions')
+      .insert(pickColumns(columnsFor('partner_visibility_permissions'), {
+        id: crypto.randomUUID(),
+        ...payload,
+        created_at: new Date().toISOString(),
+      }))
+      .select('*')
+      .maybeSingle()
+    if (error) throw new Error(`partner visibility permission insert failed: ${error.message}`)
+    rows.push(data)
+  }
+  return rows
+}
+
+async function ensurePartnerRoutingRule(service, columnsFor, { actor, bondOriginator, relationshipId }) {
+  const existingRows = await queryRequired(
+    'partner routing rule lookup',
+    service
+      .from('partner_routing_rules')
+      .select('*')
+      .eq('source_organisation_id', actor.organisationId)
+      .eq('target_organisation_id', bondOriginator.partnerOrganisationId)
+      .eq('target_role_type', 'bond_originator')
+      .eq('source_scope', 'organisation')
+      .eq('target_scope', 'consultant')
+      .limit(20),
+  )
+  const existing =
+    existingRows.find((row) => normalizeText(row.target_user_id) === normalizeText(bondOriginator.userId)) ||
+    existingRows[0] ||
+    null
+  const payload = {
+    source_organisation_id: actor.organisationId,
+    target_organisation_id: bondOriginator.partnerOrganisationId,
+    relationship_id: relationshipId,
+    rule_name: 'Staging smoke direct bond originator',
+    is_active: true,
+    is_default: true,
+    assignment_priority: 10,
+    source_scope: 'organisation',
+    source_context_id: null,
+    source_user_id: null,
+    source_scope_name: actor.profile?.company_name || actor.email || 'Smoke source organisation',
+    target_scope: 'consultant',
+    target_role_type: 'bond_originator',
+    target_region_id: null,
+    target_workspace_unit_id: null,
+    target_user_id: bondOriginator.userId,
+    assignment_mode: 'direct_consultant',
+    target_scope_name: bondOriginator.partner.contactPerson || bondOriginator.partner.email,
+    notes: 'Used by transaction propagation smoke to verify partner routing resolves without manual fallback.',
+    updated_at: new Date().toISOString(),
+  }
+
+  if (existing?.id) {
+    const { data, error } = await service
+      .from('partner_routing_rules')
+      .update(pickColumns(columnsFor('partner_routing_rules'), payload))
+      .eq('id', existing.id)
+      .select('*')
+      .maybeSingle()
+    if (error) throw new Error(`partner routing rule update failed: ${error.message}`)
+    return data || existing
+  }
+
+  const { data, error } = await service
+    .from('partner_routing_rules')
+    .insert(pickColumns(columnsFor('partner_routing_rules'), {
+      id: crypto.randomUUID(),
+      ...payload,
+      created_at: new Date().toISOString(),
+    }))
+    .select('*')
+    .maybeSingle()
+  if (error) throw new Error(`partner routing rule insert failed: ${error.message}`)
+  return data
+}
+
+async function ensurePartnerRoutingFixture({ service, columnsFor, actor, bondOriginator }) {
+  const relationship = await ensurePartnerRelationship(service, columnsFor, { actor, bondOriginator })
+  const permissions = await ensurePartnerVisibilityPermissions(service, columnsFor, {
+    relationshipId: relationship.id,
+    actor,
+  })
+  const routingRule = await ensurePartnerRoutingRule(service, columnsFor, {
+    actor,
+    bondOriginator,
+    relationshipId: relationship.id,
+  })
+  return {
+    relationshipId: relationship.id,
+    routingRuleId: routingRule.id,
+    targetOrganisationId: bondOriginator.partnerOrganisationId,
+    targetUserId: bondOriginator.userId,
+    permissions: permissions.map((row) => ({
+      permissionKey: row.permission_key,
+      isEnabled: row.is_enabled,
+    })),
+  }
+}
+
 async function createTransactionWithApp({ supabase, createTransactionFromWizard, actor, transferAttorney, bondOriginator, deal }) {
   const rolePlayers = [transferAttorney]
-  if (bondOriginator) rolePlayers.push(bondOriginator)
 
   const buyerToken = crypto.randomUUID().slice(0, 8)
   let result
@@ -354,11 +560,13 @@ async function createTransactionWithApp({ supabase, createTransactionFromWizard,
       riskStatus: 'On Track',
       nextAction: 'Smoke test roleplayer propagation.',
     },
-    options: {
-      allowIncomplete: false,
-      creationOrigin: `smoke:${deal.key}`,
-      sourceContext: {
-        originLabel: 'transaction_propagation_smoke',
+      options: {
+        allowIncomplete: false,
+        creationOrigin: `smoke:${deal.key}`,
+        disableAutoPartnerRouting: !bondOriginator,
+        partnerRoleTypes: bondOriginator ? ['bond_originator'] : undefined,
+        sourceContext: {
+          originLabel: 'transaction_propagation_smoke',
         organisationId: actor.organisationId,
         branchId: actor.branchId,
         workspaceId: actor.organisationId,
@@ -560,6 +768,128 @@ async function verifyTransaction({ service, columnsFor, txId, expectedRoles, exp
       missingBondScopeColumns,
     },
     pass: errors.length === 0,
+    errors,
+  }
+}
+
+function auditRowMatchesTransaction(row, transactionId) {
+  const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {}
+  return (
+    normalizeText(metadata.transactionId) === transactionId ||
+    normalizeText(metadata.transaction_id) === transactionId ||
+    normalizeText(row?.target_id).includes(transactionId)
+  )
+}
+
+async function verifySecurityAuditPersistence({ service, txIds }) {
+  const { data, error } = await service
+    .from('security_audit_events')
+    .select('id,user_id,workspace_id,action,target_type,target_id,metadata,created_at')
+    .eq('action', 'assignment.created')
+    .gte('created_at', RUN_STARTED_AT)
+    .order('created_at', { ascending: false })
+    .limit(250)
+
+  if (error) {
+    return {
+      pass: false,
+      error: error.message,
+      code: error.code || null,
+      rowsFound: 0,
+      byTransaction: txIds.map((transactionId) => ({ transactionId, persisted: false, rowCount: 0 })),
+    }
+  }
+
+  const rows = data || []
+  const byTransaction = txIds.map((transactionId) => {
+    const matches = rows.filter((row) => auditRowMatchesTransaction(row, transactionId))
+    return {
+      transactionId,
+      persisted: matches.length > 0,
+      rowCount: matches.length,
+      sample: matches.slice(0, 3).map((row) => ({
+        id: row.id,
+        action: row.action,
+        targetType: row.target_type,
+        targetId: row.target_id,
+        userId: row.user_id,
+        workspaceId: row.workspace_id,
+      })),
+    }
+  })
+
+  return {
+    pass: byTransaction.every((row) => row.persisted),
+    rowsFound: rows.length,
+    byTransaction,
+  }
+}
+
+function verifyWorkflowReadinessSchema({ columnsFor }) {
+  const expected = [
+    { table: 'transaction_checklist_items', column: 'due_date' },
+    { table: 'transaction_checklist_items', column: 'auto_rule_key' },
+    { table: 'transactions', column: 'seller_onboarding_status' },
+    { table: 'documents', column: 'document_name' },
+    { table: 'transaction_required_documents', column: 'requirement_key' },
+    { table: 'transaction_rollups', column: 'is_stale' },
+    { table: 'transaction_rollups', column: 'last_error' },
+    { table: 'transaction_rollups', column: 'last_recompute_attempt_at' },
+  ]
+  const missing = expected
+    .filter(({ table, column }) => !columnsFor(table).has(column))
+    .map(({ table, column }) => `${table}.${column}`)
+
+  return {
+    pass: missing.length === 0,
+    expected: expected.map(({ table, column }) => `${table}.${column}`),
+    missing,
+  }
+}
+
+function verifyPartnerRouting({ events = [], expectedRoutedDeals = 0, bondOriginator }) {
+  const bondRoutingEvents = (events || [])
+    .filter((event) => normalizeText(event.targetRoleType) === 'bond_originator')
+    .map((event) => ({
+      createdAt: event.createdAt || null,
+      targetRoleType: event.targetRoleType || '',
+      targetOrganisationId: event.targetOrganisationId || '',
+      targetUserId: event.targetUserId || '',
+      routingRuleId: event.routingRuleId || '',
+      assignmentMode: event.assignmentMode || '',
+      resolutionScope: event.resolutionScope || '',
+      fallbackUsed: Boolean(event.fallbackUsed),
+      resolutionReason: event.resolutionReason || '',
+    }))
+  const fallbackEvents = bondRoutingEvents.filter((event) => event.fallbackUsed)
+  const wrongTargetEvents = bondRoutingEvents.filter(
+    (event) =>
+      normalizeText(event.targetOrganisationId) !== normalizeText(bondOriginator.partnerOrganisationId) ||
+      normalizeText(event.targetUserId) !== normalizeText(bondOriginator.userId),
+  )
+  const missingRuleEvents = bondRoutingEvents.filter((event) => !normalizeText(event.routingRuleId))
+  const errors = []
+  if (bondRoutingEvents.length < expectedRoutedDeals) {
+    errors.push(`Expected at least ${expectedRoutedDeals} bond originator routing events, found ${bondRoutingEvents.length}.`)
+  }
+  if (fallbackEvents.length) {
+    errors.push(`Bond originator routing used fallback ${fallbackEvents.length} time(s).`)
+  }
+  if (missingRuleEvents.length) {
+    errors.push(`Bond originator routing resolved without a routing rule ${missingRuleEvents.length} time(s).`)
+  }
+  if (wrongTargetEvents.length) {
+    errors.push(`Bond originator routing resolved to an unexpected target ${wrongTargetEvents.length} time(s).`)
+  }
+
+  return {
+    pass: errors.length === 0,
+    expectedRoutedDeals,
+    totalEvents: events.length,
+    bondOriginatorEvents: bondRoutingEvents,
+    fallbackCount: fallbackEvents.length,
+    missingRuleCount: missingRuleEvents.length,
+    wrongTargetCount: wrongTargetEvents.length,
     errors,
   }
 }
@@ -788,7 +1118,7 @@ async function upsertBondApplication(service, columnsFor, { transactionId, actor
       id: crypto.randomUUID(),
       transaction_id: transactionId,
       workflow_type: 'bond_hybrid',
-      current_stage: 'documents_received',
+      current_stage: 'intake',
       status: 'active',
       last_updated_by: actor.userId,
       last_updated_at: new Date().toISOString(),
@@ -990,6 +1320,7 @@ async function runDirectDbSmoke({ service, columnsFor, config, env, actor, trans
     actorEmail: config.actorEmail,
     bondOriginatorEmail: bondOriginator.partner.email,
   })
+  const workflowSchema = verifyWorkflowReadinessSchema({ columnsFor })
 
   const report = {
     runId: RUN_ID,
@@ -998,6 +1329,7 @@ async function runDirectDbSmoke({ service, columnsFor, config, env, actor, trans
     verifications,
     idempotency,
     rls,
+    workflowSchema,
     acceptance: {
       cashNoBondApplication: verifications.find((deal) => deal.key === 'cash')?.records.transaction_bond_applications === 0,
       bondHasBondApplication: verifications.find((deal) => deal.key === 'bond')?.records.transaction_bond_applications === 1,
@@ -1008,6 +1340,7 @@ async function runDirectDbSmoke({ service, columnsFor, config, env, actor, trans
       unrelatedRoleplayerTransactionBlocked: rls.unrelatedBondOriginatorTransactionBlocked === true,
       assignedBondOriginatorCanSeeApplication: rls.bondOriginatorCanSeeAssignedApplication === true,
       rlsChecked: rls.agentCanSeeTransactions !== null || rls.bondOriginatorCanSeeApplications !== null || rls.unrelatedBondOriginatorBlocked !== null,
+      workflowReadinessSchemaReady: workflowSchema.pass === true,
     },
   }
   report.pass =
@@ -1018,7 +1351,8 @@ async function runDirectDbSmoke({ service, columnsFor, config, env, actor, trans
     report.acceptance.noDuplicateDownstreamRecords &&
     report.acceptance.unrelatedRoleplayerBlocked &&
     report.acceptance.unrelatedRoleplayerTransactionBlocked &&
-    report.acceptance.assignedBondOriginatorCanSeeApplication
+    report.acceptance.assignedBondOriginatorCanSeeApplication &&
+    report.acceptance.workflowReadinessSchemaReady
   return report
 }
 
@@ -1064,10 +1398,20 @@ async function main() {
   const vite = await createServer({ logLevel: 'error', server: { middlewareMode: true }, appType: 'custom' })
   const { supabase } = await vite.ssrLoadModule('/src/lib/supabaseClient.js')
   const { createTransactionFromWizard, saveTransactionRoleplayerSelections } = await vite.ssrLoadModule('/src/lib/api.js')
+  const {
+    clearUniversalPartnerRoutingEvents,
+    getUniversalPartnerRoutingEvents,
+  } = await vite.ssrLoadModule('/src/services/universalPartnerRoutingService.js')
   if (!supabase) throw new Error('Frontend Supabase client is not configured.')
 
   let report
   try {
+    const partnerRoutingFixture = await ensurePartnerRoutingFixture({
+      service,
+      columnsFor,
+      actor,
+      bondOriginator,
+    })
     await signInAppUser({
       supabase,
       service,
@@ -1075,6 +1419,7 @@ async function main() {
       email: config.actorEmail,
       password: config.actorPassword,
     })
+    clearUniversalPartnerRoutingEvents(actor.organisationId)
 
     const deals = [
       { key: 'cash', label: 'Cash', financeType: 'cash', purchasePrice: 1850000, bondOriginator: null, expectBondApplication: false },
@@ -1145,6 +1490,16 @@ async function main() {
       actorEmail: config.actorEmail,
       bondOriginatorEmail: bondOriginator.partner.email,
     })
+    const audit = await verifySecurityAuditPersistence({
+      service,
+      txIds: created.map((deal) => deal.transactionId),
+    })
+    const workflowSchema = verifyWorkflowReadinessSchema({ columnsFor })
+    const partnerRouting = verifyPartnerRouting({
+      events: getUniversalPartnerRoutingEvents(actor.organisationId),
+      expectedRoutedDeals: deals.filter((deal) => deal.bondOriginator).length,
+      bondOriginator,
+    })
 
     report = {
       runId: RUN_ID,
@@ -1176,6 +1531,10 @@ async function main() {
       verifications,
       idempotency,
       rls,
+      audit,
+      workflowSchema,
+      partnerRoutingFixture,
+      partnerRouting,
       acceptance: {
         cashNoBondApplication: verifications.find((deal) => deal.key === 'cash')?.records.transaction_bond_applications === 0,
         bondHasBondApplication: verifications.find((deal) => deal.key === 'bond')?.records.transaction_bond_applications === 1,
@@ -1185,6 +1544,9 @@ async function main() {
       unrelatedRoleplayerBlocked: rls.unrelatedBondOriginatorBlocked === true,
       unrelatedRoleplayerTransactionBlocked: rls.unrelatedBondOriginatorTransactionBlocked === true,
       assignedBondOriginatorCanSeeApplication: rls.bondOriginatorCanSeeAssignedApplication === true,
+      securityAuditEventsPersisted: audit.pass === true,
+      workflowReadinessSchemaReady: workflowSchema.pass === true,
+      partnerRoutingResolvedWithoutFallback: partnerRouting.pass === true,
       rlsChecked: rls.agentCanSeeTransactions !== null || rls.bondOriginatorCanSeeApplications !== null || rls.unrelatedBondOriginatorBlocked !== null,
       },
     }
@@ -1197,7 +1559,10 @@ async function main() {
     report.acceptance.noDuplicateDownstreamRecords &&
     report.acceptance.unrelatedRoleplayerBlocked &&
     report.acceptance.unrelatedRoleplayerTransactionBlocked &&
-    report.acceptance.assignedBondOriginatorCanSeeApplication
+    report.acceptance.assignedBondOriginatorCanSeeApplication &&
+    report.acceptance.securityAuditEventsPersisted &&
+    report.acceptance.workflowReadinessSchemaReady &&
+    report.acceptance.partnerRoutingResolvedWithoutFallback
   } finally {
     await vite.close()
   }

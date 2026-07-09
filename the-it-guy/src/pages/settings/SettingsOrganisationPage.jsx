@@ -99,6 +99,12 @@ const BRANDING_UNSAVED_PROMPT = "You have unsaved branding changes. Leave withou
 const BRAND_ASSET_MAX_BYTES = 10 * 1024 * 1024
 const BRAND_ASSET_ALLOWED_EXTENSIONS = new Set(['png', 'svg', 'jpg', 'jpeg', 'webp'])
 const BRAND_ASSET_ALLOWED_TYPES = new Set(['image/png', 'image/svg+xml', 'image/jpeg', 'image/webp'])
+const ARCH9_BRAND_COLOURS = Object.freeze({
+  primary: '#001A3D',
+  secondary: '#10273A',
+  accent: '#F7CF22',
+  neutral: '#F7F8FA',
+})
 const CARD_CLASS = 'rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_14px_36px_rgba(15,23,42,0.045)] sm:p-6'
 const INPUT_CLASS = 'h-11 rounded-[12px] border-[#d8e3ee] bg-white text-sm text-[#17233a] shadow-[0_1px_0_rgba(15,23,42,0.02)] placeholder:text-[#9aa8b8] focus:border-[#0f7f4f] focus:ring-[#dff2e8]'
 const LABEL_CLASS = 'text-[0.78rem] font-semibold text-[#43566d]'
@@ -128,6 +134,14 @@ const BRAND_ASSET_TARGETS = {
     title: 'Icon Logo',
     formats: 'PNG • SVG',
     dimensions: 'Recommended 512 x 512 px',
+  },
+  heroImage: {
+    variant: 'hero-image',
+    bucketField: 'heroImageBucket',
+    pathField: 'heroImagePath',
+    title: 'Hero Background',
+    formats: 'JPG • PNG • WebP',
+    dimensions: 'Recommended 1920 x 1080 px, high contrast crop-safe image',
   },
   favicon: {
     variant: 'favicon',
@@ -164,10 +178,10 @@ const BRAND_ASSET_TARGETS = {
 }
 
 const BRAND_COLOUR_CONTROLS = [
-  { key: 'primary', label: 'Primary', fallback: '#274C69' },
-  { key: 'secondary', label: 'Secondary', fallback: '#10273A' },
-  { key: 'accent', label: 'Accent', fallback: '#27AE60' },
-  { key: 'neutral', label: 'Neutral', fallback: '#F7F8FA' },
+  { key: 'primary', label: 'Primary', fallback: ARCH9_BRAND_COLOURS.primary },
+  { key: 'secondary', label: 'Secondary', fallback: ARCH9_BRAND_COLOURS.secondary },
+  { key: 'accent', label: 'Accent', fallback: ARCH9_BRAND_COLOURS.accent },
+  { key: 'neutral', label: 'Neutral', fallback: ARCH9_BRAND_COLOURS.neutral },
 ]
 
 const BRAND_TYPOGRAPHY_DEFAULTS = {
@@ -223,6 +237,15 @@ const AGENCY_SETTINGS_COPY = {
 
 function normalizeText(value = '') {
   return String(value || '').trim()
+}
+
+function normalizeHexColour(value = '') {
+  const text = normalizeText(value)
+  if (/^#[0-9a-f]{6}$/i.test(text)) return text.toUpperCase()
+  if (/^#[0-9a-f]{3}$/i.test(text)) {
+    return `#${text.slice(1).split('').map((part) => `${part}${part}`).join('')}`.toUpperCase()
+  }
+  return ''
 }
 
 function titleize(value = '') {
@@ -318,6 +341,17 @@ function getPrimaryLogo(form = {}, onboarding = {}) {
   return normalizeText(onboarding?.branding?.logoLight || form?.logoUrl)
 }
 
+function getBrandHeroImage(branding = {}) {
+  return normalizeText(
+    branding.heroImage ||
+      branding.heroImageUrl ||
+      branding.backgroundImage ||
+      branding.backgroundImageUrl ||
+      branding.coverImage ||
+      branding.coverImageUrl,
+  )
+}
+
 function getBrandAssetFileExtension(fileName = '', sourceUrl = '') {
   const source = normalizeText(fileName) || normalizeText(sourceUrl).split('?')[0]
   const extension = source.includes('.') ? source.split('.').pop() : ''
@@ -344,9 +378,133 @@ function validateBrandAssetFile(file) {
   return ''
 }
 
-function getBrandColourValue(brandColours = {}, key = '', fallback = '#274C69') {
+function rgbToHex({ r = 0, g = 0, b = 0 } = {}) {
+  return `#${[r, g, b].map((channel) => Math.max(0, Math.min(255, Math.round(channel))).toString(16).padStart(2, '0')).join('')}`.toUpperCase()
+}
+
+function getRgbDistance(a = {}, b = {}) {
+  return Math.sqrt(
+    ((a.r || 0) - (b.r || 0)) ** 2 +
+      ((a.g || 0) - (b.g || 0)) ** 2 +
+      ((a.b || 0) - (b.b || 0)) ** 2,
+  )
+}
+
+function getRgbStats(r = 0, g = 0, b = 0) {
+  const max = Math.max(r, g, b) / 255
+  const min = Math.min(r, g, b) / 255
+  const lightness = (max + min) / 2
+  const saturation = max === min ? 0 : (max - min) / (1 - Math.abs((2 * lightness) - 1))
+  return { lightness, saturation }
+}
+
+function shadeHexColour(hexValue = '', amount = 0) {
+  const colour = normalizeHexColour(hexValue)
+  if (!colour) return ''
+  const channels = [1, 3, 5].map((index) => Number.parseInt(colour.slice(index, index + 2), 16))
+  return rgbToHex({
+    r: channels[0] + ((amount >= 0 ? 255 - channels[0] : channels[0]) * amount),
+    g: channels[1] + ((amount >= 0 ? 255 - channels[1] : channels[1]) * amount),
+    b: channels[2] + ((amount >= 0 ? 255 - channels[2] : channels[2]) * amount),
+  })
+}
+
+async function extractBrandColourSuggestionsFromFile(file) {
+  if (!file || typeof document === 'undefined' || typeof Image === 'undefined' || typeof URL === 'undefined') return null
+  const extension = getBrandAssetFileExtension(file.name)
+  const mimeType = normalizeText(file.type).toLowerCase()
+  if (extension === 'svg' || mimeType === 'image/svg+xml') return null
+
+  return new Promise((resolve) => {
+    const objectUrl = URL.createObjectURL(file)
+    const image = new Image()
+
+    image.onload = () => {
+      try {
+        const width = Math.max(1, Math.min(72, image.naturalWidth || image.width || 72))
+        const height = Math.max(1, Math.min(72, image.naturalHeight || image.height || 72))
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const context = canvas.getContext('2d', { willReadFrequently: true })
+        if (!context) {
+          resolve(null)
+          return
+        }
+
+        context.drawImage(image, 0, 0, width, height)
+        const pixels = context.getImageData(0, 0, width, height).data
+        const buckets = new Map()
+
+        for (let index = 0; index < pixels.length; index += 16) {
+          const alpha = pixels[index + 3]
+          if (alpha < 96) continue
+          const r = pixels[index]
+          const g = pixels[index + 1]
+          const b = pixels[index + 2]
+          const { lightness, saturation } = getRgbStats(r, g, b)
+          if (lightness < 0.08 || lightness > 0.94 || saturation < 0.08) continue
+          const key = `${Math.round(r / 24)}-${Math.round(g / 24)}-${Math.round(b / 24)}`
+          const previous = buckets.get(key) || { r: 0, g: 0, b: 0, count: 0, saturation: 0, lightness: 0 }
+          buckets.set(key, {
+            r: previous.r + r,
+            g: previous.g + g,
+            b: previous.b + b,
+            count: previous.count + 1,
+            saturation: previous.saturation + saturation,
+            lightness: previous.lightness + lightness,
+          })
+        }
+
+        const palette = [...buckets.values()]
+          .map((bucket) => {
+            const colour = {
+              r: bucket.r / bucket.count,
+              g: bucket.g / bucket.count,
+              b: bucket.b / bucket.count,
+            }
+            const saturation = bucket.saturation / bucket.count
+            const lightness = bucket.lightness / bucket.count
+            return {
+              ...colour,
+              hex: rgbToHex(colour),
+              score: bucket.count * (0.7 + saturation) * (1 - Math.abs(lightness - 0.5)),
+            }
+          })
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 6)
+
+        const primary = palette[0]
+        if (!primary) {
+          resolve(null)
+          return
+        }
+        const accent = palette.find((candidate) => getRgbDistance(candidate, primary) > 70) || palette[1] || primary
+        resolve({
+          primary: primary.hex,
+          secondary: shadeHexColour(primary.hex, -0.28) || ARCH9_BRAND_COLOURS.secondary,
+          accent: accent.hex,
+          palette: palette.map((candidate) => candidate.hex),
+        })
+      } catch {
+        resolve(null)
+      } finally {
+        URL.revokeObjectURL(objectUrl)
+      }
+    }
+
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      resolve(null)
+    }
+
+    image.src = objectUrl
+  })
+}
+
+function getBrandColourValue(brandColours = {}, key = '', fallback = ARCH9_BRAND_COLOURS.primary) {
   const value = normalizeText(brandColours?.[key])
-  return /^#[0-9a-f]{6}$/i.test(value) ? value : fallback
+  return normalizeHexColour(value) || fallback
 }
 
 function getBrandTypography(branding = {}) {
@@ -373,7 +531,11 @@ function getBrandAssetHistory(branding = {}, targetKey = '') {
 }
 
 function getConfiguredBrandAssetCount(branding = {}) {
-  return Object.keys(BRAND_ASSET_TARGETS).filter((targetKey) => normalizeText(branding?.[targetKey])).length
+  return Object.keys(BRAND_ASSET_TARGETS).filter((targetKey) => (
+    targetKey === 'heroImage'
+      ? getBrandHeroImage(branding)
+      : normalizeText(branding?.[targetKey])
+  )).length
 }
 
 function getBrandHealthScore({ branding = {}, brandColours = {}, publicBranding = {} } = {}) {
@@ -381,6 +543,7 @@ function getBrandHealthScore({ branding = {}, brandColours = {}, publicBranding 
     normalizeText(branding.logoLight),
     normalizeText(branding.logoDark),
     normalizeText(branding.logoIcon),
+    getBrandHeroImage(branding),
     getBrandColourValue(brandColours, 'primary', ''),
     getBrandColourValue(brandColours, 'secondary', ''),
     getBrandColourValue(brandColours, 'accent', ''),
@@ -651,6 +814,7 @@ function BrandAssetTile({
   description,
   previewUrl,
   previewTone = 'light',
+  previewMode = 'contain',
   fileName,
   formats = 'PNG • SVG',
   dimensions = 'Recommended 640 x 240 px',
@@ -683,7 +847,13 @@ function BrandAssetTile({
           if (file) void onFile?.(file)
         }}
       >
-        {previewUrl ? <img className="h-full max-h-[104px] w-full object-contain" src={previewUrl} alt={`${title} preview`} /> : fallback}
+        {previewUrl ? (
+          <img
+            className={previewMode === 'cover' ? 'h-full max-h-[142px] min-h-[142px] w-full rounded-[12px] object-cover' : 'h-full max-h-[104px] w-full object-contain'}
+            src={previewUrl}
+            alt={`${title} preview`}
+          />
+        ) : fallback}
       </div>
       <div>
         <div className="flex items-start justify-between gap-3">
@@ -754,7 +924,7 @@ function BrandAssetTile({
 }
 
 function BrandColourRow({ label, value, disabled = false, onChange, onCopy }) {
-  const safeValue = /^#[0-9a-f]{6}$/i.test(value || '') ? value : '#274C69'
+  const safeValue = normalizeHexColour(value) || ARCH9_BRAND_COLOURS.primary
   return (
     <div className="grid gap-3 border-t border-[#e5edf4] py-4 first:border-t-0 first:pt-0 md:grid-cols-[160px_minmax(0,1fr)_auto] md:items-center">
       <div className="flex items-center gap-3">
@@ -787,6 +957,63 @@ function BrandColourRow({ label, value, disabled = false, onChange, onCopy }) {
   )
 }
 
+function BrandColourSuggestionPanel({ suggestions = {}, disabled = false, onApply, onReset }) {
+  const suggestedColours = [
+    { key: 'primary', label: 'Primary', value: normalizeHexColour(suggestions.primary) },
+    { key: 'secondary', label: 'Secondary', value: normalizeHexColour(suggestions.secondary) },
+    { key: 'accent', label: 'Accent', value: normalizeHexColour(suggestions.accent) },
+  ].filter((item) => item.value)
+  const hasSuggestions = suggestedColours.length > 0
+
+  return (
+    <div className="mt-4 rounded-[18px] border border-[#e4ecf5] bg-white p-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-[#17233a]">{hasSuggestions ? 'Suggested Theme' : 'Arch9 Default Theme'}</p>
+          <p className="mt-1 text-sm leading-6 text-[#60758d]">
+            {hasSuggestions ? 'Dominant logo colours are ready to apply to the client experience.' : 'Reset colours and assets back to the default Arch9 client experience.'}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {hasSuggestions ? (
+            <button
+              type="button"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-[12px] border border-[#0f7f4f] bg-[#0f7f4f] px-3 text-sm font-semibold text-white transition hover:bg-[#0d6f45] disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={disabled}
+              onClick={onApply}
+            >
+              <Palette className="h-4 w-4" strokeWidth={2} />
+              Apply Suggested Colours
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc] disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={disabled}
+            onClick={onReset}
+          >
+            <RotateCcw className="h-4 w-4" strokeWidth={2} />
+            Reset to Arch9
+          </button>
+        </div>
+      </div>
+      {hasSuggestions ? (
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          {suggestedColours.map((item) => (
+            <div key={item.key} className="flex items-center gap-3 rounded-[14px] border border-[#e4ecf5] bg-[#fbfdff] p-3">
+              <span className="h-10 w-10 rounded-[12px] border border-[#d8e3ee]" style={{ backgroundColor: item.value }} />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-[#17233a]">{item.label}</p>
+                <p className="truncate text-xs font-medium text-[#60758d]">{item.value}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function PreviewTabButton({ active, children, onClick }) {
   return (
     <button
@@ -802,11 +1029,76 @@ function PreviewTabButton({ active, children, onClick }) {
   )
 }
 
-function BrandPreviewSurface({ activeTab, organisationName, logoUrl, iconUrl, colours, typography }) {
+function BrandOnboardingPreview({ variant = 'buyer', organisationName, logoUrl, iconUrl, heroImageUrl, colours, typography }) {
+  const primary = colours.primary
+  const secondary = colours.secondary
+  const accent = colours.accent
+  const isSeller = variant === 'seller'
+  const headline = isSeller ? 'Let’s prepare your property sale.' : 'Let’s get your property purchase started.'
+  const processLabel = isSeller ? 'Seller intake and listing details' : 'Buyer intake and purchase details'
+  const propertyLabel = isSeller ? '8 Victoria Road, Clifton' : '2 Pine Avenue, Sea Point'
+  const backgroundStyle = heroImageUrl
+    ? {
+        backgroundImage: `linear-gradient(90deg, ${primary}F2 0%, ${primary}D9 48%, ${secondary}BF 100%), url("${heroImageUrl}")`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }
+    : {
+        background: `linear-gradient(135deg, ${primary}, ${secondary})`,
+      }
+
+  return (
+    <div className="overflow-hidden rounded-[18px] border border-[#dfe8f1] bg-white">
+      <div className="grid min-h-[360px] gap-5 p-5 text-white lg:grid-cols-[minmax(0,1fr)_260px]" style={backgroundStyle}>
+        <div className="flex min-w-0 flex-col justify-between gap-8">
+          <div className="flex items-center justify-between gap-3">
+            {logoUrl ? <img src={logoUrl} alt="" className="h-10 max-w-[180px] object-contain" /> : (
+              <span className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] bg-white/15 text-sm font-semibold">{getInitials(organisationName)}</span>
+            )}
+            <span className="rounded-full border border-white/25 bg-white/15 px-3 py-1 text-xs font-semibold">Secure Intake</span>
+          </div>
+          <div className="max-w-xl">
+            <p className="text-xs font-bold uppercase tracking-[0.14em]" style={{ color: accent }}>{isSeller ? 'Seller Onboarding' : 'Buyer Onboarding'}</p>
+            <h3 className="mt-3 text-3xl font-semibold leading-tight sm:text-4xl">{headline}</h3>
+            <p className="mt-4 max-w-lg text-sm leading-6 text-white/78">A focused intake for {isSeller ? 'listing preparation' : 'purchase readiness'}, matched to the agency brand.</p>
+          </div>
+          <span className="inline-flex h-11 w-fit items-center gap-2 rounded-[12px] px-4 text-sm font-semibold" style={{ backgroundColor: accent, color: primary, borderRadius: typography.borderRadius }}>
+            Start {isSeller ? 'seller' : 'buyer'} onboarding
+            <ChevronRight className="h-4 w-4" strokeWidth={2.3} />
+          </span>
+        </div>
+        <div className="rounded-[18px] border border-white/20 bg-white/12 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)] backdrop-blur">
+          <p className="text-xs font-bold uppercase tracking-[0.12em]" style={{ color: accent }}>Before you start</p>
+          <h4 className="mt-2 text-lg font-semibold">A few details, captured once.</h4>
+          <div className="mt-4 space-y-3">
+            <div className="rounded-[14px] bg-black/16 p-3">
+              <p className="text-xs font-bold uppercase tracking-[0.1em] text-white/58">Property</p>
+              <p className="mt-1 text-sm font-semibold leading-5">{propertyLabel}</p>
+            </div>
+            <div className="rounded-[14px] bg-black/16 p-3">
+              <p className="text-xs font-bold uppercase tracking-[0.1em] text-white/58">Process</p>
+              <p className="mt-1 text-sm font-semibold leading-5">{processLabel}</p>
+            </div>
+          </div>
+          <div className="mt-4 flex items-center gap-2 text-xs text-white/70">
+            {iconUrl ? <img src={iconUrl} alt="" className="h-6 w-6 rounded-[8px] object-contain" /> : <ShieldCheck className="h-4 w-4" strokeWidth={2} />}
+            <span>{organisationName}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BrandPreviewSurface({ activeTab, organisationName, logoUrl, iconUrl, heroImageUrl, colours, typography }) {
   const primary = colours.primary
   const secondary = colours.secondary
   const accent = colours.accent
   const neutral = colours.neutral
+  if (activeTab === 'buyer' || activeTab === 'seller') {
+    return <BrandOnboardingPreview variant={activeTab} organisationName={organisationName} logoUrl={logoUrl} iconUrl={iconUrl} heroImageUrl={heroImageUrl} colours={colours} typography={typography} />
+  }
+
   if (activeTab === 'email') {
     return (
       <div className="overflow-hidden rounded-[18px] border border-[#dfe8f1] bg-white">
@@ -880,10 +1172,18 @@ function BrandPreviewSurface({ activeTab, organisationName, logoUrl, iconUrl, co
   )
 }
 
-function BrandPreviewWorkspace({ activeTab, setActiveTab, organisationName, logoUrl, iconUrl, colours, typography }) {
+function BrandPreviewWorkspace({ activeTab, setActiveTab, organisationName, logoUrl, iconUrl, heroImageUrl, colours, typography }) {
   return (
-    <OrganisationCard title="Email & Portal Preview" description="Preview how brand assets appear in portals, emails and PDFs before saving.">
+    <OrganisationCard title="Email & Portal Preview" description="Preview how brand assets appear in onboarding, portals, emails and PDFs before saving.">
       <div className="flex flex-wrap gap-2">
+        <PreviewTabButton active={activeTab === 'buyer'} onClick={() => setActiveTab('buyer')}>
+          <UsersRound className="h-4 w-4" strokeWidth={2} />
+          Buyer
+        </PreviewTabButton>
+        <PreviewTabButton active={activeTab === 'seller'} onClick={() => setActiveTab('seller')}>
+          <ShieldCheck className="h-4 w-4" strokeWidth={2} />
+          Seller
+        </PreviewTabButton>
         <PreviewTabButton active={activeTab === 'portal'} onClick={() => setActiveTab('portal')}>
           <Monitor className="h-4 w-4" strokeWidth={2} />
           Portal
@@ -898,13 +1198,13 @@ function BrandPreviewWorkspace({ activeTab, setActiveTab, organisationName, logo
         </PreviewTabButton>
       </div>
       <div className="mt-5">
-        <BrandPreviewSurface activeTab={activeTab} organisationName={organisationName} logoUrl={logoUrl} iconUrl={iconUrl} colours={colours} typography={typography} />
+        <BrandPreviewSurface activeTab={activeTab} organisationName={organisationName} logoUrl={logoUrl} iconUrl={iconUrl} heroImageUrl={heroImageUrl} colours={colours} typography={typography} />
       </div>
     </OrganisationCard>
   )
 }
 
-function BrandPreviewPanel({ organisationName, logoUrl, iconUrl, colours, typography, brandHealth, configuredAssetCount }) {
+function BrandPreviewPanel({ organisationName, logoUrl, iconUrl, heroImageUrl, colours, typography, brandHealth, configuredAssetCount }) {
   return (
     <aside className="hidden xl:block">
       <div className="sticky top-4 space-y-4 rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_14px_36px_rgba(15,23,42,0.045)]">
@@ -912,7 +1212,7 @@ function BrandPreviewPanel({ organisationName, logoUrl, iconUrl, colours, typogr
           <h2 className="text-base font-semibold text-[#17233a]">Brand Preview</h2>
           <p className="mt-2 text-sm leading-6 text-[#60758d]">Live portal and email signals.</p>
         </div>
-        <BrandPreviewSurface activeTab="portal" organisationName={organisationName} logoUrl={logoUrl} iconUrl={iconUrl} colours={colours} typography={typography} />
+        <BrandPreviewSurface activeTab="buyer" organisationName={organisationName} logoUrl={logoUrl} iconUrl={iconUrl} heroImageUrl={heroImageUrl} colours={colours} typography={typography} />
         <div className="space-y-3 border-y border-[#e5edf4] py-4">
           <OverviewRow label="Brand Health" value={`${brandHealth}%`} verified={brandHealth >= 80} />
           <OverviewRow label="Assets" value={configuredAssetCount} verified={configuredAssetCount >= 3} />
@@ -977,7 +1277,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [uploadingLogoTarget, setUploadingLogoTarget] = useState('')
-  const [brandPreviewTab, setBrandPreviewTab] = useState('portal')
+  const [brandPreviewTab, setBrandPreviewTab] = useState('buyer')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
@@ -1247,7 +1547,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
     setMessage('')
     setState((previous) => {
       const brandingState = previous.onboarding?.branding || {}
-      const previousUrl = normalizeText(brandingState[targetKey])
+      const previousUrl = targetKey === 'heroImage' ? getBrandHeroImage(brandingState) : normalizeText(brandingState[targetKey])
       const previousName = normalizeText(brandingState[`${targetKey}Name`])
       const currentHistory = getBrandAssetHistory(brandingState, targetKey)
       const nextHistory = previousUrl
@@ -1269,6 +1569,15 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
             [`${targetKey}Name`]: '',
             [assetConfig.bucketField]: '',
             [assetConfig.pathField]: '',
+            ...(targetKey === 'heroImage'
+              ? {
+                  heroImageUrl: '',
+                  backgroundImage: '',
+                  backgroundImageUrl: '',
+                  coverImage: '',
+                  coverImageUrl: '',
+                }
+              : {}),
             assetHistory: {
               ...(brandingState.assetHistory || {}),
               [targetKey]: nextHistory,
@@ -1300,6 +1609,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
             ...brandingState,
             [targetKey]: url,
             [`${targetKey}Name`]: normalizeText(historyEntry.fileName) || assetConfig.title,
+            ...(targetKey === 'heroImage' ? { heroImageUrl: url } : {}),
             assetHistory: {
               ...(brandingState.assetHistory || {}),
               [targetKey]: getBrandAssetHistory(brandingState, targetKey).filter((entry) => normalizeText(entry.url) !== url),
@@ -1319,6 +1629,83 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
     } catch {
       setMessage(`${hexValue} ready to copy.`)
     }
+  }
+
+  function applySuggestedBrandColours() {
+    setMessage('')
+    setState((previous) => {
+      const brandingState = previous.onboarding?.branding || {}
+      const suggestedColours = brandingState.suggestedColours || {}
+      return {
+        ...previous,
+        onboarding: {
+          ...previous.onboarding,
+          branding: {
+            ...brandingState,
+            brandColours: {
+              ...(brandingState.brandColours || {}),
+              primary: normalizeHexColour(suggestedColours.primary) || getBrandColourValue(brandingState.brandColours, 'primary', ARCH9_BRAND_COLOURS.primary),
+              secondary: normalizeHexColour(suggestedColours.secondary) || getBrandColourValue(brandingState.brandColours, 'secondary', ARCH9_BRAND_COLOURS.secondary),
+              accent: normalizeHexColour(suggestedColours.accent) || getBrandColourValue(brandingState.brandColours, 'accent', ARCH9_BRAND_COLOURS.accent),
+              neutral: normalizeHexColour(suggestedColours.neutral) || getBrandColourValue(brandingState.brandColours, 'neutral', ARCH9_BRAND_COLOURS.neutral),
+            },
+          },
+        },
+      }
+    })
+    setMessage('Suggested colours applied. Save Branding to publish.')
+  }
+
+  function resetBrandingToArch9() {
+    setMessage('')
+    setState((previous) => {
+      const brandingState = previous.onboarding?.branding || {}
+      const resetHistory = { ...(brandingState.assetHistory || {}) }
+      const nextBranding = {
+        ...brandingState,
+        brandColours: { ...ARCH9_BRAND_COLOURS },
+        typography: { ...BRAND_TYPOGRAPHY_DEFAULTS },
+        suggestedColours: {},
+        detectedPalette: [],
+        colourSuggestionSource: null,
+      }
+
+      for (const [targetKey, assetConfig] of Object.entries(BRAND_ASSET_TARGETS)) {
+        const previousUrl = targetKey === 'heroImage' ? getBrandHeroImage(brandingState) : normalizeText(brandingState[targetKey])
+        const previousName = normalizeText(brandingState[`${targetKey}Name`])
+        if (previousUrl) {
+          resetHistory[targetKey] = [
+            { url: previousUrl, fileName: previousName || assetConfig.title, replacedAt: new Date().toISOString() },
+            ...getBrandAssetHistory(brandingState, targetKey),
+          ].slice(0, 3)
+        }
+        nextBranding[targetKey] = ''
+        nextBranding[`${targetKey}Name`] = ''
+        nextBranding[assetConfig.bucketField] = ''
+        nextBranding[assetConfig.pathField] = ''
+        nextBranding[`${targetKey}GeneratedFrom`] = ''
+      }
+
+      nextBranding.heroImageUrl = ''
+      nextBranding.backgroundImage = ''
+      nextBranding.backgroundImageUrl = ''
+      nextBranding.coverImage = ''
+      nextBranding.coverImageUrl = ''
+      nextBranding.assetHistory = resetHistory
+
+      return {
+        ...previous,
+        organisation: {
+          ...previous.organisation,
+          logoUrl: '',
+        },
+        onboarding: {
+          ...previous.onboarding,
+          branding: nextBranding,
+        },
+      }
+    })
+    setMessage('Arch9 default theme staged. Save Branding to publish.')
   }
 
   function updateOrganisationDefault(key, value) {
@@ -1354,13 +1741,16 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
       setUploadingLogoTarget(targetKey)
       setError('')
       setMessage('')
+      const colourSuggestions = ['logoLight', 'logoDark', 'logoIcon'].includes(targetKey)
+        ? await extractBrandColourSuggestionsFromFile(file)
+        : null
       const upload = await uploadOrganisationBrandingAsset({
         file,
         variant: assetConfig.variant,
       })
       const assetUrl = upload.resolvedUrl || upload.signedUrl || upload.publicUrl || ''
       const previousBranding = state.onboarding?.branding || {}
-      const previousUrl = normalizeText(previousBranding[targetKey])
+      const previousUrl = targetKey === 'heroImage' ? getBrandHeroImage(previousBranding) : normalizeText(previousBranding[targetKey])
       const previousName = normalizeText(previousBranding[`${targetKey}Name`])
       const currentHistory = getBrandAssetHistory(previousBranding, targetKey)
       const nextHistory = previousUrl
@@ -1376,6 +1766,29 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
           ...(previousBranding.assetHistory || {}),
           [targetKey]: nextHistory,
         },
+      }
+
+      if (targetKey === 'heroImage') {
+        nextBranding.heroImageUrl = assetUrl || previousBranding.heroImageUrl || ''
+        nextBranding.backgroundImage = ''
+        nextBranding.backgroundImageUrl = ''
+        nextBranding.coverImage = ''
+        nextBranding.coverImageUrl = ''
+      }
+
+      if (colourSuggestions) {
+        nextBranding.suggestedColours = {
+          ...(previousBranding.suggestedColours || {}),
+          primary: colourSuggestions.primary,
+          secondary: colourSuggestions.secondary,
+          accent: colourSuggestions.accent,
+        }
+        nextBranding.detectedPalette = colourSuggestions.palette
+        nextBranding.colourSuggestionSource = {
+          targetKey,
+          fileName: file.name,
+          updatedAt: new Date().toISOString(),
+        }
       }
 
       if (targetKey === 'logoIcon') {
@@ -1418,7 +1831,13 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
         window.dispatchEvent(new Event('itg:organisation-branding-updated'))
       }
 
-      setMessage(targetKey === 'logoIcon' ? 'Icon logo uploaded and applied.' : targetKey === 'logoDark' ? 'Dark logo uploaded and applied.' : `${assetConfig.title} uploaded and applied.`)
+      setMessage(colourSuggestions
+        ? `${assetConfig.title} uploaded and colour suggestions are ready.`
+        : targetKey === 'logoIcon'
+          ? 'Icon logo uploaded and applied.'
+          : targetKey === 'logoDark'
+            ? 'Dark logo uploaded and applied.'
+            : `${assetConfig.title} uploaded and applied.`)
     } catch (uploadError) {
       setError(uploadError?.message || 'Unable to upload the selected logo. Please try again.')
     } finally {
@@ -1518,6 +1937,8 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   if (showBrandingOnly) {
     const primaryAssetUrl = normalizeText(branding.logoLight || primaryLogo)
     const iconAssetUrl = normalizeText(branding.logoIcon)
+    const heroImageUrl = getBrandHeroImage(branding)
+    const suggestedBrandColours = branding.suggestedColours || {}
     const mainBrandAssets = [
       {
         targetKey: 'logoLight',
@@ -1534,6 +1955,12 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
         targetKey: 'logoIcon',
         description: 'Square mark used for compact navigation, avatars and generated icons.',
         previewUrl: iconAssetUrl,
+      },
+      {
+        targetKey: 'heroImage',
+        description: 'Background image used on buyer and seller onboarding landing pages.',
+        previewUrl: heroImageUrl,
+        previewMode: 'cover',
       },
     ]
     const appIconAssets = [
@@ -1588,7 +2015,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
             lastUpdatedLabel={brandLastUpdatedLabel}
             canEdit={canEdit}
             uploading={uploadingLogoTarget === 'logoLight'}
-            onPreview={() => setBrandPreviewTab('portal')}
+            onPreview={() => setBrandPreviewTab('buyer')}
             onUpload={(file) => handleLogoUpload(file, 'logoLight')}
           />
 
@@ -1605,6 +2032,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                         description={asset.description}
                         previewUrl={asset.previewUrl}
                         previewTone={asset.previewTone}
+                        previewMode={asset.previewMode}
                         fileName={branding[`${asset.targetKey}Name`]}
                         formats={config.formats}
                         dimensions={config.dimensions}
@@ -1634,6 +2062,12 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                     />
                   ))}
                 </div>
+                <BrandColourSuggestionPanel
+                  suggestions={suggestedBrandColours}
+                  disabled={!canEdit}
+                  onApply={applySuggestedBrandColours}
+                  onReset={resetBrandingToArch9}
+                />
               </OrganisationCard>
 
               <OrganisationCard title="Typography" description="Keep text, buttons and rounded controls consistent across branded surfaces.">
@@ -1679,6 +2113,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                 organisationName={organisationName}
                 logoUrl={primaryAssetUrl}
                 iconUrl={iconAssetUrl}
+                heroImageUrl={heroImageUrl}
                 colours={brandColourValues}
                 typography={typography}
               />
@@ -1736,6 +2171,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
               organisationName={organisationName}
               logoUrl={primaryAssetUrl}
               iconUrl={iconAssetUrl}
+              heroImageUrl={heroImageUrl}
               colours={brandColourValues}
               typography={typography}
               brandHealth={brandHealth}

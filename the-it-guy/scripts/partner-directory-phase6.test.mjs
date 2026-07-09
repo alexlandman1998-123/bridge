@@ -61,7 +61,7 @@ for (const token of [
   'thirdPartyDirectoryLoading && thirdPartyDirectoryRows.length === 0',
   '{shouldShowPartnersBlockingLoader ? (',
   'setThirdPartyDirectoryRows((rows) => rows.filter((row) => String(row.id) !== String(partner.id)))',
-  'invitations: (previous.invitations || []).filter((item) => String(item.id) !== String(invitation.id))',
+  'invitations: (previous.invitations || []).filter((item) => normalizeText(item.id) !== invitationId)',
 ]) {
   assert(files.partnersPage.includes(token), `PartnersPage should consume quick-create route state without bypassing the simplified modal: ${token}`)
 }

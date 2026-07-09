@@ -15,6 +15,7 @@ import {
   syncCanonicalToPrivateListingRequirements,
   syncCanonicalToTransactionRequiredDocuments,
 } from './canonicalDocumentAdapterService'
+import { syncDocumentAccessGrantsFromRequirement } from './documentAccessGrantService'
 
 export const CANONICAL_UPLOAD_LIFECYCLE_FLAG = 'VITE_CANONICAL_UPLOAD_LIFECYCLE_ENABLED'
 export const CANONICAL_REVIEW_WORKFLOW_FLAG = 'VITE_CANONICAL_REVIEW_WORKFLOW_ENABLED'
@@ -400,8 +401,15 @@ export async function linkUploadedDocumentToRequirement({
     },
   })
   const legacySync = await syncLegacyForRequirement(updated, { client: db, force: true })
+  const accessSync = await syncDocumentAccessGrantsFromRequirement({
+    client: db,
+    transactionId: updated.transaction_id || (updated.context_type === 'transaction' ? updated.context_id : null),
+    documentId,
+    requirementInstanceId: updated.id,
+    actorUserId,
+  })
   const readiness = await getReadinessAfterChange(db, updated)
-  return { requirement: updated, legacySync, readiness }
+  return { requirement: updated, legacySync, accessSync, readiness }
 }
 
 export async function startRequirementReview({
