@@ -191,6 +191,7 @@ const AssistantDashboardPage = lazy(() => import('./pages/agency/AssistantDashbo
 const BranchCommandCentrePage = lazy(() => import('./pages/agency/BranchCommandCentrePage'))
 const AppointmentRsvpPage = lazy(() => import('./pages/AppointmentRsvpPage'))
 const AttorneyDashboardPage = lazy(() => import('./pages/AttorneyDashboardPage'))
+const AttorneyFirmPage = lazy(() => import('./pages/AttorneyFirmPage'))
 const AttorneyFirmSettingsPage = lazy(() => import('./pages/AttorneyFirmSettingsPage'))
 const AttorneyIntelligenceDashboardPage = lazy(() => import('./pages/attorney-intelligence/DashboardPage'))
 const AttorneyIntelligenceMarketPositionPage = lazy(() => import('./pages/attorney-intelligence/MarketPositionPage'))
@@ -482,6 +483,7 @@ function AppLayout({ onLogout, session = null, user }) {
   const hideSharedHeader =
     isLegalWorkspaceRoute ||
     location.pathname === '/command-center' ||
+    location.pathname === '/attorney/scheduling' ||
     (role === 'developer' && (location.pathname === '/dashboard' || location.pathname === '/'))
   const isAttorneyDashboardRoute = role === 'attorney' && location.pathname === '/attorney/dashboard'
   const isDashboardRoute = location.pathname === '/dashboard' || location.pathname === '/'
@@ -2709,10 +2711,7 @@ function AppRoutes() {
                 path="/users"
                 element={
                   <RoleRoute allowedRoles={['attorney']}>
-                    <PlaceholderPage
-                      title="Users"
-                      description="Invite internal staff, manage roles, and control conveyancing team access."
-                    />
+                    <AttorneyFirmPage />
                   </RoleRoute>
                 }
               />

@@ -1,8 +1,10 @@
 import { getAttorneyOperationalWorkspaceData } from './attorneyOperations'
+import { getAttorneyIncomingMatterQueue } from './attorneyIncomingMatterQueue'
 
 export const ATTORNEY_MATTER_PAGE_SIZES = [20, 50, 100]
 
 const STAGE_STEPS = ['Instruction', 'Documents', 'Signing', 'Finance', 'Lodgement', 'Registration']
+const INCOMING_STAGE_STEPS = ['Onboarding', 'OTP', 'Documents', 'Acceptance']
 
 const STATUS_FILTERS = [
   { key: 'all', label: 'All' },
@@ -10,6 +12,13 @@ const STATUS_FILTERS = [
   { key: 'delayed', label: 'Delayed' },
   { key: 'registered', label: 'Registered' },
   { key: 'archived', label: 'Archived' },
+]
+
+const INCOMING_STATUS_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'awaiting_signed_otp', label: 'Awaiting Signed OTP' },
+  { key: 'awaiting_documents', label: 'Awaiting Documents' },
+  { key: 'ready_for_acceptance', label: 'Ready For Acceptance' },
 ]
 
 const MATTER_TYPE_FILTERS = [
@@ -31,6 +40,15 @@ const QUICK_FILTERS = [
   { key: 'due_for_registration', label: 'Due for Registration', query: { expected_registration: 'this_week' } },
 ]
 
+const INCOMING_QUICK_FILTERS = [
+  { key: 'awaiting_signed_otp', label: 'Awaiting OTP', query: { status: 'awaiting_signed_otp' } },
+  { key: 'awaiting_documents', label: 'Awaiting Documents', query: { status: 'awaiting_documents' } },
+  { key: 'ready_for_acceptance', label: 'Ready For Acceptance', query: { status: 'ready_for_acceptance' } },
+  { key: 'document_blockers', label: 'Document Blockers', query: { documents: 'blocked' } },
+  { key: 'my_matters', label: 'My Matters', query: { assignee: 'me' } },
+  { key: 'unassigned', label: 'Unassigned', query: { assignee: 'unassigned' } },
+]
+
 const SAVED_VIEWS = [
   { id: 'my-bond-registrations', name: 'My Bond Registrations', filters: { matterType: 'bond', quickFilter: 'my_matters' } },
   { id: 'registrations-this-week', name: 'Registrations This Week', filters: { quickFilter: 'due_for_registration' } },
@@ -39,8 +57,101 @@ const SAVED_VIEWS = [
   { id: 'guarantees-outstanding', name: 'Guarantees Outstanding', filters: { nextAction: 'guarantee' } },
 ]
 
+const INCOMING_SAVED_VIEWS = [
+  { id: 'incoming-awaiting-otp', name: 'Awaiting OTP', filters: { status: 'awaiting_signed_otp' } },
+  { id: 'incoming-awaiting-documents', name: 'Awaiting Documents', filters: { status: 'awaiting_documents' } },
+  { id: 'incoming-ready-for-acceptance', name: 'Ready For Acceptance', filters: { status: 'ready_for_acceptance' } },
+  { id: 'incoming-my-matters', name: 'My Incoming Matters', filters: { quickFilter: 'my_matters' } },
+  { id: 'incoming-document-blockers', name: 'Document Blockers', filters: { quickFilter: 'document_blockers' } },
+]
+
+const ATTORNEY_MATTER_VIEW_CONFIGS = {
+  all: {
+    key: 'all',
+    title: 'All Matters',
+    description: 'Every active firm matter across transfer, bond, cancellation, and development work.',
+    primaryMetric: 'activeMatters',
+    primaryMetricLabel: 'Active Matters',
+    itemLabel: 'matters',
+  },
+  active: {
+    key: 'active',
+    title: 'Incoming Matters',
+    description: 'Transfer instructions received by the firm before they become active matters.',
+    primaryMetric: 'incomingMatters',
+    primaryMetricLabel: 'Incoming Matters',
+    itemLabel: 'incoming matters',
+    usesIncomingQueue: true,
+  },
+  transfer: {
+    key: 'transfer',
+    title: 'Transfer Matters',
+    description: 'Transfer instructions through preparation, signing, lodgement, and registration.',
+    primaryMetric: 'activeMatters',
+    primaryMetricLabel: 'Active Transfer Matters',
+    itemLabel: 'transfer matters',
+    lockedMatterType: 'transfer',
+  },
+  bond: {
+    key: 'bond',
+    title: 'Bond Matters',
+    description: 'Bond registration work, guarantees, bank conditions, and signing tasks.',
+    primaryMetric: 'activeMatters',
+    primaryMetricLabel: 'Active Bond Matters',
+    itemLabel: 'bond matters',
+    lockedMatterType: 'bond',
+  },
+  cancellation: {
+    key: 'cancellation',
+    title: 'Cancellation Matters',
+    description: 'Bond cancellation instructions, releases, and related follow-up work.',
+    primaryMetric: 'activeMatters',
+    primaryMetricLabel: 'Active Cancellation Matters',
+    itemLabel: 'cancellation matters',
+    lockedMatterType: 'cancellation',
+  },
+  development: {
+    key: 'development',
+    title: 'Development Matters',
+    description: 'Development-linked matters with unit, phase, and project context.',
+    primaryMetric: 'activeMatters',
+    primaryMetricLabel: 'Active Development Matters',
+    itemLabel: 'development matters',
+    lockedMatterType: 'development',
+  },
+  registered: {
+    key: 'registered',
+    title: 'Registered Matters',
+    description: 'Matters that have reached confirmed registration.',
+    primaryMetric: 'registeredMatters',
+    primaryMetricLabel: 'Registered Matters',
+    itemLabel: 'registered matters',
+  },
+  archived: {
+    key: 'archived',
+    title: 'Archived Matters',
+    description: 'Closed, archived, or cancelled matters kept for firm reference.',
+    primaryMetric: 'archivedMatters',
+    primaryMetricLabel: 'Archived Matters',
+    itemLabel: 'archived matters',
+  },
+  delayed: {
+    key: 'delayed',
+    title: 'Delayed Matters',
+    description: 'Matters currently marked as delayed or critical.',
+    primaryMetric: 'delayedMatters',
+    primaryMetricLabel: 'Delayed Matters',
+    itemLabel: 'delayed matters',
+  },
+}
+
 function normalize(value = '') {
   return String(value || '').trim().toLowerCase()
+}
+
+function getAttorneyMatterViewConfig(view = 'all') {
+  const normalized = normalize(view || 'all')
+  return ATTORNEY_MATTER_VIEW_CONFIGS[normalized] || ATTORNEY_MATTER_VIEW_CONFIGS.all
 }
 
 function normalizeDate(value) {
@@ -131,6 +242,123 @@ function getMatterTypeLabel(matter = {}) {
   if (keys.includes('bond')) return 'Bond Registration'
   if (keys.includes('cancellation')) return 'Bond Cancellation'
   return 'Transfer'
+}
+
+function getIncomingMatterStage(row = {}) {
+  const status = normalize(row.status)
+  const index = status === 'ready_for_acceptance'
+    ? 3
+    : status === 'awaiting_documents'
+      ? 2
+      : status === 'awaiting_signed_otp'
+        ? 1
+        : 0
+
+  return {
+    key: normalize(INCOMING_STAGE_STEPS[index]),
+    label: row.statusLabel || INCOMING_STAGE_STEPS[index],
+    index,
+    steps: INCOMING_STAGE_STEPS,
+  }
+}
+
+function getIncomingMatterHealth(row = {}) {
+  if (row.status === 'ready_for_acceptance') {
+    return { key: 'on_track', label: 'Ready', tone: 'active', rank: 2 }
+  }
+
+  if (row.documents?.rejectedCount || row.status === 'awaiting_documents') {
+    return { key: 'attention', label: 'Attention', tone: 'attention', rank: 1 }
+  }
+
+  return { key: 'attention', label: 'Waiting', tone: 'attention', rank: 0 }
+}
+
+function normalizeIncomingMatterRow(row = {}, { currentUser = {} } = {}) {
+  const stage = getIncomingMatterStage(row)
+  const health = getIncomingMatterHealth(row)
+  const assignedAttorneyName = row.assignedAttorney?.name || 'Unassigned'
+  const assignedAssistant = row.assignedSecretary?.id ? row.assignedSecretary : row.assignedAdminHandler
+  const assistantName = assignedAssistant?.name || ''
+  const waitingOnLabels = Array.isArray(row.waitingOnLabels) ? row.waitingOnLabels : []
+  const statusKey = row.status || ''
+
+  const nextRow = {
+    rowKind: 'incoming',
+    incomingSortRank: statusKey === 'awaiting_signed_otp' ? 0 : statusKey === 'awaiting_documents' ? 1 : statusKey === 'ready_for_acceptance' ? 2 : 9,
+    matterId: row.matterId || row.transactionId,
+    assignmentId: row.assignmentId || row.id,
+    reference: row.reference || row.matterReference,
+    matterReference: row.reference || row.matterReference,
+    matterType: row.matterType || 'Transfer',
+    matterTypeKeys: ['transfer'],
+    property: row.property || 'Property pending',
+    buyer: row.buyerName || 'Buyer pending',
+    seller: row.sellerName || 'Seller pending',
+    development: row.development || '',
+    unit: row.unit || '',
+    phase: row.phase || '',
+    erf: '',
+    stage,
+    nextAction: row.nextAction || waitingOnLabels.join(', ') || 'Review incoming instruction',
+    expectedDue: null,
+    expectedRegistration: null,
+    expectedLodgement: null,
+    health,
+    clientActionRequired: Boolean(row.waitingOn?.includes?.('signed_otp') || row.waitingOn?.includes?.('documents')),
+    assignedAttorney: {
+      id: row.assignedAttorney?.id || '',
+      name: assignedAttorneyName,
+      initials: row.assignedAttorney?.initials || getInitials(assignedAttorneyName),
+    },
+    assignedAssistant: {
+      id: assignedAssistant?.id || '',
+      name: assistantName,
+      initials: assignedAssistant?.initials || getInitials(assistantName),
+    },
+    agent: row.agent || '',
+    bondOriginator: '',
+    bank: '',
+    matterValue: Number(row.purchasePrice || 0),
+    financeType: row.financeType || '',
+    purchasePrice: Number(row.purchasePrice || 0),
+    propertyLabel: row.property || 'Property pending',
+    buyerName: row.buyerName || 'Buyer pending',
+    sellerName: row.sellerName || 'Seller pending',
+    currentStage: stage.label,
+    lastUpdated: row.incomingSince || null,
+    status: row.statusLabel || 'Incoming',
+    statusKey,
+    lastActivity: row.incomingSince || null,
+    createdAt: row.incomingSince || null,
+    priority: health.key === 'attention' ? 'Medium' : 'Normal',
+    actionHref: row.actionHref || (row.transactionId ? `/transactions/${encodeURIComponent(row.transactionId)}` : ''),
+    isMine: [row.assignedAttorney?.id, row.assignedSecretary?.id, row.assignedAdminHandler?.id].filter(Boolean).includes(currentUser?.id),
+    waitingOn: row.waitingOn || [],
+    waitingOnLabels,
+    incomingAgeDays: row.incomingAgeDays || 0,
+    documents: row.documents || {},
+    otpStatus: row.otpStatus || null,
+  }
+
+  nextRow.searchText = [
+    nextRow.reference,
+    nextRow.buyer,
+    nextRow.seller,
+    nextRow.property,
+    nextRow.development,
+    nextRow.unit,
+    nextRow.assignedAttorney.name,
+    nextRow.assignedAssistant.name,
+    nextRow.agent,
+    nextRow.stage.label,
+    nextRow.nextAction,
+    nextRow.status,
+    nextRow.statusKey,
+    ...(nextRow.waitingOnLabels || []),
+  ].map(normalize).join(' ')
+
+  return nextRow
 }
 
 function isRegisteredMatter(matter = {}) {
@@ -305,11 +533,24 @@ function normalizeMatterRow(matter = {}, { documentStatus = {}, currentUser = {}
     bondOriginator: matter.bondOriginatorName || matter.assignedBondOriginatorEmail || '',
     bank: matter.bank || '',
     matterValue: Number(matter.purchasePrice || 0),
+    financeType: matter.financeType || '',
+    purchasePrice: Number(matter.purchasePrice || 0),
+    propertyLabel: matter.propertyLabel || 'Property pending',
+    buyerName: matter.buyerName || matter.clientName || 'Buyer pending',
+    sellerName: matter.sellerName || 'Seller pending',
+    sellerHasExistingBond: matter.sellerHasExistingBond || false,
+    currentBondBank: matter.currentBondBank || matter.bank || '',
+    estimatedSettlementAmount: matter.estimatedSettlementAmount || 0,
+    lifecycleState: matter.lifecycleState || 'active',
+    currentStage: matter.currentStage || stage.label,
+    registrationDate: matter.registrationDate || null,
+    lastUpdated: matter.lastUpdated || matter.lastMeaningfulActivityAt || null,
+    developmentName: matter.developmentName || '',
     status,
     lastActivity: matter.lastMeaningfulActivityAt || matter.lastUpdated || null,
     createdAt: matter.createdAt || null,
     priority,
-    actionHref: matter.actionHref || `/transactions/${matter.matterId}`,
+    actionHref: matter.actionHref || (matter.matterId ? `/transactions/${encodeURIComponent(matter.matterId)}` : ''),
     isMine: [matter.assignedAttorneyId, matter.assignedSecretaryId, matter.assignedAdminHandlerId].filter(Boolean).includes(currentUser?.id),
   }
 
@@ -336,8 +577,9 @@ function normalizeMatterRow(matter = {}, { documentStatus = {}, currentUser = {}
 }
 
 function applyBaseView(rows = [], view = 'all') {
-  const normalized = normalize(view || 'all')
+  const normalized = getAttorneyMatterViewConfig(view).key
   if (normalized === 'all') return rows
+  if (normalized === 'active' && rows.some((row) => row.rowKind === 'incoming')) return rows
   if (normalized === 'active') return rows.filter((row) => ['Active', 'Attention', 'Delayed'].includes(row.status))
   if (normalized === 'registered') return rows.filter((row) => row.status === 'Registered')
   if (normalized === 'archived') return rows.filter((row) => row.status === 'Archived')
@@ -370,10 +612,11 @@ function matchesMatterValue(value, bucket = 'all') {
   return true
 }
 
-function applyWorkspaceFilters(rows = [], { search = '', filters = {}, quickFilter = '' } = {}) {
+function applyWorkspaceFilters(rows = [], { search = '', filters = {}, quickFilter = '', view = 'all' } = {}) {
+  const viewConfig = getAttorneyMatterViewConfig(view)
   const searchTerm = normalize(search)
   const status = normalize(filters.status || 'all')
-  const matterType = normalize(filters.matterType || 'all')
+  const matterType = viewConfig.lockedMatterType || viewConfig.usesIncomingQueue ? 'all' : normalize(filters.matterType || 'all')
   const attorney = normalize(filters.attorney || 'all')
   const assistant = normalize(filters.assistant || 'all')
   const partner = normalize(filters.partner || 'all')
@@ -391,7 +634,7 @@ function applyWorkspaceFilters(rows = [], { search = '', filters = {}, quickFilt
 
   return rows.filter((row) => {
     if (searchTerm && !row.searchText.includes(searchTerm)) return false
-    if (status !== 'all' && normalize(row.status) !== status) return false
+    if (status !== 'all' && ![normalize(row.status), normalize(row.statusKey)].includes(status)) return false
     if (matterType !== 'all' && !row.matterTypeKeys.includes(matterType)) return false
     if (attorney !== 'all' && normalize(row.assignedAttorney.id || row.assignedAttorney.name) !== attorney) return false
     if (assistant !== 'all' && normalize(row.assignedAssistant.id || row.assignedAssistant.name) !== assistant) return false
@@ -407,6 +650,10 @@ function applyWorkspaceFilters(rows = [], { search = '', filters = {}, quickFilt
     if (quick === 'today') return isSameDay(row.expectedDue)
     if (quick === 'this_week') return isWithin(row.expectedDue || row.expectedRegistration, weekStart, weekEnd)
     if (quick === 'needs_attention') return ['critical', 'attention'].includes(row.health.key)
+    if (quick === 'awaiting_signed_otp') return row.statusKey === 'awaiting_signed_otp'
+    if (quick === 'awaiting_documents') return row.statusKey === 'awaiting_documents'
+    if (quick === 'ready_for_acceptance') return row.statusKey === 'ready_for_acceptance'
+    if (quick === 'document_blockers') return Boolean(row.documents?.openCount || row.documents?.reviewCount || row.documents?.rejectedCount)
     if (quick === 'my_matters') return row.isMine
     if (quick === 'unassigned') return !row.assignedAttorney.id
     if (quick === 'awaiting_client') return row.clientActionRequired
@@ -419,6 +666,14 @@ function applyWorkspaceFilters(rows = [], { search = '', filters = {}, quickFilt
 
 function sortWorkspaceRows(rows = []) {
   return [...rows].sort((left, right) => {
+    if (left.rowKind === 'incoming' || right.rowKind === 'incoming') {
+      const incomingDiff = (left.incomingSortRank ?? 99) - (right.incomingSortRank ?? 99)
+      if (incomingDiff !== 0) return incomingDiff
+
+      const ageDiff = (right.incomingAgeDays || 0) - (left.incomingAgeDays || 0)
+      if (ageDiff !== 0) return ageDiff
+    }
+
     const healthDiff = left.health.rank - right.health.rank
     if (healthDiff !== 0) return healthDiff
 
@@ -442,10 +697,35 @@ function createSparkline(value = 0, slope = 1) {
   )
 }
 
-function buildSummary(rows = []) {
+function buildSummary(rows = [], { usesIncomingQueue = false } = {}) {
+  const incomingRows = rows.filter((row) => row.rowKind === 'incoming')
+  if (usesIncomingQueue || incomingRows.length) {
+    return {
+      totalMatters: incomingRows.length,
+      activeMatters: incomingRows.length,
+      incomingMatters: incomingRows.length,
+      attentionMatters: incomingRows.filter((row) => ['awaiting_signed_otp', 'awaiting_documents'].includes(row.statusKey)).length,
+      delayedMatters: 0,
+      registeredMatters: 0,
+      archivedMatters: 0,
+      awaitingSignedOtp: incomingRows.filter((row) => row.statusKey === 'awaiting_signed_otp').length,
+      awaitingDocuments: incomingRows.filter((row) => row.statusKey === 'awaiting_documents').length,
+      readyForAcceptance: incomingRows.filter((row) => row.statusKey === 'ready_for_acceptance').length,
+      transferCount: incomingRows.length,
+      bondCount: 0,
+      cancellationCount: 0,
+      developmentCount: incomingRows.filter((row) => row.development).length,
+    }
+  }
+
   const activeRows = rows.filter((row) => ['Active', 'Attention', 'Delayed'].includes(row.status))
   return {
+    totalMatters: rows.length,
     activeMatters: activeRows.length,
+    attentionMatters: activeRows.filter((row) => row.status === 'Attention').length,
+    delayedMatters: activeRows.filter((row) => row.status === 'Delayed').length,
+    registeredMatters: rows.filter((row) => row.status === 'Registered').length,
+    archivedMatters: rows.filter((row) => row.status === 'Archived').length,
     transferCount: activeRows.filter((row) => row.matterTypeKeys.includes('transfer')).length,
     bondCount: activeRows.filter((row) => row.matterTypeKeys.includes('bond')).length,
     cancellationCount: activeRows.filter((row) => row.matterTypeKeys.includes('cancellation')).length,
@@ -453,7 +733,59 @@ function buildSummary(rows = []) {
   }
 }
 
-function buildKpis(rows = []) {
+function buildKpis(rows = [], { usesIncomingQueue = false } = {}) {
+  const incomingRows = rows.filter((row) => row.rowKind === 'incoming')
+  if (usesIncomingQueue || incomingRows.length) {
+    const awaitingSignedOtp = incomingRows.filter((row) => row.statusKey === 'awaiting_signed_otp')
+    const awaitingDocuments = incomingRows.filter((row) => row.statusKey === 'awaiting_documents')
+    const readyForAcceptance = incomingRows.filter((row) => row.statusKey === 'ready_for_acceptance')
+    const documentBlockers = incomingRows.filter((row) => row.documents?.openCount || row.documents?.reviewCount)
+    const oldestIncomingDays = incomingRows.reduce((max, row) => Math.max(max, row.incomingAgeDays || 0), 0)
+
+    return [
+      {
+        key: 'active_matters',
+        label: 'Incoming Matters',
+        value: incomingRows.length,
+        helper: oldestIncomingDays ? `Oldest ${oldestIncomingDays} days` : 'Ready for intake',
+        tone: 'emerald',
+        sparkline: createSparkline(incomingRows.length),
+      },
+      {
+        key: 'awaiting_client',
+        label: 'Awaiting Signed OTP',
+        value: awaitingSignedOtp.length,
+        helper: 'Buyer signature needed',
+        tone: 'amber',
+        sparkline: createSparkline(awaitingSignedOtp.length, 2),
+      },
+      {
+        key: 'lodgement_today',
+        label: 'Awaiting Documents',
+        value: awaitingDocuments.length,
+        helper: `${documentBlockers.length} blockers`,
+        tone: 'blue',
+        sparkline: createSparkline(awaitingDocuments.length),
+      },
+      {
+        key: 'registration_this_week',
+        label: 'Ready For Acceptance',
+        value: readyForAcceptance.length,
+        helper: 'Attorney action',
+        tone: 'violet',
+        sparkline: createSparkline(readyForAcceptance.length),
+      },
+      {
+        key: 'delayed',
+        label: 'Document Blockers',
+        value: documentBlockers.length,
+        helper: 'Require follow-up',
+        tone: 'red',
+        sparkline: createSparkline(documentBlockers.length, 2),
+      },
+    ]
+  }
+
   const today = new Date()
   const weekStart = startOfWeek(today)
   const weekEnd = endOfWeek(today)
@@ -512,7 +844,8 @@ function buildKpis(rows = []) {
   ]
 }
 
-function buildFilterPayload(operational = {}, rows = []) {
+function buildFilterPayload(operational = {}, rows = [], { view = 'all' } = {}) {
+  const viewConfig = getAttorneyMatterViewConfig(view)
   const memberOptions = (operational.availableFilters?.members || []).map((member) => ({
     value: member.value,
     label: member.label,
@@ -526,7 +859,7 @@ function buildFilterPayload(operational = {}, rows = []) {
     .map((value) => ({ value: normalize(value), label: value }))
 
   return {
-    statuses: STATUS_FILTERS,
+    statuses: viewConfig.usesIncomingQueue ? INCOMING_STATUS_FILTERS : STATUS_FILTERS,
     matterTypes: MATTER_TYPE_FILTERS,
     attorneys: [{ value: 'all', label: 'All Attorneys' }, ...memberOptions],
     assistants: [{ value: 'all', label: 'All Assistants' }, ...memberOptions],
@@ -557,16 +890,24 @@ function buildFilterPayload(operational = {}, rows = []) {
 }
 
 export function buildAttorneyMatterWorkspace(operational = {}, options = {}) {
+  const viewConfig = getAttorneyMatterViewConfig(options.view || 'all')
   const documentStatusByMatter = buildDocumentStatusMap(operational.documentQueue || [])
-  const baseRows = (operational.matterQueue || []).map((matter) =>
-    normalizeMatterRow(matter, {
-      documentStatus: documentStatusByMatter[matter.matterId] || {},
-      currentUser: operational.currentUser || {},
-    }),
-  )
+  const incomingMatterQueue = operational.incomingMatterQueue || operational.incomingMatterSource?.filteredRows || []
+  const baseRows = viewConfig.usesIncomingQueue && (operational.incomingMatterSource || incomingMatterQueue.length)
+    ? incomingMatterQueue.map((matter) =>
+        normalizeIncomingMatterRow(matter, {
+          currentUser: operational.currentUser || {},
+        }),
+      )
+    : (operational.matterQueue || []).map((matter) =>
+        normalizeMatterRow(matter, {
+          documentStatus: documentStatusByMatter[matter.matterId] || {},
+          currentUser: operational.currentUser || {},
+        }),
+      )
 
-  const viewRows = applyBaseView(baseRows, options.view || 'all')
-  const filteredRows = sortWorkspaceRows(applyWorkspaceFilters(viewRows, options))
+  const viewRows = applyBaseView(baseRows, viewConfig.key)
+  const filteredRows = sortWorkspaceRows(applyWorkspaceFilters(viewRows, { ...options, view: viewConfig.key }))
   const pageSize = ATTORNEY_MATTER_PAGE_SIZES.includes(Number(options.pageSize)) ? Number(options.pageSize) : 20
   const page = Math.max(1, Number(options.page || 1))
   const start = (page - 1) * pageSize
@@ -577,11 +918,12 @@ export function buildAttorneyMatterWorkspace(operational = {}, options = {}) {
     firm: operational.firm || null,
     currentUser: operational.currentUser || null,
     permissions: operational.permissions || {},
-    summary: buildSummary(baseRows),
-    filters: buildFilterPayload(operational, baseRows),
-    kpis: buildKpis(baseRows),
-    savedViews: SAVED_VIEWS,
-    quickFilters: QUICK_FILTERS,
+    view: viewConfig,
+    summary: buildSummary(viewRows, { usesIncomingQueue: viewConfig.usesIncomingQueue }),
+    filters: buildFilterPayload(operational, baseRows, { view: viewConfig.key }),
+    kpis: buildKpis(viewRows, { usesIncomingQueue: viewConfig.usesIncomingQueue }),
+    savedViews: viewConfig.usesIncomingQueue ? INCOMING_SAVED_VIEWS : SAVED_VIEWS,
+    quickFilters: viewConfig.usesIncomingQueue ? INCOMING_QUICK_FILTERS : QUICK_FILTERS,
     tableRows,
     allRows: baseRows,
     filteredRows,
@@ -598,6 +940,23 @@ export function buildAttorneyMatterWorkspace(operational = {}, options = {}) {
 }
 
 export async function getAttorneyMatterWorkspace(options = {}) {
-  const operational = await getAttorneyOperationalWorkspaceData(options.firmId || null, options.userId || null)
+  const viewConfig = getAttorneyMatterViewConfig(options.view || 'all')
+  const [operational, incomingMatterSource] = await Promise.all([
+    getAttorneyOperationalWorkspaceData(options.firmId || null, options.userId || null),
+    viewConfig.usesIncomingQueue
+      ? getAttorneyIncomingMatterQueue({
+          firmId: options.firmId || null,
+          userId: options.userId || null,
+        })
+      : Promise.resolve(null),
+  ])
+
+  if (incomingMatterSource) {
+    operational.incomingMatterSource = incomingMatterSource
+    operational.incomingMatterQueue = incomingMatterSource.filteredRows || incomingMatterSource.rows || []
+    operational.firm = incomingMatterSource.firm || operational.firm
+    operational.currentUser = incomingMatterSource.currentUser || operational.currentUser
+  }
+
   return buildAttorneyMatterWorkspace(operational, options)
 }

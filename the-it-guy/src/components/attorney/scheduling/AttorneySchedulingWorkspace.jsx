@@ -2,10 +2,8 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   AlertTriangle,
-  Bell,
   CalendarDays,
   CheckCircle2,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
@@ -14,11 +12,13 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Send,
   Users,
   X,
 } from 'lucide-react'
 import {
   assignAttorneyAppointmentResource,
+  createAttorneyAppointmentInvite,
   proposeAttorneyAppointmentReschedule,
   resendAttorneyAppointmentCommunication,
   resolveAttorneyAppointmentReschedule,
@@ -79,6 +79,47 @@ const STATUS_TONES = {
 }
 
 const VIEW_MODES = ['Day', 'Week', 'Month', 'Agenda']
+
+const ATTORNEY_INVITE_TYPES = [
+  {
+    value: 'transfer_signing',
+    label: 'Transfer Signing',
+    helper: 'Buyer or seller transfer document signing.',
+    participantRole: 'Client',
+  },
+  {
+    value: 'bond_signing',
+    label: 'Bond Signing',
+    helper: 'Buyer bond registration document signing.',
+    participantRole: 'Buyer',
+  },
+  {
+    value: 'attorney_consultation',
+    label: 'Attorney Consultation',
+    helper: 'Legal process questions, readiness, or next steps.',
+    participantRole: 'Client',
+  },
+  {
+    value: 'internal_meeting',
+    label: 'Internal Prep',
+    helper: 'Firm-only coordination before a signing.',
+    participantRole: 'Attorney',
+    visibility: 'internal_only',
+  },
+]
+
+const DEFAULT_INVITE_DRAFT = {
+  appointmentType: 'transfer_signing',
+  matterId: '',
+  recipientName: '',
+  recipientEmail: '',
+  date: '',
+  startTime: '',
+  locationType: 'video_call',
+  location: '',
+  resourceId: '',
+  notes: '',
+}
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -486,34 +527,39 @@ function metricSubtitle(key, value) {
   return 'This week'
 }
 
-function SchedulingHeader({ firm, currentUser }) {
-  const initials = normalizeText(currentUser?.name || currentUser?.email || 'IN')
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase() || 'IN'
+function getInviteType(value = '') {
+  return ATTORNEY_INVITE_TYPES.find((item) => item.value === value) || ATTORNEY_INVITE_TYPES[0]
+}
 
+function buildMatterOptions(matterRows = []) {
+  return (matterRows || [])
+    .map((row) => {
+      const matterId = normalizeText(row.matterId || row.transactionId || row.id || row.transaction_id)
+      const matterReference = normalizeText(row.matterReference || row.reference || row.transaction_reference)
+      if (!matterId) return null
+      return {
+        matterId,
+        matterReference: matterReference || `MAT-${matterId.slice(0, 8).toUpperCase()}`,
+        clientName: normalizeText(row.clientName || row.buyerName || row.sellerName),
+        matterType: normalizeText(row.matterType || row.assignmentType),
+        organisationId: normalizeText(row.organisationId || row.organisation_id),
+      }
+    })
+    .filter(Boolean)
+}
+
+function SchedulingPageHeader({ onCreateInvite }) {
   return (
-    <section className="scheduling-header" style={{ justifyContent: 'flex-end' }}>
+    <section className="scheduling-page-header">
+      <div>
+        <span>Attorney Calendar</span>
+        <h1>Scheduling</h1>
+        <p>Signings, consultations, boardrooms, confirmations, and reschedules.</p>
+      </div>
       <div className="scheduling-header-actions">
-        <Link to="/new-transaction" className="scheduling-primary-action">
+        <button type="button" className="scheduling-primary-action" onClick={onCreateInvite}>
           <Plus size={16} />
-          Create
-          <ChevronDown size={14} />
-        </Link>
-        <button type="button" className="scheduling-view-select">
-          <span>VIEW</span>
-          {firm?.firmName || currentUser?.roleLabel || 'Attorney / Conveyancer'}
-          <ChevronDown size={14} />
-        </button>
-        <button type="button" className="scheduling-icon-button" aria-label="Notifications">
-          <Bell size={17} />
-          <span className="scheduling-notification-dot">5</span>
-        </button>
-        <button type="button" className="scheduling-user-menu" aria-label="User menu">
-          {initials}
-          <ChevronDown size={14} />
+          Create Invite
         </button>
       </div>
     </section>
@@ -932,6 +978,155 @@ function OperationalFeedPanel({ rows }) {
   )
 }
 
+function CreateInviteDrawer({
+  open,
+  draft,
+  setDraft,
+  matterOptions,
+  resources,
+  busyId,
+  onClose,
+  onSubmit,
+}) {
+  if (!open) return null
+  const selectedInviteType = getInviteType(draft.appointmentType)
+  const selectedMatter = matterOptions.find((matter) => matter.matterId === draft.matterId)
+  const isBoardroomInvite = draft.locationType === 'boardroom'
+
+  function updateDraft(key, value) {
+    setDraft((previous) => ({ ...previous, [key]: value }))
+  }
+
+  return (
+    <aside className="invite-drawer" aria-label="Create attorney invite">
+      <form className="invite-drawer-card" onSubmit={onSubmit}>
+        <div className="appointment-drawer-header">
+          <span>Create Invite</span>
+          <button type="button" onClick={onClose} aria-label="Close create invite"><X size={17} /></button>
+        </div>
+
+        <div>
+          <h2>Attorney invite</h2>
+          <p>Send a signing, consultation, or firm coordination invite from the conveyancing calendar.</p>
+        </div>
+
+        <div className="invite-type-list" role="radiogroup" aria-label="Invite type">
+          {ATTORNEY_INVITE_TYPES.map((type) => (
+            <button
+              key={type.value}
+              type="button"
+              className={`invite-type-option ${draft.appointmentType === type.value ? 'is-active' : ''}`}
+              onClick={() => updateDraft('appointmentType', type.value)}
+            >
+              <strong>{type.label}</strong>
+              <span>{type.helper}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="invite-selected-summary">
+          <Send size={15} />
+          <span>{selectedInviteType.label}</span>
+          {selectedMatter ? <strong>{selectedMatter.matterReference}</strong> : <strong>Matter required</strong>}
+        </div>
+
+        <div className="invite-form-grid">
+          <label className="drawer-field invite-field-wide">
+            <span>Matter</span>
+            <select value={draft.matterId} onChange={(event) => updateDraft('matterId', event.target.value)} required>
+              <option value="">Choose a matter</option>
+              {matterOptions.map((matter) => (
+                <option key={matter.matterId} value={matter.matterId}>
+                  {matter.matterReference} {matter.clientName ? `- ${matter.clientName}` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="drawer-field">
+            <span>Invitee name</span>
+            <input
+              value={draft.recipientName}
+              onChange={(event) => updateDraft('recipientName', event.target.value)}
+              placeholder="Client or staff name"
+            />
+          </label>
+
+          <label className="drawer-field">
+            <span>Invitee email</span>
+            <input
+              type="email"
+              value={draft.recipientEmail}
+              onChange={(event) => updateDraft('recipientEmail', event.target.value)}
+              placeholder="name@example.com"
+              required
+            />
+          </label>
+
+          <label className="drawer-field">
+            <span>Date</span>
+            <input type="date" value={draft.date} onChange={(event) => updateDraft('date', event.target.value)} required />
+          </label>
+
+          <label className="drawer-field">
+            <span>Start time</span>
+            <input type="time" value={draft.startTime} onChange={(event) => updateDraft('startTime', event.target.value)} required />
+          </label>
+
+          <label className="drawer-field">
+            <span>Location type</span>
+            <select value={draft.locationType} onChange={(event) => updateDraft('locationType', event.target.value)}>
+              <option value="video_call">Video call</option>
+              <option value="boardroom">Firm boardroom</option>
+              <option value="office">Office / address</option>
+              <option value="phone_call">Phone call</option>
+            </select>
+          </label>
+
+          {isBoardroomInvite ? (
+            <label className="drawer-field">
+              <span>Boardroom</span>
+              <select value={draft.resourceId} onChange={(event) => updateDraft('resourceId', event.target.value)}>
+                <option value="">Choose boardroom</option>
+                {resources.map((resource) => (
+                  <option key={resource.resourceId} value={resource.resourceId}>{resource.resourceName}</option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <label className="drawer-field">
+              <span>{draft.locationType === 'video_call' ? 'Meeting link' : 'Location'}</span>
+              <input
+                value={draft.location}
+                onChange={(event) => updateDraft('location', event.target.value)}
+                placeholder={draft.locationType === 'video_call' ? 'Teams or Meet link' : 'Address or phone details'}
+              />
+            </label>
+          )}
+
+          <label className="drawer-field invite-field-wide">
+            <span>Notes</span>
+            <textarea
+              value={draft.notes}
+              onChange={(event) => updateDraft('notes', event.target.value)}
+              placeholder="Anything the invitee should know before the appointment"
+              rows={4}
+            />
+          </label>
+        </div>
+
+        <div className="invite-actions">
+          <button type="button" onClick={onClose}>Cancel</button>
+          <button type="submit" disabled={Boolean(busyId)}>
+            <Send size={15} />
+            Create Invite
+          </button>
+        </div>
+      </form>
+    </aside>
+  )
+}
+
 function AppointmentDrawer({
   appointment,
   resources,
@@ -1010,36 +1205,45 @@ function SchedulingStyles() {
         color: #10233f;
       }
 
-      .scheduling-header,
+      .scheduling-page-header,
       .scheduling-toolbar,
       .scheduling-panel,
       .scheduling-metric-card {
         background: rgba(255, 255, 255, 0.96);
         border: 1px solid #dce6f2;
-        box-shadow: 0 14px 34px rgba(15, 35, 65, 0.06);
+        box-shadow: 0 8px 24px rgba(15, 35, 65, 0.05);
       }
 
-      .scheduling-header {
+      .scheduling-page-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
         gap: 1rem;
-        border-radius: 18px;
-        padding: 1rem 1.1rem;
+        border-radius: 14px;
+        padding: 0.82rem 0.95rem;
       }
 
-      .scheduling-header h1 {
+      .scheduling-page-header > div:first-child > span {
+        display: block;
+        color: #2563eb;
+        font-size: 0.68rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .scheduling-page-header h1 {
         margin: 0;
-        font-size: clamp(1.35rem, 2vw, 1.9rem);
+        font-size: 1.2rem;
         line-height: 1.05;
         letter-spacing: 0;
         color: #08172d;
       }
 
-      .scheduling-header p {
-        margin: 0.32rem 0 0;
+      .scheduling-page-header p {
+        margin: 0.25rem 0 0;
         color: #5a6f89;
-        font-size: 0.9rem;
+        font-size: 0.78rem;
       }
 
       .scheduling-header-actions {
@@ -1051,9 +1255,6 @@ function SchedulingStyles() {
       }
 
       .scheduling-primary-action,
-      .scheduling-view-select,
-      .scheduling-icon-button,
-      .scheduling-user-menu,
       .scheduling-toolbar select,
       .calendar-date-controls button,
       .calendar-view-toggle button,
@@ -1061,7 +1262,8 @@ function SchedulingStyles() {
       .reschedule-actions button,
       .scheduling-panel-header button,
       .drawer-actions button,
-      .drawer-actions a {
+      .drawer-actions a,
+      .invite-actions button {
         min-height: 2.35rem;
         border-radius: 10px;
         border: 1px solid #d9e4f0;
@@ -1082,43 +1284,7 @@ function SchedulingStyles() {
         color: #fff;
         background: #0f3558;
         border-color: #0f3558;
-        box-shadow: 0 12px 24px rgba(15, 53, 88, 0.18);
-      }
-
-      .scheduling-view-select span {
-        color: #6b7f98;
-        font-size: 0.68rem;
-        letter-spacing: 0.08em;
-      }
-
-      .scheduling-icon-button,
-      .scheduling-user-menu {
-        width: 2.4rem;
-        padding: 0;
-        position: relative;
-      }
-
-      .scheduling-user-menu {
-        width: auto;
-        padding: 0 0.58rem 0 0.76rem;
-        background: #061631;
-        color: #fff;
-        border-color: #061631;
-      }
-
-      .scheduling-notification-dot {
-        position: absolute;
-        top: -0.28rem;
-        right: -0.25rem;
-        min-width: 1.05rem;
-        height: 1.05rem;
-        border-radius: 999px;
-        background: #1459b8;
-        color: #fff;
-        display: grid;
-        place-items: center;
-        font-size: 0.62rem;
-        font-weight: 800;
+        box-shadow: 0 8px 18px rgba(15, 53, 88, 0.16);
       }
 
       .scheduling-toolbar {
@@ -1144,7 +1310,9 @@ function SchedulingStyles() {
 
       .scheduling-search input,
       .scheduling-toolbar select,
-      .drawer-field select {
+      .drawer-field select,
+      .drawer-field input,
+      .drawer-field textarea {
         width: 100%;
         border: 0;
         outline: 0;
@@ -1153,7 +1321,9 @@ function SchedulingStyles() {
       }
 
       .scheduling-toolbar select,
-      .drawer-field select {
+      .drawer-field select,
+      .drawer-field input,
+      .drawer-field textarea {
         border: 1px solid #d9e4f0;
         background: #fff;
       }
@@ -1165,11 +1335,11 @@ function SchedulingStyles() {
       }
 
       .scheduling-metric-card {
-        min-height: 6.25rem;
-        border-radius: 16px;
-        padding: 0.82rem;
+        min-height: 4.85rem;
+        border-radius: 12px;
+        padding: 0.68rem;
         display: flex;
-        gap: 0.68rem;
+        gap: 0.58rem;
         align-items: flex-start;
       }
 
@@ -1179,9 +1349,9 @@ function SchedulingStyles() {
       }
 
       .scheduling-metric-icon {
-        width: 2rem;
-        height: 2rem;
-        border-radius: 9px;
+        width: 1.8rem;
+        height: 1.8rem;
+        border-radius: 8px;
         display: grid;
         place-items: center;
         background: #eff6ff;
@@ -1198,15 +1368,15 @@ function SchedulingStyles() {
 
       .scheduling-metric-card strong {
         display: block;
-        margin: 0.28rem 0 0.15rem;
+        margin: 0.2rem 0 0.12rem;
         color: #07172d;
-        font-size: 1.55rem;
+        font-size: 1.3rem;
         line-height: 1;
       }
 
       .scheduling-main-grid {
         display: grid;
-        grid-template-columns: minmax(300px, 0.37fr) minmax(0, 1fr);
+        grid-template-columns: minmax(280px, 0.34fr) minmax(0, 1fr);
         gap: 1rem;
         align-items: start;
       }
@@ -1218,17 +1388,17 @@ function SchedulingStyles() {
       }
 
       .scheduling-panel {
-        border-radius: 16px;
+        border-radius: 12px;
         overflow: hidden;
       }
 
       .scheduling-panel-header {
-        min-height: 3.35rem;
+        min-height: 2.8rem;
         display: flex;
         justify-content: space-between;
         align-items: center;
         gap: 0.75rem;
-        padding: 0.85rem 1rem;
+        padding: 0.65rem 0.8rem;
         border-bottom: 1px solid #e4ecf5;
       }
 
@@ -1258,9 +1428,9 @@ function SchedulingStyles() {
       .agenda-row {
         display: grid;
         align-items: center;
-        gap: 0.7rem;
+        gap: 0.58rem;
         border-bottom: 1px solid #edf2f7;
-        padding: 0.78rem 1rem;
+        padding: 0.58rem 0.75rem;
       }
 
       .scheduling-queue-row {
@@ -1334,7 +1504,7 @@ function SchedulingStyles() {
       }
 
       .scheduling-row-actions button {
-        min-height: 1.92rem;
+        min-height: 1.72rem;
         padding: 0 0.55rem;
       }
 
@@ -1348,7 +1518,7 @@ function SchedulingStyles() {
         justify-content: space-between;
         gap: 0.75rem;
         flex-wrap: wrap;
-        padding: 0.85rem 1rem;
+        padding: 0.7rem 0.8rem;
         border-bottom: 1px solid #e4ecf5;
       }
 
@@ -1435,7 +1605,7 @@ function SchedulingStyles() {
       }
 
       .week-calendar-body {
-        min-height: 620px;
+        min-height: 540px;
       }
 
       .calendar-time-rail {
@@ -1455,7 +1625,7 @@ function SchedulingStyles() {
 
       .calendar-day-column {
         position: relative;
-        min-height: 620px;
+        min-height: 540px;
         border-left: 1px solid #edf2f7;
         background-image: linear-gradient(to bottom, transparent calc(10% - 1px), #edf2f7 calc(10% - 1px), #edf2f7 10%, transparent 10%);
         background-size: 100% 10%;
@@ -1463,31 +1633,32 @@ function SchedulingStyles() {
 
       .calendar-event {
         position: absolute;
-        left: 0.42rem;
-        right: 0.42rem;
+        left: 0.34rem;
+        right: 0.34rem;
         border: 1px solid;
-        border-radius: 9px;
-        padding: 0.42rem 0.5rem;
+        border-left-width: 3px;
+        border-radius: 7px;
+        padding: 0.28rem 0.38rem;
         display: grid;
-        gap: 0.12rem;
+        gap: 0.08rem;
         text-align: left;
         cursor: pointer;
         overflow: hidden;
-        box-shadow: 0 10px 22px rgba(15, 35, 65, 0.08);
+        box-shadow: none;
       }
 
       .calendar-event span {
-        font-size: 0.66rem;
+        font-size: 0.6rem;
         font-weight: 800;
       }
 
       .calendar-event strong {
-        font-size: 0.72rem;
+        font-size: 0.68rem;
         color: inherit;
       }
 
       .calendar-event small {
-        font-size: 0.66rem;
+        font-size: 0.6rem;
         color: inherit;
       }
 
@@ -1686,7 +1857,8 @@ function SchedulingStyles() {
         color: #067647;
       }
 
-      .appointment-drawer {
+      .appointment-drawer,
+      .invite-drawer {
         position: fixed;
         inset: 0;
         z-index: 80;
@@ -1696,7 +1868,8 @@ function SchedulingStyles() {
         backdrop-filter: blur(3px);
       }
 
-      .appointment-drawer-card {
+      .appointment-drawer-card,
+      .invite-drawer-card {
         width: min(440px, calc(100vw - 1rem));
         height: calc(100vh - 1rem);
         margin: 0.5rem;
@@ -1709,6 +1882,10 @@ function SchedulingStyles() {
         display: grid;
         align-content: start;
         gap: 0.85rem;
+      }
+
+      .invite-drawer-card {
+        width: min(520px, calc(100vw - 1rem));
       }
 
       .appointment-drawer-header {
@@ -1737,18 +1914,88 @@ function SchedulingStyles() {
       }
 
       .appointment-drawer h2,
-      .appointment-drawer p {
+      .appointment-drawer p,
+      .invite-drawer h2,
+      .invite-drawer p {
         margin: 0;
       }
 
-      .appointment-drawer h2 {
+      .appointment-drawer h2,
+      .invite-drawer h2 {
         font-size: 1.25rem;
         color: #08172d;
       }
 
-      .appointment-drawer p {
+      .appointment-drawer p,
+      .invite-drawer p {
         color: #60748c;
         font-size: 0.86rem;
+      }
+
+      .invite-type-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.55rem;
+      }
+
+      .invite-type-option {
+        border: 1px solid #e4ecf5;
+        border-radius: 10px;
+        background: #fbfdff;
+        padding: 0.65rem;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .invite-type-option.is-active {
+        border-color: #9ec5fe;
+        background: #eff6ff;
+        box-shadow: inset 0 0 0 1px #bfdbfe;
+      }
+
+      .invite-type-option strong,
+      .invite-type-option span {
+        display: block;
+      }
+
+      .invite-type-option strong {
+        color: #10233f;
+        font-size: 0.82rem;
+      }
+
+      .invite-type-option span {
+        margin-top: 0.16rem;
+        color: #60748c;
+        font-size: 0.72rem;
+        line-height: 1.35;
+      }
+
+      .invite-selected-summary {
+        min-height: 2.35rem;
+        border: 1px solid #d9e4f0;
+        border-radius: 10px;
+        background: #f8fbff;
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0 0.7rem;
+        color: #60748c;
+        font-size: 0.78rem;
+      }
+
+      .invite-selected-summary strong {
+        margin-left: auto;
+        color: #10233f;
+      }
+
+      .invite-form-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.6rem;
+      }
+
+      .invite-field-wide {
+        grid-column: 1 / -1;
       }
 
       .drawer-facts {
@@ -1767,7 +2014,8 @@ function SchedulingStyles() {
       }
 
       .drawer-facts span,
-      .drawer-field label {
+      .drawer-field label,
+      .drawer-field > span {
         display: block;
         color: #60748c;
         font-size: 0.68rem;
@@ -1803,22 +2051,36 @@ function SchedulingStyles() {
         gap: 0.4rem;
       }
 
-      .drawer-field select {
+      .drawer-field select,
+      .drawer-field input,
+      .drawer-field textarea {
         min-height: 2.25rem;
         border-radius: 9px;
         padding: 0 0.6rem;
       }
 
-      .drawer-actions {
+      .drawer-field textarea {
+        min-height: 5rem;
+        padding: 0.55rem 0.6rem;
+        resize: vertical;
+      }
+
+      .drawer-actions,
+      .invite-actions {
         display: flex;
         flex-wrap: wrap;
         gap: 0.5rem;
       }
 
-      .drawer-actions button:first-child {
+      .drawer-actions button:first-child,
+      .invite-actions button:last-child {
         background: #0f3558;
         border-color: #0f3558;
         color: #fff;
+      }
+
+      .invite-actions {
+        justify-content: flex-end;
       }
 
       @media (max-width: 1280px) {
@@ -1840,12 +2102,12 @@ function SchedulingStyles() {
       }
 
       @media (max-width: 980px) {
-        .scheduling-header,
+        .scheduling-page-header,
         .scheduling-main-grid {
           grid-template-columns: 1fr;
         }
 
-        .scheduling-header {
+        .scheduling-page-header {
           display: grid;
         }
 
@@ -1865,15 +2127,21 @@ function SchedulingStyles() {
           gap: 0.8rem;
         }
 
-        .scheduling-header,
+        .scheduling-page-header,
         .scheduling-toolbar,
         .scheduling-panel-header {
           border-radius: 14px;
         }
 
         .scheduling-toolbar,
-        .scheduling-metrics {
+        .scheduling-metrics,
+        .invite-type-list,
+        .invite-form-grid {
           grid-template-columns: 1fr;
+        }
+
+        .invite-field-wide {
+          grid-column: auto;
         }
 
         .scheduling-search {
@@ -1914,8 +2182,8 @@ function AttorneySchedulingWorkspace({
   documentRows = [],
   resources = [],
   memberOptions = [],
+  organisationId = '',
   currentRole = '',
-  firm = null,
   currentUser = null,
   onWorkspaceChanged = null,
 }) {
@@ -1925,6 +2193,8 @@ function AttorneySchedulingWorkspace({
   const [viewMode, setViewMode] = useState('Week')
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [selectedAppointment, setSelectedAppointment] = useState(null)
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [inviteDraft, setInviteDraft] = useState(DEFAULT_INVITE_DRAFT)
   const [filters, setFilters] = useState({
     query: '',
     attorney: 'all',
@@ -1952,6 +2222,7 @@ function AttorneySchedulingWorkspace({
   const visibleRescheduleRows = useMemo(() => buildRescheduleRows(visibleRows), [visibleRows])
   const staffOptions = useMemo(() => normalizeStaffOptions(memberOptions), [memberOptions])
   const feedRows = useMemo(() => buildOperationalFeed(visibleRows, visibleRescheduleRows), [visibleRows, visibleRescheduleRows])
+  const matterOptions = useMemo(() => buildMatterOptions(matterRows), [matterRows])
 
   const metrics = useMemo(() => {
     const boardroomAssigned = activeRows.filter((row) => normalizeText(row.resourceId)).length
@@ -1967,13 +2238,13 @@ function AttorneySchedulingWorkspace({
 
   const upcomingRows = useMemo(() => sortByDateAscending(visibleRows).slice(0, 14), [visibleRows])
 
-  async function withBusy(id, callback) {
+  async function withBusy(id, callback, successMessage = 'Scheduling workspace updated.') {
     setBusyId(id)
     setError('')
     setMessage('')
     try {
       await callback()
-      setMessage('Scheduling workspace updated.')
+      setMessage(successMessage)
       await onWorkspaceChanged?.()
     } catch (actionError) {
       setError(actionError?.message || 'Unable to update scheduling workspace.')
@@ -2017,10 +2288,48 @@ function AttorneySchedulingWorkspace({
     })
   })
 
+  const handleCreateInvite = (event) => {
+    event.preventDefault()
+    const selectedMatter = matterOptions.find((matter) => matter.matterId === inviteDraft.matterId)
+    const selectedInviteType = getInviteType(inviteDraft.appointmentType)
+    if (!selectedMatter) {
+      setError('Choose a matter before creating the invite.')
+      return
+    }
+
+    const selectedResource = resources.find((resource) => String(resource.resourceId || '') === String(inviteDraft.resourceId || ''))
+    const boardroomLocation = selectedResource?.resourceName || ''
+    const isVideoInvite = inviteDraft.locationType === 'video_call'
+    const inviteLocation = inviteDraft.locationType === 'boardroom' ? boardroomLocation : inviteDraft.location
+
+    void withBusy('create-invite', async () => {
+      await createAttorneyAppointmentInvite({
+        organisationId: organisationId || selectedMatter.organisationId,
+        transactionId: selectedMatter.matterId,
+        appointmentType: selectedInviteType.value,
+        recipientName: inviteDraft.recipientName || selectedMatter.clientName,
+        recipientEmail: inviteDraft.recipientEmail,
+        participantRole: selectedInviteType.participantRole,
+        date: inviteDraft.date,
+        startTime: inviteDraft.startTime,
+        locationType: inviteDraft.locationType,
+        location: inviteLocation,
+        meetingUrl: isVideoInvite ? inviteDraft.location : '',
+        resourceId: inviteDraft.locationType === 'boardroom' ? inviteDraft.resourceId : '',
+        notes: inviteDraft.notes,
+        visibility: selectedInviteType.visibility,
+        attorneyName: currentUser?.name || currentUser?.email || '',
+        attorneyEmail: currentUser?.email || '',
+      })
+      setInviteOpen(false)
+      setInviteDraft(DEFAULT_INVITE_DRAFT)
+    }, 'Attorney invite created and sent.')
+  }
+
   return (
     <section className="attorney-scheduling-os">
       <SchedulingStyles />
-      <SchedulingHeader firm={firm} currentUser={currentUser} />
+      <SchedulingPageHeader onCreateInvite={() => setInviteOpen(true)} />
       {error ? <div className="scheduling-alert is-error">{error}</div> : null}
       {message ? <div className="scheduling-alert is-success">{message}</div> : null}
       {busyId ? <div className="scheduling-alert">Processing scheduling action...</div> : null}
@@ -2061,6 +2370,16 @@ function AttorneySchedulingWorkspace({
         onStaffAssign={handleStaffAssign}
         onComplete={handleComplete}
         onResendCommunication={handleResendCommunication}
+      />
+      <CreateInviteDrawer
+        open={inviteOpen}
+        draft={inviteDraft}
+        setDraft={setInviteDraft}
+        matterOptions={matterOptions}
+        resources={resources}
+        busyId={busyId}
+        onClose={() => setInviteOpen(false)}
+        onSubmit={handleCreateInvite}
       />
     </section>
   )

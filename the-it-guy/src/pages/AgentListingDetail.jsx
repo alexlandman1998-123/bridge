@@ -4231,7 +4231,7 @@ function AgentListingDetail() {
       },
       {
         key: 'generate_mandate',
-        title: 'Create mandate',
+        title: 'Generate mandate',
         copy: mandatePrepared
           ? 'Open the mandate workspace to review saved details or update the draft before signature.'
           : 'Start from saved listing details, enter the missing fields manually, or send seller onboarding.',
@@ -4239,7 +4239,7 @@ function AgentListingDetail() {
         statusLabel: mandatePrepared ? 'Draft ready' : 'Choose path',
         icon: FileText,
         buttonIcon: FileText,
-        buttonLabel: mandatePrepared ? 'Open Mandate' : 'Create Mandate',
+        buttonLabel: mandatePrepared ? 'Open Mandate' : 'Generate Mandate',
         loadingLabel: 'Opening...',
         priorityLabel: 'Priority: normal',
         dueLabel: 'Before signature',

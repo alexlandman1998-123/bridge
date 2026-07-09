@@ -44,6 +44,7 @@ function firstDate(...values) {
 
 export const SELLER_JOURNEY_STAGES = [
   { key: 'contacted', label: 'Contacted' },
+  { key: 'appointment_valuation', label: 'Appointment / Valuation' },
   { key: 'seller_onboarding_sent', label: 'Seller Onboarding Sent' },
   { key: 'seller_onboarding_submitted', label: 'Seller Onboarding Submitted' },
   { key: 'mandate_sent', label: 'Mandate Sent' },
@@ -63,8 +64,10 @@ const STAGE_LABEL_INDEX = new Map(
 const STAGE_KEY_BY_TOKEN = new Map(SELLER_JOURNEY_STAGES.map((stage) => [normalizeText(stage.key).toLowerCase(), stage.key]))
 const STAGE_KEY_BY_LABEL = new Map(SELLER_JOURNEY_STAGES.map((stage) => [normalizeText(stage.label).toLowerCase(), stage.key]))
 const SELLER_JOURNEY_STAGE_ALIASES = new Map([
-  ['appointment_valuation', 'contacted'],
-  ['valuation', 'contacted'],
+  ['appointment_valuation', 'appointment_valuation'],
+  ['valuation', 'appointment_valuation'],
+  ['seller_valuation', 'appointment_valuation'],
+  ['seller_consultation', 'appointment_valuation'],
   ['converted_to_listing', 'listing_created'],
   ['converted_listing', 'listing_created'],
   ['onboarding_sent', 'seller_onboarding_sent'],
@@ -79,6 +82,7 @@ const SELLER_JOURNEY_STAGE_ALIASES = new Map([
 
 const SELLER_JOURNEY_STATUS_RANKS = {
   contacted: { active: 1, contacted: 1, initial: 1, start: 1 },
+  appointment_valuation: { requested: 1, scheduled: 2, confirmed: 2, completed: 3 },
   seller_onboarding_sent: { draft: 1, pending: 1, sent: 2, opened: 2, in_progress: 3, active: 3 },
   seller_onboarding_submitted: { sent: 1, in_progress: 1, submitted: 2, completed: 2, under_review: 2 },
   mandate_sent: { draft: 1, pending: 1, sent: 2, scheduled: 2, completed: 2 },
@@ -430,9 +434,10 @@ function laterSellerJourneyStage(left = null, right = null) {
   return rightIndex > leftIndex ? right : left
 }
 
-export function getSellerJourneyStage({ lead = {}, listing = null, mandatePacketStatus = null, mandatePacket = null } = {}) {
+export function getSellerJourneyStage({ lead = {}, appointments = [], listing = null, mandatePacketStatus = null, mandatePacket = null } = {}) {
   if (!isSellerLead(lead)) return null
   const leadStage = getSellerJourneyStageFromLead(lead)
+  const valuationAppointment = findValuationAppointment(appointments)
   const onboardingSignals = getSellerOnboardingSignals({ lead, listing })
   const mandateStatus = getMandateStatus({ lead, listing, mandatePacketStatus, mandatePacket })
   const listingCreated = hasListingCreated({ lead, listing, mandateStatus })
@@ -444,15 +449,16 @@ export function getSellerJourneyStage({ lead = {}, listing = null, mandatePacket
   })
 
   let derivedStage = null
-  if (listingCreated && isListingLive(listing || lead) && documentsSubmitted) derivedStage = { ...SELLER_JOURNEY_STAGES[7], status: 'Submitted' }
-  else if (listingCreated && isListingLive(listing || lead)) derivedStage = { ...SELLER_JOURNEY_STAGES[6], status: 'Live' }
-  else if (listingCreated) derivedStage = { ...SELLER_JOURNEY_STAGES[5], status: 'Draft' }
-  else if (mandateStatus === 'signed') derivedStage = { ...SELLER_JOURNEY_STAGES[4], status: 'Signed' }
+  if (listingCreated && isListingLive(listing || lead) && documentsSubmitted) derivedStage = { ...SELLER_JOURNEY_STAGES[8], status: 'Submitted' }
+  else if (listingCreated && isListingLive(listing || lead)) derivedStage = { ...SELLER_JOURNEY_STAGES[7], status: 'Live' }
+  else if (listingCreated) derivedStage = { ...SELLER_JOURNEY_STAGES[6], status: 'Draft' }
+  else if (mandateStatus === 'signed') derivedStage = { ...SELLER_JOURNEY_STAGES[5], status: 'Signed' }
   if (!derivedStage && ['sent', 'draft'].includes(mandateStatus)) {
-    derivedStage = { ...SELLER_JOURNEY_STAGES[3], status: mandateStatus === 'sent' ? 'Sent' : 'Draft' }
+    derivedStage = { ...SELLER_JOURNEY_STAGES[4], status: mandateStatus === 'sent' ? 'Sent' : 'Draft' }
   }
-  if (!derivedStage && onboardingSignals.submitted) derivedStage = { ...SELLER_JOURNEY_STAGES[2], status: 'Submitted' }
-  if (!derivedStage && onboardingSignals.sent) derivedStage = { ...SELLER_JOURNEY_STAGES[1], status: onboardingSignals.status === 'in_progress' ? 'In Progress' : 'Sent' }
+  if (!derivedStage && onboardingSignals.submitted) derivedStage = { ...SELLER_JOURNEY_STAGES[3], status: 'Submitted' }
+  if (!derivedStage && onboardingSignals.sent) derivedStage = { ...SELLER_JOURNEY_STAGES[2], status: onboardingSignals.status === 'in_progress' ? 'In Progress' : 'Sent' }
+  if (!derivedStage && valuationAppointment) derivedStage = { ...SELLER_JOURNEY_STAGES[1], status: appointmentStatus(valuationAppointment) }
   const evidenceStage = derivedStage || { ...SELLER_JOURNEY_STAGES[0], status: 'Active' }
   const leadStageIndex = STAGE_INDEX.get(leadStage?.key) ?? 0
   const listingCreatedIndex = STAGE_INDEX.get('listing_created') ?? 5
@@ -604,10 +610,17 @@ function resolveSellerStageStartedAt({ stageKey = '', lead = {}, mandatePacketSt
 
 export function buildSellerDocuments({ listing = {}, documents = [] } = {}) {
   const rows = buildSellerDocumentRequirementRows({ listing, documents })
-  return rows.map((row) => ({
-    ...row,
-    statusLabel: row?.statusLabel || normalizeDocumentStatusLabel(row?.status),
-  }))
+  return rows.map((row) => {
+    const key = normalizeKey(row?.key || row?.requirementKey || row?.requirement_key)
+    const displayLabel = key === 'title_deed_copy' ? 'Title Deed' : row?.label || row?.title
+    return {
+      ...row,
+      title: displayLabel || row?.title,
+      label: displayLabel || row?.label,
+      status: normalizeDocumentStatusLabel(row?.status),
+      statusLabel: row?.statusLabel || normalizeDocumentStatusLabel(row?.status),
+    }
+  })
 }
 
 export function areSellerJourneyDocumentsSubmitted({ listing = {}, documents = [] } = {}) {
@@ -687,6 +700,8 @@ export function buildSellerJourney({ lead = {}, contact = {}, appointments = [],
   const evidence = {
     contacted: isSellerLead(lead),
     contactedStatus: 'Active',
+    appointment_valuation: Boolean(valuationAppointment),
+    appointment_valuationStatus: valuationStatus,
     seller_onboarding_sent: onboardingSignals.sent,
     seller_onboarding_sentStatus: onboardingSignals.status === 'in_progress' ? 'In Progress' : onboardingSignals.sent ? 'Sent' : '',
     seller_onboarding_submitted: onboardingSignals.submitted,

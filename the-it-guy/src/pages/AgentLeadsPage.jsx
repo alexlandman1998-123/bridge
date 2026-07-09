@@ -155,7 +155,6 @@ import {
   enableLeadSavedSearch,
   buildPropertyCollectionEmailPreview,
   previewPropertyMessage,
-  sendPropertyCollectionEmail,
   sendListingToLead,
   updateLeadSavedSearch,
 } from '../services/leadPropertySharingService'
@@ -255,12 +254,19 @@ const VIEWING_NEXT_STEP_OPTIONS = [
 const LEAD_PRIMARY_TABS = [
   { key: 'buyer', label: 'Buyer Leads', icon: UserRound },
   { key: 'seller', label: 'Seller Leads', icon: Home },
+  { key: 'archived', label: 'Archived', icon: Archive },
 ]
 const LEAD_QUICK_FILTERS = [
   { key: 'all', label: 'All Leads' },
   { key: 'new', label: 'New Leads' },
   { key: 'hot', label: 'Hot Leads' },
+  { key: 'unassigned', label: 'Unassigned Leads' },
+  { key: 'overdue', label: 'Overdue Leads' },
   { key: 'referrals', label: 'Referrals' },
+]
+const BUYER_INTERNAL_WORKFLOW_TABS = [
+  { key: 'requirements', label: 'Requirements' },
+  { key: 'documents', label: 'Documents' },
 ]
 const LEAD_SOURCE_PILL_STYLES = {
   property24: { tone: 'blue', label: 'Property24' },
@@ -803,6 +809,19 @@ function isHotLead(row = {}) {
   return ['hot', 'urgent', 'high'].some((token) => text.includes(token))
 }
 
+function isUnassignedLead(row = {}) {
+  const assignedAgentId = normalizeText(row?.assignedAgentId || row?.assigned_agent_id)
+  const assignedQueueId = normalizeText(row?.assignedQueueId || row?.assigned_queue_id).toLowerCase()
+  const owner = normalizeText(row?.assignedAgent || row?.assignedAgentName || row?.assigned_agent_name)
+  return !assignedAgentId && (!assignedQueueId || assignedQueueId === 'unassigned') && (!owner || owner === 'Unassigned')
+}
+
+function isOverdueLead(row = {}) {
+  const slaStatus = normalizeText(row?.slaStatus || row?.sla_status).toLowerCase()
+  const ownershipStatus = normalizeText(row?.ownershipStatus || row?.ownership_status).toLowerCase()
+  return slaStatus === 'overdue' || ownershipStatus === 'escalated'
+}
+
 function getReferralLeadIdSet(referrals = []) {
   return new Set((Array.isArray(referrals) ? referrals : []).map((referral) => normalizeText(referral?.sourceLeadId)).filter(Boolean))
 }
@@ -838,6 +857,8 @@ function applyLeadQuickFilters(rows = [], quickFilters = [], referralLeadIds = n
   return rows.filter((row) => {
     if (activeFilters.has('new') && !isNewLead(row)) return false
     if (activeFilters.has('hot') && !isHotLead(row)) return false
+    if (activeFilters.has('unassigned') && !isUnassignedLead(row)) return false
+    if (activeFilters.has('overdue') && !isOverdueLead(row)) return false
     if (activeFilters.has('referrals') && !isReferralLead(row, referralLeadIds)) return false
     return true
   })
@@ -3519,6 +3540,7 @@ function getBuyerOutreachSteps(row = {}) {
 
   return [
     { key: 'captured', label: 'Lead Captured', done: true, meta: formatDate(safeRow.createdAt || safeRow.created_at, 'Captured'), hint: 'Created automatically when the enquiry lands.' },
+    { key: 'contacted', label: 'Reached Out', done: Boolean(safeRow.firstContactedAt || safeRow.first_contacted_at), meta: formatDate(safeRow.firstContactedAt || safeRow.first_contacted_at, 'Not contacted'), hint: 'Mark first human contact once the agent reaches the buyer.' },
     { key: 'qualified', label: 'Qualified', done: qualification.qualified, meta: qualification.date ? formatDate(qualification.date, qualification.label) : qualification.label, hint: qualification.helper },
     { key: 'viewing', label: 'Viewing', done: hasCompletedViewing, meta: completedViewings.length ? `${completedViewings.length} completed` : manualViewingActivities.length ? 'Completed manually' : scheduledViewings.length ? `${scheduledViewings.length} scheduled` : 'None yet', hint: 'Schedule and complete viewings.' },
     { key: 'offer_submitted', label: 'Offer Submitted', done: submittedOffers.length > 0, meta: submittedOffers.length ? `${submittedOffers.length} submitted` : 'No offer', hint: 'Submit the buyer offer for seller review.' },
@@ -3530,6 +3552,7 @@ function getBuyerOutreachSteps(row = {}) {
 function BuyerOutreachProgress({
   row,
   onQualifyBuyer,
+  onMarkReachedOut,
   onMarkQualified,
   onScheduleViewing,
   onMarkViewingCompleted,
@@ -3545,7 +3568,21 @@ function BuyerOutreachProgress({
   const qualification = getBuyerQualificationState(row)
   const isQualificationFocus = nextStep?.key === 'qualified'
   const [markingQualified, setMarkingQualified] = useState(false)
+  const [markingReachedOut, setMarkingReachedOut] = useState(false)
   const [markError, setMarkError] = useState('')
+
+  async function markReachedOut() {
+    if (!onMarkReachedOut || row?.firstContactedAt || row?.first_contacted_at || markingReachedOut) return
+    try {
+      setMarkingReachedOut(true)
+      setMarkError('')
+      await onMarkReachedOut()
+    } catch (markErrorResult) {
+      setMarkError(markErrorResult?.message || 'Unable to mark first contact for this buyer.')
+    } finally {
+      setMarkingReachedOut(false)
+    }
+  }
 
   async function markQualified() {
     if (!onMarkQualified || qualification.qualified || markingQualified) return
@@ -3561,6 +3598,7 @@ function BuyerOutreachProgress({
   }
 
   function getStepAction(stepKey) {
+    if (stepKey === 'contacted') return markReachedOut
     if (stepKey === 'qualified') return qualification.qualified ? onQualifyBuyer : markQualified
     if (stepKey === 'viewing') return onMarkViewingCompleted
     if (stepKey === 'offer_submitted') return onCaptureOfferSubmitted
@@ -3601,6 +3639,16 @@ function BuyerOutreachProgress({
               </button>
               <p className="text-[11px] font-medium leading-4 text-slate-500">
                 Use when qualified outside the form.
+              </p>
+            </div>
+          ) : null}
+          {nextStep?.key === 'contacted' ? (
+            <div className="mt-3 grid gap-2">
+              <button type="button" onClick={markReachedOut} disabled={markingReachedOut} className="inline-flex min-h-9 items-center justify-center rounded-xl bg-slate-950 px-3 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60">
+                {markingReachedOut ? 'Marking...' : 'Mark Reached Out'}
+              </button>
+              <p className="text-[11px] font-medium leading-4 text-slate-500">
+                Use once the first call, email, WhatsApp, or meeting has happened.
               </p>
             </div>
           ) : null}
@@ -3655,7 +3703,7 @@ function BuyerOutreachProgress({
       </div>
       <div className="mt-7 overflow-x-auto pb-2">
         <div className="min-w-[940px]">
-          <div className="relative grid grid-cols-6 gap-4">
+          <div className="relative grid grid-cols-7 gap-4">
             <div className="absolute left-10 right-10 top-5 h-px bg-slate-200" aria-hidden="true" />
             {steps.map((step, index) => {
               const isCurrent = index === currentStepIndex && !step.done
@@ -3673,7 +3721,7 @@ function BuyerOutreachProgress({
                   key={step.key}
                   type={stepAction ? 'button' : undefined}
                   onClick={stepAction || undefined}
-                  className={`relative z-10 min-w-0 text-center ${stepAction ? 'rounded-2xl p-2 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-100' : ''}`}
+                  className={`lead-progress-step relative z-10 min-w-0 text-center ${stepAction ? 'rounded-2xl p-2 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-100' : ''}`}
                   title={stepAction ? `${step.label}: capture manual progress` : step.hint}
                   aria-label={stepAction ? `${step.label}: capture manual progress` : undefined}
                 >
@@ -3707,7 +3755,7 @@ function LeadSectionMenu({ tabs = [], activeTab = 'overview', onChange }) {
               role="tab"
               aria-selected={isActive}
               onClick={() => onChange?.(tab.key)}
-              className={`min-h-12 basis-0 min-w-[150px] flex-1 rounded-2xl px-4 text-center text-sm font-semibold transition ${
+              className={`buyer-workspace-tab min-h-12 basis-0 min-w-[150px] flex-1 rounded-2xl px-4 text-center text-sm font-semibold transition ${
                 isActive
                   ? 'bg-slate-950 text-white shadow-[0_10px_24px_rgba(15,23,42,0.14)]'
                   : 'text-slate-500 hover:bg-slate-100 hover:text-slate-950'
@@ -4722,11 +4770,14 @@ function LeadSourcePill({ source = '' }) {
 function LeadTypeTabs({ activeCategory = 'buyer', rows = [], onChange }) {
   const activeView = getLeadPrimaryView(activeCategory)
   const counts = rows.reduce((accumulator, row) => {
-    if (isArchivedLead(row)) return accumulator
+    if (isArchivedLead(row)) {
+      accumulator.archived = (accumulator.archived || 0) + 1
+      return accumulator
+    }
     const category = normalizeLeadCategory(row)
     accumulator[category] = (accumulator[category] || 0) + 1
     return accumulator
-  }, { buyer: 0, seller: 0, other: 0 })
+  }, { buyer: 0, seller: 0, archived: 0, other: 0 })
 
   return (
     <div className="w-full overflow-x-auto">
@@ -8350,6 +8401,7 @@ function AgentLeadList() {
   const referralLeadIds = useMemo(() => getReferralLeadIdSet(referrals), [referrals])
   const baseVisibleRows = useMemo(() => {
     const filtered = filterAgentLeadRows(rows, filters)
+    if (filters.category === 'archived') return filtered.filter(isArchivedLead)
     const activeRows = filtered.filter((row) => !isArchivedLead(row))
     return activeRows.filter((row) => normalizeLeadCategory(row) === primaryView)
   }, [primaryView, rows, filters])
@@ -8357,6 +8409,8 @@ function AgentLeadList() {
     all: baseVisibleRows.length,
     new: baseVisibleRows.filter(isNewLead).length,
     hot: baseVisibleRows.filter(isHotLead).length,
+    unassigned: baseVisibleRows.filter(isUnassignedLead).length,
+    overdue: baseVisibleRows.filter(isOverdueLead).length,
     referrals: baseVisibleRows.filter((row) => isReferralLead(row, referralLeadIds)).length,
   }), [baseVisibleRows, referralLeadIds])
   const visibleRows = useMemo(
@@ -8602,7 +8656,7 @@ function AgentLeadList() {
         <div className="flex flex-wrap items-center gap-3 sm:justify-end">
           <button
             type="button"
-            onClick={() => openCreateLead(primaryView)}
+            onClick={() => openCreateLead(primaryView === 'archived' ? 'buyer' : primaryView)}
             className="inline-flex h-12 min-w-[156px] items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(15,23,42,0.18)] transition hover:bg-slate-800"
           >
             <Plus size={17} />
@@ -9576,7 +9630,7 @@ function BuyerMatchCriteriaSection({ row, requirement, onEdit }) {
   return (
     <MatchSectionShell
       number="1"
-      title="Match Criteria"
+      title="Search Brief"
       subtitle="What the buyer is looking for"
       action={(
         <button type="button" onClick={onEdit} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
@@ -9856,7 +9910,7 @@ function BuyerRecommendationCard({ property, onPreview, onSend, onAddViewing, on
 function BuyerMightAlsoLikeSection({ properties = [], expanded, busyId, onToggleExpanded, onPreview, onSend, onAddViewing, onHide, onRegenerate }) {
   const visible = expanded ? properties : properties.slice(0, 3)
   return (
-    <MatchSectionShell number="3" title="They Might Also Like" subtitle="Properties matched to the buyer's criteria" badge={`${properties.length} Matches`}>
+    <MatchSectionShell number="3" title="Smart Suggestions" subtitle="Properties matched to the buyer's criteria" badge={`${properties.length} Matches`}>
       {properties.length ? (
         <>
           <div className="grid gap-3">
@@ -9976,7 +10030,6 @@ function BuyerEmailCampaignSection({ properties = [], summary, onPreview, onSend
 
 function SendPropertyCollectionModal({
   open,
-  organisationId,
   lead,
   requirement,
   properties = [],
@@ -10026,9 +10079,9 @@ function SendPropertyCollectionModal({
       : [...current, propertyId])
   }
 
-  async function sendEmail() {
+  async function prepareEmailLog() {
     if (!buyer.email) {
-      setError('This buyer does not have an email address yet. Add an email before sending the property collection.')
+      setError('This buyer does not have an email address yet. Add an email before preparing the property collection.')
       return
     }
     if (!selectedProperties.length) {
@@ -10039,26 +10092,10 @@ function SendPropertyCollectionModal({
       setSending(true)
       setError('')
       setMessage('')
-      const result = await sendPropertyCollectionEmail({
-        organisationId,
-        lead,
-        requirement,
-        properties: selectedProperties,
-        subject,
-        introMessage,
-        agent: actor,
-        agency,
-        collectionId: `lead-${lead?.leadId || lead?.id || 'collection'}`,
-        interestIds: selectedProperties.map((property) => property.interestId).filter(Boolean),
-      }, { actor })
-      if (!result.ok) {
-        setError(result.warning || "We couldn't send the email. Please try again.")
-        return
-      }
-      setMessage('Property collection sent successfully.')
+      setMessage('Property collection prepared. No messages are actually sent from this lead workspace; log the outreach or use the approved delivery workspace.')
       await onSent?.()
-    } catch (sendError) {
-      setError(sendError?.message || "We couldn't send the email. Please try again.")
+    } catch (prepareError) {
+      setError(prepareError?.message || "We couldn't prepare the email. Please try again.")
     } finally {
       setSending(false)
     }
@@ -10082,9 +10119,9 @@ function SendPropertyCollectionModal({
             <button type="button" onClick={() => setPreviewMode((current) => !current)} className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-blue-200 bg-white px-4 text-sm font-semibold text-blue-700">
               {previewMode ? 'Edit Message' : 'Preview Email'}
             </button>
-            <button type="button" onClick={sendEmail} disabled={sending || !buyer.email || !selectedProperties.length} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">
+            <button type="button" onClick={prepareEmailLog} disabled={sending || !buyer.email || !selectedProperties.length} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">
               <Mail size={16} />
-              {sending ? 'Sending...' : 'Send Email'}
+              {sending ? 'Preparing...' : 'Prepare Email'}
             </button>
           </div>
         </div>
@@ -10286,6 +10323,18 @@ function BuyerPropertyMatchPanel({ organisationId, row, workspace = {}, actor, a
         onRegenerate={regenerateMatches}
       />
 
+      <LeadListingInterestsPanel
+        organisationId={organisationId}
+        lead={row}
+        interests={workspace.listingInterests || row.listingInterests || []}
+        requirements={requirements}
+        actor={actor}
+        onSaved={onSaved}
+        onShare={onShare}
+        title="Shortlist / Interested Listings"
+        description="Agent-controlled buyer-to-listing relationships for the original enquiry, shortlist, and follow-up properties."
+      />
+
       <BuyerEmailCampaignSection
         properties={recommendationProperties}
         summary={collectionSummary}
@@ -10298,7 +10347,6 @@ function BuyerPropertyMatchPanel({ organisationId, row, workspace = {}, actor, a
 
       <SendPropertyCollectionModal
         open={collectionEmailOpen}
-        organisationId={organisationId}
         lead={row}
         requirement={primaryRequirement}
         properties={recommendationProperties}
@@ -15000,7 +15048,7 @@ function SellerActionsPanel({
   const onboardingSubmitted = sellerOnboardingIsSubmitted(onboardingStatus)
   const mandateReason = onboardingSubmitted
     ? 'Open the mandate workspace to generate, edit, or send the mandate.'
-    : 'Choose saved details, enter details manually, or send seller onboarding first.'
+    : 'Seller onboarding must be submitted before generating a mandate, or an agent must manually complete the mandate fields.'
   return (
     <section className={`${panelClass} p-5`}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -15583,7 +15631,6 @@ function SellerLeadHeader({
 
 function SellerJourneyRail({ journey = null, row = {}, listing = null }) {
   if (!journey) return <EmptyState title="Seller journey unavailable" copy="This seller lead could not be mapped to the existing seller journey service." />
-  const stepCount = Math.max(Array.isArray(journey.steps) ? journey.steps.length : 0, 1)
   return (
     <section id="seller-journey" className={`${panelClass} scroll-mt-6 flex h-full min-h-[220px] flex-col p-5 shadow-[0_18px_45px_rgba(15,23,42,0.05)]`}>
       <div className="flex items-start justify-between gap-4">
@@ -15594,8 +15641,7 @@ function SellerJourneyRail({ journey = null, row = {}, listing = null }) {
         <StatusPill tone={journey.listingLive ? 'green' : journey.listingCreated ? 'amber' : 'blue'}>{journey.stage?.status || journey.status?.status || 'Active'}</StatusPill>
       </div>
       <ol
-        className="mt-7 grid min-w-0 grid-cols-2 gap-x-4 gap-y-6 px-1 sm:grid-cols-3 sm:px-2 lg:grid-cols-4 lg:px-3 xl:gap-x-3 xl:[grid-template-columns:repeat(var(--seller-step-count),minmax(0,1fr))]"
-        style={{ '--seller-step-count': stepCount }}
+        className="mt-7 grid min-w-0 grid-cols-2 gap-x-4 gap-y-6 px-1 sm:grid-cols-3 sm:px-2 lg:grid-cols-4 lg:px-3 xl:grid-cols-9 xl:gap-x-3"
       >
         {(journey.steps || []).map((step, index, steps) => {
           const date = getSellerJourneyStepDate(row, listing, journey, step)
@@ -19051,14 +19097,16 @@ function AgentLeadWorkspace() {
     ]
     : [
       { key: 'overview', label: 'Overview' },
-      { key: 'requirements', label: 'Requirements' },
       { key: 'property_match', label: 'Property Match' },
-      { key: 'activity', label: 'Activity' },
+      { key: 'timeline', label: 'Timeline' },
+      { key: 'tasks', label: 'Tasks' },
       { key: 'appointments', label: 'Appointments' },
       { key: 'offers', label: 'Offers' },
-      { key: 'documents', label: 'Documents' },
-      { key: 'tasks', label: 'Tasks' },
     ], [isSellerLeadWorkspace])
+  const availableTabs = useMemo(
+    () => isSellerLeadWorkspace ? tabs : [...tabs, ...BUYER_INTERNAL_WORKFLOW_TABS, { key: 'activity', label: 'Activity' }],
+    [isSellerLeadWorkspace, tabs],
+  )
   const visibleBuyerTabs = useMemo(
     () => tabs.filter((tab) => !['requirements', 'tasks'].includes(tab.key)),
     [tabs],
@@ -19066,10 +19114,10 @@ function AgentLeadWorkspace() {
 
   useEffect(() => {
     if (!row) return
-    if (!tabs.some((tab) => tab.key === activeTab)) {
+    if (!availableTabs.some((tab) => tab.key === activeTab)) {
       setActiveTab(isSellerLeadWorkspace ? 'listing_journey' : 'overview')
     }
-  }, [activeTab, isSellerLeadWorkspace, row, tabs])
+  }, [activeTab, availableTabs, isSellerLeadWorkspace, row])
 
   const sendSellerOnboardingForLead = useCallback(async () => {
     if (!row || !isSellerLeadWorkspace || sendingSellerOnboarding || sellerOnboardingInFlightRef.current) return
@@ -19503,10 +19551,8 @@ function AgentLeadWorkspace() {
       setMandateStartOpen(true)
       return
     }
-    const params = new URLSearchParams()
-    params.set('mode', mandateMeta.mode)
-    params.set('returnTo', `/pipeline/leads/${row.leadId}`)
-    navigate(`/pipeline/leads/${row.leadId}/legal/mandate?${params.toString()}`)
+    const returnTo = `/pipeline/leads/${row.leadId}`
+    navigate(`/pipeline/leads/${row.leadId}/legal/mandate?mode=${mandateMeta.mode}&returnTo=${returnTo}`)
   }, [linkedSellerListing, navigate, row, sellerJourney])
 
   const handleStartMandateDocument = useCallback((selection = {}) => {
@@ -19679,6 +19725,14 @@ function AgentLeadWorkspace() {
     await loadWorkspace()
   }, [actor, loadWorkspace, organisationId, row])
 
+  const markBuyerReachedOut = useCallback(async () => {
+    if (!organisationId || !row?.leadId) {
+      throw new Error('This lead cannot be updated until the workspace has loaded.')
+    }
+    await markLeadFirstContacted({ organisationId, leadId: row.leadId }, { actor })
+    await loadWorkspace()
+  }, [actor, loadWorkspace, organisationId, row])
+
   const sendBuyerToBondPartner = useCallback(async () => {
     if (!organisationId || !row?.leadId) {
       throw new Error('This lead cannot be updated until the workspace has loaded.')
@@ -19726,8 +19780,8 @@ function AgentLeadWorkspace() {
       focusBuyerQualificationSnapshot()
       return
     }
-    if (actionId === 'timeline') {
-      setActiveTab('activity')
+    if (actionId === 'timeline' || actionId === 'activity') {
+      setActiveTab('timeline')
       return
     }
     if (actionId === 'tasks') {
@@ -19797,6 +19851,7 @@ function AgentLeadWorkspace() {
                   <BuyerOutreachProgress
                     row={row}
                     onQualifyBuyer={focusBuyerQualificationSnapshot}
+                    onMarkReachedOut={markBuyerReachedOut}
                     onMarkQualified={markBuyerQualified}
                     onScheduleViewing={() => setActiveTab('appointments')}
                     onMarkViewingCompleted={openManualViewingCompleted}
@@ -19846,7 +19901,7 @@ function AgentLeadWorkspace() {
                 />
               ) : null}
 
-              {activeTab === 'activity' ? (
+              {activeTab === 'timeline' || activeTab === 'activity' ? (
                 <CommunicationTimelinePanel
                   organisationId={organisationId}
                   lead={row}

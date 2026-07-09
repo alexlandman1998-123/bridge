@@ -10,6 +10,7 @@ import {
   requireClient,
 } from './attorneyFirmServiceShared'
 import { getAppointmentTypeLabel, normalizeAppointmentTypeKey } from '../lib/appointmentTypeDefinitions'
+import { applyAppointmentTemplate } from './appointmentTemplateService'
 import {
   notifyAppointmentParticipants,
   scheduleAppointmentReminders,
@@ -78,6 +79,29 @@ function normalizeRoleLabel(value) {
     .filter(Boolean)
     .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
     .join(' ')
+}
+
+function createUuid() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (marker) => {
+    const value = Math.floor(Math.random() * 16)
+    return (marker === 'x' ? value : ((value & 0x3) | 0x8)).toString(16)
+  })
+}
+
+function isUuidLike(value = '') {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizeText(value))
+}
+
+function buildAppointmentDateTime(date = '', startTime = '', fallback = '') {
+  const explicit = normalizeText(fallback)
+  if (explicit) return explicit
+  const safeDate = normalizeText(date)
+  const safeStart = normalizeText(startTime)
+  if (!safeDate || !safeStart) return ''
+  return `${safeDate}T${safeStart.length === 5 ? `${safeStart}:00` : safeStart}`
 }
 
 function buildBootstrapMembership({ firmId = '', userId = '', role = 'firm_admin' } = {}) {
@@ -890,7 +914,7 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
         status,
         flags,
         actionLabel: 'Open Matter',
-        actionHref: `/transactions/${transaction.id}`,
+        actionHref: `/transactions/${encodeURIComponent(transaction.id)}`,
       }
     })
     .filter(Boolean)
@@ -912,7 +936,7 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
           dueDate: request.due_date || null,
           priority: request.priority || 'required',
           actionLabel: 'Open Matter',
-          actionHref: request.transaction_id ? `/transactions/${request.transaction_id}` : '',
+          actionHref: request.transaction_id ? `/transactions/${encodeURIComponent(request.transaction_id)}` : '',
           transactionId: request.transaction_id,
         }
       })
@@ -973,7 +997,7 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
           matterType: matter?.matterType || null,
           flags: matter?.flags || {},
           actionLabel: 'Open Matter',
-          actionHref: appointment.transaction_id ? `/transactions/${appointment.transaction_id}` : '',
+          actionHref: appointment.transaction_id ? `/transactions/${encodeURIComponent(appointment.transaction_id)}` : '',
         }
       })
     : []
@@ -1366,6 +1390,152 @@ export async function upsertAttorneyAppointmentParticipant(appointmentId, payloa
     .maybeSingle()
   if (insert.error) throw insert.error
   return insert.data
+}
+
+export async function createAttorneyAppointmentInvite(input = {}) {
+  const client = requireClient()
+  const organisationId = normalizeText(input.organisationId || input.organisation_id)
+  const transactionId = normalizeText(input.transactionId || input.transaction_id)
+  const appointmentType = normalizeAppointmentTypeKey(input.appointmentType || input.appointment_type || 'attorney_consultation')
+  const templated = applyAppointmentTemplate(appointmentType, input)
+  const appointmentDate = normalizeText(templated.date || input.date || input.appointmentDate)
+  const startTime = normalizeText(templated.startTime || input.startTime)
+  const endTime = normalizeText(templated.endTime || input.endTime)
+  const dateTime = buildAppointmentDateTime(appointmentDate, startTime, templated.dateTime || input.dateTime)
+  const recipientEmail = toLower(input.recipientEmail || input.email)
+  const recipientName = normalizeText(input.recipientName || input.name) || recipientEmail
+
+  if (!organisationId) {
+    throw new Error('Firm workspace is required before creating an attorney invite.')
+  }
+  if (!transactionId) {
+    throw new Error('Choose the matter this invite belongs to.')
+  }
+  if (!recipientEmail) {
+    throw new Error('Recipient email is required.')
+  }
+  if (!appointmentDate || !startTime) {
+    throw new Error('Invite date and time are required.')
+  }
+
+  const user = await getAuthenticatedUser(client).catch(() => null)
+  const appointmentId = createUuid()
+  const nowIso = new Date().toISOString()
+  const visibility = normalizeText(templated.visibility || input.visibility || 'client_visible') || 'client_visible'
+  const insertPayload = {
+    appointment_id: appointmentId,
+    organisation_id: organisationId,
+    transaction_id: transactionId,
+    appointment_type: appointmentType,
+    title: normalizeText(templated.title || input.title) || getAppointmentTypeLabel(appointmentType),
+    appointment_date: appointmentDate,
+    start_time: startTime,
+    end_time: endTime || null,
+    date_time: dateTime || null,
+    location_type: normalizeText(input.locationType || input.location_type) || null,
+    location: normalizeText(input.location) || null,
+    meeting_url: normalizeText(input.meetingUrl || input.meeting_url) || null,
+    linked_workflow: normalizeText(templated.linkedWorkflow || input.linkedWorkflow) || null,
+    linked_workflow_stage: normalizeText(templated.linkedWorkflowStage || input.linkedWorkflowStage) || null,
+    linked_transaction_stage: normalizeText(input.linkedTransactionStage || input.linked_transaction_stage) || null,
+    visibility_scope: visibility,
+    appointment_instructions: normalizeText(input.instructions || templated.instructions) || null,
+    required_documents: Array.isArray(templated.requiredDocuments) ? templated.requiredDocuments : [],
+    resource_id: normalizeText(input.resourceId || input.resource_id) || null,
+    status: 'Pending Confirmation',
+    notes: normalizeText(input.notes) || null,
+    created_by: isUuidLike(user?.id) ? user.id : null,
+    created_at: nowIso,
+    updated_at: nowIso,
+  }
+
+  let appointmentResult = await client
+    .from('appointments')
+    .insert(insertPayload)
+    .select('appointment_id, transaction_id, status, visibility_scope')
+    .maybeSingle()
+
+  if (appointmentResult.error && isMissingColumnError(appointmentResult.error)) {
+    const fallbackPayload = { ...insertPayload }
+    delete fallbackPayload.location_type
+    delete fallbackPayload.meeting_url
+    delete fallbackPayload.linked_workflow
+    delete fallbackPayload.linked_workflow_stage
+    delete fallbackPayload.linked_transaction_stage
+    delete fallbackPayload.visibility_scope
+    delete fallbackPayload.appointment_instructions
+    delete fallbackPayload.required_documents
+    delete fallbackPayload.resource_id
+    appointmentResult = await client
+      .from('appointments')
+      .insert(fallbackPayload)
+      .select('appointment_id, transaction_id, status')
+      .maybeSingle()
+  }
+
+  if (appointmentResult.error) throw appointmentResult.error
+
+  const participantRows = [
+    {
+      appointment_id: appointmentId,
+      organisation_id: organisationId,
+      name: recipientName || 'Client',
+      email: recipientEmail,
+      participant_role: normalizeText(input.participantRole || input.participant_role || 'Client') || 'Client',
+      rsvp_status: 'Pending',
+      created_at: nowIso,
+      updated_at: nowIso,
+    },
+  ]
+
+  const attorneyName = normalizeText(input.attorneyName || input.senderName || user?.user_metadata?.full_name || user?.email)
+  const attorneyEmail = toLower(input.attorneyEmail || user?.email)
+  if (attorneyName || attorneyEmail) {
+    participantRows.push({
+      appointment_id: appointmentId,
+      organisation_id: organisationId,
+      name: attorneyName || 'Attorney',
+      email: attorneyEmail || null,
+      participant_role: 'Attorney',
+      rsvp_status: 'Accepted',
+      created_at: nowIso,
+      updated_at: nowIso,
+    })
+  }
+
+  let participantResult = await client.from('appointment_participants').insert(participantRows)
+  if (participantResult.error && isMissingColumnError(participantResult.error)) {
+    const fallbackParticipantRows = participantRows.map((row) => {
+      const next = { ...row }
+      delete next.created_at
+      delete next.updated_at
+      return next
+    })
+    participantResult = await client.from('appointment_participants').insert(fallbackParticipantRows)
+  }
+  if (participantResult.error && !isMissingTableError(participantResult.error, 'appointment_participants')) {
+    throw participantResult.error
+  }
+
+  const notificationResult = await notifyAppointmentParticipants(appointmentId, 'appointment_confirmation_required', {
+    visibility: appointmentResult.data?.visibility_scope || visibility,
+    metadata: {
+      source: 'createAttorneyAppointmentInvite',
+      appointmentType,
+      transactionId,
+      attachCalendarInvite: input.attachCalendarInvite !== false,
+    },
+  }).catch((notificationError) => [{ error: notificationError?.message || 'Notification delivery failed.' }])
+
+  await scheduleAppointmentReminders(appointmentId).catch(() => null)
+
+  return {
+    appointmentId,
+    transactionId,
+    status: appointmentResult.data?.status || 'Pending Confirmation',
+    appointmentType,
+    notificationResult,
+  }
 }
 
 export async function resendAttorneyAppointmentCommunication(appointmentId, communicationType = 'confirmation') {

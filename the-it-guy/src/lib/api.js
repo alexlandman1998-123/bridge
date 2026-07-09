@@ -164,6 +164,12 @@ import { resolveTransactionRoutingProfile } from '../services/transactionRouting
 import { buildTransactionRoutingBackfillPlan } from '../services/transactionRoutingGovernanceService'
 import { inferUniversalPartnerRoutingRoleTypes, resolvePartnerRoutingSelections } from '../services/universalPartnerRoutingService'
 import { recordUniversalAssignmentEvent, UNIVERSAL_ASSIGNMENT_METHODS } from '../services/universalAssignmentService'
+import { syncAttorneyIncomingInstructionStatus } from '../services/attorneyIncomingMatterInstructionSync'
+import {
+  acceptAttorneyIncomingInstruction as acceptAttorneyIncomingInstructionService,
+  declineAttorneyIncomingInstruction as declineAttorneyIncomingInstructionService,
+} from '../services/attorneyIncomingMatterInstructionActions'
+import { ATTORNEY_INCOMING_INSTRUCTION_STATUSES } from '../core/transactions/attorneyIncomingMatterContract'
 
 const CANONICAL_PILOT_BUILD_MARKER = 'CANONICAL_PILOT_BUILD_MARKER_20260525'
 const CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH_FLAG = 'VITE_CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH'
@@ -321,6 +327,8 @@ export const TRANSACTION_EVENT_TYPES = [
   'cancellation_attorney_assigned',
   'attorney_assignment_created',
   'bond_application_created',
+  'AttorneyIncomingInstructionAccepted',
+  'AttorneyIncomingInstructionDeclined',
   'CommercialAccessRequested',
   'CommercialAccessReviewed',
   'roleplayer_visibility_granted',
@@ -30197,6 +30205,15 @@ export async function saveTransactionClientInformation({
     throw transactionUpdate.error
   }
 
+  if (lifecycleStatus === 'awaiting_signed_otp') {
+    await syncAttorneyIncomingInstructionStatus(client, {
+      transactionId,
+      status: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.awaitingSignedOtp,
+      occurredAt: transactionPayload.external_onboarding_submitted_at || now,
+      source: 'save_transaction_client_information',
+    })
+  }
+
   let latestOnboardingFormData = {}
 
   try {
@@ -32888,6 +32905,12 @@ export async function getOrCreateTransactionOnboarding({ transactionId, purchase
       },
       'id, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, updated_at',
     )
+    await syncAttorneyIncomingInstructionStatus(client, {
+      transactionId: normalizedTransactionId,
+      status: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.awaitingSignedOtp,
+      occurredAt: completedAt,
+      source: 'get_or_create_transaction_onboarding',
+    })
   }
 
   const resolvedType = normalizePurchaserType(transaction?.purchaser_type || purchaserType || onboarding.purchaserType)
@@ -33459,6 +33482,13 @@ async function markTransactionAwaitingSignedOtp(
     'id, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, current_main_stage, next_action, comment, last_meaningful_activity_at, updated_at',
   )
 
+  await syncAttorneyIncomingInstructionStatus(client, {
+    transactionId: normalizedTransactionId,
+    status: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.awaitingSignedOtp,
+    occurredAt: resolvedCompletedAt,
+    source: 'buyer_onboarding_completed',
+  })
+
   return {
     onboardingStatus: 'awaiting_signed_otp',
     nextAction,
@@ -33493,10 +33523,49 @@ async function markTransactionSignedOtpReceived(
     'id, onboarding_status, next_action, comment, last_meaningful_activity_at, updated_at',
   )
 
+  await syncAttorneyIncomingInstructionStatus(client, {
+    transactionId: normalizedTransactionId,
+    status: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance,
+    occurredAt: nowIso,
+    source: 'signed_otp_received',
+  })
+
   return {
     onboardingStatus: 'signed_otp_received',
     nextAction: resolvedNextAction,
   }
+}
+
+export async function acceptAttorneyIncomingMatterInstruction({
+  assignmentId = '',
+  transactionId = '',
+  note = '',
+} = {}) {
+  const client = requireClient()
+  const actorUserId = await getCurrentSupabaseUserId(client)
+  return acceptAttorneyIncomingInstructionService(client, {
+    assignmentId,
+    transactionId,
+    actorUserId,
+    note,
+    source: 'attorney_incoming_queue',
+  })
+}
+
+export async function declineAttorneyIncomingMatterInstruction({
+  assignmentId = '',
+  transactionId = '',
+  reason = '',
+} = {}) {
+  const client = requireClient()
+  const actorUserId = await getCurrentSupabaseUserId(client)
+  return declineAttorneyIncomingInstructionService(client, {
+    assignmentId,
+    transactionId,
+    actorUserId,
+    reason,
+    source: 'attorney_incoming_queue',
+  })
 }
 
 async function resolveTransactionAndContext(client, transactionId) {

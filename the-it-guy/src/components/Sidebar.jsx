@@ -118,6 +118,10 @@ const ICON_BY_KEY = {
   attorney_matters_archived: Files,
   attorney_pipeline: KanbanSquare,
   attorney_incoming_matters: ClipboardList,
+  attorney_firm: Building2,
+  attorney_firm_branches: Building2,
+  attorney_firm_users: Users,
+  attorney_firm_finance: Wallet,
   scheduling: CalendarDays,
   team_departments: ShieldUser,
   buyer_information: FileCheck2,
@@ -178,7 +182,7 @@ const ICON_BY_KEY = {
 
 const BRIDGE_BRAND_MARK = 'Arch9'
 const BRIDGE_BRAND_SUBTITLE = 'Property Transaction OS'
-const ATTORNEY_SECONDARY_KEYS = new Set(['financials', 'team_departments'])
+const ATTORNEY_SECONDARY_KEYS = new Set()
 const BOND_NAV_SECTIONS = [
   {
     key: 'workspace',
@@ -517,7 +521,6 @@ function Sidebar() {
 
       {firmNavItems.length ? (
         <nav className="ui-nav-stack ui-sidebar-secondary" aria-label="Secondary Navigation">
-          {role === 'attorney' ? <p className="ui-sidebar-section-label px-3">Firm Administration</p> : null}
           {firmNavItems.map((item) => renderNavItem(item))}
         </nav>
       ) : null}

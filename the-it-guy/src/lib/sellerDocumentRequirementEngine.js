@@ -488,9 +488,10 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
       '',
   )
   const lifecycleStatus = toLifecycleStatus(listing)
-  const sellerBranch = flow.seller_branch || 'individual'
+  const resolvedSellerType = resolveSellerType(onboarding, listing)
+  const sellerBranch = resolvedSellerType === 'multiple_individuals' ? resolvedSellerType : flow.seller_branch || 'individual'
   const propertyBranch = flow.property_branch || 'residential'
-  const sellerType = flow.seller_legacy_type || resolveSellerType(onboarding, listing)
+  const sellerType = resolvedSellerType === 'multiple_individuals' ? resolvedSellerType : flow.seller_legacy_type || resolvedSellerType
   const ownershipTypeRaw = normalizeKey(onboarding?.ownershipType || onboarding?.ownershipStructure || listing?.ownership_structure || sellerType)
   const maritalRegime = normalizeMaritalRegime(
     onboarding?.maritalRegime ||
@@ -584,7 +585,8 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
   const trustTrustees = toArray(canonicalFacts?.seller?.trust?.trustees || onboarding?.trustees)
   const estateExecutors = toArray(canonicalFacts?.seller?.deceased_estate?.executors || onboarding?.executors)
   const poaRepresentatives = toArray(canonicalFacts?.seller?.power_of_attorney?.representatives || onboarding?.powerOfAttorneyRepresentatives)
-  const ownerCount = sellerBranch === 'multiple_owners' ? Math.max(owners.length, 2) : 1
+  const hasMultipleOwnerBranch = ['multiple_owners', 'multiple_individuals'].includes(sellerBranch) || sellerType === 'multiple_individuals'
+  const ownerCount = hasMultipleOwnerBranch ? Math.max(owners.length, 2) : 1
   const authorisedSignatory = normalizeText(
     onboarding?.authorisedSignatoryName ||
     onboarding?.authorizedSignatoryName ||
@@ -771,7 +773,10 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
   const profile = requirementProfile || {}
   const flow = profile.flow && typeof profile.flow === 'object' ? profile.flow : {}
   const lifecycleStatus = normalizeKey(profile.lifecycleStatus || flow.lifecycle_status || 'seller_lead')
-  const sellerBranch = normalizeKey(profile.sellerBranch || flow.seller_branch || profile.sellerType || 'individual')
+  const profileSellerType = normalizeKey(profile.sellerType)
+  const sellerBranch = profileSellerType === 'multiple_individuals'
+    ? profileSellerType
+    : normalizeKey(profile.sellerBranch || flow.seller_branch || profile.sellerType || 'individual')
   const propertyBranch = normalizeKey(profile.propertyBranch || flow.property_branch || profile.propertyStructureType || profile.propertyCategory || 'residential')
   const maritalRegime = normalizeKey(profile.maritalRegime || flow.marital_regime || '')
   const propertyCategory = normalizeKey(profile.propertyCategory || flow.property_category || 'residential')
@@ -992,7 +997,7 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
         }),
       )
     }
-  } else if (sellerBranch === 'multiple_owners') {
+  } else if (sellerBranch === 'multiple_owners' || sellerBranch === 'multiple_individuals') {
     const owners = Array.from({ length: Math.max(profile.ownerCount || 2, 2) }, (_, index) => profile.owners?.[index] || { id: `owner-${index + 1}`, maritalRegime: 'single' })
     owners.forEach((owner, index) => {
       const seq = index + 1

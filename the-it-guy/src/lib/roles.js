@@ -71,6 +71,7 @@ function createAgentPipelineNav() {
     activeMatch: ['/pipeline', '/pipeline/leads', '/pipeline/enquiries', '/pipeline/canvassing', '/pipeline/calendar', '/calendar'],
     children: [
       { key: 'pipeline_leads', label: 'Leads', to: '/pipeline/leads' },
+      { key: 'enquiries', label: 'Enquiries', to: '/pipeline/enquiries' },
       { key: 'pipeline_canvassing', label: 'Canvassing', to: '/pipeline/canvassing' },
       { key: 'pipeline_calendar', label: 'Calendar', to: '/pipeline/calendar', activeMatch: ['/pipeline/calendar', '/calendar'] },
     ],
@@ -144,9 +145,24 @@ export const APP_NAV_BY_ROLE = {
       key: 'attorney_matters',
       label: 'Matters',
       to: '/attorney/matters/all',
-      activeMatch: ['/transactions', '/attorney/matters', '/attorney/transactions'],
+      activeMatch: [
+        '/transactions',
+        '/attorney/matters/registered',
+        '/attorney/matters/archived',
+        '/attorney/matters/delayed',
+        '/attorney/matters/development',
+        '/attorney/transactions/all',
+        '/attorney/transactions/transfer',
+        '/attorney/transactions/bond',
+        '/attorney/transactions/cancellation',
+        '/attorney/transactions/registered',
+        '/attorney/transactions/archived',
+        '/attorney/transactions/delayed',
+        '/attorney/transactions/development',
+      ],
       children: [
         { key: 'attorney_matters_all', label: 'All Matters', to: '/attorney/matters/all' },
+        { key: 'attorney_matters_transfer', label: 'Transfer Matters', to: '/attorney/matters/transfer' },
         { key: 'attorney_matters_bond', label: 'Bond Matters', to: '/attorney/matters/bond' },
         { key: 'attorney_matters_cancellation', label: 'Cancellation Matters', to: '/attorney/matters/cancellation' },
       ],
@@ -162,10 +178,18 @@ export const APP_NAV_BY_ROLE = {
     },
     { key: 'scheduling', label: 'Calendar', to: '/attorney/scheduling' },
     { key: 'clients', label: 'Clients & Parties', to: '/clients' },
-    { key: 'documents', label: 'Documents', to: '/documents' },
     { key: 'partners', label: 'Partners', to: '/partners' },
-    { key: 'financials', label: 'Finance', to: '/financials' },
-    { key: 'team_departments', label: 'Team', to: '/users' },
+    {
+      key: 'attorney_firm',
+      label: 'Firm',
+      to: '/users?tab=users',
+      activeMatch: ['/users', '/financials'],
+      children: [
+        { key: 'attorney_firm_branches', label: 'Branches', to: '/users?tab=branches' },
+        { key: 'attorney_firm_users', label: 'Users', to: '/users?tab=users' },
+        { key: 'attorney_firm_finance', label: 'Finance', to: '/financials' },
+      ],
+    },
     ...(SHOW_INTELLIGENCE_BETA
       ? [
           {

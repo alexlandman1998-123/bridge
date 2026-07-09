@@ -62,7 +62,7 @@ function getPageTitle(pathname, stateTitle, role) {
   if (pathname === '/banks') return 'Banks'
   if (pathname === '/performance') return 'Performance'
   if (pathname === '/transfers') return role === 'attorney' ? 'Matters' : 'Transfers'
-  if (pathname === '/clients' || pathname.startsWith('/clients/')) return isAgentWorkspaceRole ? '' : 'Clients'
+  if (pathname === '/clients' || pathname.startsWith('/clients/')) return isAgentWorkspaceRole ? '' : role === 'attorney' ? 'Clients & Parties' : 'Clients'
   if (pathname === '/financials') return 'Financials'
   if (pathname.startsWith('/attorney/transactions') || pathname.startsWith('/attorney/matters')) return 'Matters'
   if (pathname === '/pipeline' || pathname.startsWith('/pipeline/')) return isAgentWorkspaceRole ? '' : 'Pipeline'
@@ -70,7 +70,7 @@ function getPageTitle(pathname, stateTitle, role) {
   if (pathname === '/documents') return isAgentWorkspaceRole ? '' : 'Documents'
   if (pathname === '/reports') return isAgentWorkspaceRole ? '' : 'Reports'
   if (pathname === '/team') return 'Team'
-  if (pathname === '/users') return 'Users'
+  if (pathname === '/users') return ''
   if (pathname === '/settings' || pathname.startsWith('/settings')) return ''
 
   return 'Workspace'
@@ -645,6 +645,17 @@ function HeaderBar({ onLogout, user }) {
     isAttorneyMatterWorkspaceRoute
   const unreadDisplay = notificationState.unreadCount > 99 ? '99+' : String(notificationState.unreadCount || 0)
   const isClientsWorkspaceRoute = location.pathname === '/clients' || location.pathname === '/bond/clients'
+  const clientsWorkspaceCopy = role === 'attorney'
+    ? {
+        title: 'Clients & Parties',
+        subtitle: 'Manage clients, counterparties, representatives and matter-linked contacts.',
+        addLabel: 'Add Party',
+      }
+    : {
+        title: 'Clients',
+        subtitle: 'Manage all your buyers, sellers and investors in one place.',
+        addLabel: 'Add Client',
+      }
   const isAttorneyDashboardRoute = role === 'attorney' && location.pathname === '/attorney/dashboard'
   const canOpenMissionControl = canAccessHQ(workspaceContext)
   const notificationSections = groupNotificationsByDate(notificationState.notifications)
@@ -834,8 +845,8 @@ function HeaderBar({ onLogout, user }) {
     return (
       <header className="no-print ui-shell-header ui-shell-header-premium">
         <div className="ui-shell-dashboard-title">
-          <h2>Clients</h2>
-          <span>Manage all your buyers, sellers and investors in one place.</span>
+          <h2>{clientsWorkspaceCopy.title}</h2>
+          <span>{clientsWorkspaceCopy.subtitle}</span>
         </div>
 
         <div className="ui-shell-actions ui-shell-actions-premium">
@@ -845,7 +856,7 @@ function HeaderBar({ onLogout, user }) {
             onClick={() => window.dispatchEvent(new Event('itg:open-add-client'))}
           >
             <Plus size={16} />
-            Add Client
+            {clientsWorkspaceCopy.addLabel}
           </button>
           {notificationsControl}
           {avatarControl}

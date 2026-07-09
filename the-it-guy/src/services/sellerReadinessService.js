@@ -377,6 +377,8 @@ export function getStageAwareSellerActions({ lead = {}, contact = {}, appointmen
   const stageKey = resolvedJourney.stage?.key || 'contacted'
   const stageActions = stageKey === 'contacted'
     ? [...valuationActions, make('open_seller_portal', 'Send Seller Onboarding', true), ...always]
+    : stageKey === 'appointment_valuation'
+      ? [...valuationActions, make('open_seller_portal', onboardingSent(resolvedJourney) ? 'Open Seller Portal' : 'Send Seller Onboarding', true), ...always]
     : stageKey === 'seller_onboarding_sent'
         ? [
           make('open_seller_portal', 'Open Seller Portal', true),

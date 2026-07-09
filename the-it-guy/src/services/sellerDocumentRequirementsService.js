@@ -361,6 +361,8 @@ function resolveRequirementStatus(requirement = {}, document = null) {
     document?.status || document?.documentStatus || document?.document_status,
   )
 
+  if (document && documentStatus && !['required', 'requested'].includes(documentStatus)) return documentStatus
+
   if (document && documentHasFile(document)) {
     if (documentStatus && !['required', 'requested'].includes(documentStatus)) return documentStatus
     if (requirementStatus && !['required', 'requested'].includes(requirementStatus)) return requirementStatus

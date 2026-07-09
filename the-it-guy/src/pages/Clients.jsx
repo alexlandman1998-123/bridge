@@ -31,8 +31,9 @@ import {
   loadAgentClientDirectory,
 } from '../core/clients/agentClientDirectory'
 import { deriveAttorneyClients } from '../core/clients/attorneyClientSelectors'
+import { buildAttorneyManualPartyRecord, readAttorneyManualParties, writeAttorneyManualParties } from '../core/clients/attorneyManualParties'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { createClientRecord, fetchDashboardOverview, fetchTransactionsByParticipant } from '../lib/api'
+import { createClientRecord, fetchDashboardOverview, fetchTransactionsByParticipant, fetchTransactionsByParticipantSummary } from '../lib/api'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
 const CLIENT_SEGMENTS = [
@@ -44,6 +45,15 @@ const CLIENT_SEGMENTS = [
   { key: 'prospect', label: 'Prospects', icon: BriefcaseBusiness },
 ]
 
+const ATTORNEY_CLIENT_SEGMENTS = [
+  { key: 'all', label: 'All Parties', icon: Users },
+  { key: 'buyer', label: 'Clients', icon: UserRoundSearch },
+  { key: 'seller', label: 'Counterparties', icon: Home },
+  { key: 'investor', label: 'Representatives', icon: BriefcaseBusiness },
+  { key: 'tenant', label: 'Organisations', icon: Building2 },
+  { key: 'prospect', label: 'Compliance', icon: CircleDollarSign },
+]
+
 const CLIENT_ROLE_OPTIONS = [
   { key: 'all', label: 'All Roles' },
   { key: 'buyer', label: 'Buyers' },
@@ -51,6 +61,15 @@ const CLIENT_ROLE_OPTIONS = [
   { key: 'investor', label: 'Investors' },
   { key: 'tenant', label: 'Tenants' },
   { key: 'prospect', label: 'Prospects' },
+]
+
+const ATTORNEY_CLIENT_ROLE_OPTIONS = [
+  { key: 'all', label: 'All Roles' },
+  { key: 'buyer', label: 'Clients' },
+  { key: 'seller', label: 'Counterparties' },
+  { key: 'investor', label: 'Representatives' },
+  { key: 'tenant', label: 'Organisations' },
+  { key: 'prospect', label: 'Compliance' },
 ]
 
 const AGENT_STATUS_FILTERS = [
@@ -61,6 +80,98 @@ const AGENT_STATUS_FILTERS = [
   { key: 'transaction_linked', label: 'Transaction Linked' },
   { key: 'archived', label: 'Archived' },
 ]
+
+const ATTORNEY_STATUS_FILTERS = [
+  { key: 'all', label: 'All Matter Statuses' },
+  { key: 'active', label: 'Active' },
+  { key: 'attention', label: 'Attention' },
+  { key: 'registered', label: 'Registered' },
+  { key: 'archived', label: 'Archived' },
+  { key: 'cancelled', label: 'Cancelled' },
+]
+
+const DEFAULT_CLIENT_DIRECTORY_COPY = {
+  searchPlaceholder: 'Search clients by name, email, phone or property...',
+  addLabel: 'Add Client',
+  allAssigneesLabel: 'All Agents',
+  assigneeLabel: 'Agent',
+  linkedRecordHeader: 'Linked Transaction',
+  linkedRecordFallback: 'No linked transaction',
+  profileLabel: 'Client profile',
+  activeStatusLabel: 'Active Transaction',
+  modalTitle: 'Add Client',
+  modalSubtitle: 'Create a client record that can later be linked into transactions.',
+  modalSaveLabel: 'Save Client',
+  roleLabels: {},
+}
+
+const ATTORNEY_CLIENT_DIRECTORY_COPY = {
+  searchPlaceholder: 'Search by name, email, phone, matter ref or property...',
+  addLabel: 'Add Party',
+  allAssigneesLabel: 'All Attorneys',
+  assigneeLabel: 'Responsible Attorney',
+  linkedRecordHeader: 'Linked Matter',
+  linkedRecordFallback: 'No linked matter',
+  profileLabel: 'Party profile',
+  activeStatusLabel: 'Active Matter',
+  modalTitle: 'Add Party',
+  modalSubtitle: 'Capture a client, counterparty, representative or organisation for later matter linkage.',
+  modalSaveLabel: 'Save Party',
+  nameLabel: 'Full Name / Entity Name',
+  roleLabel: 'Party Role',
+  typeLabel: 'Party Type',
+  matterReferenceLabel: 'Matter Reference',
+  matterReferencePlaceholder: 'Optional reference or intake note',
+  notesLabel: 'Intake Notes',
+  notesPlaceholder: 'Optional context for the team',
+  roleOptions: [
+    { key: 'buyer', label: 'Client / Purchaser' },
+    { key: 'seller', label: 'Counterparty / Seller' },
+    { key: 'investor', label: 'Representative' },
+    { key: 'tenant', label: 'Organisation' },
+    { key: 'prospect', label: 'Compliance Follow-up' },
+  ],
+  typeOptions: [
+    { key: 'individual', label: 'Individual' },
+    { key: 'company', label: 'Company' },
+    { key: 'trust', label: 'Trust' },
+    { key: 'organisation', label: 'Organisation' },
+  ],
+  roleLabels: {
+    buyer: 'Client',
+    seller: 'Counterparty',
+    investor: 'Representative',
+    tenant: 'Organisation',
+    prospect: 'Compliance',
+  },
+}
+
+const ATTORNEY_EMPTY_COPY = {
+  all: {
+    title: 'No parties found',
+    detail: 'Clients, counterparties, representatives and matter-linked contacts will appear here once added.',
+  },
+  buyer: {
+    title: 'No clients found',
+    detail: 'Matter clients will appear here once they are added or linked to a matter.',
+  },
+  seller: {
+    title: 'No counterparties found',
+    detail: 'Sellers and other side parties will appear here once they are linked to a matter.',
+  },
+  investor: {
+    title: 'No representatives found',
+    detail: 'Estate agents, bond originators and other representatives will appear here once available.',
+  },
+  tenant: {
+    title: 'No organisations found',
+    detail: 'Companies, trusts, banks and other organisations will appear here once available.',
+  },
+  prospect: {
+    title: 'No compliance items found',
+    detail: 'Parties with FICA or document follow-ups will appear here once available.',
+  },
+}
 
 const ARCHIVED_CLIENTS_STORAGE_KEY = 'itg:agent-clients-archived:v1'
 const NO_DEVELOPMENT_ID = 'no-development-assigned'
@@ -134,6 +245,71 @@ function normalizeClientFilterParam(value = '', allowedKeys = []) {
   if (!key) return ''
   const normalized = CLIENT_FILTER_ALIASES[key] || key
   return allowedKeys.includes(normalized) ? normalized : ''
+}
+
+function normalizeDirectoryOptionKey(value = '') {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+function uniqueOptionList(options = []) {
+  const byKey = new Map()
+  for (const option of options) {
+    const key = normalizeDirectoryOptionKey(option.key || option.value || option.label)
+    const label = String(option.label || option.value || option.key || '').trim()
+    if (!key || !label || byKey.has(key)) continue
+    byKey.set(key, { key, label })
+  }
+  return [...byKey.values()].sort((left, right) => left.label.localeCompare(right.label))
+}
+
+function getClientMatterTypeKeys(client = {}) {
+  return (Array.isArray(client.matterTypeKeys) ? client.matterTypeKeys : [])
+    .map(normalizeDirectoryOptionKey)
+    .filter(Boolean)
+}
+
+function getClientMatterStatusKeys(client = {}) {
+  return [
+    ...(Array.isArray(client.matterStatusKeys) ? client.matterStatusKeys : []),
+    ...(Array.isArray(client.statusKeys) ? client.statusKeys : []),
+    client.status,
+  ].map(normalizeDirectoryOptionKey).filter(Boolean)
+}
+
+function getClientComplianceKey(client = {}) {
+  const explicit = normalizeDirectoryOptionKey(client.complianceKey)
+  if (explicit) return explicit
+  const labels = [
+    client.complianceLabel,
+    client.complianceStatus,
+    ...(Array.isArray(client.complianceLabels) ? client.complianceLabels : []),
+  ].map(normalizeDirectoryOptionKey)
+  if (labels.some((label) => label && !['clear', 'complete', 'completed', 'approved', 'verified'].includes(label))) return 'attention'
+  return getClientRoleKeys(client).includes('prospect') ? 'attention' : 'clear'
+}
+
+function getClientComplianceLabel(client = {}) {
+  if (getClientComplianceKey(client) === 'clear') return 'Clear'
+  return String(client.complianceLabel || client.complianceStatus || 'Attention needed').trim()
+}
+
+function getComplianceBadgeClass(complianceKey = '') {
+  const normalized = normalizeDirectoryOptionKey(complianceKey)
+  if (normalized === 'clear') return 'border-[#d6ece0] bg-[#edfdf3] text-[#1c7d45]'
+  if (normalized === 'attention') return 'border-[#f1d49a] bg-[#fff7e8] text-[#8a5a12]'
+  return 'border-[#cfe1f7] bg-[#f0f6ff] text-[#275f9a]'
+}
+
+function getLatestMatterReference(client = {}) {
+  return String(client.latestMatterReference || client.latestTransactionId || '').trim() || 'Pending'
+}
+
+function getLatestMatterTypeLabel(client = {}) {
+  return String(client.latestMatterTypeLabel || (client.matterTypeLabels || [])[0] || 'Matter').trim()
+}
+
+function getLatestMatterStatusLabel(client = {}) {
+  return String(client.latestMatterStatusLabel || client.statusLabel || 'Active').trim()
 }
 
 function getRowDevelopmentId(row = {}) {
@@ -223,13 +399,20 @@ function getRoleLabels(client = {}) {
 
 function getClientRoleKeys(client = {}) {
   const keys = new Set()
+  const explicitRoleKeys = Array.isArray(client.roleKeys) ? client.roleKeys : []
+  for (const roleKey of explicitRoleKeys) {
+    const normalized = String(roleKey || '').trim()
+    if (['buyer', 'seller', 'investor', 'tenant', 'prospect'].includes(normalized)) {
+      keys.add(normalized)
+    }
+  }
   const labels = getRoleLabels(client).map((label) => label.toLowerCase())
   const typeKeys = Array.isArray(client.typeKeys) ? client.typeKeys : []
   if (typeKeys.some((key) => ['buyer_leads', 'buyers'].includes(key)) || labels.some((label) => label.includes('buyer'))) keys.add('buyer')
   if (typeKeys.some((key) => ['seller_leads', 'sellers'].includes(key)) || labels.some((label) => label.includes('seller'))) keys.add('seller')
-  if (typeKeys.includes('prospects') || labels.some((label) => label.includes('prospect'))) keys.add('prospect')
-  if (labels.some((label) => label.includes('investor') || label.includes('investment'))) keys.add('investor')
-  if (labels.some((label) => label.includes('tenant') || label.includes('rental') || label.includes('rent'))) keys.add('tenant')
+  if (typeKeys.some((key) => ['prospects', 'compliance'].includes(key)) || labels.some((label) => label.includes('prospect') || label.includes('compliance'))) keys.add('prospect')
+  if (typeKeys.some((key) => ['representatives', 'representative'].includes(key)) || labels.some((label) => label.includes('investor') || label.includes('investment') || label.includes('representative'))) keys.add('investor')
+  if (typeKeys.some((key) => ['organisations', 'organizations', 'companies'].includes(key)) || labels.some((label) => label.includes('tenant') || label.includes('rental') || label.includes('rent') || label.includes('organisation') || label.includes('organization') || label.includes('company') || label.includes('bank'))) keys.add('tenant')
   if (!keys.size) keys.add('prospect')
   return [...keys]
 }
@@ -247,10 +430,10 @@ function clientHasRole(client, roleKey) {
   return getClientRoleKeys(client).includes(roleKey)
 }
 
-function getClientStatusLabel(client = {}) {
+function getClientStatusLabel(client = {}, copy = DEFAULT_CLIENT_DIRECTORY_COPY) {
   const normalized = String(client.statusLabel || '').trim()
   const primaryRole = getPrimaryRoleKey(client)
-  if (Number(client.activeTransactions || 0) > 0 || normalized.toLowerCase().includes('transaction')) return 'Active Transaction'
+  if (Number(client.activeTransactions || 0) > 0 || normalized.toLowerCase().includes('transaction')) return copy.activeStatusLabel || 'Active Transaction'
   if (normalized.toLowerCase().includes('follow')) return 'Needs Attention'
   if (normalized.toLowerCase().includes('archived')) return 'Archived'
   if (primaryRole === 'seller') {
@@ -275,19 +458,25 @@ function getStatusBadgeClass(status = '') {
   return 'border-[#d6ece0] bg-[#edfdf3] text-[#1c7d45]'
 }
 
-function getLinkedRecordLabel(client = {}) {
+function getLinkedRecordLabel(client = {}, fallback = 'No linked transaction') {
   const primaryRecord = (client.linkedRecords || []).find((record) => record?.kind === 'transaction') ||
     (client.linkedRecords || []).find((record) => record?.kind === 'lead') ||
     (client.linkedRecords || [])[0]
   const label = primaryRecord?.label || client.linkedRecordLabel || client.latestPropertyLabel || ''
-  return sanitizeUiLabel(label, 'No linked transaction')
+  return sanitizeUiLabel(label, fallback)
 }
 
-function getClientContext(client = {}) {
+function getClientContext(client = {}, copy = DEFAULT_CLIENT_DIRECTORY_COPY) {
   const roleKey = getPrimaryRoleKey(client)
-  const linkedLabel = getLinkedRecordLabel(client)
+  const linkedLabel = getLinkedRecordLabel(client, copy.linkedRecordFallback)
   const sourceLabels = Array.isArray(client.sourceLabels) ? client.sourceLabels : []
   const latestProperty = sanitizeUiLabel(client.latestPropertyLabel || client.linkedRecordLabel, linkedLabel)
+  if (copy === ATTORNEY_CLIENT_DIRECTORY_COPY) {
+    return {
+      primary: latestProperty && latestProperty !== copy.linkedRecordFallback ? latestProperty : 'Matter-linked party',
+      secondary: [getLatestMatterReference(client), getLatestMatterTypeLabel(client), client.latestStage ? `Stage: ${client.latestStage}` : ''].filter(Boolean).join(' | '),
+    }
+  }
   if (roleKey === 'seller') {
     return {
       primary: `Property: ${latestProperty || linkedLabel}`,
@@ -322,7 +511,10 @@ function getAssignedAgentLabel(client = {}) {
   return String(client.assignedAgentName || client.assignedAgentEmail || 'Unassigned').trim()
 }
 
-function getEmptyCopy(segmentKey = 'all') {
+function getEmptyCopy(segmentKey = 'all', copy = DEFAULT_CLIENT_DIRECTORY_COPY) {
+  if (copy === ATTORNEY_CLIENT_DIRECTORY_COPY) {
+    return ATTORNEY_EMPTY_COPY[segmentKey] || ATTORNEY_EMPTY_COPY.all
+  }
   const meta = ROLE_META[segmentKey]
   if (!meta) {
     return {
@@ -355,12 +547,20 @@ function normalizePhoneForHref(value = '') {
   return String(value || '').replace(/\D/g, '')
 }
 
-function TypeBadges({ client }) {
+function getDisplayRoleMeta(roleKey, copy = DEFAULT_CLIENT_DIRECTORY_COPY) {
+  const meta = ROLE_META[roleKey] || ROLE_META.prospect
+  return {
+    ...meta,
+    label: copy.roleLabels?.[roleKey] || meta.label,
+  }
+}
+
+function TypeBadges({ client, copy = DEFAULT_CLIENT_DIRECTORY_COPY }) {
   const roleKeys = getClientRoleKeys(client)
   return (
     <div className="flex flex-wrap gap-1.5">
       {roleKeys.slice(0, 4).map((roleKey) => {
-        const meta = ROLE_META[roleKey] || ROLE_META.prospect
+        const meta = getDisplayRoleMeta(roleKey, copy)
         return (
         <span
           key={roleKey}
@@ -374,28 +574,49 @@ function TypeBadges({ client }) {
   )
 }
 
-function AddClientModal({ open, onClose, onSaved }) {
-  const [form, setForm] = useState({ name: '', email: '', phone: '' })
+function getEmptyAddClientForm(copy = DEFAULT_CLIENT_DIRECTORY_COPY) {
+  return {
+    name: '',
+    email: '',
+    phone: '',
+    role: copy.roleOptions?.[0]?.key || 'buyer',
+    type: copy.typeOptions?.[0]?.key || 'individual',
+    matterReference: '',
+    notes: '',
+  }
+}
+
+function AddClientModal({ open, onClose, onSaved, copy = DEFAULT_CLIENT_DIRECTORY_COPY, mode = 'client' }) {
+  const [form, setForm] = useState(() => getEmptyAddClientForm(copy))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const isAttorneyMode = mode === 'attorney'
 
   useEffect(() => {
     if (!open) {
-      setForm({ name: '', email: '', phone: '' })
+      setForm(getEmptyAddClientForm(copy))
       setSaving(false)
       setError('')
     }
-  }, [open])
+  }, [copy, open])
 
   async function handleSave() {
     try {
       setSaving(true)
       setError('')
+      if (!String(form.name || '').trim()) {
+        throw new Error(isAttorneyMode ? 'Party name is required.' : 'Client name is required.')
+      }
+      if (isAttorneyMode) {
+        onSaved?.(form)
+        onClose()
+        return
+      }
       const created = await createClientRecord(form)
       onSaved?.(created)
       onClose()
     } catch (saveError) {
-      setError(saveError.message || 'Unable to create client.')
+      setError(saveError.message || (isAttorneyMode ? 'Unable to save party.' : 'Unable to create client.'))
     } finally {
       setSaving(false)
     }
@@ -405,24 +626,48 @@ function AddClientModal({ open, onClose, onSaved }) {
     <Modal
       open={open}
       onClose={onClose}
-      title="Add Client"
-      subtitle="Create a client record that can later be linked into transactions."
+      title={copy.modalTitle}
+      subtitle={copy.modalSubtitle}
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
           <Button onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : 'Save Client'}
+            {saving ? 'Saving…' : copy.modalSaveLabel}
           </Button>
         </>
       }
     >
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="grid gap-2 sm:col-span-2">
-          <span className="text-sm font-medium text-slate-600">Full Name / Entity Name</span>
+          <span className="text-sm font-medium text-slate-600">{copy.nameLabel || 'Full Name / Entity Name'}</span>
           <Field value={form.name} onChange={(event) => setForm((previous) => ({ ...previous, name: event.target.value }))} />
         </label>
+        {isAttorneyMode ? (
+          <>
+            <label className="grid gap-2">
+              <span className="text-sm font-medium text-slate-600">{copy.roleLabel || 'Role'}</span>
+              <Field as="select" value={form.role} onChange={(event) => setForm((previous) => ({ ...previous, role: event.target.value }))}>
+                {(copy.roleOptions || []).map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
+              </Field>
+            </label>
+            <label className="grid gap-2">
+              <span className="text-sm font-medium text-slate-600">{copy.typeLabel || 'Type'}</span>
+              <Field as="select" value={form.type} onChange={(event) => setForm((previous) => ({ ...previous, type: event.target.value }))}>
+                {(copy.typeOptions || []).map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
+              </Field>
+            </label>
+          </>
+        ) : null}
         <label className="grid gap-2">
           <span className="text-sm font-medium text-slate-600">Email</span>
           <Field
@@ -435,6 +680,28 @@ function AddClientModal({ open, onClose, onSaved }) {
           <span className="text-sm font-medium text-slate-600">Phone</span>
           <Field value={form.phone} onChange={(event) => setForm((previous) => ({ ...previous, phone: event.target.value }))} />
         </label>
+        {isAttorneyMode ? (
+          <>
+            <label className="grid gap-2 sm:col-span-2">
+              <span className="text-sm font-medium text-slate-600">{copy.matterReferenceLabel || 'Matter Reference'}</span>
+              <Field
+                value={form.matterReference}
+                placeholder={copy.matterReferencePlaceholder}
+                onChange={(event) => setForm((previous) => ({ ...previous, matterReference: event.target.value }))}
+              />
+            </label>
+            <label className="grid gap-2 sm:col-span-2">
+              <span className="text-sm font-medium text-slate-600">{copy.notesLabel || 'Notes'}</span>
+              <Field
+                as="textarea"
+                rows={3}
+                value={form.notes}
+                placeholder={copy.notesPlaceholder}
+                onChange={(event) => setForm((previous) => ({ ...previous, notes: event.target.value }))}
+              />
+            </label>
+          </>
+        ) : null}
         {error ? (
           <p className="sm:col-span-2 rounded-[16px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm text-[#b42318]">
             {error}
@@ -459,23 +726,31 @@ function Clients() {
   const [roleFilter, setRoleFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [assignedAgentFilter, setAssignedAgentFilter] = useState('all')
+  const [matterTypeFilter, setMatterTypeFilter] = useState('all')
+  const [complianceFilter, setComplianceFilter] = useState('all')
   const [viewMode, setViewMode] = useState('grid')
   const [archivedClientIds, setArchivedClientIds] = useState(() => readArchivedClientIds())
+  const [manualAttorneyParties, setManualAttorneyParties] = useState(() => readAttorneyManualParties())
   const [openActionMenuId, setOpenActionMenuId] = useState('')
   const [showAddModal, setShowAddModal] = useState(false)
   const isAgentClientDirectory = role === 'agent'
+  const isAttorneyClientDirectory = role === 'attorney'
   const isBondClientsRoute = role === 'bond_originator' || location.pathname.startsWith('/bond/clients')
+  const directoryCopy = isAttorneyClientDirectory ? ATTORNEY_CLIENT_DIRECTORY_COPY : DEFAULT_CLIENT_DIRECTORY_COPY
+  const directorySegments = isAttorneyClientDirectory ? ATTORNEY_CLIENT_SEGMENTS : CLIENT_SEGMENTS
+  const directoryRoleOptions = isAttorneyClientDirectory ? ATTORNEY_CLIENT_ROLE_OPTIONS : CLIENT_ROLE_OPTIONS
+  const directoryStatusFilters = isAttorneyClientDirectory ? ATTORNEY_STATUS_FILTERS : AGENT_STATUS_FILTERS
   const selectedDevelopmentId = searchParams.get('developmentId') || 'all'
 
   useEffect(() => {
     const nextFilter = normalizeClientFilterParam(
       searchParams.get('view') || searchParams.get('type'),
-      CLIENT_SEGMENTS.map((filter) => filter.key),
+      directorySegments.map((filter) => filter.key),
     )
     if (nextFilter && nextFilter !== activeFilter) {
       setActiveFilter(nextFilter)
     }
-  }, [activeFilter, searchParams])
+  }, [activeFilter, directorySegments, searchParams])
 
   useEffect(() => {
     if (!location.state?.openAddClient) return
@@ -526,7 +801,9 @@ function Clients() {
         })
         transactionRows = overview?.rows || []
       } else if ((role === 'agent' || role === 'attorney' || role === 'bond_originator') && profile?.id) {
-        transactionRows = await fetchTransactionsByParticipant({ userId: profile.id, roleType: role })
+        transactionRows = role === 'attorney'
+          ? await fetchTransactionsByParticipantSummary({ userId: profile.id, roleType: role })
+          : await fetchTransactionsByParticipant({ userId: profile.id, roleType: role })
         if (workspace.id !== 'all') {
           transactionRows = (transactionRows || []).filter((row) =>
             (row?.development?.id || row?.unit?.development_id) === workspace.id,
@@ -553,7 +830,10 @@ function Clients() {
     () => (isAgentClientDirectory ? rows : filterRowsByDevelopment(rows, selectedDevelopmentId)),
     [isAgentClientDirectory, rows, selectedDevelopmentId],
   )
-  const clients = useMemo(() => (isAgentClientDirectory ? sourceRows : deriveAttorneyClients(sourceRows)), [isAgentClientDirectory, sourceRows])
+  const clients = useMemo(
+    () => (isAgentClientDirectory ? sourceRows : deriveAttorneyClients(sourceRows, isAttorneyClientDirectory ? manualAttorneyParties : [])),
+    [isAgentClientDirectory, isAttorneyClientDirectory, manualAttorneyParties, sourceRows],
+  )
   const filteredClients = useMemo(
     () => {
       const normalizedSearch = String(search || '').trim().toLowerCase()
@@ -571,10 +851,14 @@ function Clients() {
         .filter((client) => {
           if (!clientHasRole(client, activeFilter)) return false
           if (!clientHasRole(client, roleFilter)) return false
-          if (statusFilter !== 'all' && !(client.statusKeys || []).includes(statusFilter)) return false
+          const statusKeys = isAttorneyClientDirectory ? getClientMatterStatusKeys(client) : (client.statusKeys || [client.status].filter(Boolean))
+          if (statusFilter !== 'all' && !statusKeys.map(normalizeDirectoryOptionKey).includes(normalizeDirectoryOptionKey(statusFilter))) return false
+          if (isAttorneyClientDirectory && matterTypeFilter !== 'all' && !getClientMatterTypeKeys(client).includes(normalizeDirectoryOptionKey(matterTypeFilter))) return false
+          if (isAttorneyClientDirectory && complianceFilter !== 'all' && getClientComplianceKey(client) !== normalizeDirectoryOptionKey(complianceFilter)) return false
           if (assignedAgentFilter !== 'all') {
-            const agentKeys = [client.assignedAgentId, client.assignedAgentEmail].map((value) => String(value || '').trim()).filter(Boolean)
-            if (!agentKeys.includes(assignedAgentFilter)) return false
+            const targetAgent = normalizeDirectoryOptionKey(assignedAgentFilter)
+            const agentKeys = [client.assignedAgentId, client.assignedAgentEmail, client.assignedAgentName].map(normalizeDirectoryOptionKey).filter(Boolean)
+            if (!agentKeys.includes(targetAgent)) return false
           }
           if (!normalizedSearch) return true
           const searchHaystack = [
@@ -582,14 +866,19 @@ function Clients() {
             client.name,
             client.email,
             client.phone,
-            getLinkedRecordLabel(client),
+            getLinkedRecordLabel(client, directoryCopy.linkedRecordFallback),
             client.latestPropertyLabel,
+            client.latestMatterReference,
+            client.latestMatterTypeLabel,
+            client.latestMatterStatusLabel,
+            client.complianceLabel,
+            client.complianceStatus,
             getAssignedAgentLabel(client),
           ].join(' ').toLowerCase()
           return searchHaystack.includes(normalizedSearch)
         })
     },
-    [activeFilter, archivedClientIds, assignedAgentFilter, clients, roleFilter, search, statusFilter],
+    [activeFilter, archivedClientIds, assignedAgentFilter, clients, complianceFilter, directoryCopy.linkedRecordFallback, isAttorneyClientDirectory, matterTypeFilter, roleFilter, search, statusFilter],
   )
   const summaryStats = useMemo(() => {
     const visibleClients = (clients || []).filter((client) => !archivedClientIds.includes(client.id))
@@ -607,12 +896,12 @@ function Clients() {
       activeTransactions: activeTransactionIds.size || visibleClients.reduce((total, client) => total + Number(client.activeTransactions || 0), 0),
     }
   }, [archivedClientIds, clients])
-  const emptyCopy = useMemo(() => getEmptyCopy(activeFilter), [activeFilter])
+  const emptyCopy = useMemo(() => getEmptyCopy(activeFilter, directoryCopy), [activeFilter, directoryCopy])
   const assignedAgentOptions = useMemo(() => {
     if ((agentFilters.assignedAgents || []).length) return agentFilters.assignedAgents
     const options = new Map()
     for (const client of clients || []) {
-      const id = String(client.assignedAgentId || client.assignedAgentEmail || '').trim()
+      const id = String(client.assignedAgentId || client.assignedAgentEmail || (isAttorneyClientDirectory ? client.assignedAgentName : '') || '').trim()
       if (!id || options.has(id)) continue
       options.set(id, {
         id,
@@ -620,15 +909,47 @@ function Clients() {
       })
     }
     return [...options.values()].sort((left, right) => left.label.localeCompare(right.label))
-  }, [agentFilters.assignedAgents, clients])
+  }, [agentFilters.assignedAgents, clients, isAttorneyClientDirectory])
+  const matterTypeOptions = useMemo(() => {
+    if (!isAttorneyClientDirectory) return []
+    const options = []
+    for (const client of clients || []) {
+      const keys = getClientMatterTypeKeys(client)
+      const labels = Array.isArray(client.matterTypeLabels) ? client.matterTypeLabels : []
+      keys.forEach((key, index) => options.push({ key, label: labels[index] || key }))
+    }
+    return [{ key: 'all', label: 'All Matter Types' }, ...uniqueOptionList(options)]
+  }, [clients, isAttorneyClientDirectory])
+  const matterStatusOptions = useMemo(() => {
+    if (!isAttorneyClientDirectory) return directoryStatusFilters
+    const options = []
+    for (const client of clients || []) {
+      const keys = Array.isArray(client.matterStatusKeys) ? client.matterStatusKeys : []
+      const labels = Array.isArray(client.matterStatusLabels) ? client.matterStatusLabels : []
+      keys.forEach((key, index) => options.push({ key, label: labels[index] || key }))
+    }
+    const dynamicOptions = uniqueOptionList(options)
+    const merged = uniqueOptionList([...ATTORNEY_STATUS_FILTERS.filter((option) => option.key !== 'all'), ...dynamicOptions])
+    return [{ key: 'all', label: 'All Matter Statuses' }, ...merged]
+  }, [clients, directoryStatusFilters, isAttorneyClientDirectory])
+  const complianceOptions = useMemo(() => {
+    if (!isAttorneyClientDirectory) return []
+    const hasAttention = (clients || []).some((client) => getClientComplianceKey(client) === 'attention')
+    const hasClear = (clients || []).some((client) => getClientComplianceKey(client) === 'clear')
+    return [
+      { key: 'all', label: 'Compliance Status' },
+      ...(hasAttention ? [{ key: 'attention', label: 'Attention Needed' }] : []),
+      ...(hasClear ? [{ key: 'clear', label: 'Clear' }] : []),
+    ]
+  }, [clients, isAttorneyClientDirectory])
   const segmentCounts = useMemo(() => {
     const counts = { all: clients.length }
-    for (const segment of CLIENT_SEGMENTS) {
+    for (const segment of directorySegments) {
       if (segment.key === 'all') continue
       counts[segment.key] = clients.filter((client) => clientHasRole(client, segment.key)).length
     }
     return counts
-  }, [clients])
+  }, [clients, directorySegments])
 
   function handleViewModeChange(nextMode) {
     setViewMode(nextMode)
@@ -686,14 +1007,33 @@ function Clients() {
     }
   }
 
+  function handleAddClientSaved(payload) {
+    if (!isAttorneyClientDirectory) {
+      void loadData()
+      return
+    }
+    const createdParty = buildAttorneyManualPartyRecord(payload)
+    const nextParties = [createdParty, ...manualAttorneyParties]
+    setManualAttorneyParties(nextParties)
+    writeAttorneyManualParties(nextParties)
+  }
+
   return (
     <section className="space-y-5">
       <section className="grid gap-4 xl:grid-cols-4">
         {[
-          { label: 'Total Clients', value: summaryStats.total, icon: Users, tint: 'from-[#fbfdff] via-white to-[#f7faff]', iconClass: 'bg-[#eaf3ff] text-[#0f64b8]', helper: filteredClients.length === summaryStats.total ? 'Complete CRM view' : `${filteredClients.length} currently shown` },
-          { label: 'Buyers', value: summaryStats.buyers, icon: UserRoundSearch, tint: 'from-[#f9fbff] via-white to-[#f6f9ff]', iconClass: 'bg-[#e4f1ff] text-[#116fc8]', helper: 'Buyer leads and active buyers' },
-          { label: 'Sellers', value: summaryStats.sellers, icon: Home, tint: 'from-[#f8fcf8] via-white to-[#f5fbf7]', iconClass: 'bg-[#def8e9] text-[#0b8548]', helper: 'Seller leads and mandates' },
-          { label: 'Active Transactions', value: summaryStats.activeTransactions, icon: Handshake, tint: 'from-[#fbf9ff] via-white to-[#f7f4ff]', iconClass: 'bg-[#efe2ff] text-[#7438bf]', helper: 'Linked active deal records' },
+          isAttorneyClientDirectory
+            ? { label: 'Total Parties', value: summaryStats.total, icon: Users, tint: 'from-[#fbfdff] via-white to-[#f7faff]', iconClass: 'bg-[#eaf3ff] text-[#0f64b8]', helper: filteredClients.length === summaryStats.total ? 'Matter party directory' : `${filteredClients.length} currently shown` }
+            : { label: 'Total Clients', value: summaryStats.total, icon: Users, tint: 'from-[#fbfdff] via-white to-[#f7faff]', iconClass: 'bg-[#eaf3ff] text-[#0f64b8]', helper: filteredClients.length === summaryStats.total ? 'Complete CRM view' : `${filteredClients.length} currently shown` },
+          isAttorneyClientDirectory
+            ? { label: 'Clients', value: summaryStats.buyers, icon: UserRoundSearch, tint: 'from-[#f9fbff] via-white to-[#f6f9ff]', iconClass: 'bg-[#e4f1ff] text-[#116fc8]', helper: 'Matter clients and purchasers' }
+            : { label: 'Buyers', value: summaryStats.buyers, icon: UserRoundSearch, tint: 'from-[#f9fbff] via-white to-[#f6f9ff]', iconClass: 'bg-[#e4f1ff] text-[#116fc8]', helper: 'Buyer leads and active buyers' },
+          isAttorneyClientDirectory
+            ? { label: 'Counterparties', value: summaryStats.sellers, icon: Home, tint: 'from-[#f8fcf8] via-white to-[#f5fbf7]', iconClass: 'bg-[#def8e9] text-[#0b8548]', helper: 'Other side parties' }
+            : { label: 'Sellers', value: summaryStats.sellers, icon: Home, tint: 'from-[#f8fcf8] via-white to-[#f5fbf7]', iconClass: 'bg-[#def8e9] text-[#0b8548]', helper: 'Seller leads and mandates' },
+          isAttorneyClientDirectory
+            ? { label: 'Active Matters', value: summaryStats.activeTransactions, icon: Handshake, tint: 'from-[#fbf9ff] via-white to-[#f7f4ff]', iconClass: 'bg-[#efe2ff] text-[#7438bf]', helper: 'Linked active matter records' }
+            : { label: 'Active Transactions', value: summaryStats.activeTransactions, icon: Handshake, tint: 'from-[#fbf9ff] via-white to-[#f7f4ff]', iconClass: 'bg-[#efe2ff] text-[#7438bf]', helper: 'Linked active deal records' },
         ].map((item) => {
           const Icon = item.icon
           return (
@@ -716,7 +1056,7 @@ function Clients() {
       <section className="overflow-hidden rounded-[28px] border border-[#dbe5ef] bg-white/92 shadow-[0_12px_28px_rgba(15,23,42,0.05)] backdrop-blur-xl">
         <div className="flex items-stretch gap-3 border-b border-[#e6edf5] bg-[#fbfdff] px-3 py-3">
           <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
-            {CLIENT_SEGMENTS.map((segment) => {
+            {directorySegments.map((segment) => {
               const Icon = segment.icon
               const active = activeFilter === segment.key
               return (
@@ -748,34 +1088,56 @@ function Clients() {
           </button>
         </div>
 
-        <div className="grid gap-3 border-b border-[#edf2f7] p-4 xl:grid-cols-[minmax(280px,1fr)_180px_190px_190px_auto]">
+        <div className={`grid gap-3 border-b border-[#edf2f7] p-4 ${
+          isAttorneyClientDirectory
+            ? 'xl:grid-cols-[minmax(280px,1.2fr)_160px_170px_170px_160px_160px_auto]'
+            : 'xl:grid-cols-[minmax(280px,1fr)_180px_190px_190px_auto]'
+        }`}>
           <SearchInput
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search clients by name, email, phone or property..."
+            placeholder={directoryCopy.searchPlaceholder}
           />
           <Field as="select" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>
-            {CLIENT_ROLE_OPTIONS.map((filter) => (
+            {directoryRoleOptions.map((filter) => (
               <option key={filter.key} value={filter.key}>
                 {filter.label}
               </option>
             ))}
           </Field>
           <Field as="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-            {AGENT_STATUS_FILTERS.map((filter) => (
+            {matterStatusOptions.map((filter) => (
               <option key={filter.key} value={filter.key}>
                 {filter.label}
               </option>
             ))}
           </Field>
           <Field as="select" value={assignedAgentFilter} onChange={(event) => setAssignedAgentFilter(event.target.value)}>
-            <option value="all">All Agents</option>
+            <option value="all">{directoryCopy.allAssigneesLabel}</option>
             {assignedAgentOptions.map((agent) => (
               <option key={agent.id} value={agent.id}>
                 {agent.label}
               </option>
             ))}
           </Field>
+          {isAttorneyClientDirectory ? (
+            <>
+              <Field as="select" value={matterTypeFilter} onChange={(event) => setMatterTypeFilter(event.target.value)}>
+                {matterTypeOptions.map((filter) => (
+                  <option key={filter.key} value={filter.key}>
+                    {filter.label}
+                  </option>
+                ))}
+              </Field>
+              <Field as="select" value={complianceFilter} onChange={(event) => setComplianceFilter(event.target.value)}>
+                {complianceOptions.map((filter) => (
+                  <option key={filter.key} value={filter.key}>
+                    {filter.label}
+                  </option>
+                ))}
+              </Field>
+            </>
+          ) : null}
           <ViewToggle
             className="justify-self-start xl:justify-self-end"
             items={[
@@ -786,11 +1148,15 @@ function Clients() {
             onChange={handleViewModeChange}
           />
           {!isAgentClientDirectory ? (
-            <div className="xl:col-span-2">
+            <div className={isAttorneyClientDirectory ? 'xl:col-span-2' : 'xl:col-span-2'}>
               <Field as="select" value={selectedDevelopmentId} onChange={handleDevelopmentFilterChange}>
                 {developmentOptions.map((option) => (
                   <option key={option.id} value={option.id}>
-                    {option.name}
+                    {isAttorneyClientDirectory && option.id === 'all'
+                      ? 'All Matter Sources'
+                      : isAttorneyClientDirectory && option.id === NO_DEVELOPMENT_ID
+                        ? 'Standalone Matters'
+                        : option.name}
                   </option>
                 ))}
               </Field>
@@ -819,7 +1185,7 @@ function Clients() {
             <p className="mt-3 max-w-[560px] text-sm leading-7 text-[#6b7d93]">{emptyCopy.detail}</p>
             <Button className="mt-5" onClick={() => setShowAddModal(true)}>
               <Plus size={16} />
-              Add Client
+              {directoryCopy.addLabel}
             </Button>
           </section>
         ) : null}
@@ -828,16 +1194,21 @@ function Clients() {
           <section className="grid gap-4 p-4 lg:grid-cols-2 2xl:grid-cols-3">
             {filteredClients.map((client) => {
               const roleKey = getPrimaryRoleKey(client)
-              const meta = ROLE_META[roleKey] || ROLE_META.prospect
+              const meta = getDisplayRoleMeta(roleKey, directoryCopy)
               const RoleIcon = meta.icon
-              const context = getClientContext(client)
-              const statusLabel = getClientStatusLabel(client)
-              const linkedLabel = getLinkedRecordLabel(client)
+              const context = getClientContext(client, directoryCopy)
+              const statusLabel = getClientStatusLabel(client, directoryCopy)
+              const linkedLabel = getLinkedRecordLabel(client, directoryCopy.linkedRecordFallback)
               const assignedAgent = getAssignedAgentLabel(client)
+              const matterReference = getLatestMatterReference(client)
+              const matterTypeLabel = getLatestMatterTypeLabel(client)
+              const matterStatusLabel = getLatestMatterStatusLabel(client)
+              const complianceKey = getClientComplianceKey(client)
+              const complianceLabel = getClientComplianceLabel(client)
               return (
                 <article
                   key={client.id}
-                  className={`group relative flex min-h-[290px] cursor-pointer flex-col overflow-visible rounded-[22px] border border-[#dfe7f1] border-l-4 ${meta.cardAccent} bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)] transition duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_14px_32px_rgba(15,23,42,0.08)]`}
+                  className={`group relative flex ${isAttorneyClientDirectory ? 'min-h-[380px]' : 'min-h-[290px]'} cursor-pointer flex-col overflow-visible rounded-[22px] border border-[#dfe7f1] border-l-4 ${meta.cardAccent} bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)] transition duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_14px_32px_rgba(15,23,42,0.08)]`}
                   onClick={() => handleOpenClient(client)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
@@ -880,7 +1251,7 @@ function Clients() {
                     <div className="min-w-0">
                       <h3 className="truncate text-[1.25rem] font-semibold tracking-[-0.035em] text-[#10243a]">{client.name}</h3>
                       <div className="mt-2">
-                        <TypeBadges client={client} />
+                        <TypeBadges client={client} copy={directoryCopy} />
                       </div>
                     </div>
                     <div className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${meta.soft} text-sm font-bold`}>
@@ -897,10 +1268,33 @@ function Clients() {
                     {statusLabel}
                   </span>
 
+                  {isAttorneyClientDirectory ? (
+                    <div className="mt-4 grid gap-2 rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] p-3 text-xs text-[#5d7188] sm:grid-cols-2">
+                      <div className="min-w-0">
+                        <span className="block font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Matter Ref</span>
+                        <strong className="mt-1 block truncate text-sm text-[#142132]">{matterReference}</strong>
+                      </div>
+                      <div className="min-w-0">
+                        <span className="block font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Matter Type</span>
+                        <strong className="mt-1 block truncate text-sm text-[#142132]">{matterTypeLabel}</strong>
+                      </div>
+                      <div className="min-w-0">
+                        <span className="block font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Matter Status</span>
+                        <strong className="mt-1 block truncate text-sm text-[#142132]">{matterStatusLabel}</strong>
+                      </div>
+                      <div className="min-w-0">
+                        <span className="block font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Compliance</span>
+                        <span className={`mt-1 inline-flex max-w-full items-center rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${getComplianceBadgeClass(complianceKey)}`}>
+                          <span className="truncate">{complianceLabel}</span>
+                        </span>
+                      </div>
+                    </div>
+                  ) : null}
+
                   <footer className="mt-auto grid gap-3 border-t border-[#edf2f7] pt-4">
                     <div className="grid grid-cols-2 gap-3">
                       <div className="min-w-0">
-                        <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Agent</span>
+                        <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{directoryCopy.assigneeLabel}</span>
                         <p className="mt-1 truncate text-sm font-semibold text-[#15283d]">{assignedAgent}</p>
                       </div>
                       <div className="min-w-0 text-right">
@@ -930,19 +1324,34 @@ function Clients() {
           <DataTable className="border-0 shadow-none">
             <DataTableInner>
               <thead>
-                <tr>
-                  <th>Client</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th>Agent</th>
-                  <th>Last Activity</th>
-                  <th>Linked Transaction</th>
-                  <th>Actions</th>
-                </tr>
+                {isAttorneyClientDirectory ? (
+                  <tr>
+                    <th>Party</th>
+                    <th>Role</th>
+                    <th>Matter</th>
+                    <th>Stage</th>
+                    <th>Compliance</th>
+                    <th>{directoryCopy.assigneeLabel}</th>
+                    <th>Last Activity</th>
+                    <th>Actions</th>
+                  </tr>
+                ) : (
+                  <tr>
+                    <th>Client</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>{directoryCopy.assigneeLabel}</th>
+                    <th>Last Activity</th>
+                    <th>{directoryCopy.linkedRecordHeader}</th>
+                    <th>Actions</th>
+                  </tr>
+                )}
               </thead>
               <tbody>
                 {filteredClients.map((client) => {
-                  const statusLabel = getClientStatusLabel(client)
+                  const statusLabel = getClientStatusLabel(client, directoryCopy)
+                  const complianceKey = getClientComplianceKey(client)
+                  const complianceLabel = getClientComplianceLabel(client)
                   return (
                     <tr
                       key={client.id}
@@ -964,21 +1373,47 @@ function Clients() {
                           </div>
                           <div className="min-w-0">
                             <p className="truncate font-semibold text-[#142132]">{client.name}</p>
-                            <p className="truncate text-xs text-[#6b7d93]">Client profile</p>
+                            <p className="truncate text-xs text-[#6b7d93]">{directoryCopy.profileLabel}</p>
                           </div>
                         </div>
                       </td>
-                      <td><TypeBadges client={client} /></td>
-                      <td>
-                        <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.78rem] font-semibold ${getStatusBadgeClass(statusLabel)}`}>
-                          {statusLabel}
-                        </span>
-                      </td>
-                      <td>{getAssignedAgentLabel(client)}</td>
-                      <td>{formatRelativeTime(client.lastActivityAt)}</td>
-                      <td>
-                        <p className="max-w-[260px] truncate text-sm font-semibold text-[#142132]">{getLinkedRecordLabel(client)}</p>
-                      </td>
+                      <td><TypeBadges client={client} copy={directoryCopy} /></td>
+                      {isAttorneyClientDirectory ? (
+                        <>
+                          <td>
+                            <div className="min-w-[230px]">
+                              <p className="truncate text-sm font-semibold text-[#142132]">{getLatestMatterReference(client)}</p>
+                              <p className="mt-1 truncate text-xs font-medium text-[#6b7d93]">{getLatestMatterTypeLabel(client)} | {getLinkedRecordLabel(client, directoryCopy.linkedRecordFallback)}</p>
+                            </div>
+                          </td>
+                          <td>
+                            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.78rem] font-semibold ${getStatusBadgeClass(getLatestMatterStatusLabel(client))}`}>
+                              {getLatestMatterStatusLabel(client)}
+                            </span>
+                            {client.latestStage ? <p className="mt-1 max-w-[180px] truncate text-xs text-[#6b7d93]">{client.latestStage}</p> : null}
+                          </td>
+                          <td>
+                            <span className={`inline-flex max-w-[180px] items-center rounded-full border px-3 py-1 text-[0.78rem] font-semibold ${getComplianceBadgeClass(complianceKey)}`}>
+                              <span className="truncate">{complianceLabel}</span>
+                            </span>
+                          </td>
+                          <td>{getAssignedAgentLabel(client)}</td>
+                          <td>{formatRelativeTime(client.lastActivityAt)}</td>
+                        </>
+                      ) : (
+                        <>
+                          <td>
+                            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.78rem] font-semibold ${getStatusBadgeClass(statusLabel)}`}>
+                              {statusLabel}
+                            </span>
+                          </td>
+                          <td>{getAssignedAgentLabel(client)}</td>
+                          <td>{formatRelativeTime(client.lastActivityAt)}</td>
+                          <td>
+                            <p className="max-w-[260px] truncate text-sm font-semibold text-[#142132]">{getLinkedRecordLabel(client, directoryCopy.linkedRecordFallback)}</p>
+                          </td>
+                        </>
+                      )}
                       <td>
                         <div className="relative flex justify-end">
                           <button
@@ -1014,9 +1449,9 @@ function Clients() {
       <AddClientModal
         open={showAddModal}
         onClose={() => setShowAddModal(false)}
-        onSaved={() => {
-          void loadData()
-        }}
+        copy={directoryCopy}
+        mode={isAttorneyClientDirectory ? 'attorney' : 'client'}
+        onSaved={handleAddClientSaved}
       />
     </section>
   )
