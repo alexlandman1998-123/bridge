@@ -1,10 +1,12 @@
 import {
   ArrowRight,
   Bell,
+  Building2,
   CalendarClock,
   CheckCircle2,
   ChevronRight,
   AlertTriangle,
+  Clock3,
   Download,
   FileSignature,
   FileText,
@@ -12,10 +14,12 @@ import {
   Home,
   KeyRound,
   LayoutDashboard,
+  Mail,
   MessageCircle,
   PhoneCall,
   Settings,
   ShieldCheck,
+  UploadCloud,
   User,
   Users,
   Wrench,
@@ -26,11 +30,9 @@ import '../App.css'
 import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
 import { buildFinanceReadinessPayload } from '../core/finance/financeReadinessSelectors'
 import { normalizeFinanceManagedBy, normalizeFinanceType } from '../core/transactions/financeType'
-import { LatestUpdatesCard, PurchaseJourneyCard } from '../components/client-portal/ClientJourneySection'
 import ClientDocumentCentre from '../components/client-portal/documents/ClientDocumentCentre'
 import ClientAppointmentsSection from '../components/client-portal/appointments/ClientAppointmentsSection'
 import SellerOffersPage from '../components/client-portal/offers/SellerOffersPage'
-import ProgressTimeline from '../components/ProgressTimeline'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import AttorneyFirmRolePlayerCard from '../components/attorney/branding/AttorneyFirmRolePlayerCard'
 import {
@@ -44,7 +46,6 @@ import {
   createClientPortalDocumentSignedUrl,
   respondToClientPortalAppointment,
   saveClientPortalOnboardingDraft,
-  submitClientPortalComment,
   uploadClientPortalDocument,
   submitAlterationRequest,
   submitClientIssue,
@@ -2221,10 +2222,6 @@ function normalizePortalFinancialChoice(value, allowedValues, fallback) {
   return allowedValues.includes(normalized) ? normalized : fallback
 }
 
-function normalizePortalReservationAmountType(value) {
-  return normalizePortalFinancialChoice(value, ['fixed', 'percentage'], 'fixed')
-}
-
 function normalizePortalReservationTreatment(value) {
   return normalizePortalFinancialChoice(
     value,
@@ -2245,22 +2242,11 @@ function normalizePortalAlterationChargeTreatment(value) {
   )
 }
 
-function getReservationAmountTypeLabel(value) {
-  return normalizePortalReservationAmountType(value) === 'percentage' ? 'Percentage of purchase price' : 'Fixed amount'
-}
-
 function getReservationTreatmentLabel(value) {
   const normalized = normalizePortalReservationTreatment(value)
   if (normalized === 'separate_invoice') return 'Separate invoice'
   if (normalized === 'refundable_hold') return 'Refundable holding deposit'
   return 'Deducted from purchase price'
-}
-
-function getReservationTreatmentDescription(value) {
-  const normalized = normalizePortalReservationTreatment(value)
-  if (normalized === 'separate_invoice') return 'This reservation payment is handled separately from the purchase price.'
-  if (normalized === 'refundable_hold') return 'This reservation payment is held and may be refunded according to the agreement terms.'
-  return 'This reservation payment is credited towards the agreed purchase price.'
 }
 
 function getReservationPayableToLabel(value) {
@@ -2306,6 +2292,58 @@ function formatShortPortalDate(value, fallback = 'Recently') {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return fallback
   return date.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function getClientInitials(value = '') {
+  const words = String(value || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+  if (!words.length) return 'C'
+  return words.slice(0, 2).map((word) => word.charAt(0).toUpperCase()).join('')
+}
+
+function isUploadedPortalRequirement(document = {}) {
+  const status = normalizePortalStatus(document?.status || document?.requiredDocumentStatus || document?.required_document_status)
+  return Boolean(
+    document?.complete ||
+      document?.isUploaded ||
+      document?.uploadedDocumentId ||
+      document?.uploaded_document_id ||
+      ['uploaded', 'approved', 'verified', 'accepted', 'complete', 'completed', 'signed'].includes(status),
+  )
+}
+
+function getBuyerJourneyStepPresentation(status = '') {
+  const normalized = normalizePortalStatus(status)
+  if (normalized === 'complete' || normalized === 'completed') {
+    return {
+      label: 'Completed',
+      dotClassName: 'border-[#0f7a55] bg-[#0f7a55] text-white',
+      badgeClassName: 'bg-[#edf8f1] text-[#0f6f4a]',
+      rowClassName: 'border-[#dce9e2] bg-white',
+    }
+  }
+  if (normalized === 'current' || normalized === 'blocked') {
+    return {
+      label: normalized === 'blocked' ? 'Action needed' : 'In progress',
+      dotClassName: normalized === 'blocked'
+        ? 'border-[#d88b21] bg-[#d88b21] text-white'
+        : 'border-[#2f7dbd] bg-[#2f7dbd] text-white',
+      badgeClassName: normalized === 'blocked'
+        ? 'bg-[#fff3df] text-[#a15b10]'
+        : 'bg-[#eaf3ff] text-[#2169a6]',
+      rowClassName: normalized === 'blocked'
+        ? 'border-[#efd8b8] bg-[#fffaf2]'
+        : 'border-[#d5e5f4] bg-white',
+    }
+  }
+  return {
+    label: 'Upcoming',
+    dotClassName: 'border-[#aab8c8] bg-white text-[#7b8ca2]',
+    badgeClassName: 'bg-[#f2f5f8] text-[#64748b]',
+    rowClassName: 'border-[#e1e8f0] bg-white',
+  }
 }
 
 function formatClientNotificationTime(value) {
@@ -2557,103 +2595,6 @@ function buildClientJourneyFeedItem(item, index = 0) {
     displayType: item?.displayType || item?.metadata?.displayType || 'update',
     dueStatus: item?.dueStatus || item?.metadata?.dueStatus || '',
   }
-}
-
-function buildClientWhatsHappeningSummary({
-  mainStage,
-  nextStage,
-  latestJourneyUpdates = [],
-  nextStepState,
-}) {
-  const normalizedMainStage = String(mainStage || '').toUpperCase()
-
-  const stageSummaryMap = {
-    AVAIL: 'Your transaction is currently in the early sales preparation stage.',
-    DEP: 'Your reservation and deposit phase is currently active.',
-    OTP: 'Your transaction has moved into the offer-to-purchase stage.',
-    FIN: 'Your file is currently moving through finance progression.',
-    ATTY: 'Your file is now in legal transfer preparation.',
-    XFER: 'Your transfer is actively progressing toward registration.',
-    REG: 'Your transaction has reached registration and close-out progression.',
-  }
-
-  const teamFocusMap = {
-    AVAIL: 'Your team is aligning the initial transaction setup so the process can move smoothly.',
-    DEP: 'Your team is confirming reservation records and preparing the next deal milestones.',
-    OTP: 'Your team is finalising signed deal records and preparing finance and legal handover.',
-    FIN: 'The finance team is handling lender-side workflow and approvals.',
-    ATTY: 'The legal team is preparing transfer documents and required legal milestones.',
-    XFER: 'The attorney and transfer teams are coordinating final legal progression and registration readiness.',
-    REG: 'Your team is finalising registration confirmations and close-out tasks.',
-  }
-
-  const latestSummary = latestJourneyUpdates[0]?.summary || null
-  const fallbackSummary = nextStepState?.requiresAction
-    ? `Once your current step is completed, your transaction can move to ${nextStage}.`
-    : 'No immediate action is required from you right now. Your team is progressing the next steps.'
-
-  return [
-    stageSummaryMap[normalizedMainStage] || 'Your transaction is progressing through the current stage.',
-    teamFocusMap[normalizedMainStage] || 'Your team is actively progressing this part of your transaction.',
-    latestSummary ? `Latest update: ${latestSummary}` : fallbackSummary,
-  ]
-}
-
-function buildClientWhatHappensNextCopy({
-  journeyType,
-  nextStepState,
-  nextStageLabel,
-  financeType,
-}) {
-  const normalizedType = String(journeyType || '').toLowerCase() === 'seller' ? 'seller' : 'buyer'
-  const normalizedFinanceType = String(financeType || '').toLowerCase()
-
-  if (nextStepState?.requiresAction) {
-    if (nextStepState.ctaTo === 'documents') {
-      return [
-        'After your documents are uploaded, your team will review them for completeness.',
-        'Any missing details will be requested quickly so your file does not stall.',
-        `Once reviewed, your journey will move to ${nextStageLabel}.`,
-      ]
-    }
-    if (nextStepState.ctaTo === 'details') {
-      return [
-        'After your details are completed, your team validates all required fields.',
-        'Your legal and operations teams then continue document preparation.',
-        `Your journey will then progress to ${nextStageLabel}.`,
-      ]
-    }
-  }
-
-  if (normalizedType === 'seller') {
-    return [
-      'Your agent is coordinating the next seller milestone with your transaction team.',
-      'Any required signatures or confirmations will appear here with clear actions.',
-      `Your sale journey is moving toward ${nextStageLabel}.`,
-    ]
-  }
-
-  if (normalizedFinanceType === 'bond') {
-    return [
-      'Your bond process is being coordinated with lenders and finance teams.',
-      'Your team will contact you if any additional bank documents are required.',
-      `Once finance clears, your journey moves to ${nextStageLabel}.`,
-    ]
-  }
-
-  if (normalizedFinanceType === 'hybrid') {
-    return [
-      'Your team is progressing both cash contribution and bond finance requirements.',
-      'Any required confirmations will be surfaced here as clear next actions.',
-      `After finance checks are complete, your journey moves to ${nextStageLabel}.`,
-    ]
-  }
-
-  return [
-    'Your transaction team is actively progressing your file behind the scenes.',
-    'No action is needed unless we request it in your Next Step card.',
-    `Your journey is currently moving toward ${nextStageLabel}.`,
-  ]
 }
 
 function SellerPortalAction({ action, token, workspaceNavigationScope, className = '', children }) {
@@ -3205,7 +3146,6 @@ function ClientPortal() {
   const [sellerPortalPasswordForm, setSellerPortalPasswordForm] = useState({ password: '', confirmPassword: '' })
   const [sellerPortalPasswordFeedback, setSellerPortalPasswordFeedback] = useState('')
   const [sellerPortalPasswordSaving, setSellerPortalPasswordSaving] = useState(false)
-  const [commentDraft, setCommentDraft] = useState('')
   const [uploadingDocumentKey, setUploadingDocumentKey] = useState('')
   const [activeDocumentsTab, setActiveDocumentsTab] = useState('sales')
   const [activeBondApplicationTab, setActiveBondApplicationTab] = useState('application')
@@ -4031,25 +3971,6 @@ function ClientPortal() {
     }
   }
 
-  async function handleSubmitPortalComment(event) {
-    event.preventDefault()
-
-    try {
-      setSaving(true)
-      setError('')
-      await submitClientPortalComment({
-        token,
-        commentText: commentDraft,
-      })
-      setCommentDraft('')
-      await loadPortal()
-    } catch (submitError) {
-      setError(submitError.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
   async function handleUploadRequiredDocument(documentKey, file, options = {}) {
     if (!file) {
       return
@@ -4137,12 +4058,6 @@ function ClientPortal() {
     const requirementKey = String(uploadSpec.requirementKey || '').trim()
     if (!requirementKey) return
     void handleUploadRequiredDocument(requirementKey, file)
-  }
-
-  function handleActivityAction(item) {
-    const route = String(item?.actionRoute || '').trim() || String(item?.to || '').trim()
-    if (!route) return
-    navigate(getPortalWorkspacePath(token, workspaceNavigationScope, route))
   }
 
   async function handleRespondToAppointment(appointment, action, options = {}) {
@@ -4665,13 +4580,7 @@ function ClientPortal() {
       ? 'Amount pending'
       : ZAR_CURRENCY.format(Number(portal.transaction.reservation_amount) || 0)
   const reservationStatus = normalizePortalStatus(portal?.transaction?.reservation_status || '')
-  const reservationAmountTypeLabel = getReservationAmountTypeLabel(
-    portal?.transaction?.reservation_amount_type || portal?.transaction?.reservationAmountType,
-  )
   const reservationTreatmentLabel = getReservationTreatmentLabel(
-    portal?.transaction?.reservation_treatment || portal?.transaction?.reservationTreatment,
-  )
-  const reservationTreatmentDescription = getReservationTreatmentDescription(
     portal?.transaction?.reservation_treatment || portal?.transaction?.reservationTreatment,
   )
   const reservationPayableToLabel = getReservationPayableToLabel(
@@ -5095,17 +5004,6 @@ function ClientPortal() {
   const latestUpdates = Array.isArray(workspaceData?.activityFeed) && workspaceData.activityFeed.length
     ? workspaceData.activityFeed.slice(0, 8)
     : (portal?.discussion || []).slice(0, 5)
-  const activityFeedSummary = workspaceData?.activityFeedSummary || {}
-  const latestUpdatesSubtitle = (() => {
-    const actionRequired = Number(activityFeedSummary?.actionRequired || 0)
-    const overdue = Number(activityFeedSummary?.overdue || 0)
-    const dueSoon = Number(activityFeedSummary?.dueSoon || 0)
-    if (overdue > 0) return `${overdue} overdue item${overdue === 1 ? '' : 's'} need attention.`
-    if (actionRequired > 0) return `${actionRequired} update${actionRequired === 1 ? '' : 's'} need your attention.`
-    if (dueSoon > 0) return `${dueSoon} document reminder${dueSoon === 1 ? '' : 's'} due soon.`
-    return 'Latest progress from your transaction team.'
-  })()
-  const latestJourneyUpdates = latestUpdates.map((item) => buildClientFacingUpdate(item))
   const latestJourneyFeedItems = latestUpdates.map((item, index) => buildClientJourneyFeedItem(item, index))
   const otpSignaturePending = portalRequiredDocuments.some((item) => {
     if (item.complete) return false
@@ -5478,15 +5376,7 @@ function ClientPortal() {
   const transactionCompleted =
     ['completed', 'registered', 'closed'].includes(normalizePortalStatus(portal?.transaction?.status || '')) &&
     mainStage === 'REG'
-  const workspaceEducationalContent = workspaceData?.educationalContent || {}
-  const stageEducation = workspaceEducationalContent?.currentStage || {}
-  const rolePlayerGuidance = Array.isArray(workspaceEducationalContent?.rolePlayerGuidance)
-    ? workspaceEducationalContent.rolePlayerGuidance
-    : []
   const workspaceNextActions = Array.isArray(workspaceData?.nextActions) ? workspaceData.nextActions : []
-  const blockingActionCount = workspaceNextActions.filter((action) => action?.blocking).length
-  const prioritizedNextActions = workspaceNextActions.slice(0, 4)
-  const hiddenNextActionCount = Math.max(workspaceNextActions.length - prioritizedNextActions.length, 0)
   const nextStepState = resolveClientNextStepState({
     nextActions: workspaceNextActions,
     nextStage,
@@ -5541,22 +5431,6 @@ function ClientPortal() {
   const journeyProgressPercent = clientJourneySteps.length
     ? Math.round((journeyCompletedSteps / clientJourneySteps.length) * 100)
     : progressPercent
-  const journeyHeroSubtext = journeyCurrentStep?.whatHappensNow
-    ? String(journeyCurrentStep.whatHappensNow)
-    : stageEducation?.shortDescription || `Your team is progressing ${journeyCurrentStageLabel.toLowerCase()} right now.`
-  const whatHappensNextItems = buildClientWhatHappensNextCopy({
-    journeyType,
-    nextStepState,
-    nextStageLabel: journeyNextStageLabel,
-    financeType: journeyFinanceType,
-  })
-
-  const whatsHappeningSummary = buildClientWhatsHappeningSummary({
-    mainStage,
-    nextStage,
-    latestJourneyUpdates,
-    nextStepState,
-  })
   const notificationPayload = workspaceData?.notifications && typeof workspaceData.notifications === 'object'
     ? workspaceData.notifications
     : { unreadCount: 0, items: [] }
@@ -5673,6 +5547,222 @@ function ClientPortal() {
   const buyerName = portal?.buyer?.name || 'Client'
   const clientFirstName = String(buyerName || 'Client').trim().split(/\s+/)[0] || 'Client'
   const buyerInitial = String(buyerName || 'C').trim().charAt(0).toUpperCase() || 'C'
+  const hideBuyerOverviewHeader = effectiveWorkspace !== 'seller' && isOverview
+  const hideWorkspaceHeader = hideSellerWorkspaceHeader || hideBuyerOverviewHeader
+  const pickPortalImageUrl = (...candidates) => {
+    for (const candidate of candidates) {
+      if (Array.isArray(candidate)) {
+        const nested = pickPortalImageUrl(...candidate)
+        if (nested) return nested
+        continue
+      }
+      if (candidate && typeof candidate === 'object') {
+        const nested = pickPortalImageUrl(
+          candidate.url,
+          candidate.src,
+          candidate.imageUrl,
+          candidate.image_url,
+          candidate.publicUrl,
+          candidate.public_url,
+        )
+        if (nested) return nested
+        continue
+      }
+      const text = String(candidate || '').trim()
+      if (/^(https?:)?\/\//i.test(text) || text.startsWith('/') || /^data:image\//i.test(text)) {
+        return text
+      }
+    }
+    return ''
+  }
+  const buyerPropertyImageUrl = pickPortalImageUrl(
+    clientBrandTheme.heroImageUrl,
+    workspaceData?.listing?.heroImageUrl,
+    workspaceData?.listing?.hero_image_url,
+    workspaceData?.listing?.coverImageUrl,
+    workspaceData?.listing?.cover_image_url,
+    workspaceData?.listing?.imageUrl,
+    workspaceData?.listing?.image_url,
+    workspaceData?.listing?.images,
+    workspaceData?.listing?.photos,
+    workspaceData?.listing?.media,
+    workspaceData?.property?.heroImageUrl,
+    workspaceData?.property?.hero_image_url,
+    workspaceData?.property?.coverImageUrl,
+    workspaceData?.property?.cover_image_url,
+    workspaceData?.property?.imageUrl,
+    workspaceData?.property?.image_url,
+    workspaceData?.property?.images,
+    workspaceData?.property?.photos,
+    portal?.transaction?.property_image_url,
+    portal?.transaction?.listing_image_url,
+    portal?.transaction?.primary_image_url,
+    portal?.transaction?.cover_image_url,
+    portal?.transaction?.image_url,
+    portal?.unit?.heroImageUrl,
+    portal?.unit?.hero_image_url,
+    portal?.unit?.coverImageUrl,
+    portal?.unit?.cover_image_url,
+    portal?.unit?.primaryImageUrl,
+    portal?.unit?.primary_image_url,
+    portal?.unit?.imageUrl,
+    portal?.unit?.image_url,
+    portal?.unit?.galleryImages,
+    portal?.unit?.gallery_images,
+    portal?.unit?.development?.heroImageUrl,
+    portal?.unit?.development?.hero_image_url,
+    portal?.unit?.development?.coverImageUrl,
+    portal?.unit?.development?.cover_image_url,
+    portal?.unit?.development?.imageUrl,
+    portal?.unit?.development?.image_url,
+    portal?.unit?.development?.mediaLibrary?.heroImageUrl,
+  )
+  const buyerPropertyAddressLabel = pickFirstText(
+    portal?.transaction?.property_address_line_1,
+    [portal?.transaction?.suburb, portal?.transaction?.city].filter(Boolean).join(', '),
+    portal?.unit?.address,
+    portal?.unit?.address_line_1,
+    portal?.unit?.propertyAddress,
+    portal?.unit?.property_address,
+    portal?.unit?.phase,
+    portal?.unit?.development?.address,
+    portal?.unit?.development?.location,
+    unitLabel,
+  )
+  const estimatedRegistrationLabel = formatShortPortalDate(
+    portal?.transaction?.target_registration_date ||
+      portal?.transaction?.estimated_registration_date ||
+      portal?.transaction?.expected_registration_date ||
+      portal?.transaction?.registration_date ||
+      portal?.transaction?.expected_transfer_date ||
+      portal?.unit?.estimated_registration_date,
+    'Awaiting estimate',
+  )
+  const overviewPrimaryActionSource =
+    workspaceNextActions.find((action) => action?.blocking) ||
+    workspaceNextActions.find((action) => ['urgent', 'high', 'normal'].includes(normalizePortalStatus(action?.priority))) ||
+    null
+  const overviewHasPrimaryAction = showReservationDepositUploadCard || Boolean(nextStepState.requiresAction && overviewPrimaryActionSource)
+  const overviewActionTitle = showReservationDepositUploadCard
+    ? 'Upload proof of payment'
+    : nextStepState.title
+  const overviewActionDescription = showReservationDepositUploadCard
+    ? 'Please upload your reservation deposit proof of payment so your team can verify it and continue.'
+    : nextStepState.description
+  const overviewActionEstimatedTime = showReservationDepositUploadCard
+    ? '2 minutes'
+    : pickFirstText(
+        overviewPrimaryActionSource?.estimatedTime,
+        overviewPrimaryActionSource?.estimated_time,
+        overviewPrimaryActionSource?.metadata?.estimatedTime,
+        overviewPrimaryActionSource?.metadata?.estimated_time,
+        overviewHasPrimaryAction ? '2 minutes' : '',
+      )
+  const overviewActionDueLabel = showReservationDepositUploadCard
+    ? 'When ready'
+    : (
+        overviewPrimaryActionSource?.dueDate
+          ? formatShortPortalDate(overviewPrimaryActionSource.dueDate, '')
+          : pickFirstText(
+              overviewPrimaryActionSource?.dueLabel,
+              overviewPrimaryActionSource?.due,
+              overviewPrimaryActionSource?.metadata?.dueLabel,
+              overviewPrimaryActionSource?.metadata?.due,
+              overviewHasPrimaryAction ? 'When possible' : '',
+            )
+      )
+  const overviewActionRoute = String(nextStepState.ctaTo || overviewPrimaryActionSource?.to || 'documents').trim() || 'documents'
+  const computedUploadedRequiredDocuments = visiblePortalRequiredDocuments.filter(isUploadedPortalRequirement).length
+  const summaryRequiredTotal = Number(portal.requiredDocumentSummary?.totalRequired || 0)
+  const buyerDocumentTotal = Math.max(summaryRequiredTotal, visiblePortalRequiredDocuments.length, uploadedRequiredDocuments)
+  const buyerDocumentCompleted = buyerDocumentTotal
+    ? Math.min(buyerDocumentTotal, Math.max(uploadedRequiredDocuments, computedUploadedRequiredDocuments))
+    : 0
+  const buyerDocumentOutstanding = buyerDocumentTotal
+    ? Math.max(buyerDocumentTotal - buyerDocumentCompleted, missingRequired)
+    : 0
+  const buyerDocumentRequiredTotal = Math.max(buyerDocumentTotal, buyerDocumentCompleted + buyerDocumentOutstanding)
+  const buyerDocumentProgressPercent = buyerDocumentRequiredTotal
+    ? Math.round((buyerDocumentCompleted / buyerDocumentRequiredTotal) * 100)
+    : 0
+  const showBuyerDocumentsOverview = buyerDocumentRequiredTotal > 0
+  const overviewActivityItems = latestJourneyFeedItems.slice(0, 4)
+  const overviewAttorneyRolePlayer = transferAttorneyRolePlayer || bondAttorneyRolePlayer || null
+  const overviewAttorneyFirm = overviewAttorneyRolePlayer?.firm || {}
+  const overviewTeamCards = [
+    {
+      key: 'agent',
+      name: pickFirstText(portal?.transaction?.assigned_agent, portal?.unit?.development?.sales_contact_name, 'Sales Team'),
+      role: 'Your Agent',
+      company: pickFirstText(portal?.organisation?.name, portal?.unit?.development?.developer_company, portal?.unit?.development?.name, clientBrandName),
+      phone: pickFirstText(portal?.transaction?.assigned_agent_phone, portal?.transaction?.agent_phone),
+      email: pickFirstText(portal?.transaction?.assigned_agent_email),
+      avatarUrl: pickPortalImageUrl(portal?.transaction?.assigned_agent_avatar_url, portal?.transaction?.agent_avatar_url),
+    },
+    isBondOrHybridTransaction
+      ? {
+          key: 'bond',
+          name: pickFirstText(
+            portal?.transaction?.bond_originator,
+            portal?.transaction?.assigned_bond_originator_name,
+            portal?.transaction?.assigned_bond_originator_email,
+            'Bond Originator',
+          ),
+          role: 'Bond Originator',
+          company: pickFirstText(portal?.transaction?.bond_originator_company, 'Finance Partner'),
+          phone: pickFirstText(portal?.transaction?.assigned_bond_originator_phone, portal?.transaction?.bond_originator_phone),
+          email: pickFirstText(portal?.transaction?.assigned_bond_originator_email),
+          avatarUrl: pickPortalImageUrl(portal?.transaction?.assigned_bond_originator_avatar_url),
+        }
+      : null,
+    {
+      key: 'attorney',
+      name: pickFirstText(
+        overviewAttorneyRolePlayer?.attorneyUser?.name,
+        overviewAttorneyRolePlayer?.primaryAttorney?.name,
+        portal?.transaction?.attorney,
+        portal?.transaction?.assigned_attorney_email,
+        'Transfer Attorney',
+      ),
+      role: overviewAttorneyRolePlayer?.label || 'Transfer Attorney',
+      company: pickFirstText(overviewAttorneyFirm?.name, 'Conveyancing Team'),
+      phone: pickFirstText(overviewAttorneyFirm?.phone, portal?.transaction?.assigned_attorney_phone, portal?.transaction?.attorney_phone),
+      email: pickFirstText(overviewAttorneyFirm?.email, portal?.transaction?.assigned_attorney_email),
+      avatarUrl: pickPortalImageUrl(
+        overviewAttorneyRolePlayer?.attorneyUser?.avatarUrl,
+        overviewAttorneyRolePlayer?.attorneyUser?.avatar_url,
+        overviewAttorneyFirm?.logoUrl,
+        overviewAttorneyFirm?.logo_url,
+      ),
+    },
+    {
+      key: 'developer',
+      name: pickFirstText(portal?.unit?.development?.developer_company, portal?.unit?.development?.name, clientBrandName),
+      role: 'Developer',
+      company: developmentName,
+      phone: pickFirstText(portal?.unit?.development?.phone, portal?.unit?.development?.contact_phone),
+      email: pickFirstText(portal?.unit?.development?.email, portal?.unit?.development?.contact_email),
+      avatarUrl: pickPortalImageUrl(portal?.unit?.development?.logo_url, portal?.unit?.development?.logoUrl),
+    },
+  ]
+    .filter((member) => member && pickFirstText(member.name, member.company, member.email))
+    .slice(0, 4)
+  const showBuyerPaymentsOverview = reservationRequiredForClient && Boolean(
+    reservationStatus ||
+      Number(portal?.transaction?.reservation_amount || 0) > 0 ||
+      reservationProofUploaded ||
+      showReservationDepositUploadCard,
+  )
+  const buyerPaymentStatusLabel =
+    reservationProofUploaded || reservationStatus === 'paid' || reservationStatus === 'verified'
+      ? 'Paid'
+      : reservationStatus
+        ? toTitleLabel(reservationStatus)
+        : 'Outstanding'
+  const buyerPaymentStatusClasses =
+    buyerPaymentStatusLabel === 'Paid'
+      ? 'border-[#cde7d5] bg-[#eaf8ef] text-[#18734a]'
+      : 'border-[#f0d8ae] bg-[#fff6e7] text-[#9a5b0f]'
   const sellerDisplayName = pickFirstText(portal?.buyer?.name, activeSellingContext?.clientName, activeSellingContext?.client_name, 'Seller')
   const sellerFirstName = String(sellerDisplayName || 'Seller').trim().split(/\s+/)[0] || 'Seller'
   const sellerPropertyTitle = pickFirstText(
@@ -6363,7 +6453,7 @@ function ClientPortal() {
                 ) : null}
                 <p className="mt-3 text-xs leading-5 text-[#d7e3ef]">{sellerAgencyName || sellerAgentName || 'Arch9 Property Team'}</p>
                 <div className="mt-3 h-1 rounded-full bg-white/10">
-                  <div className="h-1 rounded-full bg-[linear-gradient(90deg,#34d399,#38bdf8)]" style={{ width: `${sellerProgressPercent}%` }} />
+                  <div className="h-1 rounded-full" style={{ width: `${sellerProgressPercent}%`, backgroundColor: 'var(--client-brand-accent)' }} />
                 </div>
               </div>
             ) : (
@@ -6400,15 +6490,15 @@ function ClientPortal() {
                       ? 'border-[rgba(52,211,153,0.42)] bg-[rgba(2,6,23,0.25)] text-white shadow-[inset_3px_0_0_#2fd18a]'
                       : 'border-transparent text-slate-300 hover:border-white/10 hover:bg-white/5 hover:text-white',
                   ].join(' ')}
+                  style={isActive ? {
+                    borderColor: 'color-mix(in srgb, var(--client-brand-accent) 42%, transparent)',
+                    boxShadow: 'inset 3px 0 0 var(--client-brand-accent)',
+                  } : undefined}
                 >
                   <Icon size={16} />
                   <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-normal [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
                     {item.label}
                   </span>
-                  style={isActive ? {
-                    borderColor: 'color-mix(in srgb, var(--client-brand-accent) 42%, transparent)',
-                    boxShadow: 'inset 3px 0 0 var(--client-brand-accent)',
-                  } : undefined}
                   {navStatus ? (
                     <span
                       className={`ml-auto inline-flex items-center rounded-full border px-2 py-0.5 text-[0.66rem] font-semibold ${
@@ -6428,7 +6518,96 @@ function ClientPortal() {
 
         <div className="min-w-0 flex-1 lg:pl-[280px]">
           <div className="border-b border-[#dbe5ef] bg-white/80 px-5 py-4 backdrop-blur lg:hidden">
-            {effectiveWorkspace === 'seller' ? (
+            {hideBuyerOverviewHeader ? (
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  {clientBrandLogoUrl ? (
+                    <img
+                      src={clientBrandLogoUrl}
+                      alt={clientBrandName}
+                      className="block h-auto max-h-9 w-auto max-w-[150px] object-contain"
+                    />
+                  ) : (
+                    <h1 className="truncate text-[1.35rem] font-bold tracking-[-0.04em] text-[#142132]">{clientBrandName}</h1>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="relative" ref={notificationsRef}>
+                    <button
+                      type="button"
+                      onClick={() => setNotificationsOpen((previous) => !previous)}
+                      className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#dbe5ef] bg-white text-[#4f647b] shadow-[0_10px_20px_rgba(15,23,42,0.05)]"
+                      aria-label="Notifications"
+                      aria-expanded={notificationsOpen}
+                    >
+                      <Bell size={16} />
+                      {unreadNotificationCount > 0 ? (
+                        <span className="absolute -right-0.5 -top-0.5 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#158765] px-1.5 text-[0.64rem] font-semibold text-white">
+                          {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                        </span>
+                      ) : null}
+                    </button>
+
+                    {notificationsOpen ? (
+                      <div className="absolute right-0 top-[calc(100%+10px)] z-40 w-[min(92vw,360px)] rounded-[16px] border border-[#dbe5ef] bg-white p-3 shadow-[0_20px_40px_rgba(15,23,42,0.12)]">
+                        <div className="mb-2 flex items-center justify-between gap-2 px-1">
+                          <strong className="text-sm font-semibold text-[#142132]">Notifications</strong>
+                          {unreadNotificationCount > 0 ? (
+                            <button
+                              type="button"
+                              onClick={handleMarkAllNotificationsRead}
+                              className="rounded-md border border-[#dbe5ef] px-2 py-0.5 text-[0.68rem] font-semibold text-[#35546c]"
+                            >
+                              Mark all read
+                            </button>
+                          ) : null}
+                        </div>
+                        <div className="max-h-[320px] space-y-2 overflow-y-auto pr-1">
+                          {notificationItems.length ? (
+                            notificationItems.map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={async () => {
+                                  await handleMarkNotificationRead(item.id)
+                                  setNotificationsOpen(false)
+                                  navigate(getPortalWorkspacePath(token, workspaceNavigationScope, item.to || 'overview'))
+                                }}
+                                className={`w-full rounded-[12px] border px-3 py-2.5 text-left transition ${
+                                  item.tone === 'action'
+                                    ? 'border-[#f0d8ae] bg-[#fff7eb]'
+                                    : 'border-[#e3ebf4] bg-[#fbfdff]'
+                                }`}
+                              >
+                                <span className="flex items-start justify-between gap-3">
+                                  <strong className="text-sm font-semibold text-[#142132]">{item.title}</strong>
+                                  <time className="shrink-0 text-[0.68rem] font-medium text-[#7b8ca2]">
+                                    {formatClientNotificationTime(item.createdAt)}
+                                  </time>
+                                </span>
+                                <span className="mt-1.5 block text-sm leading-6 text-[#51657b]">{item.message}</span>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="rounded-[12px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-3 py-3 text-sm text-[#6b7d93]">
+                              <p className="font-semibold text-[#35546c]">You&apos;re all caught up</p>
+                              <p className="mt-1">No unread notifications.</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                  <Link
+                    to={getClientPortalPath(token, 'settings')}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#f0f4f8] text-sm font-semibold text-[#142132]"
+                    aria-label="Settings"
+                  >
+                    {buyerInitial}
+                  </Link>
+                </div>
+              </div>
+            ) : effectiveWorkspace === 'seller' ? (
               <div className="mb-3 rounded-[14px] border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-3">
                 <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-2.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-[#64748b]">
                   {sellerStatusChipLabel}
@@ -6439,7 +6618,7 @@ function ClientPortal() {
                 ) : null}
                 <p className="mt-2 text-xs text-[#64748b]">{sellerAgencyName || sellerAgentName || 'Arch9 Property Team'}</p>
                 <div className="mt-3 h-1 rounded-full bg-[#dde7f1]">
-                  <div className="h-1 rounded-full bg-[#17a37a]" style={{ width: `${sellerProgressPercent}%` }} />
+                  <div className="h-1 rounded-full" style={{ width: `${sellerProgressPercent}%`, backgroundColor: 'var(--client-brand-accent)' }} />
                 </div>
               </div>
             ) : (
@@ -6458,6 +6637,7 @@ function ClientPortal() {
               </select>
             </div>
             )}
+            {hideBuyerOverviewHeader ? null : (
             <div className="overflow-x-auto">
               <nav className="flex min-w-max items-center gap-2 rounded-[22px] border border-[#e2eaf3] bg-[#f8fbff] p-2 md:min-w-[640px]">
                 {portalNavigationItems.map((item) => {
@@ -6472,6 +6652,11 @@ function ClientPortal() {
                           ? 'bg-[#35546c] text-white shadow-[0_12px_24px_rgba(53,84,108,0.18)]'
                           : 'text-[#5f7086] hover:bg-white hover:text-[#142132]'
                       }`}
+                      style={isActive ? {
+                        backgroundColor: 'var(--client-brand-primary)',
+                        color: 'var(--client-brand-primary-contrast)',
+                        boxShadow: '0 12px 24px color-mix(in srgb, var(--client-brand-primary) 18%, transparent)',
+                      } : undefined}
                     >
                       <Icon size={16} />
                       {item.label}
@@ -6480,11 +6665,12 @@ function ClientPortal() {
                 })}
               </nav>
             </div>
+            )}
           </div>
 
           <div className="space-y-6 px-5 py-5 md:px-8 md:py-8 xl:px-10">
-            {hideSellerWorkspaceHeader ? null : (
-            <section className="rounded-[24px] border border-[#223d57] bg-[linear-gradient(135deg,#10253a_0%,#1d3c5b_60%,#2a5078_100%)] px-5 py-5 text-white shadow-[0_20px_36px_rgba(12,24,40,0.3)]">
+            {hideWorkspaceHeader ? null : (
+            <section className="rounded-[24px] border border-[#223d57] px-5 py-5 text-white shadow-[0_20px_36px_rgba(12,24,40,0.3)]" style={{ backgroundImage: 'var(--client-portal-hero-bg)', borderColor: 'color-mix(in srgb, var(--client-brand-accent) 24%, var(--client-brand-primary))' }}>
               <h2 className="text-[1.35rem] font-semibold tracking-[-0.03em] text-[#f8fbff]">Welcome, {clientFirstName}</h2>
               <p className="mt-2 text-sm leading-6 text-[#d6e5f3]">
                 This is your secure transaction workspace. Your updates, documents, and next steps are kept in one place so
@@ -6498,7 +6684,7 @@ function ClientPortal() {
             </section>
             )}
 
-            {hideSellerWorkspaceHeader ? null : (
+            {hideWorkspaceHeader ? null : (
             <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-6 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
               {effectiveWorkspace === 'seller' ? (
                 <div>
@@ -6894,329 +7080,474 @@ function ClientPortal() {
                   )}
                 </section>
               ) : (
-              <>
-                {effectiveWorkspace !== 'seller' && showReservationDepositUploadCard ? (
-                  <section className="rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-                    <div className="grid gap-5 lg:grid-cols-[1.45fr_0.55fr]">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <h3 className="text-[1.12rem] font-semibold tracking-[-0.03em] text-[#142132]">Reservation Deposit Required</h3>
-                          <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getStatusToneClasses(reservationProofStatusLabel)}`}>
-                            {reservationProofStatusLabel}
+              <section className="space-y-5 pb-24 lg:pb-0">
+                {reservationRequiredForClient ? (
+                  <input
+                    ref={reservationProofInputRef}
+                    type="file"
+                    className="hidden"
+                    disabled={uploadingDocumentKey === reservationProofUploadStateKey}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0]
+                      if (file) {
+                        if (reservationProofRequirement?.key) {
+                          void handleUploadRequiredDocument(reservationProofRequirement.key, file)
+                        } else {
+                          void handleUploadReservationDepositProof(file)
+                        }
+                      }
+                      event.target.value = ''
+                    }}
+                  />
+                ) : null}
+
+                <section className="overflow-hidden rounded-[22px] border border-[#dfe8f1] bg-white shadow-[0_22px_46px_rgba(15,23,42,0.08)] sm:rounded-[28px]">
+                  <div className="grid gap-0 lg:grid-cols-[minmax(280px,0.76fr)_minmax(0,1.24fr)]">
+                    <div className="min-h-[180px] bg-[#dce7ee] sm:min-h-[220px] lg:min-h-[260px]">
+                      {buyerPropertyImageUrl ? (
+                        <img src={buyerPropertyImageUrl} alt={developmentName} className="h-full min-h-[180px] w-full object-cover sm:min-h-[220px] lg:min-h-[260px]" />
+                      ) : (
+                        <div className="flex h-full min-h-[180px] items-center justify-center bg-[linear-gradient(135deg,#dfeaf0_0%,#b8cbd4_48%,#edf4f7_100%)] text-[#335066] sm:min-h-[220px] lg:min-h-[260px]">
+                          <Building2 size={54} strokeWidth={1.5} />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="px-5 py-4 sm:px-7 sm:py-6">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <span className="inline-flex rounded-full bg-[#eaf8ef] px-3 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#13724d]">
+                            Your property
                           </span>
+                          <h1 className="mt-3 text-[1.85rem] font-semibold leading-tight text-[#071e27] sm:text-[2.35rem]">
+                            {developmentName}
+                          </h1>
+                          <p className="mt-2 text-xs font-medium leading-5 text-[#52677d] sm:text-sm sm:leading-6">
+                            {[unitLabel, buyerPropertyAddressLabel === unitLabel ? '' : buyerPropertyAddressLabel, buyerName].filter(Boolean).join('  |  ')}
+                          </p>
                         </div>
-                        <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
-                          Please pay the reservation deposit and upload proof of payment so your team can verify and continue.
-                        </p>
-
-                        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                          <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Amount due</span>
-                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationAmountLabel}</strong>
-                          </article>
-                          <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Amount type</span>
-                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationAmountTypeLabel}</strong>
-                          </article>
-                          <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">How it is treated</span>
-                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationTreatmentLabel}</strong>
-                          </article>
-                          <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Payable to</span>
-                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationPayableToLabel}</strong>
-                          </article>
-                          <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Current status</span>
-                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationProofStatusLabel}</strong>
-                          </article>
-                        </div>
-
-                        <p className="mt-3 rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2 text-xs leading-5 text-[#5f7288]">
-                          {reservationTreatmentDescription}
-                        </p>
-
-                        {reservationProofUploaded ? (
-                          <div className="mt-3 space-y-1 text-xs text-[#6b7d93]">
-                            <p>
-                              File: <span className="font-medium text-[#324559]">{reservationProofFileName || 'Reservation deposit proof of payment'}</span>
-                            </p>
-                            <p>Uploaded: {formatShortPortalDate(reservationProofUploadedAt, 'Recently')}</p>
-                          </div>
-                        ) : null}
-
-                        {reservationPaymentInstructions ? (
-                          <p className="mt-3 text-sm leading-6 text-[#566b82]">{reservationPaymentInstructions}</p>
-                        ) : null}
+                        <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] ${heroStatusBadge.className}`}>
+                          {heroStatusBadge.label}
+                        </span>
                       </div>
 
-                      <div className="flex flex-col justify-end gap-2.5">
-                        <button
-                          type="button"
-                          disabled={uploadingDocumentKey === reservationProofUploadStateKey}
-                          onClick={() => reservationProofInputRef.current?.click()}
-                          className="inline-flex min-h-[42px] items-center justify-center rounded-[12px] bg-[#35546c] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#7e95ab]"
-                        >
-                          {uploadingDocumentKey === reservationProofUploadStateKey
-                            ? 'Uploading...'
-                            : reservationProofUploaded
-                              ? 'Replace proof of payment'
-                              : 'Upload proof of payment'}
-                        </button>
-                        <input
-                          ref={reservationProofInputRef}
-                          type="file"
-                          className="hidden"
-                          disabled={uploadingDocumentKey === reservationProofUploadStateKey}
-                          onChange={(event) => {
-                            const file = event.target.files?.[0]
-                            if (file) {
-                              if (reservationProofRequirement?.key) {
-                                void handleUploadRequiredDocument(reservationProofRequirement.key, file)
-                              } else {
-                                void handleUploadReservationDepositProof(file)
-                              }
-                            }
-                            event.target.value = ''
-                          }}
-                        />
-                        {reservationProofUploadFeedback.message ? (
-                          <p className={`rounded-[10px] border px-3 py-2 text-xs font-medium ${reservationProofUploadFeedbackClasses}`}>
-                            {reservationProofUploadFeedback.message}
+                      <div className="mt-5 grid grid-cols-3 divide-x divide-[#e7edf3] sm:mt-7">
+                        <div className="min-w-0 pr-3 sm:pr-5">
+                          <span className="block text-[0.58rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2] sm:text-[0.66rem]">Complete</span>
+                          <strong className="mt-2 block text-[1.12rem] font-semibold text-[#071e27] sm:text-[1.35rem]">{journeyProgressPercent}%</strong>
+                          <span className="mt-1 block text-[0.7rem] leading-4 text-[#6b7d93] sm:text-sm sm:leading-5">Purchase progress</span>
+                        </div>
+                        <div className="min-w-0 px-3 sm:px-5">
+                          <span className="block text-[0.58rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2] sm:text-[0.66rem]">Current stage</span>
+                          <strong className="mt-2 block text-[0.88rem] font-semibold leading-4 text-[#071e27] sm:text-[1.02rem] sm:leading-5">{journeyCurrentStageLabel}</strong>
+                          <span className="mt-1 block text-[0.7rem] leading-4 text-[#2169a6] sm:text-sm sm:leading-5">{journeyStatusFlag?.label || 'In progress'}</span>
+                        </div>
+                        <div className="min-w-0 pl-3 sm:pl-5">
+                          <span className="block text-[0.58rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2] sm:text-[0.66rem]">Estimated registration</span>
+                          <strong className="mt-2 block text-[0.88rem] font-semibold leading-4 text-[#071e27] sm:text-[1.02rem] sm:leading-5">{estimatedRegistrationLabel}</strong>
+                          <span className="mt-1 block text-[0.7rem] leading-4 text-[#6b7d93] sm:text-sm sm:leading-5">Next: {journeyNextStageLabel}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-[#edf2f6] px-5 py-4 sm:px-7 sm:py-5">
+                    <div className="overflow-x-auto pb-1">
+                      <div className="flex min-w-[540px] items-start sm:min-w-[620px]">
+                        {clientJourneySteps.map((step, index) => {
+                          const presentation = getBuyerJourneyStepPresentation(step.status)
+                          const isComplete = normalizePortalStatus(step.status) === 'complete'
+                          return (
+                            <div key={step.id} className="relative flex flex-1 flex-col items-center gap-2 text-center">
+                              {index < clientJourneySteps.length - 1 ? (
+                                <span
+                                  className={`absolute left-1/2 top-3.5 h-1 w-full sm:top-4 ${isComplete ? 'bg-[#18845e]' : 'bg-[#dfe6ee]'}`}
+                                  aria-hidden="true"
+                                />
+                              ) : null}
+                              <span className={`relative z-10 inline-flex h-7 w-7 items-center justify-center rounded-full border text-[0.68rem] font-semibold sm:h-8 sm:w-8 sm:text-[0.72rem] ${presentation.dotClassName}`}>
+                                {isComplete ? <CheckCircle2 size={15} /> : index + 1}
+                              </span>
+                              <span className={`max-w-[110px] text-xs font-semibold ${step.id === journeyCurrentStep?.id ? 'text-[#071e27]' : 'text-[#66788c]'}`}>
+                                {step.label}
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section className={`rounded-[24px] border px-5 py-5 shadow-[0_18px_34px_rgba(15,23,42,0.06)] sm:px-7 sm:py-6 ${
+                  overviewHasPrimaryAction ? 'border-[#efd8b8] bg-[#fff8ec]' : 'border-[#cfe7d7] bg-[#f3fbf6]'
+                }`}>
+                  <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.34fr)] lg:items-center">
+                    <div className="flex gap-4">
+                      <span className={`inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full ${
+                        overviewHasPrimaryAction ? 'bg-[#fff1d7] text-[#d47a00]' : 'bg-[#e4f6ea] text-[#13724d]'
+                      }`}>
+                        {overviewHasPrimaryAction ? <UploadCloud size={28} /> : <CheckCircle2 size={28} />}
+                      </span>
+                      <div className="min-w-0">
+                        <span className={`text-[0.68rem] font-semibold uppercase tracking-[0.16em] ${
+                          overviewHasPrimaryAction ? 'text-[#b76500]' : 'text-[#13724d]'
+                        }`}>
+                          {overviewHasPrimaryAction ? 'Your next action' : 'All clear'}
+                        </span>
+                        <h2 className="mt-2 text-[1.55rem] font-semibold leading-tight tracking-[-0.035em] text-[#071e27]">
+                          {overviewHasPrimaryAction ? overviewActionTitle : 'Nothing required from you today.'}
+                        </h2>
+                        <p className="mt-2 max-w-2xl text-sm leading-6 text-[#31495c]">
+                          {overviewHasPrimaryAction ? overviewActionDescription : 'Everything is progressing normally. Your team will let you know when the next step needs your attention.'}
+                        </p>
+                        {reservationRejectedNote ? (
+                          <p className="mt-3 rounded-[12px] border border-[#efceb0] bg-white/75 px-3 py-2 text-sm font-medium text-[#9a4e15]">
+                            {reservationRejectedNote}
                           </p>
                         ) : null}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 border-t border-black/10 pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+                      {overviewHasPrimaryAction ? (
+                        <div className="grid grid-cols-2 gap-4">
+                          {overviewActionEstimatedTime ? (
+                            <div>
+                              <span className="inline-flex items-center gap-1.5 text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">
+                                <Clock3 size={13} />
+                                Estimated time
+                              </span>
+                              <strong className="mt-1.5 block text-sm text-[#071e27]">{overviewActionEstimatedTime}</strong>
+                            </div>
+                          ) : null}
+                          {overviewActionDueLabel ? (
+                            <div>
+                              <span className="inline-flex items-center gap-1.5 text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">
+                                <CalendarClock size={13} />
+                                Due
+                              </span>
+                              <strong className="mt-1.5 block text-sm text-[#071e27]">{overviewActionDueLabel}</strong>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      <div className="grid gap-2">
+                        {overviewHasPrimaryAction ? (
+                          showReservationDepositUploadCard ? (
+                            <button
+                              type="button"
+                              disabled={uploadingDocumentKey === reservationProofUploadStateKey}
+                              onClick={() => reservationProofInputRef.current?.click()}
+                              className="inline-flex min-h-[48px] items-center justify-center rounded-[12px] bg-[#d47a00] px-4 py-2 text-sm font-semibold text-white shadow-[0_14px_24px_rgba(212,122,0,0.18)] transition hover:bg-[#bd6e00] disabled:cursor-not-allowed disabled:bg-[#c79b68]"
+                            >
+                              {uploadingDocumentKey === reservationProofUploadStateKey ? 'Uploading...' : 'Upload Document'}
+                            </button>
+                          ) : (
+                            <Link
+                              to={getPortalWorkspacePath(token, workspaceNavigationScope, overviewActionRoute)}
+                              className="inline-flex min-h-[48px] items-center justify-center rounded-[12px] bg-[#d47a00] px-4 py-2 text-sm font-semibold text-white shadow-[0_14px_24px_rgba(212,122,0,0.18)] transition hover:bg-[#bd6e00]"
+                            >
+                              {primaryOverviewAction.label}
+                            </Link>
+                          )
+                        ) : null}
+                        <Link
+                          to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')}
+                          className="inline-flex min-h-[46px] items-center justify-center rounded-[12px] border border-[#d6e0ea] bg-white px-4 py-2 text-sm font-semibold text-[#142132] transition hover:border-[#c2d1df] hover:bg-[#fbfdff]"
+                        >
+                          View All Documents
+                        </Link>
+                      </div>
+                      {reservationProofUploadFeedback.message ? (
+                        <p className={`rounded-[10px] border px-3 py-2 text-xs font-medium ${reservationProofUploadFeedbackClasses}`}>
+                          {reservationProofUploadFeedback.message}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                </section>
+
+                <section id="buyer-portal-journey" className="rounded-[24px] border border-[#dfe8f1] bg-white p-5 shadow-[0_16px_32px_rgba(15,23,42,0.055)] sm:p-6">
+                  <header className="mb-5 flex flex-wrap items-end justify-between gap-3">
+                    <div>
+                      <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#66788c]">Your purchase journey</span>
+                      <h2 className="mt-1.5 text-[1.45rem] font-semibold tracking-[-0.035em] text-[#071e27]">Where things stand</h2>
+                    </div>
+                    <span className="rounded-full bg-[#eaf3ff] px-3 py-1 text-xs font-semibold text-[#2169a6]">
+                      {journeyCurrentStageLabel}
+                    </span>
+                  </header>
+
+                  <div className="relative space-y-3">
+                    <span className="absolute bottom-5 left-4 top-5 w-px bg-[#dfe8f1]" aria-hidden="true" />
+                    {clientJourneySteps.map((step) => {
+                      const isExpanded = resolvedExpandedJourneyStepId === step.id
+                      const presentation = getBuyerJourneyStepPresentation(step.status)
+                      return (
+                        <article key={step.id} className={`relative rounded-[16px] border transition ${presentation.rowClassName}`}>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedJourneyStepId((previous) => (previous === step.id ? null : step.id))}
+                            aria-expanded={isExpanded}
+                            className="flex w-full items-start gap-3.5 px-4 py-4 text-left"
+                          >
+                            <span className={`relative z-10 mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-[0.72rem] font-semibold ${presentation.dotClassName}`}>
+                              {normalizePortalStatus(step.status) === 'complete' ? <CheckCircle2 size={15} /> : ''}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="flex flex-wrap items-center gap-2">
+                                <span className="text-sm font-semibold text-[#071e27]">{step.label}</span>
+                                <span className={`rounded-full px-2.5 py-1 text-[0.64rem] font-semibold uppercase tracking-[0.1em] ${presentation.badgeClassName}`}>
+                                  {presentation.label}
+                                </span>
+                              </span>
+                              <span className="mt-1 block text-sm leading-6 text-[#5f738a]">{step.shortDescription}</span>
+                            </span>
+                            <ChevronRight className={`mt-1 shrink-0 text-[#7b8ca2] transition ${isExpanded ? 'rotate-90' : ''}`} size={18} />
+                          </button>
+
+                          {isExpanded ? (
+                            <div className="border-t border-[#e9eff5] px-4 pb-4 pt-3 sm:ml-[46px]">
+                              <div className="grid gap-4 sm:grid-cols-2">
+                                <div>
+                                  <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Current status</span>
+                                  <p className="mt-1.5 text-sm leading-6 text-[#324559]">{presentation.label}</p>
+                                </div>
+                                {step.timeframe ? (
+                                  <div>
+                                    <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Expected duration</span>
+                                    <p className="mt-1.5 text-sm leading-6 text-[#324559]">{step.timeframe}</p>
+                                  </div>
+                                ) : null}
+                                <div>
+                                  <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">What&apos;s happening</span>
+                                  <p className="mt-1.5 text-sm leading-6 text-[#324559]">{step.whatHappensNow}</p>
+                                </div>
+                                <div>
+                                  <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Your responsibility</span>
+                                  <p className="mt-1.5 text-sm leading-6 text-[#324559]">{step.clientAction}</p>
+                                </div>
+                              </div>
+                              {step.learnMore ? (
+                                <p className="mt-4 rounded-[12px] bg-[#f7f9fb] px-3 py-2 text-sm leading-6 text-[#566b82]">
+                                  {step.learnMore}
+                                </p>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </article>
+                      )
+                    })}
+                  </div>
+                </section>
+
+                <section className={`grid gap-5 ${showBuyerDocumentsOverview ? 'xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]' : ''}`}>
+                  <article className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_14px_28px_rgba(15,23,42,0.05)]">
+                    <header className="mb-4 flex items-center justify-between gap-3">
+                      <h2 className="text-[1rem] font-semibold uppercase tracking-[0.08em] text-[#071e27]">Recent Activity</h2>
+                      {latestUpdates.length > 4 ? (
+                        <span className="text-sm font-semibold text-[#0f6f4a]">View all</span>
+                      ) : null}
+                    </header>
+                    <div className="space-y-4">
+                      {overviewActivityItems.length ? (
+                        overviewActivityItems.map((item) => (
+                          <div key={item.id} className="flex items-start gap-3">
+                            <span className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+                              item.requiresAttention ? 'bg-[#fff3df] text-[#d47a00]' : item.displayType === 'milestone' ? 'bg-[#eaf8ef] text-[#13724d]' : 'bg-[#eaf3ff] text-[#2169a6]'
+                            }`}>
+                              {item.requiresAttention ? <UploadCloud size={16} /> : item.displayType === 'milestone' ? <CheckCircle2 size={16} /> : <FileText size={16} />}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                                <strong className="text-sm font-semibold text-[#071e27]">{item.title || item.message}</strong>
+                                <time className="text-xs font-medium text-[#6b7d93]">{item.timestampLabel}</time>
+                              </div>
+                              {item.title ? <p className="mt-1 text-sm leading-6 text-[#52677d]">{item.message}</p> : null}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="rounded-[14px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-4 text-sm leading-6 text-[#6b7d93]">
+                          Your transaction has not started yet.
+                        </p>
+                      )}
+                    </div>
+                  </article>
+
+                  {showBuyerDocumentsOverview ? (
+                    <article className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_14px_28px_rgba(15,23,42,0.05)]">
+                      <header className="mb-5 flex items-center justify-between gap-3">
+                        <h2 className="text-[1rem] font-semibold uppercase tracking-[0.08em] text-[#071e27]">Documents</h2>
+                        <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')} className="text-sm font-semibold text-[#0f6f4a]">
+                          View all
+                        </Link>
+                      </header>
+
+                      <div className="grid gap-5 sm:grid-cols-[160px_minmax(0,1fr)] sm:items-center">
+                        <div
+                          className="mx-auto flex h-36 w-36 items-center justify-center rounded-full p-3"
+                          style={{ background: `conic-gradient(#11855f ${buyerDocumentProgressPercent * 3.6}deg, #d9eee5 0deg)` }}
+                        >
+                          <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-white text-center shadow-inner">
+                            <strong className="text-[2rem] font-semibold tracking-[-0.04em] text-[#071e27]">{buyerDocumentCompleted}</strong>
+                            <span className="text-sm font-semibold text-[#52677d]">of {buyerDocumentRequiredTotal}</span>
+                          </div>
+                        </div>
+
+                        <div className="grid gap-3">
+                          {[
+                            ['Completed', buyerDocumentCompleted, 'text-[#11855f]'],
+                            ['Outstanding', buyerDocumentOutstanding, 'text-[#d47a00]'],
+                            ['Total required', buyerDocumentRequiredTotal, 'text-[#071e27]'],
+                          ].map(([label, value, className]) => (
+                            <div key={label} className="flex items-center justify-between gap-4 text-sm">
+                              <span className="text-[#52677d]">{label}</span>
+                              <strong className={className}>{value}</strong>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <Link
+                        to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')}
+                        className="mt-6 inline-flex min-h-[48px] w-full items-center justify-center rounded-[12px] bg-[#063d32] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#082f27]"
+                      >
+                        Upload Document
+                      </Link>
+                    </article>
+                  ) : null}
+                </section>
+
+                {overviewTeamCards.length ? (
+                  <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_14px_28px_rgba(15,23,42,0.05)] sm:p-6">
+                    <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
+                      <div>
+                        <h2 className="text-[1rem] font-semibold uppercase tracking-[0.08em] text-[#071e27]">Your Team</h2>
+                        <p className="mt-2 text-sm leading-6 text-[#6b7d93]">The people helping you with this purchase.</p>
+                      </div>
+                      <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'team')} className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#0f6f4a]">
+                        View all contacts
+                        <ChevronRight size={15} />
+                      </Link>
+                    </header>
+
+                    <div className="-mx-5 overflow-x-auto px-5 pb-1 sm:-mx-6 sm:px-6">
+                      <div className="flex gap-4 lg:grid lg:grid-cols-4">
+                        {overviewTeamCards.map((member) => (
+                          <article key={member.key} className="min-w-[245px] rounded-[16px] border border-[#dfe8f1] bg-[#fbfdff] p-4 lg:min-w-0">
+                            <div className="flex items-center gap-3">
+                              <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#eef4f7] text-sm font-semibold text-[#142132]">
+                                {member.avatarUrl ? <img src={member.avatarUrl} alt="" className="h-full w-full object-cover" /> : getClientInitials(member.name)}
+                              </span>
+                              <div className="min-w-0">
+                                <h3 className="truncate text-sm font-semibold text-[#071e27]">{member.name}</h3>
+                                <p className="mt-0.5 text-xs leading-5 text-[#52677d]">{member.role}</p>
+                                <p className="truncate text-xs leading-5 text-[#6b7d93]">{member.company}</p>
+                              </div>
+                            </div>
+                            <div className="mt-4 flex items-center gap-2">
+                              {member.phone ? (
+                                <a href={`tel:${member.phone}`} className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#071e27] shadow-[0_8px_18px_rgba(15,23,42,0.06)]" aria-label={`Call ${member.name}`}>
+                                  <PhoneCall size={16} />
+                                </a>
+                              ) : null}
+                              {member.email ? (
+                                <a href={`mailto:${member.email}`} className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#071e27] shadow-[0_8px_18px_rgba(15,23,42,0.06)]" aria-label={`Email ${member.name}`}>
+                                  <Mail size={16} />
+                                </a>
+                              ) : null}
+                              {member.email ? (
+                                <a href={`mailto:${member.email}`} className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#071e27] shadow-[0_8px_18px_rgba(15,23,42,0.06)]" aria-label={`Message ${member.name}`}>
+                                  <MessageCircle size={16} />
+                                </a>
+                              ) : null}
+                            </div>
+                          </article>
+                        ))}
                       </div>
                     </div>
                   </section>
                 ) : null}
 
-                <section className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <h3 className="text-[1.1rem] font-semibold tracking-[-0.03em] text-[#142132]">What You Need To Do Now</h3>
-                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
-                      {blockingActionCount} blocking
-                    </span>
+                {showBuyerPaymentsOverview ? (
+                  <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_14px_28px_rgba(15,23,42,0.05)]">
+                    <h2 className="mb-4 text-[1rem] font-semibold uppercase tracking-[0.08em] text-[#071e27]">Payments</h2>
+                    <article className="flex flex-col gap-4 rounded-[16px] border border-[#e3ebf3] bg-[#fbfdff] p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-start gap-3">
+                        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#eaf8ef] text-[#11855f]">
+                          <CheckCircle2 size={18} />
+                        </span>
+                        <div>
+                          <h3 className="text-sm font-semibold text-[#071e27]">Reservation Deposit</h3>
+                          <strong className="mt-3 block text-[1.22rem] font-semibold tracking-[-0.03em] text-[#071e27]">{reservationAmountLabel}</strong>
+                          {reservationProofUploadedAt ? (
+                            <p className="mt-1 text-sm text-[#52677d]">Paid on {formatShortPortalDate(reservationProofUploadedAt, 'Recently')}</p>
+                          ) : (
+                            <p className="mt-1 text-sm text-[#52677d]">{reservationTreatmentLabel}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3 sm:min-w-[180px]">
+                        <span className={`justify-self-start rounded-full border px-3 py-1 text-xs font-semibold sm:justify-self-end ${buyerPaymentStatusClasses}`}>
+                          {buyerPaymentStatusLabel}
+                        </span>
+                        {reservationProofFallbackUploadedDocument?.file_path || reservationProofFallbackUploadedDocument?.url ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleOpenPortalDocument(reservationProofFallbackUploadedDocument)}
+                            className="inline-flex min-h-[42px] items-center justify-center rounded-[12px] border border-[#d6e0ea] bg-white px-4 py-2 text-sm font-semibold text-[#142132] transition hover:border-[#c2d1df] hover:bg-[#fbfdff]"
+                          >
+                            View Receipt
+                          </button>
+                        ) : showReservationDepositUploadCard ? (
+                          <button
+                            type="button"
+                            disabled={uploadingDocumentKey === reservationProofUploadStateKey}
+                            onClick={() => reservationProofInputRef.current?.click()}
+                            className="inline-flex min-h-[42px] items-center justify-center rounded-[12px] border border-[#d6e0ea] bg-white px-4 py-2 text-sm font-semibold text-[#142132] transition hover:border-[#c2d1df] hover:bg-[#fbfdff] disabled:cursor-not-allowed disabled:opacity-70"
+                          >
+                            Upload Proof
+                          </button>
+                        ) : null}
+                      </div>
+                    </article>
+                  </section>
+                ) : null}
+
+                <div className="flex items-center justify-center gap-2 text-xs text-[#6b7d93]">
+                  <ShieldCheck size={14} />
+                  <span>Your information is secure and encrypted.</span>
+                </div>
+
+                <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[#dfe8f1] bg-white/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 shadow-[0_-16px_30px_rgba(15,23,42,0.08)] backdrop-blur lg:hidden">
+                  <div className="mx-auto grid max-w-[520px] grid-cols-5 gap-1">
+                    <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'overview')} className="grid min-h-[52px] place-items-center rounded-[14px] text-[0.68rem] font-semibold text-[#0f6f4a]">
+                      <Home size={19} />
+                      <span>Overview</span>
+                    </Link>
+                    <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')} className="grid min-h-[52px] place-items-center rounded-[14px] text-[0.68rem] font-semibold text-[#66788c]">
+                      <FileText size={19} />
+                      <span>Documents</span>
+                    </Link>
+                    <a href="#buyer-portal-journey" className="grid min-h-[52px] place-items-center rounded-[14px] text-[0.68rem] font-semibold text-[#66788c]">
+                      <CheckCircle2 size={19} />
+                      <span>Journey</span>
+                    </a>
+                    <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'team')} className="grid min-h-[52px] place-items-center rounded-[14px] text-[0.68rem] font-semibold text-[#66788c]">
+                      <Users size={19} />
+                      <span>Team</span>
+                    </Link>
+                    <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'settings')} className="grid min-h-[52px] place-items-center rounded-[14px] text-[0.68rem] font-semibold text-[#66788c]">
+                      <Settings size={19} />
+                      <span>More</span>
+                    </Link>
                   </div>
-                  {prioritizedNextActions.length ? (
-                    <div className="mt-4 grid gap-3 md:grid-cols-2">
-                      {prioritizedNextActions.map((action) => {
-                        const normalizedPriority = normalizePortalStatus(action?.priority)
-                        const priorityClasses =
-                          normalizedPriority === 'urgent'
-                            ? 'border-[#f5c9bf] bg-[#fff3ef] text-[#b5472d]'
-                            : normalizedPriority === 'high'
-                              ? 'border-[#f0d8ae] bg-[#fff6e7] text-[#9a5b0f]'
-                              : normalizedPriority === 'informational'
-                                ? 'border-[#d6e3f1] bg-[#eef5fb] text-[#35546c]'
-                                : 'border-[#dde7f1] bg-[#f8fbff] text-[#5f7086]'
-                        const toneClasses = action?.blocking
-                          ? 'border-[#f1ddd0] bg-[#fff8f3]'
-                          : 'border-[#dbe5ef] bg-[#fcfdff]'
-                        const dueDateLabel = action?.dueDate ? formatShortPortalDate(action.dueDate, '') : ''
-                        const actionRoute = String(action?.actionRoute || '').trim() || 'overview'
-                        const actionLabel = String(action?.actionLabel || 'Open').trim()
-                        return (
-                          <article key={action?.id || `${action?.type}-${action?.title}`} className={`rounded-[14px] border px-3.5 py-3 ${toneClasses}`}>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[0.62rem] font-semibold uppercase tracking-[0.12em] ${priorityClasses}`}>
-                                {toTitleLabel(normalizedPriority || 'normal')}
-                              </span>
-                              {action?.blocking ? (
-                                <span className="inline-flex items-center rounded-full border border-[#f0d8ae] bg-[#fff6e7] px-2 py-0.5 text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-[#9a5b0f]">
-                                  Blocking
-                                </span>
-                              ) : null}
-                              {dueDateLabel ? (
-                                <span className="text-[0.68rem] font-medium text-[#6b7d93]">Due {dueDateLabel}</span>
-                              ) : null}
-                            </div>
-                            <h4 className="mt-2 text-sm font-semibold text-[#142132]">{action?.title || 'Action required'}</h4>
-                            <p className="mt-1 text-sm leading-6 text-[#566b82]">{action?.description || 'Please review this item.'}</p>
-                            {action?.educationalSummary ? (
-                              <p className="mt-1 text-xs leading-5 text-[#5f738a]">Why this matters: {action.educationalSummary}</p>
-                            ) : null}
-                            <div className="mt-3">
-                              <Link
-                                to={getPortalWorkspacePath(token, workspaceNavigationScope, actionRoute)}
-                                className="inline-flex min-h-[36px] items-center justify-center rounded-[10px] border border-[#d1deeb] bg-white px-3 py-1.5 text-xs font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
-                              >
-                                {actionLabel}
-                              </Link>
-                            </div>
-                          </article>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <p className="mt-3 rounded-[12px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-3 py-3 text-sm leading-6 text-[#6b7d93]">
-                      You have no actions required at the moment.
-                    </p>
-                  )}
-                  {hiddenNextActionCount > 0 ? (
-                    <p className="mt-3 text-xs font-medium text-[#6b7d93]">
-                      {hiddenNextActionCount} more action{hiddenNextActionCount === 1 ? '' : 's'} are available in your full workflow.
-                    </p>
-                  ) : null}
-                </section>
-
-                <section className="grid gap-6 xl:grid-cols-2">
-                  <PurchaseJourneyCard
-                  progressPercent={journeyProgressPercent}
-                  currentStageLabel={journeyCurrentStageLabel}
-                  nextStageLabel={journeyNextStageLabel}
-                  journeyStatus={journeyStatusFlag}
-                  steps={clientJourneySteps}
-                  expandedStepId={resolvedExpandedJourneyStepId}
-                  title={effectiveWorkspace === 'seller' ? 'Your Sale Journey' : 'Your Purchase Journey'}
-                  subtitle={
-                    effectiveWorkspace === 'seller'
-                      ? 'Track each milestone from seller onboarding to transfer registration.'
-                      : 'Track each milestone from reservation through registration.'
-                  }
-                  onToggleStep={(stepId) =>
-                    setExpandedJourneyStepId((previous) => (previous === stepId ? null : stepId))
-                  }
-                  />
-                  <LatestUpdatesCard
-                  updates={latestJourneyFeedItems}
-                  commentDraft={commentDraft}
-                  saving={saving}
-                  onCommentDraftChange={setCommentDraft}
-                  onCommentSubmit={handleSubmitPortalComment}
-                  onActionClick={handleActivityAction}
-                  heading="Recent Updates"
-                  subtitle={latestUpdatesSubtitle}
-                />
-                </section>
-
-                <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
-                      Current Stage
-                    </span>
-                    <h3 className="mt-2 text-[1.12rem] font-semibold tracking-[-0.03em] text-[#142132]">{journeyCurrentStageLabel}</h3>
-                    <p className="mt-2 text-sm leading-6 text-[#566b82]">{journeyHeroSubtext}</p>
-                    <p className="mt-3 text-xs font-medium text-[#7b8ca2]">Next: {journeyNextStageLabel}</p>
-                  </article>
-
-                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
-                      Next Step For You
-                    </span>
-                    <h3 className="mt-2 text-[1.12rem] font-semibold tracking-[-0.03em] text-[#142132]">{nextStepState.title}</h3>
-                    <p className="mt-2 text-sm leading-6 text-[#566b82]">{nextStepState.description}</p>
-                    <div className="mt-4">
-                      <Link
-                        to={getPortalWorkspacePath(token, workspaceNavigationScope, primaryOverviewAction.to)}
-                        className={`inline-flex min-h-[42px] items-center justify-center rounded-[12px] px-4 py-2 text-sm font-semibold transition ${primaryOverviewActionClasses}`}
-                      >
-                        {primaryOverviewAction.label}
-                      </Link>
-                    </div>
-                  </article>
-
-                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
-                      What Happens Next
-                    </span>
-                    <ul className="mt-3 space-y-2.5 text-sm leading-6 text-[#324559]">
-                      {whatHappensNextItems.map((item) => (
-                        <li key={item} className="flex items-start gap-2">
-                          <span className="mt-2 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[#8ba0b8]" />
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </article>
-
-                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-                    <h3 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Handover status</h3>
-                    <div className="mt-3 space-y-2.5 rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3.5 text-sm">
-                      <div>
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Estimated handover</span>
-                        <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">
-                          {formatClientPortalDate(portal?.handover?.handoverDate, 'Awaiting schedule')}
-                        </strong>
-                      </div>
-                      <div>
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Status</span>
-                        <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{toTitleLabel(handoverStatus)}</strong>
-                      </div>
-                    </div>
-                  </article>
-
-                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-                    <h3 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Snag summary</h3>
-                    {portal?.settings?.snag_reporting_enabled ? (
-                      <div className="mt-3 grid grid-cols-2 gap-2.5">
-                        <article className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-3">
-                          <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Open</span>
-                          <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{snagOpenCount}</strong>
-                        </article>
-                        <article className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-3">
-                          <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Resolved</span>
-                          <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{snagResolvedCount}</strong>
-                        </article>
-                      </div>
-                    ) : (
-                      <p className="mt-3 rounded-[12px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-3 py-3 text-sm leading-6 text-[#6b7d93]">
-                        Snag reporting is not active for this transaction.
-                      </p>
-                    )}
-                  </article>
-
-                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:col-span-2 xl:col-span-1">
-                    <h3 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">What&apos;s happening</h3>
-                    <ul className="mt-3 space-y-2.5 text-sm leading-6 text-[#324559]">
-                      {whatsHappeningSummary.map((item) => (
-                        <li key={item} className="flex items-start gap-2">
-                          <span className="mt-2 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[#8ba0b8]" />
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </article>
-
-                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:col-span-2 xl:col-span-3">
-                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
-                      Stage Guide
-                    </span>
-                    <h3 className="mt-2 text-[1.12rem] font-semibold tracking-[-0.03em] text-[#142132]">
-                      {stageEducation?.title || 'Transaction stage in progress'}
-                    </h3>
-                    <p className="mt-2 text-sm leading-6 text-[#566b82]">
-                      {stageEducation?.detailedExplanation || stageEducation?.shortDescription || 'This stage is currently in progress.'}
-                    </p>
-                    <div className="mt-3 grid gap-3 md:grid-cols-2">
-                      <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">What you need to do</span>
-                        <p className="mt-1.5 text-sm leading-6 text-[#324559]">
-                          {stageEducation?.whatClientNeedsToDo || 'No action is required unless your team requests something.'}
-                        </p>
-                      </article>
-                      <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">What happens next</span>
-                        <p className="mt-1.5 text-sm leading-6 text-[#324559]">
-                          {stageEducation?.whatHappensNext || 'Your team will guide you through the next stage.'}
-                        </p>
-                      </article>
-                    </div>
-                    {rolePlayerGuidance.length ? (
-                      <div className="mt-3">
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Role players at this stage</span>
-                        <ul className="mt-2 space-y-1.5 text-sm leading-6 text-[#324559]">
-                          {rolePlayerGuidance.slice(0, 3).map((entry) => (
-                            <li key={entry?.key} className="flex items-start gap-2">
-                              <span className="mt-2 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[#8ba0b8]" />
-                              <span>{entry?.explanation}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                  </article>
-                </section>
-              </>
+                </nav>
+              </section>
               )
             ) : null}
 

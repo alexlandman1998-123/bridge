@@ -2,6 +2,10 @@ import assert from 'node:assert/strict'
 
 import {
   buildClientBrandCssVars,
+  buildClientBrandDeploymentManifest,
+  buildClientBrandVerificationMatrix,
+  getClientBrandReadiness,
+  getClientBrandFingerprint,
   getDefaultArch9ClientTheme,
   getReadableTextColor,
   normalizeBrandColor,
@@ -130,5 +134,81 @@ assert.equal(cssVars['--client-brand-primary-contrast'], '#FFFFFF')
 assert.equal(cssVars['--client-brand-accent-contrast'], '#001B44')
 assert.equal(cssVars['--client-brand-logo-url'], '"https://cdn.example.test/canonical-dark.png"')
 assert.equal(cssVars['--client-brand-hero-image'], 'url("https://cdn.example.test/canonical-hero.jpg")')
+
+const readyBrand = getClientBrandReadiness(mergedTheme)
+assert.equal(readyBrand.version, 1)
+assert.equal(readyBrand.status, 'ready')
+assert.equal(readyBrand.score, 100)
+assert.equal(readyBrand.summary.failedRequired, 0)
+assert.equal(readyBrand.surfaces.length, 3)
+assert.equal(readyBrand.surfaces.every((surface) => surface.status === 'ready'), true)
+assert.equal(Number.parseFloat(readyBrand.checks.find((check) => check.key === 'primary_contrast')?.value) >= 4.5, true)
+
+const brandFingerprint = getClientBrandFingerprint(mergedTheme)
+assert.match(brandFingerprint, /^brand_[a-z0-9]{7,}$/)
+assert.equal(
+  getClientBrandFingerprint({ ...mergedTheme, publishedAt: '2026-08-01T00:00:00.000Z' }),
+  brandFingerprint,
+  'fingerprint should ignore rollout timestamps',
+)
+assert.notEqual(
+  getClientBrandFingerprint({ ...mergedTheme, accentColor: '#00AAFF' }),
+  brandFingerprint,
+  'fingerprint should change when brand-defining values change',
+)
+
+const deploymentManifest = buildClientBrandDeploymentManifest(mergedTheme, {
+  generatedAt: '2026-07-09T10:30:00.000Z',
+  publishedAt: '2026-07-09T10:00:00.000Z',
+})
+assert.equal(deploymentManifest.version, 1)
+assert.equal(deploymentManifest.fingerprint, brandFingerprint)
+assert.equal(deploymentManifest.generatedAt, '2026-07-09T10:30:00.000Z')
+assert.equal(deploymentManifest.publishedAt, '2026-07-09T10:00:00.000Z')
+assert.equal(deploymentManifest.readiness.status, 'ready')
+assert.deepEqual(deploymentManifest.surfaces.map((surface) => surface.key), ['onboarding', 'portal', 'email'])
+assert.equal(
+  deploymentManifest.surfaces.find((surface) => surface.key === 'portal')?.viewportTargets.includes('mobile'),
+  true,
+)
+assert.equal(
+  deploymentManifest.surfaces.find((surface) => surface.key === 'email')?.surfaces.includes('workspace_invite_email'),
+  true,
+)
+
+const verificationMatrix = buildClientBrandVerificationMatrix(mergedTheme, {
+  generatedAt: '2026-07-09T10:30:00.000Z',
+  publishedAt: '2026-07-09T10:00:00.000Z',
+})
+assert.equal(verificationMatrix.version, 1)
+assert.equal(verificationMatrix.fingerprint, brandFingerprint)
+assert.equal(verificationMatrix.summary.status, 'ready')
+assert.equal(verificationMatrix.summary.targetCount, 10)
+assert.equal(verificationMatrix.targets.every((target) => target.status === 'ready'), true)
+assert.equal(
+  verificationMatrix.targets.some((target) => target.key === 'buyer_onboarding_mobile' && target.width === 390),
+  true,
+)
+assert.equal(
+  verificationMatrix.targets.some((target) => target.key === 'transaction_tracker_desktop' && target.width === 1440),
+  true,
+)
+assert.equal(
+  verificationMatrix.targets.some((target) => target.key === 'client_emails_mobile' && target.viewport === 'email_mobile'),
+  true,
+)
+
+const incompleteBrand = getClientBrandReadiness({
+  primaryColor: '#777777',
+  secondaryColor: '#777777',
+  accentColor: '#777777',
+  neutralColor: '#F7F8FA',
+})
+assert.equal(incompleteBrand.status, 'needs_attention')
+assert.equal(incompleteBrand.summary.failedRequired > 0, true)
+assert.equal(
+  incompleteBrand.checks.find((check) => check.key === 'logo')?.passed,
+  false,
+)
 
 console.log('Client brand theme tests passed.')

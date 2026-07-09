@@ -73,6 +73,16 @@ export function renderBridgeCta(label: string, url: string) {
   `;
 }
 
+function normalizeBrandColor(value: string, fallback: string) {
+  const normalized = String(value || "").trim();
+  if (/^#[0-9a-f]{6}$/i.test(normalized)) return normalized;
+  if (/^#[0-9a-f]{3}$/i.test(normalized)) {
+    const [r, g, b] = normalized.slice(1).split("");
+    return `#${r}${r}${g}${g}${b}${b}`;
+  }
+  return fallback;
+}
+
 export function renderBridgeEmailLayout({
   preheader = "",
   title,
@@ -84,6 +94,8 @@ export function renderBridgeEmailLayout({
   organisationName = "Arch9",
   senderOrganisationName = "",
   senderOrganisationLogoUrl = "",
+  brandPrimaryColor = "",
+  brandAccentColor = "",
   supportEmail = "",
   supportPhone = "",
 }: {
@@ -97,6 +109,8 @@ export function renderBridgeEmailLayout({
   organisationName?: string;
   senderOrganisationName?: string;
   senderOrganisationLogoUrl?: string;
+  brandPrimaryColor?: string;
+  brandAccentColor?: string;
   supportEmail?: string;
   supportPhone?: string;
 }) {
@@ -105,6 +119,8 @@ export function renderBridgeEmailLayout({
   const resolvedOrganisationName = senderOrganisationName || organisationName || "Arch9";
   const safeOrganisationName = escapeHtml(resolvedOrganisationName);
   const safeOrganisationLogoUrl = senderOrganisationLogoUrl ? escapeHtml(senderOrganisationLogoUrl) : "";
+  const safeBrandPrimaryColor = escapeHtml(normalizeBrandColor(brandPrimaryColor, "#0b2743"));
+  const safeBrandAccentColor = escapeHtml(normalizeBrandColor(brandAccentColor, "#f7cf22"));
   const supportLine = [safeSupportEmail, safeSupportPhone].filter(Boolean).join(" · ");
   const headerBrandHtml = safeOrganisationLogoUrl
     ? `<img src="${safeOrganisationLogoUrl}" alt="${safeOrganisationName}" style="display: block; max-height: 40px; max-width: 220px; width: auto; height: auto; object-fit: contain;" />`
@@ -116,7 +132,7 @@ export function renderBridgeEmailLayout({
     </div>
     <div style="margin: 0; padding: 24px 12px; background: #eef3f8;">
       <div style="max-width: 660px; margin: 0 auto; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; color: #142132;">
-        <div style="background: #0b2743; border-radius: 16px 16px 0 0; padding: 24px;">
+        <div style="background: ${safeBrandPrimaryColor}; background-image: linear-gradient(135deg, ${safeBrandPrimaryColor} 0%, #0b2743 100%); border-top: 4px solid ${safeBrandAccentColor}; border-radius: 16px 16px 0 0; padding: 24px;">
           <div style="margin: 0 0 18px;">${headerBrandHtml}</div>
           <h1 style="margin: 10px 0 0; font-size: 28px; line-height: 1.2; color: #ffffff;">${escapeHtml(title)}</h1>
         </div>

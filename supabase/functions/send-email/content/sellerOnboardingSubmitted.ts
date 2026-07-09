@@ -30,6 +30,8 @@ export function buildSellerOnboardingSubmittedEmailHtml({
   organisationName,
   senderOrganisationName,
   senderOrganisationLogoUrl,
+  brandPrimaryColor,
+  brandAccentColor,
   supportEmail,
   supportPhone,
   templateOverrides,
@@ -42,6 +44,8 @@ export function buildSellerOnboardingSubmittedEmailHtml({
   organisationName?: string;
   senderOrganisationName?: string;
   senderOrganisationLogoUrl?: string;
+  brandPrimaryColor?: string;
+  brandAccentColor?: string;
   supportEmail?: string;
   supportPhone?: string;
   templateOverrides?: {
@@ -115,6 +119,8 @@ export function buildSellerOnboardingSubmittedEmailHtml({
     organisationName: organisationName || "Arch9",
     senderOrganisationName,
     senderOrganisationLogoUrl,
+    brandPrimaryColor,
+    brandAccentColor,
     supportEmail: supportEmail || "",
     supportPhone: supportPhone || "",
   });

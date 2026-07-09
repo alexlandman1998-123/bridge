@@ -537,6 +537,8 @@ export function buildSellerOnboardingEmailHtml({
   organisationName,
   senderOrganisationName,
   senderOrganisationLogoUrl,
+  brandPrimaryColor,
+  brandAccentColor,
   supportEmail,
   supportPhone,
   expiryDays,
@@ -555,6 +557,8 @@ export function buildSellerOnboardingEmailHtml({
   organisationName?: string;
   senderOrganisationName?: string;
   senderOrganisationLogoUrl?: string;
+  brandPrimaryColor?: string;
+  brandAccentColor?: string;
   supportEmail?: string;
   supportPhone?: string;
   expiryDays?: number | string;
@@ -669,6 +673,8 @@ export function buildSellerOnboardingEmailHtml({
     organisationName: organisationName || "Arch9",
     senderOrganisationName,
     senderOrganisationLogoUrl,
+    brandPrimaryColor,
+    brandAccentColor,
     supportEmail: supportEmail || "",
     supportPhone: supportPhone || "",
   });

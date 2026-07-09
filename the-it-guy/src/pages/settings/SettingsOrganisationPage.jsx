@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   Camera,
   CheckCircle2,
   ChevronRight,
@@ -35,6 +36,11 @@ import {
   updateOrganisationSettings,
   uploadOrganisationBrandingAsset,
 } from '../../lib/settingsApi'
+import {
+  buildClientBrandDeploymentManifest,
+  buildClientBrandVerificationMatrix,
+  getClientBrandReadiness,
+} from '../../lib/clientBrandTheme'
 import {
   SettingsBanner,
   SettingsLoadingState,
@@ -1014,6 +1020,208 @@ function BrandColourSuggestionPanel({ suggestions = {}, disabled = false, onAppl
   )
 }
 
+function getReadinessTone(status = '') {
+  if (status === 'ready') {
+    return {
+      label: 'Ready',
+      className: 'border-[#cfe8dc] bg-[#edf8f2] text-[#0f7f4f]',
+      icon: CheckCircle2,
+    }
+  }
+  if (status === 'needs_attention') {
+    return {
+      label: 'Needs attention',
+      className: 'border-[#f2d4c8] bg-[#fff2ed] text-[#b84f2b]',
+      icon: AlertTriangle,
+    }
+  }
+  return {
+    label: 'Review',
+    className: 'border-[#f0dfba] bg-[#fff8e8] text-[#9b6a12]',
+    icon: AlertTriangle,
+  }
+}
+
+function BrandReadinessPanel({ readiness }) {
+  const statusTone = getReadinessTone(readiness?.status)
+  const StatusIcon = statusTone.icon
+  const failedChecks = (readiness?.checks || []).filter((check) => !check.passed)
+
+  return (
+    <OrganisationCard title="Client Experience Readiness" description="Contrast, asset and surface checks for the branded client experience.">
+      <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <div className="rounded-[18px] border border-[#e4ecf5] bg-[#fbfdff] p-4">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-semibold text-[#17233a]">Readiness Score</span>
+            <span className={['inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold', statusTone.className].join(' ')}>
+              <StatusIcon className="h-3.5 w-3.5" strokeWidth={2} />
+              {statusTone.label}
+            </span>
+          </div>
+          <p className="mt-4 text-4xl font-semibold tracking-[-0.04em] text-[#17233a]">{readiness?.score ?? 0}%</p>
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#dce8f1]">
+            <span className="block h-full rounded-full bg-[#0f7f4f]" style={{ width: `${readiness?.score ?? 0}%` }} />
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          {(readiness?.surfaces || []).map((surface) => {
+            const tone = getReadinessTone(surface.status)
+            const Icon = tone.icon
+            return (
+              <div key={surface.key} className="rounded-[16px] border border-[#e4ecf5] bg-white p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold leading-5 text-[#17233a]">{surface.label}</p>
+                  <span className={['inline-flex h-8 w-8 items-center justify-center rounded-full border', tone.className].join(' ')}>
+                    <Icon className="h-4 w-4" strokeWidth={2} />
+                  </span>
+                </div>
+                <p className="mt-3 text-xs font-medium text-[#60758d]">
+                  Required {surface.requiredPassed}/{surface.requiredTotal}
+                  {surface.recommendedTotal ? ` • Recommended ${surface.recommendedPassed}/${surface.recommendedTotal}` : ''}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-[18px] border border-[#e4ecf5] bg-white">
+        {(failedChecks.length ? failedChecks : (readiness?.checks || []).slice(0, 3)).map((check) => {
+          const tone = getReadinessTone(check.passed ? 'ready' : check.severity === 'required' ? 'needs_attention' : 'review')
+          const Icon = tone.icon
+          return (
+            <div key={check.key} className="flex flex-col gap-3 border-t border-[#e5edf4] p-4 first:border-t-0 md:flex-row md:items-center md:justify-between">
+              <div className="flex min-w-0 items-start gap-3">
+                <span className={['mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border', tone.className].join(' ')}>
+                  <Icon className="h-4 w-4" strokeWidth={2} />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-[#17233a]">{check.label}</p>
+                  <p className="mt-1 text-sm leading-6 text-[#60758d]">{check.detail}</p>
+                </div>
+              </div>
+              <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8fa5]">
+                {check.value || (check.passed ? 'Passed' : check.severity)}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </OrganisationCard>
+  )
+}
+
+function BrandDeploymentManifestPanel({ manifest }) {
+  const surfaces = Array.isArray(manifest?.surfaces) ? manifest.surfaces : []
+  return (
+    <OrganisationCard title="Deployment Manifest" description="Stable brand fingerprint and rollout surface map.">
+      <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+        <div className="rounded-[18px] border border-[#e4ecf5] bg-[#fbfdff] p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8fa5]">Brand Fingerprint</p>
+          <p className="mt-3 break-all font-mono text-sm font-semibold text-[#17233a]">{manifest?.fingerprint || 'brand_pending'}</p>
+          <div className="mt-4 grid gap-2 text-xs leading-5 text-[#60758d]">
+            <p><span className="font-semibold text-[#40566d]">Source:</span> {manifest?.source || 'draft'}</p>
+            <p><span className="font-semibold text-[#40566d]">Readiness:</span> {manifest?.readiness?.score ?? 0}%</p>
+            <p><span className="font-semibold text-[#40566d]">Generated:</span> {getBrandLastUpdatedLabel(manifest?.generatedAt)}</p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          {surfaces.map((surface) => {
+            const tone = getReadinessTone(surface.readiness)
+            const Icon = tone.icon
+            return (
+              <div key={surface.key} className="rounded-[16px] border border-[#e4ecf5] bg-white p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold leading-5 text-[#17233a]">{surface.label}</p>
+                  <span className={['inline-flex h-8 w-8 items-center justify-center rounded-full border', tone.className].join(' ')}>
+                    <Icon className="h-4 w-4" strokeWidth={2} />
+                  </span>
+                </div>
+                <p className="mt-3 text-xs font-medium text-[#60758d]">{surface.viewportTargets?.join(' / ') || 'desktop / mobile'}</p>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {(surface.surfaces || []).map((item) => (
+                    <span key={item} className="rounded-full border border-[#dfe8f1] bg-[#fbfdff] px-2 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#60758d]">
+                      {item.replaceAll('_', ' ')}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </OrganisationCard>
+  )
+}
+
+function BrandVerificationMatrixPanel({ matrix }) {
+  const targets = Array.isArray(matrix?.targets) ? matrix.targets : []
+  const summaryTone = getReadinessTone(matrix?.summary?.status)
+  const SummaryIcon = summaryTone.icon
+  return (
+    <OrganisationCard title="Verification Matrix" description="Desktop, mobile and email targets that should be checked before broad rollout.">
+      <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+        <div className={['rounded-[18px] border p-4', summaryTone.className].join(' ')}>
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/70">
+              <SummaryIcon className="h-4 w-4" strokeWidth={2} />
+            </span>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em]">Rollout Status</p>
+              <p className="mt-1 text-lg font-semibold">{matrix?.summary?.status?.replaceAll('_', ' ') || 'pending'}</p>
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs font-semibold">
+            <div className="rounded-[12px] bg-white/70 px-2 py-2">
+              <p className="text-lg">{matrix?.summary?.ready || 0}</p>
+              <p>Ready</p>
+            </div>
+            <div className="rounded-[12px] bg-white/70 px-2 py-2">
+              <p className="text-lg">{matrix?.summary?.review || 0}</p>
+              <p>Review</p>
+            </div>
+            <div className="rounded-[12px] bg-white/70 px-2 py-2">
+              <p className="text-lg">{matrix?.summary?.needsAttention || 0}</p>
+              <p>Blocked</p>
+            </div>
+          </div>
+          <p className="mt-4 break-all font-mono text-xs">{matrix?.fingerprint || 'brand_pending'}</p>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {targets.map((target) => {
+            const tone = getReadinessTone(target.status)
+            const Icon = tone.icon
+            return (
+              <div key={target.key} className="rounded-[16px] border border-[#e4ecf5] bg-white p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold leading-5 text-[#17233a]">{target.label}</p>
+                    <p className="mt-1 text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8fa5]">{target.viewportLabel}</p>
+                  </div>
+                  <span className={['inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border', tone.className].join(' ')}>
+                    <Icon className="h-4 w-4" strokeWidth={2} />
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#60758d]">
+                  <span className="rounded-full border border-[#dfe8f1] bg-[#fbfdff] px-2 py-1">{target.width}x{target.height}</span>
+                  <span className="rounded-full border border-[#dfe8f1] bg-[#fbfdff] px-2 py-1">{target.status.replaceAll('_', ' ')}</span>
+                </div>
+                <p className="mt-3 text-xs leading-5 text-[#60758d]">
+                  Required {target.requiredPassed}/{target.requiredTotal}
+                  {target.recommendedTotal ? ` • Recommended ${target.recommendedPassed}/${target.recommendedTotal}` : ''}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </OrganisationCard>
+  )
+}
+
 function PreviewTabButton({ active, children, onClick }) {
   return (
     <button
@@ -1204,7 +1412,8 @@ function BrandPreviewWorkspace({ activeTab, setActiveTab, organisationName, logo
   )
 }
 
-function BrandPreviewPanel({ organisationName, logoUrl, iconUrl, heroImageUrl, colours, typography, brandHealth, configuredAssetCount }) {
+function BrandPreviewPanel({ organisationName, logoUrl, iconUrl, heroImageUrl, colours, typography, brandHealth, clientReadiness, configuredAssetCount }) {
+  const readinessTone = getReadinessTone(clientReadiness?.status)
   return (
     <aside className="hidden xl:block">
       <div className="sticky top-4 space-y-4 rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_14px_36px_rgba(15,23,42,0.045)]">
@@ -1215,6 +1424,8 @@ function BrandPreviewPanel({ organisationName, logoUrl, iconUrl, heroImageUrl, c
         <BrandPreviewSurface activeTab="buyer" organisationName={organisationName} logoUrl={logoUrl} iconUrl={iconUrl} heroImageUrl={heroImageUrl} colours={colours} typography={typography} />
         <div className="space-y-3 border-y border-[#e5edf4] py-4">
           <OverviewRow label="Brand Health" value={`${brandHealth}%`} verified={brandHealth >= 80} />
+          <OverviewRow label="Client Readiness" value={`${clientReadiness?.score ?? 0}%`} verified={clientReadiness?.status === 'ready'} />
+          <OverviewRow label="Status" value={readinessTone.label} verified={clientReadiness?.status === 'ready'} />
           <OverviewRow label="Assets" value={configuredAssetCount} verified={configuredAssetCount >= 3} />
           <OverviewRow label="Colours" value="Configured" verified />
         </div>
@@ -1989,6 +2200,34 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
         icon: Palette,
       },
     ]
+    const clientBrandInput = {
+      organisation: {
+        id: form.id,
+        display_name: organisationName,
+        name: organisationName,
+        logo_url: primaryAssetUrl || branding.logoDark || iconAssetUrl,
+      },
+      legacyBranding: {
+        organisationName,
+        agencyName: organisationName,
+        logoUrl: primaryAssetUrl || branding.logoDark || iconAssetUrl,
+        logoLightUrl: primaryAssetUrl,
+        logoDarkUrl: branding.logoDark || primaryAssetUrl,
+        logoIconUrl: iconAssetUrl,
+        heroImageUrl,
+        primaryColor: brandColourValues.primary,
+        secondaryColor: brandColourValues.secondary,
+        accentColor: brandColourValues.accent,
+        neutralColor: brandColourValues.neutral,
+      },
+    }
+    const clientBrandReadiness = getClientBrandReadiness(clientBrandInput)
+    const clientBrandDeploymentManifest = buildClientBrandDeploymentManifest(clientBrandInput, {
+      generatedAt: onboarding.status?.lastSavedAt || '',
+    })
+    const clientBrandVerificationMatrix = buildClientBrandVerificationMatrix(clientBrandInput, {
+      generatedAt: onboarding.status?.lastSavedAt || '',
+    })
 
     return (
       <div className={settingsPageClass}>
@@ -2069,6 +2308,10 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                   onReset={resetBrandingToArch9}
                 />
               </OrganisationCard>
+
+              <BrandReadinessPanel readiness={clientBrandReadiness} />
+              <BrandDeploymentManifestPanel manifest={clientBrandDeploymentManifest} />
+              <BrandVerificationMatrixPanel matrix={clientBrandVerificationMatrix} />
 
               <OrganisationCard title="Typography" description="Keep text, buttons and rounded controls consistent across branded surfaces.">
                 <div className="grid gap-4 md:grid-cols-2">
@@ -2175,6 +2418,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
               colours={brandColourValues}
               typography={typography}
               brandHealth={brandHealth}
+              clientReadiness={clientBrandReadiness}
               configuredAssetCount={configuredBrandAssetCount}
             />
           </div>

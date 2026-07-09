@@ -28,7 +28,12 @@ import {
   normalizeBranchAgentCount,
   normalizeBranchManagerName,
 } from './agencyOnboarding'
-import { resolveClientBrandTheme } from './clientBrandTheme.js'
+import {
+  buildClientBrandDeploymentManifest,
+  buildClientBrandVerificationMatrix,
+  getClientBrandReadiness,
+  resolveClientBrandTheme,
+} from './clientBrandTheme.js'
 import {
   PREFERRED_PARTNER_TYPE_VALUES,
   normalizePreferredPartnerType,
@@ -2008,6 +2013,16 @@ function buildPublishedClientBrandingTheme({ context = {}, mergedDraft = {}, now
     legacyBranding,
   })
 
+  const brandReadiness = getClientBrandReadiness(theme)
+  const brandDeploymentManifest = buildClientBrandDeploymentManifest(theme, {
+    generatedAt: nowIso || new Date().toISOString(),
+    publishedAt: nowIso || theme.publishedAt,
+  })
+  const brandVerificationMatrix = buildClientBrandVerificationMatrix(theme, {
+    generatedAt: nowIso || new Date().toISOString(),
+    publishedAt: nowIso || theme.publishedAt,
+  })
+
   return {
     ...theme,
     organisationId: pickBrandingText(theme.organisationId, organisation.id),
@@ -2020,6 +2035,10 @@ function buildPublishedClientBrandingTheme({ context = {}, mergedDraft = {}, now
       source: 'settings_branding_phase4',
       settingsSourcePath: 'organisation_settings.settings_json.agencyOnboarding.branding',
       settingsSyncedAt: nowIso || new Date().toISOString(),
+      brandFingerprint: brandDeploymentManifest.fingerprint,
+      brandReadiness,
+      brandDeploymentManifest,
+      brandVerificationMatrix,
     },
   }
 }

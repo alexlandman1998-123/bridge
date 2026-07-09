@@ -7,7 +7,11 @@ import {
   supabase,
 } from './supabaseClient'
 import { uploadToStorageCandidateBuckets } from './storageFallbacks'
-import { resolveClientBrandTheme } from './clientBrandTheme.js'
+import {
+  buildClientBrandDeploymentManifest,
+  buildClientBrandVerificationMatrix,
+  resolveClientBrandTheme,
+} from './clientBrandTheme.js'
 import {
   MAIN_PROCESS_STAGES,
   STAGES,
@@ -34416,6 +34420,20 @@ function normalizeBuyerOnboardingBranding({
     theme.source === 'arch9_default'
       ? organisationName
       : normalizeNullableText(theme.organisationName) || organisationName
+  const brandDeploymentManifest =
+    theme.metadata?.brandDeploymentManifest && typeof theme.metadata.brandDeploymentManifest === 'object'
+      ? theme.metadata.brandDeploymentManifest
+      : buildClientBrandDeploymentManifest(theme, {
+        generatedAt: theme.updatedAt || theme.publishedAt || '',
+        publishedAt: theme.publishedAt || '',
+      })
+  const brandVerificationMatrix =
+    theme.metadata?.brandVerificationMatrix && typeof theme.metadata.brandVerificationMatrix === 'object'
+      ? theme.metadata.brandVerificationMatrix
+      : buildClientBrandVerificationMatrix(theme, {
+        generatedAt: brandDeploymentManifest.generatedAt || theme.updatedAt || theme.publishedAt || '',
+        publishedAt: brandDeploymentManifest.publishedAt || theme.publishedAt || '',
+      })
 
   return {
     ...fallbackBranding,
@@ -34437,6 +34455,9 @@ function normalizeBuyerOnboardingBranding({
     neutralColor: theme.neutralColor,
     suggestedPrimaryColor: theme.suggestedPrimaryColor,
     suggestedAccentColor: theme.suggestedAccentColor,
+    brandFingerprint: normalizeNullableText(brandDeploymentManifest.fingerprint),
+    brandDeploymentManifest,
+    brandVerificationMatrix,
     clientTheme: theme,
   }
 }

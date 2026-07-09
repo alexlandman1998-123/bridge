@@ -6,7 +6,9 @@ const packageJsonSource = await readFile(new URL('../package.json', import.meta.
 const packageJson = JSON.parse(packageJsonSource)
 
 for (const token of [
-  "import { resolveClientBrandTheme } from './clientBrandTheme.js'",
+  "from './clientBrandTheme.js'",
+  'resolveClientBrandTheme',
+  'getClientBrandReadiness',
   'buildPublishedClientBrandingTheme',
   'buildOrganisationClientBrandingPayload',
   'syncOrganisationClientBranding',

@@ -34,6 +34,8 @@ async function resolveSenderOrganisationBranding(
 ) {
   let senderOrganisationName = fallbackName;
   let senderOrganisationLogoUrl = "";
+  let brandPrimaryColor = "";
+  let brandAccentColor = "";
   let supportEmail = "";
   let supportPhone = "";
 
@@ -78,21 +80,38 @@ async function resolveSenderOrganisationBranding(
     console.error("[seller_onboarding_submitted] organisation logo lookup failed", logoQuery.error);
   }
 
-  const brandingQuery = await supabase
+  let brandingQuery = await supabase
     .from("organisation_branding")
-    .select("organisation_display_name, logo_light_url, logo_dark_url")
+    .select("organisation_display_name, logo_light_url, logo_dark_url, primary_color, accent_color, primary_brand_color, accent_brand_color, theme_json")
     .eq("organisation_id", organisationId)
     .maybeSingle();
+
+  if (brandingQuery.error && isMissingColumnError(brandingQuery.error)) {
+    brandingQuery = await supabase
+      .from("organisation_branding")
+      .select("organisation_display_name, logo_light_url, logo_dark_url, primary_brand_color, accent_brand_color")
+      .eq("organisation_id", organisationId)
+      .maybeSingle();
+  }
 
   if (
     !brandingQuery.error ||
     isMissingTableError(brandingQuery.error, "organisation_branding") ||
     isMissingSchemaError(brandingQuery.error)
   ) {
+    const theme = toRecord(brandingQuery.data?.theme_json);
     senderOrganisationName = normalizeText(brandingQuery.data?.organisation_display_name) || senderOrganisationName;
     senderOrganisationLogoUrl = normalizeText(brandingQuery.data?.logo_dark_url) ||
       normalizeText(brandingQuery.data?.logo_light_url) ||
       senderOrganisationLogoUrl;
+    brandPrimaryColor = normalizeText(brandingQuery.data?.primary_color) ||
+      normalizeText(brandingQuery.data?.primary_brand_color) ||
+      normalizeText(theme.primaryColor) ||
+      brandPrimaryColor;
+    brandAccentColor = normalizeText(brandingQuery.data?.accent_color) ||
+      normalizeText(brandingQuery.data?.accent_brand_color) ||
+      normalizeText(theme.accentColor) ||
+      brandAccentColor;
   } else if (brandingQuery.error) {
     console.error("[seller_onboarding_submitted] organisation branding lookup failed", brandingQuery.error);
   }
@@ -121,6 +140,15 @@ async function resolveSenderOrganisationBranding(
       normalizeText(branding.logoLight) ||
       normalizeText(branding.logoLightUrl) ||
       senderOrganisationLogoUrl;
+    brandPrimaryColor = normalizeText(branding.primaryColor) ||
+      normalizeText(branding.primaryColour) ||
+      normalizeText(branding.brandPrimaryColor) ||
+      normalizeText(toRecord(branding.brandColours).primary) ||
+      brandPrimaryColor;
+    brandAccentColor = normalizeText(branding.accentColor) ||
+      normalizeText(branding.accentColour) ||
+      normalizeText(toRecord(branding.brandColours).accent) ||
+      brandAccentColor;
   } else if (settingsQuery.error) {
     console.error("[seller_onboarding_submitted] organisation settings lookup failed", settingsQuery.error);
   }
@@ -128,6 +156,8 @@ async function resolveSenderOrganisationBranding(
   return {
     senderOrganisationName,
     senderOrganisationLogoUrl,
+    brandPrimaryColor,
+    brandAccentColor,
     supportEmail,
     supportPhone,
   };
@@ -329,6 +359,8 @@ export async function handleSellerOnboardingSubmittedEmail(
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
   let senderOrganisationName = organisationName;
   let senderOrganisationLogoUrl = "";
+  let brandPrimaryColor = normalizeText(payload.brandPrimaryColor ?? payload.brand_primary_color);
+  let brandAccentColor = normalizeText(payload.brandAccentColor ?? payload.brand_accent_color);
   let templateOverrides = null;
 
   if (organisationId && supabase) {
@@ -340,6 +372,8 @@ export async function handleSellerOnboardingSubmittedEmail(
       );
       senderOrganisationName = resolvedOrganisation.senderOrganisationName;
       senderOrganisationLogoUrl = resolvedOrganisation.senderOrganisationLogoUrl;
+      brandPrimaryColor = resolvedOrganisation.brandPrimaryColor || brandPrimaryColor;
+      brandAccentColor = resolvedOrganisation.brandAccentColor || brandAccentColor;
       if (!supportEmail) supportEmail = resolvedOrganisation.supportEmail;
       if (!supportPhone) supportPhone = resolvedOrganisation.supportPhone;
       templateOverrides = await fetchOrganisationEmailTemplateOverride(
@@ -364,6 +398,8 @@ export async function handleSellerOnboardingSubmittedEmail(
     organisationName: senderOrganisationName || organisationName,
     senderOrganisationName,
     senderOrganisationLogoUrl,
+    brandPrimaryColor,
+    brandAccentColor,
     supportEmail,
     supportPhone,
     templateOverrides: templateOverrides || undefined,

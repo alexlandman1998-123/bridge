@@ -318,6 +318,10 @@ export type SendSellerOnboardingPayload = {
   agency_logo?: string;
   agencyLogoUrl?: string;
   agency_logo_url?: string;
+  brandPrimaryColor?: string;
+  brand_primary_color?: string;
+  brandAccentColor?: string;
+  brand_accent_color?: string;
   expiryDays?: number | string;
   expiry_days?: number | string;
   expiresAt?: string;
@@ -362,6 +366,10 @@ export type SendSellerOnboardingSubmittedPayload = {
   leadId?: string;
   listingId?: string;
   assignedAgentId?: string;
+  brandPrimaryColor?: string;
+  brand_primary_color?: string;
+  brandAccentColor?: string;
+  brand_accent_color?: string;
   actionLink?: string;
 };
 

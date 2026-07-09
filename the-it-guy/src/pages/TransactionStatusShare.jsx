@@ -1,8 +1,12 @@
 import { AlertCircle } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import TransactionProgressPanel from '../components/TransactionProgressPanel'
+import {
+  buildClientBrandCssVars,
+  resolveClientBrandTheme,
+} from '../lib/clientBrandTheme'
 import { fetchTransactionStatusByToken } from '../lib/api'
 import { MAIN_STAGE_LABELS, getClientStageExplainer } from '../lib/stages'
 
@@ -46,6 +50,25 @@ function TransactionStatusShare() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [statusData, setStatusData] = useState(null)
+  const clientBrandTheme = useMemo(() => resolveClientBrandTheme({
+    fallback: statusData?.clientTheme || statusData?.branding?.clientTheme || {},
+    organisation: statusData?.organisation || null,
+    organisationSettings: statusData?.organisationSettings || null,
+    organisationBranding: statusData?.organisationBranding || null,
+    legacyBranding: statusData?.branding || {},
+    unit: statusData?.unit || null,
+  }), [statusData])
+  const clientBrandStyle = useMemo(() => ({
+    ...buildClientBrandCssVars(clientBrandTheme),
+    '--status-share-page-bg': `linear-gradient(180deg, color-mix(in srgb, ${clientBrandTheme.neutralColor} 82%, #ffffff) 0%, color-mix(in srgb, ${clientBrandTheme.primaryColor} 10%, #eef2fa) 100%)`,
+  }), [clientBrandTheme])
+  const clientBrandName = clientBrandTheme.organisationName || 'Arch9'
+  const clientBrandLogoUrl =
+    clientBrandTheme.logoDarkUrl ||
+    clientBrandTheme.logoUrl ||
+    clientBrandTheme.logoLightUrl ||
+    clientBrandTheme.logoIconUrl ||
+    ''
 
   useEffect(() => {
     let mounted = true
@@ -80,7 +103,7 @@ function TransactionStatusShare() {
 
   if (loading) {
     return (
-      <main className="status-share-page">
+      <main className="status-share-page" style={clientBrandStyle}>
         <section className="status-share-card">
           <p className="status-message">Loading transaction status...</p>
         </section>
@@ -90,7 +113,7 @@ function TransactionStatusShare() {
 
   if (error || !statusData) {
     return (
-      <main className="status-share-page">
+      <main className="status-share-page" style={clientBrandStyle}>
         <section className="status-share-card">
           <div className="status-share-error">
             <AlertCircle size={16} />
@@ -137,10 +160,14 @@ function TransactionStatusShare() {
   ].filter(Boolean)
 
   return (
-    <main className="status-share-page">
+    <main className="status-share-page" style={clientBrandStyle}>
       <section className="status-share-card">
         <header className="status-share-header">
-          <p>Arch9</p>
+          {clientBrandLogoUrl ? (
+            <img className="status-share-logo" src={clientBrandLogoUrl} alt={clientBrandName} />
+          ) : (
+            <p>{clientBrandName}</p>
+          )}
           <h1>Transaction Status</h1>
           <span>Last updated {formatDateTime(updatedAt)}</span>
         </header>
@@ -170,7 +197,7 @@ function TransactionStatusShare() {
           ].filter(Boolean)}
           comments={externalProgressItems.map((item) => ({
             id: item.id,
-            authorName: 'Arch9 Workspace',
+            authorName: `${clientBrandName} Workspace`,
             commentBody: item.body,
             createdAt: item.createdAt,
             discussionType: 'status',
