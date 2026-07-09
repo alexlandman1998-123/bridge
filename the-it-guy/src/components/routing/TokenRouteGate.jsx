@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useParams } from 'react-router-dom'
+import UxDiagnosticsActions from '../feedback/UxDiagnosticsActions'
 
 function isLikelyUnsafeToken(value = '') {
   const token = String(value || '').trim()
@@ -13,6 +14,7 @@ export default function TokenRouteGate({
   paramKey = 'token',
   title = 'Invalid access link',
   retryHref = '/',
+  supportHref = '/settings/help',
   children,
 }) {
   const params = useParams()
@@ -25,9 +27,22 @@ export default function TokenRouteGate({
         <div className="auth-loading-card">
           <h2>{title}</h2>
           <p>This link appears invalid or incomplete. Request a fresh secure link and try again.</p>
-          <a href={retryHref} className="auth-secondary-cta mt-3 inline-flex">
-            Go back
-          </a>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <a href={retryHref} className="auth-primary-cta inline-flex no-underline">
+              Go back
+            </a>
+            <a href={supportHref} className="auth-secondary-cta inline-flex no-underline">
+              Help Centre
+            </a>
+          </div>
+          <UxDiagnosticsActions
+            source={`token_route_gate:${paramKey}`}
+            category="invalid_token_route"
+            severity="high"
+            message={title}
+            metadata={{ routeParam: paramKey, title }}
+            compact
+          />
         </div>
       </section>
     )

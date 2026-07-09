@@ -1,9 +1,13 @@
 const STORAGE_KEYS = Object.freeze({
   uploads: 'arch9.mobile.uploads.v1',
   offlineDrafts: 'arch9.mobile.offlineDrafts.v1',
+  createDrafts: 'arch9.mobile.createDrafts.v1',
   recentSearches: 'arch9.mobile.recentSearches.v1',
   notificationsEnabled: 'arch9.mobile.notificationsEnabled.v1',
 })
+
+export const MOBILE_CREATE_DRAFTS_STORAGE_KEY = STORAGE_KEYS.createDrafts
+const MOBILE_CREATE_DRAFT_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 7
 
 const MODULE_LABELS = Object.freeze({
   transaction: 'Transaction',
@@ -37,6 +41,59 @@ function writeStoredList(key, list) {
 function normalizeText(value = '', fallback = '') {
   const text = String(value || '').trim()
   return text || fallback
+}
+
+function normalizeCreateDraftForm(form = {}) {
+  return {
+    primary: String(form.primary || ''),
+    secondary: String(form.secondary || ''),
+    notes: String(form.notes || ''),
+  }
+}
+
+function hasCreateDraftContent(form = {}) {
+  const normalized = normalizeCreateDraftForm(form)
+  return Boolean(
+    normalized.primary.trim() ||
+      normalized.secondary.trim() ||
+      normalized.notes.trim(),
+  )
+}
+
+function createDraftIdentity(type = '', route = '') {
+  const normalizedType = normalizeText(type, 'draft').toLowerCase()
+  const normalizedRoute = normalizeText(route, '/mobile').toLowerCase()
+  return `${normalizedType}:${normalizedRoute}`
+}
+
+function readCreateDraftMap() {
+  if (!canUseStorage()) return {}
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEYS.createDrafts) || '{}')
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return parsed
+  } catch {
+    return {}
+  }
+}
+
+function writeCreateDraftMap(map = {}) {
+  if (!canUseStorage()) return
+  const entries = Object.entries(map)
+    .filter(([, draft]) => draft && typeof draft === 'object')
+    .sort(([, left], [, right]) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')))
+    .slice(0, 20)
+  window.localStorage.setItem(STORAGE_KEYS.createDrafts, JSON.stringify(Object.fromEntries(entries)))
+}
+
+function isCreateDraftFresh(draft = {}, now = Date.now()) {
+  const updatedAt = new Date(draft.updatedAt || draft.createdAt || 0).getTime()
+  return Number.isFinite(updatedAt) && updatedAt > 0 && now - updatedAt <= MOBILE_CREATE_DRAFT_MAX_AGE_MS
+}
+
+function pruneCreateDraftMap(map = {}) {
+  const now = Date.now()
+  return Object.fromEntries(Object.entries(map).filter(([, draft]) => isCreateDraftFresh(draft, now)))
 }
 
 function nowLabel() {
@@ -225,6 +282,75 @@ export function getOfflineDrafts() {
   return readStoredList(STORAGE_KEYS.offlineDrafts)
 }
 
+export function getMobileCreateDrafts() {
+  const map = pruneCreateDraftMap(readCreateDraftMap())
+  writeCreateDraftMap(map)
+  return Object.values(map).sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')))
+}
+
+export function getMobileCreateDraft({ type = '', route = '' } = {}) {
+  const map = pruneCreateDraftMap(readCreateDraftMap())
+  const draft = map[createDraftIdentity(type, route)] || null
+  writeCreateDraftMap(map)
+  return draft
+}
+
+export function saveMobileCreateDraft({
+  type = '',
+  route = '',
+  module = '',
+  title = '',
+  form = {},
+} = {}) {
+  if (!canUseStorage()) return null
+  const normalizedForm = normalizeCreateDraftForm(form)
+  const key = createDraftIdentity(type, route)
+  const map = pruneCreateDraftMap(readCreateDraftMap())
+
+  if (!hasCreateDraftContent(normalizedForm)) {
+    delete map[key]
+    writeCreateDraftMap(map)
+    return null
+  }
+
+  const previous = map[key] || {}
+  const updatedAt = new Date().toISOString()
+  const draft = {
+    id: previous.id || `create-draft-${Date.now()}`,
+    key,
+    type: normalizeText(type, previous.type || 'draft'),
+    title: normalizeText(title || normalizedForm.primary, previous.title || 'Unfinished capture'),
+    module: normalizeText(module, previous.module || ''),
+    route: normalizeText(route, previous.route || '/mobile'),
+    form: normalizedForm,
+    createdAt: previous.createdAt || updatedAt,
+    updatedAt,
+    updatedLabel: nowLabel(),
+    status: 'unfinished',
+  }
+  map[key] = draft
+  writeCreateDraftMap(map)
+  return draft
+}
+
+export function clearMobileCreateDraft({ type = '', route = '' } = {}) {
+  if (!canUseStorage()) return
+  const map = readCreateDraftMap()
+  delete map[createDraftIdentity(type, route)]
+  writeCreateDraftMap(map)
+}
+
+export function subscribeToMobileCreateDrafts(callback) {
+  if (typeof window === 'undefined' || typeof callback !== 'function') return () => {}
+  function handleStorage(event) {
+    if (event.key === STORAGE_KEYS.createDrafts) {
+      callback(getMobileCreateDrafts())
+    }
+  }
+  window.addEventListener('storage', handleStorage)
+  return () => window.removeEventListener('storage', handleStorage)
+}
+
 export function syncOfflineDrafts() {
   const drafts = getOfflineDrafts()
   writeStoredList(STORAGE_KEYS.offlineDrafts, [])
@@ -238,6 +364,7 @@ export function getMobileFieldModeSnapshot({
   priorityActions = [],
 } = {}) {
   const drafts = getOfflineDrafts()
+  const createDrafts = getMobileCreateDrafts()
   const uploads = getMobileUploads()
   const queuedUploads = uploads.filter((upload) => upload.status === 'queued')
   const outstandingDocs = documents.find((item) => String(item.label || '').toLowerCase().includes('outstanding'))
@@ -250,12 +377,13 @@ export function getMobileFieldModeSnapshot({
     state: score >= 80 ? 'Field ready' : score >= 60 ? 'Needs attention' : 'Blocked in field',
     online: onlineStatus(),
     notificationsEnabled: getNotificationPreference(),
-    pendingDrafts: drafts.length,
+    pendingDrafts: drafts.length + createDrafts.length,
+    unfinishedCaptures: createDrafts.length,
     queuedUploads: queuedUploads.length,
     recentScans: getMobileScannerQueue(),
     module: workspace.module || 'mobile',
     checks: [
-      { label: 'Offline capture', status: drafts.length ? `${drafts.length} pending` : 'Ready' },
+      { label: 'Offline capture', status: drafts.length || createDrafts.length ? `${drafts.length + createDrafts.length} pending` : 'Ready' },
       { label: 'Document queue', status: queuedUploads.length ? `${queuedUploads.length} queued` : 'Clear' },
       { label: 'Push alerts', status: getNotificationPreference() ? 'Enabled' : 'Not enabled' },
       { label: 'Connection', status: onlineStatus() ? 'Online' : 'Offline' },

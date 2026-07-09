@@ -47,6 +47,16 @@ assert.equal(resolve('/dashboard'), '/mobile/home', 'mobile agents should land o
 assert.equal(resolve('/transactions/tx-123'), '/mobile/transaction/tx-123', 'transaction deep links should map to mobile transaction workspaces')
 assert.equal(resolve('/auth'), '/auth', 'public auth routes should not be forced into mobile shell')
 assert.equal(
+  resolve('/mobile/leads', { featureFlags: { enableMobileShell: false, enableMobileLoginRedirect: false } }),
+  '/mobile/leads',
+  'explicit mobile routes should render mobile pages even when automatic mobile redirects are disabled',
+)
+assert.equal(
+  resolve('/mobile/listings', { user: { role: 'client' } }),
+  '/dashboard',
+  'client users should still be kept out of the internal mobile shell',
+)
+assert.equal(
   resolve('/dashboard', { deviceType: 'desktop' }),
   '/dashboard',
   'desktop viewports should keep desktop routes',

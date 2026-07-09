@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { useOptionalOrganisation } from '../../context/OrganisationContext'
+import { MobileCreateRecoveryStrip } from '../../components/mobile-shell/MobileCreateSheet'
 import { MobileCard, MobileErrorState, MobileLoadingState } from '../../components/mobile-shell/MobileShellStates'
 import { getMobileDashboardSnapshot, getMobileDashboardSnapshotAsync } from '../../services/mobileDashboardService'
 import { trackMobileMetric } from '../../services/observability/monitoring'
@@ -564,6 +565,8 @@ export default function MobileHome() {
       </section>
 
       <CommandActions actions={snapshot.quickActions} onAction={handleQuickAction} />
+
+      <MobileCreateRecoveryStrip limit={2} />
 
       <ActiveTransactionsRail
         items={snapshot.activeWork}

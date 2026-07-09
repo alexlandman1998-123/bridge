@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
+import UxDiagnosticsHistoryPanel from '../components/feedback/UxDiagnosticsHistoryPanel'
 import {
   runIntegrityChecks,
   validateTransactionStateById,
@@ -360,6 +361,12 @@ export default function PlatformDiagnosticsPage() {
             </button>
           </div>
         </header>
+
+        <UxDiagnosticsHistoryPanel
+          title="UX friction reports"
+          description="Local issue packets copied or reported from access, recovery, and error states in this browser."
+          emptyMessage="No local UX friction reports saved in this browser yet."
+        />
 
         {operations ? (
           <div className="grid gap-4">

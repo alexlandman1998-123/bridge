@@ -1,6 +1,7 @@
-import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { BrowserRouter, Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import AppErrorBoundary from './components/AppErrorBoundary'
 import AccessState from './components/access/AccessState'
+import UxDiagnosticsActions from './components/feedback/UxDiagnosticsActions'
 import MobileLoginRedirectGate from './components/mobile-shell/MobileLoginRedirectGate'
 import MobileRouteGuard from './components/mobile-shell/MobileRouteGuard'
 import PermissionGate from './components/PermissionGate'
@@ -753,9 +754,70 @@ function AppLayout({ onLogout, session = null, user }) {
 }
 
 const WORKSPACE_GATE_SLOW_MS = 30000
+const PROTECTED_ROUTE_SLOW_MS = 5000
 
 function AccessDenied({ title = 'Access restricted', message = 'You do not have access to this area.' }) {
   return <AccessState type="denied" title={title} description={message} />
+}
+
+function ProtectedRouteLoadingState({ description = 'Validating access for this area.' }) {
+  const [loadingSlow, setLoadingSlow] = useState(false)
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setLoadingSlow(true)
+    }, PROTECTED_ROUTE_SLOW_MS)
+    return () => window.clearTimeout(timeoutId)
+  }, [])
+
+  return (
+    <section className="auth-loading-screen">
+      <div className="auth-loading-card">
+        <h2>{loadingSlow ? 'Workspace is taking longer than expected' : 'Preparing your workspace...'}</h2>
+        <p>{loadingSlow ? 'Refresh this page or sign in again if this does not clear.' : description}</p>
+        {loadingSlow ? (
+          <>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              <button type="button" className="auth-primary-cta" onClick={() => window.location.reload()}>
+                Refresh
+              </button>
+              <button type="button" className="auth-secondary-cta" onClick={() => window.location.assign('/auth')}>
+                Sign in again
+              </button>
+            </div>
+            <UxDiagnosticsActions
+              source="protected_route_loading"
+              category="slow_workspace_validation"
+              severity="high"
+              message={description}
+              metadata={{ description }}
+              compact
+            />
+          </>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+function ModuleUnavailable({
+  title = 'Module unavailable',
+  description = 'This workspace is not enabled for your account yet.',
+  to = '/dashboard',
+  actionLabel = 'Back to dashboard',
+}) {
+  return (
+    <AccessState
+      type="permission_required"
+      title={title}
+      description={description}
+      action={
+        <Link to={to} className="auth-primary-cta mt-4 inline-flex no-underline">
+          {actionLabel}
+        </Link>
+      }
+    />
+  )
 }
 
 function isSetupPath(pathname = '') {
@@ -997,14 +1059,7 @@ function RoleRoute({ allowedRoles, requiredPermission = '', requiredWorkspaceTyp
   const { role, workspaceReady, profileLoading, activeMemberships, onboardingRequiredReason } = workspaceContext
 
   if (!workspaceReady || profileLoading) {
-    return (
-      <section className="auth-loading-screen">
-        <div className="auth-loading-card">
-          <h2>Preparing your workspace…</h2>
-          <p>Validating access for this area.</p>
-        </div>
-      </section>
-    )
+    return <ProtectedRouteLoadingState description="Validating access for this area." />
   }
 
   if (FEATURE_FLAGS.disableRoleRestrictions && !import.meta.env.PROD) {
@@ -1074,14 +1129,7 @@ function AttorneyFirmRoute({ children, requireFirm = true }) {
   const suspendedAttorneyMembership = suspendedMemberships.find((membership) => membership.workspaceType === 'attorney_firm')
 
   if (!workspaceReady || profileLoading) {
-    return (
-      <section className="auth-loading-screen">
-        <div className="auth-loading-card">
-          <h2>Preparing your workspace…</h2>
-          <p>Validating attorney firm access.</p>
-        </div>
-      </section>
-    )
+    return <ProtectedRouteLoadingState description="Validating attorney firm access." />
   }
 
   if (role !== 'attorney') {
@@ -1125,14 +1173,7 @@ function AgentManagementRoute({ children, allowBranchOperations = false }) {
     (allowBranchOperations && evaluateAccessRequirement({ permission: PERMISSIONS.manageUsers }, workspaceContext).ok)
 
   if (!workspaceReady || profileLoading) {
-    return (
-      <section className="auth-loading-screen">
-        <div className="auth-loading-card">
-          <h2>Preparing your workspace…</h2>
-          <p>Validating access for this area.</p>
-        </div>
-      </section>
-    )
+    return <ProtectedRouteLoadingState description="Validating access for this area." />
   }
 
   if (FEATURE_FLAGS.disableRoleRestrictions && !import.meta.env.PROD) {
@@ -1165,14 +1206,7 @@ function SupportOperationsRoute({ children }) {
     evaluateAccessRequirement({ permission: PERMISSIONS.viewAgencyDashboard }, workspaceContext).ok
 
   if (!workspaceReady || profileLoading) {
-    return (
-      <section className="auth-loading-screen">
-        <div className="auth-loading-card">
-          <h2>Preparing your workspace…</h2>
-          <p>Validating support access.</p>
-        </div>
-      </section>
-    )
+    return <ProtectedRouteLoadingState description="Validating support access." />
   }
 
   if (FEATURE_FLAGS.disableRoleRestrictions && !import.meta.env.PROD) {
@@ -1191,18 +1225,16 @@ function HQRoute({ children }) {
   const { workspaceReady, profileLoading } = workspaceContext
 
   if (!workspaceReady || profileLoading) {
-    return (
-      <section className="auth-loading-screen">
-        <div className="auth-loading-card">
-          <h2>Preparing your workspace…</h2>
-          <p>Validating founder HQ access.</p>
-        </div>
-      </section>
-    )
+    return <ProtectedRouteLoadingState description="Validating founder HQ access." />
   }
 
   if (!canAccessHQ(workspaceContext)) {
-    return <Navigate to="/dashboard" replace />
+    return (
+      <AccessDenied
+        title="Founder HQ access required"
+        message="Your account is not enabled for the Arch9 founder workspace."
+      />
+    )
   }
 
   return children
@@ -1214,14 +1246,7 @@ function OrganisationSettingsManageRoute({ children }) {
   const canManage = evaluateAccessRequirement({ permission: PERMISSIONS.manageWorkspaceSettings }, workspaceContext).ok
 
   if (!workspaceReady || profileLoading) {
-    return (
-      <section className="auth-loading-screen">
-        <div className="auth-loading-card">
-          <h2>Preparing your workspace…</h2>
-          <p>Validating access for this area.</p>
-        </div>
-      </section>
-    )
+    return <ProtectedRouteLoadingState description="Validating access for this area." />
   }
 
   if (FEATURE_FLAGS.disableRoleRestrictions && !import.meta.env.PROD) {
@@ -1284,14 +1309,7 @@ function OrganisationGate({ children }) {
   const shouldHydrateOrganisation = role !== 'client' && activeMemberships.length > 0
 
   if (shouldHydrateOrganisation && loading) {
-    return (
-      <section className="auth-loading-screen">
-        <div className="auth-loading-card">
-          <h2>Loading organisation branding…</h2>
-          <p>Preparing your workspace identity.</p>
-        </div>
-      </section>
-    )
+    return <ProtectedRouteLoadingState description="Preparing your workspace identity." />
   }
 
   if (shouldHydrateOrganisation && error) {
@@ -1916,10 +1934,50 @@ function AppRoutes() {
               ) : null}
               {!SHOW_INTELLIGENCE_BETA ? (
                 <>
-                  <Route path="/intelligence/*" element={<Navigate to="/dashboard" replace />} />
-                  <Route path="/developer/intelligence/*" element={<Navigate to="/dashboard" replace />} />
-                  <Route path="/attorney/intelligence/*" element={<Navigate to="/dashboard" replace />} />
-                  <Route path="/agent/intelligence/*" element={<Navigate to="/dashboard" replace />} />
+                  <Route
+                    path="/intelligence/*"
+                    element={
+                      <ModuleUnavailable
+                        title="Intelligence is not enabled yet"
+                        description="This beta workspace is currently switched off. Your session is valid; the module is just unavailable."
+                      />
+                    }
+                  />
+                  <Route
+                    path="/developer/intelligence/*"
+                    element={
+                      <RoleRoute allowedRoles={['developer']}>
+                        <ModuleUnavailable
+                          title="Developer Intelligence is not enabled yet"
+                          description="This beta workspace is currently switched off for launch hardening."
+                        />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/attorney/intelligence/*"
+                    element={
+                      <RoleRoute allowedRoles={['attorney']}>
+                        <ModuleUnavailable
+                          title="Attorney Intelligence is not enabled yet"
+                          description="This beta workspace is currently switched off for launch hardening."
+                          to="/attorney/dashboard"
+                          actionLabel="Back to matters"
+                        />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/agent/intelligence/*"
+                    element={
+                      <RoleRoute allowedRoles={['agent']}>
+                        <ModuleUnavailable
+                          title="Agent Intelligence is not enabled yet"
+                          description="This beta workspace is currently switched off for launch hardening. Nothing is wrong with your account."
+                        />
+                      </RoleRoute>
+                    }
+                  />
                 </>
               ) : null}
               <Route

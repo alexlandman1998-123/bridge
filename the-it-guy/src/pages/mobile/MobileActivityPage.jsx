@@ -1,7 +1,7 @@
 import { BriefcaseBusiness, FileText, Landmark, ListChecks, MessageCircle, ScrollText, ShieldCheck } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import MobileCreateSheet, { MobileDraftCard } from '../../components/mobile-shell/MobileCreateSheet'
+import MobileCreateSheet, { MobileCreateRecoveryStrip, MobileDraftCard } from '../../components/mobile-shell/MobileCreateSheet'
 import { mobileDraftMatchesModule } from '../../components/mobile-shell/mobileCreateConfig'
 import { MobileCard, MobileEmptyState, MobileFilterChips } from '../../components/mobile-shell/MobileShellStates'
 import { getOfflineDrafts } from '../../services/mobileProductivityService'
@@ -81,6 +81,8 @@ export default function MobileActivityPage() {
           {pendingDrafts.map((draft) => <MobileDraftCard key={draft.id} draft={draft} />)}
         </section>
       ) : null}
+
+      <MobileCreateRecoveryStrip moduleKey="activity" />
 
       {rows.length ? (
         <section className="space-y-4">

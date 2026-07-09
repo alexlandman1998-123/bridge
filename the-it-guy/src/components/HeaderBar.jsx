@@ -757,29 +757,35 @@ function HeaderBar({ onLogout, user }) {
       <button
         type="button"
         className="ui-shell-avatar-trigger h-[44px]"
+        aria-label="Account menu. Profile, settings, and log out."
+        aria-expanded={open}
+        aria-haspopup="menu"
+        title="Account menu"
         onClick={() => setOpen((previous) => !previous)}
       >
         <span className="inline-grid h-7 w-7 place-items-center overflow-hidden rounded-full bg-textStrong text-secondary font-semibold text-textInverse">
           {userAvatarUrl ? <img src={userAvatarUrl} alt="" className="h-full w-full object-cover" /> : userInitials}
         </span>
+        <strong className="hidden text-sm font-semibold text-textStrong xl:inline">Account</strong>
         <ChevronDown size={14} />
       </button>
 
       {open ? (
-        <div className="ui-surface-floating absolute right-0 top-[calc(100%+12px)] z-40 flex min-w-[200px] flex-col p-2">
-          <Link className="rounded-control px-3 py-2 text-sm font-medium text-textStrong hover:bg-surfaceAlt" to="/settings/account" onClick={() => setOpen(false)}>
+        <div className="ui-surface-floating absolute right-0 top-[calc(100%+12px)] z-40 flex min-w-[200px] flex-col p-2" role="menu">
+          <Link role="menuitem" className="rounded-control px-3 py-2 text-sm font-medium text-textStrong hover:bg-surfaceAlt" to="/settings/account" onClick={() => setOpen(false)}>
             Profile
           </Link>
           {canOpenMissionControl ? (
-            <Link className="rounded-control px-3 py-2 text-sm font-medium text-textStrong hover:bg-surfaceAlt" to="/command-center" onClick={() => setOpen(false)}>
+            <Link role="menuitem" className="rounded-control px-3 py-2 text-sm font-medium text-textStrong hover:bg-surfaceAlt" to="/command-center" onClick={() => setOpen(false)}>
               ⌘ Mission Control
             </Link>
           ) : null}
-          <Link className="rounded-control px-3 py-2 text-sm font-medium text-textStrong hover:bg-surfaceAlt" to="/settings" onClick={() => setOpen(false)}>
+          <Link role="menuitem" className="rounded-control px-3 py-2 text-sm font-medium text-textStrong hover:bg-surfaceAlt" to="/settings" onClick={() => setOpen(false)}>
             Settings
           </Link>
           <button
             type="button"
+            role="menuitem"
             className="rounded-control px-3 py-2 text-left text-sm font-medium text-textStrong hover:bg-surfaceAlt"
             onClick={() => {
               setOpen(false)

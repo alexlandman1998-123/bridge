@@ -8,7 +8,9 @@ export default function MobileRouteGuard() {
   const location = useLocation()
   const workspace = useWorkspace()
   const destination = getDesktopLandingRoute(workspace)
-  const allowed = FEATURE_FLAGS.enableMobileShell && userCanAccessMobile(workspace)
+  const explicitMobileRoute = location.pathname.startsWith('/mobile')
+  const canAccessMobile = userCanAccessMobile(workspace)
+  const allowed = canAccessMobile && (FEATURE_FLAGS.enableMobileShell || explicitMobileRoute)
 
   if (!allowed) {
     void trackMobileMetric(FEATURE_FLAGS.enableMobileShell ? 'mobile_redirect_skipped' : 'mobile_shell_disabled', {
@@ -20,6 +22,7 @@ export default function MobileRouteGuard() {
         sourceRoute: location.pathname,
         destinationRoute: destination,
         mobileShellEnabled: FEATURE_FLAGS.enableMobileShell,
+        explicitMobileRoute,
       },
     })
     return <Navigate to={destination} replace />

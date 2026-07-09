@@ -1,7 +1,7 @@
 import { BriefcaseBusiness, ChevronRight, Plus, Upload, UsersRound } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import MobileCreateSheet, { MobileDraftCard } from '../../components/mobile-shell/MobileCreateSheet'
+import MobileCreateSheet, { MobileCreateRecoveryStrip, MobileDraftCard } from '../../components/mobile-shell/MobileCreateSheet'
 import { isMobileCreateType, mobileDraftMatchesModule } from '../../components/mobile-shell/mobileCreateConfig'
 import { MobileCard, MobileEmptyState, MobileErrorState, MobileFilterChips, MobileLoadingState, MobileSearchBar } from '../../components/mobile-shell/MobileShellStates'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -234,6 +234,7 @@ export default function MobileModulePage({ moduleKey }) {
         <MobileFilterChips items={TRANSACTION_FILTERS} active={filter} onChange={setFilter} />
 
         <section className="space-y-3">
+          <MobileCreateRecoveryStrip moduleKey="transactions" />
           {pendingDrafts.map((draft) => <MobileDraftCard key={draft.id} draft={draft} />)}
           {rows.length ? (
             rows.map((item) => <MobileTransactionCard key={item.id} item={item} onOpen={openTransaction} />)
@@ -283,6 +284,7 @@ export default function MobileModulePage({ moduleKey }) {
       <GenericModuleCard copy={copy} />
 
       <section className="space-y-3">
+        <MobileCreateRecoveryStrip moduleKey={moduleKey} />
         {pendingDrafts.map((draft) => <MobileDraftCard key={draft.id} draft={draft} />)}
         {pendingDrafts.length ? null : <MobileEmptyState title={copy.emptyTitle} body={copy.emptyBody} />}
       </section>

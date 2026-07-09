@@ -15,6 +15,8 @@ const CREATE_CONFIG = {
     notesPlaceholder: 'Budget, area, property interest, next call...',
     submitLabel: 'Save Lead',
     icon: UsersRound,
+    requiredFields: ['primary', 'secondary'],
+    contactField: 'secondary',
   },
   prospect: {
     eyebrow: 'Prospecting',
@@ -30,6 +32,8 @@ const CREATE_CONFIG = {
     notesPlaceholder: 'What was discussed and when to follow up...',
     submitLabel: 'Save Prospect',
     icon: FileText,
+    requiredFields: ['primary'],
+    atLeastOneFields: ['secondary', 'notes'],
   },
   transaction: {
     eyebrow: 'Deal Capture',
@@ -45,6 +49,8 @@ const CREATE_CONFIG = {
     notesPlaceholder: 'Price, stage, parties, next step...',
     submitLabel: 'Save Transaction Draft',
     icon: ScrollText,
+    requiredFields: ['primary'],
+    atLeastOneFields: ['secondary', 'notes'],
   },
   note: {
     eyebrow: 'Activity Note',
@@ -60,6 +66,7 @@ const CREATE_CONFIG = {
     notesPlaceholder: 'What happened?',
     submitLabel: 'Save Note',
     icon: MessageCircle,
+    atLeastOneFields: ['primary', 'notes'],
   },
   'follow-up': {
     eyebrow: 'Task Capture',
@@ -75,7 +82,38 @@ const CREATE_CONFIG = {
     notesPlaceholder: 'What needs to happen?',
     submitLabel: 'Save Follow-up',
     icon: Clock3,
+    requiredFields: ['primary', 'secondary'],
   },
+}
+
+const FIELD_LABELS = {
+  primary: 'Main detail',
+  secondary: 'Supporting detail',
+  notes: 'Notes',
+}
+
+const FIELD_LIMITS = {
+  primary: 80,
+  secondary: 140,
+  notes: 1200,
+}
+
+function normalizeMobileCreateText(value = '') {
+  return String(value || '').replace(/\s+/g, ' ').trim()
+}
+
+function getFieldLabel(config = {}, field = '') {
+  if (field === 'primary') return config.primaryLabel || FIELD_LABELS.primary
+  if (field === 'secondary') return config.secondaryLabel || FIELD_LABELS.secondary
+  if (field === 'notes') return config.notesLabel || FIELD_LABELS.notes
+  return FIELD_LABELS[field] || 'Field'
+}
+
+function looksLikePhoneOrEmail(value = '') {
+  const text = normalizeMobileCreateText(value)
+  if (!text) return false
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) return true
+  return text.replace(/\D/g, '').length >= 7
 }
 
 export function isMobileCreateType(type = '') {
@@ -86,6 +124,47 @@ export function getMobileCreateConfig(type = '') {
   return CREATE_CONFIG[String(type || '').trim()] || null
 }
 
+export function getMobileCreateFieldLimit(field = '') {
+  return FIELD_LIMITS[field] || 240
+}
+
+export function validateMobileCreateForm(type = '', form = {}) {
+  const config = getMobileCreateConfig(type)
+  if (!config) {
+    return { ok: false, errors: ['Choose a valid quick-create action.'] }
+  }
+
+  const errors = []
+  const normalizedForm = {
+    primary: normalizeMobileCreateText(form.primary),
+    secondary: normalizeMobileCreateText(form.secondary),
+    notes: normalizeMobileCreateText(form.notes),
+  }
+
+  for (const field of config.requiredFields || []) {
+    if (!normalizedForm[field]) {
+      errors.push(`${getFieldLabel(config, field)} is required.`)
+    }
+  }
+
+  if (config.atLeastOneFields?.length && config.atLeastOneFields.every((field) => !normalizedForm[field])) {
+    const labels = config.atLeastOneFields.map((field) => getFieldLabel(config, field).toLowerCase())
+    errors.push(`Add ${labels.join(' or ')} before saving.`)
+  }
+
+  Object.entries(FIELD_LIMITS).forEach(([field, limit]) => {
+    if (normalizedForm[field].length > limit) {
+      errors.push(`${getFieldLabel(config, field)} must be ${limit} characters or fewer.`)
+    }
+  })
+
+  if (config.contactField && normalizedForm[config.contactField] && !looksLikePhoneOrEmail(normalizedForm[config.contactField])) {
+    errors.push('Add a usable phone number or email address.')
+  }
+
+  return { ok: errors.length === 0, errors }
+}
+
 export function mobileDraftMatchesModule(draft = {}, moduleKey = '') {
   const module = String(draft.module || '').trim()
   if (moduleKey === 'transactions') return module === 'transaction'
@@ -93,4 +172,8 @@ export function mobileDraftMatchesModule(draft = {}, moduleKey = '') {
   if (moduleKey === 'tasks') return module === 'task'
   if (moduleKey === 'activity') return module === 'activity'
   return module === moduleKey
+}
+
+export function mobileCreateDraftMatchesModule(draft = {}, moduleKey = '') {
+  return mobileDraftMatchesModule({ module: draft.module }, moduleKey)
 }

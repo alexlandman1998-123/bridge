@@ -345,6 +345,57 @@ function isExistingOrUnconfirmedUserError(error) {
   )
 }
 
+function getFriendlyAuthError(error, { mode = 'login', action = 'authenticate' } = {}) {
+  const message = normalizeErrorMessage(error)
+  const normalized = message.toLowerCase()
+
+  if (
+    normalized === 'failed to fetch' ||
+    normalized.includes('failed to fetch') ||
+    normalized.includes('fetch failed') ||
+    normalized.includes('networkerror') ||
+    normalized.includes('network request failed') ||
+    normalized.includes('load failed')
+  ) {
+    return 'Arch9 could not reach the authentication service. Check your connection, then try again.'
+  }
+
+  if (normalized.includes('invalid login credentials')) {
+    return 'Email or password is incorrect. Check your details or reset your password.'
+  }
+
+  if (normalized.includes('email not confirmed')) {
+    return 'Confirm your email address before signing in, or resend the verification email.'
+  }
+
+  if (isAuthRateLimitError(error)) {
+    return 'Too many authentication requests were sent in a short time. Wait a few minutes, then try again.'
+  }
+
+  if (normalized.includes('redirect') && normalized.includes('not allowed')) {
+    return 'Verification redirect URL is not allowed by Supabase Auth. Add your app URLs to Auth redirect settings and retry.'
+  }
+
+  if (
+    normalized.includes('invalid api key') ||
+    normalized.includes('jwt') ||
+    normalized.includes('anon key') ||
+    normalized.includes('project not found')
+  ) {
+    return 'Arch9 authentication is not configured correctly for this environment. Ask an administrator to check the Supabase project settings.'
+  }
+
+  if (!message) {
+    return mode === 'signup'
+      ? 'Arch9 could not create the account right now. Try again in a moment.'
+      : action === 'resend'
+        ? 'Arch9 could not resend verification right now. Try again in a moment.'
+        : 'Arch9 could not sign you in right now. Try again in a moment.'
+  }
+
+  return message
+}
+
 function Auth({ onDevBypass = null }) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -630,7 +681,7 @@ function Auth({ onDevBypass = null }) {
       setPassword('')
       setConfirmPassword('')
     } catch (submitError) {
-      setError(submitError.message || 'Unable to complete authentication request.')
+      setError(getFriendlyAuthError(submitError, { mode }))
     } finally {
       setLoading(false)
     }
@@ -676,7 +727,7 @@ function Auth({ onDevBypass = null }) {
         setError('Supabase Auth is still rejecting verification emails because the project email limit is reached. Raise the Supabase Auth email limit, then retry.')
         return
       }
-      setError(resendError?.message || 'Unable to resend verification email right now.')
+      setError(getFriendlyAuthError(resendError, { mode, action: 'resend' }))
     } finally {
       setResendLoading(false)
     }

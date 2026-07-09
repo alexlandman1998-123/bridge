@@ -1,4 +1,5 @@
 import { BookOpenText, LifeBuoy, Mail } from 'lucide-react'
+import UxDiagnosticsHistoryPanel from '../../components/feedback/UxDiagnosticsHistoryPanel'
 import { SettingsPageHeader, SettingsSectionCard, settingsPageClass } from './settingsUi'
 
 const SUPPORT_OPTIONS = [
@@ -43,6 +44,15 @@ export default function SettingsSupportPage() {
             )
           })}
         </div>
+      </SettingsSectionCard>
+
+      <SettingsSectionCard title="Recent Diagnostics">
+        <UxDiagnosticsHistoryPanel
+          title="Local support packets"
+          description="Recent issue references saved on this browser."
+          emptyMessage="No support packets saved on this browser yet."
+          compact
+        />
       </SettingsSectionCard>
     </div>
   )

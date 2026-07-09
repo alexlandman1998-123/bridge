@@ -191,6 +191,27 @@ function normalizeText(value = '') {
   return String(value ?? '').trim()
 }
 
+function getListingLoadErrorMessage(error) {
+  const message = normalizeText(error?.message || error)
+  const normalized = message.toLowerCase()
+  if (
+    normalized.includes('listing id is required') ||
+    normalized.includes('invalid input syntax for type uuid')
+  ) {
+    return 'No listing matches this link. Check the URL or return to Listings.'
+  }
+  if (
+    normalized === 'failed to fetch' ||
+    normalized.includes('failed to fetch') ||
+    normalized.includes('fetch failed') ||
+    normalized.includes('networkerror') ||
+    normalized.includes('network request failed')
+  ) {
+    return 'Arch9 could not reach listings right now. Try again, or return to Listings.'
+  }
+  return message || 'Unable to load this listing.'
+}
+
 function buildAcceptedOfferOtpWorkspacePath({
   transactionId = '',
   offerId = '',
@@ -1764,7 +1785,7 @@ function AgentListingDetail() {
     setPipelineLeads(readPipelineLeads())
 
     let nextListings = runtimeListings
-    if (isSupabaseConfigured && listingId && !listingId.startsWith('development-')) {
+    if (isSupabaseConfigured && listingId && !listingId.startsWith('development-') && isUuidLike(listingId)) {
       try {
         const dbListing = await getPrivateListing(listingId)
         if (dbListing?.id) {
@@ -1772,8 +1793,10 @@ function AgentListingDetail() {
         }
       } catch (error) {
         console.error('[AgentListingDetail] Supabase listing load failed', error)
-        setDetailError(error?.message || 'Unable to load this listing from Supabase.')
+        setDetailError(getListingLoadErrorMessage(error))
       }
+    } else if (isSupabaseConfigured && listingId && !listingId.startsWith('development-') && !isUuidLike(listingId)) {
+      setDetailError('No listing matches this link. Check the URL or return to Listings.')
     }
 
     setPrivateListings(nextListings)
@@ -5336,7 +5359,8 @@ function AgentListingDetail() {
   if (!listingRecord) {
     return (
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-        <p className="text-sm text-[#6b7d93]">{detailError || 'Listing not found.'}</p>
+        <h1 className="text-lg font-semibold text-[#17233a]">Listing not found</h1>
+        <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{detailError || 'This listing was not returned for the selected workspace.'}</p>
         <div className="mt-4">
           <Button variant="secondary" onClick={() => navigate('/listings')}>
             Back to Listings

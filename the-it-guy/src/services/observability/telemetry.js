@@ -36,7 +36,7 @@ export async function trackTelemetryEvent({
   const safeEventName = normalizeText(eventName)
   if (!safeEventName) return { persisted: false, reason: 'missing_event_name' }
   if (!isSupabaseConfigured || !supabase || !userId) {
-    if (import.meta.env.DEV) console.debug('[TELEMETRY]', { category, eventName: safeEventName, route, severity, metadata })
+    if (import.meta.env?.DEV) console.debug('[TELEMETRY]', { category, eventName: safeEventName, route, severity, metadata })
     return { persisted: false, reason: 'not_persisted' }
   }
 

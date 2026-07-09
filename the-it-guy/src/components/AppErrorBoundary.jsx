@@ -1,5 +1,6 @@
 import { Component } from 'react'
 import { Link } from 'react-router-dom'
+import UxDiagnosticsActions from './feedback/UxDiagnosticsActions'
 import { reportError } from '../services/observability/errorTracking'
 
 function getErrorMessage(error) {
@@ -199,6 +200,18 @@ class AppErrorBoundary extends Component {
               Go to Dashboard
             </Link>
           </div>
+          <UxDiagnosticsActions
+            source={`error_boundary:${this.props.scope || 'app'}`}
+            category={staleChunkError ? 'stale_app_asset' : 'render_error'}
+            severity={staleChunkError ? 'medium' : 'high'}
+            message={staleChunkError ? 'Stale app asset recovery shown.' : getErrorMessage(this.state.error)}
+            metadata={{
+              scope: this.props.scope || 'app',
+              staleChunkError,
+              title: this.props.title || '',
+            }}
+            compact
+          />
         </div>
       </section>
     )

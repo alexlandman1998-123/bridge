@@ -5547,8 +5547,9 @@ function ClientPortal() {
   const buyerName = portal?.buyer?.name || 'Client'
   const clientFirstName = String(buyerName || 'Client').trim().split(/\s+/)[0] || 'Client'
   const buyerInitial = String(buyerName || 'C').trim().charAt(0).toUpperCase() || 'C'
-  const hideBuyerOverviewHeader = effectiveWorkspace !== 'seller' && isOverview
-  const hideWorkspaceHeader = hideSellerWorkspaceHeader || hideBuyerOverviewHeader
+  const isBuyerWorkspace = effectiveWorkspace !== 'seller'
+  const hideBuyerWorkspaceHeader = isBuyerWorkspace
+  const hideWorkspaceHeader = hideSellerWorkspaceHeader || hideBuyerWorkspaceHeader
   const pickPortalImageUrl = (...candidates) => {
     for (const candidate of candidates) {
       if (Array.isArray(candidate)) {
@@ -5763,6 +5764,80 @@ function ClientPortal() {
     buyerPaymentStatusLabel === 'Paid'
       ? 'border-[#cde7d5] bg-[#eaf8ef] text-[#18734a]'
       : 'border-[#f0d8ae] bg-[#fff6e7] text-[#9a5b0f]'
+  const buyerSectionDescriptorByKey = {
+    appointments: {
+      kicker: 'Appointments',
+      title: 'Appointments and key dates',
+      description: 'Review upcoming meetings, confirmations, and date-sensitive items linked to your transaction.',
+      icon: CalendarClock,
+    },
+    details: {
+      kicker: 'My details',
+      title: 'Your purchase profile',
+      description: 'Keep the personal, legal, and purchase information your team relies on up to date.',
+      icon: User,
+    },
+    bond_application: {
+      kicker: 'Bond application',
+      title: 'Finance application workspace',
+      description: 'Complete the finance information, review supporting offers, and keep lender requirements moving.',
+      icon: FileSignature,
+    },
+    documents: {
+      kicker: 'Documents',
+      title: 'Document centre',
+      description: 'Upload requested documents, review shared files, and see what is still outstanding.',
+      icon: FileText,
+    },
+    handover: {
+      kicker: 'Handover',
+      title: 'Handover readiness',
+      description: 'Track practical completion, handover requirements, and final readiness items.',
+      icon: KeyRound,
+    },
+    snags: {
+      kicker: 'Snags',
+      title: 'Snag list',
+      description: 'Log practical completion items and follow progress through to close-out.',
+      icon: Wrench,
+    },
+    settings: {
+      kicker: 'Settings',
+      title: 'Portal settings',
+      description: 'Review access, privacy, and the support features active for this transaction.',
+      icon: Settings,
+    },
+    team: {
+      kicker: 'Team',
+      title: 'Your transaction team',
+      description: 'Know who is helping you and how each role supports your purchase.',
+      icon: Users,
+    },
+  }
+  const buyerSectionDescriptor = buyerSectionDescriptorByKey[workspaceSection] || {
+    kicker: activeSectionLabel,
+    title: activeSectionLabel,
+    description: 'Review the latest information for this part of your transaction.',
+    icon: LayoutDashboard,
+  }
+  const BuyerSectionIcon = buyerSectionDescriptor.icon || LayoutDashboard
+  const activeBuyerBottomKey =
+    activeSection === 'overview'
+      ? 'overview'
+      : activeSection === 'documents'
+        ? 'documents'
+        : activeSection === 'team'
+          ? 'team'
+          : ['bond_application', 'handover'].includes(activeSection)
+            ? 'journey'
+            : 'more'
+  const buyerMobileNavigationItems = [
+    { key: 'overview', label: 'Overview', icon: Home, to: getPortalWorkspacePath(token, workspaceNavigationScope, 'overview') },
+    { key: 'documents', label: 'Documents', icon: FileText, to: getPortalWorkspacePath(token, workspaceNavigationScope, 'documents') },
+    { key: 'journey', label: 'Journey', icon: CheckCircle2, to: `${getPortalWorkspacePath(token, workspaceNavigationScope, 'overview')}#buyer-portal-journey` },
+    { key: 'team', label: 'Team', icon: Users, to: getPortalWorkspacePath(token, workspaceNavigationScope, 'team') },
+    { key: 'more', label: 'More', icon: Settings, to: getPortalWorkspacePath(token, workspaceNavigationScope, 'settings') },
+  ]
   const sellerDisplayName = pickFirstText(portal?.buyer?.name, activeSellingContext?.clientName, activeSellingContext?.client_name, 'Seller')
   const sellerFirstName = String(sellerDisplayName || 'Seller').trim().split(/\s+/)[0] || 'Seller'
   const sellerPropertyTitle = pickFirstText(
@@ -6518,7 +6593,7 @@ function ClientPortal() {
 
         <div className="min-w-0 flex-1 lg:pl-[280px]">
           <div className="border-b border-[#dbe5ef] bg-white/80 px-5 py-4 backdrop-blur lg:hidden">
-            {hideBuyerOverviewHeader ? (
+            {hideBuyerWorkspaceHeader ? (
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   {clientBrandLogoUrl ? (
@@ -6637,7 +6712,7 @@ function ClientPortal() {
               </select>
             </div>
             )}
-            {hideBuyerOverviewHeader ? null : (
+            {hideBuyerWorkspaceHeader ? null : (
             <div className="overflow-x-auto">
               <nav className="flex min-w-max items-center gap-2 rounded-[22px] border border-[#e2eaf3] bg-[#f8fbff] p-2 md:min-w-[640px]">
                 {portalNavigationItems.map((item) => {
@@ -6668,7 +6743,7 @@ function ClientPortal() {
             )}
           </div>
 
-          <div className="space-y-6 px-5 py-5 md:px-8 md:py-8 xl:px-10">
+          <div className={`space-y-6 px-5 py-5 md:px-8 md:py-8 xl:px-10 ${isBuyerWorkspace ? 'pb-28 lg:pb-8' : ''}`}>
             {hideWorkspaceHeader ? null : (
             <section className="rounded-[24px] border border-[#223d57] px-5 py-5 text-white shadow-[0_20px_36px_rgba(12,24,40,0.3)]" style={{ backgroundImage: 'var(--client-portal-hero-bg)', borderColor: 'color-mix(in srgb, var(--client-brand-accent) 24%, var(--client-brand-primary))' }}>
               <h2 className="text-[1.35rem] font-semibold tracking-[-0.03em] text-[#f8fbff]">Welcome, {clientFirstName}</h2>
@@ -7002,6 +7077,84 @@ function ClientPortal() {
             )}
 
             {error ? <p className="rounded-[18px] border border-[#f1cbc7] bg-[#fff5f4] px-4 py-3 text-sm text-[#b42318]">{error}</p> : null}
+
+            {isBuyerWorkspace && !isOverview ? (
+              <section data-client-buyer-masthead="true" className="overflow-hidden rounded-[22px] border border-[#dfe8f1] bg-white shadow-[0_18px_36px_rgba(15,23,42,0.06)] sm:rounded-[28px]">
+                <div className="grid gap-0 lg:grid-cols-[minmax(220px,0.42fr)_minmax(0,1fr)]">
+                  <div className="hidden bg-[#dce7ee] lg:block">
+                    {buyerPropertyImageUrl ? (
+                      <img src={buyerPropertyImageUrl} alt={developmentName} className="h-full min-h-[230px] w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full min-h-[230px] items-center justify-center bg-[linear-gradient(135deg,#dfeaf0_0%,#b8cbd4_48%,#edf4f7_100%)] text-[#335066]">
+                        <Building2 size={48} strokeWidth={1.5} />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="px-4 py-4 sm:px-7 sm:py-6">
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#eaf8ef] text-[#13724d] sm:h-10 sm:w-10">
+                            <BuyerSectionIcon size={17} />
+                          </span>
+                          <span className="inline-flex rounded-full bg-[#eaf8ef] px-3 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#13724d]">
+                            {buyerSectionDescriptor.kicker}
+                          </span>
+                          {hydratingPortal ? (
+                            <span className="inline-flex rounded-full border border-[#d9e8f7] bg-[#f2f8ff] px-3 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#2169a6]">
+                              Updating
+                            </span>
+                          ) : null}
+                        </div>
+                        <h1 className="mt-3 text-[1.55rem] font-semibold leading-tight text-[#071e27] sm:mt-4 sm:text-[2.25rem]">
+                          {buyerSectionDescriptor.title}
+                        </h1>
+                        <p className="mt-2 max-w-3xl text-sm leading-5 text-[#52677d] sm:leading-6">{buyerSectionDescriptor.description}</p>
+                        <p className="mt-2 text-xs font-medium leading-5 text-[#52677d] sm:mt-3 sm:text-sm sm:leading-6">
+                          {[developmentName, unitLabel, buyerName].filter(Boolean).join('  |  ')}
+                        </p>
+                      </div>
+
+                      <Link
+                        to={getPortalWorkspacePath(token, workspaceNavigationScope, overviewActionRoute)}
+                        className={`inline-flex min-h-[42px] shrink-0 items-center justify-center gap-2 self-start rounded-[13px] px-4 py-2 text-sm font-semibold transition ${
+                          overviewHasPrimaryAction
+                            ? 'bg-[#d97706] text-white hover:bg-[#b15f07]'
+                            : 'bg-[#063d32] text-white hover:bg-[#082f27]'
+                        }`}
+                      >
+                        {overviewHasPrimaryAction ? overviewActionTitle : 'Back to overview'}
+                        <ChevronRight size={15} />
+                      </Link>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-6 sm:gap-3 md:grid-cols-4">
+                      <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2.5 sm:rounded-[16px] sm:px-4 sm:py-3">
+                        <span className="block text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2] sm:text-[0.66rem] sm:tracking-[0.14em]">Progress</span>
+                        <strong className="mt-1.5 block text-[1.05rem] font-semibold text-[#071e27] sm:mt-2 sm:text-[1.2rem]">{journeyProgressPercent}%</strong>
+                        <span className="mt-1 block text-xs leading-5 text-[#6b7d93]">Purchase journey</span>
+                      </article>
+                      <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2.5 sm:rounded-[16px] sm:px-4 sm:py-3">
+                        <span className="block text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2] sm:text-[0.66rem] sm:tracking-[0.14em]">Stage</span>
+                        <strong className="mt-1.5 block text-sm font-semibold text-[#071e27] sm:mt-2">{journeyCurrentStageLabel}</strong>
+                        <span className="mt-1 block text-xs leading-5 text-[#2169a6]">{journeyStatusFlag?.label || 'In progress'}</span>
+                      </article>
+                      <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2.5 sm:rounded-[16px] sm:px-4 sm:py-3">
+                        <span className="block text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2] sm:text-[0.66rem] sm:tracking-[0.14em]">Documents</span>
+                        <strong className="mt-1.5 block text-sm font-semibold text-[#071e27] sm:mt-2">{buyerDocumentCompleted} of {buyerDocumentRequiredTotal || buyerDocumentCompleted}</strong>
+                        <span className="mt-1 block text-xs leading-5 text-[#6b7d93]">{buyerDocumentOutstanding} outstanding</span>
+                      </article>
+                      <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2.5 sm:rounded-[16px] sm:px-4 sm:py-3">
+                        <span className="block text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2] sm:text-[0.66rem] sm:tracking-[0.14em]">Next</span>
+                        <strong className="mt-1.5 block text-sm font-semibold text-[#071e27] sm:mt-2">{journeyNextStageLabel}</strong>
+                        <span className="mt-1 block text-xs leading-5 text-[#6b7d93]">{estimatedRegistrationLabel}</span>
+                      </article>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            ) : null}
 
             {isOverview ? (
               effectiveWorkspace === 'seller' ? (
@@ -7523,7 +7676,7 @@ function ClientPortal() {
                   <span>Your information is secure and encrypted.</span>
                 </div>
 
-                <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[#dfe8f1] bg-white/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 shadow-[0_-16px_30px_rgba(15,23,42,0.08)] backdrop-blur lg:hidden">
+                <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[#dfe8f1] bg-white/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 shadow-[0_-16px_30px_rgba(15,23,42,0.08)] backdrop-blur lg:hidden" aria-label="Mobile buyer portal navigation">
                   <div className="mx-auto grid max-w-[520px] grid-cols-5 gap-1">
                     <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'overview')} className="grid min-h-[52px] place-items-center rounded-[14px] text-[0.68rem] font-semibold text-[#0f6f4a]">
                       <Home size={19} />
@@ -7556,7 +7709,7 @@ function ClientPortal() {
                 appointments={clientVisibleAppointments}
                 workspace={effectiveWorkspace === 'seller' ? 'selling' : 'buying'}
                 documentCenter={workspaceData?.documentCenter || {}}
-                hideHeader={effectiveWorkspace === 'seller'}
+                hideHeader
                 pendingAction={appointmentActionPending}
                 feedbackMessage={appointmentFeedback}
                 onConfirmAppointment={(appointment) => {
@@ -8599,7 +8752,7 @@ function ClientPortal() {
             workspace={effectiveWorkspace === 'seller' ? 'selling' : 'buying'}
             uploadingDocumentKey={uploadingDocumentKey}
             openingDocumentPath={openingDocumentPath}
-            hideHeader={effectiveWorkspace === 'seller'}
+            hideHeader
             onUpload={handleDocumentCentreUpload}
             onOpenDocument={handleOpenPortalDocument}
           />
@@ -10353,6 +10506,29 @@ function ClientPortal() {
             {!portal.reviews.length ? <li className="empty-text">No reviews submitted yet.</li> : null}
           </ul>
         </section>
+      ) : null}
+
+      {isBuyerWorkspace && !isOverview ? (
+        <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[#dfe8f1] bg-white/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 shadow-[0_-16px_30px_rgba(15,23,42,0.08)] backdrop-blur lg:hidden" aria-label="Mobile buyer portal navigation">
+          <div className="mx-auto grid max-w-[520px] grid-cols-5 gap-1">
+            {buyerMobileNavigationItems.map((item) => {
+              const Icon = item.icon
+              const isActive = activeBuyerBottomKey === item.key
+              return (
+                <Link
+                  key={item.key}
+                  to={item.to}
+                  className={`grid min-h-[52px] place-items-center rounded-[14px] text-[0.68rem] font-semibold transition ${
+                    isActive ? 'text-[#0f6f4a]' : 'text-[#66788c] hover:bg-[#f4f8fc] hover:text-[#21384d]'
+                  }`}
+                >
+                  <Icon size={19} />
+                  <span>{item.label}</span>
+                </Link>
+              )
+            })}
+          </div>
+        </nav>
       ) : null}
 
           </div>

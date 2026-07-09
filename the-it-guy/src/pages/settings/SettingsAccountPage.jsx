@@ -149,6 +149,83 @@ function getNotificationStatus(preferences = {}, desktopNotificationsSupported =
   }
 }
 
+function splitProfileName(profile = {}) {
+  const safeProfile = profile && typeof profile === 'object' ? profile : {}
+  const explicitFirst = normalizeDisplayText(safeProfile.firstName || safeProfile.first_name)
+  const explicitLast = normalizeDisplayText(safeProfile.lastName || safeProfile.last_name)
+  if (explicitFirst || explicitLast) {
+    return { firstName: explicitFirst, lastName: explicitLast }
+  }
+
+  const fullName = normalizeDisplayText(safeProfile.fullName || safeProfile.full_name || safeProfile.name)
+  const parts = fullName.split(/\s+/).filter(Boolean)
+  return {
+    firstName: parts[0] || '',
+    lastName: parts.slice(1).join(' '),
+  }
+}
+
+function buildFallbackAccountSettings({ profile = {}, currentWorkspace = {}, currentMembership = {}, role = '' } = {}) {
+  const safeProfile = profile && typeof profile === 'object' ? profile : {}
+  const safeWorkspace = currentWorkspace && typeof currentWorkspace === 'object' ? currentWorkspace : {}
+  const safeMembership = currentMembership && typeof currentMembership === 'object' ? currentMembership : {}
+  const { firstName, lastName } = splitProfileName(safeProfile)
+  const workspaceName = normalizeDisplayText(
+    safeWorkspace.displayName ||
+      safeWorkspace.display_name ||
+      safeWorkspace.name ||
+      safeProfile.companyName ||
+      safeProfile.company_name,
+  )
+
+  return {
+    id: safeProfile.id || null,
+    firstName,
+    lastName,
+    email: normalizeDisplayText(safeProfile.email),
+    phoneNumber: normalizeDisplayText(safeProfile.phoneNumber || safeProfile.phone_number || safeProfile.phone),
+    avatarUrl: normalizeDisplayText(safeProfile.avatarUrl || safeProfile.avatar_url || safeProfile.photoUrl || safeProfile.photo_url),
+    companyName: workspaceName,
+    title: normalizeDisplayText(safeProfile.title || safeProfile.jobTitle || safeProfile.job_title),
+    bio: normalizeDisplayText(safeProfile.bio),
+    department: normalizeDisplayText(safeProfile.department || safeMembership.department),
+    office: normalizeDisplayText(safeProfile.office || safeMembership.branchName || safeMembership.branch_name),
+    timezone: normalizeDisplayText(safeProfile.timezone) || 'Africa/Johannesburg',
+    language: normalizeDisplayText(safeProfile.language) || 'en-ZA',
+    dateFormat: normalizeDisplayText(safeProfile.dateFormat || safeProfile.date_format) || 'DD MMM YYYY',
+    theme: normalizeDisplayText(safeProfile.theme) || 'system',
+    role: normalizeDisplayText(safeMembership.role || safeMembership.workspaceRole || safeMembership.organisationRole || safeProfile.role || role) || 'viewer',
+    notificationPreferences: { ...DEFAULT_NOTIFICATION_PREFERENCES },
+  }
+}
+
+function getFriendlySettingsError(error, fallback = 'Account settings could not be refreshed.') {
+  const message = normalizeDisplayText(error?.message || error)
+  const normalized = message.toLowerCase()
+
+  if (
+    normalized === 'failed to fetch' ||
+    normalized.includes('failed to fetch') ||
+    normalized.includes('fetch failed') ||
+    normalized.includes('networkerror') ||
+    normalized.includes('network request failed') ||
+    normalized.includes('load failed')
+  ) {
+    return 'Arch9 could not reach account settings. Showing your local workspace profile for now.'
+  }
+
+  if (
+    normalized.includes('authenticated user is required') ||
+    normalized.includes('you must be signed in') ||
+    normalized.includes('jwt') ||
+    normalized.includes('session')
+  ) {
+    return 'Arch9 could not confirm your settings session. Showing your local workspace profile for now.'
+  }
+
+  return message || fallback
+}
+
 function ProfilePageHeader({ sectionTitle = 'Profile', description = 'Manage your personal information and preferences.' }) {
   return (
     <header className="pb-1">
@@ -383,7 +460,7 @@ async function createProfileAvatarFile(file) {
 }
 
 export default function SettingsAccountPage({ section = 'profile' }) {
-  const { currentMembership, currentWorkspace, refreshProfile, role, updateLocalProfile } = useWorkspace()
+  const { currentMembership, currentWorkspace, profile, refreshProfile, role, updateLocalProfile } = useWorkspace()
   const firstNameRef = useRef(null)
   const [form, setForm] = useState(null)
   const [initialForm, setInitialForm] = useState(null)
@@ -411,7 +488,10 @@ export default function SettingsAccountPage({ section = 'profile' }) {
         }
       } catch (loadError) {
         if (active) {
-          setError(loadError.message)
+          const fallback = buildFallbackAccountSettings({ profile, currentWorkspace, currentMembership, role })
+          setForm(fallback)
+          setInitialForm(fallback)
+          setError(getFriendlySettingsError(loadError))
         }
       } finally {
         if (active) {
@@ -424,7 +504,7 @@ export default function SettingsAccountPage({ section = 'profile' }) {
     return () => {
       active = false
     }
-  }, [])
+  }, [currentMembership, currentWorkspace, profile, role])
 
   function updateField(key, value) {
     setForm((previous) => ({ ...previous, [key]: value }))
@@ -482,7 +562,7 @@ export default function SettingsAccountPage({ section = 'profile' }) {
       updateLocalProfile({ avatarUrl: nextForm.avatarUrl, avatar_url: nextForm.avatarUrl })
       setMessage('Profile picture saved.')
     } catch (uploadError) {
-      setAvatarError(uploadError.message)
+      setAvatarError(getFriendlySettingsError(uploadError, 'Profile picture could not be saved.'))
     } finally {
       setAvatarProcessing(false)
       event.target.value = ''
@@ -501,7 +581,7 @@ export default function SettingsAccountPage({ section = 'profile' }) {
       updateLocalProfile({ avatarUrl: '', avatar_url: '' })
       setMessage('Profile picture removed.')
     } catch (removeError) {
-      setAvatarError(removeError.message)
+      setAvatarError(getFriendlySettingsError(removeError, 'Profile picture could not be removed.'))
     } finally {
       setSaving(false)
     }
@@ -518,7 +598,7 @@ export default function SettingsAccountPage({ section = 'profile' }) {
       await refreshProfile()
       setMessage(successMessage)
     } catch (saveError) {
-      setError(saveError.message)
+      setError(getFriendlySettingsError(saveError, 'Account settings could not be saved.'))
     } finally {
       setSaving(false)
     }
@@ -596,8 +676,19 @@ export default function SettingsAccountPage({ section = 'profile' }) {
     }
   }, [shouldWarnUnsavedNotifications])
 
-  if (loading || !form) {
+  if (loading) {
     return <SettingsLoadingState label="Loading account settings…" />
+  }
+
+  if (!form) {
+    return (
+      <div className={settingsPageClass}>
+        <ProfilePageHeader sectionTitle="Profile" description="Manage your personal information and preferences." />
+        <SettingsBanner tone="error">
+          Account settings could not be loaded. Refresh the page or try again after signing in.
+        </SettingsBanner>
+      </div>
+    )
   }
 
   const profileName = [form.firstName, form.lastName].filter(Boolean).join(' ') || form.email || 'Arch9 User'

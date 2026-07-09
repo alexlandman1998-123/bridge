@@ -1,7 +1,7 @@
 import { CheckCircle2, Clock3, ExternalLink, ListChecks, UserRound } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import MobileCreateSheet, { MobileDraftCard } from '../../components/mobile-shell/MobileCreateSheet'
+import MobileCreateSheet, { MobileCreateRecoveryStrip, MobileDraftCard } from '../../components/mobile-shell/MobileCreateSheet'
 import { mobileDraftMatchesModule } from '../../components/mobile-shell/mobileCreateConfig'
 import { MobileOfflineDraftPanel } from '../../components/mobile-shell/MobileProductivity'
 import { MobileCard, MobileEmptyState, MobileFilterChips } from '../../components/mobile-shell/MobileShellStates'
@@ -89,6 +89,8 @@ export default function MobileTasksPage() {
           {pendingDrafts.map((draft) => <MobileDraftCard key={draft.id} draft={draft} />)}
         </section>
       ) : null}
+
+      <MobileCreateRecoveryStrip moduleKey="tasks" />
 
       {visibleTasks.length ? visibleTasks.map((task) => (
         <MobileCard key={task.id}>

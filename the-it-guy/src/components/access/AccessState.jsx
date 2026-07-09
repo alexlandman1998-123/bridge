@@ -1,3 +1,5 @@
+import UxDiagnosticsActions from '../feedback/UxDiagnosticsActions'
+
 const COPY = {
   denied: {
     title: 'Access denied',
@@ -29,16 +31,87 @@ const COPY = {
   },
 }
 
-export default function AccessState({ type = 'denied', title = '', description = '', action = null }) {
+const DEFAULT_ACTIONS = {
+  denied: {
+    primaryLabel: 'Back to dashboard',
+    primaryHref: '/dashboard',
+    secondaryLabel: 'Account settings',
+    secondaryHref: '/settings/profile',
+  },
+  permission_required: {
+    primaryLabel: 'Back to dashboard',
+    primaryHref: '/dashboard',
+    secondaryLabel: 'Account settings',
+    secondaryHref: '/settings/profile',
+  },
+  pending: {
+    primaryLabel: 'Back to setup',
+    primaryHref: '/setup/recovery',
+    secondaryLabel: 'Account settings',
+    secondaryHref: '/settings/profile',
+  },
+  suspended: {
+    primaryLabel: 'Back to dashboard',
+    primaryHref: '/dashboard',
+    secondaryLabel: 'Sign in again',
+    secondaryHref: '/auth',
+  },
+  workspace_missing: {
+    primaryLabel: 'Recover workspace',
+    primaryHref: '/setup/recovery',
+    secondaryLabel: 'Account settings',
+    secondaryHref: '/settings/profile',
+  },
+  branch_missing: {
+    primaryLabel: 'Back to setup',
+    primaryHref: '/setup/recovery',
+    secondaryLabel: 'Account settings',
+    secondaryHref: '/settings/profile',
+  },
+  empty_scope: {
+    primaryLabel: 'Back to dashboard',
+    primaryHref: '/dashboard',
+    secondaryLabel: 'Account settings',
+    secondaryHref: '/settings/profile',
+  },
+}
+
+function DefaultAction({ type = 'denied' }) {
+  const action = DEFAULT_ACTIONS[type] || DEFAULT_ACTIONS.denied
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+      <a href={action.primaryHref} className="auth-primary-cta inline-flex no-underline">
+        {action.primaryLabel}
+      </a>
+      <a href={action.secondaryHref} className="auth-secondary-cta inline-flex no-underline">
+        {action.secondaryLabel}
+      </a>
+    </div>
+  )
+}
+
+export default function AccessState({ type = 'denied', title = '', description = '', action = null, diagnostics = null }) {
   const copy = COPY[type] || COPY.denied
+  const resolvedTitle = title || copy.title
+  const resolvedDescription = description || copy.description
+  const diagnosticsProps = diagnostics === false
+    ? null
+    : {
+        source: `access_state:${type}`,
+        category: 'access_state',
+        severity: type === 'denied' || type === 'permission_required' ? 'medium' : 'high',
+        message: `${resolvedTitle}: ${resolvedDescription}`,
+        metadata: { type, title: resolvedTitle },
+        ...(diagnostics || {}),
+      }
   return (
     <section className="auth-loading-screen">
       <div className="auth-loading-card" style={{ maxWidth: '560px' }}>
-        <h2>{title || copy.title}</h2>
-        <p>{description || copy.description}</p>
-        {action}
+        <h2>{resolvedTitle}</h2>
+        <p>{resolvedDescription}</p>
+        {action || <DefaultAction type={type} />}
+        {diagnosticsProps ? <UxDiagnosticsActions {...diagnosticsProps} compact /> : null}
       </div>
     </section>
   )
 }
-

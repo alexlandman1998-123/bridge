@@ -42,7 +42,7 @@ export function resolveMobileAwareRedirect({
   const desktopLanding = getDesktopLandingRoute(user)
 
   if (intended.startsWith('/mobile')) {
-    if (!mobileShellEnabled || !canAccessMobile) return desktopLanding
+    if (!canAccessMobile) return desktopLanding
     return intended
   }
 
