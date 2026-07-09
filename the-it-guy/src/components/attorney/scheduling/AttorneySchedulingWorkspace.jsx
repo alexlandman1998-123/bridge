@@ -1016,6 +1016,7 @@ function CreateInviteDrawer({
               key={type.value}
               type="button"
               className={`invite-type-option ${draft.appointmentType === type.value ? 'is-active' : ''}`}
+              aria-pressed={draft.appointmentType === type.value}
               onClick={() => updateDraft('appointmentType', type.value)}
             >
               <strong>{type.label}</strong>

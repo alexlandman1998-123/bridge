@@ -42,6 +42,10 @@ max_frequency = "1m0s"
 otp_length = 8
 
 [auth.email.smtp]
+host = "smtp.resend.com"
+port = 587
+user = "resend"
+pass = "env(SMTP_PASSWORD)"
 admin_email = "no-reply@arch9.co.za"
 sender_name = "Arch9"
 

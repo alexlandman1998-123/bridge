@@ -506,6 +506,12 @@ function ClientProfile() {
                         <User2 size={15} />
                         <span>{client.assignedAgentName || 'Unassigned attorney'}</span>
                       </div>
+                      {client.manual ? (
+                        <div className="flex items-center gap-3 rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4 text-[#22384c]">
+                          <ShieldCheck size={15} />
+                          <span>{client.syncError ? 'Saved locally - sync needs review' : client.linkStatus === 'synced' ? 'Synced to matter role-players' : 'Intake record'}</span>
+                        </div>
+                      ) : null}
                     </>
                   ) : null}
                 </div>

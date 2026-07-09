@@ -33,7 +33,7 @@ import {
 import { deriveAttorneyClients } from '../core/clients/attorneyClientSelectors'
 import { buildAttorneyManualPartyRecord, readAttorneyManualParties, writeAttorneyManualParties } from '../core/clients/attorneyManualParties'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { createClientRecord, fetchDashboardOverview, fetchTransactionsByParticipant, fetchTransactionsByParticipantSummary } from '../lib/api'
+import { createClientRecord, fetchDashboardOverview, fetchTransactionsByParticipant, fetchTransactionsByParticipantSummary, saveAttorneyMatterParty } from '../lib/api'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
 const CLIENT_SEGMENTS = [
@@ -127,8 +127,12 @@ const ATTORNEY_CLIENT_DIRECTORY_COPY = {
   roleOptions: [
     { key: 'buyer', label: 'Client / Purchaser' },
     { key: 'seller', label: 'Counterparty / Seller' },
-    { key: 'investor', label: 'Representative' },
-    { key: 'tenant', label: 'Organisation' },
+    { key: 'agent', label: 'Estate Agent' },
+    { key: 'bond_originator', label: 'Bond Originator' },
+    { key: 'bond_attorney', label: 'Bond Attorney' },
+    { key: 'cancellation_attorney', label: 'Cancellation Attorney' },
+    { key: 'developer_contact', label: 'Developer Contact' },
+    { key: 'other', label: 'Other Professional' },
     { key: 'prospect', label: 'Compliance Follow-up' },
   ],
   typeOptions: [
@@ -137,12 +141,20 @@ const ATTORNEY_CLIENT_DIRECTORY_COPY = {
     { key: 'trust', label: 'Trust' },
     { key: 'organisation', label: 'Organisation' },
   ],
+  linkedMatterLabel: 'Link Matter',
+  linkedMatterPlaceholder: 'No matter linked yet',
   roleLabels: {
     buyer: 'Client',
     seller: 'Counterparty',
     investor: 'Representative',
     tenant: 'Organisation',
     prospect: 'Compliance',
+    agent: 'Representative',
+    bond_originator: 'Representative',
+    bond_attorney: 'Representative',
+    cancellation_attorney: 'Representative',
+    developer_contact: 'Representative',
+    other: 'Representative',
   },
 }
 
@@ -310,6 +322,52 @@ function getLatestMatterTypeLabel(client = {}) {
 
 function getLatestMatterStatusLabel(client = {}) {
   return String(client.latestMatterStatusLabel || client.statusLabel || 'Active').trim()
+}
+
+function getRowMatterReference(row = {}) {
+  const transaction = row?.transaction || {}
+  return String(
+    transaction.matter_number ||
+      transaction.matterNumber ||
+      transaction.transaction_reference ||
+      transaction.transactionReference ||
+      transaction.reference ||
+      (transaction.id ? `TRX-${String(transaction.id).replaceAll('-', '').slice(0, 8).toUpperCase()}` : ''),
+  ).trim()
+}
+
+function getRowPropertyLabel(row = {}) {
+  const transaction = row?.transaction || {}
+  const privateLabel = [
+    transaction.property_address_line_1 || transaction.propertyAddressLine1,
+    transaction.suburb || transaction.city,
+  ].filter(Boolean).join(', ')
+  if (privateLabel) return privateLabel
+  if (transaction.property_description || transaction.propertyDescription) return transaction.property_description || transaction.propertyDescription
+  if (row?.development?.name || row?.unit?.unit_number || row?.unit?.unitNumber) {
+    return `${row?.development?.name || 'Development'}${row?.unit?.unit_number || row?.unit?.unitNumber ? ` - Unit ${row?.unit?.unit_number || row?.unit?.unitNumber}` : ''}`
+  }
+  return 'Matter'
+}
+
+function getMatterOptionsFromRows(rows = []) {
+  const options = new Map()
+  for (const row of rows) {
+    const id = String(row?.transaction?.id || '').trim()
+    if (!id || options.has(id)) continue
+    const reference = getRowMatterReference(row) || id
+    const property = getRowPropertyLabel(row)
+    options.set(id, {
+      id,
+      reference,
+      label: `${reference} - ${property}`,
+    })
+  }
+  return [...options.values()].sort((left, right) => left.label.localeCompare(right.label))
+}
+
+function canSyncAttorneyPartyRole(role = '') {
+  return ['agent', 'bond_originator', 'bond_attorney', 'cancellation_attorney', 'developer_contact', 'other', 'prospect'].includes(normalizeDirectoryOptionKey(role))
 }
 
 function getRowDevelopmentId(row = {}) {
@@ -581,12 +639,13 @@ function getEmptyAddClientForm(copy = DEFAULT_CLIENT_DIRECTORY_COPY) {
     phone: '',
     role: copy.roleOptions?.[0]?.key || 'buyer',
     type: copy.typeOptions?.[0]?.key || 'individual',
+    linkedTransactionId: '',
     matterReference: '',
     notes: '',
   }
 }
 
-function AddClientModal({ open, onClose, onSaved, copy = DEFAULT_CLIENT_DIRECTORY_COPY, mode = 'client' }) {
+function AddClientModal({ open, onClose, onSaved, copy = DEFAULT_CLIENT_DIRECTORY_COPY, mode = 'client', matterOptions = [] }) {
   const [form, setForm] = useState(() => getEmptyAddClientForm(copy))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -608,7 +667,7 @@ function AddClientModal({ open, onClose, onSaved, copy = DEFAULT_CLIENT_DIRECTOR
         throw new Error(isAttorneyMode ? 'Party name is required.' : 'Client name is required.')
       }
       if (isAttorneyMode) {
-        onSaved?.(form)
+        await onSaved?.(form)
         onClose()
         return
       }
@@ -667,6 +726,30 @@ function AddClientModal({ open, onClose, onSaved, copy = DEFAULT_CLIENT_DIRECTOR
               </Field>
             </label>
           </>
+        ) : null}
+        {isAttorneyMode && matterOptions.length ? (
+          <label className="grid gap-2 sm:col-span-2">
+            <span className="text-sm font-medium text-slate-600">{copy.linkedMatterLabel || 'Link Matter'}</span>
+            <Field
+              as="select"
+              value={form.linkedTransactionId}
+              onChange={(event) => {
+                const selectedMatter = matterOptions.find((option) => option.id === event.target.value)
+                setForm((previous) => ({
+                  ...previous,
+                  linkedTransactionId: event.target.value,
+                  matterReference: selectedMatter?.reference || previous.matterReference,
+                }))
+              }}
+            >
+              <option value="">{copy.linkedMatterPlaceholder || 'No matter linked yet'}</option>
+              {matterOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </Field>
+          </label>
         ) : null}
         <label className="grid gap-2">
           <span className="text-sm font-medium text-slate-600">Email</span>
@@ -829,6 +912,10 @@ function Clients() {
   const sourceRows = useMemo(
     () => (isAgentClientDirectory ? rows : filterRowsByDevelopment(rows, selectedDevelopmentId)),
     [isAgentClientDirectory, rows, selectedDevelopmentId],
+  )
+  const matterOptions = useMemo(
+    () => (isAttorneyClientDirectory ? getMatterOptionsFromRows(sourceRows) : []),
+    [isAttorneyClientDirectory, sourceRows],
   )
   const clients = useMemo(
     () => (isAgentClientDirectory ? sourceRows : deriveAttorneyClients(sourceRows, isAttorneyClientDirectory ? manualAttorneyParties : [])),
@@ -1007,15 +1094,48 @@ function Clients() {
     }
   }
 
-  function handleAddClientSaved(payload) {
+  async function handleAddClientSaved(payload) {
     if (!isAttorneyClientDirectory) {
       void loadData()
       return
     }
-    const createdParty = buildAttorneyManualPartyRecord(payload)
+    let createdParty = buildAttorneyManualPartyRecord(payload)
+    if (payload.linkedTransactionId && canSyncAttorneyPartyRole(payload.role)) {
+      try {
+        const remote = await saveAttorneyMatterParty({
+          transactionId: payload.linkedTransactionId,
+          party: {
+            ...payload,
+            localPartyId: createdParty.id,
+          },
+          actorRole: role,
+        })
+        createdParty = {
+          ...createdParty,
+          linkStatus: 'synced',
+          linkedAt: new Date().toISOString(),
+          remoteRolePlayerId: remote?.rolePlayerId || '',
+          syncError: '',
+        }
+      } catch (syncError) {
+        createdParty = {
+          ...createdParty,
+          linkStatus: 'local_only',
+          syncError: syncError.message || 'Unable to link this party to the selected matter.',
+        }
+      }
+    } else if (payload.linkedTransactionId) {
+      createdParty = {
+        ...createdParty,
+        linkStatus: 'intake',
+      }
+    }
     const nextParties = [createdParty, ...manualAttorneyParties]
     setManualAttorneyParties(nextParties)
     writeAttorneyManualParties(nextParties)
+    if (createdParty.linkStatus === 'synced') {
+      void loadData()
+    }
   }
 
   return (
@@ -1288,6 +1408,14 @@ function Clients() {
                           <span className="truncate">{complianceLabel}</span>
                         </span>
                       </div>
+                      {client.manual ? (
+                        <div className="min-w-0 sm:col-span-2">
+                          <span className="block font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Intake Status</span>
+                          <strong className="mt-1 block truncate text-sm text-[#142132]">
+                            {client.syncError ? 'Saved locally - sync needs review' : client.linkStatus === 'synced' ? 'Linked to matter' : client.linkStatus === 'local_only' ? 'Saved locally' : 'Intake record'}
+                          </strong>
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
 
@@ -1384,6 +1512,11 @@ function Clients() {
                             <div className="min-w-[230px]">
                               <p className="truncate text-sm font-semibold text-[#142132]">{getLatestMatterReference(client)}</p>
                               <p className="mt-1 truncate text-xs font-medium text-[#6b7d93]">{getLatestMatterTypeLabel(client)} | {getLinkedRecordLabel(client, directoryCopy.linkedRecordFallback)}</p>
+                              {client.manual ? (
+                                <p className="mt-1 truncate text-xs font-semibold text-[#6b7d93]">
+                                  {client.syncError ? 'Local only - sync needs review' : client.linkStatus === 'synced' ? 'Synced role-player' : 'Intake record'}
+                                </p>
+                              ) : null}
                             </div>
                           </td>
                           <td>
@@ -1451,6 +1584,7 @@ function Clients() {
         onClose={() => setShowAddModal(false)}
         copy={directoryCopy}
         mode={isAttorneyClientDirectory ? 'attorney' : 'client'}
+        matterOptions={matterOptions}
         onSaved={handleAddClientSaved}
       />
     </section>

@@ -82,7 +82,9 @@ async function auditPackageScripts() {
     'test:agency-workflow-smoke',
     'test:agency-browser-smoke',
     'test:agency-full-smoke',
+    'test:agency-runtime-isolation',
     'test:agency-rls-manual-audit',
+    'test:agency-runtime-readiness',
   ], 'Agency smoke scripts')
 }
 
@@ -250,6 +252,20 @@ async function auditListingRlsMigrations() {
     'bridge_is_org_admin(organisation_id)',
     'assigned_agent_id = auth.uid()',
   ], 'Private listing delete access')
+
+  const externalIsolation = await readRepoFile('supabase/migrations/202607090006_private_listing_external_isolation.sql')
+  assertIncludesAll(externalIsolation, [
+    'from pg_policies',
+    "tablename = 'private_listings'",
+    "drop policy if exists %I on public.private_listings",
+    'private_listings_select_scoped',
+    'using (public.bridge_can_access_private_listing(id))',
+    'private_listings_insert_member',
+    'with check (public.bridge_is_active_member(organisation_id))',
+    'private_listings_update_scoped',
+    'private_listings_delete_owner_or_admin',
+    'or created_by = auth.uid()',
+  ], 'Private listing external isolation hardening')
 
   const mandateAlignment = await readRepoFile('supabase/migrations/202607090002_private_listing_mandate_status_alignment.sql')
   assertIncludesAll(mandateAlignment, [

@@ -20,6 +20,14 @@ const ROLE_FILTER_ALIASES = {
   counterparties: 'seller',
   representative: 'investor',
   representatives: 'investor',
+  agent: 'investor',
+  estate_agent: 'investor',
+  transfer_attorney: 'investor',
+  bond_attorney: 'investor',
+  cancellation_attorney: 'investor',
+  bond_originator: 'investor',
+  developer_contact: 'investor',
+  other: 'investor',
   organisation: 'tenant',
   organisations: 'tenant',
   organization: 'tenant',
@@ -41,6 +49,14 @@ const MANUAL_ROLE_LABELS = {
   investor: 'Representative',
   tenant: 'Organisation',
   prospect: 'Compliance',
+  agent: 'Estate Agent',
+  estate_agent: 'Estate Agent',
+  transfer_attorney: 'Transfer Attorney',
+  bond_attorney: 'Bond Attorney',
+  cancellation_attorney: 'Cancellation Attorney',
+  bond_originator: 'Bond Originator',
+  developer_contact: 'Developer Contact',
+  other: 'Other Professional',
 }
 
 const COMPLETED_STAGE_KEYS = new Set(['registered', 'completed', 'closed', 'transferred'])
@@ -844,19 +860,35 @@ function normalizeManualParty(record = {}) {
   const email = normalizeEmail(record.email)
   const phone = normalizeText(record.phone)
   const matterReference = firstText(record.matterReference, record.matter_reference)
-  const hasMatterReference = Boolean(matterReference)
-  const statusLabel = hasMatterReference ? 'Intake' : 'Unlinked'
+  const linkedTransactionId = firstText(record.linkedTransactionId, record.linked_transaction_id)
+  const hasMatterReference = Boolean(matterReference || linkedTransactionId)
+  const linkStatus = normalizeKey(record.linkStatus || record.link_status)
+  const synced = Boolean(record.remoteRolePlayerId || record.remote_role_player_id || ['synced', 'linked'].includes(linkStatus))
+  const statusLabel = synced ? 'Linked' : hasMatterReference ? 'Intake' : 'Unlinked'
   const complianceKey = roleKey === 'prospect' || normalizeKey(record.complianceKey) === 'attention' ? 'attention' : 'clear'
   const complianceLabel = complianceKey === 'attention'
     ? firstText(record.complianceLabel, record.complianceStatus, 'Attention needed')
     : 'Clear'
-  const roleLabel = firstText(record.roleLabel, MANUAL_ROLE_LABELS[roleKey], humanizeRole(roleKey))
+  const roleLabel = firstText(record.roleLabel, MANUAL_ROLE_LABELS[normalizeKey(record.matterRoleType)] || MANUAL_ROLE_LABELS[normalizeKey(record.role)] || MANUAL_ROLE_LABELS[roleKey], humanizeRole(record.matterRoleType || roleKey))
   const typeLabel = getTypeBadgeLabel(type)
   const linkedRecords = hasMatterReference
-    ? [{ kind: 'matter_reference', id: matterReference, label: buildManualMatterLabel(record), path: '' }]
+    ? [{ kind: linkedTransactionId ? 'transaction' : 'matter_reference', id: linkedTransactionId || matterReference, label: buildManualMatterLabel(record), path: linkedTransactionId ? `/transactions/${linkedTransactionId}` : '' }]
     : []
   const lastActivityAt = firstText(record.updatedAt, record.updated_at, record.createdAt, record.created_at)
-  const matterTypeKey = hasMatterReference ? 'intake' : 'unlinked'
+  const matterTypeKey = synced ? 'linked' : hasMatterReference ? 'intake' : 'unlinked'
+  const manualTransactionRows = hasMatterReference
+    ? [{
+        manualMatter: true,
+        transaction: {
+          id: linkedTransactionId || null,
+          matter_number: matterReference || linkedTransactionId,
+          transaction_type: 'manual_intake',
+          updated_at: lastActivityAt,
+        },
+        stage: statusLabel,
+        documentSummary: null,
+      }]
+    : []
   const searchText = [
     name,
     email,
@@ -866,6 +898,7 @@ function normalizeManualParty(record = {}) {
     matterReference,
     statusLabel,
     complianceLabel,
+    linkStatus,
     record.notes,
   ]
     .map((value) => normalizeText(value).toLowerCase())
@@ -887,12 +920,10 @@ function normalizeManualParty(record = {}) {
     roleLabel,
     entityName: type === 'individual' ? '' : name,
     organisationName: type === 'individual' ? '' : name,
-    activeTransactions: 0,
     completedTransactions: 0,
-    totalTransactions: 0,
     lastActivityAt,
     latestTransactionId: null,
-    latestMatterTypeLabel: hasMatterReference ? 'Intake' : 'Unlinked',
+    latestMatterTypeLabel: synced ? 'Linked Matter' : hasMatterReference ? 'Intake' : 'Unlinked',
     latestMatterStatusLabel: statusLabel,
     latestMatterReference: matterReference || 'Unlinked',
     latestPropertyLabel: buildManualMatterLabel(record),
@@ -905,15 +936,20 @@ function normalizeManualParty(record = {}) {
     complianceKeys: [complianceKey],
     complianceLabels: [complianceLabel],
     matterTypeKeys: [matterTypeKey],
-    matterTypeLabels: [hasMatterReference ? 'Intake' : 'Unlinked'],
+    matterTypeLabels: [synced ? 'Linked Matter' : hasMatterReference ? 'Intake' : 'Unlinked'],
     matterStatusKeys: [normalizeKey(statusLabel)],
     matterStatusLabels: [statusLabel],
-    status: 'inactive',
+    status: synced || hasMatterReference ? 'active' : 'inactive',
     statusLabel,
-    statusKeys: ['inactive', normalizeKey(statusLabel), ...(complianceKey === 'attention' ? ['attention'] : [])],
-    linkedTransactionIds: [],
+    statusKeys: [synced || hasMatterReference ? 'active' : 'inactive', normalizeKey(statusLabel), ...(complianceKey === 'attention' ? ['attention'] : [])],
+    linkedTransactionIds: linkedTransactionId ? [linkedTransactionId] : [],
     linkedRecords,
-    transactions: [],
+    transactions: manualTransactionRows,
+    totalTransactions: manualTransactionRows.length,
+    activeTransactions: synced || hasMatterReference ? manualTransactionRows.length : 0,
+    linkStatus: record.linkStatus || record.link_status || '',
+    remoteRolePlayerId: record.remoteRolePlayerId || record.remote_role_player_id || '',
+    syncError: normalizeText(record.syncError || record.sync_error),
     notes: normalizeText(record.notes),
     searchText,
   }

@@ -31,6 +31,26 @@ const phases = [
     getArgs: () => [],
     skippable: true,
   },
+  {
+    key: 'runtime',
+    label: 'Runtime readiness report',
+    script: 'test:agency-runtime-readiness',
+    coverage: 'staging credentials, PostgREST schema exposure, authenticated RLS reads, optional unrelated-user isolation',
+    getArgs: (options) => [
+      ...(options.runtimeFailOnBlocked ? ['--fail-on-blocked'] : []),
+    ],
+    skippable: true,
+    defaultEnabled: false,
+  },
+  {
+    key: 'isolation',
+    label: 'External isolation runtime probe',
+    script: 'test:agency-runtime-isolation',
+    coverage: 'managed unrelated staging auth user, zero organisation membership, authenticated non-member RLS denial checks',
+    getArgs: () => [],
+    skippable: true,
+    defaultEnabled: false,
+  },
 ]
 
 function parseArgs(argv) {
@@ -39,6 +59,9 @@ function parseArgs(argv) {
     list: false,
     workflow: '',
     skipBrowser: false,
+    includeRuntime: false,
+    includeIsolation: false,
+    runtimeFailOnBlocked: false,
     only: '',
   }
 
@@ -49,6 +72,12 @@ function parseArgs(argv) {
       options.list = true
     } else if (arg === '--skip-browser') {
       options.skipBrowser = true
+    } else if (arg === '--include-runtime') {
+      options.includeRuntime = true
+    } else if (arg === '--include-isolation') {
+      options.includeIsolation = true
+    } else if (arg === '--runtime-fail-on-blocked') {
+      options.runtimeFailOnBlocked = true
     } else if (arg.startsWith('--workflow=')) {
       options.workflow = arg.slice('--workflow='.length).trim().toLowerCase()
     } else if (arg.startsWith('--only=')) {
@@ -78,6 +107,9 @@ function getSelectedPhases(options) {
   return phases.filter((phase) => {
     if (options.only) return phase.key === options.only
     if (phase.key === 'browser' && options.skipBrowser) return false
+    if (phase.key === 'runtime' && !options.includeRuntime) return false
+    if (phase.key === 'isolation' && !options.includeIsolation) return false
+    if (phase.defaultEnabled === false && !['runtime', 'isolation'].includes(phase.key)) return false
     return true
   })
 }
@@ -160,7 +192,9 @@ async function main() {
   console.log('Agency full smoke')
   console.log(`  Phases: ${selectedPhases.map((phase) => phase.key).join(', ')}`)
   console.log(`  Workflow: ${options.workflow || 'all'}`)
-  console.log(`  Browser: ${options.skipBrowser ? 'skipped' : 'included'}`)
+  console.log(`  Browser: ${selectedPhases.some((phase) => phase.key === 'browser') ? 'included' : 'skipped'}`)
+  console.log(`  Runtime: ${selectedPhases.some((phase) => phase.key === 'runtime') ? 'included' : 'skipped'}`)
+  console.log(`  Isolation: ${selectedPhases.some((phase) => phase.key === 'isolation') ? 'included' : 'skipped'}`)
   console.log(`  Bail: ${options.bail ? 'yes' : 'no'}`)
 
   const suiteStartedAt = performance.now()

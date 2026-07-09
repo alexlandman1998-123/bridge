@@ -21483,7 +21483,7 @@ function normalizeTransactionRoleplayerRoleType(value) {
     .trim()
     .toLowerCase()
     .replace(/[\s-]+/g, '_')
-  if (['transfer_attorney', 'bond_originator', 'bond_attorney', 'cancellation_attorney', 'developer_contact', 'agent'].includes(normalized)) {
+  if (['transfer_attorney', 'bond_originator', 'bond_attorney', 'cancellation_attorney', 'developer_contact', 'agent', 'other'].includes(normalized)) {
     return normalized
   }
   return normalizeRoleType(normalized)
@@ -21491,7 +21491,7 @@ function normalizeTransactionRoleplayerRoleType(value) {
 
 function normalizeTransactionRoleplayerSelection(item = {}) {
   const roleType = normalizeTransactionRoleplayerRoleType(item.roleType || item.role_type || '')
-  const allowedRoleTypes = new Set(['transfer_attorney', 'bond_originator', 'bond_attorney', 'cancellation_attorney', 'developer_contact', 'agent'])
+  const allowedRoleTypes = new Set(['transfer_attorney', 'bond_originator', 'bond_attorney', 'cancellation_attorney', 'developer_contact', 'agent', 'other'])
   if (!allowedRoleTypes.has(roleType)) return null
 
   const partner = item.partner && typeof item.partner === 'object' ? item.partner : item
@@ -21552,6 +21552,55 @@ function normalizeTransactionRoleplayerSelection(item = {}) {
       contactPerson,
       email,
       activationTrigger,
+    },
+  }
+}
+
+function normalizeAttorneyDirectoryMatterRole(value = '') {
+  const normalized = normalizeTransactionRoleplayerRoleType(value)
+  if (['transfer_attorney', 'bond_originator', 'bond_attorney', 'cancellation_attorney', 'developer_contact', 'agent', 'other'].includes(normalized)) {
+    return normalized
+  }
+  const broadRole = normalizeTextValue(value).toLowerCase()
+  if (['representative', 'investor', 'estate_agent', 'estate agent'].includes(broadRole)) return 'agent'
+  if (['organisation', 'organization', 'tenant', 'company', 'trust', 'compliance', 'prospect'].includes(broadRole)) return 'other'
+  return ''
+}
+
+function normalizeAttorneyDirectoryPartySelection(party = {}) {
+  const roleType = normalizeAttorneyDirectoryMatterRole(party.matterRoleType || party.roleType || party.role)
+  if (!roleType) return null
+  const name = normalizeNullableText(party.name || party.contactPerson || party.companyName)
+  const partyType = normalizeTextValue(party.type || party.partyType).toLowerCase()
+  const organisationLike = ['company', 'trust', 'organisation', 'organization'].includes(partyType)
+  const companyName = normalizeNullableText(party.companyName || party.organisationName || party.organizationName || (organisationLike ? name : ''))
+  const contactPerson = normalizeNullableText(party.contactPerson || (organisationLike ? '' : name) || companyName)
+  const email = normalizeNullableText(party.email || party.emailAddress)?.toLowerCase() || null
+  const phone = normalizeNullableText(party.phone || party.phoneNumber)
+
+  if (!companyName && !contactPerson && !email) return null
+
+  return {
+    roleType,
+    companyName,
+    contactPerson,
+    email,
+    phone,
+    selectionSource: 'manual',
+    assignmentStatus: 'active',
+    activationTrigger: 'immediate',
+    snapshot: {
+      source: 'attorney_party_directory',
+      localPartyId: normalizeTextValue(party.id || party.localPartyId),
+      partyDirectoryRole: normalizeTextValue(party.role),
+      partyType,
+      notes: normalizeNullableText(party.notes),
+      matterReference: normalizeNullableText(party.matterReference),
+      roleType,
+      companyName,
+      contactPerson,
+      email,
+      activationTrigger: 'immediate',
     },
   }
 }
@@ -22140,6 +22189,59 @@ export async function saveTransactionRoleplayerSelections({
   })
 
   return fetchTransactionById(transactionId)
+}
+
+export async function saveAttorneyMatterParty({ transactionId, party = {}, actorRole = 'attorney' } = {}) {
+  const normalizedTransactionId = normalizeNullableUuid(transactionId)
+  if (!normalizedTransactionId) throw new Error('A linked matter is required before this party can be saved to the matter.')
+
+  const selection = normalizeAttorneyDirectoryPartySelection(party)
+  if (!selection) {
+    throw new Error('This party role cannot be saved as a matter role-player yet.')
+  }
+
+  const client = requireClient()
+  const actorProfile = await resolveActiveProfileContext(client)
+  const normalizedActorRole = normalizeRoleType(actorRole || actorProfile.role || 'attorney')
+  if (!['attorney', 'agency_admin', 'developer', 'internal_admin', 'admin'].includes(normalizedActorRole)) {
+    throw new Error('Your role does not have permission to link parties to matters.')
+  }
+
+  const transaction = await fetchTransactionRowById(client, normalizedTransactionId)
+  if (!transaction?.id) {
+    throw new Error('Matter not found.')
+  }
+
+  const savedRows = await upsertTransactionRoleplayerSelection(client, {
+    transactionId: normalizedTransactionId,
+    selection,
+    actorProfile,
+  })
+  if (!Array.isArray(savedRows) || !savedRows.length) {
+    throw new Error(`Unable to save ${selection.roleType.replaceAll('_', ' ')} to this matter.`)
+  }
+
+  await logTransactionEventIfPossible(client, {
+    transactionId: normalizedTransactionId,
+    eventType: 'attorney_party_linked',
+    createdBy: actorProfile.userId || null,
+    createdByRole: normalizedActorRole,
+    eventData: {
+      source: 'attorney_party_directory',
+      roleType: selection.roleType,
+      partyDirectoryRole: party.role || null,
+      partnerName: selection.companyName || selection.contactPerson || null,
+      email: selection.email || null,
+      localPartyId: party.id || party.localPartyId || null,
+    },
+  })
+
+  return {
+    transactionId: normalizedTransactionId,
+    rolePlayerId: savedRows[0]?.id || null,
+    roleType: selection.roleType,
+    partnerName: selection.companyName || selection.contactPerson || '',
+  }
 }
 
 export async function recordBuyerOnboardingSent({ transactionId, actorRole = null, recipientEmail = '', roleplayers = [] } = {}) {
