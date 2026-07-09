@@ -36862,14 +36862,15 @@ export async function fetchClientPortalByToken(token) {
   let transactionQuery = await client
     .from('transactions')
     .select(
-      'id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
+      'id, organisation_id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
     )
     .eq('id', link.transaction_id)
     .maybeSingle()
 
   if (
     transactionQuery.error &&
-    (isMissingColumnError(transactionQuery.error, 'development_id') ||
+    (isMissingColumnError(transactionQuery.error, 'organisation_id') ||
+      isMissingColumnError(transactionQuery.error, 'development_id') ||
       isMissingColumnError(transactionQuery.error, 'current_main_stage') ||
       isMissingColumnError(transactionQuery.error, 'current_sub_stage_summary') ||
       isMissingColumnError(transactionQuery.error, 'purchase_price') ||
@@ -36967,6 +36968,12 @@ export async function fetchClientPortalByToken(token) {
 
     buyer = buyerData
   }
+
+  const clientSurfaceBranding = await resolveClientSurfaceBranding(client, {
+    organisationId: transaction.organisation_id,
+    transaction,
+    unit,
+  })
 
   const [documents, additionalDocumentRequests] = await Promise.all([
     loadSharedDocuments(client, {
@@ -37244,6 +37251,7 @@ export async function fetchClientPortalByToken(token) {
     unit,
     transaction,
     buyer,
+    ...clientSurfaceBranding,
     appointments,
     stage,
     mainStage,
@@ -37306,14 +37314,15 @@ export async function fetchClientPortalCoreByToken(token) {
   let transactionQuery = await client
     .from('transactions')
     .select(
-      'id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
+      'id, organisation_id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
     )
     .eq('id', link.transaction_id)
     .maybeSingle()
 
   if (
     transactionQuery.error &&
-    (isMissingColumnError(transactionQuery.error, 'development_id') ||
+    (isMissingColumnError(transactionQuery.error, 'organisation_id') ||
+      isMissingColumnError(transactionQuery.error, 'development_id') ||
       isMissingColumnError(transactionQuery.error, 'current_main_stage') ||
       isMissingColumnError(transactionQuery.error, 'current_sub_stage_summary') ||
       isMissingColumnError(transactionQuery.error, 'purchase_price') ||
@@ -37400,6 +37409,12 @@ export async function fetchClientPortalCoreByToken(token) {
     throw buyerQuery.error
   }
 
+  const clientSurfaceBranding = await resolveClientSurfaceBranding(client, {
+    organisationId: transaction.organisation_id,
+    transaction,
+    unit: unitQuery.data || null,
+  })
+
   const [documents, additionalDocumentRequests] = await Promise.all([
     loadSharedDocuments(client, {
       transactionIds: [transaction.id],
@@ -37458,6 +37473,7 @@ export async function fetchClientPortalCoreByToken(token) {
     unit: unitQuery.data || null,
     transaction,
     buyer: buyerQuery.data || null,
+    ...clientSurfaceBranding,
     appointments,
     stage,
     mainStage,
