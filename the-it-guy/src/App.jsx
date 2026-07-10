@@ -333,6 +333,7 @@ const NewTransactionPage = lazy(() => import('./pages/NewTransactionPage'))
 const OnboardingProfileSetup = lazy(() => import('./pages/OnboardingProfileSetup'))
 const OnboardingLinksDemoPage = lazy(() => import('./pages/OnboardingLinksDemoPage'))
 const KingstonsSocialIntakeDemo = lazy(() => import('./pages/KingstonsSocialIntakeDemo'))
+const ProduktiveSocialIntakeDemo = lazy(() => import('./pages/ProduktiveSocialIntakeDemo'))
 const Pipeline = lazy(() => import('./pages/Pipeline'))
 const PipelineCanvassingPage = lazy(() => import('./pages/PipelineCanvassingPage'))
 const PipelineOverviewPage = lazy(() => import('./pages/PipelineOverviewPage'))
@@ -2967,6 +2968,10 @@ function AppRoutes() {
           <Route path="/demo/kingstons-social-intake/buyer" element={<AppErrorBoundary scope="demo-kingstons-social-intake-buyer" title="Kingstons buyer intake demo failed to load"><KingstonsSocialIntakeDemo initialMode="buyer" /></AppErrorBoundary>} />
           <Route path="/demo/kingstons-social-intake/seller" element={<AppErrorBoundary scope="demo-kingstons-social-intake-seller" title="Kingstons seller intake demo failed to load"><KingstonsSocialIntakeDemo initialMode="seller" /></AppErrorBoundary>} />
           <Route path="/demo/kingstons-social-intake/admin" element={<AppErrorBoundary scope="demo-kingstons-social-intake-admin" title="Kingstons social intake admin failed to load"><KingstonsSocialIntakeDemo view="admin" /></AppErrorBoundary>} />
+          <Route path="/demo/produktive-social-intake" element={<AppErrorBoundary scope="demo-produktive-social-intake" title="Produktive social intake demo failed to load"><ProduktiveSocialIntakeDemo /></AppErrorBoundary>} />
+          <Route path="/demo/produktive-social-intake/buyer" element={<AppErrorBoundary scope="demo-produktive-social-intake-buyer" title="Produktive buyer intake demo failed to load"><ProduktiveSocialIntakeDemo initialMode="buyer" /></AppErrorBoundary>} />
+          <Route path="/demo/produktive-social-intake/seller" element={<AppErrorBoundary scope="demo-produktive-social-intake-seller" title="Produktive seller intake demo failed to load"><ProduktiveSocialIntakeDemo initialMode="seller" /></AppErrorBoundary>} />
+          <Route path="/demo/produktive-social-intake/admin" element={<AppErrorBoundary scope="demo-produktive-social-intake-admin" title="Produktive social intake admin failed to load"><ProduktiveSocialIntakeDemo view="admin" /></AppErrorBoundary>} />
           <Route path="/client/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/buying" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/buying/:section" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
