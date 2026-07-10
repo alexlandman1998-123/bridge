@@ -22,7 +22,7 @@ import {
   X,
 } from 'lucide-react'
 import { createElement, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   bedroomOptions,
   buyerAreaOptions,
@@ -471,17 +471,6 @@ function SelectField({ label, value, onChange, options, placeholder = 'Select on
   )
 }
 
-function StepBody({ eyebrow, title, subtitle, children }) {
-  return (
-    <section className="mt-5">
-      <p className="text-xs font-black uppercase text-[#f5bb05] [letter-spacing:0]">{eyebrow}</p>
-      <h2 className="mt-2 text-xl font-black leading-tight text-[#071b31] [letter-spacing:0]">{title}</h2>
-      {subtitle ? <p className="mt-3 text-xs font-medium leading-5 text-[#556273] [letter-spacing:0]">{subtitle}</p> : null}
-      {children}
-    </section>
-  )
-}
-
 function FlowActions({ onBack, onNext, nextLabel = 'Continue', canContinue = true, isLast = false }) {
   return (
     <div className="mt-auto grid gap-3 pb-4 pt-8">
@@ -677,49 +666,45 @@ function BuyerFlow({ onExit }) {
         subtitle={buyerStepSubtitle(step)}
         steps={buyerSteps}
         current={step}
-        onBack={onExit}
+        onBack={goBack}
       />
 
       {step === 0 ? (
-        <StepBody eyebrow="Buyer journey" title="Select the areas you're interested in">
+        <section className="mt-5">
           <OptionGrid options={buyerAreaOptions} value={buyer.area} onChange={(value) => updateBuyer('area', value)} />
-        </StepBody>
+        </section>
       ) : null}
 
       {step === 1 ? (
-        <StepBody eyebrow="Buyer journey" title="Select your budget range">
+        <section className="mt-5">
           <OptionGrid options={buyerBudgetOptions} value={buyer.budget} onChange={updateBuyerBudget} />
-        </StepBody>
+        </section>
       ) : null}
 
       {step === 2 ? (
-        <StepBody eyebrow="Buyer journey" title="Select the minimum number of bedrooms">
+        <section className="mt-5">
           <OptionGrid options={bedroomOptions} value={buyer.beds} onChange={(value) => updateBuyer('beds', value)} />
-        </StepBody>
+        </section>
       ) : null}
 
       {step === 3 ? (
-        <StepBody eyebrow="Buyer journey" title="What type of property are you looking for?">
+        <section className="mt-5">
           <OptionGrid
             options={buyerPropertyTypeOptions}
             value={buyer.propertyType}
             onChange={(value) => updateBuyer('propertyType', value)}
           />
-        </StepBody>
+        </section>
       ) : null}
 
       {step === 4 ? (
-        <StepBody eyebrow="Buyer journey" title="Select all that apply">
+        <section className="mt-5">
           <FeatureGrid options={buyerFeatureOptions} selected={buyer.features} onToggle={toggleBuyerFeature} />
-        </StepBody>
+        </section>
       ) : null}
 
       {step === 5 ? (
-        <StepBody
-          eyebrow="Buyer journey"
-          title="Which homes are you interested in?"
-          subtitle="Select one or more properties. Kingstons will use this to match you with these homes or similar options."
-        >
+        <section className="mt-5">
           <div className="mt-5 grid gap-3">
             {demoProperties.map((property) => (
               <SelectablePropertyCard
@@ -730,7 +715,7 @@ function BuyerFlow({ onExit }) {
               />
             ))}
           </div>
-        </StepBody>
+        </section>
       ) : null}
 
       <FlowActions
@@ -751,7 +736,7 @@ function buyerStepTitle(step) {
     'Minimum bedrooms?',
     'Property type',
     'Any must-have features?',
-    'Interested homes',
+    'Which homes are you interested in?',
   ][step] || 'Buyer intake'
 }
 
@@ -762,7 +747,7 @@ function buyerStepSubtitle(step) {
     'Start with the smallest home you would consider.',
     'Choose the style of home you want to see.',
     'Add the features that would make a home worth viewing.',
-    'Pick the specific listings Kingstons should prioritise.',
+    'Select one or more properties. Kingstons will use this to match you with these homes or similar options.',
   ][step] || ''
 }
 
@@ -788,7 +773,9 @@ function BuyerResults({
 }) {
   const strongCount = strongMatches.length
   const resultMessage = strongCount
-    ? `We found ${strongCount} properties that match your search`
+    ? strongCount === 1
+      ? 'We found 1 property that matches your search'
+      : `We found ${strongCount} properties that match your search`
     : 'No perfect matches yet, but we found similar properties.'
   const selectedHomes = selectedProperties.length ? selectedProperties : buyerLead.selectedProperties || []
 
@@ -1252,7 +1239,7 @@ function SellerFlow({ onExit }) {
         subtitle={sellerStepSubtitle(step)}
         steps={sellerSteps}
         current={step}
-        onBack={onExit}
+        onBack={goBack}
       />
 
       {step === 0 ? (
@@ -1581,19 +1568,21 @@ function EmptyAdminState({ label }) {
 }
 
 export default function KingstonsSocialIntakeDemo({ view = 'intake', initialMode = 'landing' }) {
-  const [mode, setMode] = useState(() => (['buyer', 'seller'].includes(initialMode) ? initialMode : 'landing'))
+  const navigate = useNavigate()
+  const mode = ['buyer', 'seller'].includes(initialMode) ? initialMode : 'landing'
+  const homePath = '/demo/kingstons-social-intake'
 
   if (view === 'admin') {
     return <AdminPreview />
   }
 
   if (mode === 'buyer') {
-    return <BuyerFlow onExit={() => setMode('landing')} />
+    return <BuyerFlow onExit={() => navigate(homePath)} />
   }
 
   if (mode === 'seller') {
-    return <SellerFlow onExit={() => setMode('landing')} />
+    return <SellerFlow onExit={() => navigate(homePath)} />
   }
 
-  return <LandingView onSelect={setMode} />
+  return <LandingView onSelect={(nextMode) => navigate(`${homePath}/${nextMode}`)} />
 }
