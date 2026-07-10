@@ -4,8 +4,6 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import { acceptInvite, getInviteByToken, INVITE_TYPES, InviteValidationError } from '../services/inviteService'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
-import { SIGNUP_INTENT_SOURCE, SIGNUP_WORKSPACE_ACTIONS } from '../constants/signupIntents'
-import { buildSignupIntent, storeSignupIntentTemporarily } from '../lib/signupIntent'
 
 const PENDING_INVITE_TOKEN_STORAGE_KEY = 'itg:pending-org-invite-token'
 const PENDING_INVITE_EMAIL_STORAGE_KEY = 'itg:pending-org-invite-email'
@@ -147,7 +145,6 @@ function isCommercialInvite(invite = {}) {
 function getRedirectTarget(result = {}) {
   const portalRedirect = getInvitePortalRedirect(result.invite)
   if (portalRedirect) return portalRedirect
-  if (isPrincipalClaimInvite(result.invite)) return '/onboarding/profile'
   if (isCommercialInvite(result.invite)) return '/commercial'
   if (result.redirect_to) return result.redirect_to
   if (result.transaction_id) return `/transactions/${result.transaction_id}`
@@ -157,7 +154,6 @@ function getRedirectTarget(result = {}) {
 function getInviteTarget(invite = {}) {
   const portalRedirect = getInvitePortalRedirect(invite)
   if (portalRedirect) return portalRedirect
-  if (isPrincipalClaimInvite(invite)) return '/onboarding/profile'
   if (isCommercialInvite(invite)) return '/commercial'
   if (invite.targetTransactionId) return `/transactions/${invite.targetTransactionId}`
   return '/dashboard'
@@ -422,7 +418,7 @@ export default function InviteResolver() {
   const workspaceName = normalizeText(invite?.workspace?.display_name || invite?.workspace?.name)
   const workspaceLogoUrl = getInviteWorkspaceLogoUrl(invite)
   const branchName = getInviteBranchName(invite)
-  const roleLabel = invite ? formatInviteRoleLabel(principalClaimInvite ? 'principal claim' : invite?.metadata?.role_label || invite?.targetWorkspaceRole || invite?.metadata?.role) : ''
+  const roleLabel = invite ? formatInviteRoleLabel(principalClaimInvite ? 'principal' : invite?.metadata?.role_label || invite?.targetWorkspaceRole || invite?.metadata?.role) : ''
   const inviteDetails = useMemo(() => {
     const rows = []
     if (workspaceName) rows.push({ label: 'Workspace', value: workspaceName })
@@ -435,33 +431,13 @@ export default function InviteResolver() {
     if (invite.inviteType === 'transaction_invite') return 'Transaction collaboration'
     if (invite.inviteType === 'workspace_and_transaction_invite') return 'Workspace and transaction collaboration'
     if (invite.inviteType === 'client_invite') return 'Client access'
-    if (principalClaimInvite) {
-      return workspaceName
-        ? `Claim principal access for ${workspaceName}`
-        : 'Principal organisation claim'
-    }
+    if (principalClaimInvite) return workspaceName ? `${workspaceName} principal access` : 'Principal workspace access'
     if (invite.inviteType === 'branch_invite') {
       return branchName && workspaceName ? `${branchName} branch at ${workspaceName}` : 'Branch workspace access'
     }
     if (invite.inviteType === 'team_invite') return 'Team workspace access'
     return workspaceName ? `${workspaceName} workspace` : 'Workspace access'
   }, [branchName, invite, principalClaimInvite, workspaceName])
-
-  useEffect(() => {
-    if (!invite || !principalClaimInvite) return
-    const seededIntent = buildSignupIntent({
-      position: 'agency_owner',
-      source: SIGNUP_INTENT_SOURCE.inviteLink,
-      inviteToken: token,
-      overrides: {
-        workspace_action: SIGNUP_WORKSPACE_ACTIONS.claimExistingWorkspace,
-        email: invitedEmail,
-      },
-    })
-    if (seededIntent) {
-      storeSignupIntentTemporarily(seededIntent)
-    }
-  }, [invitedEmail, invite, principalClaimInvite, token])
 
   useEffect(() => {
     if (acceptedInviteBelongsToSession) {
@@ -570,8 +546,8 @@ export default function InviteResolver() {
           <InviteBrandStrip workspaceName={workspaceName} workspaceLogoUrl={workspaceLogoUrl} />
           <InviteHeader
             icon={<CheckCircle2 size={22} />}
-            title={principalClaimInvite ? 'Principal claim started' : 'Invite accepted'}
-            subtitle={principalClaimInvite ? 'Your claim invite has been accepted. Continue to onboarding so Arch9 can capture the organisation details before access is finalised.' : 'Your access has been created and verified.'}
+            title={principalClaimInvite ? 'Principal access granted' : 'Invite accepted'}
+            subtitle={principalClaimInvite ? 'Your principal access has been created and verified.' : 'Your access has been created and verified.'}
             tone="success"
           />
           <InviteActionPanel>
@@ -592,8 +568,8 @@ export default function InviteResolver() {
           <InviteBrandStrip workspaceName={workspaceName} workspaceLogoUrl={workspaceLogoUrl} />
           <InviteHeader
             icon={<CheckCircle2 size={22} />}
-            title={principalClaimInvite ? 'Principal claim already started' : 'You’re already connected'}
-            subtitle={principalClaimInvite ? `This claim invite has already been accepted for ${invitedEmail || 'your account'}. Continue to onboarding to finish the claim.` : `This invite has already been accepted for ${invitedEmail || 'your account'}. Continue into Arch9 to access the workspace.`}
+            title={principalClaimInvite ? 'Principal access already active' : 'You’re already connected'}
+            subtitle={principalClaimInvite ? `This principal invite has already been accepted for ${invitedEmail || 'your account'}. Continue into Arch9 to access the workspace.` : `This invite has already been accepted for ${invitedEmail || 'your account'}. Continue into Arch9 to access the workspace.`}
             tone="success"
           />
           <InviteActionPanel>
@@ -660,7 +636,7 @@ export default function InviteResolver() {
         <InviteBrandStrip workspaceName={workspaceName} workspaceLogoUrl={workspaceLogoUrl} />
         <InviteHeader
           icon={<Building2 size={22} />}
-          title={principalClaimInvite ? 'Start Principal Claim' : 'Accept Invite'}
+          title={principalClaimInvite ? 'Accept Principal Invite' : 'Accept Invite'}
           subtitle={invitePurpose}
         />
 
@@ -677,13 +653,13 @@ export default function InviteResolver() {
           ) : (
             <p className="text-center text-helper text-textMuted">
               {principalClaimInvite
-                ? 'Continue with the invited email address. Arch9 will start the claim process without granting principal access automatically.'
+                ? 'Continue with the invited email address. Arch9 will grant principal access when this invite is accepted.'
                 : 'Continue with the invited email address. Arch9 will apply the workspace and role from this invite.'}
             </p>
           )}
           <div className="flex flex-wrap justify-center gap-2">
             <Button type="button" onClick={() => void handleAccept()} disabled={saving}>
-              {saving ? 'Accepting…' : principalClaimInvite ? 'Start claim' : 'Accept invite'}
+              {saving ? 'Accepting…' : principalClaimInvite ? 'Accept principal invite' : 'Accept invite'}
             </Button>
           </div>
         </InviteActionPanel>

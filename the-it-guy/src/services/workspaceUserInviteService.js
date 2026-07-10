@@ -72,7 +72,7 @@ function getLastName(input = {}) {
 
 function formatRoleLabel(value = '') {
   const normalized = normalizeRole(value)
-  if (normalized === 'principal_claim') return 'Principal Claim'
+  if (normalized === 'principal_claim') return 'Principal'
   return normalized
     .split(/[_\s-]+/)
     .filter(Boolean)
@@ -106,7 +106,7 @@ function buildInviteMessage({ invite, inviteLink }) {
   const agentName = getInviteeName(invite) || 'Agent'
   const orgName = normalizeText(invite?.organisationName) || 'your organisation'
   if (invite?.inviteType === INVITE_TYPES.principalClaim || invite?.role === 'principal_claim') {
-    return `Hi ${agentName},\n\n${orgName} has invited you to claim principal access on Arch9.\n\nStart the claim here:\n${inviteLink}\n\n- Arch9`
+    return `Hi ${agentName},\n\n${orgName} has invited you to join Arch9 with principal access.\n\nAccept the invite here:\n${inviteLink}\n\n- Arch9`
   }
   return `Hi ${agentName},\n\nYou have been invited to join ${orgName} on Arch9.\n\nComplete your onboarding here:\n${inviteLink}\n\n- Arch9`
 }
@@ -348,7 +348,7 @@ function normalizeWorkspaceInviteRow(row = {}, defaults = {}) {
     office: branchName || organisationName,
     role,
     roleLabel: principalClaimInvite
-      ? 'Principal Claim'
+      ? 'Principal'
       : normalizeText(metadata.role_label || metadata.roleLabel) || formatRoleLabel(role),
     organisationLogoUrl: branding.organisationLogoUrl,
     organisationLogoIconUrl: branding.organisationLogoIconUrl,
@@ -561,13 +561,6 @@ export async function createWorkspaceUserInvite(input = {}) {
 
   const branchId = normalizeText(input.branchId || input.branch_id)
   const role = normalizeRole(input.role || input.workspaceRole || input.workspace_role || input.organisationRole || input.organisation_role, 'agent')
-  if (normalizeAgencyAuthorityRole(role) === 'principal') {
-    return createPrincipalClaimInvite({
-      ...input,
-      email,
-      source: normalizeText(input.source) || 'workspace_user_principal_claim_invite',
-    })
-  }
   const roleLabel = normalizeText(input.roleLabel || input.role_label) || formatRoleLabel(role)
   const firstName = getFirstName(input)
   const lastName = getLastName(input)
@@ -714,7 +707,7 @@ export async function createPrincipalClaimInvite(input = {}) {
     organisationLogoIconUrl,
     brandPrimaryColor,
   } = await resolveWorkspaceDefaults(input)
-  if (!workspaceId) throw new Error('A workspace is required before creating a principal claim invite.')
+  if (!workspaceId) throw new Error('A workspace is required before creating a principal invite.')
 
   const firstName = getFirstName(input)
   const lastName = getLastName(input)
@@ -741,7 +734,7 @@ export async function createPrincipalClaimInvite(input = {}) {
         last_name: lastName,
         mobile,
         role: 'principal_claim',
-        role_label: 'Principal Claim',
+        role_label: 'Principal',
         organisation_name: organisationName,
         organisation_logo_url: organisationLogoUrl,
         organisation_logo_icon_url: organisationLogoIconUrl,
@@ -774,7 +767,7 @@ export async function createPrincipalClaimInvite(input = {}) {
           organisationLogoIconUrl: existingInvite.organisationLogoIconUrl || organisationLogoIconUrl,
           brandPrimaryColor: existingInvite.brandPrimaryColor || brandPrimaryColor,
           role: 'principal_claim',
-          roleLabel: 'Principal Claim',
+          roleLabel: 'Principal',
         })
         return {
           ...resent,
@@ -806,7 +799,7 @@ export async function createPrincipalClaimInvite(input = {}) {
     organisationLogoIconUrl,
     brandPrimaryColor,
     role: 'principal_claim',
-    roleLabel: 'Principal Claim',
+    roleLabel: 'Principal',
     invitedByName: normalizeText(input.invitedByName || input.invited_by_name),
   }
   const inviteLink = buildAgentInviteLink(invite.token)

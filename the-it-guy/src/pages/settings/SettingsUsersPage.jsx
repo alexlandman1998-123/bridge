@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { BriefcaseBusiness, CheckCircle2, ShieldCheck, UserPlus, UsersRound } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
@@ -14,7 +15,6 @@ import {
   updateOrganisationUserRole,
 } from '../../lib/settingsApi'
 import {
-  createPrincipalClaimInvite,
   createWorkspaceUserInvite,
   listWorkspaceUserInvites,
   resendWorkspaceUserInvite,
@@ -70,6 +70,17 @@ function resolveInviteRole(value = '', fallback = 'agent') {
   return ROLE_OPTIONS.some((option) => option.value === normalized) ? normalized : fallback
 }
 
+function resolveDefaultTeamInviteRole(options = [], preferredRole = 'branch_manager') {
+  const preferred = resolveInviteRole(preferredRole, 'branch_manager')
+  return (
+    options.find((option) => option.value === preferred)?.value ||
+    options.find((option) => option.value === 'branch_manager')?.value ||
+    options.find((option) => option.value === 'agent')?.value ||
+    options[0]?.value ||
+    'agent'
+  )
+}
+
 function getRoleLevel(value = '') {
   return getAgencyAuthorityLevel(normalizeAgencyAuthorityRole(value))
 }
@@ -110,11 +121,19 @@ function isPrincipalInviteRole(role = '') {
   return normalizeAgencyAuthorityRole(role) === 'principal'
 }
 
+function resolveInitialInviteMode({ navigationState = {}, inviteRole = '' } = {}) {
+  const explicitMode = String(navigationState.inviteMode || navigationState.mode || '').trim().toLowerCase()
+  if (explicitMode === 'principal_claim' || explicitMode === 'principal') return 'principal_claim'
+  if (explicitMode === 'team' || explicitMode === 'manager') return 'team'
+  if (navigationState.inviteIntent === 'residential_principal_manager' && isPrincipalInviteRole(inviteRole)) return 'principal_claim'
+  return isPrincipalInviteRole(inviteRole) ? 'principal_claim' : 'team'
+}
+
 function formatUserStatusLabel(userRow = {}) {
   if (userRow.isPrincipalClaim) {
     if (userRow.status === 'active') return 'Principal active'
-    if (userRow.status === 'pending') return 'Principal claim pending'
-    if (userRow.status === 'invited') return 'Principal claim sent'
+    if (userRow.status === 'pending') return 'Principal invite pending'
+    if (userRow.status === 'invited') return 'Principal invite sent'
   }
   return String(userRow.status || 'invited').replaceAll('_', ' ')
 }
@@ -128,11 +147,11 @@ function formatInviteDate(value = '') {
 
 function formatPrincipalClaimStatusLabel(invite = {}) {
   const status = String(invite?.status || '').trim()
-  if (status === 'active') return 'Claim completed'
-  if (status === 'pending_invite') return 'Claim pending'
-  if (status === 'revoked') return 'Claim revoked'
-  if (status === 'expired') return 'Claim expired'
-  return status ? status.replaceAll('_', ' ') : 'Principal claim'
+  if (status === 'active') return 'Access active'
+  if (status === 'pending_invite') return 'Invite pending'
+  if (status === 'revoked') return 'Invite revoked'
+  if (status === 'expired') return 'Invite expired'
+  return status ? status.replaceAll('_', ' ') : 'Principal invite'
 }
 
 function formatPrincipalClaimEventLabel(invite = {}) {
@@ -178,9 +197,10 @@ export default function SettingsUsersPage() {
   const canEdit = can(PERMISSIONS.manageUsers)
   const administratorLabel = getWorkspaceAdministratorLabel({ appRole: role, workspaceType: resolvedWorkspaceType })
   const inviteSectionRef = useRef(null)
-  const inviteNavigationState = readInviteNavigationState(location.state)
-  const isPrincipalClaimInviteMode = inviteNavigationState.inviteIntent === 'residential_principal_manager'
+  const inviteNavigationState = useMemo(() => readInviteNavigationState(location.state), [location.state])
+  const isPrincipalManagerInviteIntent = inviteNavigationState.inviteIntent === 'residential_principal_manager'
   const initialInviteRole = resolveInviteRole(inviteNavigationState.inviteRole || inviteNavigationState.role, 'agent')
+  const initialInviteMode = resolveInitialInviteMode({ navigationState: inviteNavigationState, inviteRole: initialInviteRole })
   const [users, setUsers] = useState([])
   const [commissionStructures, setCommissionStructures] = useState([])
   const [commissionProfiles, setCommissionProfiles] = useState([])
@@ -188,7 +208,15 @@ export default function SettingsUsersPage() {
   const [principalClaimInviteHistory, setPrincipalClaimInviteHistory] = useState([])
   const [commercialAccessRequests, setCommercialAccessRequests] = useState([])
   const [commercialAccessManagement, setCommercialAccessManagement] = useState({ organisationModuleStatus: null, users: [], auditEvents: [] })
-  const [inviteForm, setInviteForm] = useState({ firstName: '', lastName: '', email: '', role: initialInviteRole, commissionStructureId: '' })
+  const [activePanel, setActivePanel] = useState(inviteNavigationState.openInvite ? 'invite' : 'directory')
+  const [inviteMode, setInviteMode] = useState(initialInviteMode)
+  const [inviteForm, setInviteForm] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    role: isPrincipalInviteRole(initialInviteRole) ? 'branch_manager' : initialInviteRole,
+    commissionStructureId: '',
+  })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [claimInviteBusyId, setClaimInviteBusyId] = useState('')
@@ -197,14 +225,25 @@ export default function SettingsUsersPage() {
   const [savingCommercialUserId, setSavingCommercialUserId] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const authorityMembershipRole = useMemo(() => {
+    const candidates = [
+      membershipRole,
+      workspaceRole,
+      currentMembership?.workspaceRole,
+      currentMembership?.role,
+    ].filter(Boolean)
+    return candidates.reduce((strongestRole, candidateRole) => (
+      getRoleLevel(candidateRole) > getRoleLevel(strongestRole) ? candidateRole : strongestRole
+    ), 'viewer')
+  }, [currentMembership?.role, currentMembership?.workspaceRole, membershipRole, workspaceRole])
   const authorityActor = useMemo(() => ({
     id: profile?.id || currentMembership?.userId || currentMembership?.user_id || '',
     userId: profile?.id || currentMembership?.userId || currentMembership?.user_id || '',
     email: profile?.email || currentMembership?.email || '',
-    role: membershipRole || workspaceRole || currentMembership?.workspaceRole || currentMembership?.role || 'viewer',
-    membershipRole: membershipRole || workspaceRole || currentMembership?.workspaceRole || currentMembership?.role || 'viewer',
+    role: authorityMembershipRole,
+    membershipRole: authorityMembershipRole,
     branchId: currentMembership?.primaryBranchId || currentMembership?.branchId || currentMembership?.primary_branch_id || currentMembership?.branch_id || '',
-  }), [currentMembership, membershipRole, profile, workspaceRole])
+  }), [authorityMembershipRole, currentMembership, profile])
   const usesAgencyGovernance = useMemo(() => {
     const type = String(currentWorkspace?.type || workspaceType || '').trim().toLowerCase()
     return !type || ['agency', 'residential'].includes(type)
@@ -213,7 +252,17 @@ export default function SettingsUsersPage() {
     () => (usesAgencyGovernance ? filterAssignableRoleOptions(authorityActor, { invite: true }) : ROLE_OPTIONS),
     [authorityActor, usesAgencyGovernance],
   )
-  const principalInviteSelected = usesAgencyGovernance && (isPrincipalClaimInviteMode || isPrincipalInviteRole(inviteForm.role))
+  const teamInviteRoleOptions = useMemo(
+    () => inviteRoleOptions.filter((option) => !isPrincipalInviteRole(option.value)),
+    [inviteRoleOptions],
+  )
+  const principalInviteAllowed = useMemo(
+    () => inviteRoleOptions.some((option) => isPrincipalInviteRole(option.value)),
+    [inviteRoleOptions],
+  )
+  const principalInviteSelected = usesAgencyGovernance && inviteMode === 'principal_claim'
+  const teamInviteDisabled = inviteMode === 'team' && teamInviteRoleOptions.length === 0
+  const principalInviteDisabled = principalInviteSelected && !principalInviteAllowed
 
   const commissionStructureById = useMemo(
     () => new Map((commissionStructures || []).map((item) => [String(item.id || ''), item])),
@@ -249,14 +298,21 @@ export default function SettingsUsersPage() {
         listCommercialAccessManagementState().catch(() => ({ organisationModuleStatus: null, users: [], auditEvents: [] })),
       ])
       setUsers(response)
-      setMembershipRole(normalizeOrganisationMembershipRole(context.membershipRole || 'viewer', {
+      setMembershipRole(normalizeOrganisationMembershipRole(
+        context.membershipRole ||
+          workspaceRole ||
+          currentMembership?.workspaceRole ||
+          currentMembership?.role ||
+          'viewer',
+        {
         appRole: role,
         workspaceType: context?.organisation?.type || resolvedWorkspaceType,
-      }))
+        },
+      ))
       setCommissionStructures(Array.isArray(structureRows) ? structureRows : [])
       setCommissionProfiles(Array.isArray(profileRows) ? profileRows : [])
       const principalClaimInviteRows = (Array.isArray(principalClaimInvites) ? principalClaimInvites : [])
-        .filter((invite) => invite?.isPrincipalClaimInvite)
+        .filter((invite) => invite?.isPrincipalClaimInvite || isPrincipalInviteRole(invite?.role))
       setPrincipalClaimInviteHistory(principalClaimInviteRows)
       setPendingPrincipalClaimInvites(principalClaimInviteRows.filter((invite) => invite.status === 'pending_invite'))
       setCommercialAccessRequests(Array.isArray(commercialRequests) ? commercialRequests : [])
@@ -266,7 +322,7 @@ export default function SettingsUsersPage() {
     } finally {
       setLoading(false)
     }
-  }, [canEdit, resolvedWorkspaceType, role])
+  }, [canEdit, currentMembership?.role, currentMembership?.workspaceRole, resolvedWorkspaceType, role, workspaceRole])
 
   useEffect(() => {
     void loadUsers()
@@ -274,33 +330,80 @@ export default function SettingsUsersPage() {
 
   useEffect(() => {
     if (!inviteNavigationState.openInvite) return
-    if (isPrincipalClaimInviteMode) {
-      setInviteForm((previous) => ({ ...previous, role: 'principal' }))
+    setActivePanel('invite')
+    if (isPrincipalManagerInviteIntent) {
+      const requestedRole = resolveInviteRole(inviteNavigationState.inviteRole || inviteNavigationState.role, 'principal')
+      const requestedMode = resolveInitialInviteMode({ navigationState: inviteNavigationState, inviteRole: requestedRole })
+      setInviteMode(requestedMode)
+      if (requestedMode === 'team') {
+        const allowedRole = teamInviteRoleOptions.some((option) => option.value === requestedRole)
+          ? requestedRole
+          : resolveDefaultTeamInviteRole(teamInviteRoleOptions, requestedRole)
+        setInviteForm((previous) => ({ ...previous, role: allowedRole }))
+      }
       window.setTimeout(() => {
         inviteSectionRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
       }, 0)
       return
     }
     const nextRole = resolveInviteRole(inviteNavigationState.inviteRole || inviteNavigationState.role, 'principal')
-    const allowedRole = inviteRoleOptions.some((option) => option.value === nextRole)
-      ? nextRole
-      : inviteRoleOptions[0]?.value || 'agent'
-    setInviteForm((previous) => ({ ...previous, role: allowedRole }))
+    if (isPrincipalInviteRole(nextRole)) {
+      setInviteMode('principal_claim')
+    } else {
+      setInviteMode('team')
+      const allowedRole = teamInviteRoleOptions.some((option) => option.value === nextRole)
+        ? nextRole
+        : resolveDefaultTeamInviteRole(teamInviteRoleOptions, nextRole)
+      setInviteForm((previous) => ({ ...previous, role: allowedRole }))
+    }
     window.setTimeout(() => {
       inviteSectionRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
     }, 0)
-  }, [inviteNavigationState.inviteRole, inviteNavigationState.openInvite, inviteNavigationState.role, inviteRoleOptions, isPrincipalClaimInviteMode])
+  }, [
+    inviteNavigationState,
+    inviteNavigationState.inviteIntent,
+    inviteNavigationState.inviteMode,
+    inviteNavigationState.mode,
+    inviteNavigationState.inviteRole,
+    inviteNavigationState.openInvite,
+    inviteNavigationState.role,
+    isPrincipalManagerInviteIntent,
+    teamInviteRoleOptions,
+  ])
 
   useEffect(() => {
-    if (isPrincipalClaimInviteMode) return
-    if (!inviteRoleOptions.length) return
-    if (inviteRoleOptions.some((option) => option.value === inviteForm.role)) return
-    setInviteForm((previous) => ({ ...previous, role: inviteRoleOptions[0].value }))
-  }, [inviteForm.role, inviteRoleOptions, isPrincipalClaimInviteMode])
+    if (inviteMode !== 'team') return
+    if (!teamInviteRoleOptions.length) return
+    if (teamInviteRoleOptions.some((option) => option.value === inviteForm.role)) return
+    setInviteForm((previous) => ({
+      ...previous,
+      role: resolveDefaultTeamInviteRole(teamInviteRoleOptions, inviteNavigationState.inviteRole || inviteNavigationState.role),
+    }))
+  }, [inviteForm.role, inviteMode, inviteNavigationState.inviteRole, inviteNavigationState.role, teamInviteRoleOptions])
+
+  function handleInviteModeChange(nextMode) {
+    setInviteMode(nextMode)
+    if (nextMode === 'team') {
+      setInviteForm((previous) => ({
+        ...previous,
+        role: teamInviteRoleOptions.some((option) => option.value === previous.role)
+          ? previous.role
+          : resolveDefaultTeamInviteRole(teamInviteRoleOptions, inviteNavigationState.inviteRole || inviteNavigationState.role),
+      }))
+    }
+  }
 
   async function handleInvite(event) {
     event.preventDefault()
     if (!canEdit) return
+    if (teamInviteDisabled) {
+      setError('You do not have authority to invite manager or team roles from this workspace.')
+      return
+    }
+    if (principalInviteDisabled) {
+      setError('Only the organisation owner can invite another principal.')
+      return
+    }
     try {
       setSaving(true)
       setError('')
@@ -309,30 +412,29 @@ export default function SettingsUsersPage() {
         commissionStructureById.get(String(inviteForm.commissionStructureId || '').trim()) ||
         defaultCommissionStructure ||
         null
-      const inviteResult = principalInviteSelected
-        ? await createPrincipalClaimInvite({
-            firstName: inviteForm.firstName,
-            lastName: inviteForm.lastName,
-            email: inviteForm.email,
-            source: inviteNavigationState.inviteSource || (isPrincipalClaimInviteMode ? 'settings_principal_claim_invite' : 'settings_users_principal_role_invite'),
-          })
-        : await createWorkspaceUserInvite({
-            firstName: inviteForm.firstName,
-            lastName: inviteForm.lastName,
-            email: inviteForm.email,
-            role: inviteForm.role,
-            branchId: inviteNavigationState.branchId || '',
-            branchName: inviteNavigationState.branchName || '',
-            commissionStructureId: selectedCommissionStructure?.id || '',
-            commissionStructureName: selectedCommissionStructure?.name || '',
-            source: inviteNavigationState.inviteSource || 'settings_users_invite',
-          })
-      setInviteForm({ firstName: '', lastName: '', email: '', role: 'agent', commissionStructureId: '' })
+      const inviteResult = await createWorkspaceUserInvite({
+        firstName: inviteForm.firstName,
+        lastName: inviteForm.lastName,
+        email: inviteForm.email,
+        role: principalInviteSelected ? 'principal' : inviteForm.role,
+        branchId: principalInviteSelected ? '' : inviteNavigationState.branchId || '',
+        branchName: principalInviteSelected ? '' : inviteNavigationState.branchName || '',
+        commissionStructureId: selectedCommissionStructure?.id || '',
+        commissionStructureName: selectedCommissionStructure?.name || '',
+        source: inviteNavigationState.inviteSource || (principalInviteSelected ? 'settings_users_principal_invite' : 'settings_users_invite'),
+      })
+      setInviteForm({
+        firstName: '',
+        lastName: '',
+        email: '',
+        role: resolveDefaultTeamInviteRole(teamInviteRoleOptions, inviteNavigationState.inviteRole || inviteNavigationState.role),
+        commissionStructureId: '',
+      })
       await loadUsers()
       setMessage(
         inviteResult.reusedExistingInvite
-          ? principalInviteSelected ? 'Existing principal claim invite resent.' : 'Existing pending invite resent.'
-          : principalInviteSelected ? 'Principal claim invite sent.' : 'User invite sent.',
+          ? principalInviteSelected ? 'Existing principal invite resent.' : 'Existing pending invite resent.'
+          : principalInviteSelected ? 'Principal invite sent.' : 'User invite sent.',
       )
     } catch (saveError) {
       setError(saveError.message)
@@ -441,15 +543,15 @@ export default function SettingsUsersPage() {
   async function handleCopyPrincipalClaimLink(invite) {
     const inviteLink = invite?.inviteLink || invite?.onboardingUrl || ''
     if (!inviteLink) {
-      setError('Principal claim link is not available for this invite.')
+      setError('Principal invite link is not available for this invite.')
       return
     }
     try {
       await navigator.clipboard.writeText(inviteLink)
       setError('')
-      setMessage(`Principal claim link copied for ${invite.email}.`)
+      setMessage(`Principal invite link copied for ${invite.email}.`)
     } catch {
-      setError('Unable to copy the principal claim link from this browser.')
+      setError('Unable to copy the principal invite link from this browser.')
     }
   }
 
@@ -461,9 +563,9 @@ export default function SettingsUsersPage() {
       setMessage('')
       await resendWorkspaceUserInvite(invite)
       await loadUsers()
-      setMessage(`Principal claim resent to ${invite.email}.`)
+      setMessage(`Principal invite resent to ${invite.email}.`)
     } catch (resendError) {
-      setError(resendError?.message || 'Unable to resend this principal claim.')
+      setError(resendError?.message || 'Unable to resend this principal invite.')
     } finally {
       setClaimInviteBusyId('')
     }
@@ -471,7 +573,7 @@ export default function SettingsUsersPage() {
 
   async function handleRevokePrincipalClaimInvite(invite) {
     if (!canEdit || !invite?.id) return
-    const confirmed = window.confirm(`Revoke the pending principal claim for ${invite.email}?`)
+    const confirmed = window.confirm(`Revoke the pending principal invite for ${invite.email}?`)
     if (!confirmed) return
     try {
       setClaimInviteBusyId(invite.id)
@@ -479,9 +581,9 @@ export default function SettingsUsersPage() {
       setMessage('')
       await revokeWorkspaceUserInvite(invite)
       await loadUsers()
-      setMessage(`Principal claim revoked for ${invite.email}.`)
+      setMessage(`Principal invite revoked for ${invite.email}.`)
     } catch (revokeError) {
-      setError(revokeError?.message || 'Unable to revoke this principal claim.')
+      setError(revokeError?.message || 'Unable to revoke this principal invite.')
     } finally {
       setClaimInviteBusyId('')
     }
@@ -497,29 +599,154 @@ export default function SettingsUsersPage() {
 
   const commercialModuleActive = commercialAccessManagement.organisationModuleStatus?.enabled === true
   const commercialAuditEvents = commercialAccessManagement.auditEvents || []
+  const activeUserCount = useMemo(
+    () => (users || []).filter((userRow) => userRow.status === 'active').length,
+    [users],
+  )
+  const commercialAssignedCount = useMemo(
+    () => (commercialAccessManagement.users || []).filter((userRow) => userRow.hasCommercialAccess).length,
+    [commercialAccessManagement.users],
+  )
+  const panelOptions = useMemo(() => ([
+    {
+      value: 'invite',
+      label: 'Invites',
+      description: pendingPrincipalClaimInvites.length
+        ? `${pendingPrincipalClaimInvites.length} principal invite${pendingPrincipalClaimInvites.length === 1 ? '' : 's'} pending`
+        : 'Send manager, team, or principal links',
+      icon: UserPlus,
+    },
+    {
+      value: 'directory',
+      label: 'Directory',
+      description: `${activeUserCount} active user${activeUserCount === 1 ? '' : 's'} in this workspace`,
+      icon: UsersRound,
+    },
+    {
+      value: 'commercial',
+      label: 'Commercial Access',
+      description: commercialAccessRequests.length
+        ? `${commercialAccessRequests.length} request${commercialAccessRequests.length === 1 ? '' : 's'} waiting`
+        : `${commercialAssignedCount} assigned`,
+      icon: BriefcaseBusiness,
+    },
+  ]), [activeUserCount, commercialAccessRequests.length, commercialAssignedCount, pendingPrincipalClaimInvites.length])
 
   return (
     <div className={settingsPageClass}>
       <SettingsPageHeader
         kicker="Users & Permissions"
-        title="Organisation users and access"
-        description="Invite users, assign roles, and control who can configure platform settings."
+        title="Users"
+        description="Invite people, review principal access links, and manage access for this workspace."
       />
 
       {!canEdit ? (
         <SettingsBanner tone="warning">Read-only for your role. Only {administratorLabel} can manage users and permissions.</SettingsBanner>
       ) : null}
 
+      {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
+      {message ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}
+
+      <div className="grid gap-2 md:grid-cols-3">
+        {panelOptions.map((option) => {
+          const Icon = option.icon
+          const selected = activePanel === option.value
+          return (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => setActivePanel(option.value)}
+              className={[
+                'grid min-h-[92px] grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-[12px] border p-4 text-left transition',
+                selected
+                  ? 'border-[#9bc8df] bg-[#f6fbff] shadow-[0_12px_24px_rgba(38,86,116,0.08)]'
+                  : 'border-[#e3eaf2] bg-white hover:border-[#c9d8e7] hover:bg-[#f9fbfe]',
+              ].join(' ')}
+            >
+              <span className={[
+                'inline-flex h-10 w-10 items-center justify-center rounded-[10px] border',
+                selected ? 'border-[#b9dcef] bg-white text-[#23546f]' : 'border-[#dbe6f0] bg-[#f8fafc] text-[#607387]',
+              ].join(' ')}>
+                <Icon size={18} />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold text-[#162334]">{option.label}</span>
+                <span className="mt-1 block text-sm leading-5 text-[#6b7d93]">{option.description}</span>
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      {activePanel === 'invite' ? (
+        <>
       <div ref={inviteSectionRef}>
-      <SettingsSectionCard title="Invite User" description="Add a team member and assign their initial role.">
-        {isPrincipalClaimInviteMode ? (
+      <SettingsSectionCard title="Invite User" description="Choose the correct invite path before sending access.">
+        {isPrincipalManagerInviteIntent ? (
           <SettingsBanner tone="success">
-            Principal claim selected from Residential. This sends a claim link for the principal to start organisation onboarding, without granting principal access automatically.
+            Opened from Branches. Use Team / manager for staff access, or Principal when the recipient should receive principal access as soon as they accept.
           </SettingsBanner>
         ) : null}
-        {!isPrincipalClaimInviteMode && usesAgencyGovernance && isPrincipalInviteRole(inviteForm.role) ? (
+        <div className="grid gap-3 md:grid-cols-2">
+          {[
+            {
+              value: 'team',
+              label: 'Team / manager',
+              description: 'For branch managers, agents, assistants, and coordinators. Access is granted when the invite is accepted.',
+              icon: ShieldCheck,
+            },
+            {
+              value: 'principal_claim',
+              label: 'Principal',
+              description: 'For principals who should receive active workspace access immediately after accepting.',
+              icon: CheckCircle2,
+            },
+          ].map((option) => {
+            const Icon = option.icon
+            const selected = inviteMode === option.value
+            return (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={selected}
+                disabled={!canEdit || (option.value === 'principal_claim' && (!usesAgencyGovernance || !principalInviteAllowed))}
+                onClick={() => handleInviteModeChange(option.value)}
+                className={[
+                  'grid min-h-[112px] grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-[12px] border p-4 text-left transition disabled:cursor-not-allowed disabled:opacity-60',
+                  selected
+                    ? 'border-[#91c7ad] bg-[#f3fbf6] shadow-[0_12px_24px_rgba(31,122,69,0.08)]'
+                    : 'border-[#e3eaf2] bg-white hover:border-[#c9d8e7] hover:bg-[#f9fbfe]',
+                ].join(' ')}
+              >
+                <span className={[
+                  'inline-flex h-10 w-10 items-center justify-center rounded-[10px] border',
+                  selected ? 'border-[#c9e8d5] bg-white text-[#1f7a45]' : 'border-[#dbe6f0] bg-[#f8fafc] text-[#607387]',
+                ].join(' ')}>
+                  <Icon size={18} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-[#162334]">{option.label}</span>
+                  <span className="mt-1 block text-sm leading-5 text-[#6b7d93]">{option.description}</span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        {principalInviteSelected ? (
           <SettingsBanner tone="success">
-            Principal selected. Arch9 will send a principal claim link instead of granting principal access immediately.
+            Principal invite selected. Arch9 grants active principal access as soon as the invite is accepted.
+          </SettingsBanner>
+        ) : null}
+        {principalInviteDisabled ? (
+          <SettingsBanner tone="warning">
+            Only the organisation owner can invite another principal.
+          </SettingsBanner>
+        ) : null}
+        {teamInviteDisabled ? (
+          <SettingsBanner tone="warning">
+            Your role can review users, but it cannot invite manager or team roles in this workspace.
           </SettingsBanner>
         ) : null}
         <form className={settingsGridClass} onSubmit={handleInvite}>
@@ -551,9 +778,9 @@ export default function SettingsUsersPage() {
             <span className="text-sm font-medium text-[#51657b]">Role</span>
             {principalInviteSelected ? (
               <>
-                <Field value="Principal claim invite" disabled />
+                <Field value="Principal" disabled />
                 <span className="text-xs font-medium text-[#51657b]">
-                  The invited principal claims/onboards the organisation first; access approval happens in the claim flow.
+                  The invited principal receives active workspace access immediately after accepting.
                 </span>
               </>
             ) : (
@@ -561,18 +788,21 @@ export default function SettingsUsersPage() {
                 <Field
                   as="select"
                   value={inviteForm.role}
-                  disabled={!canEdit || inviteRoleOptions.length === 0}
+                  disabled={!canEdit || teamInviteRoleOptions.length === 0}
                   onChange={(event) => setInviteForm((previous) => ({ ...previous, role: event.target.value }))}
                 >
-                  {inviteRoleOptions.map((option) => (
+                  {teamInviteRoleOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
                     ))}
                 </Field>
+                <span className="text-xs font-medium text-[#51657b]">
+                  Manager and team invites create normal pending workspace invites.
+                </span>
                 {canEdit && !inviteRoleOptions.some((option) => normalizeAgencyAuthorityRole(option.value) === 'principal') ? (
                 <span className="text-xs font-medium text-[#8a6a18]">
-                  Principal and owner invites are restricted to the organisation owner.
+                  Direct principal and owner role changes are restricted to the organisation owner.
                 </span>
               ) : null}
               </>
@@ -583,7 +813,7 @@ export default function SettingsUsersPage() {
             <Field
               as="select"
               value={inviteForm.commissionStructureId}
-              disabled={!canEdit || principalInviteSelected}
+              disabled={!canEdit}
               onChange={(event) => setInviteForm((previous) => ({ ...previous, commissionStructureId: event.target.value }))}
             >
               <option value="">Use default / unassigned</option>
@@ -600,16 +830,11 @@ export default function SettingsUsersPage() {
                 No default structure is configured. This user will remain unassigned until you set one.
               </span>
             ) : null}
-            {principalInviteSelected ? (
-              <span className="text-xs font-medium text-[#51657b]">
-                Commission is assigned after the principal claim is completed and the membership is active.
-              </span>
-            ) : null}
           </label>
           {canEdit ? (
             <div className={`${settingsActionRowClass} md:col-span-2`}>
-              <Button type="submit" disabled={saving}>
-                {saving ? 'Inviting…' : principalInviteSelected ? 'Send Principal Claim' : 'Invite User'}
+              <Button type="submit" disabled={saving || teamInviteDisabled || principalInviteDisabled}>
+                {saving ? 'Inviting…' : principalInviteSelected ? 'Send Principal Invite' : 'Invite User'}
               </Button>
             </div>
           ) : null}
@@ -619,8 +844,8 @@ export default function SettingsUsersPage() {
 
       {canEdit && usesAgencyGovernance ? (
         <SettingsSectionCard
-          title="Principal Claim Lifecycle"
-          description="Track claim links before acceptance, and keep completed claims visible after the principal finishes onboarding."
+          title="Principal Invite Activity"
+          description="Track principal access links before acceptance, and keep accepted principal invites visible after access is active."
         >
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-2xl border border-[#e4ebf3] bg-white px-4 py-3">
@@ -628,7 +853,7 @@ export default function SettingsUsersPage() {
               <p className="mt-1 text-2xl font-semibold text-[#162334]">{pendingPrincipalClaimInvites.length}</p>
             </div>
             <div className="rounded-2xl border border-[#e4ebf3] bg-white px-4 py-3">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8da0b6]">Completed</p>
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8da0b6]">Accepted</p>
               <p className="mt-1 text-2xl font-semibold text-[#162334]">
                 {principalClaimInviteHistory.filter((invite) => invite.status === 'active').length}
               </p>
@@ -643,14 +868,14 @@ export default function SettingsUsersPage() {
 
           {principalClaimInviteHistory.some((invite) => invite.status === 'active') ? (
             <SettingsBanner tone="success">
-              A principal claim has been completed. The principal now appears as an active workspace user and commission setup can continue.
+              A principal invite has been accepted. The principal now appears as an active workspace user.
             </SettingsBanner>
           ) : null}
 
           {!principalClaimInviteHistory.length ? (
             <SettingsEmptyState
-              title="No principal claim lifecycle yet"
-              description="When you invite a principal, the claim link and its completion history will appear here."
+              title="No principal invite activity yet"
+              description="When you invite a principal, pending links and accepted access history will appear here."
             />
           ) : (
             <div className="divide-y divide-[#e9eff5] overflow-hidden rounded-2xl border border-[#e4ebf3] bg-white">
@@ -674,7 +899,7 @@ export default function SettingsUsersPage() {
                     </div>
                     <div className="space-y-1">
                       <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8da0b6]">
-                        {isPending ? 'Expires' : 'Closed'}
+                      {isPending ? 'Expires' : 'Closed'}
                       </p>
                       <p className="text-sm text-[#51657b]">
                         {isPending
@@ -715,8 +940,8 @@ export default function SettingsUsersPage() {
                       ) : (
                         <span className="text-sm text-[#8da0b6]">
                           {invite.status === 'active'
-                            ? 'Claim completed and linked to the active principal membership.'
-                            : 'Claim closed.'}
+                            ? 'Invite accepted and linked to the active principal membership.'
+                            : 'Invite closed.'}
                         </span>
                       )}
                     </div>
@@ -727,8 +952,10 @@ export default function SettingsUsersPage() {
           )}
         </SettingsSectionCard>
       ) : null}
+        </>
+      ) : null}
 
-      {canEdit && commercialAccessRequests.length ? (
+      {activePanel === 'commercial' && canEdit && commercialAccessRequests.length ? (
         <SettingsSectionCard
           title="Commercial access requests"
           description="Approve agents who asked to use the Commercial workspace. Approval enables Commercial for the organisation if it is not active yet."
@@ -777,7 +1004,7 @@ export default function SettingsUsersPage() {
         </SettingsSectionCard>
       ) : null}
 
-      {canEdit ? (
+      {activePanel === 'commercial' && canEdit ? (
         <SettingsSectionCard
           title="Commercial module access"
           description="Control whether Commercial is enabled for the organisation and which users can open the Commercial workspace."
@@ -860,6 +1087,7 @@ export default function SettingsUsersPage() {
         </SettingsSectionCard>
       ) : null}
 
+      {activePanel === 'directory' ? (
       <SettingsSectionCard title="Users" description="Manage role access for the current organisation workspace.">
         {loading ? <SettingsLoadingState label="Loading users…" compact /> : null}
 
@@ -981,7 +1209,7 @@ export default function SettingsUsersPage() {
                       {formatUserStatusLabel(userRow)}
                     </span>
                     {userRow.isPrincipalClaim ? (
-                      <span className="block text-xs font-medium text-[#7b8da6]">Principal claim flow</span>
+                      <span className="block text-xs font-medium text-[#7b8da6]">Principal invite flow</span>
                     ) : null}
                   </div>
                   <div className="space-y-1">
@@ -1006,9 +1234,7 @@ export default function SettingsUsersPage() {
           </div>
         ) : null}
       </SettingsSectionCard>
-
-      {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
-      {message ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}
+      ) : null}
     </div>
   )
 }

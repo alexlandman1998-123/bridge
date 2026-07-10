@@ -240,10 +240,10 @@ function OnboardingProfileSetup() {
         <section className="auth-card onboarding-card agency-onboarding-card">
           <div className="auth-card-head">
             <span className="auth-card-eyebrow">Profile Setup</span>
-            <h2>{isPrincipalClaimIntent ? 'Before We Claim the Workspace' : 'Before We Continue'}</h2>
+            <h2>Before We Continue</h2>
             <p>
               {isPrincipalClaimIntent
-                ? 'We found a principal claim. Confirm your profile details before Arch9 captures the workspace as yours.'
+                ? 'We found a principal invite. Confirm your profile details before continuing.'
                 : signupIntent
                   ? 'We found your signup path. Confirm your profile details before workspace setup.'
                   : 'Confirm your business type and position so Arch9 can recover the correct onboarding path.'}

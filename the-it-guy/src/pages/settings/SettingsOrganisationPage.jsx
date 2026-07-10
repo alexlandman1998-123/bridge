@@ -1237,7 +1237,7 @@ function PreviewTabButton({ active, children, onClick }) {
   )
 }
 
-function BrandOnboardingPreview({ variant = 'buyer', organisationName, logoUrl, iconUrl, heroImageUrl, colours, typography }) {
+function BrandOnboardingPreview({ variant = 'buyer', organisationName, logoUrl, iconUrl, heroImageUrl, colours, typography, compact = false }) {
   const primary = colours.primary
   const secondary = colours.secondary
   const accent = colours.accent
@@ -1254,41 +1254,48 @@ function BrandOnboardingPreview({ variant = 'buyer', organisationName, logoUrl, 
     : {
         background: `linear-gradient(135deg, ${primary}, ${secondary})`,
       }
+  const previewFrameClass = compact
+    ? 'grid min-h-[420px] gap-4 p-4 text-white'
+    : 'grid min-h-[360px] gap-5 p-5 text-white lg:grid-cols-[minmax(0,1fr)_260px]'
+  const logoClass = compact ? 'h-8 max-w-[150px] object-contain' : 'h-10 max-w-[180px] object-contain'
+  const headlineClass = compact
+    ? 'mt-3 text-[1.65rem] font-semibold leading-tight !text-white'
+    : 'mt-3 text-3xl font-semibold leading-tight !text-white sm:text-4xl'
 
   return (
     <div className="overflow-hidden rounded-[18px] border border-[#dfe8f1] bg-white">
-      <div className="grid min-h-[360px] gap-5 p-5 text-white lg:grid-cols-[minmax(0,1fr)_260px]" style={backgroundStyle}>
-        <div className="flex min-w-0 flex-col justify-between gap-8">
-          <div className="flex items-center justify-between gap-3">
-            {logoUrl ? <img src={logoUrl} alt="" className="h-10 max-w-[180px] object-contain" /> : (
+      <div className={previewFrameClass} style={backgroundStyle}>
+        <div className={compact ? 'flex min-w-0 flex-col justify-between gap-5' : 'flex min-w-0 flex-col justify-between gap-8'}>
+          <div className={compact ? 'flex min-w-0 flex-wrap items-center gap-2' : 'flex items-center justify-between gap-3'}>
+            {logoUrl ? <img src={logoUrl} alt="" className={logoClass} /> : (
               <span className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] bg-white/15 text-sm font-semibold">{getInitials(organisationName)}</span>
             )}
             <span className="rounded-full border border-white/25 bg-white/15 px-3 py-1 text-xs font-semibold">Secure Intake</span>
           </div>
           <div className="max-w-xl">
             <p className="text-xs font-bold uppercase tracking-[0.14em]" style={{ color: accent }}>{isSeller ? 'Seller Onboarding' : 'Buyer Onboarding'}</p>
-            <h3 className="mt-3 text-3xl font-semibold leading-tight sm:text-4xl">{headline}</h3>
-            <p className="mt-4 max-w-lg text-sm leading-6 text-white/78">A focused intake for {isSeller ? 'listing preparation' : 'purchase readiness'}, matched to the agency brand.</p>
+            <h3 className={headlineClass}>{headline}</h3>
+            <p className={compact ? 'mt-3 text-sm leading-6 !text-white/80' : 'mt-4 max-w-lg text-sm leading-6 !text-white/80'}>A focused intake for {isSeller ? 'listing preparation' : 'purchase readiness'}, matched to the agency brand.</p>
           </div>
-          <span className="inline-flex h-11 w-fit items-center gap-2 rounded-[12px] px-4 text-sm font-semibold" style={{ backgroundColor: accent, color: primary, borderRadius: typography.borderRadius }}>
+          <span className={compact ? 'inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-[12px] px-4 py-2 text-center text-sm font-semibold' : 'inline-flex h-11 w-fit items-center gap-2 rounded-[12px] px-4 text-sm font-semibold'} style={{ backgroundColor: accent, color: primary, borderRadius: typography.borderRadius }}>
             Start {isSeller ? 'seller' : 'buyer'} onboarding
             <ChevronRight className="h-4 w-4" strokeWidth={2.3} />
           </span>
         </div>
-        <div className="rounded-[18px] border border-white/20 bg-white/12 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)] backdrop-blur">
+        <div className={compact ? 'rounded-[16px] border border-white/20 bg-white/12 p-3 shadow-[0_18px_40px_rgba(0,0,0,0.16)] backdrop-blur' : 'rounded-[18px] border border-white/20 bg-white/12 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)] backdrop-blur'}>
           <p className="text-xs font-bold uppercase tracking-[0.12em]" style={{ color: accent }}>Before you start</p>
-          <h4 className="mt-2 text-lg font-semibold">A few details, captured once.</h4>
+          <h4 className="mt-2 text-lg font-semibold !text-white">A few details, captured once.</h4>
           <div className="mt-4 space-y-3">
             <div className="rounded-[14px] bg-black/16 p-3">
-              <p className="text-xs font-bold uppercase tracking-[0.1em] text-white/58">Property</p>
-              <p className="mt-1 text-sm font-semibold leading-5">{propertyLabel}</p>
+              <p className="text-xs font-bold uppercase tracking-[0.1em] !text-white/60">Property</p>
+              <p className="mt-1 text-sm font-semibold leading-5 !text-white">{propertyLabel}</p>
             </div>
             <div className="rounded-[14px] bg-black/16 p-3">
-              <p className="text-xs font-bold uppercase tracking-[0.1em] text-white/58">Process</p>
-              <p className="mt-1 text-sm font-semibold leading-5">{processLabel}</p>
+              <p className="text-xs font-bold uppercase tracking-[0.1em] !text-white/60">Process</p>
+              <p className="mt-1 text-sm font-semibold leading-5 !text-white">{processLabel}</p>
             </div>
           </div>
-          <div className="mt-4 flex items-center gap-2 text-xs text-white/70">
+          <div className="mt-4 flex items-center gap-2 text-xs !text-white/70">
             {iconUrl ? <img src={iconUrl} alt="" className="h-6 w-6 rounded-[8px] object-contain" /> : <ShieldCheck className="h-4 w-4" strokeWidth={2} />}
             <span>{organisationName}</span>
           </div>
@@ -1298,13 +1305,13 @@ function BrandOnboardingPreview({ variant = 'buyer', organisationName, logoUrl, 
   )
 }
 
-function BrandPreviewSurface({ activeTab, organisationName, logoUrl, iconUrl, heroImageUrl, colours, typography }) {
+function BrandPreviewSurface({ activeTab, organisationName, logoUrl, iconUrl, heroImageUrl, colours, typography, compact = false }) {
   const primary = colours.primary
   const secondary = colours.secondary
   const accent = colours.accent
   const neutral = colours.neutral
   if (activeTab === 'buyer' || activeTab === 'seller') {
-    return <BrandOnboardingPreview variant={activeTab} organisationName={organisationName} logoUrl={logoUrl} iconUrl={iconUrl} heroImageUrl={heroImageUrl} colours={colours} typography={typography} />
+    return <BrandOnboardingPreview variant={activeTab} organisationName={organisationName} logoUrl={logoUrl} iconUrl={iconUrl} heroImageUrl={heroImageUrl} colours={colours} typography={typography} compact={compact} />
   }
 
   if (activeTab === 'email') {
@@ -1415,13 +1422,13 @@ function BrandPreviewWorkspace({ activeTab, setActiveTab, organisationName, logo
 function BrandPreviewPanel({ organisationName, logoUrl, iconUrl, heroImageUrl, colours, typography, brandHealth, clientReadiness, configuredAssetCount }) {
   const readinessTone = getReadinessTone(clientReadiness?.status)
   return (
-    <aside className="hidden xl:block">
-      <div className="sticky top-4 space-y-4 rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_14px_36px_rgba(15,23,42,0.045)]">
+    <aside className="hidden min-w-0 xl:block">
+      <div className="sticky top-4 min-w-0 space-y-4 rounded-[22px] border border-[#dfe8f1] bg-white p-4 shadow-[0_14px_36px_rgba(15,23,42,0.045)]">
         <div>
           <h2 className="text-base font-semibold text-[#17233a]">Brand Preview</h2>
           <p className="mt-2 text-sm leading-6 text-[#60758d]">Live portal and email signals.</p>
         </div>
-        <BrandPreviewSurface activeTab="buyer" organisationName={organisationName} logoUrl={logoUrl} iconUrl={iconUrl} heroImageUrl={heroImageUrl} colours={colours} typography={typography} />
+        <BrandPreviewSurface activeTab="buyer" organisationName={organisationName} logoUrl={logoUrl} iconUrl={iconUrl} heroImageUrl={heroImageUrl} colours={colours} typography={typography} compact />
         <div className="space-y-3 border-y border-[#e5edf4] py-4">
           <OverviewRow label="Brand Health" value={`${brandHealth}%`} verified={brandHealth >= 80} />
           <OverviewRow label="Client Readiness" value={`${clientReadiness?.score ?? 0}%`} verified={clientReadiness?.status === 'ready'} />
@@ -2258,10 +2265,10 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
             onUpload={(file) => handleLogoUpload(file, 'logoLight')}
           />
 
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,920px)_300px] xl:items-start">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(280px,320px)] xl:items-start">
             <div className="space-y-6">
               <OrganisationCard title="Brand Assets" description="Manage the core logos used across portals, emails, reports and workspace surfaces.">
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(230px,1fr))] gap-4">
                   {mainBrandAssets.map((asset) => {
                     const config = BRAND_ASSET_TARGETS[asset.targetKey]
                     return (

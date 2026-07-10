@@ -25,7 +25,8 @@ const settingsApi = await read('../src/lib/settingsApi.js')
 const signupIntentLib = await read('../src/lib/signupIntent.js')
 const permissionRegistry = await read('../src/auth/permissions/permissionRegistry.js')
 const commercialApi = await read('../src/modules/commercial/services/commercialApi.js')
-const principalClaimMigration = await read('../../supabase/migrations/202606170003_principal_claim_completion.sql')
+const commercialRoleUtils = await read('../src/modules/commercial/utils/resolveCommercialRole.js')
+const principalImmediateAccessMigration = await read('../../supabase/migrations/202607100001_principal_invites_immediate_access.sql')
 const workspaceInviteEmail = await read('../../supabase/functions/send-email/handlers/workspaceInvite.ts')
 const sendEmailTypes = await read('../../supabase/functions/send-email/types.ts')
 const packageJson = JSON.parse(await read('../package.json'))
@@ -97,18 +98,18 @@ matches(
 )
 matches(
   inviteService,
-  /normalizeAgencyAuthorityRole\(role\) === 'principal'[\s\S]*return createPrincipalClaimInvite/,
-  'Normal workspace principal invites must reroute to the claim flow instead of granting principal access directly.',
+  /const role = normalizeRole\([\s\S]*const roleLabel[\s\S]*await assertWorkspaceUserInviteAuthority\(\{ workspaceId, role, branchId \}\)[\s\S]*createInvite\(\{[\s\S]*target_workspace_role:\s*role/,
+  'Normal workspace principal invites should stay on the canonical workspace invite path so access is granted on acceptance.',
 )
 matches(
   inviteService,
-  /bridge_create_principal_claim_invite[\s\S]*target_workspace_role:\s*'principal'[\s\S]*role:\s*'principal_claim'[\s\S]*role_label:\s*'Principal Claim'/,
+  /bridge_create_principal_claim_invite[\s\S]*target_workspace_role:\s*'principal'[\s\S]*role:\s*'principal_claim'[\s\S]*role_label:\s*'Principal'/,
   'Principal claim creation must request principal onboarding while storing a safe principal_claim invite role.',
 )
 matches(
   inviteService,
-  /duplicate_pending_invite[\s\S]*role:\s*'principal_claim'[\s\S]*roleLabel:\s*'Principal Claim'[\s\S]*reusedExistingInvite:\s*true/i,
-  'Duplicate principal claim invites should resend the existing claim link and preserve the claim label.',
+  /duplicate_pending_invite[\s\S]*role:\s*'principal_claim'[\s\S]*roleLabel:\s*'Principal'[\s\S]*reusedExistingInvite:\s*true/i,
+  'Duplicate legacy principal claim invites should resend the existing principal link and preserve the principal label.',
 )
 for (const marker of [
   'resolveInviteBranding',
@@ -154,8 +155,8 @@ matches(
 )
 matches(
   settingsUsersPage,
-  /principalInviteSelected[\s\S]*createPrincipalClaimInvite[\s\S]*settings_users_principal_role_invite/i,
-  'Selecting Principal in Settings must send a principal claim instead of a direct principal invite.',
+  /principalInviteSelected[\s\S]*createWorkspaceUserInvite[\s\S]*role:\s*principalInviteSelected \? 'principal' : inviteForm\.role[\s\S]*settings_users_principal_invite/i,
+  'Selecting Principal in Settings must send a direct principal workspace invite.',
 )
 matches(
   settingsUsersPage,
@@ -163,7 +164,7 @@ matches(
   'Settings users page should load the full principal claim lifecycle and derive the pending state from it.',
 )
 for (const marker of [
-  'Principal Claim Lifecycle',
+  'Principal Invite Activity',
   'setPrincipalClaimInviteHistory',
   'handleCopyPrincipalClaimLink',
   'handleResendPrincipalClaimInvite',
@@ -171,13 +172,13 @@ for (const marker of [
   'Copy Link',
   'Resend',
   'Revoke',
-  'Send Principal Claim',
-  'Commission is assigned after the principal claim is completed',
-  'A principal claim has been completed.',
-  'Claim completed',
-  'Claim pending',
+  'Send Principal Invite',
+  'Principal invite selected. Arch9 grants active principal access as soon as the invite is accepted.',
+  'A principal invite has been accepted.',
+  'Access active',
+  'Invite pending',
 ]) {
-  includes(settingsUsersPage, marker, `Settings users page should expose Phase 6 principal claim lifecycle UI: ${marker}`)
+  includes(settingsUsersPage, marker, `Settings users page should expose principal invite activity UI: ${marker}`)
 }
 matches(
   settingsUsersPage,
@@ -186,7 +187,7 @@ matches(
 )
 matches(
   settingsUsersPage,
-  /branchId:\s*inviteNavigationState\.branchId[\s\S]*branchName:\s*inviteNavigationState\.branchName/i,
+  /branchId:\s*principalInviteSelected \? '' : inviteNavigationState\.branchId[\s\S]*branchName:\s*principalInviteSelected \? '' : inviteNavigationState\.branchName/i,
   'Settings users invite flow should preserve optional branch metadata for branch-scoped invites.',
 )
 matches(
@@ -206,16 +207,13 @@ for (const marker of [
   'getInviteRole',
   'isCommercialInvite',
   'rememberPendingInviteAutoAccept(safeToken)',
-  'buildSignupIntent({',
-  'claimExistingWorkspace',
-  'storeSignupIntentTemporarily(seededIntent)',
   'moduleContext: getInviteModuleContext(invite)',
   'role: getInviteRole(invite)',
   'window.location.assign(getRedirectTarget(result))',
   'window.location.replace(getInviteTarget(invite))',
   "'Accept invite'",
-  'Claim principal access for ${workspaceName}',
-  'Principal organisation claim',
+  'Accept Principal Invite',
+  'Arch9 will grant principal access when this invite is accepted.',
 ]) {
   includes(inviteResolver, marker, `Invite resolver should preserve Phase 3/4 auth handoff behavior: ${marker}`)
 }
@@ -223,10 +221,10 @@ for (const marker of [
 for (const marker of [
   'claimExistingWorkspace',
   "workspace_action === SIGNUP_WORKSPACE_ACTIONS.claimExistingWorkspace",
-  'Before We Claim the Workspace',
-  'We found a principal claim.',
+  'Before We Continue',
+  'We found a principal invite.',
 ]) {
-  includes(onboardingProfileSetup, marker, `Onboarding profile setup should show the principal claim handoff: ${marker}`)
+  includes(onboardingProfileSetup, marker, `Onboarding profile setup should show the principal invite handoff: ${marker}`)
 }
 
 for (const marker of [
@@ -255,26 +253,29 @@ matches(
   'Settings user normalization must mark principal-claim memberships for clearer user directory status.',
 )
 for (const marker of [
-  'create trigger trg_bridge_sync_principal_claim_membership',
+  'create or replace function public.bridge_sync_principal_claim_membership',
+  'create or replace function public.bridge_sync_direct_principal_invite_membership',
+  'create trigger trg_bridge_sync_direct_principal_invite_membership',
   "new.invite_type <> 'principal_claim_invite'",
-  "status = 'pending'",
-  "membership_status = 'pending'",
+  "target_workspace_role, '')) <> 'principal'",
+  "status = 'active'",
+  "membership_status = 'active'",
   "role = 'principal'",
   "workspace_role = 'principal'",
   "organisation_role = 'principal'",
+  "organization_role = 'principal'",
   "app_role = 'agent'",
   'v_commercial_enabled boolean := false',
   "om.module_key = 'commercial'",
   "module_context = case when v_commercial_enabled then 'commercial' else module_context end",
   "'commercialAccessInheritedAt'",
-  "'commercial_access_inherited', v_commercial_enabled",
-  "'principal_claim_accepted'",
-  'create or replace function public.bridge_complete_principal_claim_onboarding',
-  "membership_status = 'active'",
-  'active_workspace_source',
-  "'principal_claim_completed'",
+  "'principal_invite_immediate_access', true",
+  "'principal_invite_access_granted'",
+  'active_workspace_selected_at',
+  'user_workspace_preferences',
+  "'onboarding_completed'",
 ]) {
-  includes(principalClaimMigration, marker, `Principal claim migration should preserve the pending-to-active lifecycle contract: ${marker}`)
+  includes(principalImmediateAccessMigration, marker, `Principal invite migration should grant immediate active access: ${marker}`)
 }
 
 matches(
@@ -284,13 +285,23 @@ matches(
 )
 matches(
   commercialApi,
-  /const COMMERCIAL_HQ_ROLES = new Set\(\[[^\]]*'owner'[^\]]*'principal'[\s\S]*resolveScopeLevel\(role\)[\s\S]*return 'organisation'/,
+  /const COMMERCIAL_HQ_ROLES = COMMERCIAL_ORGANISATION_SCOPE_ROLES[\s\S]*function resolveScopeLevel\(role\)[\s\S]*getCommercialScopeLevel\(role\)[\s\S]*return 'organisation'/,
+  'Commercial scope resolution should use the shared organisation-level commercial role set.',
+)
+matches(
+  commercialRoleUtils,
+  /COMMERCIAL_ORGANISATION_SCOPE_ROLES = new Set\(\[[\s\S]*COMMERCIAL_ROLES\.principal[\s\S]*LEGACY_COMMERCIAL_ROLE_MAP = new Map\(\[[\s\S]*\['principal', COMMERCIAL_ROLES\.principal\][\s\S]*getCommercialScopeLevel\(userOrMembership[\s\S]*return 'organisation'/,
   'Commercial principals should resolve to organisation-level commercial scope once the commercial access marker is present.',
 )
 matches(
   commercialApi,
-  /function isCommercialMembershipRow[\s\S]*COMMERCIAL_MODULE_MARKERS\.has\(moduleValue\)[\s\S]*return true/,
+  /function isCommercialMembershipRow[\s\S]*return hasCommercialAccessMarker\(member\)/,
   'Commercial access should continue to be driven by the membership module marker inherited during principal claim completion.',
+)
+matches(
+  commercialRoleUtils,
+  /export function hasCommercialAccessMarker[\s\S]*COMMERCIAL_MODULE_MARKERS\.has\(moduleValue\)[\s\S]*return true/,
+  'Commercial access markers should still be recognized by the shared role resolver.',
 )
 
 for (const marker of [
@@ -304,7 +315,10 @@ for (const marker of [
   'This invite is locked to {invitedEmail}.',
   'Arch9 will take you straight into the invited workspace.',
   'This invite is for ${invitedEmail}. Sign in or create an account with that email address to continue.',
-  'resolvePendingInvitePath(location) || (currentIntent ? resolveSignupIntentRoute(currentIntent) : \'/setup\')',
+  'resolvePendingInvitePath(location) ||',
+  'isPublicInviteReturnPath(redirectTo)',
+  '? resolveSignupIntentRoute(currentIntent)',
+  ': \'/setup\'',
   'if (inviteTokenFromUrl && inviteTokenFromUrl !== storedInviteToken) return \'\'',
 ]) {
   includes(authPage, marker, `Auth page should keep invite-email lock and redirect behavior: ${marker}`)
