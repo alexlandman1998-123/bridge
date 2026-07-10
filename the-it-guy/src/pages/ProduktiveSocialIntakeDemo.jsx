@@ -90,21 +90,19 @@ function toWhatsappNumber(phone = '') {
 }
 
 function ProduktiveLogo({ size = 'large' }) {
+  const isHero = size === 'hero'
   const isSmall = size === 'small'
 
   return (
     <div className="flex flex-col items-center">
       <div
         className={classNames(
-          'grid place-items-center rounded-lg border border-[#d1ad61] bg-white px-2 shadow-[0_12px_28px_rgba(40,37,111,0.28)]',
-          isSmall ? 'h-11 w-[76px]' : 'h-16 w-28',
+          'grid place-items-center overflow-hidden rounded-xl border border-[#d1ad61] bg-white shadow-[0_12px_28px_rgba(40,37,111,0.28)]',
+          isHero ? 'h-20 w-40 px-3 sm:h-24 sm:w-48' : isSmall ? 'h-12 w-24 px-2.5' : 'h-20 w-40 px-3',
         )}
       >
         <img className="max-h-full w-full object-contain" src={produktiveLogoUrl} alt="Produktive Realty" />
       </div>
-      {!isSmall ? (
-        <p className="mt-2 text-center text-sm font-bold italic leading-none text-white [letter-spacing:0]">Produktive</p>
-      ) : null}
     </div>
   )
 }
@@ -173,10 +171,7 @@ function LandingView({ onSelect }) {
         <div aria-hidden className="absolute inset-x-0 bottom-0 h-[48%] bg-[linear-gradient(180deg,rgba(23,22,74,0)_0%,rgba(23,22,74,0.98)_82%)]" />
 
         <header className="relative z-10 flex items-center justify-between gap-4">
-          <ProduktiveLogo size="small" />
-          <span className="rounded-full border border-white/16 bg-white/12 px-3 py-1.5 text-[11px] font-bold uppercase text-white/78 backdrop-blur-xl [letter-spacing:0]">
-            Private intake
-          </span>
+          <ProduktiveLogo size="hero" />
         </header>
 
         <div className="relative z-10 flex flex-1 flex-col">
