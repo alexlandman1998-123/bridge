@@ -23,7 +23,7 @@ import {
 } from 'lucide-react'
 import { createElement, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import produktiveLogoUrl from '../assets/produktive-real-logo.svg'
+import produktiveLogoUrl from '../assets/produktive-realty-logo.jpg'
 import {
   bedroomOptions,
   buyerAreaOptions,
@@ -98,7 +98,7 @@ function ProduktiveLogo({ size = 'large' }) {
       <div
         className={classNames(
           'grid place-items-center overflow-hidden rounded-xl border border-[#d1ad61] bg-white shadow-[0_12px_28px_rgba(40,37,111,0.28)]',
-          isHero ? 'h-20 w-40 px-3 sm:h-24 sm:w-48' : isSmall ? 'h-12 w-24 px-2.5' : 'h-20 w-40 px-3',
+          isHero ? 'h-[92px] w-[210px] px-3 sm:h-[104px] sm:w-60' : isSmall ? 'h-12 w-[112px] px-2' : 'h-[92px] w-[210px] px-3',
         )}
       >
         <img className="max-h-full w-full object-contain" src={produktiveLogoUrl} alt="Produktive Realty" />
