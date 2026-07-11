@@ -1,4 +1,3 @@
-import { getOrCreateUserProfile } from './api'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 import { normalizeCanonicalAppRole, isCanonicalAppRole } from '../constants/appRoles'
 import { ONBOARDING_REQUIRED_REASONS, ONBOARDING_STATUSES } from '../constants/onboardingStatuses'
@@ -17,6 +16,11 @@ const AUTO_CLAIMABLE_ONBOARDING_REASONS = new Set([
   ONBOARDING_REQUIRED_REASONS.noActiveMembership,
   ONBOARDING_REQUIRED_REASONS.onboardingIncomplete,
 ])
+
+async function getOrCreateUserProfileForAuthBoot(user) {
+  const { getOrCreateUserProfile } = await import('./api')
+  return getOrCreateUserProfile({ user })
+}
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -206,7 +210,7 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
   if (!user?.id) throw new Error('Authenticated Supabase user could not be resolved.')
 
   const [profile, loadedSignupIntent] = await Promise.all([
-    runAuthBootStep('profile.getOrCreate', () => getOrCreateUserProfile({ user }), {
+    runAuthBootStep('profile.getOrCreate', () => getOrCreateUserProfileForAuthBoot(user), {
       userId: user.id,
     }),
     runAuthBootStep('signupIntent.load', () => loadSignupIntentForUser({ user }), {

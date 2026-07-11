@@ -771,8 +771,7 @@ export async function syncCanonicalToTransactionRequiredDocuments({ transactionI
   const instanceResult = await db
     .from('document_requirement_instances')
     .select('*, document_definitions(*)')
-    .eq('context_type', 'transaction')
-    .eq('transaction_id', transactionId)
+    .or(`transaction_id.eq.${transactionId},context_id.eq.${transactionId}`)
   if (instanceResult.error) throw instanceResult.error
 
   const legacyResult = await db
@@ -782,7 +781,11 @@ export async function syncCanonicalToTransactionRequiredDocuments({ transactionI
   if (legacyResult.error) throw legacyResult.error
 
   const legacyByLinkOrKey = indexedBy(legacyResult.data || [], ['canonical_requirement_instance_id', 'document_key'])
-  const rows = (instanceResult.data || []).map((instance) => {
+  const transactionInstances = (instanceResult.data || []).filter((instance) => (
+    instance.transaction_id === transactionId
+    || (instance.context_type === 'transaction' && instance.context_id === transactionId)
+  ))
+  const rows = transactionInstances.map((instance) => {
     const instanceWithTransaction = { ...instance, transaction_id: instance.transaction_id || transactionId }
     const legacyKey = canonicalDefinitionKeyToLegacyKey(instance.document_definition_key)
     const existing = legacyByLinkOrKey.get(`canonical_requirement_instance_id:${instance.id}`) || legacyByLinkOrKey.get(`document_key:${legacyKey}`) || null
@@ -796,7 +799,7 @@ export async function syncCanonicalToTransactionRequiredDocuments({ transactionI
     .select('*')
   if (write.error) throw write.error
 
-  await insertRequirementEvents(db, (instanceResult.data || []).map((instance) => buildAdapterEvent(instance.id, ADAPTER_EVENT_TYPES.legacySynced, {
+  await insertRequirementEvents(db, transactionInstances.map((instance) => buildAdapterEvent(instance.id, ADAPTER_EVENT_TYPES.legacySynced, {
     legacy_table: 'transaction_required_documents',
     transaction_id: transactionId,
   })))

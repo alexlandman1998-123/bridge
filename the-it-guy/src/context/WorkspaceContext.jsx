@@ -1,11 +1,9 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { updateUserProfile } from '../lib/api'
 import { useAuthSession } from './AuthSessionContext'
 import { deriveOnboardingSetupState } from '../lib/onboardingRouting'
 import { DEFAULT_APP_ROLE, normalizeAppRole } from '../lib/roles'
 import { can, canAll, canAny, createPermissionResolver, getPermissionScope } from '../auth/permissions/permissionResolver'
-import { completeOnboarding } from '../services/onboarding/onboardingEngine'
 
 const WORKSPACE_CONTEXT_GLOBAL_KEY = '__arch9WorkspaceContextV1'
 const WorkspaceContext =
@@ -16,6 +14,16 @@ const AGENCY_WORKFLOW_MODE_STORAGE_KEY = 'itg:agency-workflow-mode:v1'
 const DEFAULT_AGENCY_WORKFLOW_MODE = 'agent'
 const UNRESOLVED_WORKSPACE = { id: '', name: 'Workspace setup required', type: '' }
 const EMPTY_PROFILE_PATCH = {}
+
+async function updateUserProfileFromApi(payload) {
+  const { updateUserProfile } = await import('../lib/api')
+  return updateUserProfile(payload)
+}
+
+async function completeOnboardingFromService(payload) {
+  const { completeOnboarding } = await import('../services/onboarding/onboardingEngine')
+  return completeOnboarding(payload)
+}
 
 function normalizeAgencyWorkflowMode(value, fallback = DEFAULT_AGENCY_WORKFLOW_MODE) {
   const normalized = String(value || '').trim().toLowerCase()
@@ -173,7 +181,7 @@ export function WorkspaceProvider({ children }) {
         throw new Error('Workspace membership is required before onboarding can be marked complete.')
       }
       if (payload?.onboardingCompleted === true) {
-        const completed = await completeOnboarding({
+        const completed = await completeOnboardingFromService({
           userId: authState.user.id,
           user: authState.user,
           intent: signupIntent,
@@ -193,7 +201,7 @@ export function WorkspaceProvider({ children }) {
         return completed.profile
       }
 
-      const updated = await updateUserProfile({
+      const updated = await updateUserProfileFromApi({
         userId: authState.user.id,
         firstName: payload.firstName,
         lastName: payload.lastName,

@@ -10,12 +10,37 @@ import {
 
 type JsonRecord = Record<string, unknown>;
 
+type SupabaseServiceClient = ReturnType<typeof createClient<any, "public", any>>;
+
 type MandateSection = {
   key?: string;
   label?: string;
   required?: boolean;
   placeholders?: Array<[string, string]> | string[];
 };
+
+type StructuredTemplateRender = {
+  html: string;
+  documentModel: JsonRecord;
+  renderable: boolean;
+  blockingIssues: unknown[];
+  warnings: unknown[];
+  resolvedPlaceholderKeys: string[];
+};
+
+type StructuredTemplateInput = {
+  packetType?: string;
+  title?: string;
+  template?: JsonRecord | null;
+  sections?: MandateSection[];
+  placeholders?: Record<string, string>;
+  branding?: JsonRecord;
+  assetBaseUrl?: string;
+};
+
+const renderNativeStructuredTemplate = renderStructuredTemplate as unknown as (
+  input: StructuredTemplateInput,
+) => StructuredTemplateRender;
 
 type GenerateMandateRequest = {
   packetId?: string;
@@ -88,6 +113,10 @@ function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function asRecord(value: unknown): JsonRecord {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
+}
+
 function decodeBase64ToBytes(base64Value: string) {
   const normalized = base64Value.includes(",") ? base64Value.split(",").pop() || "" : base64Value;
   const binary = atob(normalized);
@@ -134,7 +163,7 @@ function inferOutputFileName({ leadId, packetId, renderMode }: { leadId: string 
   return `${base}-mandate-${Date.now()}.${extension}`;
 }
 
-function safePlaceholderValue(value: unknown) {
+function safePlaceholderValue(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
@@ -216,7 +245,7 @@ async function downloadTemplateBytes({
   templatePath,
   bucketCandidates,
 }: {
-  supabase: ReturnType<typeof createClient>;
+  supabase: SupabaseServiceClient;
   templateBase64: string;
   templateBucket: string;
   templatePath: string;
@@ -256,7 +285,7 @@ async function insertMandateDocumentRecord({
   generatedByUserId,
   clientVisible,
 }: {
-  supabase: ReturnType<typeof createClient>;
+  supabase: SupabaseServiceClient;
   transactionId: string | null;
   fileName: string;
   filePath: string;
@@ -338,18 +367,14 @@ Deno.serve(async (req: Request) => {
     const transactionId = normalizeText(payload.transactionId || payload.transaction_id) || null;
     const leadId = normalizeText(payload.leadId || payload.lead_id) || null;
     const sectionManifest = (payload.sectionManifest || payload.section_manifest || []) as MandateSection[];
-    const rawPlaceholders = payload.placeholders && typeof payload.placeholders === "object" ? payload.placeholders : {};
-    const branding = payload.branding && typeof payload.branding === "object" ? payload.branding : {};
-    const generationPayload = payload.generationPayload && typeof payload.generationPayload === "object"
-      ? payload.generationPayload
-      : payload.generation_payload && typeof payload.generation_payload === "object"
-        ? payload.generation_payload
-        : {};
-    const sourceContext = payload.sourceContext && typeof payload.sourceContext === "object"
-      ? payload.sourceContext
-      : payload.source_context && typeof payload.source_context === "object"
-        ? payload.source_context
-        : {};
+    const rawPlaceholders = asRecord(payload.placeholders);
+    const branding = asRecord(payload.branding);
+    const generationPayload = Object.keys(asRecord(payload.generationPayload)).length
+      ? asRecord(payload.generationPayload)
+      : asRecord(payload.generation_payload);
+    const sourceContext = Object.keys(asRecord(payload.sourceContext)).length
+      ? asRecord(payload.sourceContext)
+      : asRecord(payload.source_context);
 
     const placeholderMap = createAliasMap(rawPlaceholders);
     const sectionSummary = buildSectionSummary(sectionManifest);
@@ -378,24 +403,26 @@ Deno.serve(async (req: Request) => {
     let generatedFileName = inferOutputFileName({ leadId, packetId, renderMode });
     let filePath = `packet-${packetId}/mandate-documents/${generatedFileName}`;
     let contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-    let nativeRender = null as null | ReturnType<typeof renderStructuredTemplate>;
+    let nativeRender: StructuredTemplateRender | null = null;
 
     if (renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED) {
-      nativeRender = renderStructuredTemplate({
-        packetType: "mandate",
-        template: {
-          packet_type: "mandate",
+      const templatePayload = asRecord(generationPayload.template);
+      const nativeTemplate: JsonRecord = {
+        packet_type: "mandate",
+        render_mode: TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED,
+        template_label: normalizeText(templatePayload.label || templatePayload.template_label || templatePayload.templateLabel) || "Mandate Agreement",
+        metadata_json: {
           render_mode: TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED,
-          template_label: normalizeText((generationPayload as Record<string, unknown>)?.template?.label || "Mandate Agreement"),
-          metadata_json: {
-            render_mode: TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED,
-          },
-          sections: sectionManifest,
         },
+        sections: sectionManifest,
+      };
+
+      nativeRender = renderNativeStructuredTemplate({
+        packetType: "mandate",
+        template: nativeTemplate,
         sections: sectionManifest,
         placeholders: placeholderMap,
         branding,
-        mode: TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED,
         assetBaseUrl: appBaseUrl,
       });
 

@@ -1,4 +1,5 @@
 import { normalizePropertyCategory, normalizePropertyStructureType } from './propertyTaxonomy.js'
+import { LEGAL_PROPERTY_TYPES, LEGAL_SELLER_TYPES } from '../core/legal/legalRuleRegistry.js'
 
 export const SELLER_ONBOARDING_FLOW_VERSION = 'seller_onboarding_flow_v2'
 
@@ -23,26 +24,9 @@ export function migrateSellerOnboardingFieldListToV2(fields = []) {
   )
 }
 
-export const SELLER_ONBOARDING_BRANCHES = Object.freeze([
-  'individual',
-  'married',
-  'company',
-  'trust',
-  'deceased_estate',
-  'power_of_attorney',
-  'multiple_owners',
-  'other',
-])
+export const SELLER_ONBOARDING_BRANCHES = LEGAL_SELLER_TYPES
 
-export const PROPERTY_ONBOARDING_BRANCHES = Object.freeze([
-  'residential',
-  'sectional_title',
-  'estate_hoa',
-  'commercial',
-  'mixed_use',
-  'agricultural',
-  'vacant_land',
-])
+export const PROPERTY_ONBOARDING_BRANCHES = LEGAL_PROPERTY_TYPES
 
 const CORE_SELLER_RULES = Object.freeze({
   sellerFacingQuestions: Object.freeze([

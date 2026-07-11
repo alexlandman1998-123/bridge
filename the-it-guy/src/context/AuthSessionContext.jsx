@@ -2,15 +2,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { clearStoredDevAuthRole, createDevAuthSession, getStoredDevAuthRole, isDevAuthBypassEnabled } from '../lib/devAuth'
 import { getDevBypassWorkspaceId } from '../lib/demoIds'
-import { getActiveAuthBootStepDiagnostics, loadBridgeAuthState } from '../lib/authBoot'
 import { clearSupabaseLocalAuthState, isSupabaseConfigured, isUnsupportedJwtAlgorithmError, supabase } from '../lib/supabaseClient'
 import { getProductionSafetyViolation } from '../lib/envValidation'
 import { APP_ROLE_LABELS } from '../lib/roles'
 import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
-import { reportError } from '../services/observability/errorTracking'
-import { measureAsyncOperation } from '../services/observability/performanceMetrics'
-import { trackAuthMetric } from '../services/observability/monitoring'
-import { setActiveWorkspacePreference } from '../services/workspaceResolutionService'
 import { clearWorkspaceScopedRuntimeCaches } from '../services/workspaceScopedCache'
 
 const SESSION_BOOTSTRAP_TIMEOUT_MS = 15000
@@ -37,6 +32,90 @@ const EMPTY_AUTH_STATE = Object.freeze({
 })
 
 const AuthSessionContext = createContext(null)
+
+let authBootModulePromise = null
+let loadedAuthBootModule = null
+
+function nowMs() {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()
+}
+
+async function reportAuthError(error, options = {}) {
+  try {
+    const { reportError } = await import('../services/observability/errorTracking')
+    return reportError(error, options)
+  } catch (reportingError) {
+    console.warn('[AUTH] error reporting failed.', reportingError)
+    return null
+  }
+}
+
+async function trackAuthMetricSafely(eventName, context = {}) {
+  try {
+    const { trackAuthMetric } = await import('../services/observability/monitoring')
+    return trackAuthMetric(eventName, context)
+  } catch (trackingError) {
+    console.warn('[AUTH] metric tracking failed.', trackingError)
+    return { persisted: false, reason: 'tracking_failed' }
+  }
+}
+
+async function recordAuthPerformanceMetric(payload = {}) {
+  try {
+    const { recordPerformanceMetric } = await import('../services/observability/performanceMetrics')
+    return recordPerformanceMetric(payload)
+  } catch (trackingError) {
+    console.warn('[AUTH] performance tracking failed.', trackingError)
+    return { persisted: false, reason: 'tracking_failed' }
+  }
+}
+
+async function measureAuthBridgeBoot(task, context = {}) {
+  const started = nowMs()
+  try {
+    const result = await task()
+    void recordAuthPerformanceMetric({
+      ...context,
+      metricName: 'auth_bridge_boot',
+      durationMs: nowMs() - started,
+    })
+    return result
+  } catch (error) {
+    void recordAuthPerformanceMetric({
+      ...context,
+      metricName: 'auth_bridge_boot',
+      durationMs: nowMs() - started,
+      metadata: { failed: true },
+    })
+    throw error
+  }
+}
+
+async function setActiveWorkspacePreferenceFromService(userId, workspaceId, options = {}) {
+  const { setActiveWorkspacePreference } = await import('../services/workspaceResolutionService')
+  return setActiveWorkspacePreference(userId, workspaceId, options)
+}
+
+async function loadAuthBootModule() {
+  if (!authBootModulePromise) {
+    authBootModulePromise = import('../lib/authBoot').then((module) => {
+      loadedAuthBootModule = module
+      return module
+    })
+  }
+  return authBootModulePromise
+}
+
+function getActiveAuthBootStepDiagnosticsFromLoadedModule() {
+  return loadedAuthBootModule?.getActiveAuthBootStepDiagnostics?.() || []
+}
+
+async function loadBridgeAuthStateFromModule(options = {}) {
+  const { loadBridgeAuthState } = await loadAuthBootModule()
+  return loadBridgeAuthState(options)
+}
 
 function createDevOnlyAuthState(devAuthRole) {
   const session = createDevAuthSession(devAuthRole)
@@ -219,14 +298,14 @@ export function AuthSessionProvider({ children }) {
         }
         setSession(data?.session || null)
         console.debug('[AUTH] session-bootstrap:success', { hasSession: Boolean(data?.session) })
-        void trackAuthMetric(data?.session ? 'session_restored' : 'no_session', {
+        void trackAuthMetricSafely(data?.session ? 'session_restored' : 'no_session', {
           userId: data?.session?.user?.id || '',
           metadata: { source: 'session_bootstrap' },
         })
       } catch (error) {
         if (!active) return
         console.error('[AUTH] session-bootstrap:failed', error)
-        void reportError(error, {
+        void reportAuthError(error, {
           userId: '',
           operation: 'session_bootstrap',
           category: 'auth_error',
@@ -302,18 +381,17 @@ export function AuthSessionProvider({ children }) {
           attempt: bootAttempt + 1,
           timeoutMs: BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS,
         })
-        const nextState = await measureAsyncOperation(
-          'auth_bridge_boot',
-          () => withBootstrapTimeout(loadBridgeAuthState({ session, selectedWorkspaceId }), {
+        const nextState = await measureAuthBridgeBoot(
+          () => withBootstrapTimeout(loadBridgeAuthStateFromModule({ session, selectedWorkspaceId }), {
             timeoutMs: BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS,
             phase: 'bridge',
-            getDiagnostics: getActiveAuthBootStepDiagnostics,
+            getDiagnostics: getActiveAuthBootStepDiagnosticsFromLoadedModule,
           }),
           { userId: session.user.id, route: typeof window !== 'undefined' ? window.location.pathname : '' },
         )
         if (!active) return
         setAuthState(nextState)
-        void trackAuthMetric('auth_boot_success', {
+        void trackAuthMetricSafely('auth_boot_success', {
           userId: session.user.id,
           workspaceId: nextState.currentWorkspace?.id || '',
           metadata: {
@@ -332,7 +410,7 @@ export function AuthSessionProvider({ children }) {
       } catch (error) {
         if (!active) return
         console.error('[AUTH] bridge-boot:failed', error)
-        void reportError(error, {
+        void reportAuthError(error, {
           userId: session.user.id,
           operation: 'bridge_auth_boot',
           category: 'auth_error',
@@ -368,13 +446,13 @@ export function AuthSessionProvider({ children }) {
       }
       clearWorkspaceScopedRuntimeCaches()
       setSelectedWorkspaceId(id)
-      void setActiveWorkspacePreference(authState.user?.id || session?.user?.id || '', id, {
+      void setActiveWorkspacePreferenceFromService(authState.user?.id || session?.user?.id || '', id, {
         user: authState.user || session?.user || null,
         profile: authState.profile,
         source: 'user_selected',
       }).catch((error) => {
         console.error('[AUTH] workspace preference persist failed', error)
-        void reportError(error, {
+        void reportAuthError(error, {
           userId: authState.user?.id || session?.user?.id || '',
           operation: 'workspace_switch',
           category: 'workspace_resolution',
@@ -400,7 +478,7 @@ export function AuthSessionProvider({ children }) {
     if (supabase) {
       await supabase.auth.signOut()
     }
-    void trackAuthMetric('logout', { userId, workspaceId })
+    void trackAuthMetricSafely('logout', { userId, workspaceId })
   }, [authState.currentWorkspace?.id, authState.user?.id, session?.user?.id])
 
   const value = useMemo(

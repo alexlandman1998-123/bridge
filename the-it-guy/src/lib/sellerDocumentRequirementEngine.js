@@ -11,6 +11,7 @@ import {
   formatPropertyAddress,
   normalizePropertyAddress,
 } from './sellerPropertyAddress.js'
+import { isMultipleOwnerSellerType } from '../core/legal/legalRuleRegistry.js'
 
 // Phase 9 canonical document consolidation:
 // This legacy seller requirement engine is retained as a compatibility fallback.
@@ -89,7 +90,7 @@ function normalizeSellerType(value) {
   if (['company', 'pty', 'corporate'].includes(normalized)) return 'company'
   if (normalized === 'trust') return 'trust'
   if (['deceased_estate', 'estate', 'deceased'].includes(normalized)) return 'deceased_estate'
-  if (['multiple_individuals', 'multiple_owners', 'multiple', 'joint'].includes(normalized)) return 'multiple_individuals'
+  if (isMultipleOwnerSellerType(normalized)) return 'multiple_owners'
   if (['other', 'other_legal_entity', 'legal_entity'].includes(normalized)) return 'other_legal_entity'
   return 'individual'
 }
@@ -185,7 +186,7 @@ function resolveSellerDisplayName(profile = {}) {
   if (profile.sellerType === 'deceased_estate') {
     return normalizeText(formData?.estateName || formData?.deceasedEstateName || profile?.listingData?.seller?.name)
   }
-  if (profile.sellerType === 'multiple_individuals') {
+  if (isMultipleOwnerSellerType(profile.sellerType)) {
     const owners = toArray(profile?.owners)
     if (owners.length) return owners.map((owner) => `${owner.name} ${owner.surname}`.trim()).filter(Boolean).join(' / ')
   }
@@ -489,9 +490,13 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
   )
   const lifecycleStatus = toLifecycleStatus(listing)
   const resolvedSellerType = resolveSellerType(onboarding, listing)
-  const sellerBranch = resolvedSellerType === 'multiple_individuals' ? resolvedSellerType : flow.seller_branch || 'individual'
+  const sellerBranch = isMultipleOwnerSellerType(flow.seller_branch || resolvedSellerType)
+    ? 'multiple_owners'
+    : flow.seller_branch || 'individual'
   const propertyBranch = flow.property_branch || 'residential'
-  const sellerType = resolvedSellerType === 'multiple_individuals' ? resolvedSellerType : flow.seller_legacy_type || resolvedSellerType
+  const sellerType = isMultipleOwnerSellerType(resolvedSellerType)
+    ? 'multiple_owners'
+    : flow.seller_legacy_type || resolvedSellerType
   const ownershipTypeRaw = normalizeKey(onboarding?.ownershipType || onboarding?.ownershipStructure || listing?.ownership_structure || sellerType)
   const maritalRegime = normalizeMaritalRegime(
     onboarding?.maritalRegime ||
@@ -585,7 +590,7 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
   const trustTrustees = toArray(canonicalFacts?.seller?.trust?.trustees || onboarding?.trustees)
   const estateExecutors = toArray(canonicalFacts?.seller?.deceased_estate?.executors || onboarding?.executors)
   const poaRepresentatives = toArray(canonicalFacts?.seller?.power_of_attorney?.representatives || onboarding?.powerOfAttorneyRepresentatives)
-  const hasMultipleOwnerBranch = ['multiple_owners', 'multiple_individuals'].includes(sellerBranch) || sellerType === 'multiple_individuals'
+  const hasMultipleOwnerBranch = isMultipleOwnerSellerType(sellerBranch) || isMultipleOwnerSellerType(sellerType)
   const ownerCount = hasMultipleOwnerBranch ? Math.max(owners.length, 2) : 1
   const authorisedSignatory = normalizeText(
     onboarding?.authorisedSignatoryName ||
@@ -774,8 +779,8 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
   const flow = profile.flow && typeof profile.flow === 'object' ? profile.flow : {}
   const lifecycleStatus = normalizeKey(profile.lifecycleStatus || flow.lifecycle_status || 'seller_lead')
   const profileSellerType = normalizeKey(profile.sellerType)
-  const sellerBranch = profileSellerType === 'multiple_individuals'
-    ? profileSellerType
+  const sellerBranch = isMultipleOwnerSellerType(profileSellerType)
+    ? 'multiple_owners'
     : normalizeKey(profile.sellerBranch || flow.seller_branch || profile.sellerType || 'individual')
   const propertyBranch = normalizeKey(profile.propertyBranch || flow.property_branch || profile.propertyStructureType || profile.propertyCategory || 'residential')
   const maritalRegime = normalizeKey(profile.maritalRegime || flow.marital_regime || '')

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'vite'
+import { loadCanonicalVerificationSnapshot } from './canonical-document-verification-snapshot.mjs'
 
 const TRANSACTION_ID = '5db513ad-5736-46fe-bd8f-6b298d1d791d'
-const SNAPSHOT_RPC = 'canonical_document_verification_snapshot'
 
 const expectedMappings = [
   ['generated_mandate', 'generated_mandate', false],
@@ -25,8 +25,7 @@ try {
   const { supabase, isSupabaseConfigured } = await server.ssrLoadModule('/src/lib/supabaseClient.js')
   assert.ok(isSupabaseConfigured && supabase, 'Supabase must be configured for packet fixture verification')
 
-  const { data, error } = await supabase.rpc(SNAPSHOT_RPC, { p_purpose: 'canonical_staging_verification' })
-  assert.ifError(error)
+  const data = await loadCanonicalVerificationSnapshot(supabase)
 
   const requirements = data.document_requirement_instances || []
   const legacyRequirements = data.transaction_required_documents || []

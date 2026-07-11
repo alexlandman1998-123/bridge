@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'vite'
+import { loadCanonicalVerificationSnapshot } from './canonical-document-verification-snapshot.mjs'
 
 const TRANSACTION_ID = '5db513ad-5736-46fe-bd8f-6b298d1d791d'
 const REFERENCE = 'CANONICAL-DOC-TEST-001'
-const SNAPSHOT_RPC = 'canonical_document_verification_snapshot'
 
 const expectedPacketMappings = [
   ['generated_mandate', 'generated_mandate'],
@@ -72,8 +72,7 @@ try {
   assert.equal(reminders.areCanonicalEmailRemindersEnabled(), false)
   assert.equal(reminders.areCanonicalWhatsappRemindersEnabled(), false)
 
-  const { data, error } = await supabase.rpc(SNAPSHOT_RPC, { p_purpose: 'canonical_staging_verification' })
-  assert.ifError(error)
+  const data = await loadCanonicalVerificationSnapshot(supabase)
 
   const transactions = data.transactions || []
   const definitions = data.document_definitions || []

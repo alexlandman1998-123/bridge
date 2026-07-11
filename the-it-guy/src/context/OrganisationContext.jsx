@@ -1,7 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { useAuthSession } from './AuthSessionContext'
-import { fetchAgencyOnboardingSettings } from '../lib/settingsApi'
 import { resolveWorkspaceRole } from '../services/roleResolutionService'
 import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
 
@@ -20,6 +19,11 @@ const OrganisationContext =
 
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+async function fetchAgencyOnboardingSettingsFromApi(options) {
+  const { fetchAgencyOnboardingSettings } = await import('../lib/settingsApi')
+  return fetchAgencyOnboardingSettings(options)
 }
 
 function normalizeOrganisation(organisation = {}) {
@@ -195,7 +199,7 @@ export function OrganisationProvider({ children }) {
     setError('')
 
     try {
-      const nextState = await fetchAgencyOnboardingSettings({ forceRefresh })
+      const nextState = await fetchAgencyOnboardingSettingsFromApi({ forceRefresh })
       return applyOrganisationState(nextState)
     } catch (refreshError) {
       setError(refreshError?.message || 'Unable to load organisation settings.')
@@ -242,7 +246,7 @@ export function OrganisationProvider({ children }) {
       }
 
       try {
-        const nextState = await fetchAgencyOnboardingSettings({ forceRefresh: true })
+        const nextState = await fetchAgencyOnboardingSettingsFromApi({ forceRefresh: true })
         if (active) {
           applyOrganisationState(nextState)
         }

@@ -115,3 +115,11 @@
 - Digital signing can still depend on document packet signer/storage RLS and template availability.
 - Physical signed upload should be tested with real storage bucket permissions.
 - Agency settings need a reliable source for legal name, registration number, default commission, and FFC metadata.
+
+## Phase 6 Launch Gate
+
+- Added `npm run verify:document-generator-launch` for the OTP/Mandate launch-ready check.
+- The gate validates generated and signed Mandate/OTP canonical requirements against saved packet versions, final signed artifacts where applicable, and accepted/uploaded legacy `transaction_required_documents` projections.
+- The gate measures the shared canonical verification snapshot path and fails when it exceeds `DOCUMENT_GENERATOR_LAUNCH_SNAPSHOT_BUDGET_MS` (default `12000ms`).
+- Added `npm run test:document-generator-launch-gate` for offline regression coverage of the pass case, missing final signed artifacts, missing legacy projection, duplicate canonical requirements, strict document-record mode, and slow snapshot detection.
+- Missing `rendered_document_id` is a warning by default because the staging fixture proves saved storage paths and canonical/legacy linkage; set `DOCUMENT_GENERATOR_REQUIRE_DOCUMENT_RECORD=true` to make it blocking.

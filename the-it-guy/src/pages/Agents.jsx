@@ -12,6 +12,7 @@ import {
   DollarSign,
   Edit3,
   Grid2X2,
+  Info,
   KeyRound,
   List,
   Mail,
@@ -41,6 +42,16 @@ import { canAccessAgentsModule, canManageAgentOrganisations } from '../lib/roles
 import { saveTransaction } from '../lib/api'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
+import { createAppointmentAsync } from '../lib/agencyPipelineService'
+import {
+  createAgencyCrmLeadActivity,
+  createAgencyCrmLeadTask,
+  updateAgencyCrmLeadRecord,
+} from '../lib/agencyCrmRepository'
+import {
+  createCanvassingActivity,
+  updateCanvassingProspect,
+} from '../lib/canvassingRepository'
 import {
   deactivateOrganisationUser,
   fetchOrganisationSettings,
@@ -91,6 +102,7 @@ import {
 
 const PRIVATE_LISTINGS_STORAGE_KEY = 'itg:agent-private-listings:v1'
 const PIPELINE_STORAGE_KEY = 'itg:pipeline-leads:v1'
+const AGENT_QA_REVIEW_LOG_STORAGE_KEY = 'itg:agent-qa-review-log:v1'
 
 const AGENT_WORKSPACE_TABS = [
   { key: 'overview', label: 'Overview', icon: Grid2X2 },
@@ -99,6 +111,36 @@ const AGENT_WORKSPACE_TABS = [
   { key: 'leads', label: 'Leads', icon: Users },
   { key: 'prospecting', label: 'Prospecting', icon: Phone },
   { key: 'performance', label: 'Performance', icon: Trophy },
+]
+
+const AGENT_METRIC_DEFINITIONS = {
+  'Calls Logged': 'Call or phone activity logged against this agent during the current month.',
+  'Valuations Booked': 'Non-cancelled valuation appointments booked for this agent during the current month.',
+  'Mandates Won': 'Mandate signals from converted seller leads or new listing records in the current month.',
+  'Compliance %': 'Completed follow-up tasks divided by all follow-up tasks created or updated this month.',
+  'Conversion Rate': 'Assigned leads that reached OTP or equivalent conversion divided by total assigned leads.',
+  'Listings to OTP': 'Current listing count compared with assigned opportunities that reached OTP.',
+  'OTP to Registration': 'Assigned OTP-stage opportunities compared with registered deals.',
+}
+
+const AGENT_PROSPECTING_ACTIONS = [
+  { key: 'call', label: 'Log Call', icon: Phone },
+  { key: 'follow_up', label: 'Add Follow-up', icon: Clock3 },
+  { key: 'valuation', label: 'Book Valuation', icon: Building2 },
+  { key: 'appointment', label: 'Schedule Appointment', icon: CalendarDays },
+  { key: 'mandate', label: 'Record Mandate', icon: CheckCircle2 },
+]
+
+const AGENT_PROSPECTING_ACTIVITY_TYPES = ['Call', 'WhatsApp', 'Email', 'Door Knock', 'Meeting', 'Note']
+const AGENT_PROSPECTING_OUTCOMES = ['Connected', 'No answer', 'Left message', 'Interested', 'Not interested', 'Appointment booked', 'Mandate signed']
+const AGENT_PROSPECTING_PRIORITIES = ['Low', 'Medium', 'High', 'Urgent']
+const AGENT_PROSPECTING_APPOINTMENT_TYPES = [
+  { value: 'seller_valuation', label: 'Valuation' },
+  { value: 'seller_consultation', label: 'Seller Consultation' },
+  { value: 'viewing', label: 'Viewing' },
+  { value: 'buyer_consultation', label: 'Buyer Consultation' },
+  { value: 'mandate_signing', label: 'Mandate Signing' },
+  { value: 'other', label: 'Other' },
 ]
 
 const ORGANISATION_ROLE_OPTIONS = [
@@ -540,6 +582,114 @@ function readLocalRows(storageKey) {
   }
 }
 
+function normalizeQaAgentId(value = '') {
+  return String(value || '').trim().toLowerCase()
+}
+
+function getQaAgentId(agent = {}) {
+  return normalizeQaAgentId(agent.id || agent.userId || agent.user_id || agent.organisationUserId || agent.email || agent.name)
+}
+
+function readAgentQaReviewLog() {
+  if (typeof window === 'undefined' || !isUnsafeFallbackAllowed()) return []
+  try {
+    const raw = window.localStorage.getItem(AGENT_QA_REVIEW_LOG_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function persistAgentQaReviewLog(rows = []) {
+  if (typeof window === 'undefined' || !isUnsafeFallbackAllowed()) return
+  try {
+    window.localStorage.setItem(AGENT_QA_REVIEW_LOG_STORAGE_KEY, JSON.stringify(rows.slice(0, 200)))
+  } catch {
+    // Review notes remain in session state when local fallback storage is unavailable.
+  }
+}
+
+function buildAgentQaReviewLogEntry({ agent = {}, actor = {}, review = {}, note = '', issueKeys = [], nextReviewDate = '' } = {}) {
+  const now = new Date().toISOString()
+  const agentId = getQaAgentId(agent)
+  const selectedIssues = (review.issues || []).filter((issue) => issueKeys.includes(issue.key))
+  return {
+    id: `qa-review-${agentId || 'agent'}-${Date.now()}`,
+    agentId,
+    agentName: agent.name || agent.displayName || agent.fullName || agent.email || 'Agent',
+    reviewerName: actor.fullName || actor.name || actor.email || 'Principal',
+    reviewerId: actor.id || actor.userId || actor.email || '',
+    score: review.score,
+    status: review.status,
+    statusLabel: review.statusLabel,
+    issueKeys,
+    issueTitles: selectedIssues.map((issue) => issue.title),
+    note: String(note || '').trim(),
+    nextReviewDate,
+    createdAt: now,
+  }
+}
+
+function downloadCsvFile({ filename, header = [], rows = [] } = {}) {
+  const csv = [header, ...rows]
+    .map((line) => line.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(','))
+    .join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function buildQaGovernanceExportRows({ summary = {}, reviewLog = [] } = {}) {
+  const agentRows = (summary.rows || []).map((row) => {
+    const review = row.review || {}
+    return [
+      'Agent QA',
+      row.name || '',
+      row.branchName || '',
+      review.statusLabel || '',
+      formatQaScore(review.score),
+      review.issueCount || 0,
+      review.highRiskCount || 0,
+      review.actionPlan?.openCount || 0,
+      review.actionPlan?.nextReviewAt ? formatDate(review.actionPlan.nextReviewAt) : '',
+      review.recommendedAction || '',
+    ]
+  })
+  const actionRows = (summary.actionQueue || []).map((item) => [
+    'Action',
+    item.agentName || '',
+    item.branchName || '',
+    item.severity || '',
+    item.priority || '',
+    item.sourceCount || 0,
+    '',
+    item.status || 'open',
+    item.dueAt ? formatDate(item.dueAt) : '',
+    item.action || item.title || '',
+  ])
+  const reviewRows = reviewLog.map((entry) => [
+    'Review Log',
+    entry.agentName || '',
+    '',
+    entry.statusLabel || '',
+    formatQaScore(entry.score),
+    entry.issueKeys?.length || 0,
+    '',
+    entry.reviewerName || '',
+    entry.nextReviewDate ? formatDate(entry.nextReviewDate) : '',
+    entry.note || entry.issueTitles?.join('; ') || '',
+  ])
+  return [...agentRows, ...actionRows, ...reviewRows]
+}
+
 function buildAgentInviteForm({ profile, directory }) {
   const agency = directory?.agency || null
   return {
@@ -597,6 +747,31 @@ function formatDate(value) {
   }
 
   return date.toLocaleDateString('en-ZA')
+}
+
+function formatDateInputValue(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return new Date().toISOString().slice(0, 10)
+  return date.toISOString().slice(0, 10)
+}
+
+function getRelativeDateInputValue(days = 0) {
+  const date = new Date()
+  date.setDate(date.getDate() + days)
+  return formatDateInputValue(date)
+}
+
+function combineDateAndTime(dateValue = '', timeValue = '') {
+  const date = String(dateValue || '').trim() || formatDateInputValue()
+  const time = String(timeValue || '').trim() || '09:00'
+  return `${date}T${time.length === 5 ? `${time}:00` : time}`
+}
+
+function addMinutesToTime(timeValue = '', minutes = 45) {
+  const [hours = '9', mins = '0'] = String(timeValue || '09:00').split(':')
+  const date = new Date(2000, 0, 1, Number(hours) || 9, Number(mins) || 0)
+  date.setMinutes(date.getMinutes() + minutes)
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
 function normalizeIdentityEmail(value) {
@@ -1015,6 +1190,7 @@ function findAgentByRouteId(agents = [], routeId = '') {
 
 function createEmptyAgentWorkspaceSnapshot() {
   return {
+    organisationId: '',
     branches: [],
     leads: [],
     transactions: [],
@@ -1416,6 +1592,11 @@ function formatCompactActivity(value) {
 }
 
 function formatConversionRate(value) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—'
+  return `${Math.round(Number(value))}%`
+}
+
+function formatQaScore(value) {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—'
   return `${Math.round(Number(value))}%`
 }
@@ -2373,10 +2554,11 @@ function PerformanceKpiStrip({ kpis, onAttentionClick }) {
     { label: 'Avg. Conversion Rate', value: formatConversionRate(kpis.conversionRate ?? kpis.averageConversionRate), helper: 'Leads → OTP', icon: Trophy, tone: 'bg-primarySoft text-primary' },
     { label: 'Avg. Days to Registration', value: kpis.avgDaysToRegistration ?? '—', helper: 'Avg. days', icon: Clock3, tone: 'bg-warningSoft text-warning' },
     { label: 'Agents Needing Attention', value: kpis.agentsNeedingAttention ?? 0, helper: 'No activity > 7 days', icon: AlertTriangle, tone: 'bg-dangerSoft text-danger', onClick: onAttentionClick },
+    { label: 'Operational QA', value: formatQaScore(kpis.operationalQaScore), helper: `${kpis.qaIssueCount ?? 0} open QA issues`, icon: ShieldCheck, tone: 'bg-[#edf8f0] text-[#16894f]' },
   ]
 
   return (
-    <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+    <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
       {cards.map((card) => {
         const Icon = card.icon
         const Tag = card.onClick ? 'button' : 'article'
@@ -2507,6 +2689,146 @@ function AttentionAgentsPanel({ rows = [], onView }) {
         ) : (
           <p className="rounded-xl bg-[#f8fbff] px-3 py-6 text-center text-sm text-[#6b7f97]">No intervention items right now.</p>
         )}
+      </div>
+    </article>
+  )
+}
+
+function AgentQaSummaryPanel({ summary = {}, reviewLog = [], onView, onExport }) {
+  const rows = Array.isArray(summary.rows) ? summary.rows : []
+  const actionQueue = Array.isArray(summary.actionQueue) ? summary.actionQueue : []
+  const governance = summary.governance || {}
+  const dueBuckets = governance.dueBuckets || {}
+  const severity = governance.severity || {}
+  const statusClass = {
+    attention: 'border-[#f3d8d8] bg-[#fff4f4] text-[#b42318]',
+    watch: 'border-[#f4e2c9] bg-[#fff8eb] text-[#946215]',
+    healthy: 'border-[#d7e7dd] bg-[#edf9f1] text-[#16894f]',
+    not_applicable: 'border-[#dbe6f2] bg-[#f8fbff] text-[#60758d]',
+  }
+
+  return (
+    <article className="min-w-0 rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-semibold text-[#10243a]">Operational QA</h2>
+          <p className="mt-0.5 text-xs text-[#6d8299]">Data completeness and follow-up exceptions across visible agents.</p>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#d9e3ef] bg-white px-3 text-xs font-semibold text-[#24364b] shadow-sm transition hover:bg-[#f7fafc]"
+            onClick={onExport}
+          >
+            <Download size={13} />
+            Export QA
+          </button>
+          <span className="inline-flex items-center gap-2 rounded-full border border-[#d7e7dd] bg-[#edf9f1] px-3 py-1 text-xs font-semibold text-[#16894f]">
+            <ShieldCheck size={13} />
+            {formatQaScore(summary.score)}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        {[
+          ['QA Score', formatQaScore(summary.score)],
+          ['Open Issues', summary.issueCount ?? 0],
+          ['Actions Due', summary.actionsDueSoon ?? 0],
+          ['Overdue', dueBuckets.overdue ?? 0],
+          ['High Risk', severity.High ?? summary.highRiskCount ?? 0],
+          ['Reviews Logged', reviewLog.length],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-xl border border-[#e2eaf3] bg-[#fbfdff] px-3 py-3">
+            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#71859c]">{label}</p>
+            <p className="mt-1 truncate text-lg font-semibold text-[#10243a]">{value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.9fr)]">
+        <div className="min-w-0 space-y-2">
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <p className="truncate text-xs font-semibold uppercase tracking-[0.08em] text-[#71859c]">Agent Reviews</p>
+            <span className="shrink-0 text-xs font-semibold text-[#60758d]">{reviewLog.length} logged</span>
+          </div>
+        {rows.length ? rows.map((row) => {
+          const review = row.review || {}
+          return (
+            <button
+              key={row.id}
+              type="button"
+              className="grid w-full min-w-0 gap-3 rounded-xl border border-[#e2eaf3] bg-white px-3 py-3 text-left transition hover:border-[#cbd8e6] hover:bg-[#f8fbff] sm:grid-cols-[minmax(0,1fr)_140px]"
+              onClick={() => onView?.(row.agent)}
+            >
+              <span className="flex min-w-0 items-center gap-3">
+                <AgentAvatar agent={row} className="h-9 w-9 border border-[#d7e2ef] bg-[#f8fbff] text-xs font-semibold text-[#245076]" />
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold text-[#10243a]">{row.name}</span>
+                  <span className="mt-0.5 block truncate text-xs text-[#60758d]">{review.recommendedAction || 'Review QA status'}</span>
+                </span>
+              </span>
+              <span className="min-w-0 text-left sm:text-right">
+                <span className={`inline-flex rounded-full border px-3 py-1 text-[0.66rem] font-semibold ${statusClass[review.status] || statusClass.watch}`}>
+                  {review.statusLabel || 'Watch'}
+                </span>
+                <span className="mt-1 block truncate text-xs font-semibold text-[#60758d]">{formatQaScore(review.score)} · {review.issueCount || 0} issues</span>
+              </span>
+            </button>
+          )
+        }) : (
+          <div className="rounded-xl border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-5 text-center">
+            <p className="text-sm font-semibold text-[#10243a]">No QA exceptions</p>
+            <p className="mt-1 text-xs text-[#60758d]">Visible agents have current follow-ups and linked activity.</p>
+          </div>
+        )}
+        </div>
+
+        <div className="min-w-0 rounded-xl border border-[#e2eaf3] bg-[#fbfdff] p-3">
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <p className="truncate text-xs font-semibold uppercase tracking-[0.08em] text-[#71859c]">QA Action Queue</p>
+            <span className="shrink-0 text-xs font-semibold text-[#60758d]">{summary.actionItemCount ?? actionQueue.length} open</span>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-[#60758d]">
+            {[
+              ['Attention', governance.statusCounts?.attention ?? 0],
+              ['Watch', governance.statusCounts?.watch ?? 0],
+              ['Due Today', dueBuckets.today ?? 0],
+              ['Next 7 Days', dueBuckets.next7Days ?? 0],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-lg border border-[#e2eaf3] bg-white px-2.5 py-2">
+                <span className="block truncate text-[0.62rem] uppercase tracking-[0.08em] text-[#71859c]">{label}</span>
+                <span className="mt-1 block text-sm text-[#10243a]">{value}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 space-y-2">
+            {actionQueue.length ? actionQueue.slice(0, 5).map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className="grid w-full min-w-0 gap-2 rounded-xl border border-[#e2eaf3] bg-white px-3 py-3 text-left transition hover:border-[#cbd8e6] hover:bg-[#f8fbff]"
+                onClick={() => onView?.(item.agent)}
+              >
+                <span className="flex min-w-0 items-start justify-between gap-2">
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold text-[#10243a]">{item.title}</span>
+                    <span className="mt-0.5 block truncate text-xs text-[#60758d]">{item.agentName || 'Agent'} · {item.branchName || 'Current Office'}</span>
+                  </span>
+                  <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[0.62rem] font-semibold ${statusClass[item.severity === 'High' ? 'attention' : item.severity === 'Medium' ? 'watch' : 'healthy']}`}>
+                    {item.priority}
+                  </span>
+                </span>
+                <span className="truncate text-xs font-semibold text-[#60758d]">Due {formatDate(item.dueAt)} · {item.sourceCount || 0} records</span>
+              </button>
+            )) : (
+              <div className="rounded-xl border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-center">
+                <p className="text-sm font-semibold text-[#10243a]">No open QA actions</p>
+                <p className="mt-1 text-xs text-[#60758d]">Action items will appear when reviews find exceptions.</p>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </article>
   )
@@ -3826,12 +4148,19 @@ function FinancialPerformanceCard({ rows }) {
   )
 }
 
-function AgentWorkspaceKpiCard({ label, value, helper = '', icon = Grid2X2, tone = 'bg-[#edf8f0] text-[#16894f]' }) {
+function AgentWorkspaceKpiCard({ label, value, helper = '', icon = Grid2X2, tone = 'bg-[#edf8f0] text-[#16894f]', definition = '' }) {
   return (
     <article className="min-w-0 rounded-2xl border border-[#dfe7f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-[0.74rem] font-semibold text-[#526981]" title={label}>{label}</p>
+          <p className="flex min-w-0 items-center gap-1.5 text-[0.74rem] font-semibold text-[#526981]" title={definition || label}>
+            <span className="min-w-0 truncate">{label}</span>
+            {definition ? (
+              <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#eef3f8] text-[#60758d]" aria-label={definition} title={definition}>
+                <Info size={11} />
+              </span>
+            ) : null}
+          </p>
           <p className="mt-2 truncate text-[1.45rem] font-semibold tracking-[-0.035em] text-[#10243a]" title={String(value ?? '—')}>{value ?? '—'}</p>
           {helper ? <p className="mt-1 truncate text-xs font-semibold text-[#60758d]" title={helper}>{helper}</p> : null}
         </div>
@@ -3840,6 +4169,363 @@ function AgentWorkspaceKpiCard({ label, value, helper = '', icon = Grid2X2, tone
         </span>
       </div>
     </article>
+  )
+}
+
+function ProspectingDrilldownPanel({ title, description, rows = [], icon = List, emptyTitle, emptyCopy }) {
+  return (
+    <section className="min-w-0 rounded-xl border border-[#e0e8f2] bg-[#fbfcfe] p-4">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-[#1769d1] shadow-sm">
+          {createElement(icon, { size: 16 })}
+        </span>
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-semibold text-[#10243a]">{title}</h3>
+          <p className="mt-1 text-xs font-medium leading-5 text-[#60758d]">{description}</p>
+        </div>
+      </div>
+      <div className="mt-4 space-y-2">
+        {rows.length ? rows.slice(0, 5).map((row) => (
+          <div key={row.id} className="grid min-w-0 gap-2 rounded-xl border border-[#e5edf6] bg-white px-3 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_112px] sm:items-center">
+            <span className="min-w-0">
+              <span className="block truncate font-semibold text-[#10243a]" title={row.title}>{row.title}</span>
+              <span className="mt-0.5 block truncate text-xs font-medium text-[#60758d]" title={row.subtitle || row.meta || ''}>{row.subtitle || row.meta || 'Linked activity'}</span>
+            </span>
+            <span className="min-w-0 text-left sm:text-right">
+              <span className="block truncate text-xs font-semibold text-[#405870]" title={row.status || row.meta || ''}>{row.status || row.meta || 'Open'}</span>
+              <span className="mt-0.5 block truncate text-[0.7rem] font-medium text-[#7b8ca2]">{row.timestamp ? formatDateTime(row.timestamp) : 'No date'}</span>
+            </span>
+          </div>
+        )) : (
+          <div className="rounded-xl border border-dashed border-[#d8e2ee] bg-white px-4 py-4">
+            <p className="text-sm font-semibold text-[#10243a]">{emptyTitle}</p>
+            <p className="mt-1 text-xs font-medium leading-5 text-[#60758d]">{emptyCopy}</p>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function ProspectingCapturePanel({ onAction }) {
+  return (
+    <WorkspaceCard title="Capture Activity" actionLabel="Phase 2">
+      <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-5">
+        {AGENT_PROSPECTING_ACTIONS.map((action) => (
+          <button
+            key={action.key}
+            type="button"
+            className="inline-flex min-h-[44px] min-w-0 items-center justify-center gap-2 rounded-xl border border-[#dce6f1] bg-white px-3 py-2 text-sm font-semibold text-[#20364d] transition hover:border-[#bfd0e3] hover:bg-[#f7fafc]"
+            onClick={() => onAction(action.key)}
+          >
+            {createElement(action.icon, { size: 16 })}
+            <span className="truncate">{action.label}</span>
+          </button>
+        ))}
+      </div>
+    </WorkspaceCard>
+  )
+}
+
+function AgentQaReviewPanel({ review = null, agent = {}, reviewLog = [], onSaveReview }) {
+  const safeReview = review || {}
+  const issueOptions = safeReview.issues || []
+  const defaultNextReviewDate = String(safeReview.actionPlan?.nextReviewAt || '').slice(0, 10)
+  const [selectedIssueKeys, setSelectedIssueKeys] = useState(() => issueOptions.map((issue) => issue.key))
+  const [reviewNote, setReviewNote] = useState('')
+  const [nextReviewDate, setNextReviewDate] = useState(defaultNextReviewDate)
+  const [savedNotice, setSavedNotice] = useState('')
+
+  if (!review) return null
+  const statusClass = {
+    attention: 'border-[#f3d8d8] bg-[#fff4f4] text-[#b42318]',
+    watch: 'border-[#f4e2c9] bg-[#fff8eb] text-[#946215]',
+    healthy: 'border-[#d7e7dd] bg-[#edf9f1] text-[#16894f]',
+    not_applicable: 'border-[#dbe6f2] bg-[#f8fbff] text-[#60758d]',
+  }
+  const metricCards = [
+    { label: 'QA Score', value: formatQaScore(review.score), helper: review.statusLabel, icon: ShieldCheck },
+    { label: 'Overdue Follow-ups', value: review.metrics?.overdueFollowUps ?? 0, helper: 'Tasks and prospects', icon: Clock3, tone: 'bg-[#fff8eb] text-[#946215]' },
+    { label: 'Unworked Leads', value: review.metrics?.unworkedLeads ?? 0, helper: 'No tracked action', icon: Users, tone: 'bg-[#eef6ff] text-[#1769d1]' },
+    { label: 'Next-Step Gaps', value: review.metrics?.prospectsWithoutNextStep ?? 0, helper: 'Canvassing prospects', icon: AlertTriangle, tone: 'bg-[#fff4f4] text-[#b42318]' },
+  ]
+  const recentReviews = reviewLog.filter((entry) => normalizeQaAgentId(entry.agentId) === getQaAgentId(agent)).slice(0, 3)
+  const canSaveReview = Boolean(reviewNote.trim() || selectedIssueKeys.length || nextReviewDate)
+
+  function toggleIssue(issueKey) {
+    setSelectedIssueKeys((previous) => (
+      previous.includes(issueKey)
+        ? previous.filter((key) => key !== issueKey)
+        : [...previous, issueKey]
+    ))
+  }
+
+  function handleSaveReview(event) {
+    event.preventDefault()
+    if (!canSaveReview) return
+    onSaveReview?.({
+      note: reviewNote,
+      issueKeys: selectedIssueKeys,
+      nextReviewDate,
+    })
+    setSavedNotice('QA review logged')
+    setReviewNote('')
+  }
+
+  return (
+    <WorkspaceCard title="QA Review" actionLabel={review.statusLabel || 'Review'}>
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {metricCards.map((card) => (
+          <AgentWorkspaceKpiCard key={card.label} {...card} />
+        ))}
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_260px]">
+        <div className="space-y-2">
+          {review.issues?.length ? review.issues.slice(0, 5).map((issue) => (
+            <div key={issue.key} className="rounded-xl border border-[#e3ebf4] bg-[#fbfdff] px-3 py-3">
+              <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-[#10243a]">{issue.title}</p>
+                  <p className="mt-1 text-xs leading-5 text-[#60758d]">{issue.description}</p>
+                </div>
+                <span className={`inline-flex shrink-0 rounded-full border px-3 py-1 text-[0.66rem] font-semibold ${statusClass[issue.severity === 'High' ? 'attention' : issue.severity === 'Medium' ? 'watch' : 'healthy']}`}>
+                  {issue.count} · {issue.severity}
+                </span>
+              </div>
+              {issue.records?.length ? (
+                <div className="mt-3 grid gap-2">
+                  {issue.records.map((record) => (
+                    <div key={`${issue.key}-${record.id}`} className="grid min-w-0 gap-2 rounded-lg bg-white px-3 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_118px]">
+                      <span className="min-w-0">
+                        <span className="block truncate font-semibold text-[#20364d]">{record.title}</span>
+                        <span className="mt-0.5 block truncate text-[#6f839a]">{record.subtitle || record.type}</span>
+                      </span>
+                      <span className="text-left font-semibold text-[#60758d] sm:text-right">{record.timestamp ? formatDateTime(record.timestamp) : 'No date'}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          )) : (
+            <div className="rounded-xl border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-5 text-center">
+              <p className="text-sm font-semibold text-[#10243a]">No QA exceptions</p>
+              <p className="mt-1 text-xs text-[#60758d]">Tracking coverage is current for this agent.</p>
+            </div>
+          )}
+        </div>
+        <div className="rounded-xl border border-[#e3ebf4] bg-[#fbfdff] px-3 py-3">
+          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#71859c]">Recommended Action</p>
+          <p className="mt-2 text-sm font-semibold leading-5 text-[#10243a]">{review.recommendedAction || 'Keep monitoring active records.'}</p>
+          <div className="mt-3 rounded-lg border border-[#e2eaf3] bg-white px-3 py-2">
+            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#71859c]">Action Plan</p>
+            <p className="mt-1 text-xs font-semibold text-[#10243a]">{review.actionPlan?.cadence || 'Weekly'} · target {review.actionPlan?.completionTarget || '7 days'}</p>
+            <p className="mt-1 text-xs text-[#60758d]">Next review {review.actionPlan?.nextReviewAt ? formatDate(review.actionPlan.nextReviewAt) : 'not scheduled'}</p>
+          </div>
+          <div className="mt-4 space-y-2 text-xs font-medium text-[#60758d]">
+            <p>Leads: {review.trackingCoverage?.leads ?? 0}</p>
+            <p>Tasks: {review.trackingCoverage?.tasks ?? 0}</p>
+            <p>Appointments: {review.trackingCoverage?.appointments ?? 0}</p>
+            <p>Activities: {(review.trackingCoverage?.crmActivities ?? 0) + (review.trackingCoverage?.canvassingActivities ?? 0)}</p>
+            <p>Prospects: {review.trackingCoverage?.canvassingProspects ?? 0}</p>
+          </div>
+        </div>
+      </div>
+      <form className="mt-4 grid gap-3 rounded-xl border border-[#e3ebf4] bg-[#fbfdff] p-3 lg:grid-cols-[minmax(0,1fr)_280px]" onSubmit={handleSaveReview}>
+        <div className="min-w-0">
+          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#71859c]">Manager Review</p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {issueOptions.length ? issueOptions.map((issue) => (
+              <label key={issue.key} className="flex min-w-0 items-start gap-2 rounded-lg border border-[#e2eaf3] bg-white px-3 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 shrink-0 rounded border-[#cbd7e6]"
+                  checked={selectedIssueKeys.includes(issue.key)}
+                  onChange={() => toggleIssue(issue.key)}
+                />
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold text-[#10243a]">{issue.title}</span>
+                  <span className="mt-0.5 block truncate text-xs text-[#60758d]">{issue.action}</span>
+                </span>
+              </label>
+            )) : (
+              <p className="rounded-lg border border-dashed border-[#d8e2ee] bg-white px-3 py-3 text-sm text-[#60758d] sm:col-span-2">No open QA issues to select.</p>
+            )}
+          </div>
+          <label className="mt-3 grid gap-1.5">
+            <span className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#71859c]">Coaching Note</span>
+            <Field as="textarea" value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} placeholder="Record what was reviewed, agreed next action, and accountability owner." />
+          </label>
+        </div>
+        <div className="min-w-0">
+          <label className="grid gap-1.5">
+            <span className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#71859c]">Next Review Date</span>
+            <Field type="date" value={nextReviewDate} onChange={(event) => setNextReviewDate(event.target.value)} />
+          </label>
+          <Button type="submit" className="mt-3 w-full justify-center" disabled={!canSaveReview}>Record Review</Button>
+          {savedNotice ? <p className="mt-2 rounded-lg border border-[#d7e8dc] bg-[#edf9f1] px-3 py-2 text-xs font-semibold text-[#1f7d44]">{savedNotice}</p> : null}
+          <div className="mt-4 space-y-2">
+            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#71859c]">Recent Reviews</p>
+            {recentReviews.length ? recentReviews.map((entry) => (
+              <div key={entry.id} className="rounded-lg border border-[#e2eaf3] bg-white px-3 py-2">
+                <p className="truncate text-xs font-semibold text-[#10243a]">{entry.reviewerName} · {formatDateTime(entry.createdAt)}</p>
+                <p className="mt-1 line-clamp-2 text-xs text-[#60758d]">{entry.note || entry.issueTitles?.join(', ') || 'Review logged'}</p>
+                {entry.nextReviewDate ? <p className="mt-1 text-xs font-semibold text-[#60758d]">Next {formatDate(entry.nextReviewDate)}</p> : null}
+              </div>
+            )) : (
+              <p className="rounded-lg border border-dashed border-[#d8e2ee] bg-white px-3 py-3 text-xs text-[#60758d]">No reviews logged yet.</p>
+            )}
+          </div>
+        </div>
+      </form>
+    </WorkspaceCard>
+  )
+}
+
+function ProspectingActionModal({
+  open,
+  actionKey = 'call',
+  form,
+  targetOptions = [],
+  saving = false,
+  error = '',
+  onChange,
+  onClose,
+  onSubmit,
+}) {
+  const meta = getProspectingActionMeta(actionKey)
+  const isFollowUp = actionKey === 'follow_up'
+  const isAppointment = actionKey === 'appointment' || actionKey === 'valuation'
+  const isMandate = actionKey === 'mandate'
+  const requiresTarget = actionKey === 'call' || actionKey === 'follow_up' || actionKey === 'mandate'
+  const targetMissing = requiresTarget && !form.targetValue
+
+  return (
+    <Modal
+      open={open}
+      onClose={saving ? undefined : onClose}
+      title={meta.label}
+      subtitle="Capture agent-scoped prospecting work."
+      className="max-w-2xl"
+      footer={
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button type="button" onClick={onSubmit} disabled={saving || targetMissing}>
+            {saving ? 'Saving...' : 'Save'}
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        {error ? (
+          <div className="rounded-xl border border-[#f2d7d7] bg-[#fff6f6] px-4 py-3 text-sm font-semibold text-[#b42318]">
+            {error}
+          </div>
+        ) : null}
+
+        <label className="grid gap-1.5">
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Target</span>
+          <Field
+            as="select"
+            value={form.targetValue}
+            disabled={saving}
+            onChange={(event) => onChange('targetValue', event.target.value)}
+          >
+            <option value="">{isAppointment ? 'No linked lead/prospect' : 'Select lead or prospect'}</option>
+            {targetOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.kind === 'lead' ? 'Lead' : 'Prospect'} - {option.label}
+              </option>
+            ))}
+          </Field>
+        </label>
+
+        {!targetOptions.length ? (
+          <div className="rounded-xl border border-[#f0dfc2] bg-[#fffbf3] px-4 py-3 text-sm font-medium text-[#7a5a16]">
+            Assign a lead or canvassing prospect to this agent to log target-linked calls, follow-ups and mandate signals.
+          </div>
+        ) : null}
+
+        {isAppointment ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Type</span>
+              <Field as="select" value={form.appointmentType} disabled={saving || actionKey === 'valuation'} onChange={(event) => onChange('appointmentType', event.target.value)}>
+                {AGENT_PROSPECTING_APPOINTMENT_TYPES.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </Field>
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Title</span>
+              <Field value={form.title} disabled={saving} onChange={(event) => onChange('title', event.target.value)} placeholder={actionKey === 'valuation' ? 'Valuation appointment' : 'Appointment'} />
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Date</span>
+              <Field type="date" value={form.appointmentDate} disabled={saving} onChange={(event) => onChange('appointmentDate', event.target.value)} />
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="grid gap-1.5">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Start</span>
+                <Field type="time" value={form.startTime} disabled={saving} onChange={(event) => onChange('startTime', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">End</span>
+                <Field type="time" value={form.endTime} disabled={saving} onChange={(event) => onChange('endTime', event.target.value)} />
+              </label>
+            </div>
+            <label className="grid gap-1.5 sm:col-span-2">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Location</span>
+              <Field value={form.location} disabled={saving} onChange={(event) => onChange('location', event.target.value)} placeholder="Office, property address, phone call or video link" />
+            </label>
+          </div>
+        ) : isFollowUp ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Due Date</span>
+              <Field type="date" value={form.dueDate} disabled={saving} onChange={(event) => onChange('dueDate', event.target.value)} />
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Priority</span>
+              <Field as="select" value={form.priority} disabled={saving} onChange={(event) => onChange('priority', event.target.value)}>
+                {AGENT_PROSPECTING_PRIORITIES.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </Field>
+            </label>
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Activity Type</span>
+              <Field as="select" value={form.activityType} disabled={saving || isMandate} onChange={(event) => onChange('activityType', event.target.value)}>
+                {(isMandate ? ['Mandate Signed'] : AGENT_PROSPECTING_ACTIVITY_TYPES).map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </Field>
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Outcome</span>
+              <Field as="select" value={form.outcome} disabled={saving || isMandate} onChange={(event) => onChange('outcome', event.target.value)}>
+                {(isMandate ? ['Mandate signed'] : AGENT_PROSPECTING_OUTCOMES).map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </Field>
+            </label>
+          </div>
+        )}
+
+        <label className="grid gap-1.5">
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Notes</span>
+          <Field
+            as="textarea"
+            value={form.notes}
+            disabled={saving}
+            onChange={(event) => onChange('notes', event.target.value)}
+            placeholder={isFollowUp ? 'What should be followed up?' : isAppointment ? 'Appointment context, client request or prep notes' : 'Call notes, outcome or mandate context'}
+          />
+        </label>
+      </div>
+    </Modal>
   )
 }
 
@@ -3969,7 +4655,123 @@ function isTaskDone(row = {}) {
   return String(row.status || '').toLowerCase().includes('complete')
 }
 
-function AgentWorkspace({ agent, canManageSettings = false, commissionStructures = [], workspaceSnapshot = {}, onRefresh }) {
+function getAgentActivityIcon(type = '') {
+  const normalized = String(type || '').trim().toLowerCase()
+  if (normalized.includes('call')) return Phone
+  if (normalized.includes('follow')) return Clock3
+  if (normalized.includes('valuation') || normalized.includes('appointment')) return CalendarDays
+  if (normalized.includes('mandate')) return CheckCircle2
+  if (normalized.includes('transaction')) return BriefcaseBusiness
+  if (normalized.includes('listing')) return Building2
+  return List
+}
+
+function getAgentActivityTone(type = '') {
+  const normalized = String(type || '').trim().toLowerCase()
+  if (normalized.includes('call')) return 'bg-[#eef6ff] text-[#1769d1]'
+  if (normalized.includes('follow')) return 'bg-[#fff8eb] text-[#8a641d]'
+  if (normalized.includes('valuation') || normalized.includes('appointment')) return 'bg-[#f1f7ff] text-[#1f4f78]'
+  if (normalized.includes('mandate')) return 'bg-[#edf9f1] text-[#1d7d45]'
+  if (normalized.includes('transaction')) return 'bg-[#eef4ff] text-[#1769d1]'
+  if (normalized.includes('listing')) return 'bg-[#ecfdf3] text-[#16894f]'
+  return 'bg-[#f3f6fa] text-[#60758d]'
+}
+
+function encodeProspectingTargetValue(kind = '', id = '') {
+  const targetId = String(id || '').trim()
+  return targetId ? `${kind}:${targetId}` : ''
+}
+
+function parseProspectingTargetValue(value = '') {
+  const [kind = '', ...rest] = String(value || '').split(':')
+  return {
+    kind,
+    id: rest.join(':'),
+  }
+}
+
+function getProspectName(row = {}) {
+  return (
+    row.name ||
+    row.fullName ||
+    row.full_name ||
+    [row.firstName || row.first_name, row.lastName || row.last_name].filter(Boolean).join(' ') ||
+    row.email ||
+    row.phone ||
+    'Canvassing prospect'
+  )
+}
+
+function getProspectLabel(row = {}) {
+  const location = row.formattedAddress || row.formatted_address || row.streetAddress || row.street_address || row.areaSuburb || row.area_suburb || row.area
+  const status = row.status || row.prospectType || row.prospect_type
+  return [getProspectName(row), location, status].map((item) => String(item || '').trim()).filter(Boolean).join(' - ')
+}
+
+function getLeadTargetOption(row = {}) {
+  const id = getLeadId(row)
+  if (!id) return null
+  return {
+    kind: 'lead',
+    id,
+    value: encodeProspectingTargetValue('lead', id),
+    label: [getLeadName(row), getLeadLinkedProperty(row), row.status || row.stage].map((item) => String(item || '').trim()).filter(Boolean).join(' - '),
+    row,
+  }
+}
+
+function getProspectTargetOption(row = {}) {
+  const id = row.id || row.prospectId || row.prospect_id
+  if (!id) return null
+  return {
+    kind: 'prospect',
+    id,
+    value: encodeProspectingTargetValue('prospect', id),
+    label: getProspectLabel(row),
+    row,
+  }
+}
+
+function buildProspectingTargetOptions({ leads = [], prospects = [] } = {}) {
+  const seen = new Set()
+  const options = []
+  for (const option of [
+    ...leads.map(getLeadTargetOption),
+    ...prospects.map(getProspectTargetOption),
+  ]) {
+    if (!option?.value || seen.has(option.value)) continue
+    seen.add(option.value)
+    options.push(option)
+  }
+  return options
+}
+
+function getDefaultProspectingActionForm(actionKey = 'call', targetOptions = []) {
+  const firstTarget = targetOptions[0]?.value || ''
+  const appointmentDate = getRelativeDateInputValue(actionKey === 'follow_up' ? 2 : 1)
+  const startTime = '09:00'
+  return {
+    targetValue: firstTarget,
+    activityType: actionKey === 'mandate' ? 'Mandate Signed' : 'Call',
+    outcome: actionKey === 'mandate' ? 'Mandate signed' : 'Connected',
+    notes: '',
+    dueDate: getRelativeDateInputValue(2),
+    priority: 'Medium',
+    appointmentType: actionKey === 'valuation' ? 'seller_valuation' : 'other',
+    appointmentDate,
+    startTime,
+    endTime: addMinutesToTime(startTime, 45),
+    location: '',
+    title: actionKey === 'valuation' ? 'Valuation appointment' : actionKey === 'appointment' ? 'Appointment' : '',
+    mandateStatus: 'Mandate Signed',
+  }
+}
+
+function getProspectingActionMeta(actionKey = '') {
+  return AGENT_PROSPECTING_ACTIONS.find((item) => item.key === actionKey) || AGENT_PROSPECTING_ACTIONS[0]
+}
+
+function AgentWorkspace({ agent, reviewActor = {}, canManageSettings = false, commissionStructures = [], workspaceSnapshot = {}, onRefresh }) {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('overview')
   const [editMenuOpen, setEditMenuOpen] = useState(false)
@@ -3988,6 +4790,11 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
   const [permissionsForm, setPermissionsForm] = useState({ role: '' })
   const [permissionsSaving, setPermissionsSaving] = useState(false)
   const [permissionsError, setPermissionsError] = useState('')
+  const [prospectingAction, setProspectingAction] = useState('')
+  const [prospectingForm, setProspectingForm] = useState(() => getDefaultProspectingActionForm('call', []))
+  const [prospectingSaving, setProspectingSaving] = useState(false)
+  const [prospectingError, setProspectingError] = useState('')
+  const [qaReviewLog, setQaReviewLog] = useState(() => readAgentQaReviewLog())
 
   const effectiveActiveTab = AGENT_WORKSPACE_TABS.some((tab) => tab.key === activeTab) ? activeTab : 'overview'
   const activeCommissionStructures = commissionStructures.filter((structure) => structure?.isActive)
@@ -4121,6 +4928,26 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
       }),
     [agent, appointments, branches, canvassingActivities, canvassingProspects, leadActivities, leads, listings, tasks, transactions],
   )
+  const agentQaReviewLog = useMemo(
+    () => qaReviewLog.filter((entry) => normalizeQaAgentId(entry.agentId) === getQaAgentId(agent)),
+    [agent, qaReviewLog],
+  )
+  const handleSaveQaReview = useCallback(({ note = '', issueKeys = [], nextReviewDate = '' } = {}) => {
+    const entry = buildAgentQaReviewLogEntry({
+      agent,
+      actor: reviewActor,
+      review: commandCentre?.qaReview || {},
+      note,
+      issueKeys,
+      nextReviewDate,
+    })
+    setQaReviewLog((previous) => {
+      const next = [entry, ...previous].slice(0, 200)
+      persistAgentQaReviewLog(next)
+      return next
+    })
+    setActionNotice('QA review recorded.')
+  }, [agent, commandCentre?.qaReview, reviewActor])
   const partnerBusinessDistribution = useMemo(
     () =>
       buildAgentPartnerBusinessDistribution(agent, [
@@ -4154,7 +4981,15 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     canAssignListing: true,
   }
 
-  const recentActivity = [
+  const commandCentreRecentActivity = (commandCentre?.recentActivity?.items || []).map((item) => ({
+    id: `activity-${item.id}`,
+    label: item.title || 'Agent activity',
+    record: item.subtitle || item.meta || 'Linked activity',
+    timestamp: item.timestamp,
+    icon: getAgentActivityIcon(item.type),
+    tone: getAgentActivityTone(item.type),
+  }))
+  const fallbackRecentActivity = [
     ...agent.recentDeals.map((row) => ({
       id: `deal-${row?.transaction?.id || row?.transaction?.updated_at}`,
       label: normalizeDealStatus(row) === 'completed' ? 'Registered deal' : 'Updated deal',
@@ -4183,6 +5018,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     .filter((item) => item.id)
     .sort((left, right) => new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime())
     .slice(0, 7)
+  const recentActivity = (commandCentreRecentActivity.length ? commandCentreRecentActivity : fallbackRecentActivity).slice(0, 7)
 
   const contactRows = [
     ['Email', getWorkspaceDisplayValue(agent.email)],
@@ -4311,6 +5147,219 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     }
   }
 
+  function updateProspectingForm(key, value) {
+    setProspectingForm((previous) => {
+      if (key === 'startTime' && !previous.endTime) {
+        return { ...previous, startTime: value, endTime: addMinutesToTime(value, 45) }
+      }
+      return { ...previous, [key]: value }
+    })
+  }
+
+  function openProspectingAction(actionKey) {
+    setProspectingAction(actionKey)
+    setProspectingError('')
+    setProspectingForm(getDefaultProspectingActionForm(actionKey, prospectingTargetOptions))
+  }
+
+  function closeProspectingAction() {
+    if (prospectingSaving) return
+    setProspectingAction('')
+    setProspectingError('')
+  }
+
+  function getProspectingOrganisationId(targetOption = null) {
+    return String(
+      workspaceSnapshot.organisationId ||
+        agent.organisationId ||
+        agent.organisation_id ||
+        agent.agencyId ||
+        agent.agency_id ||
+        targetOption?.row?.organisationId ||
+        targetOption?.row?.organisation_id ||
+        '',
+    ).trim()
+  }
+
+  function getProspectingActor() {
+    return {
+      id: agent.userId || agent.user_id || agent.organisationUserId || agent.id || '',
+      name: agentDisplayName,
+      fullName: agentDisplayName,
+      email: agent.email || '',
+    }
+  }
+
+  async function handleSaveProspectingAction() {
+    const actionKey = prospectingAction
+    if (!actionKey || prospectingSaving) return
+
+    const parsedTarget = parseProspectingTargetValue(prospectingForm.targetValue)
+    const targetOption = prospectingTargetOptions.find((option) => option.value === prospectingForm.targetValue) || null
+    const targetKind = targetOption?.kind || parsedTarget.kind
+    const targetId = targetOption?.id || parsedTarget.id
+    const requiresTarget = actionKey === 'call' || actionKey === 'follow_up' || actionKey === 'mandate'
+    if (requiresTarget && (!targetKind || !targetId)) {
+      setProspectingError('Select a lead or canvassing prospect before saving this activity.')
+      return
+    }
+
+    const organisationId = getProspectingOrganisationId(targetOption)
+    if (!organisationId) {
+      setProspectingError('A resolved workspace is required before saving prospecting activity.')
+      return
+    }
+
+    const actor = getProspectingActor()
+    const notes = String(prospectingForm.notes || '').trim()
+    const nowIso = new Date().toISOString()
+
+    try {
+      setProspectingSaving(true)
+      setProspectingError('')
+
+      if (actionKey === 'call') {
+        if (targetKind === 'lead') {
+          await createAgencyCrmLeadActivity(organisationId, targetId, {
+            activityType: prospectingForm.activityType || 'Call',
+            activityNote: notes,
+            outcome: prospectingForm.outcome || 'Connected',
+            activityDate: nowIso,
+          }, { actor })
+        } else {
+          await createCanvassingActivity(organisationId, {
+            prospectId: targetId,
+            agentId: actor.id,
+            agentName: actor.name,
+            activityType: prospectingForm.activityType || 'Call',
+            activityNote: notes,
+            outcome: prospectingForm.outcome || 'Connected',
+            activityDate: nowIso,
+            createdBy: actor.id,
+          })
+          if (targetOption?.row) {
+            await updateCanvassingProspect(organisationId, targetId, {
+              ...targetOption.row,
+              lastContactOutcome: prospectingForm.outcome || 'Connected',
+            })
+          }
+        }
+      } else if (actionKey === 'follow_up') {
+        if (!prospectingForm.dueDate) {
+          setProspectingError('Choose a due date for the follow-up.')
+          return
+        }
+        if (targetKind === 'lead') {
+          await createAgencyCrmLeadTask(organisationId, targetId, {
+            assignedAgent: actor,
+            title: 'Follow up',
+            description: notes,
+            dueDate: prospectingForm.dueDate,
+            priority: prospectingForm.priority || 'Medium',
+            status: 'Pending',
+          }, { actor })
+        } else {
+          await updateCanvassingProspect(organisationId, targetId, {
+            ...targetOption.row,
+            nextFollowUpDate: prospectingForm.dueDate,
+            followUpPriority: prospectingForm.priority || 'Medium',
+            followUpNote: notes,
+            status: targetOption?.row?.status || 'Follow-up',
+          })
+          await createCanvassingActivity(organisationId, {
+            prospectId: targetId,
+            agentId: actor.id,
+            agentName: actor.name,
+            activityType: 'Follow-up',
+            activityNote: notes || `Follow-up scheduled for ${prospectingForm.dueDate}`,
+            outcome: `Due ${prospectingForm.dueDate}`,
+            activityDate: nowIso,
+            createdBy: actor.id,
+          })
+        }
+      } else if (actionKey === 'appointment' || actionKey === 'valuation') {
+        if (!prospectingForm.appointmentDate || !prospectingForm.startTime) {
+          setProspectingError('Choose an appointment date and start time.')
+          return
+        }
+        const appointmentType = actionKey === 'valuation' ? 'seller_valuation' : prospectingForm.appointmentType || 'other'
+        const title = prospectingForm.title || (actionKey === 'valuation' ? 'Valuation appointment' : 'Appointment')
+        const prospectReference = targetKind === 'prospect' && targetId ? `Canvassing Prospect ID: ${targetId}` : ''
+        const targetReference = targetOption?.label ? `Target: ${targetOption.label}` : ''
+        const appointment = await createAppointmentAsync(organisationId, {
+          assignedAgent: actor,
+          appointmentType,
+          title,
+          date: prospectingForm.appointmentDate,
+          startTime: prospectingForm.startTime,
+          endTime: prospectingForm.endTime || addMinutesToTime(prospectingForm.startTime, 45),
+          dateTime: combineDateAndTime(prospectingForm.appointmentDate, prospectingForm.startTime),
+          location: prospectingForm.location,
+          locationType: prospectingForm.location ? 'physical_address' : 'to_be_confirmed',
+          leadId: targetKind === 'lead' ? targetId : '',
+          relatedEntityType: targetKind === 'prospect' ? 'canvassing_prospect' : '',
+          relatedEntityId: targetKind === 'prospect' ? targetId : '',
+          status: 'confirmed',
+          notes: [notes, targetReference, prospectReference].filter(Boolean).join('\n'),
+          sendInviteEmails: false,
+          visibility: 'shared_role_players',
+        }, { actor })
+        if (targetKind === 'prospect') {
+          await createCanvassingActivity(organisationId, {
+            prospectId: targetId,
+            agentId: actor.id,
+            agentName: actor.name,
+            activityType: 'Appointment Booked',
+            activityNote: `${title} booked for ${formatDateTime(appointment?.dateTime || combineDateAndTime(prospectingForm.appointmentDate, prospectingForm.startTime))}`,
+            outcome: appointment?.status || 'confirmed',
+            activityDate: appointment?.dateTime || nowIso,
+            createdBy: actor.id,
+          })
+        }
+      } else if (actionKey === 'mandate') {
+        if (targetKind === 'lead') {
+          const existingNotes = String(targetOption?.row?.notes || '').trim()
+          await updateAgencyCrmLeadRecord(organisationId, targetId, {
+            stage: 'Mandate Signed',
+            status: 'Mandate Signed',
+            notes: [existingNotes, notes].filter(Boolean).join('\n'),
+          })
+          await createAgencyCrmLeadActivity(organisationId, targetId, {
+            activityType: 'Mandate Signed',
+            activityNote: notes || 'Mandate signed.',
+            outcome: 'Mandate signed',
+            activityDate: nowIso,
+          }, { actor })
+        } else {
+          await updateCanvassingProspect(organisationId, targetId, {
+            ...targetOption.row,
+            status: 'Mandate Signed',
+            lastContactOutcome: 'Mandate signed',
+            followUpNote: notes || targetOption?.row?.followUpNote || '',
+          })
+          await createCanvassingActivity(organisationId, {
+            prospectId: targetId,
+            agentId: actor.id,
+            agentName: actor.name,
+            activityType: 'Mandate Signed',
+            activityNote: notes || 'Mandate signed.',
+            outcome: 'Mandate signed',
+            activityDate: nowIso,
+            createdBy: actor.id,
+          })
+        }
+      }
+
+      setActionNotice(`${getProspectingActionMeta(actionKey).label} saved.`)
+      setProspectingAction('')
+      await onRefresh?.()
+    } catch (saveError) {
+      setProspectingError(saveError?.message || 'Unable to save prospecting activity.')
+    } finally {
+      setProspectingSaving(false)
+    }
+  }
+
   function handleConfirmedAction() {
     if (!pendingAction) return
     const label = pendingAction === 'remove' ? 'Remove agent' : pendingAction === 'archive' ? 'Archive agent' : 'Deactivate agent'
@@ -4319,6 +5368,12 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
   }
 
   const agentTasks = tasks.filter((row) => rowMatchesAgentContext(agent, row))
+  const scopedLeadRows = leads.filter((row) => rowMatchesAgentContext(agent, row))
+  const scopedCanvassingProspects = canvassingProspects.filter((row) => rowMatchesAgentContext(agent, row))
+  const prospectingTargetOptions = buildProspectingTargetOptions({
+    leads: [...(agent.pipelineRows || []), ...scopedLeadRows],
+    prospects: scopedCanvassingProspects,
+  })
   const buyerLeadRows = (agent.pipelineRows || []).filter((row) => getLeadType(row) === 'Buyer')
   const sellerLeadRows = (agent.pipelineRows || []).filter((row) => getLeadType(row) === 'Seller')
   const activeTransactionRows = activeDeals.length ? activeDeals : agent.deals
@@ -4332,13 +5387,61 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
   const pipelineHealthValue = commandCentre?.pipelineHealth?.pipelineValue ?? getAgentPipelineValue(agent)
   const compliancePercent = commandCentre?.followUpCompliance?.tasksCompletedPercent
   const prospectingMetricMap = new Map((commandCentre?.prospectingActivity?.metrics || []).map((metric) => [metric.key, metric]))
+  const prospectingDrilldowns = commandCentre?.prospectingActivity?.drilldowns || {}
   const prospectingMetrics = [
-    { label: 'Calls Logged', value: prospectingMetricMap.get('callsLogged')?.value || 0, icon: Phone, helper: 'This month' },
-    { label: 'Valuations Booked', value: prospectingMetricMap.get('valuationsBooked')?.value || 0, icon: Building2, helper: 'This month' },
-    { label: 'Mandates Won', value: prospectingMetricMap.get('mandatesWon')?.value || 0, icon: CheckCircle2, helper: 'This month' },
+    { label: 'Calls Logged', value: prospectingMetricMap.get('callsLogged')?.value || 0, icon: Phone, helper: 'This month', definition: AGENT_METRIC_DEFINITIONS['Calls Logged'] },
+    { label: 'Valuations Booked', value: prospectingMetricMap.get('valuationsBooked')?.value || 0, icon: Building2, helper: 'This month', definition: AGENT_METRIC_DEFINITIONS['Valuations Booked'] },
+    { label: 'Mandates Won', value: prospectingMetricMap.get('mandatesWon')?.value || 0, icon: CheckCircle2, helper: 'This month', definition: AGENT_METRIC_DEFINITIONS['Mandates Won'] },
     { label: 'Follow Ups Due', value: prospectingMetricMap.get('followUpsDue')?.value || getNumericMetric(agent, 'followUpsDue'), icon: Clock3, helper: 'Open tasks' },
     { label: 'Appointments', value: commandCentre?.calendarSummary?.upcomingItems?.length || 0, icon: CalendarDays, helper: 'Upcoming' },
-    { label: 'Compliance %', value: compliancePercent === null || compliancePercent === undefined ? '—' : `${compliancePercent}%`, icon: ShieldCheck, helper: 'Task completion' },
+    { label: 'Compliance %', value: compliancePercent === null || compliancePercent === undefined ? '—' : `${compliancePercent}%`, icon: ShieldCheck, helper: 'Task completion', definition: AGENT_METRIC_DEFINITIONS['Compliance %'] },
+  ]
+  const prospectingDrilldownCards = [
+    {
+      key: 'calls',
+      title: 'Calls',
+      description: 'Call activity logged from canvassing or CRM lead work.',
+      rows: prospectingDrilldowns.calls?.rows || [],
+      icon: Phone,
+      emptyTitle: 'No calls logged this month',
+      emptyCopy: 'Log call activity against a lead or canvassing prospect to populate Calls Logged.',
+    },
+    {
+      key: 'followUps',
+      title: 'Follow-ups',
+      description: 'Open follow-up tasks assigned to this agent.',
+      rows: prospectingDrilldowns.followUps?.rows || [],
+      icon: Clock3,
+      emptyTitle: 'No open follow-ups',
+      emptyCopy: 'Create a follow-up task on a lead or prospect to populate Follow Ups Due.',
+    },
+    {
+      key: 'valuations',
+      title: 'Valuations',
+      description: 'Valuation appointments booked in the current month.',
+      rows: prospectingDrilldowns.valuations?.rows || [],
+      icon: Building2,
+      emptyTitle: 'No valuations booked',
+      emptyCopy: 'Book a valuation appointment to populate Valuations Booked and the monthly valuation count.',
+    },
+    {
+      key: 'mandates',
+      title: 'Mandates',
+      description: 'Seller lead and listing signals counted as mandate wins.',
+      rows: prospectingDrilldowns.mandates?.rows || [],
+      icon: CheckCircle2,
+      emptyTitle: 'No mandate signals',
+      emptyCopy: 'Convert a seller lead to listing or create a mandate-backed listing to populate Mandates Won.',
+    },
+    {
+      key: 'appointments',
+      title: 'Appointments',
+      description: 'Upcoming appointments assigned to this agent.',
+      rows: prospectingDrilldowns.appointments?.rows || [],
+      icon: CalendarDays,
+      emptyTitle: 'No upcoming appointments',
+      emptyCopy: 'Schedule an appointment on the calendar to populate this appointment list.',
+    },
   ]
   const kpiCards = [
     { label: 'Active Transactions', value: activeDealCount, helper: 'Locked to agent', icon: BriefcaseBusiness },
@@ -4807,10 +5910,46 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
         <section className="min-w-0 space-y-4">
           <LockedAgentFilterChip label={agentDisplayName} />
           <PrincipalAgentTabShell title="Prospecting" description="Prospects, follow-ups, calls, valuations, mandates and appointments scoped to this agent.">
-            <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <ProspectingCapturePanel onAction={openProspectingAction} />
+            <div className="mt-5">
+              <AgentQaReviewPanel
+                review={commandCentre?.qaReview}
+                agent={agent}
+                reviewLog={agentQaReviewLog}
+                onSaveReview={handleSaveQaReview}
+              />
+            </div>
+            <div className="mt-5 grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {prospectingMetrics.map((metric) => (
                 <AgentWorkspaceKpiCard key={metric.label} {...metric} />
               ))}
+            </div>
+            <div className="mt-5 grid min-w-0 gap-4 xl:grid-cols-2">
+              {prospectingDrilldownCards.map((card) => (
+                <ProspectingDrilldownPanel key={card.key} {...card} />
+              ))}
+            </div>
+            <div className="mt-5">
+              <WorkspaceCard title="Recent Activity" actionLabel="Agent scoped">
+                {recentActivity.length ? (
+                  <div className="space-y-2">
+                    {recentActivity.slice(0, 6).map((item) => (
+                      <div key={`prospecting-${item.id}`} className="flex min-w-0 items-center gap-3 rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] px-4 py-3">
+                        <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${item.tone}`}>
+                          {createElement(item.icon, { size: 16 })}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-[#10243a]">{item.label}</p>
+                          <p className="truncate text-xs text-[#60758d]">{item.record}</p>
+                        </div>
+                        <span className="shrink-0 text-xs font-medium text-[#6f839a]">{formatDateTime(item.timestamp)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyWorkspaceState>Recent calls, follow-ups, valuations, mandate signals and appointments will appear here once this agent starts moving work through the platform.</EmptyWorkspaceState>
+                )}
+              </WorkspaceCard>
             </div>
             <div className="mt-5">
               <AppointmentDashboardSection
@@ -4850,7 +5989,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
           <PrincipalAgentTabShell title="Performance" description="Analytics, commission assignment and operational settings for this agent.">
             <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {performanceOverviewRows.map(([label, value]) => (
-                <AgentWorkspaceKpiCard key={label} label={label} value={value} icon={Trophy} />
+                <AgentWorkspaceKpiCard key={label} label={label} value={value} icon={Trophy} definition={AGENT_METRIC_DEFINITIONS[label]} />
               ))}
             </div>
             <div className="mt-5 grid min-w-0 gap-4 xl:grid-cols-3">
@@ -5004,6 +6143,18 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
           </div>
         </PrincipalAgentTabShell>
       ) : null}
+
+      <ProspectingActionModal
+        open={Boolean(prospectingAction)}
+        actionKey={prospectingAction || 'call'}
+        form={prospectingForm}
+        targetOptions={prospectingTargetOptions}
+        saving={prospectingSaving}
+        error={prospectingError}
+        onChange={updateProspectingForm}
+        onClose={closeProspectingAction}
+        onSubmit={handleSaveProspectingAction}
+      />
 
       <Modal
         open={Boolean(modalMode)}
@@ -5539,9 +6690,12 @@ export function AgentsPage() {
   const [branches, setBranches] = useState([])
   const [leadRows, setLeadRows] = useState([])
   const [leadActivities, setLeadActivities] = useState([])
+  const [canvassingProspectRows, setCanvassingProspectRows] = useState([])
+  const [canvassingActivityRows, setCanvassingActivityRows] = useState([])
   const [taskRows, setTaskRows] = useState([])
   const [appointmentRows, setAppointmentRows] = useState([])
   const [listingRows, setListingRows] = useState([])
+  const [qaReviewLog] = useState(() => readAgentQaReviewLog())
   const [commissionStructures, setCommissionStructures] = useState([])
   const [branchFilter, setBranchFilter] = useState('all')
   const dateRange = 'last_30_days'
@@ -5624,6 +6778,8 @@ export function AgentsPage() {
       setBranches([])
       setLeadRows([])
       setLeadActivities([])
+      setCanvassingProspectRows([])
+      setCanvassingActivityRows([])
       setTaskRows([])
       setAppointmentRows([])
       setListingRows([])
@@ -5777,6 +6933,8 @@ export function AgentsPage() {
       setBranches(performanceSources.branches)
       setLeadRows(pipelineRows)
       setLeadActivities(performanceSources.leadActivities)
+      setCanvassingProspectRows(performanceSources.canvassingProspects || [])
+      setCanvassingActivityRows(performanceSources.canvassingActivities || [])
       setTaskRows(performanceSources.tasks)
       setAppointmentRows(performanceSources.appointments)
       setListingRows(privateListings)
@@ -5791,6 +6949,8 @@ export function AgentsPage() {
       setBranches([])
       setLeadRows([])
       setLeadActivities([])
+      setCanvassingProspectRows([])
+      setCanvassingActivityRows([])
       setTaskRows([])
       setAppointmentRows([])
       setListingRows([])
@@ -5975,6 +7135,8 @@ export function AgentsPage() {
       appointments: appointmentRows,
       tasks: taskRows,
       activities: leadActivities,
+      canvassingProspects: canvassingProspectRows,
+      canvassingActivities: canvassingActivityRows,
       filters: {
         branchId: branchFilter,
         office: officeFilter,
@@ -5986,7 +7148,7 @@ export function AgentsPage() {
         sortBy,
       },
     }),
-    [agentDirectory?.agency?.id, agents, appointmentRows, branchFilter, branches, dateRange, effectiveStatusFilter, leadActivities, leadRows, leaderboardMetric, listingRows, officeFilter, organisationFilter, profile?.id, roleFilter, searchTerm, sortBy, taskRows, transactionRows, workspaceOrganisation?.id],
+    [agentDirectory?.agency?.id, agents, appointmentRows, branchFilter, branches, canvassingActivityRows, canvassingProspectRows, dateRange, effectiveStatusFilter, leadActivities, leadRows, leaderboardMetric, listingRows, officeFilter, organisationFilter, profile?.id, roleFilter, searchTerm, sortBy, taskRows, transactionRows, workspaceOrganisation?.id],
   )
 
   const invitedAgentRows = useMemo(() => {
@@ -6617,18 +7779,22 @@ export function AgentsPage() {
         formatCompactActivity(performance.lastActivityAt).label,
       ]
     })
-    const csv = [header, ...rows]
-      .map((line) => line.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(','))
-      .join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `agents-${new Date().toISOString().slice(0, 10)}.csv`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
+    downloadCsvFile({
+      filename: `agents-${new Date().toISOString().slice(0, 10)}.csv`,
+      header,
+      rows,
+    })
+  }
+
+  function handleExportQaGovernance() {
+    downloadCsvFile({
+      filename: `agent-qa-governance-${new Date().toISOString().slice(0, 10)}.csv`,
+      header: ['Section', 'Agent', 'Branch', 'Status / Severity', 'Score / Priority', 'Issue Count', 'High Risk', 'Owner / State', 'Due / Next Review', 'Action / Note'],
+      rows: buildQaGovernanceExportRows({
+        summary: commandCentreModel.qaSummary,
+        reviewLog: qaReviewLog,
+      }),
+    })
   }
 
   return (
@@ -6670,6 +7836,12 @@ export function AgentsPage() {
           </div>
 
           <PerformanceKpiStrip kpis={commandCentreModel.kpis} onAttentionClick={() => setStatusFilter('needs_attention')} />
+          <AgentQaSummaryPanel
+            summary={commandCentreModel.qaSummary}
+            reviewLog={qaReviewLog}
+            onExport={handleExportQaGovernance}
+            onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
+          />
           <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <TopPerformersPanel
               rows={commandCentreModel.topPerformers}
@@ -7085,6 +8257,7 @@ export function AgentWorkspacePage() {
       } else {
         setAgent(target)
         setWorkspaceSnapshot({
+          organisationId: performanceSources.organisationId || performanceSources.organisationSettings?.organisation?.id || agentDirectory?.agency?.id || '',
           branches: performanceSources.branches || [],
           leads: performanceSources.leads || [],
           transactions: performanceSources.transactions || [],
@@ -7225,6 +8398,7 @@ export function AgentWorkspacePage() {
       ) : null}
       <AgentWorkspace
         agent={agent}
+        reviewActor={profile}
         canManageSettings={canManageSettings}
         commissionStructures={commissionStructures}
         workspaceSnapshot={workspaceSnapshot}

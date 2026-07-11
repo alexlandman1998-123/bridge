@@ -16482,7 +16482,7 @@ function isSellerSubmittedSectionRelevant(section = {}, profile = {}, data = {})
   if (section.id === 'company') return profile?.sellerBranch === 'company' || sectionHasValues
   if (section.id === 'trust') return profile?.sellerBranch === 'trust' || sectionHasValues
   if (section.id === 'entity') {
-    return ['deceased_estate', 'power_of_attorney', 'multiple_individuals'].includes(profile?.sellerBranch) || sectionHasValues
+    return ['deceased_estate', 'power_of_attorney', 'multiple_owners', 'multiple_individuals'].includes(profile?.sellerBranch) || sectionHasValues
   }
   if (section.id === 'property') return true
   if (section.id === 'occupancy') {

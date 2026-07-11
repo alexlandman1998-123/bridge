@@ -8,12 +8,46 @@ const server = await createServer({
 })
 
 function createMockClient(initialRequirement = {}) {
+  const initialRequirements = Array.isArray(initialRequirement) ? initialRequirement : [initialRequirement]
   const state = {
-    requirement: { ...initialRequirement },
+    requirements: initialRequirements.map((requirement, index) => ({
+      id: requirement.id || `requirement-${index + 1}`,
+      ...requirement,
+    })),
     events: [],
     reviews: [],
     updates: [],
     artifacts: [],
+    transactionRequiredDocuments: [],
+    privateListingRequirements: [],
+    documentRequests: [],
+    legacyWrites: [],
+  }
+  state.requirement = state.requirements[0] || {}
+
+  const sameValue = (left, right) => String(left ?? '') === String(right ?? '')
+  const splitConflictKeys = (value = '') => String(value).split(',').map((item) => item.trim()).filter(Boolean)
+  const parseOrFilters = (expression = '') => String(expression)
+    .split(',')
+    .map((part) => part.match(/^([A-Za-z0-9_]+)\.eq\.(.*)$/))
+    .filter(Boolean)
+    .map((match) => ({ column: match[1], value: match[2] }))
+
+  function upsertRows(collection, rows, conflictKeys = [], idPrefix = 'row') {
+    const written = rows.map((row) => {
+      const keys = conflictKeys.length ? conflictKeys : ['id']
+      const existingIndex = collection.findIndex((existing) => keys.every((key) => row[key] && sameValue(existing[key], row[key])))
+      const existing = existingIndex >= 0 ? collection[existingIndex] : null
+      const next = {
+        ...(existing || {}),
+        ...row,
+        id: row.id || existing?.id || `${idPrefix}-${collection.length + 1}`,
+      }
+      if (existingIndex >= 0) collection[existingIndex] = next
+      else collection.push(next)
+      return next
+    })
+    return written
   }
 
   class Query {
@@ -21,7 +55,12 @@ function createMockClient(initialRequirement = {}) {
       this.table = table
       this.action = 'select'
       this.payload = null
-      this.single = false
+      this.returnSingle = false
+      this.filters = []
+      this.neqFilters = []
+      this.orFilters = []
+      this.limitCount = null
+      this.onConflict = []
     }
 
     select() {
@@ -40,7 +79,20 @@ function createMockClient(initialRequirement = {}) {
       return this
     }
 
-    eq() {
+    upsert(payload, options = {}) {
+      this.action = 'upsert'
+      this.payload = payload
+      this.onConflict = splitConflictKeys(options.onConflict)
+      return this
+    }
+
+    eq(column, value) {
+      this.filters.push({ column, value })
+      return this
+    }
+
+    neq(column, value) {
+      this.neqFilters.push({ column, value })
       return this
     }
 
@@ -48,17 +100,23 @@ function createMockClient(initialRequirement = {}) {
       return this
     }
 
-    limit() {
+    or(expression) {
+      this.orFilters.push(...parseOrFilters(expression))
+      return this
+    }
+
+    limit(count) {
+      this.limitCount = count
       return this
     }
 
     maybeSingle() {
-      this.single = true
+      this.returnSingle = true
       return this.execute()
     }
 
     single() {
-      this.single = true
+      this.returnSingle = true
       return this.execute()
     }
 
@@ -66,14 +124,41 @@ function createMockClient(initialRequirement = {}) {
       return this.execute().then(resolve, reject)
     }
 
+    filtered(rows) {
+      let result = [...rows]
+      for (const filter of this.filters) {
+        result = result.filter((row) => sameValue(row?.[filter.column], filter.value))
+      }
+      for (const filter of this.neqFilters) {
+        result = result.filter((row) => !sameValue(row?.[filter.column], filter.value))
+      }
+      if (this.orFilters.length) {
+        result = result.filter((row) => this.orFilters.some((filter) => sameValue(row?.[filter.column], filter.value)))
+      }
+      if (Number.isFinite(this.limitCount)) result = result.slice(0, Number(this.limitCount))
+      return result
+    }
+
+    selectResult(rows) {
+      const data = this.returnSingle ? (rows[0] || null) : rows
+      return { data, error: null }
+    }
+
     async execute() {
       if (this.table === 'document_requirement_instances') {
         if (this.action === 'update') {
-          state.requirement = { ...state.requirement, ...this.payload }
+          const matches = this.filtered(state.requirements)
+          const targets = matches.length ? matches : [state.requirement]
+          const updated = targets.map((target) => ({ ...target, ...this.payload }))
+          for (const row of updated) {
+            const index = state.requirements.findIndex((requirement) => requirement.id === row.id)
+            if (index >= 0) state.requirements[index] = row
+          }
+          state.requirement = updated[0]
           state.updates.push(this.payload)
-          return { data: this.single ? state.requirement : [state.requirement], error: null }
+          return this.selectResult(updated)
         }
-        return { data: this.single ? state.requirement : [state.requirement], error: null }
+        return this.selectResult(this.filtered(state.requirements))
       }
       if (this.table === 'document_requirement_events') {
         const rows = Array.isArray(this.payload) ? this.payload : [this.payload]
@@ -86,7 +171,31 @@ function createMockClient(initialRequirement = {}) {
           ...this.payload,
         }
         state.reviews.push(row)
-        return { data: this.single ? row : [row], error: null }
+        return { data: this.returnSingle ? row : [row], error: null }
+      }
+      if (this.table === 'transaction_required_documents') {
+        if (this.action === 'upsert') {
+          const rows = upsertRows(state.transactionRequiredDocuments, Array.isArray(this.payload) ? this.payload : [this.payload], this.onConflict, 'transaction-required-document')
+          state.legacyWrites.push({ table: this.table, rows })
+          return this.selectResult(rows)
+        }
+        return this.selectResult(this.filtered(state.transactionRequiredDocuments))
+      }
+      if (this.table === 'private_listing_document_requirements') {
+        if (this.action === 'upsert') {
+          const rows = upsertRows(state.privateListingRequirements, Array.isArray(this.payload) ? this.payload : [this.payload], this.onConflict, 'private-listing-requirement')
+          state.legacyWrites.push({ table: this.table, rows })
+          return this.selectResult(rows)
+        }
+        return this.selectResult(this.filtered(state.privateListingRequirements))
+      }
+      if (this.table === 'document_requests') {
+        if (this.action === 'upsert') {
+          const rows = upsertRows(state.documentRequests, Array.isArray(this.payload) ? this.payload : [this.payload], this.onConflict, 'document-request')
+          state.legacyWrites.push({ table: this.table, rows })
+          return this.selectResult(rows)
+        }
+        return this.selectResult(this.filtered(state.documentRequests))
       }
       if (['documents', 'private_listing_documents', 'document_packets', 'document_packet_versions'].includes(this.table)) {
         state.artifacts.push({ table: this.table, payload: this.payload })
@@ -258,6 +367,65 @@ try {
   assert.equal(packetResult.requirement.status, REQUIREMENT_STATUSES.completed)
   assert.equal(packetClient.state.events.at(-2).event_type, REQUIREMENT_EVENT_TYPES.packetLinked)
   assert.equal(packetClient.state.events.at(-1).event_type, REQUIREMENT_EVENT_TYPES.completed)
+
+  const transactionId = '88888888-8888-4888-8888-888888888888'
+  const listingId = '99999999-9999-4999-8999-999999999999'
+  const packetRequirementCases = [
+    ['generated_mandate', 'generated_mandate', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'],
+    ['signed_mandate', 'mandate_signature', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2'],
+    ['generated_otp', 'generated_otp', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3'],
+    ['signed_otp', 'otp', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4'],
+  ]
+  const buildPacketRequirements = (targetKey) => packetRequirementCases.map(([definitionKey, legacyKey, id]) => {
+    const listingContext = definitionKey === 'generated_mandate'
+    return {
+      ...baseRequirement,
+      id,
+      document_definition_key: definitionKey,
+      context_type: listingContext ? 'private_listing' : 'transaction',
+      context_id: listingContext ? listingId : transactionId,
+      listing_id: listingContext ? listingId : null,
+      transaction_id: definitionKey === 'generated_otp' ? null : transactionId,
+      pack_key: definitionKey.includes('otp') ? 'attorney_transfer_readiness' : 'seller_authority',
+      requirement_level: 'blocker',
+      status: definitionKey === targetKey ? REQUIREMENT_STATUSES.pending : REQUIREMENT_STATUSES.completed,
+      document_definitions: {
+        key: definitionKey,
+        display_label: legacyKey,
+        review_required: false,
+      },
+    }
+  })
+
+  for (const [definitionKey, legacyKey, requirementId] of packetRequirementCases) {
+    const packetSyncClient = createMockClient(buildPacketRequirements(definitionKey))
+    const packetSyncResult = await lifecycle.linkPacketToRequirement({
+      requirementInstanceId: requirementId,
+      packetId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1',
+      packetVersionId: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1',
+      packet: {
+        packet_type: definitionKey.includes('otp') ? 'otp' : 'mandate',
+        status: definitionKey.startsWith('signed') ? 'completed' : 'draft',
+      },
+      version: definitionKey.startsWith('signed') ? { final_signed_file_path: `${definitionKey}.pdf` } : {},
+      actorRole: 'system',
+      client: packetSyncClient,
+      force: true,
+    })
+    const projected = packetSyncClient.state.transactionRequiredDocuments.find((row) => row.canonical_requirement_instance_id === requirementId)
+    assert.equal(packetSyncResult.requirement.status, REQUIREMENT_STATUSES.completed)
+    assert.ok(projected, `${definitionKey} should sync to transaction_required_documents`)
+    assert.equal(projected.document_key, legacyKey)
+    assert.equal(projected.transaction_id, transactionId)
+    assert.equal(projected.status, 'accepted')
+    assert.equal(projected.is_uploaded, true)
+    assert.ok(packetSyncResult.legacySync.some((entry) => entry.rows?.some((row) => row.canonical_requirement_instance_id === requirementId && row.document_key === legacyKey)))
+    assert.ok(packetSyncClient.state.events.some((event) => (
+      event.event_type === 'legacy_synced'
+      && event.requirement_instance_id === requirementId
+      && event.metadata_json?.legacy_table === 'transaction_required_documents'
+    )))
+  }
 
   console.log('canonical-document-lifecycle tests passed')
 } finally {

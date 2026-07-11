@@ -34,6 +34,52 @@ function missionControlApiPlugin() {
   }
 }
 
+const APP_ACCESS_SHELL_FILES = [
+  '/src/context/AuthSessionContext.jsx',
+  '/src/context/OrganisationContext.jsx',
+  '/src/context/WorkspaceContext.jsx',
+  '/src/constants/appRoles.js',
+  '/src/constants/membershipStatuses.js',
+  '/src/constants/onboardingStatuses.js',
+  '/src/constants/orgRoles.js',
+  '/src/constants/systemRoles.js',
+  '/src/constants/workspaceTypes.js',
+  '/src/lib/demoIds.js',
+  '/src/lib/devAuth.js',
+  '/src/lib/envValidation.js',
+  '/src/lib/featureFlags.js',
+  '/src/lib/mobileAccess.js',
+  '/src/lib/onboardingRouting.js',
+  '/src/lib/pendingPartnerInvite.js',
+  '/src/lib/performanceTrace.js',
+  '/src/lib/resolveMobileAwareRedirect.js',
+  '/src/lib/roles.js',
+  '/src/lib/signupIntent.js',
+  '/src/lib/supabaseClient.js',
+]
+
+function appManualChunk(normalizedId) {
+  if (!normalizedId.includes('/src/')) return undefined
+  if (normalizedId.endsWith('/src/lib/api.js')) return 'app-api'
+  if (normalizedId.endsWith('/src/lib/settingsApi.js')) return 'app-settings-api'
+  if (normalizedId.endsWith('/src/services/auditLogService.js')) return 'app-audit'
+  if (normalizedId.endsWith('/src/services/workspaceResolutionService.js')) return 'app-workspace-resolution'
+  if (normalizedId.endsWith('/src/services/agencyAuthorityService.js')) return 'app-agency-governance'
+  if (normalizedId.includes('/src/services/onboarding/')) return 'app-onboarding'
+  if (
+    normalizedId.includes('/src/services/attorneyWorkflow/') ||
+    normalizedId.endsWith('/src/constants/attorneyPermissions.js') ||
+    normalizedId.endsWith('/src/constants/attorneyUpdateTypes.js') ||
+    normalizedId.endsWith('/src/constants/attorneyWorkflowStages.js') ||
+    normalizedId.endsWith('/src/constants/attorneyWorkflowUsability.js')
+  ) {
+    return 'app-attorney-workflow'
+  }
+  if (APP_ACCESS_SHELL_FILES.some((filePath) => normalizedId.endsWith(filePath))) return 'app-access-shell'
+  if (normalizedId.includes('/src/modules/commercial/utils/')) return 'app-commercial-shell'
+  return undefined
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), missionControlApiPlugin()],
@@ -43,6 +89,8 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           const normalizedId = id.replace(/\\/g, '/')
+          const appChunk = appManualChunk(normalizedId)
+          if (appChunk) return appChunk
           if (!normalizedId.includes('node_modules')) return undefined
           if (normalizedId.includes('/react/') || normalizedId.includes('/react-dom/') || normalizedId.includes('/react-router-dom/')) {
             return 'vendor-react'

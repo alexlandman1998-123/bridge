@@ -3,6 +3,7 @@ import { createTransactionFromLeadOverride, findExistingTransactionForAcceptedOf
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService.js'
 import { getListingReadinessSummary } from './privateListingRequirementEngine.js'
 import { updatePrivateListing } from '../services/privateListingService.js'
+import { isMultipleOwnerSellerType } from '../core/legal/legalRuleRegistry.js'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -514,7 +515,8 @@ export function buildSellerOfferReviewPreparation({
   const sellerType = normalizeText(profile?.sellerType || listing?.sellerType || listing?.seller_type || '')
   const owners = Array.isArray(profile?.owners) ? profile.owners : []
   const ownerCount = Number(profile?.ownerCount || owners.length || 0)
-  const allOwnersCaptured = sellerType !== 'multiple_individuals' || owners.length >= Math.max(ownerCount, 2)
+  const multipleOwnerSeller = isMultipleOwnerSellerType(sellerType)
+  const allOwnersCaptured = !multipleOwnerSeller || owners.length >= Math.max(ownerCount, 2)
   const authorisedSignatoryPresent = sellerType
     ? !['company', 'trust', 'deceased_estate', 'other_legal_entity'].includes(normalizeLower(sellerType))
         || Boolean(normalizeText(profile?.authorisedSignatory))
@@ -532,7 +534,7 @@ export function buildSellerOfferReviewPreparation({
   if (selectedDeliveryMode === SELLER_REVIEW_DELIVERY_MODE.AGENT_ASSISTED && !resolvedSellerPhone && !resolvedSellerEmail) {
     blockers.push('Add at least one seller contact method before using agent-assisted seller review.')
   }
-  if (sellerType === 'multiple_individuals' && !allOwnersCaptured) {
+  if (multipleOwnerSeller && !allOwnersCaptured) {
     blockers.push('Capture all owners before routing the offer for seller decision.')
   }
   if (!authorisedSignatoryPresent) {

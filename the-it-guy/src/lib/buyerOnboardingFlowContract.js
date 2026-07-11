@@ -1,4 +1,5 @@
 import { normalizeFinanceType } from '../core/transactions/financeType.js'
+import { LEGAL_BUYER_TYPES, LEGAL_FINANCE_TYPES } from '../core/legal/legalRuleRegistry.js'
 
 export const BUYER_ONBOARDING_FLOW_VERSION = 'buyer_onboarding_flow_v2'
 
@@ -27,18 +28,9 @@ export function migrateBuyerOnboardingFieldListToV2(fields = []) {
 
 export const BUYER_PURCHASE_MODES = Object.freeze(['individual', 'co_purchasing'])
 
-export const BUYER_BRANCHES = Object.freeze([
-  'individual',
-  'married_coc',
-  'married_anc',
-  'married_anc_accrual',
-  'company',
-  'trust',
-  'foreign_purchaser',
-  'other',
-])
+export const BUYER_BRANCHES = LEGAL_BUYER_TYPES
 
-export const BUYER_FINANCE_BRANCHES = Object.freeze(['cash', 'bond', 'hybrid'])
+export const BUYER_FINANCE_BRANCHES = Object.freeze(LEGAL_FINANCE_TYPES.filter((type) => ['cash', 'bond', 'hybrid'].includes(type)))
 
 const NATURAL_PERSON_BASE_RULES = Object.freeze({
   buyerFacingQuestions: Object.freeze([

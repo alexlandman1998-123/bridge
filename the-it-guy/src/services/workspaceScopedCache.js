@@ -1,13 +1,21 @@
-import { clearOrganisationRuntimeCache } from '../lib/settingsApi'
-
 const WORKSPACE_SCOPED_STORAGE_PREFIXES = Object.freeze([
   'itg:agency-pipeline:v1:',
   'itg:agency-canvassing:v1:',
   'itg:agent-demo-transactions:v1',
 ])
 
+function clearOrganisationRuntimeCacheSafely() {
+  void import('../lib/settingsApi')
+    .then(({ clearOrganisationRuntimeCache }) => {
+      clearOrganisationRuntimeCache()
+    })
+    .catch((error) => {
+      console.warn('[WORKSPACE_CACHE] organisation cache clear failed.', error)
+    })
+}
+
 export function clearWorkspaceScopedRuntimeCaches() {
-  clearOrganisationRuntimeCache()
+  clearOrganisationRuntimeCacheSafely()
 
   if (typeof window === 'undefined' || !window.localStorage) {
     return { clearedLocalStorageKeys: 0 }
