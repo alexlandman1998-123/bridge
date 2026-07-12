@@ -129,6 +129,28 @@ node scripts/lead-pilot-smoke.mjs --source Website --delivery=email --review-cas
 node scripts/lead-pilot-smoke.mjs --outbound-email --to pilot@arch9.co.za --live
 ```
 
+### Lead Pilot Launch Monitor
+
+Phase 5 is the daily launch monitor for a small pilot cohort. Configure the cohort in `.env.staging.local` before enabling real forwarding:
+
+```bash
+LEAD_PILOT_ORGANISATION_ID=<pilot organisation uuid>
+LEAD_PILOT_AGENT_USER_IDS=<agent uuid 1>,<agent uuid 2>
+LEAD_PILOT_AGENT_EMAILS=<optional profile email 1>,<optional profile email 2>
+LEAD_PILOT_SOURCES=Website,Property24
+LEAD_PILOT_MAX_AGENTS=3
+```
+
+Run the read-only monitor from the app package:
+
+```bash
+npm run report:lead-pilot-launch
+```
+
+Use this after Phase 4 live smoke tests and during week one of the pilot. The report checks active pilot aliases, cohort size, inbound count, processed count, unmatched/review items, parse failures, created leads, duplicate matches, linked-lead assignment, outbound email events, and stale pending rows.
+
+Continue the pilot only when leads are captured, assigned, readable, and reviewable. Pause source forwarding when the report shows dropped leads, misassigned leads, stale pending rows, hidden linked records, failed outbound sends, or open parse failures over the configured threshold.
+
 ## Demo Flow
 
 1. Click `+ New Transaction` in the top header.
