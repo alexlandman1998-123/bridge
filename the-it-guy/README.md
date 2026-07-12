@@ -123,9 +123,9 @@ node scripts/lead-pilot-smoke.mjs --outbound-email --to pilot@arch9.co.za
 Run live smoke tests only when ready to create staging pilot records or send to an internal/test recipient:
 
 ```bash
-node scripts/lead-pilot-smoke.mjs --source Website --live
-node scripts/lead-pilot-smoke.mjs --source Property24 --live
-node scripts/lead-pilot-smoke.mjs --source Website --review-case=unmatched --live
+node scripts/lead-pilot-smoke.mjs --source Website --delivery=email --live
+node scripts/lead-pilot-smoke.mjs --source Property24 --delivery=email --live
+node scripts/lead-pilot-smoke.mjs --source Website --delivery=email --review-case=unmatched --live
 node scripts/lead-pilot-smoke.mjs --outbound-email --to pilot@arch9.co.za --live
 ```
 

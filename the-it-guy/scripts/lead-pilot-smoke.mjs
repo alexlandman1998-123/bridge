@@ -55,6 +55,7 @@ function parseArgs(argv) {
     outboundEmail: false,
     live: false,
     skipNetwork: false,
+    delivery: 'webhook',
     reviewCase: 'low-confidence',
     aliasEmail: '',
     recipient: '',
@@ -76,6 +77,12 @@ function parseArgs(argv) {
       options.skipNetwork = true
     } else if (arg === '--outbound-email') {
       options.outboundEmail = true
+    } else if (arg === '--via-email') {
+      options.delivery = 'email'
+    } else if (arg === '--delivery' || arg.startsWith('--delivery=')) {
+      const value = normalizeLower(readValue('--delivery=')).replace(/[_\s]+/g, '-')
+      if (!['webhook', 'email'].includes(value)) throw new Error('--delivery must be webhook or email')
+      options.delivery = value
     } else if (arg === '--allow-external-recipient') {
       options.allowExternalRecipient = true
     } else if (arg === '--no-review-case') {
@@ -101,6 +108,9 @@ function parseArgs(argv) {
     }
   }
 
+  if (options.delivery === 'email' && !options.live) {
+    throw new Error('--delivery=email requires --live because it sends a real email to the capture alias.')
+  }
   if (!options.source && !options.outboundEmail) {
     throw new Error('Choose at least one smoke path: --source <Website|Property24|PrivateProperty|Facebook|General> or --outbound-email.')
   }
@@ -223,7 +233,9 @@ function requireConfig(env, report, options) {
   if (!config.anonKey) missing.push('VITE_SUPABASE_ANON_KEY/VITE_SUPABASE_KEY/SUPABASE_ANON_KEY')
   if (options.outboundEmail && options.live && !config.actorEmail) missing.push('AGENCY_RUNTIME_AGENT_EMAIL/STAGING_INTERNAL_EMAIL')
   if (options.outboundEmail && options.live && !config.actorPassword) missing.push('AGENCY_RUNTIME_AGENT_PASSWORD/STAGING_INTERNAL_PASSWORD')
-  if (options.source && options.live && !config.inboundSecret) missing.push('INBOUND_LEAD_EMAIL_WEBHOOK_SECRET/LEAD_PILOT_INBOUND_WEBHOOK_SECRET')
+  if (options.source && options.live && options.delivery === 'webhook' && !config.inboundSecret) missing.push('INBOUND_LEAD_EMAIL_WEBHOOK_SECRET/LEAD_PILOT_INBOUND_WEBHOOK_SECRET')
+  if (options.source && options.live && options.delivery === 'email' && !config.actorEmail) missing.push('AGENCY_RUNTIME_AGENT_EMAIL/STAGING_INTERNAL_EMAIL')
+  if (options.source && options.live && options.delivery === 'email' && !config.actorPassword) missing.push('AGENCY_RUNTIME_AGENT_PASSWORD/STAGING_INTERNAL_PASSWORD')
   if (options.outboundEmail && !config.outboundRecipient) missing.push('LEAD_PILOT_SMOKE_TO_EMAIL/--to')
 
   if (missing.length) {
@@ -373,6 +385,22 @@ function buildOutboundSmokePayload({ recipient, token = createSmokeToken('outbou
   }
 }
 
+function buildInboundEmailDeliveryPayload({ recipient, smoke }) {
+  const subject = smoke.payload.subject
+  const message = normalizeText(smoke.payload['body-plain'] || smoke.payload['stripped-text'])
+  return {
+    type: 'lead_property_share',
+    to: normalizeEmail(recipient),
+    subject,
+    message,
+    text: message,
+    html: `<pre style="font-family:Arial,sans-serif;white-space:pre-wrap">${message
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')}</pre>`,
+  }
+}
+
 function isAllowedSmokeRecipient(email, allowedDomains = []) {
   const domain = normalizeLower(email).split('@')[1] || ''
   if (!domain) return false
@@ -471,7 +499,14 @@ async function verifyProcessedInbound(client, report, { source, smoke, result })
 
   const lead = await querySingleById(client, 'leads', 'lead_id,contact_id,lead_source,status,stage', 'lead_id', hasLead)
   const contact = await querySingleById(client, 'contacts', 'contact_id,email,phone', 'contact_id', hasContact)
-  const log = await querySingleById(client, 'lead_ingestion_logs', 'log_id,status,lead_id,contact_id,source,external_reference,review_status,error', 'external_reference', smoke.providerMessageId)
+  const { data: logs, error: logError } = await client
+    .from('lead_ingestion_logs')
+    .select('log_id,status,lead_id,contact_id,source,external_reference,review_status,error')
+    .eq('lead_id', hasLead)
+    .order('created_at', { ascending: false })
+    .limit(1)
+  if (logError) throw logError
+  const log = Array.isArray(logs) ? logs[0] : null
 
   if (!lead || !contact || !log) {
     addFinding(report, 'Inbound Smoke', 'CRITICAL', 'Lead/contact/ingestion log side effects are incomplete.')
@@ -489,13 +524,28 @@ async function verifyLowConfidenceReview(client, report, { result, smoke }) {
     'email_id',
     result.inboundEmailId,
   )
-  const log = await querySingleById(
-    client,
-    'lead_ingestion_logs',
-    'log_id,status,review_status,error,external_reference',
-    'external_reference',
-    smoke.providerMessageId,
-  )
+  let log = null
+  const leadId = normalizeText(inbound?.lead_id || result.leadId)
+  if (leadId) {
+    const { data, error } = await client
+      .from('lead_ingestion_logs')
+      .select('log_id,status,review_status,error,external_reference,lead_id')
+      .eq('lead_id', leadId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (error) throw error
+    log = data || null
+  }
+  if (!log && smoke.providerMessageId) {
+    log = await querySingleById(
+      client,
+      'lead_ingestion_logs',
+      'log_id,status,review_status,error,external_reference,lead_id',
+      'external_reference',
+      smoke.providerMessageId,
+    )
+  }
   const confidence = Number(inbound?.parse_confidence || 0)
   report.reviewCase = {
     type: 'low-confidence',
@@ -562,6 +612,85 @@ async function postInbound(config, smoke, options) {
   }
 }
 
+async function signInActor(config) {
+  const client = createAnonClient(config)
+  const { data, error } = await client.auth.signInWithPassword({
+    email: config.actorEmail,
+    password: config.actorPassword,
+  })
+  if (error) throw error
+  const token = data?.session?.access_token
+  if (!token) throw new Error('Actor sign-in returned no access token.')
+  return token
+}
+
+async function invokeSendEmail(config, accessToken, payload, options) {
+  const url = `${config.supabaseUrl.replace(/\/$/, '')}/functions/v1/send-email`
+  const { response, payload: responsePayload } = await fetchJson(url, {
+    method: 'POST',
+    timeoutMs: options.timeoutMs,
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: config.anonKey,
+      Authorization: `Bearer ${accessToken}`,
+      'user-agent': 'arch9-lead-pilot-smoke/1.0',
+    },
+    body: JSON.stringify(payload),
+  })
+  return { response, payload: responsePayload }
+}
+
+async function waitForInboundBySubject(client, { subject, timeoutMs = DEFAULT_TIMEOUT_MS }) {
+  const startedAt = Date.now()
+  let lastError = null
+  let latestRow = null
+  while (Date.now() - startedAt < timeoutMs) {
+    const { data, error } = await client
+      .from('inbound_lead_emails')
+      .select('email_id,status,source,lead_id,contact_id,parser_name,parse_confidence,webhook_signature_status,matched_fields,error,subject')
+      .eq('subject', subject)
+      .order('received_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (error) {
+      lastError = error
+    } else if (data?.email_id) {
+      latestRow = data
+      if (!['received', 'parsed'].includes(normalizeLower(data.status))) {
+        return data
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2500))
+  }
+  if (lastError) throw lastError
+  return latestRow
+}
+
+async function deliverInboundViaEmail(client, config, aliasEmail, smoke, options) {
+  const accessToken = await signInActor(config)
+  const emailPayload = buildInboundEmailDeliveryPayload({ recipient: aliasEmail, smoke })
+  const sendResult = await invokeSendEmail(config, accessToken, emailPayload, options)
+  if (!sendResult.response.ok || !sendResult.payload?.ok) {
+    return {
+      ok: false,
+      httpStatus: sendResult.response.status,
+      payload: sendResult.payload,
+      inbound: null,
+    }
+  }
+
+  const inbound = await waitForInboundBySubject(client, {
+    subject: emailPayload.subject,
+    timeoutMs: options.timeoutMs,
+  })
+  return {
+    ok: Boolean(inbound?.email_id),
+    httpStatus: sendResult.response.status,
+    payload: sendResult.payload,
+    inbound,
+  }
+}
+
 async function runInboundSmoke(report, config, options) {
   const source = options.source
 
@@ -587,7 +716,7 @@ async function runInboundSmoke(report, config, options) {
   const smoke = buildInboundSmokePayload({ source, aliasEmail: alias.email_address })
   report.inbound = {
     source,
-    mode: options.live ? 'live' : 'preflight',
+    mode: options.live ? `live-${options.delivery}` : 'preflight',
     aliasId: alias.alias_id,
     aliasEmail: alias.email_address,
     expectedParser: smoke.expectedParser,
@@ -597,6 +726,54 @@ async function runInboundSmoke(report, config, options) {
 
   if (!options.live) {
     addFinding(report, 'Inbound Smoke', 'PASS', 'Inbound smoke preflight payload is ready. Add --live to submit it.')
+    return
+  }
+
+  if (options.delivery === 'email') {
+    const emailResult = await deliverInboundViaEmail(client, config, alias.email_address, smoke, options)
+    if (!emailResult.ok || !emailResult.inbound?.email_id) {
+      addFinding(report, 'Inbound Smoke', 'CRITICAL', 'Inbound email delivery smoke did not produce an inbound row.', `HTTP ${emailResult.httpStatus}; error=${emailResult.payload?.error || ''}`)
+      return
+    }
+    await verifyProcessedInbound(client, report, {
+      source,
+      smoke,
+      result: {
+        inboundEmailId: emailResult.inbound.email_id,
+        leadId: emailResult.inbound.lead_id,
+        contactId: emailResult.inbound.contact_id,
+      },
+    })
+
+    if (options.reviewCase === 'none') return
+
+    if (options.reviewCase === 'unmatched') {
+      const unmatchedSmoke = buildInboundSmokePayload({ source, token: createSmokeToken('unmatched'), unmatched: true })
+      const unmatchedResult = await deliverInboundViaEmail(client, config, unmatchedSmoke.payload.recipient, unmatchedSmoke, options)
+      if (!unmatchedResult.ok || !unmatchedResult.inbound?.email_id) {
+        addFinding(report, 'Review Smoke', 'CRITICAL', 'Unmatched review email smoke did not produce an inbound row.', `HTTP ${unmatchedResult.httpStatus}; error=${unmatchedResult.payload?.error || ''}`)
+        return
+      }
+      await verifyUnmatchedReview(client, report, {
+        result: { inboundEmailId: unmatchedResult.inbound.email_id },
+      })
+      return
+    }
+
+    const reviewSmoke = buildInboundSmokePayload({ source, aliasEmail: alias.email_address, token: createSmokeToken('review'), lowConfidence: true })
+    const reviewResult = await deliverInboundViaEmail(client, config, alias.email_address, reviewSmoke, options)
+    if (!reviewResult.ok || !reviewResult.inbound?.email_id) {
+      addFinding(report, 'Review Smoke', 'CRITICAL', 'Low-confidence review email smoke did not produce an inbound row.', `HTTP ${reviewResult.httpStatus}; error=${reviewResult.payload?.error || ''}`)
+      return
+    }
+    await verifyLowConfidenceReview(client, report, {
+      result: {
+        inboundEmailId: reviewResult.inbound.email_id,
+        leadId: reviewResult.inbound.lead_id,
+        contactId: reviewResult.inbound.contact_id,
+      },
+      smoke: reviewSmoke,
+    })
     return
   }
 
@@ -628,18 +805,6 @@ async function runInboundSmoke(report, config, options) {
     return
   }
   await verifyLowConfidenceReview(client, report, { result: reviewResult.payload, smoke: reviewSmoke })
-}
-
-async function signInActor(config) {
-  const client = createAnonClient(config)
-  const { data, error } = await client.auth.signInWithPassword({
-    email: config.actorEmail,
-    password: config.actorPassword,
-  })
-  if (error) throw error
-  const token = data?.session?.access_token
-  if (!token) throw new Error('Actor sign-in returned no access token.')
-  return token
 }
 
 async function runOutboundSmoke(report, config, options) {

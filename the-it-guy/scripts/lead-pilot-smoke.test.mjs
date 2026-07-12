@@ -15,11 +15,14 @@ assert.equal(normalizeSource('fb'), 'Facebook')
 
 assert.deepEqual(parseArgs(['--source', 'Website']).source, 'Website')
 assert.equal(parseArgs(['--source=PrivateProperty', '--live']).live, true)
+assert.equal(parseArgs(['--source=Website', '--delivery=email', '--live']).delivery, 'email')
+assert.equal(parseArgs(['--source=Website', '--via-email', '--live']).delivery, 'email')
 assert.equal(parseArgs(['--source=Website', '--no-review-case']).reviewCase, 'none')
 assert.equal(parseArgs(['--source=Website', '--review-case=unmatched']).reviewCase, 'unmatched')
 assert.equal(parseArgs(['--outbound-email', '--to=pilot@arch9.co.za']).outboundEmail, true)
 assert.throws(() => parseArgs([]), /Choose at least one smoke path/)
 assert.throws(() => parseArgs(['--source=Unknown']), /Unsupported source/)
+assert.throws(() => parseArgs(['--source=Website', '--delivery=email']), /requires --live/)
 
 const websiteSmoke = buildInboundSmokePayload({
   source: 'Website',
