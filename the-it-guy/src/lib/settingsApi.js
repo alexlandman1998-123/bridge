@@ -14,7 +14,6 @@ import {
   supabase,
 } from './supabaseClient'
 import {
-  buildDefaultAgencyOnboarding,
   createAgencyInviteDraft,
   isCommercialAgencyType,
   mergeAgencyOnboardingDraft,
@@ -304,6 +303,38 @@ function isMissingTableError(error, tableName) {
       && (message.includes('does not exist') || message.includes('schema cache'))
     )
   )
+}
+
+function isMissingRpcError(error, functionName = '') {
+  if (!error) return false
+  const code = String(error.code || '').toLowerCase()
+  const functionToken = String(functionName || '').toLowerCase()
+  const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
+  if (code === 'pgrst202') return true
+  if (code === '42883' && (!functionToken || message.includes(functionToken))) return true
+  return Boolean(
+    functionToken &&
+      message.includes(functionToken) &&
+      (
+        message.includes('could not find the function') ||
+        message.includes('function') && message.includes('does not exist') ||
+        message.includes('schema cache')
+      ),
+  )
+}
+
+function createRpcFailureError(error, functionName = 'RPC') {
+  const parts = [error?.message, error?.details, error?.hint]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+  const uniqueParts = [...new Set(parts)]
+  const formatted = uniqueParts.join(' ')
+  const nextError = new Error(`${functionName} failed: ${formatted || 'The database returned an unknown error.'}`)
+  nextError.code = error?.code || 'rpc_failed'
+  nextError.details = error?.details || null
+  nextError.hint = error?.hint || null
+  nextError.cause = error
+  return nextError
 }
 
 function isMissingColumnError(error, columnName) {
@@ -3282,11 +3313,17 @@ export async function completeAgencyOnboarding(input = {}) {
     : payload
   const rpcResponse = await client.rpc(rpcName, { payload: rpcPayload })
   if (rpcResponse.error) {
-    const rpcErrorMessage = `${rpcResponse.error?.message || ''} ${rpcResponse.error?.details || ''} ${rpcResponse.error?.hint || ''}`.toLowerCase()
-    if (isMissingTableError(rpcResponse.error, rpcName) || rpcErrorMessage.includes(rpcName)) {
+    if (isMissingRpcError(rpcResponse.error, rpcName)) {
       throw new Error(`Atomic onboarding is not installed. Apply the ${rpcName} migration before completing agency setup.`)
     }
-    throw rpcResponse.error
+    console.error('[ONBOARDING] agency-complete:rpc-failed', {
+      rpcName,
+      code: rpcResponse.error?.code || null,
+      message: rpcResponse.error?.message || '',
+      details: rpcResponse.error?.details || '',
+      hint: rpcResponse.error?.hint || '',
+    })
+    throw createRpcFailureError(rpcResponse.error, rpcName)
   }
 
   const completion = rpcResponse.data || {}
