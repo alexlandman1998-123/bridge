@@ -21,6 +21,7 @@ import { clearPendingPartnerInvitePath, rememberPendingPartnerInvitePath } from 
 import {
   acceptPartnerInvitationByLink,
   previewPartnerInvitationAcceptance,
+  requestPartnerInvitationTraining,
 } from '../lib/partnersRepository'
 
 function normalizeText(value = '') {
@@ -213,6 +214,9 @@ export default function PartnerInvitationAcceptPage() {
   const [preview, setPreview] = useState(null)
   const [accepted, setAccepted] = useState(false)
   const [error, setError] = useState('')
+  const [trainingRequesting, setTrainingRequesting] = useState(false)
+  const [trainingMessage, setTrainingMessage] = useState('')
+  const [trainingError, setTrainingError] = useState('')
   const autoAcceptAttemptedRef = useRef(false)
   const returnPath = useMemo(() => buildReturnPath(location), [location])
   const autoAccept = useMemo(() => new URLSearchParams(location.search).get('accept') === '1', [location.search])
@@ -227,6 +231,15 @@ export default function PartnerInvitationAcceptPage() {
   const invitedWorkspaceName = workspaceName || normalizeText(preview?.toOrganisationName)
   const partnerTypeLabel = titleize(preview?.partnerType || 'partner')
   const relationshipLabel = titleize(preview?.relationshipType || 'approved')
+  const canAcceptInvitation = Boolean(preview)
+  const currentUserEmail = normalizeText(authState.user?.email || session?.user?.email)
+  const profile = workspaceContext.profile || {}
+  const currentUserName = normalizeText(
+    profile.fullName ||
+      profile.full_name ||
+      [profile.firstName || profile.first_name, profile.lastName || profile.last_name].filter(Boolean).join(' ') ||
+      currentUserEmail,
+  )
   useEffect(() => {
     rememberPendingPartnerInvitePath(returnPath)
   }, [returnPath])
@@ -289,11 +302,43 @@ export default function PartnerInvitationAcceptPage() {
         navigate(autoAcceptRedirectPath, { replace: true })
       }
     } catch (acceptError) {
+      if (acceptError?.details?.invitation || acceptError?.invitation) {
+        setPreview(acceptError.details?.invitation || acceptError.invitation)
+      }
       setError(acceptError?.message || 'Unable to accept this partner invitation.')
     } finally {
       setAccepting(false)
     }
   }, [autoAcceptRedirectPath, invitationId, navigate, preview, returnPath, workspaceId])
+
+  const handleRequestTraining = useCallback(async function handleRequestTraining() {
+    if (!preview) {
+      setTrainingError('Load the invitation before requesting training.')
+      return
+    }
+
+    try {
+      setTrainingRequesting(true)
+      setTrainingError('')
+      setTrainingMessage('')
+      await requestPartnerInvitationTraining({
+        invitationId,
+        invitation: {
+          ...preview,
+          toOrganisationName: invitedWorkspaceName || preview.toOrganisationName,
+          scopeLabel: getScopeLabel(preview),
+        },
+        contactName: currentUserName,
+        contactEmail: currentUserEmail,
+        companyName: invitedWorkspaceName,
+      })
+      setTrainingMessage('Training request sent. The Arch9 team will reach out.')
+    } catch (trainingErrorValue) {
+      setTrainingError(trainingErrorValue?.message || 'Unable to send the training request.')
+    } finally {
+      setTrainingRequesting(false)
+    }
+  }, [currentUserEmail, currentUserName, invitationId, invitedWorkspaceName, preview])
 
   useEffect(() => {
     if (
@@ -304,14 +349,15 @@ export default function PartnerInvitationAcceptPage() {
       error ||
       !session ||
       !workspaceId ||
-      !preview
+      !preview ||
+      !canAcceptInvitation
     ) {
       return
     }
 
     autoAcceptAttemptedRef.current = true
     void handleAccept({ redirectOnSuccess: true })
-  }, [accepting, autoAccept, error, handleAccept, loadingPreview, preview, session, workspaceId])
+  }, [accepting, autoAccept, canAcceptInvitation, error, handleAccept, loadingPreview, preview, session, workspaceId])
 
   function openPartners() {
     navigate('/partners?tab=invitations', { replace: true })
@@ -344,10 +390,10 @@ export default function PartnerInvitationAcceptPage() {
                   Every future transaction.
                 </h1>
                 <p className="mt-6 max-w-xl text-base leading-7 text-[#d6e0da]">
-                  Someone has invited your business into their trusted Arch9 network.
+                  Someone has emailed you about connecting your business to their trusted Arch9 network.
                 </p>
                 <p className="mt-4 max-w-xl text-base leading-7 text-[#bac9c2]">
-                  Once connected, referrals, matters, shared transactions, and communication happen from one secure workspace.
+                  Sign in as your company contact, accept the connection for your workspace, and bring the rest of your team in when you&apos;re ready.
                 </p>
               </div>
 
@@ -396,16 +442,16 @@ export default function PartnerInvitationAcceptPage() {
                 <p className="text-sm font-semibold text-[#172033]">Here&apos;s what you&apos;ll see before deciding:</p>
                 <div className="mt-5 grid gap-4">
                   <ReviewItem title="Who invited you">
-                    The organisation and person who sent the invite
+                    The organisation and person who sent the invite.
                   </ReviewItem>
                   <ReviewItem title="Which organisation they'll connect with">
-                    The workspace you&apos;ll be joining
+                    The workspace that will become the connected partner.
                   </ReviewItem>
                   <ReviewItem title="The relationship they'll create">
-                    How your businesses will be connected
+                    How the two organisations will be connected.
                   </ReviewItem>
-                  <ReviewItem title="What access you'll have">
-                    Your role and permissions in the workspace
+                  <ReviewItem title="What happens next">
+                    After accepting, you can invite your team or ask Arch9 for free platform training.
                   </ReviewItem>
                 </div>
               </div>
@@ -486,7 +532,7 @@ export default function PartnerInvitationAcceptPage() {
                       </StatusPanel>
                     ) : (
                       <StatusPanel icon={Building2} title="Invitation details ready">
-                        Review the sender, workspace, relationship, scope, and expiry before accepting this connection.
+                        Review the sender, workspace, relationship, scope, and expiry before accepting this company connection.
                       </StatusPanel>
                     )}
 
@@ -500,6 +546,31 @@ export default function PartnerInvitationAcceptPage() {
                         <DetailRow label="Invite expires" value={formatDate(preview?.expiresAt)} icon={CalendarClock} />
                       </dl>
                     </div>
+
+                    {accepted ? (
+                      <div className="rounded-[22px] border border-[#cfe4da] bg-[#f2fbf6] p-5 shadow-[0_12px_32px_rgba(23,32,51,0.05)]">
+                        <div>
+                          <p className="text-sm font-semibold text-[#183d33]">Next steps for {invitedWorkspaceName || 'your company'}</p>
+                          <p className="mt-1 text-sm leading-6 text-[#65746c]">
+                            Bring the right people into the workspace, or ask the Arch9 team to walk your team through the platform.
+                          </p>
+                        </div>
+                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                          <Button asChild variant="secondary" size="lg" className="min-h-12 whitespace-normal rounded-[14px] border-[#b8d6ca] bg-white px-4 py-3 text-center leading-5 text-[#183d33]">
+                            <Link to="/team?intent=invite-team">
+                              <UsersRound size={17} />
+                              Invite your team
+                            </Link>
+                          </Button>
+                          <Button type="button" onClick={handleRequestTraining} disabled={trainingRequesting} variant="secondary" size="lg" className="min-h-12 whitespace-normal rounded-[14px] border-[#b8d6ca] bg-white px-4 py-3 text-center leading-5 text-[#183d33]">
+                            <Mail size={17} />
+                            {trainingRequesting ? 'Requesting...' : 'Request free training'}
+                          </Button>
+                        </div>
+                        {trainingError ? <p className="mt-3 text-sm font-semibold text-[#9a2b25]">{trainingError}</p> : null}
+                        {trainingMessage ? <p className="mt-3 text-sm font-semibold text-[#1f6a57]">{trainingMessage}</p> : null}
+                      </div>
+                    ) : null}
 
                     <div className="flex flex-wrap gap-3">
                       {accepted ? (

@@ -2723,8 +2723,7 @@ function AppRoutes() {
                     <RoleRoute allowedRoles={['developer', 'agent']}>
                       <SettingsSigningTemplatesPage
                         title="Legal Templates"
-                        eyebrow="Organisation / Legal Templates"
-                        description="Create, preview, and manage the legal templates your agency uses every day."
+                        description="Choose the templates your agency uses for offers, mandates, and related documents."
                       />
                     </RoleRoute>
                   </OrganisationSettingsManageRoute>

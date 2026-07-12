@@ -112,25 +112,25 @@ const SIMPLIFIED_PARTNER_VIEW_COPY = {
     eyebrow: 'Organisation',
     title: 'Third parties',
     description: 'Attorneys, bond originators, and referral agencies your team can reuse during transactions.',
-    actionLabel: 'Invite third party',
+    actionLabel: 'Add third party',
   },
   connected: {
     eyebrow: 'Network',
     title: 'Connections',
     description: 'Reusable organisation relationships connected to this workspace.',
-    actionLabel: 'Invite third party',
+    actionLabel: 'Email partner contact',
   },
   invitations: {
     eyebrow: 'Network',
     title: 'Invitations',
-    description: 'Sent and received partner requests for reusable third-party relationships.',
-    actionLabel: 'Invite third party',
+    description: 'Emails sent to company contacts who can sign in and review organisation-level partner connections.',
+    actionLabel: 'Email partner contact',
   },
   discover: {
     eyebrow: 'Network',
     title: 'Discover',
     description: 'Find organisations that can become reusable partners for repeat transaction work.',
-    actionLabel: 'Invite third party',
+    actionLabel: 'Email partner contact',
   },
 }
 
@@ -1633,8 +1633,8 @@ function invitationTimelineLabel(invitation = {}, status = '') {
 
 function invitationStatusSummary({ isReceived = false, status = '' } = {}) {
   const normalizedStatus = normalizeLower(status) || 'pending'
-  if (normalizedStatus === 'pending' && isReceived) return 'Needs your response.'
-  if (normalizedStatus === 'pending') return 'Waiting for a response.'
+  if (normalizedStatus === 'pending' && isReceived) return 'Needs your company response.'
+  if (normalizedStatus === 'pending') return 'Waiting for the company contact to sign in and respond.'
   if (normalizedStatus === 'accepted') return 'Connection accepted.'
   if (normalizedStatus === 'declined' || normalizedStatus === 'rejected') return 'Invitation declined.'
   if (normalizedStatus === 'revoked') return 'Invitation revoked.'
@@ -1738,6 +1738,8 @@ function PartnerInvitationCard({
   const statusSummary = invitationStatusSummary({ isReceived, status })
   const timelineLabel = invitationTimelineLabel(invitation, status)
   const message = normalizeText(invitation.message)
+  const contactEmail = normalizeText(invitation.invitedEmail || invitation.recipientContactEmail)
+  const visibleContactEmail = contactEmail && !isBridgeInternalToken(contactEmail) ? contactEmail : ''
 
   return (
     <article
@@ -1762,6 +1764,11 @@ function PartnerInvitationCard({
               <span className="text-xs font-medium text-[#7a8ba3]">{timelineLabel}</span>
             </div>
             <p className="mt-3 text-sm leading-6 text-[#40556c]">{message || statusSummary}</p>
+            {visibleContactEmail ? (
+              <p className="mt-2 text-xs font-semibold text-[#60758d]">
+                Contact emailed: {visibleContactEmail}
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -1853,7 +1860,7 @@ function ThirdPartyDirectoryModal({
       <div className="w-full max-w-2xl rounded-[8px] border border-[#d9e4ef] bg-white p-4 shadow-[0_24px_60px_rgba(15,23,42,0.15)] sm:p-6">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#10243a]">{editing ? 'Edit third party' : 'Invite third party'}</h2>
+            <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#10243a]">{editing ? 'Edit third party' : 'Add third party'}</h2>
             <p className="mt-1 text-sm text-[#60758d]">Saved third parties become reusable role-player defaults during deal setup.</p>
           </div>
           <button
@@ -2006,7 +2013,7 @@ function ThirdPartyDirectoryModal({
                   onChange={(event) => onChange('sendInvite', event.target.checked)}
                   className="h-4 w-4 rounded border-[#c8d6e5] text-[#10243a] disabled:cursor-not-allowed disabled:opacity-50"
                 />
-                Send invite
+                Email contact
               </label>
             ) : null}
           </div>
@@ -2026,7 +2033,7 @@ function ThirdPartyDirectoryModal({
               className="inline-flex h-10 items-center justify-center gap-2 rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white transition hover:bg-[#173a5e] disabled:cursor-not-allowed disabled:opacity-60"
             >
               <InviteIcon size={15} />
-              {saving ? 'Saving...' : editing ? 'Save changes' : 'Invite third party'}
+              {saving ? 'Saving...' : editing ? 'Save changes' : 'Save third party'}
             </button>
           </div>
         </form>
@@ -2040,7 +2047,7 @@ function PartnerInviteModal({
   onClose,
   onSubmit,
   variant = 'default',
-  title = 'Invite partner',
+  title = 'Email partner contact',
   inviteEmail,
   setInviteEmail,
   inviteOrganisationQuery,
@@ -2111,7 +2118,7 @@ function PartnerInviteModal({
                 setSelectedInviteOrganisationId('')
               }
             }}
-            placeholder="Partner email"
+            placeholder="Contact person email"
             disabled={saving}
             className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:text-[#8ba0b8]"
           />
@@ -2124,7 +2131,7 @@ function PartnerInviteModal({
                 setSelectedInviteOrganisationId('')
               }
             }}
-            placeholder="Search existing organisation by name"
+            placeholder="Search existing organisation by company name"
             disabled={saving}
             className="min-w-0 rounded-[8px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:text-[#8ba0b8]"
           />
@@ -2204,10 +2211,10 @@ function PartnerInviteModal({
 
           {selectedInviteOrganisation ? (
             <p className="text-sm text-[#10243a]">
-              Resolved to: <span className="font-semibold">{selectedInviteOrganisation.name}</span> · {getPartnerTypeLabel(selectedInviteOrganisation.type)}
+              Organisation connection: <span className="font-semibold">{selectedInviteOrganisation.name}</span> · {getPartnerTypeLabel(selectedInviteOrganisation.type)}
             </p>
           ) : inviteEmail ? (
-            <p className="text-sm text-[#10243a]">Resolved to: {normalizeInvitationName('', inviteEmail)}</p>
+            <p className="text-sm text-[#10243a]">Email will be sent to: {normalizeInvitationName('', inviteEmail)}</p>
           ) : null}
 
           {!!inviteOrganisationResults.length && !selectedInviteOrganisationId ? (
@@ -2239,7 +2246,7 @@ function PartnerInviteModal({
               disabled={saving}
               className="inline-flex h-10 items-center gap-2 rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <InviteIcon size={15} /> {saving ? 'Sending...' : 'Send invite'}
+              <InviteIcon size={15} /> {saving ? 'Sending...' : 'Send email'}
             </button>
             <button
               type="button"
@@ -2971,7 +2978,7 @@ export default function PartnersPage() {
     const resolvedScopeId = inviteScopeNeedsTarget ? normalizeText(inviteScopeTargetId) : scope.scopeId
 
     if (!targetId && !email) {
-      setError('Choose an organisation or enter a destination email.')
+      setError('Choose an organisation or enter a contact email.')
       return
     }
 
@@ -3012,7 +3019,7 @@ export default function PartnersPage() {
       setInviteScopeTargetId('')
       setInviteScopeTargetName('')
       setInvitePreferred(false)
-      setMessage('Partner invitation sent.')
+      setMessage('Partner contact email sent.')
       setIsInviteModalOpen(false)
       await loadSnapshot()
     } catch (inviteError) {
@@ -3061,7 +3068,7 @@ export default function PartnersPage() {
         targetId: partner.id,
         metadata: { partnerType: partner.type },
       })
-      setMessage(`Partner invitation sent to ${partner.name}.`)
+      setMessage(`Organisation connection email sent for ${partner.name}.`)
       setSentConnectionPartnerIds((previous) => new Set(previous).add(partnerKey))
       await loadSnapshot()
     } catch (connectError) {
@@ -3571,7 +3578,7 @@ export default function PartnersPage() {
         onSubmit={handleInvite}
         saving={inviteSubmitting}
         variant={isSimplifiedThirdPartyWorkspace ? 'third-party' : 'default'}
-        title={isSimplifiedThirdPartyWorkspace ? 'Invite third party' : 'Invite partner'}
+        title={isSimplifiedThirdPartyWorkspace ? 'Email third-party contact' : 'Email partner contact'}
         inviteEmail={inviteEmail}
         setInviteEmail={setInviteEmail}
         inviteOrganisationQuery={inviteOrganisationQuery}
@@ -3731,7 +3738,7 @@ export default function PartnersPage() {
                 onClick={() => setIsInviteModalOpen(true)}
                 className="inline-flex min-h-[54px] w-full items-center justify-center gap-2 rounded-[16px] border border-[#c8daef] bg-[#10243a] px-5 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(15,23,42,0.14)] transition hover:bg-[#173a5e] xl:min-w-[220px]"
               >
-                <InviteIcon size={16} /> Invite Partner
+                <InviteIcon size={16} /> Email Contact
               </button>
             </div>
           </section>
@@ -3786,7 +3793,7 @@ export default function PartnersPage() {
                 className="mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white transition hover:bg-[#173a5e]"
               >
                 <InviteIcon size={15} />
-                Invite third party
+                Add third party
               </button>
             </section>
           )}
@@ -4030,7 +4037,7 @@ export default function PartnersPage() {
                     </div>
                     <h3 className="mt-4 text-base font-semibold text-[#10243a]">No invitations found</h3>
                     <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-[#60758d]">
-                      {hasInvitationFilters ? 'No invitations match the current filters.' : 'No partner invitations have been sent or received yet.'}
+                      {hasInvitationFilters ? 'No invitations match the current filters.' : 'No partner contact emails have been sent or received yet.'}
                     </p>
                   </div>
                 ) : null}

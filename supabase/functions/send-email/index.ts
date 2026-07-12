@@ -562,8 +562,9 @@ Deno.serve(async (req: Request) => {
         "arch9_launch_internal_notification",
         "launch_internal_notification",
         "arch9_concierge_internal_notification",
-      ].includes(type) &&
-      (payload as SendArch9LaunchInternalNotificationPayload).to
+        "arch9_training_request",
+        "partner_training_request",
+      ].includes(type)
     ) {
       console.log("[send-email] routing template", {
         route: "arch9_launch_internal_notification",
@@ -571,7 +572,7 @@ Deno.serve(async (req: Request) => {
       });
       return await handleArch9LaunchInternalNotificationEmail({
         ...(payload as SendArch9LaunchInternalNotificationPayload),
-        type: "arch9_launch_internal_notification",
+        type: type as SendArch9LaunchInternalNotificationPayload["type"],
       });
     }
 
@@ -628,6 +629,7 @@ Deno.serve(async (req: Request) => {
           "appointment_documents_required",
           "arch9_launch_confirmation",
           "arch9_launch_internal_notification",
+          "arch9_training_request",
           "legacy_test",
         ],
       });
@@ -673,6 +675,7 @@ Deno.serve(async (req: Request) => {
         "appointment_documents_required",
         "arch9_launch_confirmation",
         "arch9_launch_internal_notification",
+        "arch9_training_request",
         "legacy_test",
       ],
     });

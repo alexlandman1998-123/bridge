@@ -47,7 +47,6 @@ import {
   archiveDocumentPacket,
   createDocumentPacket,
   createDocumentPacketTemplate,
-  deleteDocumentPacketTemplate,
   fetchDocumentPacket,
   fetchDocumentPacketTemplate,
   listDocumentPackets,
@@ -75,12 +74,9 @@ import {
   TemplateStatusPill,
   TemplateStudioMetricCard,
   TemplateStudioPanel,
-  TemplateStudioTabButton,
   ValidationIssueCard,
 } from './contractStudioUi'
 import {
-  CONTRACT_STUDIO_AREAS,
-  CONTRACT_STUDIO_TABS,
   DOCUMENT_RUN_SOURCE_OPTIONS,
   getDocumentKindOption,
   getDocumentRunReadiness,
@@ -467,6 +463,107 @@ const CONTRACT_CLAUSE_LIBRARY_ITEMS = [
       value: 'cash',
       label: 'Only include for cash sale transactions',
     },
+  },
+  {
+    key: 'breach_notice_jurisdiction_pack',
+    category: 'General legal terms',
+    title: 'Breach, notices and jurisdiction',
+    description: 'Core enforcement wording covering breach notices, remedies and court jurisdiction.',
+    status: 'Legal reviewed',
+    locked: true,
+    snippet: [
+      'If a party breaches a material term and fails to remedy the breach after written notice, the other party may enforce its rights, claim damages, or cancel where allowed by law.',
+      'The parties choose their recorded domicilium addresses for notices and consent to the jurisdiction recorded in this document.',
+    ].join('\n'),
+    defaultCondition: {
+      enabled: false,
+      field: 'property_address',
+      operator: 'exists',
+      value: '',
+      label: 'Use as a standard agreement term',
+    },
+  },
+  {
+    key: 'whole_agreement_non_variation_pack',
+    category: 'General legal terms',
+    title: 'Whole agreement and non-variation',
+    description: 'Standard entire-agreement, amendment, non-waiver and severability wording.',
+    status: 'Principal approved',
+    locked: true,
+    snippet: [
+      'This document, together with its schedules and annexures, records the whole agreement between the parties for this transaction.',
+      'No amendment, addition, deletion, cancellation or waiver is valid unless reduced to writing and signed or accepted by the parties as required.',
+    ].join('\n'),
+    defaultCondition: {
+      enabled: false,
+      field: 'document_reference',
+      operator: 'exists',
+      value: '',
+      label: 'Use as a standard agreement term',
+    },
+  },
+  {
+    key: 'popia_fica_processing_pack',
+    category: 'Compliance',
+    title: 'POPIA and FICA processing',
+    description: 'Consent and verification wording for personal-information processing and compliance checks.',
+    status: 'Legal reviewed',
+    locked: true,
+    snippet: [
+      'The parties consent to the processing of personal information reasonably required for this transaction, including verification, conveyancing, finance, record keeping and communication.',
+      'The parties shall provide documents and information reasonably required for FICA, identity verification, source-of-funds checks and transaction administration.',
+    ].join('\n'),
+    defaultCondition: {
+      enabled: false,
+      field: 'buyer_full_name',
+      operator: 'exists',
+      value: '',
+      label: 'Use where parties supply personal or compliance information',
+    },
+  },
+]
+const LEGAL_CONDITION_COVERAGE_ITEMS = [
+  {
+    key: 'parties_authority',
+    label: 'Parties & authority',
+    description: 'Identity, capacity, entity authority and spouse-consent packs.',
+    markers: ['parties', 'capacity', 'authority', 'spouse consent', 'seller_entity_type', 'buyer_entity_type'],
+  },
+  {
+    key: 'property_disclosure',
+    label: 'Property & disclosure',
+    description: 'Property particulars, defects, servitudes, warranties and voetstoots wording.',
+    markers: ['property', 'defects', 'servitudes', 'voetstoots', 'warranties', 'warranty'],
+  },
+  {
+    key: 'price_finance_commission',
+    label: 'Price, finance & commission',
+    description: 'Purchase price, cash or bond finance, costs and agency commission terms.',
+    markers: ['purchase price', 'finance', 'bond', 'cash sale', 'cash amount', 'commission', 'costs'],
+  },
+  {
+    key: 'conditions_special_terms',
+    label: 'Conditions & special terms',
+    description: 'Suspensive conditions, special conditions, annexures and conflict wording.',
+    markers: ['suspensive', 'special conditions', 'condition precedent', 'annexures', 'conflict'],
+  },
+  {
+    key: 'breach_notices_jurisdiction',
+    label: 'Breach, notices & jurisdiction',
+    description: 'Breach remedies, domicilium, cooling-off and jurisdiction provisions.',
+    markers: ['breach', 'domicilia', 'domicilium', 'jurisdiction', 'cooling-off', 'cooling off'],
+  },
+  {
+    key: 'general_compliance',
+    label: 'General legal provisions',
+    description: 'Whole agreement, non-variation, non-waiver, severability, governing law, POPIA and FICA.',
+    markers: ['whole agreement', 'non-variation', 'non-waiver', 'severability', 'applicable law', 'governing law', 'popia', 'fica', 'confidentiality'],
+  },
+  {
+    key: 'signing_records',
+    label: 'Signing & records',
+    description: 'Signature blocks, witness fields, document reference and version metadata.',
+    markers: ['signature', 'signatories', 'witness', 'document reference', 'template version'],
   },
 ]
 const CONDITION_OPERATORS = [
@@ -2917,38 +3014,8 @@ function templateSort(left, right) {
   return String(right?.updated_at || '').localeCompare(String(left?.updated_at || ''))
 }
 
-function incrementVersionTag(versionTag = 'v1') {
-  const normalized = normalizeText(versionTag) || 'v1'
-  const match = normalized.match(/^(.*?)(\d+)$/)
-  if (!match) return `${normalized}-v2`
-  const [, prefix = '', numberPart = '1'] = match
-  const nextNumber = Number(numberPart) + 1
-  return `${prefix}${nextNumber}`
-}
-
 function formatRenderModeLabel(renderMode = TEMPLATE_RENDER_MODES.LEGACY_DOCX) {
   return renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? 'Built in app' : 'File based'
-}
-
-function canDeleteTemplateRecord(template = null, siblingTemplates = []) {
-  if (!template?.organisation_id) return false
-  if (template?.is_default) {
-    return (siblingTemplates || []).some((row) => row?.organisation_id && row.id !== template.id)
-  }
-  const status = normalizeTemplateStatus(template)
-  return ['draft', 'in_review', 'deprecated', 'archived'].includes(status)
-}
-
-function getReplacementTemplateForDelete(template = null, siblingTemplates = []) {
-  if (!template?.is_default) return null
-  return [...(siblingTemplates || [])]
-    .filter((row) => row?.organisation_id && row.id !== template.id)
-    .sort((left, right) => {
-      const leftActive = Boolean(left?.is_active)
-      const rightActive = Boolean(right?.is_active)
-      if (leftActive !== rightActive) return leftActive ? -1 : 1
-      return templateSort(left, right)
-    })[0] || null
 }
 
 function summarizeTemplateValidation({
@@ -4654,14 +4721,6 @@ function formatDateOnly(value = '') {
   return date.toLocaleDateString()
 }
 
-function formatFriendlyDate(value = '') {
-  const normalized = normalizeText(value)
-  if (!normalized) return 'Not live yet'
-  const date = new Date(normalized)
-  if (Number.isNaN(date.getTime())) return normalized
-  return date.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
-}
-
 function humanizeKey(value = '') {
   const normalized = normalizeText(value)
   if (!normalized) return ''
@@ -4906,6 +4965,42 @@ function getSectionDescription(section = {}, index = 0) {
   return SECTION_HELP_TEXT[label] || 'Edit the wording and auto-filled information for this part of the document.'
 }
 
+function buildLegalConditionCoverage(sections = []) {
+  const normalizedSections = (Array.isArray(sections) ? sections : []).map((section, index) => {
+    const sectionKey = normalizeText(section.sectionKey || section.section_key).toLowerCase()
+    const sectionLabel = getFriendlySectionLabel(section, index)
+    const legalText = normalizeText(section.legalText || section.legal_text).toLowerCase()
+    const placeholderText = normalizeText(section.placeholderKeysText || '').toLowerCase()
+    return {
+      index,
+      section,
+      sectionLabel,
+      haystack: `${sectionKey} ${sectionLabel.toLowerCase()} ${legalText} ${placeholderText}`,
+    }
+  })
+
+  const items = LEGAL_CONDITION_COVERAGE_ITEMS.map((item) => {
+    const matchedSections = normalizedSections.filter((section) => (
+      item.markers.some((marker) => section.haystack.includes(marker))
+    ))
+    return {
+      ...item,
+      count: matchedSections.length,
+      covered: matchedSections.length > 0,
+      firstSectionIndex: matchedSections[0]?.index ?? null,
+      sectionLabels: matchedSections.slice(0, 3).map((section) => section.sectionLabel),
+    }
+  })
+
+  const coveredCount = items.filter((item) => item.covered).length
+  return {
+    items,
+    coveredCount,
+    totalCount: items.length,
+    percent: items.length ? Math.round((coveredCount / items.length) * 100) : 0,
+  }
+}
+
 function getSimpleVariableCategory(field = {}) {
   const category = normalizeText(field.category).toLowerCase()
   const key = normalizeText(field.key).toLowerCase()
@@ -4996,7 +5091,6 @@ export default function SettingsSigningTemplatesPage({
   templateModuleType = 'agency',
   allowedPacketTypes = DEFAULT_ALLOWED_PACKET_TYPES,
   title = 'Document Builder',
-  eyebrow = 'Settings / Documents',
   description = 'Create, preview, send, and manage the documents your agency uses every day.',
 } = {}) {
   const { role, currentMembership, currentWorkspace, workspaceType } = useWorkspace()
@@ -5042,8 +5136,7 @@ export default function SettingsSigningTemplatesPage({
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [cloning, setCloning] = useState(false)
-  const [, setCreatingTemplate] = useState(false)
-  const [deletingTemplate, setDeletingTemplate] = useState(false)
+  const [creatingTemplate, setCreatingTemplate] = useState(false)
   const [uploadingTemplate, setUploadingTemplate] = useState(false)
   const [testingTemplate, setTestingTemplate] = useState(false)
   const [creatingDocumentPacket, setCreatingDocumentPacket] = useState(false)
@@ -5051,6 +5144,7 @@ export default function SettingsSigningTemplatesPage({
   const [packetDetailLoading, setPacketDetailLoading] = useState(false)
   const [signingSummaryLoading, setSigningSummaryLoading] = useState(false)
   const [documentLibraryStartOpen, setDocumentLibraryStartOpen] = useState(false)
+  const [templateStarterMenuOpen, setTemplateStarterMenuOpen] = useState(false)
   const [packetActionId, setPacketActionId] = useState('')
   const [savingPlaceholder, setSavingPlaceholder] = useState('')
   const [error, setError] = useState('')
@@ -5096,6 +5190,7 @@ export default function SettingsSigningTemplatesPage({
   const [pendingSectionTitleFocus, setPendingSectionTitleFocus] = useState(false)
   const clauseTextareaRef = useRef(null)
   const sectionTitleInputRef = useRef(null)
+  const autoDraftSourceTemplateRef = useRef('')
 
   const administratorLabel = getWorkspaceAdministratorLabel({ appRole: role, workspaceType: resolvedWorkspaceType })
   const canEdit = canManageOrganisationSettings({ appRole: role, membershipRole, workspaceType: resolvedWorkspaceType })
@@ -5103,7 +5198,7 @@ export default function SettingsSigningTemplatesPage({
   const visiblePacketTypes = useMemo(() => SUPPORTED_PACKET_TYPES.filter((item) => stableAllowedPacketTypes.includes(item.key)), [stableAllowedPacketTypes])
   const normalizedModuleType = normalizeText(templateModuleType || 'agency').toLowerCase() || 'agency'
   const visibleDescription = normalizedModuleType === 'agency'
-    ? "Manage the documents used in your agency's transactions."
+    ? 'Choose the templates your agency uses for offers, mandates, and related documents.'
     : description
   const loadDocumentLinkOptions = useCallback(async () => {
     if (!resolvedOrganisationId) {
@@ -5403,17 +5498,9 @@ export default function SettingsSigningTemplatesPage({
     () => (templateDetail ? toTemplateForm(templateDetail) : null),
     [templateDetail],
   )
-  const deletableSiblingTemplates = useMemo(
-    () => selectedList.filter((item) => item?.organisation_id && item.id !== selectedTemplateId),
-    [selectedList, selectedTemplateId],
-  )
   const selectedClassification = useMemo(
     () => classifyTemplateMigrationState(selectedTemplate, packetType),
     [packetType, selectedTemplate],
-  )
-  const deleteReplacementTemplate = useMemo(
-    () => getReplacementTemplateForDelete(selectedTemplate, deletableSiblingTemplates),
-    [deletableSiblingTemplates, selectedTemplate],
   )
 
   const selectedIsOrgOwned = Boolean(selectedTemplate?.organisation_id)
@@ -5559,6 +5646,10 @@ export default function SettingsSigningTemplatesPage({
     () => (form.sections || []).map((section) => getSectionVisualState(section, packetType)),
     [form.sections, packetType],
   )
+  const legalConditionCoverage = useMemo(
+    () => buildLegalConditionCoverage(form.sections || []),
+    [form.sections],
+  )
   const selectedSectionTokens = useMemo(() => {
     if (!selectedSection) return []
     const tokenScan = detectTemplateTokenIssues(selectedSection.legalText)
@@ -5672,9 +5763,9 @@ export default function SettingsSigningTemplatesPage({
     ].some((key) => stableStringify(form[key]) !== stableStringify(baselineForm[key])) : Boolean(selectedTemplate)
     const blockers = [
       ...validationSummary.blockers,
-      ...(!selectedIsOrgOwned ? ['Create an organisation draft before making this live.'] : []),
-      ...(!canPublishTemplate ? [`Only ${administratorLabel} can make document versions live.`] : []),
-      ...(hasUnsavedChanges ? ['Save the latest edits before making this live.'] : []),
+      ...(!selectedIsOrgOwned ? ['Save your agency version before publishing.'] : []),
+      ...(!canPublishTemplate ? [`Only ${administratorLabel} can publish templates.`] : []),
+      ...(hasUnsavedChanges ? ['Save the latest edits before publishing.'] : []),
       ...(normalizeText(form.renderMode) === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED && !validationSummary.renderable ? ['Native structured template is not renderable yet.'] : []),
     ]
 
@@ -5716,7 +5807,7 @@ export default function SettingsSigningTemplatesPage({
         passed: Boolean(previewState.html) && !previewState.error,
       },
       {
-        label: publishReady ? 'Ready to make live' : 'Save and preview before making live',
+        label: publishReady ? 'Ready to publish' : 'Save and preview before publishing',
         passed: publishReady,
       },
     ]
@@ -5963,37 +6054,6 @@ export default function SettingsSigningTemplatesPage({
     tokens: detectTemplateTokenIssues(item.snippet).tokens,
     tokenLabels: detectTemplateTokenIssues(item.snippet).tokens.map((token) => tokenLabelByKey[token] || humanizeKey(token)),
   })), [tokenLabelByKey])
-  const stickyNextStep = useMemo(() => {
-    if (!selectedTemplate) {
-      return {
-        title: 'Choose a template to begin',
-        description: 'Select a version from the left to start editing or reviewing.',
-      }
-    }
-    if (!selectedIsOrgOwned) {
-      return {
-        title: 'Create a draft to make changes',
-        description: 'Base templates stay read-only until you create an organisation-owned draft.',
-      }
-    }
-    if (!previewState.html) {
-      return {
-        title: 'Generate a preview before making this live',
-        description: 'Run a safe preview to validate wording and variables.',
-      }
-    }
-    if (!form.isDefault) {
-      return {
-        title: 'Make this live when the draft is ready',
-        description: 'New documents will use this version after you make it live.',
-      }
-    }
-    return {
-      title: 'This template is live',
-      description: 'New documents of this type already start from this version.',
-    }
-  }, [form.isDefault, previewState.html, selectedIsOrgOwned, selectedTemplate])
-
   const templateTypeConfig = visiblePacketTypes.find((item) => item.key === packetType) || visiblePacketTypes[0] || SUPPORTED_PACKET_TYPES[0]
 
   useEffect(() => {
@@ -6137,13 +6197,16 @@ export default function SettingsSigningTemplatesPage({
       : 'Saved-details document start is ready. Confirm the linked IDs in Advanced preview data, then create the document.')
   }
 
-  async function refreshAll() {
+  const refreshAll = useCallback(async ({
+    targetPacketType = packetType,
+    preferredTemplateId = selectedTemplateId,
+  } = {}) => {
     await loadTemplatesAndRegistry({
-      targetPacketType: packetType,
-      preferredTemplateId: selectedTemplateId,
+      targetPacketType,
+      preferredTemplateId,
     })
-    await loadDocumentLibrary({ targetPacketType: packetType })
-  }
+    await loadDocumentLibrary({ targetPacketType })
+  }, [loadDocumentLibrary, loadTemplatesAndRegistry, packetType, selectedTemplateId])
 
   function handleStartAddendumFromLibraryPacket(packet = selectedLibraryPacket, addendumType = GENERAL_ADDENDUM_TEMPLATE_FAMILY) {
     const sourcePacket = packet || selectedLibraryPacket
@@ -6174,33 +6237,40 @@ export default function SettingsSigningTemplatesPage({
     setMessage('Addendum details are prefilled from the selected document. Add the change summary, then create the addendum.')
   }
 
-  async function handleCreateTemplate({ starterKind = 'standard' } = {}) {
+  async function handleCreateTemplate({
+    starterKind = 'standard',
+    targetPacketType = packetType,
+  } = {}) {
     try {
       setCreatingTemplate(true)
       setError('')
       setMessage('')
 
       const timestamp = Date.now()
+      const resolvedPacketType = normalizeText(targetPacketType || packetType).toLowerCase() || packetType
+      const resolvedTemplateTypeConfig = visiblePacketTypes.find((item) => item.key === resolvedPacketType)
+        || SUPPORTED_PACKET_TYPES.find((item) => item.key === resolvedPacketType)
+        || templateTypeConfig
       const addendumStarterConfig = getAddendumTemplateStarter(starterKind)
       const isGeneralAddendumStarter = Boolean(addendumStarterConfig || starterKind === GENERAL_ADDENDUM_TEMPLATE_FAMILY)
       const resolvedAddendumStarter = addendumStarterConfig || getAddendumTemplateStarter(GENERAL_ADDENDUM_TEMPLATE_FAMILY)
-      const renderMode = getDefaultRenderMode(packetType)
+      const renderMode = getDefaultRenderMode(resolvedPacketType)
       const documentKindOption = getDocumentKindOption(isGeneralAddendumStarter ? 'addendum' : 'standard')
       const starterSections = isGeneralAddendumStarter
-        ? createGeneralAddendumStarterSections(packetType, resolvedAddendumStarter.key)
-        : createStarterSections(packetType)
+        ? createGeneralAddendumStarterSections(resolvedPacketType, resolvedAddendumStarter.key)
+        : createStarterSections(resolvedPacketType)
       const created = await createDocumentPacketTemplate({
-        packetType,
+        packetType: resolvedPacketType,
         moduleType: normalizedModuleType,
         templateKey: isGeneralAddendumStarter
-          ? `${packetType}_${resolvedAddendumStarter.templateKeySegment}_${timestamp}`
-          : `${packetType}_template_${timestamp}`,
+          ? `${resolvedPacketType}_${resolvedAddendumStarter.templateKeySegment}_${timestamp}`
+          : `${resolvedPacketType}_template_${timestamp}`,
         templateLabel: isGeneralAddendumStarter
-          ? `${templateTypeConfig.shortLabel} ${resolvedAddendumStarter.templateLabel}`
-          : `${templateTypeConfig.shortLabel} Template ${new Date().toLocaleDateString()}`,
+          ? `${resolvedTemplateTypeConfig.shortLabel} ${resolvedAddendumStarter.templateLabel}`
+          : `${resolvedTemplateTypeConfig.label}`,
         description: isGeneralAddendumStarter
           ? resolvedAddendumStarter.description
-          : 'Draft legal template',
+          : `Standard ${resolvedTemplateTypeConfig.label} template with the usual legal sections.`,
         versionTag: 'v1',
         templateStatus: 'draft',
         templateFormat: getTemplateFormatForMode(renderMode),
@@ -6219,12 +6289,17 @@ export default function SettingsSigningTemplatesPage({
           preferred_document_kind: documentKindOption.key,
           document_kind_label: documentKindOption.label,
         },
-        sections: starterSections.map((section, index) => mapSectionForSave(section, index, packetType)),
+        sections: starterSections.map((section, index) => mapSectionForSave(section, index, resolvedPacketType)),
       })
 
-      await refreshAll()
+      await refreshAll({
+        targetPacketType: resolvedPacketType,
+        preferredTemplateId: created?.id || '',
+      })
+      setPacketType(resolvedPacketType)
+      setActiveDocumentTypeKey(resolvedPacketType)
       setSelectedTemplateId(created?.id || '')
-      setMessage(isGeneralAddendumStarter ? `${resolvedAddendumStarter.label} template created.` : 'New draft template created.')
+      setMessage(isGeneralAddendumStarter ? `${resolvedAddendumStarter.label} template created.` : `${resolvedTemplateTypeConfig.label} template created.`)
       return created
     } catch (createError) {
       setError(createError?.message || 'Unable to create template.')
@@ -6234,138 +6309,146 @@ export default function SettingsSigningTemplatesPage({
     }
   }
 
-  async function handleCreateGeneralAddendumTemplate() {
-    return handleCreateTemplate({ starterKind: GENERAL_ADDENDUM_TEMPLATE_FAMILY })
+  async function handleCreateGeneralAddendumTemplate(options = {}) {
+    return handleCreateTemplate({ ...options, starterKind: GENERAL_ADDENDUM_TEMPLATE_FAMILY })
   }
 
-  async function handleCreateAddendumStarterTemplate(starterKind = GENERAL_ADDENDUM_TEMPLATE_FAMILY) {
-    if (starterKind === GENERAL_ADDENDUM_TEMPLATE_FAMILY) return handleCreateGeneralAddendumTemplate()
-    return handleCreateTemplate({ starterKind })
+  async function handleCreateAddendumStarterTemplate(starterKind = GENERAL_ADDENDUM_TEMPLATE_FAMILY, options = {}) {
+    if (starterKind === GENERAL_ADDENDUM_TEMPLATE_FAMILY) return handleCreateGeneralAddendumTemplate(options)
+    return handleCreateTemplate({ ...options, starterKind })
   }
 
-  async function handleCreateEditableCopy() {
-    if (!templateDetail) return
-
-    try {
-      setCloning(true)
-      setError('')
-      setMessage('')
-
-      const cloned = await createDocumentPacketTemplate({
-        packetType,
-        moduleType: normalizedModuleType,
-        templateKey: `${normalizeText(templateDetail.template_key || packetType)}_org_${Date.now()}`,
-        templateLabel: `${normalizeText(templateDetail.template_label || templateTypeConfig.label)} (Organisation)`,
-        description: templateDetail.description || '',
-        versionTag: normalizeText(templateDetail.version_tag || 'v1') || 'v1',
-        templateStatus: normalizeTemplateStatus(templateDetail),
-        templateFormat: normalizeText(templateDetail.template_format || getTemplateFormatForMode(getDefaultRenderMode(packetType))) || getTemplateFormatForMode(getDefaultRenderMode(packetType)),
-        templateStorageBucket: normalizeText(templateDetail.template_storage_bucket || ''),
-        templateStoragePath: normalizeText(templateDetail.template_storage_path || ''),
-        templateFileName: normalizeText(templateDetail.template_file_name || ''),
-        metadataJson: {
-          ...(templateDetail?.metadata_json && typeof templateDetail.metadata_json === 'object' ? templateDetail.metadata_json : {}),
-          lifecycle_status: normalizeTemplateStatus(templateDetail),
-          render_mode: normalizeTemplateRenderMode(templateDetail, packetType),
-        },
-        sections: (templateDetail.sections || []).map((section, index) => mapSectionForSave({
-          sectionKey: section.section_key,
-          sectionLabel: section.section_label,
-          sectionType: section.section_type,
-          legalText: section.legal_text,
-          placeholderKeysText: Array.isArray(section.placeholder_keys) ? section.placeholder_keys.join(', ') : '',
-          isRequired: section.is_required,
-          conditionJson: section.condition_json && typeof section.condition_json === 'object' ? section.condition_json : {},
-          signingFields: getSigningFieldsFromMetadata(
-            section.metadata_json && typeof section.metadata_json === 'object' ? section.metadata_json : {},
-            section,
-          ),
-          sortOrder: section.sort_order ?? index,
-        }, index, packetType)),
-      })
-
-      await refreshAll()
-      setSelectedTemplateId(cloned?.id || '')
-      setMessage('Editable organisation template created from selected base template.')
-    } catch (cloneError) {
-      setError(cloneError?.message || 'Unable to create editable copy.')
-    } finally {
-      setCloning(false)
+  async function handleCreateTemplateStarter({
+    starterKind = 'standard',
+    targetPacketType = packetType,
+  } = {}) {
+    setTemplateStarterMenuOpen(false)
+    setActiveStudioArea('templates')
+    setActiveTab('template')
+    const created = await handleCreateTemplate({ starterKind, targetPacketType })
+    if (created?.id) {
+      setSelectedSectionIndex(0)
+      setSelectedCanvasBlockIndex(0)
     }
+    return created
   }
 
-  async function handleCreateNextVersion() {
-    if (!templateDetail || !selectedTemplate) return
+  const handleCreateEditableCopy = useCallback(async ({
+    quiet = false,
+    source = 'manual',
+    successMessage = '',
+  } = {}) => {
+    if (!templateDetail || !selectedTemplate) return null
+
+    const sourceTemplateId = normalizeText(templateDetail.id || selectedTemplate.id || selectedTemplateId)
+    const existingAgencyVersion = selectedList.find((template) => {
+      const metadata = template?.metadata_json && typeof template.metadata_json === 'object' ? template.metadata_json : {}
+      return Boolean(template?.organisation_id) &&
+        template.id !== selectedTemplateId &&
+        (
+          normalizeText(metadata.source_template_id) === sourceTemplateId ||
+          normalizeText(metadata.base_template_id) === sourceTemplateId
+        )
+    })
+
+    if (existingAgencyVersion) {
+      setSelectedTemplateId(existingAgencyVersion.id)
+      setHasUnsavedChanges(false)
+      setMessage(successMessage || 'Editing your agency version of this template.')
+      return existingAgencyVersion
+    }
 
     try {
       setCloning(true)
       setError('')
       setMessage('')
-
-      const currentVersion = normalizeText(form.versionTag || templateDetail.version_tag || 'v1') || 'v1'
-      const nextVersion = incrementVersionTag(currentVersion)
-      const cloned = await createDocumentPacketTemplate({
-        packetType,
-        moduleType: normalizedModuleType,
-        templateKey: `${normalizeText(selectedTemplate.template_key || packetType)}_${Date.now()}`,
-        templateLabel: `${normalizeText(form.templateLabel || selectedTemplate.template_label || templateTypeConfig.label)} ${nextVersion.toUpperCase()}`,
-        description: form.description,
-        versionTag: nextVersion,
+      const sourceForm = (form.sections || []).length ? form : toTemplateForm(templateDetail)
+      const sourceMetadata = templateDetail?.metadata_json && typeof templateDetail.metadata_json === 'object' ? templateDetail.metadata_json : {}
+      const renderMode = normalizeText(sourceForm.renderMode || normalizeTemplateRenderMode(templateDetail, packetType) || getDefaultRenderMode(packetType))
+        || getDefaultRenderMode(packetType)
+      const draftForm = {
+        ...sourceForm,
+        renderMode,
         templateStatus: 'draft',
-        templateFormat: getTemplateFormatForMode(form.renderMode),
-        templateStorageBucket: normalizeText(form.templateStorageBucket),
-        templateStoragePath: normalizeText(form.templateStoragePath),
-        templateFileName: normalizeText(form.templateFileName),
         isDefault: false,
         isActive: false,
-        metadataJson: buildTemplateMetadata({ ...form, templateStatus: 'draft', validationSummary }, form.metadataJson || {}, null),
-        sections: (form.sections || []).map((section, index) => mapSectionForSave(section, index, packetType)),
+      }
+      const metadataJson = buildTemplateMetadata(
+        { ...draftForm, validationSummary },
+        {
+          ...sourceMetadata,
+          source_template_id: sourceTemplateId || null,
+          base_template_id: sourceTemplateId || null,
+          source_template_label: normalizeText(templateDetail.template_label || selectedTemplate.template_label || ''),
+          agency_version_created_from: 'shared_base',
+          agency_version_created_via: source,
+        },
+        null,
+      )
+
+      const cloned = await createDocumentPacketTemplate({
+        packetType,
+        moduleType: normalizedModuleType,
+        templateKey: `${normalizeText(templateDetail.template_key || selectedTemplate.template_key || packetType)}_agency_${Date.now()}`,
+        templateLabel: normalizeText(sourceForm.templateLabel || templateDetail.template_label || selectedTemplate.template_label || templateTypeConfig.label) || templateTypeConfig.label,
+        description: sourceForm.description || templateDetail.description || '',
+        versionTag: normalizeText(sourceForm.versionTag || templateDetail.version_tag || selectedTemplate.version_tag || 'v1') || 'v1',
+        templateStatus: 'draft',
+        templateFormat: getTemplateFormatForMode(renderMode),
+        templateStorageBucket: normalizeText(sourceForm.templateStorageBucket || templateDetail.template_storage_bucket || ''),
+        templateStoragePath: normalizeText(sourceForm.templateStoragePath || templateDetail.template_storage_path || ''),
+        templateFileName: normalizeText(sourceForm.templateFileName || templateDetail.template_file_name || ''),
+        isDefault: false,
+        isActive: false,
+        metadataJson,
+        sections: (sourceForm.sections || []).map((section, index) => mapSectionForSave(section, index, packetType)),
       })
 
       await refreshAll()
       setSelectedTemplateId(cloned?.id || '')
-      setMessage(`Template version ${nextVersion} created as a new draft.`)
+      setHasUnsavedChanges(false)
+      setMessage(successMessage || (quiet ? 'Editing your agency version of this template.' : 'Agency template ready to edit.'))
+      return cloned
     } catch (cloneError) {
-      setError(cloneError?.message || 'Unable to create next version.')
+      setError(cloneError?.message || 'Unable to create editable copy.')
+      return null
     } finally {
       setCloning(false)
     }
-  }
+  }, [
+    form,
+    normalizedModuleType,
+    packetType,
+    refreshAll,
+    selectedList,
+    selectedTemplate,
+    selectedTemplateId,
+    templateDetail,
+    templateTypeConfig.label,
+    validationSummary,
+  ])
 
-  async function handleDeleteTemplate() {
-    if (!selectedTemplateId || !selectedTemplate || !selectedIsOrgOwned || !canEdit) return
-    if (!canDeleteTemplateRecord(selectedTemplate, selectedList)) {
-      setError('Create or keep another organisation-owned template first, then this version can be deleted.')
-      return
-    }
-    const replacementTemplate = deleteReplacementTemplate
+  useEffect(() => {
+    if (!canEdit || loading || saving || cloning) return
+    if (!selectedTemplateId || !selectedTemplate || selectedIsOrgOwned) return
+    if (!templateDetail || templateDetail.id !== selectedTemplateId) return
+    if (autoDraftSourceTemplateRef.current === selectedTemplateId) return
 
-    const confirmed = window.confirm(
-      selectedTemplate?.is_default
-        ? `Delete "${selectedTemplate.template_label || selectedTemplate.template_key}"?\n\nAnother organisation template will be promoted to default first. This removes the template record and its sections.`
-        : `Delete "${selectedTemplate.template_label || selectedTemplate.template_key}"?\n\nThis removes this draft/version template record and its sections.`,
-    )
-    if (!confirmed) return
-
-    try {
-      setDeletingTemplate(true)
-      setError('')
-      setMessage('')
-      await deleteDocumentPacketTemplate(selectedTemplateId, {
-        replacementTemplateId: replacementTemplate?.id || null,
-      })
-      await refreshAll()
-      setMessage(
-        selectedTemplate?.is_default && replacementTemplate
-          ? `Template deleted. "${replacementTemplate.template_label || replacementTemplate.template_key}" is now the default.`
-          : 'Template deleted.',
-      )
-    } catch (deleteError) {
-      setError(deleteError?.message || 'Unable to delete template.')
-    } finally {
-      setDeletingTemplate(false)
-    }
-  }
+    autoDraftSourceTemplateRef.current = selectedTemplateId
+    void handleCreateEditableCopy({ quiet: true, source: 'auto' }).then((created) => {
+      if (!created) autoDraftSourceTemplateRef.current = ''
+    })
+  }, [
+    canEdit,
+    cloning,
+    handleCreateEditableCopy,
+    loading,
+    saving,
+    selectedIsOrgOwned,
+    selectedTemplate,
+    selectedTemplateId,
+    templateDetail,
+  ])
 
   function addSection() {
     const nextIndex = (form.sections || []).length
@@ -6459,7 +6542,7 @@ export default function SettingsSigningTemplatesPage({
     if (!selectedTemplateId || !selectedTemplate) return
 
     if (!selectedIsOrgOwned) {
-      setError('Create an organisation-owned template copy before editing this template.')
+      await handleSaveDraftAction(event)
       return
     }
 
@@ -6991,43 +7074,13 @@ export default function SettingsSigningTemplatesPage({
 
     try {
       setSaving(true)
-      setCloning(true)
-      setError('')
-      setMessage('')
-
-      const draftForm = {
-        ...form,
-        templateStatus: 'draft',
-        isDefault: false,
-        isActive: false,
-      }
-      const cloned = await createDocumentPacketTemplate({
-        packetType,
-        moduleType: normalizedModuleType,
-        templateKey: `${normalizeText(selectedTemplate.template_key || packetType)}_draft_${Date.now()}`,
-        templateLabel: normalizeText(form.templateLabel || selectedTemplate.template_label || templateTypeConfig.label) || `${templateTypeConfig.label} Draft`,
-        description: form.description,
-        versionTag: normalizeText(form.versionTag || selectedTemplate.version_tag || 'v1') || 'v1',
-        templateStatus: 'draft',
-        templateFormat: getTemplateFormatForMode(form.renderMode),
-        templateStorageBucket: normalizeText(form.templateStorageBucket),
-        templateStoragePath: normalizeText(form.templateStoragePath),
-        templateFileName: normalizeText(form.templateFileName),
-        isDefault: false,
-        isActive: false,
-        metadataJson: buildTemplateMetadata({ ...draftForm, validationSummary }, form.metadataJson || {}, null),
-        sections: (form.sections || []).map((section, index) => mapSectionForSave(section, index, packetType)),
+      await handleCreateEditableCopy({
+        quiet: true,
+        source: 'save',
+        successMessage: 'Agency template saved.',
       })
-
-      await refreshAll()
-      setSelectedTemplateId(cloned?.id || '')
-      setHasUnsavedChanges(false)
-      setMessage('Draft saved for your agency.')
-    } catch (saveDraftError) {
-      setError(saveDraftError?.message || 'Unable to save draft.')
     } finally {
       setSaving(false)
-      setCloning(false)
     }
   }
 
@@ -7117,15 +7170,6 @@ export default function SettingsSigningTemplatesPage({
     } catch {
       setMessage(`Token ready: {{${normalizedToken}}}`)
     }
-  }
-
-  function handleCreateDraftAction() {
-    if (!selectedTemplate) return
-    if (selectedIsOrgOwned) {
-      void handleCreateNextVersion()
-      return
-    }
-    void handleCreateEditableCopy()
   }
 
   function insertTextIntoSelectedSection(rawText = '', { block = false } = {}) {
@@ -7391,20 +7435,28 @@ export default function SettingsSigningTemplatesPage({
     }
   }
 
-  function openPublishDialog() {
-    if (!selectedTemplateId || !selectedIsOrgOwned || !canEdit || saving || form.isDefault) return
+  async function openPublishDialog() {
+    if (!selectedTemplateId || !canEdit || saving || form.isDefault) return
+    if (!selectedIsOrgOwned) {
+      const created = await handleCreateEditableCopy({
+        quiet: true,
+        source: 'publish',
+        successMessage: 'Agency template ready to publish.',
+      })
+      if (!created) return
+    }
     setPublishReviewAccepted(false)
     setShowPublishConfirm(true)
   }
 
   async function confirmPublishTemplate() {
     if (publishReview.blockers.length) {
-      setError('Resolve the blockers before making this template live.')
+      setError('Resolve the blockers before publishing this template.')
       setShowPublishConfirm(false)
       return
     }
     if (!publishReviewAccepted) {
-      setError('Review and confirm the summary before making this template live.')
+      setError('Review and confirm the summary before publishing this template.')
       return
     }
     setShowPublishConfirm(false)
@@ -7414,89 +7466,6 @@ export default function SettingsSigningTemplatesPage({
   if (loading) {
     return <SettingsLoadingState label="Loading Document Builder…" />
   }
-
-  const makeLiveDisabled = !selectedTemplate || !selectedIsOrgOwned || !canEdit || saving || Boolean(form.isDefault)
-  const activeDocumentTypeConfig = simpleDocumentTabs.find((item) => item.key === activeDocumentTypeKey) || simpleDocumentTabs[0]
-  const selectedDocumentLabel = activeDocumentTypeConfig?.label || form.templateLabel || templateTypeConfig?.label || 'Template'
-  const selectedTemplateStatusLabel = !selectedTemplate
-    ? 'No template selected'
-    : form.isDefault
-      ? 'Live template'
-      : selectedIsOrgOwned
-        ? 'Draft'
-        : 'Standard template'
-  const selectedTemplateSavedLabel = !selectedTemplate
-    ? ''
-    : saving
-      ? 'Saving...'
-      : hasUnsavedChanges
-        ? 'Unsaved changes'
-        : `Saved ${formatFriendlyDate(selectedTemplate?.updated_at || liveTemplate?.updated_at)}`
-  const documentMetadataItems = [
-    selectedTemplate ? selectedDocumentLabel : '',
-    selectedTemplateStatusLabel,
-    selectedTemplateSavedLabel,
-  ].filter(Boolean)
-  const headerPrimaryAction = (() => {
-    if (!selectedTemplate) {
-      return {
-        label: 'Create Template',
-        icon: Plus,
-        disabled: !canEdit || saving || cloning,
-        onClick: () => {
-          setActiveStudioArea('templates')
-          setActiveTab('template')
-          void handleCreateTemplate()
-        },
-      }
-    }
-    if (!selectedIsOrgOwned) {
-      return {
-        label: cloning ? 'Creating...' : 'Create Editable Draft',
-        icon: CopyPlus,
-        disabled: !canEdit || cloning || saving,
-        onClick: (event) => {
-          setActiveStudioArea('templates')
-          setActiveTab('template')
-          void handleSaveDraftAction(event)
-        },
-      }
-    }
-    if (hasUnsavedChanges) {
-      return {
-        label: saving || cloning ? 'Saving...' : 'Save Changes',
-        icon: Save,
-        disabled: !canEdit || saving || cloning,
-        onClick: (event) => void handleSaveDraftAction(event),
-      }
-    }
-    if (!form.isDefault && publishReview.blockers.length) {
-      return {
-        label: 'Review Issues',
-        icon: AlertTriangle,
-        disabled: false,
-        onClick: () => {
-          setActiveStudioArea('templates')
-          setActiveTab('preview')
-        },
-      }
-    }
-    if (!form.isDefault) {
-      return {
-        label: 'Make Live',
-        icon: Upload,
-        disabled: makeLiveDisabled,
-        onClick: openPublishDialog,
-      }
-    }
-    return {
-      label: 'Create Document',
-      icon: FileSignature,
-      disabled: !selectedTemplate,
-      onClick: () => setActiveStudioArea('documents'),
-    }
-  })()
-  const HeaderPrimaryIcon = headerPrimaryAction.icon || Sparkles
 
   return (
     <div className="space-y-6 pb-10" data-simple-document-builder={simpleDocumentBuilderEnabled ? 'enabled' : 'off'}>
@@ -7517,36 +7486,9 @@ export default function SettingsSigningTemplatesPage({
         onContinue={handleStartDocumentLibraryDocument}
       />
       <header className="space-y-5 rounded-[20px] border border-[#dbe7f3] bg-white p-5 shadow-[0_16px_34px_rgba(15,23,42,0.05)] sm:p-6">
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
-          <div className="min-w-0 space-y-3">
-            <p className="text-sm font-medium text-[#607387]">{eyebrow}</p>
-            <div className="space-y-2">
-              <h1 className="text-[1.9rem] font-semibold leading-tight text-[#102033] sm:text-[2.1rem]">{title}</h1>
-              <p className="max-w-3xl text-[15px] leading-7 text-[#52667d]">{visibleDescription}</p>
-            </div>
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-2 text-sm font-semibold text-[#102033]" aria-label="Selected legal template">
-              {documentMetadataItems.map((item, index) => (
-                <span key={`${item}-${index}`} className="inline-flex min-w-0 items-center gap-2">
-                  {index > 0 ? <span className="h-1 w-1 rounded-full bg-[#9aabba]" /> : null}
-                  <span className={index === 1 ? 'rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-2.5 py-1 text-xs text-[#52667d]' : 'min-w-0 truncate'}>
-                    {item}
-                  </span>
-                </span>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-            <button
-              type="button"
-              className={`${studioPrimaryButtonClass} w-full sm:w-auto`}
-              onClick={headerPrimaryAction.onClick}
-              disabled={headerPrimaryAction.disabled}
-            >
-              <HeaderPrimaryIcon size={14} />
-              <span>{headerPrimaryAction.label}</span>
-            </button>
-          </div>
+        <div className="min-w-0 space-y-2">
+          <h1 className="text-[1.9rem] font-semibold leading-tight text-[#102033] sm:text-[2.1rem]">{title}</h1>
+          <p className="max-w-3xl text-[15px] leading-7 text-[#52667d]">{visibleDescription}</p>
         </div>
 
         {!canEdit ? (
@@ -7561,18 +7503,18 @@ export default function SettingsSigningTemplatesPage({
         <div className="grid gap-3">
           <div className="overflow-x-auto rounded-[16px] border border-[#dbe7f3] bg-[#f8fbff] p-1">
             <div className="flex min-w-max gap-1">
-              {CONTRACT_STUDIO_AREAS.map((area) => {
-                const Icon = area.icon
-                const active = activeStudioArea === area.key
+              {simpleDocumentTabs.map((item) => {
+                const Icon = item.icon
+                const active = activeStudioArea === 'templates' && activeDocumentTypeKey === item.key
                 return (
                   <button
-                    key={area.key}
+                    key={item.key}
                     type="button"
                     onClick={() => {
-                      setActiveStudioArea(area.key)
-                      if (area.key === 'templates' && !CONTRACT_STUDIO_TABS.some((tab) => tab.key === activeTab)) {
-                        setActiveTab('template')
-                      }
+                      setActiveStudioArea('templates')
+                      setActiveDocumentTypeKey(item.key)
+                      setPacketType(item.packetType)
+                      setActiveTab('template')
                     }}
                     className={[
                       'inline-flex min-h-11 items-center gap-2 rounded-[12px] border px-4 py-2.5 text-sm font-semibold transition',
@@ -7580,60 +7522,178 @@ export default function SettingsSigningTemplatesPage({
                         ? 'border-[#96d7ad] bg-white text-[#128642] shadow-[inset_0_-2px_0_#128642]'
                         : 'border-transparent bg-transparent text-[#52667d] hover:border-[#dbe7f3] hover:bg-white hover:text-[#102033]',
                     ].join(' ')}
-                    title={area.description}
                   >
                     <Icon size={15} />
-                    <span>{area.label}</span>
+                    <span>{item.label}</span>
                   </button>
                 )
               })}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveStudioArea('templates')
+                  setActiveTab('template')
+                  setTemplateStarterMenuOpen((previous) => !previous)
+                }}
+                aria-expanded={templateStarterMenuOpen}
+                disabled={!canEdit || saving || cloning || creatingTemplate}
+                className={[
+                  'inline-flex min-h-11 items-center gap-2 rounded-[12px] border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60',
+                  templateStarterMenuOpen
+                    ? 'border-[#96d7ad] bg-white text-[#128642] shadow-[inset_0_-2px_0_#128642]'
+                    : 'border-transparent bg-transparent text-[#52667d] hover:border-[#dbe7f3] hover:bg-white hover:text-[#102033]',
+                ].join(' ')}
+              >
+                <Plus size={15} />
+                <span>+ Template</span>
+              </button>
             </div>
           </div>
 
-          {activeStudioArea === 'templates' ? (
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)]">
-              <div className="min-w-0 rounded-[16px] border border-[#dbe7f3] bg-white p-3">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#7a8da6]">Document type</p>
-                <div className="flex min-w-0 flex-wrap gap-2">
-                  {simpleDocumentTabs.map((item) => {
-                    const Icon = item.icon
-                    const active = activeDocumentTypeKey === item.key
-                    return (
-                      <button
-                        key={item.key}
-                        type="button"
-                        onClick={() => {
-                          setActiveDocumentTypeKey(item.key)
-                          setPacketType(item.packetType)
-                          setActiveTab('template')
-                        }}
-                        className={[
-                          'inline-flex min-h-10 min-w-0 items-center gap-2 rounded-[12px] border px-3 py-2 text-sm font-semibold transition',
-                          active
-                            ? 'border-[#b9dfc8] bg-[#eef9f1] text-[#128642] shadow-[inset_0_-2px_0_#128642]'
-                            : 'border-[#e4ebf2] bg-white text-[#42566d] hover:border-[#dbe7f3] hover:bg-[#f8fbff]',
-                        ].join(' ')}
-                      >
-                        <Icon size={15} className="shrink-0" />
-                        <span className="truncate">{item.label}</span>
-                      </button>
-                    )
-                  })}
+          {templateStarterMenuOpen ? (
+            <div className="rounded-[18px] border border-[#dbe7f3] bg-white p-4 shadow-[0_18px_36px_rgba(15,23,42,0.08)]" aria-label="Template starters">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Add Template</p>
+                  <h2 className="mt-2 text-base font-semibold text-[#102033]">Choose a starter</h2>
+                  <p className="mt-1 max-w-3xl text-sm leading-6 text-[#607387]">
+                    Start with the usual sections, or add a focused addendum for a common change.
+                  </p>
                 </div>
+                <button
+                  type="button"
+                  className="self-start rounded-[10px] border border-[#dbe7f3] bg-[#f8fbff] px-3 py-2 text-xs font-semibold text-[#52667d] transition hover:bg-white"
+                  onClick={() => setTemplateStarterMenuOpen(false)}
+                >
+                  Close
+                </button>
               </div>
 
-              <div className="min-w-0 rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] p-3">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#7a8da6]">Mode</p>
-                <div className="flex min-w-0 flex-wrap gap-2">
-                  {CONTRACT_STUDIO_TABS.map((tab) => (
-                    <TemplateStudioTabButton
-                      key={tab.key}
-                      active={activeTab === tab.key}
-                      label={tab.label}
-                      onClick={() => setActiveTab(tab.key)}
-                    />
+              <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                {simpleDocumentTabs.map((item) => {
+                  const Icon = item.icon
+                  return (
+                    <button
+                      key={`starter-${item.key}`}
+                      type="button"
+                      className="min-w-0 rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] px-4 py-3 text-left transition hover:border-[#96d7ad] hover:bg-[#f6fbf8] disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={() => void handleCreateTemplateStarter({ targetPacketType: item.packetType })}
+                      disabled={!canEdit || saving || cloning || creatingTemplate}
+                    >
+                      <span className="flex items-start gap-3">
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-white text-[#128642]">
+                          <Icon size={17} />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-sm font-semibold text-[#102033]">{item.label}</span>
+                          <span className="mt-1 block text-xs leading-5 text-[#607387]">
+                            Standard sections, fields, signing blocks and legal coverage.
+                          </span>
+                        </span>
+                      </span>
+                    </button>
+                  )
+                })}
+
+                <button
+                  type="button"
+                  className="min-w-0 rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] px-4 py-3 text-left transition hover:border-[#96d7ad] hover:bg-[#f6fbf8] disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => void handleCreateTemplateStarter({ starterKind: GENERAL_ADDENDUM_TEMPLATE_FAMILY })}
+                  disabled={!canEdit || saving || cloning || creatingTemplate}
+                >
+                  <span className="flex items-start gap-3">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-white text-[#128642]">
+                      <FileSignature size={17} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold text-[#102033]">General Addendum</span>
+                      <span className="mt-1 block text-xs leading-5 text-[#607387]">
+                        Broad addendum for agreed changes, clarifications, or extra terms.
+                      </span>
+                    </span>
+                  </span>
+                </button>
+              </div>
+
+              <div className="mt-4 rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] p-3">
+                <p className="px-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">Common Addendums</p>
+                <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                  {ADDENDUM_TEMPLATE_STARTER_OPTIONS.filter((starter) => starter.key !== GENERAL_ADDENDUM_TEMPLATE_FAMILY).map((starter) => (
+                    <button
+                      key={`starter-${starter.key}`}
+                      type="button"
+                      className="rounded-[14px] border border-[#dbe7f3] bg-white px-3 py-2.5 text-left transition hover:border-[#bfd5f5] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={() => void handleCreateTemplateStarter({ starterKind: starter.key })}
+                      disabled={!canEdit || saving || cloning || creatingTemplate}
+                    >
+                      <span className="block text-sm font-semibold text-[#102033]">{starter.shortLabel}</span>
+                      <span className="mt-1 block text-xs leading-5 text-[#607387]">{starter.description}</span>
+                    </button>
                   ))}
                 </div>
+              </div>
+            </div>
+          ) : null}
+
+          {activeStudioArea === 'templates' ? (
+            <div className="flex min-w-0 flex-col gap-3 pt-1 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 flex-wrap gap-2" aria-label="Template view">
+                <button
+                  type="button"
+                  aria-pressed={activeTab !== 'preview'}
+                  onClick={() => {
+                    setActiveStudioArea('templates')
+                    setActiveTab('template')
+                  }}
+                  className={[
+                    'inline-flex min-h-10 items-center gap-2 rounded-[12px] border px-4 py-2 text-sm font-semibold transition',
+                    activeTab !== 'preview'
+                      ? 'border-[#96d7ad] bg-[#eef9f1] text-[#128642]'
+                      : 'border-[#dbe7f3] bg-white text-[#42566d] hover:border-[#b9dfc8] hover:bg-[#f8fbff]',
+                  ].join(' ')}
+                >
+                  <FileText size={15} />
+                  <span>Edit Template</span>
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={activeTab === 'preview'}
+                  onClick={() => openTemplatePreview()}
+                  disabled={!selectedTemplate}
+                  className={[
+                    'inline-flex min-h-10 items-center gap-2 rounded-[12px] border px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60',
+                    activeTab === 'preview'
+                      ? 'border-[#96d7ad] bg-[#eef9f1] text-[#128642]'
+                      : 'border-[#dbe7f3] bg-white text-[#42566d] hover:border-[#b9dfc8] hover:bg-[#f8fbff]',
+                  ].join(' ')}
+                >
+                  <Eye size={15} />
+                  <span>Preview</span>
+                </button>
+              </div>
+
+              <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
+                <span className="min-h-10 rounded-[12px] border border-[#dbe7f3] bg-white px-3 py-2 text-sm font-semibold text-[#607387]">
+                  {selectedIsOrgOwned ? 'Editing your agency version' : cloning ? 'Preparing agency version...' : 'Agency version opens automatically'}
+                </span>
+                <button
+                  type="button"
+                  className={studioSecondaryButtonClass}
+                  onClick={(event) => void handleSaveDraftAction(event)}
+                  disabled={!selectedTemplate || !canEdit || saving || cloning}
+                >
+                  <Save size={14} />
+                  <span>{saving ? 'Saving...' : 'Save'}</span>
+                </button>
+                <button
+                  type="button"
+                  className={studioPrimaryButtonClass}
+                  onClick={() => void openPublishDialog()}
+                  disabled={!selectedTemplate || !canEdit || saving || cloning || Boolean(form.isDefault)}
+                >
+                  <ShieldCheck size={14} />
+                  <span>{form.isDefault ? 'Live' : 'Publish'}</span>
+                </button>
               </div>
             </div>
           ) : null}
@@ -7806,37 +7866,81 @@ export default function SettingsSigningTemplatesPage({
                     ) : null}
 
                     <div className="min-w-0 overflow-hidden rounded-[18px] border border-[#dbe7f3] bg-white">
-                      <div className="flex min-w-0 flex-wrap items-center gap-3 border-b border-[#e7eef6] bg-[#fbfdff] px-3 py-2.5 sm:px-4">
-                        {SECTION_EDITOR_INSERT_GROUPS.map((group) => (
-                          <div key={group.label} className="flex min-w-0 flex-wrap items-center gap-1.5">
-                            <span className="px-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">
-                              {group.label}
-                            </span>
-                            <div className="inline-flex min-w-0 flex-wrap items-center gap-1 rounded-[12px] border border-[#dbe7f3] bg-white p-1">
-                              {group.items.map((item) => {
-                                const Icon = item.icon
-                                return (
-                                  <button
-                                    key={item.key}
-                                    type="button"
-                                    title={item.title}
-                                    onClick={item.action === 'source' ? focusSourceEditor : () => handleInsertDocumentBlock(item.key)}
-                                    disabled={!canEdit || !selectedSection}
-                                    className={[
-                                      'inline-flex h-8 min-w-0 items-center gap-1.5 rounded-[8px] px-2.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50',
-                                      item.action === 'source'
-                                        ? 'text-[#52667d] hover:bg-[#f4f7fb] hover:text-[#233246]'
-                                        : 'text-[#233246] hover:bg-[#f6fbf8] hover:text-[#128642]',
-                                    ].join(' ')}
-                                  >
-                                    <Icon size={14} />
-                                    <span className="truncate">{item.label}</span>
-                                  </button>
-                                )
-                              })}
-                            </div>
+                      <div className="border-b border-[#e7eef6] bg-[#fbfdff] px-3 py-3 sm:px-4">
+                        <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                          <div className="min-w-0">
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">Quick Add</p>
+                            <p className="mt-1 text-sm leading-6 text-[#607387]">Add the pieces agencies use most, then fine tune the wording in the page.</p>
                           </div>
-                        ))}
+                          <div className="grid min-w-0 gap-2 sm:grid-cols-3 lg:min-w-[520px]">
+                            <button
+                              type="button"
+                              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border border-[#dbe7f3] bg-white px-3 py-2 text-sm font-semibold text-[#233246] transition hover:border-[#96d7ad] hover:bg-[#f6fbf8] hover:text-[#128642] disabled:cursor-not-allowed disabled:opacity-50"
+                              onClick={() => handleInsertDocumentBlock('paragraph')}
+                              disabled={!canEdit || !selectedSection}
+                            >
+                              <Type size={15} />
+                              <span>Add Clause</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border border-[#dbe7f3] bg-white px-3 py-2 text-sm font-semibold text-[#233246] transition hover:border-[#96d7ad] hover:bg-[#f6fbf8] hover:text-[#128642] disabled:cursor-not-allowed disabled:opacity-50"
+                              onClick={() => handleInsertDocumentBlock('signature')}
+                              disabled={!canEdit || !selectedSection}
+                            >
+                              <FileSignature size={15} />
+                              <span>Add Signing Block</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border border-[#dbe7f3] bg-white px-3 py-2 text-sm font-semibold text-[#233246] transition hover:border-[#96d7ad] hover:bg-[#f6fbf8] hover:text-[#128642] disabled:cursor-not-allowed disabled:opacity-50"
+                              onClick={() => setActiveStudioArea('clauseLibrary')}
+                              disabled={!canEdit || !selectedSection}
+                            >
+                              <Layers3 size={15} />
+                              <span>Use Approved Clause</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        <details className="mt-3 rounded-[14px] border border-[#dbe7f3] bg-white">
+                          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-semibold text-[#42566d]">
+                            <span>More tools</span>
+                            <ChevronDown size={15} className="text-[#8aa0b7]" />
+                          </summary>
+                          <div className="flex min-w-0 flex-wrap items-center gap-3 border-t border-[#e7eef6] px-3 py-3">
+                            {SECTION_EDITOR_INSERT_GROUPS.map((group) => (
+                              <div key={group.label} className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                <span className="px-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">
+                                  {group.label}
+                                </span>
+                                <div className="inline-flex min-w-0 flex-wrap items-center gap-1 rounded-[12px] border border-[#dbe7f3] bg-white p-1">
+                                  {group.items.map((item) => {
+                                    const Icon = item.icon
+                                    return (
+                                      <button
+                                        key={item.key}
+                                        type="button"
+                                        title={item.title}
+                                        onClick={item.action === 'source' ? focusSourceEditor : () => handleInsertDocumentBlock(item.key)}
+                                        disabled={!canEdit || !selectedSection}
+                                        className={[
+                                          'inline-flex h-8 min-w-0 items-center gap-1.5 rounded-[8px] px-2.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50',
+                                          item.action === 'source'
+                                            ? 'text-[#52667d] hover:bg-[#f4f7fb] hover:text-[#233246]'
+                                            : 'text-[#233246] hover:bg-[#f6fbf8] hover:text-[#128642]',
+                                        ].join(' ')}
+                                      >
+                                        <Icon size={14} />
+                                        <span className="truncate">{item.label}</span>
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
                       </div>
 
                       <div className="bg-[#eef3f8] px-3 py-4 sm:px-4 sm:py-5">
@@ -8001,6 +8105,66 @@ export default function SettingsSigningTemplatesPage({
               </main>
 
               <aside className="min-w-0 max-w-full space-y-4 overflow-x-hidden xl:sticky xl:top-4 xl:max-h-[calc(100vh-140px)] xl:overflow-y-auto xl:pr-1">
+                <section className="min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Standard Conditions</p>
+                      <h2 className="mt-2 text-base font-semibold text-[#102033]">Legal Coverage</h2>
+                    </div>
+                    <span className="rounded-full border border-[#cdebd8] bg-[#eef9f1] px-2.5 py-1 text-[0.68rem] font-semibold text-[#128642]">
+                      {legalConditionCoverage.coveredCount}/{legalConditionCoverage.totalCount}
+                    </span>
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-[#607387]">
+                    The longer legal wording is organised into sections. Open a row to jump to the wording your attorney can review.
+                  </p>
+
+                  <div className="mt-4 space-y-2">
+                    {legalConditionCoverage.items.map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => {
+                          if (item.firstSectionIndex !== null) setSelectedSectionIndex(item.firstSectionIndex)
+                        }}
+                        disabled={item.firstSectionIndex === null}
+                        className={[
+                          'w-full rounded-[14px] border px-3 py-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-70',
+                          item.covered
+                            ? 'border-[#dbe7f3] bg-[#fbfdff] hover:border-[#96d7ad] hover:bg-[#f6fbf8]'
+                            : 'border-dashed border-[#dbe7f3] bg-white',
+                        ].join(' ')}
+                        title={item.sectionLabels.length ? item.sectionLabels.join(', ') : 'Not found in this template'}
+                      >
+                        <span className="flex items-start gap-2">
+                          {item.covered ? (
+                            <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-[#128642]" />
+                          ) : (
+                            <CircleDot size={14} className="mt-0.5 shrink-0 text-[#9fb0c4]" />
+                          )}
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-semibold text-[#102033]">{item.label}</span>
+                            <span className="mt-1 block text-xs leading-5 text-[#607387]">
+                              {item.covered
+                                ? `${item.count} section${item.count === 1 ? '' : 's'} included`
+                                : 'Not included in this template'}
+                            </span>
+                          </span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[12px] border border-[#dbe7f3] bg-[#f8fbff] px-3 py-2.5 text-sm font-semibold text-[#24518a] transition hover:bg-white"
+                    onClick={() => setActiveStudioArea('clauseLibrary')}
+                  >
+                    <Layers3 size={14} />
+                    <span>Use Approved Clauses</span>
+                  </button>
+                </section>
+
                 <section className="min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -8473,7 +8637,7 @@ export default function SettingsSigningTemplatesPage({
                 <TemplateStudioPanel
                   eyebrow="Template Library"
                   title="Template List"
-                  description="Select the version you want to update, review, or make live."
+                  description="Select the version you want to update, review, or publish."
                 >
                   <div className="rounded-[24px] border border-[#dbe7f3] bg-[#f8fbff] p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -8636,7 +8800,7 @@ export default function SettingsSigningTemplatesPage({
                           }
                         >
                           <ShieldCheck size={15} />
-                          <span>{form.isDefault ? 'Live default' : 'Make live'}</span>
+                          <span>{form.isDefault ? 'Live default' : 'Publish'}</span>
                         </button>
                       ) : null}
                     </div>
@@ -8644,7 +8808,7 @@ export default function SettingsSigningTemplatesPage({
                 >
                   {!selectedIsOrgOwned ? (
                     <SettingsBanner tone="warning">
-                      This is a shared base template. Create a draft first if you want to change clauses, section settings, or live status.
+                      Arch9 is preparing your agency version. Edits save to that version before it is published.
                     </SettingsBanner>
                   ) : null}
 
@@ -8987,7 +9151,7 @@ export default function SettingsSigningTemplatesPage({
 
                 <TemplateStudioPanel
                   eyebrow="Checks"
-                  title="Ready to Make Live"
+                  title="Ready to Publish"
                   description="A quick view of readiness, field coverage, and safety."
                 >
                   <div className="rounded-[24px] border border-[#dbe7f3] bg-[#f8fbff] p-4">
@@ -8996,10 +9160,10 @@ export default function SettingsSigningTemplatesPage({
                         {templateHealthPercent}%
                       </div>
                       <div>
-                        <p className="text-base font-semibold text-[#102033]">Ready to Make Live</p>
+                        <p className="text-base font-semibold text-[#102033]">Ready to Publish</p>
                         <p className="mt-1 text-sm leading-6 text-[#6b7c93]">
                           {validationSummary.warnings.length
-                            ? `${validationSummary.warnings.length} warning${validationSummary.warnings.length === 1 ? '' : 's'} to review before making this live.`
+                            ? `${validationSummary.warnings.length} warning${validationSummary.warnings.length === 1 ? '' : 's'} to review before publishing.`
                             : 'No warning-level issues detected right now.'}
                         </p>
                       </div>
@@ -9044,87 +9208,6 @@ export default function SettingsSigningTemplatesPage({
                 </TemplateStudioPanel>
               </div>
             </form>
-
-            <div className="mt-6">
-              <div className="rounded-[30px] border border-[#dbe7f3] bg-white p-5 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
-                <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
-                  <div className="rounded-[22px] border border-[#dbe7f3] bg-[#f8fbff] px-4 py-4">
-                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Next Step</p>
-                    <p className="mt-2 text-lg font-semibold text-[#102033]">{stickyNextStep.title}</p>
-                    <p className="mt-1 text-sm leading-6 text-[#6b7c93]">{stickyNextStep.description}</p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-                    <button
-                      type="button"
-                      className={studioSecondaryButtonClass}
-                      onClick={handleCreateDraftAction}
-                      disabled={!selectedTemplate || cloning || !canEdit}
-                    >
-                      <CopyPlus size={14} />
-                      <span>{cloning ? 'Creating…' : 'Create Draft'}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      className={studioSecondaryButtonClass}
-                      onClick={() => openTemplatePreview()}
-                      disabled={testingTemplate}
-                    >
-                      <Eye size={14} />
-                      <span>{testingTemplate ? 'Previewing…' : 'Preview'}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      className={studioPrimaryButtonClass}
-                      onClick={() => void handleTestGenerate()}
-                      disabled={testingTemplate}
-                    >
-                      <Eye size={14} />
-                      <span>{testingTemplate ? 'Previewing…' : 'Preview'}</span>
-                    </button>
-
-                    <details className="relative">
-                      <summary className={`${studioSecondaryButtonClass} list-none cursor-pointer`}>
-                        <MoreHorizontal size={14} />
-                        <span>More</span>
-                        <ChevronDown size={14} />
-                      </summary>
-                      <div className="absolute bottom-full right-0 z-20 mb-2 w-64 rounded-[22px] border border-[#dbe7f3] bg-white p-2 shadow-[0_22px_40px_rgba(15,23,42,0.14)]">
-                        <button
-                          type="button"
-                          className="flex w-full items-center justify-between rounded-[16px] px-3 py-2.5 text-left text-sm font-semibold text-[#102033] transition hover:bg-[#f6f9fc] disabled:opacity-60"
-                          onClick={(event) => void handleSave(event)}
-                          disabled={!selectedIsOrgOwned || !canEdit || saving}
-                        >
-                          <span>{saving ? 'Saving…' : 'Save'}</span>
-                          <Save size={14} className="text-[#8aa0b7]" />
-                        </button>
-                        <button
-                          type="button"
-                          className="flex w-full items-center justify-between rounded-[16px] px-3 py-2.5 text-left text-sm font-semibold text-[#102033] transition hover:bg-[#f6f9fc] disabled:opacity-60"
-                          onClick={openPublishDialog}
-                          disabled={!selectedIsOrgOwned || !canEdit || Boolean(form.isDefault)}
-                        >
-                          <span>{form.isDefault ? 'Already live' : 'Make live'}</span>
-                          <ShieldCheck size={14} className="text-[#8aa0b7]" />
-                        </button>
-                        <button
-                          type="button"
-                          className="flex w-full items-center justify-between rounded-[16px] px-3 py-2.5 text-left text-sm font-semibold text-[#b4383e] transition hover:bg-[#fff7f7] disabled:opacity-60"
-                          onClick={() => void handleDeleteTemplate()}
-                          disabled={deletingTemplate || !canDeleteTemplateRecord(selectedTemplate, selectedList)}
-                        >
-                          <span>{deletingTemplate ? 'Deleting…' : 'Delete Draft / Version'}</span>
-                          <Trash2 size={14} className="text-[#cf6368]" />
-                        </button>
-                      </div>
-                    </details>
-                  </div>
-                </div>
-              </div>
-            </div>
           </>
         ) : (
           <TemplateStudioPanel
@@ -9395,7 +9478,7 @@ export default function SettingsSigningTemplatesPage({
         selectedTemplate ? (
           <form onSubmit={handleSave} className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
             <TemplateStudioPanel
-              eyebrow="Make Live"
+              eyebrow="Publishing"
               title="Document Metadata"
               description="Name, describe, and choose whether this version is available to the team."
             >
@@ -9461,8 +9544,8 @@ export default function SettingsSigningTemplatesPage({
                   <p className="mt-3 text-sm font-semibold text-[#102033]">{selectedIsOrgOwned ? 'Organisation version' : 'Shared base version'}</p>
                   <p className="mt-2 text-xs leading-5 text-[#6b7c93]">
                     {selectedIsOrgOwned
-                      ? 'Your team can edit this version, save changes, and make it live.'
-                      : 'Create a draft copy before making wording or live-status changes.'}
+                      ? 'Your team can edit this version, save changes, and publish it.'
+                      : 'Arch9 automatically opens an agency version before edits are saved.'}
                   </p>
                 </div>
                 <div className="rounded-[20px] border border-[#dbe7f3] bg-[#f8fbff] p-4">
@@ -9480,7 +9563,7 @@ export default function SettingsSigningTemplatesPage({
                   <p className="mt-2 text-xs leading-5 text-[#6b7c93]">
                     {form.isDefault
                       ? 'New documents of this type already start from this version.'
-                      : 'Make this version live when you are ready for new documents to use it.'}
+                      : 'Publish this version when you are ready for new documents to use it.'}
                   </p>
                 </div>
               </div>
@@ -9491,7 +9574,7 @@ export default function SettingsSigningTemplatesPage({
                     <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Governance</p>
                     <h3 className="mt-2 text-base font-semibold text-[#102033]">Live Review & Section Locks</h3>
                     <p className="mt-1 text-sm leading-6 text-[#6b7c93]">
-                      Lock approved wording before making a version live so future edits have a clear governance signal.
+                      Lock approved wording before publishing so future edits have a clear governance signal.
                     </p>
                   </div>
                   <span className={[
@@ -9499,7 +9582,7 @@ export default function SettingsSigningTemplatesPage({
                     canPublishTemplate ? 'border-[#cdebd8] bg-[#eef9f1] text-[#128642]' : 'border-[#f3d1ce] bg-[#fff4f3] text-[#8e1f15]',
                   ].join(' ')}
                   >
-                    {canPublishTemplate ? 'Can make live' : 'Review only'}
+                    {canPublishTemplate ? 'Can publish' : 'Review only'}
                   </span>
                 </div>
 
@@ -9611,7 +9694,7 @@ export default function SettingsSigningTemplatesPage({
                     <SettingsBanner tone={validationSummary.renderable ? 'success' : 'warning'}>
                       {validationSummary.renderable
                         ? 'This in-app template is ready to use. No DOCX file is needed.'
-                        : 'This in-app template can still be saved, but you may want to review warnings before making it live.'}
+                        : 'This in-app template can still be saved, but you may want to review warnings before publishing.'}
                     </SettingsBanner>
                   </div>
                 ) : null}
@@ -9689,7 +9772,7 @@ export default function SettingsSigningTemplatesPage({
                 <button
                   type="submit"
                   className={studioPrimaryButtonClass}
-                  disabled={!canEdit || !selectedIsOrgOwned || saving}
+                  disabled={!canEdit || saving || cloning}
                 >
                   <Save size={14} />
                   <span>{saving ? 'Saving…' : 'Save Template'}</span>
@@ -9852,7 +9935,7 @@ export default function SettingsSigningTemplatesPage({
               </TemplateStudioPanel>
 
               <TemplateStudioPanel
-                eyebrow="Make Live"
+                eyebrow="Publishing"
                 title="Live Template"
                 description="The version new documents currently use."
               >
@@ -9860,7 +9943,7 @@ export default function SettingsSigningTemplatesPage({
                   <div className="rounded-[22px] border border-[#dbe7f3] bg-[#f8fbff] p-4">
                     <p className="text-base font-semibold text-[#102033]">{liveTemplate.template_label || liveTemplate.template_key}</p>
                     <p className="mt-2 text-sm text-[#6b7c93]">{liveTemplate.version_tag || 'v1'} · {formatDateTime(liveTemplate.updated_at)}</p>
-                    <p className="mt-2 text-sm text-[#6b7c93]">Made live by: {getTemplateActorLabel(liveTemplate)}</p>
+                    <p className="mt-2 text-sm text-[#6b7c93]">Published by: {getTemplateActorLabel(liveTemplate)}</p>
                   </div>
                 ) : (
                   <p className="text-sm leading-6 text-[#6b7c93]">No live default template is active yet for this document type.</p>
@@ -9941,6 +10024,39 @@ export default function SettingsSigningTemplatesPage({
 
           <div className="space-y-6">
             <TemplateStudioPanel
+              eyebrow="Standard Conditions"
+              title={`${legalConditionCoverage.percent}% Covered`}
+              description="Coverage is read from the current template sections, so edited-down templates stay honest."
+            >
+              <div className="space-y-2">
+                {legalConditionCoverage.items.map((item) => (
+                  <button
+                    key={`library-coverage-${item.key}`}
+                    type="button"
+                    className="flex w-full items-start gap-3 rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] px-4 py-3 text-left transition hover:border-[#96d7ad] hover:bg-[#f6fbf8] disabled:cursor-not-allowed disabled:opacity-70"
+                    onClick={() => {
+                      if (item.firstSectionIndex !== null) {
+                        setSelectedSectionIndex(item.firstSectionIndex)
+                        setActiveStudioArea('templates')
+                      }
+                    }}
+                    disabled={item.firstSectionIndex === null}
+                  >
+                    {item.covered ? (
+                      <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-[#128642]" />
+                    ) : (
+                      <CircleDot size={15} className="mt-0.5 shrink-0 text-[#9fb0c4]" />
+                    )}
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold text-[#102033]">{item.label}</span>
+                      <span className="mt-1 block text-xs leading-5 text-[#607387]">{item.description}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </TemplateStudioPanel>
+
+            <TemplateStudioPanel
               eyebrow="Governance"
               title="Library Controls"
               description="The library will become the source of truth for approved wording."
@@ -9986,14 +10102,11 @@ export default function SettingsSigningTemplatesPage({
                   type="button"
                   className={studioSecondaryButtonClass}
                   onClick={() => {
-                    void handleCreateTemplate().then((created) => {
-                      if (created?.id) {
-                        setActiveStudioArea('templates')
-                        setActiveTab('template')
-                      }
-                    })
+                    setActiveStudioArea('templates')
+                    setActiveTab('template')
+                    setTemplateStarterMenuOpen(true)
                   }}
-                  disabled={!canEdit || saving || cloning}
+                  disabled={!canEdit || saving || cloning || creatingTemplate}
                 >
                   <FileText size={14} />
                   <span>New Template</span>
@@ -10744,8 +10857,8 @@ export default function SettingsSigningTemplatesPage({
       {showPublishConfirm ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[rgba(16,32,51,0.28)] px-4 py-8">
           <div className="w-full max-w-3xl rounded-[30px] border border-[#dbe7f3] bg-white p-6 shadow-[0_28px_60px_rgba(15,23,42,0.24)]">
-            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7a8da6]">Make Live</p>
-            <h2 className="mt-3 text-[1.35rem] font-semibold text-[#102033]">Review before making this live</h2>
+            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7a8da6]">Publishing</p>
+            <h2 className="mt-3 text-[1.35rem] font-semibold text-[#102033]">Review before publishing</h2>
             <p className="mt-3 text-sm leading-7 text-[#6b7c93]">
               New documents of this type will use this version going forward. Existing transactions will not be changed.
             </p>
@@ -10803,7 +10916,7 @@ export default function SettingsSigningTemplatesPage({
 
             <div className="mt-5 space-y-2">
               {publishReview.blockers.length ? publishReview.blockers.map((item) => (
-                <ValidationIssueCard key={`publish-blocker-${item}`} issue={item} tone="error" label="Make live" />
+                <ValidationIssueCard key={`publish-blocker-${item}`} issue={item} tone="error" label="Publish" />
               )) : (
                 <p className="flex items-center gap-2 rounded-[16px] border border-[#cdebd8] bg-[#eef9f1] px-4 py-3 text-sm font-semibold text-[#128642]">
                   <CheckCircle2 size={16} />
@@ -10837,7 +10950,7 @@ export default function SettingsSigningTemplatesPage({
                 disabled={saving || Boolean(publishReview.blockers.length) || !publishReviewAccepted}
               >
                 <ShieldCheck size={14} />
-                <span>{saving ? 'Making live...' : 'Make live'}</span>
+                <span>{saving ? 'Publishing...' : 'Publish'}</span>
               </button>
             </div>
           </div>

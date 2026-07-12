@@ -71,6 +71,10 @@ function getMembershipRole(row: JsonRecord) {
   );
 }
 
+function isAdminMembership(row: JsonRecord) {
+  return ADMIN_ROLES.has(getMembershipRole(row));
+}
+
 function getBearerToken(req: Request) {
   const header = normalizeText(req.headers.get("authorization"));
   const match = header.match(/^Bearer\s+(.+)$/i);
@@ -151,8 +155,7 @@ function assertInvitationVisibleToUser({
   userEmail: string;
 }) {
   const invitedEmail = getInvitationEmail(invitation);
-  const role = getMembershipRole(membership);
-  const isAdmin = ADMIN_ROLES.has(role);
+  const isAdmin = isAdminMembership(membership);
 
   if (invitedEmail && invitedEmail !== userEmail && !invitedEmail.endsWith("@bridge.internal") && !isAdmin) {
     return {
@@ -166,7 +169,7 @@ function assertInvitationVisibleToUser({
   return { ok: true };
 }
 
-function buildPreview(invitation: JsonRecord, organisation: JsonRecord | null) {
+function buildPreview(invitation: JsonRecord, organisation: JsonRecord | null, membership: JsonRecord | null = null) {
   return {
     id: normalizeText(invitation.id),
     status: normalizeLower(invitation.status) || "pending",
@@ -178,6 +181,9 @@ function buildPreview(invitation: JsonRecord, organisation: JsonRecord | null) {
     scopeName: normalizeText(invitation.scope_name),
     preferred: invitation.preferred === true,
     expiresAt: normalizeText(invitation.expires_at),
+    invitedEmail: getInvitationEmail(invitation),
+    currentUserRole: membership ? getMembershipRole(membership) : "",
+    canAccept: Boolean(membership),
   };
 }
 
@@ -442,7 +448,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const senderOrganisation = await fetchOrganisationName(supabase, normalizeText(invitation.sender_organisation_id));
-    const preview = buildPreview(invitation, senderOrganisation);
+    const preview = buildPreview(invitation, senderOrganisation, membership);
 
     if (action === "preview") {
       return jsonResponse(200, {

@@ -130,8 +130,10 @@ export type SendArch9LaunchInternalNotificationPayload = {
   type:
     | "arch9_launch_internal_notification"
     | "launch_internal_notification"
-    | "arch9_concierge_internal_notification";
-  to: string;
+    | "arch9_concierge_internal_notification"
+    | "arch9_training_request"
+    | "partner_training_request";
+  to?: string;
   fullName?: string;
   full_name?: string;
   email?: string | null;
@@ -290,6 +292,8 @@ export type SendOrganisationPartnerInvitationPayload = {
   arch9_website?: string;
   preferred?: boolean;
   message?: string;
+  recipientName?: string;
+  recipient_name?: string;
 };
 
 export type SendSellerOnboardingPayload = {

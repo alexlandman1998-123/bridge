@@ -43,6 +43,7 @@ import {
   isUnsupportedJwtAlgorithmError,
   supabase,
 } from '../lib/supabaseClient'
+import { isPartnerInviteReturnPath, rememberPendingPartnerInvitePath } from '../lib/pendingPartnerInvite'
 
 const PENDING_ORG_INVITE_TOKEN_STORAGE_KEY = 'itg:pending-org-invite-token'
 const PENDING_ORG_INVITE_EMAIL_STORAGE_KEY = 'itg:pending-org-invite-email'
@@ -142,6 +143,24 @@ function isPublicInviteReturnPath(path = '') {
   )
 }
 
+function shouldReturnDirectlyAfterSignup(path = '') {
+  const safePath = String(path || '').trim()
+  return isPublicInviteReturnPath(safePath) && !isPartnerInviteReturnPath(safePath)
+}
+
+function resolveSignupContinuationPath({
+  redirectTo = '',
+  currentIntent = null,
+  inviteDrivenSignup = false,
+  inviteVerificationRedirectTo = '',
+} = {}) {
+  if (inviteDrivenSignup) return inviteVerificationRedirectTo || redirectTo || '/setup'
+  if (isPartnerInviteReturnPath(redirectTo) && currentIntent) return resolveSignupIntentRoute(currentIntent)
+  if (shouldReturnDirectlyAfterSignup(redirectTo)) return redirectTo
+  if (currentIntent) return resolveSignupIntentRoute(currentIntent)
+  return '/setup'
+}
+
 async function resolveFounderLoginTarget(fallbackTarget = '/dashboard') {
   const target = String(fallbackTarget || '/dashboard').trim() || '/dashboard'
   if (!['/', '/dashboard'].includes(target)) return target
@@ -230,9 +249,9 @@ function resolveInviteSignupPosition({ moduleContext = '', role = '' } = {}) {
 
 const DEV_BYPASS_ROLES = ['developer', 'agent', 'attorney', 'bond_originator']
 const SIGNUP_STEPS = [
-  { eyebrow: '01', label: 'Account' },
-  { eyebrow: '02', label: 'Business' },
-  { eyebrow: '03', label: 'Workspace' },
+  { eyebrow: '01', label: 'Business' },
+  { eyebrow: '02', label: 'Role' },
+  { eyebrow: '03', label: 'Account' },
 ]
 const ROLE_ICONS = {
   [SIGNUP_BUSINESS_TYPES.agency]: Building2,
@@ -457,6 +476,9 @@ function Auth({ onDevBypass = null }) {
 
   useEffect(() => {
     if (mode !== 'signup' || typeof window === 'undefined') return undefined
+    if (isPartnerInviteReturnPath(redirectTo)) {
+      rememberPendingPartnerInvitePath(redirectTo)
+    }
     const frame = window.requestAnimationFrame(() => {
       window.scrollTo({ top: 0, left: 0 })
       if (authFormRef.current) {
@@ -464,7 +486,7 @@ function Auth({ onDevBypass = null }) {
       }
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [mode, signupStep])
+  }, [mode, redirectTo, signupStep])
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -491,7 +513,7 @@ function Auth({ onDevBypass = null }) {
 
     if (mode === 'signup') {
       if (!currentIntent) {
-        setError('Choose your business type and position before creating an account.')
+        setError('Choose your business type and role before creating an account.')
         setSignupStep(businessType ? 1 : 0)
         return
       }
@@ -522,13 +544,9 @@ function Auth({ onDevBypass = null }) {
       setMessage('')
       const inviteVerificationRedirectTo = ensureInviteAutoAcceptPath(resolvePendingInvitePath(location) || redirectTo)
       const emailRedirectTo = resolveEmailVerificationRedirectTo(
-        mode === 'signup' && inviteDrivenSignup
-          ? inviteVerificationRedirectTo
-          : mode === 'signup' && isPublicInviteReturnPath(redirectTo)
-            ? redirectTo
-          : mode === 'signup' && currentIntent
-            ? resolveSignupIntentRoute(currentIntent)
-            : '/setup',
+        mode === 'signup'
+          ? resolveSignupContinuationPath({ redirectTo, currentIntent, inviteDrivenSignup, inviteVerificationRedirectTo })
+          : '/setup',
       )
 
       if (mode === 'login') {
@@ -609,7 +627,7 @@ function Auth({ onDevBypass = null }) {
 
       if (data?.session) {
         const pendingInvitePath = resolvePendingInvitePath(location)
-        const target = pendingInvitePath || (isPublicInviteReturnPath(redirectTo) ? redirectTo : resolveSignupIntentRoute(intentWithEmail))
+        const target = pendingInvitePath || resolveSignupContinuationPath({ redirectTo, currentIntent: intentWithEmail })
         clearPostLoginRedirect()
         console.debug('[REDIRECT] signup:session-created', { target, pendingInvite: Boolean(pendingInvitePath) })
         navigate(target, { replace: true })
@@ -653,11 +671,7 @@ function Auth({ onDevBypass = null }) {
       setError('')
       const emailRedirectTo = resolveEmailVerificationRedirectTo(
         resolvePendingInvitePath(location) ||
-          (isPublicInviteReturnPath(redirectTo)
-            ? redirectTo
-            : currentIntent
-              ? resolveSignupIntentRoute(currentIntent)
-              : '/setup'),
+          resolveSignupContinuationPath({ redirectTo, currentIntent }),
       )
       const { error: resendError } = await supabase.auth.resend({
         type: 'signup',
@@ -853,7 +867,7 @@ function Auth({ onDevBypass = null }) {
                     <div className="auth-card-head compact">
                       <span className="auth-card-eyebrow">STEP 2 OF 3</span>
                       <h2>{getBusinessSetupCopy(selectedBusinessTypeLabel)}</h2>
-                      <p>Choose the existing position that best matches your access needs.</p>
+                      <p>Choose the role or access type that best matches how you will use Arch9.</p>
                     </div>
                     <div className="signup-position-grid">
                     {positionOptions.map((option) => {
@@ -1043,7 +1057,7 @@ function Auth({ onDevBypass = null }) {
                       <div className="auth-action-row">
                         <button type="button" className="auth-secondary-cta" onClick={() => setSignupStep(1)}>
                           <ArrowLeft size={14} />
-                          Back to position
+                          Back to role
                         </button>
                       </div>
                     ) : null}

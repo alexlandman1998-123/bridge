@@ -7,12 +7,16 @@ const apiPath = resolve(root, 'src/lib/api.js')
 const pagePath = resolve(root, 'src/pages/DeveloperPartnerInvitePage.jsx')
 const appPath = resolve(root, 'src/App.jsx')
 const pendingPath = resolve(root, 'src/lib/pendingPartnerInvite.js')
+const authPath = resolve(root, 'src/pages/Auth.jsx')
+const authCallbackPath = resolve(root, 'src/pages/AuthCallback.jsx')
 
 const migration = readFileSync(migrationPath, 'utf8')
 const api = readFileSync(apiPath, 'utf8')
 const page = readFileSync(pagePath, 'utf8')
 const app = readFileSync(appPath, 'utf8')
 const pending = readFileSync(pendingPath, 'utf8')
+const auth = readFileSync(authPath, 'utf8')
+const authCallback = readFileSync(authCallbackPath, 'utf8')
 
 function assertIncludes(source, needle, message) {
   if (!source.includes(needle)) {
@@ -69,5 +73,10 @@ assertIncludes(pending, "safePath.startsWith('/partners/invite/')", 'pending hel
 assertIncludes(pending, "url.searchParams.set('accept', '1')", 'pending helper should support auto-accept resume paths')
 assertIncludes(app, 'readPendingPartnerInvitePath()', 'app should resume pending partner invites after onboarding')
 assertIncludes(app, 'buildPartnerInviteAutoAcceptPath(pendingPartnerInvitePath)', 'app should auto-accept pending partner invites after onboarding')
+assertIncludes(auth, 'rememberPendingPartnerInvitePath(redirectTo)', 'partner invite signup should preserve the invite before email verification')
+assertIncludes(auth, 'isPartnerInviteReturnPath(redirectTo) && currentIntent', 'partner invite signup should route to workspace setup before returning to the invite')
+assertIncludes(auth, 'resolveSignupContinuationPath({ redirectTo, currentIntent, inviteDrivenSignup, inviteVerificationRedirectTo })', 'signup email redirect should centralize invite/setup continuation logic')
+assertIncludes(authCallback, 'rememberPendingPartnerInvitePath(callbackInvitePath)', 'auth callback should preserve partner invites while completing onboarding')
+assertIncludes(authCallback, 'partnerInviteSignupPath || callbackInvitePath', 'auth callback should prefer onboarding for partner invite signups before returning to the invite')
 
 console.log('developer partner invite binding contract passed')

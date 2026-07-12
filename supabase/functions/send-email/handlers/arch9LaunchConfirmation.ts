@@ -102,6 +102,10 @@ function renderInternalNotificationHtml({
   note,
   pageUrl,
   submittedAt,
+  requestLabel,
+  requestHeading,
+  requestBody,
+  hiddenSummary,
 }: {
   fullName: string;
   email: string;
@@ -113,7 +117,15 @@ function renderInternalNotificationHtml({
   note: string;
   pageUrl: string;
   submittedAt: string;
+  requestLabel?: string;
+  requestHeading?: string;
+  requestBody?: string;
+  hiddenSummary?: string;
 }) {
+  const label = requestLabel || "New concierge request";
+  const heading = requestHeading || `${fullName || "A launch guest"} requested a follow-up.`;
+  const body = requestBody || "They scanned the Arch9 launch QR flow and asked to be contacted after the event.";
+  const hidden = hiddenSummary || `New Arch9 launch concierge request from ${fullName || "a launch guest"}.`;
   const details = [
     renderDetail("Name", fullName),
     renderDetail("Email", email),
@@ -127,7 +139,7 @@ function renderInternalNotificationHtml({
 
   return `
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
-      New Arch9 launch concierge request from ${escapeHtml(fullName || "a launch guest")}.
+      ${escapeHtml(hidden)}
     </div>
     <div style="margin:0;padding:24px 12px;background:#f3f0ea;">
       <div style="max-width:620px;margin:0 auto;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#111817;">
@@ -135,12 +147,12 @@ function renderInternalNotificationHtml({
           <p style="margin:0;font-size:22px;line-height:1.1;letter-spacing:0.34em;color:#123a34;font-weight:300;">ARCH9</p>
         </div>
         <div style="background:#fbfaf7;border:1px solid #ded8ce;border-radius:22px;padding:30px 24px;box-shadow:0 24px 60px rgba(17,24,23,0.08);">
-          <p style="margin:0 0 14px;font-size:12px;line-height:1.4;color:#6d746f;text-transform:uppercase;letter-spacing:0.12em;font-weight:700;">New concierge request</p>
+          <p style="margin:0 0 14px;font-size:12px;line-height:1.4;color:#6d746f;text-transform:uppercase;letter-spacing:0.12em;font-weight:700;">${escapeHtml(label)}</p>
           <h1 style="margin:0 0 18px;font-family:Georgia,'Times New Roman',serif;font-size:34px;line-height:1.08;letter-spacing:-0.03em;color:#123a34;">
-            ${escapeHtml(fullName || "A launch guest")} requested a follow-up.
+            ${escapeHtml(heading)}
           </h1>
           <p style="margin:0 0 24px;font-size:15px;line-height:1.7;color:#5d6361;">
-            They scanned the Arch9 launch QR flow and asked to be contacted after the event.
+            ${escapeHtml(body)}
           </p>
           ${details ? `
             <div style="margin:0 0 22px;padding:4px 18px;border:1px solid #ded8ce;border-radius:14px;background:#ffffff;">
@@ -252,7 +264,18 @@ export async function handleArch9LaunchInternalNotificationEmail(
   payload: SendArch9LaunchInternalNotificationPayload,
 ) {
   const emailsEnabled = envEnabled(Deno.env.get("ARCH9_LAUNCH_INTERNAL_EMAILS_ENABLED"), true);
-  const recipientEmail = normalizeText(payload.to).toLowerCase();
+  const requestType = normalizeText(payload.type).toLowerCase();
+  const source = normalizeText(payload.source).toLowerCase();
+  const isTrainingRequest = requestType === "arch9_training_request" ||
+    requestType === "partner_training_request" ||
+    source.includes("training");
+  const fallbackTrainingRecipient = normalizeText(
+    Deno.env.get("ARCH9_TRAINING_REQUEST_EMAIL") ||
+      Deno.env.get("ARCH9_LAUNCH_INTERNAL_EMAIL") ||
+      Deno.env.get("BRIDGE_SUPPORT_EMAIL") ||
+      "support@arch9.co.za",
+  );
+  const recipientEmail = (normalizeText(payload.to) || (isTrainingRequest ? fallbackTrainingRecipient : "")).toLowerCase();
 
   if (!emailsEnabled) {
     return jsonResponse(200, {
@@ -289,6 +312,16 @@ export async function handleArch9LaunchInternalNotificationEmail(
   const note = normalizeText(payload.note || "");
   const pageUrl = normalizeText(payload.pageUrl || payload.page_url);
   const submittedAt = normalizeText(payload.submittedAt || payload.submitted_at);
+  const requestLabel = isTrainingRequest ? "Free training request" : "New concierge request";
+  const requestHeading = isTrainingRequest
+    ? `${fullName || company || "A partner contact"} requested free Arch9 training.`
+    : "";
+  const requestBody = isTrainingRequest
+    ? "They accepted or reviewed a partner connection and asked the Arch9 team to help onboard their company."
+    : "";
+  const hiddenSummary = isTrainingRequest
+    ? `Free Arch9 training request from ${fullName || company || "a partner contact"}.`
+    : "";
 
   const html = renderInternalNotificationHtml({
     fullName,
@@ -301,9 +334,15 @@ export async function handleArch9LaunchInternalNotificationEmail(
     note,
     pageUrl,
     submittedAt,
+    requestLabel,
+    requestHeading,
+    requestBody,
+    hiddenSummary,
   });
   const text = [
-    `New Arch9 launch concierge request: ${fullName || "Launch guest"}`,
+    isTrainingRequest
+      ? `Free Arch9 training request: ${fullName || company || "Partner contact"}`
+      : `New Arch9 launch concierge request: ${fullName || "Launch guest"}`,
     "",
     email ? `Email: ${email}` : "",
     phone ? `Phone: ${phone}` : "",
@@ -320,7 +359,9 @@ export async function handleArch9LaunchInternalNotificationEmail(
     apiKey: resendApiKey,
     from,
     to: recipientEmail,
-    subject: `New Arch9 request${fullName ? `: ${fullName}` : ""}`,
+    subject: isTrainingRequest
+      ? `Free Arch9 training request${company ? `: ${company}` : fullName ? `: ${fullName}` : ""}`
+      : `New Arch9 request${fullName ? `: ${fullName}` : ""}`,
     html,
     text,
     replyTo: replyTo || undefined,
@@ -336,7 +377,7 @@ export async function handleArch9LaunchInternalNotificationEmail(
 
   return jsonResponse(200, {
     ok: true,
-    type: "arch9_launch_internal_notification",
+    type: requestType || "arch9_launch_internal_notification",
     sent: true,
     recipientEmail,
     provider: "resend",

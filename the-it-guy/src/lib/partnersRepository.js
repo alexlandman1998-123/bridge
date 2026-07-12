@@ -911,6 +911,10 @@ function buildPartnerInvitationFunctionError(error = null, fallback = 'Unable to
   const nextError = new Error(message)
   if (error?.code) nextError.code = error.code
   if (error?.details) nextError.details = error.details
+  if (error?.invitation) {
+    nextError.invitation = error.invitation
+    nextError.details = { ...(nextError.details || {}), invitation: error.invitation }
+  }
   return nextError
 }
 
@@ -1793,6 +1797,49 @@ export async function acceptPartnerInvitationByLink({
 
   if (error || data?.error) throw buildPartnerInvitationFunctionError(error || data)
   return data
+}
+
+export async function requestPartnerInvitationTraining({
+  invitationId = '',
+  invitation = {},
+  contactName = '',
+  contactEmail = '',
+  companyName = '',
+  pageUrl = '',
+} = {}) {
+  const id = normalizeText(invitationId)
+  const email = normalizeText(contactEmail).toLowerCase()
+  const company = normalizeText(companyName || invitation.toOrganisationName || invitation.to_organisation_name)
+  const fromOrganisationName = normalizeText(invitation.fromOrganisationName || invitation.from_organisation_name)
+  const scopeLabel = normalizeText(invitation.scopeLabel) || getPartnerScopeLabel(invitation.scopeType || invitation.scope_type, invitation.scopeId || invitation.scope_id, invitation)
+  if (!id) throw new Error('A partner invitation is required.')
+
+  const { data, error } = await invokeEdgeFunction('send-email', {
+    body: {
+      type: 'arch9_training_request',
+      invitationId: id,
+      fullName: contactName,
+      email,
+      company,
+      roleType: 'Partner workspace contact',
+      discussionFocus: fromOrganisationName
+        ? `Free Arch9 training after accepting a partner connection from ${fromOrganisationName}`
+        : 'Free Arch9 training after accepting a partner connection',
+      preferredTime: 'Please contact me',
+      note: [
+        `Partner invitation: ${id}`,
+        fromOrganisationName ? `Invited by: ${fromOrganisationName}` : '',
+        company ? `Accepted for: ${company}` : '',
+        scopeLabel ? `Scope: ${scopeLabel}` : '',
+        `Invitation link: ${buildPartnerInvitationLink(id)}`,
+      ].filter(Boolean).join('\n'),
+      pageUrl: pageUrl || (typeof window !== 'undefined' ? window.location.href : ''),
+      submittedAt: new Date().toISOString(),
+      source: 'partner_invitation_acceptance',
+    },
+  })
+  if (error || data?.error) throw new Error(error?.message || data?.error || 'Training request could not be sent.')
+  return data || { sent: true }
 }
 
 export async function acceptPartnerInvitation({

@@ -398,6 +398,7 @@ type PartnerInvitationEmailTemplateInput = {
   supportPhone: string;
   arch9Website: string;
   partnerLogoUrl?: string;
+  recipientName?: string;
 };
 
 export function renderOrganisationPartnerInvitationEmail({
@@ -414,8 +415,10 @@ export function renderOrganisationPartnerInvitationEmail({
   supportPhone,
   arch9Website,
   partnerLogoUrl,
+  recipientName,
 }: PartnerInvitationEmailTemplateInput) {
   const safeInviteUrl = escapeHtml(inviteUrl);
+  const recipientGreeting = recipientName ? `Hi ${escapeHtml(recipientName)}, ` : "";
 
   return `<!doctype html>
 <html>
@@ -466,7 +469,7 @@ export function renderOrganisationPartnerInvitationEmail({
                     <td class="arch9-column arch9-hero-copy" width="55%" valign="top" style="width: 55%; padding: 0 26px 0 0; font-family: Arial, Helvetica, sans-serif;">
                       <p style="margin: 0 0 20px; font-size: 12px; line-height: 1.2; letter-spacing: 0.14em; color: #006B4D; font-weight: 700; text-transform: uppercase;">Partner invitation</p>
                       <h1 style="margin: 0; font-size: 27px; line-height: 1.18; color: #17233A; font-weight: 700;">${escapeHtml(invitingOrganisationName)} has invited your organisation to connect on Arch9</h1>
-                      <p style="margin: 22px 0 0; font-size: 15px; line-height: 1.6; color: #475569;">You have been invited to join as a preferred partner in their network.</p>
+                      <p style="margin: 22px 0 0; font-size: 15px; line-height: 1.6; color: #475569;">${recipientGreeting}you have been asked to review an organisation-level partner connection. Sign in as your company contact to connect your workspace and bring your team in when you are ready.</p>
                     </td>
                     <td class="arch9-column arch9-relationship" width="45%" valign="top" style="width: 45%; padding: 26px 0 0;">
                       ${renderRelationshipVisual({
@@ -505,7 +508,7 @@ export function renderOrganisationPartnerInvitationEmail({
                         title: "What accepting means",
                         iconText: "OK",
                         body: [
-                          `You will be connected to ${invitingOrganisationName} as an approved partner.`,
+                          `Your organisation will be connected to ${invitingOrganisationName} as an approved partner.`,
                           "Their authorised users may route relevant property transactions to your organisation.",
                           "You can collaborate securely on shared transactions within Arch9.",
                           "You can manage or remove this partnership at any time.",
@@ -622,9 +625,10 @@ export async function handleOrganisationPartnerInvitationEmail(
   );
   const preferred = payload.preferred === true;
   const inviteMessage = normalizeText(payload.message);
+  const recipientName = resolveFirstText(payload.recipientName, payload.recipient_name);
   const from = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
     "Arch9 <no-reply@arch9.co.za>";
-  const subject = `${fromOrganisation} invited you to connect on Arch9`;
+  const subject = `${fromOrganisation} invited you to review a company connection on Arch9`;
   const summary = `${fromOrganisation} has invited your organisation to connect on Arch9.`;
 
   const html = renderOrganisationPartnerInvitationEmail({
@@ -641,13 +645,15 @@ export async function handleOrganisationPartnerInvitationEmail(
     supportPhone,
     arch9Website,
     partnerLogoUrl,
+    recipientName,
   });
 
   const text = [
     "PARTNER INVITATION",
     "",
+    recipientName ? `Hi ${recipientName},` : "",
     `${fromOrganisation} has invited your organisation to connect on Arch9.`,
-    "You have been invited to join as a preferred partner in their network.",
+    "You have been asked to review an organisation-level partner connection. Sign in as your company contact to connect your workspace and bring your team in when you are ready.",
     "",
     "Review invitation:",
     invitationLink,
@@ -665,7 +671,7 @@ export async function handleOrganisationPartnerInvitationEmail(
     `Scope: ${scopeLabel}`,
     "",
     "What accepting means",
-    `You will be connected to ${fromOrganisation} as an approved partner.`,
+    `Your organisation will be connected to ${fromOrganisation} as an approved partner.`,
     "Their authorised users may route relevant property transactions to your organisation.",
     "You can collaborate securely on shared transactions within Arch9.",
     "You can manage or remove this partnership at any time.",

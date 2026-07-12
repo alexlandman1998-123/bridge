@@ -78,7 +78,6 @@ for (const importName of [
   'archiveDocumentPacket',
   'createDocumentPacket',
   'createDocumentPacketTemplate',
-  'deleteDocumentPacketTemplate',
   'fetchDocumentPacket',
   'fetchDocumentPacketTemplate',
   'listDocumentPackets',
@@ -168,14 +167,51 @@ assert.doesNotMatch(
   /<DocumentBuilderActionRail actions=\{documentBuilderActions\} \/>/,
   'Document Builder should not render the old duplicated primary action rail in the workspace header.',
 )
-assert.match(page, /label: cloning \? 'Creating\.\.\.' : 'Create Editable Draft'/, 'The protected-template CTA should explain that it creates an editable draft.')
-assert.match(page, /label: saving \|\| cloning \? 'Saving\.\.\.' : 'Save Changes'/, 'The draft edit CTA should use Save Changes copy.')
-assert.match(page, /label: 'Make Live'/, 'Making a draft live should remain a page action, not a mode tab.')
+assert.doesNotMatch(
+  page,
+  /const headerPrimaryAction|Create Editable Draft|label: saving \|\| cloning \? 'Saving\.\.\.' : 'Save Changes'/,
+  'Phase 1 should remove the technical header lifecycle CTA from the first-viewport legal templates page.',
+)
 assert.doesNotMatch(studioConstants, /\{ key: 'settings', label: 'Make live' \}/, 'Make live should not appear as a mode tab.')
 assert.match(
   page,
-  /overflow-x-auto rounded-\[16px\][\s\S]*CONTRACT_STUDIO_AREAS\.map/,
-  'Document Builder area switcher should stay compact, visible, and horizontally safe.',
+  /overflow-x-auto rounded-\[16px\][\s\S]*simpleDocumentTabs\.map[\s\S]*<span>\{item\.label\}<\/span>[\s\S]*<span>\+ Template<\/span>/,
+  'Phase 1 should replace the workspace area switcher with the compact document-template picker.',
+)
+assert.match(
+  page,
+  /templateStarterMenuOpen[\s\S]*aria-label="Template starters"[\s\S]*Choose a starter[\s\S]*Standard sections, fields, signing blocks and legal coverage[\s\S]*Common Addendums/,
+  'Phase 5 should make + Template open an easy starter chooser instead of creating an opaque blank template.',
+)
+assert.match(
+  page,
+  /handleCreateTemplate\(\{[\s\S]*targetPacketType = packetType[\s\S]*resolvedPacketType[\s\S]*setPacketType\(resolvedPacketType\)/,
+  'Phase 5 starter creation should support creating a specific template type from the chooser.',
+)
+assert.doesNotMatch(
+  page,
+  /<span>\+ Template<\/span>[\s\S]{0,500}void handleCreateTemplate\(\)/,
+  'Phase 5 should not wire the first-viewport + Template button directly to blank-template creation.',
+)
+assert.match(
+  page,
+  /autoDraftSourceTemplateRef[\s\S]*handleCreateEditableCopy\(\{ quiet: true, source: 'auto' \}\)/,
+  'Phase 3 should automatically prepare the agency-owned version when a shared base template opens.',
+)
+assert.match(
+  page,
+  /source_template_id[\s\S]*agency_version_created_from: 'shared_base'/,
+  'Phase 3 should mark automatically created agency versions with source-template metadata.',
+)
+assert.match(
+  page,
+  /aria-label="Template view"[\s\S]*Edit Template[\s\S]*Preview[\s\S]*Editing your agency version[\s\S]*Save[\s\S]*Publish/,
+  'Phase 3 should expose the first-viewport workflow as Edit Template, Preview, Save, and Publish.',
+)
+assert.doesNotMatch(
+  page,
+  /Create Draft|Create a draft to make changes|Create an organisation draft|organisation-owned draft|Create an organisation-owned template copy/,
+  'Phase 3 should not reintroduce the manual draft/copy mental model.',
 )
 assert.doesNotMatch(page, /MANDATE DOCUMENT CANVAS/, 'Phase 3 should not reintroduce the duplicate canvas label.')
 assert.match(
@@ -196,6 +232,21 @@ assert.match(
   page,
   /<details\s+defaultOpen=\{selectedSectionCondition\.enabled\}[\s\S]*Show Clause When[\s\S]*Only use this when a section should appear for certain deals\./,
   'Phase 4 should tuck conditional clause rules into an optional disclosure panel.',
+)
+assert.match(
+  page,
+  /LEGAL_CONDITION_COVERAGE_ITEMS[\s\S]*Parties & authority[\s\S]*Property & disclosure[\s\S]*Breach, notices & jurisdiction[\s\S]*General legal provisions/,
+  'Phase 4 should model standard legal-condition coverage in plain-language categories.',
+)
+assert.match(
+  page,
+  /buildLegalConditionCoverage[\s\S]*legalConditionCoverage[\s\S]*Standard Conditions[\s\S]*Legal Coverage[\s\S]*Use Approved Clauses/,
+  'Phase 4 should show covered standard legal conditions inside the simplified editor rail.',
+)
+assert.match(
+  page,
+  /breach_notice_jurisdiction_pack[\s\S]*whole_agreement_non_variation_pack[\s\S]*popia_fica_processing_pack/,
+  'Phase 4 should include reusable approved clauses for breach, whole-agreement, and POPIA/FICA coverage.',
 )
 assert.match(
   page,
@@ -236,6 +287,16 @@ assert.doesNotMatch(
 
 assert.match(
   page,
+  /Quick Add[\s\S]*Add Clause[\s\S]*Add Signing Block[\s\S]*Use Approved Clause[\s\S]*More tools[\s\S]*SECTION_EDITOR_INSERT_GROUPS\.map/,
+  'Phase 6 should make common editor actions obvious while tucking the fuller toolset behind More tools.',
+)
+assert.match(
+  page,
+  /onClick=\{\(\) => setActiveStudioArea\('clauseLibrary'\)\}[\s\S]*Use Approved Clause/,
+  'Phase 6 should send approved-clause insertion through the existing clause library instead of a new technical flow.',
+)
+assert.match(
+  page,
   /SECTION_EDITOR_INSERT_GROUPS[\s\S]*label: 'Content'[\s\S]*label: 'Text'[\s\S]*label: 'Table'[\s\S]*label: 'Signing'[\s\S]*label: 'Signature'/,
   'Phase 6 should keep the canvas toolbar grouped around content and signing actions.',
 )
@@ -255,11 +316,32 @@ assert.doesNotMatch(
   /Document actions[\s\S]*Save Draft[\s\S]*Preview[\s\S]*Make live/,
   'Phase 7 should not reintroduce the old duplicated editor footer action bar.',
 )
+assert.doesNotMatch(
+  page,
+  /stickyNextStep|handleCreateDraftAction|Next Step[\s\S]*New Version[\s\S]*Preview[\s\S]*Preview[\s\S]*More/,
+  'Phase 7 should remove the duplicate bottom next-step/footer action rail from the template editor.',
+)
+assert.doesNotMatch(
+  page,
+  /deleteDocumentPacketTemplate|handleDeleteTemplate|deletingTemplate/,
+  'Phase 7 should not keep destructive template deletion wired into the simplified editor flow.',
+)
 assert.match(
   page,
-  /label: 'Make Live'[\s\S]*disabled: makeLiveDisabled/,
-  'Phase 7 should reuse the shared make-live disabled state for the header page action.',
+  /title="Ready to Publish"[\s\S]*Ready to Publish/,
+  'Phase 7 should use Publish language for readiness instead of Make Live action copy.',
 )
+assert.match(
+  page,
+  /Review and confirm the summary before publishing this template\./,
+  'Phase 7 should use Publish language in the publish confirmation guard.',
+)
+assert.doesNotMatch(
+  page,
+  /Ready to Make Live|Make Live|making this template live|making it live|Made live by/,
+  'Phase 7 should not reintroduce Make Live wording in the template publishing flow.',
+)
+assert.doesNotMatch(page, /makeLiveDisabled/, 'Phase 1 should remove the first-viewport make-live action state.')
 assert.doesNotMatch(
   page,
   /Need help\?|Saving will create your agency draft|View guide or contact support/,
@@ -304,41 +386,31 @@ assertFunctionReferences(page, 'setSelectedSectionSigningFields', [
   'signing_fields',
 ])
 
-assert.match(
+assert.doesNotMatch(
   page,
-  /const documentMetadataItems[\s\S]*selectedDocumentLabel[\s\S]*selectedTemplateStatusLabel[\s\S]*selectedTemplateSavedLabel/,
-  'Phase 9 should summarize the current document, status, and saved state in the compact header.',
+  /documentMetadataItems|selectedTemplateStatusLabel|aria-label="Selected legal template"/,
+  'Phase 1 should remove the selected-template metadata row from the legal templates header.',
 )
 assert.match(
   page,
-  /const headerPrimaryAction = \(\(\) => \{[\s\S]*Create Template[\s\S]*Create Editable Draft[\s\S]*Save Changes[\s\S]*Review Issues[\s\S]*Make Live[\s\S]*Create Document/,
-  'Phase 9 should keep one primary next action for the main document lifecycle states.',
+  /<h1 className="text-\[1\.9rem\][\s\S]*\{title\}[\s\S]*\{visibleDescription\}/,
+  'Phase 1 should keep the legal templates header focused on title and plain-language description.',
 )
 assert.match(
   page,
-  /aria-label="Selected legal template"[\s\S]*documentMetadataItems\.map/,
-  'Phase 9 should render the selected document metadata in the first-viewport header.',
-)
-assert.match(
-  page,
-  /handleCreateTemplate\(\)[\s\S]*handleSaveDraftAction\(event\)[\s\S]*setActiveTab\('preview'\)[\s\S]*openPublishDialog[\s\S]*setActiveStudioArea\('documents'\)/,
-  'Phase 9 primary action should reuse existing template, save, review, publish, and document actions.',
-)
-assert.match(
-  page,
-  /<HeaderPrimaryIcon size=\{14\} \/>[\s\S]*<span>\{headerPrimaryAction\.label\}<\/span>/,
-  'Phase 9 should keep the primary action compact with an icon and label.',
+  /simpleDocumentTabs\.map[\s\S]*setActiveStudioArea\('templates'\)[\s\S]*setPacketType\(item\.packetType\)[\s\S]*<span>\{item\.label\}<\/span>/,
+  'Phase 1 template picker should switch the selected reusable document template directly.',
 )
 
 assert.match(
   page,
-  /CONTRACT_STUDIO_AREAS\.map[\s\S]*Document type[\s\S]*simpleDocumentTabs\.map[\s\S]*Mode[\s\S]*CONTRACT_STUDIO_TABS\.map/,
-  'Phase 10 should keep workspace, document-type, and mode navigation visible as three clear levels.',
+  /aria-label="Template view"[\s\S]*<span>Edit Template<\/span>[\s\S]*<span>Preview<\/span>/,
+  'Phase 2 should replace technical mode tabs with a simple edit/preview switch.',
 )
-assert.match(
+assert.doesNotMatch(
   page,
-  /selectedIsOrgOwned[\s\S]*\? 'Draft'[\s\S]*: 'Standard template'/,
-  'Phase 10 should keep template status short and scannable.',
+  /<p className="mb-2 text-xs font-semibold uppercase tracking-\[0\.12em\] text-\[#7a8da6\]">Mode<\/p>|CONTRACT_STUDIO_TABS\.map|TemplateStudioTabButton/,
+  'Phase 2 should not render the old Mode container or Build/Fields/Preview/History tab strip.',
 )
 assert.doesNotMatch(
   page,
