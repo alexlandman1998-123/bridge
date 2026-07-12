@@ -96,6 +96,20 @@ VITE_SUPABASE_KEY=your-anon-key
 npm run dev
 ```
 
+## Lead Pilot Environment Readiness
+
+Run the Phase 2 pilot environment gate from the app package:
+
+```bash
+npm run test:lead-pilot-environment
+```
+
+If the unrelated-user RLS probe has not been configured on this machine yet, create the managed staging fixture once:
+
+```bash
+node scripts/lead-pilot-environment-readiness.mjs --persist-isolation-env
+```
+
 ## Demo Flow
 
 1. Click `+ New Transaction` in the top header.

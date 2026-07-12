@@ -1,8 +1,23 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { createAdminMobileDashboardResponse } from './server/services/adminMobileDashboardApi.js'
 import { createMissionControlResponse, writeNodeJsonResponse } from './server/services/hqMissionControlApi.js'
 import { createPublicListingsResponse } from './server/services/publicListingsApi.js'
+
+function documentTitleFallbackPlugin() {
+  let documentTitle = 'Bridge Nine'
+
+  return {
+    name: 'document-title-fallback',
+    configResolved(config) {
+      const env = loadEnv(config.mode, config.root, '')
+      documentTitle = String(env.VITE_DOCUMENT_TITLE || process.env.VITE_DOCUMENT_TITLE || documentTitle).trim() || 'Bridge Nine'
+    },
+    transformIndexHtml(html) {
+      return html.replaceAll('%VITE_DOCUMENT_TITLE%', documentTitle)
+    },
+  }
+}
 
 function missionControlApiPlugin() {
   return {
@@ -36,7 +51,7 @@ function missionControlApiPlugin() {
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), missionControlApiPlugin()],
+  plugins: [documentTitleFallbackPlugin(), react(), missionControlApiPlugin()],
   build: {
     chunkSizeWarningLimit: 1600,
     rollupOptions: {

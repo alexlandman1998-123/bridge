@@ -1,4 +1,8 @@
 {
+  "buildCommand": "npm run build",
+  "env": {
+    "VITE_DOCUMENT_TITLE": "Bridge Nine"
+  },
   "redirects": [
     {
       "source": "/:path*",
