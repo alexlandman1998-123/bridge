@@ -181,6 +181,7 @@ import {
   completeRecommendation,
   convertRecommendationToTask,
   dismissRecommendation as dismissLeadRecommendation,
+  getRecommendationMetrics,
 } from '../services/leadRecommendationService'
 import {
   acceptSuggestion,
@@ -9204,7 +9205,7 @@ function getRecommendationAgeLabel(recommendation = {}) {
   return `${days} days old`
 }
 
-function LeadRecommendationsPanel({ recommendations = [], actor, onSaved, onShare, title = 'Recommendations', description = 'Recommended next actions generated from lead events, inactivity, suggestions, viewings, offers, and communication history.' }) {
+function LeadRecommendationsPanel({ recommendations = [], actor, onSaved, onShare, title = 'My Recommendations', description = 'Recommended next actions generated from lead events, inactivity, suggestions, viewings, offers, and communication history.' }) {
   const [workingId, setWorkingId] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -9236,6 +9237,7 @@ function LeadRecommendationsPanel({ recommendations = [], actor, onSaved, onShar
   }
 
   const pendingCount = recommendations.filter((item) => ['pending', 'accepted'].includes(String(item.status || '').toLowerCase())).length
+  const recommendationMetrics = getRecommendationMetrics(recommendations)
 
   return (
     <section className={`${panelClass} p-5`}>
@@ -9244,7 +9246,11 @@ function LeadRecommendationsPanel({ recommendations = [], actor, onSaved, onShar
           <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">{title}</h2>
           <p className="mt-1 text-sm text-slate-500">{description}</p>
         </div>
-        <StatusPill tone="amber">{pendingCount} active</StatusPill>
+        <div className="flex flex-wrap gap-2 lg:justify-end">
+          <StatusPill tone="amber">{pendingCount} active</StatusPill>
+          <StatusPill tone="green">{recommendationMetrics.completed} completed</StatusPill>
+          <StatusPill tone="blue">{recommendationMetrics.taskConversionRate}% task conversion</StatusPill>
+        </div>
       </div>
       {message ? <p className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
       {error ? <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}

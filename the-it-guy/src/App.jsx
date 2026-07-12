@@ -354,6 +354,7 @@ const SettingsCommissionStructuresPage = lazy(() => import('./pages/settings/Set
 const SettingsCommunicationsTemplatesPage = lazy(() => import('./pages/settings/SettingsCommunicationsTemplatesPage'))
 const SettingsDevelopmentsPage = lazy(() => import('./pages/settings/SettingsDevelopmentsPage'))
 const SettingsIntegrationsPage = lazy(() => import('./pages/settings/SettingsIntegrationsPage'))
+const SettingsLanding = lazy(() => import('./pages/settings/SettingsLanding'))
 const SettingsLayout = lazy(() => import('./pages/settings/SettingsLayout'))
 const SettingsLeadCapturePage = lazy(() => import('./pages/settings/SettingsLeadCapturePage'))
 const SettingsOrganisationPage = lazy(() => import('./pages/settings/SettingsOrganisationPage'))
@@ -2730,7 +2731,7 @@ function AppRoutes() {
                 }
               />
               <Route path="/settings" element={<ClientAwareSettingsLayout />}>
-                <Route index element={<Navigate to="profile" replace />} />
+                <Route index element={<SettingsLanding />} />
                 <Route path="account" element={<SettingsAccountPage section="profile" />} />
                 <Route path="profile" element={<SettingsAccountPage section="profile" />} />
                 <Route path="security" element={<SettingsAccountPage section="security" />} />

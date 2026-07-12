@@ -4,6 +4,7 @@ import {
   Building2,
   Code2,
   CreditCard,
+  Mail,
   Menu,
   Palette,
   PlugZap,
@@ -93,6 +94,13 @@ const SETTINGS_NAV_GROUPS = [
         label: 'Integrations',
         icon: PlugZap,
         keywords: 'connected services property24 whatsapp resend google supabase integrations',
+      },
+      {
+        to: '/settings/lead-capture',
+        label: 'Lead Capture',
+        icon: Mail,
+        roles: ['agent'],
+        keywords: 'lead capture forwarding addresses agent activation inbound enquiry health property24 private property website parser review queue',
       },
       {
         to: '/settings/api',

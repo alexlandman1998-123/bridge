@@ -634,6 +634,7 @@ export default function SettingsLeadCapturePage() {
         organisationId,
         agentUserId: profileId,
         branchId: currentUser.branchId,
+        sources: LEAD_CAPTURE_SOURCES,
       })
       setNotice('Lead capture address generated.')
       await load()
@@ -651,10 +652,12 @@ export default function SettingsLeadCapturePage() {
     try {
       await ensureDefaultLeadCaptureAliases({
         organisationId,
+        sources: LEAD_CAPTURE_SOURCES,
       })
       await ensureLeadCaptureAliasesForUsers({
         organisationId,
         users,
+        sources: LEAD_CAPTURE_SOURCES,
       })
       setNotice('Agency lead capture addresses generated.')
       await load()
@@ -747,7 +750,7 @@ export default function SettingsLeadCapturePage() {
             {canManage ? (
               <PrimaryButton icon={Mail} onClick={generateAgencyAddresses} disabled={saving || !organisationId}>Generate Agency Addresses</PrimaryButton>
             ) : (
-              <PrimaryButton icon={Mail} onClick={generateMyAddresses} disabled={saving || !organisationId || !profileId}>Generate My Address</PrimaryButton>
+              <PrimaryButton icon={Mail} onClick={generateMyAddresses} disabled={saving || !organisationId || !profileId}>Generate My Addresses</PrimaryButton>
             )}
           </>
         }
@@ -764,9 +767,9 @@ export default function SettingsLeadCapturePage() {
       </section>
 
       <SettingsSectionCard
-        title="My Capture Address"
+        title="My Capture Addresses"
         description={`Status: ${STATUS_META[currentUserStatus]?.label || STATUS_META.not_started.label}`}
-        actions={!visibleMyAliases.length ? <SecondaryButton icon={Mail} onClick={generateMyAddresses} disabled={saving || !organisationId || !profileId}>Generate</SecondaryButton> : null}
+        actions={!visibleMyAliases.length ? <SecondaryButton icon={Mail} onClick={generateMyAddresses} disabled={saving || !organisationId || !profileId}>Generate My Addresses</SecondaryButton> : null}
       >
         {visibleMyAliases.length ? (
           <div className="grid gap-3">

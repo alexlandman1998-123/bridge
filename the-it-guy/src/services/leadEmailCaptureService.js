@@ -121,15 +121,26 @@ export function buildDefaultLeadCaptureAliasRequests({
   agentUserId = '',
   branchId = '',
   aliasDomain = DEFAULT_LEAD_CAPTURE_DOMAIN,
+  sources = ['General'],
 } = {}) {
-  return [{
+  const requestedSources = (Array.isArray(sources) && sources.length ? sources : ['General'])
+    .map((source) => {
+      const normalized = normalizeText(source)
+      if (!normalized || normalizeLower(normalized) === 'general') return 'General'
+      return normalizeLeadSource(normalized)
+    })
+    .filter(Boolean)
+  const uniqueSources = [...new Set(requestedSources)]
+  return uniqueSources.map((source) => ({
     organisationId,
     agentUserId: agentUserId || null,
     branchId: branchId || null,
-    source: 'General',
-    routingLevel: agentUserId ? 'agent' : 'agency',
+    source,
+    routingLevel: source === 'General'
+      ? (agentUserId ? 'agent' : 'agency')
+      : (agentUserId ? 'agent_source' : 'agency'),
     aliasDomain,
-  }]
+  }))
 }
 
 export function isPrimaryLeadCaptureAlias(alias = {}) {
@@ -318,6 +329,7 @@ export async function ensureLeadCaptureAliasesForUsers({
   organisationId = '',
   users = [],
   aliasDomain = DEFAULT_LEAD_CAPTURE_DOMAIN,
+  sources = ['General'],
 } = {}) {
   const normalizedOrganisationId = normalizeText(organisationId)
   if (!isUuidLike(normalizedOrganisationId)) {
@@ -333,6 +345,7 @@ export async function ensureLeadCaptureAliasesForUsers({
       agentUserId: userId,
       branchId: isUuidLike(branchId) ? branchId : '',
       aliasDomain,
+      sources,
     })
     aliases.push(...created)
   }
