@@ -1036,6 +1036,7 @@ export {
   parseArgs,
   resolveConfig,
   rowMatchesCohort,
+  run,
   sourceOrgRowMatchesCohort,
   summarizeInboundRows,
   summarizeIngestionLogs,

@@ -151,6 +151,35 @@ Use this after Phase 4 live smoke tests and during week one of the pilot. The re
 
 Continue the pilot only when leads are captured, assigned, readable, and reviewable. Pause source forwarding when the report shows dropped leads, misassigned leads, stale pending rows, hidden linked records, failed outbound sends, or open parse failures over the configured threshold.
 
+### Lead Pilot Rollout Decision
+
+Phase 6 turns the Phase 5 monitor evidence into an expansion decision:
+
+```bash
+npm run report:lead-pilot-rollout
+```
+
+The rollout decision runs the live Phase 5 monitor over the configured lookback window by default. It returns one of:
+
+- `APPROVE_EXPANSION`
+- `APPROVE_WITH_CONTROLS`
+- `EXTEND_PILOT`
+- `PAUSE_FORWARDING`
+
+Use saved Phase 5 JSON reports instead of live staging reads when preparing a launch packet:
+
+```bash
+node scripts/lead-pilot-rollout-decision.mjs --input ./phase5-day-1.json --input ./phase5-day-2.json
+```
+
+If the live outbound email generator was already proven by Phase 4 but communication-event telemetry does not yet show outbound lead email rows, include that proof explicitly:
+
+```bash
+node scripts/lead-pilot-rollout-decision.mjs --outbound-smoke-passed
+```
+
+Approve the next wave only when Phase 6 approves expansion or approves with controls. Keep the pilot contained when it returns `EXTEND_PILOT`; pause forwarding when it returns `PAUSE_FORWARDING`.
+
 ## Demo Flow
 
 1. Click `+ New Transaction` in the top header.
