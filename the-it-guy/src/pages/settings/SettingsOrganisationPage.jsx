@@ -166,9 +166,28 @@ const BRAND_ASSET_TARGETS = {
 const BRAND_COLOUR_CONTROLS = [
   { key: 'primary', label: 'Primary', fallback: '#274C69' },
   { key: 'secondary', label: 'Secondary', fallback: '#10273A' },
-  { key: 'accent', label: 'Accent', fallback: '#27AE60' },
+  { key: 'accent', label: 'Accent', fallback: '#F7CF22' },
   { key: 'neutral', label: 'Neutral', fallback: '#F7F8FA' },
 ]
+
+const ONBOARDING_LANDING_COLOUR_CONTROLS = [
+  { key: 'primary', label: 'Landing Primary', fallback: '#001A3D' },
+  { key: 'secondary', label: 'Landing Secondary', fallback: '#001B44' },
+  { key: 'accent', label: 'Landing Accent', fallback: '#F7CF22' },
+]
+
+const ONBOARDING_LANDING_COPY = {
+  buyer: {
+    label: 'Buyer onboarding',
+    headline: 'Let’s get your property purchase started.',
+    cta: 'Start buyer onboarding',
+  },
+  seller: {
+    label: 'Seller onboarding',
+    headline: 'Let’s get your property sale started.',
+    cta: 'Start seller onboarding',
+  },
+}
 
 const BRAND_TYPOGRAPHY_DEFAULTS = {
   primaryFont: 'Inter',
@@ -347,6 +366,34 @@ function validateBrandAssetFile(file) {
 function getBrandColourValue(brandColours = {}, key = '', fallback = '#274C69') {
   const value = normalizeText(brandColours?.[key])
   return /^#[0-9a-f]{6}$/i.test(value) ? value : fallback
+}
+
+function hexToRgb(hex = '#000000') {
+  const safeHex = /^#[0-9a-f]{6}$/i.test(hex || '') ? hex.slice(1) : '000000'
+  const value = Number.parseInt(safeHex, 16)
+  return {
+    r: (value >> 16) & 255,
+    g: (value >> 8) & 255,
+    b: value & 255,
+  }
+}
+
+function hexToRgba(hex = '#000000', alpha = 1) {
+  const { r, g, b } = hexToRgb(hex)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+function getContrastTextColour(hex = '#F7CF22', darkText = '#001B44') {
+  const { r, g, b } = hexToRgb(hex)
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000
+  return yiq >= 150 ? darkText : '#ffffff'
+}
+
+function getOnboardingLandingColours(brandColours = {}) {
+  return ONBOARDING_LANDING_COLOUR_CONTROLS.reduce((accumulator, control) => ({
+    ...accumulator,
+    [control.key]: getBrandColourValue(brandColours, control.key, control.fallback),
+  }), {})
 }
 
 function getBrandTypography(branding = {}) {
@@ -935,6 +982,188 @@ function BrandPreviewPanel({ organisationName, logoUrl, iconUrl, colours, typogr
   )
 }
 
+function OnboardingLandingLogoRow({ title, description, previewUrl, previewTone = 'light', canEdit = false, uploading = false, onFile }) {
+  return (
+    <article className="grid gap-3 rounded-[16px] border border-[#e1eaf3] bg-[#fbfdff] p-3">
+      <div className="flex items-center gap-3">
+        <span
+          className={[
+            'inline-flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-[14px] border p-2 text-xs font-semibold',
+            previewTone === 'dark'
+              ? 'border-[#17324d] bg-[#10273a] text-white/70'
+              : 'border-[#d9e3ef] bg-white text-[#60758d]',
+          ].join(' ')}
+        >
+          {previewUrl ? <img src={previewUrl} alt="" className="h-full w-full object-contain" /> : 'Logo'}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold text-[#17233a]">{title}</span>
+          <span className="mt-0.5 block text-xs leading-5 text-[#60758d]">{description}</span>
+        </span>
+      </div>
+      {canEdit ? (
+        <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc]">
+          <UploadCloud className="h-4 w-4" strokeWidth={2} />
+          {uploading ? 'Uploading...' : previewUrl ? 'Replace' : 'Upload'}
+          <input
+            type="file"
+            accept="image/png,image/svg+xml,image/jpeg,image/webp"
+            className="sr-only"
+            disabled={uploading}
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              if (file) void onFile?.(file)
+              event.target.value = ''
+            }}
+          />
+        </label>
+      ) : null}
+    </article>
+  )
+}
+
+function OnboardingLandingPreviewSurface({ portalType = 'buyer', organisationName, logoUrl, iconUrl, colours }) {
+  const copy = ONBOARDING_LANDING_COPY[portalType] || ONBOARDING_LANDING_COPY.buyer
+  const primary = colours.primary
+  const secondary = colours.secondary
+  const accent = colours.accent
+  const accentText = getContrastTextColour(accent, secondary)
+  const overlay = `linear-gradient(120deg, ${hexToRgba(primary, 0.98)} 0%, ${hexToRgba(secondary, 0.92)} 48%, ${hexToRgba(secondary, 0.72)} 100%)`
+
+  return (
+    <div className="overflow-hidden rounded-[18px] border border-[#dfe8f1] bg-[#0b1728] shadow-[0_16px_34px_rgba(15,23,42,0.12)]">
+      <div className="p-4 text-white sm:p-5" style={{ background: overlay }}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[14px] border border-white/15 bg-white/10 p-2 text-sm font-semibold text-white">
+              {logoUrl || iconUrl ? <img src={logoUrl || iconUrl} alt="" className="h-full w-full object-contain" /> : getInitials(organisationName)}
+            </span>
+            <span className="truncate text-sm font-semibold">{organisationName}</span>
+          </div>
+          <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase text-white/75">
+            Secure intake
+          </span>
+        </div>
+
+        <div className="mt-8 grid gap-5 lg:grid-cols-[minmax(0,1fr)_190px] lg:items-end">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.12em]" style={{ color: accent }}>{copy.label}</p>
+            <h3 className="mt-3 max-w-[440px] text-2xl font-semibold leading-tight text-white sm:text-3xl">
+              {copy.headline}
+            </h3>
+            <p className="mt-3 max-w-[390px] text-sm leading-6 text-white/75">
+              A standard first screen for buyer and seller intake links.
+            </p>
+            <span
+              className="mt-5 inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] px-4 text-sm font-semibold"
+              style={{ backgroundColor: accent, color: accentText, boxShadow: `0 14px 28px ${hexToRgba(accent, 0.24)}` }}
+            >
+              {copy.cta}
+              <ChevronRight className="h-4 w-4" strokeWidth={2} />
+            </span>
+          </div>
+          <div className="grid gap-2 rounded-[16px] border border-white/15 bg-white/10 p-3 backdrop-blur">
+            <span className="text-[11px] font-semibold uppercase text-white/55">Before you start</span>
+            <span className="rounded-[12px] bg-white/10 px-3 py-2 text-xs font-semibold text-white/80">Property details</span>
+            <span className="rounded-[12px] bg-white/10 px-3 py-2 text-xs font-semibold text-white/80">Secure profile</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function OnboardingLandingBrandingCard({
+  organisationName,
+  logoUrl,
+  darkLogoUrl,
+  iconUrl,
+  colours,
+  activePortalType,
+  setActivePortalType,
+  canEdit,
+  uploadingLogoTarget,
+  onUploadLogo,
+  onColourChange,
+}) {
+  const previewLogoUrl = darkLogoUrl || logoUrl || iconUrl
+  const logoRows = [
+    {
+      key: 'logoLight',
+      title: 'Primary Logo',
+      description: 'Used when the landing header sits on lighter brand surfaces.',
+      previewUrl: logoUrl,
+    },
+    {
+      key: 'logoDark',
+      title: 'Dark Logo',
+      description: 'Used first on the buyer and seller onboarding landing.',
+      previewUrl: darkLogoUrl,
+      previewTone: 'dark',
+    },
+    {
+      key: 'logoIcon',
+      title: 'Icon Logo',
+      description: 'Fallback mark for compact and mobile landing headers.',
+      previewUrl: iconUrl,
+    },
+  ]
+
+  return (
+    <OrganisationCard title="Buyer / Seller Onboarding Landing" description="Standard landing page for buyer and seller intake links. Copy and layout stay locked; logos and colours come from branding settings.">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div>
+          <div className="mb-4 flex flex-wrap gap-2">
+            <PreviewTabButton active={activePortalType === 'buyer'} onClick={() => setActivePortalType('buyer')}>
+              Buyer
+            </PreviewTabButton>
+            <PreviewTabButton active={activePortalType === 'seller'} onClick={() => setActivePortalType('seller')}>
+              Seller
+            </PreviewTabButton>
+          </div>
+          <OnboardingLandingPreviewSurface
+            portalType={activePortalType}
+            organisationName={organisationName}
+            logoUrl={previewLogoUrl}
+            iconUrl={iconUrl}
+            colours={colours}
+          />
+        </div>
+
+        <div className="space-y-4">
+          <div className="grid gap-3">
+            {logoRows.map((row) => (
+              <OnboardingLandingLogoRow
+                key={row.key}
+                title={row.title}
+                description={row.description}
+                previewUrl={row.previewUrl}
+                previewTone={row.previewTone}
+                canEdit={canEdit}
+                uploading={uploadingLogoTarget === row.key}
+                onFile={(file) => onUploadLogo?.(file, row.key)}
+              />
+            ))}
+          </div>
+          <div className="rounded-[16px] border border-[#e4ecf5] bg-[#fbfdff] p-3">
+            <div className="grid gap-3">
+              {ONBOARDING_LANDING_COLOUR_CONTROLS.map((control) => (
+                <ColourControl
+                  key={control.key}
+                  label={control.label}
+                  value={colours[control.key] || control.fallback}
+                  disabled={!canEdit}
+                  onChange={(value) => onColourChange(control.key, value)}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </OrganisationCard>
+  )
+}
+
 function PermissionRow({ title, description, checked, disabled, onChange }) {
   return (
     <div className="flex flex-col gap-3 border-t border-[#e5edf4] py-4 first:border-t-0 first:pt-0 sm:flex-row sm:items-center sm:justify-between">
@@ -978,6 +1207,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   const [saving, setSaving] = useState(false)
   const [uploadingLogoTarget, setUploadingLogoTarget] = useState('')
   const [brandPreviewTab, setBrandPreviewTab] = useState('portal')
+  const [onboardingPreviewType, setOnboardingPreviewType] = useState('buyer')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
@@ -1496,8 +1726,9 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   const organisationName = getOrganisationDisplayName(form, onboarding)
   const organisationTypeLabel = getOrganisationTypeLabel(onboarding)
   const primaryLogo = getPrimaryLogo(form, onboarding)
-  const primaryColour = brandColours.primary || '#274C69'
-  const secondaryColour = brandColours.secondary || '#10273A'
+  const primaryColour = getBrandColourValue(brandColours, 'primary', '#274C69')
+  const secondaryColour = getBrandColourValue(brandColours, 'secondary', '#10273A')
+  const accentColour = getBrandColourValue(brandColours, 'accent', '#F7CF22')
   const defaults = getOrganisationDefaults(form)
   const isPpraVerified = Boolean(normalizeText(agencyInfo.eaabPpraNumber))
   const isRegistrationVerified = Boolean(normalizeText(agencyInfo.companyRegistrationNumber))
@@ -1508,6 +1739,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
     ...accumulator,
     [control.key]: getBrandColourValue(brandColours, control.key, control.fallback),
   }), {})
+  const onboardingLandingColours = getOnboardingLandingColours(brandColours)
   const typography = getBrandTypography(branding)
   const publicBranding = getPublicBranding(form, agencyInfo, branding)
   const configuredBrandAssetCount = getConfiguredBrandAssetCount(branding)
@@ -1635,6 +1867,20 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                   ))}
                 </div>
               </OrganisationCard>
+
+              <OnboardingLandingBrandingCard
+                organisationName={organisationName}
+                logoUrl={primaryAssetUrl}
+                darkLogoUrl={branding.logoDark}
+                iconUrl={iconAssetUrl}
+                colours={onboardingLandingColours}
+                activePortalType={onboardingPreviewType}
+                setActivePortalType={setOnboardingPreviewType}
+                canEdit={canEdit}
+                uploadingLogoTarget={uploadingLogoTarget}
+                onUploadLogo={(file, targetKey) => handleLogoUpload(file, targetKey)}
+                onColourChange={(key, value) => updateBrandColour(key, value)}
+              />
 
               <OrganisationCard title="Typography" description="Keep text, buttons and rounded controls consistent across branded surfaces.">
                 <div className="grid gap-4 md:grid-cols-2">
@@ -2084,6 +2330,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                 <div className="grid gap-4">
                   <ColourControl label="Primary Colour" value={primaryColour} disabled={!canEdit} onChange={(value) => updateBrandColour('primary', value)} />
                   <ColourControl label="Secondary Colour" value={secondaryColour} disabled={!canEdit} onChange={(value) => updateBrandColour('secondary', value)} />
+                  <ColourControl label="Accent Colour" value={accentColour} disabled={!canEdit} onChange={(value) => updateBrandColour('accent', value)} />
                 </div>
               </div>
               <div className="mt-5 overflow-hidden rounded-[18px] border border-[#dfe8f1]">
@@ -2100,6 +2347,20 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                 </div>
               </div>
             </OrganisationCard>
+
+            <OnboardingLandingBrandingCard
+              organisationName={organisationName}
+              logoUrl={primaryLogo}
+              darkLogoUrl={branding.logoDark}
+              iconUrl={branding.logoIcon}
+              colours={onboardingLandingColours}
+              activePortalType={onboardingPreviewType}
+              setActivePortalType={setOnboardingPreviewType}
+              canEdit={canEdit}
+              uploadingLogoTarget={uploadingLogoTarget}
+              onUploadLogo={(file, targetKey) => handleLogoUpload(file, targetKey)}
+              onColourChange={(key, value) => updateBrandColour(key, value)}
+            />
 
             {!showBrandingOnly ? (
               <>

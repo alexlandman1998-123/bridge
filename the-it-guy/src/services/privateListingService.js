@@ -1,5 +1,6 @@
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
 import { buildSellerClientPortalLink, buildSellerOnboardingLink, generateSellerOnboardingToken } from '../lib/agentListingStorage'
+import { resolveOnboardingBranding } from '../lib/onboardingBranding'
 import {
   canTransitionPrivateListing,
   evaluatePrivateListingTransitionGuards,
@@ -1207,6 +1208,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   const portalBranding = onboardingFormData.portalBranding && typeof onboardingFormData.portalBranding === 'object'
     ? onboardingFormData.portalBranding
     : {}
+  const resolvedPortalBranding = resolveOnboardingBranding(portalBranding)
   const imageGallery = normalizeMediaItems(onboardingFormData.imageGallery)
   const coverImageId = normalizeText(onboardingFormData.coverImageId) || normalizeText(imageGallery[0]?.id)
   const coverImage = imageGallery.find((item) => normalizeText(item.id) === coverImageId) || imageGallery[0] || null
@@ -1346,21 +1348,25 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     createdBy: row.created_by || null,
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null,
-    agencyOrganisation: pickFirstText(portalBranding.organisationName, portalBranding.agencyName, row.agency_organisation),
-    organisationName: pickFirstText(portalBranding.organisationName, portalBranding.agencyName),
-    agencyName: pickFirstText(portalBranding.agencyName, portalBranding.organisationName),
-    agencyLogoUrl: pickFirstText(portalBranding.logoDarkUrl, portalBranding.logoDark, portalBranding.logoUrl),
-    agencyLogoDarkUrl: pickFirstText(portalBranding.logoDarkUrl, portalBranding.logoDark),
-    agencyLogoLightUrl: pickFirstText(portalBranding.logoLightUrl, portalBranding.logoLight, portalBranding.logoUrl),
-    organisationLogoUrl: pickFirstText(portalBranding.logoDarkUrl, portalBranding.logoDark, portalBranding.logoUrl),
-    organisationLogoDarkUrl: pickFirstText(portalBranding.logoDarkUrl, portalBranding.logoDark),
+    agencyOrganisation: pickFirstText(resolvedPortalBranding.organisationName, row.agency_organisation),
+    organisationName: resolvedPortalBranding.organisationName,
+    agencyName: resolvedPortalBranding.organisationName,
+    agencyLogoUrl: pickFirstText(resolvedPortalBranding.logoDarkUrl, resolvedPortalBranding.logoLightUrl, resolvedPortalBranding.logoIconUrl),
+    agencyLogoDarkUrl: resolvedPortalBranding.logoDarkUrl,
+    agencyLogoLightUrl: resolvedPortalBranding.logoLightUrl,
+    organisationLogoUrl: pickFirstText(resolvedPortalBranding.logoDarkUrl, resolvedPortalBranding.logoLightUrl, resolvedPortalBranding.logoIconUrl),
+    organisationLogoDarkUrl: resolvedPortalBranding.logoDarkUrl,
     branding: {
       ...portalBranding,
-      organisationName: pickFirstText(portalBranding.organisationName, portalBranding.agencyName),
-      agencyName: pickFirstText(portalBranding.agencyName, portalBranding.organisationName),
-      logoUrl: pickFirstText(portalBranding.logoDarkUrl, portalBranding.logoDark, portalBranding.logoUrl),
-      logoDarkUrl: pickFirstText(portalBranding.logoDarkUrl, portalBranding.logoDark),
-      logoLightUrl: pickFirstText(portalBranding.logoLightUrl, portalBranding.logoLight, portalBranding.logoUrl),
+      organisationName: resolvedPortalBranding.organisationName,
+      agencyName: resolvedPortalBranding.organisationName,
+      logoUrl: pickFirstText(resolvedPortalBranding.logoDarkUrl, resolvedPortalBranding.logoLightUrl, resolvedPortalBranding.logoIconUrl),
+      logoDarkUrl: resolvedPortalBranding.logoDarkUrl,
+      logoLightUrl: resolvedPortalBranding.logoLightUrl,
+      logoIconUrl: resolvedPortalBranding.logoIconUrl,
+      primaryColour: resolvedPortalBranding.primaryColour,
+      secondaryColour: resolvedPortalBranding.secondaryColour,
+      accentColour: resolvedPortalBranding.accentColour,
     },
     property24ListingUrl: row.property24_listing_url || onboardingFormData.property24ListingUrl || '',
     property24Reference: row.property24_reference || onboardingFormData.property24Reference || '',
@@ -1680,15 +1686,25 @@ async function fetchOrganisationBrandingSnapshot(client, organisationId) {
     const branding = onboarding?.branding && typeof onboarding.branding === 'object'
       ? onboarding.branding
       : {}
-    const organisationName = pickFirstText(
-      agencyInformation.tradingName,
-      agencyInformation.agencyName,
-      organisation?.display_name,
-      organisation?.name,
+    const settingsBranding = settings?.branding && typeof settings.branding === 'object'
+      ? settings.branding
+      : {}
+    const resolvedBranding = resolveOnboardingBranding(
+      branding,
+      settingsBranding,
+      {
+        organisationName: pickFirstText(
+          agencyInformation.tradingName,
+          agencyInformation.agencyName,
+        ),
+      },
+      organisation,
     )
-    const logoLightUrl = pickFirstText(branding.logoLight, branding.logoLightUrl, branding.logoUrl, organisation?.logo_url)
-    const logoDarkUrl = pickFirstText(branding.logoDark, branding.logoDarkUrl, branding.logoHighContrastUrl, branding.logoLight, branding.logoLightUrl, organisation?.logo_url)
-    const logoUrl = pickFirstText(logoDarkUrl, logoLightUrl)
+    const organisationName = resolvedBranding.organisationName
+    const logoLightUrl = resolvedBranding.logoLightUrl
+    const logoDarkUrl = resolvedBranding.logoDarkUrl
+    const logoIconUrl = resolvedBranding.logoIconUrl
+    const logoUrl = pickFirstText(logoDarkUrl, logoLightUrl, logoIconUrl)
 
     if (!organisationName && !logoUrl) return null
     return {
@@ -1698,10 +1714,12 @@ async function fetchOrganisationBrandingSnapshot(client, organisationId) {
       logoUrl,
       logoDarkUrl,
       logoLightUrl,
+      logoIconUrl,
       logoDark: logoDarkUrl,
       logoLight: logoLightUrl,
-      primaryColour: pickFirstText(branding?.brandColours?.primary, '#274C69'),
-      secondaryColour: pickFirstText(branding?.brandColours?.secondary, '#10273A'),
+      primaryColour: pickFirstText(resolvedBranding.primaryColour, '#274C69'),
+      secondaryColour: pickFirstText(resolvedBranding.secondaryColour, '#10273A'),
+      accentColour: resolvedBranding.accentColour,
     }
   } catch (error) {
     console.warn('[Private Listings] organisation branding snapshot unavailable for seller onboarding.', {

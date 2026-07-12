@@ -3,6 +3,7 @@ import { createServer } from 'vite'
 
 const TRANSACTION_ID = '5db513ad-5736-46fe-bd8f-6b298d1d791d'
 const SNAPSHOT_RPC = 'canonical_document_verification_snapshot'
+const FIXTURE_KEY = 'canonical_packet_fixture_v1'
 
 const expectedMappings = [
   ['generated_mandate', 'generated_mandate', false],
@@ -25,7 +26,11 @@ try {
   const { supabase, isSupabaseConfigured } = await server.ssrLoadModule('/src/lib/supabaseClient.js')
   assert.ok(isSupabaseConfigured && supabase, 'Supabase must be configured for packet fixture verification')
 
-  const { data, error } = await supabase.rpc(SNAPSHOT_RPC, { p_purpose: 'canonical_staging_verification' })
+  const { data, error } = await supabase.rpc(SNAPSHOT_RPC, {
+    p_purpose: 'canonical_staging_verification',
+    p_transaction_id: TRANSACTION_ID,
+    p_fixture: FIXTURE_KEY,
+  })
   assert.ifError(error)
 
   const requirements = data.document_requirement_instances || []
@@ -35,7 +40,7 @@ try {
 
   const fixturePackets = packets.filter((packet) =>
     packet.transaction_id === TRANSACTION_ID &&
-    packet.source_context_json?.fixture === 'canonical_packet_fixture_v1'
+    packet.source_context_json?.fixture === FIXTURE_KEY
   )
   const fixtureVersions = versions.filter((version) =>
     fixturePackets.some((packet) => packet.id === version.packet_id)

@@ -21,6 +21,7 @@ import PremiumOnboardingLanding from '../components/onboarding/PremiumOnboarding
 import Button from '../components/ui/Button'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { resolveBuyerOnboardingFlow } from '../lib/buyerOnboardingFlow.js'
+import { getOnboardingBrandInitials, resolveOnboardingBranding } from '../lib/onboardingBranding'
 import {
   EMPLOYMENT_TYPE_OPTIONS,
   PURCHASER_ENTITY_OPTIONS,
@@ -1626,73 +1627,43 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
   return cleaned
 }
 
-function getBuyerLandingInitials(name = '') {
-  const parts = String(name || '')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-
-  if (!parts.length) return 'B9'
-
-  return parts
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join('')
-}
-
 function resolveBuyerLandingBrand(payload = {}) {
-  const branding = payload?.branding || {}
-  const organisation = payload?.organisation || {}
   const development = Array.isArray(payload?.unit?.development)
     ? payload.unit.development[0]
     : payload?.unit?.development
-  const name =
-    String(
-      branding.organisationName ||
-        branding.agencyName ||
-        organisation.display_name ||
-        organisation.name ||
-        development?.name ||
-        branding.senderName ||
-        payload?.transaction?.assigned_agent ||
-        '',
-    ).trim() || 'Your property team'
-  const logoUrl = String(
-    branding.logoDarkUrl ||
-      branding.logoUrl ||
-      branding.logoLightUrl ||
-      organisation.logo_url ||
-      organisation.logoUrl ||
-      '',
-  ).trim()
+  const branding = resolveOnboardingBranding(
+    payload?.branding,
+    payload?.organisation?.settingsJson?.agencyOnboarding?.branding,
+    payload?.organisation?.settingsJson?.branding,
+    payload?.organisation,
+    development,
+    payload?.transaction,
+  )
+  const name = branding.organisationName || 'Your property team'
+  const logoUrl = branding.logoDarkUrl || branding.logoLightUrl || branding.logoIconUrl
 
   return {
     name,
     logoUrl,
-    initials: getBuyerLandingInitials(name),
+    initials: getOnboardingBrandInitials(name),
+    primaryColour: branding.primaryColour,
+    secondaryColour: branding.secondaryColour,
+    accentColour: branding.accentColour,
   }
 }
 
 function resolveBuyerQuestionHeaderIdentity(payload = {}) {
-  const branding = payload?.branding || {}
-  const logoUrl = String(
-    branding.logoLightUrl ||
-      branding.logoUrl ||
-      branding.logoDarkUrl ||
-      payload?.organisation?.logo_url ||
-      payload?.organisation?.logoUrl ||
-      '',
-  ).trim()
-  const agencyName = String(
-    branding.organisationName ||
-      branding.agencyName ||
-      payload?.organisation?.display_name ||
-      payload?.organisation?.name ||
-      '',
-  ).trim()
+  const branding = resolveOnboardingBranding(
+    payload?.branding,
+    payload?.organisation?.settingsJson?.agencyOnboarding?.branding,
+    payload?.organisation?.settingsJson?.branding,
+    payload?.organisation,
+  )
+  const logoUrl = branding.logoLightUrl || branding.logoDarkUrl || branding.logoIconUrl
+  const agencyName = branding.organisationName
   const senderName =
     String(
-      branding.senderName ||
+      payload?.branding?.senderName ||
         payload?.transaction?.assigned_agent ||
         payload?.assignedAgentName ||
         '',
@@ -1702,7 +1673,7 @@ function resolveBuyerQuestionHeaderIdentity(payload = {}) {
   return {
     name,
     logoUrl,
-    initials: getBuyerLandingInitials(name),
+    initials: getOnboardingBrandInitials(name),
   }
 }
 
@@ -4465,6 +4436,9 @@ function ClientOnboarding() {
             personName={buyerLandingName === 'there' ? '' : buyerLandingName}
             propertyAddress={onboardingLocationLabel}
             backgroundImage={buyerLandingBackgroundImage}
+            primaryColour={onboardingBrand.primaryColour}
+            secondaryColour={onboardingBrand.secondaryColour}
+            accentColour={onboardingBrand.accentColour}
             onStart={() => {
               setLandingDismissed(true)
               if (typeof window !== 'undefined') {

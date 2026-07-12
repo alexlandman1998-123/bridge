@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 const files = {
   organisationPage: await readFile(new URL('../src/pages/settings/SettingsOrganisationPage.jsx', import.meta.url), 'utf8'),
   settingsApi: await readFile(new URL('../src/lib/settingsApi.js', import.meta.url), 'utf8'),
+  agencyOnboarding: await readFile(new URL('../src/lib/agencyOnboarding.js', import.meta.url), 'utf8'),
   layout: await readFile(new URL('../src/pages/settings/SettingsLayout.jsx', import.meta.url), 'utf8'),
   app: await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8'),
   packageJson: await readFile(new URL('../package.json', import.meta.url), 'utf8'),
@@ -73,6 +74,23 @@ for (const token of [
   assert(files.organisationPage.includes(token), `branding page should include requested brand manager behavior: ${token}`)
 }
 
+for (const token of [
+  'ONBOARDING_LANDING_COLOUR_CONTROLS',
+  'Buyer / Seller Onboarding Landing',
+  'OnboardingLandingBrandingCard',
+  'OnboardingLandingLogoRow',
+  'OnboardingLandingPreviewSurface',
+  'onboardingPreviewType',
+  'activePortalType',
+  'Primary Logo',
+  'Dark Logo',
+  'Icon Logo',
+  'Accent Colour',
+  'onUploadLogo={(file, targetKey) => handleLogoUpload(file, targetKey)}',
+]) {
+  assert(files.organisationPage.includes(token), `branding page should expose onboarding landing branding controls: ${token}`)
+}
+
 for (const removedToken of [
   'Choose File',
   'organisation-logo-preview-frame',
@@ -100,5 +118,6 @@ assert(files.layout.includes("label: 'Branding'"), 'settings inner navigation sh
 assert(files.layout.includes('lg:grid-cols-[220px_minmax(0,1fr)]'), 'settings layout should keep inner settings navigation beside content')
 assert.match(files.app, /path="branding"[\s\S]*<SettingsOrganisationPage section="branding" \/>/)
 assert.match(files.packageJson, /"test:settings-branding-premium-refactor": "node scripts\/settings-branding-premium-refactor\.test\.mjs"/)
+assert.match(files.agencyOnboarding, /accent:\s*'#F7CF22'/)
 
 console.log('Settings branding premium refactor contract passed.')

@@ -116,6 +116,7 @@ export function buildDefaultAgencyOnboarding(profile = null) {
       brandColours: {
         primary: '#274C69',
         secondary: '#10273A',
+        accent: '#F7CF22',
       },
     },
     invitations: [createAgencyInviteDraft()],

@@ -13,6 +13,7 @@ try {
     buildTransactionDocumentFacts,
     shouldDisplayRequirementAtStage,
   } = await server.ssrLoadModule('/src/services/documents/transactionCanonicalDocumentRequirementService.js')
+  const { BUYER_ONBOARDING_FLOW_VERSION } = await server.ssrLoadModule('/src/lib/buyerOnboardingFlowContract.js')
 
   const definitions = [
     {
@@ -41,6 +42,42 @@ try {
       default_requirement_level: 'required',
       default_visibility: ['seller', 'agent'],
       default_upload_roles: ['seller'],
+    },
+    {
+      key: 'buyer_id_document',
+      display_label: 'Buyer ID Document',
+      category: 'buyer_identity_fica',
+      pack_key: 'buyer_identity_fica',
+      default_requirement_level: 'required',
+      default_visibility: ['buyer', 'agent'],
+      default_upload_roles: ['buyer'],
+    },
+    {
+      key: 'buyer_proof_of_address',
+      display_label: 'Buyer Proof of Address',
+      category: 'buyer_identity_fica',
+      pack_key: 'buyer_identity_fica',
+      default_requirement_level: 'required',
+      default_visibility: ['buyer', 'agent'],
+      default_upload_roles: ['buyer'],
+    },
+    {
+      key: 'buyer_company_registration',
+      display_label: 'Buyer Company Registration',
+      category: 'buyer_identity_fica',
+      pack_key: 'buyer_identity_fica',
+      default_requirement_level: 'required',
+      default_visibility: ['buyer', 'agent'],
+      default_upload_roles: ['buyer'],
+    },
+    {
+      key: 'buyer_trust_deed',
+      display_label: 'Buyer Trust Deed',
+      category: 'buyer_identity_fica',
+      pack_key: 'buyer_identity_fica',
+      default_requirement_level: 'required',
+      default_visibility: ['buyer', 'agent'],
+      default_upload_roles: ['buyer'],
     },
   ]
 
@@ -152,7 +189,8 @@ try {
   assert.equal(snapshotFacts.buyer.branch, 'company')
   assert.equal(snapshotFacts.buyer.purchase_mode, 'individual')
   assert.equal(snapshotFacts.buyer.finance_support_mode, 'originator_led')
-  assert.equal(snapshotFacts.buyer.onboarding_flow_version, 'buyer_onboarding_flow_v1')
+  assert.equal(snapshotFacts.buyer.onboarding_flow_version, BUYER_ONBOARDING_FLOW_VERSION)
+  assert.equal(snapshotFacts.buyer.onboarding_flow?.source_version, 'buyer_onboarding_flow_v1')
   assert.equal(snapshotFacts.buyer.onboarding_flow?.buyer_branch, 'company')
 
   const preFinanceVisibility = shouldDisplayRequirementAtStage({
@@ -228,6 +266,48 @@ try {
   const existingBondKeys = existingBondCandidates.candidates.map((candidate) => candidate.generated.document_definition_key)
   assert.equal(existingBondKeys.includes('bond_statement'), true)
   assert.equal(existingBondKeys.includes('bond_approval'), true)
+
+  const companyBuyerCandidates = buildProjectedTransactionRequirementCandidates({
+    transaction: {
+      id: 'tx-company-buyer',
+      finance_type: 'cash',
+      purchaser_type: 'company',
+      seller_has_existing_bond: false,
+      current_main_stage: 'OTP',
+      stage: 'OTP Signed',
+      onboarding_status: 'Submitted',
+    },
+    formData: { purchaser_type: 'company', purchase_finance_type: 'cash' },
+    documents: [],
+    subprocesses: [],
+    rules,
+    definitions,
+  })
+  const companyBuyerKeys = companyBuyerCandidates.candidates.map((candidate) => candidate.generated.document_definition_key)
+  assert.equal(companyBuyerKeys.includes('buyer_company_registration'), true)
+  assert.equal(companyBuyerKeys.includes('buyer_company_resolution'), false)
+  assert.equal(companyBuyerKeys.includes('buyer_company_registration_documents'), false)
+
+  const trustBuyerCandidates = buildProjectedTransactionRequirementCandidates({
+    transaction: {
+      id: 'tx-trust-buyer',
+      finance_type: 'cash',
+      purchaser_type: 'trust',
+      seller_has_existing_bond: false,
+      current_main_stage: 'OTP',
+      stage: 'OTP Signed',
+      onboarding_status: 'Submitted',
+    },
+    formData: { purchaser_type: 'trust', purchase_finance_type: 'cash' },
+    documents: [],
+    subprocesses: [],
+    rules,
+    definitions,
+  })
+  const trustBuyerKeys = trustBuyerCandidates.candidates.map((candidate) => candidate.generated.document_definition_key)
+  assert.equal(trustBuyerKeys.includes('buyer_trust_deed'), true)
+  assert.equal(trustBuyerKeys.includes('buyer_letters_of_authority'), false)
+  assert.equal(trustBuyerKeys.includes('buyer_trustee_resolution'), false)
 
   console.log('transaction canonical document engine tests passed')
 } finally {

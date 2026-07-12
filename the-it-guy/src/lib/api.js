@@ -31,6 +31,7 @@ import {
   validateOnboardingSubmission,
 } from './purchaserPersonas'
 import { resolveBuyerOnboardingFlow } from './buyerOnboardingFlow.js'
+import { resolveOnboardingBranding } from './onboardingBranding.js'
 import {
   canProgressTransactionStage as canProgressTransactionStageForBuyerRequirements,
   getBuyerFicaReadiness as getBuyerFicaReadinessFromProfile,
@@ -33820,22 +33821,75 @@ async function fetchOrganisationBrandContext(client, organisationId) {
     throw organisationQuery.error
   }
 
-  return organisationQuery.data || null
+  if (!organisationQuery.data) {
+    return null
+  }
+
+  let settingsJson = {}
+  try {
+    const settingsQuery = await client
+      .from('organisation_settings')
+      .select('settings_json')
+      .eq('organisation_id', normalizedOrganisationId)
+      .maybeSingle()
+
+    if (settingsQuery.error) {
+      if (
+        !isMissingTableError(settingsQuery.error, 'organisation_settings') &&
+        !isMissingColumnError(settingsQuery.error, 'settings_json') &&
+        !isMissingSchemaError(settingsQuery.error) &&
+        !isPermissionDeniedError(settingsQuery.error)
+      ) {
+        throw settingsQuery.error
+      }
+    } else if (settingsQuery.data?.settings_json && typeof settingsQuery.data.settings_json === 'object') {
+      settingsJson = settingsQuery.data.settings_json
+    }
+  } catch (settingsError) {
+    if (
+      !isMissingTableError(settingsError, 'organisation_settings') &&
+      !isMissingColumnError(settingsError, 'settings_json') &&
+      !isMissingSchemaError(settingsError) &&
+      !isPermissionDeniedError(settingsError)
+    ) {
+      throw settingsError
+    }
+  }
+
+  return {
+    ...organisationQuery.data,
+    settingsJson,
+  }
+}
+
+function normalizeOnboardingBrandingRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
+function getOrganisationOnboardingBrandingSources(organisation = null) {
+  const settingsJson = normalizeOnboardingBrandingRecord(organisation?.settingsJson || organisation?.settings_json)
+  const agencyOnboarding = normalizeOnboardingBrandingRecord(
+    settingsJson.agencyOnboarding || settingsJson.agency_onboarding,
+  )
+  const agencyBranding = normalizeOnboardingBrandingRecord(
+    agencyOnboarding.branding || agencyOnboarding.portalBranding || agencyOnboarding.portal_branding,
+  )
+  const settingsBranding = normalizeOnboardingBrandingRecord(settingsJson.branding)
+
+  return [agencyBranding, settingsBranding]
 }
 
 function normalizeBuyerOnboardingBranding({ organisation = null, transaction = null, unit = null } = {}) {
   const development = Array.isArray(unit?.development) ? unit.development[0] : unit?.development
-  const organisationName =
-    normalizeNullableText(organisation?.display_name) ||
-    normalizeNullableText(organisation?.name) ||
-    ''
-  const developmentName = normalizeNullableText(development?.name)
+  const [agencyBranding, settingsBranding] = getOrganisationOnboardingBrandingSources(organisation)
+  const organisationBranding = resolveOnboardingBranding(agencyBranding, settingsBranding, organisation)
+  const contextBranding = resolveOnboardingBranding(agencyBranding, settingsBranding, organisation, transaction, development)
+  const organisationName = normalizeNullableText(organisationBranding.organisationName)
   const senderName =
     organisationName ||
-    normalizeNullableText(transaction?.assigned_agent) ||
-    developmentName ||
+    normalizeNullableText(contextBranding.organisationName) ||
     'Your property team'
-  const logoUrl = normalizeNullableText(organisation?.logo_url || organisation?.logoUrl)
+  const logoUrl = normalizeNullableText(contextBranding.logoDarkUrl || contextBranding.logoLightUrl || contextBranding.logoIconUrl)
 
   return {
     organisationId: normalizeNullableUuid(organisation?.id || transaction?.organisation_id),
@@ -33845,8 +33899,10 @@ function normalizeBuyerOnboardingBranding({ organisation = null, transaction = n
     logoUrl,
     logoDarkUrl: logoUrl,
     logoLightUrl: logoUrl,
-    primaryColour: '',
-    secondaryColour: '',
+    logoIconUrl: normalizeNullableText(contextBranding.logoIconUrl),
+    primaryColour: normalizeNullableText(contextBranding.primaryColour),
+    secondaryColour: normalizeNullableText(contextBranding.secondaryColour),
+    accentColour: normalizeNullableText(contextBranding.accentColour),
   }
 }
 

@@ -27,6 +27,11 @@ import {
 import PremiumOnboardingLanding from '../components/onboarding/PremiumOnboardingLanding'
 import Button from '../components/ui/Button'
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
+import {
+  getOnboardingBrandInitials,
+  hasResolvedOnboardingBrandingValue,
+  resolveOnboardingBranding,
+} from '../lib/onboardingBranding'
 import { getEdgeFunctionInvokeError, invokeEdgeFunction } from '../lib/supabaseClient'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import {
@@ -414,65 +419,47 @@ function formatValue(value, fallback = 'Not provided') {
   return text.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
-function getInitials(value = '') {
-  const parts = String(value || '').trim().split(/\s+/).filter(Boolean)
-  if (!parts.length) return 'B9'
-  return parts.slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('')
-}
-
-function pickBrandText(...values) {
-  for (const value of values) {
-    if (typeof value !== 'string' && typeof value !== 'number') continue
-    const text = String(value).trim()
-    if (text) return text
-  }
-  return ''
-}
-
 function resolveAgencyBrand(listing = {}) {
   const onboardingBranding = listing?.sellerOnboarding?.formData?.portalBranding || {}
-  const agencyName = pickBrandText(
-    listing?.branding?.organisationName,
-    listing?.branding?.agencyName,
-    listing?.branding?.name,
-    onboardingBranding?.organisationName,
-    onboardingBranding?.agencyName,
-    listing?.agencyOrganisation,
-    listing?.organisationName,
-    listing?.agencyName,
-    listing?.agency?.displayName,
-    listing?.agency?.name,
-    listing?.organisation?.displayName,
-    listing?.organisation?.name,
-    listing?.assignedAgencyName,
+  const listingBranding = {
+    agencyOrganisation: listing?.agencyOrganisation,
+    organisationName: listing?.organisationName,
+    agencyName: listing?.agencyName,
+    assignedAgencyName: listing?.assignedAgencyName,
+    agencyLogoUrl: listing?.agencyLogoUrl,
+    agencyLogoDarkUrl: listing?.agencyLogoDarkUrl,
+    agencyLogoLightUrl: listing?.agencyLogoLightUrl,
+    organisationLogoUrl: listing?.organisationLogoUrl,
+    organisationLogoDarkUrl: listing?.organisationLogoDarkUrl,
+    organisationLogoLightUrl: listing?.organisationLogoLightUrl,
+  }
+  const brandingSources = [
+    listing?.branding,
+    onboardingBranding,
+    listingBranding,
+    listing?.agency,
+    listing?.organisation,
+  ]
+  const branding = resolveOnboardingBranding(...brandingSources)
+  const hasAgencyName = hasResolvedOnboardingBrandingValue(
+    'organisationName',
+    ...brandingSources,
   )
-  const brandName = agencyName || 'Arch9'
-  const logoDarkUrl = pickBrandText(
-    listing?.agencyLogoDarkUrl,
-    listing?.organisationLogoDarkUrl,
-    listing?.branding?.logoDarkUrl,
-    listing?.branding?.logoDark,
-    onboardingBranding?.logoDarkUrl,
-    onboardingBranding?.logoDark,
-  )
-  const logoLightUrl = pickBrandText(
-    listing?.agencyLogoLightUrl,
-    listing?.organisationLogoLightUrl,
-    listing?.branding?.logoLightUrl,
-    listing?.branding?.logoLight,
-    onboardingBranding?.logoLightUrl,
-    onboardingBranding?.logoLight,
-  )
-  const fallbackLogoUrl = pickBrandText(
-    listing?.agencyLogoUrl,
-    listing?.organisationLogoUrl,
-    listing?.agency?.logoUrl,
-    listing?.organisation?.logoUrl,
-    listing?.branding?.logoUrl,
-    onboardingBranding?.logoUrl,
-  )
-  const logoUrl = logoDarkUrl || fallbackLogoUrl || logoLightUrl
-  return { name: brandName, logoUrl, logoDarkUrl, logoLightUrl, initials: getInitials(brandName), isFallback: !agencyName }
+  const brandName = branding.organisationName || 'Arch9'
+  const logoDarkUrl = branding.logoDarkUrl
+  const logoLightUrl = branding.logoLightUrl
+  const logoUrl = logoDarkUrl || branding.logoIconUrl || logoLightUrl
+  return {
+    name: brandName,
+    logoUrl,
+    logoDarkUrl,
+    logoLightUrl,
+    initials: getOnboardingBrandInitials(brandName),
+    isFallback: !hasAgencyName,
+    primaryColour: branding.primaryColour,
+    secondaryColour: branding.secondaryColour,
+    accentColour: branding.accentColour,
+  }
 }
 
 function resolveAgentName(listing = {}) {
@@ -1632,6 +1619,9 @@ function SellerWelcomeScreen({ brand, listing, form, onContinue }) {
       personName={welcomeName}
       propertyAddress={propertyAddress}
       backgroundImage={resolveSellerWelcomeImageUrl(listing)}
+      primaryColour={brand?.primaryColour}
+      secondaryColour={brand?.secondaryColour}
+      accentColour={brand?.accentColour}
       onStart={onContinue}
     />
   )

@@ -17,6 +17,8 @@ const TABLES = Object.freeze([
 const PAGE_SIZE = 1000
 const MAX_ROWS_PER_TABLE = Number(process.env.CANONICAL_DRY_RUN_MAX_ROWS || 5000)
 const SNAPSHOT_RPC = 'canonical_document_verification_snapshot'
+const SNAPSHOT_TRANSACTION_ID = normalizeText(process.env.CANONICAL_DRY_RUN_TRANSACTION_ID)
+const SNAPSHOT_FIXTURE = normalizeText(process.env.CANONICAL_DRY_RUN_FIXTURE)
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -116,7 +118,14 @@ async function fetchAllTables(client) {
 }
 
 async function fetchVerificationSnapshot(client) {
-  const result = await client.rpc(SNAPSHOT_RPC, { p_purpose: 'canonical_staging_verification' })
+  const params = {
+    p_purpose: 'canonical_staging_verification',
+    p_max_rows: MAX_ROWS_PER_TABLE,
+  }
+  if (SNAPSHOT_TRANSACTION_ID) params.p_transaction_id = SNAPSHOT_TRANSACTION_ID
+  if (SNAPSHOT_FIXTURE) params.p_fixture = SNAPSHOT_FIXTURE
+
+  const result = await client.rpc(SNAPSHOT_RPC, params)
   if (result.error) return { available: false, error: result.error.message, tables: null }
 
   const snapshot = result.data || {}

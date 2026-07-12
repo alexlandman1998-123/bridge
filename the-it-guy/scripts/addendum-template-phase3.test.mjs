@@ -90,9 +90,9 @@ const createTemplateBlock = getFunctionBlock(page, 'handleCreateTemplate')
 for (const reference of [
   'const addendumStarterConfig = getAddendumTemplateStarter(starterKind)',
   'const resolvedAddendumStarter = addendumStarterConfig || getAddendumTemplateStarter(GENERAL_ADDENDUM_TEMPLATE_FAMILY)',
-  'createGeneralAddendumStarterSections(packetType, resolvedAddendumStarter.key)',
-  '`${packetType}_${resolvedAddendumStarter.templateKeySegment}_${timestamp}`',
-  '`${templateTypeConfig.shortLabel} ${resolvedAddendumStarter.templateLabel}`',
+  'createGeneralAddendumStarterSections(resolvedPacketType, resolvedAddendumStarter.key)',
+  '`${resolvedPacketType}_${resolvedAddendumStarter.templateKeySegment}_${timestamp}`',
+  '`${resolvedTemplateTypeConfig.shortLabel} ${resolvedAddendumStarter.templateLabel}`',
   'description: isGeneralAddendumStarter',
   'addendum_type: isGeneralAddendumStarter ? resolvedAddendumStarter.key : null',
   'addendum_label: isGeneralAddendumStarter ? resolvedAddendumStarter.label : null',
@@ -103,12 +103,12 @@ for (const reference of [
 const createAddendumStarterBlock = getFunctionBlock(page, 'handleCreateAddendumStarterTemplate')
 assertIncludes(
   page,
-  'async function handleCreateAddendumStarterTemplate(starterKind = GENERAL_ADDENDUM_TEMPLATE_FAMILY)',
+  'async function handleCreateAddendumStarterTemplate(starterKind = GENERAL_ADDENDUM_TEMPLATE_FAMILY, options = {})',
   'Dedicated addendum starter action should default to the General Addendum starter.',
 )
 for (const reference of [
-  'handleCreateGeneralAddendumTemplate()',
-  'handleCreateTemplate({ starterKind })',
+  'handleCreateGeneralAddendumTemplate(options)',
+  'handleCreateTemplate({ ...options, starterKind })',
 ]) {
   assertIncludes(createAddendumStarterBlock, reference, `Dedicated addendum starter action should keep ${reference}.`)
 }

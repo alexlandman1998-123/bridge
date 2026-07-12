@@ -78,14 +78,14 @@ for (const reference of [
 }
 
 const createTemplateBlock = getFunctionBlock(page, 'handleCreateTemplate')
-assertIncludes(
+assert.match(
   page,
-  "async function handleCreateTemplate({ starterKind = 'standard' } = {})",
-  'Template creation should accept a starter kind while preserving the standard default.',
+  /async function handleCreateTemplate\(\{\s*starterKind = 'standard',\s*targetPacketType = packetType,\s*\} = \{\}\)/,
+  'Template creation should accept a starter kind and optional packet type while preserving the standard default.',
 )
 for (const reference of [
   'starterKind === GENERAL_ADDENDUM_TEMPLATE_FAMILY',
-  'createGeneralAddendumStarterSections(packetType, resolvedAddendumStarter.key)',
+  'createGeneralAddendumStarterSections(resolvedPacketType, resolvedAddendumStarter.key)',
   "documentKindOption = getDocumentKindOption(isGeneralAddendumStarter ? 'addendum' : 'standard')",
   'document_kind: documentKindOption.key',
   'preferred_document_kind: documentKindOption.key',
@@ -98,7 +98,7 @@ for (const reference of [
 const createGeneralAddendumBlock = getFunctionBlock(page, 'handleCreateGeneralAddendumTemplate')
 assertIncludes(
   createGeneralAddendumBlock,
-  'handleCreateTemplate({ starterKind: GENERAL_ADDENDUM_TEMPLATE_FAMILY })',
+  'handleCreateTemplate({ ...options, starterKind: GENERAL_ADDENDUM_TEMPLATE_FAMILY })',
   'Dedicated General Addendum action should call the starter-aware template creator.',
 )
 

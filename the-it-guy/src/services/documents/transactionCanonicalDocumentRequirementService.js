@@ -222,14 +222,14 @@ const BUYER_ADAPTER_CANONICAL_KEY_OVERRIDES = Object.freeze({
   proof_of_address: 'buyer_proof_of_address',
   purchaser_proof_of_address: 'buyer_proof_of_address',
   purchaser_1_proof_of_address: 'buyer_proof_of_address',
-  cipc_registration: 'buyer_company_registration_documents',
-  company_resolution: 'buyer_company_resolution',
-  director_id: 'buyer_director_ids',
-  director_proof_of_address: 'buyer_business_address',
+  cipc_registration: 'buyer_company_registration',
+  company_resolution: 'buyer_company_registration',
+  director_id: 'buyer_id_document',
+  director_proof_of_address: 'buyer_proof_of_address',
   trust_deed: 'buyer_trust_deed',
-  letters_of_authority: 'buyer_letters_of_authority',
-  trust_resolution: 'buyer_trustee_resolution',
-  trustee_id: 'buyer_trustee_ids',
+  letters_of_authority: 'buyer_trust_deed',
+  trust_resolution: 'buyer_trust_deed',
+  trustee_id: 'buyer_id_document',
 })
 
 function normalizeText(value) {

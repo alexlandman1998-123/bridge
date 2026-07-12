@@ -67,8 +67,8 @@ for (const reference of [
   'const mandateMeta = getSellerMandateMeta(row, linkedSellerListing, sellerJourney)',
   'if (!mandateMeta.hasRecord)',
   'setMandateStartOpen(true)',
-  "params.set('mode', mandateMeta.mode)",
-  'navigate(`/pipeline/leads/${row.leadId}/legal/mandate?${params.toString()}`)',
+  'const returnTo = `/pipeline/leads/${row.leadId}`',
+  'navigate(`/pipeline/leads/${row.leadId}/legal/mandate?mode=${mandateMeta.mode}&returnTo=${returnTo}`)',
 ]) {
   assertIncludes(openMandateBlock, reference, `openMandateWorkspace should keep ${reference}.`)
 }
@@ -97,7 +97,7 @@ assertIncludes(
 )
 assertIncludes(
   page,
-  'Choose saved details, enter details manually, or send seller onboarding first.',
+  'Choose saved details, manual details, or seller onboarding.',
   'Seller Actions mandate CTA should explain the non-blocking choice.',
 )
 assertNotIncludes(

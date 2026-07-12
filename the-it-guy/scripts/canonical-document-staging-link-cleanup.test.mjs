@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { createServer } from 'vite'
+
+const runnerSource = readFileSync(new URL('./canonical-document-staging-link-cleanup.mjs', import.meta.url), 'utf8')
+
+assert.match(runnerSource, /SUPABASE_SERVICE_ROLE_KEY/, 'staging cleanup runner must use service-role credentials for admin-only tables')
+assert.match(runnerSource, /accessMode:\s*'service_role_admin'/, 'staging cleanup reports service-role admin access mode')
 
 const server = await createServer({
   root: process.cwd(),
@@ -84,6 +90,40 @@ try {
   assert.equal(plan.manualReview.some((item) => item.sourceId === 'doc-final' && item.reason === 'missing_transaction_context'), true)
   assert.equal(plan.documentLinks.every((item) => item.confidence === 95), true)
   assert.equal(plan.documentRequestLinks[0].reminderType, 'missing_blocker_documents')
+
+  const transactionScopedPlan = buildStagingLinkProjectionCleanupPlan({
+    canonicalInstances: [
+      ...canonicalInstances,
+      {
+        id: 'req-missing-parent-transaction',
+        document_definition_key: 'signed_otp',
+        context_type: 'transaction',
+        context_id: 'deleted-tx',
+        transaction_id: 'deleted-tx',
+        pack_key: 'attorney_generated_documents',
+        requirement_level: 'blocker',
+        status: 'requested',
+        visible_to_roles: ['buyer', 'seller', 'agent'],
+        uploadable_by_roles: ['buyer', 'seller'],
+        requested_from_role: 'client',
+      },
+    ],
+    transactions: [{ id: 'tx-1' }],
+    transactionRequiredDocuments: [
+      { id: 'legacy-otp', transaction_id: 'tx-1', document_key: 'otp', canonical_requirement_instance_id: 'req-otp' },
+    ],
+  })
+  assert.equal(
+    transactionScopedPlan.manualReview.some((item) =>
+      item.sourceId === 'req-missing-parent-transaction' &&
+      item.reason === 'missing_transaction_row'
+    ),
+    true,
+  )
+  assert.equal(
+    transactionScopedPlan.legacyProjectionCreates.some((item) => item.transactionId === 'deleted-tx'),
+    false,
+  )
 
   const writeDryRun = await writeStagingLinkProjectionCleanupPlan({ plan, write: false })
   assert.equal(writeDryRun.dryRun, true)

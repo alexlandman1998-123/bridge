@@ -85,22 +85,77 @@ try {
     assert.equal(legacyRequirementKeyToCanonicalKey(key), key)
   }
   const realStagingUnmappedKeys = [
+    'bank_approval_to_lodge',
+    'bank_requirements',
     'bank_statements',
+    'bond_registration_confirmation',
+    'buyer_company_resolution',
+    'buyer_company_registration_documents',
+    'buyer_director_ids',
+    'buyer_business_address',
+    'buyer_letters_of_authority',
+    'buyer_signed_bond_documents',
+    'buyer_trust_deed',
+    'buyer_trustee_ids',
+    'buyer_trustee_resolution',
+    'cancellation_confirmation',
+    'cancellation_figures',
+    'developer_sale_pack',
+    'final_account',
     'grant_signed',
+    'guarantee_letter',
     'guarantees',
+    'income_verification',
     'information_sheet',
+    'levy_clearance',
     'otp',
     'payslips',
+    'proof_of_funds_cash_component',
     'proof_of_income',
+    'rates_clearance',
+    'rates_clearance_certificate',
     'reservation_deposit_proof',
     'settlement_figures',
+    'seller_bond_cancellation_information',
+    'seller_company_resolution',
     'signed_transfer_pack',
+    'transfer_duty_receipt',
     'transfer_documents',
   ]
   assert.deepEqual(
     getUnmappedLegacyRequirementKeys(realStagingUnmappedKeys.map((document_key) => ({ document_key }))),
     [],
   )
+  const phaseThreeLegacyAliases = {
+    bank_approval_to_lodge: 'bond_instruction_to_attorneys',
+    bank_requirements: 'bank_feedback',
+    bond_registration_confirmation: 'registration_confirmation',
+    buyer_company_registration_documents: 'buyer_company_registration',
+    buyer_company_resolution: 'buyer_company_registration',
+    buyer_director_ids: 'buyer_id_document',
+    buyer_business_address: 'buyer_proof_of_address',
+    buyer_letters_of_authority: 'buyer_trust_deed',
+    buyer_signed_bond_documents: 'bond_instruction_to_attorneys',
+    buyer_trust_deed: 'buyer_trust_deed',
+    buyer_trustee_ids: 'buyer_id_document',
+    buyer_trustee_resolution: 'buyer_trust_deed',
+    cancellation_confirmation: 'bond_cancellation_notice',
+    cancellation_figures: 'settlement_figure',
+    developer_sale_pack: 'transfer_documents',
+    final_account: 'transfer_documents',
+    guarantee_letter: 'guarantees',
+    income_verification: 'proof_of_income',
+    levy_clearance: 'levy_clearance_certificate',
+    proof_of_funds_cash_component: 'proof_of_funds',
+    rates_clearance: 'rates_clearance_certificate',
+    rates_clearance_certificate: 'rates_clearance_certificate',
+    seller_bond_cancellation_information: 'bond_bank_details',
+    seller_company_resolution: 'company_resolution_to_sell',
+    transfer_duty_receipt: 'transfer_documents',
+  }
+  for (const [legacyKey, canonicalKey] of Object.entries(phaseThreeLegacyAliases)) {
+    assert.equal(legacyRequirementKeyToCanonicalKey(legacyKey), canonicalKey)
+  }
   assert.equal(legacyRequirementKeyToCanonicalKey('grant_signed'), 'grant_letter')
   assert.equal(legacyRequirementKeyToCanonicalKey('settlement_figures'), 'settlement_figure')
   assert.equal(legacyRequirementKeyToCanonicalKey('signed_transfer_pack'), 'signed_transfer_documents')

@@ -1,7 +1,6 @@
 import {
   canonicalDefinitionKeyToLegacyKey,
   canonicalInstanceToTransactionRequiredDocument,
-  canonicalStatusToDocumentRequestStatus,
   legacyRequirementKeyToCanonicalKey,
   pickStrongerCanonicalStatus,
 } from './canonicalDocumentAdapterService'
@@ -260,6 +259,8 @@ function buildPacketManualReview(packet = {}) {
 
 export function buildStagingLinkProjectionCleanupPlan({
   canonicalInstances = [],
+  transactions = [],
+  validTransactionIds = null,
   transactionRequiredDocuments = [],
   documents = [],
   documentRequests = [],
@@ -267,6 +268,11 @@ export function buildStagingLinkProjectionCleanupPlan({
   packetVersions = [],
 } = {}) {
   const activeInstances = canonicalInstances.filter((instance) => instance.status !== REQUIREMENT_STATUSES.notApplicable)
+  const transactionIdSet = validTransactionIds
+    ? new Set(normalizeArray(validTransactionIds).map(normalizeText).filter(Boolean))
+    : transactions.length
+      ? new Set(transactions.map((row) => normalizeText(row.id)).filter(Boolean))
+      : null
   const documentLinks = []
   const documentRequestLinks = []
   const legacyProjectionCreates = []
@@ -292,7 +298,16 @@ export function buildStagingLinkProjectionCleanupPlan({
 
   for (const instance of activeInstances) {
     const plan = buildProjectionPlan(instance, transactionRequiredDocuments)
-    if (plan) legacyProjectionCreates.push(plan)
+    if (!plan) continue
+    if (transactionIdSet && !transactionIdSet.has(normalizeText(plan.transactionId))) {
+      manualReview.push(buildManualReview('create_legacy_projection', instance, 'missing_transaction_row', {
+        canonicalRequirementInstanceId: instance.id || null,
+        canonicalKey: instance.document_definition_key || null,
+        transactionId: plan.transactionId || null,
+      }))
+      continue
+    }
+    legacyProjectionCreates.push(plan)
   }
 
   for (const packet of packetVersions.filter((row) => !row.canonical_requirement_instance_id && !row.requirement_instance_id)) {

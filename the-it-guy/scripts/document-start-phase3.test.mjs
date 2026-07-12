@@ -49,13 +49,16 @@ for (const reference of [
 }
 
 for (const reference of [
-  'Check the mandate details',
+  'Mandate details',
+  'Review the essentials',
   'Seller',
   'Property',
-  'Mandate and commission',
   'Manual capture',
-  'Core mandate details are ready for draft generation.',
-  'You can still generate a draft with gaps',
+  'Core mandate fields',
+  'Ready for draft generation.',
+  'Seller contact and authority',
+  'Property extras',
+  'Terms and special conditions',
 ]) {
   assertIncludes(panel, reference, `MandateDraftIntakePanel should keep ${reference}.`)
 }

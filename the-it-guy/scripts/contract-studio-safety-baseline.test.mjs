@@ -175,22 +175,37 @@ assert.doesNotMatch(
 assert.doesNotMatch(studioConstants, /\{ key: 'settings', label: 'Make live' \}/, 'Make live should not appear as a mode tab.')
 assert.match(
   page,
-  /overflow-x-auto rounded-\[16px\][\s\S]*simpleDocumentTabs\.map[\s\S]*<span>\{item\.label\}<\/span>[\s\S]*<span>\+ Template<\/span>/,
+  /overflow-x-auto rounded-\[16px\][\s\S]*simpleDocumentTabs\.map[\s\S]*customTemplateTabs\.map[\s\S]*setSelectedTemplateId\(item\.template\.id\)[\s\S]*<Plus size=\{15\} \/>[\s\S]*<span>Blank Template<\/span>/,
   'Phase 1 should replace the workspace area switcher with the compact document-template picker.',
 )
 assert.match(
   page,
-  /templateStarterMenuOpen[\s\S]*aria-label="Template starters"[\s\S]*Choose a starter[\s\S]*Standard sections, fields, signing blocks and legal coverage[\s\S]*Common Addendums/,
-  'Phase 5 should make + Template open an easy starter chooser instead of creating an opaque blank template.',
+  /templateStarterMenuOpen[\s\S]*aria-label="Blank template creator"[\s\S]*Blank canvas[\s\S]*Template name[\s\S]*Template type[\s\S]*Create Blank Template/,
+  'Phase 5 should make + Template open a blank canvas creator instead of a clause/addendum starter chooser.',
 )
 assert.match(
   page,
-  /handleCreateTemplate\(\{[\s\S]*targetPacketType = packetType[\s\S]*resolvedPacketType[\s\S]*setPacketType\(resolvedPacketType\)/,
-  'Phase 5 starter creation should support creating a specific template type from the chooser.',
+  /customTemplateTabs[\s\S]*isTemplatePickerCustomTemplate[\s\S]*documentKindLabel/,
+  'Blank and addendum templates should appear as selectable templates in the top picker row.',
 )
 assert.doesNotMatch(
   page,
-  /<span>\+ Template<\/span>[\s\S]{0,500}void handleCreateTemplate\(\)/,
+  /<span>\+ Template<\/span>/,
+  'Template picker should not duplicate the plus icon with + Template text.',
+)
+assert.doesNotMatch(
+  page,
+  /aria-label="Blank template creator"[\s\S]*Common addendums|aria-label="Blank template creator"[\s\S]*Standard sections, fields, signing blocks and legal coverage/,
+  'The blank template creator should not present clause/addendum starter choices.',
+)
+assert.match(
+  page,
+  /handleCreateBlankTemplate[\s\S]*starter_template: BLANK_CANVAS_TEMPLATE_STARTER[\s\S]*createBlankCanvasSections/,
+  'Phase 5 blank creation should create an empty editable template, not starter clauses.',
+)
+assert.doesNotMatch(
+  page,
+  /<span>Blank Template<\/span>[\s\S]{0,500}void handleCreateTemplate\(\)/,
   'Phase 5 should not wire the first-viewport + Template button directly to blank-template creation.',
 )
 assert.match(
@@ -289,6 +304,11 @@ assert.match(
   page,
   /Quick Add[\s\S]*Add Clause[\s\S]*Add Signing Block[\s\S]*Use Approved Clause[\s\S]*More tools[\s\S]*SECTION_EDITOR_INSERT_GROUPS\.map/,
   'Phase 6 should make common editor actions obvious while tucking the fuller toolset behind More tools.',
+)
+assert.match(
+  page,
+  /Quick Add[\s\S]*Add commonly used document pieces[\s\S]*grid min-w-0 gap-2 md:grid-cols-3/,
+  'Quick Add should use a full-width helper row above the action grid, not a squeezed side column.',
 )
 assert.match(
   page,

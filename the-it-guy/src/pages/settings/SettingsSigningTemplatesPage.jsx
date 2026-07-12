@@ -135,6 +135,9 @@ const SUPPORTED_PACKET_TYPES = [
 
 const DEFAULT_ALLOWED_PACKET_TYPES = ['otp', 'mandate']
 const SUPPORTED_PACKET_TYPE_KEYS = new Set(SUPPORTED_PACKET_TYPES.map((item) => item.key))
+const BLANK_CANVAS_TEMPLATE_STARTER = 'blank_canvas'
+const CUSTOM_TEMPLATE_FAMILY = 'custom_template'
+const BLANK_TEMPLATE_DOCUMENT_KIND_KEYS = ['custom', 'addendum', 'amendment', 'annexure', 'standard']
 const LEGAL_TEMPLATE_TABLE_SNIPPET = [
   '| Detail | Value |',
   '| --- | --- |',
@@ -2676,6 +2679,59 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function createTemplateKeySegment(value = 'template') {
+  return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'template'
+}
+
+function getTemplateMetadata(template = null) {
+  return template?.metadata_json && typeof template.metadata_json === 'object' ? template.metadata_json : {}
+}
+
+function getTemplateDocumentKind(template = null) {
+  const metadata = getTemplateMetadata(template)
+  return getDocumentKindOption(
+    metadata.document_kind ||
+      metadata.documentKind ||
+      metadata.preferred_document_kind ||
+      metadata.preferredDocumentKind ||
+      'standard',
+  )
+}
+
+function isTemplatePickerCustomTemplate(template = null) {
+  const metadata = getTemplateMetadata(template)
+  const starter = normalizeText(metadata.starter_template || metadata.starterTemplate).toLowerCase()
+  const family = normalizeText(metadata.template_family || metadata.templateFamily).toLowerCase()
+  const documentKind = getTemplateDocumentKind(template).key
+  return starter === BLANK_CANVAS_TEMPLATE_STARTER ||
+    family === CUSTOM_TEMPLATE_FAMILY ||
+    family === GENERAL_ADDENDUM_TEMPLATE_FAMILY ||
+    ['addendum', 'amendment', 'annexure', 'custom'].includes(documentKind)
+}
+
+function createBlankTemplateForm(packetType = 'otp') {
+  return {
+    templateLabel: '',
+    packetType: normalizeText(packetType).toLowerCase() || 'otp',
+    documentKind: 'custom',
+    description: '',
+  }
+}
+
+function createBlankCanvasSections() {
+  return [
+    {
+      sectionKey: 'blank_page',
+      sectionLabel: 'Blank Page',
+      sectionType: 'legal_text',
+      legalText: '',
+      placeholderKeysText: '',
+      isRequired: false,
+      sortOrder: 0,
+    },
+  ]
+}
+
 function normalizeTemplateTokenKey(value = '') {
   const key = normalizeText(value)
   return TEMPLATE_TOKEN_REPLACEMENTS[key] || key
@@ -5145,6 +5201,7 @@ export default function SettingsSigningTemplatesPage({
   const [signingSummaryLoading, setSigningSummaryLoading] = useState(false)
   const [documentLibraryStartOpen, setDocumentLibraryStartOpen] = useState(false)
   const [templateStarterMenuOpen, setTemplateStarterMenuOpen] = useState(false)
+  const [blankTemplateForm, setBlankTemplateForm] = useState(() => createBlankTemplateForm(defaultPacketType))
   const [packetActionId, setPacketActionId] = useState('')
   const [savingPlaceholder, setSavingPlaceholder] = useState('')
   const [error, setError] = useState('')
@@ -5489,6 +5546,21 @@ export default function SettingsSigningTemplatesPage({
   const selectedTemplate = useMemo(
     () => selectedList.find((item) => item.id === selectedTemplateId) || null,
     [selectedList, selectedTemplateId],
+  )
+  const selectedIsPickerCustomTemplate = isTemplatePickerCustomTemplate(selectedTemplate)
+  const customTemplateTabs = useMemo(
+    () => stableAllowedPacketTypes
+      .flatMap((type) => (templatesByType[type] || [])
+        .filter((template) => isTemplatePickerCustomTemplate(template))
+        .map((template) => ({
+          key: `template:${template.id}`,
+          packetType: type,
+          template,
+          label: normalizeText(template.template_label || template.templateLabel || template.template_key || template.templateKey) || 'Untitled template',
+          documentKindLabel: getTemplateDocumentKind(template).label,
+        })))
+      .sort((left, right) => templateSort(left.template, right.template)),
+    [stableAllowedPacketTypes, templatesByType],
   )
   const defaultAddendumTemplate = useMemo(
     () => getPreferredAddendumTemplateForType(selectedList),
@@ -6309,6 +6381,71 @@ export default function SettingsSigningTemplatesPage({
     }
   }
 
+  async function handleCreateBlankTemplate(event) {
+    event?.preventDefault?.()
+    const label = normalizeText(blankTemplateForm.templateLabel)
+    const resolvedPacketType = normalizeText(blankTemplateForm.packetType || packetType).toLowerCase() || packetType
+    const documentKindOption = getDocumentKindOption(blankTemplateForm.documentKind || 'custom')
+    if (!label) {
+      setError('Name the blank template before creating it.')
+      return null
+    }
+
+    try {
+      setCreatingTemplate(true)
+      setError('')
+      setMessage('')
+
+      const timestamp = Date.now()
+      const renderMode = getDefaultRenderMode(resolvedPacketType)
+      const keySegment = createTemplateKeySegment(label)
+      const created = await createDocumentPacketTemplate({
+        packetType: resolvedPacketType,
+        moduleType: normalizedModuleType,
+        templateKey: `${resolvedPacketType}_${documentKindOption.key}_${keySegment}_${timestamp}`,
+        templateLabel: label,
+        description: normalizeText(blankTemplateForm.description) || `Blank ${documentKindOption.label.toLowerCase()} canvas.`,
+        versionTag: 'v1',
+        templateStatus: 'draft',
+        templateFormat: getTemplateFormatForMode(renderMode),
+        isDefault: false,
+        isActive: false,
+        metadataJson: {
+          lifecycle_status: 'draft',
+          render_mode: renderMode,
+          native_renderer_version: renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? NATIVE_RENDERER_VERSION : null,
+          starter_template: BLANK_CANVAS_TEMPLATE_STARTER,
+          template_family: CUSTOM_TEMPLATE_FAMILY,
+          document_kind: documentKindOption.key,
+          documentKind: documentKindOption.key,
+          preferred_document_kind: documentKindOption.key,
+          document_kind_label: documentKindOption.label,
+          blank_canvas: true,
+        },
+        sections: createBlankCanvasSections().map((section, index) => mapSectionForSave(section, index, resolvedPacketType)),
+      })
+
+      await refreshAll({
+        targetPacketType: resolvedPacketType,
+        preferredTemplateId: created?.id || '',
+      })
+      setPacketType(resolvedPacketType)
+      setActiveDocumentTypeKey(`template:${created?.id || ''}`)
+      setSelectedTemplateId(created?.id || '')
+      setSelectedSectionIndex(0)
+      setSelectedCanvasBlockIndex(0)
+      setTemplateStarterMenuOpen(false)
+      setBlankTemplateForm(createBlankTemplateForm(resolvedPacketType))
+      setMessage(`${label} blank template created.`)
+      return created
+    } catch (createError) {
+      setError(createError?.message || 'Unable to create blank template.')
+      return null
+    } finally {
+      setCreatingTemplate(false)
+    }
+  }
+
   async function handleCreateGeneralAddendumTemplate(options = {}) {
     return handleCreateTemplate({ ...options, starterKind: GENERAL_ADDENDUM_TEMPLATE_FAMILY })
   }
@@ -6316,21 +6453,6 @@ export default function SettingsSigningTemplatesPage({
   async function handleCreateAddendumStarterTemplate(starterKind = GENERAL_ADDENDUM_TEMPLATE_FAMILY, options = {}) {
     if (starterKind === GENERAL_ADDENDUM_TEMPLATE_FAMILY) return handleCreateGeneralAddendumTemplate(options)
     return handleCreateTemplate({ ...options, starterKind })
-  }
-
-  async function handleCreateTemplateStarter({
-    starterKind = 'standard',
-    targetPacketType = packetType,
-  } = {}) {
-    setTemplateStarterMenuOpen(false)
-    setActiveStudioArea('templates')
-    setActiveTab('template')
-    const created = await handleCreateTemplate({ starterKind, targetPacketType })
-    if (created?.id) {
-      setSelectedSectionIndex(0)
-      setSelectedCanvasBlockIndex(0)
-    }
-    return created
   }
 
   const handleCreateEditableCopy = useCallback(async ({
@@ -7505,7 +7627,7 @@ export default function SettingsSigningTemplatesPage({
             <div className="flex min-w-max gap-1">
               {simpleDocumentTabs.map((item) => {
                 const Icon = item.icon
-                const active = activeStudioArea === 'templates' && activeDocumentTypeKey === item.key
+                const active = activeStudioArea === 'templates' && !selectedIsPickerCustomTemplate && activeDocumentTypeKey === item.key
                 return (
                   <button
                     key={item.key}
@@ -7515,6 +7637,7 @@ export default function SettingsSigningTemplatesPage({
                       setActiveDocumentTypeKey(item.key)
                       setPacketType(item.packetType)
                       setActiveTab('template')
+                      setTemplateStarterMenuOpen(false)
                     }}
                     className={[
                       'inline-flex min-h-11 items-center gap-2 rounded-[12px] border px-4 py-2.5 text-sm font-semibold transition',
@@ -7528,11 +7651,39 @@ export default function SettingsSigningTemplatesPage({
                   </button>
                 )
               })}
+              {customTemplateTabs.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => {
+                    setActiveStudioArea('templates')
+                    setPacketType(item.packetType)
+                    setSelectedTemplateId(item.template.id)
+                    setActiveDocumentTypeKey(item.key)
+                    setActiveTab('template')
+                    setTemplateStarterMenuOpen(false)
+                  }}
+                  className={[
+                    'inline-flex min-h-11 items-center gap-2 rounded-[12px] border px-4 py-2.5 text-sm font-semibold transition',
+                    selectedTemplateId === item.template.id
+                      ? 'border-[#96d7ad] bg-white text-[#128642] shadow-[inset_0_-2px_0_#128642]'
+                      : 'border-transparent bg-transparent text-[#52667d] hover:border-[#dbe7f3] hover:bg-white hover:text-[#102033]',
+                  ].join(' ')}
+                  title={item.documentKindLabel}
+                >
+                  <FileText size={15} />
+                  <span>{item.label}</span>
+                </button>
+              ))}
               <button
                 type="button"
                 onClick={() => {
                   setActiveStudioArea('templates')
                   setActiveTab('template')
+                  setBlankTemplateForm((previous) => ({
+                    ...previous,
+                    packetType,
+                  }))
                   setTemplateStarterMenuOpen((previous) => !previous)
                 }}
                 aria-expanded={templateStarterMenuOpen}
@@ -7545,94 +7696,112 @@ export default function SettingsSigningTemplatesPage({
                 ].join(' ')}
               >
                 <Plus size={15} />
-                <span>+ Template</span>
+                <span>Blank Template</span>
               </button>
             </div>
           </div>
 
           {templateStarterMenuOpen ? (
-            <div className="rounded-[18px] border border-[#dbe7f3] bg-white p-4 shadow-[0_18px_36px_rgba(15,23,42,0.08)]" aria-label="Template starters">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Add Template</p>
-                  <h2 className="mt-2 text-base font-semibold text-[#102033]">Choose a starter</h2>
-                  <p className="mt-1 max-w-3xl text-sm leading-6 text-[#607387]">
-                    Start with the usual sections, or add a focused addendum for a common change.
-                  </p>
+            <form
+              className="rounded-[18px] border border-[#dbe7f3] bg-[#fbfdff] p-3"
+              aria-label="Blank template creator"
+              onSubmit={(event) => void handleCreateBlankTemplate(event)}
+            >
+              <div className="grid gap-4 rounded-[14px] bg-white p-4 lg:grid-cols-[180px_minmax(0,1fr)]">
+                <div className="rounded-[14px] border border-[#dbe7f3] bg-[#f8fbff] px-4 py-4 text-center">
+                  <div className="mx-auto h-32 w-24 rounded-[8px] border-2 border-[#d1dbe8] bg-white shadow-[0_12px_22px_rgba(15,23,42,0.08)]" />
+                  <p className="mt-3 text-sm font-semibold text-[#102033]">Blank canvas</p>
+                  <p className="mt-1 text-xs leading-5 text-[#607387]">No clauses or preset sections.</p>
                 </div>
-                <button
-                  type="button"
-                  className="self-start rounded-[10px] border border-[#dbe7f3] bg-[#f8fbff] px-3 py-2 text-xs font-semibold text-[#52667d] transition hover:bg-white"
-                  onClick={() => setTemplateStarterMenuOpen(false)}
-                >
-                  Close
-                </button>
-              </div>
 
-              <div className="mt-4 grid gap-3 lg:grid-cols-3">
-                {simpleDocumentTabs.map((item) => {
-                  const Icon = item.icon
-                  return (
+                <div className="min-w-0">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <h2 className="text-base font-semibold text-[#102033]">Create a blank template</h2>
+                      <p className="mt-1 max-w-3xl text-sm leading-6 text-[#607387]">
+                        Name it, choose what kind of document it is, then build the wording from an empty page.
+                      </p>
+                    </div>
                     <button
-                      key={`starter-${item.key}`}
                       type="button"
-                      className="min-w-0 rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] px-4 py-3 text-left transition hover:border-[#96d7ad] hover:bg-[#f6fbf8] disabled:cursor-not-allowed disabled:opacity-60"
-                      onClick={() => void handleCreateTemplateStarter({ targetPacketType: item.packetType })}
-                      disabled={!canEdit || saving || cloning || creatingTemplate}
+                      className="self-start rounded-[10px] border border-[#dbe7f3] bg-[#f8fbff] px-3 py-2 text-xs font-semibold text-[#52667d] transition hover:border-[#bfd5f5] hover:bg-white"
+                      onClick={() => setTemplateStarterMenuOpen(false)}
                     >
-                      <span className="flex items-start gap-3">
-                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-white text-[#128642]">
-                          <Icon size={17} />
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block text-sm font-semibold text-[#102033]">{item.label}</span>
-                          <span className="mt-1 block text-xs leading-5 text-[#607387]">
-                            Standard sections, fields, signing blocks and legal coverage.
-                          </span>
-                        </span>
-                      </span>
+                      Close
                     </button>
-                  )
-                })}
+                  </div>
 
-                <button
-                  type="button"
-                  className="min-w-0 rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] px-4 py-3 text-left transition hover:border-[#96d7ad] hover:bg-[#f6fbf8] disabled:cursor-not-allowed disabled:opacity-60"
-                  onClick={() => void handleCreateTemplateStarter({ starterKind: GENERAL_ADDENDUM_TEMPLATE_FAMILY })}
-                  disabled={!canEdit || saving || cloning || creatingTemplate}
-                >
-                  <span className="flex items-start gap-3">
-                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-white text-[#128642]">
-                      <FileSignature size={17} />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-sm font-semibold text-[#102033]">General Addendum</span>
-                      <span className="mt-1 block text-xs leading-5 text-[#607387]">
-                        Broad addendum for agreed changes, clarifications, or extra terms.
-                      </span>
-                    </span>
-                  </span>
-                </button>
-              </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <label className={settingsFieldClass}>
+                      Template name
+                      <input
+                        type="text"
+                        value={blankTemplateForm.templateLabel}
+                        disabled={!canEdit || saving || cloning || creatingTemplate}
+                        onChange={(event) => setBlankTemplateForm((previous) => ({ ...previous, templateLabel: event.target.value }))}
+                        placeholder="e.g. Occupation Addendum"
+                      />
+                    </label>
 
-              <div className="mt-4 rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] p-3">
-                <p className="px-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">Common Addendums</p>
-                <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-                  {ADDENDUM_TEMPLATE_STARTER_OPTIONS.filter((starter) => starter.key !== GENERAL_ADDENDUM_TEMPLATE_FAMILY).map((starter) => (
+                    <label className={settingsFieldClass}>
+                      Based on
+                      <select
+                        value={blankTemplateForm.packetType}
+                        disabled={!canEdit || saving || cloning || creatingTemplate}
+                        onChange={(event) => setBlankTemplateForm((previous) => ({ ...previous, packetType: event.target.value }))}
+                      >
+                        {visiblePacketTypes.map((item) => (
+                          <option key={`blank-packet-${item.key}`} value={item.key}>{item.label}</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className={settingsFieldClass}>
+                      Template type
+                      <select
+                        value={blankTemplateForm.documentKind}
+                        disabled={!canEdit || saving || cloning || creatingTemplate}
+                        onChange={(event) => setBlankTemplateForm((previous) => ({ ...previous, documentKind: event.target.value }))}
+                      >
+                        {BLANK_TEMPLATE_DOCUMENT_KIND_KEYS.map((key) => {
+                          const option = getDocumentKindOption(key)
+                          return <option key={`blank-kind-${option.key}`} value={option.key}>{option.label}</option>
+                        })}
+                      </select>
+                    </label>
+
+                    <label className={settingsFieldClass}>
+                      Note
+                      <input
+                        type="text"
+                        value={blankTemplateForm.description}
+                        disabled={!canEdit || saving || cloning || creatingTemplate}
+                        onChange={(event) => setBlankTemplateForm((previous) => ({ ...previous, description: event.target.value }))}
+                        placeholder="Optional team note"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
                     <button
-                      key={`starter-${starter.key}`}
                       type="button"
-                      className="rounded-[14px] border border-[#dbe7f3] bg-white px-3 py-2.5 text-left transition hover:border-[#bfd5f5] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
-                      onClick={() => void handleCreateTemplateStarter({ starterKind: starter.key })}
-                      disabled={!canEdit || saving || cloning || creatingTemplate}
+                      className={studioSecondaryButtonClass}
+                      onClick={() => setTemplateStarterMenuOpen(false)}
                     >
-                      <span className="block text-sm font-semibold text-[#102033]">{starter.shortLabel}</span>
-                      <span className="mt-1 block text-xs leading-5 text-[#607387]">{starter.description}</span>
+                      Cancel
                     </button>
-                  ))}
+                    <button
+                      type="submit"
+                      className={studioPrimaryButtonClass}
+                      disabled={!canEdit || saving || cloning || creatingTemplate || !normalizeText(blankTemplateForm.templateLabel)}
+                    >
+                      <Plus size={14} />
+                      <span>{creatingTemplate ? 'Creating...' : 'Create Blank Template'}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
+            </form>
           ) : null}
 
           {activeStudioArea === 'templates' ? (
@@ -7867,12 +8036,14 @@ export default function SettingsSigningTemplatesPage({
 
                     <div className="min-w-0 overflow-hidden rounded-[18px] border border-[#dbe7f3] bg-white">
                       <div className="border-b border-[#e7eef6] bg-[#fbfdff] px-3 py-3 sm:px-4">
-                        <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex min-w-0 flex-col gap-3">
                           <div className="min-w-0">
-                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">Quick Add</p>
-                            <p className="mt-1 text-sm leading-6 text-[#607387]">Add the pieces agencies use most, then fine tune the wording in the page.</p>
+                            <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3">
+                              <p className="shrink-0 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">Quick Add</p>
+                              <p className="min-w-0 text-sm leading-6 text-[#607387]">Add commonly used document pieces, then fine tune the wording in the page.</p>
+                            </div>
                           </div>
-                          <div className="grid min-w-0 gap-2 sm:grid-cols-3 lg:min-w-[520px]">
+                          <div className="grid min-w-0 gap-2 md:grid-cols-3">
                             <button
                               type="button"
                               className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border border-[#dbe7f3] bg-white px-3 py-2 text-sm font-semibold text-[#233246] transition hover:border-[#96d7ad] hover:bg-[#f6fbf8] hover:text-[#128642] disabled:cursor-not-allowed disabled:opacity-50"
