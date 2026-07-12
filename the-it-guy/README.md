@@ -110,6 +110,25 @@ If the unrelated-user RLS probe has not been configured on this machine yet, cre
 node scripts/lead-pilot-environment-readiness.mjs --persist-isolation-env
 ```
 
+Run the Phase 3 pilot smoke-test preflight without creating leads or sending email:
+
+```bash
+node scripts/lead-pilot-smoke.mjs --source Website
+node scripts/lead-pilot-smoke.mjs --source Property24
+node scripts/lead-pilot-smoke.mjs --source PrivateProperty
+node scripts/lead-pilot-smoke.mjs --source Facebook
+node scripts/lead-pilot-smoke.mjs --outbound-email --to pilot@arch9.co.za
+```
+
+Run live smoke tests only when ready to create staging pilot records or send to an internal/test recipient:
+
+```bash
+node scripts/lead-pilot-smoke.mjs --source Website --live
+node scripts/lead-pilot-smoke.mjs --source Property24 --live
+node scripts/lead-pilot-smoke.mjs --source Website --review-case=unmatched --live
+node scripts/lead-pilot-smoke.mjs --outbound-email --to pilot@arch9.co.za --live
+```
+
 ## Demo Flow
 
 1. Click `+ New Transaction` in the top header.
