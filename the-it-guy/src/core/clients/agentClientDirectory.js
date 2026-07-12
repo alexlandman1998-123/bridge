@@ -1,13 +1,9 @@
 import { listAgencyCrmLeadContacts } from '../../lib/agencyCrmRepository'
 import { fetchTransactionsByParticipant } from '../../lib/api'
 import { listCanvassingWorkspace } from '../../lib/canvassingRepository'
-import { isUnsafeFallbackAllowed } from '../../lib/envValidation'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../../lib/settingsApi'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
-import { assertResolvedWorkspaceContext, logUnsafeFallbackBlocked } from '../../services/workspaceResolutionService'
-
-const CANVASSING_STORAGE_PREFIX = 'itg:agency-canvassing:v1'
-const QUICK_CREATE_STORAGE_KEY = 'bridge:quick-create-records:v1'
+import { assertResolvedWorkspaceContext } from '../../services/workspaceResolutionService'
 
 const TYPE_PRIORITY = [
   'Seller Lead',
@@ -40,45 +36,25 @@ function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(normalizeText(value))
 }
 
-function readJsonStorage(key, fallback) {
-  if (typeof window === 'undefined') return fallback
-  if (!isUnsafeFallbackAllowed()) {
-    logUnsafeFallbackBlocked({
-      service: 'agentClientDirectory.readJsonStorage',
-      missingContextType: 'workspace_scoped_local_storage',
-      attemptedFallbackType: 'local_client_directory_snapshot',
-      metadata: { storageKey: key },
-    })
-    return fallback
-  }
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(key) || '')
-    return parsed ?? fallback
-  } catch {
-    return fallback
-  }
+function isMissingColumnError(error, columnName = '') {
+  const code = normalizeText(error?.code).toUpperCase()
+  const message = normalizeLower(error?.message || error?.details || error?.hint)
+  const target = normalizeLower(columnName)
+  if (code === '42703' || code === 'PGRST204') return !target || message.includes(target)
+  return target ? message.includes(target) && message.includes('column') : message.includes('column') && message.includes('does not exist')
 }
 
-function getCanvassingStorageKey(organisationId) {
-  const workspaceId = normalizeText(organisationId)
-  if (!workspaceId) throw new Error('A resolved workspace id is required before loading canvassing data.')
-  return `${CANVASSING_STORAGE_PREFIX}:${workspaceId}`
-}
-
-function readCanvassingStore(organisationId) {
-  const parsed = readJsonStorage(getCanvassingStorageKey(organisationId), { prospects: [], activities: [] })
-  return {
-    prospects: Array.isArray(parsed?.prospects) ? parsed.prospects : [],
-    activities: Array.isArray(parsed?.activities) ? parsed.activities : [],
-  }
-}
-
-function readQuickCreateStore() {
-  const parsed = readJsonStorage(QUICK_CREATE_STORAGE_KEY, { prospects: [], appointments: [] })
-  return {
-    prospects: Array.isArray(parsed?.prospects) ? parsed.prospects : [],
-    appointments: Array.isArray(parsed?.appointments) ? parsed.appointments : [],
-  }
+function isSeedOrDemoRow(row = {}) {
+  const metadata = row?.demo_metadata && typeof row.demo_metadata === 'object' ? row.demo_metadata : {}
+  return (
+    row?.is_demo_data === true ||
+    row?.isDemoData === true ||
+    metadata?.isDemoData === true ||
+    metadata?.is_demo_data === true ||
+    metadata?.seedData === true ||
+    metadata?.seed_data === true ||
+    metadata?.migratedFromLocalStorage === true
+  )
 }
 
 function toDateValue(value) {
@@ -641,18 +617,32 @@ async function fetchTransactionSellerRows(transactionIds = []) {
   }
 }
 
-async function fetchManualBuyerRows() {
-  if (!isSupabaseConfigured || !supabase) return []
+async function fetchManualBuyerRows({ organisationId = '' } = {}) {
+  const workspaceId = normalizeText(organisationId)
+  if (!isSupabaseConfigured || !supabase || !isUuidLike(workspaceId)) return []
   try {
     let result = await supabase
       .from('buyers')
-      .select('id, name, phone, email, created_at, updated_at')
+      .select('id, name, phone, email, organisation_id, is_demo_data, demo_metadata, created_at, updated_at')
+      .eq('organisation_id', workspaceId)
+      .neq('is_demo_data', true)
+      .order('updated_at', { ascending: false })
       .limit(500)
     if (result.error) {
-      result = await supabase.from('buyers').select('id, name, phone, email').limit(500)
+      if (isMissingColumnError(result.error, 'organisation_id')) return []
+      if (isMissingColumnError(result.error, 'is_demo_data') || isMissingColumnError(result.error, 'demo_metadata')) {
+        result = await supabase
+          .from('buyers')
+          .select('id, name, phone, email, organisation_id, created_at, updated_at')
+          .eq('organisation_id', workspaceId)
+          .order('updated_at', { ascending: false })
+          .limit(500)
+      }
     }
     if (result.error) return []
-    return result.data || []
+    return (result.data || [])
+      .filter((row) => normalizeText(row?.organisation_id) === workspaceId)
+      .filter((row) => !isSeedOrDemoRow(row))
   } catch {
     return []
   }
@@ -728,7 +718,7 @@ export async function loadAgentClientDirectory({ profile = {}, role = 'agent', w
     leadActivities: [],
     tasks: [],
   }
-  crmSnapshot = await listAgencyCrmLeadContacts(organisationId)
+  crmSnapshot = await listAgencyCrmLeadContacts(organisationId, { includeLocalFallback: false })
 
   let transactionRows = []
   if (isSupabaseConfigured && profile?.id) {
@@ -737,6 +727,7 @@ export async function loadAgentClientDirectory({ profile = {}, role = 'agent', w
       if (workspace?.id && workspace.id !== 'all') {
         transactionRows = transactionRows.filter((row) => (row?.development?.id || row?.unit?.development_id) === workspace.id)
       }
+      transactionRows = transactionRows.filter((row) => !isSeedOrDemoRow(row?.transaction || row) && !isSeedOrDemoRow(row?.buyer || {}))
     } catch {
       transactionRows = []
     }
@@ -745,19 +736,17 @@ export async function loadAgentClientDirectory({ profile = {}, role = 'agent', w
   const transactionIds = transactionRows.map((row) => normalizeText(row?.transaction?.id)).filter(Boolean)
   const [sellerRows, manualBuyerRows] = await Promise.all([
     fetchTransactionSellerRows(transactionIds),
-    fetchManualBuyerRows(),
+    fetchManualBuyerRows({ organisationId }),
   ])
   let canvassingStore = { prospects: [], activities: [] }
   try {
-    canvassingStore = await listCanvassingWorkspace(organisationId)
+    canvassingStore = await listCanvassingWorkspace(organisationId, { includeLocalFallback: false })
   } catch {
-    canvassingStore = readCanvassingStore(organisationId)
+    canvassingStore = { prospects: [], activities: [] }
   }
-  const quickCreateStore = readQuickCreateStore()
   const sourceRows = [
     ...buildLeadSources(crmSnapshot),
     ...buildProspectSources({ ...canvassingStore, organisationId, sourceLabel: 'Canvassing' }),
-    ...buildProspectSources({ prospects: quickCreateStore.prospects, activities: [], organisationId, sourceLabel: 'Manual' }),
     ...buildTransactionBuyerSources(transactionRows),
     ...buildTransactionSellerSources(transactionRows, sellerRows),
     ...buildManualBuyerSources(manualBuyerRows),

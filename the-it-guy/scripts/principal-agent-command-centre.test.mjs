@@ -22,6 +22,16 @@ assert.match(
   /organisationId: organisationFilter === EMPTY_ORGANISATION\.id[\s\S]*workspaceOrganisation\?\.id \|\| agentDirectory\?\.agency\?\.id/,
   'Agents page should prefer the live workspace id before the legacy local agent directory id.',
 )
+assert.match(
+  agentsPageSource,
+  /principal_claim'[\s\S]*Principal Claim/,
+  'Agents page should label principal claim invites without falling back to Agent.',
+)
+assert.match(
+  agentsPageSource,
+  /Pending Invitations/,
+  'Agents page pending invite panel should not describe every invite as an agent invite.',
+)
 
 const today = new Date()
 const yesterday = new Date(today)
@@ -62,6 +72,17 @@ const agents = [
     status: 'inactive',
     organisationId: 'agency-a',
     branchId: 'benoni',
+  },
+  {
+    id: 'principal-claim-invite',
+    name: 'Pending Principal',
+    email: 'pending-principal@test.com',
+    role: 'principal_claim',
+    status: 'pending_invite',
+    organisationId: 'agency-a',
+    branchId: 'benoni',
+    isPendingInvite: true,
+    isPrincipalClaimInvite: true,
   },
   {
     id: 'outside-agent',
@@ -165,6 +186,13 @@ function buildModel(overrides = {}) {
   const model = buildModel({ filters: { status: 'inactive', dateRange: 'last_30_days' } })
   assert.equal(model.kpis.totalAgents, 1, 'inactive agents are only returned when explicitly filtered')
   assert.equal(model.agentsTable[0].id, 'inactive-agent')
+}
+
+{
+  const model = buildModel({ filters: { status: 'pending_invite', dateRange: 'last_30_days' } })
+  assert.equal(model.kpis.totalAgents, 1, 'pending invites are only returned when explicitly filtered')
+  assert.equal(model.agentsTable[0].id, 'principal-claim-invite')
+  assert.equal(model.agentsTable[0].role, 'principal_claim')
 }
 
 {

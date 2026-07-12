@@ -645,15 +645,14 @@ function HeaderBar({ onLogout, user }) {
     isAttorneyMatterWorkspaceRoute
   const unreadDisplay = notificationState.unreadCount > 99 ? '99+' : String(notificationState.unreadCount || 0)
   const isClientsWorkspaceRoute = location.pathname === '/clients' || location.pathname === '/bond/clients'
-  const clientsWorkspaceCopy = role === 'attorney'
+  const showClientsWorkspaceTitle = role === 'attorney'
+  const clientsWorkspaceCopy = showClientsWorkspaceTitle
     ? {
         title: 'Clients & Parties',
         subtitle: 'Manage clients, counterparties, representatives and matter-linked contacts.',
         addLabel: 'Add Party',
       }
     : {
-        title: 'Clients',
-        subtitle: 'Manage all your buyers, sellers and investors in one place.',
         addLabel: 'Add Client',
       }
   const isAttorneyDashboardRoute = role === 'attorney' && location.pathname === '/attorney/dashboard'
@@ -843,11 +842,13 @@ function HeaderBar({ onLogout, user }) {
 
   if (isClientsWorkspaceRoute) {
     return (
-      <header className="no-print ui-shell-header ui-shell-header-premium">
-        <div className="ui-shell-dashboard-title">
-          <h2>{clientsWorkspaceCopy.title}</h2>
-          <span>{clientsWorkspaceCopy.subtitle}</span>
-        </div>
+      <header className={`no-print ui-shell-header ui-shell-header-premium${showClientsWorkspaceTitle ? '' : ' ui-shell-header-premium-actions-only'}`}>
+        {showClientsWorkspaceTitle ? (
+          <div className="ui-shell-dashboard-title">
+            <h2>{clientsWorkspaceCopy.title}</h2>
+            <span>{clientsWorkspaceCopy.subtitle}</span>
+          </div>
+        ) : null}
 
         <div className="ui-shell-actions ui-shell-actions-premium">
           <button

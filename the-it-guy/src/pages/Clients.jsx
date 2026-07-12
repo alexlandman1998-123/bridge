@@ -401,6 +401,23 @@ function filterRowsByDevelopment(rows = [], developmentId = 'all') {
   return rows.filter((row) => getRowDevelopmentId(row) === developmentId)
 }
 
+function isSeedOrDemoRecord(record = {}) {
+  const metadata = record?.demo_metadata && typeof record.demo_metadata === 'object' ? record.demo_metadata : {}
+  return (
+    record?.is_demo_data === true ||
+    record?.isDemoData === true ||
+    metadata?.isDemoData === true ||
+    metadata?.is_demo_data === true ||
+    metadata?.seedData === true ||
+    metadata?.seed_data === true ||
+    metadata?.migratedFromLocalStorage === true
+  )
+}
+
+function filterSeedRows(rows = []) {
+  return (rows || []).filter((row) => !isSeedOrDemoRecord(row?.transaction || row) && !isSeedOrDemoRecord(row?.buyer || {}))
+}
+
 function formatRelativeTime(value) {
   const date = new Date(value || 0)
   if (Number.isNaN(date.getTime())) return 'No recent activity'
@@ -882,7 +899,7 @@ function Clients() {
         const overview = await fetchDashboardOverview({
           developmentId: workspace.id === 'all' ? null : workspace.id,
         })
-        transactionRows = overview?.rows || []
+        transactionRows = filterSeedRows(overview?.rows || [])
       } else if ((role === 'agent' || role === 'attorney' || role === 'bond_originator') && profile?.id) {
         transactionRows = role === 'attorney'
           ? await fetchTransactionsByParticipantSummary({ userId: profile.id, roleType: role })
@@ -892,6 +909,7 @@ function Clients() {
             (row?.development?.id || row?.unit?.development_id) === workspace.id,
           )
         }
+        transactionRows = filterSeedRows(transactionRows)
       } else {
         transactionRows = []
       }

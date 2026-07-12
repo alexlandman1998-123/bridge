@@ -105,6 +105,7 @@ const ORGANISATION_ROLE_OPTIONS = [
   { value: 'owner', label: 'Organisation Owner' },
   { value: 'super_admin', label: 'Super Admin' },
   { value: 'principal', label: 'Principal / Owner' },
+  { value: 'principal_claim', label: 'Principal Claim' },
   { value: 'admin', label: 'Admin' },
   { value: 'branch_manager', label: 'Branch Manager' },
   { value: 'branch_admin', label: 'Branch Admin / Manager' },
@@ -151,6 +152,7 @@ const SUPPORT_USER_ROLES = new Set(['assistant', 'transaction_coordinator', 'lis
 
 function formatRoleLabel(value) {
   const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'principal_claim' || normalized === 'principal claim') return 'Principal Claim'
   const matched = ORGANISATION_ROLE_OPTIONS.find((item) => item.value === normalized) || AGENT_ROLE_OPTIONS.find((item) => item.value === normalized)
   return matched?.label || 'Agent'
 }
@@ -901,6 +903,10 @@ function normalizeInviteAgentRow(invite = {}, context = {}) {
   const organisationId = normalizeAgentRecordId(invite.organisationId || invite.targetWorkspaceId || context.organisationId || '')
   const organisationName = String(invite.organisationName || context.organisationName || 'Arch9 Organisation').trim()
   const branchName = String(invite.branchName || invite.office || '').trim()
+  const isPrincipalClaimInvite = Boolean(invite.isPrincipalClaimInvite || invite.inviteType === 'principal_claim_invite' || invite.invite_type === 'principal_claim_invite')
+  const role = isPrincipalClaimInvite
+    ? 'principal_claim'
+    : String(invite.role || 'agent').trim().toLowerCase() || 'agent'
   return {
     id: id || email,
     organisationUserId: '',
@@ -915,7 +921,8 @@ function normalizeInviteAgentRow(invite = {}, context = {}) {
     branchName,
     organisationId,
     organisationName,
-    role: String(invite.role || 'agent').trim().toLowerCase() || 'agent',
+    role,
+    roleLabel: invite.roleLabel || invite.role_label || formatRoleLabel(role),
     status,
     invitedAt: invite.invitedAt || invite.createdAt || null,
     activatedAt: invite.activatedAt || null,
@@ -925,6 +932,7 @@ function normalizeInviteAgentRow(invite = {}, context = {}) {
     inviteLink: invite.inviteLink || buildAgentInviteLink(invite.inviteToken || invite.token),
     isPendingInvite: status === AGENT_INVITE_STATUS.PENDING_INVITE,
     isCanonicalInvite: Boolean(invite.isCanonicalInvite),
+    isPrincipalClaimInvite,
     deals: [],
     developmentListings: [],
     privateListings: [],
@@ -2517,7 +2525,7 @@ function InvitedAgentsPanel({ rows = [], actionSlot = null, onShowPending, onRes
     <article className="overflow-hidden rounded-2xl border border-[#dde6f1] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-[#edf2f7] px-4 py-4">
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold text-[#10243a]">Invited Agents</h2>
+          <h2 className="truncate text-sm font-semibold text-[#10243a]">Pending Invitations</h2>
           <p className="mt-0.5 truncate text-xs text-[#6d8299]">Pending invitations that have not been accepted yet.</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -2577,8 +2585,8 @@ function InvitedAgentsPanel({ rows = [], actionSlot = null, onShowPending, onRes
           <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[#f7f1ff] text-[#5c3a9d]">
             <Send size={20} />
           </span>
-          <h3 className="mt-3 text-sm font-semibold text-[#10243a]">No pending agent invites</h3>
-          <p className="mt-1 text-sm text-[#6d8299]">Invited agents will appear here until they accept their invitation.</p>
+          <h3 className="mt-3 text-sm font-semibold text-[#10243a]">No pending invitations</h3>
+          <p className="mt-1 text-sm text-[#6d8299]">Invited users will appear here until they accept their invitation.</p>
         </div>
       )}
     </article>

@@ -267,7 +267,7 @@ async function auditListingRlsMigrations() {
     'or created_by = auth.uid()',
   ], 'Private listing external isolation hardening')
 
-  const mandateAlignment = await readRepoFile('supabase/migrations/202607090002_private_listing_mandate_status_alignment.sql')
+  const mandateAlignment = await readRepoFile('supabase/migrations/202607090007_private_listing_mandate_status_alignment.sql')
   assertIncludesAll(mandateAlignment, [
     'private_listings_mandate_status_check',
     "'signed_uploaded'",

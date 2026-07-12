@@ -35,6 +35,18 @@ function isMissingCanvassingSchemaError(error) {
   )
 }
 
+function isDemoCanvassingRow(row = {}) {
+  const metadata = row?.demo_metadata && typeof row.demo_metadata === 'object' ? row.demo_metadata : {}
+  return (
+    row?.is_demo_data === true ||
+    metadata?.isDemoData === true ||
+    metadata?.is_demo_data === true ||
+    metadata?.seedData === true ||
+    metadata?.seed_data === true ||
+    metadata?.migratedFromLocalStorage === true
+  )
+}
+
 function getStorageKey(organisationId) {
   const id = normalizeText(organisationId)
   if (!id) throw new Error('A resolved workspace is required before loading canvassing data.')
@@ -296,9 +308,53 @@ async function withFallback(organisationId, task) {
   }
 }
 
-export async function listCanvassingWorkspace(organisationId) {
+export async function listCanvassingWorkspace(organisationId, options = {}) {
   const orgId = normalizeText(organisationId)
   if (!orgId) return { prospects: [], activities: [], persistence: 'none' }
+  const includeLocalFallback = options?.includeLocalFallback !== false
+
+  if (!includeLocalFallback) {
+    if (!isSupabaseConfigured || !supabase) {
+      return { prospects: [], activities: [], persistence: 'none' }
+    }
+
+    try {
+      const [prospectsResult, activitiesResult] = await Promise.all([
+        supabase
+          .from('canvassing_prospects')
+          .select('*')
+          .eq('organisation_id', orgId)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('canvassing_activities')
+          .select('*')
+          .eq('organisation_id', orgId)
+          .order('activity_date', { ascending: false }),
+      ])
+      if (prospectsResult.error) throw prospectsResult.error
+      if (activitiesResult.error) throw activitiesResult.error
+
+      const prospects = (prospectsResult.data || []).filter((row) => !isDemoCanvassingRow(row))
+      const prospectIds = new Set(prospects.map((row) => normalizeText(row?.id)).filter(Boolean))
+      const activities = (activitiesResult.data || []).filter((row) => {
+        if (isDemoCanvassingRow(row)) return false
+        const prospectId = normalizeText(row?.prospect_id)
+        return prospectIds.has(prospectId)
+      })
+
+      return {
+        prospects: prospects.map(mapProspectRow),
+        activities: activities.map(mapActivityRow),
+        persistence: 'supabase',
+      }
+    } catch (error) {
+      if (isMissingCanvassingSchemaError(error)) {
+        return { prospects: [], activities: [], persistence: 'none', schemaMissing: true }
+      }
+      throw error
+    }
+  }
+
   return withFallback(orgId, async (client) => {
     const fallbackStore = readCanvassingFallbackStore(orgId)
     const [prospectsResult, activitiesResult] = await Promise.all([

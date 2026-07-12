@@ -557,11 +557,12 @@ async function selectLeadsWithCompatibility(queryBuilderFactory) {
   return leadResult
 }
 
-export async function listAgencyCrmLeadContacts(organisationId) {
+export async function listAgencyCrmLeadContacts(organisationId, options = {}) {
   const workspaceId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.listAgencyCrmLeadContacts')
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Supabase is required before loading agency CRM data.')
   }
+  const includeLocalFallback = options?.includeLocalFallback !== false
 
   const contactPromise = supabase
     .from('contacts')
@@ -606,6 +607,16 @@ export async function listAgencyCrmLeadContacts(organisationId) {
   const remoteLeads = Array.isArray(leadResult.data) ? leadResult.data.map(mapSupabaseLead) : []
   const remoteLeadActivities = Array.isArray(activityResult.data) ? activityResult.data.map(mapSupabaseLeadActivity) : []
   const remoteTasks = Array.isArray(taskResult.data) ? taskResult.data.map(mapSupabaseTask) : []
+
+  if (!includeLocalFallback) {
+    return {
+      contacts: remoteContacts,
+      leads: remoteLeads,
+      leadActivities: remoteLeadActivities,
+      tasks: remoteTasks,
+      source: 'remote',
+    }
+  }
 
   const reconciled = reconcileAgencyPipelineSnapshot(workspaceId, {
     contacts: remoteContacts,

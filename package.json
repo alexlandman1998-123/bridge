@@ -2,7 +2,23 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "supabase:phase0": "node scripts/supabase-phase0-guard.mjs",
+    "supabase:phase1": "node scripts/supabase-phase1-reconciliation.mjs --fetch-remote --write",
+    "supabase:phase1:local": "node scripts/supabase-phase1-reconciliation.mjs --write",
+    "supabase:phase2": "node scripts/supabase-phase2-onboarding-readiness.mjs --fetch-remote --rest-probe --write",
+    "supabase:phase2:local": "node scripts/supabase-phase2-onboarding-readiness.mjs --write",
+    "supabase:phase3": "node scripts/supabase-phase3-ledger-repair.mjs --apply --write",
+    "supabase:phase3:plan": "node scripts/supabase-phase3-ledger-repair.mjs --write",
+    "supabase:phase4": "node scripts/supabase-phase4-deduplicate-migration-timestamps.mjs --write",
+    "supabase:phase5": "node scripts/supabase-phase5-module-drift-audit.mjs --fetch-remote --write",
+    "supabase:phase5:local": "node scripts/supabase-phase5-module-drift-audit.mjs --write",
+    "supabase:phase6": "node scripts/supabase-phase6-split-ledger-investigation.mjs --fetch-remote --write",
+    "supabase:phase6:local": "node scripts/supabase-phase6-split-ledger-investigation.mjs --write",
+    "supabase:phase7": "node scripts/supabase-phase7-canonical-ledger-repair.mjs --apply --write",
+    "supabase:phase7:plan": "node scripts/supabase-phase7-canonical-ledger-repair.mjs --write",
+    "supabase:guard": "node scripts/supabase-phase0-guard.mjs",
+    "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0"

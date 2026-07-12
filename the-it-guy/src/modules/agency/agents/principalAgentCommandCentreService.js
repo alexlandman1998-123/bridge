@@ -160,6 +160,7 @@ function shouldIncludeAgent(agent = {}, { organisationId = '', branchId = 'all',
   if (status === 'inactive') return agentStatus === 'inactive'
   if (status === 'on_leave') return agentStatus === 'on_leave'
   if (status === 'pending_invite') return agentStatus === 'pending_invite'
+  if (agentStatus === 'pending_invite') return false
   if (status === 'active') return agentStatus === 'active'
   if (!includeInactive && agentStatus === 'inactive') return false
   return true

@@ -137,7 +137,7 @@ for (const token of [
   )
 }
 
-const migration = await readWorkspaceFile('supabase/migrations/202606220002_seller_portal_password_access_phase3.sql')
+const migration = await readWorkspaceFile('supabase/migrations/202606220003_seller_portal_password_access_phase3.sql')
 for (const field of [
   'seller_portal_password_hash',
   'seller_portal_password_set_at',
