@@ -19,8 +19,18 @@ import {
   isWorkflowGateSatisfied,
 } from '../workflows/transactionWorkflowGates.js'
 import {
+  buildSuspensiveConditionWorkflowBlockers,
+} from '../workflows/suspensiveConditionWorkflowGates.js'
+import {
+  buildAuthorityValidityWorkflowBlockers,
+} from '../workflows/authorityValidityWorkflowGates.js'
+import {
   assertNoLegacyLifecycleFieldWrites,
 } from './transactionStageCompatibilityService.js'
+import {
+  buildNonDigitalWorkflowActionPayloadBlockers,
+  buildWorkflowActionWaiverSeparationBlockers,
+} from './workflowActionPayloadPolicyService.js'
 import { logTransactionWorkflowEvent } from './workflowEventService.js'
 import { publishWorkflowChanged } from './workflowRecomputeService.js'
 
@@ -66,6 +76,92 @@ function buildOutOfSequenceWarning(incompletePredecessors = []) {
     outOfSequence: true,
     incompletePredecessors,
   }
+}
+
+function buildWorkflowActionEvidence(actionKey = '') {
+  return {
+    evidenceType: 'event',
+    evidenceId: normalizeText(actionKey).toUpperCase(),
+  }
+}
+
+function resolveSignedOtpDocumentEvidenceId(payload = {}) {
+  return normalizeText(
+    payload.signedOtpDocumentId ||
+      payload.signed_otp_document_id ||
+      payload.documentId ||
+      payload.document_id,
+  )
+}
+
+function resolveSignedContractDocumentEvidenceId(payload = {}) {
+  return normalizeText(
+    payload.signedContractDocumentId ||
+      payload.signed_contract_document_id ||
+      payload.signedTransferDocumentId ||
+      payload.signed_transfer_document_id ||
+      payload.signedBondDocumentId ||
+      payload.signed_bond_document_id ||
+      payload.signedCancellationDocumentId ||
+      payload.signed_cancellation_document_id ||
+      payload.documentId ||
+      payload.document_id,
+  )
+}
+
+function resolveSupportingDocsDocumentEvidenceId(payload = {}) {
+  return normalizeText(
+    payload.supportingDocsDocumentId ||
+      payload.supporting_docs_document_id ||
+      payload.supportingDocumentId ||
+      payload.supporting_document_id ||
+      payload.ficaDocumentId ||
+      payload.fica_document_id ||
+      payload.documentId ||
+      payload.document_id,
+  )
+}
+
+const DOCUMENT_EVIDENCE_ACTIONS = Object.freeze({
+  RECORD_SIGNED_OTP: {
+    resolveEvidenceId: resolveSignedOtpDocumentEvidenceId,
+  },
+  RECORD_PAPER_SIGNED_OTP: {
+    resolveEvidenceId: resolveSignedOtpDocumentEvidenceId,
+    requiredCode: 'SIGNED_OTP_DOCUMENT_REQUIRED',
+    requiredMessage: 'Upload the signed paper OTP document before recording paper OTP completion.',
+    requiredEvidence: ['SIGNED_OTP_DOCUMENT'],
+  },
+  RECORD_MANUAL_SIGNED_TRANSFER_DOCUMENTS: {
+    resolveEvidenceId: resolveSignedContractDocumentEvidenceId,
+    requiredCode: 'SIGNED_TRANSFER_DOCUMENTS_REQUIRED',
+    requiredMessage: 'Upload the manually signed transfer document pack before recording transfer signature completion.',
+    requiredEvidence: ['TRANSFER_SIGNED_DOCS'],
+  },
+  RECORD_MANUAL_SIGNED_BOND_DOCUMENTS: {
+    resolveEvidenceId: resolveSignedContractDocumentEvidenceId,
+    requiredCode: 'SIGNED_BOND_DOCUMENTS_REQUIRED',
+    requiredMessage: 'Upload the manually signed bond document pack before recording bond signature completion.',
+    requiredEvidence: ['BOND_ATTORNEY_DOCUMENTS_SIGNED'],
+  },
+  RECORD_MANUAL_SIGNED_CANCELLATION_DOCUMENTS: {
+    resolveEvidenceId: resolveSignedContractDocumentEvidenceId,
+    requiredCode: 'SIGNED_CANCELLATION_DOCUMENTS_REQUIRED',
+    requiredMessage: 'Upload the manually signed cancellation document pack before recording cancellation signature completion.',
+    requiredEvidence: ['CANCELLATION_DOCUMENTS_SIGNED'],
+  },
+  RECORD_AGENT_ASSISTED_SUPPORTING_DOCS: {
+    resolveEvidenceId: resolveSupportingDocsDocumentEvidenceId,
+  },
+})
+
+function getDocumentEvidenceAction(actionKey = '') {
+  return DOCUMENT_EVIDENCE_ACTIONS[normalizeText(actionKey).toUpperCase()] || null
+}
+
+function resolveWorkflowActionDocumentEvidenceId(actionKey = '', payload = {}) {
+  const config = getDocumentEvidenceAction(actionKey)
+  return config?.resolveEvidenceId ? config.resolveEvidenceId(payload) : ''
 }
 
 function validateRegistrationPayload(transaction = {}, payload = {}) {
@@ -252,6 +348,46 @@ function validateWorkflowAction(descriptor, state = {}, rollup = {}, payload = {
     }
   }
 
+  const requiredDocumentEvidenceAction = getDocumentEvidenceAction(descriptor.actionKey)
+  if (requiredDocumentEvidenceAction?.requiredCode && !resolveWorkflowActionDocumentEvidenceId(descriptor.actionKey, payload)) {
+    return [
+      {
+        code: requiredDocumentEvidenceAction.requiredCode,
+        message: requiredDocumentEvidenceAction.requiredMessage,
+        severity: 'hard',
+        ownerRole: descriptor.ownerRole || 'agent',
+        workflowKey: descriptor.workflowKey,
+        stepKey: descriptor.stepKey,
+        requiredEvidence: requiredDocumentEvidenceAction.requiredEvidence || [],
+      },
+    ]
+  }
+
+  const waiverSeparationBlockers = buildWorkflowActionWaiverSeparationBlockers(descriptor, payload)
+  if (waiverSeparationBlockers.length) {
+    return waiverSeparationBlockers
+  }
+
+  const payloadPolicyBlockers = buildNonDigitalWorkflowActionPayloadBlockers(descriptor, payload)
+  if (payloadPolicyBlockers.length) {
+    return payloadPolicyBlockers
+  }
+
+  if (descriptor.targetParentStage) {
+    const gateContext = {
+      actionKey: descriptor.actionKey,
+      targetParentStage: descriptor.targetParentStage,
+      workflowKey: descriptor.workflowKey,
+      stepKey: descriptor.stepKey,
+      ownerRole: descriptor.ownerRole,
+      now: payload.occurredAt || payload.now || Date.now(),
+    }
+    const conditionBlockers = buildSuspensiveConditionWorkflowBlockers(state.transaction || {}, gateContext)
+    if (conditionBlockers.length) return conditionBlockers
+    const authorityBlockers = buildAuthorityValidityWorkflowBlockers(state.transaction || {}, gateContext)
+    if (authorityBlockers.length) return authorityBlockers
+  }
+
   if (
     gateAction &&
     descriptor.prerequisiteParentStage &&
@@ -299,6 +435,35 @@ function buildActionTransactionFields(actionKey, state = {}, payload = {}, userI
       archived_by_user_id: null,
       archive_reason: null,
       last_meaningful_activity_at: nowIso,
+    }
+  }
+
+  if (key === 'RECORD_AGENT_ASSISTED_BUYER_ONBOARDING') {
+    return {
+      onboarding_status: normalizeText(payload.onboardingStatus || payload.onboarding_status) || 'awaiting_signed_otp',
+      onboarding_completed_at:
+        payload.completedAt ||
+        payload.completed_at ||
+        transaction.onboarding_completed_at ||
+        nowIso,
+      external_onboarding_submitted_at:
+        payload.externalSubmittedAt ||
+        payload.external_submitted_at ||
+        payload.completedAt ||
+        payload.completed_at ||
+        transaction.external_onboarding_submitted_at ||
+        nowIso,
+      last_meaningful_activity_at: nowIso,
+      updated_at: nowIso,
+    }
+  }
+
+  if (key === 'RECORD_AGENT_ASSISTED_SELLER_ONBOARDING') {
+    return {
+      seller_onboarding_status:
+        normalizeText(payload.sellerOnboardingStatus || payload.seller_onboarding_status) || 'approved',
+      last_meaningful_activity_at: nowIso,
+      updated_at: nowIso,
     }
   }
 
@@ -451,18 +616,35 @@ export async function runWorkflowAction({
     const refreshedState = await getWorkflowStateForTransaction(transactionId, { client, transaction: state.transaction })
     const targetStep = (refreshedState.stepsByWorkflowKey?.[descriptor.workflowKey] || []).find((step) => step.step_key === descriptor.stepKey) || null
     if (targetStep?.id) {
+      const actionEvidence = buildWorkflowActionEvidence(actionKey)
       await attachWorkflowEvidence(
         transactionId,
         targetStep.id,
         {
           workflowKey: descriptor.workflowKey,
           stepKey: descriptor.stepKey,
-          evidenceType: 'manual_override',
-          evidenceId: normalizeText(actionKey).toUpperCase(),
+          evidenceType: actionEvidence.evidenceType,
+          evidenceId: actionEvidence.evidenceId,
           evidenceStatus: descriptor.targetStatus === 'complete' ? 'accepted' : 'superseded',
         },
         { client },
       )
+
+      const actionDocumentEvidenceId = resolveWorkflowActionDocumentEvidenceId(actionKey, payload)
+      if (actionDocumentEvidenceId) {
+        await attachWorkflowEvidence(
+          transactionId,
+          targetStep.id,
+          {
+            workflowKey: descriptor.workflowKey,
+            stepKey: descriptor.stepKey,
+            evidenceType: 'document',
+            evidenceId: actionDocumentEvidenceId,
+            evidenceStatus: 'accepted',
+          },
+          { client },
+        )
+      }
     }
   }
 

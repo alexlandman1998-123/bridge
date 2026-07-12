@@ -110,13 +110,13 @@ try {
   const missingGrantIssue = diagnostics.issues.find((issue) => issue.code === 'missing_grant_document')
   assert.equal(missingGrantIssue.actionLabel, 'Attach grant document')
   assert.equal(missingGrantIssue.actionHref, '/bond/files/tx-missing-grant-doc?diagnostic=missing_grant_document')
-  assert.equal(missingGrantIssue.queueHref, '/bond/applications?view=grant-received')
+  assert.equal(missingGrantIssue.queueHref, '/bond/applications?view=awaiting-grant')
   assert.equal(missingGrantIssue.ownerRole, 'Bond Originator')
 
   const grantRemediation = diagnostics.remediationPlan.find((item) => item.code === 'missing_grant_document')
   assert.equal(grantRemediation.count, 2)
   assert.equal(grantRemediation.actionLabel, 'Attach grant document')
-  assert.equal(grantRemediation.actionHref, '/bond/applications?view=grant-received')
+  assert.equal(grantRemediation.actionHref, '/bond/applications?view=awaiting-grant')
   assert.deepEqual(grantRemediation.transactionIds, ['tx-missing-grant-doc', 'tx-legacy-grant-signed'])
 
   const submittedRow = diagnostics.rows.find((row) => row.transactionId === 'tx-grant-submitted')
@@ -125,6 +125,65 @@ try {
   assert.equal(submittedRow.expectedQueueKey, 'ready_for_instruction')
   assert.equal(submittedRow.actionHref, '/bond/files/tx-grant-submitted')
   assert.equal(submittedRow.issues.some((issue) => issue.code === 'stale_legacy_finance_status'), true)
+
+  const phase2Diagnostics = diagnosticsService.buildBondOperationalDiagnostics([
+    {
+      transaction: makeTransaction('tx-awaiting-bank-feedback'),
+      transactionFinanceWorkflow: makeWorkflow('submitted_to_banks', {}, {
+        applications: [{ id: 'bank-app-1', status: 'submitted', submitted_at: '2026-05-23T09:00:00.000Z' }],
+      }),
+    },
+    {
+      transaction: makeTransaction('tx-additional-docs'),
+      transactionFinanceWorkflow: makeWorkflow('bank_review', {}, {
+        applications: [{ id: 'bank-app-2', status: 'additional_documents_required', updated_at: '2026-05-23T09:00:00.000Z' }],
+      }),
+    },
+    {
+      transaction: makeTransaction('tx-buyer-reupload', {
+        document_requests: [{ id: 'doc-reupload', document_key: 'bank_statement', status: 'reupload_required' }],
+      }),
+      transactionFinanceWorkflow: makeWorkflow('bank_review', {}, {
+        applications: [{ id: 'bank-app-3', status: 'additional_documents_required', updated_at: '2026-05-23T09:00:00.000Z' }],
+      }),
+    },
+    {
+      transaction: makeTransaction('tx-awaiting-grant-doc'),
+      transactionFinanceWorkflow: makeWorkflow('bond_approved'),
+    },
+    {
+      transaction: makeTransaction('tx-awaiting-signed-grant'),
+      transactionFinanceWorkflow: makeWorkflow('grant_received', {
+        grantReceived: true,
+        grantDocumentId: 'doc-grant',
+      }),
+    },
+    {
+      transaction: makeTransaction('tx-attorney-acceptance'),
+      transactionFinanceWorkflow: makeWorkflow('instruction_sent', {
+        instructionSent: true,
+        instructionDocumentId: 'doc-instruction',
+      }),
+    },
+    {
+      transaction: makeTransaction('tx-active-review-required', {
+        finance_managed_by: 'bond_originator',
+        bond_assignment_status: 'consultant_assigned',
+        transactionFinanceWorkflow: null,
+      }),
+    },
+  ], { generatedAt: '2026-07-05T11:00:00.000Z' })
+
+  assert.equal(phase2Diagnostics.rows.find((row) => row.transactionId === 'tx-awaiting-bank-feedback')?.operationalQueueKey, 'awaiting_bank_feedback')
+  assert.equal(phase2Diagnostics.rows.find((row) => row.transactionId === 'tx-additional-docs')?.operationalQueueKey, 'additional_documents_required')
+  assert.equal(phase2Diagnostics.rows.find((row) => row.transactionId === 'tx-buyer-reupload')?.operationalQueueKey, 'awaiting_buyer_reupload')
+  assert.equal(phase2Diagnostics.rows.find((row) => row.transactionId === 'tx-awaiting-grant-doc')?.operationalQueueKey, 'awaiting_grant_document')
+  assert.equal(phase2Diagnostics.rows.find((row) => row.transactionId === 'tx-awaiting-signed-grant')?.operationalQueueKey, 'awaiting_signed_grant')
+  assert.equal(phase2Diagnostics.rows.find((row) => row.transactionId === 'tx-attorney-acceptance')?.operationalQueueKey, 'instruction_sent_awaiting_attorney_acceptance')
+  assert.equal(phase2Diagnostics.rows.find((row) => row.transactionId === 'tx-active-review-required')?.operationalQueueKey, 'active_review_required')
+  assert.equal(phase2Diagnostics.actionQueues.find((item) => item.queueKey === 'awaiting_bank_feedback')?.href, '/bond/applications?view=awaiting-bank-feedback')
+  assert.equal(phase2Diagnostics.actionQueues.find((item) => item.queueKey === 'awaiting_grant_document')?.href, '/bond/applications?view=awaiting-grant')
+  assert.equal(phase2Diagnostics.actionQueues.find((item) => item.queueKey === 'instruction_sent_awaiting_attorney_acceptance')?.href, '/bond/applications?view=attorney-acceptance')
 
   const financeWorkspace = financeService.buildTransactionFinanceWorkspace({
     transaction: makeTransaction('tx-finance-workspace', {

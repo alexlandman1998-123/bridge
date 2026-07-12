@@ -3,6 +3,7 @@ import {
   isMissingColumnError,
   isPermissionDeniedError,
   isMissingTableError,
+  normalizeNullableText,
   normalizeText,
   requireClient,
 } from './attorneyFirmServiceShared'
@@ -10,13 +11,21 @@ import { getAttorneyFirmMembers } from './attorneyFirmMembers'
 import { getAttorneyFirmById, getAttorneyFirmDepartments } from './attorneyFirms'
 import { prepareBondAssignmentPayload } from './bondAssignmentService'
 import { recordUniversalAssignmentEvent, UNIVERSAL_ASSIGNMENT_METHODS } from './universalAssignmentService'
+import {
+  TRANSACTION_REFERENCE_SCOPES,
+  canEditTransactionReference,
+  getAttorneyMatterReferenceTypeForRole,
+  getTransactionReferencePolicy,
+  normalizeTransactionReferenceSource,
+} from '../core/transactions/transactionReferencePolicy'
 
 export const ATTORNEY_ASSIGNMENT_TYPES = ['transfer', 'bond', 'transfer_and_bond', 'cancellation']
 export const TRANSACTION_ATTORNEY_ROLES = ['transfer_attorney', 'bond_attorney', 'cancellation_attorney']
 export const ATTORNEY_ASSIGNMENT_STATUSES = ['pending', 'active', 'paused', 'completed', 'removed']
 const ATTORNEY_ASSIGNMENTS_MIGRATION_HINT = 'Attorney assignment table is not set up yet. Run the attorney assignment migrations and refresh.'
+const ATTORNEY_MATTER_REFERENCE_MIGRATION_HINT = 'Attorney matter reference fields are not set up yet. Run the transaction attorney matter reference migration and refresh.'
 const ASSIGNMENT_SELECT =
-  'id, transaction_id, firm_id, attorney_firm_id, assignment_type, attorney_role, department_id, attorney_department_id, primary_attorney_id, attorney_user_id, secretary_id, admin_handler_id, status, assignment_status, is_primary, visibility_scope, can_edit, can_manage_documents, can_manage_signing, can_add_internal_notes, can_add_shared_updates, can_update_workflow_lane, assigned_by, assigned_at, created_at, updated_at'
+  'id, transaction_id, firm_id, attorney_firm_id, assignment_type, attorney_role, department_id, attorney_department_id, primary_attorney_id, attorney_user_id, secretary_id, admin_handler_id, matter_reference, matter_reference_source, matter_reference_updated_by, matter_reference_updated_at, status, assignment_status, is_primary, visibility_scope, can_edit, can_manage_documents, can_manage_signing, can_add_internal_notes, can_add_shared_updates, can_update_workflow_lane, assigned_by, assigned_at, created_at, updated_at'
 
 const TRANSFER_PRIMARY_ROLES = new Set(['transfer_attorney', 'director_partner', 'firm_admin'])
 const BOND_PRIMARY_ROLES = new Set(['bond_attorney', 'director_partner', 'firm_admin'])
@@ -84,6 +93,10 @@ function mapAssignmentRow(row) {
     primaryAttorneyId: isPrimary ? attorneyUserId : row.primary_attorney_id || null,
     secretaryId: row.secretary_id || null,
     adminHandlerId: row.admin_handler_id || null,
+    matterReference: row.matter_reference || null,
+    matterReferenceSource: row.matter_reference_source || null,
+    matterReferenceUpdatedBy: row.matter_reference_updated_by || null,
+    matterReferenceUpdatedAt: row.matter_reference_updated_at || null,
     status: row.assignment_status || row.status,
     assignmentStatus: row.assignment_status || row.status,
     isPrimary,
@@ -178,6 +191,55 @@ async function assertActorCanManageAssignment(client, { actorId, firmId }) {
   if (ownerFallback.error || !ownerFallback.data?.id) {
     throw new Error('You do not have permission to assign attorneys to this transaction.')
   }
+}
+
+async function assertActorCanEditMatterReference(client, { actorId, assignment, policy }) {
+  const normalizedActorId = normalizeText(actorId)
+  const firmId = normalizeText(assignment?.attorneyFirmId || assignment?.firmId)
+  if (!normalizedActorId || !firmId) {
+    throw new Error('You do not have permission to edit this attorney matter number.')
+  }
+
+  const assignedUserIds = new Set([
+    assignment?.attorneyUserId,
+    assignment?.primaryAttorneyId,
+    assignment?.secretaryId,
+    assignment?.adminHandlerId,
+  ].filter(Boolean))
+
+  const membershipQuery = await client
+    .from('attorney_firm_members')
+    .select('id, role, status')
+    .eq('firm_id', firmId)
+    .eq('user_id', normalizedActorId)
+    .eq('status', 'active')
+    .maybeSingle()
+
+  if (membershipQuery.error && !isMissingTableError(membershipQuery.error, 'attorney_firm_members')) {
+    throw membershipQuery.error
+  }
+
+  const memberRole = normalizeText(membershipQuery.data?.role).toLowerCase()
+  if (
+    ['firm_admin', 'director_partner'].includes(memberRole) ||
+    canEditTransactionReference(policy?.type, memberRole) ||
+    assignedUserIds.has(normalizedActorId)
+  ) {
+    return
+  }
+
+  const ownerFallback = await client
+    .from('attorney_firms')
+    .select('id, created_by')
+    .eq('id', firmId)
+    .eq('created_by', normalizedActorId)
+    .maybeSingle()
+
+  if (!ownerFallback.error && ownerFallback.data?.id) {
+    return
+  }
+
+  throw new Error('You do not have permission to edit this attorney matter number.')
 }
 
 function assertRoleAllowed({ assignmentType, field, memberRole }) {
@@ -412,6 +474,47 @@ async function logAttorneyAssignmentEvent(client, { transactionId, eventType, as
   if (insert.error && !isMissingTableError(insert.error, 'transaction_events') && !isMissingColumnError(insert.error)) {
     throw insert.error
   }
+}
+
+async function logAttorneyMatterReferenceEvent(client, {
+  assignment,
+  policy,
+  previousValue = null,
+  nextValue = null,
+  previousSource = null,
+  nextSource = null,
+  reason = '',
+  actorId = null,
+} = {}) {
+  if (!assignment?.transactionId || !policy?.type) return null
+
+  const assignmentLabel = assignment?.attorneyRoleLabel || getAttorneyRoleLabel(assignment?.attorneyRole)
+  const message = `${policy.label} updated for ${assignmentLabel}.`
+  const insert = await client.from('transaction_events').insert({
+    transaction_id: assignment.transactionId,
+    event_type: 'TransactionUpdated',
+    event_data: {
+      message,
+      changeType: 'transaction_reference_updated',
+      referenceType: policy.type,
+      referenceLabel: policy.label,
+      storageTarget: policy.storageTarget,
+      assignmentId: assignment.id,
+      attorneyRole: assignment.attorneyRole,
+      previousValue,
+      newValue: nextValue,
+      previousSource,
+      newSource: nextSource,
+      reason: normalizeText(reason) || 'Attorney matter reference updated.',
+    },
+    created_by: actorId || null,
+    created_by_role: 'attorney',
+  })
+
+  if (insert.error && !isMissingTableError(insert.error, 'transaction_events') && !isMissingColumnError(insert.error)) {
+    throw insert.error
+  }
+  return insert.data || null
 }
 
 export async function validateAttorneyAssignment(payload = {}, options = {}) {
@@ -752,6 +855,128 @@ export async function updateTransactionAttorneyAssignment(assignmentId, payload 
     console.warn('[transactionAttorneyAssignments] universal assignment update skipped', error)
   }
   await syncTransactionAssignmentLegacyFields(result.transactionId).catch(() => null)
+  return result
+}
+
+export async function updateTransactionAttorneyMatterReference(assignmentId, payload = {}, options = {}) {
+  const client = options.client || requireClient()
+  const actor = await getAuthenticatedUser(client)
+  const normalizedAssignmentId = normalizeText(assignmentId)
+  if (!normalizedAssignmentId) {
+    throw new Error('Assignment id is required.')
+  }
+
+  const existingQuery = await client
+    .from('transaction_attorney_assignments')
+    .select(ASSIGNMENT_SELECT)
+    .eq('id', normalizedAssignmentId)
+    .maybeSingle()
+
+  if (existingQuery.error) {
+    if (isMissingTableError(existingQuery.error, 'transaction_attorney_assignments')) {
+      throw new Error(ATTORNEY_ASSIGNMENTS_MIGRATION_HINT)
+    }
+    if (
+      isMissingColumnError(existingQuery.error, 'matter_reference') ||
+      isMissingColumnError(existingQuery.error, 'matter_reference_source') ||
+      isMissingColumnError(existingQuery.error, 'matter_reference_updated_by') ||
+      isMissingColumnError(existingQuery.error, 'matter_reference_updated_at')
+    ) {
+      throw new Error(ATTORNEY_MATTER_REFERENCE_MIGRATION_HINT)
+    }
+    throw existingQuery.error
+  }
+
+  if (!existingQuery.data) {
+    throw new Error('Assignment not found.')
+  }
+
+  const existing = mapAssignmentRow(existingQuery.data)
+  const referenceType = normalizeText(payload.referenceType || payload.reference_type) || getAttorneyMatterReferenceTypeForRole(existing.attorneyRole)
+  const policy = getTransactionReferencePolicy(referenceType)
+  if (!policy || policy.scope !== TRANSACTION_REFERENCE_SCOPES.attorneyAssignment) {
+    throw new Error('Reference type must be an attorney matter number.')
+  }
+  if (policy.assignmentRole && policy.assignmentRole !== existing.attorneyRole) {
+    throw new Error(`${policy.label} can only be edited on the matching attorney assignment lane.`)
+  }
+
+  await assertActorCanEditMatterReference(client, { actorId: actor.id, assignment: existing, policy })
+
+  const hasMatterReferenceValue = [
+    'matterReference',
+    'matter_reference',
+    'referenceValue',
+    'reference_value',
+    'value',
+  ].some((key) => Object.prototype.hasOwnProperty.call(payload, key))
+  if (!hasMatterReferenceValue) {
+    throw new Error('Matter reference value is required.')
+  }
+
+  const nextValue = normalizeNullableText(
+    payload.matterReference ??
+      payload.matter_reference ??
+      payload.referenceValue ??
+      payload.reference_value ??
+      payload.value,
+  )
+  const nextSource = normalizeTransactionReferenceSource(
+    payload.matterReferenceSource ||
+      payload.matter_reference_source ||
+      payload.referenceSource ||
+      payload.reference_source ||
+      payload.source ||
+      'manual',
+  )
+  const previousValue = existing.matterReference || null
+  const previousSource = normalizeTransactionReferenceSource(existing.matterReferenceSource || 'manual')
+  const reason = normalizeText(payload.reason || payload.changeReason || payload.change_reason || payload.note) || 'Attorney matter reference updated.'
+
+  if (previousValue === nextValue && previousSource === nextSource) {
+    return existing
+  }
+
+  const now = new Date().toISOString()
+  const updateQuery = await client
+    .from('transaction_attorney_assignments')
+    .update({
+      matter_reference: nextValue,
+      matter_reference_source: nextSource,
+      matter_reference_updated_by: actor.id,
+      matter_reference_updated_at: now,
+    })
+    .eq('id', normalizedAssignmentId)
+    .select(ASSIGNMENT_SELECT)
+    .single()
+
+  if (updateQuery.error) {
+    if (
+      isMissingColumnError(updateQuery.error, 'matter_reference') ||
+      isMissingColumnError(updateQuery.error, 'matter_reference_source') ||
+      isMissingColumnError(updateQuery.error, 'matter_reference_updated_by') ||
+      isMissingColumnError(updateQuery.error, 'matter_reference_updated_at')
+    ) {
+      throw new Error(ATTORNEY_MATTER_REFERENCE_MIGRATION_HINT)
+    }
+    throw updateQuery.error
+  }
+
+  const mapped = mapAssignmentRow(updateQuery.data)
+  const [enriched] = await enrichAssignments(client, [mapped])
+  const result = enriched || mapped
+
+  await logAttorneyMatterReferenceEvent(client, {
+    assignment: result,
+    policy,
+    previousValue,
+    nextValue,
+    previousSource,
+    nextSource,
+    reason,
+    actorId: actor.id,
+  })
+
   return result
 }
 

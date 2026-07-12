@@ -50,7 +50,10 @@ test('keeps finance aliases behind one legal workflow term', () => {
 test('normalizes buyer, property, ownership and transaction aliases', () => {
   assert.equal(normalizeBuyerType('married in community of property'), 'married_coc')
   assert.equal(normalizeBuyerType('foreign buyer'), 'foreign_purchaser')
+  assert.equal(normalizeBuyerType('buyer poa'), 'power_of_attorney')
+  assert.equal(normalizeBuyerType('sequestrated'), 'insolvent')
   assert.equal(normalizePropertyType('body corporate'), 'sectional_title')
   assert.equal(normalizeOwnershipStructure('poa'), 'power_of_attorney')
+  assert.equal(normalizeOwnershipStructure('company liquidation'), 'liquidation')
   assert.equal(normalizeTransactionType('off plan'), 'development_sale')
 })

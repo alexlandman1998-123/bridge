@@ -318,6 +318,33 @@ try {
   assert.equal(reopenedAudit.reason_code, 'step_reopened')
   assert.equal(reopenedAudit.derived_from_json?.auditMetadata?.overrideType, 'force_reopen')
 
+  const waived = await overrideService.applyWorkflowOverride({
+    transactionId: 'tx-1',
+    workflowKey: 'sales_otp',
+    stepKey: 'ready_for_finance_handoff',
+    overrideType: 'force_waive',
+    reason: 'Principal confirmed finance handoff is not required for this transaction.',
+    userId: 'principal-1',
+    actorRole: 'principal',
+    payload: {
+      attachmentId: 'doc-waiver-confirmation',
+      attachmentType: 'waiver_confirmation',
+    },
+    client,
+  })
+
+  assert.equal(waived.success, true)
+  assert.equal(waived.nextStatus, 'not_applicable')
+  const waiverEvent = client.state.transaction_workflow_events.find((row) => row.payload_json?.overrideType === 'force_waive')
+  assert.equal(waiverEvent?.payload_json?.overrideIntent, 'waiver_override')
+  assert.equal(waiverEvent?.payload_json?.completionMode, 'waived')
+  assert.equal(waiverEvent?.payload_json?.waiver, true)
+  const waiverAudit = client.state.transaction_rollup_audit[client.state.transaction_rollup_audit.length - 1]
+  assert.equal(waiverAudit.reason_code, 'step_waived')
+  assert.equal(waiverAudit.derived_from_json?.auditMetadata?.overrideIntent, 'waiver_override')
+  assert.equal(waiverAudit.derived_from_json?.auditMetadata?.completionMode, 'waived')
+  assert.equal(waiverAudit.derived_from_json?.auditMetadata?.waiver, true)
+
   console.log('workflowOverrideService tests passed')
 } finally {
   await server.close()

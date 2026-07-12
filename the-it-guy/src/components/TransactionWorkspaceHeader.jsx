@@ -5,6 +5,7 @@ import {
   Clock3,
   ExternalLink,
   FileText,
+  Hash,
   Link2,
   MoreHorizontal,
   Printer,
@@ -40,6 +41,7 @@ const ICON_BY_KEY = {
   archive: Archive,
   refresh: RefreshCw,
   report: FileText,
+  reference: Hash,
   delete: Trash2,
 }
 

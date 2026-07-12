@@ -5,6 +5,11 @@ import {
 } from './purchaserPersonas.js'
 import { normalizeFinanceType } from '../core/transactions/financeType.js'
 import { resolveBuyerOnboardingFlow } from './buyerOnboardingFlow.js'
+import {
+  canDeriveBuyerBaseline,
+  createLegalSupportBoundaryRequirement,
+  resolveLegalSupportBoundary,
+} from '../core/legal/legalSupportBoundary.js'
 
 // Phase 9 canonical document consolidation:
 // This legacy buyer requirement engine is retained as a compatibility fallback.
@@ -74,6 +79,9 @@ export function getBuyerRequirementProfile(transactionOrOnboardingData = {}) {
     transactionOrOnboardingData?.onboardingFormData?.formData ||
     transactionOrOnboardingData?.formData ||
     {}
+  const supportBoundary = resolveLegalSupportBoundary({ transaction, formData })
+  const boundaryRequirement = createLegalSupportBoundaryRequirement(supportBoundary)
+  const shouldDeriveBaseline = supportBoundary.automationAllowed || canDeriveBuyerBaseline(supportBoundary)
 
   const flow = resolveBuyerOnboardingFlow(formData, transaction, {
     purchaserType: transaction?.purchaser_type || transactionOrOnboardingData?.purchaserType,
@@ -92,34 +100,50 @@ export function getBuyerRequirementProfile(transactionOrOnboardingData = {}) {
       'cash',
   )
 
-  const derived = deriveOnboardingConfiguration(formData, {
-    transaction,
-    purchaserType,
-    financeType,
-  })
+  const derived = shouldDeriveBaseline
+    ? deriveOnboardingConfiguration(formData, {
+        transaction,
+        purchaserType,
+        financeType,
+      })
+    : {
+        requiredDocuments: [],
+        derivedFields: {},
+        summary: { headlineItems: [], lines: [] },
+        flags: [],
+        flow: null,
+      }
 
-  const onboardingSections = getVisibleOnboardingSections({
-    purchaserType,
-    financeType,
-    values: formData,
-  }).map((section) => ({
-    sectionKey: section.key,
-    sectionTitle: section.title,
-    requiredFields: (section.fields || [])
-      .filter((field) => field.required)
-      .map((field) => ({
-        key: field.key,
-        label: field.label,
-      })),
-  }))
+  const onboardingSections = shouldDeriveBaseline
+    ? getVisibleOnboardingSections({
+        purchaserType,
+        financeType,
+        values: formData,
+      }).map((section) => ({
+        sectionKey: section.key,
+        sectionTitle: section.title,
+        requiredFields: (section.fields || [])
+          .filter((field) => field.required)
+          .map((field) => ({
+            key: field.key,
+            label: field.label,
+          })),
+      }))
+    : []
 
-  const requirementByKey = (derived.requiredDocuments || []).reduce((accumulator, item) => {
+  const requiredDocuments = [
+    ...(boundaryRequirement ? [boundaryRequirement] : []),
+    ...(derived.requiredDocuments || []),
+  ]
+
+  const requirementByKey = requiredDocuments.reduce((accumulator, item) => {
     accumulator[item.key] = item
     return accumulator
   }, {})
 
   const criticalGroups = new Set(['buyer_fica', 'sale', 'finance'])
-  const criticalRequirements = (derived.requiredDocuments || []).filter((item) => {
+  const criticalRequirements = requiredDocuments.filter((item) => {
+    if (item?.legalSupportBoundary) return true
     const level = String(item?.requirementLevel || 'required').trim().toLowerCase()
     if (level !== 'required') return false
     return criticalGroups.has(String(item?.groupKey || '').trim().toLowerCase())
@@ -133,9 +157,21 @@ export function getBuyerRequirementProfile(transactionOrOnboardingData = {}) {
         ? 'trust'
         : purchaserType === 'company'
           ? 'company'
-          : purchaserType === 'foreign_purchaser'
-            ? 'foreign_individual'
-            : 'individual',
+          : purchaserType === 'close_corporation'
+            ? 'close_corporation'
+            : purchaserType === 'foreign_purchaser'
+              ? 'foreign_individual'
+              : [
+                  'power_of_attorney',
+                  'deceased_estate',
+                  'minor',
+                  'insolvent',
+                  'curatorship',
+                  'business_rescue',
+                  'liquidation',
+                ].includes(purchaserType)
+                ? purchaserType
+                : 'individual',
     financeType,
     financeTypeLabel: financeTypeLabel(financeType),
     financeSupportMode: String(flow.finance_support_mode || flow.buyer_finance_support_mode || 'self_managed').trim().toLowerCase(),
@@ -158,13 +194,18 @@ export function getBuyerRequirementProfile(transactionOrOnboardingData = {}) {
     requiresProofOfFunds: Boolean(derived?.derivedFields?.requires_proof_of_funds),
     requiresEntityDocuments: Boolean(derived?.derivedFields?.requires_entity_documents),
     needsBondOriginator: Boolean(derived?.derivedFields?.needs_bond_originator),
-    requiredDocuments: derived.requiredDocuments || [],
+    requiredDocuments,
     requirementByKey,
     criticalRequirements,
     onboardingSections,
     summary: derived.summary || { headlineItems: [], lines: [] },
     flags: derived.flags || [],
     derivedFields: derived.derivedFields || {},
+    supportBoundary,
+    supportBoundaryStatus: supportBoundary.status,
+    automationAllowed: supportBoundary.automationAllowed,
+    manualReviewRequired: supportBoundary.manualReviewRequired,
+    unsupported: supportBoundary.unsupported,
   }
 }
 
@@ -208,11 +249,29 @@ export function getRequiredOnboardingSections(requirementProfile) {
 
 export function getRequiredTransactionActions(requirementProfile, uploadedDocuments = []) {
   if (!requirementProfile) return []
+  const supportBoundary = requirementProfile.supportBoundary || null
   const requiredDocuments = getRequiredBuyerDocuments(requirementProfile)
+    .filter((item) => !item?.legalSupportBoundary)
   const missing = requiredDocuments.filter((item) => !isRequirementSatisfied(item, uploadedDocuments))
   const missingKeys = new Set(missing.map((item) => String(item.key || '').trim().toLowerCase()))
 
   const actions = []
+  if (supportBoundary?.unsupported) {
+    actions.push({
+      key: 'legal_support_boundary_stop',
+      severity: 'critical',
+      title: 'Stop automated document requests',
+      description: supportBoundary.summary || 'This legal scenario is outside the automated document workflow.',
+    })
+  } else if (supportBoundary?.manualReviewRequired) {
+    actions.push({
+      key: 'legal_manual_review_required',
+      severity: 'critical',
+      title: 'Conveyancer legal review required',
+      description: supportBoundary.summary || 'This legal scenario must be reviewed before automation continues.',
+    })
+  }
+
   if (missing.length) {
     actions.push({
       key: 'upload_required_documents',
@@ -259,6 +318,18 @@ export function getRequiredTransactionActions(requirementProfile, uploadedDocume
   }
 
   if (
+    requirementProfile.buyerType === 'close_corporation' &&
+    [...missingKeys].some((key) => key.includes('close_corporation') || key.includes('ck_') || key.includes('member') || key.includes('cc_'))
+  ) {
+    actions.push({
+      key: 'complete_close_corporation_documents',
+      severity: 'critical',
+      title: 'Complete close corporation authority documents',
+      description: 'CK documents, member resolution, member identity, and signatory records are required.',
+    })
+  }
+
+  if (
     requirementProfile.buyerType === 'foreign_purchaser' &&
     [...missingKeys].some((key) => key.includes('passport') || key.includes('source_of_funds') || key.includes('proof_of_address'))
   ) {
@@ -267,6 +338,66 @@ export function getRequiredTransactionActions(requirementProfile, uploadedDocume
       severity: 'critical',
       title: 'Complete foreign buyer document pack',
       description: 'Passport, address, and foreign source-of-funds records are still required.',
+    })
+  }
+
+  if (
+    requirementProfile.buyerType === 'power_of_attorney' &&
+    [...missingKeys].some((key) => key.includes('power_of_attorney') || key.includes('principal') || key.includes('representative') || key.includes('authority'))
+  ) {
+    actions.push({
+      key: 'complete_buyer_poa_pack',
+      severity: 'critical',
+      title: 'Complete buyer power of attorney pack',
+      description: 'Power of attorney, principal identity, representative identity, and authority scope records are required.',
+    })
+  }
+
+  if (
+    requirementProfile.buyerType === 'deceased_estate' &&
+    [...missingKeys].some((key) => key.includes('estate') || key.includes('executor'))
+  ) {
+    actions.push({
+      key: 'complete_buyer_estate_pack',
+      severity: 'critical',
+      title: 'Complete deceased estate buyer pack',
+      description: 'Executor authority, executor identity, and estate source-of-funds records are required.',
+    })
+  }
+
+  if (
+    requirementProfile.buyerType === 'minor' &&
+    [...missingKeys].some((key) => key.includes('minor') || key.includes('guardian'))
+  ) {
+    actions.push({
+      key: 'complete_minor_buyer_pack',
+      severity: 'critical',
+      title: 'Complete minor buyer authority pack',
+      description: 'Minor identity, guardian identity, guardian authority, and source-of-funds records are required.',
+    })
+  }
+
+  if (
+    requirementProfile.buyerType === 'insolvent' &&
+    [...missingKeys].some((key) => key.includes('insolvency') || key.includes('trustee') || key.includes('curator'))
+  ) {
+    actions.push({
+      key: 'complete_insolvency_buyer_pack',
+      severity: 'critical',
+      title: 'Complete insolvency authority pack',
+      description: 'Trustee or curator appointment, authority, and finance/source-of-funds records are required.',
+    })
+  }
+
+  if (
+    requirementProfile.buyerType === 'curatorship' &&
+    [...missingKeys].some((key) => key.includes('curator') || key.includes('curatorship') || key.includes('court_order'))
+  ) {
+    actions.push({
+      key: 'complete_curatorship_buyer_pack',
+      severity: 'critical',
+      title: 'Complete curatorship authority pack',
+      description: 'Court/order, curator identity, and authority records are required.',
     })
   }
 

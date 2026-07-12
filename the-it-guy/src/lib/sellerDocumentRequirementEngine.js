@@ -12,6 +12,18 @@ import {
   normalizePropertyAddress,
 } from './sellerPropertyAddress.js'
 import { isMultipleOwnerSellerType } from '../core/legal/legalRuleRegistry.js'
+import {
+  buildAssociatedPartyRequirementDefinitions,
+} from '../core/legal/legalRequirementCardinality.js'
+import {
+  canDeriveSellerBaseline,
+  createSellerLegalSupportBoundaryRequirement,
+  resolveLegalSupportBoundary,
+} from '../core/legal/legalSupportBoundary.js'
+import {
+  isSignedArtifactSignatureCaptured,
+  isSignedArtifactStatusComplete,
+} from '../core/workflows/overrideContract.js'
 
 // Phase 9 canonical document consolidation:
 // This legacy seller requirement engine is retained as a compatibility fallback.
@@ -23,7 +35,6 @@ import { isMultipleOwnerSellerType } from '../core/legal/legalRuleRegistry.js'
 const COMPLETED_REQUIREMENT_STATUSES = new Set(['approved', 'completed'])
 const ACTIVE_REQUIREMENT_STATUSES = new Set(['required', 'requested', 'uploaded', 'under_review', 'rejected'])
 
-const MANDATE_SIGNED_STATUSES = new Set(['signed', 'signed_uploaded'])
 const DOCUMENT_STATUSES = ['required', 'requested', 'uploaded', 'under_review', 'rejected', 'approved', 'completed', 'not_applicable']
 
 function normalizeText(value) {
@@ -88,6 +99,7 @@ function toBoolean(value) {
 function normalizeSellerType(value) {
   const normalized = normalizeKey(value)
   if (['company', 'pty', 'corporate'].includes(normalized)) return 'company'
+  if (['close_corporation', 'cc', 'close_corp'].includes(normalized)) return 'close_corporation'
   if (normalized === 'trust') return 'trust'
   if (['deceased_estate', 'estate', 'deceased'].includes(normalized)) return 'deceased_estate'
   if (isMultipleOwnerSellerType(normalized)) return 'multiple_owners'
@@ -180,6 +192,9 @@ function resolveSellerDisplayName(profile = {}) {
   if (profile.sellerType === 'company') {
     return normalizeText(formData?.companyName || formData?.entityName || profile?.listingData?.seller?.name)
   }
+  if (profile.sellerType === 'close_corporation') {
+    return normalizeText(formData?.ccName || formData?.closeCorporationName || formData?.entityName || profile?.listingData?.seller?.name)
+  }
   if (profile.sellerType === 'trust') {
     return normalizeText(formData?.trustName || formData?.entityName || profile?.listingData?.seller?.name)
   }
@@ -236,6 +251,33 @@ function buildRequirement({
     label: name,
     required: Boolean(required),
   }
+}
+
+function appendAssociatedPartyRequirements(docs = [], parties = [], options = {}) {
+  const definitions = buildAssociatedPartyRequirementDefinitions(parties, {
+    keyPrefix: options.keyPrefix,
+    roleLabel: options.roleLabel,
+    groupKey: options.groupKey,
+    group: options.group,
+    expectedFromRole: options.expectedFromRole || 'seller',
+    defaultVisibility: options.visibility || 'seller_visible',
+  })
+
+  definitions.forEach((definition) => {
+    docs.push(
+      buildRequirement({
+        key: definition.key,
+        name: definition.name || definition.label,
+        description: definition.description,
+        group: options.group || definition.groupKey || 'compliance',
+        visibility: options.visibility || 'seller_visible',
+        generatedFrom: {
+          ...(options.generatedFrom || {}),
+          ...(definition.generatedFrom || {}),
+        },
+      }),
+    )
+  })
 }
 
 function appendBondRequirements(docs, generatedFrom) {
@@ -480,6 +522,11 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
       ? listing?.sellerOnboarding?.formData || listing?.sellerOnboarding?.form_data || {}
       : onboardingData || {}
   const canonicalFacts = getCanonicalSellerFacts(listing, onboarding)
+  const supportBoundary = resolveLegalSupportBoundary({
+    listing,
+    onboardingData: onboarding,
+    formData: onboarding,
+  })
   const flow = resolveSellerOnboardingFlow(onboarding, listing, canonicalFacts)
   const onboardingStatusRaw = normalizeKey(
     listing?.sellerOnboardingStatus ||
@@ -587,7 +634,44 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
     owners: onboarding?.owners || canonicalFacts?.seller?.owners || [],
   })
   const companyDirectors = toArray(canonicalFacts?.seller?.company?.directors || onboarding?.companyDirectors)
+  const companyBeneficialOwners = toArray(
+    canonicalFacts?.seller?.company?.beneficial_owners ||
+      onboarding?.companyBeneficialOwners ||
+      onboarding?.company_beneficial_owners ||
+      onboarding?.company?.beneficial_owners ||
+      onboarding?.beneficialOwners ||
+      onboarding?.beneficial_owners,
+  )
+  const closeCorporationMembers = toArray(
+    canonicalFacts?.seller?.close_corporation?.members ||
+      onboarding?.closeCorporationMembers ||
+      onboarding?.close_corporation_members ||
+      onboarding?.ccMembers ||
+      onboarding?.cc_members ||
+      onboarding?.close_corporation?.members ||
+      onboarding?.cc?.members ||
+      onboarding?.members,
+  )
+  const closeCorporationBeneficialOwners = toArray(
+    canonicalFacts?.seller?.close_corporation?.beneficial_owners ||
+      onboarding?.closeCorporationBeneficialOwners ||
+      onboarding?.close_corporation_beneficial_owners ||
+      onboarding?.ccBeneficialOwners ||
+      onboarding?.cc_beneficial_owners ||
+      onboarding?.close_corporation?.beneficial_owners ||
+      onboarding?.cc?.beneficial_owners ||
+      onboarding?.beneficialOwners ||
+      onboarding?.beneficial_owners,
+  )
   const trustTrustees = toArray(canonicalFacts?.seller?.trust?.trustees || onboarding?.trustees)
+  const trustBeneficialOwners = toArray(
+    canonicalFacts?.seller?.trust?.beneficial_owners ||
+      onboarding?.trustBeneficialOwners ||
+      onboarding?.trust_beneficial_owners ||
+      onboarding?.trust?.beneficial_owners ||
+      onboarding?.beneficialOwners ||
+      onboarding?.beneficial_owners,
+  )
   const estateExecutors = toArray(canonicalFacts?.seller?.deceased_estate?.executors || onboarding?.executors)
   const poaRepresentatives = toArray(canonicalFacts?.seller?.power_of_attorney?.representatives || onboarding?.powerOfAttorneyRepresentatives)
   const hasMultipleOwnerBranch = isMultipleOwnerSellerType(sellerBranch) || isMultipleOwnerSellerType(sellerType)
@@ -599,6 +683,11 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
     companyDirectors[0]?.full_name ||
     companyDirectors[0]?.name ||
     onboarding?.companyDirectorName ||
+    canonicalFacts?.seller?.close_corporation?.authorised_member?.name ||
+    closeCorporationMembers[0]?.full_name ||
+    closeCorporationMembers[0]?.name ||
+    onboarding?.authorisedMemberName ||
+    onboarding?.authorizedMemberName ||
     canonicalFacts?.seller?.trust?.authorised_trustee?.name ||
     trustTrustees[0]?.full_name ||
     trustTrustees[0]?.name ||
@@ -631,6 +720,7 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
     formData: {
       ...onboarding,
       companyName: onboarding?.companyName || canonicalFacts?.seller?.company?.name,
+      ccName: onboarding?.ccName || onboarding?.closeCorporationName || canonicalFacts?.seller?.close_corporation?.name,
       trustName: onboarding?.trustName || canonicalFacts?.seller?.trust?.name,
       estateName: onboarding?.estateName || canonicalFacts?.seller?.deceased_estate?.estate_reference || canonicalFacts?.seller?.deceased_estate?.executor_name,
     },
@@ -675,11 +765,20 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
     sellerContactEmail: normalizeText(onboarding?.email || listing?.seller?.email),
     sellerContactPhone: normalizeText(onboarding?.phone || listing?.seller?.phone),
     companyDirectors,
+    companyBeneficialOwners,
+    closeCorporationMembers,
+    closeCorporationBeneficialOwners,
     trustTrustees,
+    trustBeneficialOwners,
     estateExecutors,
     poaRepresentatives,
     flow,
     documentTriggers: flow.document_triggers || [],
+    supportBoundary,
+    supportBoundaryStatus: supportBoundary.status,
+    automationAllowed: supportBoundary.automationAllowed,
+    manualReviewRequired: supportBoundary.manualReviewRequired,
+    unsupported: supportBoundary.unsupported,
     organisationId: normalizeText(listing?.organisationId || listing?.organisation_id),
     assignedAgentId: normalizeText(listing?.assignedAgentId || listing?.assigned_agent_id || listing?.agentId),
     listingData: listing,
@@ -706,7 +805,7 @@ export function getRequiredMandateInputs(requirementProfile = {}) {
       key: 'authorised_signatory',
       label: 'Authorised signatory',
       satisfied:
-        !['company', 'trust', 'deceased_estate', 'power_of_attorney', 'other_legal_entity'].includes(sellerBranch) ||
+        !['company', 'close_corporation', 'trust', 'deceased_estate', 'power_of_attorney', 'other_legal_entity'].includes(sellerBranch) ||
         hasValue(requirementProfile?.authorisedSignatory),
       blocker: 'Authorised signatory missing',
     },
@@ -789,6 +888,11 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
   const documentTriggers = new Set(
     [...toArray(profile.documentTriggers), ...toArray(flow.document_triggers)].map(normalizeKey),
   )
+  const supportBoundary = profile.supportBoundary || resolveLegalSupportBoundary({
+    listing: profile.listingData || {},
+    onboardingData: profile.formData || {},
+    formData: profile.formData || {},
+  })
   const generatedFrom = {
     sellerType: profile.sellerType || flow.seller_legacy_type || sellerBranch || 'individual',
     sellerBranch,
@@ -802,9 +906,17 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
     ownerCount: profile.ownerCount || 1,
     documentTriggers: Array.from(documentTriggers),
   }
+  const boundaryRequirement = createSellerLegalSupportBoundaryRequirement(supportBoundary, { generatedFrom })
+  const boundaryRequirements = boundaryRequirement ? [boundaryRequirement] : []
+  const shouldDeriveBaseline = supportBoundary.automationAllowed || canDeriveSellerBaseline(supportBoundary)
+
+  if (boundaryRequirement && !shouldDeriveBaseline) {
+    return boundaryRequirements
+  }
 
   if (lifecycleStatus === 'seller_lead') {
     return [
+      ...boundaryRequirements,
       buildRequirement({
         key: 'seller_contact_confirmation',
         name: 'Seller Contact Confirmation',
@@ -818,6 +930,7 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
 
   if (lifecycleStatus === 'onboarding_sent') {
     return [
+      ...boundaryRequirements,
       buildRequirement({
         key: 'seller_onboarding_submission',
         name: 'Seller Onboarding Submission',
@@ -830,6 +943,7 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
   }
 
   const docs = [
+    ...boundaryRequirements,
     buildRequirement({
       key: 'signed_mandate',
       name: 'Signed Mandate',
@@ -1090,6 +1204,18 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
         generatedFrom,
       }),
       buildRequirement({
+        key: 'seller_authority_validity_review',
+        name: 'Seller Authority Validity Review',
+        description: 'Attorney review confirming signatory authority, quorum, and transaction-specific resolution scope.',
+        group: 'company',
+        visibility: 'internal',
+        generatedFrom: {
+          ...generatedFrom,
+          authorityValidityReview: true,
+          entityType: 'company',
+        },
+      }),
+      buildRequirement({
         key: 'director_member_ids',
         name: 'Director / Member ID Documents',
         description: 'Identity documents of directors/members.',
@@ -1125,13 +1251,107 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
       buildRequirement({
         key: 'beneficial_ownership_fica',
         name: 'Beneficial Ownership / FICA Documents',
-        description: 'Beneficial ownership and related FICA documents where required.',
+        description: 'Beneficial ownership declaration and related FICA documents.',
         group: 'company',
-        visibility: 'internal',
-        required: false,
+        visibility: 'seller_visible',
         generatedFrom,
       }),
     )
+    appendAssociatedPartyRequirements(docs, profile.companyDirectors || [], {
+      keyPrefix: 'seller_director',
+      roleLabel: 'Director',
+      group: 'company',
+      groupKey: 'company',
+      visibility: 'seller_visible',
+      generatedFrom,
+    })
+    appendAssociatedPartyRequirements(docs, profile.companyBeneficialOwners || [], {
+      keyPrefix: 'seller_beneficial_owner',
+      roleLabel: 'Beneficial Owner',
+      group: 'company',
+      groupKey: 'company',
+      visibility: 'seller_visible',
+      generatedFrom,
+    })
+  } else if (sellerBranch === 'close_corporation') {
+    docs.push(
+      buildRequirement({
+        key: 'cc_registration_documents',
+        name: 'Close Corporation CK / Founding Statement Documents',
+        description: 'CK / founding statement and close corporation registration records.',
+        group: 'close_corporation',
+        visibility: 'seller_visible',
+        generatedFrom,
+      }),
+      buildRequirement({
+        key: 'member_resolution_to_sell',
+        name: 'Member Resolution',
+        description: 'Resolution authorising the close corporation to sell the property.',
+        group: 'close_corporation',
+        visibility: 'seller_visible',
+        generatedFrom,
+      }),
+      buildRequirement({
+        key: 'seller_authority_validity_review',
+        name: 'Seller Authority Validity Review',
+        description: 'Attorney review confirming authorised member authority, member consent/quorum, and transaction-specific resolution scope.',
+        group: 'close_corporation',
+        visibility: 'internal',
+        generatedFrom: {
+          ...generatedFrom,
+          authorityValidityReview: true,
+          entityType: 'close_corporation',
+        },
+      }),
+      buildRequirement({
+        key: 'member_ids',
+        name: 'Member ID Documents',
+        description: 'Identity documents of close corporation members.',
+        group: 'close_corporation',
+        visibility: 'seller_visible',
+        generatedFrom,
+      }),
+      buildRequirement({
+        key: 'authorised_member_id',
+        name: 'Authorised Member / Signatory ID',
+        description: 'ID document of the authorised member or signatory.',
+        group: 'close_corporation',
+        visibility: 'seller_visible',
+        generatedFrom,
+      }),
+      buildRequirement({
+        key: 'cc_address_proof',
+        name: 'Proof of Close Corporation Address',
+        description: 'Proof of registered or operating address for the close corporation.',
+        group: 'close_corporation',
+        visibility: 'seller_visible',
+        generatedFrom,
+      }),
+      buildRequirement({
+        key: 'cc_beneficial_ownership_fica',
+        name: 'Beneficial Ownership / FICA Documents',
+        description: 'Beneficial ownership declaration and related FICA documents.',
+        group: 'close_corporation',
+        visibility: 'seller_visible',
+        generatedFrom,
+      }),
+    )
+    appendAssociatedPartyRequirements(docs, profile.closeCorporationMembers || [], {
+      keyPrefix: 'seller_member',
+      roleLabel: 'Member',
+      group: 'close_corporation',
+      groupKey: 'close_corporation',
+      visibility: 'seller_visible',
+      generatedFrom,
+    })
+    appendAssociatedPartyRequirements(docs, profile.closeCorporationBeneficialOwners || [], {
+      keyPrefix: 'seller_beneficial_owner',
+      roleLabel: 'Beneficial Owner',
+      group: 'close_corporation',
+      groupKey: 'close_corporation',
+      visibility: 'seller_visible',
+      generatedFrom,
+    })
   } else if (sellerBranch === 'trust') {
     docs.push(
       buildRequirement({
@@ -1167,6 +1387,18 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
         generatedFrom,
       }),
       buildRequirement({
+        key: 'seller_authority_validity_review',
+        name: 'Seller Authority Validity Review',
+        description: 'Attorney review confirming current trustee authority, required trustee signing, quorum, and transaction-specific resolution scope.',
+        group: 'trust',
+        visibility: 'internal',
+        generatedFrom: {
+          ...generatedFrom,
+          authorityValidityReview: true,
+          entityType: 'trust',
+        },
+      }),
+      buildRequirement({
         key: 'authorised_trustee_signatory_id',
         name: 'Authorised Trustee / Signatory ID',
         description: 'ID document for authorised trustee signatory.',
@@ -1186,13 +1418,28 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
       buildRequirement({
         key: 'trust_beneficial_ownership_fica',
         name: 'Beneficial Ownership / FICA Documents',
-        description: 'Beneficial ownership/FICA documents where required.',
+        description: 'Beneficial ownership declaration and related FICA documents.',
         group: 'trust',
-        visibility: 'internal',
-        required: false,
+        visibility: 'seller_visible',
         generatedFrom,
       }),
     )
+    appendAssociatedPartyRequirements(docs, profile.trustTrustees || [], {
+      keyPrefix: 'seller_trustee',
+      roleLabel: 'Trustee',
+      group: 'trust',
+      groupKey: 'trust',
+      visibility: 'seller_visible',
+      generatedFrom,
+    })
+    appendAssociatedPartyRequirements(docs, profile.trustBeneficialOwners || [], {
+      keyPrefix: 'seller_beneficial_owner',
+      roleLabel: 'Beneficial Owner',
+      group: 'trust',
+      groupKey: 'trust',
+      visibility: 'seller_visible',
+      generatedFrom,
+    })
   } else if (sellerBranch === 'deceased_estate') {
     docs.push(
       buildRequirement({
@@ -1417,10 +1664,12 @@ export function getListingReadinessSummary(listing = {}) {
   const requirements = toArray(listing?.documentRequirements).length ? toArray(listing?.documentRequirements) : derivedRequirements
   const documents = toArray(listing?.documents)
   const mandateReadiness = getMandateReadiness(requirementProfile)
-  const mandateSigned = MANDATE_SIGNED_STATUSES.has(normalizeKey(requirementProfile?.mandateStatus))
+  const mandateSignatureCaptured = isSignedArtifactSignatureCaptured(requirementProfile?.mandateStatus)
+  const signedMandateDocumentComplete = isSignedArtifactStatusComplete(requirementProfile?.mandateStatus)
+  const mandateSigned = mandateSignatureCaptured
   const requirementSatisfied = (row) => {
     const key = normalizeKey(row?.requirement_key || row?.key)
-    if (key === 'signed_mandate' && mandateSigned) return true
+    if (key === 'signed_mandate' && signedMandateDocumentComplete) return true
     return isSellerRequirementSatisfied(row, documents)
   }
 
@@ -1428,7 +1677,14 @@ export function getListingReadinessSummary(listing = {}) {
   const completedRows = requiredRows.filter((row) => requirementSatisfied(row))
   const missingRows = requiredRows.filter((row) => !requirementSatisfied(row))
   const completionPct = requiredRows.length ? Math.round((completedRows.length / requiredRows.length) * 100) : 0
-  const activeReady = Boolean(mandateReadiness.ready && mandateSigned && missingRows.length === 0)
+  const activeReady = Boolean(mandateReadiness.ready && signedMandateDocumentComplete && missingRows.length === 0)
+  const readinessState = activeReady
+    ? 'ready_for_activation'
+    : mandateSignatureCaptured && !signedMandateDocumentComplete
+      ? 'attention_required'
+      : mandateReadiness.ready
+        ? 'ready_for_mandate'
+        : 'blocked'
   const blockedBy = [
     ...mandateReadiness.blockers,
     ...missingRows.slice(0, 8).map((row) => `Missing ${row?.requirement_name || row?.requirement_key}`),
@@ -1439,8 +1695,10 @@ export function getListingReadinessSummary(listing = {}) {
     onboardingComplete: Boolean(requirementProfile.onboardingCompleted),
     mandateReady: Boolean(mandateReadiness.ready),
     mandateSigned,
+    mandateSignatureCaptured,
+    signedMandateDocumentComplete,
     activeReady,
-    readinessState: activeReady ? 'ready_for_activation' : mandateReadiness.ready ? 'ready_for_mandate' : 'blocked',
+    readinessState,
     requirementCompletionPct: completionPct,
     totalRequirements: requiredRows.length,
     completedRequirementsCount: completedRows.length,
@@ -1461,6 +1719,8 @@ export function getListingActivationReadiness(listingOrSummary = {}) {
     ready: Boolean(summary?.activeReady),
     blockers: toArray(summary?.blockedBy),
     mandateSigned: Boolean(summary?.mandateSigned),
+    mandateSignatureCaptured: Boolean(summary?.mandateSignatureCaptured ?? summary?.mandateSigned),
+    signedMandateDocumentComplete: Boolean(summary?.signedMandateDocumentComplete),
     missingRequirementsCount: Number(summary?.missingRequirementsCount || 0),
   }
 }

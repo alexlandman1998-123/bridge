@@ -62,6 +62,7 @@ try {
     assert.equal(packet.canonical_requirement_instance_id, requirement.id, `${canonicalKey} packet should link back to requirement`)
     assert.equal(version.canonical_requirement_instance_id, requirement.id, `${canonicalKey} version should link back to requirement`)
     assert.equal(version.packet_id, packet.id, `${canonicalKey} version should belong to packet`)
+    assert.ok(version.rendered_document_id, `${canonicalKey} packet version should link to a generated document record`)
 
     const legacy = legacyRequirements.find((row) =>
       row.transaction_id === TRANSACTION_ID &&

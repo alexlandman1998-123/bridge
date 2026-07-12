@@ -79,6 +79,7 @@ export const BOND_HYBRID_FINANCE_STAGE_ALIASES = {
 export const BOND_HYBRID_APPLICATION_STATUSES = [
   'pending',
   'submitted',
+  'in_review',
   'feedback_received',
   'quote_received',
   'additional_documents_required',
@@ -91,6 +92,7 @@ export const BOND_HYBRID_APPLICATION_STATUSES = [
 export const BOND_HYBRID_APPLICATION_STATUS_LABELS = {
   pending: 'Pending',
   submitted: 'Submitted',
+  in_review: 'In Review',
   feedback_received: 'Feedback Received',
   quote_received: 'Quote Received',
   additional_documents_required: 'Additional Documents Required',

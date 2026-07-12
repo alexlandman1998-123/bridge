@@ -1,6 +1,10 @@
 import { normalizeFinanceType } from '../core/transactions/financeType.js'
 import { buildDocumentTemplate } from '../core/documents/documentVaultArchitecture.js'
 import {
+  buildAssociatedPartyRequirementDefinitions,
+  getAssociatedParties,
+} from '../core/legal/legalRequirementCardinality.js'
+import {
   resolveBuyerBranch,
   resolveBuyerPurchaseMode,
   resolveBuyerOnboardingFlow,
@@ -13,7 +17,15 @@ export const PURCHASER_TYPES = [
   'married_anc_accrual',
   'trust',
   'company',
+  'close_corporation',
   'foreign_purchaser',
+  'power_of_attorney',
+  'deceased_estate',
+  'minor',
+  'insolvent',
+  'curatorship',
+  'business_rescue',
+  'liquidation',
 ]
 
 export const PURCHASER_TYPE_LABELS = {
@@ -23,13 +35,22 @@ export const PURCHASER_TYPE_LABELS = {
   married_anc_accrual: 'Married out of Community of Property with Accrual',
   trust: 'Trust',
   company: 'Company / Pty Ltd',
+  close_corporation: 'Close Corporation',
   foreign_purchaser: 'Foreign Purchaser',
+  power_of_attorney: 'Power of Attorney',
+  deceased_estate: 'Deceased Estate',
+  minor: 'Minor',
+  insolvent: 'Insolvent / Sequestrated',
+  curatorship: 'Curatorship / Administration',
+  business_rescue: 'Business Rescue',
+  liquidation: 'Liquidation',
 }
 
 export const PURCHASER_ENTITY_OPTIONS = [
   { value: 'individual', label: 'Individual', caption: 'A natural person buying in a personal capacity.' },
   { value: 'foreign_purchaser', label: 'Foreign Individual', caption: 'A foreign national or non-resident individual purchasing the property.' },
   { value: 'company', label: 'Company', caption: 'A company or Pty Ltd purchasing the property.' },
+  { value: 'close_corporation', label: 'Close Corporation', caption: 'A close corporation purchasing through its members or authorised signatory.' },
   { value: 'trust', label: 'Trust', caption: 'A trust purchasing through its trustees and signatories.' },
 ]
 
@@ -52,6 +73,26 @@ const PURCHASER_TYPE_ALIASES = {
   coc: 'married_coc',
   foreign: 'foreign_purchaser',
   foreign_buyer: 'foreign_purchaser',
+  cc: 'close_corporation',
+  close_corp: 'close_corporation',
+  poa: 'power_of_attorney',
+  buyer_poa: 'power_of_attorney',
+  attorney: 'power_of_attorney',
+  deceased: 'deceased_estate',
+  estate: 'deceased_estate',
+  estate_late: 'deceased_estate',
+  under_18: 'minor',
+  child_buyer: 'minor',
+  sequestrated: 'insolvent',
+  insolvency: 'insolvent',
+  administration: 'curatorship',
+  administrator: 'curatorship',
+  curator: 'curatorship',
+  business_rescue_buyer: 'business_rescue',
+  company_in_business_rescue: 'business_rescue',
+  liquidated_company: 'liquidation',
+  company_liquidation: 'liquidation',
+  liquidation_buyer: 'liquidation',
 }
 
 const ONBOARDING_SUMMARY_META_KEYS = new Set([
@@ -284,6 +325,19 @@ const COMPANY_VALIDATION_KEYS = [
   'authorised_signatory_phone',
   'authorised_signatory_capacity',
   'board_resolution_available',
+]
+
+const CLOSE_CORPORATION_VALIDATION_KEYS = [
+  'cc_name',
+  'cc_registration_number',
+  'cc_registered_address',
+  'cc_nature_of_business',
+  'authorised_member_name',
+  'authorised_member_identity_number',
+  'authorised_member_email',
+  'authorised_member_phone',
+  'authorised_member_capacity',
+  'member_resolution_available',
 ]
 
 const TRUST_VALIDATION_KEYS = [
@@ -540,6 +594,30 @@ function createDirector() {
   }
 }
 
+function createMember() {
+  return {
+    full_name: '',
+    id_number: '',
+    phone: '',
+    email: '',
+    residential_address: '',
+    role_title: 'Member',
+    signing_authority: false,
+  }
+}
+
+function createBeneficialOwner() {
+  return {
+    full_name: '',
+    id_number: '',
+    phone: '',
+    email: '',
+    residential_address: '',
+    ownership_percentage: '',
+    role_title: 'Beneficial Owner',
+  }
+}
+
 const PERSONAL_SECTION = section(
   'personal_details',
   'Your Details',
@@ -682,6 +760,21 @@ const TRUST_SECTIONS = [
       checkboxField('signing_authority', 'This trustee is authorised to sign'),
     ],
   }),
+  repeatableSection('beneficial_owners', 'Beneficial Owners', {
+    itemLabel: 'Beneficial Owner',
+    addLabel: 'Add Beneficial Owner',
+    minItems: 0,
+    createItem: createBeneficialOwner,
+    description: 'Capture every natural person who ultimately owns or controls the trust where applicable.',
+    fields: [
+      textField('full_name', 'Full Name', { required: true }),
+      textField('id_number', 'ID Number / Passport', { required: true }),
+      textField('ownership_percentage', 'Ownership / Control %'),
+      phoneField('phone', 'Contact Number'),
+      emailField('email', 'Email Address'),
+      textareaField('residential_address', 'Residential Address', { fullWidth: true }),
+    ],
+  }),
 ]
 
 const COMPANY_SECTIONS = [
@@ -722,6 +815,205 @@ const COMPANY_SECTIONS = [
       checkboxField('signing_authority', 'This director is authorised to sign'),
     ],
   }),
+  repeatableSection('beneficial_owners', 'Beneficial Owners', {
+    itemLabel: 'Beneficial Owner',
+    addLabel: 'Add Beneficial Owner',
+    minItems: 0,
+    createItem: createBeneficialOwner,
+    description: 'Capture every natural person who ultimately owns or controls the company where applicable.',
+    fields: [
+      textField('full_name', 'Full Name', { required: true }),
+      textField('id_number', 'ID Number / Passport', { required: true }),
+      textField('ownership_percentage', 'Ownership / Control %'),
+      phoneField('phone', 'Contact Number'),
+      emailField('email', 'Email Address'),
+      textareaField('residential_address', 'Residential Address', { fullWidth: true }),
+    ],
+  }),
+]
+
+const CLOSE_CORPORATION_SECTIONS = [
+  section(
+    'close_corporation_entity',
+    'Close Corporation Details',
+    [
+      textField('cc_name', 'Close Corporation Name', { required: true }),
+      textField('cc_registration_number', 'Registration Number', { required: true }),
+      textField('vat_number', 'VAT Number'),
+      textareaField('cc_registered_address', 'Registered Address', { required: true, fullWidth: true }),
+      textareaField('cc_business_address', 'Business Address (if different)', { fullWidth: true }),
+      textField('cc_nature_of_business', 'Nature of Business', { required: true }),
+      textField('cc_tax_number', 'Tax Number'),
+      textField('cc_contact_name', 'Primary Contact', { required: true }),
+      emailField('cc_contact_email', 'Primary Contact Email', { required: true }),
+      phoneField('cc_contact_phone', 'Primary Contact Number', { required: true }),
+      textField('authorised_member_capacity', 'Authorised Member / Signatory Capacity', { required: true }),
+      yesNoField('member_resolution_available', 'Is a member resolution available?', { required: true }),
+    ],
+    {
+      description: 'Close corporation purchases need CK records, member information, and authority to purchase.',
+    },
+  ),
+  repeatableSection('members', 'Members / Signatories', {
+    itemLabel: 'Member',
+    addLabel: 'Add Member',
+    minItems: 1,
+    createItem: createMember,
+    description: 'Capture every relevant member and mark the people who have authority to sign the purchase documents.',
+    fields: [
+      textField('full_name', 'Full Name', { required: true }),
+      textField('id_number', 'ID Number / Passport', { required: true }),
+      phoneField('phone', 'Contact Number', { required: true }),
+      emailField('email', 'Email Address'),
+      textareaField('residential_address', 'Residential Address', { required: true, fullWidth: true }),
+      textField('role_title', 'Role / Title', { required: true }),
+      checkboxField('signing_authority', 'This member is authorised to sign'),
+    ],
+  }),
+  repeatableSection('beneficial_owners', 'Beneficial Owners', {
+    itemLabel: 'Beneficial Owner',
+    addLabel: 'Add Beneficial Owner',
+    minItems: 0,
+    createItem: createBeneficialOwner,
+    description: 'Capture every natural person who ultimately owns or controls the close corporation where applicable.',
+    fields: [
+      textField('full_name', 'Full Name', { required: true }),
+      textField('id_number', 'ID Number / Passport', { required: true }),
+      textField('ownership_percentage', 'Ownership / Control %'),
+      phoneField('phone', 'Contact Number'),
+      emailField('email', 'Email Address'),
+      textareaField('residential_address', 'Residential Address', { fullWidth: true }),
+    ],
+  }),
+]
+
+const POWER_OF_ATTORNEY_SECTIONS = [
+  section(
+    'power_of_attorney_details',
+    'Power of Attorney Details',
+    [
+      textField('principal_name', 'Principal Full Name', { required: true }),
+      textField('principal_identity_number', 'Principal ID Number / Passport', { required: true }),
+      textField('representative_name', 'Representative Full Name', { required: true }),
+      textField('representative_identity_number', 'Representative ID Number / Passport', { required: true }),
+      phoneField('representative_phone', 'Representative Contact Number'),
+      emailField('representative_email', 'Representative Email Address'),
+      textareaField('poa_scope', 'Authority Scope', { required: true, fullWidth: true }),
+      dateField('poa_expiry_date', 'Expiry Date'),
+      textField('poa_signing_location', 'Signing Location', { required: true }),
+      yesNoField('poa_authentication_required', 'Does the authority require authentication?', { required: true }),
+    ],
+    {
+      description: 'Purchases through a representative must pause for authority and scope review.',
+    },
+  ),
+]
+
+const DECEASED_ESTATE_SECTIONS = [
+  section(
+    'deceased_estate_details',
+    'Deceased Estate Details',
+    [
+      textField('estate_name', 'Estate Name / Reference', { required: true }),
+      textField('estate_reference', 'Master Reference Number'),
+      textField('executor_name', 'Executor Full Name', { required: true }),
+      textField('executor_identity_number', 'Executor ID Number / Passport', { required: true }),
+      phoneField('executor_phone', 'Executor Contact Number'),
+      emailField('executor_email', 'Executor Email Address'),
+      textareaField('estate_authority_details', 'Authority Details', { required: true, fullWidth: true }),
+      textareaField('estate_source_of_funds', 'Source of Funds', { required: true, fullWidth: true }),
+    ],
+    {
+      description: 'Deceased-estate purchases require executor authority and estate-capacity review.',
+    },
+  ),
+]
+
+const MINOR_SECTIONS = [
+  section(
+    'minor_details',
+    'Minor / Guardian Details',
+    [
+      textField('minor_full_name', 'Minor Full Name', { required: true }),
+      textField('minor_identity_number', 'Minor ID Number / Birth Certificate', { required: true }),
+      textField('guardian_name', 'Guardian Full Name', { required: true }),
+      textField('guardian_identity_number', 'Guardian ID Number / Passport', { required: true }),
+      phoneField('guardian_phone', 'Guardian Contact Number'),
+      emailField('guardian_email', 'Guardian Email Address'),
+      textareaField('guardian_authority_details', 'Guardian Authority Details', { required: true, fullWidth: true }),
+      textareaField('minor_source_of_funds_details', 'Source of Funds', { required: true, fullWidth: true }),
+      textareaField('minor_ownership_intention', 'Ownership Intention', { required: true, fullWidth: true }),
+    ],
+    {
+      description: 'Minor purchases require guardian or court-authority review before automation continues.',
+    },
+  ),
+]
+
+const INSOLVENCY_SECTIONS = [
+  section(
+    'insolvency_details',
+    'Insolvency / Sequestration Details',
+    [
+      textField('insolvency_status', 'Insolvency Status', { required: true }),
+      textField('trustee_or_curator_name', 'Trustee / Curator Full Name', { required: true }),
+      textField('trustee_or_curator_identity_number', 'Trustee / Curator ID Number / Passport'),
+      phoneField('trustee_or_curator_phone', 'Trustee / Curator Contact Number'),
+      emailField('trustee_or_curator_email', 'Trustee / Curator Email Address'),
+      textareaField('insolvency_authority_details', 'Authority Details', { required: true, fullWidth: true }),
+      textareaField('insolvency_source_of_funds', 'Finance / Source of Funds', { required: true, fullWidth: true }),
+    ],
+    {
+      description: 'Insolvent or sequestrated buyer scenarios must pause for capacity and authority review.',
+    },
+  ),
+]
+
+const CURATORSHIP_SECTIONS = [
+  section(
+    'curatorship_details',
+    'Curatorship / Administration Details',
+    [
+      textField('represented_person_name', 'Represented Person Full Name', { required: true }),
+      textField('curator_or_administrator_name', 'Curator / Administrator Full Name', { required: true }),
+      textField('curator_or_administrator_identity_number', 'Curator / Administrator ID Number / Passport'),
+      phoneField('curator_or_administrator_phone', 'Curator / Administrator Contact Number'),
+      emailField('curator_or_administrator_email', 'Curator / Administrator Email Address'),
+      textareaField('curatorship_authority_details', 'Authority Details', { required: true, fullWidth: true }),
+      textareaField('curatorship_transaction_scope', 'Transaction Scope', { required: true, fullWidth: true }),
+    ],
+    {
+      description: 'Curatorship and administration scenarios require court/order authority review.',
+    },
+  ),
+]
+
+const BUSINESS_RESCUE_SECTIONS = [
+  section(
+    'business_rescue_details',
+    'Business Rescue Details',
+    [
+      textareaField('business_rescue_details', 'Business Rescue Details', { required: true, fullWidth: true }),
+      textField('business_rescue_practitioner_name', 'Business Rescue Practitioner'),
+    ],
+    {
+      description: 'Business rescue is outside the automated buyer workflow and must be triaged manually.',
+    },
+  ),
+]
+
+const LIQUIDATION_SECTIONS = [
+  section(
+    'liquidation_details',
+    'Liquidation Details',
+    [
+      textareaField('liquidation_details', 'Liquidation Details', { required: true, fullWidth: true }),
+      textField('liquidator_name', 'Liquidator Name'),
+    ],
+    {
+      description: 'Liquidation is outside the automated buyer workflow and must be triaged manually.',
+    },
+  ),
 ]
 
 const FOREIGN_PURCHASER_SECTIONS = []
@@ -816,7 +1108,18 @@ function normalizeEmploymentType(value) {
 
 function isNaturalPersonPurchaserType(value) {
   const normalized = normalizePurchaserType(value)
-  return !['trust', 'company'].includes(normalized)
+  return ![
+    'trust',
+    'company',
+    'close_corporation',
+    'power_of_attorney',
+    'deceased_estate',
+    'minor',
+    'insolvent',
+    'curatorship',
+    'business_rescue',
+    'liquidation',
+  ].includes(normalized)
 }
 
 export function getEmploymentTypeLabel(value) {
@@ -1160,8 +1463,24 @@ function getPurchaserSpecificSections(purchaserType) {
       return TRUST_SECTIONS
     case 'company':
       return COMPANY_SECTIONS
+    case 'close_corporation':
+      return CLOSE_CORPORATION_SECTIONS
     case 'foreign_purchaser':
       return FOREIGN_PURCHASER_SECTIONS
+    case 'power_of_attorney':
+      return POWER_OF_ATTORNEY_SECTIONS
+    case 'deceased_estate':
+      return DECEASED_ESTATE_SECTIONS
+    case 'minor':
+      return MINOR_SECTIONS
+    case 'insolvent':
+      return INSOLVENCY_SECTIONS
+    case 'curatorship':
+      return CURATORSHIP_SECTIONS
+    case 'business_rescue':
+      return BUSINESS_RESCUE_SECTIONS
+    case 'liquidation':
+      return LIQUIDATION_SECTIONS
     case 'individual':
     default:
       return INDIVIDUAL_SECTIONS
@@ -1200,6 +1519,8 @@ function toDocument(definition, index) {
     allowMultiple: template.allowMultiple,
     keywords: template.keywords,
     sortOrder: template.sortOrder,
+    generatedFrom: definition.generatedFrom,
+    cardinalityExpanded: definition.cardinalityExpanded === true,
   }
 }
 
@@ -1291,7 +1612,16 @@ function getPurchaserDocumentDefinitions(purchaserType, values = {}) {
         },
       ]
     case 'trust': {
-      const trustees = getStructuredCollectionEntries(values, 'trust.trustees')
+      const trustees = getAssociatedParties(values, {
+        paths: ['trust.trustees'],
+        fallbackKeys: ['trustees'],
+        defaultRole: 'Trustee',
+      })
+      const beneficialOwners = getAssociatedParties(values, {
+        paths: ['trust.beneficial_owners', 'trust.beneficialOwners'],
+        fallbackKeys: ['beneficial_owners', 'beneficialOwners'],
+        defaultRole: 'Beneficial Owner',
+      })
       const trusteeCount = Math.max(trustees.length, 1)
       return [
         {
@@ -1313,6 +1643,17 @@ function getPurchaserDocumentDefinitions(purchaserType, values = {}) {
           description: 'Required to confirm authority for the trust to buy the property.',
         },
         {
+          key: 'buyer_authority_validity_review',
+          label: 'Buyer Authority Validity Review',
+          groupKey: 'buyer_fica',
+          description: 'Required for attorney review of trustee authority, current letters, signatory authority, and transaction scope.',
+          expectedFromRole: 'attorney',
+          generatedFrom: {
+            authorityValidityReview: true,
+            entityType: 'trust',
+          },
+        },
+        {
           key: 'trustee_id',
           label: trusteeCount > 1 ? 'Trustee ID Copies' : 'Trustee ID Copy',
           groupKey: 'buyer_fica',
@@ -1324,10 +1665,41 @@ function getPurchaserDocumentDefinitions(purchaserType, values = {}) {
           groupKey: 'buyer_fica',
           description: 'Required for every trustee involved in the purchase.',
         },
+        {
+          key: 'beneficial_ownership_declaration',
+          label: 'Beneficial Ownership Declaration',
+          groupKey: 'buyer_fica',
+          description: 'Required to confirm the natural persons who ultimately own or control the trust.',
+        },
+        ...buildAssociatedPartyRequirementDefinitions(trustees, {
+          keyPrefix: 'trustee',
+          roleLabel: 'Trustee',
+          groupKey: 'buyer_fica',
+          group: 'Buyer & FICA',
+          expectedFromRole: 'client',
+          defaultVisibility: 'client',
+        }),
+        ...buildAssociatedPartyRequirementDefinitions(beneficialOwners, {
+          keyPrefix: 'beneficial_owner',
+          roleLabel: 'Beneficial Owner',
+          groupKey: 'buyer_fica',
+          group: 'Buyer & FICA',
+          expectedFromRole: 'client',
+          defaultVisibility: 'client',
+        }),
       ]
     }
     case 'company': {
-      const directors = getStructuredCollectionEntries(values, 'company.directors')
+      const directors = getAssociatedParties(values, {
+        paths: ['company.directors'],
+        fallbackKeys: ['directors'],
+        defaultRole: 'Director',
+      })
+      const beneficialOwners = getAssociatedParties(values, {
+        paths: ['company.beneficial_owners', 'company.beneficialOwners'],
+        fallbackKeys: ['beneficial_owners', 'beneficialOwners'],
+        defaultRole: 'Beneficial Owner',
+      })
       const directorCount = Math.max(directors.length, 1)
       return [
         {
@@ -1343,6 +1715,17 @@ function getPurchaserDocumentDefinitions(purchaserType, values = {}) {
           description: 'Required to authorise the purchase and identify approved signatories.',
         },
         {
+          key: 'buyer_authority_validity_review',
+          label: 'Buyer Authority Validity Review',
+          groupKey: 'buyer_fica',
+          description: 'Required for attorney review of the authorised signatory, quorum, resolution scope, and transaction-specific authority.',
+          expectedFromRole: 'attorney',
+          generatedFrom: {
+            authorityValidityReview: true,
+            entityType: 'company',
+          },
+        },
+        {
           key: 'director_id',
           label: directorCount > 1 ? 'Director ID Copies' : 'Director ID Copy',
           groupKey: 'buyer_fica',
@@ -1354,6 +1737,117 @@ function getPurchaserDocumentDefinitions(purchaserType, values = {}) {
           groupKey: 'buyer_fica',
           description: 'Required for the directors involved in the purchase and signing process.',
         },
+        {
+          key: 'beneficial_ownership_declaration',
+          label: 'Beneficial Ownership Declaration',
+          groupKey: 'buyer_fica',
+          description: 'Required to confirm the natural persons who ultimately own or control the company.',
+        },
+        ...buildAssociatedPartyRequirementDefinitions(directors, {
+          keyPrefix: 'director',
+          roleLabel: 'Director',
+          groupKey: 'buyer_fica',
+          group: 'Buyer & FICA',
+          expectedFromRole: 'client',
+          defaultVisibility: 'client',
+        }),
+        ...buildAssociatedPartyRequirementDefinitions(beneficialOwners, {
+          keyPrefix: 'beneficial_owner',
+          roleLabel: 'Beneficial Owner',
+          groupKey: 'buyer_fica',
+          group: 'Buyer & FICA',
+          expectedFromRole: 'client',
+          defaultVisibility: 'client',
+        }),
+      ]
+    }
+    case 'close_corporation': {
+      const members = getAssociatedParties(values, {
+        paths: ['close_corporation.members', 'cc.members'],
+        fallbackKeys: ['members'],
+        defaultRole: 'Member',
+      })
+      const beneficialOwners = getAssociatedParties(values, {
+        paths: [
+          'close_corporation.beneficial_owners',
+          'close_corporation.beneficialOwners',
+          'cc.beneficial_owners',
+          'cc.beneficialOwners',
+        ],
+        fallbackKeys: ['beneficial_owners', 'beneficialOwners'],
+        defaultRole: 'Beneficial Owner',
+      })
+      const memberCount = Math.max(members.length, 1)
+      return [
+        {
+          key: 'ck_documents',
+          label: 'CK / Founding Statement Documents',
+          groupKey: 'buyer_fica',
+          description: 'Required to confirm the close corporation’s registration and members.',
+        },
+        {
+          key: 'member_resolution',
+          label: 'Member Resolution to Purchase',
+          groupKey: 'buyer_fica',
+          description: 'Required to authorise the purchase and identify approved signatories.',
+        },
+        {
+          key: 'buyer_authority_validity_review',
+          label: 'Buyer Authority Validity Review',
+          groupKey: 'buyer_fica',
+          description: 'Required for attorney review of authorised member authority, member consent/quorum, and transaction scope.',
+          expectedFromRole: 'attorney',
+          generatedFrom: {
+            authorityValidityReview: true,
+            entityType: 'close_corporation',
+          },
+        },
+        {
+          key: 'member_id',
+          label: memberCount > 1 ? 'Member ID Copies' : 'Member ID Copy',
+          groupKey: 'buyer_fica',
+          description: 'Required for every member involved in the purchase and signing process.',
+        },
+        {
+          key: 'member_proof_of_address',
+          label: memberCount > 1 ? 'Member Proofs of Address' : 'Member Proof of Address',
+          groupKey: 'buyer_fica',
+          description: 'Required for every member involved in the purchase and signing process.',
+        },
+        {
+          key: 'authorised_member_id',
+          label: 'Authorised Member / Signatory ID',
+          groupKey: 'buyer_fica',
+          description: 'Required to identify the person authorised to sign for the close corporation.',
+        },
+        {
+          key: 'close_corporation_address_proof',
+          label: 'Proof of Close Corporation Address',
+          groupKey: 'buyer_fica',
+          description: 'Required to verify the registered or operating address for the close corporation.',
+        },
+        {
+          key: 'beneficial_ownership_declaration',
+          label: 'Beneficial Ownership Declaration',
+          groupKey: 'buyer_fica',
+          description: 'Required to confirm the natural persons who ultimately own or control the close corporation.',
+        },
+        ...buildAssociatedPartyRequirementDefinitions(members, {
+          keyPrefix: 'member',
+          roleLabel: 'Member',
+          groupKey: 'buyer_fica',
+          group: 'Buyer & FICA',
+          expectedFromRole: 'client',
+          defaultVisibility: 'client',
+        }),
+        ...buildAssociatedPartyRequirementDefinitions(beneficialOwners, {
+          keyPrefix: 'beneficial_owner',
+          roleLabel: 'Beneficial Owner',
+          groupKey: 'buyer_fica',
+          group: 'Buyer & FICA',
+          expectedFromRole: 'client',
+          defaultVisibility: 'client',
+        }),
       ]
     }
     case 'foreign_purchaser':
@@ -1377,6 +1871,133 @@ function getPurchaserDocumentDefinitions(purchaserType, values = {}) {
           description: 'Required where foreign funds are involved for compliance and exchange-control checks.',
         },
       ]
+    case 'power_of_attorney':
+      return [
+        {
+          key: 'buyer_power_of_attorney',
+          label: 'Power of Attorney',
+          groupKey: 'buyer_fica',
+          description: 'Required because the purchaser is acting through a representative and authority must be reviewed.',
+        },
+        {
+          key: 'buyer_principal_id',
+          label: 'Principal ID Document / Passport',
+          groupKey: 'buyer_fica',
+          description: 'Required to verify the person granting authority.',
+        },
+        {
+          key: 'buyer_representative_id',
+          label: 'Representative ID Document / Passport',
+          groupKey: 'buyer_fica',
+          description: 'Required to verify the representative signing or acting for the purchaser.',
+        },
+        {
+          key: 'buyer_authority_proof',
+          label: 'Authority Scope Proof',
+          groupKey: 'buyer_fica',
+          description: 'Required to confirm the authority scope, expiry, and transaction mandate.',
+        },
+        {
+          key: 'buyer_authentication_if_foreign',
+          label: 'Authentication / Apostille Evidence',
+          groupKey: 'buyer_fica',
+          description: 'May be required where the power of attorney was signed outside South Africa.',
+          requirementLevel: 'optional_required',
+        },
+      ]
+    case 'deceased_estate':
+      return [
+        {
+          key: 'buyer_estate_authority',
+          label: 'Letters of Executorship / Authority',
+          groupKey: 'buyer_fica',
+          description: 'Required to confirm that the executor or representative may act for the estate.',
+        },
+        {
+          key: 'buyer_executor_id',
+          label: 'Executor ID Document / Passport',
+          groupKey: 'buyer_fica',
+          description: 'Required to verify the executor or authorised representative.',
+        },
+        {
+          key: 'buyer_estate_source_of_funds',
+          label: 'Estate Bank / Source of Funds Evidence',
+          groupKey: 'buyer_fica',
+          description: 'Required to support source-of-funds review for the estate purchase.',
+        },
+      ]
+    case 'minor':
+      return [
+        {
+          key: 'minor_birth_certificate_or_id',
+          label: 'Minor Birth Certificate / ID',
+          groupKey: 'buyer_fica',
+          description: 'Required to verify the minor purchaser.',
+        },
+        {
+          key: 'guardian_id',
+          label: 'Guardian ID Document / Passport',
+          groupKey: 'buyer_fica',
+          description: 'Required to verify the guardian or authorised representative.',
+        },
+        {
+          key: 'guardian_authority_or_court_order',
+          label: 'Guardian Authority / Court Order',
+          groupKey: 'buyer_fica',
+          description: 'Required where guardian or court authority must be confirmed.',
+        },
+        {
+          key: 'minor_source_of_funds',
+          label: 'Minor Source of Funds Evidence',
+          groupKey: 'buyer_fica',
+          description: 'Required to support source-of-funds and capacity review.',
+        },
+      ]
+    case 'insolvent':
+      return [
+        {
+          key: 'trustee_or_curator_appointment',
+          label: 'Trustee / Curator Appointment',
+          groupKey: 'buyer_fica',
+          description: 'Required to confirm the appointed person who may act for the insolvent estate.',
+        },
+        {
+          key: 'insolvency_authority_docs',
+          label: 'Insolvency Authority Documents',
+          groupKey: 'buyer_fica',
+          description: 'Required to confirm capacity and authority for the purchase.',
+        },
+        {
+          key: 'insolvency_finance_or_source_docs',
+          label: 'Finance / Source of Funds Documents',
+          groupKey: 'buyer_fica',
+          description: 'Required to support source-of-funds and finance review.',
+        },
+      ]
+    case 'curatorship':
+      return [
+        {
+          key: 'curatorship_court_order',
+          label: 'Court / Administration Order',
+          groupKey: 'buyer_fica',
+          description: 'Required to confirm the curatorship or administration authority.',
+        },
+        {
+          key: 'curator_id',
+          label: 'Curator / Administrator ID Document',
+          groupKey: 'buyer_fica',
+          description: 'Required to verify the person acting for the purchaser.',
+        },
+        {
+          key: 'curator_authority_docs',
+          label: 'Curator / Administrator Authority Documents',
+          groupKey: 'buyer_fica',
+          description: 'Required to confirm authority scope for this transaction.',
+        },
+      ]
+    case 'business_rescue':
+    case 'liquidation':
+      return []
     case 'individual':
     default:
       return [
@@ -1558,7 +2179,7 @@ function getFinanceDocumentDefinitions(values = {}, financeType) {
       }
     } else {
       documents.push(
-        ...(purchaserType === 'company' || purchaserType === 'trust'
+        ...(purchaserType === 'company' || purchaserType === 'close_corporation' || purchaserType === 'trust'
           ? [
               {
                 key: 'entity_bank_statements',
@@ -1707,7 +2328,21 @@ export function getPurchaserEntityType(value) {
   const normalized = normalizePurchaserType(value)
   if (normalized === 'trust') return 'trust'
   if (normalized === 'company') return 'company'
+  if (normalized === 'close_corporation') return 'close_corporation'
   if (normalized === 'foreign_purchaser') return 'foreign_purchaser'
+  if (
+    [
+      'power_of_attorney',
+      'deceased_estate',
+      'minor',
+      'insolvent',
+      'curatorship',
+      'business_rescue',
+      'liquidation',
+    ].includes(normalized)
+  ) {
+    return normalized
+  }
   return 'individual'
 }
 
@@ -1792,6 +2427,11 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
   const rawDirectors = getStructuredCollectionEntries(formData, 'company.directors').length
     ? getStructuredCollectionEntries(formData, 'company.directors')
     : formData.directors || []
+  const rawMembers = getStructuredCollectionEntries(formData, 'close_corporation.members').length
+    ? getStructuredCollectionEntries(formData, 'close_corporation.members')
+    : getStructuredCollectionEntries(formData, 'cc.members').length
+      ? getStructuredCollectionEntries(formData, 'cc.members')
+      : formData.members || []
   const purchaserSnapshot = resolveStructuredPurchasers(formData, purchaserType)
   const trustees = normalizeAssociatedPeopleCollection(
     rawTrustees.filter((item) => hasAssociatedPersonEntryData(item, 'Trustee')),
@@ -1800,6 +2440,10 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
   const directors = normalizeAssociatedPeopleCollection(
     rawDirectors.filter((item) => hasAssociatedPersonEntryData(item, 'Director')),
     'Director',
+  )
+  const members = normalizeAssociatedPeopleCollection(
+    rawMembers.filter((item) => hasAssociatedPersonEntryData(item, 'Member')),
+    'Member',
   )
   const fundingSources = Array.isArray(formData.funding_sources) ? formData.funding_sources.filter((item) => isFilledValue(item)) : []
   const employmentType = normalizeEmploymentType(formData.employment_type)
@@ -1892,6 +2536,45 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
     })
   }
 
+  const ccName = firstFilledValue([
+    formData.cc_name,
+    formData.close_corporation_name,
+    formData.close_corporation?.name,
+    formData.cc?.name,
+  ])
+  const authorisedMemberName = firstFilledValue([
+    formData.authorised_member_name,
+    formData.authorized_member_name,
+    formData.close_corporation?.authorised_member?.name,
+    formData.cc?.authorised_member?.name,
+  ])
+
+  if (purchaserType === 'close_corporation' && ccName) {
+    parties.push(buildParty({ role: 'close_corporation_entity', name: ccName, type: 'entity', purchaser: true }))
+    if (authorisedMemberName) {
+      parties.push(
+        buildParty({
+          role: 'authorised_member',
+          name: authorisedMemberName,
+          purchaser: false,
+          signatory: true,
+          relationship: 'member_signatory',
+        }),
+      )
+    }
+    members.forEach((item) => {
+      parties.push(
+        buildParty({
+          role: isYes(item.signing_authority) ? 'authorised_member' : 'member',
+          name: item.full_name,
+          purchaser: false,
+          signatory: isYes(item.signing_authority),
+          relationship: 'member',
+        }),
+      )
+    })
+  }
+
   const hasBondComponent = financeType === 'bond' || financeType === 'combination'
   const hasCashComponent = financeType === 'cash' || financeType === 'combination'
   const naturalPersonPurchase = isNaturalPersonPurchaserType(purchaserType)
@@ -1900,16 +2583,19 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
     hasBondComponent &&
     (financeSupportMode === 'originator_led' || isYes(formData.ooba_assist_requested) || isYes(formData.bond_help_requested))
   const companySignatoryCount = purchaserType === 'company' ? (isFilledValue(formData.authorised_signatory_name) ? 1 : 0) + directors.filter((item) => isYes(item.signing_authority)).length : 0
+  const memberSignatoryCount = purchaserType === 'close_corporation' ? (isFilledValue(authorisedMemberName) ? 1 : 0) + members.filter((item) => isYes(item.signing_authority)).length : 0
   const trustSignatoryCount = purchaserType === 'trust' ? (isFilledValue(formData.authorised_trustee_name) ? 1 : 0) + trustees.filter((item) => isYes(item.signing_authority)).length : 0
   const multipleSignatories =
     purchaserType === 'married_coc' ||
     (purchaserType === 'trust' && trustSignatoryCount > 1) ||
-    (purchaserType === 'company' && companySignatoryCount > 1)
+    (purchaserType === 'company' && companySignatoryCount > 1) ||
+    (purchaserType === 'close_corporation' && memberSignatoryCount > 1)
 
   const flags = uniqueByKey(
     [
       purchaserType === 'trust' ? { key: 'entity_purchase', label: 'Trust purchase' } : null,
       purchaserType === 'company' ? { key: 'entity_purchase_company', label: 'Company purchase' } : null,
+      purchaserType === 'close_corporation' ? { key: 'entity_purchase_close_corporation', label: 'Close corporation purchase' } : null,
       purchaserType === 'married_coc' ? { key: 'spouse_required', label: 'Both spouses required' } : null,
       (purchaserType === 'married_anc' || purchaserType === 'married_anc_accrual') && formData.spouse_full_name
         ? { key: 'spouse_recorded', label: 'Spouse recorded' }
@@ -1974,6 +2660,7 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
       : []),
     ...(purchaserType === 'trust' ? [`Trustees captured: ${trustees.length || 0}`] : []),
     ...(purchaserType === 'company' ? [`Directors captured: ${directors.length || 0}`] : []),
+    ...(purchaserType === 'close_corporation' ? [`Members captured: ${members.length || 0}`] : []),
     ...(isNaturalPersonPurchaserType(purchaserType) && flow.purchase_mode === 'co_purchasing'
       ? [
           `Ownership split: ${
@@ -2043,7 +2730,7 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
       needs_bond_originator: bondHelpWorkflowRequired,
       requires_multiple_signatories: multipleSignatories,
       requires_spouse_fica: purchaserType === 'married_coc' || isYes(formData.spouse_is_co_purchaser) || isCoPurchasing(formData),
-      requires_entity_documents: ['trust', 'company'].includes(purchaserType),
+      requires_entity_documents: ['trust', 'company', 'close_corporation'].includes(purchaserType),
       requires_proof_of_funds: hasCashComponent,
       requires_bond_documents: hasBondComponent,
       buyer_party_count: parties.filter((item) => item.purchaser).length,
@@ -2267,6 +2954,55 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
       validatePhoneIfPresent(director.phone, `Director ${directorIndex + 1} Phone`)
       validateEmailIfPresent(director.email, `Director ${directorIndex + 1} Email`)
       requireField(director.residential_address, `Director ${directorIndex + 1} Residential Address`)
+    })
+  } else if (purchaserType === 'close_corporation') {
+    const closeCorporation = {}
+    CLOSE_CORPORATION_VALIDATION_KEYS.forEach((key) => {
+      const aliases =
+        key === 'cc_name'
+          ? ['name', 'company_name']
+          : key === 'cc_registration_number'
+            ? ['registration_number', 'company_registration_number']
+            : key === 'cc_registered_address'
+              ? ['registered_address', 'company_registered_address']
+              : key === 'cc_nature_of_business'
+                ? ['nature_of_business']
+                : key === 'member_resolution_available'
+                  ? ['resolution_available', 'cc_resolution_available']
+                  : []
+      closeCorporation[key] = firstFilledValue([
+        resolveEntityValue(formData, 'close_corporation', key, aliases),
+        resolveEntityValue(formData, 'cc', key, aliases),
+      ])
+    })
+    CLOSE_CORPORATION_VALIDATION_KEYS.forEach((key) => {
+      const label = key.replace(/^cc_/, 'close corporation ').replaceAll('_', ' ')
+      requireField(closeCorporation[key], label.charAt(0).toUpperCase() + label.slice(1))
+    })
+    validateEmailIfPresent(closeCorporation.authorised_member_email, 'Authorised Member Email')
+    validatePhoneIfPresent(closeCorporation.authorised_member_phone, 'Authorised Member Phone')
+    validateIdLike(closeCorporation.authorised_member_identity_number, 'Authorised Member ID Number')
+    requireYesNo(closeCorporation.member_resolution_available, 'Member resolution availability')
+    const closeCorporationMembers = getStructuredCollectionEntries(formData, 'close_corporation.members').length
+      ? getStructuredCollectionEntries(formData, 'close_corporation.members')
+      : getStructuredCollectionEntries(formData, 'cc.members').length
+        ? getStructuredCollectionEntries(formData, 'cc.members')
+        : formData.members || []
+    const populatedMembers = closeCorporationMembers.filter((member) => hasAssociatedPersonEntryData(member, 'Member'))
+    if (!populatedMembers.length) {
+      throw new Error('At least one close corporation member is required.')
+    }
+    closeCorporationMembers.forEach((member, memberIndex) => {
+      if (!hasAssociatedPersonEntryData(member, 'Member')) {
+        return
+      }
+      requireField(member.full_name, `Member ${memberIndex + 1} Full Name`)
+      requireField(member.id_number, `Member ${memberIndex + 1} ID Number`)
+      validateIdLike(member.id_number, `Member ${memberIndex + 1} ID Number`)
+      requireField(member.phone, `Member ${memberIndex + 1} Phone`)
+      validatePhoneIfPresent(member.phone, `Member ${memberIndex + 1} Phone`)
+      validateEmailIfPresent(member.email, `Member ${memberIndex + 1} Email`)
+      requireField(member.residential_address, `Member ${memberIndex + 1} Residential Address`)
     })
   } else if (purchaserType === 'trust') {
     const trust = {}

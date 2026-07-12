@@ -65,6 +65,7 @@ import {
   getOrCreateTransactionOnboarding,
   getOrCreateClientPortalLink,
   archiveTransactionLifecycle,
+  correctTransactionReference,
   recordTransactionProxyUpdate,
   saveTransaction,
   saveTransactionClientInformation,
@@ -126,6 +127,12 @@ import {
   resolveTransactionWorkspaceMenuAlias,
   resolveTransactionWorkspaceProfile,
 } from '../core/transactions/transactionWorkspaceProfile'
+import {
+  TRANSACTION_REFERENCE_TYPES,
+  buildTransactionReferenceDisplayModel,
+  getCorrectableTransactionReferenceTypesForRole,
+  getTransactionReferencePolicy,
+} from '../core/transactions/transactionReferencePolicy'
 import { buildDeveloperTransactionRelationshipSummary } from '../core/transactions/developerTransactionRelationshipProfile.js'
 import { buildDeveloperTransactionOperationsSummary } from '../core/transactions/developerTransactionOperationsProfile.js'
 import {
@@ -208,6 +215,11 @@ const DEFAULT_PROXY_UPDATE_FORM = {
   workflowArea: 'general',
   newStatus: 'reported',
   note: '',
+}
+const DEFAULT_REFERENCE_CORRECTION_FORM = {
+  referenceType: '',
+  value: '',
+  reason: '',
 }
 
 function mapLegacyMainStageToWorkflowAction(mainStage = '') {
@@ -1086,6 +1098,41 @@ function toTitleLabel(value) {
     .replace(/\b\w/g, (match) => match.toUpperCase())
 }
 
+function getTransactionEventData(event = {}) {
+  if (event?.eventData && typeof event.eventData === 'object') return event.eventData
+  if (event?.event_data && typeof event.event_data === 'object') return event.event_data
+  return {}
+}
+
+function normalizeTransactionReferenceHistoryEvent(event = {}) {
+  const eventData = getTransactionEventData(event)
+  if (String(eventData.changeType || eventData.change_type || '').trim() !== 'transaction_reference_updated') {
+    return null
+  }
+
+  const referenceType = normalizeText(eventData.referenceType || eventData.reference_type)
+  const policy = getTransactionReferencePolicy(referenceType)
+  const previousValue = normalizeText(eventData.previousValue ?? eventData.previous_value ?? '')
+  const newValue = normalizeText(eventData.newValue ?? eventData.new_value ?? eventData.nextValue ?? eventData.next_value ?? '')
+
+  return {
+    id: event.id || event.eventId || event.event_id || `${referenceType}-${event.createdAt || event.created_at || ''}`,
+    referenceType,
+    referenceLabel: eventData.referenceLabel || eventData.reference_label || policy?.label || referenceType || 'Reference',
+    storageTarget: eventData.storageTarget || eventData.storage_target || policy?.storageTarget || '',
+    entityType: eventData.entityType || eventData.entity_type || '',
+    entityId: eventData.entityId || eventData.entity_id || '',
+    previousValue: previousValue || 'Not captured',
+    newValue: newValue || 'Not captured',
+    previousSource: eventData.previousSource || eventData.previous_source || '',
+    newSource: eventData.newSource || eventData.new_source || '',
+    reason: normalizeText(eventData.reason || eventData.note) || 'No reason captured.',
+    correction: eventData.correction === true,
+    createdByRole: event.createdByRole || event.created_by_role || eventData.actorRole || eventData.actor_role || '',
+    createdAt: event.createdAt || event.created_at || null,
+  }
+}
+
 function normalizeFinancialTermChoice(value, allowedValues, fallback) {
   const normalized = String(value || '').trim().toLowerCase()
   return allowedValues.includes(normalized) ? normalized : fallback
@@ -1424,6 +1471,43 @@ function getRollupHeaderActionVariant(action = {}) {
     return 'primary'
   }
   return 'secondary'
+}
+
+const AGENT_ASSISTED_ROLLUP_ACTION_KEYS = new Set([
+  'record_agent_assisted_buyer_onboarding',
+  'record_agent_assisted_seller_onboarding',
+  'record_agent_assisted_supporting_docs',
+])
+
+function normalizeWorkflowActionKey(value = '') {
+  return String(value || '').trim().toLowerCase()
+}
+
+function buildAgentWorkflowActionPayload(actionKey = '', source = 'rollup_overview') {
+  const normalized = normalizeWorkflowActionKey(actionKey)
+  if (normalized === 'record_agent_assisted_buyer_onboarding' || normalized === 'record_agent_assisted_seller_onboarding') {
+    return {
+      source: 'agent_assisted_onboarding',
+      recordedFrom: source,
+      completionMode: 'agent_assisted_completed',
+      captureMethod: 'agent_ui',
+      clientConsentMethod: 'agent_attested_client_instruction',
+      reason: 'Agent recorded client onboarding completion from information captured outside the portal.',
+      notes: 'Recorded from the agent workflow action surface.',
+    }
+  }
+  if (normalized === 'record_agent_assisted_supporting_docs') {
+    return {
+      source: 'agent_assisted_supporting_docs',
+      recordedFrom: source,
+      completionMode: 'agent_assisted_completed',
+      captureMethod: 'offline_verified',
+      clientConsentMethod: 'agent_attested_document_review',
+      reason: 'Agent verified supporting documents outside the client portal.',
+      notes: 'Recorded from the agent workflow action surface.',
+    }
+  }
+  return { source }
 }
 
 const TRANSACTION_REPORT_WORKFLOW_ROW_LIMIT = 5
@@ -2847,6 +2931,11 @@ function UnitDetail() {
   const [proxyUpdateModalOpen, setProxyUpdateModalOpen] = useState(false)
   const [proxyUpdateSaving, setProxyUpdateSaving] = useState(false)
   const [proxyUpdateForm, setProxyUpdateForm] = useState(() => ({ ...DEFAULT_PROXY_UPDATE_FORM }))
+  const [referenceCorrectionModalOpen, setReferenceCorrectionModalOpen] = useState(false)
+  const [referenceCorrectionSaving, setReferenceCorrectionSaving] = useState(false)
+  const [referenceCorrectionError, setReferenceCorrectionError] = useState('')
+  const [referenceCorrectionForm, setReferenceCorrectionForm] = useState(() => ({ ...DEFAULT_REFERENCE_CORRECTION_FORM }))
+  const [referenceHistoryModalOpen, setReferenceHistoryModalOpen] = useState(false)
   const [actingRole, setActingRole] = useState('developer')
   const [clientPortalLink, setClientPortalLink] = useState(null)
   const [activeDocumentLibraryCategory, setActiveDocumentLibraryCategory] = useState('all')
@@ -3294,7 +3383,7 @@ function UnitDetail() {
       const result = await runWorkflowAction({
         transactionId: detail.transaction.id,
         actionKey,
-        payload: { source: 'rollup_overview' },
+        payload: buildAgentWorkflowActionPayload(actionKey, 'rollup_overview'),
         actorRole: actingRole,
       })
       if (!result?.allowed) {
@@ -5003,14 +5092,34 @@ function UnitDetail() {
     try {
       setSalesActionLoading('upload_signed_otp')
       setError('')
-      await uploadDocument({
+      const uploadedSignedOtp = await uploadDocument({
         transactionId: transaction.id,
         file,
         category: 'Signed OTP',
         documentType: OTP_DOCUMENT_TYPES.signedReuploaded,
         stageKey: 'otp_prep_signing',
         isClientVisible: false,
+        source: 'paper_signed_otp_upload',
       })
+      const paperOtpAction = await runWorkflowAction({
+        transactionId: transaction.id,
+        actorRole: effectiveEditorRole,
+        actionKey: 'RECORD_PAPER_SIGNED_OTP',
+        payload: {
+          source: 'paper_signed_otp_upload',
+          signingMethod: 'paper',
+          completionMode: 'manual_uploaded',
+          captureMethod: 'paper_signature_upload',
+          clientConsentMethod: 'signed_document_uploaded',
+          reason: 'Client signed the OTP outside the digital signing flow and the signed document was uploaded.',
+          notes: `Uploaded signed OTP file: ${file.name}`,
+          signedOtpDocumentId: uploadedSignedOtp?.id || null,
+          documentName: uploadedSignedOtp?.name || file.name,
+        },
+      })
+      if (!paperOtpAction?.allowed) {
+        throw new Error((paperOtpAction?.blockers || []).map((item) => item.message).filter(Boolean).join(' • ') || 'Unable to record the signed paper OTP.')
+      }
       await finalizeSignedOtpWorkflow({
         transactionId: transaction.id,
         financeType: transaction?.finance_type || stageForm.finance_type || 'cash',
@@ -5772,6 +5881,9 @@ function UnitDetail() {
   const hasWorkspaceEditOverride = elevatedWorkspaceRoles.includes(workspaceRole)
   const effectiveEditorRole = hasWorkspaceEditOverride ? workspaceRole : actingRole
   const isAgentWorkspace = workspaceRole === 'agent'
+  const workspaceHeaderRole = ['developer', 'attorney', 'agent', 'bond_originator'].includes(effectiveEditorRole)
+    ? effectiveEditorRole
+    : 'developer'
   const transactionWorkspaceProfile = resolveTransactionWorkspaceProfile({
     transaction,
     unit,
@@ -5797,11 +5909,7 @@ function UnitDetail() {
       if (eventType !== 'TransactionUpdated') {
         return false
       }
-      const eventData = item?.eventData && typeof item.eventData === 'object'
-        ? item.eventData
-        : item?.event_data && typeof item.event_data === 'object'
-          ? item.event_data
-          : {}
+      const eventData = getTransactionEventData(item)
       const action = String(eventData?.action || '').trim().toLowerCase()
       const type = String(eventData?.type || '').trim().toLowerCase()
       return action === 'onboarding_email_sent' || type === 'onboarding_sent'
@@ -5812,6 +5920,10 @@ function UnitDetail() {
       return rightDate - leftDate
     })
   const onboardingEmailSent = onboardingEmailEvents.length > 0
+  const transactionReferenceHistory = (transactionEvents || [])
+    .map((event) => normalizeTransactionReferenceHistoryEvent(event))
+    .filter(Boolean)
+    .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime())
   const stageProgressModel = buildTransactionStageProgressModel({
     mainStage,
     transaction,
@@ -5923,8 +6035,62 @@ function UnitDetail() {
     Boolean(transaction?.id) &&
     canCommentInWorkspace &&
     ['agent', 'developer', 'internal_admin'].includes(effectiveEditorRole)
+  const referenceCorrectionRole =
+    [workspaceRole, effectiveEditorRole].find((role) => getCorrectableTransactionReferenceTypesForRole(role).length) ||
+    effectiveEditorRole
   const pendingProxyUpdates = (transactionProxyUpdates || []).filter((item) => item.confirmationStatus === 'pending')
   const recentProxyUpdates = (transactionProxyUpdates || []).slice(0, 4)
+
+  function getTransactionReferenceCorrectionValue(referenceType = '') {
+    if (referenceType === TRANSACTION_REFERENCE_TYPES.bridgeMatterNumber) {
+      return normalizeText(transaction?.matter_number || transaction?.matterNumber)
+    }
+    if (referenceType === TRANSACTION_REFERENCE_TYPES.transactionReference) {
+      return normalizeText(transaction?.transaction_reference || transaction?.transactionReference)
+    }
+    return ''
+  }
+
+  function openReferenceCorrectionModal(referenceType = '') {
+    const [fallbackReferenceType = ''] = getCorrectableTransactionReferenceTypesForRole(referenceCorrectionRole)
+    const resolvedReferenceType = referenceType || fallbackReferenceType
+    if (!resolvedReferenceType) return
+
+    setReferenceCorrectionError('')
+    setReferenceCorrectionForm({
+      referenceType: resolvedReferenceType,
+      value: getTransactionReferenceCorrectionValue(resolvedReferenceType),
+      reason: '',
+    })
+    setReferenceCorrectionModalOpen(true)
+  }
+
+  async function handleSubmitReferenceCorrection(event) {
+    event.preventDefault()
+    if (!transaction?.id) {
+      setReferenceCorrectionError('Transaction data is not available for reference correction.')
+      return
+    }
+
+    try {
+      setReferenceCorrectionSaving(true)
+      setReferenceCorrectionError('')
+      await correctTransactionReference(transaction.id, {
+        referenceType: referenceCorrectionForm.referenceType,
+        value: referenceCorrectionForm.value,
+        reason: referenceCorrectionForm.reason,
+      })
+      setReferenceCorrectionModalOpen(false)
+      setReferenceCorrectionForm({ ...DEFAULT_REFERENCE_CORRECTION_FORM })
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (correctionError) {
+      setReferenceCorrectionError(correctionError?.message || 'Unable to correct this transaction reference.')
+    } finally {
+      setReferenceCorrectionSaving(false)
+    }
+  }
+
   async function handleSubmitProxyUpdate(event) {
     event.preventDefault()
     if (!transaction?.id) {
@@ -6777,9 +6943,19 @@ function UnitDetail() {
     }))
   }
 
+  const transactionReferenceSummary = buildTransactionReferenceDisplayModel({
+    transaction,
+    attorneyAssignments: detail?.transactionAttorneyAssignments || detail?.attorneyAssignments || transaction?.attorneyAssignments || [],
+    bondApplications: transactionFinanceWorkflow?.applications || transaction?.bondApplications || transaction?.bond_applications || [],
+    transactionFinanceWorkflow,
+    audienceRole: workspaceHeaderRole,
+    includeSystemReferences: ['developer', 'internal_admin'].includes(effectiveEditorRole),
+  })
   const transactionReference =
-    transaction?.transaction_reference ||
+    transactionReferenceSummary.primary?.displayValue ||
+    transactionReferenceSummary.primary?.value ||
     transaction?.matter_number ||
+    transaction?.transaction_reference ||
     (transaction?.id ? `TX-${String(transaction.id).slice(0, 8).toUpperCase()}` : `Unit ${unit.unit_number}`)
   const propertyIdentityTitle = propertyAddressForOtp !== 'Not captured'
     ? propertyAddressForOtp
@@ -6914,10 +7090,11 @@ function UnitDetail() {
     ? (transactionRollup?.availableActions || [])
       .filter((action) =>
         ['request_buyer_details', 'move_to_finance', 'move_to_transfer', 'mark_ready_for_registration', 'mark_registered']
-          .includes(String(action?.actionKey || '').trim().toLowerCase()),
+          .includes(normalizeWorkflowActionKey(action?.actionKey)) ||
+        AGENT_ASSISTED_ROLLUP_ACTION_KEYS.has(normalizeWorkflowActionKey(action?.actionKey)),
       )
       .map((action) => {
-        const actionKey = String(action?.actionKey || '').trim().toLowerCase()
+        const actionKey = normalizeWorkflowActionKey(action?.actionKey)
         const busy =
           actionKey === 'request_buyer_details'
             ? sendingOnboardingEmail
@@ -7353,9 +7530,6 @@ function UnitDetail() {
   const requestedWorkspaceMenu = resolveTransactionWorkspaceMenuAlias(transactionWorkspaceProfile, workspaceMenu)
   const activeWorkspaceMenu = workspaceMenus.some((tab) => tab.id === requestedWorkspaceMenu) ? requestedWorkspaceMenu : 'overview'
   const showOverviewWorkspaceHero = activeWorkspaceMenu === 'overview'
-  const workspaceHeaderRole = ['developer', 'attorney', 'agent', 'bond_originator'].includes(effectiveEditorRole)
-    ? effectiveEditorRole
-    : 'developer'
   const resolvedBuyerDisplayName = normalizeDisplayName(buyer?.name)
   const resolvedDevelopmentName = normalizeDisplayName(unit?.development?.name)
   const workspaceHeaderTitle =
@@ -7380,7 +7554,21 @@ function UnitDetail() {
     timeInStageValue: formatTransactionAge(transaction?.created_at || transaction?.updated_at),
     timeInStageMeta: `Updated ${formatDate(transaction?.updated_at || transaction?.created_at)}`,
     unitStatusLabel: unit?.status ? toTitleLabel(unit.status) : 'Unit active',
+    referenceSummary: transactionReferenceSummary,
   })
+  const referenceCorrectionOptions = getCorrectableTransactionReferenceTypesForRole(referenceCorrectionRole)
+    .map((referenceType) => getTransactionReferencePolicy(referenceType))
+    .filter(Boolean)
+    .map((policy) => ({
+      value: policy.type,
+      label: policy.label,
+      currentValue: getTransactionReferenceCorrectionValue(policy.type),
+    }))
+  const canCorrectTransactionReferences = Boolean(transaction?.id && referenceCorrectionOptions.length)
+  const canViewTransactionReferenceHistory = Boolean(
+    transactionReferenceHistory.length &&
+      (canCorrectTransactionReferences || ['developer', 'internal_admin'].includes(effectiveEditorRole)),
+  )
   const workspaceTransactionLifecycleState = String(transaction?.lifecycle_state || '').toLowerCase()
   const canArchiveTransaction = ['registered', 'completed'].includes(workspaceTransactionLifecycleState)
   const onboardingDeliveryMode = onboardingIntakePreference
@@ -7427,6 +7615,22 @@ function UnitDetail() {
       onClick: () => setProxyUpdateModalOpen(true),
       disabled: !canRecordProxyUpdate,
       hidden: !canRecordProxyUpdate,
+    },
+    {
+      id: 'correct-transaction-reference',
+      label: 'Correct Reference',
+      icon: 'reference',
+      onClick: () => openReferenceCorrectionModal(),
+      disabled: !canCorrectTransactionReferences,
+      hidden: !canCorrectTransactionReferences,
+    },
+    {
+      id: 'reference-history',
+      label: 'Reference History',
+      icon: 'reference',
+      onClick: () => setReferenceHistoryModalOpen(true),
+      disabled: !canViewTransactionReferenceHistory,
+      hidden: !canViewTransactionReferenceHistory,
     },
   ]
 
@@ -7724,6 +7928,23 @@ function UnitDetail() {
         disabled: disabled || isBusy,
       })
     }
+    const getRollupWorkflowAction = (actionKey) => {
+      const normalizedActionKey = normalizeWorkflowActionKey(actionKey)
+      return (transactionRollup?.availableActions || []).find((item) => normalizeWorkflowActionKey(item?.actionKey) === normalizedActionKey) || null
+    }
+    const addRollupWorkflowAction = (actionKey, label, { variant = 'secondary' } = {}) => {
+      const action = getRollupWorkflowAction(actionKey)
+      if (!action) return
+      addAction(
+        `workflow-${normalizeWorkflowActionKey(action.actionKey)}`,
+        label || action.label,
+        () => void handleOverviewWorkflowAction(action),
+        {
+          variant,
+          disabled: action.enabled === false,
+        },
+      )
+    }
 
     switch (salesWorkflowSnapshot.nextAction) {
       case 'complete_onboarding':
@@ -7748,6 +7969,8 @@ function UnitDetail() {
             disabled: !transaction?.id,
           },
         )
+        addRollupWorkflowAction('RECORD_AGENT_ASSISTED_BUYER_ONBOARDING', 'Record Buyer Assisted')
+        addRollupWorkflowAction('RECORD_AGENT_ASSISTED_SELLER_ONBOARDING', 'Record Seller Assisted')
         break
       case 'generate_otp':
         addAction(
@@ -7800,7 +8023,8 @@ function UnitDetail() {
         }
         break
       case 'complete_supporting_documents':
-        addAction('open_documents', 'Open Documents', openDocumentsWorkspace, { variant: 'primary' })
+        addRollupWorkflowAction('RECORD_AGENT_ASSISTED_SUPPORTING_DOCS', 'Record Docs Verified Offline', { variant: 'primary' })
+        addAction('open_documents', 'Open Documents', openDocumentsWorkspace)
         addAction(
           'mark_supporting_docs_complete',
           'Mark Supporting Docs Complete',
@@ -11132,6 +11356,145 @@ function UnitDetail() {
           }}
         />
       </div>
+    </Modal>
+    <Modal
+      open={referenceHistoryModalOpen}
+      onClose={() => setReferenceHistoryModalOpen(false)}
+      title="Reference History"
+      subtitle="Audited transaction reference changes for this workspace."
+      footer={(
+        <div className="flex justify-end">
+          <Button type="button" variant="secondary" onClick={() => setReferenceHistoryModalOpen(false)}>
+            Close
+          </Button>
+        </div>
+      )}
+      className="max-w-[760px]"
+    >
+      <div className="space-y-3">
+        {transactionReferenceHistory.map((item) => (
+          <article key={item.id} className="rounded-[16px] border border-[#dce6f0] bg-[#fbfdff] px-4 py-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8496ab]">
+                  {item.correction ? 'Correction' : 'Reference Update'}
+                </span>
+                <strong className="mt-1 block text-sm font-semibold text-[#142132]">{item.referenceLabel}</strong>
+              </div>
+              <span className="text-xs font-medium text-[#6b7d93]">{formatDateTime(item.createdAt)}</span>
+            </div>
+
+            <div className="mt-3 rounded-[12px] border border-[#e5edf5] bg-white px-3 py-2 text-sm font-semibold text-[#1f3448]">
+              {item.previousValue} {'->'} {item.newValue}
+            </div>
+
+            <dl className="mt-3 grid gap-2 text-xs text-[#607286] sm:grid-cols-2">
+              <div>
+                <dt className="font-semibold uppercase tracking-[0.08em] text-[#8496ab]">Source</dt>
+                <dd className="mt-1">{item.newSource ? toTitleLabel(item.newSource) : 'Not captured'}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold uppercase tracking-[0.08em] text-[#8496ab]">Actor Role</dt>
+                <dd className="mt-1">{item.createdByRole ? toTitleLabel(item.createdByRole) : 'Not captured'}</dd>
+              </div>
+              <div className="sm:col-span-2">
+                <dt className="font-semibold uppercase tracking-[0.08em] text-[#8496ab]">Reason</dt>
+                <dd className="mt-1">{item.reason}</dd>
+              </div>
+              {item.storageTarget ? (
+                <div className="sm:col-span-2">
+                  <dt className="font-semibold uppercase tracking-[0.08em] text-[#8496ab]">Storage Target</dt>
+                  <dd className="mt-1 font-mono text-[0.72rem]">{item.storageTarget}</dd>
+                </div>
+              ) : null}
+            </dl>
+          </article>
+        ))}
+        {!transactionReferenceHistory.length ? (
+          <p className="rounded-[14px] border border-[#e1eaf4] bg-[#fbfdff] px-4 py-3 text-sm text-[#607286]">
+            No reference changes have been audited for this transaction.
+          </p>
+        ) : null}
+      </div>
+    </Modal>
+    <Modal
+      open={referenceCorrectionModalOpen}
+      onClose={() => {
+        if (referenceCorrectionSaving) return
+        setReferenceCorrectionModalOpen(false)
+      }}
+      title="Correct Transaction Reference"
+      subtitle="Trusted correction for Bridge-owned transaction references."
+      footer={(
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => setReferenceCorrectionModalOpen(false)}
+            disabled={referenceCorrectionSaving}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form="transaction-reference-correction-form"
+            disabled={
+              referenceCorrectionSaving ||
+              !referenceCorrectionForm.referenceType ||
+              !referenceCorrectionForm.value.trim() ||
+              !referenceCorrectionForm.reason.trim()
+            }
+          >
+            {referenceCorrectionSaving ? 'Saving...' : 'Save Correction'}
+          </Button>
+        </div>
+      )}
+      className="max-w-[640px]"
+    >
+      <form id="transaction-reference-correction-form" onSubmit={handleSubmitReferenceCorrection} className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field
+            as="select"
+            label="Reference"
+            value={referenceCorrectionForm.referenceType}
+            onChange={(event) => {
+              const referenceType = event.target.value
+              setReferenceCorrectionForm((previous) => ({
+                ...previous,
+                referenceType,
+                value: getTransactionReferenceCorrectionValue(referenceType),
+              }))
+            }}
+          >
+            {referenceCorrectionOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Field>
+          <Field
+            label="Corrected Value"
+            value={referenceCorrectionForm.value}
+            onChange={(event) => setReferenceCorrectionForm((previous) => ({ ...previous, value: event.target.value }))}
+            placeholder="Enter corrected reference"
+          />
+        </div>
+
+        <Field
+          as="textarea"
+          label="Audit Reason"
+          value={referenceCorrectionForm.reason}
+          onChange={(event) => setReferenceCorrectionForm((previous) => ({ ...previous, reason: event.target.value }))}
+          placeholder="Why is this correction required?"
+          rows={4}
+        />
+
+        {referenceCorrectionError ? (
+          <div className="rounded-[14px] border border-[#f4c1bf] bg-[#fff5f5] px-4 py-3 text-sm text-[#b42318]">
+            {referenceCorrectionError}
+          </div>
+        ) : null}
+      </form>
     </Modal>
     <Modal
       open={proxyUpdateModalOpen}

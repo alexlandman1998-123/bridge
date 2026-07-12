@@ -9,7 +9,6 @@ import {
   Clock3,
   Flag,
   FileText,
-  Mail,
   MoreHorizontal,
   Plus,
   Save,
@@ -117,6 +116,19 @@ const QUICK_FILTER_ICONS = {
   document_blockers: AlertTriangle,
   delayed: AlertTriangle,
   due_for_registration: Flag,
+}
+
+const ATTORNEY_QUEUE_ACTION_TARGETS = {
+  overview: { menu: 'overview', label: 'Open Matter' },
+  assign_attorney: { menu: 'stakeholders', label: 'Manage Assignment' },
+  request_document: { menu: 'documents', label: 'Request Documents' },
+  documents: { menu: 'documents', label: 'Documents' },
+  generated_documents: { menu: 'documents', label: 'Generated Documents' },
+  schedule_appointment: { menu: 'transfer', label: 'Schedule Signing' },
+  follow_up_otp: { menu: 'activity', label: 'Follow Up OTP' },
+  message_client: { menu: 'activity', label: 'Message Client' },
+  timeline: { menu: 'activity', label: 'Timeline' },
+  activity: { menu: 'activity', label: 'Activity' },
 }
 
 function classNames(...values) {
@@ -566,21 +578,66 @@ function getMatterPreview(row = {}) {
   }
 }
 
+function getMatterActionState(row = {}, action = 'overview') {
+  const actionConfig = ATTORNEY_QUEUE_ACTION_TARGETS[action] || ATTORNEY_QUEUE_ACTION_TARGETS.overview
+  return {
+    matterPreview: getMatterPreview(row),
+    attorneyQueueAction: action,
+    attorneyQueueActionLabel: actionConfig.label,
+    attorneyWorkspaceTarget: actionConfig.menu,
+  }
+}
+
+function getMatterActionHref(row = {}) {
+  if (row.actionHref) return row.actionHref
+  if (row.transactionHref) return row.transactionHref
+  if (row.href) return row.href
+  const transactionId = row.transactionId || row.matterId
+  return transactionId ? `/transactions/${encodeURIComponent(transactionId)}` : ''
+}
+
+function MatterActionLink({ row, action = 'overview', children, className = '', onClick }) {
+  const href = getMatterActionHref(row)
+  if (!href) {
+    return (
+      <span
+        aria-disabled="true"
+        onClick={(event) => event.stopPropagation()}
+        className={classNames(className, 'cursor-not-allowed opacity-50')}
+      >
+        {children}
+      </span>
+    )
+  }
+
+  return (
+    <Link
+      to={href}
+      state={getMatterActionState(row, action)}
+      onClick={(event) => {
+        event.stopPropagation()
+        onClick?.(event)
+      }}
+      className={className}
+    >
+      {children}
+    </Link>
+  )
+}
+
 function RowActions({ row }) {
-  const preview = getMatterPreview(row)
   return (
     <details className="relative" onClick={(event) => event.stopPropagation()}>
       <summary className="inline-flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900">
         <MoreHorizontal size={17} />
       </summary>
       <div className="absolute right-0 z-20 mt-2 w-52 rounded-xl border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-xl">
-        <Link className="block rounded-lg px-3 py-2 hover:bg-slate-50" to={row.actionHref} state={{ matterPreview: preview }}>Open Matter</Link>
-        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Assign</button>
-        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Reassign</button>
-        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Generate Document</button>
-        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Request Document</button>
-        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Schedule Appointment</button>
-        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left text-red-600 hover:bg-red-50">Archive</button>
+        <MatterActionLink row={row} action="overview" className="block rounded-lg px-3 py-2 hover:bg-slate-50">Open Matter</MatterActionLink>
+        <MatterActionLink row={row} action="assign_attorney" className="block rounded-lg px-3 py-2 hover:bg-slate-50">Manage Assignment</MatterActionLink>
+        <MatterActionLink row={row} action="request_document" className="block rounded-lg px-3 py-2 hover:bg-slate-50">Request Documents</MatterActionLink>
+        <MatterActionLink row={row} action="generated_documents" className="block rounded-lg px-3 py-2 hover:bg-slate-50">Generated Documents</MatterActionLink>
+        <MatterActionLink row={row} action="schedule_appointment" className="block rounded-lg px-3 py-2 hover:bg-slate-50">Schedule Signing</MatterActionLink>
+        <MatterActionLink row={row} action="activity" className="block rounded-lg px-3 py-2 hover:bg-slate-50">Activity</MatterActionLink>
       </div>
     </details>
   )
@@ -595,8 +652,7 @@ function canDeclineIncomingMatter(row = {}) {
 }
 
 function IncomingRowActions({ row, onAcceptMatter, onDeclineMatter, accepting = false, declining = false }) {
-  const href = row.actionHref || '#'
-  const preview = getMatterPreview(row)
+  const href = getMatterActionHref(row)
   const readyForAcceptance = canAcceptIncomingMatter(row)
   const canDecline = canDeclineIncomingMatter(row)
 
@@ -606,7 +662,7 @@ function IncomingRowActions({ row, onAcceptMatter, onDeclineMatter, accepting = 
         <MoreHorizontal size={17} />
       </summary>
       <div className="absolute right-0 z-20 mt-2 w-56 rounded-xl border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-xl">
-        <Link className="block rounded-lg px-3 py-2 hover:bg-slate-50" to={href} state={{ matterPreview: preview }}>Open Transfer</Link>
+        <MatterActionLink row={{ ...row, actionHref: href }} action="overview" className="block rounded-lg px-3 py-2 hover:bg-slate-50">Open Transfer</MatterActionLink>
         {readyForAcceptance ? (
           <button
             type="button"
@@ -627,10 +683,10 @@ function IncomingRowActions({ row, onAcceptMatter, onDeclineMatter, accepting = 
             {declining ? 'Declining Transfer' : 'Decline Transfer'}
           </button>
         ) : null}
-        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Follow Up OTP</button>
-        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Request Documents</button>
-        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Assign Attorney</button>
-        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Email Client</button>
+        <MatterActionLink row={{ ...row, actionHref: href }} action="follow_up_otp" className="block rounded-lg px-3 py-2 hover:bg-slate-50">Follow Up OTP</MatterActionLink>
+        <MatterActionLink row={{ ...row, actionHref: href }} action="request_document" className="block rounded-lg px-3 py-2 hover:bg-slate-50">Request Documents</MatterActionLink>
+        <MatterActionLink row={{ ...row, actionHref: href }} action="assign_attorney" className="block rounded-lg px-3 py-2 hover:bg-slate-50">Manage Assignment</MatterActionLink>
+        <MatterActionLink row={{ ...row, actionHref: href }} action="message_client" className="block rounded-lg px-3 py-2 hover:bg-slate-50">Message Client</MatterActionLink>
       </div>
     </details>
   )
@@ -718,8 +774,7 @@ function IncomingMattersTable({
           <tbody className="divide-y divide-slate-100">
             {rows.map((row) => {
               const selected = selectedRows.includes(row.matterId)
-              const href = row.actionHref || '#'
-              const preview = getMatterPreview(row)
+              const href = getMatterActionHref(row)
               const readyForAcceptance = canAcceptIncomingMatter(row)
               const accepting = acceptingMatterId === row.assignmentId
               const declining = decliningMatterId === row.assignmentId
@@ -786,9 +841,9 @@ function IncomingMattersTable({
                           {accepting ? 'Accepting' : 'Accept Transfer'}
                         </button>
                       ) : null}
-                      <Link to={href} state={{ matterPreview: preview }} onClick={(event) => event.stopPropagation()} className="text-xs font-semibold text-[#00614f]">Open Transfer</Link>
-                      <button type="button" onClick={(event) => event.stopPropagation()} className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Documents</button>
-                      <button type="button" onClick={(event) => event.stopPropagation()} className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Email Client</button>
+                      <MatterActionLink row={{ ...row, actionHref: href }} action="overview" className="text-xs font-semibold text-[#00614f]">Open Transfer</MatterActionLink>
+                      <MatterActionLink row={{ ...row, actionHref: href }} action="request_document" className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Documents</MatterActionLink>
+                      <MatterActionLink row={{ ...row, actionHref: href }} action="message_client" className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Message Client</MatterActionLink>
                     </div>
                   </td>
                   <td className="px-4 py-3">
@@ -807,26 +862,24 @@ function IncomingMattersTable({
                           {accepting ? 'Accepting' : 'Accept Transfer'}
                         </button>
                       ) : (
-                        <Link
-                          to={href}
-                          state={{ matterPreview: preview }}
-                          onClick={(event) => event.stopPropagation()}
+                        <MatterActionLink
+                          row={{ ...row, actionHref: href }}
+                          action="overview"
                           className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#00463d] px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-[#00614f]"
                         >
                           Open Transfer
                           <ArrowRight size={14} />
-                        </Link>
+                        </MatterActionLink>
                       )}
                       {readyForAcceptance ? (
-                        <Link
-                          to={href}
-                          state={{ matterPreview: preview }}
-                          onClick={(event) => event.stopPropagation()}
+                        <MatterActionLink
+                          row={{ ...row, actionHref: href }}
+                          action="overview"
                           className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
                         >
                           Open
                           <ArrowRight size={14} />
-                        </Link>
+                        </MatterActionLink>
                       ) : null}
                       <IncomingRowActions
                         row={row}
@@ -847,36 +900,23 @@ function IncomingMattersTable({
   )
 }
 
-function BulkActionBar({ selectedCount, onClear, incoming = false }) {
+function BulkActionBar({ selectedCount, onClear, onOpenSelected, incoming = false }) {
   if (!selectedCount) return null
 
-  const actions = incoming
-    ? [
-        { label: 'Assign Attorney', Icon: UserRound },
-        { label: 'Request Documents', Icon: FileText },
-        { label: 'Follow Up OTP', Icon: Mail },
-        { label: 'Mark Reviewed', Icon: ClipboardCheck },
-        { label: 'Email Clients', Icon: Mail },
-      ]
-    : [
-        { label: 'Assign Attorney' },
-        { label: 'Assign Assistant' },
-        { label: 'Generate Documents' },
-        { label: 'Request Documents' },
-        { label: 'Schedule Appointment' },
-        { label: 'Archive' },
-        { label: 'Export' },
-        { label: 'Email Clients' },
-      ]
   return (
     <section className="flex flex-wrap items-center gap-2 rounded-xl border border-[#00614f]/20 bg-emerald-50 p-3 text-sm shadow-sm">
       <strong className="mr-2 text-[#00463d]">{selectedCount} selected</strong>
-      {actions.map(({ label, Icon }) => (
-        <button key={label} type="button" className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 font-semibold text-slate-700 shadow-sm transition hover:text-[#00614f]">
-          {Icon ? <Icon size={15} /> : null}
-          {label}
-        </button>
-      ))}
+      <span className="text-sm font-medium text-[#00463d]">
+        {incoming ? 'Open a selected transfer to act on intake blockers.' : 'Open a selected matter to act on assignments, documents, signing, or activity.'}
+      </span>
+      <button
+        type="button"
+        onClick={onOpenSelected}
+        className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 font-semibold text-slate-700 shadow-sm transition hover:text-[#00614f]"
+      >
+        <ArrowRight size={15} />
+        Open selected matter
+      </button>
       <button type="button" onClick={onClear} className="ml-auto rounded-lg px-3 py-2 font-semibold text-slate-500 hover:bg-white">
         Clear
       </button>
@@ -914,7 +954,6 @@ function MattersTable({ rows = [], selectedRows = [], onToggleRow, onToggleAll, 
           <tbody className="divide-y divide-slate-100">
             {rows.map((row) => {
               const selected = selectedRows.includes(row.matterId)
-              const preview = getMatterPreview(row)
               return (
                 <tr
                   key={row.assignmentId || row.matterId}
@@ -939,15 +978,14 @@ function MattersTable({ rows = [], selectedRows = [], onToggleRow, onToggleAll, 
                     />
                   </td>
                   <td className="px-4 py-3 font-semibold text-slate-950">
-                    <Link
-                      to={row.actionHref}
-                      state={{ matterPreview: preview }}
-                      onClick={(event) => event.stopPropagation()}
+                    <MatterActionLink
+                      row={row}
+                      action="overview"
                       className="inline-flex items-center gap-1 text-slate-950 hover:text-[#00614f]"
                     >
                       {row.reference}
                       <ArrowRight size={13} className="opacity-0 transition group-hover:opacity-100" />
-                    </Link>
+                    </MatterActionLink>
                   </td>
                   <td className="max-w-[250px] px-4 py-3">
                     <p className="truncate font-medium text-slate-800">{row.property}</p>
@@ -966,18 +1004,17 @@ function MattersTable({ rows = [], selectedRows = [], onToggleRow, onToggleAll, 
                       {row.nextAction}
                     </p>
                     <div className="mt-2 hidden flex-wrap gap-2 group-hover:flex">
-                      <Link
-                        to={row.actionHref}
-                        state={{ matterPreview: preview }}
-                        onClick={(event) => event.stopPropagation()}
+                      <MatterActionLink
+                        row={row}
+                        action="overview"
                         className="text-xs font-semibold text-[#00614f]"
                       >
                         Open
-                      </Link>
-                      <button type="button" className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Timeline</button>
-                      <button type="button" className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Documents</button>
-                      <button type="button" className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Generate Letter</button>
-                      <button type="button" className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Email Client</button>
+                      </MatterActionLink>
+                      <MatterActionLink row={row} action="timeline" className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Timeline</MatterActionLink>
+                      <MatterActionLink row={row} action="request_document" className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Documents</MatterActionLink>
+                      <MatterActionLink row={row} action="generated_documents" className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Generated Docs</MatterActionLink>
+                      <MatterActionLink row={row} action="message_client" className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Message Client</MatterActionLink>
                     </div>
                   </td>
                   <td className={classNames('px-4 py-3 font-semibold', dueTone(row.expectedDue, row.status))}>{formatDue(row.expectedDue)}</td>
@@ -1256,8 +1293,15 @@ function AttorneyMattersPage() {
   }
 
   function handleOpenMatter(row = {}) {
-    if (!row.actionHref) return
-    navigate(row.actionHref, { state: { matterPreview: getMatterPreview(row) } })
+    const href = getMatterActionHref(row)
+    if (!href) return
+    navigate(href, { state: getMatterActionState(row, 'overview') })
+  }
+
+  function handleOpenSelectedMatter() {
+    const selectedMatter = workspace?.tableRows?.find((row) => selectedRows.includes(row.matterId))
+    if (!selectedMatter) return
+    handleOpenMatter(selectedMatter)
   }
 
   async function refreshIncomingWorkspaceAfterDecision(row = {}) {
@@ -1369,7 +1413,12 @@ function AttorneyMattersPage() {
           </section>
         ) : null}
 
-        <BulkActionBar selectedCount={selectedRows.length} onClear={() => setSelectedRows([])} incoming={usesIncomingQueue} />
+        <BulkActionBar
+          selectedCount={selectedRows.length}
+          onClear={() => setSelectedRows([])}
+          onOpenSelected={handleOpenSelectedMatter}
+          incoming={usesIncomingQueue}
+        />
 
         {workspace.tableRows.length ? (
           usesIncomingQueue ? (

@@ -1,3 +1,8 @@
+import {
+  isSignedArtifactPrepared,
+  isSignedArtifactSignatureCaptured,
+} from '../core/workflows/overrideContract.js'
+
 const CANONICAL_PRIVATE_LISTING_STATUSES = [
   'seller_lead',
   'onboarding_sent',
@@ -315,7 +320,7 @@ export function evaluatePrivateListingTransitionGuards(listing = {}, targetStatu
 
   if (normalizedTarget === 'mandate_sent') {
     const mandateStatus = normalizeKey(metadata?.mandateStatus || listing?.mandateStatus || listing?.mandate_status)
-    const hasMandatePrepared = ['ready', 'generated', 'sent', 'viewed', 'signed', 'signed_uploaded', 'signed_external_pending_upload'].includes(mandateStatus)
+    const hasMandatePrepared = isSignedArtifactPrepared(mandateStatus)
     if (!hasMandatePrepared) {
       blockers.push('Mandate must be ready/generated before it can be sent.')
     }
@@ -326,14 +331,14 @@ export function evaluatePrivateListingTransitionGuards(listing = {}, targetStatu
 
   if (normalizedTarget === 'mandate_signed') {
     const mandateStatus = normalizeKey(metadata?.mandateStatus || listing?.mandateStatus || listing?.mandate_status)
-    if (!['signed', 'signed_uploaded', 'signed_external_pending_upload'].includes(mandateStatus)) {
+    if (!isSignedArtifactSignatureCaptured(mandateStatus)) {
       blockers.push('Mandate status must be signed before moving to mandate signed stage.')
     }
   }
 
   if (normalizedTarget === 'active') {
     const mandateStatus = normalizeKey(metadata?.mandateStatus || listing?.mandateStatus || listing?.mandate_status)
-    const hasSignedMandate = ['signed', 'signed_uploaded', 'signed_external_pending_upload'].includes(mandateStatus) || listingHasDocumentSignal(listing, ['mandate', 'signed mandate'])
+    const hasSignedMandate = isSignedArtifactSignatureCaptured(mandateStatus) || listingHasDocumentSignal(listing, ['mandate', 'signed mandate'])
     if (!hasSignedMandate) {
       blockers.push('The mandate must be signed before this listing can become active.')
     }

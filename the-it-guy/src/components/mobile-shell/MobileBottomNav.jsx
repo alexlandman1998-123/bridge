@@ -103,7 +103,7 @@ export default function MobileBottomNav() {
       ) : null}
 
       {!createSheetOpen ? (
-        <nav className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2" aria-label="Mobile navigation" data-mobile-bottom-nav>
+        <nav className="relative z-30 shrink-0 px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2" aria-label="Mobile navigation" data-mobile-bottom-nav>
           <div className="mx-auto grid max-w-[520px] grid-cols-5 items-end gap-1 rounded-[24px] border border-[#dfe7ef]/80 bg-white/92 px-2 py-1.5 shadow-[0_-10px_28px_rgba(15,23,42,0.10)] backdrop-blur-xl">
             {items.map((item) => {
               const Icon = ICONS[item.key] || LayoutGrid

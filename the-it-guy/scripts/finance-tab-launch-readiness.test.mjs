@@ -18,10 +18,28 @@ try {
   const financeService = await server.ssrLoadModule('/src/services/transactionFinanceService.js')
   const financeCommandModule = await server.ssrLoadModule('/src/components/transaction/TransactionFinanceCommandCenter.jsx')
 
+  assert.deepEqual(
+    workflow.BOND_HYBRID_FINANCE_STAGES,
+    [
+      'intake',
+      'documents',
+      'submitted_to_banks',
+      'bank_review',
+      'quote_received',
+      'quote_accepted',
+      'bond_approved',
+      'grant_received',
+      'grant_signed',
+      'grant_submitted',
+      'instruction_sent',
+      'complete',
+    ],
+    'finance progress should use the expanded bond/hybrid stage ladder',
+  )
   assert.equal(workflow.getBondHybridFinanceProgressPercent('intake'), 0)
-  assert.equal(workflow.getBondHybridFinanceProgressPercent('documents'), 14)
-  assert.equal(workflow.getBondHybridFinanceProgressPercent('submitted_to_banks'), 29)
-  assert.equal(workflow.getBondHybridFinanceProgressPercent('instruction_sent'), 86)
+  assert.equal(workflow.getBondHybridFinanceProgressPercent('documents'), 9)
+  assert.equal(workflow.getBondHybridFinanceProgressPercent('submitted_to_banks'), 18)
+  assert.equal(workflow.getBondHybridFinanceProgressPercent('instruction_sent'), 91)
   assert.equal(workflow.getBondHybridFinanceProgressPercent('complete'), 100)
   assert.equal(workflow.getBondHybridFinanceProgressPercent('intake', 'completed'), 100)
 

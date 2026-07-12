@@ -7,6 +7,7 @@ import {
   getTransactionAttorneyAssignments,
   listAttorneyFirmsForAssignment,
   removeTransactionAttorneyAssignment,
+  updateTransactionAttorneyMatterReference,
 } from '../../../services/transactionAttorneyAssignments'
 import { resolveAttorneyWorkflowForTransaction } from '../../../services/attorneyWorkflow/attorneyWorkflowService'
 import AttorneyAssignmentForm from './AttorneyAssignmentForm'
@@ -145,6 +146,30 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash', transa
     setAssignments(nextAssignments)
   }
 
+  async function handleMatterReferenceUpdate(assignment, payload = {}) {
+    if (!assignment?.id) return null
+    setBusy(true)
+    setError('')
+    try {
+      const saved = await updateTransactionAttorneyMatterReference(assignment.id, payload)
+      recordAuditEvent('management_assignment_action', {
+        action: 'updated_attorney_matter_reference',
+        transactionId,
+        assignmentId: assignment.id,
+        assignmentType: assignment.assignmentType,
+        attorneyRole: assignment.attorneyRole,
+      })
+      const nextAssignments = await getTransactionAttorneyAssignments(transactionId)
+      setAssignments(nextAssignments)
+      return saved
+    } catch (updateError) {
+      setError(updateError?.message || 'Unable to update attorney matter number.')
+      throw updateError
+    } finally {
+      setBusy(false)
+    }
+  }
+
   function renderAssignmentBlock({ type, assignment, supportingAssignments = [], title, helper }) {
     const isEditing = activeForm.type === type
     const editingAssignment = isEditing && activeForm.assignmentId
@@ -203,6 +228,8 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash', transa
                   key={item.id}
                   assignment={item}
                   busy={busy}
+                  canEditMatterReference={canUpdateAssignments && Boolean(item?.id)}
+                  onUpdateMatterReference={canUpdateAssignments ? handleMatterReferenceUpdate : null}
                   onEdit={canUpdateAssignments ? () => setActiveForm({ type, assignmentId: item.id, isPrimary: item.isPrimary !== false }) : null}
                   onRemove={canRemoveAssignments ? () => void handleRemove(item) : null}
                 />

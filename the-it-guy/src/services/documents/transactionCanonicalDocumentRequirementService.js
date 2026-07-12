@@ -9,6 +9,10 @@ import {
   getMainStageIndex,
 } from '../../lib/stages'
 import { normalizeFinanceType } from '../../core/transactions/financeType'
+import {
+  canDeriveBuyerBaseline,
+  resolveLegalSupportBoundary,
+} from '../../core/legal/legalSupportBoundary.js'
 import { resolveSalesWorkflowSnapshot } from '../../core/transactions/salesWorkflow'
 import { resolveFinanceWorkflowSnapshot } from '../../core/transactions/financeWorkflow'
 import {
@@ -225,6 +229,7 @@ const BUYER_ADAPTER_CANONICAL_KEY_OVERRIDES = Object.freeze({
   purchaser_1_proof_of_address: 'buyer_proof_of_address',
   cipc_registration: 'buyer_company_registration_documents',
   company_resolution: 'buyer_company_resolution',
+  buyer_authority_validity_review: 'buyer_authority_validity_review',
   director_id: 'buyer_director_ids',
   director_proof_of_address: 'buyer_business_address',
   trust_deed: 'buyer_trust_deed',
@@ -602,6 +607,11 @@ function buildBuyerAdapterCandidates({
   formData = {},
   definitionsByKey = new Map(),
 } = {}) {
+  const supportBoundary = resolveLegalSupportBoundary({ transaction, formData })
+  if (!supportBoundary.automationAllowed && !canDeriveBuyerBaseline(supportBoundary)) {
+    return []
+  }
+
   const purchaserType = normalizePurchaserType(
     formData?.purchaser_type || transaction?.purchaser_type || facts?.buyer?.purchaser_type || 'individual',
   )
@@ -949,6 +959,8 @@ export function buildProjectedTransactionRequirementCandidates({
     documents,
     subprocesses,
   })
+  const supportBoundary = resolveLegalSupportBoundary({ transaction, formData })
+  const shouldDeriveBaseline = supportBoundary.automationAllowed || canDeriveBuyerBaseline(supportBoundary)
   const definitionsByKey = new Map(definitions.map((definition) => [definition.key, definition]))
   const resolverInput = {
     contextType: 'transaction',
@@ -964,11 +976,17 @@ export function buildProjectedTransactionRequirementCandidates({
   }
 
   const normalizedRules = rules.map((rule) => normalizeRule(rule, definitionsByKey))
-  const ruleCandidates = resolveRequirementCandidates({
-    input: resolverInput,
-    rules: normalizedRules,
-    definitions,
-  })
+  const ruleCandidates = shouldDeriveBaseline
+    ? resolveRequirementCandidates({
+        input: resolverInput,
+        rules: normalizedRules,
+        definitions,
+      })
+    : {
+        matchedRules: [],
+        unmatchedRules: normalizedRules,
+        trace: [],
+      }
 
   const canonicalCandidates = ruleCandidates.matchedRules.map((match) => ({
     generated: match.generated,
@@ -979,10 +997,14 @@ export function buildProjectedTransactionRequirementCandidates({
     explicitMeta: {},
   }))
 
-  const adapterCandidates = [
-    ...buildBuyerAdapterCandidates({ transaction, facts, formData, definitionsByKey }),
-    ...buildAttorneyAdapterCandidates({ transaction, facts, definitionsByKey }),
-  ]
+  const adapterCandidates = shouldDeriveBaseline
+    ? [
+        ...buildBuyerAdapterCandidates({ transaction, facts, formData, definitionsByKey }),
+        ...(supportBoundary.automationAllowed
+          ? buildAttorneyAdapterCandidates({ transaction, facts, definitionsByKey })
+          : []),
+      ]
+    : []
 
   const candidates = dedupeCandidateRows([
     ...canonicalCandidates,
@@ -997,6 +1019,7 @@ export function buildProjectedTransactionRequirementCandidates({
     candidates,
     definitionsByKey,
     ruleCandidates,
+    supportBoundary,
   }
 }
 

@@ -48,6 +48,15 @@ import {
 } from './buyerRequirementEngine'
 import { DEFAULT_DOCUMENT_REQUIREMENTS } from '../core/documents/documentRequirementRules'
 import {
+  canDeriveBuyerBaseline,
+  createLegalSupportBoundaryRequirement,
+  resolveLegalSupportBoundary,
+} from '../core/legal/legalSupportBoundary.js'
+import {
+  hasAssociatedPartyCardinality,
+  hasAssociatedPartyPresence,
+} from '../core/legal/legalRequirementCardinality.js'
+import {
   DOCUMENT_VAULT_GROUP_DEFINITIONS,
   buildTemplateMap,
   getGroupByKey,
@@ -122,6 +131,13 @@ import {
   resolveDeveloperTransactionRelationshipProfile,
 } from '../core/transactions/developerTransactionRelationshipProfile.js'
 import { getRolePermissions, normalizeFinanceManagedBy, normalizeRoleType } from '../core/transactions/permissions'
+import {
+  TRANSACTION_REFERENCE_SCOPES,
+  TRANSACTION_REFERENCE_TYPES,
+  canCorrectTransactionReference,
+  getTransactionReferencePolicy,
+  normalizeTransactionReferenceSource,
+} from '../core/transactions/transactionReferencePolicy'
 import { resolveWorkflowLanePermissions } from '../core/workflows/permissions'
 import {
   blockOperationalChecklistItem as blockOperationalChecklistItemService,
@@ -7401,28 +7417,68 @@ export async function ensureTransactionRequiredDocuments(
     return []
   }
 
-  try {
-    const canonicalResolution = await maybeResolveTransactionDocumentRequirements({
-      transactionId,
-      client,
-      formData,
-      rolloutOptions: {
-        transactionId,
-      },
-    })
+  const normalizedFinanceType = normalizeFinanceType(financeType || 'cash')
+  const supportBoundary = resolveLegalSupportBoundary({
+    transaction: {
+      id: transactionId,
+      purchaser_type: purchaserType,
+      finance_type: financeType,
+      seller_entity_type: formData?.seller_entity_type,
+      seller_type: formData?.seller_type,
+      property_type: formData?.property_type,
+      propertyStructureType: formData?.propertyStructureType,
+      property_structure_type: formData?.property_structure_type,
+    },
+    formData: {
+      ...(formData || {}),
+      purchaser_type: formData?.purchaser_type || purchaserType,
+      purchase_finance_type: formData?.purchase_finance_type || financeType,
+    },
+  })
+  const boundaryRequirement = createLegalSupportBoundaryRequirement(supportBoundary)
+  const shouldDeriveBaseline = supportBoundary.automationAllowed || canDeriveBuyerBaseline(supportBoundary)
+  const hasBuyerCardinalityExpansion = hasAssociatedPartyCardinality(formData || {}, [
+    { paths: ['company.directors'], fallbackKeys: ['directors'], defaultRole: 'Director' },
+    { paths: ['close_corporation.members', 'cc.members'], fallbackKeys: ['members'], defaultRole: 'Member' },
+    { paths: ['trust.trustees'], fallbackKeys: ['trustees'], defaultRole: 'Trustee' },
+  ]) || hasAssociatedPartyPresence(formData || {}, [
+    { paths: ['company.beneficial_owners', 'company.beneficialOwners'], fallbackKeys: ['beneficial_owners', 'beneficialOwners'], defaultRole: 'Beneficial Owner' },
+    {
+      paths: [
+        'close_corporation.beneficial_owners',
+        'close_corporation.beneficialOwners',
+        'cc.beneficial_owners',
+        'cc.beneficialOwners',
+      ],
+      fallbackKeys: ['beneficial_owners', 'beneficialOwners'],
+      defaultRole: 'Beneficial Owner',
+    },
+    { paths: ['trust.beneficial_owners', 'trust.beneficialOwners'], fallbackKeys: ['beneficial_owners', 'beneficialOwners'], defaultRole: 'Beneficial Owner' },
+  ])
 
-    if (
-      canonicalResolution?.rolloutMode === 'canonical_primary' ||
-      canonicalResolution?.rolloutMode === 'canonical_only'
-    ) {
-      return canonicalResolution.requirements || []
+  if (supportBoundary.automationAllowed && !hasBuyerCardinalityExpansion) {
+    try {
+      const canonicalResolution = await maybeResolveTransactionDocumentRequirements({
+        transactionId,
+        client,
+        formData,
+        rolloutOptions: {
+          transactionId,
+        },
+      })
+
+      if (
+        canonicalResolution?.rolloutMode === 'canonical_primary' ||
+        canonicalResolution?.rolloutMode === 'canonical_only'
+      ) {
+        return canonicalResolution.requirements || []
+      }
+    } catch (canonicalError) {
+      console.warn('[canonical-documents] transaction canonical resolution failed; falling back to legacy generation.', canonicalError)
     }
-  } catch (canonicalError) {
-    console.warn('[canonical-documents] transaction canonical resolution failed; falling back to legacy generation.', canonicalError)
   }
 
   const normalizedType = normalizePurchaserType(purchaserType)
-  const normalizedFinanceType = normalizeFinanceType(financeType || 'cash')
   let resolvedStage = normalizeStage(stage, 'Available')
   let resolvedMainStage = normalizeMainStage(currentMainStage, resolvedStage)
 
@@ -7447,36 +7503,48 @@ export async function ensureTransactionRequiredDocuments(
     }
   }
 
-  const derivedConfiguration = deriveOnboardingConfiguration(
-    {
-      ...(formData || {}),
-      purchaser_type: formData?.purchaser_type || normalizedType,
-      purchase_finance_type: formData?.purchase_finance_type || normalizedFinanceType,
-      reservation_required: formData?.reservation_required ?? reservationRequired,
-      cash_amount: formData?.cash_amount ?? cashAmount,
-      bond_amount: formData?.bond_amount ?? bondAmount,
-    },
-    {
-      purchaserType: normalizedType,
-      financeType: normalizedFinanceType,
-    },
-  )
-  const ruleDrivenTemplates = await resolveRuleDrivenDocumentTemplates(client, {
-    purchaserType: normalizedType,
-    financeType: normalizedFinanceType,
-    reservationRequired,
-  })
-  const initialTemplates = ruleDrivenTemplates.length
-    ? ruleDrivenTemplates
-    : derivedConfiguration.requiredDocuments.length
-      ? derivedConfiguration.requiredDocuments
-      : getRequiredDocumentsForPurchaserType(normalizedType, {
+  const derivedConfiguration = shouldDeriveBaseline
+    ? deriveOnboardingConfiguration(
+        {
+          ...(formData || {}),
+          purchaser_type: formData?.purchaser_type || normalizedType,
+          purchase_finance_type: formData?.purchase_finance_type || normalizedFinanceType,
+          reservation_required: formData?.reservation_required ?? reservationRequired,
+          cash_amount: formData?.cash_amount ?? cashAmount,
+          bond_amount: formData?.bond_amount ?? bondAmount,
+        },
+        {
+          purchaserType: normalizedType,
           financeType: normalizedFinanceType,
-          reservationRequired,
-          cashAmount,
-          bondAmount,
-          formData,
-        })
+        },
+      )
+    : { requiredDocuments: [] }
+  const ruleDrivenTemplates = shouldDeriveBaseline && !hasBuyerCardinalityExpansion
+    ? await resolveRuleDrivenDocumentTemplates(client, {
+        purchaserType: normalizedType,
+        financeType: normalizedFinanceType,
+        reservationRequired,
+      })
+    : []
+  const initialTemplates = ruleDrivenTemplates.length
+    ? [
+        ...(boundaryRequirement ? [boundaryRequirement] : []),
+        ...ruleDrivenTemplates,
+      ]
+    : [
+        ...(boundaryRequirement ? [boundaryRequirement] : []),
+        ...(derivedConfiguration.requiredDocuments.length
+          ? derivedConfiguration.requiredDocuments
+          : shouldDeriveBaseline
+            ? getRequiredDocumentsForPurchaserType(normalizedType, {
+                financeType: normalizedFinanceType,
+                reservationRequired,
+                cashAmount,
+                bondAmount,
+                formData,
+              })
+            : []),
+      ]
   const templates = initialTemplates.filter((template) => {
     const groupKey = String(template?.groupKey || '').trim().toLowerCase()
     const key = String(template?.key || '').trim().toLowerCase()
@@ -9574,12 +9642,12 @@ async function resolveActiveProfileContext(client) {
   try {
     const { data, error } = await client.auth.getSession()
     if (error) {
-      return { userId: null, email: null, role: null, firmId: null, firmRole: null }
+      return { userId: null, email: null, role: null, rawRole: null, firmId: null, firmRole: null }
     }
 
     const user = data?.session?.user
     if (!user?.id) {
-      return { userId: null, email: null, role: null, firmId: null, firmRole: null }
+      return { userId: null, email: null, role: null, rawRole: null, firmId: null, firmRole: null }
     }
 
     const profileQuery = await client
@@ -9590,20 +9658,22 @@ async function resolveActiveProfileContext(client) {
       .maybeSingle()
     if (profileQuery.error) {
       if (isMissingSchemaError(profileQuery.error)) {
-        return { userId: user.id, email: normalizeEmailAddress(user.email), role: null, firmId: null, firmRole: null }
+        return { userId: user.id, email: normalizeEmailAddress(user.email), role: null, rawRole: null, firmId: null, firmRole: null }
       }
-      return { userId: user.id, email: normalizeEmailAddress(user.email), role: null, firmId: null, firmRole: null }
+      return { userId: user.id, email: normalizeEmailAddress(user.email), role: null, rawRole: null, firmId: null, firmRole: null }
     }
 
+    const rawRole = profileQuery.data?.role || null
     return {
       userId: user.id,
       email: normalizeEmailAddress(user.email),
-      role: normalizeRoleType(profileQuery.data?.role || 'developer'),
+      role: normalizeRoleType(rawRole || 'developer'),
+      rawRole,
       firmId: profileQuery.data?.firm_id || null,
       firmRole: normalizeFirmRole(profileQuery.data?.firm_role || 'attorney'),
     }
   } catch {
-    return { userId: null, email: null, role: null, firmId: null, firmRole: null }
+    return { userId: null, email: null, role: null, rawRole: null, firmId: null, firmRole: null }
   }
 }
 
@@ -10347,6 +10417,203 @@ async function logBondHybridWorkflowActivity(client, { transactionId, actorRole,
   ])
 }
 
+async function logTransactionReferenceChangeIfNeeded(client, {
+  transactionId,
+  eventType = 'TransactionUpdated',
+  referenceType,
+  entityType = '',
+  entityId = '',
+  previousValue = null,
+  nextValue = null,
+  previousSource = null,
+  nextSource = 'manual',
+  reason = '',
+  createdBy = null,
+  createdByRole = null,
+  metadata = {},
+} = {}) {
+  if (!transactionId || !referenceType) return null
+  const normalizedPrevious = normalizeNullableText(previousValue)
+  const normalizedNext = normalizeNullableText(nextValue)
+  const normalizedPreviousSource = normalizeTransactionReferenceSource(previousSource || 'manual')
+  const normalizedNextSource = normalizeTransactionReferenceSource(nextSource || 'manual')
+  if (normalizedPrevious === normalizedNext && normalizedPreviousSource === normalizedNextSource) return null
+
+  const policy = getTransactionReferencePolicy(referenceType)
+  return logTransactionEventIfPossible(client, {
+    transactionId,
+    eventType,
+    createdBy,
+    createdByRole,
+    eventData: {
+      source: 'transaction_reference_policy',
+      message: `${policy?.label || 'Reference'} updated.`,
+      changeType: 'transaction_reference_updated',
+      referenceType,
+      referenceLabel: policy?.label || referenceType,
+      storageTarget: policy?.storageTarget || null,
+      entityType,
+      entityId,
+      previousValue: normalizedPrevious,
+      newValue: normalizedNext,
+      previousSource: normalizedPreviousSource,
+      newSource: normalizedNextSource,
+      reason: normalizeNullableText(reason) || 'Reference updated.',
+      ...metadata,
+    },
+  })
+}
+
+const TRANSACTION_REFERENCE_CORRECTION_COLUMNS = Object.freeze({
+  [TRANSACTION_REFERENCE_TYPES.bridgeMatterNumber]: 'matter_number',
+  [TRANSACTION_REFERENCE_TYPES.transactionReference]: 'transaction_reference',
+})
+
+const TRANSACTION_REFERENCE_CORRECTION_SELECT_COLUMNS = Object.freeze([
+  'id',
+  'updated_at',
+  'created_at',
+])
+
+function getTransactionReferenceCorrectionSelect(correctionColumn) {
+  return ['id', correctionColumn, ...TRANSACTION_REFERENCE_CORRECTION_SELECT_COLUMNS.filter((column) => column !== 'id')].join(', ')
+}
+
+function getTransactionReferenceCorrectionValue(payload = {}) {
+  const valueKeys = [
+    'value',
+    'referenceValue',
+    'reference_value',
+    'matterNumber',
+    'matter_number',
+    'transactionReference',
+    'transaction_reference',
+  ]
+  const matchedKey = valueKeys.find((key) => Object.prototype.hasOwnProperty.call(payload, key))
+  if (!matchedKey) return { hasValue: false, value: null }
+  return {
+    hasValue: true,
+    value: payload[matchedKey],
+  }
+}
+
+export async function correctTransactionReference(transactionId, payload = {}, options = {}) {
+  const client = options.client || requireClient()
+  const normalizedTransactionId = normalizeNullableText(transactionId || payload.transactionId || payload.transaction_id)
+  if (!normalizedTransactionId) {
+    throw new Error('Transaction id is required.')
+  }
+
+  const referenceType = normalizeTextValue(payload.referenceType || payload.reference_type || TRANSACTION_REFERENCE_TYPES.bridgeMatterNumber)
+  const policy = getTransactionReferencePolicy(referenceType)
+  const correctionColumn = TRANSACTION_REFERENCE_CORRECTION_COLUMNS[referenceType]
+  if (!policy || policy.scope !== TRANSACTION_REFERENCE_SCOPES.transaction || policy.ownerRole !== 'system' || !correctionColumn) {
+    throw new Error('Reference type must be a Bridge-owned transaction reference.')
+  }
+
+  const actorProfile = await resolveActiveProfileContext(client)
+  const actorRole = normalizeTextValue(actorProfile.rawRole || actorProfile.role || '')
+  if (!canCorrectTransactionReference(referenceType, actorRole)) {
+    throw new Error(`Your role does not have permission to correct ${policy.label}.`)
+  }
+
+  const correctionValue = getTransactionReferenceCorrectionValue(payload)
+  if (!correctionValue.hasValue) {
+    throw new Error('Corrected reference value is required.')
+  }
+
+  const nextValue = normalizeNullableText(correctionValue.value)
+  if (!nextValue) {
+    throw new Error('Corrected reference value cannot be blank.')
+  }
+
+  const reason = normalizeNullableText(payload.reason || payload.changeReason || payload.change_reason || payload.note)
+  if (!reason) {
+    throw new Error('A correction reason is required.')
+  }
+
+  const existing = await client
+    .from('transactions')
+    .select(getTransactionReferenceCorrectionSelect(correctionColumn))
+    .eq('id', normalizedTransactionId)
+    .maybeSingle()
+
+  if (existing.error) {
+    if (isMissingColumnError(existing.error, correctionColumn)) {
+      throw new Error(`${policy.label} is not available on this transactions schema.`)
+    }
+    throw existing.error
+  }
+
+  if (!existing.data) {
+    throw new Error('Transaction not found.')
+  }
+
+  const previousValue = normalizeNullableText(existing.data?.[correctionColumn])
+  if (previousValue === nextValue) {
+    return {
+      transactionId: normalizedTransactionId,
+      referenceType,
+      label: policy.label,
+      storageTarget: policy.storageTarget,
+      value: previousValue,
+      previousValue,
+      source: 'correction',
+      changed: false,
+      transaction: existing.data,
+    }
+  }
+
+  const update = await client
+    .from('transactions')
+    .update({
+      [correctionColumn]: nextValue,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', normalizedTransactionId)
+    .select(getTransactionReferenceCorrectionSelect(correctionColumn))
+    .single()
+
+  if (update.error) {
+    if (isMissingColumnError(update.error, correctionColumn)) {
+      throw new Error(`${policy.label} is not available on this transactions schema.`)
+    }
+    throw update.error
+  }
+
+  await logTransactionReferenceChangeIfNeeded(client, {
+    transactionId: normalizedTransactionId,
+    eventType: 'TransactionUpdated',
+    referenceType,
+    entityType: 'transaction',
+    entityId: normalizedTransactionId,
+    previousValue,
+    nextValue,
+    previousSource: referenceType === TRANSACTION_REFERENCE_TYPES.transactionReference ? 'legacy' : 'system',
+    nextSource: 'correction',
+    reason,
+    createdBy: actorProfile.userId || null,
+    createdByRole: actorRole || actorProfile.role || null,
+    metadata: {
+      correction: true,
+      correctedColumn: correctionColumn,
+      actorRole: actorRole || null,
+    },
+  })
+
+  return {
+    transactionId: normalizedTransactionId,
+    referenceType,
+    label: policy.label,
+    storageTarget: policy.storageTarget,
+    value: normalizeNullableText(update.data?.[correctionColumn]),
+    previousValue,
+    source: 'correction',
+    changed: true,
+    transaction: update.data,
+  }
+}
+
 async function notifyBondHybridWorkflowRoles(client, { transactionId, stage, message, eventType = 'BondHybridFinanceWorkflowUpdated' } = {}) {
   const rolesByStage = {
     submitted_to_banks: ['agent'],
@@ -10843,6 +11110,10 @@ export async function addBondApplication(transactionId, payload = {}, options = 
   const status = normalizeBondHybridApplicationStatus(payload.status || 'submitted')
   const submittedAt = normalizeBondWorkflowPayloadDate(payload.submittedAt || payload.submitted_at) || (status === 'submitted' ? new Date().toISOString() : null)
   const feedbackReceivedAt = normalizeBondWorkflowPayloadDate(payload.feedbackReceivedAt || payload.feedback_received_at)
+  const referenceNumber = normalizeNullableText(payload.referenceNumber || payload.reference_number)
+  const applicationReference = normalizeNullableText(payload.applicationReference || payload.application_reference || referenceNumber)
+  const referenceSource = normalizeTransactionReferenceSource(payload.referenceSource || payload.reference_source || payload.source || 'partner_portal')
+  const referenceReason = normalizeNullableText(payload.referenceReason || payload.reference_reason || payload.reason) || 'Bond application reference captured.'
 
   const insert = await client
     .from('transaction_bond_applications')
@@ -10854,8 +11125,8 @@ export async function addBondApplication(transactionId, payload = {}, options = 
       status,
       submitted_at: submittedAt,
       feedback_received_at: feedbackReceivedAt,
-      reference_number: normalizeNullableText(payload.referenceNumber || payload.reference_number),
-      application_reference: normalizeNullableText(payload.applicationReference || payload.application_reference || payload.referenceNumber || payload.reference_number),
+      reference_number: referenceNumber,
+      application_reference: applicationReference,
       bond_originator_id: normalizeNullableUuid(payload.bondOriginatorId || payload.bond_originator_id) || null,
       originator_organisation_id: normalizeNullableUuid(payload.originatorOrganisationId || payload.originator_organisation_id) || null,
       submitted_by: activeProfile.userId || null,
@@ -10882,6 +11153,42 @@ export async function addBondApplication(transactionId, payload = {}, options = 
     eventType: 'BondHybridFinanceApplicationUpdated',
     eventData: { workflowId: workflow.id, applicationId: insert.data.id, bankName, status },
   })
+  await Promise.all([
+    applicationReference
+      ? logTransactionReferenceChangeIfNeeded(client, {
+          transactionId,
+          eventType: 'BondHybridFinanceApplicationUpdated',
+          referenceType: TRANSACTION_REFERENCE_TYPES.bondOriginatorApplicationReference,
+          entityType: 'transaction_bond_application',
+          entityId: insert.data.id,
+          previousValue: null,
+          nextValue: applicationReference,
+          previousSource: null,
+          nextSource: referenceSource,
+          reason: referenceReason,
+          createdBy: activeProfile.userId || null,
+          createdByRole: actorRole || activeProfile.role || 'bond_originator',
+          metadata: { workflowId: workflow.id, bankName },
+        })
+      : Promise.resolve(null),
+    referenceNumber
+      ? logTransactionReferenceChangeIfNeeded(client, {
+          transactionId,
+          eventType: 'BondHybridFinanceApplicationUpdated',
+          referenceType: TRANSACTION_REFERENCE_TYPES.bankApplicationReference,
+          entityType: 'transaction_bond_application',
+          entityId: insert.data.id,
+          previousValue: null,
+          nextValue: referenceNumber,
+          previousSource: null,
+          nextSource: referenceSource,
+          reason: referenceReason,
+          createdBy: activeProfile.userId || null,
+          createdByRole: actorRole || activeProfile.role || 'bond_originator',
+          metadata: { workflowId: workflow.id, bankName },
+        })
+      : Promise.resolve(null),
+  ])
 
   await processWorkflowEvidenceIfPossible(client, {
     transactionId,
@@ -10928,7 +11235,7 @@ export async function updateBondApplication(applicationId, payload = {}, options
 
   const existing = await client
     .from('transaction_bond_applications')
-    .select('id, transaction_id, workflow_id, application_type, bank_name, status')
+    .select('id, transaction_id, workflow_id, application_type, bank_name, status, reference_number, application_reference')
     .eq('id', applicationId)
     .maybeSingle()
   if (existing.error) throw existing.error
@@ -10979,6 +11286,46 @@ export async function updateBondApplication(applicationId, payload = {}, options
     eventType: 'BondHybridFinanceApplicationUpdated',
     eventData: { workflowId: workflow.id, applicationId, bankName: update.data.bank_name, status: nextStatus },
   })
+  const referenceSource = normalizeTransactionReferenceSource(payload.referenceSource || payload.reference_source || payload.source || 'partner_portal')
+  const referenceReason = normalizeNullableText(payload.referenceReason || payload.reference_reason || payload.reason) || 'Bond application reference updated.'
+  const hasApplicationReferenceUpdate = Object.prototype.hasOwnProperty.call(updatePayload, 'application_reference')
+  const hasReferenceNumberUpdate = Object.prototype.hasOwnProperty.call(updatePayload, 'reference_number')
+  await Promise.all([
+    hasApplicationReferenceUpdate
+      ? logTransactionReferenceChangeIfNeeded(client, {
+          transactionId: existing.data.transaction_id,
+          eventType: 'BondHybridFinanceApplicationUpdated',
+          referenceType: TRANSACTION_REFERENCE_TYPES.bondOriginatorApplicationReference,
+          entityType: 'transaction_bond_application',
+          entityId: applicationId,
+          previousValue: existing.data.application_reference || null,
+          nextValue: update.data.application_reference || null,
+          previousSource: null,
+          nextSource: referenceSource,
+          reason: referenceReason,
+          createdBy: activeProfile.userId || null,
+          createdByRole: actorRole || activeProfile.role || 'bond_originator',
+          metadata: { workflowId: workflow.id, bankName: update.data.bank_name },
+        })
+      : Promise.resolve(null),
+    hasReferenceNumberUpdate
+      ? logTransactionReferenceChangeIfNeeded(client, {
+          transactionId: existing.data.transaction_id,
+          eventType: 'BondHybridFinanceApplicationUpdated',
+          referenceType: TRANSACTION_REFERENCE_TYPES.bankApplicationReference,
+          entityType: 'transaction_bond_application',
+          entityId: applicationId,
+          previousValue: existing.data.reference_number || null,
+          nextValue: update.data.reference_number || null,
+          previousSource: null,
+          nextSource: referenceSource,
+          reason: referenceReason,
+          createdBy: activeProfile.userId || null,
+          createdByRole: actorRole || activeProfile.role || 'bond_originator',
+          metadata: { workflowId: workflow.id, bankName: update.data.bank_name },
+        })
+      : Promise.resolve(null),
+  ])
 
   if (nextStatus === 'submitted') {
     await processWorkflowEvidenceIfPossible(client, {
@@ -20990,6 +21337,19 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = [], options = {}) {
       const workspaceUnitId = normalizeNullableUuid(item?.workspaceUnitId || item?.workspace_unit_id || partner.workspaceUnitId || partner.workspace_unit_id)
       const branchId = normalizeNullableUuid(item?.branchId || item?.branch_id || partner.branchId || partner.branch_id)
       const teamId = normalizeNullableUuid(item?.teamId || item?.team_id || partner.teamId || partner.team_id)
+      const isAttorneyRoleplayer = ['transfer_attorney', 'bond_attorney', 'cancellation_attorney'].includes(roleType)
+      const firmId = isAttorneyRoleplayer
+        ? normalizeNullableUuid(
+            item?.firmId ||
+              item?.firm_id ||
+              item?.attorneyFirmId ||
+              item?.attorney_firm_id ||
+              partner.firmId ||
+              partner.firm_id ||
+              partner.attorneyFirmId ||
+              partner.attorney_firm_id,
+          )
+        : null
 
       if (!partnerName && !contactPerson && !email && !partnerOrganisationId && !userId && normalizedSource !== 'agency_preferred') {
         return null
@@ -21008,6 +21368,8 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = [], options = {}) {
         workspaceUnitId,
         branchId,
         teamId,
+        firmId,
+        attorneyFirmId: firmId,
         partnerName: partnerName || null,
         contactPerson,
         email,
@@ -21030,6 +21392,8 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = [], options = {}) {
           workspaceUnitId,
           branchId,
           teamId,
+          firmId,
+          attorneyFirmId: firmId,
           partner: {
             companyName: normalizeNullableText(partner.companyName),
             contactPerson,
@@ -21507,20 +21871,27 @@ async function resolveAttorneyFirmIdForCreationRoleplayer(client, selection = {}
     }
     if (query.data?.[0]?.id) return query.data[0].id
 
-    const byId = await client
+    let byId = await client
       .from('attorney_firms')
       .select('id')
       .eq('id', organisationId)
       .eq('is_active', true)
       .limit(1)
+    if (byId.error && isMissingColumnError(byId.error, 'is_active')) {
+      byId = await client
+        .from('attorney_firms')
+        .select('id')
+        .eq('id', organisationId)
+        .limit(1)
+    }
     if (byId.error && !isMissingTableError(byId.error, 'attorney_firms') && !isMissingColumnError(byId.error, 'is_active') && !isPermissionDeniedError(byId.error)) {
       throw byId.error
     }
     if (byId.data?.[0]?.id) return byId.data[0].id
 
-    // Attorney firm rows are only selectable to firm members in older schemas.
-    // Partner selections can still carry the firm UUID, and the assignment FK/RLS will validate it.
-    return organisationId
+    // A partner organisation UUID is not necessarily an attorney_firms.id.
+    // Only use organisationId as firmId when the by-id lookup above confirms it.
+    return null
   }
 
   const email = normalizeEmailAddress(selection.email)
@@ -21911,13 +22282,35 @@ function normalizeTransactionRoleplayerSelection(item = {}) {
   if (!allowedRoleTypes.has(roleType)) return null
 
   const partner = item.partner && typeof item.partner === 'object' ? item.partner : item
-  const organisationId = normalizeNullableUuid(item.organisationId || item.organisation_id || partner.organisationId || partner.organisation_id)
+  const organisationId = normalizeNullableUuid(
+    item.partnerOrganisationId ||
+      item.partner_organisation_id ||
+      item.organisationId ||
+      item.organisation_id ||
+      partner.partnerOrganisationId ||
+      partner.partner_organisation_id ||
+      partner.organisationId ||
+      partner.organisation_id,
+  )
   const relationshipId = normalizeNullableUuid(item.relationshipId || item.relationship_id || partner.relationshipId || partner.relationship_id)
   const userId = normalizeNullableUuid(item.userId || item.user_id || partner.userId || partner.user_id)
   const workspaceUnitId = normalizeNullableUuid(item.workspaceUnitId || item.workspace_unit_id || partner.workspaceUnitId || partner.workspace_unit_id)
   const regionId = normalizeNullableUuid(item.regionId || item.region_id || partner.regionId || partner.region_id)
   const branchId = normalizeNullableUuid(item.branchId || item.branch_id || partner.branchId || partner.branch_id)
   const teamId = normalizeNullableUuid(item.teamId || item.team_id || partner.teamId || partner.team_id)
+  const isAttorneyRoleplayer = ['transfer_attorney', 'bond_attorney', 'cancellation_attorney'].includes(roleType)
+  const firmId = isAttorneyRoleplayer
+    ? normalizeNullableUuid(
+        item.firmId ||
+          item.firm_id ||
+          item.attorneyFirmId ||
+          item.attorney_firm_id ||
+          partner.firmId ||
+          partner.firm_id ||
+          partner.attorneyFirmId ||
+          partner.attorney_firm_id,
+      )
+    : null
   const companyName = normalizeNullableText(partner.companyName || partner.organisationName || partner.partnerName || partner.name)
   const contactPerson = normalizeNullableText(partner.contactPerson || partner.contactName || partner.name || companyName)
   const email = normalizeNullableText(partner.email || partner.emailAddress || partner.email_address)?.toLowerCase() || null
@@ -21944,6 +22337,8 @@ function normalizeTransactionRoleplayerSelection(item = {}) {
     workspaceUnitId,
     branchId,
     teamId,
+    firmId,
+    attorneyFirmId: firmId,
     companyName,
     contactPerson,
     email,
@@ -21960,6 +22355,8 @@ function normalizeTransactionRoleplayerSelection(item = {}) {
       workspaceUnitId,
       branchId,
       teamId,
+      firmId,
+      attorneyFirmId: firmId,
       scopeType: normalizeNullableText(item.scopeType || item.scope_type || partner.scopeType),
       scopeId: normalizeNullableText(item.scopeId || item.scope_id || partner.scopeId),
       scopeLabel: normalizeNullableText(item.scopeLabel || item.scope_label || partner.scopeLabel),
@@ -22521,6 +22918,8 @@ export async function saveTransactionRoleplayerSelections({
       branchId: selection.branchId || null,
       regionId: selection.regionId || null,
       teamId: selection.teamId || null,
+      firmId: selection.firmId || null,
+      attorneyFirmId: selection.attorneyFirmId || selection.firmId || null,
       snapshot: selection.snapshot || {},
     })),
     actorProfile,
@@ -39469,6 +39868,101 @@ export async function uploadClientPortalDocument({
   }
 }
 
+function clientPortalDocumentPathLooksTransactionScoped(filePath = '', transactionId = '') {
+  const normalizedPath = normalizeTextValue(filePath).replace(/\\/g, '/')
+  const normalizedTransactionId = normalizeTextValue(transactionId)
+  if (!normalizedPath || !normalizedTransactionId) return false
+
+  return (
+    normalizedPath === normalizedTransactionId ||
+    normalizedPath.startsWith(`${normalizedTransactionId}/`) ||
+    normalizedPath.includes(`/${normalizedTransactionId}/`) ||
+    normalizedPath.startsWith(`transaction-${normalizedTransactionId}/`) ||
+    normalizedPath.includes(`/transaction-${normalizedTransactionId}/`) ||
+    normalizedPath.startsWith(`client-portal/${normalizedTransactionId}/`) ||
+    normalizedPath.includes(`/client-portal/${normalizedTransactionId}/`)
+  )
+}
+
+async function clientPortalDocumentPathHasDocumentRow(client, transactionId, filePath) {
+  const query = await client
+    .from('documents')
+    .select('id')
+    .eq('transaction_id', transactionId)
+    .eq('file_path', filePath)
+    .limit(1)
+
+  if (query.error) {
+    if (
+      isMissingTableError(query.error, 'documents') ||
+      isMissingColumnError(query.error, 'file_path') ||
+      isMissingColumnError(query.error, 'transaction_id') ||
+      isPermissionDeniedError(query.error)
+    ) {
+      return false
+    }
+    throw query.error
+  }
+
+  return Array.isArray(query.data) && query.data.length > 0
+}
+
+async function clientPortalDocumentPathHasPacketVersion(client, transactionId, filePath) {
+  for (const field of ['rendered_file_path', 'final_signed_file_path']) {
+    const versionQuery = await client
+      .from('document_packet_versions')
+      .select('id, packet_id')
+      .eq(field, filePath)
+      .limit(1)
+
+    if (versionQuery.error) {
+      if (
+        isMissingTableError(versionQuery.error, 'document_packet_versions') ||
+        isMissingColumnError(versionQuery.error, field) ||
+        isPermissionDeniedError(versionQuery.error)
+      ) {
+        continue
+      }
+      throw versionQuery.error
+    }
+
+    const packetId = versionQuery.data?.[0]?.packet_id || ''
+    if (!packetId) continue
+
+    const packetQuery = await client
+      .from('document_packets')
+      .select('id')
+      .eq('id', packetId)
+      .eq('transaction_id', transactionId)
+      .limit(1)
+
+    if (packetQuery.error) {
+      if (
+        isMissingTableError(packetQuery.error, 'document_packets') ||
+        isMissingColumnError(packetQuery.error, 'transaction_id') ||
+        isPermissionDeniedError(packetQuery.error)
+      ) {
+        continue
+      }
+      throw packetQuery.error
+    }
+
+    if (Array.isArray(packetQuery.data) && packetQuery.data.length > 0) return true
+  }
+
+  return false
+}
+
+async function clientPortalDocumentPathBelongsToTransaction(client, link, filePath) {
+  const normalizedFilePath = normalizeTextValue(filePath)
+  const transactionId = normalizeTextValue(link?.transaction_id)
+  if (!normalizedFilePath || !transactionId) return false
+
+  if (clientPortalDocumentPathLooksTransactionScoped(normalizedFilePath, transactionId)) return true
+  if (await clientPortalDocumentPathHasDocumentRow(client, transactionId, normalizedFilePath)) return true
+  return clientPortalDocumentPathHasPacketVersion(client, transactionId, normalizedFilePath)
+}
+
 export async function createClientPortalDocumentSignedUrl({
   token,
   filePath,
@@ -39480,7 +39974,11 @@ export async function createClientPortalDocumentSignedUrl({
   }
 
   const client = requireClientPortalTokenClient(token)
-  await resolveClientPortalLinkByToken(client, token)
+  const link = await resolveClientPortalLinkByToken(client, token)
+  const pathBelongsToTransaction = await clientPortalDocumentPathBelongsToTransaction(client, link, filePath)
+  if (!pathBelongsToTransaction) {
+    throw new Error('Unable to open this document right now.')
+  }
 
   const candidateBuckets = Array.from(
     new Set([

@@ -99,9 +99,12 @@ assert.match(
 const smokeSource = fs.readFileSync(path.join(PROJECT_ROOT, 'scripts/transaction-propagation-smoke.mjs'), 'utf8')
 assert.match(smokeSource, /partnerRoutingResolvedWithoutFallback/, 'smoke should expose the partner routing launch acceptance flag')
 assert.match(smokeSource, /verifyPartnerRouting/, 'smoke should verify partner routing events explicitly')
+assert.match(smokeSource, /attorneyFirmId: selection\.firmId/, 'smoke idempotency reruns should preserve attorney firm ids')
 
 const apiSource = fs.readFileSync(path.join(PROJECT_ROOT, 'src/lib/api.js'), 'utf8')
 assert.match(apiSource, /normalizeTransactionRoleplayerDbStatus/, 'API should normalize DB-safe roleplayer assignment statuses')
+assert.match(apiSource, /firmId: selection\.firmId \|\| null/, 'roleplayer propagation should preserve attorney firm ids')
+assert.match(apiSource, /Only use organisationId as firmId when the by-id lookup above confirms it/, 'API should not substitute partner organisation ids as attorney firm ids')
 
 const relationshipMigration = fs.readFileSync(
   path.join(REPO_ROOT, 'supabase/migrations/202607090010_partner_routing_relationship_resolution.sql'),

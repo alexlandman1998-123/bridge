@@ -165,6 +165,128 @@ const transactions = [
     },
     updated_at: '2026-05-26T10:00:00.000Z',
   },
+  {
+    id: 'tx-awaiting-bank-feedback',
+    organisation_id: 'workspace-1',
+    bond_workspace_id: 'workspace-1',
+    bond_region_id: 'region-1',
+    bond_workspace_unit_id: 'unit-2',
+    primary_bond_consultant_user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    assigned_bond_processor_user_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    transactionFinanceWorkflow: {
+      workflow: { currentStage: 'submitted_to_banks', status: 'active' },
+    },
+    transaction_bond_applications: [
+      { id: 'app-awaiting-bank', status: 'submitted', submitted_at: '2026-05-26T09:00:00.000Z' },
+    ],
+    updated_at: '2026-05-26T10:00:00.000Z',
+  },
+  {
+    id: 'tx-additional-documents',
+    organisation_id: 'workspace-1',
+    bond_workspace_id: 'workspace-1',
+    bond_region_id: 'region-1',
+    bond_workspace_unit_id: 'unit-2',
+    primary_bond_consultant_user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    assigned_bond_processor_user_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    transactionFinanceWorkflow: {
+      workflow: { currentStage: 'bank_review', status: 'active' },
+    },
+    transaction_bond_applications: [
+      { id: 'app-additional-docs', status: 'additional_documents_required', updated_at: '2026-05-27T09:00:00.000Z' },
+    ],
+    updated_at: '2026-05-27T10:00:00.000Z',
+  },
+  {
+    id: 'tx-buyer-reupload',
+    organisation_id: 'workspace-1',
+    bond_workspace_id: 'workspace-1',
+    bond_region_id: 'region-1',
+    bond_workspace_unit_id: 'unit-2',
+    primary_bond_consultant_user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    assigned_bond_processor_user_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    transactionFinanceWorkflow: {
+      workflow: { currentStage: 'bank_review', status: 'active' },
+    },
+    transaction_bond_applications: [
+      { id: 'app-buyer-reupload', status: 'additional_documents_required', updated_at: '2026-05-28T09:00:00.000Z' },
+    ],
+    document_requests: [
+      { id: 'doc-reupload', document_key: 'bank_statement', status: 'reupload_required' },
+    ],
+    updated_at: '2026-05-28T10:00:00.000Z',
+  },
+  {
+    id: 'tx-awaiting-grant-doc',
+    organisation_id: 'workspace-1',
+    bond_workspace_id: 'workspace-1',
+    bond_region_id: 'region-1',
+    bond_workspace_unit_id: 'unit-2',
+    primary_bond_consultant_user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    assigned_bond_processor_user_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    transactionFinanceWorkflow: {
+      workflow: { currentStage: 'bond_approved', status: 'active' },
+    },
+    updated_at: '2026-05-29T10:00:00.000Z',
+  },
+  {
+    id: 'tx-awaiting-signed-grant',
+    organisation_id: 'workspace-1',
+    bond_workspace_id: 'workspace-1',
+    bond_region_id: 'region-1',
+    bond_workspace_unit_id: 'unit-2',
+    primary_bond_consultant_user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    assigned_bond_processor_user_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    transactionFinanceWorkflow: {
+      workflow: { currentStage: 'grant_received', status: 'active' },
+      instruction: { grantDocumentId: 'doc-grant-1', grantReceived: true },
+    },
+    updated_at: '2026-05-30T10:00:00.000Z',
+  },
+  {
+    id: 'tx-instruction-awaiting-attorney',
+    organisation_id: 'workspace-1',
+    bond_workspace_id: 'workspace-1',
+    bond_region_id: 'region-1',
+    bond_workspace_unit_id: 'unit-2',
+    primary_bond_consultant_user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    assigned_bond_processor_user_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    transactionFinanceWorkflow: {
+      workflow: { currentStage: 'instruction_sent', status: 'active' },
+      instruction: { instructionSent: true, instructionDocumentId: 'doc-instruction-1' },
+    },
+    updated_at: '2026-05-31T10:00:00.000Z',
+  },
+  {
+    id: 'tx-clean-instruction',
+    organisation_id: 'workspace-1',
+    bond_workspace_id: 'workspace-1',
+    bond_region_id: 'region-1',
+    bond_workspace_unit_id: 'unit-2',
+    primary_bond_consultant_user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    assigned_bond_processor_user_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    transactionFinanceWorkflow: {
+      workflow: { currentStage: 'instruction_sent', status: 'active' },
+      instruction: { instructionSent: true, instructionDocumentId: 'doc-instruction-2' },
+    },
+    transaction_attorney_assignments: [
+      { id: 'attorney-assignment-1', attorney_role: 'bond_attorney', assignment_status: 'active', attorney_user_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' },
+    ],
+    updated_at: '2026-06-01T10:00:00.000Z',
+  },
+  {
+    id: 'tx-unknown-active',
+    organisation_id: 'workspace-1',
+    bond_workspace_id: 'workspace-1',
+    bond_region_id: 'region-1',
+    bond_workspace_unit_id: 'unit-2',
+    finance_type: 'bond',
+    finance_managed_by: 'bond_originator',
+    bond_assignment_status: 'consultant_assigned',
+    primary_bond_consultant_user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    assigned_bond_processor_user_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    updated_at: '2026-06-02T10:00:00.000Z',
+  },
 ]
 
 try {
@@ -202,12 +324,42 @@ try {
   assert.equal(queueService.getBankFeedbackQueue(manager, transactions).length >= 1, true)
   assert.equal(queueService.getSubmissionReadinessQueue(manager, transactions).length >= 1, true)
   assert.equal(queueService.getManagerEscalationsQueue(manager, transactions).length >= 1, true)
+  assert.equal(queueService.getAwaitingBankFeedbackQueue(manager, transactions).some((item) => item.transactionId === 'tx-awaiting-bank-feedback'), true)
+  assert.equal(queueService.getAdditionalDocumentsRequiredQueue(manager, transactions).some((item) => item.transactionId === 'tx-additional-documents'), true)
+  assert.equal(queueService.getAwaitingBuyerReuploadQueue(manager, transactions).some((item) => item.transactionId === 'tx-buyer-reupload'), true)
   assert.equal(queueService.getAwaitingGrantQueue(manager, transactions).some((item) => item.transactionId === 'tx-awaiting-grant'), true)
+  assert.equal(queueService.getAwaitingGrantDocumentQueue(manager, transactions).some((item) => item.transactionId === 'tx-awaiting-grant-doc'), true)
   assert.equal(queueService.getGrantReceivedQueue(manager, transactions).some((item) => item.transactionId === 'tx-grant-received'), true)
+  assert.equal(queueService.getAwaitingSignedGrantQueue(manager, transactions).some((item) => item.transactionId === 'tx-awaiting-signed-grant'), true)
   assert.equal(queueService.getGrantSignedQueue(manager, transactions).some((item) => item.transactionId === 'tx-grant-signed'), true)
   const readyForInstruction = queueService.getReadyForInstructionQueue(manager, transactions)
   assert.equal(readyForInstruction.some((item) => item.transactionId === 'tx-ready-for-instruction'), true)
   assert.equal(readyForInstruction.find((item) => item.transactionId === 'tx-ready-for-instruction')?.canonicalFinanceStage, 'grant_submitted')
+  assert.equal(queueService.getInstructionSentAwaitingAttorneyAcceptanceQueue(manager, transactions).some((item) => item.transactionId === 'tx-instruction-awaiting-attorney'), true)
+  assert.equal(queueService.getInstructionSentAwaitingAttorneyAcceptanceQueue(manager, transactions).some((item) => item.transactionId === 'tx-clean-instruction'), false)
+  assert.equal(queueService.getInstructionSentQueue(manager, transactions).some((item) => item.transactionId === 'tx-clean-instruction'), true)
+  assert.equal(queueService.getActiveReviewRequiredQueue(manager, transactions).some((item) => item.transactionId === 'tx-unknown-active'), true)
+  assert.equal(queueService.getActiveReviewRequiredQueue(manager, transactions).some((item) => item.transactionId === 'tx-clean-instruction'), false)
+
+  assert.equal(
+    queueService.getBondOperationalQueueContract(transactions.find((item) => item.id === 'tx-awaiting-bank-feedback')).queueKey,
+    queueService.BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_BANK_FEEDBACK,
+  )
+  assert.equal(
+    queueService.getBondOperationalQueueContract(transactions.find((item) => item.id === 'tx-buyer-reupload')).waitState,
+    queueService.BOND_OPERATIONAL_WAIT_STATES.AWAITING_BUYER_REUPLOAD,
+  )
+  assert.equal(
+    queueService.getBondOperationalQueueContract(transactions.find((item) => item.id === 'tx-unknown-active')).queueKey,
+    queueService.BOND_OPERATIONAL_QUEUE_KEYS.ACTIVE_REVIEW_REQUIRED,
+  )
+  assert.equal(
+    queueService.getBondOperationalQueueContract(transactions.find((item) => item.id === 'tx-clean-instruction')).queueKey,
+    queueService.BOND_OPERATIONAL_QUEUE_KEYS.INSTRUCTION_SENT,
+  )
+  assert.equal(queueService.getBondOperationalQueueContract({ id: 'tx-complete', finance_type: 'bond', status: 'completed' }).hiddenAllowed, true)
+  assert.equal(queueService.getBondOperationalQueueContract({ id: 'tx-declined', finance_type: 'bond', status: 'declined' }).hiddenAllowed, true)
+  assert.equal(queueService.getBondOperationalQueueContract({ id: 'tx-archived', finance_type: 'bond', archived_at: '2026-06-01T00:00:00.000Z' }).hiddenAllowed, true)
 
   const compliance = makeContext({
     userId: '44444444-4444-4444-8444-444444444444',
@@ -222,7 +374,15 @@ try {
   assert.equal(Array.isArray(queues.processing_queue), true)
   assert.equal(queues.manager_escalations.length >= 1, true)
   assert.equal(queues.awaiting_grant.some((item) => item.transactionId === 'tx-awaiting-grant'), true)
+  assert.equal(queues.awaiting_bank_feedback.some((item) => item.transactionId === 'tx-awaiting-bank-feedback'), true)
+  assert.equal(queues.additional_documents_required.some((item) => item.transactionId === 'tx-additional-documents'), true)
+  assert.equal(queues.awaiting_buyer_reupload.some((item) => item.transactionId === 'tx-buyer-reupload'), true)
+  assert.equal(queues.awaiting_grant_document.some((item) => item.transactionId === 'tx-awaiting-grant-doc'), true)
+  assert.equal(queues.awaiting_signed_grant.some((item) => item.transactionId === 'tx-awaiting-signed-grant'), true)
   assert.equal(queues.ready_for_instruction.some((item) => item.transactionId === 'tx-ready-for-instruction'), true)
+  assert.equal(queues.instruction_sent_awaiting_attorney_acceptance.some((item) => item.transactionId === 'tx-instruction-awaiting-attorney'), true)
+  assert.equal(queues.instruction_sent.some((item) => item.transactionId === 'tx-clean-instruction'), true)
+  assert.equal(queues.active_review_required.some((item) => item.transactionId === 'tx-unknown-active'), true)
 
   const intakeRows = [
     {

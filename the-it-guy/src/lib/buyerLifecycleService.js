@@ -1045,11 +1045,25 @@ function mapListingDbRow(row = {}) {
   const marketing = row.marketing && typeof row.marketing === 'object' ? row.marketing : {}
   return {
     id: row.id,
+    organisationId: row.organisation_id,
+    branchId: row.branch_id || null,
+    assignedBranchId: row.assigned_branch_id || row.branch_id || null,
+    assignedAgentId: row.assigned_agent_id || null,
+    sellerLeadId: row.seller_lead_id || null,
+    sellerContactId: row.seller_contact_id || null,
+    sellerType: row.seller_type || null,
+    sellerHasExistingBond: row.seller_has_existing_bond ?? row.finance_context?.sellerHasExistingBond ?? null,
+    cancellationRequired: row.cancellation_required ?? row.finance_context?.cancellationRequired ?? null,
+    mandatePacketId: row.mandate_packet_id || null,
     listingTitle: row.listing_title || marketing.title || propertyDetails.title || 'Listing',
     propertyAddress: row.property_address || propertyDetails.address || propertyDetails.addressLine1 || '',
     suburb: row.suburb || propertyDetails.suburb || '',
     city: row.city || propertyDetails.city || '',
     askingPrice: row.asking_price || row.price || propertyDetails.askingPrice || 0,
+    propertyType: row.property_type || propertyDetails.propertyType || null,
+    propertyTenure: row.property_tenure || row.property_structure_type || propertyDetails.propertyTenure || null,
+    vatTreatment: row.vat_treatment || row.seller_canonical_facts_json?.vatTreatment || null,
+    sellerOnboarding: row.seller_canonical_facts_json || null,
   }
 }
 
@@ -2398,7 +2412,11 @@ export async function createTransactionFromAcceptedCanonicalOffer({
     originatingBuyerLeadId: canonicalOffer.buyerLeadId,
     originatingLeadId: canonicalOffer.buyerLeadId,
     buyerContactId: canonicalOffer.buyerContactId,
+    sellerContactId: canonicalOffer.sellerContactId || listing?.sellerContactId || listing?.seller_contact_id || payload?.sellerContactId,
+    originatingSellerLeadId: canonicalOffer.sellerLeadId || listing?.sellerLeadId || listing?.seller_lead_id || payload?.originatingSellerLeadId,
     listingId: canonicalOffer.listingId || payload?.listingId,
+    branchId: listing?.branchId || listing?.branch_id || listing?.assignedBranchId || listing?.assigned_branch_id || payload?.branchId,
+    assignedBranchId: listing?.assignedBranchId || listing?.assigned_branch_id || listing?.branchId || listing?.branch_id || payload?.assignedBranchId,
     acceptedOfferId: canonicalOffer.offerId || canonicalOffer.id,
     purchasePrice: canonicalOffer.offerAmount || payload?.purchasePrice,
     dealValue: canonicalOffer.offerAmount || payload?.dealValue,

@@ -321,7 +321,7 @@ try {
   assert.equal(financeResult.rollup.parentStage, 'FINANCE')
   assert.equal(financeResult.compatibility.current_main_stage, 'FIN')
   assert.equal(client.state.transactions[0].current_main_stage, 'FIN')
-  assert.equal(client.state.units[0].status, 'FIN')
+  assert.equal(client.state.units[0].status, 'Finance Pending')
 
   const cancelledResult = await api.runWorkflowAction({
     transactionId: 'tx-2',

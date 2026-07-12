@@ -12,11 +12,19 @@ assert.equal(
   'package script should expose the transaction overview conversation regression',
 )
 
-const overviewStart = source.indexOf("{workspaceRole !== 'bond_originator' && ['overview', 'transfer'].includes(activeWorkspaceMenu) ? (")
+const overviewStart = source.indexOf("{workspaceRole !== 'bond_originator' && ['overview', 'transfer'].includes(activeWorkspaceMenu) && !showAttorneyMatterCommandCenterV2 ? (")
 const overviewSidebarStart = source.indexOf('<OverviewSidePanel title="Quick Actions">', overviewStart)
+const commandCenterStart = source.indexOf('{showAttorneyMatterCommandCenterV2 ? (')
+const commandCenterEnd = source.indexOf("{workspaceRole !== 'bond_originator' && ['overview', 'transfer'].includes(activeWorkspaceMenu)", commandCenterStart)
+const commandCenterBlock = source.slice(commandCenterStart, commandCenterEnd)
+const commandCenterFunctionStart = source.indexOf('function AttorneyMatterCommandCenterV2({')
+const commandCenterFunctionEnd = source.indexOf('function AttorneyDailyActionQueue({', commandCenterFunctionStart)
+const commandCenterFunction = source.slice(commandCenterFunctionStart, commandCenterFunctionEnd)
 
 assert.notEqual(overviewStart, -1, 'Transaction workspace overview block should render explicitly')
 assert.notEqual(overviewSidebarStart, -1, 'Overview sidebar should follow the main overview content')
+assert.notEqual(commandCenterStart, -1, 'Attorney command center V2 overview branch should render explicitly')
+assert.notEqual(commandCenterFunctionStart, -1, 'Attorney command center V2 component should stay in the transaction workspace')
 
 const overviewBlock = source.slice(overviewStart, overviewSidebarStart)
 const conversationTitle = "{isAgentTransactionView ? 'Transaction Conversation' : 'Matter Conversation'}"
@@ -63,6 +71,14 @@ assert.match(overviewBlock, /<div key=\{entry\.id\} className="flex w-full">/, '
 assert.doesNotMatch(overviewBlock, /max-w-\[min\(100%,46rem\)\]/, 'Conversation cards should not be capped narrower than the thread container')
 assert.match(overviewBlock, /<DiscussionComposerControls[\s\S]{0,800}structured=\{structuredDiscussionComposer\}/, 'Manual composer should use the shared action controls')
 assert.match(overviewBlock, /visibilityOptions=\{effectiveDiscussionVisibilityOptions\}/, 'Manual composer should use resolved audience options')
+assert.match(commandCenterBlock, /<AttorneyMatterCommandCenterV2[\s\S]{0,2000}handleAddDiscussion=\{handleAddDiscussion\}/, 'Command center V2 should receive the matter conversation submit handler')
+assert.match(commandCenterBlock, /<AttorneyMatterCommandCenterV2[\s\S]{0,2000}structuredDiscussionComposer=\{structuredDiscussionComposer\}/, 'Command center V2 should receive the structured attorney composer state')
+assert.match(commandCenterBlock, /<AttorneyMatterCommandCenterV2[\s\S]{0,2000}availableDiscussionVisibilityOptions=\{effectiveDiscussionVisibilityOptions\}/, 'Command center V2 should use resolved audience options')
+assert.match(commandCenterBlock, /<AttorneyMatterCommandCenterV2[\s\S]{0,2000}recentActivity=\{overviewConversationEntries\}/, 'Command center V2 should receive overview conversation history')
+assert.match(commandCenterFunction, /function AttorneyMatterCommandCenterV2\(\{[\s\S]*handleAddDiscussion[\s\S]*structuredDiscussionComposer[\s\S]*recentActivity/, 'Command center V2 should expose matter conversation props')
+assert.match(commandCenterFunction, /<BondMatterConversationPanel[\s\S]{0,1400}handleAddDiscussion=\{handleAddDiscussion\}/, 'Command center V2 should render the shared matter conversation panel')
+assert.match(commandCenterFunction, /<BondMatterConversationPanel[\s\S]{0,1400}overviewConversationEntries=\{recentActivity\}/, 'Command center V2 conversation should render recent activity')
+assert.match(commandCenterFunction, /<BondMatterConversationPanel[\s\S]{0,1400}structuredDiscussionComposer=\{structuredDiscussionComposer\}/, 'Command center V2 conversation should keep structured composer controls')
 
 assert.match(source, /kind: category === 'system' \? 'system' : 'event'/, 'Automated system notifications should still normalize into the conversation feed')
 assert.match(source, /kind: 'comment'/, 'Manual discussion comments should still normalize into the conversation feed')

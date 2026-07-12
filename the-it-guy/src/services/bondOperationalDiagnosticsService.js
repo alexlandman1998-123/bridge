@@ -4,6 +4,10 @@ import {
   normalizeBondHybridFinanceStage,
 } from '../core/transactions/bondHybridFinanceWorkflow'
 import { resolveEffectiveBondAssignment } from './bondAssignmentService'
+import {
+  BOND_OPERATIONAL_QUEUE_KEYS,
+  getBondOperationalQueueContract,
+} from './bondOperationalQueueService'
 
 export const BOND_OPERATIONAL_DIAGNOSTIC_STAGES = Object.freeze([
   'application_arrived',
@@ -16,10 +20,12 @@ const STAGE_LABELS = Object.freeze({
 })
 
 const EXPECTED_QUEUE_BY_STAGE = Object.freeze({
-  bond_approved: 'awaiting_grant',
+  submitted_to_banks: BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_BANK_FEEDBACK,
+  bond_approved: BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_GRANT_DOCUMENT,
   grant_received: 'grant_received',
   grant_signed: 'grant_signed',
   grant_submitted: 'ready_for_instruction',
+  instruction_sent: BOND_OPERATIONAL_QUEUE_KEYS.INSTRUCTION_SENT,
 })
 
 const NEXT_ACTION_BY_STAGE = Object.freeze({
@@ -39,10 +45,18 @@ const NEXT_ACTION_BY_STAGE = Object.freeze({
 })
 
 const QUEUE_HREF_BY_KEY = Object.freeze({
+  [BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_BANK_FEEDBACK]: '/bond/applications?view=awaiting-bank-feedback',
+  [BOND_OPERATIONAL_QUEUE_KEYS.ADDITIONAL_DOCUMENTS_REQUIRED]: '/bond/applications?view=additional-documents',
+  [BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_BUYER_REUPLOAD]: '/bond/applications?view=buyer-reupload',
   awaiting_grant: '/bond/applications?view=bond-approved',
+  [BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_GRANT_DOCUMENT]: '/bond/applications?view=awaiting-grant',
   grant_received: '/bond/applications?view=grant-received',
+  [BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_SIGNED_GRANT]: '/bond/applications?view=awaiting-signed-grant',
   grant_signed: '/bond/applications?view=grant-signed',
   ready_for_instruction: '/bond/applications?view=grant-submitted',
+  [BOND_OPERATIONAL_QUEUE_KEYS.INSTRUCTION_SENT]: '/bond/applications?view=instruction-sent',
+  [BOND_OPERATIONAL_QUEUE_KEYS.INSTRUCTION_SENT_AWAITING_ATTORNEY_ACCEPTANCE]: '/bond/applications?view=attorney-acceptance',
+  [BOND_OPERATIONAL_QUEUE_KEYS.ACTIVE_REVIEW_REQUIRED]: '/bond/applications?view=review-required',
 })
 
 const ISSUE_REMEDIATION_META = Object.freeze({
@@ -79,16 +93,16 @@ const ISSUE_REMEDIATION_META = Object.freeze({
   missing_grant_document: {
     actionLabel: 'Attach grant document',
     ownerRole: 'Bond Originator',
-    queueKey: 'grant_received',
+    queueKey: BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_GRANT_DOCUMENT,
     evidenceKey: 'grant_document',
-    href: '/bond/applications?view=grant-received',
+    href: '/bond/applications?view=awaiting-grant',
   },
   missing_signed_grant_document: {
     actionLabel: 'Attach signed grant',
     ownerRole: 'Bond Originator',
-    queueKey: 'grant_signed',
+    queueKey: BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_SIGNED_GRANT,
     evidenceKey: 'signed_grant_document',
-    href: '/bond/applications?view=grant-signed',
+    href: '/bond/applications?view=awaiting-signed-grant',
   },
   missing_grant_submission_evidence: {
     actionLabel: 'Record grant submission',
@@ -100,9 +114,9 @@ const ISSUE_REMEDIATION_META = Object.freeze({
   missing_instruction_evidence: {
     actionLabel: 'Attach instruction evidence',
     ownerRole: 'Bond Originator',
-    queueKey: 'ready_for_instruction',
+    queueKey: BOND_OPERATIONAL_QUEUE_KEYS.INSTRUCTION_SENT_AWAITING_ATTORNEY_ACCEPTANCE,
     evidenceKey: 'attorney_instruction',
-    href: '/bond/applications?view=instruction-sent',
+    href: '/bond/applications?view=attorney-acceptance',
   },
 })
 
@@ -255,21 +269,22 @@ function getTransactionHref(transactionId = '', diagnosticCode = '') {
   return `/bond/files/${encodePathSegment(id)}${suffix}`
 }
 
-function getIssueRemediation({ code = '', transactionId = null } = {}) {
+function getIssueRemediation({ code = '', transactionId = null, queueKey = '' } = {}) {
   const meta = ISSUE_REMEDIATION_META[code] || {}
+  const resolvedQueueKey = normalizeText(queueKey || meta.queueKey)
   const transactionHref = getTransactionHref(transactionId, code)
-  const queueHref = meta.queueKey ? QUEUE_HREF_BY_KEY[meta.queueKey] || meta.href || '/bond/applications' : meta.href || '/bond/applications'
+  const queueHref = resolvedQueueKey ? QUEUE_HREF_BY_KEY[resolvedQueueKey] || meta.href || '/bond/applications' : meta.href || '/bond/applications'
   return {
     actionLabel: meta.actionLabel || 'Review issue',
     actionHref: transactionHref || queueHref,
     queueHref,
-    queueKey: meta.queueKey || null,
+    queueKey: resolvedQueueKey || null,
     evidenceKey: meta.evidenceKey || null,
     ownerRole: meta.ownerRole || 'Operations',
   }
 }
 
-function buildIssue({ code, severity = 'warning', transactionId = null, stage = '', message, recommendation = '' } = {}) {
+function buildIssue({ code, severity = 'warning', transactionId = null, stage = '', message, recommendation = '', queueKey = '' } = {}) {
   return {
     code,
     severity,
@@ -277,7 +292,7 @@ function buildIssue({ code, severity = 'warning', transactionId = null, stage = 
     stage,
     message,
     recommendation,
-    ...getIssueRemediation({ code, transactionId }),
+    ...getIssueRemediation({ code, transactionId, queueKey }),
   }
 }
 
@@ -336,6 +351,12 @@ function diagnoseRecord(record = {}) {
   const canonicalStage = getCanonicalBondFinanceStage(record)
   const legacyStage = resolveLegacyStage(record)
   const stage = canonicalStage || legacyStage || 'application_arrived'
+  const operationalContract = getBondOperationalQueueContract(record)
+  const operationalQueueKey = operationalContract.queueKey || null
+  const evidenceQueueKey = (fallbackQueueKey) =>
+    operationalQueueKey && operationalQueueKey !== BOND_OPERATIONAL_QUEUE_KEYS.ACTIVE_REVIEW_REQUIRED
+      ? operationalQueueKey
+      : fallbackQueueKey
   const assignment = resolveEffectiveBondAssignment(transaction)
   const assignmentWorkspaceId = getAssignmentWorkspaceId(transaction, assignment)
   const primaryConsultantUserId = getAssignmentPrimaryConsultantId(transaction, assignment)
@@ -416,6 +437,7 @@ function diagnoseRecord(record = {}) {
       stage,
       message: 'The workflow is at or beyond Grant Received but no grant document is attached.',
       recommendation: 'Attach the lender grant document before progressing the grant workflow.',
+      queueKey: evidenceQueueKey(BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_GRANT_DOCUMENT),
     }))
   }
 
@@ -427,6 +449,7 @@ function diagnoseRecord(record = {}) {
       stage,
       message: 'The workflow is at or beyond Grant Signed but no signed grant document is attached.',
       recommendation: 'Attach the buyer-signed grant document before marking the grant signed or submitted.',
+      queueKey: evidenceQueueKey(BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_SIGNED_GRANT),
     }))
   }
 
@@ -438,6 +461,7 @@ function diagnoseRecord(record = {}) {
       stage,
       message: 'The workflow is at or beyond Grant Submitted but submission evidence is missing.',
       recommendation: 'Record the grant submission timestamp before attorney instruction handoff.',
+      queueKey: evidenceQueueKey(BOND_OPERATIONAL_QUEUE_KEYS.READY_FOR_INSTRUCTION),
     }))
   }
 
@@ -449,6 +473,7 @@ function diagnoseRecord(record = {}) {
       stage,
       message: 'The workflow is at or beyond Instruction Sent but attorney instruction evidence is incomplete.',
       recommendation: 'Attach the instruction document and record the instruction-sent milestone.',
+      queueKey: evidenceQueueKey(BOND_OPERATIONAL_QUEUE_KEYS.INSTRUCTION_SENT_AWAITING_ATTORNEY_ACCEPTANCE),
     }))
   }
 
@@ -463,7 +488,11 @@ function diagnoseRecord(record = {}) {
     stageLabel: STAGE_LABELS[stage] || stage,
     canonicalStage: canonicalStage || null,
     legacyStage: legacyStage || null,
-    expectedQueueKey: EXPECTED_QUEUE_BY_STAGE[stage] || null,
+    expectedQueueKey: operationalQueueKey || EXPECTED_QUEUE_BY_STAGE[stage] || null,
+    operationalQueueKey,
+    operationalWaitState: operationalContract.waitState || null,
+    operationalQueueReason: operationalContract.reason || null,
+    hiddenAllowed: Boolean(operationalContract.hiddenAllowed),
     nextAction: NEXT_ACTION_BY_STAGE[stage] || 'Review bond operational status.',
     assignment: {
       source: assignment.source || 'none',
@@ -480,7 +509,7 @@ function diagnoseRecord(record = {}) {
       hasInstructionSentEvidence: hasInstructionSentEvidence(instruction),
     },
     actionLabel: primaryIssue?.actionLabel || NEXT_ACTION_BY_STAGE[stage] || 'Review bond operational status.',
-    actionHref: primaryIssue?.actionHref || rowAction.actionHref || getTransactionHref(transactionId) || (EXPECTED_QUEUE_BY_STAGE[stage] ? QUEUE_HREF_BY_KEY[EXPECTED_QUEUE_BY_STAGE[stage]] : '/bond/applications'),
+    actionHref: primaryIssue?.actionHref || rowAction.actionHref || getTransactionHref(transactionId) || (operationalQueueKey ? QUEUE_HREF_BY_KEY[operationalQueueKey] : EXPECTED_QUEUE_BY_STAGE[stage] ? QUEUE_HREF_BY_KEY[EXPECTED_QUEUE_BY_STAGE[stage]] : '/bond/applications'),
     status: criticalCount ? 'critical' : warningCount ? 'warning' : 'healthy',
     issues,
   }
@@ -549,6 +578,28 @@ function buildRemediationPlan(issues = []) {
     .sort((left, right) => (severityRank[right.severity] || 0) - (severityRank[left.severity] || 0) || right.count - left.count)
 }
 
+function buildActionQueues(rows = []) {
+  const queues = new Map()
+
+  for (const row of rows) {
+    const queueKey = normalizeText(row.expectedQueueKey)
+    if (!queueKey) continue
+    const existing = queues.get(queueKey) || {
+      stage: row.stage || '',
+      queueKey,
+      count: 0,
+      label: STAGE_LABELS[row.stage] || row.stage || queueKey,
+      href: QUEUE_HREF_BY_KEY[queueKey] || '/bond/applications',
+      actionLabel: NEXT_ACTION_BY_STAGE[row.stage] || 'Review queue',
+    }
+    existing.count += 1
+    queues.set(queueKey, existing)
+  }
+
+  return [...queues.values()]
+    .sort((left, right) => right.count - left.count || left.queueKey.localeCompare(right.queueKey))
+}
+
 export function buildBondOperationalDiagnostics(records = [], options = {}) {
   const rows = (Array.isArray(records) ? records : []).filter(Boolean).map(diagnoseRecord)
   const issues = rows.flatMap((row) => row.issues)
@@ -574,14 +625,7 @@ export function buildBondOperationalDiagnostics(records = [], options = {}) {
     issueSummary,
     remediationPlan,
     stageCoverage: buildStageCoverage(rows),
-    actionQueues: Object.entries(EXPECTED_QUEUE_BY_STAGE).map(([stage, queueKey]) => ({
-      stage,
-      queueKey,
-      count: rows.filter((row) => row.stage === stage).length,
-      label: STAGE_LABELS[stage] || stage,
-      href: QUEUE_HREF_BY_KEY[queueKey] || '/bond/applications',
-      actionLabel: NEXT_ACTION_BY_STAGE[stage] || 'Review queue',
-    })),
+    actionQueues: buildActionQueues(rows),
     rows,
     issues,
   }

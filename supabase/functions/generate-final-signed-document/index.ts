@@ -896,7 +896,7 @@ function listingAlreadyOwnsOperationalFields(status: unknown) {
 }
 
 const SIGNED_MANDATE_LISTING_SELECT =
-  "id, assigned_agent_id, seller_lead_id, originating_crm_lead_id, listing_status, listing_visibility, mandate_status, seller_onboarding_status, is_active, title, address_line_1, property_type, suburb, city, province, asking_price, estimated_value";
+  "id, organisation_id, branch_id, assigned_agent_id, seller_lead_id, originating_crm_lead_id, listing_status, listing_visibility, mandate_status, seller_onboarding_status, is_active, title, address_line_1, property_type, suburb, city, province, asking_price, estimated_value";
 
 function isUniqueViolation(error: unknown) {
   const details = asRecord(error);
@@ -1041,6 +1041,39 @@ function resolveSellerOnboardingSnapshot({
     maritalRegime: firstValue(generatedOnboarding.maritalRegime, generatedOnboarding.marriageRegime, formData.maritalRegime, formData.marriageRegime),
     propertyDisclosureAnnexure,
   };
+}
+
+function resolveSignedMandateBranchId({
+  listing,
+  lead,
+  sourceContext,
+  sourceLead,
+}: {
+  listing: Record<string, unknown> | null;
+  lead: Record<string, unknown> | null;
+  sourceContext: Record<string, unknown>;
+  sourceLead: Record<string, unknown>;
+}) {
+  const sourceContextBranch = asRecord(sourceContext.branch);
+  const sourceLeadBranch = asRecord(sourceLead.branch);
+  return normalizeNullableUuid(
+    listing?.branch_id ||
+      listing?.branchId ||
+      lead?.branch_id ||
+      lead?.assigned_branch_id ||
+      sourceContext.branchId ||
+      sourceContext.branch_id ||
+      sourceContext.assignedBranchId ||
+      sourceContext.assigned_branch_id ||
+      sourceContextBranch.id ||
+      sourceContextBranch.branch_id ||
+      sourceLead.branchId ||
+      sourceLead.branch_id ||
+      sourceLead.assignedBranchId ||
+      sourceLead.assigned_branch_id ||
+      sourceLeadBranch.id ||
+      sourceLeadBranch.branch_id,
+  );
 }
 
 async function ensureSellerOnboardingSnapshotForListing({
@@ -1237,7 +1270,7 @@ async function ensureListingFromSignedMandate({
   if (leadId) {
     const leadQuery = await supabase
       .from("leads")
-      .select("lead_id, organisation_id, assigned_agent_id, contact_id, lead_category, stage, status, budget, area_interest, property_interest, seller_property_address, estimated_value, seller_onboarding_token, seller_onboarding_status, listing_id")
+      .select("lead_id, organisation_id, branch_id, assigned_branch_id, assigned_agent_id, contact_id, lead_category, stage, status, budget, area_interest, property_interest, seller_property_address, estimated_value, seller_onboarding_token, seller_onboarding_status, listing_id")
       .eq("organisation_id", organisationId)
       .eq("lead_id", leadId)
       .maybeSingle();
@@ -1286,6 +1319,12 @@ async function ensureListingFromSignedMandate({
     || Object.keys(asRecord(sellerOnboardingSnapshot.formData)).length > 0
     ? "completed"
     : "not_started";
+  const branchId = resolveSignedMandateBranchId({
+    listing,
+    lead,
+    sourceContext,
+    sourceLead,
+  });
   let existingListingFound = Boolean(listing?.id);
 
   if (listing?.id) {
@@ -1300,6 +1339,7 @@ async function ensureListingFromSignedMandate({
       assigned_agent_id: listingOwnsOperationalFields
         ? normalizeNullableUuid(listing.assigned_agent_id)
         : normalizeNullableUuid(listing.assigned_agent_id || lead?.assigned_agent_id || sourceContext.assignedAgentId || sourceContext.assigned_agent_id || sourceLead.assignedAgentId || sourceLead.assigned_agent_id),
+      branch_id: branchId,
       seller_lead_id: normalizeText(listing.seller_lead_id) || leadId || null,
       originating_crm_lead_id: normalizeText(listing.originating_crm_lead_id) || leadId || null,
       listing_status: nextListingStatus,
@@ -1330,6 +1370,7 @@ async function ensureListingFromSignedMandate({
   } else {
     const insertPayload = {
       organisation_id: organisationId,
+      branch_id: branchId,
       assigned_agent_id: normalizeNullableUuid(lead?.assigned_agent_id || sourceContext.assignedAgentId || sourceContext.assigned_agent_id || sourceLead.assignedAgentId || sourceLead.assigned_agent_id),
       seller_lead_id: leadId || null,
       originating_crm_lead_id: leadId || null,
@@ -1357,7 +1398,7 @@ async function ensureListingFromSignedMandate({
     const insert = await supabase
       .from("private_listings")
       .insert(insertPayload)
-      .select("id, listing_status, mandate_status")
+      .select("id, branch_id, listing_status, mandate_status")
       .single();
     if (insert.error) {
       if (!isUniqueViolation(insert.error)) throw insert.error;
@@ -1430,6 +1471,7 @@ async function ensureListingFromSignedMandate({
       metadata: {
         source: "signed_mandate_auto_conversion",
         leadId: leadId || null,
+        branchId: branchId || null,
         packetId: normalizeText(packet.id),
         packetVersionId: normalizeText(version.id),
         finalArtifactPath: finalArtifactPath || null,
@@ -1450,6 +1492,8 @@ async function ensureListingFromSignedMandate({
           listing_id: listingId,
           privateListingId: listingId,
           private_listing_id: listingId,
+          branchId: branchId || sourceContext.branchId || null,
+          branch_id: branchId || sourceContext.branch_id || null,
           leadConvertedToListingAt: new Date().toISOString(),
         },
       })

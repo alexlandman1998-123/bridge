@@ -295,7 +295,7 @@ const PURCHASER_BRANCH_RULES = Object.freeze({
   }),
   company: Object.freeze({
     label: 'Company',
-    aliases: Object.freeze(['company', 'business', 'corporate', 'pty', 'pty_ltd', 'cc']),
+    aliases: Object.freeze(['company', 'business', 'corporate', 'pty', 'pty_ltd']),
     buyerFacingQuestions: Object.freeze([
       'buyer.company.name',
       'buyer.company.registration_number',
@@ -345,6 +345,61 @@ const PURCHASER_BRANCH_RULES = Object.freeze({
       'company_resolution',
       'director_id',
       'director_proof_of_address',
+    ]),
+  }),
+  close_corporation: Object.freeze({
+    label: 'Close Corporation',
+    aliases: Object.freeze(['close_corporation', 'cc', 'close_corp']),
+    buyerFacingQuestions: Object.freeze([
+      'buyer.close_corporation.name',
+      'buyer.close_corporation.registration_number',
+      'buyer.close_corporation.registered_address',
+      'buyer.close_corporation.business_address',
+      'buyer.close_corporation.tax_number',
+      'buyer.close_corporation.vat_number',
+      'buyer.close_corporation.nature_of_business',
+      'buyer.close_corporation.authorised_member.name',
+      'buyer.close_corporation.authorised_member.identity_number_or_passport_number',
+      'buyer.close_corporation.authorised_member.email',
+      'buyer.close_corporation.authorised_member.phone',
+      'buyer.close_corporation.authorised_member.capacity',
+      'buyer.close_corporation.members',
+      'buyer.close_corporation.member_resolution_available',
+      'buyer.close_corporation.resolution_date',
+      'buyer.close_corporation.authority_basis',
+    ]),
+    requiredFields: Object.freeze([
+      'buyer.close_corporation.name',
+      'buyer.close_corporation.registration_number',
+      'buyer.close_corporation.registered_address',
+      'buyer.close_corporation.nature_of_business',
+      'buyer.close_corporation.authorised_member.name',
+      'buyer.close_corporation.authorised_member.identity_number_or_passport_number',
+      'buyer.close_corporation.authorised_member.email',
+      'buyer.close_corporation.authorised_member.phone',
+      'buyer.close_corporation.authorised_member.capacity',
+      'buyer.close_corporation.members',
+      'buyer.close_corporation.member_resolution_available',
+      'buyer.close_corporation.resolution_date',
+      'buyer.close_corporation.authority_basis',
+    ]),
+    optionalFields: Object.freeze([
+      'buyer.close_corporation.business_address',
+      'buyer.close_corporation.tax_number',
+      'buyer.close_corporation.vat_number',
+      'buyer.close_corporation.beneficial_owners',
+    ]),
+    internalDerivedFacts: Object.freeze([
+      'buyer.branch',
+      'buyer.legal_type',
+      'buyer.member_count',
+      'buyer.authorised_member',
+    ]),
+    documentTriggers: Object.freeze([
+      'ck_documents',
+      'member_resolution',
+      'member_id',
+      'member_proof_of_address',
     ]),
   }),
   trust: Object.freeze({
@@ -439,6 +494,219 @@ const PURCHASER_BRANCH_RULES = Object.freeze({
       'proof_of_address',
       'source_of_funds',
     ]),
+  }),
+  power_of_attorney: Object.freeze({
+    label: 'Power of Attorney',
+    aliases: Object.freeze(['power_of_attorney', 'poa', 'buyer_poa', 'attorney']),
+    buyerFacingQuestions: Object.freeze([
+      'buyer.power_of_attorney.principal.name',
+      'buyer.power_of_attorney.principal.identity_number_or_passport_number',
+      'buyer.power_of_attorney.representative.name',
+      'buyer.power_of_attorney.representative.identity_number_or_passport_number',
+      'buyer.power_of_attorney.scope',
+      'buyer.power_of_attorney.expiry_date',
+      'buyer.power_of_attorney.signing_location',
+      'buyer.power_of_attorney.authentication_required',
+    ]),
+    requiredFields: Object.freeze([
+      'buyer.power_of_attorney.principal.name',
+      'buyer.power_of_attorney.principal.identity_number_or_passport_number',
+      'buyer.power_of_attorney.representative.name',
+      'buyer.power_of_attorney.representative.identity_number_or_passport_number',
+      'buyer.power_of_attorney.scope',
+      'buyer.power_of_attorney.signing_location',
+    ]),
+    optionalFields: Object.freeze([
+      'buyer.power_of_attorney.expiry_date',
+      'buyer.power_of_attorney.authentication_required',
+    ]),
+    internalDerivedFacts: Object.freeze([
+      'buyer.branch',
+      'buyer.legal_type',
+      'buyer.power_of_attorney_review_required',
+    ]),
+    documentTriggers: Object.freeze([
+      'buyer_power_of_attorney',
+      'buyer_principal_id',
+      'buyer_representative_id',
+      'buyer_authority_proof',
+      'buyer_authentication_if_foreign',
+    ]),
+  }),
+  deceased_estate: Object.freeze({
+    label: 'Deceased Estate',
+    aliases: Object.freeze(['deceased_estate', 'deceased', 'estate', 'estate_late']),
+    buyerFacingQuestions: Object.freeze([
+      'buyer.deceased_estate.name',
+      'buyer.deceased_estate.reference',
+      'buyer.deceased_estate.executor.name',
+      'buyer.deceased_estate.executor.identity_number_or_passport_number',
+      'buyer.deceased_estate.executor.email',
+      'buyer.deceased_estate.executor.phone',
+      'buyer.deceased_estate.authority_details',
+      'buyer.deceased_estate.source_of_funds',
+    ]),
+    requiredFields: Object.freeze([
+      'buyer.deceased_estate.name',
+      'buyer.deceased_estate.executor.name',
+      'buyer.deceased_estate.executor.identity_number_or_passport_number',
+      'buyer.deceased_estate.authority_details',
+      'buyer.deceased_estate.source_of_funds',
+    ]),
+    optionalFields: Object.freeze([
+      'buyer.deceased_estate.reference',
+      'buyer.deceased_estate.executor.email',
+      'buyer.deceased_estate.executor.phone',
+    ]),
+    internalDerivedFacts: Object.freeze([
+      'buyer.branch',
+      'buyer.legal_type',
+      'buyer.estate_capacity_review_required',
+    ]),
+    documentTriggers: Object.freeze([
+      'buyer_estate_authority',
+      'buyer_executor_id',
+      'buyer_estate_source_of_funds',
+    ]),
+  }),
+  minor: Object.freeze({
+    label: 'Minor',
+    aliases: Object.freeze(['minor', 'under_18', 'child_buyer']),
+    buyerFacingQuestions: Object.freeze([
+      'buyer.minor.name',
+      'buyer.minor.identity_number_or_birth_certificate',
+      'buyer.minor.guardian.name',
+      'buyer.minor.guardian.identity_number_or_passport_number',
+      'buyer.minor.guardian.email',
+      'buyer.minor.guardian.phone',
+      'buyer.minor.guardian_authority',
+      'buyer.minor.source_of_funds',
+      'buyer.minor.ownership_intention',
+    ]),
+    requiredFields: Object.freeze([
+      'buyer.minor.name',
+      'buyer.minor.identity_number_or_birth_certificate',
+      'buyer.minor.guardian.name',
+      'buyer.minor.guardian.identity_number_or_passport_number',
+      'buyer.minor.guardian_authority',
+      'buyer.minor.source_of_funds',
+      'buyer.minor.ownership_intention',
+    ]),
+    optionalFields: Object.freeze([
+      'buyer.minor.guardian.email',
+      'buyer.minor.guardian.phone',
+    ]),
+    internalDerivedFacts: Object.freeze([
+      'buyer.branch',
+      'buyer.legal_type',
+      'buyer.guardian_authority_review_required',
+    ]),
+    documentTriggers: Object.freeze([
+      'minor_birth_certificate_or_id',
+      'guardian_id',
+      'guardian_authority_or_court_order',
+      'minor_source_of_funds',
+    ]),
+  }),
+  insolvent: Object.freeze({
+    label: 'Insolvent / Sequestrated',
+    aliases: Object.freeze(['insolvent', 'sequestrated', 'insolvency']),
+    buyerFacingQuestions: Object.freeze([
+      'buyer.insolvency.status',
+      'buyer.insolvency.trustee_or_curator.name',
+      'buyer.insolvency.trustee_or_curator.identity_number_or_passport_number',
+      'buyer.insolvency.authority_details',
+      'buyer.insolvency.source_of_funds',
+    ]),
+    requiredFields: Object.freeze([
+      'buyer.insolvency.status',
+      'buyer.insolvency.trustee_or_curator.name',
+      'buyer.insolvency.authority_details',
+      'buyer.insolvency.source_of_funds',
+    ]),
+    optionalFields: Object.freeze([
+      'buyer.insolvency.trustee_or_curator.identity_number_or_passport_number',
+    ]),
+    internalDerivedFacts: Object.freeze([
+      'buyer.branch',
+      'buyer.legal_type',
+      'buyer.insolvency_review_required',
+    ]),
+    documentTriggers: Object.freeze([
+      'trustee_or_curator_appointment',
+      'insolvency_authority_docs',
+      'insolvency_finance_or_source_docs',
+    ]),
+  }),
+  curatorship: Object.freeze({
+    label: 'Curatorship / Administration',
+    aliases: Object.freeze(['curatorship', 'administration', 'administrator', 'curator']),
+    buyerFacingQuestions: Object.freeze([
+      'buyer.curatorship.represented_person.name',
+      'buyer.curatorship.curator_or_administrator.name',
+      'buyer.curatorship.curator_or_administrator.identity_number_or_passport_number',
+      'buyer.curatorship.authority_details',
+      'buyer.curatorship.transaction_scope',
+    ]),
+    requiredFields: Object.freeze([
+      'buyer.curatorship.represented_person.name',
+      'buyer.curatorship.curator_or_administrator.name',
+      'buyer.curatorship.authority_details',
+      'buyer.curatorship.transaction_scope',
+    ]),
+    optionalFields: Object.freeze([
+      'buyer.curatorship.curator_or_administrator.identity_number_or_passport_number',
+    ]),
+    internalDerivedFacts: Object.freeze([
+      'buyer.branch',
+      'buyer.legal_type',
+      'buyer.curatorship_review_required',
+    ]),
+    documentTriggers: Object.freeze([
+      'curatorship_court_order',
+      'curator_id',
+      'curator_authority_docs',
+    ]),
+  }),
+  business_rescue: Object.freeze({
+    label: 'Business Rescue',
+    aliases: Object.freeze(['business_rescue', 'business_rescue_buyer', 'company_in_business_rescue']),
+    buyerFacingQuestions: Object.freeze([
+      'buyer.business_rescue.details',
+      'buyer.business_rescue.practitioner.name',
+    ]),
+    requiredFields: Object.freeze([
+      'buyer.business_rescue.details',
+    ]),
+    optionalFields: Object.freeze([
+      'buyer.business_rescue.practitioner.name',
+    ]),
+    internalDerivedFacts: Object.freeze([
+      'buyer.branch',
+      'buyer.legal_type',
+      'buyer.unsupported',
+    ]),
+    documentTriggers: Object.freeze([]),
+  }),
+  liquidation: Object.freeze({
+    label: 'Liquidation',
+    aliases: Object.freeze(['liquidation', 'liquidated_company', 'company_liquidation', 'liquidation_buyer']),
+    buyerFacingQuestions: Object.freeze([
+      'buyer.liquidation.details',
+      'buyer.liquidation.liquidator.name',
+    ]),
+    requiredFields: Object.freeze([
+      'buyer.liquidation.details',
+    ]),
+    optionalFields: Object.freeze([
+      'buyer.liquidation.liquidator.name',
+    ]),
+    internalDerivedFacts: Object.freeze([
+      'buyer.branch',
+      'buyer.legal_type',
+      'buyer.unsupported',
+    ]),
+    documentTriggers: Object.freeze([]),
   }),
   other: Object.freeze({
     label: 'Other',
@@ -1033,6 +1301,42 @@ function resolveBranchContract(rules, branchKey, baseRules) {
   }
 }
 
+function buyerLegalTypeForBranch(branch = '') {
+  if (branch === 'company') return 'company'
+  if (branch === 'close_corporation') return 'close_corporation'
+  if (branch === 'trust') return 'trust'
+  if (branch === 'foreign_purchaser') return 'foreign_individual'
+  if (
+    [
+      'power_of_attorney',
+      'deceased_estate',
+      'minor',
+      'insolvent',
+      'curatorship',
+      'business_rescue',
+      'liquidation',
+    ].includes(branch)
+  ) {
+    return branch
+  }
+  return 'individual'
+}
+
+function usesNonNaturalBuyerBase(branch = '') {
+  return [
+    'company',
+    'close_corporation',
+    'trust',
+    'power_of_attorney',
+    'deceased_estate',
+    'minor',
+    'insolvent',
+    'curatorship',
+    'business_rescue',
+    'liquidation',
+  ].includes(branch)
+}
+
 function buildBranchSummary({
   purchaserDefinition,
   purchaseModeDefinition,
@@ -1046,7 +1350,7 @@ function buildBranchSummary({
     purchaser: {
       key: purchaserBranch,
       label: purchaserDefinition.label || purchaserBranch,
-      legal_type: purchaserBranch === 'company' ? 'company' : purchaserBranch === 'trust' ? 'trust' : purchaserBranch === 'foreign_purchaser' ? 'foreign_individual' : 'individual',
+      legal_type: buyerLegalTypeForBranch(purchaserBranch),
     },
     purchase_mode: {
       key: purchaseMode,
@@ -1066,8 +1370,8 @@ function buildBranchSummary({
 export function resolveBuyerOnboardingFlowContract(form = {}, transaction = {}, facts = {}) {
   const source = facts && typeof facts === 'object' && Object.keys(facts).length ? facts : {}
   const purchaserBranch = resolveBuyerBranch(form, transaction, source)
-  const isEntityBranch = purchaserBranch === 'company' || purchaserBranch === 'trust'
-  const purchaseMode = isEntityBranch ? 'individual' : resolveBuyerPurchaseMode(form, transaction, source)
+  const usesEntityLikeBase = usesNonNaturalBuyerBase(purchaserBranch)
+  const purchaseMode = usesEntityLikeBase ? 'individual' : resolveBuyerPurchaseMode(form, transaction, source)
   const financeModel = resolveBuyerFinanceModel(form, transaction, source)
   const financeBranch = financeModel.finance_branch
   const financeSupportMode = financeModel.support_mode
@@ -1075,7 +1379,7 @@ export function resolveBuyerOnboardingFlowContract(form = {}, transaction = {}, 
   const purchaserDefinition = resolveBranchContract(
     PURCHASER_BRANCH_RULES,
     purchaserBranch,
-    isEntityBranch ? ENTITY_BASE_RULES : NATURAL_PERSON_BASE_RULES,
+    usesEntityLikeBase ? ENTITY_BASE_RULES : NATURAL_PERSON_BASE_RULES,
   )
   const purchaseModeDefinition = resolveBranchContract(PURCHASE_MODE_RULES, purchaseMode, { buyerFacingQuestions: [], requiredFields: [], optionalFields: [], internalDerivedFacts: [], documentTriggers: [] })
   const financeDefinition = resolveBranchContract(FINANCE_BRANCH_RULES, financeBranch, FINANCE_CORE_RULES)
@@ -1118,7 +1422,7 @@ export function resolveBuyerOnboardingFlowContract(form = {}, transaction = {}, 
     purchaser_branch: purchaserBranch,
     purchaser_branch_label: purchaserDefinition.label,
     purchaser_type: purchaserBranch,
-    buyer_legal_type: purchaserBranch === 'company' ? 'company' : purchaserBranch === 'trust' ? 'trust' : purchaserBranch === 'foreign_purchaser' ? 'foreign_individual' : 'individual',
+    buyer_legal_type: buyerLegalTypeForBranch(purchaserBranch),
     buyer_purchase_mode: purchaseMode,
     buyer_purchase_mode_label: purchaseModeDefinition.label,
     purchase_mode: purchaseMode,

@@ -482,7 +482,7 @@ function ApplicationsSection({
                         disabled={Boolean(loadingAction)}
                         onChange={(event) => onUpdateStatus?.(row, event.target.value)}
                       >
-                        {['pending', 'submitted', 'feedback_received', 'quote_received', 'additional_documents_required', 'declined', 'approved', 'buyer_approved', 'expired'].map((status) => (
+                        {['pending', 'submitted', 'in_review', 'feedback_received', 'quote_received', 'additional_documents_required', 'declined', 'approved', 'buyer_approved', 'expired'].map((status) => (
                           <option key={status} value={status}>{title(status)}</option>
                         ))}
                       </Field>

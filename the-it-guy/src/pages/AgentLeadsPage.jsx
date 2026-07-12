@@ -19158,6 +19158,7 @@ function AgentLeadWorkspace() {
         const created = await createPrivateListing({
           organisationId,
           assignedAgentId: normalizeText(row.assignedAgentId || actor.id),
+          branchId: getLeadBranchId(row) || normalizeText(actor?.branchId || actor?.primaryBranchId),
           sellerLeadId: normalizeText(row.leadId),
           originatingCrmLeadId: normalizeText(row.leadId),
           listingStatus: 'seller_lead',
@@ -19318,6 +19319,7 @@ function AgentLeadWorkspace() {
       const created = await createPrivateListing({
         organisationId,
         assignedAgentId: normalizeText(row.assignedAgentId || actor.id),
+        branchId: getLeadBranchId(row) || normalizeText(actor?.branchId || actor?.primaryBranchId),
         sellerLeadId: normalizeText(row.leadId),
         originatingCrmLeadId: normalizeText(row.leadId),
         listingStatus: 'seller_lead',
@@ -19494,6 +19496,7 @@ function AgentLeadWorkspace() {
         const created = await createPrivateListing({
           organisationId,
           assignedAgentId: normalizeText(row.assignedAgentId || actor.id),
+          branchId: getLeadBranchId(row) || normalizeText(actor?.branchId || actor?.primaryBranchId),
           sellerLeadId: normalizeText(row.leadId),
           originatingCrmLeadId: normalizeText(row.leadId),
           listingStatus: 'seller_lead',

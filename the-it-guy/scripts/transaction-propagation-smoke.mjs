@@ -615,9 +615,12 @@ async function rerunIdempotency({ saveTransactionRoleplayerSelections, transacti
     roleplayers: [transferAttorney, bondOriginator].filter(Boolean).map((selection) => ({
       roleType: selection.roleType,
       organisationId: selection.partnerOrganisationId,
+      partnerOrganisationId: selection.partnerOrganisationId,
       userId: selection.userId,
       workspaceUnitId: selection.workspaceUnitId,
       branchId: selection.branchId,
+      firmId: selection.firmId || null,
+      attorneyFirmId: selection.firmId || null,
       partner: {
         companyName: selection.partner.companyName,
         contactPerson: selection.partner.contactPerson,

@@ -29,7 +29,7 @@ import {
   Workflow,
   X,
 } from 'lucide-react'
-import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
+import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import LoadingSkeleton from '../components/LoadingSkeleton'
@@ -73,6 +73,7 @@ import {
   buildAttorneyWorkflowCoordinationCommand,
   buildAttorneyWorkflowFollowUpCommand,
 } from '../constants/attorneyWorkflowUsability.js'
+import { resolveLegalSupportBoundary } from '../core/legal/legalSupportBoundary.js'
 import {
   addTransactionDiscussionComment,
   addBondApplication,
@@ -116,6 +117,7 @@ import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supab
 import { getFinanceReadiness } from '../services/bondFinanceReadinessService'
 import { getDocumentReadiness } from '../services/documentReadinessService'
 import { getBankPanelForCurrentUser } from '../services/bondOriginatorBankService'
+import { createAttorneyAppointmentInvite } from '../services/attorneyOperations'
 import {
   markBondGrantMilestone,
   markBondInstructionSent,
@@ -225,6 +227,59 @@ const ATTORNEY_DOCUMENT_CATEGORIES = [
   'Internal Working Documents',
 ]
 
+const SIGNING_APPOINTMENT_TYPE_OPTIONS = [
+  { value: 'transfer_signing', label: 'Transfer Signing', defaultDurationMinutes: 60 },
+  { value: 'bond_signing', label: 'Bond Signing', defaultDurationMinutes: 60 },
+]
+
+const SIGNING_APPOINTMENT_VISIBILITY_OPTIONS = [
+  { value: 'client_visible', label: 'Buyer/seller visible' },
+  { value: 'shared_role_players', label: 'Roleplayers only' },
+]
+
+function getDefaultSigningAppointmentDate() {
+  const next = new Date()
+  next.setDate(next.getDate() + 1)
+  const day = next.getDay()
+  if (day === 6) next.setDate(next.getDate() + 2)
+  if (day === 0) next.setDate(next.getDate() + 1)
+  return next.toISOString().slice(0, 10)
+}
+
+function addMinutesToClock(value = '10:00', minutes = 60) {
+  const [hourPart, minutePart] = String(value || '10:00').split(':')
+  const totalMinutes = (Number(hourPart || 10) * 60) + Number(minutePart || 0) + Number(minutes || 60)
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60)
+  const nextMinutes = totalMinutes % 60
+  return `${String(hours).padStart(2, '0')}:${String(nextMinutes).padStart(2, '0')}`
+}
+
+function getSigningAppointmentTypeForLane(laneKey = '') {
+  return String(laneKey || '').trim().toLowerCase() === 'bond' ? 'bond_signing' : 'transfer_signing'
+}
+
+function getSigningAppointmentDuration(appointmentType = 'transfer_signing') {
+  return SIGNING_APPOINTMENT_TYPE_OPTIONS.find((option) => option.value === appointmentType)?.defaultDurationMinutes || 60
+}
+
+function getSigningAppointmentWorkflow(appointmentType = 'transfer_signing') {
+  return appointmentType === 'bond_signing' ? 'bond_workflow' : 'transfer_workflow'
+}
+
+function getSigningAppointmentStage(appointmentType = 'transfer_signing') {
+  return appointmentType === 'bond_signing' ? 'bond_document_signing' : 'transfer_document_signing'
+}
+
+function resolveDefaultSigningRecipient(options = [], appointmentType = 'transfer_signing') {
+  const preferredKey = appointmentType === 'bond_signing' ? 'buyer' : 'buyer'
+  return (
+    options.find((option) => option.key === preferredKey && option.email) ||
+    options.find((option) => option.email) ||
+    options[0] ||
+    { key: 'manual', roleLabel: 'Client', participantRole: 'Client', name: '', email: '' }
+  )
+}
+
 const ATTORNEY_DOCUMENT_GROUPS = [
   {
     key: 'all_documents',
@@ -293,6 +348,24 @@ function getAttorneyCategoryForRequiredDocument(requirement = {}) {
   if (key.includes('otp') || key.includes('instruction')) return 'Instruction / OTP Documents'
   if (key.includes('transfer')) return 'Drafting Documents'
   return 'Internal Working Documents'
+}
+
+function normalizeManualSigningKey(value = '') {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+function resolveManualSignedContractActionKey({ requiredDocumentKey = '', documentType = '', category = '' } = {}) {
+  const candidates = [requiredDocumentKey, documentType, category].map(normalizeManualSigningKey).filter(Boolean)
+  if (candidates.some((key) => ['signed_transfer_documents', 'signed_transfer_pack', 'transfer_signatures', 'buyer_signed_transfer_documents', 'seller_signed_transfer_documents'].includes(key))) {
+    return 'RECORD_MANUAL_SIGNED_TRANSFER_DOCUMENTS'
+  }
+  if (candidates.some((key) => ['bond_documents_signed', 'buyer_signed_bond_documents', 'signed_bond_documents', 'signed_bond_pack'].includes(key))) {
+    return 'RECORD_MANUAL_SIGNED_BOND_DOCUMENTS'
+  }
+  if (candidates.some((key) => ['cancellation_documents_signed', 'seller_cancellation_documents_signed', 'signed_cancellation_documents', 'signed_cancellation_pack'].includes(key))) {
+    return 'RECORD_MANUAL_SIGNED_CANCELLATION_DOCUMENTS'
+  }
+  return ''
 }
 
 const DOCUMENT_LIBRARY_FILTERS = [
@@ -675,6 +748,11 @@ const LIFECYCLE_STATES = ['active', 'registered', 'completed', 'archived', 'canc
 const PLACEHOLDER_PARTY_NAMES = new Set(['buyer', 'seller', 'client', 'purchaser'])
 const APPROVED_WORKFLOW_DOCUMENT_STATUSES = new Set(['approved', 'accepted', 'completed', 'verified'])
 const PRESENT_WORKFLOW_DOCUMENT_STATUSES = new Set(['approved', 'accepted', 'completed', 'verified', 'uploaded', 'under_review'])
+const AGENT_ASSISTED_ROLLUP_ACTION_KEYS = new Set([
+  'record_agent_assisted_buyer_onboarding',
+  'record_agent_assisted_seller_onboarding',
+  'record_agent_assisted_supporting_docs',
+])
 
 function normalizeTransactionKind(transaction) {
   const normalized = String(transaction?.transaction_type || '')
@@ -702,6 +780,33 @@ function normalizeDetailKey(value = '') {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
+}
+
+function buildAgentWorkflowActionPayload(actionKey = '', source = 'rollup_overview') {
+  const normalized = normalizeDetailKey(actionKey)
+  if (normalized === 'record_agent_assisted_buyer_onboarding' || normalized === 'record_agent_assisted_seller_onboarding') {
+    return {
+      source: 'agent_assisted_onboarding',
+      recordedFrom: source,
+      completionMode: 'agent_assisted_completed',
+      captureMethod: 'agent_ui',
+      clientConsentMethod: 'agent_attested_client_instruction',
+      reason: 'Agent recorded client onboarding completion from information captured outside the portal.',
+      notes: 'Recorded from the agent workflow action surface.',
+    }
+  }
+  if (normalized === 'record_agent_assisted_supporting_docs') {
+    return {
+      source: 'agent_assisted_supporting_docs',
+      recordedFrom: source,
+      completionMode: 'agent_assisted_completed',
+      captureMethod: 'offline_verified',
+      clientConsentMethod: 'agent_attested_document_review',
+      reason: 'Agent verified supporting documents outside the client portal.',
+      notes: 'Recorded from the agent workflow action surface.',
+    }
+  }
+  return { source }
 }
 
 function isPlaceholderPartyName(value = '') {
@@ -2342,6 +2447,724 @@ function getAttorneyCommandCenterDependencies(workflow = {}, limit = 4) {
   return unique.slice(0, limit)
 }
 
+const ATTORNEY_ACTIONABLE_BLOCKER_TARGETS = {
+  documents: {
+    label: 'Open Documents',
+    target: 'documents',
+    icon: FileText,
+  },
+  missing_documents: {
+    label: 'Open Missing Documents',
+    target: 'documents',
+    documentFilter: 'missing',
+    icon: FileText,
+  },
+  upload_document: {
+    label: 'Upload Document',
+    target: 'upload_document',
+    icon: Upload,
+  },
+  signing: {
+    label: 'Schedule Signing',
+    target: 'signing',
+    icon: CalendarDays,
+  },
+  roleplayers: {
+    label: 'Manage Roleplayers',
+    target: 'roleplayers',
+    icon: UsersRound,
+  },
+  registration: {
+    label: 'Open Registration',
+    target: 'registration',
+    icon: FileCheck2,
+  },
+  finance: {
+    label: 'Open Finance',
+    target: 'finance',
+    icon: Landmark,
+  },
+  activity: {
+    label: 'Open Activity',
+    target: 'activity',
+    icon: Activity,
+  },
+  workflow: {
+    label: 'Open Lane',
+    target: 'workflow',
+    icon: Workflow,
+  },
+  recheck: {
+    label: 'Recheck Requirements',
+    target: 'recheck',
+    icon: CheckCircle2,
+  },
+}
+
+function getActionableBlockerSignal({ sectionKey = '', item = {}, workflow = {}, source = '' } = {}) {
+  return [
+    source,
+    sectionKey,
+    workflow?.key,
+    workflow?.title,
+    workflow?.detailKey,
+    item?.key,
+    item?.id,
+    item?.label,
+    item?.title,
+    item?.message,
+    item?.description,
+    item?.reason,
+    item?.documentType,
+    item?.document_type,
+    item?.status,
+  ].map((value) => String(value || '').toLowerCase()).join(' ')
+}
+
+function getAttorneyActionableBlockerAction(context = {}) {
+  const { sectionKey = '', item = {}, workflow = {}, source = '' } = context
+  const signal = getActionableBlockerSignal(context)
+  const normalizedSection = normalizeDetailKey(sectionKey)
+
+  if (item?.requirement || item?.canonicalRequirementInstanceId || item?.canonical_requirement_instance_id) {
+    return {
+      ...ATTORNEY_ACTIONABLE_BLOCKER_TARGETS.upload_document,
+      requirement: item.requirement || item,
+      reason: 'Open the existing upload modal for this requirement.',
+    }
+  }
+
+  if (source === 'registration_validation' || normalizedSection === 'registration' || /registration|registered|title deed|deed number/.test(signal)) {
+    return {
+      ...ATTORNEY_ACTIONABLE_BLOCKER_TARGETS.registration,
+      reason: 'Return to guided registration and resolve the validation blocker.',
+    }
+  }
+
+  if (normalizedSection === 'documents' || /document|fica|proof|id document|identity|passport|upload|bank statement|source of funds/.test(signal)) {
+    return {
+      ...ATTORNEY_ACTIONABLE_BLOCKER_TARGETS.missing_documents,
+      reason: 'Open the missing document list for this blocker.',
+    }
+  }
+
+  if (normalizedSection === 'signatures' || /sign|signature|signing|appointment|appoint/.test(signal)) {
+    return {
+      ...ATTORNEY_ACTIONABLE_BLOCKER_TARGETS.signing,
+      reason: 'Open the signing appointment workflow.',
+    }
+  }
+
+  if (/roleplayer|attorney|originator|firm|assign|assigned|team|handoff|intro/.test(signal)) {
+    return {
+      ...ATTORNEY_ACTIONABLE_BLOCKER_TARGETS.roleplayers,
+      reason: 'Open roleplayer assignment and communication controls.',
+    }
+  }
+
+  if (/finance|bond|bank|quote|offer|grant|guarantee/.test(signal)) {
+    return {
+      ...ATTORNEY_ACTIONABLE_BLOCKER_TARGETS.finance,
+      reason: 'Open the finance workspace linked to this blocker.',
+    }
+  }
+
+  if (/activity|note|comment|update/.test(signal)) {
+    return {
+      ...ATTORNEY_ACTIONABLE_BLOCKER_TARGETS.activity,
+      reason: 'Open the activity feed for context.',
+    }
+  }
+
+  return {
+    ...ATTORNEY_ACTIONABLE_BLOCKER_TARGETS.workflow,
+    detailKey: workflow?.detailKey || workflow?.key || '',
+    reason: 'Open the workflow lane where this blocker appears.',
+  }
+}
+
+function ActionableBlockerButton({
+  action = null,
+  onResolve = null,
+  context = null,
+  className = '',
+}) {
+  if (!action || !onResolve) return null
+  const Icon = action.icon || ChevronRight
+  return (
+    <Button
+      type="button"
+      variant="secondary"
+      size="sm"
+      className={`min-h-8 justify-center whitespace-normal text-center leading-5 ${className}`}
+      onClick={() => onResolve(action, context)}
+    >
+      {createElement(Icon, { size: 14 })}
+      {action.label}
+    </Button>
+  )
+}
+
+function ActionableBlockerRows({
+  rows = [],
+  onResolve = null,
+  emptyText = 'No actionable blockers are visible.',
+}) {
+  if (!rows.length) {
+    return (
+      <p className="rounded-[12px] border border-success/25 bg-successSoft px-3 py-3 text-sm font-semibold text-success">
+        {emptyText}
+      </p>
+    )
+  }
+
+  return (
+    <div className="grid gap-2">
+      {rows.map((row, index) => {
+        const action = row.action || getAttorneyActionableBlockerAction({ source: row.source, sectionKey: row.sectionKey, item: row })
+        return (
+          <article key={row.id || `${row.title}-${index}`} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <strong className="block break-words text-sm text-textStrong">{row.title || row.label || 'Workflow blocker'}</strong>
+                {row.description ? <p className="mt-1 text-xs leading-5 text-textMuted">{row.description}</p> : null}
+              </div>
+              <ActionableBlockerButton action={action} onResolve={onResolve} context={{ row }} className="shrink-0" />
+            </div>
+          </article>
+        )
+      })}
+    </div>
+  )
+}
+
+function getLegalExceptionTone(status = '') {
+  const normalized = normalizeDetailKey(status)
+  if (normalized === 'unsupported') {
+    return {
+      label: 'Automation stopped',
+      badge: 'border-red-200 bg-red-50 text-red-700',
+      panel: 'border-red-200 bg-red-50/55',
+      icon: 'bg-red-100 text-red-700',
+      Icon: AlertTriangle,
+    }
+  }
+  if (normalized === 'manual_review') {
+    return {
+      label: 'Manual review required',
+      badge: 'border-orange-200 bg-orange-50 text-orange-700',
+      panel: 'border-orange-200 bg-orange-50/55',
+      icon: 'bg-orange-100 text-orange-700',
+      Icon: LockKeyhole,
+    }
+  }
+  return {
+    label: 'Supported automation',
+    badge: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    panel: 'border-emerald-200 bg-emerald-50/45',
+    icon: 'bg-emerald-100 text-emerald-700',
+    Icon: CheckCircle2,
+  }
+}
+
+function getLegalExceptionOwner({ boundary = {}, transferAttorney = null, workspaceRole = '' } = {}) {
+  if (boundary?.unsupported) {
+    return {
+      label: 'Conveyancer / firm principal',
+      assigned: Boolean(transferAttorney?.participantName || transferAttorney?.participantEmail || transferAttorney?.organisationName),
+      detail: transferAttorney?.participantName || transferAttorney?.participantEmail || transferAttorney?.organisationName || 'No conveyancer assigned',
+      missingLabel: 'Assign a conveyancer owner before any manual continuation.',
+    }
+  }
+  if (boundary?.manualReviewRequired) {
+    return {
+      label: 'Assigned conveyancer',
+      assigned: Boolean(transferAttorney?.participantName || transferAttorney?.participantEmail || transferAttorney?.organisationName),
+      detail: transferAttorney?.participantName || transferAttorney?.participantEmail || transferAttorney?.organisationName || 'No conveyancer assigned',
+      missingLabel: 'Assign a conveyancer owner for the manual legal review.',
+    }
+  }
+  return {
+    label: workspaceRole === 'attorney' ? 'Attorney workflow owner' : 'Matter owner',
+    assigned: true,
+    detail: transferAttorney?.participantName || transferAttorney?.participantEmail || transferAttorney?.organisationName || 'Standard workflow owner',
+    missingLabel: '',
+  }
+}
+
+function buildLegalExceptionReviewModel({ boundary = {}, transferAttorney = null, workspaceRole = '' } = {}) {
+  const status = normalizeDetailKey(boundary?.status || (boundary?.unsupported ? 'unsupported' : boundary?.manualReviewRequired ? 'manual_review' : 'supported'))
+  const tone = getLegalExceptionTone(status)
+  const owner = getLegalExceptionOwner({ boundary, transferAttorney, workspaceRole })
+  const blockers = Array.isArray(boundary?.blockers) ? boundary.blockers : []
+  const reviewRows = blockers.length
+    ? blockers.map((blocker, index) => ({
+        id: `${blocker.axis || 'legal'}-${blocker.scenarioKey || index}`,
+        title: blocker.title || blocker.scenarioKey || 'Legal exception',
+        description: blocker.reason || boundary?.summary || 'This scenario requires explicit legal ownership before automation continues.',
+        axis: blocker.axis || 'legal',
+        status: blocker.status || status,
+        action: blocker.action || boundary?.action || '',
+      }))
+    : status === 'supported'
+      ? []
+      : [{
+          id: 'legal-exception-summary',
+          title: tone.label,
+          description: boundary?.summary || 'This legal scenario requires explicit review ownership.',
+          axis: 'legal',
+          status,
+          action: boundary?.action || '',
+        }]
+
+  return {
+    status,
+    tone,
+    owner,
+    summary: boundary?.summary || (status === 'supported' ? 'No manual-review or unsupported legal boundary is active.' : tone.label),
+    automationAllowed: boundary?.automationAllowed !== false && status === 'supported',
+    manualReviewRequired: Boolean(boundary?.manualReviewRequired),
+    unsupported: Boolean(boundary?.unsupported),
+    action: boundary?.action || '',
+    matrixVersion: boundary?.matrixVersion || '',
+    version: boundary?.version || '',
+    reviewRows,
+    showPanel: status !== 'supported' || reviewRows.length > 0,
+  }
+}
+
+function LegalExceptionReviewPanel({
+  model = null,
+  onManageOwner = null,
+  onOpenDocuments = null,
+  onDraftReviewNote = null,
+}) {
+  if (!model?.showPanel) return null
+  const ToneIcon = model.tone.Icon || AlertTriangle
+  const workflowPolicy = model.unsupported
+    ? 'Automated progression is stopped until a conveyancer explicitly decides how this matter continues.'
+    : 'Automated progression is paused for conveyancer review while intake and supporting documents remain visible.'
+
+  return (
+    <section className={`rounded-[18px] border p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:p-5 ${model.tone.panel}`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`inline-flex size-10 items-center justify-center rounded-[12px] ${model.tone.icon}`}>
+              <ToneIcon size={17} />
+            </span>
+            <div>
+              <h3 className="text-sm font-semibold text-textStrong">Legal Exception Review</h3>
+              <p className="mt-1 text-sm leading-6 text-textMuted">{workflowPolicy}</p>
+            </div>
+          </div>
+        </div>
+        <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${model.tone.badge}`}>
+          {model.tone.label}
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.52fr)]">
+        <div className="rounded-[14px] border border-white/70 bg-white/80 px-4 py-3">
+          <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Boundary Summary</span>
+          <p className="mt-2 text-sm leading-6 text-textBody">{model.summary}</p>
+          {model.reviewRows.length ? (
+            <div className="mt-3 grid gap-2">
+              {model.reviewRows.map((row) => (
+                <article key={row.id} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <strong className="text-sm text-textStrong">{row.title}</strong>
+                    <span className="rounded-full border border-borderSoft bg-white px-2 py-0.5 text-[0.64rem] font-semibold text-textMuted">
+                      {toTitle(row.axis)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-textMuted">{row.description}</p>
+                </article>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <aside className="rounded-[14px] border border-white/70 bg-white/80 px-4 py-3">
+          <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Operational Owner</span>
+          <strong className="mt-2 block text-sm text-textStrong">{model.owner.label}</strong>
+          <p className={`mt-1 text-sm leading-5 ${model.owner.assigned ? 'text-textMuted' : 'font-semibold text-warning'}`}>
+            {model.owner.assigned ? model.owner.detail : model.owner.missingLabel}
+          </p>
+          <div className="mt-4 grid gap-2">
+            <Button type="button" variant="secondary" size="sm" className="w-full justify-center" onClick={onManageOwner}>
+              <UsersRound size={14} />
+              {model.owner.assigned ? 'Manage Owner' : 'Assign Owner'}
+            </Button>
+            <Button type="button" variant="secondary" size="sm" className="w-full justify-center" onClick={onOpenDocuments}>
+              <FileText size={14} />
+              Review Boundary Docs
+            </Button>
+            <Button type="button" size="sm" className="w-full justify-center" onClick={onDraftReviewNote}>
+              <MessageSquarePlus size={14} />
+              Add Review Note
+            </Button>
+          </div>
+          {model.matrixVersion ? <p className="mt-3 text-[0.68rem] text-textMuted">Matrix: {model.matrixVersion}</p> : null}
+        </aside>
+      </div>
+    </section>
+  )
+}
+
+function getTimestampValue(value) {
+  const timestamp = new Date(value || 0).getTime()
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0
+}
+
+function getDayCountSince(value, now = Date.now()) {
+  const timestamp = getTimestampValue(value)
+  const end = getTimestampValue(now) || Date.now()
+  if (!timestamp) return null
+  return Math.max(0, Math.floor((end - timestamp) / 86_400_000))
+}
+
+function getAttorneyPilotMonitorTone(healthKey = '') {
+  const normalized = normalizeDetailKey(healthKey)
+  if (normalized === 'blocked') {
+    return {
+      label: 'Stuck',
+      panel: 'border-red-200 bg-red-50/45',
+      badge: 'border-red-200 bg-red-50 text-red-700',
+      icon: 'bg-red-100 text-red-700',
+      Icon: AlertTriangle,
+    }
+  }
+  if (normalized === 'delayed') {
+    return {
+      label: 'Watch',
+      panel: 'border-orange-200 bg-orange-50/45',
+      badge: 'border-orange-200 bg-orange-50 text-orange-700',
+      icon: 'bg-orange-100 text-orange-700',
+      Icon: Clock3,
+    }
+  }
+  if (normalized === 'waiting') {
+    return {
+      label: 'Needs Attention',
+      panel: 'border-amber-200 bg-amber-50/45',
+      badge: 'border-amber-200 bg-amber-50 text-amber-700',
+      icon: 'bg-amber-100 text-amber-700',
+      Icon: Bell,
+    }
+  }
+  return {
+    label: 'Pilot Clear',
+    panel: 'border-emerald-200 bg-emerald-50/35',
+    badge: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    icon: 'bg-emerald-100 text-emerald-700',
+    Icon: CheckCircle2,
+  }
+}
+
+function getAttorneyPilotFeedbackEntries({ activityFeed = [], discussion = [] } = {}) {
+  return [...activityFeed, ...discussion]
+    .filter((entry) => {
+      const text = [
+        entry?.title,
+        entry?.body,
+        entry?.commentText,
+        entry?.comment_text,
+        entry?.message,
+        entry?.messageType,
+        entry?.updateType,
+      ].filter(Boolean).join(' ')
+      return /pilot feedback|pilot monitor|pilot metric/i.test(text)
+    })
+    .sort((left, right) => {
+      const leftTime = getTimestampValue(left?.createdAt || left?.created_at || left?.updatedAt || left?.updated_at)
+      const rightTime = getTimestampValue(right?.createdAt || right?.created_at || right?.updatedAt || right?.updated_at)
+      return rightTime - leftTime
+    })
+}
+
+function buildAttorneyPilotMonitorModel({
+  transaction = {},
+  workflowLanes = [],
+  documentReadiness = {},
+  roleplayerActionableBlockers = [],
+  legalExceptionReview = null,
+  activityFeed = [],
+  visibleTransactionDiscussion = [],
+  matterHealthLabel = '',
+} = {}) {
+  const activeLanes = (workflowLanes || []).filter(Boolean)
+  const laneHealthRows = activeLanes.map((lane) => ({
+    laneKey: lane.laneKey || 'transfer',
+    title: getWorkflowLaneTitle(lane),
+    healthKey: getWorkflowHealthKey(lane),
+    dueDate: lane.dueDate || lane.due_date || lane.nextActionDueAt || lane.next_action_due_at || lane.summary?.dueDate || '',
+    updatedAt: lane.updatedAt || lane.updated_at || lane.summary?.updatedAt || lane.summary?.updated_at || lane.createdAt || lane.created_at || '',
+  }))
+  const blockedLaneCount = laneHealthRows.filter((lane) => lane.healthKey === 'blocked').length
+  const delayedLaneCount = laneHealthRows.filter((lane) => lane.healthKey === 'delayed').length
+  const waitingLaneCount = laneHealthRows.filter((lane) => lane.healthKey === 'waiting').length
+  const overdueLaneCount = laneHealthRows.filter((lane) => {
+    const dueDate = getTimestampValue(lane.dueDate)
+    return dueDate && dueDate < Date.now() && lane.healthKey !== 'completed'
+  }).length
+  const latestLaneActivityAt = Math.max(0, ...laneHealthRows.map((lane) => getTimestampValue(lane.updatedAt)))
+  const latestActivityAt = Math.max(
+    getTimestampValue(transaction?.last_meaningful_activity_at || transaction?.lastMeaningfulActivityAt),
+    latestLaneActivityAt,
+    ...activityFeed.slice(0, 10).map((entry) => getTimestampValue(entry?.createdAt || entry?.created_at || entry?.updatedAt || entry?.updated_at)),
+    getTimestampValue(transaction?.updated_at || transaction?.updatedAt),
+    getTimestampValue(transaction?.created_at || transaction?.createdAt),
+  )
+  const daysIdle = latestActivityAt ? getDayCountSince(latestActivityAt) : null
+  const missingDocumentCount = Array.isArray(documentReadiness?.missingDocuments)
+    ? documentReadiness.missingDocuments.length
+    : Number(documentReadiness?.missingCount || documentReadiness?.missing || transaction?.missing_documents_count || 0)
+  const criticalDocumentCount = Array.isArray(documentReadiness?.criticalDocuments)
+    ? documentReadiness.criticalDocuments.filter((item) => !item.fileUrl && !item.linkedDocument).length
+    : 0
+  const roleplayerBlockerCount = roleplayerActionableBlockers.length
+  const feedbackEntries = getAttorneyPilotFeedbackEntries({
+    activityFeed,
+    discussion: visibleTransactionDiscussion,
+  })
+  const latestFeedbackAt =
+    feedbackEntries[0]?.createdAt ||
+    feedbackEntries[0]?.created_at ||
+    feedbackEntries[0]?.updatedAt ||
+    feedbackEntries[0]?.updated_at ||
+    ''
+  const riskItems = []
+
+  if (legalExceptionReview?.unsupported) {
+    riskItems.push({
+      id: 'unsupported-legal-boundary',
+      title: 'Unsupported legal boundary',
+      description: 'Automation is stopped pending conveyancer ownership.',
+      statusKey: 'blocked',
+    })
+  } else if (legalExceptionReview?.manualReviewRequired) {
+    riskItems.push({
+      id: 'manual-review-boundary',
+      title: 'Manual legal review',
+      description: 'Automation is paused while the conveyancer reviews the boundary.',
+      statusKey: 'delayed',
+    })
+  }
+  if (blockedLaneCount) {
+    riskItems.push({
+      id: 'blocked-lanes',
+      title: `${blockedLaneCount} blocked lane${blockedLaneCount === 1 ? '' : 's'}`,
+      description: 'At least one legal lane is blocked.',
+      statusKey: 'blocked',
+    })
+  }
+  if (overdueLaneCount) {
+    riskItems.push({
+      id: 'overdue-lanes',
+      title: `${overdueLaneCount} overdue lane${overdueLaneCount === 1 ? '' : 's'}`,
+      description: 'One or more lane due dates have passed.',
+      statusKey: 'delayed',
+    })
+  }
+  if (daysIdle !== null && daysIdle >= 14) {
+    riskItems.push({
+      id: 'idle-critical',
+      title: `${daysIdle} days without meaningful activity`,
+      description: 'The matter meets the stuck-file idle threshold.',
+      statusKey: 'blocked',
+    })
+  } else if (daysIdle !== null && daysIdle >= 7) {
+    riskItems.push({
+      id: 'idle-watch',
+      title: `${daysIdle} days without meaningful activity`,
+      description: 'The matter is nearing the stuck-file idle threshold.',
+      statusKey: 'delayed',
+    })
+  }
+  if (roleplayerBlockerCount) {
+    riskItems.push({
+      id: 'roleplayer-blockers',
+      title: `${roleplayerBlockerCount} roleplayer blocker${roleplayerBlockerCount === 1 ? '' : 's'}`,
+      description: 'Assignment or handoff details still need attention.',
+      statusKey: 'waiting',
+    })
+  }
+  if (criticalDocumentCount || missingDocumentCount) {
+    const count = criticalDocumentCount || missingDocumentCount
+    riskItems.push({
+      id: 'document-gaps',
+      title: `${count} document gap${count === 1 ? '' : 's'}`,
+      description: criticalDocumentCount ? 'Critical documents are still outstanding.' : 'Required documents are still outstanding.',
+      statusKey: criticalDocumentCount ? 'delayed' : 'waiting',
+    })
+  }
+  if (!feedbackEntries.length) {
+    riskItems.push({
+      id: 'pilot-feedback-gap',
+      title: 'No pilot feedback logged',
+      description: 'The pilot note trail has not captured attorney feedback yet.',
+      statusKey: 'waiting',
+    })
+  }
+
+  const healthKey = legalExceptionReview?.unsupported || blockedLaneCount || (daysIdle !== null && daysIdle >= 14)
+    ? 'blocked'
+    : legalExceptionReview?.manualReviewRequired || delayedLaneCount || overdueLaneCount || (daysIdle !== null && daysIdle >= 7)
+      ? 'delayed'
+      : waitingLaneCount || roleplayerBlockerCount || criticalDocumentCount || missingDocumentCount
+        ? 'waiting'
+        : 'in_progress'
+  const tone = getAttorneyPilotMonitorTone(healthKey)
+  const focusLane =
+    laneHealthRows.find((lane) => lane.healthKey === 'blocked') ||
+    laneHealthRows.find((lane) => lane.healthKey === 'delayed') ||
+    laneHealthRows.find((lane) => lane.healthKey === 'waiting') ||
+    laneHealthRows[0] ||
+    null
+
+  return {
+    showPanel: true,
+    healthKey,
+    tone,
+    matterHealthLabel,
+    summary: riskItems.some((item) => item.statusKey === 'blocked')
+      ? 'Stuck-matter intervention is required.'
+      : riskItems.some((item) => item.statusKey === 'delayed')
+        ? 'Pilot watch signals are active.'
+        : 'Pilot matter is moving inside expected thresholds.',
+    focusLaneKey: focusLane?.laneKey || 'transfer',
+    activeLaneCount: activeLanes.length,
+    blockedLaneCount,
+    delayedLaneCount,
+    waitingLaneCount,
+    overdueLaneCount,
+    daysIdle,
+    lastActivityAt: latestActivityAt ? new Date(latestActivityAt).toISOString() : '',
+    missingDocumentCount,
+    criticalDocumentCount,
+    roleplayerBlockerCount,
+    feedbackCount: feedbackEntries.length,
+    latestFeedbackAt,
+    riskItems,
+    metricCards: [
+      {
+        key: 'idle-days',
+        label: 'Idle Days',
+        value: daysIdle === null ? 'Not set' : String(daysIdle),
+        statusKey: daysIdle !== null && daysIdle >= 14 ? 'blocked' : daysIdle !== null && daysIdle >= 7 ? 'delayed' : 'completed',
+      },
+      {
+        key: 'blocked-lanes',
+        label: 'Blocked Lanes',
+        value: String(blockedLaneCount),
+        statusKey: blockedLaneCount ? 'blocked' : 'completed',
+      },
+      {
+        key: 'document-gaps',
+        label: 'Document Gaps',
+        value: String(criticalDocumentCount || missingDocumentCount),
+        statusKey: criticalDocumentCount ? 'delayed' : missingDocumentCount ? 'waiting' : 'completed',
+      },
+      {
+        key: 'pilot-feedback',
+        label: 'Pilot Feedback',
+        value: feedbackEntries.length ? String(feedbackEntries.length) : 'Needed',
+        statusKey: feedbackEntries.length ? 'completed' : 'waiting',
+      },
+    ],
+  }
+}
+
+function AttorneyPilotMonitorPanel({
+  model = null,
+  onDraftFeedback = null,
+  onOpenActivity = null,
+}) {
+  if (!model?.showPanel) return null
+  const ToneIcon = model.tone.Icon || Bell
+
+  return (
+    <section className={`rounded-[18px] border p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:p-5 ${model.tone.panel}`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`inline-flex size-10 items-center justify-center rounded-[12px] ${model.tone.icon}`}>
+              <ToneIcon size={17} />
+            </span>
+            <div>
+              <h3 className="text-sm font-semibold text-textStrong">Pilot Monitor</h3>
+              <p className="mt-1 text-sm leading-6 text-textMuted">{model.summary}</p>
+            </div>
+          </div>
+        </div>
+        <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${model.tone.badge}`}>
+          {model.tone.label}
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-4">
+        {model.metricCards.map((metric) => {
+          const meta = WORKFLOW_STATUS_META[metric.statusKey] || WORKFLOW_STATUS_META.in_progress
+          return (
+            <article key={metric.key} className={`rounded-[14px] border bg-white/85 px-3 py-3 ${meta.border}`}>
+              <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{metric.label}</span>
+              <strong className={`mt-1 block text-lg font-semibold ${meta.text}`}>{metric.value}</strong>
+            </article>
+          )
+        })}
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.45fr)]">
+        <div className="rounded-[14px] border border-white/70 bg-white/85 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Stuck Matter Signals</span>
+            <span className="text-xs font-semibold text-textMuted">
+              Last activity: {model.lastActivityAt ? formatDateTime(model.lastActivityAt) : 'Not set'}
+            </span>
+          </div>
+          <div className="mt-3 grid gap-2">
+            {model.riskItems.slice(0, 5).map((item) => {
+              const meta = WORKFLOW_STATUS_META[item.statusKey] || WORKFLOW_STATUS_META.waiting
+              return (
+                <article key={item.id} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <strong className="text-sm text-textStrong">{item.title}</strong>
+                    <span className={`rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold ${meta.border} ${meta.bg} ${meta.text}`}>
+                      {meta.label}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-textMuted">{item.description}</p>
+                </article>
+              )
+            })}
+          </div>
+        </div>
+
+        <aside className="rounded-[14px] border border-white/70 bg-white/85 px-4 py-3">
+          <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Pilot Feedback</span>
+          <strong className="mt-2 block text-sm text-textStrong">
+            {model.feedbackCount ? `${model.feedbackCount} note${model.feedbackCount === 1 ? '' : 's'} logged` : 'Feedback needed'}
+          </strong>
+          <p className="mt-1 text-sm leading-5 text-textMuted">
+            Latest: {model.latestFeedbackAt ? formatDateTime(model.latestFeedbackAt) : 'Not captured'}
+          </p>
+          <div className="mt-4 grid gap-2">
+            <Button type="button" size="sm" className="w-full justify-center" onClick={onDraftFeedback}>
+              <MessageSquarePlus size={14} />
+              Log Pilot Feedback
+            </Button>
+            <Button type="button" variant="secondary" size="sm" className="w-full justify-center" onClick={onOpenActivity}>
+              <Activity size={14} />
+              Open Activity
+            </Button>
+          </div>
+        </aside>
+      </div>
+    </section>
+  )
+}
+
 function getAttorneyCommandCenterCriticalPath(workflow = {}) {
   const laneKey = getAttorneyCommandCenterLaneKey(workflow)
   const template = getAttorneyCommandCenterLaneTemplate(laneKey)
@@ -3109,8 +3932,25 @@ function AttorneyMatterCommandCenterV2({
   onExecuteFollowUp = null,
   onOpenDocuments = null,
   onOpenActivity = null,
+  discussionBody = '',
+  setDiscussionBody,
+  handleAddDiscussion,
+  discussionType = '',
+  setDiscussionType,
+  discussionVisibility = '',
+  setDiscussionVisibility,
+  availableDiscussionVisibilityOptions = [],
+  structuredDiscussionComposer = false,
+  discussionLaneKey = '',
+  setDiscussionLaneKey,
+  discussionLaneOptions = [],
+  discussionActionKey = '',
+  setDiscussionActionKey,
+  discussionActionOptions = [],
+  discussionSubmitDisabled = false,
   recentActivity = [],
   roleplayerItems = [],
+  saving = false,
 }) {
   const activeWorkflows = workflows.filter((workflow) => workflow?.required)
   const selectedWorkflow =
@@ -3233,6 +4073,29 @@ function AttorneyMatterCommandCenterV2({
         <AttorneyMyLaneCriticalPath workflow={selectedWorkflow} />
 
         <AttorneyLaneEssentialsPanel items={templateEssentials} />
+
+        <BondMatterConversationPanel
+          discussionBody={discussionBody}
+          setDiscussionBody={setDiscussionBody}
+          handleAddDiscussion={handleAddDiscussion}
+          discussionType={discussionType}
+          setDiscussionType={setDiscussionType}
+          discussionVisibility={discussionVisibility}
+          setDiscussionVisibility={setDiscussionVisibility}
+          availableDiscussionVisibilityOptions={availableDiscussionVisibilityOptions}
+          structuredDiscussionComposer={structuredDiscussionComposer}
+          discussionLaneKey={discussionLaneKey}
+          setDiscussionLaneKey={setDiscussionLaneKey}
+          discussionLaneOptions={discussionLaneOptions}
+          discussionActionKey={discussionActionKey}
+          setDiscussionActionKey={setDiscussionActionKey}
+          discussionActionOptions={discussionActionOptions}
+          discussionSubmitDisabled={discussionSubmitDisabled}
+          overviewConversationEntries={recentActivity}
+          saving={saving}
+          onAttachDocument={onOpenDocuments}
+          onViewActivity={onOpenActivity}
+        />
 
         <section className="rounded-lg border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3459,6 +4322,7 @@ function AttorneyRequirementsBoard({
   workflows = [],
   onOpenWorkflow = null,
   onRequestDocuments = null,
+  onResolveBlocker = null,
 }) {
   const activeWorkflows = [
     ...ATTORNEY_ROLE_WORKSPACE_ORDER
@@ -3617,22 +4481,41 @@ function AttorneyRequirementsBoard({
                         </span>
                       </div>
                       <div className="mt-2 grid gap-2">
-                        {section.items.length ? section.items.map((item, index) => (
-                          <div key={item.id || item.key || `${workflow.key}-${section.key}-${index}`} className="rounded-[10px] border border-borderSoft bg-surfaceAlt px-3 py-2">
-                            <div className="flex items-start justify-between gap-2">
-                              <strong className="min-w-0 break-words text-xs text-textStrong">
-                                {getRequirementDisplayLabel(item, section.fallback)}
-                              </strong>
-                              <span className="shrink-0 rounded-full border border-borderSoft bg-white px-2 py-0.5 text-[0.62rem] font-semibold text-textMuted">
-                                {getRequirementStatusDisplay(item)}
-                              </span>
+                        {section.items.length ? section.items.map((item, index) => {
+                          const blockerAction = getAttorneyActionableBlockerAction({ sectionKey: section.key, item, workflow, source: 'attorney_unblocker_board' })
+                          return (
+                            <div key={item.id || item.key || `${workflow.key}-${section.key}-${index}`} className="rounded-[10px] border border-borderSoft bg-surfaceAlt px-3 py-2">
+                              <div className="flex items-start justify-between gap-2">
+                                <strong className="min-w-0 break-words text-xs text-textStrong">
+                                  {getRequirementDisplayLabel(item, section.fallback)}
+                                </strong>
+                                <span className="shrink-0 rounded-full border border-borderSoft bg-white px-2 py-0.5 text-[0.62rem] font-semibold text-textMuted">
+                                  {getRequirementStatusDisplay(item)}
+                                </span>
+                              </div>
+                              <p className="mt-1 line-clamp-2 text-[0.7rem] leading-4 text-textMuted">{section.meta(item)}</p>
+                              <ActionableBlockerButton
+                                action={blockerAction}
+                                onResolve={onResolveBlocker}
+                                context={{ workflow, sectionKey: section.key, item }}
+                                className="mt-2 w-full"
+                              />
                             </div>
-                            <p className="mt-1 line-clamp-2 text-[0.7rem] leading-4 text-textMuted">{section.meta(item)}</p>
+                          )
+                        }) : (
+                          <div className="rounded-[10px] border border-dashed border-borderSoft bg-surfaceAlt px-3 py-2">
+                            <p className="text-xs leading-5 text-textMuted">
+                              {section.count ? `${section.count} open ${section.label.toLowerCase()} item${section.count === 1 ? '' : 's'} counted in the lane summary.` : section.empty}
+                            </p>
+                            {section.count ? (
+                              <ActionableBlockerButton
+                                action={getAttorneyActionableBlockerAction({ sectionKey: section.key, item: { label: section.fallback }, workflow, source: 'attorney_unblocker_board_count' })}
+                                onResolve={onResolveBlocker}
+                                context={{ workflow, sectionKey: section.key }}
+                                className="mt-2 w-full"
+                              />
+                            ) : null}
                           </div>
-                        )) : (
-                          <p className="rounded-[10px] border border-dashed border-borderSoft bg-surfaceAlt px-3 py-2 text-xs leading-5 text-textMuted">
-                            {section.count ? `${section.count} open ${section.label.toLowerCase()} item${section.count === 1 ? '' : 's'} counted in the lane summary.` : section.empty}
-                          </p>
                         )}
                         {hiddenCount ? (
                           <p className="px-1 text-[0.68rem] font-semibold text-textMuted">
@@ -4668,6 +5551,409 @@ function uniqueDocumentsByRenderKey(items = []) {
     seen.add(key)
     return true
   })
+}
+
+const PERSON_LEVEL_REQUIREMENT_GROUPS = [
+  {
+    key: 'director',
+    label: 'Director',
+    pluralLabel: 'Directors',
+    generatedRoles: ['director'],
+    keyPatterns: [/(^|_)director_\d+_/],
+    textPatterns: [/\bdirector\s+\d+\b/],
+  },
+  {
+    key: 'trustee',
+    label: 'Trustee',
+    pluralLabel: 'Trustees',
+    generatedRoles: ['trustee'],
+    keyPatterns: [/(^|_)trustee_\d+_/],
+    textPatterns: [/\btrustee\s+\d+\b/],
+  },
+  {
+    key: 'spouse',
+    label: 'Spouse',
+    pluralLabel: 'Spouses',
+    generatedRoles: ['spouse'],
+    keyPatterns: [/(^|_)spouse(_|$)/],
+    textPatterns: [/\bspouse\b/],
+  },
+  {
+    key: 'co_owner',
+    label: 'Co-owner',
+    pluralLabel: 'Co-owners',
+    generatedRoles: ['co_owner', 'coowner', 'co_purchaser', 'co_buyer'],
+    keyPatterns: [/(^|_)(co_owner|coowner|co_purchaser|co_buyer)(_\d+)?_/],
+    textPatterns: [/\bco-owner\b/, /\bco owner\b/, /\bco-purchaser\b/, /\bco purchaser\b/],
+  },
+  {
+    key: 'signatory',
+    label: 'Signatory',
+    pluralLabel: 'Signatories',
+    generatedRoles: ['signatory', 'authorised_signatory', 'authorized_signatory', 'authorised_trustee', 'authorized_trustee'],
+    keyPatterns: [/(^|_)(authorised|authorized)?_?(director_|member_|trustee_)?signatory(_|$)/, /signing_authority/],
+    textPatterns: [/\bsignatory\b/, /\bsigning authority\b/, /\bauthorised trustee\b/, /\bauthorized trustee\b/],
+  },
+  {
+    key: 'beneficial_owner',
+    label: 'Beneficial owner',
+    pluralLabel: 'Beneficial owners',
+    generatedRoles: ['beneficial_owner', 'beneficialowner'],
+    keyPatterns: [/(^|_)beneficial_owner_\d+_/],
+    textPatterns: [/\bbeneficial owner\s+\d+\b/],
+  },
+]
+
+const PERSON_LEVEL_REQUIREMENT_GROUP_ORDER = PERSON_LEVEL_REQUIREMENT_GROUPS.reduce((accumulator, group, index) => {
+  accumulator[group.key] = index
+  return accumulator
+}, {})
+
+function normalizePersonLevelRequirementToken(value = '') {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+    .replace(/[^a-z0-9_]/g, '')
+    .replace(/^_+|_+$/g, '')
+}
+
+function getRequirementGeneratedFrom(requirement = {}) {
+  return requirement?.generatedFrom || requirement?.generated_from || {}
+}
+
+function getPersonLevelRequirementDefinition(row = {}) {
+  const requirement = row.requirement || row.requiredDocument || {}
+  const generatedFrom = getRequirementGeneratedFrom(requirement)
+  const generatedRole = normalizePersonLevelRequirementToken(
+    generatedFrom.participantRole ||
+      generatedFrom.participant_role ||
+      generatedFrom.role ||
+      '',
+  )
+  const keyText = normalizePersonLevelRequirementToken(
+    row.requiredDocumentKey ||
+      requirement.key ||
+      requirement.documentKey ||
+      requirement.document_key ||
+      '',
+  )
+  const searchableText = [
+    row.displayName,
+    row.requiredParty,
+    row.categoryLabel,
+    requirement.label,
+    requirement.name,
+    requirement.documentLabel,
+    requirement.document_label,
+    requirement.groupKey,
+    requirement.group_key,
+    requirement.group,
+    generatedFrom.participantName,
+    generatedFrom.participant_name,
+  ].map((value) => String(value || '').toLowerCase()).join(' ')
+
+  return PERSON_LEVEL_REQUIREMENT_GROUPS.find((group) => {
+    if (generatedRole && group.generatedRoles.includes(generatedRole)) return true
+    if (group.keyPatterns.some((pattern) => pattern.test(keyText))) return true
+    return group.textPatterns.some((pattern) => pattern.test(searchableText))
+  }) || null
+}
+
+function getPersonLevelRequirementIndex(row = {}, definition = null) {
+  const requirement = row.requirement || row.requiredDocument || {}
+  const generatedFrom = getRequirementGeneratedFrom(requirement)
+  const generatedIndex = Number(generatedFrom.participantIndex || generatedFrom.participant_index || 0)
+  if (Number.isFinite(generatedIndex) && generatedIndex > 0) return generatedIndex
+
+  const keyText = normalizePersonLevelRequirementToken(
+    row.requiredDocumentKey ||
+      requirement.key ||
+      requirement.documentKey ||
+      requirement.document_key ||
+      '',
+  )
+  const indexPatterns = {
+    director: /(?:^|_)director_(\d+)_/,
+    trustee: /(?:^|_)trustee_(\d+)_/,
+    spouse: /(?:^|_)spouse_(\d+)_/,
+    co_owner: /(?:^|_)(?:co_owner|coowner|co_purchaser|co_buyer)_(\d+)_/,
+    signatory: /(?:^|_)signatory_(\d+)_/,
+    beneficial_owner: /(?:^|_)beneficial_owner_(\d+)_/,
+  }
+  const match = definition?.key ? keyText.match(indexPatterns[definition.key]) : null
+  return match ? Number(match[1]) : 0
+}
+
+function getPersonLevelRequirementParty(row = {}) {
+  const requirement = row.requirement || row.requiredDocument || {}
+  const keyText = normalizePersonLevelRequirementToken(
+    row.requiredDocumentKey ||
+      requirement.key ||
+      requirement.documentKey ||
+      requirement.document_key ||
+      '',
+  )
+  const rowParty = String(row.requiredParty || '').trim()
+  if (keyText.startsWith('seller_') || rowParty.toLowerCase() === 'seller') return 'Seller'
+  if (keyText.startsWith('buyer_') || rowParty.toLowerCase() === 'buyer') return 'Buyer'
+  return rowParty || 'Buyer'
+}
+
+function getPersonLevelRequirementPersonName(row = {}) {
+  const requirement = row.requirement || row.requiredDocument || {}
+  const generatedFrom = getRequirementGeneratedFrom(requirement)
+  return String(generatedFrom.participantName || generatedFrom.participant_name || '').trim()
+}
+
+function getPersonLevelRequirementDocumentLabel(row = {}) {
+  const requirement = row.requirement || row.requiredDocument || {}
+  const keyText = normalizePersonLevelRequirementToken(
+    row.requiredDocumentKey ||
+      requirement.key ||
+      requirement.documentKey ||
+      requirement.document_key ||
+      '',
+  )
+  if (keyText.includes('proof_of_address')) return 'Proof of address'
+  if (keyText.includes('id_document') || keyText.endsWith('_id') || keyText.includes('identity')) return 'ID document'
+  if (keyText.includes('consent')) return 'Consent'
+  if (keyText.includes('resolution')) return 'Resolution'
+  if (keyText.includes('authority')) return 'Authority'
+  return row.displayName || requirement.label || toTitle(keyText || 'Requirement')
+}
+
+function isOpenPersonLevelRequirementStatus(status = '') {
+  const normalized = normalizeDocumentCommandStatus(status)
+  return !['uploaded', 'verified', 'generated'].includes(normalized)
+}
+
+function getPersonLevelGroupStatus(requirements = []) {
+  const statuses = requirements.map((requirement) => normalizeDocumentCommandStatus(requirement.status))
+  if (statuses.some((status) => ['missing', 'rejected', 'expired'].includes(status))) return 'missing'
+  if (statuses.some((status) => ['requested', 'pending_review'].includes(status))) return 'pending_review'
+  if (statuses.every((status) => status === 'verified')) return 'verified'
+  if (statuses.some((status) => status === 'uploaded')) return 'uploaded'
+  return statuses[0] || 'missing'
+}
+
+function buildPersonLevelRequirementRows(requiredDocumentRows = []) {
+  const grouped = new Map()
+
+  for (const row of requiredDocumentRows) {
+    const definition = getPersonLevelRequirementDefinition(row)
+    if (!definition) continue
+    const requirement = row.requirement || row.requiredDocument || null
+    const personIndex = getPersonLevelRequirementIndex(row, definition)
+    const partyLabel = getPersonLevelRequirementParty(row)
+    const personName = getPersonLevelRequirementPersonName(row)
+    const personKey = [
+      partyLabel.toLowerCase().replace(/\s+/g, '_'),
+      definition.key,
+      personIndex || normalizePersonLevelRequirementToken(personName) || 'unsequenced',
+    ].join(':')
+
+    if (!grouped.has(personKey)) {
+      grouped.set(personKey, {
+        id: personKey,
+        groupKey: definition.key,
+        groupLabel: definition.label,
+        groupPluralLabel: definition.pluralLabel,
+        partyLabel,
+        personIndex,
+        personName,
+        requirements: [],
+      })
+    }
+
+    grouped.get(personKey).requirements.push({
+      id: row.id || row.requiredDocumentKey || row.displayName,
+      label: getPersonLevelRequirementDocumentLabel(row),
+      displayName: row.displayName,
+      status: row.status,
+      statusLabel: row.statusLabel || getDocumentCommandStatusLabel(row.status),
+      fileUrl: row.fileUrl || '',
+      requirement,
+      row,
+    })
+  }
+
+  return Array.from(grouped.values())
+    .map((group) => {
+      const sortedRequirements = [...group.requirements].sort((left, right) => {
+        const leftOpen = isOpenPersonLevelRequirementStatus(left.status) ? 0 : 1
+        const rightOpen = isOpenPersonLevelRequirementStatus(right.status) ? 0 : 1
+        if (leftOpen !== rightOpen) return leftOpen - rightOpen
+        return String(left.label || '').localeCompare(String(right.label || ''))
+      })
+      const openCount = sortedRequirements.filter((requirement) => isOpenPersonLevelRequirementStatus(requirement.status)).length
+      const totalCount = sortedRequirements.length
+      const completeCount = totalCount - openCount
+      const label = [
+        group.partyLabel,
+        group.groupLabel,
+        group.personIndex ? String(group.personIndex) : '',
+      ].filter(Boolean).join(' ')
+
+      return {
+        ...group,
+        label,
+        requirements: sortedRequirements,
+        openCount,
+        totalCount,
+        completeCount,
+        status: getPersonLevelGroupStatus(sortedRequirements),
+      }
+    })
+    .sort((left, right) => {
+      const orderDelta = (PERSON_LEVEL_REQUIREMENT_GROUP_ORDER[left.groupKey] ?? 99) - (PERSON_LEVEL_REQUIREMENT_GROUP_ORDER[right.groupKey] ?? 99)
+      if (orderDelta) return orderDelta
+      const partyDelta = String(left.partyLabel || '').localeCompare(String(right.partyLabel || ''))
+      if (partyDelta) return partyDelta
+      return (left.personIndex || 0) - (right.personIndex || 0)
+    })
+}
+
+function summarizePersonLevelRequirementRows(rows = []) {
+  const roleCounts = PERSON_LEVEL_REQUIREMENT_GROUPS.map((group) => {
+    const matchingRows = rows.filter((row) => row.groupKey === group.key)
+    return {
+      key: group.key,
+      label: group.pluralLabel,
+      count: matchingRows.length,
+      openCount: matchingRows.reduce((total, row) => total + row.openCount, 0),
+    }
+  })
+  return {
+    totalPeople: rows.length,
+    totalRequirements: rows.reduce((total, row) => total + row.totalCount, 0),
+    openRequirements: rows.reduce((total, row) => total + row.openCount, 0),
+    roleCounts,
+  }
+}
+
+function getPersonLevelRequirementAction(row = {}) {
+  return (
+    row.requirements?.find((requirement) => isOpenPersonLevelRequirementStatus(requirement.status) && !requirement.fileUrl && requirement.requirement)?.requirement ||
+    row.requirements?.find((requirement) => requirement.requirement)?.requirement ||
+    null
+  )
+}
+
+function PersonLevelRequirementsPanel({
+  rows = [],
+  summary = summarizePersonLevelRequirementRows(rows),
+  onUploadRequirement = null,
+  onReviewLibrary = null,
+  saving = false,
+}) {
+  const hasRows = rows.length > 0
+  const statusText = hasRows
+    ? `${summary.openRequirements}/${summary.totalRequirements} open`
+    : 'No person-level requirements'
+
+  return (
+    <section className="rounded-[12px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold text-[#142132]">Person-Level Requirements</h3>
+          <p className="mt-1 text-sm text-[#60758d]">Directors, trustees, spouses, co-owners, signatories, and beneficial owners.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${
+            summary.openRequirements ? 'border-orange-100 bg-orange-50 text-orange-700' : 'border-emerald-100 bg-emerald-50 text-emerald-700'
+          }`}>
+            {statusText}
+          </span>
+          {onReviewLibrary ? (
+            <button type="button" className="text-sm font-semibold text-primary hover:text-primaryDark" onClick={onReviewLibrary}>
+              Review in library
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {summary.roleCounts.map((role) => (
+          <span
+            key={role.key}
+            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${
+              role.count ? 'border-[#dbe8f7] bg-[#f7fbff] text-[#35546c]' : 'border-[#e7edf4] bg-[#f8fbff] text-[#8aa0b8]'
+            }`}
+          >
+            {role.label}: {role.count}
+            {role.openCount ? <span className="text-orange-700">({role.openCount} open)</span> : null}
+          </span>
+        ))}
+      </div>
+
+      <div className="mt-4 overflow-x-auto rounded-[12px] border border-[#e6edf5]">
+        <table className="min-w-[860px] w-full border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-[#dde4ee] bg-[#f8fbff] text-left text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#71839a]">
+              <th className="py-2.5 pl-4 pr-4">Person</th>
+              <th className="px-4 py-2.5">Party</th>
+              <th className="px-4 py-2.5">Requirements</th>
+              <th className="px-4 py-2.5">Status</th>
+              <th className="py-2.5 pl-4 pr-4 text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {hasRows ? (
+              rows.map((row) => {
+                const actionRequirement = getPersonLevelRequirementAction(row)
+                return (
+                  <tr key={row.id} className="border-b border-[#edf2f7] last:border-0">
+                    <td className="max-w-[260px] py-3 pl-4 pr-4">
+                      <strong className="block truncate text-sm font-semibold text-[#142132]">{row.label}</strong>
+                      <span className="mt-1 block truncate text-xs text-[#60758d]">{row.personName || row.groupLabel}</span>
+                    </td>
+                    <td className="px-4 py-3 text-[#52677f]">{row.partyLabel}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1.5">
+                        {row.requirements.map((requirement) => (
+                          <span
+                            key={requirement.id}
+                            className={`inline-flex max-w-[260px] items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold ${getDocumentCommandStatusTone(requirement.status)}`}
+                            title={requirement.displayName}
+                          >
+                            <span className="truncate">{requirement.label}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
+                        {row.openCount ? `${row.openCount} open` : 'Complete'}
+                      </span>
+                    </td>
+                    <td className="py-3 pl-4 pr-4">
+                      <div className="flex items-center justify-end">
+                        {actionRequirement && onUploadRequirement ? (
+                          <Button type="button" variant="secondary" size="sm" onClick={() => onUploadRequirement(actionRequirement)} disabled={saving}>
+                            <Upload size={14} />
+                            Upload
+                          </Button>
+                        ) : (
+                          <CheckCircle2 size={17} className="text-emerald-600" />
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })
+            ) : (
+              <tr>
+                <td colSpan="5" className="py-8 text-center text-sm text-[#60758d]">
+                  No director, trustee, spouse, co-owner, signatory, or beneficial-owner rows are currently required for this transaction.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
 }
 
 function getParticipantDisplayName(participant) {
@@ -5817,6 +7103,17 @@ function buildMatterPreviewShell(matterPreview, transactionId) {
   }
 }
 
+function normalizeAttorneyQueueWorkspaceTarget(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (['overview', 'parties', 'stakeholders', 'documents', 'finance', 'transfer', 'tasks', 'activity'].includes(normalized)) {
+    return normalized
+  }
+  if (normalized === 'assignments' || normalized === 'assignment' || normalized === 'roleplayers') return 'stakeholders'
+  if (normalized === 'timeline' || normalized === 'messages' || normalized === 'email') return 'activity'
+  if (normalized === 'signing' || normalized === 'appointments') return 'transfer'
+  return ''
+}
+
 function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange, premium = false, spread = false }) {
   const iconByTab = {
     overview: Workflow,
@@ -6764,13 +8061,16 @@ function MatterOverviewHeader({
     </div>
   )
 }
-function LegalWorkflowHubCard({ workflow, onOpen, onExecuteAction = null }) {
+function LegalWorkflowHubCard({ workflow, onOpen, onExecuteAction = null, onResolveBlocker = null }) {
   const accent = LANE_ACCENTS[workflow?.accentKey] || LANE_ACCENTS.transfer
   const statusMeta = WORKFLOW_STATUS_META[workflow?.statusKey] || WORKFLOW_STATUS_META.not_started
   const actionSummary = workflow?.actionSummary || {}
   const primaryAction = actionSummary.primaryNextAction || null
   const readinessChecklist = (actionSummary.readinessChecklist || []).filter((item) => ['data', 'documents', 'signatures'].includes(item.id))
   const primaryCommand = primaryAction ? getWorkflowActionCommand(primaryAction, workflow?.lane || {}) : null
+  const blockerAction = workflow?.blockers?.length
+    ? getAttorneyActionableBlockerAction({ source: 'legal_workflow_hub_card', sectionKey: 'blockers', item: { label: workflow.blockers[0] }, workflow })
+    : null
 
   return (
     <article className={`flex h-full min-w-0 flex-col overflow-hidden rounded-[18px] border border-borderDefault border-l-4 bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:p-5 ${accent.ring}`}>
@@ -6813,7 +8113,13 @@ function LegalWorkflowHubCard({ workflow, onOpen, onExecuteAction = null }) {
           </div>
         ) : workflow.blockers.length ? (
           <div className="rounded-[14px] border border-warning/30 bg-warningSoft px-3 py-3 text-sm text-warning">
-            {workflow.blockers[0]}
+            <span className="block">{workflow.blockers[0]}</span>
+            <ActionableBlockerButton
+              action={blockerAction}
+              onResolve={onResolveBlocker}
+              context={{ workflow, sectionKey: 'blockers', item: { label: workflow.blockers[0] } }}
+              className="mt-3 w-full border-warning/20 bg-white/80"
+            />
           </div>
         ) : null}
       </div>
@@ -7731,6 +9037,7 @@ function AttorneyTransactionDetail() {
   const { transactionId, workflowDetailKey } = useParams()
   const location = useLocation()
   const navigate = useNavigate()
+  const handledSigningAppointmentIntentRef = useRef('')
   const { profile, role: workspaceRole, workspace, workspaceType, currentMembership } = useWorkspace()
   const attorneyPermissionState = useAttorneyPermissions()
   const navigationPreviewData = useMemo(
@@ -7743,7 +9050,9 @@ function AttorneyTransactionDetail() {
   const [matterAccessChecked, setMatterAccessChecked] = useState(workspaceRole !== 'attorney')
   const [matterAccessAllowed, setMatterAccessAllowed] = useState(workspaceRole !== 'attorney')
   const [saving, setSaving] = useState(false)
-  const [workspaceMenu, setWorkspaceMenu] = useState('overview')
+  const [workspaceMenu, setWorkspaceMenu] = useState(() => (
+    normalizeAttorneyQueueWorkspaceTarget(location.state?.attorneyWorkspaceTarget || location.state?.workspaceMenu) || 'overview'
+  ))
   const [selectedAttorneyLaneKey, setSelectedAttorneyLaneKey] = useState('')
   const [discussionBody, setDiscussionBody] = useState('')
   const [discussionType, setDiscussionType] = useState('operational')
@@ -7877,6 +9186,9 @@ function AttorneyTransactionDetail() {
   const [workflowNoteDraft, setWorkflowNoteDraft] = useState(null)
   const [workflowDocumentDraft, setWorkflowDocumentDraft] = useState(null)
   const [workflowSaving, setWorkflowSaving] = useState(false)
+  const [signingAppointmentDraft, setSigningAppointmentDraft] = useState(null)
+  const [signingAppointmentSaving, setSigningAppointmentSaving] = useState(false)
+  const [signingAppointmentError, setSigningAppointmentError] = useState('')
   const [bondHybridFinanceActionLoading, setBondHybridFinanceActionLoading] = useState('')
   const [bondApplicationPdfBusy, setBondApplicationPdfBusy] = useState(false)
   const [activityFilter, setActivityFilter] = useState('all')
@@ -7965,6 +9277,12 @@ function AttorneyTransactionDetail() {
     setSelectedAttorneyLaneKey('')
     setLoading(!navigationPreviewData)
   }, [navigationPreviewData, transactionId])
+
+  useEffect(() => {
+    const nextMenu = normalizeAttorneyQueueWorkspaceTarget(location.state?.attorneyWorkspaceTarget || location.state?.workspaceMenu)
+    if (!nextMenu) return
+    setWorkspaceMenu((previous) => (previous === nextMenu ? previous : nextMenu))
+  }, [location.key, location.state?.attorneyWorkspaceTarget, location.state?.workspaceMenu])
 
   useEffect(() => {
     if (workspaceRole === 'attorney') {
@@ -8645,6 +9963,14 @@ function AttorneyTransactionDetail() {
       }),
     [requiredDocumentChecklist, requirementDocumentLookup, transaction?.id],
   )
+  const personLevelRequirementRows = useMemo(
+    () => buildPersonLevelRequirementRows(requiredDocumentRows),
+    [requiredDocumentRows],
+  )
+  const personLevelRequirementSummary = useMemo(
+    () => summarizePersonLevelRequirementRows(personLevelRequirementRows),
+    [personLevelRequirementRows],
+  )
   const allDocumentLibraryRows = useMemo(
     () =>
       uniqueDocumentsByRenderKey(documents)
@@ -8712,6 +10038,92 @@ function AttorneyTransactionDetail() {
     () => activeStakeholders.find((item) => item?.roleType === 'bond_originator') || null,
     [activeStakeholders],
   )
+  const signingAppointmentParticipantOptions = useMemo(() => {
+    const rows = [
+      {
+        key: 'buyer',
+        roleLabel: 'Buyer',
+        participantRole: 'Buyer',
+        name: buyerDisplayName,
+        email: buyerEmail,
+      },
+      {
+        key: 'seller',
+        roleLabel: 'Seller',
+        participantRole: 'Seller',
+        name: sellerDisplayName,
+        email: sellerEmail,
+      },
+      {
+        key: 'agent',
+        roleLabel: 'Agent',
+        participantRole: 'Agent',
+        name: roleplayerForm.agentName || assignedAgent?.participantName || transaction?.assigned_agent || '',
+        email: roleplayerForm.agentEmail || assignedAgent?.participantEmail || transaction?.assigned_agent_email || '',
+      },
+      {
+        key: 'transfer_attorney',
+        roleLabel: 'Transfer Attorney',
+        participantRole: 'Attorney',
+        name: roleplayerForm.attorneyName || transferAttorney?.participantName || transaction?.attorney || '',
+        email: roleplayerForm.attorneyEmail || transferAttorney?.participantEmail || transaction?.assigned_attorney_email || '',
+      },
+      {
+        key: 'bond_attorney',
+        roleLabel: 'Bond Attorney',
+        participantRole: 'Bond Attorney',
+        name: bondAttorney?.participantName || '',
+        email: bondAttorney?.participantEmail || '',
+      },
+      {
+        key: 'bond_originator',
+        roleLabel: 'Bond Originator',
+        participantRole: 'Bond Originator',
+        name: roleplayerForm.bondOriginatorName || assignedBondOriginator?.participantName || transaction?.bond_originator || '',
+        email: roleplayerForm.bondOriginatorEmail || assignedBondOriginator?.participantEmail || transaction?.assigned_bond_originator_email || '',
+      },
+    ]
+
+    const seen = new Set()
+    return rows
+      .map((row) => ({
+        ...row,
+        name: cleanDetailText(row.name),
+        email: cleanDetailEmail(row.email),
+      }))
+      .filter((row) => row.name || row.email)
+      .filter((row) => {
+        const key = `${row.key}:${row.email || row.name}`.toLowerCase()
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+  }, [
+    assignedAgent?.participantEmail,
+    assignedAgent?.participantName,
+    assignedBondOriginator?.participantEmail,
+    assignedBondOriginator?.participantName,
+    bondAttorney?.participantEmail,
+    bondAttorney?.participantName,
+    buyerDisplayName,
+    buyerEmail,
+    roleplayerForm.agentEmail,
+    roleplayerForm.agentName,
+    roleplayerForm.attorneyEmail,
+    roleplayerForm.attorneyName,
+    roleplayerForm.bondOriginatorEmail,
+    roleplayerForm.bondOriginatorName,
+    sellerDisplayName,
+    sellerEmail,
+    transaction?.assigned_agent,
+    transaction?.assigned_agent_email,
+    transaction?.assigned_attorney_email,
+    transaction?.assigned_bond_originator_email,
+    transaction?.attorney,
+    transaction?.bond_originator,
+    transferAttorney?.participantEmail,
+    transferAttorney?.participantName,
+  ])
   const savedTransferRoleplayer = useMemo(
     () => transactionRolePlayers.find((item) => item?.roleType === 'transfer_attorney' || item?.role_type === 'transfer_attorney') || null,
     [transactionRolePlayers],
@@ -8820,6 +10232,37 @@ function AttorneyTransactionDetail() {
       transactionFinanceWorkflow,
       transferStageKey,
     ],
+  )
+  const legalExceptionBoundary = useMemo(() => {
+    const sellerOnboardingData =
+      data?.sellerOnboarding?.form_data ||
+      data?.sellerOnboarding?.formData ||
+      data?.sellerOnboarding ||
+      data?.sellerOnboardingFormData ||
+      transaction?.seller_onboarding_form_data ||
+      transaction?.sellerOnboardingFormData ||
+      {}
+    return resolveLegalSupportBoundary({
+      transaction: transaction || {},
+      formData: data?.onboardingFormData || {},
+      onboardingData: sellerOnboardingData,
+      listing: data?.listing || data?.sellerListing || {},
+    })
+  }, [
+    data?.listing,
+    data?.onboardingFormData,
+    data?.sellerListing,
+    data?.sellerOnboarding,
+    data?.sellerOnboardingFormData,
+    transaction,
+  ])
+  const legalExceptionReview = useMemo(
+    () => buildLegalExceptionReviewModel({
+      boundary: legalExceptionBoundary,
+      transferAttorney,
+      workspaceRole,
+    }),
+    [legalExceptionBoundary, transferAttorney, workspaceRole],
   )
   const overviewPrimaryNextAction = useMemo(
     () =>
@@ -9034,6 +10477,59 @@ function AttorneyTransactionDetail() {
     transaction?.seller_has_existing_bond,
     transferAttorney,
   ])
+  const roleplayerActionableBlockers = useMemo(() => {
+    const requiredBlockers = (roleplayerReadiness.blockers || []).map((item) => ({
+      id: `roleplayer-required-${item.key || item.label}`,
+      title: item.label || 'Roleplayer requirement',
+      description: item.description || 'Required before the transaction team can be introduced.',
+      source: 'roleplayer_readiness',
+      sectionKey: 'roleplayers',
+      action: {
+        ...ATTORNEY_ACTIONABLE_BLOCKER_TARGETS.roleplayers,
+        reason: 'Open roleplayer assignment controls.',
+      },
+    }))
+    const handoffBlockers = (roleplayerReadiness.teamHandoffBlockers || []).map((label) => ({
+      id: `roleplayer-handoff-${normalizeDetailKey(label)}`,
+      title: `${label} required`,
+      description: 'Required before the team handoff can be sent.',
+      source: 'roleplayer_handoff',
+      sectionKey: 'roleplayers',
+      action: {
+        ...ATTORNEY_ACTIONABLE_BLOCKER_TARGETS.roleplayers,
+        reason: 'Open roleplayer contact controls.',
+      },
+    }))
+    const staleIntro = roleplayerReadiness.introOutdated
+      ? [{
+          id: 'roleplayer-intro-outdated',
+          title: 'Buyer intro needs resend',
+          description: 'Roleplayer details changed after the buyer introduction was sent.',
+          source: 'roleplayer_intro',
+          sectionKey: 'roleplayers',
+          action: {
+            label: 'Resend Intro',
+            target: 'send_roleplayer_intro',
+            icon: Send,
+          },
+        }]
+      : []
+    const staleHandoff = roleplayerReadiness.handoffOutdated
+      ? [{
+          id: 'roleplayer-handoff-outdated',
+          title: 'Team handoff needs resend',
+          description: 'Provider details changed after the team handoff was sent.',
+          source: 'roleplayer_handoff',
+          sectionKey: 'roleplayers',
+          action: {
+            label: 'Resend Team Intro',
+            target: 'send_team_handoff',
+            icon: Send,
+          },
+        }]
+      : []
+    return [...requiredBlockers, ...handoffBlockers, ...staleIntro, ...staleHandoff]
+  }, [roleplayerReadiness])
   const workflowLanes = useMemo(
     () => (Array.isArray(workflowOperations?.lanes) ? workflowOperations.lanes : EMPTY_ARRAY),
     [workflowOperations?.lanes],
@@ -9176,6 +10672,28 @@ function AttorneyTransactionDetail() {
       transaction?.bond_application_id,
       transaction?.id,
       transactionFinanceWorkflow,
+    ],
+  )
+  const attorneyPilotMonitor = useMemo(
+    () => buildAttorneyPilotMonitorModel({
+      transaction,
+      workflowLanes,
+      documentReadiness,
+      roleplayerActionableBlockers,
+      legalExceptionReview,
+      activityFeed,
+      visibleTransactionDiscussion,
+      matterHealthLabel,
+    }),
+    [
+      activityFeed,
+      documentReadiness,
+      legalExceptionReview,
+      matterHealthLabel,
+      roleplayerActionableBlockers,
+      transaction,
+      visibleTransactionDiscussion,
+      workflowLanes,
     ],
   )
   const documentLibraryRows = useMemo(() => {
@@ -9887,19 +11405,139 @@ function AttorneyTransactionDetail() {
     })
   }, [workflowLanes])
 
-  const handleQuickScheduleSigning = useCallback(() => {
-    const lane = workflowLanes.find((item) => item.laneKey === 'transfer') || workflowLanes[0]
-    if (!lane) {
-      setWorkspaceMenu('activity')
-      return
-    }
-    openWorkflowDrawer(lane)
-    setWorkflowNoteDraft({
-      laneKey: lane.laneKey,
-      visibility: 'internal',
-      message: 'Signing appointment to be scheduled.',
+  const openSigningAppointmentWorkflow = useCallback((preferredLane = null) => {
+    const lane =
+      preferredLane ||
+      workflowLanes.find((item) => item.laneKey === 'transfer') ||
+      workflowLanes.find((item) => item.laneKey === 'bond') ||
+      workflowLanes[0] ||
+      null
+    const appointmentType = getSigningAppointmentTypeForLane(lane?.laneKey)
+    const startTime = '10:00'
+    const recipient = resolveDefaultSigningRecipient(signingAppointmentParticipantOptions, appointmentType)
+
+    setWorkspaceMenu('transfer')
+    setWorkflowDrawerLaneKey('')
+    setWorkflowStepDraft(null)
+    setWorkflowNoteDraft(null)
+    setWorkflowDocumentDraft(null)
+    setSigningAppointmentError('')
+    setSigningAppointmentDraft({
+      laneKey: lane?.laneKey || (appointmentType === 'bond_signing' ? 'bond' : 'transfer'),
+      appointmentType,
+      participantKey: recipient.key || 'manual',
+      participantRole: recipient.participantRole || recipient.roleLabel || 'Client',
+      recipientName: recipient.name || '',
+      recipientEmail: recipient.email || '',
+      appointmentDate: getDefaultSigningAppointmentDate(),
+      startTime,
+      endTime: addMinutesToClock(startTime, getSigningAppointmentDuration(appointmentType)),
+      location: '',
+      visibility: 'client_visible',
+      notes: '',
     })
-  }, [workflowLanes])
+  }, [signingAppointmentParticipantOptions, workflowLanes])
+
+  const handleQuickScheduleSigning = useCallback(() => {
+    openSigningAppointmentWorkflow()
+  }, [openSigningAppointmentWorkflow])
+
+  const handleSigningAppointmentParticipantChange = useCallback((participantKey) => {
+    const selected = signingAppointmentParticipantOptions.find((option) => option.key === participantKey)
+    setSigningAppointmentDraft((previous) => ({
+      ...previous,
+      participantKey,
+      participantRole: selected?.participantRole || selected?.roleLabel || previous?.participantRole || 'Client',
+      recipientName: selected?.name || previous?.recipientName || '',
+      recipientEmail: selected?.email || previous?.recipientEmail || '',
+    }))
+  }, [signingAppointmentParticipantOptions])
+
+  const handleSigningAppointmentTypeChange = useCallback((appointmentType) => {
+    setSigningAppointmentDraft((previous) => {
+      const startTime = previous?.startTime || '10:00'
+      return {
+        ...previous,
+        appointmentType,
+        laneKey: appointmentType === 'bond_signing' ? 'bond' : 'transfer',
+        endTime: addMinutesToClock(startTime, getSigningAppointmentDuration(appointmentType)),
+      }
+    })
+  }, [])
+
+  async function handleCreateSigningAppointment(event) {
+    event.preventDefault()
+    if (!signingAppointmentDraft) return
+    setSigningAppointmentSaving(true)
+    setSigningAppointmentError('')
+
+    try {
+      const scopedTransactionId = transaction?.id || transactionId
+      const organisationId = workspaceOrganisationId || transaction?.organisation_id || currentMembership?.organisation_id || currentMembership?.workspaceId || ''
+      if (!organisationId) throw new Error('Attorney workspace is required before creating an appointment.')
+      if (!scopedTransactionId) throw new Error('Transaction is required before creating an appointment.')
+      if (!signingAppointmentDraft.appointmentDate || !signingAppointmentDraft.startTime) {
+        throw new Error('Appointment date and start time are required.')
+      }
+      if (!cleanDetailEmail(signingAppointmentDraft.recipientEmail)) {
+        throw new Error('Recipient email is required for appointment confirmation.')
+      }
+
+      const appointmentType = signingAppointmentDraft.appointmentType || 'transfer_signing'
+      const appointmentResult = await createAttorneyAppointmentInvite({
+        organisationId,
+        transactionId: scopedTransactionId,
+        appointmentType,
+        date: signingAppointmentDraft.appointmentDate,
+        startTime: signingAppointmentDraft.startTime,
+        endTime: signingAppointmentDraft.endTime,
+        recipientName: signingAppointmentDraft.recipientName,
+        recipientEmail: signingAppointmentDraft.recipientEmail,
+        participantRole: signingAppointmentDraft.participantRole || 'Client',
+        location: signingAppointmentDraft.location,
+        visibility: signingAppointmentDraft.visibility || 'client_visible',
+        notes: signingAppointmentDraft.notes,
+        linkedWorkflow: getSigningAppointmentWorkflow(appointmentType),
+        linkedWorkflowStage: getSigningAppointmentStage(appointmentType),
+        linkedTransactionStage: signingAppointmentDraft.laneKey || (appointmentType === 'bond_signing' ? 'bond' : 'transfer'),
+        attorneyName: profile?.full_name || profile?.name || currentMembership?.name || currentMembership?.fullName || profile?.email || '',
+        attorneyEmail: profile?.email || currentMembership?.email || '',
+      })
+
+      await addTransactionDiscussionComment({
+        transactionId: scopedTransactionId,
+        organisationId,
+        authorName: profile?.full_name || profile?.name || profile?.email || 'Attorney',
+        authorRole: workspaceRole || 'attorney',
+        authorUserId: profile?.id || profile?.userId || null,
+        visibilityScope: signingAppointmentDraft.visibility === 'client_visible' ? 'client_visible' : 'shared',
+        updateType: 'system',
+        relatedEntityType: 'appointment',
+        relatedEntityId: appointmentResult.appointmentId || null,
+        isSystemGenerated: true,
+        commentText: `Signing appointment scheduled for ${signingAppointmentDraft.recipientName || signingAppointmentDraft.recipientEmail} on ${signingAppointmentDraft.appointmentDate} at ${signingAppointmentDraft.startTime}.`,
+      }).catch((discussionError) => {
+        console.warn('[AttorneyTransactionDetail] signing appointment activity failed', discussionError)
+      })
+
+      setSigningAppointmentDraft(null)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadData({ background: true })
+    } catch (appointmentError) {
+      setSigningAppointmentError(appointmentError?.message || 'Unable to create signing appointment.')
+    } finally {
+      setSigningAppointmentSaving(false)
+    }
+  }
+
+  useEffect(() => {
+    if (location.state?.attorneyQueueAction !== 'schedule_appointment') return
+    if (!transaction?.id) return
+    const intentKey = `${location.key || 'direct'}:${transaction.id}:schedule_appointment`
+    if (handledSigningAppointmentIntentRef.current === intentKey) return
+    handledSigningAppointmentIntentRef.current = intentKey
+    openSigningAppointmentWorkflow()
+  }, [location.key, location.state?.attorneyQueueAction, openSigningAppointmentWorkflow, transaction?.id])
 
   function findWorkflowStepForActionCommand(lane = {}, action = {}, command = {}) {
     const laneKey = lane?.laneKey || command?.laneKey || action?.laneKey || 'transfer'
@@ -10110,7 +11748,7 @@ function AttorneyTransactionDetail() {
       const result = await runWorkflowAction({
         transactionId: transaction.id,
         actionKey: action.actionKey,
-        payload: { source: 'rollup_overview' },
+        payload: buildAgentWorkflowActionPayload(action.actionKey, 'rollup_overview'),
         actorRole: workspaceRole,
       })
       if (!result?.allowed) {
@@ -10289,7 +11927,8 @@ function AttorneyTransactionDetail() {
     return (transactionRollup?.availableActions || [])
       .filter((action) =>
         ['request_buyer_details', 'request_seller_details', 'move_to_finance', 'move_to_transfer', 'mark_ready_for_registration', 'mark_registered']
-          .includes(normalizeDetailKey(action?.actionKey)),
+          .includes(normalizeDetailKey(action?.actionKey)) ||
+        AGENT_ASSISTED_ROLLUP_ACTION_KEYS.has(normalizeDetailKey(action?.actionKey)),
       )
       .map((action) => {
         const actionKey = normalizeDetailKey(action?.actionKey)
@@ -11709,6 +13348,117 @@ function AttorneyTransactionDetail() {
     transaction?.id,
   ])
 
+  function handleAttorneyActionableBlocker(action = {}, context = {}) {
+    const target = String(action?.target || '').trim()
+
+    if (target === 'upload_document') {
+      openDocumentUploadModal({ requirement: action.requirement || context?.item?.requirement || context?.item || null })
+      return
+    }
+
+    if (target === 'documents') {
+      if (action.documentFilter) {
+        setActiveDocumentLibraryCategory(action.documentFilter)
+      }
+      openWorkspaceMenu('documents')
+      return
+    }
+
+    if (target === 'signing') {
+      handleQuickScheduleSigning()
+      return
+    }
+
+    if (target === 'roleplayers') {
+      openRoleplayerConfirmation()
+      return
+    }
+
+    if (target === 'send_roleplayer_intro') {
+      void handleSendRoleplayerIntro()
+      return
+    }
+
+    if (target === 'send_team_handoff') {
+      void handleSendRoleplayerHandoff()
+      return
+    }
+
+    if (target === 'registration') {
+      setRegistrationModalOpen(true)
+      return
+    }
+
+    if (target === 'recheck') {
+      void refreshRegistrationValidation()
+      return
+    }
+
+    if (target === 'finance') {
+      openWorkspaceMenu(workspaceRole === 'bond_originator' ? 'banks_quotes' : 'finance')
+      return
+    }
+
+    if (target === 'activity') {
+      openWorkspaceMenu('activity')
+      return
+    }
+
+    const workflow = context?.workflow || null
+    const detailKey = action.detailKey || workflow?.detailKey || workflow?.key || 'transfer'
+    openLegalWorkflowDetail(detailKey)
+  }
+
+  function handleOpenLegalExceptionDocuments() {
+    setActiveDocumentLibraryCategory(legalExceptionReview?.unsupported ? 'missing' : 'critical')
+    openWorkspaceMenu('documents')
+  }
+
+  function handleDraftLegalExceptionReviewNote() {
+    const rows = (legalExceptionReview?.reviewRows || [])
+      .map((row) => `- ${row.title}: ${row.description}`)
+      .join('\n')
+    setDiscussionType('internal_note')
+    setDiscussionVisibility('internal')
+    setDiscussionActionKey('quick_internal_note')
+    setDiscussionLaneKey(transferWorkflowLane?.laneKey || 'transfer')
+    setDiscussionBody([
+      'Legal exception review required.',
+      `Status: ${legalExceptionReview?.tone?.label || 'Manual review'}.`,
+      `Owner: ${legalExceptionReview?.owner?.detail || legalExceptionReview?.owner?.label || 'Unassigned'}.`,
+      legalExceptionReview?.summary ? `Summary: ${legalExceptionReview.summary}` : '',
+      rows ? `Open review items:\n${rows}` : '',
+    ].filter(Boolean).join('\n'))
+    openWorkspaceMenu('activity')
+  }
+
+  function handleDraftAttorneyPilotFeedbackNote() {
+    const signalRows = (attorneyPilotMonitor?.riskItems || [])
+      .slice(0, 5)
+      .map((row) => `- ${row.title}: ${row.description}`)
+      .join('\n')
+    setDiscussionType('internal_note')
+    setDiscussionVisibility('internal')
+    setDiscussionActionKey('quick_internal_note')
+    setDiscussionLaneKey(
+      attorneyPilotMonitor?.focusLaneKey ||
+        transferWorkflowLane?.laneKey ||
+        activeDiscussionLane?.laneKey ||
+        workflowLanes[0]?.laneKey ||
+        'transfer',
+    )
+    setDiscussionBody([
+      'Pilot feedback.',
+      `Pilot health: ${attorneyPilotMonitor?.tone?.label || 'Pilot monitor'}.`,
+      `Idle days: ${attorneyPilotMonitor?.daysIdle ?? 'Not set'}.`,
+      `Blocked lanes: ${attorneyPilotMonitor?.blockedLaneCount || 0}.`,
+      `Document gaps: ${attorneyPilotMonitor?.criticalDocumentCount || attorneyPilotMonitor?.missingDocumentCount || 0}.`,
+      signalRows ? `Open pilot signals:\n${signalRows}` : '',
+      'Feedback:',
+    ].filter(Boolean).join('\n'))
+    openWorkspaceMenu('activity')
+  }
+
   async function handleRunRegistration() {
     if (!transaction?.id) {
       return
@@ -11885,22 +13635,53 @@ function AttorneyTransactionDetail() {
         : null
     const selectedVisibility = String(uploadDraft.visibility || 'client_visible').trim().toLowerCase()
     const visibilityScope = selectedVisibility === 'internal' ? 'internal' : 'shared'
+    const resolvedRequiredDocumentKey = linkedRequirement ? (uploadDraft.requiredDocumentKey || linkedRequirement?.key || null) : null
+    const resolvedDocumentType = uploadDraft.documentType || uploadDraft.requiredDocumentKey || null
+    const manualSignedContractActionKey = resolveManualSignedContractActionKey({
+      requiredDocumentKey: resolvedRequiredDocumentKey || uploadDraft.requiredDocumentKey,
+      documentType: resolvedDocumentType,
+      category: uploadDraft.category,
+    })
 
     try {
       setSaving(true)
       setError('')
-      await uploadDocument({
+      const uploadedDocument = await uploadDocument({
         transactionId: transaction.id,
         file: uploadDraft.file,
         category: uploadDraft.category,
         isClientVisible: visibilityScope !== 'internal',
         visibilityScope,
         stageKey: uploadDraft.relatedWorkflow || transferStageKey,
-        requiredDocumentKey: linkedRequirement ? (uploadDraft.requiredDocumentKey || linkedRequirement?.key || null) : null,
-        documentType: uploadDraft.documentType || uploadDraft.requiredDocumentKey || null,
+        requiredDocumentKey: resolvedRequiredDocumentKey,
+        documentType: resolvedDocumentType,
         canonicalRequirementInstanceId: linkedRequirement ? (uploadDraft.canonicalRequirementInstanceId || null) : null,
         documentRequestId: uploadDraft.documentRequestId || null,
+        source: manualSignedContractActionKey ? 'manual_signed_contract_upload' : 'attorney_document_upload',
       })
+      if (manualSignedContractActionKey) {
+        const actionResult = await runWorkflowAction({
+          transactionId: transaction.id,
+          actorRole: workspaceRole,
+          actionKey: manualSignedContractActionKey,
+          payload: {
+            source: 'manual_signed_contract_upload',
+            signingMethod: 'paper',
+            completionMode: 'manual_uploaded',
+            captureMethod: 'paper_signature_upload',
+            clientConsentMethod: 'signed_document_uploaded',
+            reason: 'Parties signed the contract document pack outside the digital signing flow and the signed pack was uploaded.',
+            notes: `Uploaded signed contract file: ${uploadDraft.fileName || uploadDraft.file?.name || 'uploaded document'}`,
+            signedContractDocumentId: uploadedDocument?.id || null,
+            documentName: uploadedDocument?.name || uploadDraft.fileName || uploadDraft.file?.name,
+            requiredDocumentKey: resolvedRequiredDocumentKey || uploadDraft.requiredDocumentKey || null,
+            documentType: resolvedDocumentType,
+          },
+        })
+        if (!actionResult?.allowed) {
+          throw new Error((actionResult?.blockers || []).map((item) => item.message).filter(Boolean).join(' • ') || 'Unable to record the manually signed contract documents.')
+        }
+      }
       setUploadDraft((previous) => ({
         ...previous,
         file: null,
@@ -12308,8 +14089,42 @@ function AttorneyTransactionDetail() {
             onExecuteFollowUp={handleWorkflowFollowUpCommand}
             onOpenDocuments={() => openWorkspaceMenu('documents')}
             onOpenActivity={() => openWorkspaceMenu('activity')}
+            discussionBody={discussionBody}
+            setDiscussionBody={setDiscussionBody}
+            handleAddDiscussion={handleAddDiscussion}
+            discussionType={discussionType}
+            setDiscussionType={setDiscussionType}
+            discussionVisibility={discussionVisibility}
+            setDiscussionVisibility={setDiscussionVisibility}
+            availableDiscussionVisibilityOptions={effectiveDiscussionVisibilityOptions}
+            structuredDiscussionComposer={structuredDiscussionComposer}
+            discussionLaneKey={activeDiscussionLane?.laneKey || discussionLaneKey}
+            setDiscussionLaneKey={setDiscussionLaneKey}
+            discussionLaneOptions={discussionLaneOptions}
+            discussionActionKey={selectedDiscussionAction?.key || discussionActionKey}
+            setDiscussionActionKey={setDiscussionActionKey}
+            discussionActionOptions={discussionActionOptions}
+            discussionSubmitDisabled={discussionSubmitDisabled}
             recentActivity={overviewConversationEntries}
             roleplayerItems={roleplayerStripItems}
+            saving={saving}
+          />
+        ) : null}
+
+        {workspaceRole === 'attorney' && activeWorkspaceMenu === 'overview' ? (
+          <LegalExceptionReviewPanel
+            model={legalExceptionReview}
+            onManageOwner={openRoleplayerConfirmation}
+            onOpenDocuments={handleOpenLegalExceptionDocuments}
+            onDraftReviewNote={handleDraftLegalExceptionReviewNote}
+          />
+        ) : null}
+
+        {workspaceRole === 'attorney' && activeWorkspaceMenu === 'overview' ? (
+          <AttorneyPilotMonitorPanel
+            model={attorneyPilotMonitor}
+            onDraftFeedback={handleDraftAttorneyPilotFeedbackNote}
+            onOpenActivity={() => openWorkspaceMenu('activity')}
           />
         ) : null}
 
@@ -12354,6 +14169,7 @@ function AttorneyTransactionDetail() {
                     workflows={legalWorkflowModels}
                     onOpenWorkflow={(workflow) => openLegalWorkflowDetail(workflow.detailKey)}
                     onRequestDocuments={(workflow, action) => handleWorkflowActionCommand(workflow?.lane, action)}
+                    onResolveBlocker={handleAttorneyActionableBlocker}
                   />
                 ) : null}
                 {activeWorkspaceMenu === 'overview' ? (
@@ -12565,6 +14381,7 @@ function AttorneyTransactionDetail() {
                               workflow={workflow}
                               onOpen={() => openLegalWorkflowDetail(workflow.detailKey)}
                               onExecuteAction={handleWorkflowActionCommand}
+                              onResolveBlocker={handleAttorneyActionableBlocker}
                             />
                           ))}
                         </div>
@@ -12927,6 +14744,14 @@ function AttorneyTransactionDetail() {
                       <span className="mt-1 block text-xs leading-5">
                         {documentReadiness.submissionReady ? 'All critical documents received.' : `${documentReadiness.blockerCount} critical item${documentReadiness.blockerCount === 1 ? '' : 's'} missing or rejected.`}
                       </span>
+                      {!documentReadiness.submissionReady ? (
+                        <ActionableBlockerButton
+                          action={ATTORNEY_ACTIONABLE_BLOCKER_TARGETS.missing_documents}
+                          onResolve={handleAttorneyActionableBlocker}
+                          context={{ source: 'document_readiness', sectionKey: 'documents' }}
+                          className="mt-3 w-full border-white/60 bg-white/80"
+                        />
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -12952,6 +14777,14 @@ function AttorneyTransactionDetail() {
                 </div>
               </div>
             </section>
+
+            <PersonLevelRequirementsPanel
+              rows={personLevelRequirementRows}
+              summary={personLevelRequirementSummary}
+              onUploadRequirement={(requirement) => openDocumentUploadModal({ requirement })}
+              onReviewLibrary={() => setActiveDocumentLibraryCategory('missing')}
+              saving={saving}
+            />
 
             <section className="grid items-stretch gap-5 xl:grid-cols-2">
               <section className="min-w-0 rounded-[12px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
@@ -14537,6 +16370,32 @@ function AttorneyTransactionDetail() {
             </section>
 
             <section className="rounded-[18px] border border-borderDefault bg-surface p-6 shadow-surface">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h3 className="text-section-title font-semibold text-textStrong">Roleplayer Blocker Actions</h3>
+                  <p className="mt-1 text-secondary text-textMuted">
+                    Missing assignments, missing emails, and stale introductions stay actionable from this workspace.
+                  </p>
+                </div>
+                <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-helper font-semibold ${
+                  roleplayerActionableBlockers.length
+                    ? 'border-warning/30 bg-warningSoft text-warning'
+                    : 'border-success/25 bg-successSoft text-success'
+                }`}>
+                  {roleplayerActionableBlockers.length} open
+                </span>
+              </div>
+
+              <div className="mt-4">
+                <ActionableBlockerRows
+                  rows={roleplayerActionableBlockers}
+                  onResolve={handleAttorneyActionableBlocker}
+                  emptyText="Roleplayer assignments and introductions are clear right now."
+                />
+              </div>
+            </section>
+
+            <section className="rounded-[18px] border border-borderDefault bg-surface p-6 shadow-surface">
               <div>
                 <h3 className="text-section-title font-semibold text-textStrong">Team Actions</h3>
                 <p className="mt-1 text-secondary text-textMuted">
@@ -14691,6 +16550,178 @@ function AttorneyTransactionDetail() {
         onExecuteFollowUp={handleWorkflowFollowUpCommand}
         onExecuteCoordination={handleWorkflowCoordinationCommand}
       />
+
+      <Modal
+        open={Boolean(signingAppointmentDraft)}
+        onClose={signingAppointmentSaving ? undefined : () => {
+          setSigningAppointmentDraft(null)
+          setSigningAppointmentError('')
+        }}
+        title="Schedule Signing Appointment"
+        subtitle="Signing date, participant, visibility, and location."
+        className="max-w-2xl"
+        footer={(
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setSigningAppointmentDraft(null)
+                setSigningAppointmentError('')
+              }}
+              disabled={signingAppointmentSaving}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" form="attorney-signing-appointment-form" disabled={signingAppointmentSaving}>
+              <CalendarDays size={14} />
+              {signingAppointmentSaving ? 'Scheduling...' : 'Create Appointment'}
+            </Button>
+          </div>
+        )}
+      >
+        {signingAppointmentDraft ? (
+          <form id="attorney-signing-appointment-form" onSubmit={handleCreateSigningAppointment} className="grid gap-4">
+            {signingAppointmentError ? (
+              <p className="rounded-control border border-danger/25 bg-dangerSoft px-3 py-2 text-sm font-semibold text-danger">
+                {signingAppointmentError}
+              </p>
+            ) : null}
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-label font-semibold uppercase text-textMuted">Appointment type</span>
+                <Field
+                  as="select"
+                  value={signingAppointmentDraft.appointmentType || 'transfer_signing'}
+                  onChange={(event) => handleSigningAppointmentTypeChange(event.target.value)}
+                >
+                  {SIGNING_APPOINTMENT_TYPE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </Field>
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-label font-semibold uppercase text-textMuted">Recipient</span>
+                <Field
+                  as="select"
+                  value={signingAppointmentDraft.participantKey || 'manual'}
+                  onChange={(event) => handleSigningAppointmentParticipantChange(event.target.value)}
+                >
+                  <option value="manual">Manual recipient</option>
+                  {signingAppointmentParticipantOptions.map((option) => (
+                    <option key={`${option.key}:${option.email || option.name}`} value={option.key}>
+                      {option.roleLabel}: {option.name || option.email}
+                    </option>
+                  ))}
+                </Field>
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-label font-semibold uppercase text-textMuted">Recipient name</span>
+                <Field
+                  value={signingAppointmentDraft.recipientName || ''}
+                  onChange={(event) =>
+                    setSigningAppointmentDraft((previous) => ({
+                      ...previous,
+                      recipientName: event.target.value,
+                      participantKey: previous?.participantKey || 'manual',
+                    }))
+                  }
+                  placeholder="Buyer or seller name"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-label font-semibold uppercase text-textMuted">Recipient email</span>
+                <Field
+                  type="email"
+                  value={signingAppointmentDraft.recipientEmail || ''}
+                  onChange={(event) =>
+                    setSigningAppointmentDraft((previous) => ({
+                      ...previous,
+                      recipientEmail: event.target.value,
+                      participantKey: previous?.participantKey || 'manual',
+                    }))
+                  }
+                  placeholder="client@example.com"
+                  required
+                />
+              </label>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-3">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-label font-semibold uppercase text-textMuted">Date</span>
+                <Field
+                  type="date"
+                  value={signingAppointmentDraft.appointmentDate || ''}
+                  onChange={(event) => setSigningAppointmentDraft((previous) => ({ ...previous, appointmentDate: event.target.value }))}
+                  required
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-label font-semibold uppercase text-textMuted">Start</span>
+                <Field
+                  type="time"
+                  value={signingAppointmentDraft.startTime || ''}
+                  onChange={(event) =>
+                    setSigningAppointmentDraft((previous) => ({
+                      ...previous,
+                      startTime: event.target.value,
+                      endTime: addMinutesToClock(
+                        event.target.value,
+                        getSigningAppointmentDuration(previous?.appointmentType || 'transfer_signing'),
+                      ),
+                    }))
+                  }
+                  required
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-label font-semibold uppercase text-textMuted">End</span>
+                <Field
+                  type="time"
+                  value={signingAppointmentDraft.endTime || ''}
+                  onChange={(event) => setSigningAppointmentDraft((previous) => ({ ...previous, endTime: event.target.value }))}
+                />
+              </label>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-label font-semibold uppercase text-textMuted">Visibility</span>
+                <Field
+                  as="select"
+                  value={signingAppointmentDraft.visibility || 'client_visible'}
+                  onChange={(event) => setSigningAppointmentDraft((previous) => ({ ...previous, visibility: event.target.value }))}
+                >
+                  {SIGNING_APPOINTMENT_VISIBILITY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </Field>
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-label font-semibold uppercase text-textMuted">Location</span>
+                <Field
+                  value={signingAppointmentDraft.location || ''}
+                  onChange={(event) => setSigningAppointmentDraft((previous) => ({ ...previous, location: event.target.value }))}
+                  placeholder="Boardroom, branch, or video link"
+                />
+              </label>
+            </div>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-label font-semibold uppercase text-textMuted">Internal notes</span>
+              <Field
+                as="textarea"
+                rows={3}
+                value={signingAppointmentDraft.notes || ''}
+                onChange={(event) => setSigningAppointmentDraft((previous) => ({ ...previous, notes: event.target.value }))}
+                placeholder="Signer sequence, documents to bring, or readiness notes"
+              />
+            </label>
+          </form>
+        ) : null}
+      </Modal>
 
       <Modal
         open={detailPanelOpen}
@@ -14964,9 +16995,25 @@ function AttorneyTransactionDetail() {
           <section className="rounded-control border border-borderSoft bg-surfaceAlt p-4">
             <h4 className="text-body font-semibold text-textStrong">Validation</h4>
             {registrationValidation.blockers.length ? (
-              <ul className="mt-2 space-y-1 text-secondary text-danger">
+              <ul className="mt-2 grid gap-2">
                 {registrationValidation.blockers.map((blocker) => (
-                  <li key={blocker.key || blocker.label}>• {blocker.label}</li>
+                  <li key={blocker.key || blocker.label} className="rounded-[12px] border border-danger/20 bg-white px-3 py-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <span className="text-secondary font-semibold text-danger">{blocker.label}</span>
+                      <div className="flex shrink-0 flex-wrap gap-2">
+                        <ActionableBlockerButton
+                          action={getAttorneyActionableBlockerAction({ source: 'registration_validation', sectionKey: 'registration', item: blocker })}
+                          onResolve={handleAttorneyActionableBlocker}
+                          context={{ blocker, sectionKey: 'registration' }}
+                        />
+                        <ActionableBlockerButton
+                          action={ATTORNEY_ACTIONABLE_BLOCKER_TARGETS.recheck}
+                          onResolve={handleAttorneyActionableBlocker}
+                          context={{ blocker, sectionKey: 'registration' }}
+                        />
+                      </div>
+                    </div>
+                  </li>
                 ))}
               </ul>
             ) : (

@@ -33,6 +33,7 @@ Default budget: `12000ms`.
 
 - `npm run test:document-generator-launch-gate`
 - `npm run verify:document-generator-launch`
+- `npm run cleanup:document-generator-fixture-links`
 
 ## Configuration
 
@@ -42,4 +43,10 @@ Default budget: `12000ms`.
 
 ## Notes
 
-The default gate treats missing `rendered_document_id` as a warning because the staging fixture proves saved storage paths and canonical/legacy linkage, while live generation already enforces the linked document record at runtime.
+The default gate still treats missing `rendered_document_id` as a warning unless `DOCUMENT_GENERATOR_REQUIRE_DOCUMENT_RECORD=true` is set, because live generation already enforces linked document records at runtime. The staging pilot fixture has now been cleaned so generated packet versions link to `documents` rows and the normal launch gate reports `warningCount: 0`.
+
+`cleanup:document-generator-fixture-links` is guarded by dry-run defaults. Write mode requires:
+
+```bash
+DOCUMENT_GENERATOR_FIXTURE_DOCUMENT_LINK_WRITE=true npm run cleanup:document-generator-fixture-links -- --write --confirm-staging
+```

@@ -1480,9 +1480,16 @@ function OperationalHeatmapPanel({ rows = [] }) {
 function formatDiagnosticLabel(value = '') {
   const labels = {
     awaiting_grant: 'Awaiting Grant',
+    awaiting_bank_feedback: 'Awaiting Bank Feedback',
+    additional_documents_required: 'Additional Documents Required',
+    awaiting_buyer_reupload: 'Awaiting Buyer Re-upload',
+    awaiting_grant_document: 'Awaiting Grant Document',
     grant_received: 'Grant Received',
+    awaiting_signed_grant: 'Awaiting Signed Grant',
     grant_signed: 'Grant Signed',
     ready_for_instruction: 'Ready for Instruction',
+    instruction_sent_awaiting_attorney_acceptance: 'Awaiting Attorney Acceptance',
+    active_review_required: 'Active Review Required',
     application_arrived: 'Application Arrived',
     submitted_to_banks: 'Submitted to Banks',
     bank_review: 'Bank Review',

@@ -157,14 +157,15 @@ try {
       { document_request_id: 'req-bank', status: 'uploaded', uploaded_at: '2026-05-03T11:00:00.000Z' },
     ],
   })
-  assert.equal(getNewApplicationsQueue([ready]).length, 0, 'ready for review moves out of Pipeline')
-  assert.equal(isBondApplicationTrackerRow(ready), true, 'ready for review appears in Applications')
+  assert.equal(getNewApplicationsQueue([ready]).length, 1, 'ready for review remains actionable in Pipeline')
+  assert.equal(getNewApplicationsQueue([ready])[0].canAccept, true, 'ready for review can be accepted from Pipeline')
+  assert.equal(isBondApplicationTrackerRow(ready), false, 'unaccepted ready for review files stay out of Applications')
   assert.equal(isNewBondApplicationReadyForReview(ready), true, 'unaccepted ready for review files are tagged new')
   assert.deepEqual(
     getBondOriginatorQueueState(ready),
     {
       status: BOND_INTAKE_STATUSES.READY_FOR_REVIEW,
-      bucket: 'applications',
+      bucket: 'pipeline',
       label: 'Ready for review',
       isNew: true,
       actionRequired: true,

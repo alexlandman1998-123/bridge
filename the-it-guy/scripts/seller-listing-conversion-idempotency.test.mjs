@@ -56,6 +56,17 @@ test('signed mandate conversion recovers from duplicate insert conflicts', () =>
   assert.match(finalSignedFunction, /existingListingFound = true/)
 })
 
+test('signed mandate conversion preserves branch attribution on fallback listing creation', () => {
+  assert.match(finalSignedFunction, /SIGNED_MANDATE_LISTING_SELECT =\s*\n\s*"[^"]*branch_id/)
+  assert.match(finalSignedFunction, /\.select\("lead_id, organisation_id, branch_id, assigned_branch_id, assigned_agent_id/)
+  assert.match(finalSignedFunction, /function resolveSignedMandateBranchId/)
+  assert.match(finalSignedFunction, /listing\?\.branch_id[\s\S]*lead\?\.branch_id[\s\S]*lead\?\.assigned_branch_id[\s\S]*sourceContext\.branchId[\s\S]*sourceLead\.branch_id/)
+  assert.match(finalSignedFunction, /branch_id: branchId,\s*\n\s*seller_lead_id:/)
+  assert.match(finalSignedFunction, /organisation_id: organisationId,\s*\n\s*branch_id: branchId,\s*\n\s*assigned_agent_id:/)
+  assert.match(finalSignedFunction, /branchId: branchId \|\| null/)
+  assert.match(finalSignedFunction, /branch_id: branchId \|\| sourceContext\.branch_id \|\| null/)
+})
+
 test('converted listings own operational fields after mandate signed', () => {
   assert.match(finalSignedFunction, /function listingAlreadyOwnsOperationalFields/)
   assert.match(finalSignedFunction, /"mandate_signed", "active", "under_offer", "transaction_created", "sold", "withdrawn"/)

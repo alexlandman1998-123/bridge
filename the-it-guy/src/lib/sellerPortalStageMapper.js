@@ -1,3 +1,7 @@
+import {
+  isSignedArtifactSignatureCaptured,
+} from '../core/workflows/overrideContract.js'
+
 export const SELLER_PORTAL_STAGES = [
   {
     key: 'mandate_signed',
@@ -133,13 +137,9 @@ function hasSignal(signals = [], keywords = []) {
 function hasSignedMandateSignal(signals = []) {
   return hasSignal(signals, [
     'all_signers_completed',
-    'fully_signed',
     'mandate_signed_by_seller',
-    'manual_signed_document_uploaded',
-    'signed_physical_mandate_uploaded',
     'signer_completed_signing',
-    'uploaded_signed',
-  ]) || signals.some((signal) => ['signed', 'signed_uploaded'].includes(signal))
+  ]) || signals.some((signal) => signal !== 'mandate_signed' && isSignedArtifactSignatureCaptured(signal))
 }
 
 function hasExplicitSignedMandateEvidence(transaction = {}, context = {}, mandatePacket = {}) {
@@ -157,7 +157,7 @@ function hasExplicitSignedMandateEvidence(transaction = {}, context = {}, mandat
     mandatePacket.packet?.status,
   ].map(normalizeStageSignal)
 
-  if (dedicatedMandateSignals.some((signal) => ['signed', 'completed', 'fully_signed', 'uploaded_signed'].includes(signal))) {
+  if (dedicatedMandateSignals.some((signal) => isSignedArtifactSignatureCaptured(signal))) {
     return true
   }
 

@@ -99,6 +99,291 @@ Required coverage:
 - Recovery: missing membership, invalid onboarding, invalid assignment, orphan detection.
 - Observability: logs, audit visibility, permission-denial tracking, deployment checks.
 
+## Bond Originator Launch Gate
+
+The bond-originator release gate covers bank delays, additional-document delays, buyer re-upload waits, grant evidence, signed-grant evidence, attorney instruction handoff, invalid legacy statuses, and active files that would otherwise fall out of a visible queue.
+
+Current implemented audit phases:
+
+- Bond originator Phase 3 launch gate: `docs/audits/bond-originator-phase3-launch-gate.md`
+- Bond originator Phase 4 staging sweep: `docs/audits/bond-originator-phase4-staging-sweep.md`
+- Bond originator Phase 5 final sign-off: `docs/audits/bond-originator-phase5-final-signoff.md`
+- Bond originator Phase 6 post-launch monitoring: `docs/audits/bond-originator-phase6-post-launch-monitoring.md`
+
+Local Phase 3 verification:
+
+```bash
+npm run verify:bond-originator-phase3-launch-gate
+```
+
+Strict read-only staging sweep before release:
+
+```bash
+node scripts/bond-originator-phase4-staging-sweep.mjs --live --confirm-staging --require-live
+```
+
+Phase 4 staging sweep verification:
+
+```bash
+npm run verify:bond-originator-phase4-staging-sweep
+```
+
+Phase 5 final sign-off package:
+
+```bash
+npm run verify:bond-originator-phase5-final-signoff
+```
+
+Strict final sign-off before production go:
+
+```bash
+node scripts/bond-originator-phase5-final-signoff.mjs --require-final-signoff
+```
+
+Phase 6 post-launch monitoring package:
+
+```bash
+npm run verify:bond-originator-phase6-post-launch-monitoring
+```
+
+Strict post-launch monitoring evidence:
+
+```bash
+node scripts/bond-originator-phase6-post-launch-monitoring.mjs --require-monitoring
+```
+
+## Seller-Side Transaction Launch Gate
+
+The seller-side launch checklist is tracked separately because it spans agency, seller portal, listing, mandate, transaction, document, finance, attorney, and registration surfaces.
+
+Current implemented audit phases:
+
+- Phase 0 scope lock: `docs/audits/seller-side-transaction-launch-scope-phase0.md`
+- Phase 1 staging fixture/env readiness: `docs/audits/seller-side-transaction-launch-phase1.md`
+- Phase 2 lead-to-onboarding contracts: `docs/audits/seller-side-transaction-launch-phase2.md`
+- Phase 3 listing/mandate conversion contracts: `docs/audits/seller-side-transaction-launch-phase3.md`
+- Phase 4 transaction spine/documents/routing contracts: `docs/audits/seller-side-transaction-launch-phase4.md`
+- Phase 5 transfer/registration/security/browser contracts: `docs/audits/seller-side-transaction-launch-phase5.md`
+- Phase 6 launch hardening/build/RLS contracts: `docs/audits/seller-side-transaction-launch-phase6.md`
+- Phase 7 release-candidate/cutover evidence contracts: `docs/audits/seller-side-transaction-launch-phase7.md`
+
+Phase 1 verification:
+
+```bash
+npm run verify:seller-side-phase1-readiness
+```
+
+Phase 2 verification:
+
+```bash
+npm run verify:seller-side-phase2-lead-onboarding
+```
+
+Phase 3 verification:
+
+```bash
+npm run verify:seller-side-phase3-listing-mandate
+```
+
+Phase 4 verification:
+
+```bash
+npm run verify:seller-side-phase4-transaction-spine
+```
+
+Phase 5 verification:
+
+```bash
+npm run verify:seller-side-phase5-transfer-registration
+```
+
+Phase 6 verification:
+
+```bash
+npm run verify:seller-side-phase6-launch-hardening
+```
+
+Phase 6 live staging RLS cutover evidence:
+
+```bash
+SELLER_SIDE_RLS_ACTOR_EMAIL=<actor@example.com> \
+SELLER_SIDE_RLS_ACTOR_PASSWORD=<actor-password> \
+SELLER_SIDE_RLS_UNRELATED_EMAIL=<unrelated@example.com> \
+SELLER_SIDE_RLS_UNRELATED_PASSWORD=<unrelated-password> \
+SELLER_SIDE_RLS_TRANSACTION_ID=<transaction-id> \
+node scripts/seller-side-phase6-rls-probes.mjs --live --confirm-staging --require-live
+```
+
+Phase 7 release-candidate verification:
+
+```bash
+npm run verify:seller-side-phase7-release-candidate
+```
+
+Phase 7 strict cutover evidence:
+
+```bash
+SELLER_SIDE_BROWSER_SMOKE_BASE_URL=https://staging.arch9.co.za \
+SELLER_SIDE_BROWSER_SMOKE_TRANSACTION_ID=<transaction-id> \
+SELLER_SIDE_BROWSER_SMOKE_AUTH_STATE=playwright/.auth/staging-internal.json \
+SELLER_SIDE_RLS_ACTOR_EMAIL=<actor@example.com> \
+SELLER_SIDE_RLS_ACTOR_PASSWORD=<actor-password> \
+SELLER_SIDE_RLS_UNRELATED_EMAIL=<unrelated@example.com> \
+SELLER_SIDE_RLS_UNRELATED_PASSWORD=<unrelated-password> \
+SELLER_SIDE_RLS_TRANSACTION_ID=<transaction-id> \
+node scripts/seller-side-phase7-release-candidate-gate.mjs --require-cutover-evidence
+```
+
+## Buyer-Side Lead-To-Registration Diagnostic
+
+The buyer-side diagnostic mirrors the seller launch gate at a full journey level: lead capture, assignment, requirements, matching, offer submission, accepted-offer transaction conversion, onboarding, finance, document requirements, transfer workflow, registration action evidence, and browser entry protection.
+
+Current diagnostic audit:
+
+- Attorney workflow contract Phase 0: `docs/audits/attorney-workflow-contract-phase0.md`
+- Attorney workflow Phase 1 queue actions: `docs/audits/attorney-workflow-phase1-queue-actions.md`
+- Attorney workflow Phase 2 permission lock: `docs/audits/attorney-workflow-phase2-permission-lock.md`
+- Attorney workflow Phase 3 launch gate: `docs/audits/attorney-workflow-phase3-launch-gate.md`
+- Attorney workflow Phase 4 multi-firm smoke: `docs/audits/attorney-workflow-phase4-multi-firm-smoke.md`
+- Attorney workflow Phase 5 signing appointments: `docs/audits/attorney-workflow-phase5-signing-appointments.md`
+- Attorney workflow Phase 6 person-level requirements: `docs/audits/attorney-workflow-phase6-person-level-requirements.md`
+- Attorney workflow Phase 7 actionable blockers: `docs/audits/attorney-workflow-phase7-actionable-blockers.md`
+- Attorney workflow Phase 8 exceptional legal scenarios: `docs/audits/attorney-workflow-phase8-exceptional-legal-scenarios.md`
+- Attorney workflow Phase 9 pilot monitoring: `docs/audits/attorney-workflow-phase9-pilot-monitoring.md`
+- Buyer-side launch hardening Phase 0 scope lock: `docs/audits/buyer-side-launch-hardening-phase0.md`
+- Buyer-side launch hardening Phase 1 live staging transaction: `docs/audits/buyer-side-launch-hardening-phase1.md`
+- Buyer-side launch hardening Phase 2 RLS access probes: `docs/audits/buyer-side-launch-hardening-phase2.md`
+- Buyer-side launch hardening Phase 3 public offer-token browser smoke: `docs/audits/buyer-side-launch-hardening-phase3.md`
+- Buyer-side launch hardening Phase 4 token delivery and invalid-token handling: `docs/audits/buyer-side-launch-hardening-phase4.md`
+- Buyer-side launch hardening Phase 5 document and privacy verification: `docs/audits/buyer-side-launch-hardening-phase5.md`
+- Buyer-side launch hardening Phase 6 launch-candidate gate: `docs/audits/buyer-side-launch-hardening-phase6.md`
+- Buyer-side launch hardening Phase 7 final staging sign-off: `docs/audits/buyer-side-launch-hardening-phase7.md`
+- Buyer-side lead-to-registration diagnostic: `docs/audits/buyer-side-lead-registration-diagnostic.md`
+
+Phase 0 verification:
+
+```bash
+npm run verify:attorney-workflow-phase0-contract
+npm run verify:attorney-workflow-phase1-queue-actions
+npm run verify:attorney-workflow-phase2-permission-lock
+npm run verify:attorney-workflow-phase3-launch-gate
+npm run verify:attorney-workflow-phase4-multi-firm-smoke
+npm run verify:attorney-workflow-phase5-signing-appointments
+npm run verify:attorney-workflow-phase6-person-level-requirements
+npm run verify:attorney-workflow-phase7-actionable-blockers
+npm run verify:attorney-workflow-phase8-exceptional-legal-scenarios
+npm run verify:attorney-workflow-phase9-pilot-monitoring
+npm run verify:buyer-side-phase0-scope-fixtures
+```
+
+Attorney Phase 4 strict live staging evidence:
+
+```bash
+npm run verify:attorney-workflow-phase4-live
+```
+
+Phase 1 local contract verification:
+
+```bash
+npm run verify:buyer-side-phase1-live-staging-transaction
+```
+
+Phase 1 strict live staging evidence:
+
+```bash
+node scripts/buyer-side-phase1-live-staging-transaction-gate.mjs --live --confirm-staging --require-live
+```
+
+Phase 2 local RLS contract verification:
+
+```bash
+npm run verify:buyer-side-phase2-rls-access
+```
+
+Phase 2 strict live RLS evidence:
+
+```bash
+node scripts/buyer-side-phase2-rls-access-probes.mjs --live --confirm-staging --require-live
+```
+
+Phase 3 local offer-token contract verification:
+
+```bash
+npm run verify:buyer-side-phase3-offer-token-browser
+```
+
+Phase 3 local mocked browser smoke:
+
+```bash
+node scripts/buyer-side-phase3-offer-token-browser-smoke.mjs --browser
+```
+
+Phase 3 strict live public-token browser evidence:
+
+```bash
+node scripts/buyer-side-phase3-offer-token-browser-smoke.mjs --live --confirm-staging --require-browser
+```
+
+Phase 4 local token delivery contract verification:
+
+```bash
+npm run verify:buyer-side-phase4-token-delivery
+```
+
+Phase 4 strict live delivery evidence:
+
+```bash
+node scripts/buyer-side-phase4-token-delivery-invalid-handling.mjs --live --confirm-staging --require-live
+```
+
+Phase 5 local document privacy contract verification:
+
+```bash
+npm run verify:buyer-side-phase5-document-privacy
+```
+
+Phase 5 strict live document privacy evidence:
+
+```bash
+node scripts/buyer-side-phase5-document-privacy-verification.mjs --live --confirm-staging --require-live
+```
+
+Phase 6 local launch-candidate verification:
+
+```bash
+npm run verify:buyer-side-phase6-launch-candidate
+```
+
+Phase 6 strict live evidence chain:
+
+```bash
+node scripts/buyer-side-phase6-launch-candidate-gate.mjs --require-live-evidence
+```
+
+Phase 7 local final sign-off package:
+
+```bash
+npm run verify:buyer-side-phase7-final-signoff
+```
+
+Phase 7 strict final staging sign-off:
+
+```bash
+node scripts/buyer-side-phase7-final-signoff-gate.mjs --require-final-signoff
+```
+
+Verification:
+
+```bash
+npm run verify:buyer-side-lead-registration-diagnostic
+```
+
+Optional browser smoke:
+
+```bash
+node scripts/buyer-side-lead-registration-diagnostic-gate.mjs --include-browser-smoke
+```
+
 ## Role QA Suites
 
 Agency:
@@ -257,6 +542,23 @@ Client issue:
 
 ## Go-Live Checklist
 
+Seller-side transaction launch scope is locked in
+`docs/audits/seller-side-transaction-launch-scope-phase0.md`.
+Phase 1 fixture and env readiness is recorded in
+`docs/audits/seller-side-transaction-launch-phase1.md`.
+Phase 2 lead-to-onboarding contracts are recorded in
+`docs/audits/seller-side-transaction-launch-phase2.md`.
+Phase 3 listing/mandate conversion contracts are recorded in
+`docs/audits/seller-side-transaction-launch-phase3.md`.
+Phase 4 transaction spine, documents, and routing contracts are recorded in
+`docs/audits/seller-side-transaction-launch-phase4.md`.
+Phase 5 transfer, registration, security, and browser-smoke contracts are recorded in
+`docs/audits/seller-side-transaction-launch-phase5.md`.
+Phase 6 launch hardening, production build warning hygiene, and RLS probe contracts are recorded in
+`docs/audits/seller-side-transaction-launch-phase6.md`.
+Phase 7 release-candidate and strict cutover evidence contracts are recorded in
+`docs/audits/seller-side-transaction-launch-phase7.md`.
+
 Infrastructure:
 
 - production env vars set
@@ -413,6 +715,7 @@ Incident requirements:
 
 ## Phase 9 Candidates
 
+- Attorney workflow pilot monitoring is implemented in `docs/audits/attorney-workflow-phase9-pilot-monitoring.md`.
 - Automated Playwright regression suite using seeded demo users.
 - Dedicated staging seed runner.
 - CI release gate using launch readiness checks.

@@ -8,6 +8,22 @@ import {
   buildSellerDocumentRequirementRows,
   normalizeSellerDocumentRequirementStatus,
 } from './sellerDocumentRequirementsService.js'
+import {
+  SIGNED_ARTIFACT_STATUSES,
+  isSignedArtifactPrepared,
+  isSignedArtifactSignatureCaptured,
+  normalizeSignedArtifactStatus,
+} from '../core/workflows/overrideContract.js'
+
+const SENT_SIGNED_ARTIFACT_STATUSES = new Set([
+  SIGNED_ARTIFACT_STATUSES.sentForSignature,
+  SIGNED_ARTIFACT_STATUSES.sentToAgent,
+  SIGNED_ARTIFACT_STATUSES.agentSigned,
+  SIGNED_ARTIFACT_STATUSES.sentToSeller,
+  SIGNED_ARTIFACT_STATUSES.sellerSigned,
+  SIGNED_ARTIFACT_STATUSES.viewed,
+  SIGNED_ARTIFACT_STATUSES.partiallySigned,
+])
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -352,6 +368,9 @@ function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, m
     sourceContext?.signing_status,
     ...leadMandateStageSignals,
   ].map(normalizeKey)
+  const artifactStatuses = statuses
+    .map((status) => normalizeSignedArtifactStatus(status, ''))
+    .filter(Boolean)
   const onboardingStatus = normalizeKey(
     lead?.sellerOnboardingStatus ||
       lead?.seller_onboarding_status ||
@@ -377,15 +396,22 @@ function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, m
     allSignersSigned ||
     hasFinalArtifact ||
     (mandatePacketRef && convertedToListing) ||
-    (allowStatusOnlyMandate && statuses.some((status) => ['signed', 'signed_uploaded', 'completed', 'fully_signed', 'uploaded_signed'].includes(status) || status.includes('mandate_signed')))
+    (allowStatusOnlyMandate && statuses.some((status) => isSignedArtifactSignatureCaptured(status) || status.includes('mandate_signed')))
   ) {
     return 'signed'
   }
+  const mandateStatusPrepared = statuses.some((status) =>
+    isSignedArtifactPrepared(status) ||
+      status === 'ready_for_generation' ||
+      status.includes('mandate_sent'),
+  )
+  const mandateStatusSent = artifactStatuses.some((status) => SENT_SIGNED_ARTIFACT_STATUSES.has(status)) ||
+    statuses.some((status) => status.includes('sent') || status.includes('partially_signed'))
   if (
     mandatePacketRef ||
-    (allowStatusOnlyMandate && statuses.some((status) => ['sent', 'generated', 'ready', 'ready_for_generation', 'partially_signed', 'sent_to_seller', 'sent_to_agent'].includes(status) || status.includes('mandate_sent')))
+    (allowStatusOnlyMandate && mandateStatusPrepared)
   ) {
-    return statuses.some((status) => status.includes('sent') || status.includes('partially_signed')) ? 'sent' : 'draft'
+    return mandateStatusSent ? 'sent' : 'draft'
   }
   return 'not_started'
 }

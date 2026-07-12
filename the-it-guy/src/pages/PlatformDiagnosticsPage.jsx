@@ -719,7 +719,7 @@ export default function PlatformDiagnosticsPage() {
             <div>
               <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Canonical invite diagnostics</h2>
               <p className="mt-2 text-sm text-[#60758d]">
-                Monitor partner, buyer, and seller invite activation sync across canonical invites, participants, and portal records.
+                Monitor workspace, partner, buyer, and seller invite expiry, activation sync, participants, portal records, and completed profiles without workspaces.
               </p>
             </div>
             <button type="button" className="header-secondary-cta" onClick={loadInviteDiagnostics} disabled={inviteLoading}>
@@ -731,15 +731,21 @@ export default function PlatformDiagnosticsPage() {
             <div className="grid gap-4">
               <div className="grid gap-3 md:grid-cols-4">
                 <StatCard label="Invite health" value={inviteHealth.status || 'unknown'} tone={inviteHealth.status === 'critical' ? 'critical' : inviteHealth.status === 'warning' ? 'warning' : 'success'} />
+                <StatCard label="Pending workspaces" value={inviteHealth.totals?.pendingWorkspaceInvites || 0} />
                 <StatCard label="Pending partners" value={inviteHealth.totals?.pendingPartnerInvites || 0} />
                 <StatCard label="Pending clients" value={inviteHealth.totals?.pendingClientInvites || 0} />
-                <StatCard label="Stale pending" value={inviteHealth.totals?.stalePendingInvites || 0} tone={inviteHealth.totals?.stalePendingInvites ? 'warning' : 'success'} />
+                <StatCard label="Expired pending" value={inviteHealth.totals?.expiredPendingInvites || 0} tone={inviteHealth.totals?.expiredPendingInvites ? 'warning' : 'success'} />
               </div>
               <div className="grid gap-3 md:grid-cols-4">
+                <StatCard label="Stale pending" value={inviteHealth.totals?.stalePendingInvites || 0} tone={inviteHealth.totals?.stalePendingInvites ? 'warning' : 'success'} />
+                <StatCard label="Completed no workspace" value={inviteHealth.totals?.completedProfilesWithoutWorkspace || 0} tone={inviteHealth.totals?.completedProfilesWithoutWorkspace ? 'warning' : 'success'} />
+                <StatCard label="Expired partner rows" value={(inviteHealth.totals?.expiredPendingPartnerInvitations || 0) + (inviteHealth.totals?.expiredPendingTransactionPartnerInvitations || 0)} tone={(inviteHealth.totals?.expiredPendingPartnerInvitations || inviteHealth.totals?.expiredPendingTransactionPartnerInvitations) ? 'warning' : 'success'} />
+                <StatCard label="Duplicate pending" value={inviteHealth.totals?.duplicatePendingInvites || 0} tone={inviteHealth.totals?.duplicatePendingInvites ? 'warning' : 'success'} />
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
                 <StatCard label="Partner gaps" value={inviteHealth.totals?.partnerSyncGaps || 0} tone={inviteHealth.totals?.partnerSyncGaps ? 'critical' : 'success'} />
                 <StatCard label="Buyer participant gaps" value={inviteHealth.totals?.buyerParticipantSyncGaps || 0} tone={inviteHealth.totals?.buyerParticipantSyncGaps ? 'critical' : 'success'} />
                 <StatCard label="Portal gaps" value={(inviteHealth.totals?.buyerPortalSyncGaps || 0) + (inviteHealth.totals?.sellerPortalSyncGaps || 0)} tone={(inviteHealth.totals?.buyerPortalSyncGaps || inviteHealth.totals?.sellerPortalSyncGaps) ? 'warning' : 'success'} />
-                <StatCard label="Duplicate pending" value={inviteHealth.totals?.duplicatePendingInvites || 0} tone={inviteHealth.totals?.duplicatePendingInvites ? 'warning' : 'success'} />
               </div>
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">

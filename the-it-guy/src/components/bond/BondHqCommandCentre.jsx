@@ -302,11 +302,16 @@ function buildAttentionItems({ alerts = [], priorityActions = [], operationalRis
   const missingDocuments = Math.max(
     getAlertMetricValue(alerts, ['missing_docs', 'missing_documents']),
     normalizeNumber(findMetric(priorityActions, 'missing_documents')?.count),
+    normalizeNumber(findMetric(priorityActions, 'additional_documents_required')?.count),
+    normalizeNumber(findMetric(priorityActions, 'awaiting_buyer_reupload')?.count),
+    getDiagnosticQueueCount(operationalDiagnostics, ['additional_documents_required', 'awaiting_buyer_reupload']),
     countRowsMatching(operationalRiskMatrix, ['missing documents', 'document pack', 'documents missing', 'documents']),
   )
   const bankFeedback = Math.max(
     getAlertMetricValue(alerts, ['sla', 'sla_breaches']),
     normalizeNumber(findMetric(priorityActions, 'bank_feedback')?.count),
+    normalizeNumber(findMetric(priorityActions, 'awaiting_bank_feedback')?.count),
+    getDiagnosticQueueCount(operationalDiagnostics, ['awaiting_bank_feedback']),
     countRowsMatching(operationalRiskMatrix, ['bank feedback', 'lender query', 'bank review']),
   )
   const awaitingClient = Math.max(
@@ -326,7 +331,19 @@ function buildAttentionItems({ alerts = [], priorityActions = [], operationalRis
       'missing_grant_submission_evidence',
       'missing_instruction_evidence',
     ]),
-    getDiagnosticQueueCount(operationalDiagnostics, ['awaiting_grant', 'grant_received', 'grant_signed', 'ready_for_instruction']),
+    getDiagnosticQueueCount(operationalDiagnostics, [
+      'awaiting_grant',
+      'awaiting_grant_document',
+      'grant_received',
+      'awaiting_signed_grant',
+      'grant_signed',
+      'ready_for_instruction',
+      'instruction_sent_awaiting_attorney_acceptance',
+    ]),
+  )
+  const reviewRequired = Math.max(
+    normalizeNumber(findMetric(priorityActions, 'active_review_required')?.count),
+    getDiagnosticQueueCount(operationalDiagnostics, ['active_review_required']),
   )
 
   return [
@@ -369,6 +386,14 @@ function buildAttentionItems({ alerts = [], priorityActions = [], operationalRis
       detail: 'Grant and instruction evidence before attorney handoff',
       tone: grantEvidence ? 'critical' : 'neutral',
       href: '/bond/applications?view=grant-submitted',
+    },
+    {
+      key: 'review_required',
+      label: 'Review Required',
+      value: reviewRequired,
+      detail: 'Active bond files outside a canonical wait state',
+      tone: reviewRequired ? 'critical' : 'neutral',
+      href: '/bond/applications?view=review-required',
     },
   ]
     .sort((left, right) => right.value - left.value)

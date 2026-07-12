@@ -57,10 +57,44 @@ function normalizeLower(value) {
   return normalize(value).toLowerCase()
 }
 
-const TRANSACTION_IDENTITY_SELECT = 'id, organisation_id, accepted_offer_id, listing_id, originating_lead_id, originating_buyer_lead_id, stage, current_main_stage, finance_type, assigned_agent_email, buyer_id, created_at, updated_at'
+const TRANSACTION_IDENTITY_SELECT = 'id, organisation_id, accepted_offer_id, listing_id, originating_lead_id, originating_buyer_lead_id, stage, current_main_stage, finance_type, assigned_agent_id, assigned_agent_email, assigned_branch_id, buyer_id, created_at, updated_at'
 
 function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalize(value))
+}
+
+function resolveTransactionBranchId({
+  listing = null,
+  lead = null,
+  offerRecord = null,
+  actor = null,
+  payload = {},
+} = {}) {
+  return normalize(
+    payload?.assignedBranchId ||
+      payload?.assigned_branch_id ||
+      payload?.branchId ||
+      payload?.branch_id ||
+      listing?.assignedBranchId ||
+      listing?.assigned_branch_id ||
+      listing?.branchId ||
+      listing?.branch_id ||
+      lead?.assignedBranchId ||
+      lead?.assigned_branch_id ||
+      lead?.branchId ||
+      lead?.branch_id ||
+      offerRecord?.assignedBranchId ||
+      offerRecord?.assigned_branch_id ||
+      offerRecord?.branchId ||
+      offerRecord?.branch_id ||
+      actor?.assignedBranchId ||
+      actor?.assigned_branch_id ||
+      actor?.branchId ||
+      actor?.branch_id ||
+      actor?.primaryBranchId ||
+      actor?.primary_branch_id ||
+      null,
+  ) || null
 }
 
 function isMissingColumnError(error, columnName = '') {
@@ -345,6 +379,7 @@ function buildTransactionRow({
   const stage = normalize(payload?.stage || '') || 'Reserved'
   const mainStage = resolveInitialMainStage(stage)
   const organisationId = getOrganisationId({ organisationId: payload?.organisationId, listing, offerRecord })
+  const branchId = resolveTransactionBranchId({ listing, lead, offerRecord, actor, payload })
   const routingProfile = resolveRoutingProfileForTransaction({ listing, offerRecord, lead, payload })
   const routingFields = buildRoutingProfileTransactionFields(routingProfile)
   const clientIntakePreference = normalizeClientIntakePreference(payload?.clientIntakePreference || payload?.deliveryMode)
@@ -439,13 +474,14 @@ function buildTransactionRow({
       onboarding_url: onboardingUrl,
       transaction_workflow_stage: 'created',
       organisation_id: organisationId,
+      assigned_branch_id: branchId || null,
       listing_id: listing?.id || payload?.listingId || null,
       originating_buyer_lead_id: offerRecord?.buyerLeadId || payload?.originatingBuyerLeadId || lead?.leadId || null,
-      originating_seller_lead_id: listing?.sellerLeadId || payload?.originatingSellerLeadId || null,
+      originating_seller_lead_id: listing?.sellerLeadId || offerRecord?.sellerLeadId || payload?.originatingSellerLeadId || null,
       accepted_offer_id: offerRecord?.id || payload?.acceptedOfferId || null,
       assigned_agent_id: assignedAgentId || null,
-      buyer_contact_id: payload?.buyerContactId || null,
-      seller_contact_id: payload?.sellerContactId || null,
+      buyer_contact_id: payload?.buyerContactId || offerRecord?.buyerContactId || null,
+      seller_contact_id: payload?.sellerContactId || offerRecord?.sellerContactId || listing?.sellerContactId || null,
       otp_packet_id: payload?.otpPacketId || null,
       mandate_packet_id: payload?.mandatePacketId || listing?.mandatePacketId || null,
       commission_snapshot_id: payload?.commissionSnapshotId || null,
@@ -516,6 +552,7 @@ export function createTransactionFromAcceptedOffer({
     eventType: 'offer_accepted_transaction_created',
     transactionId: created.transactionId,
     organisationId: created.transactionRow?.transaction?.organisation_id || null,
+    branchId: created.transactionRow?.transaction?.assigned_branch_id || null,
     listingId: listing?.id || null,
     offerId: offerRecord?.id || null,
     agentId: created.transactionRow?.transaction?.assigned_agent_id || null,
@@ -829,6 +866,7 @@ export async function createTransactionFromLeadOverride({
   const nextAssignedAgentId = normalize(payload?.assignedAgentId || lead?.assignedAgentId || actor?.id)
   const nextAssignedAgentEmail = normalize(payload?.assignedAgentEmail || lead?.assignedAgentEmail || actor?.email).toLowerCase()
   const nextListingId = normalize(payload?.listingId || listing?.id || created?.transactionRow?.transaction?.unit_id)
+  const nextBranchId = resolveTransactionBranchId({ listing, lead, actor, payload })
   const acceptedOfferId = normalize(payload?.acceptedOfferId || payload?.accepted_offer_id || options?.acceptedOfferId)
   const allowDirectLeadConversion = options?.allowDirectLeadConversion === true
   const unsafeFallbackAllowed = isUnsafeFallbackAllowed()
@@ -991,6 +1029,7 @@ export async function createTransactionFromLeadOverride({
       assigned_agent: normalize(payload?.assignedAgentName || lead?.assignedAgentName || actor?.name) || null,
       assigned_agent_email: nextAssignedAgentEmail || null,
       assigned_agent_id: isUuidLike(nextAssignedAgentId) ? nextAssignedAgentId : null,
+      assigned_branch_id: isUuidLike(nextBranchId) ? nextBranchId : null,
       is_active: true,
       lifecycle_state: 'active',
       owner_user_id: isUuidLike(nextAssignedAgentId) ? nextAssignedAgentId : null,
@@ -1018,6 +1057,7 @@ export async function createTransactionFromLeadOverride({
       (() => {
         const fallback = removeRoutingProfileTransactionFields(baseInsertPayload)
         delete fallback.assigned_agent_id
+        delete fallback.assigned_branch_id
         delete fallback.listing_id
         delete fallback.originating_lead_id
         delete fallback.originating_buyer_lead_id
@@ -1071,7 +1111,34 @@ export async function createTransactionFromLeadOverride({
         .single()
 
       if (!result.error) {
-        insertedRow = result.data
+        insertedRow = {
+          ...result.data,
+          ...Object.fromEntries(
+            [
+              'assigned_agent_id',
+              'assigned_branch_id',
+              'listing_id',
+              'originating_lead_id',
+              'originating_buyer_lead_id',
+              'accepted_offer_id',
+              'buyer_contact_id',
+              'seller_contact_id',
+              'otp_packet_id',
+              'mandate_packet_id',
+              'commission_snapshot_id',
+              'routing_profile_version',
+              'routing_profile_json',
+              'property_tenure',
+              'seller_type',
+              'seller_has_existing_bond',
+              'existing_bond',
+              'cancellation_required',
+              'vat_treatment',
+            ]
+              .filter((key) => Object.prototype.hasOwnProperty.call(variant, key))
+              .map((key) => [key, variant[key]]),
+          ),
+        }
         break
       }
 
@@ -1136,6 +1203,7 @@ export async function createTransactionFromLeadOverride({
       organisationId: nextOrganisationId,
       leadId: nextLeadId || null,
       listingId: nextListingId || null,
+      branchId: nextBranchId || null,
       warning: 'missing_accepted_offer',
       agentId: isUuidLike(nextAssignedAgentId) ? nextAssignedAgentId : null,
       createdAt: new Date().toISOString(),
@@ -1189,6 +1257,7 @@ export function createTransactionFromLeadManualOverride({
     eventType: 'lead_manual_override_transaction_created',
     transactionId: created.transactionId,
     organisationId: created.transactionRow?.transaction?.organisation_id || null,
+    branchId: created.transactionRow?.transaction?.assigned_branch_id || null,
     leadId: lead?.leadId || null,
     listingId: listing?.id || payload?.listingId || null,
     warning: 'missing_accepted_offer',

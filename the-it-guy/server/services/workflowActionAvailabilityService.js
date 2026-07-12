@@ -109,6 +109,20 @@ const ACTION_DEFINITIONS = Object.freeze({
     requires: ['buyer_onboarding_complete', 'seller_onboarding_complete'],
     targetStatus: 'complete',
     actionContext: 'task_update',
+    hideWhenStepComplete: true,
+  },
+  RECORD_PAPER_SIGNED_OTP: {
+    label: 'Record Paper Signed OTP',
+    groupKey: 'documents',
+    workflowKey: 'sales_otp',
+    stepKey: 'signed_otp_received',
+    ownerRole: 'agent',
+    allowedRoles: ['agent', 'developer', 'internal_admin'],
+    stages: ['SALES_OTP'],
+    requires: ['buyer_onboarding_complete', 'seller_onboarding_complete'],
+    targetStatus: 'complete',
+    actionContext: 'paper_otp_upload',
+    hideWhenStepComplete: true,
   },
   RECORD_ATTORNEY_INSTRUCTION: {
     label: 'Record Attorney Instruction',
@@ -144,6 +158,18 @@ const ACTION_DEFINITIONS = Object.freeze({
       return null
     },
   },
+  RECORD_AGENT_ASSISTED_BUYER_ONBOARDING: {
+    label: 'Record Agent-Assisted Buyer Onboarding',
+    groupKey: 'client',
+    workflowKey: 'sales_otp',
+    stepKey: 'buyer_onboarding_complete',
+    ownerRole: 'agent',
+    allowedRoles: ['agent', 'developer', 'internal_admin'],
+    stages: ['SALES_OTP'],
+    targetStatus: 'complete',
+    actionContext: 'agent_assisted_onboarding',
+    hideWhenStepComplete: true,
+  },
   REQUEST_SELLER_DETAILS: {
     label: 'Request seller details',
     groupKey: 'client',
@@ -164,6 +190,30 @@ const ACTION_DEFINITIONS = Object.freeze({
       }
       return null
     },
+  },
+  RECORD_AGENT_ASSISTED_SELLER_ONBOARDING: {
+    label: 'Record Agent-Assisted Seller Onboarding',
+    groupKey: 'client',
+    workflowKey: 'sales_otp',
+    stepKey: 'seller_onboarding_complete',
+    ownerRole: 'agent',
+    allowedRoles: ['agent', 'developer', 'internal_admin'],
+    stages: ['SALES_OTP'],
+    targetStatus: 'complete',
+    actionContext: 'agent_assisted_onboarding',
+    hideWhenStepComplete: true,
+  },
+  RECORD_AGENT_ASSISTED_SUPPORTING_DOCS: {
+    label: 'Record Agent-Assisted Supporting Documents',
+    groupKey: 'documents',
+    workflowKey: 'sales_otp',
+    stepKey: 'supporting_docs_complete',
+    ownerRole: 'agent',
+    allowedRoles: ['agent', 'developer', 'internal_admin'],
+    stages: ['SALES_OTP'],
+    targetStatus: 'complete',
+    actionContext: 'agent_assisted_supporting_docs',
+    hideWhenStepComplete: true,
   },
   MOVE_TO_FINANCE: {
     label: 'Move to Finance',
@@ -201,6 +251,45 @@ const ACTION_DEFINITIONS = Object.freeze({
     targetStatus: 'complete',
     prerequisiteParentStage: 'TRANSFER',
     targetParentStage: 'REGISTRATION',
+  },
+  RECORD_MANUAL_SIGNED_TRANSFER_DOCUMENTS: {
+    label: 'Record Manually Signed Transfer Documents',
+    groupKey: 'attorney',
+    workflowKey: 'attorney_transfer',
+    stepKey: 'transfer_documents_signed',
+    ownerRole: 'attorney',
+    allowedRoles: ['attorney', 'developer', 'internal_admin'],
+    stages: ['TRANSFER'],
+    requires: ['transfer_documents_prepared'],
+    targetStatus: 'complete',
+    actionContext: 'manual_signed_contract_upload',
+    hideWhenStepComplete: true,
+  },
+  RECORD_MANUAL_SIGNED_BOND_DOCUMENTS: {
+    label: 'Record Manually Signed Bond Documents',
+    groupKey: 'attorney',
+    workflowKey: 'attorney_bond',
+    stepKey: 'bond_documents_signed',
+    ownerRole: 'attorney',
+    allowedRoles: ['attorney', 'developer', 'internal_admin'],
+    stages: ['TRANSFER'],
+    requires: ['bond_documents_prepared'],
+    targetStatus: 'complete',
+    actionContext: 'manual_signed_contract_upload',
+    hideWhenStepComplete: true,
+  },
+  RECORD_MANUAL_SIGNED_CANCELLATION_DOCUMENTS: {
+    label: 'Record Manually Signed Cancellation Documents',
+    groupKey: 'attorney',
+    workflowKey: 'seller_bond_cancellation',
+    stepKey: 'cancellation_documents_signed',
+    ownerRole: 'attorney',
+    allowedRoles: ['attorney', 'developer', 'internal_admin'],
+    stages: ['TRANSFER'],
+    requires: ['cancellation_documents_prepared'],
+    targetStatus: 'complete',
+    actionContext: 'manual_signed_contract_upload',
+    hideWhenStepComplete: true,
   },
   MARK_REGISTERED: {
     label: 'Mark Registered',
@@ -343,6 +432,12 @@ export function getWorkflowActionDescriptor(actionKey, state = {}) {
   }
 }
 
+export function listWorkflowActionDescriptors(state = {}) {
+  return Object.keys(ACTION_DEFINITIONS)
+    .map((actionKey) => getWorkflowActionDescriptor(actionKey, state))
+    .filter(Boolean)
+}
+
 export function isWorkflowActionAllowedForRole(descriptor = {}, actorRole = '') {
   return !resolvePermissionReason(descriptor, actorRole)
 }
@@ -395,9 +490,7 @@ function resolveActionDisabledReason(descriptor = {}, state = {}) {
 }
 
 export function resolveWorkflowAvailableActions(state = {}) {
-  const descriptors = Object.keys(ACTION_DEFINITIONS)
-    .map((actionKey) => getWorkflowActionDescriptor(actionKey, state))
-    .filter(Boolean)
+  const descriptors = listWorkflowActionDescriptors(state)
     .filter((descriptor) => isActionRelevant(descriptor, state))
 
   return descriptors

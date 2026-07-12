@@ -234,6 +234,7 @@ try {
   assert.match(workspaceSource, /overflow-y-auto/, 'recent activity should scroll inside its card')
   assert.match(workspaceSource, /getSellerDocumentDisplayStatus\(document\)/, 'seller document summary should show upload status text')
   assert.ok(workspaceSource.includes('updatePrivateListingOnboardingFormData'), 'seller lead commission save should persist to seller onboarding form data')
+  assert.ok(workspaceSource.includes('branchId: getLeadBranchId(row) || normalizeText(actor?.branchId || actor?.primaryBranchId)'), 'seller lead listing shell creation should preserve branch attribution')
   assert.ok(workspaceSource.includes('function SellerCommissionCard'), 'seller mandate tab should expose commission structure capture')
   assert.ok(workspaceSource.includes('function getSellerCommissionWorkspace'), 'seller commission fields should normalize existing listing/onboarding values')
   assert.ok(workspaceSource.includes('commissionStructure: commissionType'), 'commission save should preserve mandate percentage/fixed merge field')

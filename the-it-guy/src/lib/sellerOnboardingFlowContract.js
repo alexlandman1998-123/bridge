@@ -247,6 +247,53 @@ const SELLER_BRANCH_RULES = Object.freeze({
       'company_address_proof',
     ]),
   }),
+  close_corporation: Object.freeze({
+    label: 'Close Corporation',
+    aliases: Object.freeze(['close_corporation', 'cc', 'close_corp']),
+    sellerFacingQuestions: Object.freeze([
+      'seller.close_corporation.name',
+      'seller.close_corporation.registration_number',
+      'seller.close_corporation.registered_address',
+      'seller.close_corporation.members',
+      'seller.close_corporation.authorised_member.name',
+      'seller.close_corporation.authorised_member.capacity',
+      'seller.close_corporation.resolution_date',
+      'seller.close_corporation.authority_basis',
+      'seller.close_corporation.authorised_member.email',
+      'seller.close_corporation.authorised_member.phone',
+      'seller.close_corporation.authorised_member.residential_address',
+    ]),
+    requiredFields: Object.freeze([
+      'seller.close_corporation.name',
+      'seller.close_corporation.registration_number',
+      'seller.close_corporation.registered_address',
+      'seller.close_corporation.authorised_member.name',
+      'seller.close_corporation.authorised_member.capacity',
+      'seller.close_corporation.resolution_date',
+      'seller.close_corporation.authority_basis',
+    ]),
+    optionalFields: Object.freeze([
+      'seller.close_corporation.members',
+      'seller.close_corporation.resolution_available',
+      'seller.close_corporation.beneficial_owners',
+      'seller.close_corporation.tax_number',
+      'seller.close_corporation.vat_number',
+      'seller.close_corporation.authorised_member.email',
+      'seller.close_corporation.authorised_member.phone',
+      'seller.close_corporation.authorised_member.residential_address',
+    ]),
+    internalDerivedFacts: Object.freeze([
+      'seller.branch',
+      'seller.close_corporation.member_count',
+      'seller.close_corporation.authorised_member',
+    ]),
+    documentTriggers: Object.freeze([
+      'cc_registration',
+      'member_resolution',
+      'member_identity',
+      'cc_address_proof',
+    ]),
+  }),
   trust: Object.freeze({
     label: 'Trust',
     aliases: Object.freeze(['trust']),
@@ -721,6 +768,7 @@ function normalizeOwnerEntityType(value, { fallback = '' } = {}) {
   const normalized = normalizeKey(value)
   if (!normalized) return fallback
   if (['company', 'pty', 'pty_ltd', 'corporate'].includes(normalized)) return 'company'
+  if (['close_corporation', 'cc', 'close_corp'].includes(normalized)) return 'close_corporation'
   if (['trust', 'family_trust'].includes(normalized)) return 'trust'
   if (['foreign', 'foreign_owner', 'foreign_individual', 'foreign_company', 'foreign_trust', 'non_resident'].includes(normalized)) return 'foreign'
   if (['other', 'other_legal_entity', 'legal_entity'].includes(normalized)) return 'other'
@@ -747,6 +795,7 @@ function normalizeOwnerEntityType(value, { fallback = '' } = {}) {
 function normalizeOwnerStructureType(value, ownerEntityType = 'natural_person', { fallback = '' } = {}) {
   const normalized = normalizeKey(value)
   if (ownerEntityType === 'company') return normalized === 'foreign_company' ? 'foreign_company' : 'company'
+  if (ownerEntityType === 'close_corporation') return 'close_corporation'
   if (ownerEntityType === 'trust') return normalized === 'foreign_trust' ? 'foreign_trust' : 'trust'
   if (ownerEntityType === 'foreign') {
     if (['foreign_company', 'company'].includes(normalized)) return 'foreign_company'
@@ -756,6 +805,7 @@ function normalizeOwnerStructureType(value, ownerEntityType = 'natural_person', 
   if (ownerEntityType === 'other') return 'other'
   if (!normalized) return fallback || 'individual'
   if (['single', 'sole_owner', 'natural_person'].includes(normalized)) return 'individual'
+  if (['close_corporation', 'cc', 'close_corp'].includes(normalized)) return 'close_corporation'
   if (['poa', 'attorney'].includes(normalized)) return 'power_of_attorney'
   if (['deceased', 'estate'].includes(normalized)) return 'deceased_estate'
   if (['multiple', 'joint', 'multiple_individuals'].includes(normalized)) return 'multiple_owners'
@@ -778,6 +828,7 @@ function normalizeOwnerStructureType(value, ownerEntityType = 'natural_person', 
 
 function resolveSellerBranchFromOwnerFields(ownerEntityType = '', ownerStructureType = '') {
   if (ownerStructureType === 'foreign_company' || ownerStructureType === 'company' || ownerEntityType === 'company') return 'company'
+  if (ownerStructureType === 'close_corporation' || ownerEntityType === 'close_corporation') return 'close_corporation'
   if (ownerStructureType === 'foreign_trust' || ownerStructureType === 'trust' || ownerEntityType === 'trust') return 'trust'
   if (ownerStructureType === 'multiple_owners') return 'multiple_owners'
   if (ownerStructureType === 'deceased_estate') return 'deceased_estate'
@@ -811,7 +862,11 @@ export function resolveSellerOwnershipModel(form = {}, listing = {}, facts = {})
   const ownerEntityType =
     directEntityType ||
     normalizeOwnerEntityType(legacyOwnershipType) ||
-    (legacyBranch === 'company' || legacyBranch === 'trust' ? legacyBranch : legacyBranch === 'other' ? 'other' : 'natural_person')
+    (legacyBranch === 'company' || legacyBranch === 'close_corporation' || legacyBranch === 'trust'
+      ? legacyBranch
+      : legacyBranch === 'other'
+        ? 'other'
+        : 'natural_person')
   const ownerStructureType = normalizeOwnerStructureType(
     form?.ownerStructureType ||
       form?.owner_structure_type ||

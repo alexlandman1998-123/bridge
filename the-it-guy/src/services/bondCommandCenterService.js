@@ -11,6 +11,8 @@ import { fetchTransactionsByParticipantSummary } from '../lib/api'
 import { bondPerfLog } from '../lib/performanceTrace'
 import { canViewFinanceWorkflow } from './bondFinanceWorkflowOwnershipService'
 import {
+  BOND_OPERATIONAL_QUEUE_KEYS,
+  getBondOperationalQueueContract,
   getBondOriginatorQueueState,
   isBondApplicationTrackerRow,
   isNewBondApplicationReadyForReview,
@@ -50,6 +52,27 @@ const PRIORITY_CARD_META = Object.freeze({
     href: '/bond/pipeline?view=submitted',
     helper: 'Bank queries and lender responses waiting on action.',
   },
+  [BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_BANK_FEEDBACK]: {
+    title: 'Awaiting Bank',
+    icon: 'clock-alert',
+    tone: 'indigo',
+    href: '/bond/applications?view=awaiting-bank-feedback',
+    helper: 'Submitted applications waiting on lender feedback.',
+  },
+  [BOND_OPERATIONAL_QUEUE_KEYS.ADDITIONAL_DOCUMENTS_REQUIRED]: {
+    title: 'Additional Docs',
+    icon: 'file-warning',
+    tone: 'amber',
+    href: '/bond/applications?view=additional-documents',
+    helper: 'Banks have asked for extra paperwork before a decision.',
+  },
+  [BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_BUYER_REUPLOAD]: {
+    title: 'Buyer Re-upload',
+    icon: 'file-warning',
+    tone: 'rose',
+    href: '/bond/applications?view=buyer-reupload',
+    helper: 'Rejected or incomplete documents must be uploaded again.',
+  },
   awaiting_grant: {
     title: 'Awaiting Grant',
     icon: 'badge-check',
@@ -57,12 +80,26 @@ const PRIORITY_CARD_META = Object.freeze({
     href: '/bond/applications?view=bond-approved',
     helper: 'Approved bonds waiting for the formal lender grant.',
   },
+  [BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_GRANT_DOCUMENT]: {
+    title: 'Grant Document',
+    icon: 'badge-check',
+    tone: 'blue',
+    href: '/bond/applications?view=awaiting-grant',
+    helper: 'Approved bonds waiting for formal grant evidence.',
+  },
   grant_received: {
     title: 'Grant Received',
     icon: 'file-check',
     tone: 'cyan',
     href: '/bond/applications?view=grant-received',
     helper: 'Formal grants received and awaiting buyer signature.',
+  },
+  [BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_SIGNED_GRANT]: {
+    title: 'Signed Grant',
+    icon: 'signature',
+    tone: 'cyan',
+    href: '/bond/applications?view=awaiting-signed-grant',
+    helper: 'Grant documents received and waiting for buyer signature.',
   },
   grant_signed: {
     title: 'Grant Signed',
@@ -77,6 +114,20 @@ const PRIORITY_CARD_META = Object.freeze({
     tone: 'violet',
     href: '/bond/applications?view=grant-submitted',
     helper: 'Submitted grants ready for attorney instruction.',
+  },
+  [BOND_OPERATIONAL_QUEUE_KEYS.INSTRUCTION_SENT_AWAITING_ATTORNEY_ACCEPTANCE]: {
+    title: 'Attorney Acceptance',
+    icon: 'send',
+    tone: 'violet',
+    href: '/bond/applications?view=attorney-acceptance',
+    helper: 'Instructions sent but not yet accepted by the attorney workflow.',
+  },
+  [BOND_OPERATIONAL_QUEUE_KEYS.ACTIVE_REVIEW_REQUIRED]: {
+    title: 'Review Required',
+    icon: 'shield-alert',
+    tone: 'rose',
+    href: '/bond/applications?view=review-required',
+    helper: 'Active bond files that need explicit queue classification.',
   },
   overdue_applications: {
     title: 'Overdue Applications',
@@ -229,6 +280,13 @@ const DASHBOARD_ROLE_FOCUS = Object.freeze({
 const TRANSACTION_STATUS_META = Object.freeze({
   all: { label: 'All Applications' },
   active: { label: 'Active' },
+  awaiting_bank_feedback: { label: 'Awaiting Bank Feedback' },
+  additional_documents_required: { label: 'Additional Documents Required' },
+  awaiting_buyer_reupload: { label: 'Awaiting Buyer Re-upload' },
+  awaiting_grant_document: { label: 'Awaiting Grant Document' },
+  awaiting_signed_grant: { label: 'Awaiting Signed Grant' },
+  instruction_sent_awaiting_attorney_acceptance: { label: 'Awaiting Attorney Acceptance' },
+  active_review_required: { label: 'Active Review Required' },
   awaiting_instruction: { label: 'Awaiting Attorney Instruction' },
   bond_approved: { label: 'Bond Approved' },
   grant_received: { label: 'Grant Received' },
@@ -241,6 +299,16 @@ const TRANSACTION_STATUS_META = Object.freeze({
   at_risk: { label: 'At Risk' },
   cancelled: { label: 'Declined' },
 })
+
+const OPERATIONAL_QUEUE_STATUS_FILTERS = new Set([
+  BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_BANK_FEEDBACK,
+  BOND_OPERATIONAL_QUEUE_KEYS.ADDITIONAL_DOCUMENTS_REQUIRED,
+  BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_BUYER_REUPLOAD,
+  BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_GRANT_DOCUMENT,
+  BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_SIGNED_GRANT,
+  BOND_OPERATIONAL_QUEUE_KEYS.INSTRUCTION_SENT_AWAITING_ATTORNEY_ACCEPTANCE,
+  BOND_OPERATIONAL_QUEUE_KEYS.ACTIVE_REVIEW_REQUIRED,
+])
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -719,6 +787,9 @@ async function resolveBondRows(user = {}, workspaceId = '', options = {}) {
 }
 
 function getPriorityRowsByKey(rows = [], key = '') {
+  if (OPERATIONAL_QUEUE_STATUS_FILTERS.has(key)) {
+    return rows.filter((row) => getBondOperationalQueueContract(row).queueKey === key)
+  }
   if (key === 'missing_documents') {
     return rows.filter((row) => getDocumentMissingCount(row) > 0)
   }
@@ -2262,6 +2333,9 @@ function buildStatusCards(rows = []) {
   const buckets = rows.reduce((accumulator, row) => {
     const status = normalizeText(row?.status) || deriveTransactionStatus(row)
     accumulator[status] = (accumulator[status] || 0) + 1
+    if (row?.operationalQueueKey) {
+      accumulator[row.operationalQueueKey] = (accumulator[row.operationalQueueKey] || 0) + 1
+    }
     if (status !== 'cancelled' && status !== 'registered') {
       accumulator.active = (accumulator.active || 0) + 1
     }
@@ -2271,11 +2345,18 @@ function buildStatusCards(rows = []) {
   return [
     { key: 'all', label: 'All', count: rows.length },
     { key: 'active', label: 'Active', count: buckets.active || 0 },
+    { key: BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_BANK_FEEDBACK, label: 'Awaiting Bank', count: buckets[BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_BANK_FEEDBACK] || 0 },
+    { key: BOND_OPERATIONAL_QUEUE_KEYS.ADDITIONAL_DOCUMENTS_REQUIRED, label: 'Additional Docs', count: buckets[BOND_OPERATIONAL_QUEUE_KEYS.ADDITIONAL_DOCUMENTS_REQUIRED] || 0 },
+    { key: BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_BUYER_REUPLOAD, label: 'Buyer Re-upload', count: buckets[BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_BUYER_REUPLOAD] || 0 },
     { key: 'bond_approved', label: 'Bond Approved', count: buckets.bond_approved || 0 },
+    { key: BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_GRANT_DOCUMENT, label: 'Awaiting Grant', count: buckets[BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_GRANT_DOCUMENT] || 0 },
     { key: 'grant_received', label: 'Grant Received', count: buckets.grant_received || 0 },
+    { key: BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_SIGNED_GRANT, label: 'Awaiting Signed Grant', count: buckets[BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_SIGNED_GRANT] || 0 },
     { key: 'grant_signed', label: 'Grant Signed', count: buckets.grant_signed || 0 },
     { key: 'grant_submitted', label: 'Grant Submitted', count: buckets.grant_submitted || 0 },
     { key: 'instruction_sent', label: 'Instruction Sent', count: buckets.instruction_sent || 0 },
+    { key: BOND_OPERATIONAL_QUEUE_KEYS.INSTRUCTION_SENT_AWAITING_ATTORNEY_ACCEPTANCE, label: 'Attorney Acceptance', count: buckets[BOND_OPERATIONAL_QUEUE_KEYS.INSTRUCTION_SENT_AWAITING_ATTORNEY_ACCEPTANCE] || 0 },
+    { key: BOND_OPERATIONAL_QUEUE_KEYS.ACTIVE_REVIEW_REQUIRED, label: 'Review Required', count: buckets[BOND_OPERATIONAL_QUEUE_KEYS.ACTIVE_REVIEW_REQUIRED] || 0 },
     { key: 'attorney_stage', label: 'Attorney Stage', count: (buckets.awaiting_instruction || 0) + (buckets.in_transfer || 0) },
     { key: 'registered', label: 'Registered', count: buckets.registered || 0 },
     { key: 'at_risk', label: 'At Risk', count: buckets.at_risk || 0 },
@@ -2286,6 +2367,7 @@ function buildStatusCards(rows = []) {
 function mapTransactionTrackerRow(row = {}) {
   const assignment = resolveEffectiveBondAssignment(row?.transaction || {})
   const queueState = getBondOriginatorQueueState(row)
+  const operationalContract = getBondOperationalQueueContract(row)
   const financeLane = deriveFinanceLaneStage(row)
   const transferStage = getAttorneyTransferStage(row)
   const risk = deriveRiskSignals(row)
@@ -2340,9 +2422,13 @@ function mapTransactionTrackerRow(row = {}) {
     financeStageLabel: financeLane.label,
     originatorQueueStatus: queueState.status,
     originatorQueueLabel: queueState.label,
+    operationalQueueKey: operationalContract.queueKey,
+    operationalWaitState: operationalContract.waitState,
+    operationalQueueReason: operationalContract.reason,
     tags: [
       isNewBondApplicationReadyForReview(row) ? { key: 'new', label: 'New', tone: 'blue' } : null,
       queueState.status === 'READY_FOR_REVIEW' ? { key: 'ready_for_review', label: 'Ready For Review', tone: 'green' } : null,
+      operationalContract.queueKey === BOND_OPERATIONAL_QUEUE_KEYS.ACTIVE_REVIEW_REQUIRED ? { key: 'review_required', label: 'Review Required', tone: 'rose' } : null,
     ].filter(Boolean),
     transferStageKey: transferStage,
     transferStageLabel: stageLabelFromAttorneyKey(transferStage),
@@ -2381,6 +2467,9 @@ function mapTransactionTrackerRow(row = {}) {
 
 function filterTransactionRows(rows = [], status = 'all') {
   if (!status || status === 'all') return rows
+  if (OPERATIONAL_QUEUE_STATUS_FILTERS.has(status)) {
+    return rows.filter((row) => row.operationalQueueKey === status || row.operationalWaitState === status)
+  }
   if (status === 'active') {
     return rows.filter((row) => row.status !== 'registered' && row.status !== 'cancelled')
   }

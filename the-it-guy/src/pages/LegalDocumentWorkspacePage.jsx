@@ -2442,6 +2442,127 @@ export default function LegalDocumentWorkspacePage() {
     }
   }, [actor, leadContext?.lead?.leadId, organisationId, profile])
 
+  const handleManualSignedMandateUploaded = useCallback(async (upload = {}) => {
+    if (packetType !== 'mandate') return null
+
+    const packet = asRecord(upload.packet)
+    const packetSource = asRecord(packet.source_context_json)
+    const nestedSource = asRecord(packetSource.sourceContext || packetSource.source_context)
+    const generatedSnapshot = asRecord(packetSource.generatedDataSnapshot || packetSource.generated_data_snapshot)
+    const generatedSource = asRecord(generatedSnapshot.sourceContext || generatedSnapshot.source_context)
+    const privateListing = asRecord(packetSource.privateListing || packetSource.private_listing)
+    const lead = leadContext?.lead || {}
+    const linkedListingId = firstText(
+      routeListingId,
+      upload.privateListingId,
+      upload.private_listing_id,
+      packet.private_listing_id,
+      packetSource.privateListingId,
+      packetSource.private_listing_id,
+      privateListing.id,
+      privateListing.privateListingId,
+      privateListing.private_listing_id,
+      nestedSource.privateListingId,
+      nestedSource.private_listing_id,
+      generatedSnapshot.privateListingId,
+      generatedSnapshot.private_listing_id,
+      generatedSource.privateListingId,
+      generatedSource.private_listing_id,
+      lead.listingId,
+      lead.listing_id,
+      lead.privateListingId,
+      lead.private_listing_id,
+    )
+    const uploadedAt = normalizeText(upload.uploadedAt) || new Date().toISOString()
+    const packetId = normalizeText(upload.packetId || packet.id)
+    const versionId = normalizeText(upload.packetVersionId || upload.versionId)
+    const documentId = normalizeText(upload.documentId)
+    const finalFilePath = normalizeText(upload.finalFilePath)
+    const finalFileUrl = normalizeText(upload.finalFileUrl)
+    const currentListingStatus = normalizeKey(
+      privateListing.listingStatus ||
+        privateListing.listing_status ||
+        packetSource.listingStatus ||
+        packetSource.listing_status ||
+        lead.listingStatus ||
+        lead.listing_status,
+    )
+    const listingStatus = ['active', 'under_offer', 'transaction_created', 'sold'].includes(currentListingStatus)
+      ? currentListingStatus
+      : 'mandate_signed'
+
+    await syncLeadMandateState({
+      stage: 'Mandate Signed',
+      status: 'Signed',
+      mandateStatus: 'signed_uploaded',
+      mandateSignedAt: uploadedAt,
+      signedMandateDocumentId: documentId || null,
+      signedMandatePacketId: packetId || null,
+      signedMandateFilePath: finalFilePath || null,
+      signedMandateUrl: finalFileUrl || null,
+      mandateSigningMethod: 'physical',
+    }, { reason: 'persist manual signed mandate upload state' })
+
+    await recordLeadMandateActivity({
+      agent: { id: actor.id, name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name), email: actor.email },
+      activityType: 'Mandate Signed',
+      activityNote: 'Manually signed mandate uploaded.',
+      mandateStatus: 'signed_uploaded',
+      packetId,
+      documentId,
+      signingMethod: 'physical',
+      completionMode: 'manual_uploaded',
+    })
+
+    if (isSupabaseConfigured && isUuidLike(linkedListingId)) {
+      await updatePrivateListing(
+        linkedListingId,
+        {
+          listingStatus,
+          mandateStatus: 'signed_uploaded',
+        },
+        { includeRequirementsAndDocuments: false },
+      )
+      await createPrivateListingActivity({
+        privateListingId: linkedListingId,
+        activityType: 'mandate_signed',
+        activityTitle: 'Manual signed mandate uploaded',
+        activityDescription: 'A signed paper mandate was uploaded and linked to this listing.',
+        performedBy: normalizeText(actor.id),
+        visibility: 'internal',
+        metadata: {
+          source: 'manual_signed_mandate_upload',
+          packetId,
+          packetVersionId: versionId,
+          documentId,
+          finalFilePath,
+          finalFileUrl,
+          signingMethod: 'physical',
+          completionMode: 'manual_uploaded',
+          allRequiredPartiesSigned: Boolean(upload.allRequiredPartiesSigned),
+        },
+      })
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('itg:listings-updated'))
+        window.dispatchEvent(new Event('itg:pipeline-updated'))
+      }
+    }
+
+    return {
+      privateListingId: linkedListingId,
+      listingStatus,
+      mandateStatus: 'signed_uploaded',
+    }
+  }, [
+    actor,
+    leadContext?.lead,
+    packetType,
+    profile,
+    recordLeadMandateActivity,
+    routeListingId,
+    syncLeadMandateState,
+  ])
+
   const resolveCurrentStatus = useCallback(async () => {
     const currentPacketId = normalizeText(validatedRoutePacketId || initialStatus?.packet?.id || '')
     if (isRuntimePacketId(currentPacketId)) {
@@ -3154,6 +3275,7 @@ export default function LegalDocumentWorkspacePage() {
         onView={() => openLatestDocument({ signed: false })}
         onViewSigned={() => openLatestDocument({ signed: true })}
         onRefreshContext={undefined}
+        onManualSignedMandateUploaded={handleManualSignedMandateUploaded}
         autoGenerateEnabled={contextHydrated && false}
       />
     </>

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { getAssignmentTypeLabel } from '../../../services/transactionAttorneyAssignments'
 import AttorneyAssignmentStatusBadge from './AttorneyAssignmentStatusBadge'
 
@@ -10,7 +11,47 @@ function Row({ label, value }) {
   )
 }
 
-function AttorneyAssignmentSummaryCard({ assignment, onEdit, onRemove, busy = false }) {
+function matterReferenceLabel(assignment = {}) {
+  if (assignment.attorneyRole === 'bond_attorney' || assignment.assignmentType === 'bond') return 'Bond Matter No'
+  if (assignment.attorneyRole === 'cancellation_attorney' || assignment.assignmentType === 'cancellation') return 'Cancellation Matter No'
+  return 'Transfer Matter No'
+}
+
+function AttorneyAssignmentSummaryCard({
+  assignment,
+  onEdit,
+  onRemove,
+  onUpdateMatterReference,
+  canEditMatterReference = false,
+  busy = false,
+}) {
+  const [editingMatterReference, setEditingMatterReference] = useState(false)
+  const [matterReferenceValue, setMatterReferenceValue] = useState(assignment.matterReference || '')
+  const [matterReferenceReason, setMatterReferenceReason] = useState('')
+  const [savingMatterReference, setSavingMatterReference] = useState(false)
+  const [matterReferenceError, setMatterReferenceError] = useState('')
+
+  async function handleMatterReferenceSubmit(event) {
+    event.preventDefault()
+    if (!onUpdateMatterReference) return
+    setSavingMatterReference(true)
+    setMatterReferenceError('')
+    try {
+      const saved = await onUpdateMatterReference(assignment, {
+        matterReference: matterReferenceValue,
+        reason: matterReferenceReason,
+        source: 'partner_portal',
+      })
+      setMatterReferenceValue(saved?.matterReference || matterReferenceValue || '')
+      setMatterReferenceReason('')
+      setEditingMatterReference(false)
+    } catch (error) {
+      setMatterReferenceError(error?.message || 'Unable to update matter number.')
+    } finally {
+      setSavingMatterReference(false)
+    }
+  }
+
   return (
     <article className="rounded-control border border-borderSoft bg-surfaceAlt p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -32,10 +73,72 @@ function AttorneyAssignmentSummaryCard({ assignment, onEdit, onRemove, busy = fa
         />
         <Row label="Secretary" value={assignment.secretary?.name || assignment.secretary?.email || 'Not assigned'} />
         <Row label="Admin Handler" value={assignment.adminHandler?.name || assignment.adminHandler?.email || 'Not assigned'} />
+        <Row label={matterReferenceLabel(assignment)} value={assignment.matterReference || 'Not captured'} />
       </div>
 
-      {onEdit || onRemove ? (
+      {editingMatterReference ? (
+        <form className="mt-4 rounded-control border border-borderSoft bg-surface p-3" onSubmit={handleMatterReferenceSubmit}>
+          <div className="grid gap-2 md:grid-cols-2">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-label font-semibold uppercase text-textMuted">{matterReferenceLabel(assignment)}</span>
+              <input
+                className="input"
+                value={matterReferenceValue}
+                onChange={(event) => setMatterReferenceValue(event.target.value)}
+                disabled={savingMatterReference}
+                autoFocus
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-label font-semibold uppercase text-textMuted">Audit Reason</span>
+              <input
+                className="input"
+                value={matterReferenceReason}
+                onChange={(event) => setMatterReferenceReason(event.target.value)}
+                disabled={savingMatterReference}
+                required
+              />
+            </label>
+          </div>
+          {matterReferenceError ? <p className="mt-2 text-sm text-danger">{matterReferenceError}</p> : null}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="submit" className="header-primary-cta" disabled={savingMatterReference || busy}>
+              {savingMatterReference ? 'Saving…' : 'Save Matter No'}
+            </button>
+            <button
+              type="button"
+              className="header-secondary-cta"
+              onClick={() => {
+                setMatterReferenceValue(assignment.matterReference || '')
+                setMatterReferenceReason('')
+                setMatterReferenceError('')
+                setEditingMatterReference(false)
+              }}
+              disabled={savingMatterReference}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : null}
+
+      {onEdit || onRemove || canEditMatterReference ? (
         <div className="mt-4 flex flex-wrap gap-2">
+          {canEditMatterReference && !editingMatterReference ? (
+            <button
+              type="button"
+              className="header-secondary-cta"
+              onClick={() => {
+                setMatterReferenceValue(assignment.matterReference || '')
+                setMatterReferenceReason('')
+                setMatterReferenceError('')
+                setEditingMatterReference(true)
+              }}
+              disabled={busy || savingMatterReference}
+            >
+              Edit Matter No
+            </button>
+          ) : null}
           {onEdit ? (
             <button type="button" className="header-secondary-cta" onClick={onEdit} disabled={busy}>
               Update Assignment

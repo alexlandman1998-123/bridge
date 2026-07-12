@@ -227,7 +227,7 @@ assert.match(migrationSql, /commission_profile_linked_from_invite/, 'Phase 3 com
 assert.match(migrationSql, /branch_member_synced_from_invite/, 'Phase 4 branch member sync event must exist')
 assert.match(branchWorkspacePage, /BRANCH_AGENT_ROLE_VALUES/, 'Phase 5 branch-safe role menu must exist')
 assert.match(inviteResolver, /InviteDetailList/, 'Phase 5 invite detail UI must exist')
-assert.match(emailRouter, /\["workspace_invite", "team_invite", "branch_invite", "agent_invite"\]\.includes\(type\)/, 'send-email must route branch invites through the workspace invite email handler')
+assert.match(emailRouter, /\[\s*"workspace_invite",\s*"team_invite",\s*"branch_invite",\s*"agent_invite",?\s*(?:"developer_access_invite")?\s*\]\s*\.includes\(type\)/, 'send-email must route branch invites through the workspace invite email handler')
 assert.match(emailTypes, /type:\s*"workspace_invite"\s*\|\s*"team_invite"\s*\|\s*"branch_invite"\s*\|\s*"agent_invite"/, 'workspace invite email payload type must include branch_invite')
 
 const state = createFixtureState()

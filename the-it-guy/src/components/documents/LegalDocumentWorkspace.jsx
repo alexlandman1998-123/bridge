@@ -2435,6 +2435,7 @@ export default function LegalDocumentWorkspace({
   onView = null,
   onViewSigned = null,
   onRefreshContext = null,
+  onManualSignedMandateUploaded = null,
   autoGenerateEnabled = true,
 }) {
   const isPageMode = displayMode === 'page'
@@ -4979,6 +4980,29 @@ export default function LegalDocumentWorkspace({
           allRequiredPartiesSigned: Boolean(manualSignedAllPartiesSigned),
         },
       })
+
+      try {
+        await onManualSignedMandateUploaded?.({
+          packetId: resolvedPacketId,
+          packetVersionId: versionId,
+          versionId,
+          packet: packetForCompletion || latestPacket || statusState?.packet || null,
+          transactionId: resolvedTransactionId || null,
+          documentId: documentId || null,
+          finalFilePath,
+          finalFileName,
+          finalFileUrl,
+          finalFileBucket,
+          uploadedAt: nowIso,
+          signingMethod: 'physical',
+          signingStatus: 'uploaded_signed',
+          completionMode: 'manual_uploaded',
+          allRequiredPartiesSigned: Boolean(manualSignedAllPartiesSigned),
+          notes: normalizeText(manualSignedNotes) || null,
+        })
+      } catch (manualMandateSyncError) {
+        console.warn('[LegalDocumentWorkspace] manual signed mandate listing sync skipped.', manualMandateSyncError)
+      }
 
       setManualSignedFile(null)
       setManualSignedNotes('')

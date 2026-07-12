@@ -174,6 +174,43 @@ export function deriveAuthBootOnboardingState({
   }
 }
 
+export function resolveAuthBootSetupRequirement({
+  onboarding = {},
+  onboardingState = null,
+  appRole = '',
+  activeMemberships = [],
+  currentMembership = null,
+} = {}) {
+  const workspacePendingApproval =
+    onboardingState?.onboardingStatus === ONBOARDING_STATUSES.workspacePendingApproval
+  const rawRequiresSetup = Boolean(onboardingState?.recoveryReason) || (
+    onboarding.onboardingComplete &&
+    onboardingState?.validation &&
+    onboardingState.validation.ok === false
+  )
+  let reason = workspacePendingApproval
+    ? ONBOARDING_REQUIRED_REASONS.pendingApproval
+    : onboardingState?.recoveryReason || onboarding.onboardingRequiredReason || ONBOARDING_REQUIRED_REASONS.none
+
+  const hasResolvedWorkspaceAccess = Boolean(
+    appRole !== 'client' &&
+      activeMemberships.length &&
+      currentMembership?.workspace,
+  )
+
+  if (hasResolvedWorkspaceAccess && reason === ONBOARDING_REQUIRED_REASONS.noActiveMembership) {
+    return {
+      engineRequiresSetup: false,
+      engineRequiredReason: ONBOARDING_REQUIRED_REASONS.none,
+    }
+  }
+
+  return {
+    engineRequiresSetup: rawRequiresSetup || workspacePendingApproval,
+    engineRequiredReason: reason,
+  }
+}
+
 export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } = {}) {
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Supabase is not configured. Arch9 auth requires Supabase in this environment.')
@@ -448,15 +485,16 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     }
   }
 
-  const engineRequiresSetup = Boolean(onboardingState?.recoveryReason) || (
-    onboarding.onboardingComplete &&
-    onboardingState?.validation &&
-    onboardingState.validation.ok === false
-  )
-  const engineRequiredReason =
-    onboardingState?.onboardingStatus === ONBOARDING_STATUSES.workspacePendingApproval
-      ? ONBOARDING_REQUIRED_REASONS.pendingApproval
-      : onboardingState?.recoveryReason || onboarding.onboardingRequiredReason
+  const {
+    engineRequiresSetup,
+    engineRequiredReason,
+  } = resolveAuthBootSetupRequirement({
+    onboarding,
+    onboardingState,
+    appRole,
+    activeMemberships,
+    currentMembership,
+  })
 
   return {
     status: 'authenticated',

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, Circle, Clock3, Download, FileUp, X } from 'lucide-react'
-import { buildWorkflowStepComment, finalizeSignedOtpWorkflow, parseWorkflowStepComment, SUBPROCESS_STEP_STATUSES, uploadDocument } from '../lib/api'
+import { buildWorkflowStepComment, finalizeSignedOtpWorkflow, parseWorkflowStepComment, runWorkflowAction, SUBPROCESS_STEP_STATUSES, uploadDocument } from '../lib/api'
 import { getWorkflowStepChecklistTemplate } from '../core/transactions/workflowChecklistConfig'
 import ConfirmDialog from './ui/ConfirmDialog'
 
@@ -313,13 +313,34 @@ function SubprocessWorkflowPanel({
 
     try {
       setUploadingStepId(step.id)
-      await uploadDocument({
+      const uploadedSignedOtp = await uploadDocument({
         transactionId: process.transaction_id,
         file: selectedFile,
         category: 'Signed OTP',
+        documentType: 'otp_signed_reuploaded',
         stageKey: step.step_key || null,
         isClientVisible: false,
+        source: 'paper_signed_otp_upload',
       })
+      const paperOtpAction = await runWorkflowAction({
+        transactionId: process.transaction_id,
+        actionKey: 'RECORD_PAPER_SIGNED_OTP',
+        payload: {
+          source: 'paper_signed_otp_upload',
+          signingMethod: 'paper',
+          completionMode: 'manual_uploaded',
+          captureMethod: 'paper_signature_upload',
+          clientConsentMethod: 'signed_document_uploaded',
+          reason: 'Client signed the OTP outside the digital signing flow and the signed document was uploaded.',
+          notes: `Uploaded signed OTP file: ${selectedFile.name}`,
+          signedOtpDocumentId: uploadedSignedOtp?.id || null,
+          documentName: uploadedSignedOtp?.name || selectedFile.name,
+          subprocessStepId: step.id,
+        },
+      })
+      if (!paperOtpAction?.allowed) {
+        throw new Error((paperOtpAction?.blockers || []).map((item) => item.message).filter(Boolean).join(' • ') || 'Unable to record the signed paper OTP.')
+      }
       await finalizeSignedOtpWorkflow({
         transactionId: process.transaction_id,
       })

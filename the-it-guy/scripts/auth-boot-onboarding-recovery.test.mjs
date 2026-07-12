@@ -10,6 +10,7 @@ const server = await createServer({
 try {
   const {
     deriveAuthBootOnboardingState,
+    resolveAuthBootSetupRequirement,
     shouldAutoClaimWorkspaceMembership,
     shouldAutoRepairWorkspaceOnboarding,
   } = await server.ssrLoadModule('/src/lib/authBoot.js')
@@ -121,6 +122,19 @@ try {
     onboardingComplete: recovered.onboardingComplete,
   })
   assert.equal(runtimeStatus, 'onboarding_completed')
+
+  const staleNoMembershipRecovery = resolveAuthBootSetupRequirement({
+    appRole: 'attorney',
+    activeMemberships: [membership],
+    currentMembership: membership,
+    onboarding: recovered,
+    onboardingState: {
+      recoveryReason: 'no_active_membership',
+      validation: { ok: false, reason: 'no_active_membership' },
+    },
+  })
+  assert.equal(staleNoMembershipRecovery.engineRequiresSetup, false)
+  assert.equal(staleNoMembershipRecovery.engineRequiredReason, '')
 
   const missingMembership = deriveAuthBootOnboardingState({
     profile: staleProfile,

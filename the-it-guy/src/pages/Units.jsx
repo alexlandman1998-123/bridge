@@ -31,6 +31,7 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { resolveEffectiveBondAssignment } from '../services/bondAssignmentService'
 import {
   BOND_OPERATIONAL_QUEUE_KEYS,
+  getBondOperationalQueueContract,
   getBondOriginatorQueueState,
   isNewBondApplicationRow,
 } from '../services/bondOperationalQueueService'
@@ -529,11 +530,26 @@ function getBondMissingDocumentCount(row) {
   return Math.max(totalRequired - uploadedCount, 0)
 }
 
+const BOND_INTAKE_QUEUE_FILTERS = new Set([
+  BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS,
+  'awaiting_otp',
+  'ready_to_start',
+  'application_in_progress',
+  'application_submitted',
+  'ready_for_review',
+])
+
+function isBondApplicationQueueFilter(queue = '') {
+  const normalizedQueue = String(queue || 'all').trim().toLowerCase()
+  return Boolean(normalizedQueue && normalizedQueue !== 'all' && !BOND_INTAKE_QUEUE_FILTERS.has(normalizedQueue))
+}
+
 function isBondQueueMatch(row, queue, profile = null) {
   const normalizedQueue = String(queue || 'all').trim().toLowerCase()
   if (!normalizedQueue || normalizedQueue === 'all') return true
 
   const queueState = getBondOriginatorQueueState(row)
+  const queueContract = getBondOperationalQueueContract(row)
   const stage = getBondApplicationStage(row)
   const signal = getBondSignalText(row)
   const missingDocuments = getBondMissingDocumentCount(row)
@@ -560,6 +576,10 @@ function isBondQueueMatch(row, queue, profile = null) {
     return isNewBondApplicationRow(row)
   }
 
+  if (normalizedQueue === queueContract.queueKey) {
+    return true
+  }
+
   if (normalizedQueue === 'awaiting_otp') {
     return queueState.status === 'AWAITING_OTP'
   }
@@ -576,8 +596,17 @@ function isBondQueueMatch(row, queue, profile = null) {
     return queueState.status === 'APPLICATION_SUBMITTED'
   }
 
+  if (normalizedQueue === 'ready_for_review') {
+    return queueState.status === 'READY_FOR_REVIEW'
+  }
+
   if (normalizedQueue === 'missing_documents') {
-    return missingDocuments > 0 || stage === 'docs_requested'
+    return (
+      missingDocuments > 0 ||
+      stage === 'docs_requested' ||
+      queueContract.queueKey === BOND_OPERATIONAL_QUEUE_KEYS.ADDITIONAL_DOCUMENTS_REQUIRED ||
+      queueContract.queueKey === BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_BUYER_REUPLOAD
+    )
   }
 
   if (normalizedQueue === 'submission_readiness') {
@@ -585,11 +614,34 @@ function isBondQueueMatch(row, queue, profile = null) {
   }
 
   if (normalizedQueue === 'bank_feedback') {
-    return stage === 'bank_reviewing' || /bank feedback|query|valuation|underwriting/.test(signal)
+    return (
+      queueContract.queueKey === BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_BANK_FEEDBACK ||
+      stage === 'bank_reviewing' ||
+      /bank feedback|query|valuation|underwriting/.test(signal)
+    )
   }
 
   if (normalizedQueue === 'submitted') {
     return stage === 'application_submitted' || stage === 'bank_reviewing' || /submitted|sent to bank|bank feedback|query|valuation|underwriting/.test(signal)
+  }
+
+  if (normalizedQueue === BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_GRANT) {
+    return (
+      queueContract.queueKey === BOND_OPERATIONAL_QUEUE_KEYS.AWAITING_GRANT_DOCUMENT ||
+      /bond approved|approval granted|awaiting grant|formal grant/.test(signal)
+    )
+  }
+
+  if (normalizedQueue === BOND_OPERATIONAL_QUEUE_KEYS.GRANT_RECEIVED) {
+    return queueContract.canonicalFinanceStage === 'grant_received' || /grant received|formal grant/.test(signal)
+  }
+
+  if (normalizedQueue === BOND_OPERATIONAL_QUEUE_KEYS.GRANT_SIGNED) {
+    return queueContract.canonicalFinanceStage === 'grant_signed' || /grant signed|loan acceptance signed/.test(signal)
+  }
+
+  if (normalizedQueue === BOND_OPERATIONAL_QUEUE_KEYS.READY_FOR_INSTRUCTION) {
+    return queueContract.canonicalFinanceStage === 'grant_submitted' || /ready for instruction|grant submitted/.test(signal)
   }
 
   if (normalizedQueue === 'overdue_applications') {
@@ -603,7 +655,11 @@ function isBondQueueMatch(row, queue, profile = null) {
   return true
 }
 
-function isBondPipelineLifecycleRow(row) {
+function isBondPipelineLifecycleRow(row, queue = 'all') {
+  if (isBondApplicationQueueFilter(queue)) {
+    const queueContract = getBondOperationalQueueContract(row)
+    return Boolean(queueContract.visible && queueContract.queueKey !== BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS)
+  }
   return getBondOriginatorQueueState(row).bucket === 'pipeline'
 }
 
@@ -837,6 +893,7 @@ function Units() {
     const allowedBlockedValues = new Set(['all', 'blocked', 'clear'])
     const allowedAssignedValues = new Set(['all', 'mine'])
     const allowedQueueValues = new Set([
+      ...Object.values(BOND_OPERATIONAL_QUEUE_KEYS),
       BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS,
       'all',
       'my_applications',
@@ -844,10 +901,15 @@ function Units() {
       'ready_to_start',
       'application_in_progress',
       'application_submitted',
+      'ready_for_review',
       'missing_documents',
       'submission_readiness',
       'submitted',
       'bank_feedback',
+      'awaiting_grant',
+      'grant_received',
+      'grant_signed',
+      'ready_for_instruction',
       'overdue_applications',
       'compliance_review',
     ])
@@ -1211,7 +1273,7 @@ function Units() {
               ? true
               : transactionScope === filters.transactionType
             : true
-        const bondLifecycleMatch = isBondRole ? isBondPipelineLifecycleRow(row) : true
+        const bondLifecycleMatch = isBondRole ? isBondPipelineLifecycleRow(row, filters.queue) : true
         const bondQueueMatch = isBondRole ? isBondQueueMatch(row, filters.queue, profile) : true
         const developmentMatch = filters.developmentId === 'all'
           ? true

@@ -41,7 +41,7 @@ export default function MobileHeader() {
   const unreadCount = 3
 
   return (
-    <header className="sticky top-0 z-30 border-b border-[#e6edf3]/80 bg-[#f6f8fb]/92 px-5 pb-3 pt-[max(0.875rem,env(safe-area-inset-top))] backdrop-blur-xl" data-mobile-header>
+    <header className="relative z-20 shrink-0 border-b border-[#e6edf3]/80 bg-[#f6f8fb]/92 px-5 pb-3 pt-[max(0.875rem,env(safe-area-inset-top))] backdrop-blur-xl" data-mobile-header>
       <div className="mx-auto flex max-w-[520px] items-center gap-3">
         <Link to="/mobile/home" className="flex min-w-0 flex-1 items-center text-inherit" aria-label={`${workspaceName} mobile home`}>
           {showLogo ? (

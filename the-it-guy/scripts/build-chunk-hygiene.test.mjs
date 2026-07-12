@@ -53,8 +53,8 @@ assert.doesNotMatch(
 
 assert.match(
   viteConfig,
-  /chunkSizeWarningLimit:\s*1600/,
-  'Vite should keep an explicit app-shell chunk warning budget instead of relying on the default.',
+  /chunkSizeWarningLimit:\s*2200/,
+  'Vite should keep an explicit reviewed transaction-core chunk warning budget instead of relying on the default.',
 )
 
 assert.match(
@@ -67,11 +67,35 @@ for (const chunkName of [
   'app-access-shell',
   'app-commercial-shell',
   'app-api',
-  'app-settings-api',
-  'app-attorney-workflow',
 ]) {
   assert.match(viteConfig, new RegExp(chunkName), `Vite config should split ${chunkName} out of the entry chunk.`)
 }
+
+assert.match(
+  viteConfig,
+  /APP_API_COLOCATED_FILES[\s\S]*\/src\/lib\/settingsApi\.js[\s\S]*\/src\/services\/workspaceResolutionService\.js/,
+  'settingsApi and workspaceResolutionService should stay co-located with app-api while they import api.',
+)
+assert.doesNotMatch(
+  viteConfig,
+  /endsWith\('\/src\/lib\/settingsApi\.js'\)\)\s*return\s*'app-settings-api'/,
+  'settingsApi should not be forced into a standalone manual chunk while it imports api.',
+)
+assert.doesNotMatch(
+  viteConfig,
+  /endsWith\('\/src\/services\/workspaceResolutionService\.js'\)\)\s*return\s*'app-workspace-resolution'/,
+  'workspaceResolutionService should not be forced into a standalone manual chunk while it imports api.',
+)
+assert.match(
+  viteConfig,
+  /ATTORNEY_WORKFLOW_FACT_FILES[\s\S]*\/src\/lib\/buyerOnboardingFlow\.js[\s\S]*return 'app-api'/,
+  'buyer onboarding and attorney workflow fact resolution should stay co-located with app-api until api.js is decomposed.',
+)
+assert.doesNotMatch(
+  viteConfig,
+  /return\s*'app-attorney-workflow'/,
+  'attorney workflow should not be forced into a standalone source chunk while app-api imports its fallback resolvers.',
+)
 
 assert.doesNotMatch(
   viteConfig,

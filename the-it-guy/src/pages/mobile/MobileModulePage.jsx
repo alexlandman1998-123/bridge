@@ -262,22 +262,22 @@ export default function MobileModulePage({ moduleKey }) {
   }
 
   return (
-    <div className="space-y-6">
-      <section className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-[34px] font-bold leading-tight text-[#10243a]">{copy.title}</h1>
-          <p className="mt-2 text-[16px] leading-7 text-[#60758d]">{copy.intro}</p>
+    <div className="space-y-5">
+      <section className="grid gap-3 pt-1">
+        <div className="flex items-start justify-between gap-3">
+          <h1 className="min-w-0 text-[30px] font-bold leading-[1.05] text-[#10243a]">{copy.title}</h1>
+          {copy.actionLabel ? (
+            <button
+              type="button"
+              className="inline-flex min-h-11 max-w-[44vw] shrink-0 items-center gap-2 rounded-full bg-[#1f7a5a] px-3 text-[13px] font-semibold text-white shadow-[0_10px_22px_rgba(31,122,90,0.24)]"
+              onClick={openModuleCreate}
+            >
+              {ActionIcon ? <ActionIcon className="h-4 w-4 shrink-0" /> : null}
+              <span className="truncate">{copy.actionLabel}</span>
+            </button>
+          ) : null}
         </div>
-        {copy.actionLabel ? (
-          <button
-            type="button"
-            className="inline-flex min-h-12 shrink-0 items-center gap-2 rounded-full bg-[#1f7a5a] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(31,122,90,0.24)]"
-            onClick={openModuleCreate}
-          >
-            {ActionIcon ? <ActionIcon className="h-4 w-4" /> : null}
-            {copy.actionLabel}
-          </button>
-        ) : null}
+        <p className="max-w-[32ch] text-[15px] leading-6 text-[#60758d]">{copy.intro}</p>
       </section>
 
       {copy.search ? <MobileSearchBar placeholder={copy.search} /> : null}

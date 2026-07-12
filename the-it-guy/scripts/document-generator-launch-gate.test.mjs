@@ -20,6 +20,7 @@ function buildSnapshot({
   missingFinalKey = '',
   missingLegacyKey = '',
   duplicateRequirementKey = '',
+  linkRenderedDocuments = false,
 } = {}) {
   const transactionId = DEFAULT_DOCUMENT_GENERATOR_TRANSACTION_ID
   const snapshot = {
@@ -64,7 +65,7 @@ function buildSnapshot({
       packet_id: packetId,
       canonical_requirement_instance_id: requirementId,
       rendered_file_path: `canonical-packet-fixture/${spec.key}/generated.pdf`,
-      rendered_document_id: null,
+      rendered_document_id: linkRenderedDocuments ? `${versionId}-document` : null,
       final_signed_file_path: spec.signed && missingFinalKey !== spec.key
         ? `canonical-packet-fixture/${spec.key}/final-signed.pdf`
         : null,
@@ -96,6 +97,19 @@ assert.equal(passingReport.warningCount, 4, 'missing rendered_document_id should
 assert.deepEqual(
   passingReport.packets.map((packet) => packet.key),
   ['generated_mandate', 'signed_mandate', 'generated_otp', 'signed_otp'],
+)
+
+const cleanLinkedReport = evaluateDocumentGeneratorLaunchGate({
+  snapshot: buildSnapshot({ linkRenderedDocuments: true }),
+  snapshotDurationMs: 250,
+  snapshotBudgetMs: 1000,
+})
+assert.equal(cleanLinkedReport.pass, true, 'fixture with linked rendered document rows should pass the launch gate')
+assert.equal(cleanLinkedReport.warningCount, 0, 'linked rendered document rows should clear document-generator fixture warnings')
+assert.equal(
+  cleanLinkedReport.packets.every((packet) => packet.checks.generatedDocumentRecord),
+  true,
+  'all launch packets should expose rendered_document_id once fixture cleanup is applied',
 )
 
 const strictDocumentRecordReport = evaluateDocumentGeneratorLaunchGate({
@@ -167,6 +181,11 @@ assert.equal(
   packageJson.scripts?.['verify:document-generator-launch'],
   'node scripts/document-generator-launch-gate.mjs',
   'package.json should expose the runnable OTP/Mandate document generator launch gate.',
+)
+assert.equal(
+  packageJson.scripts?.['cleanup:document-generator-fixture-links'],
+  'node scripts/document-generator-fixture-document-link-cleanup.mjs',
+  'package.json should expose the guarded fixture document-link cleanup.',
 )
 
 console.log('document generator launch gate tests passed')

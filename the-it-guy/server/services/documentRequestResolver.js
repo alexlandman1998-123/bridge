@@ -11,6 +11,11 @@ import {
   resolveRequiredAttorneyLanes,
   resolveRequiredAttorneyWorkflowKeys,
 } from './attorneyLaneResolver.js'
+import {
+  canDeriveBuyerBaseline,
+  createLegalSupportBoundaryRequirement,
+  resolveLegalSupportBoundary,
+} from '../../src/core/legal/legalSupportBoundary.js'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -22,6 +27,9 @@ function normalizeKey(value) {
 
 export function resolveDocumentRequestProfile(transaction = {}, options = {}) {
   const formData = options.formData && typeof options.formData === 'object' ? options.formData : {}
+  const supportBoundary = resolveLegalSupportBoundary({ transaction, formData })
+  const boundaryRequirement = createLegalSupportBoundaryRequirement(supportBoundary)
+  const shouldDeriveBaseline = supportBoundary.automationAllowed || canDeriveBuyerBaseline(supportBoundary)
   const purchaserType = normalizePurchaserType(
     formData.purchaser_type || transaction.purchaser_type || 'individual',
   )
@@ -29,22 +37,28 @@ export function resolveDocumentRequestProfile(transaction = {}, options = {}) {
     formData.purchase_finance_type || transaction.finance_type,
   )
   const canonicalFinanceType = toCanonicalTransactionFinanceType(workflowFinanceType) || 'cash'
-  const derived = deriveOnboardingConfiguration(
-    {
-      ...formData,
-      purchaser_type: purchaserType,
-      purchase_finance_type: canonicalFinanceType,
-    },
-    {
-      transaction,
-      purchaserType,
-      financeType: canonicalFinanceType,
-    },
-  )
+  const derived = shouldDeriveBaseline
+    ? deriveOnboardingConfiguration(
+        {
+          ...formData,
+          purchaser_type: purchaserType,
+          purchase_finance_type: canonicalFinanceType,
+        },
+        {
+          transaction,
+          purchaserType,
+          financeType: canonicalFinanceType,
+        },
+      )
+    : { requiredDocuments: [] }
+  const requiredDocuments = [
+    ...(boundaryRequirement ? [boundaryRequirement] : []),
+    ...(derived.requiredDocuments || []),
+  ]
 
   const documentKeys = [
     ...new Set(
-      (derived.requiredDocuments || [])
+      requiredDocuments
         .map((item) => normalizeKey(item?.key))
         .filter(Boolean),
     ),
@@ -57,7 +71,12 @@ export function resolveDocumentRequestProfile(transaction = {}, options = {}) {
     attorneyLanes,
     requiredAttorneyWorkflowKeys: resolveRequiredAttorneyWorkflowKeys(transaction),
     documentKeys,
-    requiredDocuments: derived.requiredDocuments || [],
+    requiredDocuments,
+    supportBoundary,
+    supportBoundaryStatus: supportBoundary.status,
+    automationAllowed: supportBoundary.automationAllowed,
+    manualReviewRequired: supportBoundary.manualReviewRequired,
+    unsupported: supportBoundary.unsupported,
   }
 }
 

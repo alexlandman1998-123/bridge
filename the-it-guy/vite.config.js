@@ -58,22 +58,35 @@ const APP_ACCESS_SHELL_FILES = [
   '/src/lib/supabaseClient.js',
 ]
 
+const APP_API_COLOCATED_FILES = [
+  '/src/lib/api.js',
+  '/src/lib/settingsApi.js',
+  '/src/services/workspaceResolutionService.js',
+]
+
+const ATTORNEY_WORKFLOW_FACT_FILES = [
+  '/src/lib/buyerOnboardingFlow.js',
+  '/src/lib/buyerOnboardingFlowContract.js',
+  '/src/core/documents/conditionalPackDataRules.js',
+  '/src/core/documents/documentPartyClassification.js',
+  '/src/core/legal/legalRuleRegistry.js',
+]
+
 function appManualChunk(normalizedId) {
   if (!normalizedId.includes('/src/')) return undefined
-  if (normalizedId.endsWith('/src/lib/api.js')) return 'app-api'
-  if (normalizedId.endsWith('/src/lib/settingsApi.js')) return 'app-settings-api'
+  if (APP_API_COLOCATED_FILES.some((filePath) => normalizedId.endsWith(filePath))) return 'app-api'
   if (normalizedId.endsWith('/src/services/auditLogService.js')) return 'app-audit'
-  if (normalizedId.endsWith('/src/services/workspaceResolutionService.js')) return 'app-workspace-resolution'
   if (normalizedId.endsWith('/src/services/agencyAuthorityService.js')) return 'app-agency-governance'
   if (normalizedId.includes('/src/services/onboarding/')) return 'app-onboarding'
   if (
+    ATTORNEY_WORKFLOW_FACT_FILES.some((filePath) => normalizedId.endsWith(filePath)) ||
     normalizedId.includes('/src/services/attorneyWorkflow/') ||
     normalizedId.endsWith('/src/constants/attorneyPermissions.js') ||
     normalizedId.endsWith('/src/constants/attorneyUpdateTypes.js') ||
     normalizedId.endsWith('/src/constants/attorneyWorkflowStages.js') ||
     normalizedId.endsWith('/src/constants/attorneyWorkflowUsability.js')
   ) {
-    return 'app-attorney-workflow'
+    return 'app-api'
   }
   if (APP_ACCESS_SHELL_FILES.some((filePath) => normalizedId.endsWith(filePath))) return 'app-access-shell'
   if (normalizedId.includes('/src/modules/commercial/utils/')) return 'app-commercial-shell'
@@ -84,7 +97,7 @@ function appManualChunk(normalizedId) {
 export default defineConfig({
   plugins: [react(), missionControlApiPlugin()],
   build: {
-    chunkSizeWarningLimit: 1600,
+    chunkSizeWarningLimit: 2200,
     rollupOptions: {
       output: {
         manualChunks(id) {

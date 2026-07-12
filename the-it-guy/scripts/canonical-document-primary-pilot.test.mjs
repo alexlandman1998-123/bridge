@@ -141,6 +141,7 @@ try {
     assert.ok(version, `${canonicalKey} packet version should be scoped to disposable fixture`)
     assert.equal(packet.canonical_requirement_instance_id, requirement.id, `${canonicalKey} packet should link back to requirement`)
     assert.equal(version.canonical_requirement_instance_id, requirement.id, `${canonicalKey} packet version should link back to requirement`)
+    assert.ok(version.rendered_document_id, `${canonicalKey} packet version should link to a generated document record`)
 
     const projection = legacyRequirements.find((row) =>
       row.transaction_id === TRANSACTION_ID &&

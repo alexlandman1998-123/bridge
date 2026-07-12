@@ -169,6 +169,7 @@ try {
 
   try {
     const service = await server.ssrLoadModule('/src/services/bondCommandCenterService.js')
+    const queueService = await server.ssrLoadModule('/src/services/bondOperationalQueueService.js')
 
     const demoRows = [
       { transaction: { id: 'demo-1', transaction_reference: 'APP-DEMO-1' }, buyer: { name: 'Buyer A' }, isDemo: true },
@@ -320,40 +321,37 @@ try {
     assert.equal(grantSubmittedRow.financeStageKey, 'grant_submitted')
     assert.equal(grantSubmittedRow.registrationStatus, 'Ready for instruction')
 
-    const readyForReviewSnapshot = await service.getBondTransactionTrackerSnapshot(manager, 'workspace-1', {
-      rows: [
-        {
-          transaction: {
-            id: 'tx-ready-review',
-            organisation_id: 'workspace-1',
-            bond_workspace_id: 'workspace-1',
-            finance_type: 'bond',
-            buyer_name: 'Ready Buyer',
-            property_address_line_1: '14 Review Road',
-            onboarding_completed_at: '2026-06-04T08:00:00.000Z',
-            otp_status: 'fully_signed',
-            sales_price: 1850000,
-            updated_at: '2026-06-04T09:00:00.000Z',
-          },
-          onboardingFormData: {
-            form_data: {
-              bond_application: {
-                status: 'Submitted',
-                submitted_at: '2026-06-04T08:30:00.000Z',
-              },
+    const readyForReviewRows = [
+      {
+        transaction: {
+          id: 'tx-ready-review',
+          organisation_id: 'workspace-1',
+          bond_workspace_id: 'workspace-1',
+          finance_type: 'bond',
+          buyer_name: 'Ready Buyer',
+          property_address_line_1: '14 Review Road',
+          onboarding_completed_at: '2026-06-04T08:00:00.000Z',
+          otp_status: 'fully_signed',
+          sales_price: 1850000,
+          updated_at: '2026-06-04T09:00:00.000Z',
+        },
+        onboardingFormData: {
+          form_data: {
+            bond_application: {
+              status: 'Submitted',
+              submitted_at: '2026-06-04T08:30:00.000Z',
             },
           },
-          documentRequests: [{ id: 'req-bank', category: 'finance', title: 'Bank statement', status: 'requested' }],
-          documents: [{ document_request_id: 'req-bank', status: 'uploaded', uploaded_at: '2026-06-04T08:45:00.000Z' }],
         },
-      ],
-      status: 'all',
-    })
-    const readyForReviewRow = readyForReviewSnapshot.rows.find((row) => row.transactionId === 'tx-ready-review')
-    assert.ok(readyForReviewRow)
-    assert.equal(readyForReviewRow.financeStageKey, 'ready_for_review')
-    assert.equal(readyForReviewRow.tags.some((tag) => tag.key === 'new'), true)
-    assert.equal(readyForReviewRow.nextAction, 'Review submitted application')
+        documentRequests: [{ id: 'req-bank', category: 'finance', title: 'Bank statement', status: 'requested' }],
+        documents: [{ document_request_id: 'req-bank', status: 'uploaded', uploaded_at: '2026-06-04T08:45:00.000Z' }],
+      },
+    ]
+    const readyForReviewQueue = queueService.getNewApplicationsQueue(readyForReviewRows)
+    assert.equal(readyForReviewQueue.length, 1)
+    assert.equal(readyForReviewQueue[0].transactionId, 'tx-ready-review')
+    assert.equal(readyForReviewQueue[0].canAccept, true)
+    assert.equal(queueService.isBondApplicationTrackerRow(readyForReviewRows[0]), false)
 
     const registeredSnapshot = await service.getBondTransactionTrackerSnapshot(manager, 'workspace-1', {
       transactions,

@@ -105,7 +105,7 @@ async function main() {
 
     assert.deepEqual(
       viewsModule.bondViews.pipeline.tabs.map((tab) => tab.key),
-      ['all', 'awaiting-otp', 'ready-to-start', 'in-progress', 'submitted', 'stalled', 'declined'],
+      ['all', 'awaiting-otp', 'ready-to-start', 'in-progress', 'submitted', 'ready-for-review', 'stalled', 'declined'],
     )
     assert.deepEqual(
       viewsModule.bondViews.transactions.tabs.map((tab) => tab.key),
@@ -131,6 +131,7 @@ async function main() {
       'workspace-1',
       {
         filterVisible: false,
+        includeDemoRows: false,
         reportingScope: { workspaceKind: 'bond_company', dashboardMode: 'consultant' },
         rows: [
           {

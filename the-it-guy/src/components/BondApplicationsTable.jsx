@@ -36,6 +36,16 @@ const CURRENCY = new Intl.NumberFormat('en-ZA', {
   maximumFractionDigits: 0,
 })
 
+const INTAKE_PIPELINE_QUEUES = new Set([
+  'all',
+  BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS,
+  'awaiting_otp',
+  'ready_to_start',
+  'application_in_progress',
+  'application_submitted',
+  'ready_for_review',
+])
+
 function formatCurrency(value) {
   const amount = Number(value)
   if (!Number.isFinite(amount)) {
@@ -629,6 +639,7 @@ function NewApplicationsInbox({ rows = [], onRowClick, currentUser = {}, onActio
       BOND_INTAKE_STATUSES.READY_TO_START,
       BOND_INTAKE_STATUSES.APPLICATION_IN_PROGRESS,
       BOND_INTAKE_STATUSES.APPLICATION_SUBMITTED,
+      BOND_INTAKE_STATUSES.READY_FOR_REVIEW,
     ].map((status) => ({
       key: status,
       label: `${intakeFilterLabel(status)} (${activeItems.filter((item) => item.intakeStatus === status).length})`,
@@ -892,7 +903,7 @@ function BondApplicationsTable({
   currentUser = {},
   onIntakeActionComplete,
 }) {
-  if (queue === BOND_OPERATIONAL_QUEUE_KEYS.NEW_APPLICATIONS) {
+  if (INTAKE_PIPELINE_QUEUES.has(String(queue || 'all').trim().toLowerCase())) {
     return (
       <NewApplicationsInbox
         rows={rows}

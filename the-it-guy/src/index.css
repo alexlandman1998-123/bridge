@@ -10286,6 +10286,18 @@ button.agency-setup-row-card:hover {
 }
 
 @media (max-width: 980px) {
+  .auth-page:not(.onboarding-page) .auth-shell {
+    width: min(560px, 100%);
+  }
+
+  .auth-page:not(.onboarding-page) .auth-hero {
+    display: none;
+  }
+
+  .auth-page:not(.onboarding-page) .auth-card {
+    order: 0;
+  }
+
   .auth-page:not(.onboarding-page) .auth-form {
     overflow: visible;
     padding-right: 0;

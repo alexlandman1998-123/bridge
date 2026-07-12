@@ -293,7 +293,7 @@ export function buildSellerPortalJourneyView({ journey = null, documentCenter = 
   }))
   const completedCount = stages.filter((step) => step.state === 'completed').length
   const currentIndex = Math.max(0, stages.findIndex((step) => step.state === 'current'))
-  const progressPercent = stages.length ? Math.round(((completedCount + 1) / stages.length) * 100) : 0
+  const progressPercent = stages.length ? Math.floor(((completedCount + 1) / stages.length) * 100) : 0
   const currentStage = stages[currentIndex] || stages[0] || { key: 'contacted', label: 'Contacted', state: 'current' }
   const statusCards = [
     {

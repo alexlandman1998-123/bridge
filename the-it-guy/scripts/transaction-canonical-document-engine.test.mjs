@@ -13,6 +13,7 @@ try {
     buildTransactionDocumentFacts,
     shouldDisplayRequirementAtStage,
   } = await server.ssrLoadModule('/src/services/documents/transactionCanonicalDocumentRequirementService.js')
+  const { BUYER_ONBOARDING_FLOW_VERSION } = await server.ssrLoadModule('/src/lib/buyerOnboardingFlowContract.js')
 
   const definitions = [
     {
@@ -152,7 +153,9 @@ try {
   assert.equal(snapshotFacts.buyer.branch, 'company')
   assert.equal(snapshotFacts.buyer.purchase_mode, 'individual')
   assert.equal(snapshotFacts.buyer.finance_support_mode, 'originator_led')
-  assert.equal(snapshotFacts.buyer.onboarding_flow_version, 'buyer_onboarding_flow_v1')
+  assert.equal(snapshotFacts.buyer.onboarding_flow_version, BUYER_ONBOARDING_FLOW_VERSION)
+  assert.equal(snapshotFacts.buyer.onboarding_flow?.version, BUYER_ONBOARDING_FLOW_VERSION)
+  assert.equal(snapshotFacts.buyer.onboarding_flow?.source_version, 'buyer_onboarding_flow_v1')
   assert.equal(snapshotFacts.buyer.onboarding_flow?.buyer_branch, 'company')
 
   const preFinanceVisibility = shouldDisplayRequirementAtStage({

@@ -42,6 +42,7 @@ import {
 } from './documents/sellerOnboardingFactTransformer'
 import { buildSellerOnboardingPublicationDraft, mergePublicationDraft } from './sellerListingPublicationMapper'
 import { areSellerJourneyDocumentsSubmitted, buildSellerJourneyProgressPatch } from './sellerJourneyService.js'
+import { isSignedArtifactSignatureCaptured } from '../core/workflows/overrideContract.js'
 
 const LISTING_STATUSES = PRIVATE_LISTING_LIFECYCLE.STATUSES
 
@@ -1637,13 +1638,13 @@ function mapPrivateListingSummaryRow(row = {}) {
         : {},
     completeness: {
       isDraft: false,
-      hasMandate: ['signed', 'signed_uploaded', 'approved', 'verified', 'completed'].includes(normalizeKey(row.mandate_status)),
+      hasMandate: isSignedArtifactSignatureCaptured(row.mandate_status),
       hasSellerDocs: false,
       hasSellerOnboarding: false,
     },
     readinessSummary: {
       isDraft: false,
-      hasMandate: ['signed', 'signed_uploaded', 'approved', 'verified', 'completed'].includes(normalizeKey(row.mandate_status)),
+      hasMandate: isSignedArtifactSignatureCaptured(row.mandate_status),
       hasSellerDocs: false,
       hasSellerOnboarding: false,
       missing: [],

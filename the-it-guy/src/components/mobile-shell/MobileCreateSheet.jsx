@@ -132,10 +132,37 @@ export default function MobileCreateSheet({ open = false, type = '', route = '',
   const config = getMobileCreateConfig(type)
 
   useEffect(() => {
-    if (!open || typeof document === 'undefined') return undefined
+    if (!open || typeof document === 'undefined' || typeof window === 'undefined') return undefined
     const previousOverflow = document.body.style.overflow
+    const root = document.documentElement
+    const viewport = window.visualViewport
+
+    function syncVisualViewport() {
+      if (!viewport) {
+        root.style.setProperty('--mobile-sheet-vvh', '100dvh')
+        root.style.setProperty('--mobile-sheet-vv-offset-top', '0px')
+        root.style.setProperty('--mobile-sheet-vv-bottom', '0px')
+        return
+      }
+      const layoutHeight = window.innerHeight || viewport.height
+      const offsetTop = Math.max(0, viewport.offsetTop || 0)
+      const height = Math.max(320, Math.min(viewport.height || layoutHeight, layoutHeight - offsetTop))
+      const bottomInset = Math.max(0, layoutHeight - offsetTop - height)
+      root.style.setProperty('--mobile-sheet-vvh', `${height}px`)
+      root.style.setProperty('--mobile-sheet-vv-offset-top', `${offsetTop}px`)
+      root.style.setProperty('--mobile-sheet-vv-bottom', `${bottomInset}px`)
+    }
+
+    syncVisualViewport()
+    viewport?.addEventListener('resize', syncVisualViewport)
+    viewport?.addEventListener('scroll', syncVisualViewport)
     document.body.style.overflow = 'hidden'
     return () => {
+      viewport?.removeEventListener('resize', syncVisualViewport)
+      viewport?.removeEventListener('scroll', syncVisualViewport)
+      root.style.removeProperty('--mobile-sheet-vvh')
+      root.style.removeProperty('--mobile-sheet-vv-offset-top')
+      root.style.removeProperty('--mobile-sheet-vv-bottom')
       document.body.style.overflow = previousOverflow
     }
   }, [open])
@@ -259,27 +286,34 @@ function MobileCreateSheetForm({ config, type, route, onClose, onSaved }) {
 
   return (
     <div
-      className="fixed inset-0 z-[85] flex items-end overflow-hidden bg-[#10243a]/42 px-4 pb-[max(0.875rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))]"
+      className="fixed inset-x-0 z-[85] flex items-end overflow-hidden bg-[#10243a]/55 px-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-[2px]"
       onClick={requestClose}
+      style={{
+        top: 'var(--mobile-sheet-vv-offset-top, 0px)',
+        bottom: 'var(--mobile-sheet-vv-bottom, 0px)',
+      }}
     >
       <form
-        className="mx-auto flex max-h-[calc(100dvh-2rem)] w-full max-w-[520px] flex-col overflow-hidden rounded-[28px] bg-white shadow-[0_24px_64px_rgba(15,23,42,0.28)]"
+        className="mx-auto flex w-full max-w-[520px] flex-col overflow-hidden rounded-[24px] bg-white shadow-[0_24px_64px_rgba(15,23,42,0.28)]"
         onClick={(event) => event.stopPropagation()}
         onSubmit={handleSubmit}
         data-mobile-create-sheet={type}
+        style={{
+          maxHeight: 'min(660px, calc(var(--mobile-sheet-vvh, 100dvh) - 2rem))',
+        }}
       >
-        <div className="flex shrink-0 items-start justify-between gap-3 px-5 pt-5">
+        <div className="flex shrink-0 items-start justify-between gap-3 px-5 pt-4">
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[#1f7a5a]">{config.eyebrow}</p>
-            <h2 className="mt-1 text-[24px] font-semibold text-[#10243a]">{config.title}</h2>
-            <p className="mt-2 text-sm leading-6 text-[#60758d]">{config.body}</p>
+            <h2 className="mt-1 text-[22px] font-semibold leading-tight text-[#10243a]">{config.title}</h2>
+            <p className="mt-1.5 text-[13px] leading-5 text-[#60758d]">{config.body}</p>
           </div>
           <button type="button" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#f1f5f9] text-[#60758d]" onClick={requestClose} aria-label="Close create sheet">
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4 pt-5 [-webkit-overflow-scrolling:touch]">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-3 pt-4 [-webkit-overflow-scrolling:touch]">
           {hasTypedDraft && !savedDraft ? (
             <div className="mb-4 rounded-[20px] border border-[#d9eadf] bg-[#f5fbf7] p-4" data-mobile-create-durable-draft>
               <div className="flex items-start justify-between gap-3">
@@ -320,11 +354,11 @@ function MobileCreateSheetForm({ config, type, route, onClose, onSaved }) {
             </div>
           ) : null}
 
-          <div className="space-y-4">
+          <div className="space-y-3">
             <label className="block">
-              <span className="text-xs font-semibold uppercase text-[#60758d]">{config.primaryLabel}</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.02em] text-[#60758d]">{config.primaryLabel}</span>
               <input
-                className="mt-2 min-h-12 w-full rounded-2xl border border-[#d7e0ea] bg-white px-3 text-sm font-semibold text-[#10243a] outline-none focus:border-[#1f7a5a]"
+                className="mt-1.5 min-h-11 w-full rounded-[16px] border border-[#d7e0ea] bg-white px-3 text-sm font-semibold text-[#10243a] outline-none focus:border-[#1f7a5a]"
                 value={form.primary}
                 onChange={(event) => updateField('primary', event.target.value)}
                 placeholder={config.primaryPlaceholder}
@@ -334,9 +368,9 @@ function MobileCreateSheetForm({ config, type, route, onClose, onSaved }) {
             </label>
 
             <label className="block">
-              <span className="text-xs font-semibold uppercase text-[#60758d]">{config.secondaryLabel}</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.02em] text-[#60758d]">{config.secondaryLabel}</span>
               <input
-                className="mt-2 min-h-12 w-full rounded-2xl border border-[#d7e0ea] bg-white px-3 text-sm font-semibold text-[#10243a] outline-none focus:border-[#1f7a5a]"
+                className="mt-1.5 min-h-11 w-full rounded-[16px] border border-[#d7e0ea] bg-white px-3 text-sm font-semibold text-[#10243a] outline-none focus:border-[#1f7a5a]"
                 value={form.secondary}
                 onChange={(event) => updateField('secondary', event.target.value)}
                 placeholder={config.secondaryPlaceholder}
@@ -345,9 +379,9 @@ function MobileCreateSheetForm({ config, type, route, onClose, onSaved }) {
             </label>
 
             <label className="block">
-              <span className="text-xs font-semibold uppercase text-[#60758d]">{config.notesLabel}</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.02em] text-[#60758d]">{config.notesLabel}</span>
               <textarea
-                className="mt-2 min-h-[92px] w-full rounded-2xl border border-[#d7e0ea] bg-white px-3 py-3 text-sm font-semibold text-[#10243a] outline-none focus:border-[#1f7a5a]"
+                className="mt-1.5 min-h-[76px] w-full rounded-[16px] border border-[#d7e0ea] bg-white px-3 py-3 text-sm font-semibold text-[#10243a] outline-none focus:border-[#1f7a5a]"
                 value={form.notes}
                 onChange={(event) => updateField('notes', event.target.value)}
                 placeholder={config.notesPlaceholder}
@@ -364,8 +398,8 @@ function MobileCreateSheetForm({ config, type, route, onClose, onSaved }) {
           ) : null}
         </div>
 
-        <div className="shrink-0 border-t border-[#e6edf3] bg-white px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4">
-          <button type={savedDraft ? 'button' : 'submit'} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#10243a] px-4 text-sm font-semibold text-white" onClick={savedDraft ? onClose : undefined}>
+        <div className="shrink-0 border-t border-[#e6edf3] bg-white px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
+          <button type={savedDraft ? 'button' : 'submit'} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-[16px] bg-[#10243a] px-4 text-sm font-semibold text-white" onClick={savedDraft ? onClose : undefined}>
             <Icon className="h-4 w-4 text-[#9fe0bd]" />
             {savedDraft ? 'Done' : config.submitLabel}
           </button>

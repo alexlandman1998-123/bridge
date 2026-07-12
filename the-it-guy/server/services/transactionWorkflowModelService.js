@@ -26,10 +26,16 @@ const ROLLUP_SELECT =
   'transaction_id, parent_stage, parent_status, progress_percent, active_workflow_key, active_step_key, completed_stages_json, blocked_stages_json, blockers_json, next_action_json, derived_from_json, derived_at, created_at, updated_at'
 
 const TRANSACTION_SELECT =
-  'id, finance_type, current_main_stage, stage, onboarding_status, seller_onboarding_status, lifecycle_state, seller_has_existing_bond, existing_bond, cancellation_required, updated_at, created_at'
+  'id, finance_type, purchaser_type, buyer_entity_type, seller_type, seller_entity_type, routing_profile_json, authority_validity_json, buyer_authority_validity_json, seller_authority_validity_json, current_main_stage, stage, onboarding_status, seller_onboarding_status, lifecycle_state, seller_has_existing_bond, existing_bond, cancellation_required, conditions_json, suspensive_conditions, subject_to_sale, subject_to_inspection, updated_at, created_at'
 
 const TRANSACTION_SELECT_FALLBACK =
-  'id, finance_type, current_main_stage, stage, onboarding_status, seller_onboarding_status, lifecycle_state, updated_at, created_at'
+  'id, finance_type, purchaser_type, buyer_entity_type, seller_type, seller_entity_type, routing_profile_json, current_main_stage, stage, onboarding_status, seller_onboarding_status, lifecycle_state, seller_has_existing_bond, existing_bond, cancellation_required, conditions_json, suspensive_conditions, subject_to_sale, subject_to_inspection, updated_at, created_at'
+
+const TRANSACTION_SELECT_LEGACY_FALLBACK =
+  'id, finance_type, purchaser_type, buyer_entity_type, seller_type, seller_entity_type, routing_profile_json, current_main_stage, stage, onboarding_status, seller_onboarding_status, lifecycle_state, conditions_json, suspensive_conditions, subject_to_sale, subject_to_inspection, updated_at, created_at'
+
+const TRANSACTION_SELECT_MINIMAL_FALLBACK =
+  'id, finance_type, purchaser_type, seller_type, current_main_stage, stage, onboarding_status, seller_onboarding_status, lifecycle_state, updated_at, created_at'
 
 const LEGACY_WORKFLOW_STEP_KEY_ALIAS = Object.freeze({
   sales_otp: {
@@ -118,9 +124,19 @@ async function fetchTransaction(client, transactionId) {
   const primary = await client.from('transactions').select(TRANSACTION_SELECT).eq('id', transactionId).maybeSingle()
   if (!primary.error) return primary.data || null
 
-  if (isMissingColumnError(primary.error, 'seller_has_existing_bond')) {
+  if (isMissingColumnError(primary.error)) {
     const fallback = await client.from('transactions').select(TRANSACTION_SELECT_FALLBACK).eq('id', transactionId).maybeSingle()
     if (!fallback.error) return fallback.data || null
+
+    if (isMissingColumnError(fallback.error)) {
+      const legacy = await client.from('transactions').select(TRANSACTION_SELECT_LEGACY_FALLBACK).eq('id', transactionId).maybeSingle()
+      if (!legacy.error) return legacy.data || null
+
+      if (isMissingColumnError(legacy.error)) {
+        const minimal = await client.from('transactions').select(TRANSACTION_SELECT_MINIMAL_FALLBACK).eq('id', transactionId).maybeSingle()
+        if (!minimal.error) return minimal.data || null
+      }
+    }
   }
 
   if (isMissingTableError(primary.error, 'transactions')) return null

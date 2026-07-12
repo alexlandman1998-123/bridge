@@ -1,3 +1,5 @@
+import { trackTelemetryEvent } from './telemetry.js'
+
 export const UX_DIAGNOSTICS_STORAGE_KEY = 'arch9.ux.diagnostics.v1'
 export const UX_DIAGNOSTICS_HISTORY_LIMIT = 20
 
@@ -321,7 +323,6 @@ export async function recordUxFrictionEvent({
     metadata,
   }))
 
-  const { trackTelemetryEvent } = await import('./telemetry.js')
   const telemetry = await trackTelemetryEvent({
     category: 'ux',
     eventName: 'ux_friction_reported',

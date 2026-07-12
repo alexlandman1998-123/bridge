@@ -1,0 +1,470 @@
+export const ATTORNEY_WORKFLOW_LAUNCH_CONTRACT_VERSION = 'attorney_workflow_launch_contract_v1'
+
+export const ATTORNEY_WORKFLOW_AUTOMATION_STATUSES = Object.freeze({
+  automated: 'automated',
+  manualReview: 'manual_review',
+  unsupported: 'unsupported',
+})
+
+export const ATTORNEY_WORKFLOW_PHASES = Object.freeze({
+  phase0: 'contract_lock',
+  phase1: 'queue_action_wiring',
+  phase2: 'lane_permission_lock',
+  phase3: 'launch_gate_cleanup',
+  phase4: 'staging_multi_firm_smoke',
+  phase5: 'signing_workflow',
+  phase6: 'person_level_requirement_ux',
+  phase7: 'actionable_blockers',
+  phase8: 'exceptional_legal_scenarios',
+  phase9: 'pilot_metrics',
+})
+
+export const ATTORNEY_WORKFLOW_REQUIRED_LANES = Object.freeze([
+  Object.freeze({
+    key: 'transfer',
+    attorneyRole: 'transfer_attorney',
+    requiredWhen: 'Every sale transaction.',
+    primarySurface: 'AttorneyTransactionDetail',
+  }),
+  Object.freeze({
+    key: 'bond',
+    attorneyRole: 'bond_attorney',
+    requiredWhen: 'Finance type is bond or hybrid.',
+    primarySurface: 'AttorneyTransactionDetail',
+  }),
+  Object.freeze({
+    key: 'cancellation',
+    attorneyRole: 'cancellation_attorney',
+    requiredWhen: 'Seller has an existing bond or cancellation is explicitly required.',
+    primarySurface: 'AttorneyTransactionDetail',
+  }),
+])
+
+export const ATTORNEY_WORKFLOW_BLOCKER_TYPES = Object.freeze([
+  Object.freeze({
+    key: 'missing_assignment',
+    source: 'assignment',
+    minimumSeverity: 'critical',
+    owner: 'management',
+    requiredAction: 'assign_attorney',
+  }),
+  Object.freeze({
+    key: 'missing_document',
+    source: 'document_requirement',
+    minimumSeverity: 'medium',
+    owner: 'request_owner',
+    requiredAction: 'request_document',
+  }),
+  Object.freeze({
+    key: 'rejected_document',
+    source: 'document_review',
+    minimumSeverity: 'high',
+    owner: 'attorney',
+    requiredAction: 'review_or_rerequest_document',
+  }),
+  Object.freeze({
+    key: 'unsigned_document',
+    source: 'signing_requirement',
+    minimumSeverity: 'medium',
+    owner: 'client_or_attorney',
+    requiredAction: 'manage_signing',
+  }),
+  Object.freeze({
+    key: 'inactive_matter',
+    source: 'activity_age',
+    minimumSeverity: 'high',
+    owner: 'attorney',
+    requiredAction: 'capture_progress_update',
+  }),
+  Object.freeze({
+    key: 'manual_blocker',
+    source: 'attorney_workflow_blocker',
+    minimumSeverity: 'medium',
+    owner: 'blocker_owner',
+    requiredAction: 'resolve_or_reopen_blocker',
+  }),
+  Object.freeze({
+    key: 'missing_data',
+    source: 'readiness_gate',
+    minimumSeverity: 'medium',
+    owner: 'attorney',
+    requiredAction: 'capture_required_data',
+  }),
+])
+
+export const ATTORNEY_WORKFLOW_PERMISSION_CONTRACT = Object.freeze([
+  Object.freeze({
+    key: 'transfer_lane_scope',
+    role: 'transfer_attorney',
+    mayEditLanes: ['transfer'],
+    mayViewLanes: ['transfer', 'bond', 'cancellation'],
+    managementOverride: ['firm_admin', 'director_partner'],
+    phase: ATTORNEY_WORKFLOW_PHASES.phase2,
+  }),
+  Object.freeze({
+    key: 'bond_lane_scope',
+    role: 'bond_attorney',
+    mayEditLanes: ['bond'],
+    mayViewLanes: ['transfer', 'bond', 'cancellation'],
+    managementOverride: ['firm_admin', 'director_partner'],
+    phase: ATTORNEY_WORKFLOW_PHASES.phase2,
+  }),
+  Object.freeze({
+    key: 'cancellation_lane_scope',
+    role: 'cancellation_attorney',
+    mayEditLanes: ['cancellation'],
+    mayViewLanes: ['transfer', 'bond', 'cancellation'],
+    managementOverride: ['firm_admin', 'director_partner'],
+    phase: ATTORNEY_WORKFLOW_PHASES.phase2,
+  }),
+])
+
+function freezeArray(values = []) {
+  return Object.freeze([...values])
+}
+
+function freezeScenario(definition = {}) {
+  return Object.freeze({
+    key: definition.key,
+    title: definition.title,
+    automationStatus: definition.automationStatus,
+    legalMatterSupport: Object.freeze({ ...(definition.legalMatterSupport || {}) }),
+    transaction: Object.freeze({ ...(definition.transaction || {}) }),
+    expectedRoles: freezeArray(definition.expectedRoles || []),
+    expectedMissingFields: freezeArray(definition.expectedMissingFields || []),
+    expectedDocuments: freezeArray(definition.expectedDocuments || []),
+    expectedSigningRequirements: freezeArray(definition.expectedSigningRequirements || []),
+    requiredBlockers: freezeArray(definition.requiredBlockers || []),
+    nextActions: freezeArray(definition.nextActions || []),
+    uiSurfaces: freezeArray(definition.uiSurfaces || []),
+    phase0Notes: freezeArray(definition.phase0Notes || []),
+    p0ImplementationPhases: freezeArray(definition.p0ImplementationPhases || []),
+    p1ImplementationPhases: freezeArray(definition.p1ImplementationPhases || []),
+  })
+}
+
+export const ATTORNEY_WORKFLOW_PHASE0_SCENARIOS = freezeArray([
+  freezeScenario({
+    key: 'transfer_only_cash_individual_resale',
+    title: 'Transfer only, cash, individual buyer and seller',
+    automationStatus: ATTORNEY_WORKFLOW_AUTOMATION_STATUSES.automated,
+    legalMatterSupport: {
+      buyerType: 'individual',
+      sellerType: 'individual',
+      financeType: 'cash',
+      propertyType: 'residential',
+    },
+    transaction: {
+      id: 'phase0-transfer-only',
+      finance_type: 'cash',
+      transaction_type: 'resale',
+      buyer_entity_type: 'individual',
+      seller_entity_type: 'individual',
+      seller_has_existing_bond: false,
+      property_tenure: 'freehold',
+    },
+    expectedRoles: ['transfer_attorney'],
+    expectedDocuments: [
+      'sale_agreement_or_otp',
+      'buyer_id_document',
+      'buyer_marital_status_details',
+      'seller_id_document',
+      'seller_marital_status_details',
+      'rates_clearance',
+      'electrical_compliance_certificate',
+    ],
+    expectedSigningRequirements: ['buyer_transfer_signature', 'seller_transfer_signature'],
+    requiredBlockers: ['missing_assignment', 'missing_document', 'unsigned_document', 'inactive_matter', 'manual_blocker'],
+    nextActions: ['assign_transfer_attorney', 'request_transfer_documents', 'schedule_transfer_signing', 'mark_lodgement_ready'],
+    uiSurfaces: ['AttorneyMattersPage', 'AttorneyTransactionDetail', 'AttorneyWorkflowLanesPanel'],
+    p0ImplementationPhases: [ATTORNEY_WORKFLOW_PHASES.phase1, ATTORNEY_WORKFLOW_PHASES.phase2, ATTORNEY_WORKFLOW_PHASES.phase3],
+    p1ImplementationPhases: [ATTORNEY_WORKFLOW_PHASES.phase5, ATTORNEY_WORKFLOW_PHASES.phase7, ATTORNEY_WORKFLOW_PHASES.phase9],
+  }),
+  freezeScenario({
+    key: 'transfer_bond_company_buyer_sectional',
+    title: 'Transfer and bond, company buyer, sectional title',
+    automationStatus: ATTORNEY_WORKFLOW_AUTOMATION_STATUSES.automated,
+    legalMatterSupport: {
+      buyerType: 'company',
+      sellerType: 'individual',
+      financeType: 'bond',
+      propertyType: 'sectional_title',
+    },
+    transaction: {
+      id: 'phase0-transfer-bond-company',
+      finance_type: 'bond',
+      transaction_type: 'private_sale',
+      buyer_entity_type: 'company',
+      seller_entity_type: 'individual',
+      property_tenure: 'sectional_title',
+    },
+    expectedRoles: ['transfer_attorney', 'bond_attorney'],
+    expectedDocuments: [
+      'buyer_company_registration_documents',
+      'buyer_director_ids',
+      'buyer_company_resolution',
+      'buyer_beneficial_ownership',
+      'bond_instruction',
+      'bank_requirements',
+      'guarantees_issued',
+      'body_corporate_levy_clearance',
+    ],
+    expectedSigningRequirements: ['buyer_transfer_signature', 'seller_transfer_signature', 'buyer_bond_documents_signature', 'buyer_director_resolution_signature'],
+    requiredBlockers: ['missing_assignment', 'missing_document', 'rejected_document', 'unsigned_document', 'inactive_matter', 'manual_blocker'],
+    nextActions: ['assign_transfer_attorney', 'assign_bond_attorney', 'request_company_authority', 'request_bank_requirements', 'manage_bond_signing'],
+    uiSurfaces: ['AttorneyTransactionDetail', 'AttorneyWorkflowLanesPanel', 'AttorneyOperationsPage', 'AttorneySchedulingPage'],
+    phase0Notes: ['Person-level director rows remain owned by buyer/canonical document cardinality until Phase 6 surfaces them in attorney UX.'],
+    p0ImplementationPhases: [ATTORNEY_WORKFLOW_PHASES.phase1, ATTORNEY_WORKFLOW_PHASES.phase2, ATTORNEY_WORKFLOW_PHASES.phase3, ATTORNEY_WORKFLOW_PHASES.phase4],
+    p1ImplementationPhases: [ATTORNEY_WORKFLOW_PHASES.phase5, ATTORNEY_WORKFLOW_PHASES.phase6, ATTORNEY_WORKFLOW_PHASES.phase7],
+  }),
+  freezeScenario({
+    key: 'transfer_cancellation_married_seller',
+    title: 'Transfer and cancellation, married seller with existing bond',
+    automationStatus: ATTORNEY_WORKFLOW_AUTOMATION_STATUSES.automated,
+    legalMatterSupport: {
+      buyerType: 'individual',
+      sellerType: 'married',
+      financeType: 'cash',
+      propertyType: 'residential',
+    },
+    transaction: {
+      id: 'phase0-transfer-cancellation',
+      finance_type: 'cash',
+      transaction_type: 'resale',
+      buyer_entity_type: 'individual',
+      seller_entity_type: 'individual',
+      seller_has_existing_bond: true,
+      property_tenure: 'freehold',
+    },
+    expectedRoles: ['transfer_attorney', 'cancellation_attorney'],
+    expectedDocuments: [
+      'seller_marital_status_details',
+      'cancellation_instruction',
+      'existing_bond_account_details',
+      'cancellation_figures',
+      'cancellation_guarantees',
+      'bank_cancellation_documents',
+    ],
+    expectedSigningRequirements: ['buyer_transfer_signature', 'seller_transfer_signature', 'seller_cancellation_documents_signature'],
+    requiredBlockers: ['missing_assignment', 'missing_document', 'unsigned_document', 'inactive_matter', 'manual_blocker', 'missing_data'],
+    nextActions: ['assign_cancellation_attorney', 'request_cancellation_figures', 'capture_notice_period', 'manage_cancellation_signing'],
+    uiSurfaces: ['AttorneyTransactionDetail', 'AttorneyWorkflowLanesPanel', 'AttorneyOperationsPage'],
+    p0ImplementationPhases: [ATTORNEY_WORKFLOW_PHASES.phase1, ATTORNEY_WORKFLOW_PHASES.phase2, ATTORNEY_WORKFLOW_PHASES.phase3, ATTORNEY_WORKFLOW_PHASES.phase4],
+    p1ImplementationPhases: [ATTORNEY_WORKFLOW_PHASES.phase5, ATTORNEY_WORKFLOW_PHASES.phase7, ATTORNEY_WORKFLOW_PHASES.phase8],
+  }),
+  freezeScenario({
+    key: 'transfer_bond_cancellation_trust_parties',
+    title: 'Transfer, bond, and cancellation with trust buyer and seller',
+    automationStatus: ATTORNEY_WORKFLOW_AUTOMATION_STATUSES.automated,
+    legalMatterSupport: {
+      buyerType: 'trust',
+      sellerType: 'trust',
+      financeType: 'hybrid',
+      propertyType: 'sectional_title',
+    },
+    transaction: {
+      id: 'phase0-all-lanes-trust',
+      finance_type: 'hybrid',
+      transaction_type: 'private_sale',
+      buyer_entity_type: 'trust',
+      seller_entity_type: 'trust',
+      seller_has_existing_bond: true,
+      property_tenure: 'sectional_title',
+    },
+    expectedRoles: ['transfer_attorney', 'bond_attorney', 'cancellation_attorney'],
+    expectedDocuments: [
+      'buyer_trust_deed',
+      'buyer_letters_of_authority',
+      'buyer_trustee_ids',
+      'buyer_trustee_resolution',
+      'seller_trust_deed',
+      'seller_letters_of_authority',
+      'seller_trustee_ids',
+      'seller_trustee_resolution',
+      'bond_instruction',
+      'cancellation_figures',
+      'body_corporate_levy_clearance',
+    ],
+    expectedSigningRequirements: [
+      'buyer_transfer_signature',
+      'seller_transfer_signature',
+      'buyer_bond_documents_signature',
+      'seller_cancellation_documents_signature',
+      'buyer_trustee_resolution_signature',
+      'seller_trustee_resolution_signature',
+    ],
+    requiredBlockers: ['missing_assignment', 'missing_document', 'rejected_document', 'unsigned_document', 'inactive_matter', 'manual_blocker', 'missing_data'],
+    nextActions: ['assign_all_required_attorneys', 'request_trust_authority', 'request_bank_requirements', 'request_cancellation_figures', 'coordinate_lodgement_readiness'],
+    uiSurfaces: ['AttorneyTransactionDetail', 'AttorneyWorkflowLanesPanel', 'AttorneyOperationsPage', 'AttorneySchedulingPage'],
+    phase0Notes: ['Trustee/person-level cardinality is owned by legal requirement cardinality and must be made explicit in Phase 6 UX.'],
+    p0ImplementationPhases: [ATTORNEY_WORKFLOW_PHASES.phase1, ATTORNEY_WORKFLOW_PHASES.phase2, ATTORNEY_WORKFLOW_PHASES.phase3, ATTORNEY_WORKFLOW_PHASES.phase4],
+    p1ImplementationPhases: [ATTORNEY_WORKFLOW_PHASES.phase5, ATTORNEY_WORKFLOW_PHASES.phase6, ATTORNEY_WORKFLOW_PHASES.phase7],
+  }),
+  freezeScenario({
+    key: 'development_sale_company_parties',
+    title: 'Development sale with company buyer and seller',
+    automationStatus: ATTORNEY_WORKFLOW_AUTOMATION_STATUSES.automated,
+    legalMatterSupport: {
+      buyerType: 'company',
+      sellerType: 'company',
+      financeType: 'cash',
+      propertyType: 'residential',
+    },
+    transaction: {
+      id: 'phase0-development-company',
+      finance_type: 'cash',
+      transaction_type: 'development_sale',
+      development_id: 'development-phase0',
+      buyer_entity_type: 'company',
+      seller_entity_type: 'company',
+      seller_has_existing_bond: false,
+    },
+    expectedRoles: ['transfer_attorney'],
+    expectedDocuments: [
+      'developer_sale_pack',
+      'unit_schedule',
+      'developer_signing_authority',
+      'buyer_company_resolution',
+      'seller_company_resolution',
+      'buyer_director_ids',
+      'seller_director_ids',
+    ],
+    expectedSigningRequirements: ['buyer_transfer_signature', 'seller_transfer_signature', 'buyer_director_resolution_signature', 'seller_director_resolution_signature'],
+    requiredBlockers: ['missing_assignment', 'missing_document', 'rejected_document', 'unsigned_document', 'inactive_matter', 'manual_blocker'],
+    nextActions: ['assign_transfer_attorney', 'request_developer_pack', 'request_company_authority', 'prepare_transfer_documents'],
+    uiSurfaces: ['AttorneyTransactionDetail', 'AttorneyWorkflowLanesPanel', 'AttorneyOperationsPage'],
+    p0ImplementationPhases: [ATTORNEY_WORKFLOW_PHASES.phase1, ATTORNEY_WORKFLOW_PHASES.phase2, ATTORNEY_WORKFLOW_PHASES.phase3],
+    p1ImplementationPhases: [ATTORNEY_WORKFLOW_PHASES.phase6, ATTORNEY_WORKFLOW_PHASES.phase7],
+  }),
+  freezeScenario({
+    key: 'commercial_unknown_finance_company_parties',
+    title: 'Commercial company parties with unknown finance',
+    automationStatus: ATTORNEY_WORKFLOW_AUTOMATION_STATUSES.manualReview,
+    legalMatterSupport: {
+      buyerType: 'company',
+      sellerType: 'company',
+      financeType: 'unknown',
+      propertyType: 'commercial',
+      conditions: ['subject_to_sale'],
+    },
+    transaction: {
+      id: 'phase0-commercial-unknown-finance',
+      transaction_type: 'commercial',
+      property_type: 'commercial',
+      buyer_entity_type: 'company',
+      seller_entity_type: 'company',
+    },
+    expectedRoles: ['transfer_attorney'],
+    expectedMissingFields: ['finance_type'],
+    expectedDocuments: ['buyer_company_resolution', 'seller_company_resolution', 'vat_status_confirmation', 'lease_agreements'],
+    expectedSigningRequirements: ['buyer_transfer_signature', 'seller_transfer_signature'],
+    requiredBlockers: ['missing_assignment', 'missing_document', 'manual_blocker', 'missing_data'],
+    nextActions: ['capture_finance_type', 'manual_legal_review', 'capture_vat_treatment', 'confirm_commercial_conditions'],
+    uiSurfaces: ['AttorneyTransactionDetail', 'AttorneyWorkflowLanesPanel', 'AttorneyOperationsPage'],
+    phase0Notes: ['Unknown finance and commercial/suspensive condition overlays must not silently proceed as standard residential transfer.'],
+    p0ImplementationPhases: [ATTORNEY_WORKFLOW_PHASES.phase0, ATTORNEY_WORKFLOW_PHASES.phase3],
+    p1ImplementationPhases: [ATTORNEY_WORKFLOW_PHASES.phase8, ATTORNEY_WORKFLOW_PHASES.phase9],
+  }),
+  freezeScenario({
+    key: 'close_corporation_manual_review',
+    title: 'Close corporation party requires manual authority review',
+    automationStatus: ATTORNEY_WORKFLOW_AUTOMATION_STATUSES.manualReview,
+    legalMatterSupport: {
+      buyerType: 'close_corporation',
+      sellerType: 'individual',
+      financeType: 'cash',
+      propertyType: 'residential',
+    },
+    transaction: {
+      id: 'phase0-cc-manual-review',
+      finance_type: 'cash',
+      transaction_type: 'resale',
+      buyer_entity_type: 'close_corporation',
+      seller_entity_type: 'individual',
+      seller_has_existing_bond: false,
+    },
+    expectedRoles: ['transfer_attorney'],
+    expectedDocuments: ['buyer_company_registration_documents', 'buyer_director_ids', 'buyer_company_resolution'],
+    expectedSigningRequirements: ['buyer_transfer_signature', 'seller_transfer_signature', 'buyer_director_resolution_signature'],
+    requiredBlockers: ['manual_blocker', 'missing_document', 'missing_data'],
+    nextActions: ['manual_legal_review', 'request_member_authority', 'confirm_signatory_capacity'],
+    uiSurfaces: ['AttorneyTransactionDetail', 'AttorneyWorkflowLanesPanel'],
+    phase0Notes: ['The workflow resolver currently treats close corporations as company-like; the legal scenario matrix keeps the matter in manual review until Phase 8 first-class CC handling.'],
+    p0ImplementationPhases: [ATTORNEY_WORKFLOW_PHASES.phase0],
+    p1ImplementationPhases: [ATTORNEY_WORKFLOW_PHASES.phase6, ATTORNEY_WORKFLOW_PHASES.phase8],
+  }),
+  freezeScenario({
+    key: 'foreign_buyer_manual_review',
+    title: 'Foreign individual buyer requires compliance review',
+    automationStatus: ATTORNEY_WORKFLOW_AUTOMATION_STATUSES.manualReview,
+    legalMatterSupport: {
+      buyerType: 'foreign_purchaser',
+      sellerType: 'individual',
+      financeType: 'cash',
+      propertyType: 'residential',
+    },
+    transaction: {
+      id: 'phase0-foreign-buyer',
+      finance_type: 'cash',
+      transaction_type: 'resale',
+      buyer_entity_type: 'foreign_individual',
+      seller_entity_type: 'individual',
+      seller_has_existing_bond: false,
+    },
+    expectedRoles: ['transfer_attorney'],
+    expectedDocuments: ['buyer_id_document', 'buyer_proof_of_address', 'buyer_marital_status_details'],
+    expectedSigningRequirements: ['buyer_transfer_signature', 'seller_transfer_signature'],
+    requiredBlockers: ['manual_blocker', 'missing_document', 'missing_data'],
+    nextActions: ['manual_legal_review', 'capture_source_of_funds', 'confirm_exchange_control_route'],
+    uiSurfaces: ['AttorneyTransactionDetail', 'AttorneyWorkflowLanesPanel'],
+    p0ImplementationPhases: [ATTORNEY_WORKFLOW_PHASES.phase0],
+    p1ImplementationPhases: [ATTORNEY_WORKFLOW_PHASES.phase8],
+  }),
+  freezeScenario({
+    key: 'business_rescue_or_liquidation_stop',
+    title: 'Business rescue or liquidation must stop automated progression',
+    automationStatus: ATTORNEY_WORKFLOW_AUTOMATION_STATUSES.unsupported,
+    legalMatterSupport: {
+      buyerType: 'individual',
+      sellerType: 'liquidation',
+      financeType: 'cash',
+      propertyType: 'residential',
+    },
+    transaction: {
+      id: 'phase0-liquidation-stop',
+      finance_type: 'cash',
+      transaction_type: 'resale',
+      buyer_entity_type: 'individual',
+      seller_entity_type: 'liquidation',
+      seller_has_existing_bond: false,
+    },
+    expectedRoles: ['transfer_attorney'],
+    expectedDocuments: ['buyer_id_document', 'buyer_proof_of_address'],
+    expectedSigningRequirements: ['buyer_transfer_signature', 'seller_transfer_signature'],
+    requiredBlockers: ['manual_blocker', 'missing_data'],
+    nextActions: ['stop_automated_workflow', 'escalate_to_conveyancer_review'],
+    uiSurfaces: ['AttorneyTransactionDetail', 'AttorneyWorkflowLanesPanel'],
+    phase0Notes: ['Unsupported legal status may still produce baseline transfer facts; launch contract requires hard-stop overlay before normal progression.'],
+    p0ImplementationPhases: [ATTORNEY_WORKFLOW_PHASES.phase0],
+    p1ImplementationPhases: [ATTORNEY_WORKFLOW_PHASES.phase8, ATTORNEY_WORKFLOW_PHASES.phase9],
+  }),
+])
+
+export function listAttorneyWorkflowLaunchScenarios({ automationStatus } = {}) {
+  if (!automationStatus) return [...ATTORNEY_WORKFLOW_PHASE0_SCENARIOS]
+  return ATTORNEY_WORKFLOW_PHASE0_SCENARIOS.filter((scenario) => scenario.automationStatus === automationStatus)
+}
+
+export function getAttorneyWorkflowLaunchScenario(key) {
+  return ATTORNEY_WORKFLOW_PHASE0_SCENARIOS.find((scenario) => scenario.key === key) || null
+}
+
+export function getAttorneyWorkflowPhaseTicketMap() {
+  return ATTORNEY_WORKFLOW_PHASE0_SCENARIOS.reduce((accumulator, scenario) => {
+    for (const phase of [...scenario.p0ImplementationPhases, ...scenario.p1ImplementationPhases]) {
+      if (!accumulator[phase]) accumulator[phase] = []
+      accumulator[phase].push(scenario.key)
+    }
+    return accumulator
+  }, {})
+}

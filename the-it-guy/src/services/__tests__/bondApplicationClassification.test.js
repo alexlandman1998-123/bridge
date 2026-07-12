@@ -309,7 +309,8 @@ try {
     bondApplications: applications,
     primaryBondApplication: originatorRows[0],
   }])
-  assert.equal(originatorQueueRows.length, 0, 'ready for review file is no longer in Pipeline')
+  assert.equal(originatorQueueRows.length, 1, 'ready for review file remains actionable in Pipeline')
+  assert.equal(originatorQueueRows[0].canAccept, true, 'ready for review file can be accepted from Pipeline')
   const trackerInput = {
     transaction: {
       id: 'tx-bond-1',
@@ -331,7 +332,7 @@ try {
     bondApplications: applications,
     primaryBondApplication: originatorRows[0],
   }
-  assert.equal(isBondApplicationTrackerRow(trackerInput), true)
+  assert.equal(isBondApplicationTrackerRow(trackerInput), false)
   assert.equal(getBondOriginatorQueueState(trackerInput).status, 'READY_FOR_REVIEW')
 
   const approvedQuoteId = '00000000-0000-4000-8000-000000000101'

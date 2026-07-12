@@ -1,4 +1,5 @@
 import { normalizeRoleType } from '../../src/core/transactions/permissions.js'
+import { WORKFLOW_COMPLETION_MODES } from '../../src/core/workflows/overrideContract.js'
 import { requireClient } from '../../src/services/attorneyFirmServiceShared.js'
 import { writeWorkflowEvidence } from './workflowEvidenceService.js'
 import { publishWorkflowChanged } from './workflowRecomputeService.js'
@@ -88,9 +89,29 @@ function buildOverrideEvidenceStatus(nextStatus = '') {
 }
 
 function buildOverrideReasonCode(overrideType = '') {
-  return normalizeOverrideType(overrideType) === 'force_reopen'
-    ? 'step_reopened'
-    : 'manual_override_applied'
+  const normalized = normalizeOverrideType(overrideType)
+  if (normalized === 'force_reopen') return 'step_reopened'
+  if (normalized === 'force_waive' || normalized === 'force_not_applicable') return 'step_waived'
+  return 'manual_override_applied'
+}
+
+function buildOverrideIntent(overrideType = '') {
+  const normalized = normalizeOverrideType(overrideType)
+  if (normalized === 'force_complete') return 'completion_override'
+  if (normalized === 'force_skip') return 'skip_override'
+  if (normalized === 'force_waive' || normalized === 'force_not_applicable') return 'waiver_override'
+  if (normalized === 'force_reopen') return 'reopen_override'
+  if (normalized === 'force_block') return 'block_override'
+  return 'manual_override'
+}
+
+function buildOverrideCompletionMode(overrideType = '') {
+  const normalized = normalizeOverrideType(overrideType)
+  if (normalized === 'force_waive' || normalized === 'force_not_applicable') return WORKFLOW_COMPLETION_MODES.waived
+  if (normalized === 'force_skip') return WORKFLOW_COMPLETION_MODES.skipped
+  if (normalized === 'force_reopen') return WORKFLOW_COMPLETION_MODES.reopened
+  if (normalized === 'force_block') return WORKFLOW_COMPLETION_MODES.blocked
+  return ''
 }
 
 export async function applyWorkflowOverride({
@@ -146,6 +167,8 @@ export async function applyWorkflowOverride({
   if (!nextStatus) {
     throw new Error('Unable to resolve the override target status.')
   }
+  const overrideIntent = buildOverrideIntent(normalizedOverrideType)
+  const overrideCompletionMode = buildOverrideCompletionMode(normalizedOverrideType)
 
   const stepUpdate = await applyWorkflowStepStatus(
     normalizedTransactionId,
@@ -194,6 +217,9 @@ export async function applyWorkflowOverride({
       newStatus: stepUpdate.nextStatus,
       payload: {
         overrideType: normalizedOverrideType,
+        overrideIntent,
+        completionMode: overrideCompletionMode || null,
+        waiver: overrideIntent === 'waiver_override',
         reason: normalizedReason,
         actorRole: normalizedActorRole,
         rawActorRole,
@@ -222,6 +248,9 @@ export async function applyWorkflowOverride({
     forceAudit: true,
     auditMetadata: {
       overrideType: normalizedOverrideType,
+      overrideIntent,
+      completionMode: overrideCompletionMode || null,
+      waiver: overrideIntent === 'waiver_override',
       workflowKey: normalizedWorkflowKey,
       stepKey: normalizedStepKey,
       previousStatus: stepUpdate.previousStatus,
@@ -237,6 +266,9 @@ export async function applyWorkflowOverride({
     },
     payload: {
       overrideType: normalizedOverrideType,
+      overrideIntent,
+      completionMode: overrideCompletionMode || null,
+      waiver: overrideIntent === 'waiver_override',
       workflowKey: normalizedWorkflowKey,
       stepKey: normalizedStepKey,
       reason: normalizedReason,

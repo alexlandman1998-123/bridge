@@ -16,6 +16,29 @@ function buildBaseHeaderConfig({
   }
 }
 
+function buildReferenceStats(referenceSummary = null, { includePartnerReferences = true } = {}) {
+  const primary = referenceSummary?.primary
+  const partnerItems = includePartnerReferences
+    ? (referenceSummary?.partnerItems || []).slice(0, 2)
+    : []
+  return [
+    primary
+      ? {
+          label: primary.label,
+          value: primary.displayValue || primary.value,
+          helperText: primary.isFallback ? `Fallback from ${primary.fallbackStorageTarget}` : 'Shared transaction reference',
+          icon: 'reference',
+        }
+      : null,
+    ...partnerItems.map((item) => ({
+      label: item.label,
+      value: item.displayValue || item.value,
+      helperText: item.sourceLabel ? `${item.sourceLabel} reference` : '',
+      icon: 'reference',
+    })),
+  ].filter(Boolean)
+}
+
 export function buildDeveloperTransactionHeaderConfig({
   title,
   unitLabel,
@@ -28,6 +51,7 @@ export function buildDeveloperTransactionHeaderConfig({
   timeInStageValue,
   timeInStageMeta = '',
   unitStatusLabel = '',
+  referenceSummary = null,
 } = {}) {
   return buildBaseHeaderConfig({
     title,
@@ -36,6 +60,7 @@ export function buildDeveloperTransactionHeaderConfig({
     contextLabel: null,
     pills: [],
     stats: [
+      ...buildReferenceStats(referenceSummary, { includePartnerReferences: false }),
       { label: 'Current Stage', value: currentStageLabel || 'Available', helperText: '', icon: 'stage' },
       { label: 'Purchase Price', value: purchasePriceLabel || '—', helperText: '', icon: 'price' },
       { label: 'Main Stage', value: mainStageLabel || 'Available', helperText: '', icon: 'stage' },
@@ -56,6 +81,7 @@ export function buildAttorneyTransactionHeaderConfig({
   purchasePriceLabel,
   timeInStageValue,
   timeInStageMeta = '',
+  referenceSummary = null,
 } = {}) {
   return buildBaseHeaderConfig({
     title,
@@ -70,6 +96,7 @@ export function buildAttorneyTransactionHeaderConfig({
       { label: financeTypeLabel || 'Cash', icon: 'finance', tone: 'blue' },
     ],
     stats: [
+      ...buildReferenceStats(referenceSummary),
       { label: 'Current Stage', value: currentStageLabel || 'Instruction Received', icon: 'stage' },
       { label: 'Purchase Price', value: purchasePriceLabel || '—', icon: 'price' },
       { label: 'Main Stage', value: mainStageLabel || 'Available', icon: 'stage' },

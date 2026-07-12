@@ -1,5 +1,6 @@
 import { isMissingTableError } from './attorneyFirmServiceShared'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { PARTNER_ROUTING_ROLE_TYPES } from '../constants/bondRoutingContract'
 import { ALL_BOND_ORGANISATION_SCOPE, BOND_ORGANISATION_LEVELS, resolveBondOrganisationScope } from './bondOrganisationScopeResolver'
 import { BOND_ROUTING_METHODS, recordRoutingRuleUsed, resolveBondApplicationRouting } from './bondRoutingRulesService'
 import { recordAuditEvent } from '../lib/activityAudit'
@@ -847,7 +848,7 @@ export async function reassignApplication(applicationId = '', toConsultantId = '
       reason,
       metadata: {
         previousConsultantId: previousConsultant?.id || null,
-        assignmentMethod: preview.assignmentMethod,
+        assignmentMethod: BOND_APPLICATION_ASSIGNMENT_METHODS.reassigned,
       },
     }, application)
   } catch (error) {

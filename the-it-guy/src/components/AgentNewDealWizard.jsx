@@ -20,6 +20,7 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { getAgentPrivateListingSummaries, getAgentPrivateListings } from '../services/privateListingService'
 import { inferPartnerRoutingRoleTypesForTransaction, resolvePartnerRoutingForTransaction } from '../services/universalPartnerRoutingService'
+import { isSignedArtifactSignatureCaptured } from '../core/workflows/overrideContract.js'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
 
@@ -245,7 +246,7 @@ function getListingMandateReady(listing) {
   ]
   const mandateDoc = docs.find((doc) => ['mandate_to_sell', 'signed_mandate', 'mandate'].includes(normalizeKey(doc?.key || doc?.documentType || doc?.document_type || doc?.name)))
   const docStatus = normalizeKey(mandateDoc?.status || mandateDoc?.documentStatus || mandateDoc?.document_status)
-  return ['signed', 'signed_uploaded', 'approved', 'verified', 'completed'].includes(mandateStatus) ||
+  return isSignedArtifactSignatureCaptured(mandateStatus) ||
     ['approved', 'verified', 'completed', 'signed'].includes(docStatus)
 }
 

@@ -1,3 +1,12 @@
+import {
+  SUSPENSIVE_CONDITION_GATE_KEYS,
+  areSuspensiveConditionWorkflowGatesSatisfied,
+} from './suspensiveConditionWorkflowGates.js'
+import {
+  AUTHORITY_VALIDITY_GATE_KEYS,
+  areAuthorityValidityWorkflowGatesSatisfied,
+} from './authorityValidityWorkflowGates.js'
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -26,15 +35,45 @@ export const TRANSACTION_GATE_DEFINITIONS = Object.freeze({
   finance_ready: {
     gateKey: 'finance_ready',
     label: 'Finance Ready',
-    requiredEvidence: ['finance_readiness_or_override'],
+    requiredEvidence: ['finance_readiness_or_override', SUSPENSIVE_CONDITION_GATE_KEYS.deadlinesCurrent],
     requiredSteps: ['ready_for_transfer'],
     allowedOverrides: ['force_complete', 'force_waive'],
     rolePermissions: ['principal', 'admin', 'developer_admin', 'transaction_coordinator', 'arch9_admin'],
   },
+  [SUSPENSIVE_CONDITION_GATE_KEYS.deadlinesCurrent]: {
+    gateKey: SUSPENSIVE_CONDITION_GATE_KEYS.deadlinesCurrent,
+    label: 'Suspensive Condition Deadlines Current',
+    requiredEvidence: ['condition_deadline', 'condition_extension_evidence_if_late'],
+    requiredSteps: [],
+    allowedOverrides: ['force_complete'],
+    rolePermissions: ['principal', 'admin', 'attorney_admin', 'transaction_coordinator', 'arch9_admin'],
+  },
+  [SUSPENSIVE_CONDITION_GATE_KEYS.resolutionsReady]: {
+    gateKey: SUSPENSIVE_CONDITION_GATE_KEYS.resolutionsReady,
+    label: 'Suspensive Condition Resolutions Ready',
+    requiredEvidence: ['condition_fulfilment', 'condition_waiver', 'condition_extension_if_late'],
+    requiredSteps: [],
+    allowedOverrides: ['force_complete'],
+    rolePermissions: ['principal', 'admin', 'attorney_admin', 'transaction_coordinator', 'arch9_admin'],
+  },
+  [AUTHORITY_VALIDITY_GATE_KEYS.legalAuthorityValidityReady]: {
+    gateKey: AUTHORITY_VALIDITY_GATE_KEYS.legalAuthorityValidityReady,
+    label: 'Legal Authority Validity Ready',
+    requiredEvidence: ['authority_validity_review', 'signatory_authority_match', 'quorum_or_required_signatures', 'transaction_scope_authority'],
+    requiredSteps: [],
+    allowedOverrides: ['force_complete'],
+    rolePermissions: ['principal', 'admin', 'attorney_admin', 'transaction_coordinator', 'arch9_admin'],
+  },
   transfer_ready: {
     gateKey: 'transfer_ready',
     label: 'Transfer Ready',
-    requiredEvidence: ['attorney_instructed', 'required_docs_satisfied', 'finance_ready'],
+    requiredEvidence: [
+      'attorney_instructed',
+      'required_docs_satisfied',
+      'finance_ready',
+      SUSPENSIVE_CONDITION_GATE_KEYS.resolutionsReady,
+      AUTHORITY_VALIDITY_GATE_KEYS.legalAuthorityValidityReady,
+    ],
     requiredSteps: ['all_required_matters_lodged'],
     allowedOverrides: ['force_complete'],
     rolePermissions: ['principal', 'admin', 'attorney_admin', 'transaction_coordinator', 'arch9_admin'],
@@ -42,7 +81,13 @@ export const TRANSACTION_GATE_DEFINITIONS = Object.freeze({
   registration_confirmed: {
     gateKey: 'registration_confirmed',
     label: 'Registration Confirmed',
-    requiredEvidence: ['registration_date', 'registration_confirmation', 'final_registration_event'],
+    requiredEvidence: [
+      'registration_date',
+      'registration_confirmation',
+      'final_registration_event',
+      SUSPENSIVE_CONDITION_GATE_KEYS.resolutionsReady,
+      AUTHORITY_VALIDITY_GATE_KEYS.legalAuthorityValidityReady,
+    ],
     requiredSteps: ['registration_confirmed'],
     allowedOverrides: ['force_complete'],
     rolePermissions: ['principal', 'admin', 'attorney_admin', 'transaction_coordinator', 'arch9_admin'],
@@ -76,10 +121,27 @@ export function isWorkflowGateSatisfied(gateKey = '', state = {}) {
       normalizeText(workflow?.workflowKey || workflow?.workflow_key).startsWith('finance_'),
     )
     const financeStatus = normalizeKey(financeWorkflow?.status)
-    return (
+    const financeReady = (
       ['TRANSFER', 'REGISTRATION', 'COMPLETE'].includes(parentStage) ||
       ['ready_for_handoff', 'complete', 'skipped'].includes(financeStatus)
     )
+    return financeReady && areSuspensiveConditionWorkflowGatesSatisfied(
+      state.transaction || {},
+      SUSPENSIVE_CONDITION_GATE_KEYS.deadlinesCurrent,
+      state,
+    )
+  }
+
+  if (key === SUSPENSIVE_CONDITION_GATE_KEYS.deadlinesCurrent) {
+    return areSuspensiveConditionWorkflowGatesSatisfied(state.transaction || {}, SUSPENSIVE_CONDITION_GATE_KEYS.deadlinesCurrent, state)
+  }
+
+  if (key === SUSPENSIVE_CONDITION_GATE_KEYS.resolutionsReady) {
+    return areSuspensiveConditionWorkflowGatesSatisfied(state.transaction || {}, SUSPENSIVE_CONDITION_GATE_KEYS.resolutionsReady, state)
+  }
+
+  if (key === AUTHORITY_VALIDITY_GATE_KEYS.legalAuthorityValidityReady) {
+    return areAuthorityValidityWorkflowGatesSatisfied(state.transaction || {}, AUTHORITY_VALIDITY_GATE_KEYS.legalAuthorityValidityReady, state)
   }
 
   if (key === 'otp_executed') {
@@ -101,11 +163,31 @@ export function isWorkflowGateSatisfied(gateKey = '', state = {}) {
   }
 
   if (key === 'transfer_ready') {
-    return ['REGISTRATION', 'COMPLETE'].includes(parentStage)
+    return ['REGISTRATION', 'COMPLETE'].includes(parentStage) &&
+      areSuspensiveConditionWorkflowGatesSatisfied(
+        state.transaction || {},
+        SUSPENSIVE_CONDITION_GATE_KEYS.resolutionsReady,
+        state,
+      ) &&
+      areAuthorityValidityWorkflowGatesSatisfied(
+        state.transaction || {},
+        AUTHORITY_VALIDITY_GATE_KEYS.legalAuthorityValidityReady,
+        state,
+      )
   }
 
   if (key === 'registration_confirmed') {
-    return parentStage === 'COMPLETE'
+    return parentStage === 'COMPLETE' &&
+      areSuspensiveConditionWorkflowGatesSatisfied(
+        state.transaction || {},
+        SUSPENSIVE_CONDITION_GATE_KEYS.resolutionsReady,
+        state,
+      ) &&
+      areAuthorityValidityWorkflowGatesSatisfied(
+        state.transaction || {},
+        AUTHORITY_VALIDITY_GATE_KEYS.legalAuthorityValidityReady,
+        state,
+      )
   }
 
   return false

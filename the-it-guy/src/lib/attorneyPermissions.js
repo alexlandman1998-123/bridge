@@ -208,12 +208,6 @@ export function normalizeAttorneyLaneRole(value, fallback = 'transfer') {
   return ATTORNEY_LANE_ROLES.includes(normalized) ? normalized : fallback
 }
 
-function isMissingColumnLikeError(error, columnName) {
-  if (!error) return false
-  const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
-  return error.code === 'PGRST204' || message.includes(String(columnName || '').toLowerCase())
-}
-
 function isAssignmentActive(assignment = {}) {
   return String(assignment.assignment_status || assignment.status || '').trim().toLowerCase() === 'active'
 }
@@ -457,29 +451,6 @@ async function getMembershipsByFirmForUser(client, userId, firmIds = []) {
   }, {})
 }
 
-async function getAttorneyFirmOverrideSetting(client, firmId) {
-  const resolvedFirmId = normalizeText(firmId)
-  if (!resolvedFirmId) return false
-
-  const result = await client
-    .from('attorney_firms')
-    .select('id, allow_management_lane_override')
-    .eq('id', resolvedFirmId)
-    .maybeSingle()
-
-  if (result.error) {
-    if (
-      isMissingTableError(result.error, 'attorney_firms') ||
-      isMissingColumnLikeError(result.error, 'allow_management_lane_override')
-    ) {
-      return false
-    }
-    throw result.error
-  }
-
-  return Boolean(result.data?.allow_management_lane_override)
-}
-
 export async function isAttorneyFirmAdmin(userId, firmId) {
   const membership = await getCurrentUserAttorneyMembership(firmId, userId)
   return Boolean(membership?.isActive && ATTORNEY_FIRM_ADMIN_ROLES.has(membership.role))
@@ -516,14 +487,17 @@ export async function getAttorneyLaneAccessContext({ userId = null, transactionI
   const activeLaneAssignment = findActiveLaneAssignment(assignments, laneRole)
   const scopedFirmIds = [...new Set(assignments.map((assignment) => assignment.attorney_firm_id || assignment.firm_id).filter(Boolean))]
   const membershipsByFirmId = await getMembershipsByFirmForUser(client, resolvedUserId, scopedFirmIds)
+  const laneFirmId = normalizeText(activeLaneAssignment?.attorney_firm_id || activeLaneAssignment?.firm_id || firmId)
+  const fallbackMembership = activeLaneAssignment
+    ? null
+    : ((firmId && membershipsByFirmId[normalizeText(firmId)]) || Object.values(membershipsByFirmId)[0] || null)
   const primaryMembership =
-    ((activeLaneAssignment?.attorney_firm_id || activeLaneAssignment?.firm_id) && membershipsByFirmId[activeLaneAssignment.attorney_firm_id || activeLaneAssignment.firm_id]) ||
-    (firmId && membershipsByFirmId[normalizeText(firmId)]) ||
-    Object.values(membershipsByFirmId)[0] ||
-    null
+    (laneFirmId && membershipsByFirmId[laneFirmId]) ||
+    fallbackMembership
   const activeMembership = primaryMembership?.isActive ? primaryMembership : null
   const permissions = activeMembership ? getAttorneyRolePermissions(activeMembership.role) : {}
-  const isManagementUser = Boolean(activeMembership && ATTORNEY_FIRM_MANAGER_ROLES.has(activeMembership.role))
+  const membershipFirmMatchesLane = Boolean(activeMembership?.firmId && (!laneFirmId || activeMembership.firmId === laneFirmId))
+  const isManagementUser = Boolean(membershipFirmMatchesLane && ATTORNEY_FIRM_MANAGER_ROLES.has(activeMembership.role))
   const isAssignedAttorney = Boolean(
     activeLaneAssignment &&
       isAssignmentActive(activeLaneAssignment) &&
@@ -534,8 +508,8 @@ export async function getAttorneyLaneAccessContext({ userId = null, transactionI
   const canAssignLane = Boolean(
     canManageMatter && (permissions.can_create_attorney_assignments || permissions.can_update_attorney_assignments),
   )
-  const overrideFirmId = activeLaneAssignment?.attorney_firm_id || activeLaneAssignment?.firm_id || activeMembership?.firmId || normalizeText(firmId)
-  const managementOverrideEnabled = isManagementUser ? await getAttorneyFirmOverrideSetting(client, overrideFirmId) : false
+  const overrideFirmId = laneFirmId || activeMembership?.firmId || normalizeText(firmId)
+  const managementOverrideEnabled = Boolean(isManagementUser && activeLaneAssignment && overrideFirmId)
   const canActAsAttorney = Boolean(
     (isAssignedAttorney && activeLaneAssignment?.can_update_workflow_lane !== false) ||
       (isManagementUser && managementOverrideEnabled && canViewMatter && overrideFirmId),

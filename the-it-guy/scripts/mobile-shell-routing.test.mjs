@@ -36,7 +36,10 @@ const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8
 const mobileLayoutSource = readFileSync(new URL('../src/components/mobile-shell/MobileLayout.jsx', import.meta.url), 'utf8')
 const mobileHeaderSource = readFileSync(new URL('../src/components/mobile-shell/MobileHeader.jsx', import.meta.url), 'utf8')
 const mobileBottomNavSource = readFileSync(new URL('../src/components/mobile-shell/MobileBottomNav.jsx', import.meta.url), 'utf8')
+const mobileCreateSheetSource = readFileSync(new URL('../src/components/mobile-shell/MobileCreateSheet.jsx', import.meta.url), 'utf8')
+const mobileModuleSource = readFileSync(new URL('../src/pages/mobile/MobileModulePage.jsx', import.meta.url), 'utf8')
 const mobileHomeSource = readFileSync(new URL('../src/pages/mobile/MobileHome.jsx', import.meta.url), 'utf8')
+const indexSource = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
 
 global.window = {
   localStorage: createLocalStorageMock(),
@@ -96,7 +99,17 @@ assert.match(mobileLayoutSource, /overflow-y-auto/, 'mobile content should scrol
 assert.match(mobileLayoutSource, /overscroll-contain/, 'mobile content should contain overscroll on iOS Safari')
 assert.match(mobileLayoutSource, /scrollRootRef\.current\?\.scrollTo/, 'mobile route changes should reset the shell scroll root')
 assert.match(mobileHeaderSource, /data-mobile-header/, 'mobile header should expose a stable marker')
+assert.match(mobileHeaderSource, /shrink-0/, 'mobile header should stay in the shell flow instead of sticking to the viewport')
+assert.doesNotMatch(mobileHeaderSource, /sticky\s+top-0/, 'mobile header should not use sticky viewport positioning')
 assert.match(mobileBottomNavSource, /data-mobile-bottom-nav/, 'mobile bottom nav should expose a stable marker')
+assert.match(mobileBottomNavSource, /shrink-0/, 'mobile bottom nav should stay in the shell flow instead of overlaying content')
+assert.doesNotMatch(mobileBottomNavSource, /fixed\s+inset-x-0\s+bottom-0/, 'mobile bottom nav should not use fixed viewport positioning')
+assert.match(mobileBottomNavSource, /!createSheetOpen/, 'mobile bottom nav should be suppressed while a create sheet is open')
+assert.match(mobileCreateSheetSource, /visualViewport/, 'mobile create sheets should track the visual viewport on mobile browsers')
+assert.match(mobileCreateSheetSource, /--mobile-sheet-vvh/, 'mobile create sheets should use visual viewport height for safe sizing')
+assert.match(mobileCreateSheetSource, /data-mobile-create-sheet/, 'mobile create sheets should expose a stable marker')
+assert.match(mobileModuleSource, /max-w-\[44vw\]/, 'mobile module action buttons should stay within narrow viewport headers')
 assert.match(mobileHomeSource, /data-mobile-home/, 'mobile home should expose a stable marker')
+assert.match(indexSource, /viewport-fit=cover/, 'viewport metadata should expose iOS safe-area insets to the mobile shell')
 
 console.log('mobile shell routing regression tests passed')
