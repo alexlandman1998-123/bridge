@@ -35,8 +35,9 @@ function visibleKeys(items = []) {
 
 try {
   const { getRoleNavItems } = await server.ssrLoadModule('/src/lib/roles.js')
-  const { PERMISSIONS, navPermissionByKey } = await server.ssrLoadModule('/src/auth/permissions/permissionRegistry.js')
-  const { can, evaluateAccessRequirement, filterNavigationItems, getRouteAccessRequirement } = await server.ssrLoadModule('/src/auth/permissions/permissionResolver.js')
+  const { PERMISSIONS } = await server.ssrLoadModule('/src/auth/permissions/permissionRegistry.js')
+  const { navPermissionByKey, filterNavigationItems } = await server.ssrLoadModule('/src/auth/permissions/navigationPermissions.js')
+  const { can, evaluateAccessRequirement, getRouteAccessRequirement } = await server.ssrLoadModule('/src/auth/permissions/permissionResolver.js')
   const { isCommercialProfessionalMember } = await server.ssrLoadModule('/src/modules/commercial/utils/resolveCommercialRole.js')
 
   assert.equal(navPermissionByKey.agency_pipeline, PERMISSIONS.viewLeads)
@@ -45,8 +46,11 @@ try {
   assert.equal(navPermissionByKey.developer_snags, PERMISSIONS.viewDevelopments)
 
   const agencyContext = context({ appRole: 'agent', workspaceType: 'agency', workspaceRole: 'principal' })
-  const agencyKeys = visibleKeys(filterNavigationItems(getRoleNavItems('agent'), agencyContext))
+  const agencyItems = filterNavigationItems(getRoleNavItems('agent'), agencyContext)
+  const agencyKeys = visibleKeys(agencyItems)
+  const agencyPipelineChildren = agencyItems.find((item) => item.key === 'agency_pipeline')?.children || []
   assert.equal(agencyKeys.includes('agency_pipeline'), true)
+  assert.deepEqual(agencyPipelineChildren.map((item) => item.label), ['Leads', 'Canvassing', 'Calendar'])
   assert.equal(agencyKeys.includes('developer_pipeline'), false)
   assert.equal(can(PERMISSIONS.viewLeads, agencyContext), true)
   assert.equal(can(PERMISSIONS.viewSalesPipeline, agencyContext), false)

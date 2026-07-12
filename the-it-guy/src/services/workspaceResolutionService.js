@@ -4,9 +4,10 @@ import { ONBOARDING_REQUIRED_REASONS } from '../constants/onboardingStatuses'
 import { getDefaultBranchScope, normalizeBranchScope } from '../constants/workspaceUnits'
 import { WORKSPACE_TYPES, inferWorkspaceTypeFromAppRole, normalizeWorkspaceType } from '../constants/workspaceTypes'
 import { permissionsByWorkspaceRole } from '../auth/permissions/permissionRegistry'
-import { getOrCreateUserProfile } from '../lib/api'
+import { getOrCreateUserProfile } from '../lib/profileApi'
 import { getUnsafeFallbackEnvironmentDiagnostics } from '../lib/envValidation'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { isCommercialBrokerMember } from '../lib/commercialAccess'
 import { resolveSystemRole, resolveWorkspaceRole } from './roleResolutionService'
 
 export const WORKSPACE_RESOLUTION_STATUSES = Object.freeze({
@@ -44,28 +45,12 @@ const INVALID_SERVICE_WORKSPACE_IDS = new Set([
   'local',
   'local-workspace',
 ])
-const COMMERCIAL_MODULE_MARKERS = new Set(['commercial', 'commercial_brokerage', 'commercial_agency'])
-
 function normalizeText(value) {
   return String(value || '').trim()
 }
 
 function normalizeEmail(value) {
   return normalizeText(value).toLowerCase()
-}
-
-function parseObject(value) {
-  if (!value) return {}
-  if (typeof value === 'object' && !Array.isArray(value)) return value
-  if (typeof value === 'string') {
-    try {
-      const parsed = JSON.parse(value)
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
-    } catch {
-      return {}
-    }
-  }
-  return {}
 }
 
 function isMissingTableError(error, tableName = '') {
@@ -246,28 +231,6 @@ function membershipMatchesWorkspaceId(membership = null, workspaceId = '') {
   return Boolean(requestedWorkspaceId && (resolvedWorkspaceId === requestedWorkspaceId || membership?.id === requestedWorkspaceId))
 }
 
-function isCommercialBrokerMembership(membership = {}) {
-  const safeMembership = membership && typeof membership === 'object' ? membership : {}
-  const metadata = parseObject(safeMembership.moduleMetadata || safeMembership.module_metadata || safeMembership.raw?.module_metadata || safeMembership.raw?.metadata)
-  const moduleContext = normalizeText(
-    safeMembership.moduleContext ||
-      safeMembership.module_context ||
-      safeMembership.raw?.module_context ||
-      metadata.module_context ||
-      metadata.module,
-  ).toLowerCase()
-  const commercialRole = normalizeText(
-    metadata.commercial_role ||
-      metadata.commercialRole ||
-      metadata.broker_role ||
-      metadata.brokerRole,
-  ).toLowerCase()
-  if (commercialRole === 'broker' || commercialRole === 'commercial broker' || commercialRole === 'commercial_broker') return true
-  if (!COMMERCIAL_MODULE_MARKERS.has(moduleContext)) return false
-  const role = normalizeText(safeMembership.role || safeMembership.workspaceRole || safeMembership.rawRole || safeMembership.raw?.workspace_role || safeMembership.raw?.role).toLowerCase()
-  return role === 'agent' || role === 'broker' || role === 'commercial_broker' || role.includes('broker')
-}
-
 function getWorkspacePreferenceReason({
   requestedWorkspaceId = '',
   storedWorkspaceId = '',
@@ -300,7 +263,7 @@ function selectMembership(activeMemberships = [], { requestedWorkspaceId = '', s
     if (selected) return selected
   }
 
-  const commercialBrokerMembership = activeMemberships.find((membership) => membership.workspace && isCommercialBrokerMembership(membership))
+  const commercialBrokerMembership = activeMemberships.find((membership) => membership.workspace && isCommercialBrokerMember(membership))
   if (commercialBrokerMembership) return commercialBrokerMembership
 
   return [...activeMemberships].sort(sortMemberships)[0] || null

@@ -1,7 +1,7 @@
 import { BriefcaseBusiness, Check, ChevronDown, Home } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { hasCommercialAccessMarker } from '../modules/commercial/utils/resolveCommercialRole'
+import { hasCommercialAccessMarker } from '../lib/commercialAccess'
 
 const WORKSPACE_STORAGE_KEY = 'bridge:active-workspace'
 const RESIDENTIAL_ROUTE_STORAGE_KEY = 'bridge:last-residential-route'

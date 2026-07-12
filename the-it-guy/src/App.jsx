@@ -9,7 +9,7 @@ import { AuthSessionProvider, useAuthSession } from './context/AuthSessionContex
 import { OrganisationProvider, useOrganisation } from './context/OrganisationContext'
 import { WorkspaceProvider } from './context/WorkspaceContext'
 import { useWorkspace } from './context/WorkspaceContext'
-import { APP_ROLE_LABELS } from './lib/roles'
+import { APP_ROLE_LABELS } from './lib/appRoleMetadata'
 import { FEATURE_FLAGS, SHOW_INTELLIGENCE_BETA } from './lib/featureFlags'
 import {
   isSupabaseConfigured,
@@ -27,7 +27,11 @@ import { PERMISSIONS } from './auth/permissions/permissionRegistry'
 import { createRoutePerformanceMarker } from './services/observability/performanceMetrics'
 import { reportError } from './services/observability/errorTracking'
 import { trackPermissionMetric } from './services/observability/monitoring'
-import { isCommercialProfessionalMember } from './modules/commercial/utils/resolveCommercialRole'
+import {
+  hasCommercialAccessMarker,
+  isCommercialBrokerMember,
+  isCommercialProfessionalMember,
+} from './lib/commercialAccess'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 
 const INACTIVITY_TIMEOUT_MINUTES = 15
@@ -39,7 +43,6 @@ const ACTIVITY_TIMER_RESET_THROTTLE_MS = 1000
 
 const lazyNamed = (loader, exportName) => lazy(() => loader().then((module) => ({ default: module[exportName] })))
 
-const COMMERCIAL_MODULE_MARKERS = new Set(['commercial', 'commercial_brokerage', 'commercial_agency'])
 const WORKSPACE_SWITCHER_STORAGE_KEY = 'bridge:active-workspace'
 const PUBLIC_WEBSITE_HOSTS = new Set(['arch9.co.za', 'www.arch9.co.za'])
 
@@ -65,98 +68,6 @@ function getPreferredWorkspaceMode() {
   } catch {
     return ''
   }
-}
-
-function hasCommercialMembershipMarker(membership = {}) {
-  const safeMembership = membership && typeof membership === 'object' ? membership : {}
-  const raw = safeMembership.raw && typeof safeMembership.raw === 'object' ? safeMembership.raw : {}
-  const metadata =
-    (raw.module_metadata && typeof raw.module_metadata === 'object' ? raw.module_metadata : null) ||
-    (raw.moduleMetadata && typeof raw.moduleMetadata === 'object' ? raw.moduleMetadata : null) ||
-    (raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : null) ||
-    (safeMembership.module_metadata && typeof safeMembership.module_metadata === 'object' ? safeMembership.module_metadata : null) ||
-    (safeMembership.moduleMetadata && typeof safeMembership.moduleMetadata === 'object' ? safeMembership.moduleMetadata : null) ||
-    (safeMembership.metadata && typeof safeMembership.metadata === 'object' ? safeMembership.metadata : {}) ||
-    {}
-  const moduleValue = normalizeRouteText(
-    raw.module_context ||
-      raw.moduleContext ||
-      raw.module ||
-      raw.module_type ||
-      safeMembership.module_context ||
-      safeMembership.moduleContext ||
-      safeMembership.module ||
-      safeMembership.module_type ||
-      metadata.module_context ||
-      metadata.moduleContext ||
-      metadata.module ||
-      metadata.module_type,
-  )
-  if (COMMERCIAL_MODULE_MARKERS.has(moduleValue)) return true
-
-  const commercialRole = normalizeRouteText(
-    metadata.commercial_role ||
-      metadata.commercialRole ||
-      metadata.broker_role ||
-      metadata.brokerRole,
-  )
-  if (commercialRole === 'broker' || commercialRole.startsWith('commercial_')) return true
-
-  const workspaceType = normalizeRouteText(
-    safeMembership.workspaceType ||
-      safeMembership.workspace_type ||
-      raw.workspace_type ||
-      raw.workspaceType ||
-      safeMembership.workspace?.type ||
-      raw.workspace?.type,
-  )
-  if (COMMERCIAL_MODULE_MARKERS.has(workspaceType)) return true
-
-  const role = normalizeRouteText(
-    safeMembership.role ||
-      safeMembership.workspaceRole ||
-      safeMembership.workspace_role ||
-      safeMembership.organisationRole ||
-      safeMembership.organisation_role ||
-      raw.workspace_role ||
-      raw.organisation_role ||
-      raw.role ||
-      metadata.role,
-  )
-  return role.startsWith('commercial_') || role.includes('commercial_broker')
-}
-
-function isCommercialBrokerMembership(membership = {}) {
-  const safeMembership = membership && typeof membership === 'object' ? membership : {}
-  const raw = safeMembership.raw && typeof safeMembership.raw === 'object' ? safeMembership.raw : {}
-  const metadata =
-    (raw.module_metadata && typeof raw.module_metadata === 'object' ? raw.module_metadata : null) ||
-    (raw.moduleMetadata && typeof raw.moduleMetadata === 'object' ? raw.moduleMetadata : null) ||
-    (raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : null) ||
-    (safeMembership.module_metadata && typeof safeMembership.module_metadata === 'object' ? safeMembership.module_metadata : null) ||
-    (safeMembership.moduleMetadata && typeof safeMembership.moduleMetadata === 'object' ? safeMembership.moduleMetadata : null) ||
-    (safeMembership.metadata && typeof safeMembership.metadata === 'object' ? safeMembership.metadata : {}) ||
-    {}
-  const commercialRole = normalizeRouteText(
-    metadata.commercial_role ||
-      metadata.commercialRole ||
-      metadata.broker_role ||
-      metadata.brokerRole,
-  )
-  if (commercialRole === 'broker' || commercialRole === 'commercial broker' || commercialRole === 'commercial_broker') return true
-  if (!hasCommercialMembershipMarker(membership)) return false
-  const role = normalizeRouteText(
-    safeMembership.role ||
-      safeMembership.workspaceRole ||
-      safeMembership.workspace_role ||
-      safeMembership.organisationRole ||
-      safeMembership.organisation_role ||
-      raw.workspace_role ||
-      raw.organisation_role ||
-      raw.role ||
-      metadata.role,
-  )
-  return role === 'agent' || role === 'broker' || role === 'commercial_broker' || role.includes('broker')
 }
 
 const AddDevelopmentModal = lazy(() => import('./components/AddDevelopmentModal'))
@@ -459,7 +370,7 @@ function AppLayout({ onLogout, session = null, user }) {
   const mainScrollRef = useRef(null)
   const inactivityTimerRef = useRef(null)
   const warningTimerRef = useRef(null)
-  const lastActivityAtRef = useRef(Date.now())
+  const lastActivityAtRef = useRef(0)
   const lastTimerResetAtRef = useRef(0)
   const resetInactivityTimerRef = useRef(null)
   const securityLogoutInProgressRef = useRef(false)
@@ -921,8 +832,8 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
 
   const reason = authState.onboardingRequiredReason
   const hasCommercialAccess =
-    hasCommercialMembershipMarker(authState.currentMembership) ||
-    (authState.activeMemberships || []).some((membership) => hasCommercialMembershipMarker(membership))
+    hasCommercialAccessMarker(authState.currentMembership) ||
+    (authState.activeMemberships || []).some((membership) => hasCommercialAccessMarker(membership))
   const commercialRecoveryCanContinue =
     hasCommercialAccess &&
     (
@@ -1261,6 +1172,20 @@ function ProtectedLayout({ onLogout, session }) {
   return <AppLayout onLogout={onLogout} session={session} user={session?.user || null} />
 }
 
+function SetupProtectedLayout({ session }) {
+  if (isSupabaseConfigured && !session) {
+    return <Navigate to="/auth" replace />
+  }
+
+  return (
+    <div className="setup-module-shell">
+      <Suspense fallback={<PageSkeleton label="Preparing setup" />}>
+        <Outlet />
+      </Suspense>
+    </div>
+  )
+}
+
 function MobileProtectedLayout({ onLogout, session }) {
   if (isSupabaseConfigured && !session) {
     return <Navigate to="/auth" replace />
@@ -1490,6 +1415,11 @@ function AppRoutes() {
                 </Route>
               </Route>
 
+              <Route element={<OrganisationGate><SetupProtectedLayout session={session} /></OrganisationGate>}>
+                <Route path="/setup" element={<PostDashboardSetup />} />
+                <Route path="/setup/recovery" element={<PostDashboardSetup />} />
+              </Route>
+
               <Route element={<OrganisationGate><ProtectedLayout onLogout={logout} session={session} /></OrganisationGate>}>
               <Route path="/dashboard" element={<AppErrorBoundary scope="dashboard-shell" title="Dashboard failed to render"><ClientAwareDashboard /></AppErrorBoundary>} />
               <Route path="/command-center" element={<HQRoute><AppErrorBoundary scope="command-center" title="Mission Control failed to render"><CommandCenterPage /></AppErrorBoundary></HQRoute>} />
@@ -1586,8 +1516,6 @@ function AppRoutes() {
                 />
                 <Route path="*" element={<Navigate to="/commercial" replace />} />
               </Route>
-              <Route path="/setup" element={<PostDashboardSetup />} />
-              <Route path="/setup/recovery" element={<PostDashboardSetup />} />
               <Route
                 path="/platform/diagnostics"
                 element={
@@ -2995,12 +2923,12 @@ function ClientAwareDashboard() {
     return <Navigate to="/attorney/dashboard" replace />
   }
   const hasCommercialAccess =
-    hasCommercialMembershipMarker(currentMembership) ||
-    activeMemberships.some((membership) => hasCommercialMembershipMarker(membership))
+    hasCommercialAccessMarker(currentMembership) ||
+    activeMemberships.some((membership) => hasCommercialAccessMarker(membership))
   const hasCommercialBrokerAccess =
-    isCommercialBrokerMembership(currentMembership) ||
+    isCommercialBrokerMember(currentMembership) ||
     isCommercialProfessionalMember(currentMembership) ||
-    activeMemberships.some((membership) => isCommercialBrokerMembership(membership) || isCommercialProfessionalMember(membership))
+    activeMemberships.some((membership) => isCommercialBrokerMember(membership) || isCommercialProfessionalMember(membership))
   if (
     (preferredWorkspaceMode === 'commercial' || (!preferredWorkspaceMode && hasCommercialBrokerAccess)) &&
     hasCommercialAccess &&

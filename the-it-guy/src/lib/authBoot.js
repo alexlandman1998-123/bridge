@@ -1,4 +1,4 @@
-import { getOrCreateUserProfile } from './api'
+import { getOrCreateUserProfile } from './profileApi'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 import { normalizeCanonicalAppRole, isCanonicalAppRole } from '../constants/appRoles'
 import { ONBOARDING_REQUIRED_REASONS, ONBOARDING_STATUSES } from '../constants/onboardingStatuses'

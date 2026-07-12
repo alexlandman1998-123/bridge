@@ -11,6 +11,7 @@ function assertIncludes(source, needle, message) {
 
 const packageJson = JSON.parse(await read('../package.json'))
 const app = await read('../src/App.jsx')
+const listingPage = await read('../src/pages/AgentListings.jsx')
 const listingDetail = await read('../src/pages/AgentListingDetail.jsx')
 const workspacePage = await read('../src/pages/LegalDocumentWorkspacePage.jsx')
 const rolloutDoc = await read('../docs/audits/document-start-phase-4.md')
@@ -26,6 +27,20 @@ for (const reference of [
   '<LegalDocumentWorkspacePage />',
 ]) {
   assertIncludes(app, reference, `App should keep listing legal workspace route ${reference}.`)
+}
+
+for (const reference of [
+  "DOCUMENT_START_ENTRY_POINTS",
+  "DOCUMENT_START_SOURCE_MODES",
+  "function buildListingMandateWorkspacePath",
+  "params.set('mode', 'generate')",
+  "params.set('sourceMode', DOCUMENT_START_SOURCE_MODES.saved)",
+  "params.set('documentStart', DOCUMENT_START_ENTRY_POINTS.listingMandate)",
+  "params.set('listingId', listingId)",
+  "Generate Mandate",
+  "openListingMandateWorkspace(card, event)",
+]) {
+  assertIncludes(listingPage, reference, `AgentListings should keep listing-page mandate entry point ${reference}.`)
 }
 
 for (const reference of [

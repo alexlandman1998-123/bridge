@@ -137,7 +137,23 @@ const DEFAULT_ALLOWED_PACKET_TYPES = ['otp', 'mandate']
 const SUPPORTED_PACKET_TYPE_KEYS = new Set(SUPPORTED_PACKET_TYPES.map((item) => item.key))
 const BLANK_CANVAS_TEMPLATE_STARTER = 'blank_canvas'
 const CUSTOM_TEMPLATE_FAMILY = 'custom_template'
+const STANDARD_LEGAL_TEMPLATE_FAMILY = 'standard_legal_template'
+const ARCH9_DEFAULT_TEMPLATE_STARTER = 'arch9_standard_default'
+const LEGAL_DEFAULT_TEMPLATE_SOURCE = 'arch9_agency_default'
+const VIRTUAL_DEFAULT_TEMPLATE_ID_PREFIX = '__arch9_default_legal_template__'
 const BLANK_TEMPLATE_DOCUMENT_KIND_KEYS = ['custom', 'addendum', 'amendment', 'annexure', 'standard']
+const LEGAL_DEFAULT_TEMPLATE_DEFINITIONS = {
+  otp: {
+    templateKey: 'otp_default_v1',
+    templateLabel: 'Offer to Purchase (OTP) · Default',
+    description: 'Default editable OTP template for agency transactions.',
+  },
+  mandate: {
+    templateKey: 'mandate_default_v1',
+    templateLabel: 'Mandate Agreement · Default',
+    description: 'Default editable seller mandate template for agency workflows.',
+  },
+}
 const LEGAL_TEMPLATE_TABLE_SNIPPET = [
   '| Detail | Value |',
   '| --- | --- |',
@@ -2554,6 +2570,124 @@ function createStarterSections(packetType = 'otp') {
   ]
 }
 
+function isDefaultLegalTemplatePacketType(packetType = '') {
+  return Boolean(LEGAL_DEFAULT_TEMPLATE_DEFINITIONS[normalizeText(packetType).toLowerCase()])
+}
+
+function getDefaultLegalTemplateDefinition(packetType = 'otp') {
+  const normalized = normalizeText(packetType).toLowerCase()
+  return LEGAL_DEFAULT_TEMPLATE_DEFINITIONS[normalized] || LEGAL_DEFAULT_TEMPLATE_DEFINITIONS.otp
+}
+
+function createVirtualDefaultTemplateId(packetType = 'otp') {
+  const normalized = isDefaultLegalTemplatePacketType(packetType)
+    ? normalizeText(packetType).toLowerCase()
+    : 'otp'
+  return `${VIRTUAL_DEFAULT_TEMPLATE_ID_PREFIX}:${normalized}`
+}
+
+function isVirtualDefaultTemplateId(templateId = '') {
+  return normalizeText(templateId).startsWith(`${VIRTUAL_DEFAULT_TEMPLATE_ID_PREFIX}:`)
+}
+
+function getPacketTypeFromVirtualDefaultTemplateId(templateId = '') {
+  const [, packetType = ''] = normalizeText(templateId).split(':')
+  return isDefaultLegalTemplatePacketType(packetType) ? packetType : ''
+}
+
+function createDefaultLegalTemplateRecord(packetType = 'otp', {
+  moduleType = 'agency',
+  virtual = false,
+  updatedAt = '',
+} = {}) {
+  const normalizedPacketType = isDefaultLegalTemplatePacketType(packetType)
+    ? normalizeText(packetType).toLowerCase()
+    : 'otp'
+  const definition = getDefaultLegalTemplateDefinition(normalizedPacketType)
+  const renderMode = getDefaultRenderMode(normalizedPacketType)
+  const timestamp = normalizeText(updatedAt) || '2026-05-11T00:00:00.000Z'
+  const starterSections = createStarterSections(normalizedPacketType)
+  const validationMetadata = {
+    renderable: true,
+    isRenderable: true,
+    blockingIssues: [],
+    warnings: [],
+    sectionCount: starterSections.length,
+    tokenCount: starterSections.reduce((count, section) => {
+      const tokens = new Set([
+        ...String(section.placeholderKeysText || '')
+          .split(',')
+          .map((item) => normalizeTemplateTokenKey(item))
+          .filter(Boolean),
+        ...detectTemplateTokenIssues(section.legalText).tokens.map((item) => normalizeTemplateTokenKey(item)).filter(Boolean),
+      ])
+      return count + tokens.size
+    }, 0),
+    validatedAt: timestamp,
+  }
+
+  return {
+    id: virtual ? createVirtualDefaultTemplateId(normalizedPacketType) : '',
+    organisation_id: null,
+    module_type: normalizeText(moduleType || 'agency').toLowerCase() || 'agency',
+    packet_type: normalizedPacketType,
+    template_key: definition.templateKey,
+    template_label: definition.templateLabel,
+    template_format: getTemplateFormatForMode(renderMode),
+    template_storage_bucket: null,
+    template_storage_path: null,
+    template_file_name: null,
+    version_tag: 'v1',
+    description: definition.description,
+    status: 'published',
+    is_default: true,
+    is_active: true,
+    metadata_json: {
+      template_scope: virtual ? 'runtime_default' : 'global_default',
+      document_family: normalizedPacketType,
+      preview_layout: 'three_panel_packet',
+      render_mode: renderMode,
+      native_renderer_version: renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? NATIVE_RENDERER_VERSION : null,
+      starter_template: ARCH9_DEFAULT_TEMPLATE_STARTER,
+      template_family: STANDARD_LEGAL_TEMPLATE_FAMILY,
+      default_template_source: LEGAL_DEFAULT_TEMPLATE_SOURCE,
+      editable_copy_mode: 'auto_agency_version',
+      lifecycle_status: 'published',
+      document_kind: 'standard',
+      documentKind: 'standard',
+      preferred_document_kind: 'standard',
+      document_kind_label: 'Standard document',
+      last_render_validation: validationMetadata,
+    },
+    created_at: timestamp,
+    updated_at: timestamp,
+    published_at: timestamp,
+    sections: starterSections,
+  }
+}
+
+function hasNormalLegalTemplate(rows = []) {
+  return (Array.isArray(rows) ? rows : []).some((template) => !isTemplatePickerCustomTemplate(template))
+}
+
+function withDefaultLegalTemplateStarter(rows = [], packetType = 'otp', moduleType = 'agency') {
+  const list = Array.isArray(rows) ? rows : []
+  if (
+    normalizeText(moduleType).toLowerCase() !== 'agency' ||
+    !isDefaultLegalTemplatePacketType(packetType) ||
+    hasNormalLegalTemplate(list)
+  ) {
+    return list
+  }
+  return [
+    ...list,
+    createDefaultLegalTemplateRecord(packetType, {
+      moduleType,
+      virtual: true,
+    }),
+  ]
+}
+
 function createGeneralAddendumStarterSections(packetType = 'otp', starterKind = GENERAL_ADDENDUM_TEMPLATE_FAMILY) {
   const normalized = normalizeText(packetType).toLowerCase()
   const isMandate = normalized === 'mandate'
@@ -2707,6 +2841,17 @@ function isTemplatePickerCustomTemplate(template = null) {
     family === CUSTOM_TEMPLATE_FAMILY ||
     family === GENERAL_ADDENDUM_TEMPLATE_FAMILY ||
     ['addendum', 'amendment', 'annexure', 'custom'].includes(documentKind)
+}
+
+function getPrimaryTemplateForPicker(templates = []) {
+  const list = Array.isArray(templates) ? templates : []
+  const primaryTemplates = list.filter((template) => !isTemplatePickerCustomTemplate(template))
+  return primaryTemplates.find((template) => Boolean(template?.organisation_id) && Boolean(template?.is_default))
+    || primaryTemplates.find((template) => Boolean(template?.organisation_id))
+    || primaryTemplates.find((template) => Boolean(template?.is_default))
+    || primaryTemplates[0]
+    || list[0]
+    || null
 }
 
 function createBlankTemplateForm(packetType = 'otp') {
@@ -5310,7 +5455,7 @@ export default function SettingsSigningTemplatesPage({
     ])))
 
     const nextByType = templateRows.reduce((accumulator, [type, rows]) => {
-      accumulator[type] = [...(rows || [])].sort(templateSort)
+      accumulator[type] = withDefaultLegalTemplateStarter(rows || [], type, normalizedModuleType).sort(templateSort)
       return accumulator
     }, {})
 
@@ -5497,6 +5642,19 @@ export default function SettingsSigningTemplatesPage({
 
       try {
         setError('')
+        if (isVirtualDefaultTemplateId(selectedTemplateId)) {
+          const virtualPacketType = getPacketTypeFromVirtualDefaultTemplateId(selectedTemplateId) || packetType
+          const detail = createDefaultLegalTemplateRecord(virtualPacketType, {
+            moduleType: normalizedModuleType,
+            virtual: true,
+          })
+          if (!active) return
+          setTemplateDetail(detail)
+          setForm(toTemplateForm(detail))
+          setHasUnsavedChanges(false)
+          setPreviewState({ loading: false, html: '', warnings: [], critical: [], dataRequirements: [], error: '' })
+          return
+        }
         const detail = await fetchDocumentPacketTemplate(selectedTemplateId, { includeSections: true })
         if (!active) return
         setTemplateDetail(detail)
@@ -5515,7 +5673,7 @@ export default function SettingsSigningTemplatesPage({
     return () => {
       active = false
     }
-  }, [selectedTemplateId])
+  }, [normalizedModuleType, packetType, selectedTemplateId])
 
   useEffect(() => {
     setSelectedSectionIndex(0)
@@ -5677,6 +5835,17 @@ export default function SettingsSigningTemplatesPage({
     () => getSimpleDocumentTabs({ normalizedModuleType, visiblePacketTypes, activeDocumentTypeKey }),
     [activeDocumentTypeKey, normalizedModuleType, visiblePacketTypes],
   )
+  const handleSelectPrimaryTemplateTab = useCallback((item) => {
+    const primaryTemplate = getPrimaryTemplateForPicker(templatesByType[item.packetType] || [])
+    setActiveStudioArea('templates')
+    setActiveDocumentTypeKey(item.key)
+    setPacketType(item.packetType)
+    if (primaryTemplate?.id) {
+      setSelectedTemplateId(primaryTemplate.id)
+    }
+    setActiveTab('template')
+    setTemplateStarterMenuOpen(false)
+  }, [templatesByType])
   const selectedSection = useMemo(
     () => (Array.isArray(form.sections) ? form.sections[selectedSectionIndex] || null : null),
     [form.sections, selectedSectionIndex],
@@ -7627,20 +7796,15 @@ export default function SettingsSigningTemplatesPage({
             <div className="flex min-w-max gap-1">
               {simpleDocumentTabs.map((item) => {
                 const Icon = item.icon
-                const active = activeStudioArea === 'templates' && !selectedIsPickerCustomTemplate && activeDocumentTypeKey === item.key
+                const active = activeStudioArea === 'templates' && packetType === item.packetType && !selectedIsPickerCustomTemplate
                 return (
                   <button
                     key={item.key}
                     type="button"
-                    onClick={() => {
-                      setActiveStudioArea('templates')
-                      setActiveDocumentTypeKey(item.key)
-                      setPacketType(item.packetType)
-                      setActiveTab('template')
-                      setTemplateStarterMenuOpen(false)
-                    }}
+                    aria-pressed={active}
+                    onClick={() => handleSelectPrimaryTemplateTab(item)}
                     className={[
-                      'inline-flex min-h-11 items-center gap-2 rounded-[12px] border px-4 py-2.5 text-sm font-semibold transition',
+                      'inline-flex min-h-11 items-center gap-2 rounded-[12px] border px-4 py-2.5 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#bdeccf]',
                       active
                         ? 'border-[#96d7ad] bg-white text-[#128642] shadow-[inset_0_-2px_0_#128642]'
                         : 'border-transparent bg-transparent text-[#52667d] hover:border-[#dbe7f3] hover:bg-white hover:text-[#102033]',
@@ -7655,6 +7819,7 @@ export default function SettingsSigningTemplatesPage({
                 <button
                   key={item.key}
                   type="button"
+                  aria-pressed={selectedTemplateId === item.template.id}
                   onClick={() => {
                     setActiveStudioArea('templates')
                     setPacketType(item.packetType)
@@ -7664,7 +7829,7 @@ export default function SettingsSigningTemplatesPage({
                     setTemplateStarterMenuOpen(false)
                   }}
                   className={[
-                    'inline-flex min-h-11 items-center gap-2 rounded-[12px] border px-4 py-2.5 text-sm font-semibold transition',
+                    'inline-flex min-h-11 items-center gap-2 rounded-[12px] border px-4 py-2.5 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#bdeccf]',
                     selectedTemplateId === item.template.id
                       ? 'border-[#96d7ad] bg-white text-[#128642] shadow-[inset_0_-2px_0_#128642]'
                       : 'border-transparent bg-transparent text-[#52667d] hover:border-[#dbe7f3] hover:bg-white hover:text-[#102033]',
@@ -7689,7 +7854,7 @@ export default function SettingsSigningTemplatesPage({
                 aria-expanded={templateStarterMenuOpen}
                 disabled={!canEdit || saving || cloning || creatingTemplate}
                 className={[
-                  'inline-flex min-h-11 items-center gap-2 rounded-[12px] border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60',
+                  'inline-flex min-h-11 items-center gap-2 rounded-[12px] border px-4 py-2.5 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#bdeccf] disabled:cursor-not-allowed disabled:opacity-60',
                   templateStarterMenuOpen
                     ? 'border-[#96d7ad] bg-white text-[#128642] shadow-[inset_0_-2px_0_#128642]'
                     : 'border-transparent bg-transparent text-[#52667d] hover:border-[#dbe7f3] hover:bg-white hover:text-[#102033]',

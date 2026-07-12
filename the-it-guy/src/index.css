@@ -7181,6 +7181,37 @@ button.agency-setup-row-card:hover {
   padding-top: clamp(0.72rem, 1vw, 0.9rem);
 }
 
+.setup-module-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: auto;
+  color: #102033;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(244, 248, 252, 0.96)),
+    radial-gradient(circle at 8% 10%, rgba(47, 111, 159, 0.14), transparent 32%),
+    radial-gradient(circle at 92% 2%, rgba(44, 124, 101, 0.1), transparent 28%),
+    #eef4f8;
+}
+
+.setup-module-shell .onboarding-progress-page {
+  align-content: center;
+  width: 100%;
+  min-height: 100dvh;
+  padding: clamp(1rem, 2.4vw, 2rem);
+}
+
+.setup-module-shell .onboarding-progress-panel {
+  width: min(1540px, 100%);
+  margin: 0 auto;
+  border-color: rgba(191, 206, 220, 0.82);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 26px 70px rgba(15, 35, 57, 0.13);
+}
+
+.setup-module-shell .onboarding-progress-heading {
+  max-width: 76rem;
+}
+
 .onboarding-progress-page {
   gap: clamp(0.72rem, 1vw, 1.15rem);
 }

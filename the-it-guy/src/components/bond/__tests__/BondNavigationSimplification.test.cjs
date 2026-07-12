@@ -17,14 +17,14 @@ async function main() {
 
   try {
     const rolesModule = await server.ssrLoadModule('/src/lib/roles.js')
-    const permissionResolver = await server.ssrLoadModule('/src/auth/permissions/permissionResolver.js')
+    const navigationPermissions = await server.ssrLoadModule('/src/auth/permissions/navigationPermissions.js')
     const viewsModule = await server.ssrLoadModule('/src/config/bondViews.js')
     const tabsModule = await server.ssrLoadModule('/src/components/bond/BondViewTabs.jsx')
     const serviceModule = await server.ssrLoadModule('/src/services/bondCommandCenterService.js')
 
     const defaultBondNav = rolesModule.getRoleNavItems('bond_originator')
     const hqBondNav = rolesModule.getRoleNavItems('bond_originator', { membershipRole: 'bond_hq_manager' })
-    const consultantNav = permissionResolver.filterNavigationItems(defaultBondNav, {
+    const consultantNav = navigationPermissions.filterNavigationItems(defaultBondNav, {
       role: 'bond_originator',
       currentWorkspace: { id: 'workspace-1', type: 'bond_originator' },
       currentMembership: {

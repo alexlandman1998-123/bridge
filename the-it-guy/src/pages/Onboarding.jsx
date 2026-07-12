@@ -30,7 +30,7 @@ import {
   saveAgencyOnboardingDraft,
   uploadOrganisationBrandingAsset,
 } from '../lib/settingsApi'
-import { INTERNAL_APP_ROLES } from '../lib/roles'
+import { INTERNAL_APP_ROLES } from '../lib/appRoleMetadata'
 
 const PENDING_ORG_INVITE_TOKEN_STORAGE_KEY = 'itg:pending-org-invite-token'
 const ONBOARDING_BOOTSTRAP_TIMEOUT_MS = 15000

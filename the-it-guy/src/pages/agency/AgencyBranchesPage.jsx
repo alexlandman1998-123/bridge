@@ -5,6 +5,8 @@ import {
   ArrowUpRight,
   Banknote,
   Building2,
+  CheckCircle2,
+  Copy,
   Filter,
   HeartPulse,
   LineChart,
@@ -26,6 +28,7 @@ import Field from '../../components/ui/Field'
 import Modal from '../../components/ui/Modal'
 import { upsertAreaFromAddress } from '../../lib/location/upsertArea'
 import { createBranch, deleteBranch, getAgencyBranchOverview } from '../../services/agencyBranchService'
+import { createPrincipalClaimInvite } from '../../services/workspaceUserInviteService'
 
 const PERIOD_OPTIONS = [
   { value: 'this_month', label: 'This Month' },
@@ -432,7 +435,7 @@ function EmptyState({ onCreate }) {
 }
 
 function NewBranchModal({ open, onClose, onCreated }) {
-  const [form, setForm] = useState({
+  const createInitialForm = () => ({
     name: '',
     city: '',
     province: '',
@@ -448,16 +451,21 @@ function NewBranchModal({ open, onClose, onCreated }) {
     email: '',
     phone: '',
   })
+  const [form, setForm] = useState(createInitialForm)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    if (!open) {
-      setForm({ name: '', city: '', province: '', address: '', formattedAddress: '', suburb: '', country: 'South Africa', postalCode: '', latitude: null, longitude: null, googlePlaceId: '', managerName: '', email: '', phone: '' })
-      setSaving(false)
-      setError('')
-    }
-  }, [open])
+  function resetModal() {
+    setForm(createInitialForm())
+    setSaving(false)
+    setError('')
+  }
+
+  function handleClose() {
+    if (saving) return
+    resetModal()
+    onClose?.()
+  }
 
   async function handleCreate() {
     setSaving(true)
@@ -468,6 +476,7 @@ function NewBranchModal({ open, onClose, onCreated }) {
       if (typeof onCreated === 'function') {
         onCreated(created)
       }
+      resetModal()
       onClose?.()
     } catch (creationError) {
       setError(creationError?.message || 'Unable to create branch right now.')
@@ -479,12 +488,12 @@ function NewBranchModal({ open, onClose, onCreated }) {
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={saving ? undefined : handleClose}
       title="Create New Branch"
       subtitle="Add a new office, franchise, or team branch to your agency structure."
       footer={(
         <div className="flex items-center justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button type="button" variant="secondary" onClick={handleClose} disabled={saving}>Cancel</Button>
           <Button type="button" onClick={handleCreate} disabled={saving}>{saving ? 'Creating...' : 'Create Branch'}</Button>
         </div>
       )}
@@ -537,6 +546,166 @@ function NewBranchModal({ open, onClose, onCreated }) {
   )
 }
 
+function PrincipalManagerInviteModal({ open, onClose }) {
+  const createInitialForm = () => ({
+    firstName: '',
+    lastName: '',
+    email: '',
+    mobile: '',
+    notes: '',
+  })
+  const [form, setForm] = useState(createInitialForm)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [createdInvite, setCreatedInvite] = useState(null)
+  const [copyMessage, setCopyMessage] = useState('')
+
+  function resetModal() {
+    setForm(createInitialForm())
+    setSaving(false)
+    setError('')
+    setCreatedInvite(null)
+    setCopyMessage('')
+  }
+
+  function handleClose() {
+    if (saving) return
+    resetModal()
+    onClose?.()
+  }
+
+  function updateField(key, value) {
+    setForm((previous) => ({ ...previous, [key]: value }))
+  }
+
+  async function handleInvite() {
+    if (!normalizeText(form.email)) {
+      setError('Email is required before sending this principal claim.')
+      return
+    }
+
+    try {
+      setSaving(true)
+      setError('')
+      setCopyMessage('')
+      const result = await createPrincipalClaimInvite({
+        firstName: form.firstName,
+        lastName: form.lastName,
+        email: form.email,
+        mobile: form.mobile,
+        notes: form.notes,
+        source: 'residential_branches_principal_manager_invite',
+      })
+      setCreatedInvite(result)
+    } catch (inviteError) {
+      setError(inviteError?.message || 'Unable to send this principal claim right now.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleCopyLink() {
+    const inviteLink = createdInvite?.inviteLink || createdInvite?.onboardingUrl || ''
+    if (!inviteLink) {
+      setError('The principal claim link is not available yet.')
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(inviteLink)
+      setCopyMessage('Claim link copied.')
+      setError('')
+    } catch {
+      setError('Unable to copy the claim link from this browser.')
+    }
+  }
+
+  const inviteLink = createdInvite?.inviteLink || createdInvite?.onboardingUrl || ''
+
+  return (
+    <Modal
+      open={open}
+      onClose={saving ? undefined : handleClose}
+      title="Invite Principal / Manager"
+      subtitle="Send a principal claim link without leaving the branches workspace."
+      className="max-w-2xl"
+      footer={(
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <Button type="button" variant="secondary" onClick={handleClose} disabled={saving}>Close</Button>
+          {createdInvite ? (
+            <Button type="button" onClick={handleCopyLink}>
+              <Copy size={15} />Copy Link
+            </Button>
+          ) : (
+            <Button type="button" onClick={handleInvite} disabled={saving}>
+              <Users size={15} />{saving ? 'Sending...' : 'Send Claim'}
+            </Button>
+          )}
+        </div>
+      )}
+    >
+      <div className="space-y-4">
+        {createdInvite ? (
+          <section className="rounded-lg border border-[#cfe8d7] bg-[#f3fbf5] p-4">
+            <div className="flex items-start gap-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white text-[#1d7d45]">
+                <CheckCircle2 size={18} />
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-[#123824]">
+                  {createdInvite.reusedExistingInvite ? 'Existing claim resent' : 'Principal claim sent'}
+                </h3>
+                <p className="mt-1 text-sm leading-6 text-[#2f6b45]">
+                  The invitee will complete onboarding before principal access becomes active.
+                </p>
+              </div>
+            </div>
+          </section>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#64748b]">First Name</span>
+              <Field value={form.firstName} onChange={(event) => updateField('firstName', event.target.value)} placeholder="First name" />
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#64748b]">Last Name</span>
+              <Field value={form.lastName} onChange={(event) => updateField('lastName', event.target.value)} placeholder="Last name" />
+            </label>
+            <label className="grid gap-1.5 md:col-span-2">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#64748b]">Email</span>
+              <Field type="email" value={form.email} onChange={(event) => updateField('email', event.target.value)} placeholder="principal@agency.com" />
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#64748b]">Mobile</span>
+              <Field value={form.mobile} onChange={(event) => updateField('mobile', event.target.value)} placeholder="Optional" />
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#64748b]">Access</span>
+              <Field value="Principal claim" disabled />
+            </label>
+            <label className="grid gap-1.5 md:col-span-2">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#64748b]">Note</span>
+              <Field as="textarea" value={form.notes} onChange={(event) => updateField('notes', event.target.value)} placeholder="Optional context for this invite" />
+            </label>
+          </div>
+        )}
+
+        {inviteLink ? (
+          <section className="rounded-lg border border-[#dfe8f1] bg-white p-4">
+            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Claim Link</p>
+            <p className="mt-2 break-all rounded-lg border border-[#e2eaf3] bg-[#f8fbff] px-3 py-2 text-sm text-[#35546c]">
+              {inviteLink}
+            </p>
+          </section>
+        ) : null}
+
+        {copyMessage ? <p className="rounded-lg border border-[#cfe8d7] bg-[#f3fbf5] px-3 py-2 text-sm text-[#1d7d45]">{copyMessage}</p> : null}
+        {error ? <p className="rounded-lg border border-[#fecaca] bg-[#fef2f2] px-3 py-2 text-sm text-[#991b1b]">{error}</p> : null}
+      </div>
+    </Modal>
+  )
+}
+
 export default function AgencyBranchesPage() {
   const navigate = useNavigate()
   const [overview, setOverview] = useState(EMPTY_OVERVIEW)
@@ -548,6 +717,7 @@ export default function AgencyBranchesPage() {
   const [provinceFilter, setProvinceFilter] = useState('all')
   const [sortBy, setSortBy] = useState('pipeline')
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showPrincipalInviteModal, setShowPrincipalInviteModal] = useState(false)
   const [deleteDialog, setDeleteDialog] = useState({ open: false, branch: null, error: '' })
   const [deletingBranchId, setDeletingBranchId] = useState('')
 
@@ -565,7 +735,10 @@ export default function AgencyBranchesPage() {
   }, [period])
 
   useEffect(() => {
-    void loadOverview()
+    const timer = setTimeout(() => {
+      void loadOverview()
+    }, 0)
+    return () => clearTimeout(timer)
   }, [loadOverview])
 
   const provinceOptions = useMemo(() => {
@@ -603,14 +776,7 @@ export default function AgencyBranchesPage() {
   }
 
   function openPrincipalManagerInvite() {
-    navigate('/settings/users', {
-      state: {
-        openInvite: true,
-        inviteIntent: 'residential_principal_manager',
-        inviteRole: 'principal',
-        inviteSource: 'residential_branches_principal_manager_invite',
-      },
-    })
+    setShowPrincipalInviteModal(true)
   }
 
   function openDeleteBranch(branch) {
@@ -750,6 +916,10 @@ export default function AgencyBranchesPage() {
         onCreated={() => {
           void loadOverview()
         }}
+      />
+      <PrincipalManagerInviteModal
+        open={showPrincipalInviteModal}
+        onClose={() => setShowPrincipalInviteModal(false)}
       />
       <ConfirmDialog
         open={deleteDialog.open}

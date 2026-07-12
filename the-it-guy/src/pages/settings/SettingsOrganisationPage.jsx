@@ -283,15 +283,6 @@ function buildOrganisationAddressValue(organisation = {}, onboarding = {}) {
   }
 }
 
-function getLogoPreviewLabel(sourceUrl, fallbackLabel = 'Uploaded logo') {
-  const value = normalizeText(sourceUrl)
-  if (!value) return ''
-  if (value.startsWith('data:image/')) return fallbackLabel
-  const clean = value.split('?')[0]
-  const lastSegment = clean.split('/').filter(Boolean).pop() || ''
-  return lastSegment ? decodeURIComponent(lastSegment) : fallbackLabel
-}
-
 function getOrganisationDefaults(organisation = {}) {
   const defaults = organisation?.settingsJson?.organisationDefaults
   return {
@@ -544,76 +535,6 @@ function LogoMark({ logoUrl, name }) {
   )
 }
 
-function BrandUploadTile({ title, description, previewUrl, previewTone = 'light', fileName, fallback, uploading = false, canEdit = false, onFile }) {
-  return (
-    <article
-      className="grid gap-4 rounded-[18px] border border-[#dfe8f1] bg-[#fbfdff] p-4"
-      onDragOver={(event) => {
-        if (canEdit) event.preventDefault()
-      }}
-      onDrop={(event) => {
-        if (!canEdit) return
-        event.preventDefault()
-        const file = event.dataTransfer.files?.[0]
-        if (file) void onFile?.(file)
-      }}
-    >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h3 className="text-sm font-semibold text-[#17233a]">{title}</h3>
-          <p className="mt-1 text-sm leading-6 text-[#60758d]">{description}</p>
-        </div>
-        {canEdit ? (
-          <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] shadow-[0_6px_16px_rgba(15,23,42,0.04)] transition hover:bg-[#f7fafc]">
-            <UploadCloud className="h-4 w-4" strokeWidth={2} />
-            {uploading ? 'Uploading...' : previewUrl ? 'Replace' : 'Upload'}
-            <input
-              type="file"
-              accept="image/png,image/svg+xml,image/jpeg,image/webp"
-              className="sr-only"
-              disabled={uploading}
-              onChange={(event) => {
-                const file = event.target.files?.[0]
-                if (file) void onFile?.(file)
-                event.target.value = ''
-              }}
-            />
-          </label>
-        ) : null}
-      </div>
-      <div className={previewTone === 'dark' ? 'flex min-h-[132px] items-center justify-center rounded-[16px] border border-[#153b5a] bg-[#10273a] p-4 text-sm font-semibold text-white/70' : 'flex min-h-[132px] items-center justify-center rounded-[16px] border border-[#e2ebf3] bg-white p-4 text-sm font-semibold text-[#8091a7]'}>
-        {previewUrl ? <img className="h-full max-h-[98px] w-full object-contain" src={previewUrl} alt={`${title} preview`} /> : fallback}
-      </div>
-      <div className="text-xs leading-5 text-[#60758d]">
-        <p className="truncate font-medium text-[#40566d]">{fileName || (previewUrl ? getLogoPreviewLabel(previewUrl, title) : 'Drop PNG, SVG or JPG here, or browse files.')}</p>
-        <p>Supported: PNG, SVG, JPG, WebP. Recommended max size: 10MB.</p>
-      </div>
-    </article>
-  )
-}
-
-function ColourControl({ label, value, disabled = false, onChange }) {
-  const safeValue = /^#[0-9a-f]{6}$/i.test(value || '') ? value : '#274C69'
-  return (
-    <div className="rounded-[18px] border border-[#dfe8f1] bg-[#fbfdff] p-4">
-      <div className="flex items-center gap-3">
-        <input
-          type="color"
-          className="h-11 w-11 cursor-pointer rounded-[12px] border border-[#d8e3ee] bg-white p-1"
-          value={safeValue}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.value)}
-          aria-label={`${label} colour picker`}
-        />
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-[#17233a]">{label}</p>
-          <Field className={`${INPUT_CLASS} mt-2`} value={value || ''} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function BrandHero({
   organisationName,
   primaryLogo,
@@ -834,6 +755,45 @@ function BrandColourRow({ label, value, disabled = false, onChange, onCopy }) {
   )
 }
 
+function BrandColourField({ label, value, disabled = false, onChange, onCopy }) {
+  const safeValue = /^#[0-9a-f]{6}$/i.test(value || '') ? value : '#274C69'
+  return (
+    <div className="rounded-[14px] border border-[#e1eaf3] bg-white p-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="h-10 w-10 shrink-0 rounded-[12px] border border-[#d8e3ee]" style={{ backgroundColor: safeValue }} />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-[#17233a]">{label}</p>
+            <p className="text-xs font-medium uppercase tracking-[0.08em] text-[#7b8fa5]">{safeValue.toUpperCase()}</p>
+          </div>
+        </div>
+        {onCopy ? (
+          <button
+            type="button"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-[#d9e3ef] bg-white text-[#24364b] transition hover:bg-[#f7fafc]"
+            onClick={onCopy}
+            title={`Copy ${label} colour`}
+            aria-label={`Copy ${label} colour`}
+          >
+            <Copy className="h-4 w-4" strokeWidth={2} />
+          </button>
+        ) : null}
+      </div>
+      <div className="grid grid-cols-[minmax(0,1fr)_48px] gap-2">
+        <Field className={INPUT_CLASS} value={value || ''} disabled={disabled} onChange={(event) => onChange(event.target.value)} aria-label={`${label} hex value`} />
+        <input
+          type="color"
+          className="h-11 w-12 cursor-pointer rounded-[12px] border border-[#d8e3ee] bg-white p-1"
+          value={safeValue}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+          aria-label={`${label} colour picker`}
+        />
+      </div>
+    </div>
+  )
+}
+
 function PreviewTabButton({ active, children, onClick }) {
   return (
     <button
@@ -984,8 +944,8 @@ function BrandPreviewPanel({ organisationName, logoUrl, iconUrl, colours, typogr
 
 function OnboardingLandingLogoRow({ title, description, previewUrl, previewTone = 'light', canEdit = false, uploading = false, onFile }) {
   return (
-    <article className="grid gap-3 rounded-[16px] border border-[#e1eaf3] bg-[#fbfdff] p-3">
-      <div className="flex items-center gap-3">
+    <article className="flex flex-col gap-3 rounded-[14px] border border-[#e1eaf3] bg-white p-3 sm:flex-row sm:items-center">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         <span
           className={[
             'inline-flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-[14px] border p-2 text-xs font-semibold',
@@ -1002,7 +962,7 @@ function OnboardingLandingLogoRow({ title, description, previewUrl, previewTone 
         </span>
       </div>
       {canEdit ? (
-        <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc]">
+        <label className="inline-flex h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc]">
           <UploadCloud className="h-4 w-4" strokeWidth={2} />
           {uploading ? 'Uploading...' : previewUrl ? 'Replace' : 'Upload'}
           <input
@@ -1032,7 +992,7 @@ function OnboardingLandingPreviewSurface({ portalType = 'buyer', organisationNam
 
   return (
     <div className="overflow-hidden rounded-[18px] border border-[#dfe8f1] bg-[#0b1728] shadow-[0_16px_34px_rgba(15,23,42,0.12)]">
-      <div className="p-4 text-white sm:p-5" style={{ background: overlay }}>
+      <div className="p-5 text-white sm:p-6" style={{ background: overlay }}>
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[14px] border border-white/15 bg-white/10 p-2 text-sm font-semibold text-white">
@@ -1045,10 +1005,10 @@ function OnboardingLandingPreviewSurface({ portalType = 'buyer', organisationNam
           </span>
         </div>
 
-        <div className="mt-8 grid gap-5 lg:grid-cols-[minmax(0,1fr)_190px] lg:items-end">
-          <div>
+        <div className="mt-8 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+          <div className="min-w-0 flex-1">
             <p className="text-xs font-bold uppercase tracking-[0.12em]" style={{ color: accent }}>{copy.label}</p>
-            <h3 className="mt-3 max-w-[440px] text-2xl font-semibold leading-tight text-white sm:text-3xl">
+            <h3 className="mt-3 max-w-[520px] text-2xl font-semibold leading-tight text-white sm:text-3xl">
               {copy.headline}
             </h3>
             <p className="mt-3 max-w-[390px] text-sm leading-6 text-white/75">
@@ -1062,7 +1022,7 @@ function OnboardingLandingPreviewSurface({ portalType = 'buyer', organisationNam
               <ChevronRight className="h-4 w-4" strokeWidth={2} />
             </span>
           </div>
-          <div className="grid gap-2 rounded-[16px] border border-white/15 bg-white/10 p-3 backdrop-blur">
+          <div className="grid w-full gap-2 rounded-[16px] border border-white/15 bg-white/10 p-3 backdrop-blur md:w-64 md:shrink-0">
             <span className="text-[11px] font-semibold uppercase text-white/55">Before you start</span>
             <span className="rounded-[12px] bg-white/10 px-3 py-2 text-xs font-semibold text-white/80">Property details</span>
             <span className="rounded-[12px] bg-white/10 px-3 py-2 text-xs font-semibold text-white/80">Secure profile</span>
@@ -1085,6 +1045,7 @@ function OnboardingLandingBrandingCard({
   uploadingLogoTarget,
   onUploadLogo,
   onColourChange,
+  onCopyColour,
 }) {
   const previewLogoUrl = darkLogoUrl || logoUrl || iconUrl
   const logoRows = [
@@ -1110,16 +1071,19 @@ function OnboardingLandingBrandingCard({
   ]
 
   return (
-    <OrganisationCard title="Buyer / Seller Onboarding Landing" description="Standard landing page for buyer and seller intake links. Copy and layout stay locked; logos and colours come from branding settings.">
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+    <OrganisationCard title="Buyer / Seller Onboarding Links" description="Edit the logos and colours used by secure buyer and seller intake links.">
+      <div className="space-y-5">
         <div>
-          <div className="mb-4 flex flex-wrap gap-2">
-            <PreviewTabButton active={activePortalType === 'buyer'} onClick={() => setActivePortalType('buyer')}>
-              Buyer
-            </PreviewTabButton>
-            <PreviewTabButton active={activePortalType === 'seller'} onClick={() => setActivePortalType('seller')}>
-              Seller
-            </PreviewTabButton>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2">
+              <PreviewTabButton active={activePortalType === 'buyer'} onClick={() => setActivePortalType('buyer')}>
+                Buyer
+              </PreviewTabButton>
+              <PreviewTabButton active={activePortalType === 'seller'} onClick={() => setActivePortalType('seller')}>
+                Seller
+              </PreviewTabButton>
+            </div>
+            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8fa5]">Live preview</span>
           </div>
           <OnboardingLandingPreviewSurface
             portalType={activePortalType}
@@ -1130,7 +1094,104 @@ function OnboardingLandingBrandingCard({
           />
         </div>
 
-        <div className="space-y-4">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
+          <section className="rounded-[16px] border border-[#e4ecf5] bg-[#fbfdff] p-4">
+            <div className="mb-4">
+              <h3 className="text-sm font-semibold text-[#17233a]">Landing logos</h3>
+              <p className="mt-1 text-sm leading-6 text-[#60758d]">Primary, dark and compact marks for intake pages.</p>
+            </div>
+            <div className="grid gap-3">
+              {logoRows.map((row) => (
+                <OnboardingLandingLogoRow
+                  key={row.key}
+                  title={row.title}
+                  description={row.description}
+                  previewUrl={row.previewUrl}
+                  previewTone={row.previewTone}
+                  canEdit={canEdit}
+                  uploading={uploadingLogoTarget === row.key}
+                  onFile={(file) => onUploadLogo?.(file, row.key)}
+                />
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-[16px] border border-[#e4ecf5] bg-[#fbfdff] p-4">
+            <div className="mb-4">
+              <h3 className="text-sm font-semibold text-[#17233a]">Landing colours</h3>
+              <p className="mt-1 text-sm leading-6 text-[#60758d]">Header and call-to-action colours for intake links.</p>
+            </div>
+            <div className="grid gap-3">
+              {ONBOARDING_LANDING_COLOUR_CONTROLS.map((control) => (
+                <BrandColourField
+                  key={control.key}
+                  label={control.label}
+                  value={colours[control.key] || control.fallback}
+                  disabled={!canEdit}
+                  onChange={(value) => onColourChange(control.key, value)}
+                  onCopy={() => onCopyColour?.(colours[control.key] || control.fallback)}
+                />
+              ))}
+            </div>
+          </section>
+        </div>
+      </div>
+    </OrganisationCard>
+  )
+}
+
+function BrandingEssentialsCard({
+  organisationName,
+  logoUrl,
+  darkLogoUrl,
+  iconUrl,
+  colours,
+  canEdit,
+  uploadingLogoTarget,
+  onUploadLogo,
+  onColourChange,
+  onCopyColour,
+}) {
+  const logoRows = [
+    {
+      key: 'logoLight',
+      title: 'Primary Logo',
+      description: 'Horizontal mark for sidebars, reports and headers.',
+      previewUrl: logoUrl,
+    },
+    {
+      key: 'logoDark',
+      title: 'Dark Logo',
+      description: 'High-contrast mark for dark branded surfaces.',
+      previewUrl: darkLogoUrl,
+      previewTone: 'dark',
+    },
+    {
+      key: 'logoIcon',
+      title: 'Icon Logo',
+      description: 'Square mark for compact navigation and portal icons.',
+      previewUrl: iconUrl,
+    },
+  ]
+  const accentText = getContrastTextColour(colours.accent, colours.secondary)
+
+  return (
+    <OrganisationCard
+      title="Core Branding"
+      description="Keep the essential logos and palette in one quick-edit panel."
+      actions={
+        <Link to="/settings/branding" className="inline-flex h-10 items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc]">
+          <Palette className="h-4 w-4" strokeWidth={2} />
+          Full Brand Manager
+        </Link>
+      }
+    >
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+        <section className="rounded-[16px] border border-[#e4ecf5] bg-[#fbfdff] p-4">
+          <div className="mb-4">
+            <h3 className="text-sm font-semibold text-[#17233a]">Logos</h3>
+            <p className="mt-1 text-sm leading-6 text-[#60758d]">Upload once, reuse across workspace and client surfaces.</p>
+          </div>
           <div className="grid gap-3">
             {logoRows.map((row) => (
               <OnboardingLandingLogoRow
@@ -1145,19 +1206,45 @@ function OnboardingLandingBrandingCard({
               />
             ))}
           </div>
-          <div className="rounded-[16px] border border-[#e4ecf5] bg-[#fbfdff] p-3">
-            <div className="grid gap-3">
-              {ONBOARDING_LANDING_COLOUR_CONTROLS.map((control) => (
-                <ColourControl
-                  key={control.key}
-                  label={control.label}
-                  value={colours[control.key] || control.fallback}
-                  disabled={!canEdit}
-                  onChange={(value) => onColourChange(control.key, value)}
-                />
-              ))}
+        </section>
+
+        <section className="rounded-[16px] border border-[#e4ecf5] bg-[#fbfdff] p-4">
+          <div className="mb-4">
+            <h3 className="text-sm font-semibold text-[#17233a]">Brand colours</h3>
+            <p className="mt-1 text-sm leading-6 text-[#60758d]">Used by buttons, headers and document accents.</p>
+          </div>
+          <div className="grid gap-3">
+            {BRAND_COLOUR_CONTROLS.map((control) => (
+              <BrandColourField
+                key={control.key}
+                label={control.label}
+                value={colours[control.key] || control.fallback}
+                disabled={!canEdit}
+                onChange={(value) => onColourChange(control.key, value)}
+                onCopy={() => onCopyColour?.(colours[control.key] || control.fallback)}
+              />
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <div className="mt-5 overflow-hidden rounded-[16px] border border-[#dfe8f1]">
+        <div className="flex flex-col gap-4 p-4 text-white sm:flex-row sm:items-center sm:justify-between" style={{ background: `linear-gradient(135deg, ${colours.primary}, ${colours.secondary})` }}>
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-[14px] bg-white/15 p-2 text-sm font-semibold">
+              {iconUrl ? <img src={iconUrl} alt="" className="h-full w-full object-contain" /> : getInitials(organisationName)}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold">{organisationName}</p>
+              <p className="text-xs text-white/75">Workspace preview</p>
             </div>
           </div>
+          <span
+            className="inline-flex h-10 items-center justify-center rounded-[12px] px-4 text-sm font-semibold"
+            style={{ backgroundColor: colours.accent, color: accentText }}
+          >
+            Primary action
+          </span>
         </div>
       </div>
     </OrganisationCard>
@@ -1726,9 +1813,6 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   const organisationName = getOrganisationDisplayName(form, onboarding)
   const organisationTypeLabel = getOrganisationTypeLabel(onboarding)
   const primaryLogo = getPrimaryLogo(form, onboarding)
-  const primaryColour = getBrandColourValue(brandColours, 'primary', '#274C69')
-  const secondaryColour = getBrandColourValue(brandColours, 'secondary', '#10273A')
-  const accentColour = getBrandColourValue(brandColours, 'accent', '#F7CF22')
   const defaults = getOrganisationDefaults(form)
   const isPpraVerified = Boolean(normalizeText(agencyInfo.eaabPpraNumber))
   const isRegistrationVerified = Boolean(normalizeText(agencyInfo.companyRegistrationNumber))
@@ -1746,55 +1830,54 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   const brandHealth = getBrandHealthScore({ branding, brandColours, publicBranding })
   const brandLastUpdatedLabel = getBrandLastUpdatedLabel(onboarding.status?.lastSavedAt)
   const isSaveSuccessMessage = message === ORGANISATION_SUCCESS_MESSAGE || message === BRANDING_SUCCESS_MESSAGE
+  const primaryAssetUrl = normalizeText(branding.logoLight || primaryLogo)
+  const iconAssetUrl = normalizeText(branding.logoIcon)
+  const mainBrandAssets = [
+    {
+      targetKey: 'logoLight',
+      description: 'Used in sidebars, portals, reports and organisation headers.',
+      previewUrl: primaryAssetUrl,
+    },
+    {
+      targetKey: 'logoDark',
+      description: 'Used on dark email headers and high-contrast brand surfaces.',
+      previewUrl: branding.logoDark,
+      previewTone: 'dark',
+    },
+    {
+      targetKey: 'logoIcon',
+      description: 'Square mark used for compact navigation, avatars and generated icons.',
+      previewUrl: iconAssetUrl,
+    },
+  ]
+  const appIconAssets = [
+    {
+      targetKey: 'favicon',
+      description: 'Browser tab icon generated from or uploaded separately from your icon logo.',
+      previewUrl: branding.favicon || iconAssetUrl,
+      icon: Globe2,
+    },
+    {
+      targetKey: 'portalIcon',
+      description: 'Compact portal mark for client workspace headers.',
+      previewUrl: branding.portalIcon || iconAssetUrl,
+      icon: Monitor,
+    },
+    {
+      targetKey: 'mobileIcon',
+      description: 'Mobile shortcut icon for app-like portal experiences.',
+      previewUrl: branding.mobileIcon || iconAssetUrl,
+      icon: Smartphone,
+    },
+    {
+      targetKey: 'browserTile',
+      description: 'Pinned browser tile for supported browser surfaces.',
+      previewUrl: branding.browserTile || iconAssetUrl,
+      icon: Palette,
+    },
+  ]
 
   if (showBrandingOnly) {
-    const primaryAssetUrl = normalizeText(branding.logoLight || primaryLogo)
-    const iconAssetUrl = normalizeText(branding.logoIcon)
-    const mainBrandAssets = [
-      {
-        targetKey: 'logoLight',
-        description: 'Used in sidebars, portals, reports and organisation headers.',
-        previewUrl: primaryAssetUrl,
-      },
-      {
-        targetKey: 'logoDark',
-        description: 'Used on dark email headers and high-contrast brand surfaces.',
-        previewUrl: branding.logoDark,
-        previewTone: 'dark',
-      },
-      {
-        targetKey: 'logoIcon',
-        description: 'Square mark used for compact navigation, avatars and generated icons.',
-        previewUrl: iconAssetUrl,
-      },
-    ]
-    const appIconAssets = [
-      {
-        targetKey: 'favicon',
-        description: 'Browser tab icon generated from or uploaded separately from your icon logo.',
-        previewUrl: branding.favicon || iconAssetUrl,
-        icon: Globe2,
-      },
-      {
-        targetKey: 'portalIcon',
-        description: 'Compact portal mark for client workspace headers.',
-        previewUrl: branding.portalIcon || iconAssetUrl,
-        icon: Monitor,
-      },
-      {
-        targetKey: 'mobileIcon',
-        description: 'Mobile shortcut icon for app-like portal experiences.',
-        previewUrl: branding.mobileIcon || iconAssetUrl,
-        icon: Smartphone,
-      },
-      {
-        targetKey: 'browserTile',
-        description: 'Pinned browser tile for supported browser surfaces.',
-        previewUrl: branding.browserTile || iconAssetUrl,
-        icon: Palette,
-      },
-    ]
-
     return (
       <div className={settingsPageClass}>
         <OrganisationPageHeader
@@ -1880,6 +1963,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                 uploadingLogoTarget={uploadingLogoTarget}
                 onUploadLogo={(file, targetKey) => handleLogoUpload(file, targetKey)}
                 onColourChange={(key, value) => updateBrandColour(key, value)}
+                onCopyColour={(value) => copyBrandHex(value)}
               />
 
               <OrganisationCard title="Typography" description="Keep text, buttons and rounded controls consistent across branded surfaces.">
@@ -2294,65 +2378,24 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
               </>
             ) : null}
 
-            <OrganisationCard title="Branding" description="Brand assets used for portal, reporting, and outbound communication surfaces.">
-              <div className="grid gap-4 lg:grid-cols-2">
-                <BrandUploadTile
-                  title="Primary Logo"
-                  description="Horizontal logo for sidebars, reports, and organisation headers."
-                  previewUrl={branding.logoLight}
-                  fileName={branding.logoLightName}
-                  fallback="Primary logo not uploaded"
-                  uploading={uploadingLogoTarget === 'logoLight'}
-                  canEdit={canEdit}
-                  onFile={(file) => handleLogoUpload(file, 'logoLight')}
-                />
-                <BrandUploadTile
-                  title="Icon Logo"
-                  description="Square mark for compact surfaces."
-                  previewUrl={branding.logoIcon}
-                  fileName={branding.logoIconName}
-                  fallback="Initials fallback"
-                  uploading={uploadingLogoTarget === 'logoIcon'}
-                  canEdit={canEdit}
-                  onFile={(file) => handleLogoUpload(file, 'logoIcon')}
-                />
-                <BrandUploadTile
-                  title="Dark Logo"
-                  description="Used where a stronger contrast asset is needed."
-                  previewUrl={branding.logoDark}
-                  previewTone="dark"
-                  fileName={branding.logoDarkName}
-                  fallback="Dark logo not uploaded"
-                  uploading={uploadingLogoTarget === 'logoDark'}
-                  canEdit={canEdit}
-                  onFile={(file) => handleLogoUpload(file, 'logoDark')}
-                />
-                <div className="grid gap-4">
-                  <ColourControl label="Primary Colour" value={primaryColour} disabled={!canEdit} onChange={(value) => updateBrandColour('primary', value)} />
-                  <ColourControl label="Secondary Colour" value={secondaryColour} disabled={!canEdit} onChange={(value) => updateBrandColour('secondary', value)} />
-                  <ColourControl label="Accent Colour" value={accentColour} disabled={!canEdit} onChange={(value) => updateBrandColour('accent', value)} />
-                </div>
-              </div>
-              <div className="mt-5 overflow-hidden rounded-[18px] border border-[#dfe8f1]">
-                <div className="p-4 text-white" style={{ background: `linear-gradient(135deg, ${primaryColour}, ${secondaryColour})` }}>
-                  <div className="flex items-center gap-3">
-                    <span className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] bg-white/15 text-sm font-semibold">
-                      {branding.logoIcon ? <img src={branding.logoIcon} alt="" className="h-full w-full object-contain p-2" /> : getInitials(organisationName)}
-                    </span>
-                    <div>
-                      <p className="text-sm font-semibold">{organisationName}</p>
-                      <p className="text-xs text-white/75">Live branding preview</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </OrganisationCard>
+            <BrandingEssentialsCard
+              organisationName={organisationName}
+              logoUrl={primaryAssetUrl}
+              darkLogoUrl={branding.logoDark}
+              iconUrl={iconAssetUrl}
+              colours={brandColourValues}
+              canEdit={canEdit}
+              uploadingLogoTarget={uploadingLogoTarget}
+              onUploadLogo={(file, targetKey) => handleLogoUpload(file, targetKey)}
+              onColourChange={(key, value) => updateBrandColour(key, value)}
+              onCopyColour={(value) => copyBrandHex(value)}
+            />
 
             <OnboardingLandingBrandingCard
               organisationName={organisationName}
-              logoUrl={primaryLogo}
+              logoUrl={primaryAssetUrl}
               darkLogoUrl={branding.logoDark}
-              iconUrl={branding.logoIcon}
+              iconUrl={iconAssetUrl}
               colours={onboardingLandingColours}
               activePortalType={onboardingPreviewType}
               setActivePortalType={setOnboardingPreviewType}
@@ -2360,6 +2403,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
               uploadingLogoTarget={uploadingLogoTarget}
               onUploadLogo={(file, targetKey) => handleLogoUpload(file, targetKey)}
               onColourChange={(key, value) => updateBrandColour(key, value)}
+              onCopyColour={(value) => copyBrandHex(value)}
             />
 
             {!showBrandingOnly ? (

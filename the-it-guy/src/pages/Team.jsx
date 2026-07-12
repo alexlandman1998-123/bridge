@@ -2,7 +2,7 @@ import { Building2, ChevronRight, Clock3, Mail, ShieldUser, UserPlus, Users } fr
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
-import { APP_ROLE_LABELS } from '../lib/roles'
+import { APP_ROLE_LABELS } from '../lib/appRoleMetadata'
 import { listDevelopmentTeamAssignments, listOrganisationUsers } from '../lib/settingsApi'
 
 function formatRoleLabel(role) {

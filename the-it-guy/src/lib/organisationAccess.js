@@ -1,4 +1,4 @@
-import { normalizeAppRole } from './roles'
+import { normalizeAppRole } from './appRoleMetadata'
 import { FEATURE_FLAGS } from './featureFlags'
 import { can } from '../auth/permissions/permissionResolver'
 import { PERMISSIONS } from '../auth/permissions/permissionRegistry'

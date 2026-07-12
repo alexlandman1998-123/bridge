@@ -1,4 +1,4 @@
-import { ArrowRight, Building2, CheckCircle2, CircleAlert, Copy, FolderKanban, Loader2, MoreVertical, Plus, Search, Share2, Trash2, UserRound, X } from 'lucide-react'
+import { ArrowRight, Building2, CheckCircle2, CircleAlert, FileText, FolderKanban, Loader2, MoreVertical, Plus, Search, Share2, Trash2, UserRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -6,6 +6,10 @@ import Field from '../components/ui/Field'
 import SectionHeader from '../components/ui/SectionHeader'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import { getTransactionScopeForRow } from '../core/transactions/transactionScope'
+import {
+  DOCUMENT_START_ENTRY_POINTS,
+  DOCUMENT_START_SOURCE_MODES,
+} from '../core/documents/documentStartRules'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
   fetchAssignedDevelopmentIdsForRole,
@@ -67,17 +71,6 @@ const LISTING_FOLLOW_UP_SLA_DAYS = {
   add_photos: 5,
   add_external_link: 5,
 }
-const LISTING_FOLLOW_UP_FILTERS = [
-  { key: 'all', label: 'All Listings', insightKey: 'totalListings' },
-  { key: 'needs_follow_up', label: 'Needs Follow-Up', insightKey: 'needsFollowUp' },
-  { key: 'active_warning', label: 'Active With Warning', insightKey: 'activeWithWarning' },
-  { key: 'mandate_uploads', label: 'Mandate Uploads', insightKey: 'mandateUploads' },
-  { key: 'seller_fica', label: 'Seller FICA', insightKey: 'sellerFica' },
-  { key: 'photos', label: 'Photos', insightKey: 'photos' },
-  { key: 'commission', label: 'Commission', insightKey: 'commission' },
-  { key: 'onboarding', label: 'Onboarding', insightKey: 'onboarding' },
-  { key: 'overdue', label: 'Overdue', insightKey: 'overdueFollowUps' },
-]
 const QUICK_ADD_FOLLOW_UP_TAB_BY_KEY = {
   send_onboarding: 'seller',
   add_seller_contact: 'seller',
@@ -1014,92 +1007,6 @@ function withFollowUpReminderStatus(card = {}, now = Date.now()) {
   }
 }
 
-function listingMatchesFollowUpFilter(card = {}, filterKey = 'all') {
-  const normalizedFilter = normalizeKey(filterKey) || 'all'
-  if (normalizedFilter === 'all') return true
-  const queue = Array.isArray(card.followUpQueue) ? card.followUpQueue : []
-  const keys = new Set(queue.map((item) => normalizeKey(item?.key || item?.label)).filter(Boolean))
-  const hasAny = (...actionKeys) => actionKeys.some((key) => keys.has(normalizeKey(key)))
-  if (normalizedFilter === 'needs_follow_up') return queue.length > 0
-  if (normalizedFilter === 'active_warning') {
-    const statusKey = normalizeKey(card.listingStatusKey || card.listingRecord?.listingStatus || card.listingRecord?.listing_status)
-    return ['active', 'mandate_signed', 'under_offer'].includes(statusKey) && queue.length > 0
-  }
-  if (normalizedFilter === 'mandate_uploads') return hasAny('upload_signed_mandate')
-  if (normalizedFilter === 'seller_fica') return hasAny('add_seller_fica', 'add_seller_identity')
-  if (normalizedFilter === 'photos') return hasAny('add_photos')
-  if (normalizedFilter === 'commission') return hasAny('confirm_commission')
-  if (normalizedFilter === 'onboarding') return hasAny('send_onboarding')
-  if (normalizedFilter === 'overdue') return queue.some((item) => item.reminderStatus === 'overdue')
-  return true
-}
-
-function buildListingFollowUpInsights(cards = []) {
-  const insights = {
-    totalListings: 0,
-    needsFollowUp: 0,
-    activeWithWarning: 0,
-    mandateUploads: 0,
-    sellerFica: 0,
-    photos: 0,
-    commission: 0,
-    onboarding: 0,
-    overdueFollowUps: 0,
-    dueTodayFollowUps: 0,
-    totalFollowUps: 0,
-    ownerHotspots: [],
-  }
-  const ownerMap = new Map()
-
-  for (const card of Array.isArray(cards) ? cards : []) {
-    const queue = Array.isArray(card?.followUpQueue) ? card.followUpQueue : []
-    insights.totalListings += 1
-    insights.totalFollowUps += queue.length
-    insights.overdueFollowUps += Number(card?.overdueFollowUpCount || queue.filter((item) => item.reminderStatus === 'overdue').length)
-    insights.dueTodayFollowUps += Number(card?.dueTodayFollowUpCount || queue.filter((item) => item.reminderStatus === 'due_today').length)
-    if (listingMatchesFollowUpFilter(card, 'needs_follow_up')) insights.needsFollowUp += 1
-    if (listingMatchesFollowUpFilter(card, 'active_warning')) insights.activeWithWarning += 1
-    if (listingMatchesFollowUpFilter(card, 'mandate_uploads')) insights.mandateUploads += 1
-    if (listingMatchesFollowUpFilter(card, 'seller_fica')) insights.sellerFica += 1
-    if (listingMatchesFollowUpFilter(card, 'photos')) insights.photos += 1
-    if (listingMatchesFollowUpFilter(card, 'commission')) insights.commission += 1
-    if (listingMatchesFollowUpFilter(card, 'onboarding')) insights.onboarding += 1
-
-    if (queue.length) {
-      const owner = normalizeText(card?.agentName) || 'Unassigned'
-      const current = ownerMap.get(owner) || { owner, count: 0, overdue: 0 }
-      current.count += queue.length
-      current.overdue += Number(card?.overdueFollowUpCount || 0)
-      ownerMap.set(owner, current)
-    }
-  }
-
-  insights.ownerHotspots = [...ownerMap.values()]
-    .sort((left, right) => (right.overdue - left.overdue) || (right.count - left.count) || left.owner.localeCompare(right.owner))
-    .slice(0, 3)
-  return insights
-}
-
-function buildListingFollowUpEscalationSummary(cards = [], insights = {}) {
-  const openCards = (Array.isArray(cards) ? cards : [])
-    .filter((card) => Array.isArray(card?.followUpQueue) && card.followUpQueue.length)
-    .sort((left, right) => Number(right.overdueFollowUpCount || 0) - Number(left.overdueFollowUpCount || 0))
-
-  const lines = [
-    `Manual listing chase list`,
-    `${insights.needsFollowUp || openCards.length} listings need follow-up; ${insights.overdueFollowUps || 0} overdue items; ${insights.dueTodayFollowUps || 0} due today.`,
-    '',
-    ...openCards.slice(0, 25).map((card) => {
-      const actions = card.followUpQueue
-        .slice(0, 4)
-        .map((item) => `${item.label}${item.reminderLabel ? ` (${item.reminderLabel})` : ''}`)
-        .join('; ')
-      return `- ${card.title || 'Untitled listing'} — ${card.agentName || 'Unassigned'} — ${actions}`
-    }),
-  ]
-  return lines.filter((line, index) => index < 3 || normalizeText(line)).join('\n')
-}
-
 function mergePrivateListingRows(dbRows = [], runtimeRows = [], deletedIds = new Set()) {
   const map = new Map()
   const seenKeys = new Set()
@@ -1646,7 +1553,6 @@ function AgentListings({ initialTab = null } = {}) {
   const [shareError, setShareError] = useState('')
   const [filters, setFilters] = useState({
     search: '',
-    followUp: 'all',
   })
   const [quickAddDuplicateMatches, setQuickAddDuplicateMatches] = useState([])
   const [quickAddDuplicateOverride, setQuickAddDuplicateOverride] = useState(false)
@@ -3161,8 +3067,6 @@ function AgentListings({ initialTab = null } = {}) {
     })
   }, [deletedListingIds, privateListings, profile?.email, profile?.fullName, profile?.name])
 
-  const followUpFilter = filters.followUp || 'all'
-
   const residentialListingCards = useMemo(() => {
     const query = String(filters.search || '').trim().toLowerCase()
     const tabCategoryMap = {
@@ -3178,16 +3082,6 @@ function AgentListings({ initialTab = null } = {}) {
       return categoryMatch && searchMatch
     })
   }, [filters.search, listingsTab, privateListingCards])
-
-  const categoryFilteredListingCards = useMemo(
-    () => residentialListingCards.filter((card) => listingMatchesFollowUpFilter(card, followUpFilter)),
-    [followUpFilter, residentialListingCards],
-  )
-
-  const listingFollowUpInsights = useMemo(
-    () => buildListingFollowUpInsights(residentialListingCards),
-    [residentialListingCards],
-  )
 
   const developmentCards = useMemo(() => {
     const grouped = new Map()
@@ -3340,14 +3234,6 @@ function AgentListings({ initialTab = null } = {}) {
     [developmentCards.length, privateListingCards],
   )
 
-  async function copyListingFollowUpChaseList() {
-    const chaseList = buildListingFollowUpEscalationSummary(residentialListingCards, listingFollowUpInsights)
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(chaseList)
-    }
-    setWorkflowMessage('Manual listing chase list copied for follow-up.')
-  }
-
   function handleOpenDevelopmentWorkspace(card) {
     const developmentId = card?.id
     if (!developmentId) return
@@ -3358,6 +3244,46 @@ function AgentListings({ initialTab = null } = {}) {
       label: 'agent-listings-to-development-workspace',
     })
     navigate(`/developments/${developmentId}`)
+  }
+
+  function resolveSellerLeadIdFromListing(listing = {}) {
+    return normalizeText(
+      listing?.sellerLeadId ||
+        listing?.seller_lead_id ||
+        listing?.leadId ||
+        listing?.lead_id ||
+        listing?.seller?.leadId ||
+        listing?.seller?.lead_id ||
+        listing?.sellerLead?.leadId ||
+        listing?.sellerLead?.lead_id,
+    )
+  }
+
+  function buildListingMandateWorkspacePath(card = {}) {
+    const listingId = normalizeText(card?.id || card?.listingRecord?.id || card?.listingRecord?.listing_id)
+    if (!listingId) return ''
+
+    const params = new URLSearchParams()
+    const sellerLeadId = resolveSellerLeadIdFromListing(card?.listingRecord || {})
+    if (sellerLeadId && sellerLeadId !== listingId) params.set('leadId', sellerLeadId)
+    params.set('mode', 'generate')
+    params.set('sourceMode', DOCUMENT_START_SOURCE_MODES.saved)
+    params.set('documentStart', DOCUMENT_START_ENTRY_POINTS.listingMandate)
+    params.set('listingId', listingId)
+    params.set('returnTo', '/listings')
+
+    return `/agent/listings/${encodeURIComponent(listingId)}/legal/mandate?${params.toString()}`
+  }
+
+  function openListingMandateWorkspace(card, event) {
+    event?.stopPropagation?.()
+    setOpenListingMenuId('')
+    const path = buildListingMandateWorkspacePath(card)
+    if (!path) {
+      setError('Unable to open the mandate workspace because this listing is missing an id.')
+      return
+    }
+    navigate(path)
   }
 
   return (
@@ -3494,88 +3420,14 @@ function AgentListings({ initialTab = null } = {}) {
           </div>
         </div>
 
-        {!loading && listingsTab !== 'developments' ? (
-          <div className="mb-5 rounded-[18px] border border-[#dbe6f2] bg-[#f7fbff] p-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Follow-Up Oversight</p>
-                <h3 className="mt-1 text-[1rem] font-semibold text-[#142132]">
-                  {listingFollowUpInsights.needsFollowUp} listing{listingFollowUpInsights.needsFollowUp === 1 ? '' : 's'} need agent follow-up
-                </h3>
-                <p className="mt-1 text-sm text-[#607387]">
-                  {listingFollowUpInsights.overdueFollowUps} overdue · {listingFollowUpInsights.dueTodayFollowUps} due today · {listingFollowUpInsights.totalFollowUps} open items
-                </p>
-              </div>
-              <Button type="button" size="sm" variant="secondary" onClick={copyListingFollowUpChaseList}>
-                <Copy size={15} />
-                Copy Chase List
-              </Button>
-            </div>
-
-            <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
-              {LISTING_FOLLOW_UP_FILTERS.map((filter) => {
-                const active = followUpFilter === filter.key
-                const count = listingFollowUpInsights[filter.insightKey] || 0
-                return (
-                  <button
-                    key={filter.key}
-                    type="button"
-                    onClick={() => setFilters((previous) => ({ ...previous, followUp: filter.key }))}
-                    className={`inline-flex min-h-10 shrink-0 items-center gap-2 rounded-full border px-3 text-[0.78rem] font-semibold transition ${
-                      active
-                        ? 'border-[#1f4f78] bg-[#1f4f78] text-white'
-                        : 'border-[#cfe0f0] bg-white text-[#35546c] hover:border-[#a8bdd3]'
-                    }`}
-                    aria-pressed={active}
-                  >
-                    {filter.label}
-                    <span className={`rounded-full px-2 py-0.5 text-[0.68rem] ${active ? 'bg-white/16 text-white' : 'bg-[#eef5fb] text-[#607387]'}`}>
-                      {count}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-
-            <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_0.7fr]">
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {[
-                  { label: 'Mandate Uploads', value: listingFollowUpInsights.mandateUploads },
-                  { label: 'Seller FICA', value: listingFollowUpInsights.sellerFica },
-                  { label: 'Photos', value: listingFollowUpInsights.photos },
-                  { label: 'Commission', value: listingFollowUpInsights.commission },
-                ].map((metric) => (
-                  <div key={metric.label} className="rounded-[12px] border border-[#e1ebf5] bg-white px-3 py-2">
-                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{metric.label}</p>
-                    <p className="mt-1 text-lg font-semibold text-[#142132]">{metric.value}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="rounded-[12px] border border-[#e1ebf5] bg-white px-3 py-2">
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Owner Hotspots</p>
-                <div className="mt-2 space-y-1.5">
-                  {listingFollowUpInsights.ownerHotspots.length ? listingFollowUpInsights.ownerHotspots.map((owner) => (
-                    <div key={owner.owner} className="flex items-center justify-between gap-3 text-[0.78rem] font-semibold text-[#35546c]">
-                      <span className="truncate">{owner.owner}</span>
-                      <span>{owner.count} open · {owner.overdue} overdue</span>
-                    </div>
-                  )) : (
-                    <p className="text-[0.78rem] font-semibold text-[#607387]">No owner hotspots.</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
-
         {loading ? (
           <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-6 text-sm text-[#6c7f95]">Loading listings…</div>
         ) : null}
 
         {!loading && listingsTab !== 'developments' ? (
-          categoryFilteredListingCards.length ? (
+          residentialListingCards.length ? (
             <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-              {categoryFilteredListingCards.map((card) => (
+              {residentialListingCards.map((card) => (
                 <article
                   key={card.id}
                   onClick={() => navigate(`/agent/listings/${encodeURIComponent(card.id)}`)}
@@ -3608,6 +3460,14 @@ function AgentListings({ initialTab = null } = {}) {
                             className="absolute right-0 top-9 z-20 w-44 overflow-hidden rounded-[12px] border border-[#dce6f2] bg-white py-1 shadow-[0_14px_30px_rgba(15,23,42,0.16)]"
                             onClick={(event) => event.stopPropagation()}
                           >
+                            <button
+                              type="button"
+                              onClick={(event) => openListingMandateWorkspace(card, event)}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8rem] font-semibold text-[#1f4f78] transition hover:bg-[#f5f9fd]"
+                            >
+                              <FileText size={14} />
+                              Generate Mandate
+                            </button>
                             {getRemoteListingIdForCard(card) ? (
                               <button
                                 type="button"
@@ -3711,22 +3571,33 @@ function AgentListings({ initialTab = null } = {}) {
                       </div>
                     ) : null}
 
-                    <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-[#eef3f8] pt-3 text-[0.82rem] text-[#53687f]">
+                    <div className="mt-auto space-y-3 border-t border-[#eef3f8] pt-3 text-[0.82rem] text-[#53687f]">
                       <span className="inline-flex min-w-0 items-center gap-1.5 font-semibold">
                         <UserRound size={14} className="shrink-0 text-[#1f4f78]" />
                         <span className="truncate">{card.agentName || 'Assigned Agent'}</span>
                       </span>
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          navigate(`/agent/listings/${encodeURIComponent(card.id)}`)
-                        }}
-                        className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[#c6d8ea] bg-white px-3 py-1.5 font-semibold text-[#1f4f78] transition hover:border-[#9fb7d1] hover:bg-[#f6faff]"
-                      >
-                        Open
-                        <ArrowRight size={14} />
-                      </button>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={(event) => openListingMandateWorkspace(card, event)}
+                          className="inline-flex min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-full border border-[#1f4f78] bg-[#1f4f78] px-2 text-[0.76rem] font-semibold text-white transition hover:border-[#163c5d] hover:bg-[#163c5d]"
+                          aria-label={`Generate mandate for ${card.title}`}
+                        >
+                          <FileText size={14} className="shrink-0" />
+                          <span className="truncate">Generate Mandate</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            navigate(`/agent/listings/${encodeURIComponent(card.id)}`)
+                          }}
+                          className="inline-flex min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-full border border-[#c6d8ea] bg-white px-2 text-[0.76rem] font-semibold text-[#1f4f78] transition hover:border-[#9fb7d1] hover:bg-[#f6faff]"
+                        >
+                          <span className="truncate">Open</span>
+                          <ArrowRight size={14} className="shrink-0" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </article>

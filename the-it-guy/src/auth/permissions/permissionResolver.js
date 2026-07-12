@@ -21,7 +21,6 @@ import { resolveSystemRole, resolveWorkspaceRole, SYSTEM_ROLES } from '../../ser
 import {
   ACCESS_SCOPES,
   clientPermissions,
-  navPermissionByKey,
   normalizePermission,
   PERMISSIONS,
   permissionsByWorkspaceRole,
@@ -501,18 +500,6 @@ export function evaluateAccessRequirement(requirement = null, context = {}) {
     return { ok: false, reason: 'missing_permission', message: resolvePermissionDenialMessage(requirement.permission) }
   }
   return { ok: true, reason: '', message: '' }
-}
-
-export function filterNavigationItems(items = [], context = {}) {
-  return (items || [])
-    .map((item) => {
-      const children = Array.isArray(item.children) ? filterNavigationItems(item.children, context) : []
-      const permission = navPermissionByKey[item.key]
-      const visible = !permission || can(permission, context) || children.length > 0
-      if (!visible) return null
-      return children.length ? { ...item, children } : { ...item, children: undefined }
-    })
-    .filter(Boolean)
 }
 
 export function resolvePermissionDenialMessage(permission = '') {

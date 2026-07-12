@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { recordAuditEvent } from '../lib/activityAudit'
-import { APP_ROLE_LABELS, normalizeAppRole } from '../lib/roles'
+import { APP_ROLE_LABELS, normalizeAppRole } from '../lib/appRoleMetadata'
 import { updateBondOrganisationStructureSettings } from '../lib/settingsApi'
 import { resolveSignupIntentRoute } from '../lib/signupIntent'
 import {

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Button from '../ui/Button'
 import Drawer from '../ui/Drawer'
 import { useWorkspace } from '../../context/WorkspaceContext'
-import { normalizeAppRole } from '../../lib/roles'
+import { normalizeAppRole } from '../../lib/appRoleMetadata'
 import {
   appendDocumentPacketEvent,
   createDocumentPacketSigners,

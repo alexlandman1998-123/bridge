@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "npm run build:guarded",
   "env": {
     "VITE_DOCUMENT_TITLE": "Bridge Nine"
   },

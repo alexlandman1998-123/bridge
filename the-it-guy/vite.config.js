@@ -58,6 +58,9 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           const normalizedId = id.replace(/\\/g, '/')
+          if (normalizedId.includes('vite/preload-helper') || normalizedId.includes('commonjsHelpers.js')) {
+            return 'vendor-runtime'
+          }
           if (!normalizedId.includes('node_modules')) return undefined
           if (normalizedId.includes('/react/') || normalizedId.includes('/react-dom/') || normalizedId.includes('/react-router-dom/')) {
             return 'vendor-react'

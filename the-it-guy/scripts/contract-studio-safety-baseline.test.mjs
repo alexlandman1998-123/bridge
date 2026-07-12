@@ -180,6 +180,11 @@ assert.match(
 )
 assert.match(
   page,
+  /function getPrimaryTemplateForPicker[\s\S]*!isTemplatePickerCustomTemplate[\s\S]*const handleSelectPrimaryTemplateTab = useCallback[\s\S]*getPrimaryTemplateForPicker\(templatesByType\[item\.packetType\][\s\S]*setSelectedTemplateId\(primaryTemplate\.id\)[\s\S]*aria-pressed=\{active\}/,
+  'Template picker base tabs should explicitly select the primary base template instead of only changing packet type.',
+)
+assert.match(
+  page,
   /templateStarterMenuOpen[\s\S]*aria-label="Blank template creator"[\s\S]*Blank canvas[\s\S]*Template name[\s\S]*Template type[\s\S]*Create Blank Template/,
   'Phase 5 should make + Template open a blank canvas creator instead of a clause/addendum starter chooser.',
 )

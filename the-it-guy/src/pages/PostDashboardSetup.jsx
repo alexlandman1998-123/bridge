@@ -18,10 +18,11 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import OnboardingProgressLayout from '../components/onboarding/OnboardingProgressLayout'
-import { APP_ROLE_LABELS } from '../lib/roles'
+import { APP_ROLE_LABELS } from '../lib/appRoleMetadata'
 import { ONBOARDING_STATUSES, ONBOARDING_STEPS } from '../constants/onboardingStatuses'
 import { SIGNUP_ONBOARDING_PATHS, SIGNUP_WORKSPACE_ACTIONS } from '../constants/signupIntents'
 import { clearStoredSignupIntent } from '../lib/signupIntent'
+import { hasCommercialAccessMarker } from '../lib/commercialAccess'
 import { WORKSPACE_KINDS, WORKSPACE_TYPES } from '../constants/workspaceTypes'
 import {
   AGENCY_BUSINESS_FOCUS_OPTIONS,
@@ -91,51 +92,6 @@ function normalizeText(value) {
 
 function normalizeKey(value = '') {
   return normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
-}
-
-const COMMERCIAL_MODULE_MARKERS = new Set(['commercial', 'commercial_brokerage', 'commercial_agency'])
-
-function hasCommercialMembershipMarker(membership = {}) {
-  const safeMembership = membership && typeof membership === 'object' ? membership : {}
-  const raw = safeMembership.raw && typeof safeMembership.raw === 'object' ? safeMembership.raw : {}
-  const metadata =
-    (raw.module_metadata && typeof raw.module_metadata === 'object' ? raw.module_metadata : null) ||
-    (raw.moduleMetadata && typeof raw.moduleMetadata === 'object' ? raw.moduleMetadata : null) ||
-    (raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : null) ||
-    (safeMembership.module_metadata && typeof safeMembership.module_metadata === 'object' ? safeMembership.module_metadata : null) ||
-    (safeMembership.moduleMetadata && typeof safeMembership.moduleMetadata === 'object' ? safeMembership.moduleMetadata : null) ||
-    (safeMembership.metadata && typeof safeMembership.metadata === 'object' ? safeMembership.metadata : {}) ||
-    {}
-  const moduleContext = normalizeKey(
-    raw.module_context ||
-      raw.moduleContext ||
-      raw.module ||
-      raw.module_type ||
-      safeMembership.module_context ||
-      safeMembership.moduleContext ||
-      safeMembership.module ||
-      safeMembership.module_type ||
-      metadata.module_context ||
-      metadata.moduleContext ||
-      metadata.module ||
-      metadata.module_type,
-  )
-  if (COMMERCIAL_MODULE_MARKERS.has(moduleContext)) return true
-
-  const role = normalizeKey(
-    safeMembership.role ||
-      safeMembership.workspaceRole ||
-      safeMembership.workspace_role ||
-      safeMembership.organisationRole ||
-      safeMembership.organisation_role ||
-      raw.workspace_role ||
-      raw.organisation_role ||
-      raw.role ||
-      metadata.commercial_role ||
-      metadata.commercialRole ||
-      metadata.role,
-  )
-  return role.startsWith('commercial_') || role.includes('commercial_broker')
 }
 
 function getPostInviteDashboardPath({ hasCommercialWorkspaceAccess = false, agencySignupType = '', intent = null, baseRole = '' } = {}) {
@@ -626,7 +582,7 @@ export default function PostDashboardSetup() {
   const agencySetupType = agencyDraft?.agencyInformation?.agencyType || agencySignupType
   const agencySetupLabel = getAgencySetupLabel(agencySetupType)
   const hasCommercialWorkspaceAccess = useMemo(
-    () => [currentMembership, ...(activeMemberships || [])].some((membership) => hasCommercialMembershipMarker(membership)),
+    () => [currentMembership, ...(activeMemberships || [])].some((membership) => hasCommercialAccessMarker(membership)),
     [activeMemberships, currentMembership],
   )
   const pageTitle = useMemo(() => {

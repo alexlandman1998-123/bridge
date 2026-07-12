@@ -1,4 +1,4 @@
-import { normalizeAppRole } from './roles'
+import { normalizeAppRole } from './appRoleMetadata'
 
 const ONBOARDING_PATHS = [
   '/onboarding',

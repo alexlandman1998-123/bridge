@@ -33,7 +33,7 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { getRoleNavItems } from '../lib/roles'
 import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import { inferWorkspaceTypeFromAppRole } from '../constants/workspaceTypes'
-import { filterNavigationItems } from '../auth/permissions/permissionResolver'
+import { filterNavigationItems } from '../auth/permissions/navigationPermissions'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 
 const ICON_BY_KEY = {

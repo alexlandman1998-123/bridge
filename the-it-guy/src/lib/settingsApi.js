@@ -1,15 +1,9 @@
-import {
-  createDevelopment,
-  fetchDevelopmentAttorneyConfig,
-  getOrCreateUserProfile,
-  saveDevelopmentAttorneyConfig,
-  updateUserProfile,
-  updateDevelopmentSettings,
-} from './api'
+import { getOrCreateUserProfile, updateUserProfile } from './profileApi'
+import { clearOrganisationRuntimeCache as clearOrganisationBootstrapRuntimeCache } from './organisationBootstrapApi'
 import { resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
 import { DEMO_PROFILE_ID } from './demoIds'
 import { normalizeOrganisationMembershipRole } from './organisationAccess'
-import { normalizeAppRole } from './roles'
+import { normalizeAppRole } from './appRoleMetadata'
 import {
   BRANDING_BUCKET_CANDIDATES,
   PROFILE_AVATAR_BUCKET_CANDIDATES,
@@ -65,11 +59,17 @@ import { loadSignupIntentForUser } from './signupIntent'
 import { isActiveMembershipStatus, normalizeMembershipStatus } from '../constants/membershipStatuses'
 import { uploadToStorageCandidateBuckets } from './storageFallbacks'
 
+export { fetchAgencyOnboardingSettings } from './organisationBootstrapApi'
+
 const importMetaEnv = import.meta.env || {}
 const PARTNER_ROUTING_DEMO_MODE = Boolean(
   MOCK_DATA_ENABLED ||
     (importMetaEnv.DEV && String(importMetaEnv.VITE_ENABLE_MOCK_DATA || '').trim().toLowerCase() === 'true'),
 )
+
+async function loadDevelopmentApi() {
+  return import('./api')
+}
 
 const DEFAULT_NOTIFICATION_PREFERENCES = {
   emailEnabled: true,
@@ -275,6 +275,7 @@ function isFreshCacheEntry(entry) {
 }
 
 export function clearOrganisationRuntimeCache() {
+  clearOrganisationBootstrapRuntimeCache()
   organisationContextCache = null
   organisationContextInflight = null
   organisationUsersCache = null
@@ -3070,133 +3071,6 @@ export async function fetchOrganisationSettings({ forceRefresh = false } = {}) {
   return ensureOrganisationContextCached(requireClient())
 }
 
-export async function fetchAgencyOnboardingSettings({ forceRefresh = false } = {}) {
-  if (!isSupabaseConfigured || !supabase) {
-    if (!isUnsafeFallbackAllowed()) {
-      blockUnsafeSettingsFallback({
-        service: 'settingsApi.fetchAgencyOnboardingSettings',
-        attemptedFallbackType: 'demo_agency_onboarding_no_supabase',
-      })
-    }
-    console.debug('[ONBOARDING] agency-settings:fallback-demo')
-    return {
-      onboarding: buildDefaultAgencyOnboarding(),
-      organisation: buildDefaultOrganisation(),
-      membershipRole: 'viewer',
-      membershipStatus: 'pending',
-      onboardingMode: 'principal_setup',
-      persisted: false,
-    }
-  }
-
-  console.debug('[ONBOARDING] agency-settings:start')
-  try {
-    if (forceRefresh) {
-      clearOrganisationRuntimeCache()
-    }
-    const context = await ensureOrganisationContextCached(requireClient())
-    const mergedOnboarding = mergeAgencyOnboardingDraft(context.organisationSettings?.agencyOnboarding, {}, context.profile)
-    const hydratedOnboarding = await hydrateAgencyOnboardingBrandingUrls(requireClient(), mergedOnboarding)
-    const response = {
-      onboarding: hydratedOnboarding,
-      organisation: context.organisation,
-      membershipRole: context.membershipRole,
-      membershipStatus: context.membershipStatus,
-      onboardingMode: context.onboardingMode,
-      persisted: context.persisted,
-    }
-    console.debug('[ONBOARDING] agency-settings:success', {
-      organisationId: context?.organisation?.id || null,
-      onboardingMode: context?.onboardingMode || 'principal_setup',
-      membershipRole: context?.membershipRole || null,
-      membershipStatus: context?.membershipStatus || null,
-      persisted: Boolean(context?.persisted),
-    })
-    return response
-  } catch (error) {
-    console.error('[ONBOARDING] agency-settings:failed', error)
-    throw error
-  }
-}
-
-async function resolveBrandingAssetUrl(client, { bucket = '', path = '', fallbackUrl = '' } = {}) {
-  let safeBucket = normalizeText(bucket)
-  let safePath = normalizeText(path)
-  const safeFallback = normalizeText(fallbackUrl)
-  if ((!safeBucket || !safePath) && safeFallback) {
-    const storageMatch = safeFallback.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/(.+?)(?:\?|$)/i)
-    if (storageMatch?.[1] && storageMatch?.[2]) {
-      safeBucket = decodeURIComponent(storageMatch[1])
-      safePath = decodeURIComponent(storageMatch[2])
-    }
-  }
-  if (!safeBucket || !safePath) {
-    return safeFallback
-  }
-
-  const signedResult = await client.storage.from(safeBucket).createSignedUrl(safePath, 60 * 60 * 24 * 30)
-  const signedUrl = normalizeText(signedResult?.data?.signedUrl)
-  if (!signedResult?.error && signedUrl) {
-    return signedUrl
-  }
-
-  const { data: publicUrlData } = client.storage.from(safeBucket).getPublicUrl(safePath)
-  return normalizeText(publicUrlData?.publicUrl) || safeFallback
-}
-
-async function hydrateAgencyOnboardingBrandingUrls(client, onboarding = {}) {
-  const branding = onboarding?.branding && typeof onboarding.branding === 'object' ? onboarding.branding : {}
-  const lightUrl = await resolveBrandingAssetUrl(client, {
-    bucket: branding.logoLightBucket,
-    path: branding.logoLightPath,
-    fallbackUrl: branding.logoLight,
-  })
-  const iconUrl = await resolveBrandingAssetUrl(client, {
-    bucket: branding.logoIconBucket,
-    path: branding.logoIconPath,
-    fallbackUrl: branding.logoIcon || branding.logoIconUrl,
-  })
-  const darkUrl = await resolveBrandingAssetUrl(client, {
-    bucket: branding.logoDarkBucket,
-    path: branding.logoDarkPath,
-    fallbackUrl: branding.logoDark,
-  })
-  const faviconUrl = await resolveBrandingAssetUrl(client, {
-    bucket: branding.faviconBucket,
-    path: branding.faviconPath,
-    fallbackUrl: branding.favicon,
-  })
-  const portalIconUrl = await resolveBrandingAssetUrl(client, {
-    bucket: branding.portalIconBucket,
-    path: branding.portalIconPath,
-    fallbackUrl: branding.portalIcon,
-  })
-  const mobileIconUrl = await resolveBrandingAssetUrl(client, {
-    bucket: branding.mobileIconBucket,
-    path: branding.mobileIconPath,
-    fallbackUrl: branding.mobileIcon,
-  })
-  const browserTileUrl = await resolveBrandingAssetUrl(client, {
-    bucket: branding.browserTileBucket,
-    path: branding.browserTilePath,
-    fallbackUrl: branding.browserTile,
-  })
-
-  return {
-    ...onboarding,
-    branding: {
-      ...branding,
-      logoLight: lightUrl || normalizeText(branding.logoLight),
-      logoIcon: iconUrl || normalizeText(branding.logoIcon || branding.logoIconUrl),
-      logoDark: darkUrl || normalizeText(branding.logoDark),
-      favicon: faviconUrl || normalizeText(branding.favicon),
-      portalIcon: portalIconUrl || normalizeText(branding.portalIcon),
-      mobileIcon: mobileIconUrl || normalizeText(branding.mobileIcon),
-      browserTile: browserTileUrl || normalizeText(branding.browserTile),
-    },
-  }
-}
-
 export async function uploadOrganisationBrandingAsset({ file, variant = 'light' } = {}) {
   const selectedFile = typeof File !== 'undefined' && file instanceof File ? file : null
   if (!selectedFile) {
@@ -5196,6 +5070,7 @@ export async function saveDevelopmentConfiguration(input = {}) {
   assertOrganisationAdminAccess(context, 'update development settings')
 
   if (!input.id) {
+    const { createDevelopment } = await loadDevelopmentApi()
     const created = await createDevelopment({
       name: input.name,
       plannedUnits: input.plannedUnits,
@@ -5216,6 +5091,12 @@ export async function saveDevelopmentConfiguration(input = {}) {
       id: created.id,
     }
   }
+
+  const {
+    fetchDevelopmentAttorneyConfig,
+    saveDevelopmentAttorneyConfig,
+    updateDevelopmentSettings,
+  } = await loadDevelopmentApi()
 
   const { error: developmentError } = await client
     .from('developments')

@@ -50,8 +50,14 @@ assert.match(
   /chunkSizeWarningLimit:\s*1600/,
   'Vite should keep an explicit app-shell chunk warning budget instead of relying on the default.',
 )
+assert.match(
+  viteConfig,
+  /vite\/preload-helper/,
+  'Vite preload helpers should stay in a neutral runtime chunk instead of a lazy PDF/export chunk.',
+)
 
 for (const chunkName of [
+  'vendor-runtime',
   'html2pdf-runtime',
   'vendor-html2canvas',
   'vendor-jspdf',

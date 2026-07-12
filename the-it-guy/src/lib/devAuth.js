@@ -1,4 +1,4 @@
-import { INTERNAL_APP_ROLES, normalizeAppRole } from './roles'
+import { INTERNAL_APP_ROLES, normalizeAppRole } from './appRoleMetadata'
 import { getDevBypassUserId } from './demoIds'
 import { getUnsafeEnvironmentFlags } from './envValidation'
 

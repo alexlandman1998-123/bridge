@@ -1,24 +1,21 @@
 import { SHOW_INTELLIGENCE_BETA } from './featureFlags'
 import { canAccessHQ } from '../auth/hqAccess'
 import {
+  APP_ROLE_LABELS,
+  APP_ROLES,
   DEFAULT_APP_ROLE,
-  TRANSITIONAL_APP_ROLE_VALUES,
-  normalizeCanonicalAppRole,
-} from '../constants/appRoles'
+  INTERNAL_APP_ROLES,
+  isInternalAppRole,
+  normalizeAppRole,
+} from './appRoleMetadata'
 
-export { DEFAULT_APP_ROLE }
-
-export const APP_ROLES = TRANSITIONAL_APP_ROLE_VALUES
-export const INTERNAL_APP_ROLES = TRANSITIONAL_APP_ROLE_VALUES
-
-export const APP_ROLE_LABELS = {
-  developer: 'Developer',
-  agent: 'Agent',
-  attorney: 'Attorney / Conveyancer',
-  bond_originator: 'Bond Originator',
-  client: 'Client / Buyer',
-  platform_admin: 'Platform Admin',
-  viewer: 'Viewer',
+export {
+  APP_ROLE_LABELS,
+  APP_ROLES,
+  DEFAULT_APP_ROLE,
+  INTERNAL_APP_ROLES,
+  isInternalAppRole,
+  normalizeAppRole,
 }
 
 const HQ_NAV_ITEM = Object.freeze({ key: 'mission_control', label: '⌘ Mission Control', to: '/command-center', navSection: 'secondary' })
@@ -68,10 +65,9 @@ function createAgentPipelineNav() {
     key: 'agency_pipeline',
     label: 'Pipeline',
     to: '/pipeline/leads',
-    activeMatch: ['/pipeline', '/pipeline/leads', '/pipeline/enquiries', '/pipeline/canvassing', '/pipeline/calendar', '/calendar'],
+    activeMatch: ['/pipeline', '/pipeline/leads', '/pipeline/canvassing', '/pipeline/calendar', '/calendar'],
     children: [
       { key: 'pipeline_leads', label: 'Leads', to: '/pipeline/leads' },
-      { key: 'enquiries', label: 'Enquiries', to: '/pipeline/enquiries' },
       { key: 'pipeline_canvassing', label: 'Canvassing', to: '/pipeline/canvassing' },
       { key: 'pipeline_calendar', label: 'Calendar', to: '/pipeline/calendar', activeMatch: ['/pipeline/calendar', '/calendar'] },
     ],
@@ -238,14 +234,6 @@ export const APP_NAV_BY_ROLE = {
     { key: 'audit_logs', label: 'Audit Logs', to: '/attorney/audit-logs' },
     { key: 'settings', label: 'Settings', to: '/settings' },
   ],
-}
-
-export function normalizeAppRole(value) {
-  return normalizeCanonicalAppRole(value, DEFAULT_APP_ROLE)
-}
-
-export function isInternalAppRole(value) {
-  return INTERNAL_APP_ROLES.includes(normalizeAppRole(value))
 }
 
 export function getRoleModuleCopy(role) {

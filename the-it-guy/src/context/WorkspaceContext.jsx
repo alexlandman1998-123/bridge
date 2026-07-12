@@ -1,9 +1,9 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { updateUserProfile } from '../lib/api'
+import { updateUserProfile } from '../lib/profileApi'
 import { useAuthSession } from './AuthSessionContext'
 import { deriveOnboardingSetupState } from '../lib/onboardingRouting'
-import { DEFAULT_APP_ROLE, normalizeAppRole } from '../lib/roles'
+import { DEFAULT_APP_ROLE, normalizeAppRole } from '../lib/appRoleMetadata'
 import { can, canAll, canAny, createPermissionResolver, getPermissionScope } from '../auth/permissions/permissionResolver'
 import { completeOnboarding } from '../services/onboarding/onboardingEngine'
 

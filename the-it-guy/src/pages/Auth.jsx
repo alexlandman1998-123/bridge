@@ -22,7 +22,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { setStoredDevAuthRole } from '../lib/devAuth'
 import { isDevAuthBypassEnabled } from '../lib/devAuth'
 import { clearPostLoginRedirect, getPostLoginRedirect } from '../lib/resolveMobileAwareRedirect'
-import { APP_ROLE_LABELS } from '../lib/roles'
+import { APP_ROLE_LABELS } from '../lib/appRoleMetadata'
 import { canAccessHQ } from '../auth/hqAccess'
 import {
   BUSINESS_TYPE_OPTIONS,

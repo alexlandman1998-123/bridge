@@ -1,4 +1,4 @@
-import { clearOrganisationRuntimeCache } from '../lib/settingsApi'
+import { clearOrganisationRuntimeCache } from '../lib/organisationBootstrapApi'
 
 const WORKSPACE_SCOPED_STORAGE_PREFIXES = Object.freeze([
   'itg:agency-pipeline:v1:',

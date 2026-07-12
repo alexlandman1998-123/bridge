@@ -4,58 +4,35 @@ import { readFile } from 'node:fs/promises'
 const source = await readFile(new URL('../src/pages/AgentListings.jsx', import.meta.url), 'utf8')
 const packageJson = await readFile(new URL('../package.json', import.meta.url), 'utf8')
 
-assert.match(
-  source,
+for (const removedPattern of [
   /const LISTING_FOLLOW_UP_FILTERS = \[/,
-  'Phase 5 should define a canonical listing follow-up filter set.',
-)
-
-for (const label of [
-  'Needs Follow-Up',
-  'Active With Warning',
-  'Mandate Uploads',
-  'Seller FICA',
-  'Photos',
-  'Commission',
-  'Onboarding',
+  /function listingMatchesFollowUpFilter\(card = \{\}, filterKey = 'all'\)/,
+  /function buildListingFollowUpInsights\(cards = \[\]\)/,
+  /Owner Hotspots/,
+  /Follow-Up Oversight/,
+  /Copy Chase List/,
+  /followUp: 'all'/,
+  /listingMatchesFollowUpFilter\(card, followUpFilter\)/,
 ]) {
-  assert.match(source, new RegExp(label), `Missing oversight filter or metric: ${label}`)
+  assert.doesNotMatch(source, removedPattern, `Listing page should no longer render or power the oversight panel: ${removedPattern}`)
 }
 
 assert.match(
   source,
-  /function listingMatchesFollowUpFilter\(card = \{\}, filterKey = 'all'\)/,
-  'Listing oversight should filter cards through a single matching helper.',
+  /residentialListingCards\.length/,
+  'Residential listing cards should render directly without a follow-up oversight filter.',
 )
 
 assert.match(
   source,
-  /function buildListingFollowUpInsights\(cards = \[\]\)/,
-  'Listing oversight should roll up counts from listing follow-up queues.',
+  /residentialListingCards\.map\(\(card\) =>/,
+  'Residential listing cards should map the unfiltered residential card list.',
 )
 
 assert.match(
   source,
-  /Owner Hotspots/,
-  'Phase 5 should show the agents carrying the most follow-up load.',
-)
-
-assert.match(
-  source,
-  /Follow-Up Oversight/,
-  'Phase 5 should render a visible oversight strip on residential listings.',
-)
-
-assert.match(
-  source,
-  /setFilters\(\(previous\) => \(\{ \.\.\.previous, followUp: filter\.key \}\)\)/,
-  'Oversight filters should update the listing follow-up filter state.',
-)
-
-assert.match(
-  source,
-  /listingMatchesFollowUpFilter\(card, followUpFilter\)/,
-  'Residential listing cards should be filtered by the selected follow-up queue.',
+  /Listing follow-ups/,
+  'Listing cards should still show their own follow-up hints.',
 )
 
 assert.match(
@@ -64,4 +41,4 @@ assert.match(
   'package.json should expose the Phase 5 oversight test.',
 )
 
-console.log('manual-listing-oversight tests passed')
+console.log('manual-listing-oversight removal tests passed')

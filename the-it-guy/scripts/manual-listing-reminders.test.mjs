@@ -37,32 +37,32 @@ assert.match(
 
 assert.match(
   source,
-  /overdueFollowUps:/,
-  'Oversight insights should count overdue follow-ups.',
+  /overdueFollowUpCount:/,
+  'Listing cards should count overdue follow-ups.',
 )
 
 assert.match(
   source,
-  /dueTodayFollowUps:/,
-  'Oversight insights should count follow-ups due today.',
+  /dueTodayFollowUpCount:/,
+  'Listing cards should count follow-ups due today.',
 )
 
-assert.match(
+assert.doesNotMatch(
   source,
   /function buildListingFollowUpEscalationSummary\(cards = \[\], insights = \{\}\)/,
-  'Phase 6 should generate a copyable escalation chase list.',
+  'Listing page should no longer generate an oversight chase list.',
 )
 
-assert.match(
+assert.doesNotMatch(
   source,
   /Copy Chase List/,
-  'Follow-up oversight should expose a copy chase list action.',
+  'Listing page should no longer expose a copy chase list action.',
 )
 
-assert.match(
+assert.doesNotMatch(
   source,
   /Manual listing chase list copied for follow-up\./,
-  'Copy action should confirm the chase list was prepared.',
+  'Listing page should no longer show a chase-list copy confirmation.',
 )
 
 assert.match(

@@ -3,6 +3,7 @@ import { MEMBERSHIP_STATUSES } from '../../constants/membershipStatuses'
 import { ONBOARDING_REQUIRED_REASONS } from '../../constants/onboardingStatuses'
 import { ORG_ROLES } from '../../constants/orgRoles'
 import { WORKSPACE_TYPES, inferWorkspaceTypeFromAppRole, normalizeWorkspaceType } from '../../constants/workspaceTypes'
+import { hasCommercialAccessMarker } from '../../lib/commercialAccess'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { resolveSystemRole, resolveWorkspaceRole } from '../roleResolutionService'
 
@@ -15,54 +16,6 @@ function requireClient() {
 
 function normalizeText(value) {
   return String(value || '').trim()
-}
-
-function normalizeKey(value) {
-  return normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
-}
-
-const COMMERCIAL_MODULE_MARKERS = new Set(['commercial', 'commercial_brokerage', 'commercial_agency'])
-
-function getMembershipMetadata(membership = {}) {
-  return membership?.module_metadata && typeof membership.module_metadata === 'object'
-    ? membership.module_metadata
-    : membership?.moduleMetadata && typeof membership.moduleMetadata === 'object'
-      ? membership.moduleMetadata
-      : membership?.metadata && typeof membership.metadata === 'object'
-        ? membership.metadata
-        : {}
-}
-
-function hasCommercialMembershipMarker(membership = {}) {
-  const metadata = getMembershipMetadata(membership)
-  const moduleContext = normalizeKey(
-    membership.module_context ||
-      membership.moduleContext ||
-      membership.module ||
-      membership.module_type ||
-      metadata.module_context ||
-      metadata.moduleContext ||
-      metadata.module ||
-      metadata.module_type,
-  )
-  if (COMMERCIAL_MODULE_MARKERS.has(moduleContext)) return true
-
-  const commercialRole = normalizeKey(
-    metadata.commercial_role ||
-      metadata.commercialRole ||
-      metadata.role_label ||
-      metadata.roleLabel,
-  )
-  if (commercialRole.startsWith('commercial_') || commercialRole === 'broker' || commercialRole === 'commercial_broker') return true
-
-  const role = normalizeKey(
-    membership.workspace_role ||
-      membership.workspaceRole ||
-      membership.organisation_role ||
-      membership.organisationRole ||
-      membership.role,
-  )
-  return role.startsWith('commercial_') || role.includes('commercial_broker')
 }
 
 function isMissingSchemaError(error, token = '') {
@@ -225,7 +178,7 @@ async function validateOrganisationCompletion(client, { userId, appRole, workspa
 
   const organisationRole = resolveWorkspaceRole(membership, { appRole, workspaceType: resolvedWorkspaceType })
   const missingRecords = []
-  const isCommercialMembership = resolvedWorkspaceType === WORKSPACE_TYPES.agency && hasCommercialMembershipMarker(membership)
+  const isCommercialMembership = resolvedWorkspaceType === WORKSPACE_TYPES.agency && hasCommercialAccessMarker(membership)
 
   if ([WORKSPACE_TYPES.agency, WORKSPACE_TYPES.attorneyFirm, WORKSPACE_TYPES.bondOriginator].includes(resolvedWorkspaceType) && !isCommercialMembership) {
     const branch = await validateBranch(client, membership.organisation_id)
