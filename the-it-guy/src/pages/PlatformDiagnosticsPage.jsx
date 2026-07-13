@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
@@ -22,6 +22,16 @@ import {
   getSellerMandateContinuityDiagnosticsSnapshot,
   getSellerMandateContinuityReleaseGate,
 } from '../services/sellerMandateContinuityReportService'
+import {
+  backfillSellerPortalInvitesAfterSignedMandates,
+  runSellerDocumentRequirementReconciliation,
+} from '../services/privateListingService'
+import {
+  buildCrossModuleDocumentConsistencyGate,
+  buildCrossModuleDocumentConsistencyAudit,
+  fetchCrossModuleDocumentConsistencySnapshot,
+  summarizeCrossModuleDocumentConsistencyAudit,
+} from '../services/documents/crossModuleDocumentConsistencyService'
 
 function StatCard({ label, value, tone = 'neutral' }) {
   const toneClass =
@@ -37,6 +47,97 @@ function StatCard({ label, value, tone = 'neutral' }) {
       <p className="text-xs font-semibold uppercase tracking-[0.08em] opacity-75">{label}</p>
       <strong className="mt-1 block text-2xl">{value}</strong>
     </article>
+  )
+}
+
+function SellerPortalInviteBackfillResult({ result = null }) {
+  if (!result) return null
+  const actions = Array.isArray(result.actions) ? result.actions : []
+  return (
+    <div className={`rounded-[14px] border p-4 ${result.dryRun ? 'border-[#f5d3a4] bg-[#fff8ec]' : 'border-[#cfe8d8] bg-[#effaf3]'}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">
+            {result.dryRun ? 'Invite backfill dry-run result' : 'Invite backfill result'}
+          </h3>
+          <p className="mt-2 text-sm text-[#60758d]">
+            {result.dryRun ? 'No seller emails were sent.' : 'Seller portal invite backfill finished.'}
+          </p>
+          {!result.dryRun && result.planLocked ? (
+            <p className="mt-1 text-xs font-semibold text-[#60758d]">
+              Applied from dry-run plan: {result.plannedCandidateCount || 0}
+            </p>
+          ) : null}
+        </div>
+        <span className="text-sm font-semibold text-[#31485e]">{result.dryRun ? 'dry-run' : 'applied'}</span>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-5">
+        <StatCard label="Scanned" value={result.scannedRecords || 0} />
+        <StatCard label="Candidates" value={result.candidateCount || 0} tone={result.candidateCount ? 'warning' : 'success'} />
+        <StatCard label={result.dryRun ? 'Planned' : 'Sent'} value={result.dryRun ? result.summary?.planned || 0 : result.summary?.sent || 0} tone="success" />
+        <StatCard label="Skipped" value={result.summary?.skipped || 0} tone={result.summary?.skipped ? 'warning' : 'success'} />
+        <StatCard label="Failed" value={result.summary?.failed || 0} tone={result.summary?.failed ? 'critical' : 'success'} />
+      </div>
+      {actions.length ? (
+        <ul className="mt-3 divide-y divide-[#edf1f6] text-sm text-[#60758d]">
+          {actions.slice(0, 5).map((action) => (
+            <li key={`${action.packetId}-${action.status}`} className="flex flex-wrap items-center justify-between gap-3 py-2">
+              <span>{action.listingId || 'Unknown listing'} · {action.previousInviteStatus || 'missing'}</span>
+              <span className="font-semibold text-[#31485e]">{action.status}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
+function SellerDocumentReconciliationResult({ result = null }) {
+  if (!result) return null
+  const summary = result.summary || {}
+  const syncable = result.actionQueues?.syncable || []
+  const applied = Array.isArray(result.applied) ? result.applied : []
+  const isApply = result.dryRun === false
+  return (
+    <div className={`rounded-[14px] border p-4 ${isApply ? 'border-[#cfe8d8] bg-[#effaf3]' : 'border-[#f5d3a4] bg-[#fff8ec]'}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">
+            {isApply ? 'Seller document reconciliation result' : 'Seller document reconciliation dry-run'}
+          </h3>
+          <p className="mt-2 text-sm text-[#60758d]">
+            {isApply ? 'Requirement sync finished for the reviewed listings.' : 'No requirement rows were changed.'}
+          </p>
+        </div>
+        <span className="text-sm font-semibold text-[#31485e]">{isApply ? 'applied' : 'dry-run'}</span>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-6">
+        <StatCard label="Checked" value={summary.total || 0} />
+        <StatCard label="Ready" value={summary.ready || 0} tone="success" />
+        <StatCard label="Need sync" value={summary.needsSync || 0} tone={summary.needsSync ? 'warning' : 'success'} />
+        <StatCard label="Syncable" value={summary.syncable || 0} tone={summary.syncable ? 'warning' : 'success'} />
+        <StatCard label="Missing rows" value={summary.missingRequirementRows || 0} tone={summary.missingRequirementRows ? 'warning' : 'success'} />
+        <StatCard label="Stale rows" value={summary.staleRequirementRows || 0} tone={summary.staleRequirementRows ? 'warning' : 'success'} />
+      </div>
+      {isApply ? (
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <StatCard label="Attempted" value={result.applySummary?.attempted || applied.length || 0} />
+          <StatCard label="Synced" value={result.applySummary?.synced || 0} tone="success" />
+          <StatCard label="Failed" value={result.applySummary?.failed || 0} tone={result.applySummary?.failed ? 'critical' : 'success'} />
+        </div>
+      ) : null}
+      {syncable.length ? (
+        <ul className="mt-3 divide-y divide-[#edf1f6] text-sm text-[#60758d]">
+          {syncable.slice(0, 6).map((row) => (
+            <li key={row.listingId} className="grid gap-2 py-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
+              <span className="font-semibold text-[#31485e]">{row.title || row.listingId}</span>
+              <span>Missing: {(row.missingRequirementKeys || []).join(', ') || '-'}</span>
+              <span>Stale: {(row.staleRequirementKeys || []).join(', ') || '-'}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   )
 }
 
@@ -82,9 +183,9 @@ function formatDiagnosticDate(value) {
 }
 
 function getDiagnosticStatusTone(status) {
-  if (status === 'critical' || status === 'forbidden' || status === 'not_configured') return 'critical'
+  if (status === 'critical' || status === 'forbidden' || status === 'not_configured' || status === 'fail' || status === 'blocked') return 'critical'
   if (status === 'warning' || status === 'attention' || status === 'not_installed') return 'warning'
-  if (status === 'healthy') return 'success'
+  if (status === 'healthy' || status === 'pass') return 'success'
   return 'neutral'
 }
 
@@ -121,16 +222,40 @@ export default function PlatformDiagnosticsPage() {
   const [notificationDispatchResult, setNotificationDispatchResult] = useState(null)
   const [mandateContinuity, setMandateContinuity] = useState(null)
   const [mandateContinuityLoading, setMandateContinuityLoading] = useState(false)
-
-  useEffect(() => {
-    if (entityType === 'user') setEntityId(authState.user?.id || '')
-    if (entityType === 'workspace') setEntityId(currentWorkspace?.id || '')
-  }, [authState.user?.id, currentWorkspace?.id, entityType])
+  const [mandateInviteBackfill, setMandateInviteBackfill] = useState(null)
+  const [mandateInviteBackfillLoading, setMandateInviteBackfillLoading] = useState(false)
+  const [mandateInviteBackfillApplyLoading, setMandateInviteBackfillApplyLoading] = useState(false)
+  const [sellerDocumentReconciliation, setSellerDocumentReconciliation] = useState(null)
+  const [sellerDocumentReconciliationLoading, setSellerDocumentReconciliationLoading] = useState(false)
+  const [sellerDocumentReconciliationApplyLoading, setSellerDocumentReconciliationApplyLoading] = useState(false)
+  const [documentConsistency, setDocumentConsistency] = useState(null)
+  const [documentConsistencyLoading, setDocumentConsistencyLoading] = useState(false)
 
   const summary = useMemo(() => result?.summary || result || {}, [result])
   const issues = result?.issues || []
   const inviteReconciliationActionCount = sumActionCounts(inviteReconciliation?.actions)
   const inviteAppliedActionCount = sumActionCounts(inviteApplyResult?.actions)
+  const mandateInviteBackfillPlannedCandidates = useMemo(() => {
+    if (!mandateInviteBackfill?.dryRun) return []
+    return (Array.isArray(mandateInviteBackfill.actions) ? mandateInviteBackfill.actions : [])
+      .filter((action) => action.status === 'planned' && action.packetId && action.listingId)
+      .map((action) => ({
+        listingId: action.listingId,
+        packetId: action.packetId,
+        sellerWorkspaceToken: action.sellerWorkspaceToken || '',
+        previousInviteStatus: action.previousInviteStatus || 'missing',
+      }))
+  }, [mandateInviteBackfill])
+  const mandateInviteBackfillPlannedCount = mandateInviteBackfill?.dryRun
+    ? Number(mandateInviteBackfillPlannedCandidates.length || 0)
+    : 0
+  const sellerDocumentReconciliationPlannedIds = useMemo(() => {
+    if (!sellerDocumentReconciliation?.dryRun) return []
+    return (sellerDocumentReconciliation.actionQueues?.syncable || [])
+      .map((row) => row.listingId)
+      .filter(Boolean)
+  }, [sellerDocumentReconciliation])
+  const sellerDocumentReconciliationPlannedCount = sellerDocumentReconciliationPlannedIds.length
 
   async function refreshNotificationAutomationHealth() {
     const snapshot = await getNotificationAutomationHealth({
@@ -273,6 +398,126 @@ export default function PlatformDiagnosticsPage() {
     }
   }
 
+  async function runSellerPortalInviteBackfillDryRun() {
+    try {
+      setMandateInviteBackfillLoading(true)
+      setError('')
+      const dryRun = await backfillSellerPortalInvitesAfterSignedMandates({
+        organisationId: currentWorkspace?.id || '',
+        limit: 50,
+        dryRun: true,
+      })
+      setMandateInviteBackfill(dryRun)
+    } catch (backfillError) {
+      setError(backfillError?.message || 'Seller portal invite backfill dry-run failed.')
+    } finally {
+      setMandateInviteBackfillLoading(false)
+    }
+  }
+
+  async function applySellerPortalInviteBackfill() {
+    if (!mandateInviteBackfillPlannedCount) return
+    const confirmed = window.confirm(`Send ${mandateInviteBackfillPlannedCount} seller portal password setup invite${mandateInviteBackfillPlannedCount === 1 ? '' : 's'} now? This can send live seller emails.`)
+    if (!confirmed) return
+
+    try {
+      setMandateInviteBackfillApplyLoading(true)
+      setError('')
+      const applied = await backfillSellerPortalInvitesAfterSignedMandates({
+        organisationId: currentWorkspace?.id || '',
+        limit: 50,
+        dryRun: false,
+        plannedCandidates: mandateInviteBackfillPlannedCandidates,
+      })
+      setMandateInviteBackfill(applied)
+      await loadSellerMandateContinuityDiagnostics()
+    } catch (backfillError) {
+      setError(backfillError?.message || 'Seller portal invite backfill failed.')
+    } finally {
+      setMandateInviteBackfillApplyLoading(false)
+    }
+  }
+
+  async function runSellerDocumentReconciliationDryRun() {
+    try {
+      setSellerDocumentReconciliationLoading(true)
+      setError('')
+      const dryRun = await runSellerDocumentRequirementReconciliation({
+        organisationId: currentWorkspace?.id || '',
+        limit: 100,
+        dryRun: true,
+      })
+      setSellerDocumentReconciliation(dryRun)
+    } catch (reconciliationError) {
+      setError(reconciliationError?.message || 'Seller document reconciliation dry-run failed.')
+    } finally {
+      setSellerDocumentReconciliationLoading(false)
+    }
+  }
+
+  async function applySellerDocumentReconciliation() {
+    if (!sellerDocumentReconciliationPlannedCount) return
+    const confirmed = window.confirm(`Apply seller document requirement sync for ${sellerDocumentReconciliationPlannedCount} listing${sellerDocumentReconciliationPlannedCount === 1 ? '' : 's'} from the reviewed dry-run plan?`)
+    if (!confirmed) return
+
+    try {
+      setSellerDocumentReconciliationApplyLoading(true)
+      setError('')
+      const applied = await runSellerDocumentRequirementReconciliation({
+        listingIds: sellerDocumentReconciliationPlannedIds,
+        limit: sellerDocumentReconciliationPlannedCount,
+        dryRun: false,
+      })
+      setSellerDocumentReconciliation(applied)
+    } catch (reconciliationError) {
+      setError(reconciliationError?.message || 'Seller document reconciliation failed.')
+    } finally {
+      setSellerDocumentReconciliationApplyLoading(false)
+    }
+  }
+
+  async function loadCrossModuleDocumentConsistency() {
+    try {
+      setDocumentConsistencyLoading(true)
+      setError('')
+      const audit = {
+        ...buildCrossModuleDocumentConsistencyAudit(),
+        source: 'static_contract',
+      }
+      setDocumentConsistency({
+        ...audit,
+        gate: buildCrossModuleDocumentConsistencyGate(audit),
+      })
+    } catch (consistencyError) {
+      setError(consistencyError?.message || 'Cross-module document consistency diagnostics failed.')
+    } finally {
+      setDocumentConsistencyLoading(false)
+    }
+  }
+
+  async function loadLiveCrossModuleDocumentConsistency() {
+    try {
+      setDocumentConsistencyLoading(true)
+      setError('')
+      if (!isSupabaseConfigured || !supabase) {
+        throw new Error('Supabase is not configured for live document consistency diagnostics.')
+      }
+      const snapshot = await fetchCrossModuleDocumentConsistencySnapshot({
+        client: supabase,
+        organisationId: currentWorkspace?.id || '',
+        limit: 100,
+      })
+      setDocumentConsistency({
+        ...snapshot,
+        gate: buildCrossModuleDocumentConsistencyGate(snapshot),
+      })
+    } catch (consistencyError) {
+      setError(consistencyError?.message || 'Live document consistency diagnostics failed.')
+    } finally {
+      setDocumentConsistencyLoading(false)
+    }
+  }
+
   async function runNotificationReminderDryRun() {
     try {
       setNotificationDispatchLoading(true)
@@ -373,6 +618,13 @@ export default function PlatformDiagnosticsPage() {
     : null
   const mandateContinuityRows = mandateContinuity?.records || []
   const mandateContinuityWarnings = mandateContinuity?.queryWarnings || []
+  const documentConsistencySummary = documentConsistency?.summary || {}
+  const documentConsistencyIssues = documentConsistency?.issues || []
+  const documentConsistencyGroups = documentConsistency?.parityGroups || []
+  const documentConsistencyWarnings = documentConsistency?.queryWarnings || []
+  const documentConsistencyGate = documentConsistency
+    ? documentConsistency.gate || buildCrossModuleDocumentConsistencyGate(documentConsistency)
+    : null
 
   return (
     <section className="page">
@@ -492,12 +744,25 @@ export default function PlatformDiagnosticsPage() {
             <div>
               <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Seller mandate continuity</h2>
               <p className="mt-2 text-sm text-[#60758d]">
-                Audit signed mandate linkage across listings, leads, seller-visible documents, seller portal context, and activity feed.
+                Audit signed mandate linkage across listings, leads, seller-visible documents, seller portal context, invite delivery, and activity feed.
               </p>
             </div>
-            <button type="button" className="header-secondary-cta" onClick={loadSellerMandateContinuityDiagnostics} disabled={mandateContinuityLoading}>
-              {mandateContinuityLoading ? 'Checking mandates...' : 'Run mandate continuity'}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="header-secondary-cta" onClick={loadSellerMandateContinuityDiagnostics} disabled={mandateContinuityLoading}>
+                {mandateContinuityLoading ? 'Checking mandates...' : 'Run mandate continuity'}
+              </button>
+              <button type="button" className="header-secondary-cta" onClick={runSellerPortalInviteBackfillDryRun} disabled={mandateInviteBackfillLoading || mandateInviteBackfillApplyLoading}>
+                {mandateInviteBackfillLoading ? 'Planning...' : 'Dry-run invite backfill'}
+              </button>
+              <button
+                type="button"
+                className="header-primary-cta"
+                onClick={applySellerPortalInviteBackfill}
+                disabled={mandateInviteBackfillApplyLoading || mandateInviteBackfillLoading || !mandateInviteBackfillPlannedCount}
+              >
+                {mandateInviteBackfillApplyLoading ? 'Sending...' : 'Apply invite backfill'}
+              </button>
+            </div>
           </div>
 
           {mandateContinuity ? (
@@ -520,6 +785,13 @@ export default function PlatformDiagnosticsPage() {
                 <StatCard label="Portal warnings" value={mandateContinuity.summary?.portalWarnings || 0} tone={mandateContinuity.summary?.portalWarnings ? 'warning' : 'success'} />
                 <StatCard label="Query warnings" value={mandateContinuityWarnings.length || 0} tone={mandateContinuityWarnings.length ? 'warning' : 'success'} />
               </div>
+              <div className="grid gap-3 md:grid-cols-5">
+                <StatCard label="Portal invite sent" value={mandateContinuity.summary?.portalInviteSent || 0} tone="success" />
+                <StatCard label="Invite action" value={mandateContinuity.summary?.portalInviteNeedsAction || 0} tone={mandateContinuity.summary?.portalInviteNeedsAction ? 'warning' : 'success'} />
+                <StatCard label="Invite failed" value={mandateContinuity.summary?.portalInviteFailed || 0} tone={mandateContinuity.summary?.portalInviteFailed ? 'critical' : 'success'} />
+                <StatCard label="Invite blocked" value={mandateContinuity.summary?.portalInviteBlocked || 0} tone={mandateContinuity.summary?.portalInviteBlocked ? 'warning' : 'success'} />
+                <StatCard label="Invite skipped" value={mandateContinuity.summary?.portalInviteSkipped || 0} tone={mandateContinuity.summary?.portalInviteSkipped ? 'warning' : 'success'} />
+              </div>
 
               {mandateContinuityGate?.reason ? (
                 <p className={`rounded-[12px] border px-3 py-2 text-sm ${mandateContinuityGate.status === 'fail' ? 'border-[#f2c8c4] bg-[#fff5f4] text-[#9f1c1c]' : 'border-[#cfe8d8] bg-[#effaf3] text-[#236340]'}`}>
@@ -533,14 +805,17 @@ export default function PlatformDiagnosticsPage() {
                 </div>
               ) : null}
 
+              <SellerPortalInviteBackfillResult result={mandateInviteBackfill} />
+
               <div className="overflow-hidden rounded-[14px] border border-[#dde4ee] bg-white">
-                <table className="w-full min-w-[920px] text-left text-sm">
+                <table className="w-full min-w-[1040px] text-left text-sm">
                   <thead className="bg-[#f7f9fc] text-xs uppercase tracking-[0.08em] text-[#60758d]">
                     <tr>
                       <th className="px-4 py-3">Status</th>
                       <th className="px-4 py-3">Listing</th>
                       <th className="px-4 py-3">Packet</th>
                       <th className="px-4 py-3">Signed evidence</th>
+                      <th className="px-4 py-3">Portal invite</th>
                       <th className="px-4 py-3">Next action</th>
                     </tr>
                   </thead>
@@ -565,20 +840,152 @@ export default function PlatformDiagnosticsPage() {
                             {record.signedDocumentName || record.finalSignedFilePath || record.finalSignedFileUrl || ''}
                           </span>
                         </td>
+                        <td className="px-4 py-3">
+                          <span className="block font-semibold capitalize text-[#31485e]">{String(record.portalInviteStatus || 'missing').replace(/_/g, ' ')}</span>
+                          <span className="block max-w-[220px] truncate text-xs text-[#60758d]">
+                            {record.portalInviteSentAt || record.portalInviteFailedAt || record.portalInviteBlockedAt || record.portalInviteReadyAt || record.portalInviteSkipReason || record.portalInviteDetail || ''}
+                          </span>
+                        </td>
                         <td className="px-4 py-3 text-[#60758d]">{record.actionItems?.[0] || (record.ready ? 'No action required.' : 'Review continuity checks.')}</td>
                       </tr>
                     )) : (
                       <tr>
-                        <td className="px-4 py-5 text-center text-[#60758d]" colSpan={5}>No signed mandate records found for this workspace.</td>
+                        <td className="px-4 py-5 text-center text-[#60758d]" colSpan={6}>No signed mandate records found for this workspace.</td>
                       </tr>
                     )}
                   </tbody>
                 </table>
               </div>
             </div>
+          ) : mandateInviteBackfill ? (
+            <SellerPortalInviteBackfillResult result={mandateInviteBackfill} />
           ) : (
             <p className="rounded-[14px] border border-dashed border-[#d7e2ee] bg-[#f9fbfe] px-4 py-6 text-center text-sm text-[#60758d]">
               Run mandate continuity to verify signed mandates before release checks or seller support follow-up.
+            </p>
+          )}
+        </div>
+
+        <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-white p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Cross-module document consistency</h2>
+              <p className="mt-2 text-sm text-[#60758d]">
+                Check seller, listing, seller-lead, buyer agency, transaction, attorney, bond, and cancellation document touchpoints against the shared canonical document map.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="header-secondary-cta" onClick={loadCrossModuleDocumentConsistency} disabled={documentConsistencyLoading}>
+                {documentConsistencyLoading ? 'Checking documents...' : 'Run static contract'}
+              </button>
+              <button type="button" className="header-primary-cta" onClick={loadLiveCrossModuleDocumentConsistency} disabled={documentConsistencyLoading}>
+                {documentConsistencyLoading ? 'Checking documents...' : 'Run live workspace'}
+              </button>
+            </div>
+          </div>
+
+          {documentConsistency ? (
+            <div className="grid gap-4">
+              <div className="grid gap-3 md:grid-cols-6">
+                <StatCard label="Gate" value={documentConsistencyGate?.status || 'unknown'} tone={getDiagnosticStatusTone(documentConsistencyGate?.status)} />
+                <StatCard label="Consistency" value={documentConsistencySummary.status || 'unknown'} tone={getDiagnosticStatusTone(documentConsistencySummary.status)} />
+                <StatCard label="Mode" value={String(documentConsistencySummary.source || documentConsistency.source || 'static').replace(/_/g, ' ')} />
+                <StatCard label="Rows checked" value={documentConsistencySummary.rowCount || 0} />
+                <StatCard label="Parity groups" value={documentConsistencySummary.parityGroupCount || 0} tone={documentConsistencySummary.inconsistentParityGroupCount ? 'warning' : 'success'} />
+                <StatCard label="Issues" value={documentConsistencySummary.issueCount || 0} tone={documentConsistencySummary.issueCount ? 'warning' : 'success'} />
+              </div>
+              {documentConsistencyGate ? (
+                <p className={`rounded-[12px] border px-3 py-2 text-sm ${documentConsistencyGate.status === 'fail' ? 'border-[#f2c8c4] bg-[#fff5f4] text-[#9f1c1c]' : documentConsistencyGate.status === 'warning' ? 'border-[#f5d3a4] bg-[#fff8ec] text-[#8a4b10]' : 'border-[#cfe8d8] bg-[#effaf3] text-[#236340]'}`}>
+                  Phase 6 gate {documentConsistencyGate.status}: {documentConsistencyGate.reason} No document rows were changed.
+                </p>
+              ) : null}
+              {documentConsistency.source === 'live_workspace' ? (
+                <div className="grid gap-3 md:grid-cols-4">
+                  <StatCard label="Listings scoped" value={documentConsistencySummary.scopedListingCount || 0} />
+                  <StatCard label="Transactions scoped" value={documentConsistencySummary.scopedTransactionCount || 0} />
+                  <StatCard label="Touchpoint rows" value={documentConsistency.sourceCounts?.touchpointRows || 0} />
+                  <StatCard label="Query warnings" value={documentConsistencySummary.queryWarningCount || 0} tone={documentConsistencySummary.queryWarningCount ? 'warning' : 'success'} />
+                </div>
+              ) : null}
+              <p className={`rounded-[12px] border px-3 py-2 text-sm ${documentConsistencySummary.status === 'healthy' ? 'border-[#cfe8d8] bg-[#effaf3] text-[#236340]' : 'border-[#f5d3a4] bg-[#fff8ec] text-[#8a4b10]'}`}>
+                {summarizeCrossModuleDocumentConsistencyAudit(documentConsistency)}
+              </p>
+              {documentConsistencyWarnings.length ? (
+                <div className="rounded-[12px] border border-[#f5d3a4] bg-[#fff8ec] p-3 text-sm text-[#8a4b10]">
+                  {documentConsistencyWarnings.length} live query warning{documentConsistencyWarnings.length === 1 ? '' : 's'} occurred. The report may be partial.
+                </div>
+              ) : null}
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Key parity groups</h3>
+                  {documentConsistencyGroups.length ? (
+                    <ul className="mt-3 space-y-2 text-sm text-[#60758d]">
+                      {documentConsistencyGroups.slice(0, 8).map((group) => (
+                        <li key={group.parityGroup} className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f6] py-2 last:border-0">
+                          <span>{String(group.parityGroup || '').replace(/_/g, ' ')}</span>
+                          <span className="font-semibold text-[#31485e]">{group.canonicalDocumentKeys.join(', ') || 'unknown'}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-sm text-[#60758d]">Run diagnostics to view parity groups.</p>
+                  )}
+                </div>
+                <div className="rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Consistency issues</h3>
+                  {documentConsistencyIssues.length ? (
+                    <ul className="mt-3 space-y-2 text-sm text-[#60758d]">
+                      {documentConsistencyIssues.slice(0, 8).map((issue, index) => (
+                        <li key={`${issue.code}-${issue.touchpointKey}-${issue.parityGroup}-${index}`} className="border-b border-[#edf1f6] py-2 last:border-0">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <span>{String(issue.code || '').replace(/_/g, ' ')}</span>
+                            <span className="font-semibold capitalize text-[#31485e]">{issue.severity || 'warning'}</span>
+                          </div>
+                          <p className="mt-1 text-xs leading-5 text-[#60758d]">{issue.message}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-sm text-[#60758d]">No cross-module document consistency issues detected.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="rounded-[14px] border border-dashed border-[#d7e2ee] bg-[#f9fbfe] px-4 py-6 text-center text-sm text-[#60758d]">
+              Run document consistency before changing document requirements, portal labels, attorney workspaces, or buyer agency document prompts.
+            </p>
+          )}
+        </div>
+
+        <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-white p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Seller document reconciliation</h2>
+              <p className="mt-2 text-sm text-[#60758d]">
+                Compare persisted seller document requirements with the shared listing document source-of-truth and sync old listings from a reviewed dry-run plan.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="header-secondary-cta" onClick={runSellerDocumentReconciliationDryRun} disabled={sellerDocumentReconciliationLoading || sellerDocumentReconciliationApplyLoading}>
+                {sellerDocumentReconciliationLoading ? 'Checking documents...' : 'Dry-run document reconciliation'}
+              </button>
+              <button
+                type="button"
+                className="header-primary-cta"
+                onClick={applySellerDocumentReconciliation}
+                disabled={sellerDocumentReconciliationApplyLoading || sellerDocumentReconciliationLoading || !sellerDocumentReconciliationPlannedCount}
+              >
+                {sellerDocumentReconciliationApplyLoading ? 'Syncing...' : 'Apply requirement sync'}
+              </button>
+            </div>
+          </div>
+
+          {sellerDocumentReconciliation ? (
+            <SellerDocumentReconciliationResult result={sellerDocumentReconciliation} />
+          ) : (
+            <p className="rounded-[14px] border border-dashed border-[#d7e2ee] bg-[#f9fbfe] px-4 py-6 text-center text-sm text-[#60758d]">
+              Run a dry-run to find listings whose seller document requirements are missing or stale across listing documents, seller leads, and seller portal touchpoints.
             </p>
           )}
         </div>
@@ -998,7 +1405,17 @@ export default function PlatformDiagnosticsPage() {
         <div className="grid gap-3 rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4 lg:grid-cols-[180px_minmax(0,1fr)_auto]">
           <label className="grid gap-1.5 text-sm font-semibold text-[#31485e]">
             Check type
-            <select className="auth-input" value={entityType} onChange={(event) => setEntityType(event.target.value)}>
+            <select
+              className="auth-input"
+              value={entityType}
+              onChange={(event) => {
+                const nextType = event.target.value
+                setEntityType(nextType)
+                if (nextType === 'user') setEntityId(authState.user?.id || '')
+                else if (nextType === 'workspace') setEntityId(currentWorkspace?.id || '')
+                else if (nextType === 'system') setEntityId('')
+              }}
+            >
               <option value="user">User</option>
               <option value="workspace">Workspace</option>
               <option value="transaction">Transaction</option>

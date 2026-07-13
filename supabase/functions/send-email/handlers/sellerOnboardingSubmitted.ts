@@ -30,6 +30,12 @@ function toRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function normalizeBoolean(value: unknown) {
+  if (typeof value === "boolean") return value;
+  const normalized = normalizeText(value).toLowerCase();
+  return ["1", "true", "yes", "on", "enabled"].includes(normalized);
+}
+
 async function resolveSenderOrganisationBranding(
   supabase: any,
   organisationId: string,
@@ -442,7 +448,16 @@ export async function handleSellerOnboardingSubmittedEmail(
   const leadId = normalizeText(payload.leadId);
   const listingId = normalizeText(payload.listingId);
   const sellerEmail = normalizeEmail(payload.sellerEmail ?? payload.seller_email);
-  const sellerPortalLink = resolveSellerPortalLink(req, payload);
+  const sellerPortalInvitePolicy = normalizeText(
+    payload.sellerPortalInvitePolicy ??
+      payload.seller_portal_invite_policy,
+  ).toLowerCase();
+  const deferSellerPortalLinkUntilMandateSigned =
+    normalizeBoolean(
+      payload.deferSellerPortalLinkUntilMandateSigned ??
+        payload.defer_seller_portal_link_until_mandate_signed,
+    ) || sellerPortalInvitePolicy === "after_mandate_signed";
+  const sellerPortalLink = deferSellerPortalLinkUntilMandateSigned ? "" : resolveSellerPortalLink(req, payload);
   const requestedActionLink = normalizeText(payload.actionLink);
   const appBaseUrl = resolveAppBaseUrl(req);
   const actionLink = requestedActionLink ||
@@ -590,7 +605,11 @@ export async function handleSellerOnboardingSubmittedEmail(
   if (!sellerEmail || !sellerPortalLink) {
     skipped.push({
       target: "seller",
-      reason: !sellerEmail ? "missing_seller_email" : "missing_seller_portal_link",
+      reason: !sellerEmail
+        ? "missing_seller_email"
+        : deferSellerPortalLinkUntilMandateSigned
+          ? "seller_portal_link_deferred_until_mandate_signed"
+          : "missing_seller_portal_link",
     });
   } else {
     const sellerSubject = buildSellerOnboardingSubmittedSellerSubject(propertyTitle);
@@ -690,5 +709,8 @@ export async function handleSellerOnboardingSubmittedEmail(
     leadId: leadId || null,
     listingId: listingId || null,
     sellerPortalLink: sellerPortalLink || null,
+    sellerPortalInvitePolicy: deferSellerPortalLinkUntilMandateSigned
+      ? "after_mandate_signed"
+      : sellerPortalInvitePolicy || null,
   });
 }

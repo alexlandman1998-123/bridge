@@ -44,6 +44,16 @@ import {
   normalizeVisibilityConditionInput,
 } from '../../core/documents/sectionVisibilityRules'
 import {
+  buildMandateTemplatePublishGateReport,
+  serializeMandateTemplatePublishGateScan,
+} from '../../core/documents/mandateTemplatePublishGate'
+import {
+  buildMandateTemplateOperationalAudit,
+} from '../../core/documents/mandateTemplateOperationalAudit'
+import {
+  buildMandateTemplateLaunchReadiness,
+} from '../../core/documents/mandateTemplateLaunchReadiness'
+import {
   archiveDocumentPacket,
   createDocumentPacket,
   createDocumentPacketTemplate,
@@ -154,6 +164,17 @@ const LEGAL_DEFAULT_TEMPLATE_DEFINITIONS = {
     description: 'Default editable seller mandate template for agency workflows.',
   },
 }
+const MANDATE_TEMPLATE_ROUTE_OPTIONS = [
+  { key: 'default', label: 'All mandate situations' },
+  { key: 'company_full_title', label: 'Company + Full Title' },
+  { key: 'company_sectional_title', label: 'Company + Sectional Title' },
+  { key: 'trust_full_title', label: 'Trust + Full Title' },
+  { key: 'trust_sectional_title', label: 'Trust + Sectional Title' },
+  { key: 'individual_full_title', label: 'Individual + Full Title' },
+  { key: 'individual_sectional_title', label: 'Individual + Sectional Title' },
+  { key: 'individual_spouse_consent_full_title', label: 'Married ICOP + Full Title' },
+  { key: 'individual_spouse_consent_sectional_title', label: 'Married ICOP + Sectional Title' },
+]
 const LEGAL_TEMPLATE_TABLE_SNIPPET = [
   '| Detail | Value |',
   '| --- | --- |',
@@ -1634,15 +1655,50 @@ Display Address: {{property_display_address}}
 Suburb: {{property_suburb}}
 City: {{property_city}}
 Property Type: {{property_type}}
-Unit Number: {{property_unit_number}}
-Section Number: {{property_section_number}}
-Sectional Title Number: {{sectional_title_number}}
-Complex / Scheme Name: {{property_complex_name}}
-Estate Name: {{property_estate_name}}
+Title Type: {{property_title_type}}
 
 The Seller warrants that the Seller is duly authorised to mandate the marketing of the Property.
 
-The Seller shall disclose to the Agency any material facts, defects, restrictions, servitudes, disputes, body corporate issues, estate rules, or other matters which may reasonably affect the marketing, sale, transfer, or value of the Property.`,
+The Seller shall disclose to the Agency any material facts, defects, restrictions, servitudes, disputes, rules, or other matters which may reasonably affect the marketing, sale, transfer, or value of the Property.`,
+  property_full_title_pack: `FULL TITLE PROPERTY DETAILS
+
+Where the Property is a full title property, the Seller confirms the registered land particulars recorded below and will provide any title deed, rates, servitude, estate, HOA, or municipal information reasonably required for marketing and transfer.
+
+Title Type
+{{property_title_type}}
+
+Erf Number
+{{erf_number}}
+
+Erf Size
+{{erf_size}}
+
+Floor Size
+{{floor_size}}
+
+Estate / HOA
+{{property_estate_name}}`,
+  property_sectional_title_pack: `SECTIONAL TITLE PROPERTY DETAILS
+
+Where the Property is a sectional title, share block, apartment, flat, or unit, the Seller confirms the scheme particulars recorded below and will disclose any body corporate, levy, conduct rule, exclusive use, parking, storage, or scheme issue relevant to marketing and transfer.
+
+Title Type
+{{property_title_type}}
+
+Unit Number
+{{property_unit_number}}
+
+Section Number
+{{property_section_number}}
+
+Sectional Title Number
+{{sectional_title_number}}
+
+Complex / Scheme Name
+{{property_complex_name}}
+
+Estate Name
+{{property_estate_name}}`,
   mandate_terms: `MANDATE TERMS
 
 Mandate Type: {{mandate_type}}
@@ -2169,9 +2225,39 @@ function createStarterSections(packetType = 'otp') {
         sectionLabel: 'Property Details',
         sectionType: 'dynamic_fields',
         legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.property_details,
-        placeholderKeysText: 'property_address, property_display_address, property_suburb, property_city, property_type, property_unit_number, property_section_number, sectional_title_number, property_complex_name, property_estate_name',
+        placeholderKeysText: 'property_address, property_display_address, property_suburb, property_city, property_type, property_title_type',
         isRequired: true,
         sortOrder: 6,
+      },
+      {
+        sectionKey: 'property_full_title_pack',
+        sectionLabel: 'Full Title Property Pack',
+        sectionType: 'legal_text',
+        legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.property_full_title_pack,
+        placeholderKeysText: 'property_title_type, erf_number, erf_size, floor_size, property_estate_name',
+        conditionJson: createConditionalPackCondition({
+          field: 'property_title_type',
+          operator: 'in',
+          value: 'full_title, agricultural_holding',
+          label: 'Only include for full title properties',
+        }),
+        isRequired: false,
+        sortOrder: 7,
+      },
+      {
+        sectionKey: 'property_sectional_title_pack',
+        sectionLabel: 'Sectional Title Property Pack',
+        sectionType: 'legal_text',
+        legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.property_sectional_title_pack,
+        placeholderKeysText: 'property_title_type, property_unit_number, property_section_number, sectional_title_number, property_complex_name, property_estate_name',
+        conditionJson: createConditionalPackCondition({
+          field: 'property_title_type',
+          operator: 'in',
+          value: 'sectional_title, share_block',
+          label: 'Only include for sectional title or share block properties',
+        }),
+        isRequired: false,
+        sortOrder: 8,
       },
       {
         sectionKey: 'mandate_terms',
@@ -2180,7 +2266,7 @@ function createStarterSections(packetType = 'otp') {
         legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.mandate_terms,
         placeholderKeysText: 'mandate_type, mandate_start_date, mandate_end_date, mandate_introduction_purpose, mandate_authority_granted, mandate_access_instructions',
         isRequired: true,
-        sortOrder: 7,
+        sortOrder: 9,
       },
       {
         sectionKey: 'commission_terms',
@@ -2189,7 +2275,7 @@ function createStarterSections(packetType = 'otp') {
         legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.commission_terms,
         placeholderKeysText: 'commission_structure, mandate_commission_percent, mandate_commission_amount, vat_handling, asking_price',
         isRequired: true,
-        sortOrder: 8,
+        sortOrder: 10,
       },
       {
         sectionKey: 'marketing_listing_terms',
@@ -2198,7 +2284,7 @@ function createStarterSections(packetType = 'otp') {
         legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.marketing_listing_terms,
         placeholderKeysText: 'mandate_marketing_permissions',
         isRequired: false,
-        sortOrder: 9,
+        sortOrder: 11,
       },
       {
         sectionKey: 'special_conditions',
@@ -2207,7 +2293,7 @@ function createStarterSections(packetType = 'otp') {
         legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.special_conditions,
         placeholderKeysText: 'special_conditions, annexures_list',
         isRequired: false,
-        sortOrder: 10,
+        sortOrder: 12,
       },
       {
         sectionKey: 'signature_pages',
@@ -2216,7 +2302,7 @@ function createStarterSections(packetType = 'otp') {
         legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.signature_pages,
         placeholderKeysText: 'seller_full_name, seller_signature, seller_initials, signed_date, agent_full_name, organisation_name, agent_ffc_number, witness_signature, document_reference, transaction_reference, generated_date, template_version',
         isRequired: true,
-        sortOrder: 11,
+        sortOrder: 13,
       },
     ]
   }
@@ -2657,6 +2743,13 @@ function createDefaultLegalTemplateRecord(packetType = 'otp', {
       documentKind: 'standard',
       preferred_document_kind: 'standard',
       document_kind_label: 'Standard document',
+      ...(normalizedPacketType === 'mandate'
+        ? {
+            mandate_template_variant: 'default',
+            mandateTemplateVariant: 'default',
+            mandate_template_variants: ['default'],
+          }
+        : {}),
       last_render_validation: validationMetadata,
     },
     created_at: timestamp,
@@ -2817,6 +2910,136 @@ function createTemplateKeySegment(value = 'template') {
   return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'template'
 }
 
+function normalizeMandateTemplateRoute(value = '') {
+  const normalized = createTemplateKeySegment(value)
+  return normalized === 'template' ? 'default' : normalized
+}
+
+function getMandateTemplateRouteLabel(value = '') {
+  const normalized = normalizeMandateTemplateRoute(value)
+  return MANDATE_TEMPLATE_ROUTE_OPTIONS.find((option) => option.key === normalized)?.label || 'All mandate situations'
+}
+
+function getMandateTemplateRouteFromTemplate(template = null) {
+  const metadata = template?.metadata_json && typeof template.metadata_json === 'object'
+    ? template.metadata_json
+    : template?.metadataJson && typeof template.metadataJson === 'object'
+      ? template.metadataJson
+      : {}
+  return normalizeMandateTemplateRoute(
+    metadata.mandate_template_variant ||
+      metadata.mandateTemplateVariant ||
+      metadata.template_variant ||
+      metadata.templateVariant ||
+      '',
+  )
+}
+
+function getMandateVariantTemplateLabel(baseLabel = 'Mandate Agreement', routeKey = 'default') {
+  const routeLabel = getMandateTemplateRouteLabel(routeKey)
+  if (normalizeMandateTemplateRoute(routeKey) === 'default') return normalizeText(baseLabel) || 'Mandate Agreement'
+  return `${routeLabel} Mandate`
+}
+
+function isLiveTemplateStatus(status = '') {
+  return ['active', 'published', 'approved', 'live'].includes(normalizeText(status).toLowerCase())
+}
+
+function classifyMandateVariantTemplateReadiness(template = null) {
+  if (!template) {
+    return {
+      key: 'missing',
+      label: 'Missing',
+      tone: 'missing',
+      routable: false,
+      renderable: false,
+      template: null,
+    }
+  }
+
+  const templateStatus = normalizeTemplateStatus(template)
+  const classification = classifyTemplateMigrationState(template, 'mandate')
+  const metadata = getTemplateMetadata(template)
+  const mandateContentScan = metadata.last_mandate_content_scan || metadata.lastMandateContentScan || metadata.mandate_content_publish_scan
+  const isActive = template?.is_active !== false
+  const isLiveStatus = isLiveTemplateStatus(templateStatus)
+  const renderable = Boolean(classification.renderable)
+  const contentScanReady = mandateContentScan?.isValidForPublish !== false
+
+  if (isActive && isLiveStatus && renderable && contentScanReady) {
+    return {
+      key: 'live',
+      label: 'Live',
+      tone: 'live',
+      routable: true,
+      renderable,
+      template,
+    }
+  }
+
+  if (isActive && isLiveStatus && (!renderable || !contentScanReady)) {
+    return {
+      key: 'needs_setup',
+      label: 'Needs setup',
+      tone: 'warning',
+      routable: false,
+      renderable,
+      template,
+    }
+  }
+
+  return {
+    key: 'draft',
+    label: 'Draft',
+    tone: 'draft',
+    routable: false,
+    renderable,
+    template,
+  }
+}
+
+function compareMandateVariantTemplatesForReadiness(left = null, right = null) {
+  const readinessRank = {
+    live: 0,
+    needs_setup: 1,
+    draft: 2,
+    missing: 3,
+  }
+  const leftReadiness = classifyMandateVariantTemplateReadiness(left)
+  const rightReadiness = classifyMandateVariantTemplateReadiness(right)
+  if (readinessRank[leftReadiness.key] !== readinessRank[rightReadiness.key]) {
+    return readinessRank[leftReadiness.key] - readinessRank[rightReadiness.key]
+  }
+  const leftOrg = Boolean(left?.organisation_id)
+  const rightOrg = Boolean(right?.organisation_id)
+  if (leftOrg !== rightOrg) return leftOrg ? -1 : 1
+  const updatedDelta = String(right?.updated_at || '').localeCompare(String(left?.updated_at || ''))
+  if (updatedDelta) return updatedDelta
+  return normalizeText(left?.id).localeCompare(normalizeText(right?.id))
+}
+
+function buildMandateVariantCoverageRows(templates = [], routeOptions = MANDATE_TEMPLATE_ROUTE_OPTIONS) {
+  const mandateTemplates = (Array.isArray(templates) ? templates : [])
+    .filter((template) => normalizeText(template?.packet_type || template?.packetType).toLowerCase() === 'mandate')
+  const routes = routeOptions.filter((option) => option.key !== 'default')
+  return routes.map((option) => {
+    const routeTemplates = mandateTemplates
+      .filter((template) => getMandateTemplateRouteFromTemplate(template) === option.key)
+      .sort(compareMandateVariantTemplatesForReadiness)
+    const preferredTemplate = routeTemplates[0] || null
+    const readiness = classifyMandateVariantTemplateReadiness(preferredTemplate)
+    return {
+      ...option,
+      templates: routeTemplates,
+      template: preferredTemplate,
+      templateCount: routeTemplates.length,
+      readiness,
+      exists: Boolean(preferredTemplate),
+      routable: Boolean(readiness.routable),
+    }
+  })
+}
+
 function getTemplateMetadata(template = null) {
   return template?.metadata_json && typeof template.metadata_json === 'object' ? template.metadata_json : {}
 }
@@ -2959,6 +3182,8 @@ function getDefaultSectionLegalText(packetType = 'otp', section = {}) {
     seller_trust_authority_pack: SALES_MANDATE_DEFAULT_LEGAL_TEXT.seller_trust_authority_pack,
     seller_spouse_consent_pack: SALES_MANDATE_DEFAULT_LEGAL_TEXT.seller_spouse_consent_pack,
     property_details: SALES_MANDATE_DEFAULT_LEGAL_TEXT.property_details,
+    property_full_title_pack: SALES_MANDATE_DEFAULT_LEGAL_TEXT.property_full_title_pack,
+    property_sectional_title_pack: SALES_MANDATE_DEFAULT_LEGAL_TEXT.property_sectional_title_pack,
     mandate_terms: SALES_MANDATE_DEFAULT_LEGAL_TEXT.mandate_terms,
     commission_terms: SALES_MANDATE_DEFAULT_LEGAL_TEXT.commission_terms,
     marketing_listing_terms: SALES_MANDATE_DEFAULT_LEGAL_TEXT.marketing_listing_terms,
@@ -3093,6 +3318,13 @@ function toTemplateForm(template = null) {
     templateStatus: normalizeTemplateStatus(template),
     isActive: template?.is_active === undefined ? true : Boolean(template?.is_active),
     isDefault: Boolean(template?.is_default),
+    mandateTemplateVariant: normalizeMandateTemplateRoute(
+      metadata.mandate_template_variant ||
+        metadata.mandateTemplateVariant ||
+        metadata.template_variant ||
+        metadata.templateVariant ||
+        '',
+    ),
     sections: sectionsFromTemplate(template),
     metadataJson: metadata,
   }
@@ -3178,7 +3410,7 @@ function buildPreviewTemplateFromForm({
   validationSummary = null,
 } = {}) {
   const baseTemplate = templateDetail || selectedTemplate || {}
-  const metadataJson = buildTemplateMetadata({ ...form, validationSummary }, form.metadataJson || {}, null)
+  const metadataJson = buildTemplateMetadata({ ...form, packetType, validationSummary }, form.metadataJson || {}, null)
   const renderMode = normalizeText(form.renderMode || TEMPLATE_RENDER_MODES.LEGACY_DOCX) || TEMPLATE_RENDER_MODES.LEGACY_DOCX
   return {
     ...baseTemplate,
@@ -3396,6 +3628,33 @@ function buildTemplateMetadata(form = {}, existingMetadata = {}, uploadMeta = nu
   if (uploadMeta && typeof uploadMeta === 'object') {
     nextMetadata.template_uploaded_at = new Date().toISOString()
     nextMetadata.template_upload_source = 'settings_legal_templates'
+  }
+
+  if (normalizeText(form.packetType || form.packet_type).toLowerCase() === 'mandate') {
+    const mandateTemplateVariant = normalizeMandateTemplateRoute(form.mandateTemplateVariant)
+    const mandateContentScan = serializeMandateTemplatePublishGateScan(form.mandateContentScan)
+    nextMetadata.mandate_template_variant = mandateTemplateVariant
+    nextMetadata.mandateTemplateVariant = mandateTemplateVariant
+    nextMetadata.mandate_template_variants = [mandateTemplateVariant]
+    if (mandateContentScan) {
+      nextMetadata.last_mandate_content_scan = mandateContentScan
+      nextMetadata.lastMandateContentScan = mandateContentScan
+      nextMetadata.mandate_content_publish_gate_version = mandateContentScan.gateVersion
+    } else {
+      delete nextMetadata.last_mandate_content_scan
+      delete nextMetadata.lastMandateContentScan
+      delete nextMetadata.mandate_content_publish_scan
+      delete nextMetadata.mandate_content_publish_gate_version
+    }
+  } else {
+    delete nextMetadata.mandate_template_variant
+    delete nextMetadata.mandateTemplateVariant
+    delete nextMetadata.mandate_template_variants
+    delete nextMetadata.supported_mandate_template_variants
+    delete nextMetadata.supportedMandateTemplateVariants
+    delete nextMetadata.last_mandate_content_scan
+    delete nextMetadata.lastMandateContentScan
+    delete nextMetadata.mandate_content_publish_gate_version
   }
 
   return nextMetadata
@@ -5369,6 +5628,7 @@ export default function SettingsSigningTemplatesPage({
   const [documentLinkOptionsLoading, setDocumentLinkOptionsLoading] = useState(false)
   const [documentLinkOptionsError, setDocumentLinkOptionsError] = useState('')
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [creatingMandateVariants, setCreatingMandateVariants] = useState(false)
   const [placeholderForm, setPlaceholderForm] = useState({
     placeholderKey: '',
     entityScope: 'transaction',
@@ -5705,6 +5965,62 @@ export default function SettingsSigningTemplatesPage({
     () => selectedList.find((item) => item.id === selectedTemplateId) || null,
     [selectedList, selectedTemplateId],
   )
+  const mandateOperationalAudit = useMemo(() => {
+    if (packetType !== 'mandate') return null
+    const currentRoute = normalizeMandateTemplateRoute(
+      form.mandateTemplateVariant || getMandateTemplateRouteFromTemplate(selectedTemplate || templateDetail),
+    )
+    const currentTemplate = selectedTemplate
+      ? {
+          ...selectedTemplate,
+          metadata_json: {
+            ...(selectedTemplate.metadata_json && typeof selectedTemplate.metadata_json === 'object' ? selectedTemplate.metadata_json : {}),
+            ...(form.metadataJson && typeof form.metadataJson === 'object' ? form.metadataJson : {}),
+            mandate_template_variant: currentRoute,
+            mandateTemplateVariant: currentRoute,
+          },
+          metadataJson: {
+            ...(selectedTemplate.metadata_json && typeof selectedTemplate.metadata_json === 'object' ? selectedTemplate.metadata_json : {}),
+            ...(form.metadataJson && typeof form.metadataJson === 'object' ? form.metadataJson : {}),
+            mandate_template_variant: currentRoute,
+            mandateTemplateVariant: currentRoute,
+          },
+          packet_type: 'mandate',
+          packetType: 'mandate',
+          sections: (form.sections || []).map((section, index) => mapSectionForPreview(section, index, 'mandate')),
+        }
+      : null
+    const auditTemplates = selectedList.map((template) => (
+      currentTemplate && normalizeText(template.id) === normalizeText(selectedTemplateId)
+        ? currentTemplate
+        : template
+    ))
+    return buildMandateTemplateOperationalAudit(auditTemplates, { includeDefaultRoute: true })
+  }, [form, packetType, selectedList, selectedTemplate, selectedTemplateId, templateDetail])
+  const mandateLaunchReadiness = useMemo(() => {
+    if (!mandateOperationalAudit) return null
+    return buildMandateTemplateLaunchReadiness(mandateOperationalAudit, { includeDefaultRoute: true })
+  }, [mandateOperationalAudit])
+  const mandateVariantOptions = useMemo(
+    () => MANDATE_TEMPLATE_ROUTE_OPTIONS.filter((option) => option.key !== 'default'),
+    [],
+  )
+  const mandateVariantCoverageRows = useMemo(
+    () => packetType === 'mandate'
+      ? buildMandateVariantCoverageRows(selectedList, MANDATE_TEMPLATE_ROUTE_OPTIONS)
+      : [],
+    [packetType, selectedList],
+  )
+  const liveMandateVariantCount = useMemo(
+    () => mandateVariantCoverageRows.filter((row) => row.routable).length,
+    [mandateVariantCoverageRows],
+  )
+  const missingMandateVariantOptions = useMemo(
+    () => packetType === 'mandate'
+      ? mandateVariantCoverageRows.filter((row) => row.readiness.key === 'missing')
+      : [],
+    [mandateVariantCoverageRows, packetType],
+  )
   const selectedIsPickerCustomTemplate = isTemplatePickerCustomTemplate(selectedTemplate)
   const customTemplateTabs = useMemo(
     () => stableAllowedPacketTypes
@@ -5827,6 +6143,31 @@ export default function SettingsSigningTemplatesPage({
     }),
     [canonicalFields, form, packetType, placeholderRegistry],
   )
+  const mandatePublishGateReport = useMemo(() => {
+    if (packetType !== 'mandate') return null
+    const mandateTemplateVariant = normalizeMandateTemplateRoute(
+      form.mandateTemplateVariant || getMandateTemplateRouteFromTemplate(selectedTemplate || templateDetail),
+    )
+    return buildMandateTemplatePublishGateReport({
+      packet_type: 'mandate',
+      packetType: 'mandate',
+      template_label: form.templateLabel || selectedTemplate?.template_label || selectedTemplate?.templateLabel || '',
+      metadata_json: {
+        ...(form.metadataJson && typeof form.metadataJson === 'object' ? form.metadataJson : {}),
+        mandate_template_variant: mandateTemplateVariant,
+        mandateTemplateVariant: mandateTemplateVariant,
+      },
+      metadataJson: {
+        ...(form.metadataJson && typeof form.metadataJson === 'object' ? form.metadataJson : {}),
+        mandate_template_variant: mandateTemplateVariant,
+        mandateTemplateVariant: mandateTemplateVariant,
+      },
+      sections: (form.sections || []).map((section, index) => mapSectionForPreview(section, index, 'mandate')),
+    }, {
+      packetType: 'mandate',
+      routeKey: mandateTemplateVariant,
+    })
+  }, [form, packetType, selectedTemplate, templateDetail])
   const variableGroups = useMemo(
     () => getVariableGroups(canonicalFields),
     [canonicalFields],
@@ -5968,6 +6309,8 @@ export default function SettingsSigningTemplatesPage({
     + previewState.warnings.length
     + validationSummary.blockers.length
     + validationSummary.warnings.length
+    + (mandatePublishGateReport?.blockingCount || 0)
+    + (mandatePublishGateReport?.warningCount || 0)
   const liveTemplate = useMemo(
     () => migrationReport.defaultTemplate?.template || selectedList.find((row) => row?.is_default) || null,
     [migrationReport.defaultTemplate, selectedList],
@@ -6001,9 +6344,13 @@ export default function SettingsSigningTemplatesPage({
       'templateStorageBucket',
       'templateFileName',
       'templateOutputBucket',
+      'mandateTemplateVariant',
     ].some((key) => stableStringify(form[key]) !== stableStringify(baselineForm[key])) : Boolean(selectedTemplate)
+    const contentScanBlockers = mandatePublishGateReport?.blockingMessages || []
+    const contentScanWarnings = mandatePublishGateReport?.warningMessages || []
     const blockers = [
       ...validationSummary.blockers,
+      ...contentScanBlockers,
       ...(!selectedIsOrgOwned ? ['Save your agency version before publishing.'] : []),
       ...(!canPublishTemplate ? [`Only ${administratorLabel} can publish templates.`] : []),
       ...(hasUnsavedChanges ? ['Save the latest edits before publishing.'] : []),
@@ -6021,12 +6368,15 @@ export default function SettingsSigningTemplatesPage({
       lockedSectionCount: lockedSections.length,
       signingFieldCount,
       conditionCount,
+      contentScan: mandatePublishGateReport,
+      contentScanBlockers,
+      contentScanWarnings,
       blockers,
-      warnings: validationSummary.warnings,
+      warnings: [...validationSummary.warnings, ...contentScanWarnings],
       liveTemplateLabel: liveTemplate?.template_label || liveTemplate?.template_key || 'No live template',
       currentTemplateLabel: form.templateLabel || selectedTemplate?.template_label || selectedTemplate?.template_key || 'Current draft',
     }
-  }, [administratorLabel, baselineForm, canPublishTemplate, form, hasUnsavedChanges, liveTemplate, selectedIsOrgOwned, selectedTemplate, validationSummary.blockers, validationSummary.renderable, validationSummary.warnings])
+  }, [administratorLabel, baselineForm, canPublishTemplate, form, hasUnsavedChanges, liveTemplate, mandatePublishGateReport, selectedIsOrgOwned, selectedTemplate, validationSummary.blockers, validationSummary.renderable, validationSummary.warnings])
   const studioHealthChecks = useMemo(() => {
     const docxReady = normalizeText(form.renderMode) === TEMPLATE_RENDER_MODES.LEGACY_DOCX
       ? Boolean(normalizeText(form.templateStoragePath))
@@ -6529,6 +6879,13 @@ export default function SettingsSigningTemplatesPage({
           documentKind: documentKindOption.key,
           preferred_document_kind: documentKindOption.key,
           document_kind_label: documentKindOption.label,
+          ...(resolvedPacketType === 'mandate' && !isGeneralAddendumStarter
+            ? {
+                mandate_template_variant: 'default',
+                mandateTemplateVariant: 'default',
+                mandate_template_variants: ['default'],
+              }
+            : {}),
         },
         sections: starterSections.map((section, index) => mapSectionForSave(section, index, resolvedPacketType)),
       })
@@ -6590,6 +6947,13 @@ export default function SettingsSigningTemplatesPage({
           preferred_document_kind: documentKindOption.key,
           document_kind_label: documentKindOption.label,
           blank_canvas: true,
+          ...(resolvedPacketType === 'mandate'
+            ? {
+                mandate_template_variant: 'default',
+                mandateTemplateVariant: 'default',
+                mandate_template_variants: ['default'],
+              }
+            : {}),
         },
         sections: createBlankCanvasSections().map((section, index) => mapSectionForSave(section, index, resolvedPacketType)),
       })
@@ -6622,6 +6986,128 @@ export default function SettingsSigningTemplatesPage({
   async function handleCreateAddendumStarterTemplate(starterKind = GENERAL_ADDENDUM_TEMPLATE_FAMILY, options = {}) {
     if (starterKind === GENERAL_ADDENDUM_TEMPLATE_FAMILY) return handleCreateGeneralAddendumTemplate(options)
     return handleCreateTemplate({ ...options, starterKind })
+  }
+
+  async function createMandateVariantTemplate(routeKey = '') {
+    const mandateRoute = normalizeMandateTemplateRoute(routeKey)
+    if (packetType !== 'mandate' || mandateRoute === 'default') return null
+
+    const existing = selectedList.find((template) => (
+      Boolean(template?.organisation_id) &&
+      getMandateTemplateRouteFromTemplate(template) === mandateRoute
+    ))
+    if (existing?.id) return existing
+
+    const sourceTemplate = templateDetail || selectedTemplate || createDefaultLegalTemplateRecord('mandate', {
+      moduleType: normalizedModuleType,
+      virtual: true,
+    })
+    const sourceForm = (form.sections || []).length ? form : toTemplateForm(sourceTemplate)
+    const sourceMetadata = sourceTemplate?.metadata_json && typeof sourceTemplate.metadata_json === 'object'
+      ? sourceTemplate.metadata_json
+      : {}
+    const sourceTemplateId = normalizeText(sourceTemplate.id || selectedTemplate?.id || selectedTemplateId)
+    const routeLabel = getMandateTemplateRouteLabel(mandateRoute)
+    const renderMode = normalizeText(sourceForm.renderMode || normalizeTemplateRenderMode(sourceTemplate, 'mandate') || getDefaultRenderMode('mandate'))
+      || getDefaultRenderMode('mandate')
+    const draftForm = {
+      ...sourceForm,
+      packetType: 'mandate',
+      renderMode,
+      mandateTemplateVariant: mandateRoute,
+      templateStatus: 'draft',
+      isDefault: false,
+      isActive: false,
+    }
+    const metadataJson = buildTemplateMetadata(
+      { ...draftForm, validationSummary },
+      {
+        ...sourceMetadata,
+        source_template_id: sourceTemplateId || null,
+        base_template_id: sourceTemplateId || null,
+        source_template_label: normalizeText(sourceTemplate.template_label || selectedTemplate?.template_label || sourceForm.templateLabel || ''),
+        mandate_variant_created_from: sourceTemplateId || null,
+        mandate_variant_route: mandateRoute,
+        mandate_variant_label: routeLabel,
+        agency_version_created_via: 'mandate_variant_scaffold',
+      },
+      null,
+    )
+    const templateKeyBase = normalizeText(sourceTemplate.template_key || selectedTemplate?.template_key || 'mandate_default_v1') || 'mandate_default_v1'
+    const created = await createDocumentPacketTemplate({
+      packetType: 'mandate',
+      moduleType: normalizedModuleType,
+      templateKey: `${templateKeyBase}_${mandateRoute}_${Date.now()}`,
+      templateLabel: getMandateVariantTemplateLabel(sourceForm.templateLabel || sourceTemplate.template_label || 'Mandate Agreement', mandateRoute),
+      description: `Scenario-specific mandate template for ${routeLabel}.`,
+      versionTag: normalizeText(sourceForm.versionTag || sourceTemplate.version_tag || 'v1') || 'v1',
+      templateStatus: 'draft',
+      templateFormat: getTemplateFormatForMode(renderMode),
+      templateStorageBucket: normalizeText(sourceForm.templateStorageBucket || sourceTemplate.template_storage_bucket || ''),
+      templateStoragePath: normalizeText(sourceForm.templateStoragePath || sourceTemplate.template_storage_path || ''),
+      templateFileName: normalizeText(sourceForm.templateFileName || sourceTemplate.template_file_name || ''),
+      isDefault: false,
+      isActive: false,
+      metadataJson,
+      sections: (sourceForm.sections || []).map((section, index) => mapSectionForSave(section, index, 'mandate')),
+    })
+
+    return created
+  }
+
+  async function handleCreateMandateVariantTemplate(routeKey = '') {
+    try {
+      setCreatingMandateVariants(true)
+      setError('')
+      setMessage('')
+      const created = await createMandateVariantTemplate(routeKey)
+      await refreshAll({
+        targetPacketType: 'mandate',
+        preferredTemplateId: created?.id || '',
+      })
+      if (created?.id) setSelectedTemplateId(created.id)
+      setPacketType('mandate')
+      setActiveDocumentTypeKey('mandate')
+      setMessage(created?.id ? `${getMandateTemplateRouteLabel(routeKey)} variant created.` : 'Mandate variant already exists.')
+      return created
+    } catch (createError) {
+      setError(createError?.message || 'Unable to create mandate variant.')
+      return null
+    } finally {
+      setCreatingMandateVariants(false)
+    }
+  }
+
+  async function handleCreateMissingMandateVariantTemplates() {
+    if (!missingMandateVariantOptions.length) {
+      setMessage('All mandate variants already exist.')
+      return []
+    }
+
+    try {
+      setCreatingMandateVariants(true)
+      setError('')
+      setMessage('')
+      const created = []
+      for (const option of missingMandateVariantOptions) {
+        const template = await createMandateVariantTemplate(option.key)
+        if (template?.id && !created.some((row) => row.id === template.id)) created.push(template)
+      }
+      await refreshAll({
+        targetPacketType: 'mandate',
+        preferredTemplateId: created[0]?.id || selectedTemplateId,
+      })
+      if (created[0]?.id) setSelectedTemplateId(created[0].id)
+      setPacketType('mandate')
+      setActiveDocumentTypeKey('mandate')
+      setMessage(`${created.length} mandate variant${created.length === 1 ? '' : 's'} created as draft templates.`)
+      return created
+    } catch (createError) {
+      setError(createError?.message || 'Unable to create mandate variants.')
+      return []
+    } finally {
+      setCreatingMandateVariants(false)
+    }
   }
 
   const handleCreateEditableCopy = useCallback(async ({
@@ -6665,7 +7151,7 @@ export default function SettingsSigningTemplatesPage({
         isActive: false,
       }
       const metadataJson = buildTemplateMetadata(
-        { ...draftForm, validationSummary },
+        { ...draftForm, packetType, validationSummary },
         {
           ...sourceMetadata,
           source_template_id: sourceTemplateId || null,
@@ -6849,13 +7335,21 @@ export default function SettingsSigningTemplatesPage({
       setError('This native template is not renderable yet. Cover the required fields before activating it.')
       return
     }
+    const isActivatingMandateTemplate = packetType === 'mandate' && (
+      Boolean(form.isDefault) ||
+      isLiveTemplateStatus(form.templateStatus)
+    )
+    if (isActivatingMandateTemplate && mandatePublishGateReport?.isValidForPublish === false) {
+      setError('Mandate content scanner found blockers. Resolve the route wording before activating this mandate template.')
+      return
+    }
 
     try {
       setSaving(true)
       setError('')
       setMessage('')
 
-      const metadataJson = buildTemplateMetadata({ ...form, validationSummary }, form.metadataJson || {}, null)
+      const metadataJson = buildTemplateMetadata({ ...form, packetType, validationSummary, mandateContentScan: mandatePublishGateReport }, form.metadataJson || {}, null)
       await updateDocumentPacketTemplate(selectedTemplateId, {
         templateLabel: form.templateLabel,
         description: form.description,
@@ -6895,13 +7389,17 @@ export default function SettingsSigningTemplatesPage({
       setError('This native template is not renderable yet. Cover the required fields before making it the default.')
       return
     }
+    if (packetType === 'mandate' && mandatePublishGateReport?.isValidForPublish === false) {
+      setError('Mandate content scanner found blockers. Resolve the route wording before publishing this mandate template.')
+      return
+    }
 
     try {
       setSaving(true)
       setError('')
       setMessage('')
 
-      const metadataJson = buildTemplateMetadata({ ...form, validationSummary }, form.metadataJson || {}, null)
+      const metadataJson = buildTemplateMetadata({ ...form, packetType, validationSummary, mandateContentScan: mandatePublishGateReport }, form.metadataJson || {}, null)
       await updateDocumentPacketTemplate(selectedTemplateId, {
         templateLabel: form.templateLabel,
         description: form.description,
@@ -7741,6 +8239,11 @@ export default function SettingsSigningTemplatesPage({
   }
 
   async function confirmPublishTemplate() {
+    if (packetType === 'mandate' && mandatePublishGateReport?.isValidForPublish === false) {
+      setError('Mandate content scanner found blockers. Resolve the route wording before publishing this mandate template.')
+      setShowPublishConfirm(false)
+      return
+    }
     if (publishReview.blockers.length) {
       setError('Resolve the blockers before publishing this template.')
       setShowPublishConfirm(false)
@@ -9852,6 +10355,21 @@ export default function SettingsSigningTemplatesPage({
                   </select>
                 </label>
 
+                {packetType === 'mandate' ? (
+                  <label className={settingsFieldClass}>
+                    Mandate route
+                    <select
+                      value={form.mandateTemplateVariant || ''}
+                      disabled={!canEdit || !selectedIsOrgOwned}
+                      onChange={(event) => setForm((previous) => ({ ...previous, mandateTemplateVariant: event.target.value }))}
+                    >
+                      {MANDATE_TEMPLATE_ROUTE_OPTIONS.map((option) => (
+                        <option key={option.key || 'all'} value={option.key}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+
                 <label className="flex items-center gap-3 rounded-[18px] border border-[#dbe7f3] bg-[#fbfdff] px-4 py-3 text-sm text-[#445b73]">
                   <input
                     type="checkbox"
@@ -9893,6 +10411,15 @@ export default function SettingsSigningTemplatesPage({
                       : 'Uses an uploaded DOCX file as the base template.'}
                   </p>
                 </div>
+                {packetType === 'mandate' ? (
+                  <div className="rounded-[20px] border border-[#dbe7f3] bg-[#f8fbff] p-4">
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Mandate Route</p>
+                    <p className="mt-3 text-sm font-semibold text-[#102033]">{getMandateTemplateRouteLabel(form.mandateTemplateVariant)}</p>
+                    <p className="mt-2 text-xs leading-5 text-[#6b7c93]">
+                      The generator uses this route when onboarding data matches the seller and property situation.
+                    </p>
+                  </div>
+                ) : null}
                 <div className="rounded-[20px] border border-[#dbe7f3] bg-[#f8fbff] p-4">
                   <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Live Use</p>
                   <p className="mt-3 text-sm font-semibold text-[#102033]">{form.isDefault ? 'Currently live default' : 'Not the live default'}</p>
@@ -9903,6 +10430,208 @@ export default function SettingsSigningTemplatesPage({
                   </p>
                 </div>
               </div>
+
+              {packetType === 'mandate' ? (
+                <div className="mt-5 rounded-[22px] border border-[#dbe7f3] bg-[#fbfdff] p-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Variant Pack</p>
+                      <h3 className="mt-2 text-base font-semibold text-[#102033]">Mandate Situation Templates</h3>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7c93]">
+                        {liveMandateVariantCount}/{mandateVariantOptions.length} variants are live and routable.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className={studioSecondaryButtonClass}
+                      disabled={!canEdit || creatingMandateVariants || !missingMandateVariantOptions.length}
+                      onClick={() => void handleCreateMissingMandateVariantTemplates()}
+                    >
+                      <CopyPlus size={14} />
+                      <span>{creatingMandateVariants ? 'Creating…' : 'Create Missing Variants'}</span>
+                    </button>
+                  </div>
+
+                  {missingMandateVariantOptions.length || liveMandateVariantCount < mandateVariantOptions.length ? (
+                    <SettingsBanner tone={missingMandateVariantOptions.length ? 'warning' : 'success'}>
+                      {missingMandateVariantOptions.length
+                        ? `${missingMandateVariantOptions.length} mandate route${missingMandateVariantOptions.length === 1 ? '' : 's'} still need draft templates before they can be reviewed and published.`
+                        : 'All mandate routes have templates. Publish each route when its wording is approved.'}
+                    </SettingsBanner>
+                  ) : null}
+
+                  {mandateOperationalAudit ? (
+                    <div className={[
+                      'mt-4 rounded-[18px] border p-4',
+                      mandateOperationalAudit.status === 'blocked'
+                        ? 'border-[#f3d1ce] bg-[#fff4f3]'
+                        : mandateOperationalAudit.status === 'attention'
+                          ? 'border-[#f6e4bf] bg-[#fffaf1]'
+                          : 'border-[#cdebd8] bg-[#eef9f1]',
+                    ].join(' ')}
+                    >
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div>
+                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Operational Audit</p>
+                          <h4 className="mt-2 text-sm font-semibold text-[#102033]">
+                            {mandateOperationalAudit.status === 'blocked'
+                              ? 'Live mandate templates need fixing'
+                              : mandateOperationalAudit.status === 'attention'
+                                ? 'Mandate routes need review'
+                                : 'Mandate templates are audit-ready'}
+                          </h4>
+                          <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
+                            {mandateOperationalAudit.summary.verifiedLiveTemplateCount}/{mandateOperationalAudit.summary.liveTemplateCount} live templates are verified by the content gate.
+                          </p>
+                        </div>
+                        <span className={[
+                          'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold',
+                          mandateOperationalAudit.status === 'blocked'
+                            ? 'border-[#e9b7b2] bg-white text-[#8e1f15]'
+                            : mandateOperationalAudit.status === 'attention'
+                              ? 'border-[#f1d49d] bg-white text-[#8a5b06]'
+                              : 'border-[#b8e5c7] bg-white text-[#128642]',
+                        ].join(' ')}
+                        >
+                          {mandateOperationalAudit.auditVersion}
+                        </span>
+                      </div>
+                      <div className="mt-4 grid gap-2 md:grid-cols-4">
+                        {[
+                          { label: 'Blocked live', value: mandateOperationalAudit.summary.blockedLiveTemplateCount },
+                          { label: 'Unverified live', value: mandateOperationalAudit.summary.unverifiedLiveTemplateCount },
+                          { label: 'Missing routes', value: mandateOperationalAudit.summary.missingRouteCount },
+                          { label: 'Draft routes', value: mandateOperationalAudit.summary.draftOnlyRouteCount },
+                        ].map((item) => (
+                          <div key={`mandate-audit-${item.label}`} className="rounded-[14px] border border-[#dbe7f3] bg-white px-3 py-2">
+                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">{item.label}</p>
+                            <p className="mt-1 text-xl font-semibold text-[#102033]">{item.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                      {mandateOperationalAudit.actions.length ? (
+                        <div className="mt-3 space-y-2">
+                          {mandateOperationalAudit.actions.slice(0, 3).map((action) => (
+                            <p key={`${action.code}-${action.routeKey}-${action.templateId}`} className={[
+                              'rounded-[14px] border bg-white px-3 py-2 text-xs leading-5',
+                              action.priority === 'blocker'
+                                ? 'border-[#f3d1ce] text-[#8e1f15]'
+                                : 'border-[#f6e4bf] text-[#8a5b06]',
+                            ].join(' ')}
+                            >
+                              <span className="font-semibold">{action.message}</span> {action.remediation}
+                            </p>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {mandateLaunchReadiness ? (
+                    <div className={[
+                      'mt-4 rounded-[18px] border p-4',
+                      mandateLaunchReadiness.status === 'blocked'
+                        ? 'border-[#f3d1ce] bg-[#fff4f3]'
+                        : mandateLaunchReadiness.status === 'attention'
+                          ? 'border-[#f6e4bf] bg-[#fffaf1]'
+                          : 'border-[#cdebd8] bg-[#eef9f1]',
+                    ].join(' ')}
+                    >
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div>
+                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Launch Readiness</p>
+                          <h4 className="mt-2 text-sm font-semibold text-[#102033]">
+                            {mandateLaunchReadiness.status === 'blocked'
+                              ? 'Mandate automation is locked'
+                              : mandateLaunchReadiness.status === 'attention'
+                                ? 'Mandate automation needs sign-off'
+                                : 'Mandate automation is ready'}
+                          </h4>
+                          <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
+                            {mandateLaunchReadiness.summary.readyRouteCount}/{mandateLaunchReadiness.summary.requiredRouteCount} mandate routes have verified live templates.
+                          </p>
+                        </div>
+                        <span className={[
+                          'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold',
+                          mandateLaunchReadiness.canEnableMandateAutomation
+                            ? 'border-[#b8e5c7] bg-white text-[#128642]'
+                            : 'border-[#e9b7b2] bg-white text-[#8e1f15]',
+                        ].join(' ')}
+                        >
+                          {mandateLaunchReadiness.canEnableMandateAutomation ? 'Ready' : 'Locked'}
+                        </span>
+                      </div>
+                      <div className="mt-4 grid gap-2 md:grid-cols-3">
+                        {[
+                          { label: 'Ready routes', value: mandateLaunchReadiness.summary.readyRouteCount },
+                          { label: 'Blocked routes', value: mandateLaunchReadiness.summary.blockedRouteCount },
+                          { label: 'Launch blockers', value: mandateLaunchReadiness.summary.blockerCount },
+                        ].map((item) => (
+                          <div key={`mandate-launch-${item.label}`} className="rounded-[14px] border border-[#dbe7f3] bg-white px-3 py-2">
+                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">{item.label}</p>
+                            <p className="mt-1 text-xl font-semibold text-[#102033]">{item.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                      {mandateLaunchReadiness.blockers.length ? (
+                        <div className="mt-3 space-y-2">
+                          {mandateLaunchReadiness.blockers.slice(0, 3).map((issue) => (
+                            <p key={`${issue.code}-${issue.routeKey}-${issue.templateId}`} className="rounded-[14px] border border-[#f3d1ce] bg-white px-3 py-2 text-xs leading-5 text-[#8e1f15]">
+                              <span className="font-semibold">{issue.message}</span> {issue.remediation}
+                            </p>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  <div className="mt-4 grid gap-2 md:grid-cols-2">
+                    {mandateVariantCoverageRows.map((option) => {
+                      const readiness = option.readiness
+                      const statusClass = readiness.key === 'live'
+                        ? 'border-[#cdebd8] bg-[#eef9f1] text-[#128642]'
+                        : readiness.key === 'needs_setup'
+                          ? 'border-[#f6e4bf] bg-[#fffaf1] text-[#8a5b06]'
+                          : readiness.key === 'draft'
+                            ? 'border-[#dbe7f3] bg-[#f8fbff] text-[#607387]'
+                            : 'border-[#f3d1ce] bg-[#fff4f3] text-[#8e1f15]'
+                      return (
+                        <div key={option.key} className="flex items-center justify-between gap-3 rounded-[16px] border border-[#dbe7f3] bg-white px-4 py-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-[#102033]">{option.label}</p>
+                            <p className="mt-1 font-mono text-[11px] text-[#6b7c93]">{option.key}</p>
+                            {option.template ? (
+                              <p className="mt-1 truncate text-xs text-[#8aa0b7]">
+                                {option.template.template_label || option.template.template_key || 'Untitled template'}
+                              </p>
+                            ) : null}
+                          </div>
+                          {option.exists ? (
+                            <button
+                              type="button"
+                              className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusClass}`}
+                              onClick={() => option.template?.id ? setSelectedTemplateId(option.template.id) : null}
+                              title={option.routable ? 'This route can be selected during mandate generation.' : 'Open this route template to finish setup or publish it.'}
+                            >
+                              {readiness.label}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className={studioQuietButtonClass}
+                              disabled={!canEdit || creatingMandateVariants}
+                              onClick={() => void handleCreateMandateVariantTemplate(option.key)}
+                            >
+                              <Plus size={14} />
+                              <span>Create</span>
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="mt-5 rounded-[22px] border border-[#dbe7f3] bg-[#fbfdff] p-4">
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -9935,6 +10664,45 @@ export default function SettingsSigningTemplatesPage({
                     </div>
                   ))}
                 </div>
+
+                {packetType === 'mandate' && mandatePublishGateReport ? (
+                  <div className={[
+                    'mt-4 rounded-[18px] border px-4 py-3',
+                    mandatePublishGateReport.isValidForPublish
+                      ? 'border-[#cdebd8] bg-[#eef9f1]'
+                      : 'border-[#f3d1ce] bg-[#fff4f3]',
+                  ].join(' ')}
+                  >
+                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">Mandate Content Gate</p>
+                        <p className="mt-1 text-sm font-semibold text-[#102033]">
+                          {mandatePublishGateReport.routeLabel}: {mandatePublishGateReport.isValidForPublish ? 'Ready for publish review' : `${mandatePublishGateReport.blockingCount} blocker${mandatePublishGateReport.blockingCount === 1 ? '' : 's'}`}
+                        </p>
+                      </div>
+                      <span className={[
+                        'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold',
+                        mandatePublishGateReport.isValidForPublish
+                          ? 'border-[#b8e5c7] bg-white text-[#128642]'
+                          : 'border-[#e9b7b2] bg-white text-[#8e1f15]',
+                      ].join(' ')}
+                      >
+                        {mandatePublishGateReport.gateVersion}
+                      </span>
+                    </div>
+                    {mandatePublishGateReport.blockingMessages.length ? (
+                      <div className="mt-3 space-y-2">
+                        {mandatePublishGateReport.blockingMessages.slice(0, 3).map((item) => (
+                          <p key={`mandate-content-gate-${item}`} className="text-sm leading-6 text-[#8e1f15]">{item}</p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm leading-6 text-[#52667d]">
+                        No route-content blockers detected for this mandate template.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
 
                 <div className="mt-4 space-y-2">
                   {(form.sections || []).map((section, index) => {
@@ -11231,6 +11999,46 @@ export default function SettingsSigningTemplatesPage({
                 </div>
               </div>
             </div>
+
+            {publishReview.contentScan ? (
+              <div className={[
+                'mt-5 rounded-[18px] border p-4',
+                publishReview.contentScan.isValidForPublish
+                  ? 'border-[#cdebd8] bg-[#eef9f1]'
+                  : 'border-[#f3d1ce] bg-[#fff4f3]',
+              ].join(' ')}
+              >
+                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-[#102033]">Mandate content gate</p>
+                    <p className="mt-2 text-sm leading-6 text-[#52667d]">
+                      {publishReview.contentScan.routeLabel} checked with {publishReview.contentScan.scannerVersion}.
+                    </p>
+                  </div>
+                  <span className={[
+                    'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold',
+                    publishReview.contentScan.isValidForPublish
+                      ? 'border-[#b8e5c7] bg-white text-[#128642]'
+                      : 'border-[#e9b7b2] bg-white text-[#8e1f15]',
+                  ].join(' ')}
+                  >
+                    {publishReview.contentScan.isValidForPublish ? 'Passed' : 'Blocked'}
+                  </span>
+                </div>
+                {publishReview.contentScanBlockers.length ? (
+                  <div className="mt-3 space-y-2">
+                    {publishReview.contentScanBlockers.slice(0, 4).map((item) => (
+                      <ValidationIssueCard key={`publish-content-scan-blocker-${item}`} issue={item} tone="error" label="Mandate Scan" />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-[#128642]">
+                    <CheckCircle2 size={16} />
+                    No route-content blockers detected.
+                  </p>
+                )}
+              </div>
+            ) : null}
 
             {publishReview.changedSections.length ? (
               <div className="mt-5 rounded-[18px] border border-[#dbe7f3] bg-white p-4">

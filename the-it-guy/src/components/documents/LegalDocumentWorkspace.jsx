@@ -1185,6 +1185,137 @@ function resolveWorkspaceBranding({
   }
 }
 
+function formatMandateRouteLabel(value = '') {
+  const text = normalizeText(value)
+  if (!text) return ''
+  return text
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (character) => character.toUpperCase())
+}
+
+function resolveMandateRoutingSnapshot({
+  sourceContext = {},
+  latestVersion = null,
+  packet = null,
+  templateDetail = null,
+} = {}) {
+  const summary = latestVersion?.validation_summary_json && typeof latestVersion.validation_summary_json === 'object'
+    ? latestVersion.validation_summary_json
+    : {}
+  const renderProvenance = resolveSnapshotObject(summary.render_provenance, summary.renderProvenance)
+  const generationPayload = resolveSnapshotObject(
+    sourceContext.generationPayload,
+    sourceContext.generation_payload,
+    summary.generationPayload,
+    summary.generation_payload,
+  )
+  const templateResolution = resolveSnapshotObject(
+    sourceContext.templateResolution,
+    sourceContext.template_resolution,
+    summary.templateResolution,
+    summary.template_resolution,
+    generationPayload.templateResolution,
+    generationPayload.template_resolution,
+  )
+  const routing = resolveSnapshotObject(
+    sourceContext.mandateTemplateRouting,
+    sourceContext.mandate_template_routing,
+    generationPayload.mandateTemplateRouting,
+    generationPayload.mandate_template_routing,
+    templateResolution.mandateTemplateRouting,
+    templateResolution.mandate_template_routing,
+    summary.mandateTemplateRouting,
+    summary.mandate_template_routing,
+  )
+  const fallbackWarning = resolveSnapshotObject(
+    sourceContext.mandateTemplateFallbackWarning,
+    sourceContext.mandate_template_fallback_warning,
+    summary.mandateTemplateFallbackWarning,
+    summary.mandate_template_fallback_warning,
+    generationPayload.mandateTemplateFallbackWarning,
+    generationPayload.mandate_template_fallback_warning,
+  )
+
+  const variant = firstNonEmptyText(
+    sourceContext.mandateTemplateVariant,
+    sourceContext.mandate_template_variant,
+    generationPayload.mandateTemplateVariant,
+    generationPayload.mandate_template_variant,
+    summary.mandateTemplateVariant,
+    summary.mandate_template_variant,
+    routing.mandateTemplateVariant,
+    routing.mandate_template_variant,
+    renderProvenance.mandateTemplateVariant,
+    renderProvenance.mandate_template_variant,
+    latestVersion?.placeholders_resolved_json?.mandate_template_variant,
+  )
+  const selectedTemplate = firstNonEmptyText(
+    routing.selectedTemplateLabel,
+    routing.selected_template_label,
+    routing.selectedTemplateKey,
+    routing.selected_template_key,
+    templateDetail?.template_label,
+    templateDetail?.templateLabel,
+    packet?.template_label_snapshot,
+    packet?.templateLabelSnapshot,
+  )
+  const templateResolutionSource = firstNonEmptyText(
+    sourceContext.templateResolutionSource,
+    sourceContext.template_resolution_source,
+    generationPayload.templateResolutionSource,
+    generationPayload.template_resolution_source,
+    summary.templateResolutionSource,
+    summary.template_resolution_source,
+    templateResolution.source,
+  )
+  const fallback = Boolean(
+    sourceContext.mandateTemplateFallback ||
+      sourceContext.mandate_template_fallback ||
+      summary.mandateTemplateFallback ||
+      summary.mandate_template_fallback ||
+      generationPayload.mandateTemplateFallback ||
+      generationPayload.mandate_template_fallback ||
+      fallbackWarning.message ||
+      normalizeKey(templateResolutionSource) === 'mandate_scenario_fallback',
+  )
+  const routeLabel = formatMandateRouteLabel(variant) || 'Route pending'
+  const matchReasons = Array.isArray(routing.matchReasons)
+    ? routing.matchReasons
+    : Array.isArray(routing.match_reasons)
+      ? routing.match_reasons
+      : []
+
+  const hasSignal = Boolean(
+    variant ||
+      selectedTemplate ||
+      templateResolutionSource ||
+      routing.selectedTemplateId ||
+      routing.selected_template_id,
+  )
+
+  return {
+    hasSignal,
+    fallback,
+    variant,
+    routeLabel,
+    selectedTemplate: selectedTemplate || 'Template not linked',
+    templateResolutionSource,
+    sellerProfile: formatMandateRouteLabel(firstNonEmptyText(routing.sellerClauseProfile, routing.seller_clause_profile, generationPayload.mandateScenarioProfile?.sellerClauseProfile)),
+    propertyProfile: formatMandateRouteLabel(firstNonEmptyText(routing.propertyClauseProfile, routing.property_clause_profile, generationPayload.mandateScenarioProfile?.propertyClauseProfile)),
+    propertyTitleType: formatMandateRouteLabel(firstNonEmptyText(routing.propertyTitleType, routing.property_title_type, generationPayload.mandateScenarioProfile?.propertyTitleType)),
+    warningMessage: normalizeText(fallbackWarning.message) ||
+      (fallback && variant ? `No live ${routeLabel} mandate template is routable yet, so this packet is using ${selectedTemplate || 'the selected default mandate template'}.` : ''),
+    matchReasons,
+    statusLabel: fallback
+      ? 'Fallback active'
+      : normalizeKey(templateResolutionSource) === 'mandate_scenario_variant'
+        ? 'Scenario route matched'
+        : variant
+          ? 'Route selected'
+          : 'Route pending',
+  }
+}
+
 function resolvePrimaryActionLabel(mode, statusState, packetType) {
   const typeLabel = normalizeKey(packetType) === 'otp' ? 'OTP' : 'Mandate'
   const modeKey = normalizeKey(mode)
@@ -2376,7 +2507,7 @@ function ActivityPanel({
         ))}
       </div>
 
-      <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+      <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-2 [scrollbar-gutter:stable]">
         {visibleItems.length ? (
           visibleItems.map((item) => {
             const isVersion = item.type === 'version'
@@ -2411,6 +2542,72 @@ function ActivityPanel({
         <p className="mt-1">Key: {templateKey || '—'}</p>
         <p className="mt-1 break-all">Storage path: {templateStoragePath || 'Missing'}</p>
       </div>
+    </section>
+  )
+}
+
+function MandateRoutePanel({ routing = null, className = '' }) {
+  if (!routing?.hasSignal) return null
+
+  const fallback = Boolean(routing.fallback)
+  const statusClassName = fallback
+    ? 'border-[#f7dfba] bg-[#fff8ed] text-[#9b6b1c]'
+    : 'border-[#d8f0e3] bg-[#effaf4] text-[#23784d]'
+  const iconClassName = fallback
+    ? 'bg-[#fff3dd] text-[#9b6b1c]'
+    : 'bg-[#effaf4] text-[#20b26b]'
+
+  const rows = [
+    { key: 'seller', label: 'Seller', value: routing.sellerProfile || 'Not classified' },
+    { key: 'property', label: 'Property', value: routing.propertyProfile || routing.propertyTitleType || 'Not classified' },
+    { key: 'template', label: 'Template', value: routing.selectedTemplate || 'Template not linked' },
+  ]
+
+  return (
+    <section className={`rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)] ${className}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[16px] ${iconClassName}`}>
+            {fallback ? <AlertCircle size={17} /> : <ShieldCheck size={17} />}
+          </span>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ea4]">Mandate route</p>
+            <h4 className="mt-1 truncate text-[1rem] font-semibold text-[#102033]">{routing.routeLabel}</h4>
+          </div>
+        </div>
+        <span className={`shrink-0 rounded-full border px-3 py-1 text-[0.68rem] font-semibold ${statusClassName}`}>
+          {routing.statusLabel}
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-2">
+        {rows.map((row) => (
+          <div key={row.key} className="flex items-start justify-between gap-3 rounded-[16px] border border-[#edf3fa] bg-[#f8fbff] px-3 py-2.5">
+            <span className="text-xs font-semibold text-[#7b8ea4]">{row.label}</span>
+            <span className="min-w-0 max-w-[68%] truncate text-right text-xs font-semibold text-[#102033]" title={row.value}>
+              {row.value}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {fallback ? (
+        <div className="mt-4 rounded-[18px] border border-[#f4dfbf] bg-[#fff8ed] px-4 py-3 text-sm text-[#795315]">
+          <p className="font-semibold text-[#7a4d10]">Route-specific template missing</p>
+          <p className="mt-1 leading-5">{routing.warningMessage}</p>
+          <a
+            href="/settings/signing-templates"
+            className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#f1d4a5] bg-white px-3 py-2 text-xs font-semibold text-[#7a4d10]"
+          >
+            Open Template Settings
+            <ChevronRight size={13} />
+          </a>
+        </div>
+      ) : (
+        <p className="mt-4 rounded-[18px] border border-[#d9eee4] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#23784d]">
+          This packet is using the routed mandate template.
+        </p>
+      )}
     </section>
   )
 }
@@ -2696,6 +2893,14 @@ export default function LegalDocumentWorkspace({
   const signingMethod = isMandatePacket ? normalizeSigningMethod(sourceContext.signing_method || sourceContext.signingMethod) : 'digital'
   const mandateStatus = isMandatePacket ? normalizeMandateStatus(statusState, sourceContext, latestVersion) : ''
   const mandateStatusMeta = MANDATE_STATUS_BADGES[mandateStatus] || MANDATE_STATUS_BADGES.draft
+  const mandateRoutingSnapshot = isMandatePacket
+    ? resolveMandateRoutingSnapshot({
+        sourceContext,
+        latestVersion,
+        packet: statusState?.packet || packetDetail,
+        templateDetail,
+      })
+    : null
   const mandateNextAction = getMandateNextAction(
     mandateStatus,
     signingMethod,
@@ -2811,7 +3016,7 @@ export default function LegalDocumentWorkspace({
     : lifecycleProgress
   const documentHealthLabel =
     documentHealthPercent >= 85 ? 'Good' : documentHealthPercent >= 60 ? 'Review' : 'Needs work'
-  const documentHealthItems = useMemo(() => {
+  const documentHealthItems = (() => {
     if (!isMandatePacket) {
       return [
         { key: 'lifecycle', label: 'Lifecycle progress', complete: lifecycleProgress >= 50 },
@@ -2841,16 +3046,13 @@ export default function LegalDocumentWorkspace({
         label: 'Commission terms',
         complete: commissionWarnings.length === 0,
       },
+      {
+        key: 'mandate_route',
+        label: 'Mandate route',
+        complete: mandateRoutingSnapshot?.hasSignal ? !mandateRoutingSnapshot.fallback : true,
+      },
     ]
-  }, [
-    editablePreviewHtml,
-    generatedPreviewUrl,
-    isMandatePacket,
-    lifecycleProgress,
-    mandatePreviewValidation?.fieldGroups,
-    signedPreviewUrl,
-    signerValidation.blockers.length,
-  ])
+  })()
 
   const workspaceSummary = useMemo(() => {
     const leadSummary = sourceContext.lead && typeof sourceContext.lead === 'object' ? sourceContext.lead : {}
@@ -5183,7 +5385,7 @@ export default function LegalDocumentWorkspace({
   const desktopWorkspaceRailHeightClassName = 'xl:h-[clamp(700px,calc(100vh-14rem),880px)]'
   const mainGridClassName = `grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)] xl:items-stretch 2xl:grid-cols-[340px_minmax(0,1fr)] ${desktopWorkspaceRailHeightClassName}`
   const secondaryGridClassName = 'mt-6 grid gap-5 xl:grid-cols-[minmax(500px,1.05fr)_minmax(340px,0.95fr)] xl:items-stretch 2xl:grid-cols-[minmax(560px,1.1fr)_minmax(380px,0.9fr)]'
-  const reviewRailPanelClassName = 'min-h-[470px]'
+  const reviewRailPanelClassName = 'min-h-[420px] xl:h-[clamp(470px,calc(100vh-22rem),620px)]'
 
   return (
     <>
@@ -5552,6 +5754,10 @@ export default function LegalDocumentWorkspace({
 
             <div className={secondaryGridClassName}>
               <aside className="h-full space-y-5">
+                {isMandatePacket ? (
+                  <MandateRoutePanel routing={mandateRoutingSnapshot} />
+                ) : null}
+
                 {isMandatePacket ? (
                   <SigningMethodPanel
                     method={signingMethod}

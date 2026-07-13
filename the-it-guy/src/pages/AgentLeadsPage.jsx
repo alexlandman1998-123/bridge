@@ -108,6 +108,7 @@ import {
 import {
   createPrivateListing,
   createPrivateListingActivity,
+  isSellerPortalInviteReadyAfterSignedMandate,
   markSellerOnboardingSent,
   sendSellerOnboarding,
   submitSellerOnboarding,
@@ -175,7 +176,10 @@ import { listLeadCommunicationTemplates } from '../services/leadCommunicationTem
 import { buildLeadWorkspaceAnalyticsSummary } from '../services/leadAnalyticsService'
 import { buildSellerJourney } from '../services/sellerJourneyService'
 import { buildSellerReadinessSummary } from '../services/sellerReadinessService'
-import { getSellerRequiredDocuments } from '../services/sellerDocumentRequirementsService'
+import {
+  buildSellerDocumentSourceOfTruth,
+  getSellerRequiredDocuments,
+} from '../services/sellerDocumentRequirementsService'
 import {
   DOCUMENT_START_DOCUMENT_KINDS,
   DOCUMENT_START_ENTRY_POINTS,
@@ -15215,6 +15219,8 @@ function buildSellerOnboardingEmailPayload({ row = {}, listing = null, onboardin
     emailKind: normalizedEmailKind,
     to: normalizeText(row.email || row.contact?.email).toLowerCase(),
     organisationId: normalizeText(organisationId),
+    listingId: normalizeText(listing?.id || listing?.listingId || listing?.listing_id || row?.listingId || row?.listing_id),
+    sellerPortalInvitePolicy: normalizedEmailKind === 'portal_documents' ? 'after_mandate_signed' : '',
     sellerName: normalizeText(row.name || row.contact?.name || 'Seller'),
     propertyTitle,
     propertyType: normalizeText(row?.propertyType || row?.property_type || listing?.propertyType || listing?.property_type),
@@ -15320,7 +15326,7 @@ function getSellerDocumentCompletion(documents = []) {
 }
 
 function getSellerDocumentDisplayStatus(document = {}) {
-  return getDocumentStatusLabel(document.status || document.documentStatus || document.document_status)
+  return document.statusLabel || getDocumentStatusLabel(document.status || document.documentStatus || document.document_status)
 }
 
 const SELLER_DOCUMENT_CENTER_TABS = [
@@ -15346,6 +15352,8 @@ function getSellerDocumentCategoryTone(category = '') {
 }
 
 function getSellerDocumentFilterBucket(document = {}) {
+  const sourceBucket = normalizeText(document.statusBucket).toLowerCase()
+  if (['approved', 'rejected', 'under_review', 'uploaded', 'outstanding'].includes(sourceBucket)) return sourceBucket
   const status = normalizeDocumentStatus(document.status || document.documentStatus || document.document_status)
   if (status === 'approved' || status === 'completed') return 'approved'
   if (status === 'rejected') return 'rejected'
@@ -15380,80 +15388,181 @@ function getSellerDocumentCountForTab(documents = [], tabKey = 'all') {
   return rows.filter((document) => normalizeText(document.category).toLowerCase() === tabKey).length
 }
 
-function getSellerDocumentCategoryFromRequirement(requirement = {}) {
-  const group = normalizeText(requirement?.requirement_group || requirement?.group || requirement?.category).toLowerCase()
-  if (group === 'property' || group === 'occupancy' || group === 'financial') return 'property'
-  if (['seller_identity', 'marital', 'fica', 'compliance', 'property_compliance', 'company', 'trust', 'deceased_estate', 'power_of_attorney'].includes(group)) return 'fica'
-  return 'additional'
-}
-
-function getSellerRequirementDocumentKey(requirement = {}) {
-  return normalizeText(
-    requirement?.requirement_key ||
-      requirement?.requirementKey ||
-      requirement?.key ||
-      requirement?.canonical_requirement_instance_id ||
-      requirement?.id ||
-      requirement?.requirement_name ||
-      requirement?.label,
-  ).toLowerCase()
-}
-
-function findSellerUploadedDocumentForRequirement(requirement = {}, documents = []) {
-  const requirementId = normalizeText(requirement?.id)
-  const canonicalRequirementId = normalizeText(requirement?.canonical_requirement_instance_id || requirement?.canonicalRequirementInstanceId)
-  const requirementKey = getSellerRequirementDocumentKey(requirement)
-  return (Array.isArray(documents) ? documents : []).find((document) => {
-    const documentRequirementId = normalizeText(document?.requirement_id || document?.requirementId)
-    const documentCanonicalId = normalizeText(document?.canonical_requirement_instance_id || document?.canonicalRequirementInstanceId)
-    const documentType = normalizeText(document?.document_type || document?.documentType || document?.category).toLowerCase()
-    const documentName = normalizeText(document?.document_name || document?.documentName || document?.fileName || document?.file_name).toLowerCase()
-    return (
-      (requirementId && documentRequirementId === requirementId) ||
-      (canonicalRequirementId && documentCanonicalId === canonicalRequirementId) ||
-      (requirementKey && (documentType === requirementKey || documentName.includes(requirementKey.replace(/_/g, ' '))))
-    )
-  }) || null
-}
-
-function buildSellerDocumentRowsFromListing(listing = null, row = {}) {
-  const requirements = Array.isArray(listing?.documentRequirements)
-    ? listing.documentRequirements
-    : Array.isArray(row?.documentRequirements)
-      ? row.documentRequirements
+function buildSellerDocumentSourceListing(listing = null, row = {}) {
+  const listingRecord = listing && typeof listing === 'object' ? listing : {}
+  const rowRecord = row && typeof row === 'object' ? row : {}
+  const formData = readSellerOnboardingFormData(listingRecord, rowRecord)
+  const listingId = getSellerListingId(rowRecord, listingRecord)
+  const documentRequirements = Array.isArray(listingRecord?.documentRequirements)
+    ? listingRecord.documentRequirements
+    : Array.isArray(rowRecord?.documentRequirements)
+      ? rowRecord.documentRequirements
       : []
-  const documents = Array.isArray(listing?.documents)
-    ? listing.documents
-    : Array.isArray(row?.documents)
-      ? row.documents
-      : []
+  const documents = [
+    ...(Array.isArray(rowRecord?.documents) ? rowRecord.documents : []),
+    ...(Array.isArray(listingRecord?.documents) ? listingRecord.documents : []),
+  ]
+  const rowOnboarding = isPlainObject(rowRecord?.sellerOnboarding) ? rowRecord.sellerOnboarding : {}
+  const listingOnboarding = isPlainObject(listingRecord?.sellerOnboarding) ? listingRecord.sellerOnboarding : {}
+  const onboardingStatus = firstFilledValue(
+    listingOnboarding.status,
+    listingRecord?.sellerOnboardingStatus,
+    listingRecord?.seller_onboarding_status,
+    rowOnboarding.status,
+    rowRecord?.sellerOnboardingStatus,
+    rowRecord?.seller_onboarding_status,
+  )
 
-  return requirements.map((requirement) => {
-    const uploadedDocument = findSellerUploadedDocumentForRequirement(requirement, documents)
-    const label = normalizeText(requirement?.requirement_name || requirement?.requirementName || requirement?.label || requirement?.name || requirement?.requirement_key || requirement?.key)
-    const uploadedUrl = normalizeText(uploadedDocument?.url || uploadedDocument?.fileUrl || uploadedDocument?.file_url || uploadedDocument?.signedUrl || uploadedDocument?.signed_url)
-    const uploadedName = normalizeText(uploadedDocument?.fileName || uploadedDocument?.file_name || uploadedDocument?.document_name || uploadedDocument?.documentName)
-    return {
-      id: normalizeText(requirement?.id || requirement?.canonical_requirement_instance_id || requirement?.requirement_key || label),
-      key: getSellerRequirementDocumentKey(requirement),
-      title: label,
-      label,
-      description: normalizeText(requirement?.requirement_description || requirement?.description),
-      whyNeeded: normalizeText(requirement?.whyNeeded || requirement?.why_needed),
-      category: getSellerDocumentCategoryFromRequirement(requirement),
-      status: uploadedDocument ? normalizeText(uploadedDocument?.status || 'uploaded') || 'uploaded' : normalizeText(requirement?.status || 'required') || 'required',
-      required: requirement?.is_required !== false,
-      applicable: requirement?.applicable !== false,
-      url: uploadedUrl,
-      uploadedFileName: uploadedName,
-      uploadedAt: uploadedDocument?.uploadedAt || uploadedDocument?.uploaded_at || uploadedDocument?.createdAt || uploadedDocument?.created_at || null,
-      uploadedBy: uploadedDocument?.uploadedBy || uploadedDocument?.uploaded_by || '',
-      original: {
-        requirement,
-        document: uploadedDocument,
-      },
-    }
-  }).filter((document) => document.id || document.key || document.label)
+  return {
+    ...rowRecord,
+    ...listingRecord,
+    id: listingId || normalizeText(listingRecord?.id || rowRecord?.listingId || rowRecord?.leadId),
+    private_listing_id: normalizeText(listingRecord?.private_listing_id || listingId),
+    sellerLeadId: normalizeText(listingRecord?.sellerLeadId || listingRecord?.seller_lead_id || rowRecord?.leadId || rowRecord?.lead_id),
+    seller_lead_id: normalizeText(listingRecord?.seller_lead_id || listingRecord?.sellerLeadId || rowRecord?.leadId || rowRecord?.lead_id),
+    documentRequirements,
+    documents,
+    sellerOnboarding: {
+      ...rowOnboarding,
+      ...listingOnboarding,
+      status: onboardingStatus,
+      formData,
+      form_data: formData,
+    },
+    seller_onboarding: {
+      ...(isPlainObject(rowRecord?.seller_onboarding) ? rowRecord.seller_onboarding : {}),
+      ...(isPlainObject(listingRecord?.seller_onboarding) ? listingRecord.seller_onboarding : {}),
+      status: onboardingStatus,
+      formData,
+      form_data: formData,
+    },
+  }
+}
+
+function buildSellerMandatePacketForDocumentSource({
+  row = {},
+  listing = null,
+  journey = null,
+  mandatePacketStatus = null,
+} = {}) {
+  const summary = getSellerMandatePacketSummary({ row, listing, journey, mandatePacketStatus })
+  const packet = summary.packet || mandatePacketStatus?.packet || journey?.mandatePacket || row?.mandatePacket || listing?.mandatePacket || {}
+  const sourceContext = summary.sourceContext || {}
+  const latestVersion = summary.latestVersion || {}
+  const finalSignedFilePath = firstFilledValue(
+    latestVersion?.final_signed_file_path,
+    latestVersion?.finalSignedFilePath,
+    packet?.finalSignedFilePath,
+    packet?.final_signed_file_path,
+    listing?.mandate?.finalSignedFilePath,
+    listing?.mandate?.final_signed_file_path,
+    row?.mandateSignedDocumentPath,
+    row?.mandate_signed_document_path,
+    sourceContext?.finalSignedFilePath,
+    sourceContext?.final_signed_file_path,
+  )
+  const finalSignedFileUrl = firstFilledValue(
+    latestVersion?.final_signed_file_access_url,
+    latestVersion?.final_signed_file_url,
+    latestVersion?.finalSignedFileAccessUrl,
+    latestVersion?.finalSignedFileUrl,
+    packet?.finalSignedDownloadUrl,
+    packet?.finalSignedFileAccessUrl,
+    packet?.finalSignedFileUrl,
+    packet?.final_signed_file_access_url,
+    packet?.final_signed_file_url,
+    listing?.mandate?.finalSignedDownloadUrl,
+    listing?.mandate?.finalSignedFileAccessUrl,
+    listing?.mandate?.finalSignedFileUrl,
+    listing?.mandate?.final_signed_file_access_url,
+    listing?.mandate?.final_signed_file_url,
+    row?.mandateSignedDocumentUrl,
+    row?.mandate_signed_document_url,
+    sourceContext?.finalSignedDownloadUrl,
+    sourceContext?.finalSignedFileAccessUrl,
+    sourceContext?.finalSignedFileUrl,
+    sourceContext?.final_signed_file_access_url,
+    sourceContext?.final_signed_file_url,
+  )
+  const status = normalizeText(summary.status || mandatePacketStatus?.state || mandatePacketStatus?.status || packet?.status)
+  const isSigned = ['signed', 'completed', 'complete', 'fully_signed', 'uploaded_signed', 'signed_uploaded', 'finalised', 'finalized'].includes(status.toLowerCase())
+  const signedUrl = finalSignedFileUrl || (isSigned ? summary.signedUrl : '')
+  const hasFinalSignedArtifact = Boolean(finalSignedFilePath || signedUrl)
+  if (!hasFinalSignedArtifact) return mandatePacketStatus || packet || null
+  const packetId = normalizeText(summary.packetId || packet?.id || packet?.packetId || packet?.packet_id)
+  const signedState = 'fully_signed'
+
+  return {
+    ...packet,
+    id: packetId,
+    state: signedState,
+    status: signedState,
+    packet: {
+      ...(packet?.packet || {}),
+      id: packetId,
+      status: signedState,
+    },
+    version: {
+      ...latestVersion,
+      id: normalizeText(latestVersion?.id || latestVersion?.versionId || latestVersion?.version_id),
+      final_signed_file_path: finalSignedFilePath,
+      final_signed_file_url: signedUrl,
+      final_signed_file_access_url: signedUrl,
+      final_signed_file_name: firstFilledValue(latestVersion?.final_signed_file_name, latestVersion?.finalSignedFileName, packet?.finalSignedFileName, packet?.final_signed_file_name, 'Signed Mandate.pdf'),
+      finalised_at: summary.signedAt,
+    },
+    finalSignedFilePath: finalSignedFilePath,
+    finalSignedDownloadUrl: signedUrl,
+    finalSignedFileName: firstFilledValue(latestVersion?.final_signed_file_name, latestVersion?.finalSignedFileName, packet?.finalSignedFileName, packet?.final_signed_file_name, 'Signed Mandate.pdf'),
+  }
+}
+
+function mapSellerDocumentSourceRow(row = {}) {
+  const upload = row?.upload || {}
+  const originalDocument = row?.original?.document || {}
+  const status = normalizeDocumentStatus(row.status || (row.complete ? 'completed' : 'required'))
+  const id = normalizeText(row.id || row.key || row.title || row.label)
+  return {
+    ...row,
+    id,
+    key: normalizeText(row.key || id),
+    title: row.title || row.label || 'Seller document',
+    label: row.label || row.title || 'Seller document',
+    category: normalizeText(row.category || 'property').toLowerCase(),
+    status,
+    statusLabel: row.statusLabel || getDocumentStatusLabel(status),
+    required: row.required !== false,
+    applicable: row.applicable !== false,
+    url: normalizeText(upload.url || row.url || row.documentUrl || originalDocument.url || originalDocument.fileUrl || originalDocument.file_url || originalDocument.signedUrl || originalDocument.signed_url),
+    uploadedFileName: upload.fileName || row.uploadedFileName || originalDocument.fileName || originalDocument.file_name || originalDocument.document_name || '',
+    uploadedAt: upload.uploadedAt || row.uploadedAt || originalDocument.uploadedAt || originalDocument.uploaded_at || originalDocument.createdAt || originalDocument.created_at || '',
+    uploadedBy: upload.uploadedBy || row.uploadedBy || originalDocument.uploadedBy || originalDocument.uploaded_by || '',
+    requestedBy: row.requestedBy || row.original?.requirement?.requestedBy || row.original?.requirement?.requested_by || '',
+    rejectionReason: row.rejectionReason || originalDocument.rejectionReason || originalDocument.rejected_reason || originalDocument.reason || '',
+  }
+}
+
+function buildSellerDocumentRowsFromSource({
+  journey = null,
+  listing = null,
+  row = {},
+  mandatePacketStatus = null,
+} = {}) {
+  const sourceListing = buildSellerDocumentSourceListing(listing, row)
+  const journeyDocuments = (Array.isArray(journey?.documents) ? journey.documents : [])
+    .map((document) => document?.original?.document || document)
+    .filter(Boolean)
+  const source = buildSellerDocumentSourceOfTruth({
+    listing: sourceListing,
+    documents: [
+      ...(Array.isArray(sourceListing?.documents) ? sourceListing.documents : []),
+      ...journeyDocuments,
+    ],
+    formData: readSellerOnboardingFormData(listing || {}, row || {}),
+    mandatePacket: buildSellerMandatePacketForDocumentSource({ row, listing, journey, mandatePacketStatus }),
+  })
+
+  return source.rows.map(mapSellerDocumentSourceRow)
 }
 
 function getSellerListingDocumentWeight(listing = null) {
@@ -15512,30 +15621,6 @@ function chooseRichestSellerListing(candidates = []) {
       if (hydrationDelta) return hydrationDelta
       return getSellerListingDocumentWeight(right) - getSellerListingDocumentWeight(left)
     })[0] || null
-}
-
-function mergeSellerDocumentRows(primaryRows = [], fallbackRows = []) {
-  const merged = new Map()
-  for (const document of [...fallbackRows, ...primaryRows]) {
-    const key = normalizeText(document?.key || document?.id || document?.title || document?.label).toLowerCase()
-    if (!key) continue
-    const previous = merged.get(key)
-    if (!previous) {
-      merged.set(key, document)
-      continue
-    }
-    const previousHasUrl = Boolean(previous.url || previous.documentUrl || previous.document_url)
-    const nextHasUrl = Boolean(document.url || document.documentUrl || document.document_url)
-    merged.set(key, {
-      ...previous,
-      ...document,
-      url: nextHasUrl ? (document.url || document.documentUrl || document.document_url) : previous.url,
-      uploadedFileName: document.uploadedFileName || previous.uploadedFileName,
-      uploadedAt: document.uploadedAt || previous.uploadedAt,
-      status: nextHasUrl && !previousHasUrl ? document.status : (document.status || previous.status),
-    })
-  }
-  return Array.from(merged.values())
 }
 
 function SellerWorkspaceCard({ title, action, children, className = '', id = '', density = 'regular' }) {
@@ -19682,12 +19767,11 @@ function SellerMandateTab({
   )
 }
 
-function SellerDocumentsTab({ journey, listing = null, row = {} }) {
-  const documents = useMemo(() => {
-    const journeyDocuments = Array.isArray(journey?.documents) ? journey.documents : []
-    const listingDocuments = buildSellerDocumentRowsFromListing(listing, row)
-    return mergeSellerDocumentRows(journeyDocuments, listingDocuments)
-  }, [journey, listing, row])
+function SellerDocumentsTab({ journey, listing = null, row = {}, mandatePacketStatus = null }) {
+  const documents = useMemo(
+    () => buildSellerDocumentRowsFromSource({ journey, listing, row, mandatePacketStatus }),
+    [journey, listing, mandatePacketStatus, row],
+  )
   const completion = getSellerDocumentCompletion(documents)
   const summary = useMemo(() => getSellerDocumentStatusSummary(documents), [documents])
   const [activeTab, setActiveTab] = useState('property')
@@ -20204,7 +20288,7 @@ function SellerTabContent({
       />
     )
   }
-  if (activeTab === 'documents') return <SellerDocumentsTab journey={journey} listing={listing} row={row} />
+  if (activeTab === 'documents') return <SellerDocumentsTab journey={journey} listing={listing} row={row} mandatePacketStatus={mandatePacketStatus} />
   if (activeTab === 'activity') return <SellerActivityTab timeline={timeline} row={row} listing={listing} journey={journey} readiness={readiness} onTabChange={onTabChange} />
   return (
     <SellerOverviewTab
@@ -21169,6 +21253,16 @@ function AgentLeadWorkspace() {
       setSellerActionError('Send seller onboarding first to create the seller portal link.')
       return
     }
+    if (!isSellerPortalInviteReadyAfterSignedMandate(linkedSellerListing, {
+      mandateSigned: sellerJourney?.mandatePacketStatus?.signed ||
+        sellerJourney?.mandatePacketStatus?.signedAt ||
+        sellerJourney?.mandatePacketStatus?.signed_at ||
+        sellerJourney?.mandateSignedAt ||
+        sellerJourney?.mandate_signed_at,
+    })) {
+      setSellerActionError('Sign the seller mandate before resending the seller portal password setup link.')
+      return
+    }
 
     try {
       setSendingSellerPortalLink(true)
@@ -21207,7 +21301,7 @@ function AgentLeadWorkspace() {
     } finally {
       setSendingSellerPortalLink(false)
     }
-  }, [actor, isSellerLeadWorkspace, linkedSellerListing, organisationId, row, sendingSellerPortalLink, workspaceName])
+  }, [actor, isSellerLeadWorkspace, linkedSellerListing, organisationId, row, sellerJourney, sendingSellerPortalLink, workspaceName])
 
   const saveSellerPropertyForLead = useCallback(async (draft = {}) => {
     if (!row || !isSellerLeadWorkspace) return null

@@ -368,6 +368,10 @@ export type SendSellerOnboardingSubmittedPayload = {
   seller_portal_link?: string;
   sellerPortalToken?: string;
   seller_portal_token?: string;
+  sellerPortalInvitePolicy?: string;
+  seller_portal_invite_policy?: string;
+  deferSellerPortalLinkUntilMandateSigned?: boolean | string;
+  defer_seller_portal_link_until_mandate_signed?: boolean | string;
   portalLink?: string;
   propertyTitle?: string;
   transactionReference?: string;

@@ -18,6 +18,11 @@ import {
   isTrustBuyer,
   isTrustSeller,
 } from './documentPartyClassification'
+import {
+  isFullTitleMandateProperty,
+  isSectionalMandateProperty,
+  withMandateScenarioPlaceholders,
+} from './mandateScenarioProfile'
 
 const ZAR_CURRENCY = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -199,7 +204,8 @@ function renderLegalTextWithPlaceholders(value = '', placeholders = {}, packetTy
       if (!placeholderKey) return ''
       const resolvedValue = safeValueOrMissing(placeholders, placeholderKey, placeholderKey, packetType)
       const missing = resolvedValue.startsWith('[MISSING:')
-      return `<span class="${missing ? 'packet-preview-missing' : ''}">${escapeHtml(resolvedValue)}</span>`
+      const displayValue = missing ? resolvedValue : formatDocumentDisplayValue(placeholderKey, resolvedValue)
+      return `<span class="${missing ? 'packet-preview-missing' : ''}">${escapeHtml(displayValue)}</span>`
     })
     .replace(/\n/g, '<br />')
 }
@@ -319,6 +325,18 @@ function appendSectionSigningRequirement(content = '', section = {}, placeholder
 
 function renderContactIcon(type = '') {
   const common = 'aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"'
+  if (type === 'company') {
+    return `<svg ${common}><path d="M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"></path><path d="M18 9h1a1 1 0 0 1 1 1v11"></path><path d="M3 21h18"></path><path d="M8 7h4"></path><path d="M8 11h4"></path><path d="M8 15h4"></path></svg>`
+  }
+  if (type === 'registration') {
+    return `<svg ${common}><path d="M14 3v5h5"></path><path d="M6 21h12a2 2 0 0 0 2-2V8l-5-5H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2z"></path><path d="M8 13h8"></path><path d="M8 17h6"></path></svg>`
+  }
+  if (type === 'tax') {
+    return `<svg ${common}><path d="M7 3h10l2 2v16l-3-2-3 2-3-2-3 2-3-2V5l3-2z"></path><path d="M9 8h6"></path><path d="M9 12h6"></path><path d="M9 16h4"></path></svg>`
+  }
+  if (type === 'license') {
+    return `<svg ${common}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="m9 12 2 2 4-4"></path></svg>`
+  }
   if (type === 'website') {
     return `<svg ${common}><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3c2.2 2.4 3.4 5.4 3.4 9s-1.2 6.6-3.4 9"></path><path d="M12 3c-2.2 2.4-3.4 5.4-3.4 9s1.2 6.6 3.4 9"></path></svg>`
   }
@@ -332,7 +350,49 @@ function renderContactIcon(type = '') {
 }
 
 function resolveDocumentContactItems(branding = {}, placeholders = {}) {
-  const address = firstText(
+  const legalName = firstMeaningfulText(
+    branding.legalName,
+    branding.legal_name,
+    branding.organisationLegalName,
+    branding.organisation_legal_name,
+    branding.companyLegalName,
+    branding.company_legal_name,
+    placeholders.agency_legal_name,
+    placeholders.organisation_legal_name,
+    placeholders['organisation.legal_name'],
+    placeholders.agency_display_name,
+    placeholders.organisation_display_name,
+  )
+  const registrationNumber = firstMeaningfulText(
+    branding.registrationNumber,
+    branding.registration_number,
+    branding.companyRegistrationNumber,
+    branding.company_registration_number,
+    branding.organisationRegistrationNumber,
+    branding.organisation_registration_number,
+    placeholders.agency_registration_number,
+    placeholders.organisation_registration_number,
+    placeholders['organisation.registration_number'],
+  )
+  const vatNumber = firstMeaningfulText(
+    branding.vatNumber,
+    branding.vat_number,
+    branding.organisationVatNumber,
+    branding.organisation_vat_number,
+    placeholders.agency_vat_number,
+    placeholders.organisation_vat_number,
+    placeholders['organisation.vat_number'],
+  )
+  const fspNumber = firstMeaningfulText(
+    branding.fspNumber,
+    branding.fsp_number,
+    branding.organisationFspNumber,
+    branding.organisation_fsp_number,
+    placeholders.agency_fsp_number,
+    placeholders.organisation_fsp_number,
+    placeholders['organisation.fsp_number'],
+  )
+  const address = firstMeaningfulText(
     branding.physicalAddress,
     branding.physical_address,
     branding.organisationPhysicalAddress,
@@ -344,14 +404,18 @@ function resolveDocumentContactItems(branding = {}, placeholders = {}) {
     placeholders.agency_address,
   )
   const items = [
-    ['website', firstText(branding.website, branding.organisationWebsite, branding.organisation_website, branding.companyWebsite, placeholders.organisation_website, placeholders['organisation.website'], placeholders.agency_website)],
-    ['email', firstText(branding.email, branding.organisationEmail, branding.organisation_email, branding.contactEmail, branding.companyEmail, placeholders.organisation_email, placeholders['organisation.email'], placeholders.agency_email)],
+    ['company', legalName],
+    ['registration', registrationNumber ? `Reg: ${registrationNumber}` : ''],
+    ['tax', vatNumber ? `VAT: ${vatNumber}` : ''],
+    ['license', fspNumber ? `FSP: ${fspNumber}` : ''],
     ['address', address],
-    ['phone', firstText(branding.telephone, branding.phoneNumber, branding.phone_number, branding.phone, branding.telephoneNumber, branding.contactPhone, branding.organisationPhone, branding.organisation_phone, placeholders.organisation_phone, placeholders.organisation_telephone, placeholders['organisation.phone'], placeholders.agency_phone)],
+    ['email', firstMeaningfulText(branding.email, branding.organisationEmail, branding.organisation_email, branding.contactEmail, branding.companyEmail, placeholders.organisation_email, placeholders['organisation.email'], placeholders.agency_email)],
+    ['phone', firstMeaningfulText(branding.telephone, branding.phoneNumber, branding.phone_number, branding.phone, branding.telephoneNumber, branding.contactPhone, branding.organisationPhone, branding.organisation_phone, placeholders.organisation_phone, placeholders.organisation_telephone, placeholders['organisation.phone'], placeholders.agency_phone)],
+    ['website', firstMeaningfulText(branding.website, branding.organisationWebsite, branding.organisation_website, branding.companyWebsite, placeholders.organisation_website, placeholders['organisation.website'], placeholders.agency_website)],
   ]
   return items
     .map(([type, value]) => ({ type, value: normalizeText(value) }))
-    .filter((item) => item.value)
+    .filter((item) => !isEmptyDisplayValue(item.value))
 }
 
 function renderDocumentContactRow(items = []) {
@@ -389,6 +453,95 @@ function toTitleCase(value) {
     .replace(/_/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/\b\w/g, (character) => character.toUpperCase())
+}
+
+const EMPTY_DISPLAY_VALUES = new Set([
+  'na',
+  'n_a',
+  'n/a',
+  'none',
+  'unknown',
+  'tbc',
+  'missing',
+  'not_applicable',
+  'not_provided',
+])
+
+const OPTIONAL_PROPERTY_DETAIL_KEYS = new Set([
+  'property_unit_number',
+  'unit_number',
+  'property_section_number',
+  'section_number',
+  'sectional_title_number',
+  'property_sectional_title_scheme',
+  'property_complex_name',
+  'property_estate_name',
+  'property_estate_complex_name',
+])
+
+function normalizeDisplayKey(value = '') {
+  return normalizeText(value).toLowerCase().replace(/[\s.-]+/g, '_')
+}
+
+function isEmptyDisplayValue(value) {
+  const normalized = normalizeDisplayKey(value)
+  return !normalized || EMPTY_DISPLAY_VALUES.has(normalized)
+}
+
+function firstMeaningfulText(...values) {
+  return values.map((value) => normalizeText(value)).find((value) => !isEmptyDisplayValue(value)) || ''
+}
+
+function formatDocumentDisplayValue(key, value) {
+  const text = normalizeText(value)
+  if (!text) return ''
+  const normalizedKey = normalizeDisplayKey(key)
+  if (
+    normalizedKey.includes('marital') ||
+    normalizedKey.includes('entity_type') ||
+    normalizedKey === 'property_type' ||
+    normalizedKey === 'property_title_type' ||
+    normalizedKey === 'mandate_template_variant' ||
+    normalizedKey === 'mandate_clause_profile' ||
+    normalizedKey === 'seller_clause_profile' ||
+    normalizedKey === 'property_clause_profile' ||
+    normalizedKey === 'vat_handling'
+  ) {
+    return toTitleCase(text)
+  }
+  return text
+}
+
+function propertyLooksSectional(placeholders = {}, packetType = 'mandate') {
+  const propertyType = normalizeDisplayKey(firstMeaningfulText(
+    resolvePlaceholderValue(placeholders, 'property_title_type', packetType),
+    placeholders.property_title_type,
+    placeholders['property.title_type_raw'],
+    resolvePlaceholderValue(placeholders, 'property_type', packetType),
+    placeholders.propertyType,
+    placeholders.property_type,
+    placeholders['property.type'],
+  ))
+  return propertyType.includes('sectional') ||
+    propertyType.includes('share_block') ||
+    propertyType.includes('apartment') ||
+    propertyType.includes('flat') ||
+    propertyType.includes('unit')
+}
+
+function shouldSkipDocumentRow(sectionKey, key, rawValue, placeholders = {}, packetType = 'mandate') {
+  if (normalizeDisplayKey(sectionKey) !== 'property_details') return false
+  const normalizedKey = normalizeDisplayKey(key)
+  if (!OPTIONAL_PROPERTY_DETAIL_KEYS.has(normalizedKey)) return false
+  return !propertyLooksSectional(placeholders, packetType) && isEmptyDisplayValue(rawValue)
+}
+
+function getVisibleSectionPlaceholderRows(section = {}, placeholders = {}, packetType = 'mandate') {
+  const sectionKey = normalizeText(section?.key)
+  return (section.placeholders || []).filter(([placeholderKey]) => {
+    const rawValue = resolvePlaceholderValue(placeholders, placeholderKey, packetType)
+    return !shouldSkipDocumentRow(sectionKey, placeholderKey, rawValue, placeholders, packetType)
+  })
 }
 
 function formatCurrency(value) {
@@ -750,7 +903,38 @@ const MANDATE_SECTION_DEFINITIONS = [
     required: true,
     placeholders: [
       ['property_address', 'Property Address'],
+      ['property_display_address', 'Display Address'],
+      ['property_suburb', 'Suburb'],
+      ['property_city', 'City'],
       ['property_type', 'Property Type'],
+      ['property_title_type', 'Title Type'],
+    ],
+  }),
+  createPacketSection({
+    key: 'property_full_title_pack',
+    label: 'Full Title Property Pack',
+    required: false,
+    condition: ({ placeholders }) => isFullTitleMandateProperty({ placeholders }),
+    placeholders: [
+      ['property_title_type', 'Title Type'],
+      ['erf_number', 'Erf Number'],
+      ['erf_size', 'Erf Size'],
+      ['floor_size', 'Floor Size'],
+      ['property_estate_name', 'Estate / HOA'],
+    ],
+  }),
+  createPacketSection({
+    key: 'property_sectional_title_pack',
+    label: 'Sectional Title Property Pack',
+    required: false,
+    condition: ({ placeholders }) => isSectionalMandateProperty({ placeholders }),
+    placeholders: [
+      ['property_title_type', 'Title Type'],
+      ['property_unit_number', 'Unit Number'],
+      ['property_section_number', 'Section Number'],
+      ['sectional_title_number', 'Sectional Title Number'],
+      ['property_complex_name', 'Complex / Scheme'],
+      ['property_estate_name', 'Estate / HOA'],
     ],
   }),
   createPacketSection({
@@ -1394,7 +1578,12 @@ export function resolveMandatePacketPlaceholders({
   transaction = null,
 } = {}) {
   if (mandateData?.placeholders && typeof mandateData.placeholders === 'object') {
-    return mandateData.placeholders
+    return withMandateScenarioPlaceholders(mandateData.placeholders, {
+      seller: mandateData.seller || {},
+      property: mandateData.property || {},
+      mandate: mandateData.mandate || {},
+      sourceContext: mandateData.sourceContext || mandateData.source_context || {},
+    })
   }
   const onboarding = {
     ...(lead?.sellerOnboarding?.formData && typeof lead.sellerOnboarding.formData === 'object'
@@ -1403,7 +1592,7 @@ export function resolveMandatePacketPlaceholders({
     ...(mandateDraft && typeof mandateDraft === 'object' ? mandateDraft : {}),
     status: lead?.sellerOnboarding?.status || lead?.sellerOnboardingStatus || mandateDraft?.sellerOnboardingStatus,
   }
-  return mapSellerOnboardingToMandateData({
+  const mapped = mapSellerOnboardingToMandateData({
     onboardingSubmission: onboarding,
     lead: lead || {},
     privateListing: privateListing || {},
@@ -1413,7 +1602,13 @@ export function resolveMandatePacketPlaceholders({
     contact: contact || {},
     transaction: transaction || {},
     mandateDraft: mandateDraft || {},
-  }).placeholders
+  })
+  return withMandateScenarioPlaceholders(mapped.placeholders, {
+    seller: mapped.seller || {},
+    property: mapped.property || {},
+    mandate: mapped.mandate || {},
+    sourceContext: mapped.sourceContext || {},
+  })
 }
 
 export function buildPacketSectionManifest({
@@ -1671,13 +1866,14 @@ function renderSectionHtml(section, placeholders, packetType = 'otp') {
     `
   }
 
-  const rows = (section.placeholders || []).map(([placeholderKey, placeholderLabel]) => {
+  const rows = getVisibleSectionPlaceholderRows(section, placeholders, packetType).map(([placeholderKey, placeholderLabel]) => {
     const resolvedValue = safeValueOrMissing(placeholders, placeholderKey, placeholderLabel, packetType)
     const missing = resolvedValue.startsWith('[MISSING:')
+    const displayValue = missing ? resolvedValue : formatDocumentDisplayValue(placeholderKey, resolvedValue)
     return `
       <div class="packet-preview-row">
         <dt>${escapeHtml(placeholderLabel)}</dt>
-        <dd class="${missing ? 'packet-preview-missing' : ''}">${renderInlineText(resolvedValue)}</dd>
+        <dd class="${missing ? 'packet-preview-missing' : ''}">${renderInlineText(displayValue)}</dd>
       </div>
     `
   })
@@ -1693,15 +1889,16 @@ function renderSectionHtml(section, placeholders, packetType = 'otp') {
 function getPreviewField(placeholders, key, label, packetType = 'mandate') {
   const value = safeValueOrMissing(placeholders, key, label, packetType)
   const missing = value.startsWith('[MISSING:')
+  const displayValue = missing ? value : formatDocumentDisplayValue(key, value)
   return {
-    value,
-    html: `<span class="${missing ? 'packet-preview-missing' : ''}">${renderInlineText(value)}</span>`,
+    value: displayValue,
+    html: `<span class="${missing ? 'packet-preview-missing' : ''}">${renderInlineText(displayValue)}</span>`,
     missing,
   }
 }
 
 function renderLegalClauseRows(section, placeholders, packetType, sectionIndex) {
-  if (normalizeText(section.legalText)) {
+  if (normalizeText(section.legalText) && normalizeDisplayKey(section.key) !== 'property_details') {
     return appendSectionSigningRequirement(renderLegalTextBlocks(section.legalText, placeholders, packetType), section, placeholders, packetType)
   }
 
@@ -1743,7 +1940,7 @@ function renderLegalClauseRows(section, placeholders, packetType, sectionIndex) 
 
   return appendSectionSigningRequirement(`
     <ol class="legal-clause-list">
-      ${(section.placeholders || [])
+      ${getVisibleSectionPlaceholderRows(section, placeholders, packetType)
         .map(([placeholderKey, placeholderLabel], rowIndex) => {
           const field = getPreviewField(placeholders, placeholderKey, placeholderLabel, packetType)
           return `

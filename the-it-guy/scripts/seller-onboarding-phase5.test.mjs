@@ -38,7 +38,7 @@ assertContract(
 )
 assertContract(
   sellerOnboardingPage,
-  /void notifySellerOnboardingSubmitted\(updated, form, token\)/,
+  /void notifySellerOnboardingSubmitted\(updated, form\)/,
   'Seller onboarding submit should trigger post-submit notifications after save.',
 )
 
@@ -92,16 +92,31 @@ assertContract(
 )
 assertContract(
   submittedHandler,
-  /seller_onboarding_submitted_seller/,
-  'Seller onboarding submitted email should send the seller thank-you portal email.',
+  /seller_portal_link_deferred_until_mandate_signed/,
+  'Seller onboarding submitted email should defer the seller portal password setup link until mandate signature.',
 )
 assertContract(
-  submittedHandler,
-  /sellerPortalLink/,
-  'Seller onboarding submitted email should include the seller portal link in the seller notification path.',
+  sellerOnboardingPage,
+  /sellerPortalInvitePolicy:\s*'after_mandate_signed'/,
+  'Seller onboarding submitted notification should mark seller portal invite delivery as post-mandate.',
+)
+assertContract(
+  sellerOnboardingPage,
+  /deferSellerPortalLinkUntilMandateSigned:\s*true/,
+  'Seller onboarding submitted notification should explicitly defer the seller portal link.',
 )
 
 const sellerEmailHandler = await readWorkspaceFile('supabase/functions/send-email/handlers/sellerOnboarding.ts')
+assertContract(
+  sellerEmailHandler,
+  /verifySellerPortalInviteAfterSignedMandate/,
+  'Seller portal link email should verify a signed mandate before sending.',
+)
+assertContract(
+  sellerEmailHandler,
+  /seller_portal_invite_requires_signed_mandate/,
+  'Seller portal link email should reject attempts before mandate signature.',
+)
 assertContract(
   sellerEmailHandler,
   /seller_portal_link_seller/,

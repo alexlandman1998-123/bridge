@@ -1,3 +1,5 @@
+import { resolveCrossModuleDocumentReference } from '../../services/documents/crossModuleDocumentKeyMapService'
+
 const PORTAL_WORKSPACE_CATEGORIES = ['sales', 'fica', 'bond', 'additional', 'property']
 
 const GROUP_KEY_TO_WORKSPACE = {
@@ -6,6 +8,23 @@ const GROUP_KEY_TO_WORKSPACE = {
   finance: 'bond',
   transfer: 'property',
   handover: 'property',
+}
+
+const PACK_KEY_TO_WORKSPACE = {
+  seller_identity_fica: 'fica',
+  seller_authority: 'sales',
+  property_ownership: 'property',
+  property_finance_existing_bond: 'property',
+  property_compliance: 'property',
+  sectional_title_body_corporate: 'property',
+  estate_hoa: 'property',
+  tenant_occupancy: 'property',
+  marketing_assets: 'property',
+  attorney_transfer_readiness: 'property',
+  buyer_identity_fica: 'fica',
+  buyer_finance: 'bond',
+  bond_originator: 'bond',
+  attorney_generated_documents: 'sales',
 }
 
 function normalizeText(value) {
@@ -215,6 +234,28 @@ export function resolvePortalDocumentMetadata(document = {}) {
   const groupWorkspace = groupKey ? GROUP_KEY_TO_WORKSPACE[groupKey] || '' : ''
 
   const resolvedDocumentType = resolveDocumentType(document)
+  const documentReference = resolveCrossModuleDocumentReference(
+    document.canonicalDocumentKey ||
+      document.canonical_document_key ||
+      document.documentDefinitionKey ||
+      document.document_definition_key ||
+      document.documentKey ||
+      document.document_key ||
+      document.requirementKey ||
+      document.requirement_key ||
+      document.documentType ||
+      document.document_type ||
+      resolvedDocumentType,
+    {
+      groupKey,
+      packKey: document.packKey || document.pack_key,
+      requestedFromRole: document.expectedFromRole || document.expected_from_role || document.requiredFromRole || document.required_from_role,
+      ownerRole: document.documentOwnerRole || document.document_owner_role,
+      visibleSection: document.visibleSection || document.visible_section,
+      portalWorkspaceCategory: existingWorkspace,
+    },
+  )
+  const mapWorkspace = PACK_KEY_TO_WORKSPACE[documentReference.documentPackKey] || ''
   const typeWorkspace = classifyWorkspaceFromType(resolvedDocumentType)
   const stageWorkspace = classifyWorkspaceFromStage(document.stageKey || document.stage_key)
   const signalWorkspace = classifyWorkspaceFromSignal(
@@ -223,6 +264,7 @@ export function resolvePortalDocumentMetadata(document = {}) {
 
   const candidateEntries = [
     ['group_key', groupWorkspace],
+    ['cross_module_document_map', mapWorkspace],
     ['document_type', typeWorkspace],
     ['stage_key', stageWorkspace],
   ].filter(([, workspace]) => Boolean(workspace))
@@ -237,6 +279,9 @@ export function resolvePortalDocumentMetadata(document = {}) {
     if (groupWorkspace) {
       workspaceCategory = groupWorkspace
       mappingSource = 'group_key'
+    } else if (mapWorkspace) {
+      workspaceCategory = mapWorkspace
+      mappingSource = 'cross_module_document_map'
     } else if (typeWorkspace) {
       workspaceCategory = typeWorkspace
       mappingSource = 'document_type'
@@ -261,5 +306,14 @@ export function resolvePortalDocumentMetadata(document = {}) {
     portalMappingSource: mappingSource,
     portalMappingConfidence: mappingConfidence,
     portalMappingAmbiguous: hasExplicitConflict,
+    canonicalDocumentKey: documentReference.canonicalDocumentKey,
+    crossModuleDocumentKey: documentReference.crossModuleDocumentKey,
+    crossModuleDocumentMapVersion: documentReference.crossModuleDocumentMapVersion,
+    crossModuleDocumentKnown: documentReference.crossModuleDocumentKnown,
+    documentOwnerRole: documentReference.documentOwnerRole,
+    documentResponsibleRoles: documentReference.documentResponsibleRoles,
+    documentPackKey: documentReference.documentPackKey,
+    documentCategory: documentReference.documentCategory,
+    documentLabel: documentReference.documentLabel,
   }
 }

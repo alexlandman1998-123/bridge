@@ -3,6 +3,10 @@ import {
   isPropertyDisclosureDigitallyComplete,
   normalizePropertyDisclosure,
 } from '../../lib/propertyDisclosure.js'
+import {
+  buildMandateScenarioPlaceholders,
+  resolveMandateScenarioProfile,
+} from './mandateScenarioProfile.js'
 
 const ZAR_CURRENCY = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -526,12 +530,33 @@ function resolvePropertyProfile(onboarding = {}, lead = {}, privateListing = {},
     lead.propertyInterest,
   )
   const displayAddress = joinUniqueAddressParts(formatUnitNumber(unitNumber), complexName, estateName, address)
+  const propertyStructureType = firstText(
+    mandateDraft.propertyStructureType,
+    mandateDraft.property_structure_type,
+    onboarding.propertyStructureType,
+    onboarding.property_structure_type,
+    privateListing.propertyStructureType,
+    privateListing.property_structure_type,
+    lead.propertyStructureType,
+    lead.property_structure_type,
+    transaction.property_structure_type,
+  )
+  const propertyType = firstText(
+    mandateDraft.propertyType,
+    onboarding.propertyType,
+    privateListing.propertyType,
+    lead.propertyType,
+    transaction.property_type,
+    lead.propertyInterest,
+    propertyStructureType,
+  )
   return {
     fullAddress: address,
     displayAddress: displayAddress || address,
     address,
-    type: firstText(mandateDraft.propertyType, onboarding.propertyType, onboarding.propertyStructureType, privateListing.propertyType, lead.propertyType, transaction.property_type, lead.propertyInterest),
-    propertyType: firstText(mandateDraft.propertyType, onboarding.propertyType, onboarding.propertyStructureType, privateListing.propertyType, lead.propertyType, transaction.property_type, lead.propertyInterest),
+    type: propertyType,
+    propertyType,
+    propertyStructureType,
     suburb: firstText(mandateDraft.propertySuburb, mandateDraft.suburb, onboarding.suburb, privateListing.suburb, lead.suburb, transaction.suburb, lead.areaInterest),
     city: firstText(mandateDraft.propertyCity, mandateDraft.city, onboarding.city, privateListing.city, lead.city, transaction.city),
     province: firstText(mandateDraft.propertyProvince, mandateDraft.province, onboarding.province, privateListing.province, lead.province, transaction.province),
@@ -762,7 +787,7 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     warnings.push(`${toTitleCase(seller.entityType)} representative ID number is missing.`)
   }
 
-  const placeholders = {
+  const basePlaceholders = {
     mandate_introduction_purpose: firstText(
       mandate.introductionPurpose,
       'This Mandate Agreement records the appointment of the Agent by the Seller to market the property described in this agreement and to perform the related services set out herein. The purpose of this document is to confirm the parties, the property, the mandate terms, commission arrangements, and any special conditions applicable to the marketing and sale of the property.',
@@ -775,8 +800,8 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     seller_domicilium_address: safePlaceholder(seller.domiciliumAddress),
     seller_entity_type: safePlaceholder(toTitleCase(seller.entityType || 'individual')),
     'seller.entity_type_raw': seller.entityType || 'individual',
-    seller_marital_status: safePlaceholder(seller.maritalStatus),
-    seller_marital_regime: safePlaceholder(seller.maritalRegime),
+    seller_marital_status: safePlaceholder(toTitleCase(seller.maritalStatus)),
+    seller_marital_regime: safePlaceholder(toTitleCase(seller.maritalRegime)),
     seller_spouse_full_name: safePlaceholder(seller.spouseFullName || seller.spouseName),
     seller_spouse_name: safePlaceholder(seller.spouseFullName || seller.spouseName),
     seller_spouse_id_number: safePlaceholder(seller.spouseIdNumber),
@@ -794,7 +819,8 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     seller_authority_basis: safePlaceholder(seller.authorityBasis),
 
     property_address: safePlaceholder(property.fullAddress),
-    property_type: safePlaceholder(property.propertyType),
+    property_type: safePlaceholder(toTitleCase(property.propertyType)),
+    property_structure_type: safePlaceholder(property.propertyStructureType),
     property_suburb: safePlaceholder(property.suburb),
     property_city: safePlaceholder(property.city),
     property_province: safePlaceholder(property.province),
@@ -863,6 +889,17 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     agent_phone: safePlaceholder(agentProfile.phone),
     agent_ffc_number: safePlaceholder(agentProfile.ffcNumber),
   }
+  const scenarioProfile = resolveMandateScenarioProfile({
+    placeholders: basePlaceholders,
+    seller,
+    property,
+    mandate,
+    sourceContext,
+  })
+  const placeholders = {
+    ...basePlaceholders,
+    ...buildMandateScenarioPlaceholders(scenarioProfile),
+  }
 
   return {
     onboardingStatus,
@@ -880,6 +917,8 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
       agentSignaturePlaceholder: 'agent_signature',
     },
     placeholders,
+    scenarioProfile,
+    mandateScenarioProfile: scenarioProfile,
     sourceContext,
     propertyDisclosureAnnexure,
     warnings,

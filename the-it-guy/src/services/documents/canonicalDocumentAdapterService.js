@@ -5,6 +5,10 @@ import {
   REQUIREMENT_LEVELS,
   REQUIREMENT_STATUSES,
 } from './canonicalDocumentResolverService'
+import {
+  getCrossModuleDocumentDefinition,
+  resolveCrossModuleDocumentKey,
+} from './crossModuleDocumentKeyMapService'
 
 export const CANONICAL_DOCUMENT_ADAPTERS_FLAG = 'VITE_CANONICAL_DOCUMENT_ADAPTERS_ENABLED'
 export const CANONICAL_DOCUMENT_ADAPTER_SOURCE = 'canonical_document_adapter'
@@ -353,7 +357,7 @@ export function canonicalDefinitionKeyToLegacyKey(key = '') {
 
 export function legacyRequirementKeyToCanonicalKey(key = '') {
   const normalized = normalizeKey(key)
-  return LEGACY_TO_CANONICAL_REQUIREMENT_KEYS[normalized] || normalized
+  return LEGACY_TO_CANONICAL_REQUIREMENT_KEYS[normalized] || resolveCrossModuleDocumentKey(normalized, normalized)
 }
 
 export function packKeyToLegacyRequirementGroup(packKey = '') {
@@ -658,7 +662,7 @@ export function getUnmappedLegacyRequirementKeys(legacyRows = []) {
   return [...new Set(legacyRows
     .map((row) => normalizeKey(row.requirement_key || row.document_key || row.document_type))
     .filter(Boolean)
-    .filter((key) => !LEGACY_TO_CANONICAL_REQUIREMENT_KEYS[key]))].sort()
+    .filter((key) => !LEGACY_TO_CANONICAL_REQUIREMENT_KEYS[key] && !getCrossModuleDocumentDefinition(key)))].sort()
 }
 
 export function buildAdapterAuditReport({

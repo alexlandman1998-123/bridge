@@ -158,6 +158,7 @@ import {
   maybeResolveTransactionDocumentRequirements,
 } from '../services/documents/transactionCanonicalDocumentRequirementService'
 import { getCanonicalDocumentRolloutMode } from '../services/documents/canonicalDocumentConsolidationService'
+import { resolveCrossModuleDocumentReference } from '../services/documents/crossModuleDocumentKeyMapService'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService'
 import { buildTransactionRoutingBackfillPlan } from '../services/transactionRoutingGovernanceService'
 import { inferUniversalPartnerRoutingRoleTypes, resolvePartnerRoutingSelections } from '../services/universalPartnerRoutingService'
@@ -6984,6 +6985,42 @@ function normalizeChecklistTraceRole(value = '') {
     .join(' ')
 }
 
+function buildRequirementDocumentReference(row = {}, context = {}) {
+  return resolveCrossModuleDocumentReference(
+    row.canonicalDocumentKey ||
+      row.canonical_document_key ||
+      row.documentDefinitionKey ||
+      row.document_definition_key ||
+      row.document_key ||
+      row.key ||
+      row.document_type,
+    {
+      ownerRole: row.documentOwnerRole || row.document_owner_role,
+      requestedFromRole: row.expectedFromRole || row.required_from_role || row.requested_from || row.responsible_role,
+      groupKey: row.groupKey || row.group_key,
+      packKey: row.packKey || row.pack_key || row.documentPackKey,
+      visibleSection: row.visibleSection || row.visible_section,
+      portalWorkspaceCategory: row.portalWorkspaceCategory || row.portal_workspace_category,
+      transaction: context.transaction,
+    },
+  )
+}
+
+function withCrossModuleRequirementMetadata(row = {}, context = {}) {
+  const documentReference = buildRequirementDocumentReference(row, context)
+  return {
+    ...row,
+    canonicalDocumentKey: row.canonicalDocumentKey || documentReference.canonicalDocumentKey,
+    crossModuleDocumentKey: row.crossModuleDocumentKey || documentReference.crossModuleDocumentKey,
+    crossModuleDocumentMapVersion: row.crossModuleDocumentMapVersion || documentReference.crossModuleDocumentMapVersion,
+    crossModuleDocumentKnown: row.crossModuleDocumentKnown ?? documentReference.crossModuleDocumentKnown,
+    documentOwnerRole: row.documentOwnerRole || documentReference.documentOwnerRole,
+    documentResponsibleRoles: row.documentResponsibleRoles || documentReference.documentResponsibleRoles,
+    documentPackKey: row.documentPackKey || documentReference.documentPackKey,
+    documentCategory: row.documentCategory || documentReference.documentCategory,
+  }
+}
+
 function getRequirementWorkflowMetadata(row = {}, context = {}) {
   const key = String(row?.document_key || row?.key || '').trim().toLowerCase()
   const groupKey = String(row?.group_key || row?.groupKey || '').trim().toLowerCase()
@@ -7069,38 +7106,43 @@ function inferRequirementTriggeringCondition(row = {}, context = {}) {
 }
 
 function withRequirementTraceMetadata(row = {}, context = {}) {
+  const enrichedRow = withCrossModuleRequirementMetadata(row, context)
   const workflowMeta = getRequirementWorkflowMetadata(row, context)
   const currentMainStage = normalizeMainStage(context?.currentMainStage, context?.stage || context?.transaction?.stage || 'Available')
   return {
-    ...row,
-    owningWorkflow: row.owningWorkflow || workflowMeta.owningWorkflow,
-    visibleSection: row.visibleSection || workflowMeta.visibleSection,
-    blockingStage: row.blockingStage || workflowMeta.blockingStage,
+    ...enrichedRow,
+    owningWorkflow: enrichedRow.owningWorkflow || workflowMeta.owningWorkflow,
+    visibleSection: enrichedRow.visibleSection || workflowMeta.visibleSection,
+    blockingStage: enrichedRow.blockingStage || workflowMeta.blockingStage,
     preCollectionAllowed:
-      row.preCollectionAllowed === true || workflowMeta.preCollectionAllowed === true,
-    isBlocking: row.isBlocking ?? workflowMeta.isBlocking,
-    sourceEngine: row.sourceEngine || 'legacy_transaction_required_documents',
+      enrichedRow.preCollectionAllowed === true || workflowMeta.preCollectionAllowed === true,
+    isBlocking: enrichedRow.isBlocking ?? workflowMeta.isBlocking,
+    sourceEngine: enrichedRow.sourceEngine || 'legacy_transaction_required_documents',
     sourceRuleOrLegacyPath:
-      row.sourceRuleOrLegacyPath || '/src/lib/purchaserPersonas.js#deriveOnboardingConfiguration',
-    triggeringCondition: row.triggeringCondition || inferRequirementTriggeringCondition(row, context),
-    currentMainStageAtGeneration: row.currentMainStageAtGeneration || currentMainStage,
-    lastRecalculatedAt: row.lastRecalculatedAt || row.updatedAt || row.updated_at || row.createdAt || row.created_at || null,
-    requestedFromLabel: normalizeChecklistTraceRole(row.expectedFromRole || row.required_from_role || 'client'),
-    debugTrace: row.debugTrace || {
-      documentName: row.label || row.document_label || row.key || row.document_key || 'Document',
-      owningWorkflow: row.owningWorkflow || workflowMeta.owningWorkflow,
-      requestedFrom: normalizeChecklistTraceRole(row.expectedFromRole || row.required_from_role || 'client'),
-      visibleSection: row.visibleSection || workflowMeta.visibleSection,
-      sourceEngine: row.sourceEngine || 'legacy_transaction_required_documents',
+      enrichedRow.sourceRuleOrLegacyPath || '/src/lib/purchaserPersonas.js#deriveOnboardingConfiguration',
+    triggeringCondition: enrichedRow.triggeringCondition || inferRequirementTriggeringCondition(enrichedRow, context),
+    currentMainStageAtGeneration: enrichedRow.currentMainStageAtGeneration || currentMainStage,
+    lastRecalculatedAt: enrichedRow.lastRecalculatedAt || enrichedRow.updatedAt || enrichedRow.updated_at || enrichedRow.createdAt || enrichedRow.created_at || null,
+    requestedFromLabel: normalizeChecklistTraceRole(enrichedRow.expectedFromRole || enrichedRow.required_from_role || 'client'),
+    debugTrace: enrichedRow.debugTrace || {
+      documentName: enrichedRow.label || enrichedRow.document_label || enrichedRow.key || enrichedRow.document_key || 'Document',
+      owningWorkflow: enrichedRow.owningWorkflow || workflowMeta.owningWorkflow,
+      requestedFrom: normalizeChecklistTraceRole(enrichedRow.expectedFromRole || enrichedRow.required_from_role || 'client'),
+      visibleSection: enrichedRow.visibleSection || workflowMeta.visibleSection,
+      sourceEngine: enrichedRow.sourceEngine || 'legacy_transaction_required_documents',
       sourceRuleOrLegacyPath:
-        row.sourceRuleOrLegacyPath || '/src/lib/purchaserPersonas.js#deriveOnboardingConfiguration',
-      triggeringCondition: row.triggeringCondition || inferRequirementTriggeringCondition(row, context),
-      currentMainStageAtGeneration: row.currentMainStageAtGeneration || currentMainStage,
-      blockingStage: row.blockingStage || workflowMeta.blockingStage,
+        enrichedRow.sourceRuleOrLegacyPath || '/src/lib/purchaserPersonas.js#deriveOnboardingConfiguration',
+      triggeringCondition: enrichedRow.triggeringCondition || inferRequirementTriggeringCondition(enrichedRow, context),
+      canonicalDocumentKey: enrichedRow.canonicalDocumentKey,
+      documentOwnerRole: enrichedRow.documentOwnerRole,
+      documentResponsibleRoles: enrichedRow.documentResponsibleRoles,
+      documentPackKey: enrichedRow.documentPackKey,
+      currentMainStageAtGeneration: enrichedRow.currentMainStageAtGeneration || currentMainStage,
+      blockingStage: enrichedRow.blockingStage || workflowMeta.blockingStage,
       preCollectionAllowed:
-        row.preCollectionAllowed === true || workflowMeta.preCollectionAllowed === true,
-      createdAt: row.createdAt || row.created_at || null,
-      lastRecalculatedAt: row.lastRecalculatedAt || row.updatedAt || row.updated_at || row.createdAt || row.created_at || null,
+        enrichedRow.preCollectionAllowed === true || workflowMeta.preCollectionAllowed === true,
+      createdAt: enrichedRow.createdAt || enrichedRow.created_at || null,
+      lastRecalculatedAt: enrichedRow.lastRecalculatedAt || enrichedRow.updatedAt || enrichedRow.updated_at || enrichedRow.createdAt || enrichedRow.created_at || null,
     },
   }
 }
@@ -7155,6 +7197,14 @@ function normalizeRequiredDocumentRows(rows = [], metadataByKey = {}, context = 
         portalMappingSource: portalMetadata.portalMappingSource,
         portalMappingConfidence: portalMetadata.portalMappingConfidence,
         portalMappingAmbiguous: portalMetadata.portalMappingAmbiguous,
+        canonicalDocumentKey: portalMetadata.canonicalDocumentKey,
+        crossModuleDocumentKey: portalMetadata.crossModuleDocumentKey,
+        crossModuleDocumentMapVersion: portalMetadata.crossModuleDocumentMapVersion,
+        crossModuleDocumentKnown: portalMetadata.crossModuleDocumentKnown,
+        documentOwnerRole: portalMetadata.documentOwnerRole,
+        documentResponsibleRoles: portalMetadata.documentResponsibleRoles,
+        documentPackKey: portalMetadata.documentPackKey,
+        documentCategory: portalMetadata.documentCategory,
         createdAt: row.created_at || null,
         updatedAt: row.updated_at || null,
       }
@@ -7897,6 +7947,14 @@ function buildRequiredChecklistFromRows(requiredRows, documents) {
       portalMappingSource: row.portalMappingSource || 'fallback',
       portalMappingConfidence: row.portalMappingConfidence || 'fallback',
       portalMappingAmbiguous: Boolean(row.portalMappingAmbiguous),
+      canonicalDocumentKey: row.canonicalDocumentKey || row.crossModuleDocumentKey || row.key || null,
+      crossModuleDocumentKey: row.crossModuleDocumentKey || row.canonicalDocumentKey || row.key || null,
+      crossModuleDocumentMapVersion: row.crossModuleDocumentMapVersion || '',
+      crossModuleDocumentKnown: row.crossModuleDocumentKnown === true,
+      documentOwnerRole: row.documentOwnerRole || '',
+      documentResponsibleRoles: Array.isArray(row.documentResponsibleRoles) ? row.documentResponsibleRoles : [],
+      documentPackKey: row.documentPackKey || '',
+      documentCategory: row.documentCategory || '',
       canonicalRequirementInstanceId: row.canonicalRequirementInstanceId || row.canonical_requirement_instance_id || null,
       canonical_requirement_instance_id: row.canonicalRequirementInstanceId || row.canonical_requirement_instance_id || null,
       owningWorkflow: row.owningWorkflow || 'Transaction Documents',

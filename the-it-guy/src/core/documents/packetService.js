@@ -36,6 +36,20 @@ import {
 import { normalizeMergeFieldPayload } from './mergeFieldRegistry'
 import { validateMandateGenerationData } from './mandateValidation'
 import {
+  buildMandateTemplateRoutingAudit,
+  normalizeMandateTemplateVariant,
+  resolveMandateTemplateRoutingProfile,
+  scoreMandateTemplateCandidate,
+} from './mandateTemplateRouting'
+import {
+  buildMandateTemplatePublishGateReport,
+  formatMandateTemplatePublishGateIssue,
+} from './mandateTemplatePublishGate'
+import {
+  buildMandateTemplateRuntimeLaunchReadiness,
+  formatMandateTemplateLaunchReadinessIssue,
+} from './mandateTemplateLaunchReadiness'
+import {
   NATIVE_RENDERER_VERSION,
   normalizeTemplateRenderMode,
   resolveTemplateStorageConfig as resolveStructuredTemplateStorageConfig,
@@ -147,6 +161,16 @@ function dedupeValidationIssues(issues = []) {
   return rows
 }
 
+function buildWarningsSnapshot(context = {}, validation = {}) {
+  const contextWarnings = Array.isArray(context?.mandateValidation?.warnings)
+    ? context.mandateValidation.warnings
+    : []
+  return dedupeValidationIssues([
+    ...contextWarnings,
+    ...(validation?.warnings || []),
+  ])
+}
+
 function isMissingPlaceholderWarning(issue = {}, missingPlaceholderKeys = new Set()) {
   const placeholderKey = normalizeText(issue.placeholderKey || issue.placeholder_key).toLowerCase()
   const message = normalizeText(issue.message)
@@ -233,10 +257,27 @@ function buildGenerationOutputPath({ packet, context = {}, generatedAt = new Dat
   return `mandates/${organisationId}/${normalizePathSegment(leadOrPacketId, 'packet')}/${timestamp}.pdf`
 }
 
-function buildGenerationPayload({ packet = null, context = {}, validation = {}, template = null, generatedAt = new Date().toISOString() } = {}) {
+function buildGenerationPayload({
+  packet = null,
+  context = {},
+  validation = {},
+  template = null,
+  templateResolution = null,
+  generatedAt = new Date().toISOString(),
+} = {}) {
   const mandateData = context?.mandateData || context?.generatedDataSnapshot || null
   const mandateValidation = context?.mandateValidation || validation?.mandateValidation || null
   const templateMetadata = template?.metadata_json && typeof template.metadata_json === 'object' ? template.metadata_json : {}
+  const mandateScenarioProfile = validation?.mandateScenarioProfile ||
+    mandateData?.scenarioProfile ||
+    mandateData?.mandateScenarioProfile ||
+    null
+  const mandateTemplateVariant =
+    normalizeText(validation?.placeholders?.mandate_template_variant) ||
+    normalizeText(mandateData?.placeholders?.mandate_template_variant) ||
+    normalizeText(mandateScenarioProfile?.templateVariant)
+  const templateRouting = templateResolution?.mandateTemplateRouting || null
+  const templateResolutionSource = normalizeText(templateResolution?.source) || null
   const outputBucket =
     normalizeText(template?.template_output_bucket) ||
     normalizeText(template?.templateOutputBucket) ||
@@ -247,6 +288,14 @@ function buildGenerationPayload({ packet = null, context = {}, validation = {}, 
   return {
     packetId: normalizeText(packet?.id) || null,
     mandateData,
+    mandateScenarioProfile,
+    mandateTemplateVariant: mandateTemplateVariant || null,
+    mandateTemplateRouting: templateRouting,
+    templateResolutionSource,
+    mandateTemplateFallback: Boolean(validation?.mandateTemplateFallback),
+    mandateTemplateFallbackWarning: validation?.mandateTemplateFallbackWarning || null,
+    mandateTemplateContentGate: validation?.mandateTemplateContentGate || null,
+    mandateTemplateLaunchReadiness: validation?.mandateTemplateLaunchReadiness || null,
     validation: mandateValidation || buildValidationSummary(validation),
     template: template
       ? {
@@ -259,6 +308,20 @@ function buildGenerationPayload({ packet = null, context = {}, validation = {}, 
           rendererVersion: templateUsesNativeRenderer(template, packet?.packet_type || context?.packetType || '')
             ? NATIVE_RENDERER_VERSION
             : null,
+          mandateTemplateVariant: mandateTemplateVariant || null,
+          mandateTemplateRouting: templateRouting,
+        }
+      : null,
+    templateResolution: templateResolution
+      ? {
+          source: templateResolutionSource,
+          candidateCount: Number.isFinite(Number(templateResolution.candidateCount))
+            ? Number(templateResolution.candidateCount)
+            : null,
+          candidateModuleTypes: Array.isArray(templateResolution.candidateModuleTypes)
+            ? templateResolution.candidateModuleTypes
+            : [],
+          mandateTemplateRouting: templateRouting,
         }
       : null,
     sourceContext: mandateData?.sourceContext || context?.sourceContext || null,
@@ -290,11 +353,17 @@ function buildRenderProvenance({
   const renderMode = resolveTemplateRenderMode(template, normalizedPacketType)
   const rendererVersion = renderMode === 'native_structured' ? NATIVE_RENDERER_VERSION : 'legacy_docx'
   const sectionManifest = Array.isArray(validation?.sectionManifest) ? validation.sectionManifest : []
+  const mandateScenarioProfile = generationPayload?.mandateScenarioProfile || validation?.mandateScenarioProfile || null
+  const mandateTemplateVariant =
+    normalizeText(generationPayload?.mandateTemplateVariant) ||
+    normalizeText(mandateScenarioProfile?.templateVariant) ||
+    normalizeText(pdfPlaceholders?.mandate_template_variant)
   const contentFingerprint = buildContentFingerprint({
     packetType: normalizedPacketType,
     renderMode,
     templateId: normalizeText(template?.id) || null,
     templateVersion: templateVersion || null,
+    mandateTemplateVariant: mandateTemplateVariant || null,
     placeholders: pdfPlaceholders && typeof pdfPlaceholders === 'object' ? pdfPlaceholders : {},
     sections: sectionManifest,
   })
@@ -307,6 +376,12 @@ function buildRenderProvenance({
     templateKey: normalizeText(template?.template_key || template?.key) || null,
     templateLabel: normalizeText(template?.template_label || template?.label) || null,
     templateVersion: templateVersion || null,
+    templateResolutionSource: normalizeText(generationPayload?.templateResolutionSource) || null,
+    mandateTemplateVariant: mandateTemplateVariant || null,
+    mandateTemplateFallback: Boolean(generationPayload?.mandateTemplateFallback),
+    mandateTemplateLaunchReadinessStatus: normalizeText(generationPayload?.mandateTemplateLaunchReadiness?.status) || null,
+    sellerClauseProfile: normalizeText(mandateScenarioProfile?.sellerClauseProfile || pdfPlaceholders?.seller_clause_profile) || null,
+    propertyClauseProfile: normalizeText(mandateScenarioProfile?.propertyClauseProfile || pdfPlaceholders?.property_clause_profile) || null,
     generatedAt: generatedAt || null,
     sectionManifestHash: buildContentFingerprint(sectionManifest),
     placeholderHash: buildContentFingerprint(pdfPlaceholders && typeof pdfPlaceholders === 'object' ? pdfPlaceholders : {}),
@@ -361,7 +436,7 @@ async function recordGenerationFailure({
       render_provenance: renderProvenance,
       generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
       missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
-      warningsSnapshot: context?.mandateValidation?.warnings || validation.warnings || [],
+      warningsSnapshot: buildWarningsSnapshot(context, validation),
       sourceContext: sourceContextSnapshot,
     },
     generatedBy: context?.generatedByUserId || null,
@@ -405,7 +480,7 @@ async function recordGenerationFailure({
       renderProvenance,
       generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
       missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
-      warningsSnapshot: context?.mandateValidation?.warnings || validation.warnings || [],
+      warningsSnapshot: buildWarningsSnapshot(context, validation),
       sourceContext: sourceContextSnapshot,
     },
   })
@@ -505,6 +580,21 @@ function resolveTemplateModuleType(packetType = '', context = {}, template = nul
   return 'residential'
 }
 
+function resolveTemplateModuleCandidatesForPacket(packetType = '', moduleType = '') {
+  const normalizedPacketType = normalizeText(packetType).toLowerCase()
+  const normalizedModuleType = normalizeText(moduleType).toLowerCase()
+  const candidates = []
+
+  if (normalizedModuleType) candidates.push(normalizedModuleType)
+  if (normalizedPacketType.startsWith('commercial_')) {
+    candidates.push('commercial')
+  } else if (['mandate', 'otp', 'addendum', 'supporting_legal', 'custom'].includes(normalizedPacketType)) {
+    candidates.push('residential', 'agency')
+  }
+  candidates.push('shared')
+  return Array.from(new Set(candidates.filter(Boolean)))
+}
+
 function resolveTemplateOrganisationId(context = {}) {
   return normalizeNullableUuid(
     context?.organisationId ||
@@ -518,6 +608,144 @@ function resolveTemplateOrganisationId(context = {}) {
     context?.landlord?.organisation_id ||
     context?.company?.organisation_id,
   )
+}
+
+function templateIsPublishedForRouting(template = {}) {
+  const status = normalizeText(template?.status).toLowerCase()
+  if (status) return status === 'published'
+  return template?.is_active !== false
+}
+
+function resolveTemplateUpdatedAt(template = {}) {
+  const parsed = Date.parse(template?.published_at || template?.updated_at || template?.created_at || '')
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function compareTemplateRoutingTie(left = {}, right = {}, { organisationId = '', moduleCandidates = [] } = {}) {
+  const leftOrg = normalizeText(left?.organisation_id)
+  const rightOrg = normalizeText(right?.organisation_id)
+  const resolvedOrganisationId = normalizeText(organisationId)
+  const leftOwnerRank = leftOrg && leftOrg === resolvedOrganisationId ? 0 : leftOrg ? 1 : 2
+  const rightOwnerRank = rightOrg && rightOrg === resolvedOrganisationId ? 0 : rightOrg ? 1 : 2
+  if (leftOwnerRank !== rightOwnerRank) return leftOwnerRank - rightOwnerRank
+
+  const leftModule = normalizeText(left?.module_type).toLowerCase()
+  const rightModule = normalizeText(right?.module_type).toLowerCase()
+  const leftModuleRank = moduleCandidates.includes(leftModule) ? moduleCandidates.indexOf(leftModule) : moduleCandidates.length + 1
+  const rightModuleRank = moduleCandidates.includes(rightModule) ? moduleCandidates.indexOf(rightModule) : moduleCandidates.length + 1
+  if (leftModuleRank !== rightModuleRank) return leftModuleRank - rightModuleRank
+
+  if (Boolean(left?.is_default) !== Boolean(right?.is_default)) return left?.is_default ? -1 : 1
+  const updatedDelta = resolveTemplateUpdatedAt(right) - resolveTemplateUpdatedAt(left)
+  if (updatedDelta) return updatedDelta
+  return normalizeText(left?.id).localeCompare(normalizeText(right?.id))
+}
+
+async function resolveMandateScenarioTemplateForPacket({
+  packetType,
+  context = {},
+  moduleType = '',
+  organisationId = null,
+  includeSections = true,
+} = {}) {
+  const normalizedPacketType = normalizeText(packetType).toLowerCase()
+  if (normalizedPacketType !== 'mandate') return null
+
+  const resolvedModuleType = normalizeText(moduleType) || resolveTemplateModuleType(normalizedPacketType, context)
+  const moduleCandidates = resolveTemplateModuleCandidatesForPacket(normalizedPacketType, resolvedModuleType)
+  const resolvedOrganisationId = organisationId || resolveTemplateOrganisationId(context)
+  const rawPlaceholders = resolvePacketTypeContext(normalizedPacketType, context)
+  const placeholders = normalizeMergeFieldPayload(rawPlaceholders, {
+    packetType: normalizedPacketType,
+    includeAliasKeys: true,
+  }).payload
+  const scenarioProfile = resolveMandateTemplateRoutingProfile({
+    placeholders,
+    seller: context?.mandateData?.seller || null,
+    property: context?.mandateData?.property || null,
+    mandate: context?.mandateData?.mandate || null,
+    sourceContext: context?.mandateData?.sourceContext || context?.sourceContext || null,
+    context,
+  })
+
+  const templateGroups = await Promise.all(
+    moduleCandidates.map((candidateModuleType) => getPacketTemplates({
+      packetType: normalizedPacketType,
+      moduleType: candidateModuleType,
+      includeInactive: false,
+      organisationId: resolvedOrganisationId,
+    }).catch((error) => {
+      if (isMissingPacketTemplateSchemaError(error)) return []
+      throw error
+    })),
+  )
+
+  const templateById = new Map()
+  for (const template of templateGroups.flat()) {
+    if (!template?.id || !templateIsPublishedForRouting(template)) continue
+    templateById.set(template.id, template)
+  }
+
+  const scored = Array.from(templateById.values())
+    .map((candidateTemplate) => scoreMandateTemplateCandidate(candidateTemplate, {
+      scenarioProfile,
+      placeholders,
+      context,
+    }))
+    .filter((row) => row.compatible)
+    .sort((left, right) => {
+      if (right.score !== left.score) return right.score - left.score
+      return compareTemplateRoutingTie(left.template, right.template, {
+        organisationId: resolvedOrganisationId,
+        moduleCandidates,
+      })
+    })
+
+  const selection = scored[0] || null
+  if (!selection?.template?.id) {
+    return {
+      template: null,
+      source: 'none',
+      organisationId: resolvedOrganisationId,
+      moduleType: resolvedModuleType,
+      packetType: normalizedPacketType,
+      candidateModuleTypes: moduleCandidates,
+      candidateCount: templateById.size,
+      mandateScenarioProfile: scenarioProfile,
+      mandateTemplateRouting: buildMandateTemplateRoutingAudit(null, {
+        profile: scenarioProfile,
+      }),
+    }
+  }
+
+  const hydratedTemplate = includeSections
+    ? await getPacketTemplate(selection.template.id, { includeSections: true })
+    : selection.template
+  const routingAudit = buildMandateTemplateRoutingAudit(
+    { ...selection, template: hydratedTemplate || selection.template },
+    { profile: scenarioProfile },
+  )
+  const matchedSpecificRoute = (selection.reasons || []).some((reason) => [
+    'exact_variant_metadata',
+    'clause_profile_metadata',
+    'seller_profile_metadata',
+    'property_profile_metadata',
+    'template_name_variant_match',
+  ].includes(reason))
+
+  return {
+    template: hydratedTemplate || selection.template,
+    source: matchedSpecificRoute
+      ? 'mandate_scenario_variant'
+      : 'mandate_scenario_fallback',
+    organisationId: resolvedOrganisationId,
+    moduleType: normalizeText((hydratedTemplate || selection.template)?.module_type || resolvedModuleType),
+    packetType: normalizedPacketType,
+    candidateModuleTypes: moduleCandidates,
+    candidateCount: templateById.size,
+    mandateScenarioProfile: scenarioProfile,
+    mandateTemplateRouting: routingAudit,
+  }
 }
 
 async function resolveTemplateForPacket({ packetType, context = {}, template = null } = {}) {
@@ -539,6 +767,17 @@ async function resolveTemplateForPacket({ packetType, context = {}, template = n
   }
 
   try {
+    if (normalizedPacketType === 'mandate') {
+      const mandateTemplateResolution = await resolveMandateScenarioTemplateForPacket({
+        packetType: normalizedPacketType,
+        context,
+        moduleType: resolveTemplateModuleType(normalizedPacketType, context, template),
+        organisationId: resolveTemplateOrganisationId(context),
+        includeSections: true,
+      })
+      if (mandateTemplateResolution?.template) return mandateTemplateResolution
+    }
+
     return await resolveActivePacketTemplate({
       packetType: normalizedPacketType,
       moduleType: resolveTemplateModuleType(normalizedPacketType, context, template),
@@ -1288,6 +1527,230 @@ function buildValidationSummary(validation = {}) {
     conditionalPackDataRequirements: validation?.conditionalPackDataRequirements || [],
     conditionalPackMissingPlaceholders: validation?.conditionalPackMissingPlaceholders || [],
     conditionalPackAudit: validation?.conditionalPackAudit || null,
+    templateResolutionSource: validation?.templateResolutionSource || null,
+    mandateTemplateFallback: Boolean(validation?.mandateTemplateFallback),
+    mandateTemplateFallbackWarning: validation?.mandateTemplateFallbackWarning || null,
+    mandateTemplateContentGate: validation?.mandateTemplateContentGate || null,
+    mandateTemplateLaunchReadiness: validation?.mandateTemplateLaunchReadiness || null,
+  }
+}
+
+function formatMandateTemplateRouteLabel(value = '') {
+  return normalizeText(value)
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (character) => character.toUpperCase())
+}
+
+function buildMandateTemplateFallbackWarning({
+  validation = {},
+  templateResolution = null,
+} = {}) {
+  const packetType = normalizeText(validation?.packetType || templateResolution?.packetType).toLowerCase()
+  if (packetType !== 'mandate') return null
+  if (normalizeText(templateResolution?.source) !== 'mandate_scenario_fallback') return null
+
+  const routing = templateResolution?.mandateTemplateRouting || {}
+  const mandateTemplateVariant =
+    normalizeText(validation?.mandateTemplateVariant) ||
+    normalizeText(validation?.placeholders?.mandate_template_variant) ||
+    normalizeText(routing?.mandateTemplateVariant) ||
+    normalizeText(templateResolution?.mandateScenarioProfile?.templateVariant)
+  if (!mandateTemplateVariant || mandateTemplateVariant === 'default') return null
+
+  const routeLabel = formatMandateTemplateRouteLabel(mandateTemplateVariant)
+  const selectedTemplate =
+    normalizeText(routing?.selectedTemplateLabel) ||
+    normalizeText(routing?.selectedTemplateKey) ||
+    'the selected default mandate template'
+
+  return {
+    source: 'mandate_template_routing',
+    sectionKey: 'mandate_template_variant',
+    sectionLabel: 'Mandate template routing',
+    placeholderKey: 'mandate_template_variant',
+    placeholderLabel: 'Mandate route',
+    message: `No live ${routeLabel} mandate template is routable yet, so generation is using ${selectedTemplate}. Publish the route-specific template before relying on this packet as final.`,
+    required: false,
+    warningCode: 'MANDATE_TEMPLATE_ROUTE_FALLBACK',
+    mandateTemplateVariant,
+    selectedTemplateId: routing?.selectedTemplateId || null,
+    selectedTemplateKey: routing?.selectedTemplateKey || null,
+  }
+}
+
+function resolveMandateTemplateRuntimeRouteKey(validation = {}, templateResolution = null) {
+  const template = templateResolution?.template || null
+  const metadata = template?.metadata_json && typeof template.metadata_json === 'object'
+    ? template.metadata_json
+    : template?.metadataJson && typeof template.metadataJson === 'object'
+      ? template.metadataJson
+      : {}
+  const templateRoute = normalizeMandateTemplateVariant(
+    metadata.mandate_template_variant ||
+      metadata.mandateTemplateVariant ||
+      metadata.template_variant ||
+      metadata.templateVariant ||
+      '',
+  )
+  const scenarioRoute = normalizeMandateTemplateVariant(
+    validation?.mandateTemplateVariant ||
+      validation?.placeholders?.mandate_template_variant ||
+      templateResolution?.mandateTemplateRouting?.mandateTemplateVariant ||
+      templateResolution?.mandateScenarioProfile?.templateVariant ||
+      '',
+  )
+  const resolutionSource = normalizeText(templateResolution?.source)
+
+  if (resolutionSource === 'mandate_scenario_variant') {
+    return scenarioRoute || templateRoute || 'default'
+  }
+  if (templateRoute && templateRoute !== 'default') return templateRoute
+  if (resolutionSource === 'mandate_scenario_fallback') return 'default'
+  return scenarioRoute || templateRoute || 'default'
+}
+
+function mapMandateTemplateContentGateIssue(issue = {}, gate = {}, { required = true } = {}) {
+  const signalKey = normalizeText(issue.signalGroupKey || issue.conditionalPackKey || issue.code || 'mandate_template_content')
+  const signalLabel = normalizeText(issue.signalGroupLabel || issue.conditionalPackKey || 'Mandate template content')
+  return {
+    source: 'mandate_template_content_gate',
+    sectionKey: normalizeText(issue.sectionKey) || 'mandate_template_content',
+    sectionLabel: normalizeText(issue.sectionLabel) || 'Mandate template content',
+    placeholderKey: signalKey,
+    placeholderLabel: signalLabel,
+    message: formatMandateTemplatePublishGateIssue(issue),
+    required,
+    warningCode: normalizeText(issue.code) || 'MANDATE_TEMPLATE_CONTENT_GATE',
+    mandateTemplateVariant: normalizeText(gate.routeKey),
+    mandateTemplateRouteLabel: normalizeText(gate.routeLabel),
+    selectedTemplateId: normalizeText(gate.selectedTemplateId) || null,
+    selectedTemplateKey: normalizeText(gate.selectedTemplateKey) || null,
+  }
+}
+
+function mapMandateTemplateLaunchReadinessIssue(issue = {}, readiness = {}, { required = true } = {}) {
+  const routeKey = normalizeText(issue.routeKey || readiness.routeKey || 'mandate_template_variant')
+  const routeLabel = normalizeText(issue.routeLabel || readiness.routeLabel || 'Mandate route')
+  return {
+    source: 'mandate_template_launch_readiness',
+    sectionKey: 'mandate_template_launch_readiness',
+    sectionLabel: 'Mandate launch readiness',
+    placeholderKey: routeKey,
+    placeholderLabel: routeLabel,
+    message: formatMandateTemplateLaunchReadinessIssue(issue),
+    required,
+    warningCode: normalizeText(issue.code) || 'MANDATE_TEMPLATE_LAUNCH_READINESS',
+    mandateTemplateVariant: routeKey,
+    mandateTemplateRouteLabel: routeLabel,
+    selectedTemplateId: normalizeText(issue.templateId || readiness.selectedTemplateId) || null,
+    selectedTemplateKey: normalizeText(issue.templateKey || readiness.selectedTemplateKey) || null,
+  }
+}
+
+function buildMandateTemplateRuntimeContentGate(validation = {}, templateResolution = null) {
+  if (normalizeText(validation?.packetType).toLowerCase() !== 'mandate') return null
+  const template = templateResolution?.template || null
+  if (!template?.id) return null
+
+  const routeKey = resolveMandateTemplateRuntimeRouteKey(validation, templateResolution)
+  const gate = buildMandateTemplatePublishGateReport(
+    {
+      ...template,
+      packet_type: 'mandate',
+      packetType: 'mandate',
+    },
+    {
+      packetType: 'mandate',
+      routeKey,
+    },
+  )
+
+  return {
+    ...gate,
+    source: 'mandate_template_runtime_content_gate',
+    selectedTemplateId: normalizeText(template.id) || null,
+    selectedTemplateKey: normalizeText(template.template_key || template.key) || null,
+    selectedTemplateLabel: normalizeText(template.template_label || template.label) || null,
+    templateResolutionSource: normalizeText(templateResolution?.source) || null,
+    mandateTemplateRouting: templateResolution?.mandateTemplateRouting || null,
+  }
+}
+
+function withMandateTemplateRoutingWarnings(validation = {}, templateResolution = null) {
+  const templateResolutionSource = normalizeText(templateResolution?.source || validation?.templateResolutionSource) || null
+  const fallbackWarning = buildMandateTemplateFallbackWarning({
+    validation,
+    templateResolution,
+  })
+  const contentGate = buildMandateTemplateRuntimeContentGate(validation, templateResolution)
+  const launchReadiness = buildMandateTemplateRuntimeLaunchReadiness(validation, templateResolution, {
+    action: validation?.validationAction,
+  })
+  const contentGateBlockers = (contentGate?.blockers || [])
+    .map((issue) => mapMandateTemplateContentGateIssue(issue, contentGate, { required: true }))
+  const contentGateWarnings = (contentGate?.warnings || [])
+    .map((issue) => mapMandateTemplateContentGateIssue(issue, contentGate, { required: false }))
+  const launchReadinessBlockers = (launchReadiness?.shouldBlockGeneration ? launchReadiness.blockers : [])
+    .map((issue) => mapMandateTemplateLaunchReadinessIssue(issue, launchReadiness, { required: true }))
+  const launchReadinessWarnings = (!launchReadiness?.shouldBlockGeneration ? launchReadiness?.warnings || [] : [])
+    .map((issue) => mapMandateTemplateLaunchReadinessIssue(issue, launchReadiness, { required: false }))
+
+  return {
+    ...validation,
+    templateResolutionSource,
+    mandateTemplateLaunchReadiness: launchReadiness
+      ? {
+          readinessVersion: launchReadiness.readinessVersion,
+          status: launchReadiness.status,
+          action: launchReadiness.action,
+          shouldBlockGeneration: Boolean(launchReadiness.shouldBlockGeneration),
+          canGenerateWithoutFallback: Boolean(launchReadiness.canGenerateWithoutFallback),
+          routeKey: launchReadiness.routeKey,
+          routeLabel: launchReadiness.routeLabel,
+          templateResolutionSource: launchReadiness.templateResolutionSource,
+          selectedTemplateId: launchReadiness.selectedTemplateId,
+          selectedTemplateKey: launchReadiness.selectedTemplateKey,
+          selectedTemplateLabel: launchReadiness.selectedTemplateLabel,
+          blockerCodes: (launchReadiness.blockers || []).map((issue) => normalizeText(issue.code)).filter(Boolean),
+          warningCodes: (launchReadiness.warnings || []).map((issue) => normalizeText(issue.code)).filter(Boolean),
+        }
+      : validation?.mandateTemplateLaunchReadiness || null,
+    mandateTemplateContentGate: contentGate
+      ? {
+          gateVersion: contentGate.gateVersion,
+          scannerVersion: contentGate.scannerVersion,
+          ruleVersion: contentGate.ruleVersion,
+          routeKey: contentGate.routeKey,
+          routeLabel: contentGate.routeLabel,
+          isValidForGeneration: contentGate.isValidForPublish,
+          blockingCount: contentGate.blockingCount,
+          warningCount: contentGate.warningCount,
+          selectedTemplateId: contentGate.selectedTemplateId,
+          selectedTemplateKey: contentGate.selectedTemplateKey,
+          selectedTemplateLabel: contentGate.selectedTemplateLabel,
+          templateResolutionSource: contentGate.templateResolutionSource,
+          blockerCodes: contentGate.metadata?.blockerCodes || [],
+          warningCodes: contentGate.metadata?.warningCodes || [],
+          presentSignalGroupKeys: contentGate.metadata?.presentSignalGroupKeys || [],
+          presentPackKeys: contentGate.metadata?.presentPackKeys || [],
+          missingRecommendedPackKeys: contentGate.metadata?.missingRecommendedPackKeys || [],
+          scannedAt: contentGate.metadata?.scannedAt || new Date().toISOString(),
+        }
+      : validation?.mandateTemplateContentGate || null,
+    critical: dedupeValidationIssues([
+      ...(validation?.critical || []),
+      ...contentGateBlockers,
+      ...launchReadinessBlockers,
+    ]),
+    mandateTemplateFallback: Boolean(fallbackWarning || validation?.mandateTemplateFallback),
+    mandateTemplateFallbackWarning: fallbackWarning || validation?.mandateTemplateFallbackWarning || null,
+    warnings: dedupeValidationIssues([
+      ...(validation?.warnings || []),
+      ...(fallbackWarning ? [fallbackWarning] : []),
+      ...contentGateWarnings,
+      ...launchReadinessWarnings,
+    ]),
+    isValidForGeneration: (contentGateBlockers.length || launchReadinessBlockers.length) ? false : validation?.isValidForGeneration,
   }
 }
 
@@ -1322,6 +1785,22 @@ export async function resolveActiveTemplate({
   context = {},
   includeSections = true,
 } = {}) {
+  const normalizedPacketType = normalizeText(packetType).toLowerCase()
+  if (normalizedPacketType === 'mandate') {
+    const mandateTemplateResolution = await resolveMandateScenarioTemplateForPacket({
+      packetType: normalizedPacketType,
+      context: {
+        ...context,
+        moduleType,
+        organisationId,
+      },
+      moduleType: normalizeText(moduleType) || resolveTemplateModuleType(normalizedPacketType, context),
+      organisationId: organisationId || resolveTemplateOrganisationId(context),
+      includeSections,
+    })
+    if (mandateTemplateResolution?.template) return mandateTemplateResolution
+  }
+
   return resolveActivePacketTemplate({
     packetType,
     moduleType: normalizeText(moduleType) || resolveTemplateModuleType(packetType, context),
@@ -1391,6 +1870,16 @@ export async function validatePacket({
     packetType: normalizedPacketType,
     placeholders,
   })
+  const mandateScenarioProfile = normalizedPacketType === 'mandate'
+    ? resolveMandateTemplateRoutingProfile({
+        placeholders,
+        seller: context?.mandateData?.seller || null,
+        property: context?.mandateData?.property || null,
+        mandate: context?.mandateData?.mandate || null,
+        sourceContext: context?.mandateData?.sourceContext || context?.sourceContext || null,
+        context,
+      })
+    : null
   const mandateValidationAction = normalizeValidationAction(validationAction || context?.validationAction || 'preview')
   const isTemplatePreview = mandateValidationAction === TEMPLATE_PREVIEW_VALIDATION_ACTION
   const isCommercialPacket = COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(normalizedPacketType)
@@ -1507,6 +1996,8 @@ export async function validatePacket({
     conditionalPackDataRequirements,
     conditionalPackMissingPlaceholders,
     conditionalPackAudit,
+    mandateScenarioProfile,
+    mandateTemplateVariant: mandateScenarioProfile?.templateVariant || null,
     missingPlaceholders,
     aliasHits: ruleValidation.aliasHits || [],
     unknownFields: ruleValidation.unknownFields || [],
@@ -1537,12 +2028,13 @@ export async function renderPacketPreview({
 } = {}) {
   const templateResolution = await resolveTemplateForPacket({ packetType, context, template })
   const resolvedTemplate = templateResolution.template || null
-  const validation = await validatePacket({
+  const baseValidation = await validatePacket({
     packetType,
     context,
     template: resolvedTemplate,
     validationAction,
   })
+  const validation = withMandateTemplateRoutingWarnings(baseValidation, templateResolution)
   if (
     validation.packetType === 'mandate' &&
     validationAction === 'upload_signed' &&
@@ -1626,13 +2118,14 @@ export async function savePacketDraft({
 } = {}) {
   const templateResolution = await resolveTemplateForPacket({ packetType, context, template })
   const resolvedTemplate = templateResolution.template || null
-  const rendered = await renderPacketPreview({
+  const renderedPreview = await renderPacketPreview({
     packetType,
     context,
     title: buildPacketTitle(packetType, context),
     template: resolvedTemplate,
     validationAction,
   })
+  const rendered = withMandateTemplateRoutingWarnings(renderedPreview, templateResolution)
 
   const packet = await createOrReusePacket({
     packetId,
@@ -1646,6 +2139,7 @@ export async function savePacketDraft({
     context,
     validation: rendered,
     template: resolvedTemplate,
+    templateResolution,
     generatedAt: preparedAt,
   })
   const previewRenderProvenance = buildRenderProvenance({
@@ -1658,9 +2152,13 @@ export async function savePacketDraft({
     generatedAt: preparedAt,
   })
 
+  const packetStatus = normalizeText(packet?.status).toLowerCase()
+  const canUpdateTemplateSnapshot = resolvedTemplate?.id &&
+    normalizeText(packet?.template_id) !== normalizeText(resolvedTemplate.id) &&
+    !['sent', 'partially_signed', 'completed', 'voided', 'archived'].includes(packetStatus)
   const updated = await updatePacketFresh(packet.id, {
     status: 'draft',
-    ...(resolvedTemplate?.id && !packet?.template_id
+    ...(canUpdateTemplateSnapshot
       ? {
           templateId: resolvedTemplate.id,
           templateKeySnapshot: resolvedTemplate.template_key || resolvedTemplate.key || null,
@@ -1675,9 +2173,17 @@ export async function savePacketDraft({
       renderProvenancePreview: previewRenderProvenance,
       templateVersion: resolveTemplateVersion(resolvedTemplate),
       templateResolution,
+      templateResolutionSource: rendered.templateResolutionSource || templateResolution?.source || null,
+      mandateTemplateVariant: rendered.mandateTemplateVariant || null,
+      mandateScenarioProfile: rendered.mandateScenarioProfile || null,
+      mandateTemplateRouting: templateResolution?.mandateTemplateRouting || null,
+      mandateTemplateFallback: Boolean(rendered.mandateTemplateFallback),
+      mandateTemplateFallbackWarning: rendered.mandateTemplateFallbackWarning || null,
+      mandateTemplateContentGate: rendered.mandateTemplateContentGate || null,
+      mandateTemplateLaunchReadiness: rendered.mandateTemplateLaunchReadiness || null,
       generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
       missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || rendered?.critical || [],
-      warningsSnapshot: context?.mandateValidation?.warnings || rendered?.warnings || [],
+      warningsSnapshot: buildWarningsSnapshot(context, rendered),
       sourceContext: context?.mandateData?.sourceContext || context?.sourceContext || null,
     },
     brandingSnapshotJson: rendered.branding || {},
@@ -1722,11 +2228,19 @@ export async function generatePacketVersion({
   const effectiveTemplate = prepared.template || template || null
   const isMandatePacket = validation.packetType === 'mandate'
   const hasConditionalPackBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'conditional_pack')
-  const allowGenerationBypass = (isMandatePacket && !hasConditionalPackBlockingIssues) || forceGenerate
+  const hasMandateTemplateContentGateBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'mandate_template_content_gate')
+  const hasMandateTemplateLaunchReadinessBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'mandate_template_launch_readiness')
+  const allowGenerationBypass = (isMandatePacket && !hasConditionalPackBlockingIssues && !hasMandateTemplateContentGateBlockingIssues && !hasMandateTemplateLaunchReadinessBlockingIssues) || forceGenerate
   if (!validation.isValidForGeneration && !allowGenerationBypass) {
     const error = createPacketError(
-      'VALIDATION_BLOCKED',
-      'Critical packet data is missing. Fix validation issues before generation.',
+      hasMandateTemplateLaunchReadinessBlockingIssues
+        ? 'MANDATE_TEMPLATE_LAUNCH_READINESS_BLOCKED'
+        : hasMandateTemplateContentGateBlockingIssues ? 'MANDATE_TEMPLATE_CONTENT_GATE_BLOCKED' : 'VALIDATION_BLOCKED',
+      hasMandateTemplateLaunchReadinessBlockingIssues
+        ? 'Mandate template launch readiness is blocked. Publish the correct route template before generation.'
+        : hasMandateTemplateContentGateBlockingIssues
+          ? 'Mandate template wording does not match the selected route. Fix the template content before generation.'
+          : 'Critical packet data is missing. Fix validation issues before generation.',
     )
     error.validation = validation
     throw error
@@ -1747,6 +2261,7 @@ export async function generatePacketVersion({
     context,
     validation,
     template: effectiveTemplate,
+    templateResolution: prepared.templateResolution || null,
     generatedAt,
   })
   const pdfPlaceholders = sanitizeTemplatePlaceholders(validation.placeholders || {})
@@ -1767,6 +2282,13 @@ export async function generatePacketVersion({
       transactionId: context?.transaction?.id || context?.transactionId || null,
       packetType: validation.packetType,
       templateVersion,
+      templateResolutionSource: generationPayload.templateResolutionSource || null,
+      mandateTemplateVariant: generationPayload.mandateTemplateVariant || null,
+      mandateTemplateRouting: generationPayload.mandateTemplateRouting || null,
+      mandateTemplateFallback: Boolean(generationPayload.mandateTemplateFallback),
+      mandateTemplateFallbackWarning: generationPayload.mandateTemplateFallbackWarning || null,
+      mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
+      mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
       generatedAt,
       message: validation.packetType === 'mandate'
         ? 'Mandate generation started.'
@@ -1940,11 +2462,12 @@ export async function generatePacketVersion({
       previewOnlyReason: previewOnlyReason || null,
       generationPayload,
       templateVersion,
+      templateResolution: prepared.templateResolution || null,
       generatedAt,
       render_provenance: renderProvenance,
       generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
       missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
-      warningsSnapshot: context?.mandateValidation?.warnings || validation.warnings || [],
+      warningsSnapshot: buildWarningsSnapshot(context, validation),
       sourceContext: sourceContextSnapshot,
       readOnlyAnnexures,
       annexures: readOnlyAnnexures,
@@ -1964,9 +2487,17 @@ export async function generatePacketVersion({
       templateVersion,
       generatedAt,
       renderProvenance,
+      templateResolutionSource: generationPayload.templateResolutionSource || null,
+      mandateTemplateVariant: generationPayload.mandateTemplateVariant || null,
+      mandateScenarioProfile: generationPayload.mandateScenarioProfile || null,
+      mandateTemplateRouting: generationPayload.mandateTemplateRouting || null,
+      mandateTemplateFallback: Boolean(generationPayload.mandateTemplateFallback),
+      mandateTemplateFallbackWarning: generationPayload.mandateTemplateFallbackWarning || null,
+      mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
+      mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
       generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
       missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
-      warningsSnapshot: context?.mandateValidation?.warnings || validation.warnings || [],
+      warningsSnapshot: buildWarningsSnapshot(context, validation),
       sourceContext: sourceContextSnapshot,
       readOnlyAnnexures,
       annexures: readOnlyAnnexures,
@@ -1993,6 +2524,13 @@ export async function generatePacketVersion({
       renderedFilePath: version.rendered_file_path,
       previewOnly: previewOnlyGeneration,
       previewOnlyReason: previewOnlyReason || null,
+      templateResolutionSource: generationPayload.templateResolutionSource || null,
+      mandateTemplateVariant: generationPayload.mandateTemplateVariant || null,
+      mandateTemplateRouting: generationPayload.mandateTemplateRouting || null,
+      mandateTemplateFallback: Boolean(generationPayload.mandateTemplateFallback),
+      mandateTemplateFallbackWarning: generationPayload.mandateTemplateFallbackWarning || null,
+      mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
+      mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
       message: previewOnlyGeneration
         ? 'Mandate draft preview was generated.'
         : COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)

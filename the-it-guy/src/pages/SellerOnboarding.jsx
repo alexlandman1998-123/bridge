@@ -35,7 +35,6 @@ import {
 import { getEdgeFunctionInvokeError, invokeEdgeFunction } from '../lib/supabaseClient'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import {
-  buildSellerClientPortalLink,
   createListingDraftFromSellerLead,
   findSellerWorkflowRecordByToken,
   LISTING_STATUS,
@@ -340,18 +339,7 @@ function resolveSellerSubmissionEmail(updated = {}, form = {}) {
   ).trim()
 }
 
-function resolveSellerSubmissionPortalLink(updated = {}, fallbackToken = '') {
-  const token = String(
-    updated?.sellerOnboarding?.token ||
-      updated?.sellerOnboardingToken ||
-      updated?.seller_onboarding_token ||
-      fallbackToken ||
-      ''
-  ).trim()
-  return token ? buildSellerClientPortalLink(token) : ''
-}
-
-async function notifySellerOnboardingSubmitted(updated = {}, form = {}, fallbackToken = '') {
+async function notifySellerOnboardingSubmitted(updated = {}, form = {}) {
   const assignedAgentId = String(
     updated?.assignedAgentId ||
       updated?.assigned_agent_id ||
@@ -377,7 +365,6 @@ async function notifySellerOnboardingSubmitted(updated = {}, form = {}, fallback
   const listingId = String(updated?.id || updated?.listingId || updated?.listing_id || '').trim()
   const transactionReference = String(updated?.transactionReference || updated?.transaction_reference || updated?.reference || '').trim()
   const sellerEmail = resolveSellerSubmissionEmail(updated, form)
-  const sellerPortalLink = resolveSellerSubmissionPortalLink(updated, fallbackToken)
   const hasValidSellerEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sellerEmail)
   if (!hasValidAssignedAgentEmail && !assignedAgentId && !leadId && !listingId && !hasValidSellerEmail) return
   const actionLink = typeof window !== 'undefined' && leadId
@@ -395,14 +382,8 @@ async function notifySellerOnboardingSubmitted(updated = {}, form = {}, fallback
             agentName: assignedAgentName,
             sellerName,
             sellerEmail: hasValidSellerEmail ? sellerEmail : '',
-            sellerPortalLink,
-            sellerPortalToken: String(
-              updated?.sellerOnboarding?.token ||
-                updated?.sellerOnboardingToken ||
-                updated?.seller_onboarding_token ||
-                fallbackToken ||
-                ''
-            ).trim(),
+            sellerPortalInvitePolicy: 'after_mandate_signed',
+            deferSellerPortalLinkUntilMandateSigned: true,
             propertyTitle,
             transactionReference,
             organisationId: String(updated?.organisationId || updated?.organisation_id || '').trim(),
@@ -3648,7 +3629,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           console.error('[Seller Onboarding] submitted callback failed', callbackError)
         }
       }
-      void notifySellerOnboardingSubmitted(updated, form, token)
+      void notifySellerOnboardingSubmitted(updated, form)
       console.debug('[Seller Onboarding] submit completed', {
         durationMs: Math.round(getRuntimeTimestampMs() - startedAt),
         mode: useDbFirstSellerOnboarding ? 'supabase' : 'local',

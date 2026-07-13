@@ -24,6 +24,7 @@ import {
   syncSellerDocumentRequirements as syncSellerDocumentRequirementsFromEngine,
 } from '../lib/privateListingRequirementEngine'
 import { DOCUMENTS_BUCKET_CANDIDATES, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { appendDocumentPacketEvent } from '../lib/documentPacketsApi'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { uploadToStorageCandidateBuckets } from '../lib/storageFallbacks'
 import {
@@ -42,7 +43,12 @@ import {
   validateSellerOnboardingFacts,
 } from './documents/sellerOnboardingFactTransformer'
 import { buildSellerOnboardingPublicationDraft, mergePublicationDraft } from './sellerListingPublicationMapper'
+import {
+  buildSellerDocumentRequirementReconciliationReport,
+  summarizeSellerDocumentRequirementReconciliationReport,
+} from './sellerDocumentRequirementsService.js'
 import { areSellerJourneyDocumentsSubmitted, buildSellerJourneyProgressPatch } from './sellerJourneyService.js'
+import { getSellerMandateContinuityDiagnosticsSnapshot } from './sellerMandateContinuityReportService.js'
 
 const LISTING_STATUSES = PRIVATE_LISTING_LIFECYCLE.STATUSES
 
@@ -65,6 +71,24 @@ const DELETED_LISTING_STATUSES = new Set(['withdrawn', 'deleted', 'archived'])
 const DELETED_LISTING_VISIBILITIES = new Set(['archived', 'deleted'])
 const CANONICAL_ONBOARDING_RESOLVER_FLAG = 'VITE_CANONICAL_ONBOARDING_RESOLVER_ENABLED'
 const SELLER_PORTAL_ACCESS_STORAGE_PREFIX = 'bridge:seller-portal-access:'
+const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SENT_EVENT = 'seller_portal_invite_sent_after_mandate_signed'
+const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SKIPPED_EVENT = 'seller_portal_invite_skipped_after_mandate_signed'
+const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_FAILED_EVENT = 'seller_portal_invite_failed_after_mandate_signed'
+const SELLER_PORTAL_INVITE_READY_AFTER_MANDATE_SIGNED_STATUS_KEYS = new Set([
+  'active',
+  'finalised',
+  'finalized',
+  'fully_signed',
+  'live',
+  'mandate_signed',
+  'published',
+  'signed',
+  'signed_uploaded',
+  'sold',
+  'transaction_created',
+  'under_offer',
+  'uploaded_signed',
+])
 
 function requireClient() {
   if (!isSupabaseConfigured || !supabase) {
@@ -144,6 +168,10 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
 
+function normalizeStatusKey(value) {
+  return normalizeKey(value).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
 function isPlainObject(value) {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
@@ -157,6 +185,54 @@ function normalizeCompatibilityKey(value) {
 
 function isTruthyFlag(value) {
   return ['1', 'true', 'yes', 'on', 'enabled'].includes(normalizeKey(value))
+}
+
+export function isSellerPortalInviteReadyAfterSignedMandate(listing = {}, context = {}) {
+  if (context?.mandateSigned || context?.signed || context?.signedAt || context?.mandateSignedAt) return true
+  const mandate = listing?.mandate && typeof listing.mandate === 'object' ? listing.mandate : {}
+  const mandatePacket = listing?.mandatePacket && typeof listing.mandatePacket === 'object'
+    ? listing.mandatePacket
+    : listing?.mandate_packet && typeof listing.mandate_packet === 'object'
+      ? listing.mandate_packet
+      : {}
+  const version = mandatePacket?.version && typeof mandatePacket.version === 'object' ? mandatePacket.version : {}
+  const statusValues = [
+    listing?.mandateStatus,
+    listing?.mandate_status,
+    listing?.listingStatus,
+    listing?.listing_status,
+    listing?.status,
+    mandate?.status,
+    mandate?.mandateStatus,
+    mandate?.mandate_status,
+    mandatePacket?.status,
+    mandatePacket?.packetStatus,
+    mandatePacket?.packet_status,
+    version?.status,
+  ]
+  if (statusValues.some((value) => SELLER_PORTAL_INVITE_READY_AFTER_MANDATE_SIGNED_STATUS_KEYS.has(normalizeStatusKey(value)))) {
+    return true
+  }
+  return Boolean(
+    listing?.mandateSignedAt ||
+      listing?.mandate_signed_at ||
+      listing?.mandateSignedDate ||
+      listing?.mandate_signed_date ||
+      mandate?.signedAt ||
+      mandate?.signed_at ||
+      mandate?.finalisedAt ||
+      mandate?.finalised_at ||
+      mandate?.finalizedAt ||
+      mandate?.finalized_at ||
+      mandate?.finalSignedFilePath ||
+      mandate?.final_signed_file_path ||
+      mandatePacket?.finalSignedFilePath ||
+      mandatePacket?.final_signed_file_path ||
+      mandatePacket?.finalSignedFileUrl ||
+      mandatePacket?.final_signed_file_url ||
+      version?.final_signed_file_path ||
+      version?.final_signed_file_url,
+  )
 }
 
 function isCanonicalOnboardingResolverEnabled(options = {}) {
@@ -828,10 +904,18 @@ export async function uploadPrivateListingMediaAsset(file, { listingId = '', typ
 
 const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS =
   'id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, applies_to, document_visibility, status, is_required, generated_from, canonical_requirement_instance_id, created_at, updated_at'
+const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_NO_APPLIES_TO =
+  'id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, document_visibility, status, is_required, generated_from, canonical_requirement_instance_id, created_at, updated_at'
+const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_BASE =
+  'id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, document_visibility, status, is_required, generated_from, created_at, updated_at'
 const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_LEGACY =
   'id, private_listing_id, requirement_key, status, is_required, created_at, updated_at'
 const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_MIN =
   'id, private_listing_id, requirement_key, status, is_required, created_at, updated_at'
+const PRIVATE_LISTING_REQUIREMENT_MUTATION_SELECT_FIELDS =
+  'id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, document_visibility, status, is_required, generated_from, canonical_requirement_instance_id, created_at, updated_at'
+const PRIVATE_LISTING_REQUIREMENT_MUTATION_SELECT_FIELDS_BASE =
+  'id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, document_visibility, status, is_required, generated_from, created_at, updated_at'
 const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS =
   'id, private_listing_id, requirement_id, document_type, category, document_name, storage_path, file_url, uploaded_by, status, visibility, canonical_requirement_instance_id, pending_transaction_promotion, promoted_transaction_id, promoted_document_id, uploaded_at, created_at, updated_at'
 const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_LEGACY =
@@ -840,6 +924,8 @@ const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_MIN =
   'id, private_listing_id, requirement_id, document_type, document_name, status, pending_transaction_promotion, promoted_transaction_id, promoted_document_id, uploaded_at, created_at'
 const PRIVATE_LISTING_REQUIREMENT_SELECT_VARIANTS = [
   PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS,
+  PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_NO_APPLIES_TO,
+  PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_BASE,
   PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_LEGACY,
   PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_MIN,
 ]
@@ -848,8 +934,164 @@ const PRIVATE_LISTING_DOCUMENT_SELECT_VARIANTS = [
   PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_LEGACY,
   PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_MIN,
 ]
+const PRIVATE_LISTING_REQUIREMENT_MUTATION_STATUSES = [
+  'required',
+  'requested',
+  'uploaded',
+  'under_review',
+  'rejected',
+  'approved',
+  'completed',
+  'not_applicable',
+]
+const PRIVATE_LISTING_REQUIREMENT_MUTATION_VISIBILITIES = ['internal', 'seller_visible', 'shared_role_players']
+const PRIVATE_LISTING_REQUIREMENT_MUTATION_GROUPS = new Set([
+  'seller_identity',
+  'fica',
+  'marital',
+  'company',
+  'trust',
+  'property',
+  'financial',
+  'mandate',
+  'compliance',
+  'marketing',
+])
+const PRIVATE_LISTING_REQUIREMENT_MUTATION_GROUP_ALIASES = {
+  deceased_estate: 'seller_identity',
+  occupancy: 'property',
+  power_of_attorney: 'seller_identity',
+  property_compliance: 'compliance',
+  seller_authority: 'seller_identity',
+}
+const PRIVATE_LISTING_REQUIREMENT_MUTATION_VARIANTS = [
+  {
+    name: 'canonical',
+    selectFields: PRIVATE_LISTING_REQUIREMENT_MUTATION_SELECT_FIELDS,
+    columns: [
+      'id',
+      'private_listing_id',
+      'requirement_key',
+      'requirement_name',
+      'requirement_description',
+      'requirement_group',
+      'document_visibility',
+      'status',
+      'is_required',
+      'generated_from',
+      'canonical_requirement_instance_id',
+    ],
+  },
+  {
+    name: 'base',
+    selectFields: PRIVATE_LISTING_REQUIREMENT_MUTATION_SELECT_FIELDS_BASE,
+    columns: [
+      'id',
+      'private_listing_id',
+      'requirement_key',
+      'requirement_name',
+      'requirement_description',
+      'requirement_group',
+      'document_visibility',
+      'status',
+      'is_required',
+      'generated_from',
+    ],
+  },
+]
 const PRIVATE_LISTING_SELECT_VARIANT_CACHE = new Map()
 const PRIVATE_LISTING_SELECT_FAILURE_CACHE = new Map()
+
+function normalizePrivateListingRequirementMutationGroup(value = '') {
+  const normalized = normalizeStatusKey(value || 'compliance')
+  if (PRIVATE_LISTING_REQUIREMENT_MUTATION_GROUPS.has(normalized)) return normalized
+  return PRIVATE_LISTING_REQUIREMENT_MUTATION_GROUP_ALIASES[normalized] || 'compliance'
+}
+
+function buildPrivateListingRequirementMutationPayload(row = {}, columns = []) {
+  const rawGroup = normalizeText(row?.requirement_group || row?.group || '')
+  const requirementGroup = normalizePrivateListingRequirementMutationGroup(rawGroup)
+  const generatedFrom = isPlainObject(row?.generated_from) ? { ...row.generated_from } : {}
+  if (rawGroup && normalizeStatusKey(rawGroup) !== requirementGroup && !generatedFrom.originalRequirementGroup) {
+    generatedFrom.originalRequirementGroup = rawGroup
+  }
+
+  const requirementKey = normalizeStatusKey(row?.requirement_key || row?.key || '')
+  const payload = {
+    id: normalizeUuid(row?.id),
+    private_listing_id: normalizeUuid(row?.private_listing_id || row?.privateListingId),
+    requirement_key: requirementKey,
+    requirement_name: normalizeText(row?.requirement_name || row?.name || row?.label || requirementKey),
+    requirement_description: normalizeText(row?.requirement_description || row?.description || ''),
+    requirement_group: requirementGroup,
+    document_visibility: normalizeStatus(
+      row?.document_visibility || row?.visibility || 'seller_visible',
+      PRIVATE_LISTING_REQUIREMENT_MUTATION_VISIBILITIES,
+      'seller_visible',
+    ),
+    status: normalizeStatus(row?.status || 'required', PRIVATE_LISTING_REQUIREMENT_MUTATION_STATUSES, 'required'),
+    is_required: row?.is_required !== false,
+    generated_from: generatedFrom,
+    canonical_requirement_instance_id: normalizeUuid(row?.canonical_requirement_instance_id),
+  }
+
+  if (!payload.private_listing_id || !payload.requirement_key || !payload.requirement_name) return null
+
+  const result = {}
+  for (const column of columns) {
+    const value = payload[column]
+    if (value === null || value === undefined) continue
+    result[column] = value
+  }
+  return result
+}
+
+async function upsertPrivateListingRequirementRows(client, rows = []) {
+  const sourceRows = Array.isArray(rows) ? rows : []
+  if (!sourceRows.length) return { data: [], mutationVariant: null }
+
+  let lastError = null
+  for (const variant of PRIVATE_LISTING_REQUIREMENT_MUTATION_VARIANTS) {
+    const payload = sourceRows
+      .map((row) => buildPrivateListingRequirementMutationPayload(row, variant.columns))
+      .filter(Boolean)
+    if (!payload.length) return { data: [], mutationVariant: variant.name }
+
+    const query = await client
+      .from('private_listing_document_requirements')
+      .upsert(payload, { onConflict: 'private_listing_id,requirement_key' })
+      .select(variant.selectFields)
+
+    if (!query?.error) {
+      return {
+        data: normalizeRequirementRows(query.data || []),
+        mutationVariant: variant.name,
+      }
+    }
+
+    lastError = query.error
+    if (isMissingTableError(query.error, 'private_listing_document_requirements')) {
+      rememberMissingTable('private_listing_document_requirements')
+      setSelectFallbackState('private_listing_document_requirements', {
+        reason: 'missingTable',
+        error: query.error,
+      })
+      return { missingTable: true, error: query.error }
+    }
+    if (!isMissingColumnError(query.error)) {
+      return { error: query.error }
+    }
+  }
+
+  const summary = querySummary(lastError)
+  setSelectFallbackState('private_listing_document_requirements', {
+    reason: 'schemaIncompatible',
+    error: lastError,
+    columns: summary.columns || [],
+    message: summary.message,
+  })
+  return { schemaIncompatible: true, error: lastError || null }
+}
 
 function getSelectFailureCacheKey(tableName = '') {
   return normalizeText(tableName).toLowerCase()
@@ -1291,6 +1533,116 @@ function getPrivateListingFinalSignedMandateArtifact(mandatePacket = null) {
   }
 }
 
+function getPrivateListingDocumentStorageBucket(document = {}) {
+  const metadata = document?.metadata && typeof document.metadata === 'object' ? document.metadata : {}
+  return normalizeText(
+    document?.storage_bucket ||
+      document?.storageBucket ||
+      document?.file_bucket ||
+      document?.fileBucket ||
+      document?.bucket ||
+      metadata.finalSignedFileBucket ||
+      metadata.final_signed_file_bucket ||
+      metadata.fileBucket ||
+      metadata.file_bucket ||
+      metadata.storageBucket ||
+      metadata.storage_bucket ||
+      metadata.bucket,
+  )
+}
+
+function privateListingDocumentPathMatches(document = {}, filePath = '') {
+  const normalizedFilePath = normalizeText(filePath)
+  if (!normalizedFilePath) return false
+  const metadata = document?.metadata && typeof document.metadata === 'object' ? document.metadata : {}
+  return [
+    document?.storage_path,
+    document?.storagePath,
+    document?.file_path,
+    document?.filePath,
+    document?.path,
+    metadata.finalSignedFilePath,
+    metadata.final_signed_file_path,
+    metadata.storagePath,
+    metadata.storage_path,
+    metadata.filePath,
+    metadata.file_path,
+    metadata.path,
+  ].some((candidate) => normalizeText(candidate) === normalizedFilePath)
+}
+
+function getPrivateListingMandateArtifactMatch(listing = {}, filePath = '') {
+  const normalizedFilePath = normalizeText(filePath)
+  if (!normalizedFilePath) return null
+  const mandate = listing?.mandate && typeof listing.mandate === 'object' ? listing.mandate : {}
+  const mandatePacket = listing?.mandatePacket && typeof listing.mandatePacket === 'object'
+    ? listing.mandatePacket
+    : listing?.mandate_packet && typeof listing.mandate_packet === 'object'
+      ? listing.mandate_packet
+      : {}
+  const version = mandatePacket?.version && typeof mandatePacket.version === 'object' ? mandatePacket.version : {}
+  const artifact = getPrivateListingFinalSignedMandateArtifact(mandatePacket)
+  const candidates = [
+    { filePath: mandate.finalSignedFilePath, bucket: mandate.finalSignedFileBucket },
+    { filePath: mandate.final_signed_file_path, bucket: mandate.final_signed_file_bucket },
+    { filePath: mandate.signedFilePath, bucket: mandate.signedFileBucket },
+    { filePath: mandate.signed_file_path, bucket: mandate.signed_file_bucket },
+    { filePath: artifact.filePath, bucket: artifact.fileBucket },
+    { filePath: mandatePacket.finalSignedFilePath, bucket: mandatePacket.finalSignedFileBucket },
+    { filePath: mandatePacket.final_signed_file_path, bucket: mandatePacket.final_signed_file_bucket },
+    { filePath: version.finalSignedFilePath, bucket: version.finalSignedFileBucket },
+    { filePath: version.final_signed_file_path, bucket: version.final_signed_file_bucket },
+  ]
+  return candidates.find((candidate) => normalizeText(candidate.filePath) === normalizedFilePath) || null
+}
+
+function getPrivateListingDocumentDownloadAllowedPrefixes(listingId = '') {
+  const normalizedListingId = normalizeUuid(listingId)
+  if (!normalizedListingId) return []
+  return [
+    `seller-portal/${normalizedListingId}/`,
+    `private-listings/${normalizedListingId}/`,
+  ]
+}
+
+async function resolvePrivateListingDocumentDownload(client, listingId, filePath) {
+  const normalizedListingId = normalizeUuid(listingId)
+  const normalizedFilePath = normalizeText(filePath)
+  if (!normalizedListingId) throw new Error('Listing id is required.')
+  if (!normalizedFilePath) throw new Error('Document path is required.')
+
+  const allowedPrefixes = getPrivateListingDocumentDownloadAllowedPrefixes(normalizedListingId)
+  const isListingStoragePath = allowedPrefixes.some((prefix) => normalizedFilePath.startsWith(prefix))
+  const listing = await getPrivateListingById(normalizedListingId, {
+    includeRequirementsAndDocuments: !isListingStoragePath,
+  })
+  if (!listing?.id) {
+    return { linked: false, bucket: '' }
+  }
+  if (isListingStoragePath) {
+    return { linked: true, bucket: '' }
+  }
+
+  const mandateArtifactMatch = getPrivateListingMandateArtifactMatch(listing, normalizedFilePath)
+  const documents = Array.isArray(listing.documents) ? listing.documents : []
+  const documentMatch = documents.find((document) => privateListingDocumentPathMatches(document, normalizedFilePath))
+  if (documentMatch) {
+    return {
+      linked: true,
+      bucket: getPrivateListingDocumentStorageBucket(documentMatch) || normalizeText(mandateArtifactMatch?.bucket),
+    }
+  }
+
+  if (mandateArtifactMatch) {
+    return {
+      linked: true,
+      bucket: normalizeText(mandateArtifactMatch.bucket),
+    }
+  }
+
+  return { linked: false, bucket: '' }
+}
+
 function mandatePacketHasFinalSignedArtifact(mandatePacket = null) {
   const artifact = getPrivateListingFinalSignedMandateArtifact(mandatePacket)
   return Boolean(artifact.filePath || artifact.fileUrl)
@@ -1691,6 +2043,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
       finalSignedFilePath: mandateFinalArtifact.filePath || '',
       finalSignedFileUrl: mandateFinalArtifact.fileUrl || mandateDocumentUrl,
       finalSignedFileName: mandateFinalArtifact.fileName || '',
+      finalSignedFileBucket: mandateFinalArtifact.fileBucket || '',
       updatedAt: primaryMandateDocument?.uploaded_at || row.updated_at || row.created_at || null,
     },
     mandatePacket: mandatePacket || null,
@@ -2086,6 +2439,8 @@ function buildSellerClientPortalContextPayload({ listing = {}, onboarding = {}, 
 }
 
 function buildSellerPortalDocumentsEmailPayload({ listing = {}, onboarding = {}, formData = {} } = {}) {
+  if (!isSellerPortalInviteReadyAfterSignedMandate(listing)) return null
+
   const token = normalizeText(onboarding?.token || listing?.sellerOnboarding?.token || listing?.seller_onboarding_token)
   const portalLink = buildSellerClientPortalLink(token)
   const to = getSellerClientPortalEmail(listing, onboarding, formData)
@@ -2124,6 +2479,9 @@ function buildSellerPortalDocumentsEmailPayload({ listing = {}, onboarding = {},
 }
 
 async function notifySellerPortalDocumentsReady(client, { listing = {}, onboarding = {}, formData = {} } = {}) {
+  if (!isSellerPortalInviteReadyAfterSignedMandate(listing)) {
+    return { skipped: true, reason: 'mandate_not_signed' }
+  }
   const payload = buildSellerPortalDocumentsEmailPayload({ listing, onboarding, formData })
   if (!payload) return { skipped: true, reason: 'email_or_portal_link_missing' }
 
@@ -2133,6 +2491,360 @@ async function notifySellerPortalDocumentsReady(client, { listing = {}, onboardi
   }
 
   return data || { ok: true }
+}
+
+async function hasSellerPortalMandateInviteBeenSent(client, packetId) {
+  const normalizedPacketId = normalizeUuid(packetId)
+  if (!normalizedPacketId) return false
+
+  const { data, error } = await client
+    .from('document_packet_events')
+    .select('id')
+    .eq('packet_id', normalizedPacketId)
+    .eq('event_type', SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SENT_EVENT)
+    .limit(1)
+  if (error) {
+    console.warn('[Private Listings] seller portal invite event dedupe lookup skipped', error)
+    return false
+  }
+  return Boolean((data || []).length)
+}
+
+async function fetchSellerOnboardingForInvite(client, { listingId = '', sellerWorkspaceToken = '' } = {}) {
+  const normalizedListingId = normalizeUuid(listingId)
+  const normalizedToken = normalizeText(sellerWorkspaceToken)
+  let query = null
+  if (normalizedListingId) {
+    query = await client
+      .from('private_listing_seller_onboarding')
+      .select('id, private_listing_id, token, token_expires_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at')
+      .eq('private_listing_id', normalizedListingId)
+      .maybeSingle()
+  }
+  if ((!query || (!query.error && !query.data)) && normalizedToken) {
+    query = await client
+      .from('private_listing_seller_onboarding')
+      .select('id, private_listing_id, token, token_expires_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at')
+      .eq('token', normalizedToken)
+      .maybeSingle()
+  }
+
+  if (!query) return null
+  if (query.error) {
+    if (isMissingTableError(query.error, 'private_listing_seller_onboarding')) return null
+    throw query.error
+  }
+  return query.data || null
+}
+
+async function appendSellerPortalMandateInviteEvent(eventType, {
+  packetId = '',
+  organisationId = '',
+  versionId = '',
+  source = 'private_listing_service',
+  listingId = '',
+  sellerWorkspaceToken = '',
+  finalArtifactPath = '',
+  finalArtifactUrlPresent = false,
+  payload = {},
+} = {}) {
+  const normalizedPacketId = normalizeUuid(packetId)
+  if (!normalizedPacketId) return null
+
+  return appendDocumentPacketEvent({
+    packetId: normalizedPacketId,
+    organisationId: normalizeUuid(organisationId) || null,
+    versionId: normalizeUuid(versionId) || null,
+    eventType,
+    eventPayload: {
+      triggerSource: source,
+      triggerReason: 'mandate_signed',
+      listingId: normalizeUuid(listingId) || null,
+      sellerWorkspaceTokenPresent: Boolean(normalizeText(sellerWorkspaceToken)),
+      finalArtifactPath: normalizeText(finalArtifactPath) || null,
+      finalArtifactUrlPresent: Boolean(finalArtifactUrlPresent),
+      ...payload,
+    },
+  }).catch((eventError) => {
+    console.warn('[Private Listings] seller portal mandate invite event skipped', eventError)
+    return null
+  })
+}
+
+export async function sendSellerPortalInviteAfterMandateSigned({
+  packetId = '',
+  organisationId = '',
+  versionId = '',
+  listingId = '',
+  sellerWorkspaceToken = '',
+  finalArtifactPath = '',
+  finalArtifactUrlPresent = false,
+  source = 'private_listing_service',
+} = {}) {
+  const client = requireClient()
+  const normalizedPacketId = normalizeUuid(packetId)
+  if (!normalizedPacketId) return { skipped: true, reason: 'packet_id_missing' }
+
+  const alreadySent = await hasSellerPortalMandateInviteBeenSent(client, normalizedPacketId)
+  if (alreadySent) return { skipped: true, reason: 'already_sent' }
+
+  const onboarding = await fetchSellerOnboardingForInvite(client, { listingId, sellerWorkspaceToken })
+  const resolvedListingId = normalizeUuid(listingId || onboarding?.private_listing_id)
+  const listing = resolvedListingId
+    ? await getPrivateListing(resolvedListingId, { includeRequirementsAndDocuments: false })
+    : null
+
+  if (!listing?.id) {
+    await appendSellerPortalMandateInviteEvent(SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SKIPPED_EVENT, {
+      packetId: normalizedPacketId,
+      organisationId,
+      versionId,
+      source,
+      listingId: resolvedListingId,
+      sellerWorkspaceToken,
+      finalArtifactPath,
+      finalArtifactUrlPresent,
+      payload: {
+        portalInviteStatus: 'skipped',
+        skipReason: 'listing_missing',
+      },
+    })
+    return { skipped: true, reason: 'listing_missing' }
+  }
+
+  const effectiveOnboarding = onboarding || listing.sellerOnboarding || {}
+  const formData = effectiveOnboarding?.form_data && typeof effectiveOnboarding.form_data === 'object'
+    ? effectiveOnboarding.form_data
+    : effectiveOnboarding?.formData && typeof effectiveOnboarding.formData === 'object'
+      ? effectiveOnboarding.formData
+      : listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
+        ? listing.sellerOnboarding.formData
+        : {}
+  const token = normalizeText(effectiveOnboarding?.token || listing?.sellerOnboarding?.token)
+
+  if (!token) {
+    await appendSellerPortalMandateInviteEvent(SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SKIPPED_EVENT, {
+      packetId: normalizedPacketId,
+      organisationId,
+      versionId,
+      source,
+      listingId: listing.id,
+      sellerWorkspaceToken,
+      finalArtifactPath,
+      finalArtifactUrlPresent,
+      payload: {
+        portalInviteStatus: 'skipped',
+        skipReason: 'seller_portal_token_missing',
+      },
+    })
+    return { skipped: true, reason: 'seller_portal_token_missing' }
+  }
+
+  await ensureSellerClientPortalContext(client, {
+    listing: {
+      ...listing,
+      mandatePacketId: normalizedPacketId,
+    },
+    onboarding: {
+      ...effectiveOnboarding,
+      token,
+    },
+    formData,
+  }).catch((contextError) => {
+    console.warn('[Private Listings] seller portal context sync skipped before mandate invite', contextError)
+    return null
+  })
+
+  let emailResult = null
+  try {
+    emailResult = await notifySellerPortalDocumentsReady(client, {
+      listing: {
+        ...listing,
+        mandatePacketId: normalizedPacketId,
+        sellerOnboarding: {
+          ...(listing.sellerOnboarding || {}),
+          ...effectiveOnboarding,
+          token,
+          formData,
+        },
+      },
+      onboarding: {
+        ...effectiveOnboarding,
+        token,
+      },
+      formData,
+    })
+  } catch (emailError) {
+    await appendSellerPortalMandateInviteEvent(SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_FAILED_EVENT, {
+      packetId: normalizedPacketId,
+      organisationId: organisationId || listing.organisationId,
+      versionId,
+      source,
+      listingId: listing.id,
+      sellerWorkspaceToken: token,
+      finalArtifactPath,
+      finalArtifactUrlPresent,
+      payload: {
+        portalInviteStatus: 'failed',
+        failedAt: new Date().toISOString(),
+        recipientEmailPresent: Boolean(getSellerClientPortalEmail(listing, { ...effectiveOnboarding, token }, formData)),
+        errorMessage: normalizeText(emailError?.message) || 'Seller portal email could not be sent.',
+      },
+    })
+    throw emailError
+  }
+
+  if (emailResult?.skipped) {
+    await appendSellerPortalMandateInviteEvent(SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SKIPPED_EVENT, {
+      packetId: normalizedPacketId,
+      organisationId: organisationId || listing.organisationId,
+      versionId,
+      source,
+      listingId: listing.id,
+      sellerWorkspaceToken: token,
+      finalArtifactPath,
+      finalArtifactUrlPresent,
+      payload: {
+        portalInviteStatus: 'skipped',
+        skipReason: emailResult.reason || 'email_or_portal_link_missing',
+      },
+    })
+    return emailResult
+  }
+
+  await appendSellerPortalMandateInviteEvent(SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SENT_EVENT, {
+    packetId: normalizedPacketId,
+    organisationId: organisationId || listing.organisationId,
+    versionId,
+    source,
+    listingId: listing.id,
+    sellerWorkspaceToken: token,
+    finalArtifactPath,
+    finalArtifactUrlPresent,
+    payload: {
+      portalInviteStatus: 'sent',
+      sentAt: new Date().toISOString(),
+      recipientEmailPresent: true,
+      deliveryId: normalizeText(emailResult?.deliveryId) || null,
+      canonicalInviteId: normalizeText(emailResult?.canonicalInviteId) || null,
+    },
+  })
+
+  return {
+    ok: true,
+    sent: true,
+    listingId: listing.id,
+    deliveryId: emailResult?.deliveryId || null,
+    canonicalInviteId: emailResult?.canonicalInviteId || null,
+  }
+}
+
+export async function backfillSellerPortalInvitesAfterSignedMandates({
+  organisationId = '',
+  limit = 50,
+  dryRun = true,
+  plannedCandidates = null,
+} = {}) {
+  const client = requireClient()
+  const snapshot = await getSellerMandateContinuityDiagnosticsSnapshot({
+    client,
+    organisationId,
+    limit,
+  })
+  const getCandidateKey = (candidate = {}) => {
+    const packetId = normalizeUuid(candidate.packetId || candidate.packet_id)
+    const listingId = normalizeUuid(candidate.listingId || candidate.listing_id)
+    return packetId && listingId ? `${packetId}:${listingId}` : ''
+  }
+  const plannedCandidateRows = Array.isArray(plannedCandidates) ? plannedCandidates : []
+  const plannedCandidateKeys = new Set(plannedCandidateRows.map(getCandidateKey).filter(Boolean))
+  const planLocked = !dryRun && Array.isArray(plannedCandidates)
+  const eligibleCandidates = (snapshot.records || []).filter((record) =>
+    record?.portalInviteActionRequired &&
+    record?.portalInviteStatus !== 'sent' &&
+    record?.status !== 'blocked' &&
+    normalizeUuid(record?.packetId) &&
+    normalizeUuid(record?.listingId)
+  )
+  const candidates = planLocked
+    ? eligibleCandidates.filter((record) => plannedCandidateKeys.has(getCandidateKey(record)))
+    : eligibleCandidates
+  const actions = []
+  const currentCandidateKeys = new Set(candidates.map(getCandidateKey).filter(Boolean))
+
+  if (planLocked) {
+    for (const plannedCandidate of plannedCandidateRows) {
+      const candidateKey = getCandidateKey(plannedCandidate)
+      if (!candidateKey || currentCandidateKeys.has(candidateKey)) continue
+      actions.push({
+        listingId: normalizeUuid(plannedCandidate.listingId || plannedCandidate.listing_id),
+        packetId: normalizeUuid(plannedCandidate.packetId || plannedCandidate.packet_id),
+        sellerWorkspaceToken: normalizeText(plannedCandidate.sellerWorkspaceToken || plannedCandidate.seller_workspace_token),
+        previousInviteStatus: normalizeText(plannedCandidate.previousInviteStatus || plannedCandidate.previous_invite_status) || 'planned',
+        dryRun: false,
+        status: 'skipped',
+        reason: 'not_in_current_signed_mandate_snapshot',
+      })
+    }
+  }
+
+  for (const record of candidates) {
+    const action = {
+      listingId: record.listingId,
+      packetId: record.packetId,
+      sellerWorkspaceToken: record.sellerWorkspaceToken || '',
+      previousInviteStatus: record.portalInviteStatus || 'missing',
+      dryRun: Boolean(dryRun),
+    }
+
+    if (dryRun) {
+      actions.push({
+        ...action,
+        status: 'planned',
+      })
+      continue
+    }
+
+    try {
+      const result = await sendSellerPortalInviteAfterMandateSigned({
+        packetId: record.packetId,
+        organisationId,
+        listingId: record.listingId,
+        sellerWorkspaceToken: record.sellerWorkspaceToken || '',
+        finalArtifactPath: record.finalSignedFilePath || '',
+        finalArtifactUrlPresent: Boolean(record.finalSignedFileUrl),
+        source: 'seller_portal_mandate_invite_backfill',
+      })
+      actions.push({
+        ...action,
+        status: result?.sent ? 'sent' : result?.skipped ? 'skipped' : 'completed',
+        result,
+      })
+    } catch (error) {
+      actions.push({
+        ...action,
+        status: 'failed',
+        errorMessage: normalizeText(error?.message) || 'Seller portal invite backfill failed.',
+      })
+    }
+  }
+
+  return {
+    dryRun: Boolean(dryRun),
+    organisationId: normalizeText(organisationId),
+    planLocked,
+    plannedCandidateCount: plannedCandidateKeys.size,
+    scannedRecords: Number(snapshot.totalRecords || snapshot.records?.length || 0),
+    candidateCount: dryRun ? eligibleCandidates.length : candidates.length,
+    eligibleCandidateCount: eligibleCandidates.length,
+    actions,
+    summary: {
+      planned: actions.filter((action) => action.status === 'planned').length,
+      sent: actions.filter((action) => action.status === 'sent').length,
+      skipped: actions.filter((action) => action.status === 'skipped').length,
+      failed: actions.filter((action) => action.status === 'failed').length,
+    },
+  }
 }
 
 export async function getSellerPortalAccessState(token) {
@@ -2803,6 +3515,15 @@ export async function updatePrivateListingOnboardingFormData(listingId, formData
       console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding form insert', factError)
       return null
     })
+    if (options.syncRequirements !== false) {
+      await syncPrivateListingRequirements(normalizedId, {
+        emitActivity: false,
+        reason: options.requirementSyncReason || 'onboarding_form_saved',
+      }).catch((requirementsError) => {
+        console.warn('[Private Listings] seller requirement sync skipped after onboarding form insert', requirementsError)
+        return null
+      })
+    }
     return inserted.data
   }
 
@@ -2836,6 +3557,15 @@ export async function updatePrivateListingOnboardingFormData(listingId, formData
     console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding form update', factError)
     return null
   })
+  if (options.syncRequirements !== false) {
+    await syncPrivateListingRequirements(normalizedId, {
+      emitActivity: false,
+      reason: options.requirementSyncReason || 'onboarding_form_saved',
+    }).catch((requirementsError) => {
+      console.warn('[Private Listings] seller requirement sync skipped after onboarding form update', requirementsError)
+      return null
+    })
+  }
   return update.data
 }
 
@@ -3869,16 +4599,9 @@ export async function syncPrivateListingRequirements(listingOrId, { emitActivity
 
   const payload = [...upsertRows, ...markNotApplicableRows]
   if (payload.length) {
-    const runUpsert = await runSelectWithFallback(
-      (selectFields) => client
-        .from('private_listing_document_requirements')
-        .upsert(payload, { onConflict: 'private_listing_id,requirement_key' })
-        .select(selectFields),
-      PRIVATE_LISTING_REQUIREMENT_SELECT_VARIANTS,
-      'private_listing_document_requirements',
-    )
+    const runUpsert = await upsertPrivateListingRequirementRows(client, payload)
     if (runUpsert.missingTable) {
-      if (!emitActivity) return {
+      return {
         listing: hydrateListingWithRequirementData(listing, [], []),
         requirementProfile: null,
         requirements: [],
@@ -3888,6 +4611,9 @@ export async function syncPrivateListingRequirements(listingOrId, { emitActivity
           documents: [],
         }),
       }
+    }
+    if (runUpsert.schemaIncompatible) {
+      console.warn('[Private Listings] seller requirement sync skipped because requirement schema is incompatible', runUpsert.error)
     }
     if (runUpsert.error && !isMissingColumnError(runUpsert.error) && !isMissingTableError(runUpsert.error, 'private_listing_document_requirements')) {
       throw runUpsert.error
@@ -4255,7 +4981,7 @@ export async function submitSellerOnboarding(token, payload = {}) {
     throw rpc.error
   }
   if (!rpc.error) {
-    const rpcContext = mapSellerClientPortalPayload(rpc.data)
+    let rpcContext = mapSellerClientPortalPayload(rpc.data)
     if (!rpcContext?.listing) {
       throw new Error('Seller onboarding link is invalid or inactive.')
     }
@@ -4267,16 +4993,6 @@ export async function submitSellerOnboarding(token, payload = {}) {
       console.warn('[Private Listings] seller client portal context sync skipped after onboarding submit', contextError)
       return null
     })
-    if (!payload.skipPortalNotification) {
-      await notifySellerPortalDocumentsReady(client, {
-        listing: rpcContext.listing,
-        onboarding: rpcContext.onboarding,
-        formData: payload.formData,
-      }).catch((portalEmailError) => {
-        console.warn('[Private Listings] seller portal email skipped after onboarding submit', portalEmailError)
-        return null
-      })
-    }
     await persistCanonicalSellerFactPayload(client, {
       listingId: rpcContext.listing.id,
       onboardingId: rpcContext.onboarding?.id,
@@ -4294,6 +5010,27 @@ export async function submitSellerOnboarding(token, payload = {}) {
       console.warn('[Private Listings] seller onboarding publication draft sync skipped after onboarding submit', publicationError)
       return null
     })
+    const requirementSync = await syncPrivateListingRequirements(rpcContext.listing, {
+      emitActivity: true,
+      reason: 'onboarding_completed',
+    }).catch((requirementsError) => {
+      console.error('[Private Listings] seller requirements sync failed after onboarding submit', requirementsError)
+      return null
+    })
+    if (requirementSync?.listing) {
+      rpcContext = {
+        ...rpcContext,
+        listing: requirementSync.listing,
+      }
+      await ensureSellerClientPortalContext(client, {
+        listing: rpcContext.listing,
+        onboarding: rpcContext.onboarding,
+        formData: payload.formData,
+      }).catch((contextError) => {
+        console.warn('[Private Listings] seller client portal context sync skipped after requirement sync', contextError)
+        return null
+      })
+    }
     void maybeResolveCanonicalSellerRequirements({
       listing: rpcContext.listing,
       formData: payload.formData,
@@ -4405,11 +5142,12 @@ export async function submitSellerOnboarding(token, payload = {}) {
     return null
   })
 
-  void syncPrivateListingRequirements(transitionResult?.listing?.id || context.listing.id, {
+  const requirementSync = await syncPrivateListingRequirements(transitionResult?.listing || fallbackListing, {
     emitActivity: true,
     reason: 'onboarding_completed',
   }).catch((requirementsError) => {
     console.error('[Private Listings] seller requirements sync failed after onboarding submit', requirementsError)
+    return null
   })
   const leadOrganisationId = normalizeText(context.listing?.organisationId)
   const rawLeadIds = [
@@ -4440,7 +5178,7 @@ export async function submitSellerOnboarding(token, payload = {}) {
     },
   }).catch(() => false)
 
-  const listingForContext = transitionResult?.listing || fallbackListing
+  const listingForContext = requirementSync?.listing || transitionResult?.listing || fallbackListing
   await ensureSellerClientPortalContext(client, {
     listing: listingForContext,
     onboarding: updateOnboarding.data,
@@ -4449,16 +5187,6 @@ export async function submitSellerOnboarding(token, payload = {}) {
     console.warn('[Private Listings] seller client portal context sync skipped after onboarding fallback submit', contextError)
     return null
   })
-  if (!payload.skipPortalNotification) {
-    await notifySellerPortalDocumentsReady(client, {
-      listing: listingForContext,
-      onboarding: updateOnboarding.data,
-      formData: nextFormData,
-    }).catch((portalEmailError) => {
-      console.warn('[Private Listings] seller portal email skipped after onboarding fallback submit', portalEmailError)
-      return null
-    })
-  }
   await persistCanonicalSellerFactPayload(client, {
     listingId: listingForContext?.id || context.listing.id,
     onboardingId: updateOnboarding.data?.id,
@@ -4511,7 +5239,7 @@ export async function updateSellerOnboardingProgress(token, payload = {}) {
     throw rpc.error
   }
   if (!rpc.error) {
-    const rpcContext = mapSellerClientPortalPayload(rpc.data)
+    let rpcContext = mapSellerClientPortalPayload(rpc.data)
     if (!rpcContext?.listing) {
       throw new Error('Seller onboarding link is invalid or inactive.')
     }
@@ -4525,6 +5253,19 @@ export async function updateSellerOnboardingProgress(token, payload = {}) {
       console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding progress update', factError)
       return null
     })
+    const requirementSync = await syncPrivateListingRequirements(rpcContext.listing, {
+      emitActivity: false,
+      reason: 'seller_onboarding_progress',
+    }).catch((requirementsError) => {
+      console.warn('[Private Listings] seller requirement sync skipped after onboarding progress update', requirementsError)
+      return null
+    })
+    if (requirementSync?.listing) {
+      rpcContext = {
+        ...rpcContext,
+        listing: requirementSync.listing,
+      }
+    }
     void maybeResolveCanonicalSellerRequirements({
       listing: rpcContext.listing,
       formData: payload.formData,
@@ -4586,8 +5327,16 @@ export async function updateSellerOnboardingProgress(token, payload = {}) {
     console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding fallback progress update', factError)
     return null
   })
+  const requirementSync = await syncPrivateListingRequirements(refreshedListing || context.listing, {
+    emitActivity: false,
+    reason: 'seller_onboarding_progress',
+  }).catch((requirementsError) => {
+    console.warn('[Private Listings] seller requirement sync skipped after onboarding fallback progress update', requirementsError)
+    return null
+  })
+  const listingForProgress = requirementSync?.listing || refreshedListing || context.listing
   void maybeResolveCanonicalSellerRequirements({
-    listing: refreshedListing || context.listing,
+    listing: listingForProgress,
     formData: nextFormData,
     client,
     reason: 'seller_onboarding_progress',
@@ -4597,7 +5346,7 @@ export async function updateSellerOnboardingProgress(token, payload = {}) {
 
   return {
     onboarding: updateQuery.data,
-    listing: refreshedListing,
+    listing: listingForProgress,
   }
 }
 
@@ -4698,6 +5447,96 @@ export async function generateSellerDocumentRequirements(listingId) {
 export async function syncSellerDocumentRequirements(listingId, options = {}) {
   const result = await syncPrivateListingRequirements(listingId, options)
   return result?.requirements || []
+}
+
+export async function runSellerDocumentRequirementReconciliation({
+  organisationId = '',
+  listingIds = [],
+  limit = 100,
+  dryRun = true,
+} = {}) {
+  const normalizedListingIds = normalizeUuidList(Array.isArray(listingIds) ? listingIds : [listingIds])
+  const normalizedOrganisationId = normalizeUuid(organisationId)
+  if (!normalizedOrganisationId && !normalizedListingIds.length) {
+    throw new Error('Provide organisationId or listingIds before reconciling seller document requirements.')
+  }
+
+  const maxRows = Math.max(1, Math.min(Number(limit || 100) || 100, 500))
+  const loadErrors = []
+  const listings = normalizedListingIds.length
+    ? (await Promise.all(normalizedListingIds.slice(0, maxRows).map(async (listingId) => {
+        try {
+          return {
+            listing: await getPrivateListing(listingId, { includeRequirementsAndDocuments: true }),
+            error: null,
+          }
+        } catch (error) {
+          return {
+            listing: null,
+            error: {
+              listingId,
+              status: 'load_failed',
+              errorMessage: normalizeText(error?.message || error) || 'Listing could not be loaded.',
+            },
+          }
+        }
+      }))).reduce((accumulator, result) => {
+        if (result?.listing) accumulator.push(result.listing)
+        if (result?.error) loadErrors.push(result.error)
+        return accumulator
+      }, [])
+    : (await getOrganisationPrivateListings(normalizedOrganisationId, { includeRequirementsAndDocuments: true })).slice(0, maxRows)
+
+  const initialReport = buildSellerDocumentRequirementReconciliationReport(listings, { dryRun })
+  if (loadErrors.length) {
+    initialReport.actionQueues.manualReview.push(...loadErrors)
+    initialReport.summary.loadFailed = loadErrors.length
+  }
+  if (dryRun !== false) {
+    return {
+      ...initialReport,
+      mode: 'dry-run',
+      recommendation: initialReport.summary.syncable
+        ? 'Run again with dryRun: false after reviewing the syncable queue.'
+        : 'No seller document requirement reconciliation needed.',
+      summaryText: summarizeSellerDocumentRequirementReconciliationReport(initialReport),
+    }
+  }
+
+  const applied = []
+  for (const row of initialReport.actionQueues.syncable || []) {
+    if (!row?.listingId) continue
+    try {
+      const result = await syncPrivateListingRequirements(row.listingId, {
+        emitActivity: false,
+        reason: 'seller_document_reconciliation_phase4',
+      })
+      applied.push({
+        listingId: row.listingId,
+        status: 'synced',
+        requirementCount: Array.isArray(result?.requirements) ? result.requirements.length : 0,
+      })
+    } catch (error) {
+      applied.push({
+        listingId: row.listingId,
+        status: 'failed',
+        errorMessage: normalizeText(error?.message || error) || 'Seller document requirement sync failed.',
+      })
+    }
+  }
+
+  return {
+    ...initialReport,
+    dryRun: false,
+    mode: 'apply',
+    applied,
+    applySummary: {
+      attempted: applied.length,
+      synced: applied.filter((row) => row.status === 'synced').length,
+      failed: applied.filter((row) => row.status === 'failed').length,
+    },
+    summaryText: summarizeSellerDocumentRequirementReconciliationReport(initialReport),
+  }
 }
 
 export async function getMissingSellerDocuments(listingId) {
@@ -5010,12 +5849,17 @@ export async function createSellerClientPortalDocumentSignedUrl({
     sellerPortalAccessToken: accessToken || getStoredSellerPortalAccessToken(normalizedToken),
   })
   if (!context?.listing?.id) throw new Error('Seller client portal link is invalid or inactive.')
-  const listingPathPrefix = `seller-portal/${context.listing.id}/`
-  if (!normalizedFilePath.startsWith(listingPathPrefix)) {
+  const downloadContext = await resolvePrivateListingDocumentDownload(client, context.listing.id, normalizedFilePath)
+  if (!downloadContext.linked) {
     throw new Error('This document is not available in this client portal.')
   }
 
-  const signedUrl = await createPrivateListingDocumentSignedUrl(client, normalizedFilePath, expiresInSeconds)
+  const signedUrl = await createPrivateListingDocumentSignedUrl(
+    client,
+    normalizedFilePath,
+    expiresInSeconds,
+    downloadContext.bucket,
+  )
   if (!signedUrl) throw new Error('Unable to open this document right now.')
   return signedUrl
 }
@@ -5031,16 +5875,17 @@ export async function createPrivateListingDocumentDownloadUrl({
   if (!normalizedListingId) throw new Error('Listing id is required.')
   if (!normalizedFilePath) throw new Error('Document path is required.')
 
-  await getPrivateListing(normalizedListingId, { includeRequirementsAndDocuments: false })
-  const allowedPrefixes = [
-    `seller-portal/${normalizedListingId}/`,
-    `private-listings/${normalizedListingId}/`,
-  ]
-  if (!allowedPrefixes.some((prefix) => normalizedFilePath.startsWith(prefix))) {
+  const downloadContext = await resolvePrivateListingDocumentDownload(client, normalizedListingId, normalizedFilePath)
+  if (!downloadContext.linked) {
     throw new Error('This document is not linked to the selected listing.')
   }
 
-  const signedUrl = await createPrivateListingDocumentSignedUrl(client, normalizedFilePath, expiresInSeconds)
+  const signedUrl = await createPrivateListingDocumentSignedUrl(
+    client,
+    normalizedFilePath,
+    expiresInSeconds,
+    downloadContext.bucket,
+  )
   if (!signedUrl) throw new Error('Unable to open this document right now.')
   return signedUrl
 }

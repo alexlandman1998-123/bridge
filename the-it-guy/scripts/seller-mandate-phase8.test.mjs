@@ -61,6 +61,17 @@ const readyRecord = {
       eventData: { title: 'Signed mandate received' },
     },
   ],
+  packetEvents: [
+    {
+      id: 'portal-invite-ready',
+      eventType: 'seller_portal_invite_sent_after_mandate_signed',
+      eventPayload: {
+        portalInviteStatus: 'sent',
+        sentAt: '2026-07-13T08:10:00.000Z',
+      },
+      createdAt: '2026-07-13T08:10:00.000Z',
+    },
+  ],
   portalContext: {
     mandatePacketId: 'packet-ready',
   },
@@ -118,6 +129,7 @@ test('report script is read-only and fetches the signed mandate continuity graph
   assert.match(reportService, /private_listing_documents/)
   assert.match(reportService, /private_listing_activity/)
   assert.match(reportService, /document_packets/)
+  assert.match(reportService, /document_packet_events/)
   assert.match(reportService, /client_portal_contexts/)
   assert.doesNotMatch(reportScript, /\.insert\(/)
   assert.doesNotMatch(reportScript, /\.update\(/)

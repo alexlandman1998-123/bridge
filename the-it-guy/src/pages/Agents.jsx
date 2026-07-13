@@ -8,12 +8,10 @@ import {
   CheckCircle2,
   Clock3,
   Copy,
-  Download,
   DollarSign,
   Edit3,
   Grid2X2,
   KeyRound,
-  List,
   Mail,
   MessageCircle,
   MoreHorizontal,
@@ -5556,11 +5554,9 @@ export function AgentsPage() {
   const [leaderboardMetric, setLeaderboardMetric] = useState('pipelineValue')
   const officeFilter = 'all'
   const [organisationFilter, setOrganisationFilter] = useState(EMPTY_ORGANISATION.id)
-  const [roleFilter, setRoleFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [sortBy, setSortBy] = useState('pipeline')
   const [searchTerm, setSearchTerm] = useState('')
-  const [agentDirectoryView, setAgentDirectoryView] = useState('table')
   const [agents, setAgents] = useState([])
   const [agentDirectory, setAgentDirectory] = useState(() => readAgentDirectory())
   const [agentInvites, setAgentInvites] = useState(() => readAgentInvites())
@@ -5961,11 +5957,6 @@ export function AgentsPage() {
     })
   }, [activeCommissionStructureOptions])
 
-  const roleOptions = useMemo(() => {
-    const items = [...new Set(agents.map((agent) => String(agent.role || 'agent').trim().toLowerCase()).filter(Boolean))]
-    return ['all', ...items]
-  }, [agents])
-
   const effectiveStatusFilter = statusFilter
 
   const commandCentreModel = useMemo(
@@ -5986,7 +5977,7 @@ export function AgentsPage() {
       filters: {
         branchId: branchFilter,
         office: officeFilter,
-        role: roleFilter,
+        role: 'all',
         status: effectiveStatusFilter,
         search: searchTerm,
         dateRange,
@@ -5994,7 +5985,7 @@ export function AgentsPage() {
         sortBy,
       },
     }),
-    [agentDirectory?.agency?.id, agents, appointmentRows, branchFilter, branches, dateRange, effectiveStatusFilter, leadActivities, leadRows, leaderboardMetric, listingRows, officeFilter, organisationFilter, profile?.id, roleFilter, searchTerm, sortBy, taskRows, transactionRows, workspaceOrganisation?.id],
+    [agentDirectory?.agency?.id, agents, appointmentRows, branchFilter, branches, dateRange, effectiveStatusFilter, leadActivities, leadRows, leaderboardMetric, listingRows, officeFilter, organisationFilter, profile?.id, searchTerm, sortBy, taskRows, transactionRows, workspaceOrganisation?.id],
   )
 
   const invitedAgentRows = useMemo(() => {
@@ -6003,7 +5994,6 @@ export function AgentsPage() {
       : String(organisationFilter || '').trim().toLowerCase()
     const selectedBranchId = String(branchFilter || 'all').trim().toLowerCase()
     const selectedOffice = String(officeFilter || 'all').trim().toLowerCase()
-    const selectedRole = String(roleFilter || 'all').trim().toLowerCase()
     const query = String(searchTerm || '').trim().toLowerCase()
 
     return agents
@@ -6016,7 +6006,6 @@ export function AgentsPage() {
         const agentOffice = String(agent?.office || agent?.branchName || '').trim().toLowerCase()
         if (selectedBranchId !== 'all' && agentBranchId !== selectedBranchId && agentOffice !== selectedBranchId) return false
         if (selectedOffice !== 'all' && agentOffice !== selectedOffice) return false
-        if (selectedRole !== 'all' && String(agent?.role || '').trim().toLowerCase() !== selectedRole) return false
         if (!query) return true
         return [
           agent?.name,
@@ -6028,7 +6017,7 @@ export function AgentsPage() {
         ].some((value) => String(value || '').toLowerCase().includes(query))
       })
       .sort((left, right) => (new Date(right?.invitedAt || 0).getTime() || 0) - (new Date(left?.invitedAt || 0).getTime() || 0))
-  }, [agentDirectory?.agency?.id, agents, branchFilter, officeFilter, organisationFilter, roleFilter, searchTerm, workspaceOrganisation?.id])
+  }, [agentDirectory?.agency?.id, agents, branchFilter, officeFilter, organisationFilter, searchTerm, workspaceOrganisation?.id])
 
   const offboardingDestinationAgents = useMemo(
     () =>
@@ -6582,62 +6571,12 @@ export function AgentsPage() {
     setInviteModalOpen(true)
   }
 
-  const agentDirectoryViewToggle = (
-    <div className="inline-flex rounded-xl border border-[#d9e3ef] bg-white p-1 shadow-sm">
-      <button
-        type="button"
-        className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition ${agentDirectoryView === 'table' ? 'bg-[#0f2742] text-white shadow-sm' : 'text-[#60758d] hover:bg-[#f7fafc]'}`}
-        onClick={() => setAgentDirectoryView('table')}
-      >
-        <List size={14} />
-        Table
-      </button>
-      <button
-        type="button"
-        className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition ${agentDirectoryView === 'cards' ? 'bg-[#0f2742] text-white shadow-sm' : 'text-[#60758d] hover:bg-[#f7fafc]'}`}
-        onClick={() => setAgentDirectoryView('cards')}
-      >
-        <Grid2X2 size={14} />
-        Cards
-      </button>
-    </div>
-  )
-
   const inviteAgentAction = canManageDirectory ? (
     <Button type="button" size="sm" onClick={openAgentInviteModal}>
       <Plus size={15} />
       Add Agent
     </Button>
   ) : null
-
-  function handleExportAgentRows() {
-    const header = ['Agent', 'Role', 'Branch', 'Pipeline Value', 'Active Transactions', 'Listings', 'Conversion', 'Last Activity']
-    const rows = commandCentreModel.agentsTable.map((row) => {
-      const performance = row.performance || {}
-      return [
-        row.name || '',
-        formatRoleLabel(row.role),
-        row.branchName || 'Current Office',
-        Number(performance.pipelineValue || 0),
-        Number(performance.activeTransactionCount ?? performance.activeTransactions ?? 0),
-        Number(performance.activeListingCount ?? performance.listings ?? 0),
-        performance.conversionRate === null || performance.conversionRate === undefined ? '' : `${Math.round(Number(performance.conversionRate))}%`,
-        formatCompactActivity(performance.lastActivityAt).label,
-      ]
-    })
-    const csv = [header, ...rows]
-      .map((line) => line.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(','))
-      .join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `agents-${new Date().toISOString().slice(0, 10)}.csv`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
-  }
 
   return (
     <section className="space-y-5">
@@ -6659,21 +6598,6 @@ export function AgentsPage() {
               onChange={setBranchFilter}
               options={commandCentreModel.filterOptions.branches.map((branch) => ({ value: branch.id, label: branch.name }))}
             />
-            <DirectorySelect
-              label="Role"
-              value={roleFilter}
-              onChange={setRoleFilter}
-              options={roleOptions.map((item) => ({ value: item, label: item === 'all' ? 'All Roles' : formatRoleLabel(item) }))}
-            />
-            {agentDirectoryViewToggle}
-            <button
-              type="button"
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] shadow-sm transition hover:bg-[#f7fafc]"
-              onClick={handleExportAgentRows}
-            >
-              <Download size={15} />
-              Export
-            </button>
             {inviteAgentAction}
           </div>
 
@@ -6742,39 +6666,22 @@ export function AgentsPage() {
           />
 
           {commandCentreModel.agentsTable.length ? (
-            agentDirectoryView === 'cards' ? (
-              <AgentCommandCardGrid
-                rows={commandCentreModel.agentsTable}
-                canManage={canManageDirectory}
-                onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
-                onDeactivate={(agent) => openConfirm('deactivate', agent)}
-                onViewTransactions={(agent, stage) => navigate(`/transactions?agent=${encodeURIComponent(agent.id || agent.email || '')}${stage ? `&stage=${encodeURIComponent(stage)}` : ''}`)}
-                onAssignLead={(agent) => navigate(`/pipeline/leads?assignAgent=${encodeURIComponent(agent.id || agent.email || '')}`)}
-                onSendMessage={(agent) => {
-                  if (agent?.email) window.location.href = `mailto:${agent.email}`
-                }}
-                onResendInvite={handleResendAgentInvite}
-                onCopyInviteLink={handleCopyAgentInviteLink}
-                onRevokeInvite={(agent) => openConfirm('revoke', agent)}
-              />
-            ) : (
-              <AgentPerformanceTable
-                rows={commandCentreModel.agentsTable}
-                canManage={canManageDirectory}
-                sortBy={sortBy}
-                onSort={setSortBy}
-                onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
-                onDeactivate={(agent) => openConfirm('deactivate', agent)}
-                onViewTransactions={(agent, stage) => navigate(`/transactions?agent=${encodeURIComponent(agent.id || agent.email || '')}${stage ? `&stage=${encodeURIComponent(stage)}` : ''}`)}
-                onAssignLead={(agent) => navigate(`/pipeline/leads?assignAgent=${encodeURIComponent(agent.id || agent.email || '')}`)}
-                onSendMessage={(agent) => {
-                  if (agent?.email) window.location.href = `mailto:${agent.email}`
-                }}
-                onResendInvite={handleResendAgentInvite}
-                onCopyInviteLink={handleCopyAgentInviteLink}
-                onRevokeInvite={(agent) => openConfirm('revoke', agent)}
-              />
-            )
+            <AgentPerformanceTable
+              rows={commandCentreModel.agentsTable}
+              canManage={canManageDirectory}
+              sortBy={sortBy}
+              onSort={setSortBy}
+              onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
+              onDeactivate={(agent) => openConfirm('deactivate', agent)}
+              onViewTransactions={(agent, stage) => navigate(`/transactions?agent=${encodeURIComponent(agent.id || agent.email || '')}${stage ? `&stage=${encodeURIComponent(stage)}` : ''}`)}
+              onAssignLead={(agent) => navigate(`/pipeline/leads?assignAgent=${encodeURIComponent(agent.id || agent.email || '')}`)}
+              onSendMessage={(agent) => {
+                if (agent?.email) window.location.href = `mailto:${agent.email}`
+              }}
+              onResendInvite={handleResendAgentInvite}
+              onCopyInviteLink={handleCopyAgentInviteLink}
+              onRevokeInvite={(agent) => openConfirm('revoke', agent)}
+            />
           ) : (
             <section className="rounded-2xl border border-dashed border-[#c9d8e8] bg-white px-5 py-12 text-center shadow-sm">
               <span className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#edf5ff] text-[#1769d1]">

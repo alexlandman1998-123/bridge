@@ -26,6 +26,7 @@ import { OTP_DOCUMENT_TYPES } from '../core/transactions/salesWorkflow'
 import { addLeadActivity, getAgencyPipelineSnapshot, listAgencyLeads, updateAgencyLead } from '../lib/agencyPipelineService'
 import { inferLeadCategoryFromRecord } from '../lib/leadCategory'
 import {
+  appendDocumentPacketEvent,
   createDocumentPacket,
   fetchDocumentPacket,
   listDocumentPackets,
@@ -42,6 +43,7 @@ import {
   createPrivateListingActivity,
   getSellerOnboardingByToken,
   linkPrivateListingDocument,
+  sendSellerPortalInviteAfterMandateSigned,
   updatePrivateListing,
 } from '../services/privateListingService'
 import { getMandateSignerRoleLabel, resolveMandateSecondarySignerConfig } from '../lib/mandateSignatureRules'
@@ -49,6 +51,8 @@ import { getMandateSignerRoleLabel, resolveMandateSecondarySignerConfig } from '
 function normalizeText(value) {
   return String(value || '').trim()
 }
+
+const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_EVENT = 'seller_portal_invite_ready_after_mandate_signed'
 
 function firstText(...values) {
   for (const value of values) {
@@ -3793,6 +3797,50 @@ export default function LegalDocumentWorkspacePage() {
       }
     }
 
+    if (isSupabaseConfigured && isUuidLike(packetId)) {
+      await appendDocumentPacketEvent({
+        packetId,
+        organisationId: normalizeText(currentStatus?.packet?.organisation_id || organisationId) || null,
+        versionId: packetVersionId,
+        eventType: SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_EVENT,
+        eventPayload: {
+          triggerSource: 'legal_document_workspace',
+          triggerReason: 'mandate_signed',
+          portalInviteStatus: 'ready',
+          readyForSellerPortalPasswordInvite: true,
+          requiresPasswordSetup: true,
+          signedAt: finalizedAt,
+          finalizedAt,
+          packetStatus: 'completed',
+          listingId: linkedListingId || null,
+          sellerWorkspaceTokenPresent: Boolean(sellerWorkspaceToken),
+          finalArtifactPath: finalFilePath || null,
+          finalArtifactUrlPresent: Boolean(finalFileUrl),
+          signingMethod: artifact.signingMethod || null,
+          signingStatus,
+        },
+      }).catch((triggerError) => {
+        console.warn('[LegalDocumentWorkspacePage] seller portal invite trigger marker skipped.', triggerError)
+        return null
+      })
+    }
+
+    if (isSupabaseConfigured && isUuidLike(packetId)) {
+      await sendSellerPortalInviteAfterMandateSigned({
+        packetId,
+        organisationId: normalizeText(currentStatus?.packet?.organisation_id || organisationId),
+        versionId: packetVersionId,
+        listingId: linkedListingId,
+        sellerWorkspaceToken,
+        finalArtifactPath: finalFilePath,
+        finalArtifactUrlPresent: Boolean(finalFileUrl),
+        source: 'legal_document_workspace',
+      }).catch((portalInviteError) => {
+        console.warn('[LegalDocumentWorkspacePage] seller portal invite after mandate signed skipped.', portalInviteError)
+        return null
+      })
+    }
+
     if (isSupabaseConfigured && sellerNotification.sellerEmail) {
       try {
         const emailResponse = await withLegalWorkspaceTimeout(
@@ -3878,6 +3926,7 @@ export default function LegalDocumentWorkspacePage() {
     syncLeadMandateState,
     transactionReference,
     validatedRoutePacketId,
+    organisationId,
   ])
 
   const openLatestDocument = useCallback(async ({ signed = false } = {}) => {

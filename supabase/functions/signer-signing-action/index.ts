@@ -2,8 +2,14 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 import { handleSellerMandateSentEmail } from "../send-email/handlers/sellerMandateSent.ts";
 import { handleSellerMandateSignedEmail } from "../send-email/handlers/sellerMandateSigned.ts";
+import { handleSellerOnboardingEmail } from "../send-email/handlers/sellerOnboarding.ts";
 
 type JsonRecord = Record<string, unknown>;
+
+const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_EVENT = "seller_portal_invite_ready_after_mandate_signed";
+const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SENT_EVENT = "seller_portal_invite_sent_after_mandate_signed";
+const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SKIPPED_EVENT = "seller_portal_invite_skipped_after_mandate_signed";
+const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_FAILED_EVENT = "seller_portal_invite_failed_after_mandate_signed";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -392,7 +398,13 @@ async function invokeSendEmail({
       ? await handleSellerMandateSentEmail(body as never)
       : type === "seller_mandate_signed"
         ? await handleSellerMandateSignedEmail(body as never)
-        : jsonResponse(400, { error: `Unsupported internal email type: ${type || "unknown"}.` });
+        : type === "seller_portal_link"
+          ? await handleSellerOnboardingEmail({
+            ...(body as Record<string, unknown>),
+            type: "seller_portal_link",
+            emailKind: "portal_documents",
+          } as never)
+          : jsonResponse(400, { error: `Unsupported internal email type: ${type || "unknown"}.` });
   const responseBody = await response.json().catch(() => ({}));
   return { ok: response.ok, status: response.status, body: responseBody as Record<string, unknown> };
 }
@@ -1109,6 +1121,537 @@ async function sendFinalSignedMandateEmails({
   });
 }
 
+async function appendSellerPortalInviteAfterMandateSignedTrigger({
+  supabase,
+  packet,
+  packetId,
+  organisationId,
+  versionId,
+  finalBody,
+  nowIso,
+}: {
+  supabase: any;
+  packet: Record<string, unknown>;
+  packetId: string;
+  organisationId: string;
+  versionId: string;
+  finalBody: Record<string, unknown>;
+  nowIso: string;
+}) {
+  if (lower(packet.packet_type) !== "mandate") return;
+
+  const artifact = finalBody?.finalArtifact && typeof finalBody.finalArtifact === "object"
+    ? finalBody.finalArtifact as Record<string, unknown>
+    : {};
+  const finalArtifactPath = normalizeText(artifact.path);
+  const finalArtifactUrl = normalizeText(artifact.url);
+
+  await appendPacketEvent({
+    supabase,
+    packetId,
+    organisationId,
+    versionId,
+    eventType: SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_EVENT,
+    payload: {
+      triggerSource: "signer_signing_action",
+      triggerReason: "mandate_signed",
+      portalInviteStatus: "ready",
+      readyForSellerPortalPasswordInvite: true,
+      requiresPasswordSetup: true,
+      signedAt: nowIso,
+      finalizedAt: nowIso,
+      packetStatus: "completed",
+      finalArtifactPath: finalArtifactPath || null,
+      finalArtifactUrlPresent: Boolean(finalArtifactUrl),
+    },
+  });
+}
+
+function resolveAppBaseUrl() {
+  return (normalizeText(
+    Deno.env.get("PUBLIC_APP_URL") ||
+      Deno.env.get("CLIENT_APP_URL") ||
+      Deno.env.get("VITE_PUBLIC_APP_URL") ||
+      Deno.env.get("VITE_SITE_URL"),
+  ) || "https://app.arch9.co.za").replace(/\/$/, "");
+}
+
+function buildSellerClientPortalLink(token: string) {
+  return token ? `${resolveAppBaseUrl()}/client/${encodeURIComponent(token)}/selling` : "";
+}
+
+function resolveSellerPortalSourceContext(packet: Record<string, unknown>) {
+  const sourceContext = asRecord(packet.source_context_json);
+  const generatedSnapshot = asRecord(sourceContext.generatedDataSnapshot);
+  const nestedSource = asRecord(generatedSnapshot.sourceContext);
+  const sourceLead = asRecord(sourceContext.lead);
+  const sellerOnboarding = {
+    ...asRecord(nestedSource.sellerOnboarding),
+    ...asRecord(generatedSnapshot.sellerOnboarding),
+    ...asRecord(sourceLead.sellerOnboarding),
+    ...asRecord(sourceContext.sellerOnboarding),
+  };
+  const formData = {
+    ...asRecord(nestedSource.onboardingFormData),
+    ...asRecord(generatedSnapshot.onboardingFormData),
+    ...asRecord(sourceContext.onboardingFormData),
+    ...asRecord(sellerOnboarding.formData),
+    ...asRecord(sellerOnboarding.form_data),
+  };
+  const placeholders = asRecord(generatedSnapshot.placeholders);
+  return { sourceContext, generatedSnapshot, nestedSource, sourceLead, sellerOnboarding, formData, placeholders };
+}
+
+async function sellerPortalMandateInviteAlreadySent({
+  supabase,
+  packetId,
+}: {
+  supabase: any;
+  packetId: string;
+}) {
+  const existing = await supabase
+    .from("document_packet_events")
+    .select("id")
+    .eq("packet_id", packetId)
+    .eq("event_type", SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SENT_EVENT)
+    .limit(1);
+  if (existing.error) {
+    console.error("[mandate-signing] seller portal invite dedupe lookup failed", existing.error);
+    return false;
+  }
+  return Boolean((existing.data || []).length);
+}
+
+async function appendSellerPortalMandateInviteOutcome({
+  supabase,
+  packetId,
+  organisationId,
+  versionId,
+  eventType,
+  listingId = "",
+  token = "",
+  finalBody = {},
+  payload = {},
+}: {
+  supabase: any;
+  packetId: string;
+  organisationId: string;
+  versionId: string;
+  eventType: string;
+  listingId?: string;
+  token?: string;
+  finalBody?: Record<string, unknown>;
+  payload?: Record<string, unknown>;
+}) {
+  const artifact = asRecord(finalBody.finalArtifact);
+  await appendPacketEvent({
+    supabase,
+    packetId,
+    organisationId,
+    versionId,
+    eventType,
+    payload: {
+      triggerSource: "signer_signing_action",
+      triggerReason: "mandate_signed",
+      listingId: uuidOrNull(listingId),
+      sellerWorkspaceTokenPresent: Boolean(token),
+      finalArtifactPath: normalizeText(artifact.path) || null,
+      finalArtifactUrlPresent: Boolean(normalizeText(artifact.url)),
+      ...payload,
+    },
+  });
+}
+
+async function resolveSellerPortalInviteListing({
+  supabase,
+  packet,
+  packetId,
+  organisationId,
+  finalBody,
+}: {
+  supabase: any;
+  packet: Record<string, unknown>;
+  packetId: string;
+  organisationId: string;
+  finalBody: Record<string, unknown>;
+}) {
+  const { sourceContext, nestedSource } = resolveSellerPortalSourceContext(packet);
+  const listingConversion = asRecord(finalBody.listingConversion);
+  const candidateIds = [
+    listingConversion.listingId,
+    listingConversion.listing_id,
+    sourceContext.privateListingId,
+    sourceContext.private_listing_id,
+    sourceContext.listingId,
+    sourceContext.listing_id,
+    nestedSource.privateListingId,
+    nestedSource.private_listing_id,
+    nestedSource.listingId,
+    nestedSource.listing_id,
+  ].map(uuidOrNull).filter(Boolean) as string[];
+
+  for (const listingId of [...new Set(candidateIds)]) {
+    const byId = await supabase
+      .from("private_listings")
+      .select("id, organisation_id, assigned_agent_id, assigned_agent_email, seller_lead_id, originating_crm_lead_id, listing_reference, title, address_line_1, address_line_2, property_type, mandate_packet_id")
+      .eq("organisation_id", organisationId)
+      .eq("id", listingId)
+      .maybeSingle();
+    if (!byId.error && byId.data?.id) return byId.data as Record<string, unknown>;
+    if (byId.error) console.error("[mandate-signing] seller portal invite listing lookup by id failed", byId.error);
+  }
+
+  const byPacket = await supabase
+    .from("private_listings")
+    .select("id, organisation_id, assigned_agent_id, assigned_agent_email, seller_lead_id, originating_crm_lead_id, listing_reference, title, address_line_1, address_line_2, property_type, mandate_packet_id")
+    .eq("organisation_id", organisationId)
+    .eq("mandate_packet_id", packetId)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!byPacket.error && byPacket.data?.id) return byPacket.data as Record<string, unknown>;
+  if (byPacket.error) console.error("[mandate-signing] seller portal invite listing lookup by packet failed", byPacket.error);
+  return null;
+}
+
+async function resolveSellerPortalInviteOnboarding({
+  supabase,
+  listing,
+  packet,
+}: {
+  supabase: any;
+  listing: Record<string, unknown> | null;
+  packet: Record<string, unknown>;
+}) {
+  const { sourceContext, sourceLead, sellerOnboarding } = resolveSellerPortalSourceContext(packet);
+  const listingId = normalizeText(listing?.id);
+  if (listingId) {
+    const byListing = await supabase
+      .from("private_listing_seller_onboarding")
+      .select("id, private_listing_id, token, token_expires_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at")
+      .eq("private_listing_id", listingId)
+      .maybeSingle();
+    if (!byListing.error && byListing.data?.id) return byListing.data as Record<string, unknown>;
+    if (byListing.error) console.error("[mandate-signing] seller portal invite onboarding lookup by listing failed", byListing.error);
+  }
+
+  const token = firstText(
+    sellerOnboarding.token,
+    sellerOnboarding.sellerWorkspaceToken,
+    sourceContext.sellerOnboardingToken,
+    sourceContext.seller_onboarding_token,
+    sourceContext.sellerWorkspaceToken,
+    sourceContext.seller_workspace_token,
+    sourceLead.sellerOnboardingToken,
+    sourceLead.seller_onboarding_token,
+  );
+  if (!token) return null;
+
+  const byToken = await supabase
+    .from("private_listing_seller_onboarding")
+    .select("id, private_listing_id, token, token_expires_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at")
+    .eq("token", token)
+    .maybeSingle();
+  if (!byToken.error && byToken.data?.id) return byToken.data as Record<string, unknown>;
+  if (byToken.error) console.error("[mandate-signing] seller portal invite onboarding lookup by token failed", byToken.error);
+  return null;
+}
+
+function buildSellerPortalInviteEmailPayload({
+  packet,
+  listing,
+  onboarding,
+  allSigners,
+  organisationId,
+}: {
+  packet: Record<string, unknown>;
+  listing: Record<string, unknown>;
+  onboarding: Record<string, unknown>;
+  allSigners: Record<string, unknown>[];
+  organisationId: string;
+}) {
+  const { sourceContext, nestedSource, sourceLead, formData, placeholders } = resolveSellerPortalSourceContext(packet);
+  const onboardingFormData = {
+    ...formData,
+    ...asRecord(onboarding.form_data),
+    ...asRecord(onboarding.formData),
+  };
+  const sellerSigner = (allSigners || []).find((item) => isMandateSeller(item.signer_role)) || {};
+  const token = firstText(
+    onboarding.token,
+    sourceContext.sellerWorkspaceToken,
+    sourceContext.seller_workspace_token,
+    sourceContext.sellerOnboardingToken,
+    sourceContext.seller_onboarding_token,
+  );
+  const portalLink = buildSellerClientPortalLink(token);
+  const sellerEmail = firstText(
+    onboardingFormData.sellerEmail,
+    onboardingFormData.seller_email,
+    onboardingFormData.email,
+    onboardingFormData.contactEmail,
+    sourceContext.sellerEmail,
+    sourceContext.seller_email,
+    nestedSource.sellerEmail,
+    nestedSource.seller_email,
+    sourceLead.email,
+    sourceLead.sellerEmail,
+    sourceLead.seller_email,
+    sellerSigner.signer_email,
+  ).toLowerCase();
+  const sellerName = firstText(
+    onboardingFormData.sellerName,
+    onboardingFormData.seller_name,
+    onboardingFormData.fullName,
+    [onboardingFormData.sellerFirstName, onboardingFormData.sellerSurname].map(normalizeText).filter(Boolean).join(" "),
+    sourceContext.sellerName,
+    sourceContext.seller_name,
+    nestedSource.sellerName,
+    nestedSource.seller_name,
+    sellerSigner.signer_name,
+    "Seller",
+  );
+  const propertyTitle = firstText(
+    listing.title,
+    [listing.address_line_1, listing.address_line_2].map(normalizeText).filter(Boolean).join(", "),
+    sourceContext.propertyTitle,
+    nestedSource.propertyTitle,
+    onboardingFormData.propertyTitle,
+    onboardingFormData.listingTitle,
+    onboardingFormData.propertyAddress,
+    placeholders.property_address,
+    packet.title,
+    "your property",
+  );
+
+  if (!portalLink || !isUsableEmail(sellerEmail)) {
+    return {
+      payload: null,
+      reason: !portalLink ? "seller_portal_token_missing" : "seller_email_missing",
+      token,
+    };
+  }
+
+  return {
+    payload: {
+      type: "seller_portal_link",
+      emailKind: "portal_documents",
+      to: sellerEmail,
+      organisationId,
+      leadId: firstText(listing.seller_lead_id, listing.originating_crm_lead_id, sourceContext.leadId, sourceContext.lead_id, sourceLead.lead_id, sourceLead.leadId),
+      listingId: normalizeText(listing.id),
+      recipientRole: "seller",
+      recipientName: sellerName,
+      sellerName,
+      propertyTitle,
+      propertyType: firstText(listing.property_type, sourceContext.propertyType, nestedSource.propertyType, onboardingFormData.propertyType),
+      onboardingLink: portalLink,
+      portalLink,
+      transactionReference: firstText(listing.listing_reference, sourceContext.transactionReference, sourceContext.transaction_reference),
+      agentName: firstText(sourceContext.assignedAgentName, nestedSource.assignedAgentName, "Your agent"),
+      supportEmail: firstText(listing.assigned_agent_email, sourceContext.assignedAgentEmail, nestedSource.assignedAgentEmail).toLowerCase(),
+    },
+    reason: "",
+    token,
+  };
+}
+
+async function syncSellerPortalInviteContext({
+  supabase,
+  packetId,
+  organisationId,
+  listing,
+  onboarding,
+  email,
+  nowIso,
+}: {
+  supabase: any;
+  packetId: string;
+  organisationId: string;
+  listing: Record<string, unknown>;
+  onboarding: Record<string, unknown>;
+  email: string;
+  nowIso: string;
+}) {
+  const token = normalizeText(onboarding.token);
+  const listingId = normalizeText(listing.id);
+  if (!token || !listingId) return;
+
+  const payload = {
+    organisation_id: uuidOrNull(organisationId),
+    client_email: isUsableEmail(email) ? email : null,
+    client_contact_id: null,
+    context_type: "selling",
+    transaction_id: null,
+    seller_lead_id: uuidOrNull(firstText(listing.seller_lead_id, listing.originating_crm_lead_id)),
+    listing_id: listingId,
+    mandate_packet_id: uuidOrNull(packetId),
+    seller_workspace_token: token,
+    status: "active",
+    updated_at: nowIso,
+  };
+
+  const existing = await supabase
+    .from("client_portal_contexts")
+    .select("id")
+    .eq("seller_workspace_token", token)
+    .limit(1)
+    .maybeSingle();
+  if (existing.error) {
+    console.error("[mandate-signing] seller portal context lookup failed", existing.error);
+    return;
+  }
+
+  const result = existing.data?.id
+    ? await supabase.from("client_portal_contexts").update(payload).eq("id", existing.data.id)
+    : await supabase.from("client_portal_contexts").insert({
+      ...payload,
+      created_at: nowIso,
+    });
+  if (result.error) console.error("[mandate-signing] seller portal context sync failed", result.error);
+}
+
+async function sendSellerPortalInviteAfterMandateSigned({
+  supabase,
+  packet,
+  packetId,
+  organisationId,
+  versionId,
+  finalBody,
+  allSigners,
+  nowIso,
+}: {
+  supabase: any;
+  packet: Record<string, unknown>;
+  packetId: string;
+  organisationId: string;
+  versionId: string;
+  finalBody: Record<string, unknown>;
+  allSigners: Record<string, unknown>[];
+  nowIso: string;
+}) {
+  if (lower(packet.packet_type) !== "mandate") return { skipped: true, reason: "not_mandate" };
+  if (await sellerPortalMandateInviteAlreadySent({ supabase, packetId })) {
+    return { skipped: true, reason: "already_sent" };
+  }
+
+  const listing = await resolveSellerPortalInviteListing({ supabase, packet, packetId, organisationId, finalBody });
+  if (!listing?.id) {
+    await appendSellerPortalMandateInviteOutcome({
+      supabase,
+      packetId,
+      organisationId,
+      versionId,
+      eventType: SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SKIPPED_EVENT,
+      finalBody,
+      payload: {
+        portalInviteStatus: "skipped",
+        skipReason: "listing_missing",
+      },
+    });
+    return { skipped: true, reason: "listing_missing" };
+  }
+
+  const onboarding = await resolveSellerPortalInviteOnboarding({ supabase, listing, packet });
+  if (!onboarding?.id) {
+    await appendSellerPortalMandateInviteOutcome({
+      supabase,
+      packetId,
+      organisationId,
+      versionId,
+      eventType: SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SKIPPED_EVENT,
+      listingId: normalizeText(listing.id),
+      finalBody,
+      payload: {
+        portalInviteStatus: "skipped",
+        skipReason: "seller_onboarding_missing",
+      },
+    });
+    return { skipped: true, reason: "seller_onboarding_missing" };
+  }
+  const { payload, reason, token } = buildSellerPortalInviteEmailPayload({
+    packet,
+    listing,
+    onboarding,
+    allSigners,
+    organisationId,
+  });
+
+  if (!payload) {
+    await appendSellerPortalMandateInviteOutcome({
+      supabase,
+      packetId,
+      organisationId,
+      versionId,
+      eventType: SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SKIPPED_EVENT,
+      listingId: normalizeText(listing.id),
+      token,
+      finalBody,
+      payload: {
+        portalInviteStatus: "skipped",
+        skipReason: reason || "email_or_portal_link_missing",
+      },
+    });
+    return { skipped: true, reason: reason || "email_or_portal_link_missing" };
+  }
+
+  await syncSellerPortalInviteContext({
+    supabase,
+    packetId,
+    organisationId,
+    listing,
+    onboarding: { ...onboarding, token },
+    email: normalizeText(payload.to).toLowerCase(),
+    nowIso,
+  });
+
+  const emailResult = await invokeSendEmail({ body: payload });
+  if (!emailResult.ok) {
+    await appendSellerPortalMandateInviteOutcome({
+      supabase,
+      packetId,
+      organisationId,
+      versionId,
+      eventType: SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_FAILED_EVENT,
+      listingId: normalizeText(listing.id),
+      token,
+      finalBody,
+      payload: {
+        portalInviteStatus: "failed",
+        failedAt: nowIso,
+        recipientEmailPresent: true,
+        emailProviderStatus: emailResult.status,
+        errorMessage: normalizeText(emailResult.body?.error) || "Seller portal email could not be sent.",
+      },
+    });
+    return { sent: false, failed: true, status: emailResult.status };
+  }
+
+  await appendSellerPortalMandateInviteOutcome({
+    supabase,
+    packetId,
+    organisationId,
+    versionId,
+    eventType: SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SENT_EVENT,
+    listingId: normalizeText(listing.id),
+    token,
+    finalBody,
+    payload: {
+      portalInviteStatus: "sent",
+      sentAt: nowIso,
+      recipientEmailPresent: true,
+      deliveryId: normalizeText(emailResult.body?.deliveryId) || null,
+      canonicalInviteId: normalizeText(emailResult.body?.canonicalInviteId) || null,
+    },
+  });
+
+  return {
+    sent: true,
+    deliveryId: normalizeText(emailResult.body?.deliveryId) || null,
+    canonicalInviteId: normalizeText(emailResult.body?.canonicalInviteId) || null,
+  };
+}
+
 function humanizePacketEventMessage(eventType = "", payload: Record<string, unknown> = {}) {
   const type = normalizeText(eventType).toLowerCase();
   const signerName = normalizeText(payload.signerName || payload.signer_name);
@@ -1118,6 +1661,10 @@ function humanizePacketEventMessage(eventType = "", payload: Record<string, unkn
     signer_completed_signing: `${signerLabel} signed the mandate.`,
     all_signers_completed: "All required signers completed the mandate.",
     mandate_signed_by_seller: `${signerLabel} signed the mandate.`,
+    [SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_EVENT]: "Seller portal password setup invite is ready after mandate signature.",
+    [SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SENT_EVENT]: "Seller portal password setup invite was sent after mandate signature.",
+    [SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SKIPPED_EVENT]: "Seller portal password setup invite was skipped after mandate signature.",
+    [SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_FAILED_EVENT]: "Seller portal password setup invite failed after mandate signature.",
   };
   return messages[type] || normalizeText(payload.message) || eventType.replace(/_/g, " ");
 }
@@ -1711,6 +2258,46 @@ Deno.serve(async (req: Request) => {
             console.error("[mandate-signing] seller mandate completion sync failed", {
               mandateId: packetId,
               error: String(syncError),
+            });
+          }
+          try {
+            await appendSellerPortalInviteAfterMandateSignedTrigger({
+              supabase,
+              packet,
+              packetId,
+              organisationId,
+              versionId: packetVersionId,
+              finalBody,
+              nowIso,
+            });
+          } catch (triggerError) {
+            console.error("[mandate-signing] seller portal invite trigger marker failed", {
+              mandateId: packetId,
+              error: String(triggerError),
+            });
+          }
+          try {
+            const portalInviteResult = await sendSellerPortalInviteAfterMandateSigned({
+              supabase,
+              packet,
+              packetId,
+              organisationId,
+              versionId: packetVersionId,
+              finalBody,
+              allSigners: completionSigners,
+              nowIso,
+            });
+            console.log("[mandate-signing] seller portal invite after mandate signed result", {
+              mandateId: packetId,
+              sent: Boolean(portalInviteResult?.sent),
+              skipped: Boolean(portalInviteResult?.skipped),
+              failed: Boolean(portalInviteResult?.failed),
+              reason: normalizeText(portalInviteResult?.reason) || null,
+            });
+          } catch (portalInviteError) {
+            console.error("[mandate-signing] seller portal invite after mandate signed failed", {
+              mandateId: packetId,
+              error: String(portalInviteError),
             });
           }
           try {

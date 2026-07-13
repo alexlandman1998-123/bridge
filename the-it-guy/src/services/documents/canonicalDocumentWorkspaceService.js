@@ -12,6 +12,7 @@ import {
   evaluateAllGateReadinessFromRequirements,
   evaluateGateReadinessFromRequirements,
 } from './canonicalWorkflowGateService'
+import { resolveCrossModuleDocumentReference } from './crossModuleDocumentKeyMapService'
 
 export const CANONICAL_DOCUMENT_WORKSPACE_FLAG = 'VITE_CANONICAL_DOCUMENT_WORKSPACE_ENABLED'
 export const CANONICAL_READINESS_UI_FLAG = 'VITE_CANONICAL_READINESS_UI_ENABLED'
@@ -249,6 +250,11 @@ export function normalizeCanonicalRequirement(instance = {}, { documentCenter = 
   const pack = getPack(instance)
   const packKey = normalizeText(instance.pack_key || definition.pack_key || pack.key || 'uncategorised')
   const definitionKey = normalizeText(instance.document_definition_key || definition.key)
+  const documentReference = resolveCrossModuleDocumentReference(definitionKey, {
+    packKey,
+    requestedFromRole: instance.requested_from_role || instance.requestedFromRole,
+    ownerRole: instance.document_owner_role || instance.documentOwnerRole,
+  })
   const status = normalizeText(instance.status || 'pending').toLowerCase()
   const requirementLevel = normalizeText(instance.requirement_level || definition.default_requirement_level || 'required').toLowerCase()
   const uploadedDocument = getUploadedDocumentForRequirement({ ...instance, documentDefinitionKey: definitionKey }, documentCenter)
@@ -276,6 +282,14 @@ export function normalizeCanonicalRequirement(instance = {}, { documentCenter = 
     id: normalizeText(instance.id),
     documentDefinitionKey: definitionKey,
     document_definition_key: definitionKey,
+    canonicalDocumentKey: documentReference.canonicalDocumentKey,
+    crossModuleDocumentKey: documentReference.crossModuleDocumentKey,
+    crossModuleDocumentMapVersion: documentReference.crossModuleDocumentMapVersion,
+    crossModuleDocumentKnown: documentReference.crossModuleDocumentKnown,
+    documentOwnerRole: documentReference.documentOwnerRole,
+    documentResponsibleRoles: documentReference.documentResponsibleRoles,
+    documentPackKey: documentReference.documentPackKey,
+    documentCategory: documentReference.documentCategory,
     packKey,
     pack_key: packKey,
     pack,
@@ -305,6 +319,7 @@ export function normalizeCanonicalRequirement(instance = {}, { documentCenter = 
       requirementInstanceId: normalizeText(instance.id),
       requirementKey: definitionKey,
       documentDefinitionKey: definitionKey,
+      canonicalDocumentKey: documentReference.canonicalDocumentKey,
       documentType: definitionKey,
       category: packKey,
     },

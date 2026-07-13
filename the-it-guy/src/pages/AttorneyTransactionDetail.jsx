@@ -8486,6 +8486,66 @@ function AttorneyTransactionDetail() {
       transactionFinanceWorkflow,
     ],
   )
+  const documentHealthSummary = useMemo(() => {
+    const kpis = documentReadiness.kpis || {}
+    const statusRank = {
+      missing: 0,
+      requested: 1,
+      rejected: 2,
+      pending_review: 3,
+      uploaded: 4,
+      verified: 5,
+    }
+    const requiredDocuments = [...requiredDocumentRows].sort((left, right) => {
+      const leftRank = statusRank[left.status] ?? 9
+      const rightRank = statusRank[right.status] ?? 9
+      if (leftRank !== rightRank) return leftRank - rightRank
+      return String(left.displayName || '').localeCompare(String(right.displayName || ''))
+    })
+    const recentActivity = [
+      ...allDocumentLibraryRows.map((row) => ({
+        id: `document:${row.id}`,
+        label: row.displayName || 'Document uploaded',
+        detail: `${row.categoryLabel || 'Document'} • ${getDocumentCommandStatusLabel(row.status)}`,
+        timestamp: row.updatedAt || row.uploadedAt || '',
+        fileUrl: row.fileUrl || '',
+      })),
+      ...additionalDocumentRequests.map((request) => ({
+        id: `request:${request.id || request.title}`,
+        label: request.title || request.documentType || 'Document requested',
+        detail: `${getAdditionalRequestStatusLabel(request.status)} • ${getAdditionalRequestOptionLabel(ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS, request.requestedFrom, 'Buyer')}`,
+        timestamp: request.updatedAt || request.createdAt || '',
+        fileUrl: '',
+      })),
+    ]
+      .filter((item) => item.label)
+      .sort((left, right) => new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime())
+      .slice(0, 5)
+
+    return {
+      applicationId: documentReadiness.applicationId,
+      score: documentReadiness.score,
+      scoreLabel: documentReadiness.scoreLabel,
+      summaryText: documentReadiness.summaryText,
+      submissionReady: documentReadiness.submissionReady,
+      blockerCount: documentReadiness.blockerCount,
+      requiredDocuments,
+      recentActivity,
+      kpis,
+      requiredCount: kpis.required || requiredDocuments.length,
+      uploadedCount: kpis.received || 0,
+      missingCount: kpis.missing || 0,
+      pendingReviewCount: kpis.pendingReview || 0,
+      approvedCount: kpis.verified || 0,
+      rejectedCount: kpis.rejected || 0,
+      percentComplete: kpis.required ? Math.round(((kpis.received || 0) / kpis.required) * 100) : 0,
+    }
+  }, [
+    additionalDocumentRequests,
+    allDocumentLibraryRows,
+    documentReadiness,
+    requiredDocumentRows,
+  ])
   const documentLibraryRows = useMemo(() => {
     const activeFilter = String(activeDocumentLibraryCategory || 'all').trim().toLowerCase()
     const search = String(documentLibrarySearch || '').trim().toLowerCase()
@@ -8577,7 +8637,7 @@ function AttorneyTransactionDetail() {
           .map((request) => mapRequestAsLibraryRow(request, group.bankName)),
       )
     } else if (activeFilter !== 'all') {
-      rows = allDocumentLibraryRows.filter((row) => row.category === activeFilter)
+      rows = allDocumentLibraryRows.filter((row) => activeDocumentLibraryCategory === 'all' || row.category === activeDocumentLibraryCategory)
     }
 
     const deduped = []
@@ -11781,51 +11841,67 @@ function AttorneyTransactionDetail() {
 
         {activeWorkspaceMenu === 'documents' ? (
           <section className="space-y-5">
+            <header className="rounded-[18px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h2 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-textStrong">Documents</h2>
+                  <p className="mt-1 text-sm leading-6 text-textMuted">Manage all documents and requirements for this transaction.</p>
+                </div>
+                <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${
+                  documentHealthSummary.submissionReady
+                    ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                    : 'border-orange-100 bg-orange-50 text-orange-700'
+                }`}>
+                  {documentHealthSummary.submissionReady ? 'Requirements ready' : `${documentHealthSummary.blockerCount} blocker${documentHealthSummary.blockerCount === 1 ? '' : 's'}`}
+                </span>
+              </div>
+            </header>
+
             <section className="rounded-[18px] border border-[#dde4ee] bg-white p-6 shadow-[0_16px_34px_rgba(15,23,42,0.055)]">
               <div className="grid gap-6 xl:grid-cols-[220px_minmax(0,1fr)_minmax(360px,0.9fr)] xl:items-center">
                 <div className="flex items-center justify-center">
                   <div
                     className="relative flex size-40 items-center justify-center rounded-full"
                     style={{
-                      background: `conic-gradient(${documentReadiness.score >= 61 ? '#2fb344' : documentReadiness.score >= 31 ? '#f59f00' : '#e03131'} ${documentReadiness.score}%, #edf2f7 0)`,
+                      background: `conic-gradient(${documentHealthSummary.score >= 61 ? '#2fb344' : documentHealthSummary.score >= 31 ? '#f59f00' : '#e03131'} ${documentHealthSummary.score}%, #edf2f7 0)`,
                     }}
                   >
                     <div className="flex size-28 flex-col items-center justify-center rounded-full bg-white shadow-inner">
-                      <strong className="text-3xl font-semibold text-[#142132]">{documentReadiness.score}%</strong>
-                      <span className="mt-1 text-xs font-semibold text-[#60758d]">{documentReadiness.scoreLabel}</span>
+                      <strong className="text-3xl font-semibold text-[#142132]">{documentHealthSummary.score}%</strong>
+                      <span className="mt-1 text-xs font-semibold text-[#60758d]">{documentHealthSummary.scoreLabel}</span>
                     </div>
                   </div>
                 </div>
                 <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#71839a]">Document Readiness</p>
-                  <h3 className="mt-2 text-xl font-semibold text-[#142132]">{documentReadiness.summaryText}</h3>
+                  <h3 className="mt-2 text-xl font-semibold text-[#142132]">{documentHealthSummary.summaryText}</h3>
                   <p className="mt-2 max-w-xl text-sm leading-6 text-[#60758d]">
-                    {documentReadiness.submissionReady
+                    {documentHealthSummary.submissionReady
                       ? 'All critical documents are received. This application can move toward bank submission once the consultant is satisfied.'
                       : 'Complete the missing or rejected critical items before submitting this application to banks.'}
                   </p>
                   <div className={`mt-4 inline-flex max-w-full items-start gap-3 rounded-[14px] border px-4 py-3 text-sm ${
-                    documentReadiness.submissionReady
+                    documentHealthSummary.submissionReady
                       ? 'border-emerald-100 bg-emerald-50 text-emerald-800'
                       : 'border-orange-100 bg-orange-50 text-orange-800'
                   }`}>
-                    {documentReadiness.submissionReady ? <CheckCircle2 size={18} className="mt-0.5 shrink-0" /> : <AlertTriangle size={18} className="mt-0.5 shrink-0" />}
+                    {documentHealthSummary.submissionReady ? <CheckCircle2 size={18} className="mt-0.5 shrink-0" /> : <AlertTriangle size={18} className="mt-0.5 shrink-0" />}
                     <div>
-                      <strong className="block">{documentReadiness.submissionReady ? 'Ready For Submission' : 'Not Ready For Submission'}</strong>
+                      <strong className="block">{documentHealthSummary.submissionReady ? 'Ready For Submission' : 'Not Ready For Submission'}</strong>
                       <span className="mt-1 block text-xs leading-5">
-                        {documentReadiness.submissionReady ? 'All critical documents received.' : `${documentReadiness.blockerCount} critical item${documentReadiness.blockerCount === 1 ? '' : 's'} missing or rejected.`}
+                        {documentHealthSummary.submissionReady ? 'All critical documents received.' : `${documentHealthSummary.blockerCount} critical item${documentHealthSummary.blockerCount === 1 ? '' : 's'} missing or rejected.`}
                       </span>
                     </div>
                   </div>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {[
-                    ['Required', documentReadiness.kpis.required, FileText, 'text-blue-700 bg-blue-50'],
-                    ['Received', documentReadiness.kpis.received, Upload, 'text-emerald-700 bg-emerald-50'],
-                    ['Missing', documentReadiness.kpis.missing, AlertTriangle, 'text-red-700 bg-red-50'],
-                    ['Verified', documentReadiness.kpis.verified, FileCheck2, 'text-emerald-700 bg-emerald-50'],
-                    ['Pending Review', documentReadiness.kpis.pendingReview, Clock3, 'text-orange-700 bg-orange-50'],
-                    ['Rejected', documentReadiness.kpis.rejected, X, 'text-red-700 bg-red-50'],
+                    ['Required', documentHealthSummary.requiredCount, FileText, 'text-blue-700 bg-blue-50'],
+                    ['Received', documentHealthSummary.uploadedCount, Upload, 'text-emerald-700 bg-emerald-50'],
+                    ['Missing', documentHealthSummary.missingCount, AlertTriangle, 'text-red-700 bg-red-50'],
+                    ['Verified', documentHealthSummary.approvedCount, FileCheck2, 'text-emerald-700 bg-emerald-50'],
+                    ['Pending Review', documentHealthSummary.pendingReviewCount, Clock3, 'text-orange-700 bg-orange-50'],
+                    ['Rejected', documentHealthSummary.rejectedCount, X, 'text-red-700 bg-red-50'],
                   ].map(([label, value, Icon, tone]) => (
                     <article key={label} className="flex items-center gap-3 rounded-[14px] border border-[#e6edf5] bg-white px-4 py-3">
                       <span className={`inline-flex size-10 shrink-0 items-center justify-center rounded-[10px] ${tone}`}>
@@ -11845,8 +11921,8 @@ function AttorneyTransactionDetail() {
               <section className="min-w-0 rounded-[12px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <h3 className="text-base font-semibold text-[#142132]">Critical Documents</h3>
-                    <p className="mt-1 text-sm text-[#60758d]">Required for bank submission.</p>
+                    <h3 className="text-base font-semibold text-[#142132]">Required Documents</h3>
+                    <p className="mt-1 text-sm text-[#60758d]">Canonical requirements currently active for this transaction.</p>
                   </div>
                   <button
                     type="button"
@@ -11868,8 +11944,8 @@ function AttorneyTransactionDetail() {
                       </tr>
                     </thead>
                     <tbody>
-                      {documentReadiness.criticalDocuments.length ? (
-                        documentReadiness.criticalDocuments.slice(0, 5).map((row) => {
+                      {documentHealthSummary.requiredDocuments.length ? (
+                        documentHealthSummary.requiredDocuments.slice(0, 5).map((row) => {
                           const document = row.linkedDocument || {}
                           const showReviewActions = canReviewDocumentRequirement(row.requirement, document)
                           const showReplaceAction = canReplaceDocumentRequirement(row.requirement, document)
@@ -11929,7 +12005,7 @@ function AttorneyTransactionDetail() {
                       ) : (
                         <tr>
                           <td colSpan="5" className="py-8 text-center text-sm text-[#60758d]">
-                            No critical document requirements are blocking bank submission.
+                            No required document rows are active for this transaction.
                           </td>
                         </tr>
                       )}
@@ -11990,6 +12066,33 @@ function AttorneyTransactionDetail() {
               </section>
             </section>
 
+            <section className="rounded-[12px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-[#142132]">Quick Actions</h3>
+                  <p className="mt-1 text-sm text-[#60758d]">Request, upload, or filter transaction documents without leaving the command centre.</p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <Button type="button" variant="secondary" onClick={handleQuickRequestDocuments}>
+                  <FileText size={14} />
+                  Request Document
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => openDocumentUploadModal()}>
+                  <Upload size={14} />
+                  Upload Document
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => setActiveDocumentLibraryCategory('missing')}>
+                  <AlertTriangle size={14} />
+                  View Missing
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => setActiveDocumentLibraryCategory('all')}>
+                  <FileCheck2 size={14} />
+                  View Library
+                </Button>
+              </div>
+            </section>
+
             <section className="grid items-stretch gap-5 xl:grid-cols-2">
               <section className="rounded-[12px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -12029,26 +12132,26 @@ function AttorneyTransactionDetail() {
               <section className="rounded-[12px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <h3 className="text-base font-semibold text-[#142132]">Recent Uploads</h3>
-                    <p className="mt-1 text-sm text-[#60758d]">Latest files added to the application.</p>
+                    <h3 className="text-base font-semibold text-[#142132]">Recent Activity</h3>
+                    <p className="mt-1 text-sm text-[#60758d]">Latest document uploads, reviews, and requests.</p>
                   </div>
                   <button type="button" className="text-sm font-semibold text-primary hover:text-primaryDark" onClick={() => setActiveDocumentLibraryCategory('all')}>
                     View all uploads
                   </button>
                 </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  {documentReadiness.recentUploads.length ? (
-                    documentReadiness.recentUploads.map((row) => (
+                  {documentHealthSummary.recentActivity.length ? (
+                    documentHealthSummary.recentActivity.map((row) => (
                       <article key={row.id} className="min-w-0 rounded-[12px] border border-[#e6edf5] bg-white px-3 py-3">
                         <div className="flex items-start gap-3">
                           <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-emerald-50 text-emerald-700">
                             <FileText size={16} />
                           </span>
                           <div className="min-w-0">
-                            <strong className="block truncate text-sm text-[#142132]">{row.displayName}</strong>
-                            <p className="mt-1 text-xs text-[#60758d]">{formatShortDayMonth(row.uploadedAt || row.updatedAt)}</p>
-                            <span className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
-                              {getDocumentCommandStatusLabel(row.status)}
+                            <strong className="block truncate text-sm text-[#142132]">{row.label}</strong>
+                            <p className="mt-1 text-xs text-[#60758d]">{row.timestamp ? formatShortDayMonth(row.timestamp) : '-'}</p>
+                            <span className="mt-2 inline-flex rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-2 py-0.5 text-[0.68rem] font-semibold text-[#52677f]">
+                              {row.detail}
                             </span>
                           </div>
                         </div>
@@ -12056,7 +12159,7 @@ function AttorneyTransactionDetail() {
                     ))
                   ) : (
                     <p className="rounded-[12px] border border-dashed border-[#dbe5ef] bg-[#f8fbff] px-4 py-6 text-sm text-[#60758d] sm:col-span-2 xl:col-span-4">
-                      No uploads yet. Uploaded buyer and bank documents will appear here.
+                      No document activity yet. Uploads and requests will appear here.
                     </p>
                   )}
                 </div>

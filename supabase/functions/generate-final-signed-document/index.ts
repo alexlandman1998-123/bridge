@@ -415,6 +415,67 @@ function firstPdfText(...values: unknown[]) {
   return values.map((value) => pdfSafeText(value)).find(Boolean) || "";
 }
 
+function isEmptyPdfValue(value: unknown) {
+  const normalized = pdfSafeText(value).toLowerCase().replace(/[\s._-]+/g, "_");
+  return !normalized || ["na", "n_a", "n/a", "none", "unknown", "tbc", "missing", "not_applicable", "not_provided"].includes(normalized);
+}
+
+function firstMeaningfulPdfText(...values: unknown[]) {
+  return values.map((value) => pdfSafeText(value)).find((value) => !isEmptyPdfValue(value)) || "";
+}
+
+function toPdfTitleCase(value: unknown) {
+  return pdfSafeText(value)
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function formatFallbackPlaceholderValue(key: unknown, value: unknown) {
+  const text = pdfSafeText(value);
+  if (!text) return "";
+  const normalizedKey = lower(key);
+  if (
+    normalizedKey.includes("marital") ||
+    normalizedKey.includes("entity_type") ||
+    normalizedKey === "property_type" ||
+    normalizedKey === "property_title_type" ||
+    normalizedKey === "mandate_template_variant" ||
+    normalizedKey === "mandate_clause_profile" ||
+    normalizedKey === "seller_clause_profile" ||
+    normalizedKey === "property_clause_profile" ||
+    normalizedKey === "vat_handling"
+  ) {
+    return toPdfTitleCase(text);
+  }
+  return text;
+}
+
+function shouldSkipFallbackSectionRow(sectionKey: string, key: unknown, rawValue: unknown, placeholders: Record<string, unknown>) {
+  if (sectionKey !== "property_details") return false;
+  const normalizedKey = lower(key).replace(/\./g, "_");
+  const optionalPropertyKeys = new Set([
+    "property_unit_number",
+    "unit_number",
+    "property_section_number",
+    "section_number",
+    "sectional_title_number",
+    "property_sectional_title_scheme",
+    "property_complex_name",
+    "property_estate_name",
+    "property_estate_complex_name",
+  ]);
+  if (!optionalPropertyKeys.has(normalizedKey)) return false;
+  const propertyType = lower(placeholders.property_title_type || placeholders["property.title_type_raw"] || placeholders.property_type || placeholders["property.type"]);
+  const propertyLooksSectional =
+    propertyType.includes("sectional") ||
+    propertyType.includes("share_block") ||
+    propertyType.includes("apartment") ||
+    propertyType.includes("flat") ||
+    propertyType.includes("unit");
+  return !propertyLooksSectional && isEmptyPdfValue(rawValue);
+}
+
 function isBridgeAssetUrl(value: unknown) {
   const text = normalizeText(value).toLowerCase();
   return text.includes("/brand/bridge") || text.includes("bridge_9") || text.includes("bridge9");
@@ -1520,21 +1581,67 @@ async function buildFallbackMandatePdfBytes({
     .map((candidate) => ({ ...candidate, value: normalizeText(candidate.value) }))
     .find((candidate) => candidate.value && !isBridgeAssetUrl(candidate.value)) || { value: "", needsDarkPlate: false };
   const agencyLogoUrl = agencyLogoChoice.value;
-  const bridgeLogoUrl = firstPdfText(
-    ...[
-      branding.bridgeLogoLightUrl,
-      placeholders.bridgeLogoLightUrl,
-      placeholders["bridge.logo_light_url"],
-      placeholders.bridge_legal_logo_light_url,
-      placeholders["bridge_legal_logo_light_url"],
-    ].filter((candidate) => !isBridgeAssetUrl(candidate)),
-  );
   const agencyLogo = await embedImageAsset(pdf, agencyLogoUrl);
-  const bridgeLogo = await embedImageAsset(pdf, bridgeLogoUrl);
+  const agencyRegistrationNumber = firstMeaningfulPdfText(placeholders.agency_registration_number);
+  const agencyVatNumber = firstMeaningfulPdfText(placeholders.agency_vat_number);
+  const agencyFspNumber = firstMeaningfulPdfText(placeholders.agency_fsp_number);
+  const companyDetailLines = [
+    firstMeaningfulPdfText(placeholders.agency_legal_name, placeholders.organisation_legal_name, orgName),
+    agencyRegistrationNumber ? `Reg: ${agencyRegistrationNumber}` : "",
+    agencyVatNumber ? `VAT: ${agencyVatNumber}` : "",
+    agencyFspNumber ? `FSP: ${agencyFspNumber}` : "",
+    firstMeaningfulPdfText(placeholders.agency_address, placeholders.organisation_physical_address, placeholders["organisation.physical_address"]),
+  ].filter((line) => !isEmptyPdfValue(line));
   const documentReference =
     firstPdfText(placeholders.document_reference, placeholders.transaction_reference) ||
     firstPdfText(packet.title) ||
     "Mandate Agreement";
+
+  const drawRightAlignedLine = ({
+    page,
+    text,
+    y,
+    size,
+    font,
+    color,
+    maxWidth,
+  }: {
+    page: any;
+    text: string;
+    y: number;
+    size: number;
+    font: any;
+    color: ReturnType<typeof rgb>;
+    maxWidth: number;
+  }) => {
+    const line = pdfSafeText(text);
+    if (!line) return;
+    const x = pageWidth - marginX - Math.min(font.widthOfTextAtSize(line, size), maxWidth);
+    page.drawText(line, { x, y, size, font, color });
+  };
+
+  const drawCompanyDetails = (page: any) => {
+    const maxWidth = 285;
+    let detailY = pageHeight - 82;
+    const lines = companyDetailLines.length ? companyDetailLines : [orgName];
+    for (const [index, line] of lines.entries()) {
+      const font = index === 0 ? boldFont : regularFont;
+      const size = index === 0 ? 10.5 : 9.2;
+      for (const wrappedLine of wrapPdfText(line, maxWidth, font, size).slice(0, index === lines.length - 1 ? 2 : 1)) {
+        drawRightAlignedLine({
+          page,
+          text: wrappedLine,
+          y: detailY,
+          size,
+          font,
+          color: index === 0 ? navy : muted,
+          maxWidth,
+        });
+        detailY -= index === 0 ? 13 : 11.5;
+      }
+      if (detailY < pageHeight - 142) break;
+    }
+  };
 
   const drawBrandHeader = (page: any) => {
     page.drawRectangle({
@@ -1585,30 +1692,7 @@ async function buildFallbackMandatePdfBytes({
         });
       }
     }
-    const drewBridgeLogo = drawContainedImage({
-      page,
-      image: bridgeLogo,
-      x: pageWidth - marginX - 150,
-      y: pageHeight - 126,
-      maxWidth: 150,
-      maxHeight: 54,
-    });
-    if (!drewBridgeLogo) {
-      page.drawText("Arch", {
-        x: pageWidth - marginX - 118,
-        y: pageHeight - 105,
-        size: 30,
-        font: boldFont,
-        color: rgb(0.10, 0.22, 0.30),
-      });
-      page.drawText("9", {
-        x: pageWidth - marginX - 47,
-        y: pageHeight - 105,
-        size: 30,
-        font: boldFont,
-        color: rgb(0.20, 0.78, 0.52),
-      });
-    }
+    drawCompanyDetails(page);
     page.drawLine({
       start: { x: marginX, y: pageHeight - 155 },
       end: { x: pageWidth - marginX, y: pageHeight - 155 },
@@ -1730,13 +1814,17 @@ async function buildFallbackMandatePdfBytes({
     }
 
     const rows = normalizeSectionRows(section);
-    for (const [rowIndex, [key, rawLabel]] of rows.entries()) {
+    let renderedRowIndex = 0;
+    for (const [key, rawLabel] of rows) {
+      const rawValue = getPlaceholderValue(placeholders, key);
+      if (shouldSkipFallbackSectionRow(sectionKey, key, rawValue, placeholders)) continue;
+      renderedRowIndex += 1;
       const label = pdfSafeText(rawLabel || key);
-      const value = pdfSafeText(getPlaceholderValue(placeholders, key) || "Not provided");
+      const value = formatFallbackPlaceholderValue(key, rawValue) || "Not provided";
       const valueLines = wrapPdfText(value, 400, regularFont, 11.5);
       const rowHeight = Math.max(24, valueLines.length * 15);
       ensureSpace(rowHeight + 5);
-      page.drawText(`${index + 1}.${rowIndex + 1}`, {
+      page.drawText(`${index + 1}.${renderedRowIndex}`, {
         x: marginX,
         y,
         size: 10.5,

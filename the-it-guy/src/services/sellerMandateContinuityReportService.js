@@ -151,6 +151,10 @@ function getActivityEvents(record = {}) {
   return getArray(record.activityEvents || record.activity_events || record.events || record.activities || record.privateListingActivity || record.private_listing_activity)
 }
 
+function getPacketEvents(record = {}) {
+  return getArray(record.packetEvents || record.packet_events || record.documentPacketEvents || record.document_packet_events)
+}
+
 function buildMandatePacketSummary(packet = null, version = null) {
   if (!packet && !version) return null
   const packetId = firstText(packet?.id, version?.packet_id)
@@ -183,6 +187,7 @@ function getActionForCheck(check = {}) {
   if (key === 'seller_visible_signed_document') return 'Link a seller-visible signed mandate document or final signed packet artifact.'
   if (key === 'seller_visible_activity') return 'Create a client-visible mandate signed activity event for the seller portal timeline.'
   if (key === 'seller_portal_context_linked') return 'Refresh the seller portal context so it references the same mandate packet.'
+  if (key === 'seller_portal_invite_sent_after_mandate_signed') return 'Retry the seller portal password setup invite for this signed mandate.'
   return check.detail || `Review ${check.label || check.key}.`
 }
 
@@ -211,6 +216,7 @@ export function buildSellerMandateContinuityAuditRecord(record = {}) {
     documents: getDocuments(record),
     mandatePacket,
     activityEvents: getActivityEvents(record),
+    packetEvents: getPacketEvents(record),
     portalContext,
     sellerWorkspaceToken,
   })
@@ -230,6 +236,17 @@ export function buildSellerMandateContinuityAuditRecord(record = {}) {
     finalSignedFilePath: model.finalSignedFilePath,
     finalSignedFileUrl: model.finalSignedFileUrl,
     signedActivityId: model.signedActivityId,
+    portalInviteStatus: model.portalInviteStatus,
+    portalInviteEventId: model.portalInviteEventId,
+    portalInviteSentAt: model.portalInviteSentAt,
+    portalInviteFailedAt: model.portalInviteFailedAt,
+    portalInviteBlockedAt: model.portalInviteBlockedAt,
+    portalInviteReadyAt: model.portalInviteReadyAt,
+    portalInviteDeliveryId: model.portalInviteDeliveryId,
+    portalInviteCanonicalInviteId: model.portalInviteCanonicalInviteId,
+    portalInviteSkipReason: model.portalInviteSkipReason,
+    portalInviteDetail: model.portalInviteDetail,
+    portalInviteActionRequired: model.portalInviteActionRequired,
     summary: model.summary,
     blockers: model.blockers,
     warnings: model.warnings,
@@ -251,6 +268,13 @@ function summarize(records = []) {
     packetArtifactFallback: 0,
     missingSellerActivity: 0,
     portalWarnings: 0,
+    portalInviteSent: 0,
+    portalInviteReady: 0,
+    portalInviteSkipped: 0,
+    portalInviteFailed: 0,
+    portalInviteBlocked: 0,
+    portalInviteMissing: 0,
+    portalInviteNeedsAction: 0,
     checks: {},
   }
 
@@ -260,6 +284,13 @@ function summarize(records = []) {
     else summary.blocked += 1
     if (record.signedDocumentSource === 'listing_document') summary.linkedSignedDocument += 1
     if (record.signedDocumentSource === 'packet_artifact') summary.packetArtifactFallback += 1
+    if (record.portalInviteStatus === 'sent') summary.portalInviteSent += 1
+    else if (record.portalInviteStatus === 'ready') summary.portalInviteReady += 1
+    else if (record.portalInviteStatus === 'skipped') summary.portalInviteSkipped += 1
+    else if (record.portalInviteStatus === 'failed') summary.portalInviteFailed += 1
+    else if (record.portalInviteStatus === 'blocked') summary.portalInviteBlocked += 1
+    else summary.portalInviteMissing += 1
+    if (record.portalInviteActionRequired) summary.portalInviteNeedsAction += 1
 
     getArray(record.checks).forEach((check) => {
       if (check.state === 'complete' || check.state === 'not_applicable') return
@@ -270,6 +301,7 @@ function summarize(records = []) {
       if (key === 'seller_visible_signed_document') summary.missingSignedDocument += 1
       if (key === 'seller_visible_activity') summary.missingSellerActivity += 1
       if (key === 'seller_portal_context_linked') summary.portalWarnings += 1
+      if (key === 'seller_portal_invite_sent_after_mandate_signed') summary.portalWarnings += 1
     })
   })
 
@@ -351,7 +383,7 @@ export async function fetchSellerMandateContinuityRows(client, { limit = 50, org
   const packetIds = unique(listings.map((listing) => listing.mandate_packet_id))
   const sellerTokens = unique(listings.map((listing) => listing.seller_workspace_token))
 
-  const [documents, activities, leads, packets, packetVersions, portalContexts] = await Promise.all([
+  const [documents, activities, leads, packets, packetVersions, packetEvents, portalContexts] = await Promise.all([
     listingIds.length
       ? safeQuery('private_listing_documents', client.from('private_listing_documents').select('*').in('private_listing_id', listingIds), queryWarnings)
       : [],
@@ -374,6 +406,16 @@ export async function fetchSellerMandateContinuityRows(client, { limit = 50, org
           queryWarnings,
         )
       : [],
+    packetIds.length
+      ? safeQuery(
+          'document_packet_events',
+          client
+            .from('document_packet_events')
+            .select('id, packet_id, organisation_id, version_id, event_type, event_payload_json, created_by, created_at')
+            .in('packet_id', packetIds),
+          queryWarnings,
+        )
+      : [],
     sellerTokens.length
       ? safeQuery('client_portal_contexts', client.from('client_portal_contexts').select('*').in('seller_workspace_token', sellerTokens), queryWarnings)
       : [],
@@ -384,6 +426,7 @@ export async function fetchSellerMandateContinuityRows(client, { limit = 50, org
   const leadsByLeadId = groupBy(leads, 'lead_id')
   const packetsById = groupBy(packets, 'id')
   const packetVersionsByPacketId = groupBy(packetVersions, 'packet_id')
+  const packetEventsByPacketId = groupBy(packetEvents, 'packet_id')
   const portalContextsByToken = groupBy(portalContexts, 'seller_workspace_token')
 
   return listings.map((listing) => {
@@ -397,6 +440,7 @@ export async function fetchSellerMandateContinuityRows(client, { limit = 50, org
       lead: leadsByLeadId[leadId]?.[0] || {},
       documents: documentsByListing[listing.id] || [],
       activityEvents: activitiesByListing[listing.id] || [],
+      packetEvents: packetEventsByPacketId[packetId] || [],
       mandatePacket: buildMandatePacketSummary(packet, latestVersion),
       portalContext: portalContextsByToken[sellerToken]?.[0] || {},
       sellerWorkspaceToken: sellerToken,
@@ -446,6 +490,9 @@ export function renderSellerMandateContinuityMarkdown(report = {}) {
     `- Linked signed documents: ${Number(summary.linkedSignedDocument || 0)}`,
     `- Packet artifact fallback: ${Number(summary.packetArtifactFallback || 0)}`,
     `- Missing seller activity: ${Number(summary.missingSellerActivity || 0)}`,
+    `- Seller portal invite sent: ${Number(summary.portalInviteSent || 0)}`,
+    `- Seller portal invite blocked: ${Number(summary.portalInviteBlocked || 0)}`,
+    `- Seller portal invite action required: ${Number(summary.portalInviteNeedsAction || 0)}`,
     '',
     '## Records',
     '',
@@ -456,11 +503,11 @@ export function renderSellerMandateContinuityMarkdown(report = {}) {
     return lines.join('\n')
   }
 
-  lines.push('| Status | Listing | Packet | Action |')
-  lines.push('| --- | --- | --- | --- |')
+  lines.push('| Status | Listing | Packet | Portal invite | Action |')
+  lines.push('| --- | --- | --- | --- | --- |')
   for (const record of report.records) {
     const action = record.actionItems?.[0] || (record.ready ? 'No action required.' : 'Review continuity checks.')
-    lines.push(`| ${record.status} | ${record.title || record.listingId || 'Unlabelled listing'} | ${record.packetId || '-'} | ${action} |`)
+    lines.push(`| ${record.status} | ${record.title || record.listingId || 'Unlabelled listing'} | ${record.packetId || '-'} | ${record.portalInviteStatus || 'missing'} | ${action} |`)
   }
   lines.push('')
   return lines.join('\n')

@@ -5,6 +5,7 @@ import {
 } from './purchaserPersonas.js'
 import { normalizeFinanceType } from '../core/transactions/financeType.js'
 import { resolveBuyerOnboardingFlow } from './buyerOnboardingFlow.js'
+import { resolveCrossModuleDocumentReference } from '../services/documents/crossModuleDocumentKeyMapService'
 
 // Phase 9 canonical document consolidation:
 // This legacy buyer requirement engine is retained as a compatibility fallback.
@@ -68,6 +69,25 @@ function getDocumentsFromInput(input = {}, uploadedDocuments = []) {
   return []
 }
 
+function withCrossModuleDocumentMetadata(requirement = {}) {
+  const reference = resolveCrossModuleDocumentReference(requirement.key, {
+    ownerRole: 'buyer',
+    requestedFromRole: requirement.expectedFromRole || 'buyer',
+    groupKey: requirement.groupKey || requirement.requirement_group,
+  })
+  return {
+    ...requirement,
+    canonicalDocumentKey: reference.canonicalDocumentKey,
+    crossModuleDocumentKey: reference.crossModuleDocumentKey,
+    crossModuleDocumentMapVersion: reference.crossModuleDocumentMapVersion,
+    crossModuleDocumentKnown: reference.crossModuleDocumentKnown,
+    documentOwnerRole: reference.documentOwnerRole,
+    documentResponsibleRoles: reference.documentResponsibleRoles,
+    documentPackKey: reference.documentPackKey,
+    documentCategory: reference.documentCategory,
+  }
+}
+
 export function getBuyerRequirementProfile(transactionOrOnboardingData = {}) {
   const transaction = transactionOrOnboardingData?.transaction || transactionOrOnboardingData || {}
   const formData =
@@ -113,13 +133,14 @@ export function getBuyerRequirementProfile(transactionOrOnboardingData = {}) {
       })),
   }))
 
-  const requirementByKey = (derived.requiredDocuments || []).reduce((accumulator, item) => {
+  const requiredDocuments = (derived.requiredDocuments || []).map((item) => withCrossModuleDocumentMetadata(item))
+  const requirementByKey = requiredDocuments.reduce((accumulator, item) => {
     accumulator[item.key] = item
     return accumulator
   }, {})
 
   const criticalGroups = new Set(['buyer_fica', 'sale', 'finance'])
-  const criticalRequirements = (derived.requiredDocuments || []).filter((item) => {
+  const criticalRequirements = requiredDocuments.filter((item) => {
     const level = String(item?.requirementLevel || 'required').trim().toLowerCase()
     if (level !== 'required') return false
     return criticalGroups.has(String(item?.groupKey || '').trim().toLowerCase())
@@ -158,7 +179,7 @@ export function getBuyerRequirementProfile(transactionOrOnboardingData = {}) {
     requiresProofOfFunds: Boolean(derived?.derivedFields?.requires_proof_of_funds),
     requiresEntityDocuments: Boolean(derived?.derivedFields?.requires_entity_documents),
     needsBondOriginator: Boolean(derived?.derivedFields?.needs_bond_originator),
-    requiredDocuments: derived.requiredDocuments || [],
+    requiredDocuments,
     requirementByKey,
     criticalRequirements,
     onboardingSections,

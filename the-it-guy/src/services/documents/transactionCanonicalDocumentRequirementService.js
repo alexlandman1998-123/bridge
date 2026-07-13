@@ -21,6 +21,10 @@ import {
   isLegacyDocumentAdapterWritebackEnabled,
 } from './canonicalDocumentConsolidationService'
 import {
+  resolveCrossModuleDocumentKey,
+  resolveCrossModuleDocumentReference,
+} from './crossModuleDocumentKeyMapService'
+import {
   REQUIREMENT_LEVELS,
   REQUIREMENT_STATUSES,
   buildInstanceSignature,
@@ -242,7 +246,8 @@ function normalizeKey(value) {
 
 function buyerAdapterCanonicalKey(key = '') {
   const normalized = normalizeKey(key)
-  return BUYER_ADAPTER_CANONICAL_KEY_OVERRIDES[normalized] || legacyRequirementKeyToCanonicalKey(normalized)
+  const mapped = BUYER_ADAPTER_CANONICAL_KEY_OVERRIDES[normalized] || legacyRequirementKeyToCanonicalKey(normalized)
+  return resolveCrossModuleDocumentKey(mapped, mapped)
 }
 
 function attorneyFallbackPackKey(requirement = {}, definition = {}) {
@@ -789,17 +794,31 @@ function dedupeCandidateRows(candidates = []) {
   return [...bySignature.values()]
 }
 
-function mapProjectionRowToRequirement(row = {}) {
+export function mapProjectionRowToRequirement(row = {}) {
   const required = row.required !== false
   const status = normalizeKey(row.status || REQUIREMENT_STATUSES.pending)
   const visibilityScope = row.visible_section === 'seller_documents' || row.visible_section === 'buyer_documents'
     ? 'client'
     : 'shared'
+  const documentReference = resolveCrossModuleDocumentReference(row.document_key, {
+    groupKey: row.debug_group_key || row.group_key,
+    packKey: row.group_key,
+    requestedFromRole: row.requested_from || row.responsible_role,
+    visibleSection: row.visible_section,
+  })
 
   return {
     id: row.id,
     transactionId: row.transaction_id,
     key: row.document_key,
+    canonicalDocumentKey: documentReference.canonicalDocumentKey,
+    crossModuleDocumentKey: documentReference.crossModuleDocumentKey,
+    crossModuleDocumentMapVersion: documentReference.crossModuleDocumentMapVersion,
+    crossModuleDocumentKnown: documentReference.crossModuleDocumentKnown,
+    documentOwnerRole: documentReference.documentOwnerRole,
+    documentResponsibleRoles: documentReference.documentResponsibleRoles,
+    documentPackKey: documentReference.documentPackKey,
+    documentCategory: documentReference.documentCategory,
     label: row.document_name,
     groupKey: SECTION_TO_GROUP_KEY[row.visible_section] || row.debug_group_key || 'transfer',
     groupLabel: TRANSACTION_DOCUMENT_SECTION_LABELS[row.visible_section] || row.visible_section,
@@ -841,6 +860,10 @@ function mapProjectionRowToRequirement(row = {}) {
       visibleSection: row.visible_section,
       sourceEngine: row.source,
       sourceRuleOrLegacyPath: row.rule_id || null,
+      canonicalDocumentKey: documentReference.canonicalDocumentKey,
+      documentOwnerRole: documentReference.documentOwnerRole,
+      documentResponsibleRoles: documentReference.documentResponsibleRoles,
+      documentPackKey: documentReference.documentPackKey,
       currentMainStageAtGeneration: row.stage_at_generation || null,
       blockingStage: row.blocking_stage,
       preCollectionAllowed: row.pre_collection_allowed === true,

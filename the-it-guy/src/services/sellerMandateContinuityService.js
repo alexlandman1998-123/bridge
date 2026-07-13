@@ -136,6 +136,114 @@ function findMandateSignedEvent(events = []) {
   ) || null
 }
 
+function getEventPayload(event = {}) {
+  return event.eventPayload && typeof event.eventPayload === 'object'
+    ? event.eventPayload
+    : event.event_payload_json && typeof event.event_payload_json === 'object'
+      ? event.event_payload_json
+      : event.metadata && typeof event.metadata === 'object'
+        ? event.metadata
+        : {}
+}
+
+function getEventCreatedAt(event = {}) {
+  return normalizeText(
+    event.createdAt ||
+      event.created_at ||
+      event.sentAt ||
+      event.sent_at ||
+      getEventPayload(event).sentAt ||
+      getEventPayload(event).sent_at,
+  )
+}
+
+function getSellerPortalInviteEventStatus(event = {}) {
+  const type = normalizeKey(event.eventType || event.event_type || event.type || event.activity_type)
+  if (type === 'seller_portal_invite_sent_after_mandate_signed') return 'sent'
+  if (type === 'seller_portal_invite_failed_after_mandate_signed') return 'failed'
+  if (type === 'seller_portal_invite_skipped_after_mandate_signed') return 'skipped'
+  if (type === 'seller_portal_invite_blocked_before_mandate_signed') return 'blocked'
+  if (type === 'seller_portal_invite_ready_after_mandate_signed') return 'ready'
+  return ''
+}
+
+function compareInviteEvents(left = {}, right = {}) {
+  const statusRank = { sent: 5, failed: 4, blocked: 3, skipped: 2, ready: 1 }
+  const leftStatus = getSellerPortalInviteEventStatus(left)
+  const rightStatus = getSellerPortalInviteEventStatus(right)
+  const leftTime = Date.parse(getEventCreatedAt(left))
+  const rightTime = Date.parse(getEventCreatedAt(right))
+  const timeDelta = (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0)
+  if (timeDelta) return timeDelta
+  return (statusRank[rightStatus] || 0) - (statusRank[leftStatus] || 0)
+}
+
+function resolveSellerPortalInviteDelivery(packetEvents = []) {
+  const inviteEvents = (Array.isArray(packetEvents) ? packetEvents : [])
+    .filter((item) => getSellerPortalInviteEventStatus(item))
+  const sentEvent = inviteEvents
+    .filter((item) => getSellerPortalInviteEventStatus(item) === 'sent')
+    .sort(compareInviteEvents)[0] || null
+  const event = sentEvent || inviteEvents.sort(compareInviteEvents)[0] || null
+  if (!event) {
+    return {
+      status: 'missing',
+      detail: 'No seller portal password setup invite event is recorded for this signed mandate.',
+      actionRequired: true,
+    }
+  }
+
+  const payload = getEventPayload(event)
+  const status = getSellerPortalInviteEventStatus(event)
+  const eventId = normalizeText(event.id)
+  if (status === 'sent') {
+    return {
+      status,
+      eventId,
+      sentAt: normalizeText(payload.sentAt || payload.sent_at || event.created_at),
+      deliveryId: normalizeText(payload.deliveryId || payload.delivery_id),
+      canonicalInviteId: normalizeText(payload.canonicalInviteId || payload.canonical_invite_id),
+      detail: 'Seller portal password setup invite was sent.',
+      actionRequired: false,
+    }
+  }
+  if (status === 'failed') {
+    return {
+      status,
+      eventId,
+      failedAt: normalizeText(payload.failedAt || payload.failed_at || event.created_at),
+      detail: normalizeText(payload.errorMessage || payload.error_message) || 'Seller portal password setup invite failed.',
+      actionRequired: true,
+    }
+  }
+  if (status === 'skipped') {
+    return {
+      status,
+      eventId,
+      skipReason: normalizeText(payload.skipReason || payload.skip_reason),
+      detail: normalizeText(payload.skipReason || payload.skip_reason) || 'Seller portal password setup invite was skipped.',
+      actionRequired: true,
+    }
+  }
+  if (status === 'blocked') {
+    return {
+      status,
+      eventId,
+      blockedAt: normalizeText(payload.blockedAt || payload.blocked_at || event.created_at),
+      detail: normalizeText(payload.message || payload.errorMessage || payload.error_message) ||
+        'Seller portal password setup invite was blocked before the mandate was signed.',
+      actionRequired: true,
+    }
+  }
+  return {
+    status,
+    eventId,
+    readyAt: normalizeText(payload.finalizedAt || payload.finalized_at || payload.signedAt || payload.signed_at || event.created_at),
+    detail: 'Seller portal password setup invite is ready but no sent event is recorded yet.',
+    actionRequired: true,
+  }
+}
+
 function getPortalContextPacketId(portalContext = {}) {
   return normalizeText(
     portalContext.mandatePacketId ||
@@ -163,6 +271,7 @@ export function buildSellerMandateContinuityModel({
   documents = [],
   mandatePacket = null,
   activityEvents = [],
+  packetEvents = [],
   portalContext = {},
   sellerWorkspaceToken = '',
 } = {}) {
@@ -184,8 +293,8 @@ export function buildSellerMandateContinuityModel({
   const hasFinalArtifact = Boolean(finalArtifact.filePath || finalArtifact.fileUrl)
   const listingSigned = isSignedStatus(listing?.mandateStatus || listing?.mandate_status || listing?.listingStatus || listing?.listing_status)
   const leadSigned = isSignedStatus(lead?.mandateStatus || lead?.mandate_status || lead?.status || lead?.stage)
-  const hasPacketSource = Boolean(mandatePacket || packetId)
   const hasPortalContext = Boolean(portalContext && typeof portalContext === 'object' && Object.keys(portalContext).length)
+  const portalInvite = resolveSellerPortalInviteDelivery(packetEvents)
 
   const checks = [
     buildCheck(
@@ -245,6 +354,17 @@ export function buildSellerMandateContinuityModel({
         detail: portalPacketId ? `Portal packet ${portalPacketId}` : 'Portal context was not available in this payload.',
       },
     ),
+    buildCheck(
+      'seller_portal_invite_sent_after_mandate_signed',
+      'Seller portal password setup invite sent',
+      portalInvite.status === 'sent',
+      {
+        required: false,
+        severity: 'warning',
+        notApplicable: !packetId,
+        detail: portalInvite.detail,
+      },
+    ),
   ]
 
   const blockers = checks.filter((check) => check.state === 'blocked')
@@ -260,6 +380,17 @@ export function buildSellerMandateContinuityModel({
     finalSignedFilePath: finalArtifact.filePath,
     finalSignedFileUrl: finalArtifact.fileUrl,
     signedActivityId: normalizeText(signedEvent?.id),
+    portalInviteStatus: portalInvite.status,
+    portalInviteEventId: portalInvite.eventId || '',
+    portalInviteSentAt: portalInvite.sentAt || '',
+    portalInviteFailedAt: portalInvite.failedAt || '',
+    portalInviteBlockedAt: portalInvite.blockedAt || '',
+    portalInviteReadyAt: portalInvite.readyAt || '',
+    portalInviteDeliveryId: portalInvite.deliveryId || '',
+    portalInviteCanonicalInviteId: portalInvite.canonicalInviteId || '',
+    portalInviteSkipReason: portalInvite.skipReason || '',
+    portalInviteDetail: portalInvite.detail || '',
+    portalInviteActionRequired: Boolean(packetId && portalInvite.actionRequired),
     checks,
     blockers,
     warnings,

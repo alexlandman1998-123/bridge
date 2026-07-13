@@ -102,6 +102,7 @@ import {
   createPrivateListingDocumentDownloadUrl,
   deletePrivateListing,
   getSellerPortalAccessState,
+  isSellerPortalInviteReadyAfterSignedMandate,
   resetSellerPortalPassword,
   sendSellerOnboarding,
   syncPrivateListingDistributionData,
@@ -115,6 +116,7 @@ import { listListingPropertyShares } from '../services/leadPropertySharingServic
 import { listCommunicationDeliveries } from '../services/communicationDeliveryService'
 import { buildListingWorkspaceAnalyticsSummary } from '../services/leadAnalyticsService'
 import { buildSellerMandateContinuityModel } from '../services/sellerMandateContinuityService'
+import { buildSellerDocumentSourceOfTruth } from '../services/sellerDocumentRequirementsService'
 import {
   captureShowDayLead,
   captureShowDayLeadBatch,
@@ -597,6 +599,37 @@ function getListingSellerFormData(listing = {}) {
   return listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
     ? listing.sellerOnboarding.formData
     : {}
+}
+
+function getSellerDocumentSourceLabel(row = {}) {
+  if (row?.source?.document === 'document_packets.final_signed_artifact') return 'Signed mandate packet'
+  if (row?.source?.document === 'private_listing_documents' || row?.hasUpload) return 'Seller portal / linked document'
+  if (row?.source?.requirement === 'private_listing_document_requirements') return 'Requirement checklist'
+  return 'Generated seller requirement'
+}
+
+function mapSellerDocumentSourceRowForListing(row = {}) {
+  const upload = row?.upload || {}
+  const originalDocument = row?.original?.document || {}
+  const url = normalizeText(upload.url || row.url || row.documentUrl || originalDocument.url || originalDocument.fileUrl || originalDocument.file_url || originalDocument.signedUrl || originalDocument.signed_url)
+  const filePath = normalizeText(upload.filePath || row.filePath || originalDocument.storagePath || originalDocument.storage_path || originalDocument.filePath || originalDocument.file_path)
+  const uploadedOn = normalizeText(upload.uploadedAt || row.uploadedAt || originalDocument.uploadedAt || originalDocument.uploaded_at || originalDocument.createdAt || originalDocument.created_at)
+  const hasUpload = Boolean(row.hasUpload || url || filePath || uploadedOn)
+  const key = normalizeText(row.key || row.id || row.title || row.label)
+  return {
+    ...row,
+    key,
+    label: row.label || row.title || 'Seller document',
+    required: row.required !== false,
+    uploaded: hasUpload,
+    status: row.status || (hasUpload ? 'uploaded' : 'required'),
+    statusLabel: row.statusLabel || formatStatusLabel(row.status || (hasUpload ? 'uploaded' : 'required')),
+    uploadedOn,
+    fileName: upload.fileName || row.uploadedFileName || row.fileName || originalDocument.fileName || originalDocument.file_name || originalDocument.document_name || '',
+    filePath,
+    url,
+    sourceLabel: getSellerDocumentSourceLabel(row),
+  }
 }
 
 function resolveSellerEmailFromListing(listing = {}) {
@@ -2667,6 +2700,11 @@ function AgentListingDetail() {
     if (!isValidEmail(sellerEmail)) {
       throw new Error('No seller email is linked to this listing yet. Add the seller email before resending the client portal link.')
     }
+    if (!isSellerPortalInviteReadyAfterSignedMandate(listingRecord, {
+      mandateSigned: mandateWorkspace?.isSigned || mandateWorkspace?.signedDate,
+    })) {
+      throw new Error('Sign the seller mandate before resending the seller portal password setup link.')
+    }
 
     const portalLink = buildSellerClientPortalLink(token)
     if (!portalLink) throw new Error('Seller client portal link could not be built from the saved token.')
@@ -2714,6 +2752,7 @@ function AgentListingDetail() {
           emailKind: 'portal_documents',
           to: sellerEmail,
           organisationId: listingOrganisationId,
+          listingId: listingRecord?.id || '',
           recipientRole: 'seller',
           recipientName: sellerName,
           sellerName,
@@ -3596,16 +3635,6 @@ function AgentListingDetail() {
     })
   }, [dynamicSellerRequirements, listingRecord])
 
-  const propertyDocuments = useMemo(
-    () => dynamicSellerRequirements.filter((doc) => ['property', 'compliance', 'financial', 'occupancy'].includes(String(doc?.requirement_group || '').trim().toLowerCase())),
-    [dynamicSellerRequirements],
-  )
-
-  const sellerDocuments = useMemo(
-    () => dynamicSellerRequirements.filter((doc) => ['seller_identity', 'fica', 'marital', 'company', 'trust', 'deceased_estate', 'mandate'].includes(String(doc?.requirement_group || '').trim().toLowerCase())),
-    [dynamicSellerRequirements],
-  )
-
   const buyerDocuments = useMemo(() => {
     const accepted = offerRows.find((offer) =>
       [OFFER_WORKFLOW_STATUS.ACCEPTED, OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION].includes(normalizeOfferWorkflowStatus(offer?.status)),
@@ -3930,97 +3959,91 @@ function AgentListingDetail() {
     })
   }, [listingRecord, mandateWorkspace.isSigned, mandateWorkspace.signedDate, mandateWorkspace.signedUrl, mandateWorkspace.status, mandateWorkspace.viewUrl])
 
-  const sellerDocumentTrackerRows = useMemo(() => {
-    const sourceRequirements = Array.isArray(dynamicSellerRequirements) ? dynamicSellerRequirements : []
-    const linkedRequirementUploads = sourceRequirements.flatMap((requirement) =>
-      [requirement?.uploadedDocument, requirement?.uploaded_document].filter(Boolean),
+  const sellerDocumentSource = useMemo(() => {
+    if (!listingRecord) return null
+    const mandate = listingRecord?.mandate || {}
+    const mandatePacketId = firstDraftValue(
+      listingRecord?.mandatePacketId,
+      listingRecord?.mandate_packet_id,
+      listingRecord?.mandate_packet?.id,
+      mandate?.packetId,
+      mandate?.packet_id,
+      mandate?.packet?.id,
+      mandate?.id,
     )
-    const uploadedDocuments = [
-      ...(Array.isArray(listingRecord?.documents) ? listingRecord.documents : []),
-      ...linkedRequirementUploads,
-    ]
-    const suggested = [
-      { key: 'id_document', label: 'ID Document / Passport', match: /id_document|identity_documents|identity|seller_id|id document|passport/i },
-      { key: 'proof_of_address', label: 'Proof of Address', match: /proof_of_address|proof of address|residential_address|residence|address/i },
-      { key: 'title_deed_copy', label: 'Title Deed / Reference', match: /title_deed_copy|title_deed|title deed|deed/i },
-      { key: 'rates_account', label: 'Rates Account', match: /rates_account|rates account|rates/i },
-      { key: 'property_condition_disclosure', label: 'Property Condition Disclosure', match: /property_condition_disclosure|condition disclosure|disclosure|defects/i },
-      { key: 'solar_compliance_documents', label: 'Solar Compliance Documents', match: /solar_compliance_documents|solar compliance|solar/i, defaultRequired: false },
-      { key: 'signed_mandate', label: 'Signed Mandate', match: /signed_mandate|mandate_signature|mandate/i },
-    ]
-    return suggested.map((item) => {
-      const requirement = sourceRequirements.find((row) =>
-        item.match.test(`${row?.key || ''} ${row?.requirement_key || ''} ${row?.label || ''} ${row?.requirement_name || ''} ${row?.document_type || ''} ${row?.category || ''}`),
-      )
-      const requirementId = String(requirement?.id || requirement?.requirement_id || '').trim()
-      const requirementKey = normalizeKey(requirement?.key || requirement?.requirement_key || item.key)
-      const upload = uploadedDocuments.find((document) => {
-        const documentRequirementId = String(document?.requirement_id || document?.requirementId || '').trim()
-        if (requirementId && documentRequirementId && requirementId === documentRequirementId) return true
-        const searchable = normalizeKey([
-          document?.document_type,
-          document?.documentType,
-          document?.category,
-          document?.document_name,
-          document?.documentName,
-          document?.fileName,
-          document?.name,
-          document?.requirement_key,
-          document?.requirementKey,
-        ].filter(Boolean).join(' '))
-        return item.match.test(searchable) || (requirementKey && searchable.includes(requirementKey))
-      }) || (requirement && (
-        requirement?.uploadedDocument ||
-        requirement?.uploaded_document ||
-        requirement?.filePath ||
-        requirement?.file_path ||
-        requirement?.fileUrl ||
-        requirement?.file_url ||
-        requirement?.url ||
-        requirement?.uploadedAt ||
-        requirement?.uploaded_at ||
-        ['uploaded', 'under_review', 'approved', 'completed', 'verified'].includes(String(requirement?.status || '').trim().toLowerCase())
-      )
-        ? {
-            ...requirement,
-            status: requirement.status || 'uploaded',
-            uploadedAt: requirement.uploadedAt || requirement.uploaded_at || requirement.updated_at || listingRecord?.updatedAt || '',
-            document_name: requirement.fileName || requirement.file_name || requirement.requirement_name || requirement.label,
-            storage_path: requirement.filePath || requirement.file_path || '',
-            url: requirement.url || requirement.fileUrl || requirement.file_url || '',
-          }
-        : null) || (item.key === 'signed_mandate' && mandateWorkspace.isSigned
-        ? {
-            status: 'signed',
-            uploadedAt: mandateWorkspace.signedDate || listingRecord?.updatedAt || listingRecord?.createdAt || '',
-            document_name: 'Signed mandate',
-            url: mandateWorkspace.signedUrl || mandateWorkspace.viewUrl || '',
-          }
-        : null)
-      const status = String(upload?.status || requirement?.status || '').trim().toLowerCase()
-      const hasUpload = Boolean(
-        upload?.storage_path ||
-          upload?.file_path ||
-          upload?.fileUrl ||
-          upload?.file_url ||
-          upload?.url ||
-          upload?.signedUrl ||
-          upload?.uploaded_at ||
-          upload?.uploadedAt,
-      )
-      const required = requirement ? requirement.is_required !== false : item.defaultRequired !== false
-      return {
-        ...item,
-        required,
-        uploaded: hasUpload,
-        status: hasUpload ? (status || 'uploaded') : status || 'missing',
-        uploadedOn: upload?.uploadedAt || upload?.uploaded_at || upload?.createdAt || upload?.created_at || '',
-        fileName: upload?.document_name || upload?.fileName || upload?.file_name || requirement?.fileName || requirement?.file_name || '',
-        filePath: upload?.storage_path || upload?.file_path || upload?.storagePath || upload?.path || '',
-        url: upload?.url || upload?.fileUrl || upload?.file_url || upload?.signedUrl || '',
-      }
+    const finalSignedFilePath = firstDraftValue(
+      listingRecord?.mandateSignedDocumentPath,
+      listingRecord?.mandate_signed_document_path,
+      mandate?.finalSignedFilePath,
+      mandate?.final_signed_file_path,
+      mandate?.signedFilePath,
+      mandate?.signed_file_path,
+    )
+    const finalSignedFileUrl = firstDraftValue(
+      listingRecord?.mandateSignedDocumentUrl,
+      listingRecord?.mandate_signed_document_url,
+      mandate?.finalSignedFileUrl,
+      mandate?.finalSignedDownloadUrl,
+      mandate?.final_signed_file_url,
+      mandate?.signedFileUrl,
+      mandate?.signed_file_url,
+      mandateWorkspace.signedUrl,
+      mandateWorkspace.viewUrl,
+    )
+    const mandatePacket = mandatePacketId || finalSignedFilePath || finalSignedFileUrl
+      ? {
+          id: mandatePacketId,
+          state: mandateWorkspace.isSigned ? 'fully_signed' : mandateWorkspace.status,
+          status: mandateWorkspace.status,
+          packet: { id: mandatePacketId, status: mandateWorkspace.status },
+          version: {
+            id: firstDraftValue(mandate?.versionId, mandate?.version_id, listingRecord?.mandatePacketVersionId, listingRecord?.mandate_packet_version_id),
+            final_signed_file_path: finalSignedFilePath,
+            final_signed_file_url: finalSignedFileUrl,
+            final_signed_file_name: firstDraftValue(mandate?.finalSignedFileName, mandate?.signedFileName, 'Signed Mandate.pdf'),
+            finalised_at: mandateWorkspace.signedDate,
+          },
+          finalSignedFilePath,
+          finalSignedDownloadUrl: finalSignedFileUrl,
+          finalSignedFileName: firstDraftValue(mandate?.finalSignedFileName, mandate?.signedFileName, 'Signed Mandate.pdf'),
+        }
+      : null
+
+    return buildSellerDocumentSourceOfTruth({
+      listing: {
+        ...listingRecord,
+        documentRequirements: dynamicSellerRequirements,
+      },
+      documents: Array.isArray(listingRecord?.documents) ? listingRecord.documents : [],
+      formData: getListingSellerFormData(listingRecord),
+      mandatePacket,
     })
-  }, [dynamicSellerRequirements, listingRecord?.createdAt, listingRecord?.documents, listingRecord?.updatedAt, mandateWorkspace.isSigned, mandateWorkspace.signedDate, mandateWorkspace.signedUrl, mandateWorkspace.viewUrl])
+  }, [dynamicSellerRequirements, listingRecord, mandateWorkspace.isSigned, mandateWorkspace.signedDate, mandateWorkspace.signedUrl, mandateWorkspace.status, mandateWorkspace.viewUrl])
+
+  const sellerDocumentTrackerRows = useMemo(
+    () => (sellerDocumentSource?.rows || [])
+      .filter((row) => row?.required !== false && row?.applicable !== false)
+      .map((row) => mapSellerDocumentSourceRowForListing(row)),
+    [sellerDocumentSource],
+  )
+
+  const propertyDocuments = useMemo(
+    () => sellerDocumentTrackerRows.filter((doc) => {
+      const category = normalizeKey(doc?.category)
+      const group = normalizeKey(doc?.group)
+      return category === 'property' || ['property', 'compliance', 'property_compliance', 'financial', 'occupancy', 'mandate'].includes(group)
+    }),
+    [sellerDocumentTrackerRows],
+  )
+
+  const sellerDocuments = useMemo(
+    () => sellerDocumentTrackerRows.filter((doc) => {
+      const category = normalizeKey(doc?.category)
+      const group = normalizeKey(doc?.group)
+      return category === 'fica' || ['seller_identity', 'fica', 'marital', 'company', 'trust', 'deceased_estate', 'power_of_attorney'].includes(group)
+    }),
+    [sellerDocumentTrackerRows],
+  )
 
   const listingReadinessItems = useMemo(() => {
     const requiredSellerDocuments = sellerDocumentTrackerRows.filter((doc) => doc.required)
@@ -8408,8 +8431,8 @@ function AgentListingDetail() {
                           <p className="truncate font-semibold text-[#243d56]" title={doc.label}>{doc.label}</p>
                           <p className="mt-1 text-xs text-[#74879d]">{doc.required ? 'Required seller document' : 'Optional seller document'}</p>
                         </td>
-                        <td className="px-5 py-4 text-sm text-[#607387]">{doc.uploaded ? 'Seller portal / linked document' : 'Requirement checklist'}</td>
-                        <td className="px-5 py-4"><StatusPill status={doc.uploaded ? 'uploaded' : 'missing'} label={doc.uploaded ? 'Uploaded' : 'Missing'} /></td>
+                        <td className="px-5 py-4 text-sm text-[#607387]">{doc.sourceLabel || (doc.uploaded ? 'Seller portal / linked document' : 'Requirement checklist')}</td>
+                        <td className="px-5 py-4"><StatusPill status={doc.status} label={doc.statusLabel || formatStatusLabel(doc.status)} /></td>
                         <td className="px-5 py-4">{doc.uploadedOn ? formatDate(doc.uploadedOn) : '—'}</td>
                         <td className="px-5 py-4 text-right">
                           {doc.url || doc.filePath ? (
@@ -8556,8 +8579,8 @@ function AgentListingDetail() {
             <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
               <h3 className="text-[1rem] font-semibold text-[#142132]">Seller Requirement Summary</h3>
               <div className="mt-4 grid gap-3 md:grid-cols-4">
-                <MetricCard label="Completion" value={`${sellerReadinessSummary.requirementCompletionPct}%`} meta="Dynamic seller requirement progress" />
-                <MetricCard label="Missing" value={sellerReadinessSummary.missingRequirementsCount} meta="Outstanding requirement count" />
+                <MetricCard label="Completion" value={`${sellerDocumentSource?.summary?.totalRequired ? Math.round((sellerDocumentSource.summary.completeRequired / sellerDocumentSource.summary.totalRequired) * 100) : sellerReadinessSummary.requirementCompletionPct}%`} meta="Dynamic seller requirement progress" />
+                <MetricCard label="Missing" value={sellerDocumentSource?.summary?.blocking ?? sellerReadinessSummary.missingRequirementsCount} meta="Outstanding requirement count" />
                 <MetricCard label="Mandate Ready" value={sellerReadinessSummary.mandateReady ? 'Yes' : 'No'} meta="Based on onboarding + mandate inputs" />
                 <MetricCard label="Active Ready" value={sellerReadinessSummary.activeReady ? 'Yes' : 'No'} meta="Ready for activation checks" />
               </div>

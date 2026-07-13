@@ -58,6 +58,12 @@ const FIELD_ALIAS_MAP = {
   finance_type: ['finance_type', 'transaction.finance_type_raw', 'transaction.finance_type', 'transactionFinanceType', 'financeType'],
   seller_marital_status: ['seller_marital_status', 'seller.marital_status_raw', 'seller.marital_status', 'sellerMaritalStatus'],
   buyer_marital_status: ['buyer_marital_status', 'buyer.marital_status_raw', 'buyer.marital_status', 'buyerMaritalStatus'],
+  property_title_type: ['property_title_type', 'property.title_type_raw', 'property.title_type', 'propertyStructureType', 'property_structure_type'],
+  'property.title_type_raw': ['property.title_type_raw', 'property_title_type', 'property.title_type', 'propertyStructureType', 'property_structure_type'],
+  mandate_template_variant: ['mandate_template_variant', 'mandate.template_variant', 'mandateClauseProfile', 'mandate_clause_profile'],
+  mandate_clause_profile: ['mandate_clause_profile', 'mandate.clause_profile', 'mandateTemplateVariant', 'mandate_template_variant'],
+  seller_clause_profile: ['seller_clause_profile', 'seller.clause_profile'],
+  property_clause_profile: ['property_clause_profile', 'property.clause_profile'],
 }
 
 export function normalizeVisibilityFieldKey(value = '') {

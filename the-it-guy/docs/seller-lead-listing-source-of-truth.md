@@ -112,6 +112,84 @@ the document source of truth. `private_listings.mandate_packet_id` is guarded by
 a `NOT VALID` foreign key with `on delete set null` so existing continuity can be
 audited before validation while new broken packet links are rejected.
 
+### Seller Document Center Contract
+
+The seller document center source of truth is listing-scoped:
+
+- requirements: `private_listing_document_requirements`
+- uploads: `private_listing_documents`
+- signed mandate artifact: `document_packets.final_signed_artifact`
+
+The frontend contract is `buildSellerDocumentSourceOfTruth()` in
+`src/services/sellerDocumentRequirementsService.js`. Listing documents, seller
+lead documents, and seller portal documents must consume this model instead of
+building separate requirement/checklist arrays.
+
+Each row exposes the same fields for every touchpoint:
+
+- `contextType` / `contextId`
+- `requirementId`
+- `key`
+- `title` / `label`
+- `category`
+- `group`
+- `status`
+- `statusBucket`
+- `required`
+- `applicable`
+- `complete`
+- `blocking`
+- `hasUpload`
+- `visibility`
+- `source.requirement`
+- `source.document`
+- `upload`
+
+Conditional requirements such as gas and solar compliance must appear through
+the same contract. A final signed mandate packet artifact must satisfy the
+`signed_mandate` requirement in this model; individual screens must not inject a
+separate mandate row with their own status rules.
+
+### Seller Document Requirement Reconciliation
+
+Phase 4 adds an operational reconciliation pass for existing listings created
+before the shared document contract was persisted consistently. The
+`buildSellerDocumentRequirementReconciliationReport()` helper compares the
+expected source-of-truth requirement keys with active rows in
+`private_listing_document_requirements` and classifies each listing as ready or
+needing a requirement sync.
+
+`runSellerDocumentRequirementReconciliation()` is dry-run by default. It may scan
+an organisation or explicit listing ids, and it only applies changes when called
+with `dryRun: false`. The apply path delegates to
+`syncPrivateListingRequirements()` with reason
+`seller_document_reconciliation_phase4`, so it uses the same Phase 3 schema-safe
+upsert path and does not create a separate backfill writer.
+
+`npm run reconcile:seller-documents -- --organisation-id=<uuid>` prints the
+dry-run plan. Add `--apply` only after reviewing the syncable queue.
+
+Phase 5 surfaces the same reconciliation in Platform Diagnostics as
+`Seller document reconciliation`. The console runs a dry-run first, lists missing
+and stale requirement keys, and applies only the listing ids from that reviewed
+dry-run plan. The apply button delegates to the Phase 4 runner and therefore
+uses `syncPrivateListingRequirements()` rather than a separate repair writer.
+
+Phase 6 turns reconciliation into a non-mutating release gate. Use
+`npm run verify:seller-documents -- --organisation-id=<uuid>` or
+`npm run reconcile:seller-documents -- --organisation-id=<uuid> --gate` to run
+the dry-run report and fail the process when listings still have syncable,
+missing, stale, load-failed, or manual-review document requirement drift. The
+gate refuses `--apply`; repairs must still go through the reviewed dry-run/apply
+flow from Phase 4 or Platform Diagnostics from Phase 5.
+
+Phase 7 packages the gate evidence into an operator runbook. Use
+`npm run prepare:seller-documents -- --organisation-id=<uuid>
+--output-dir=<dir>` to write the dry-run report, gate packet, syncable listing
+queue, manual-review queue, and Markdown runbook. The packet generator is
+dry-run-only and can also consume a saved report with
+`--input=<seller-document-reconciliation-report.json>` for release evidence.
+
 The service-only `bridge_private_listing_document_continuity_report()` diagnostic
 checks:
 
@@ -198,13 +276,15 @@ The report highlights the operational actions needed to restore continuity:
 - link the seller-visible signed mandate document
 - create the seller-visible `mandate_signed` activity event
 - refresh seller portal context packet linkage
+- send the seller portal password setup invite after the mandate is signed
 
 `npm run report:seller-mandate-continuity` is the service-role operational entry
 point. It reads signed mandate listings, related private listing documents,
-listing activity, leads, mandate packets, and seller portal contexts. It must not
-repair, backfill, delete, or publish data. The optional `--gate` and
-`--fail-on-warning` flags can be used by release checks to fail a run when signed
-mandate continuity is blocked or under review.
+listing activity, leads, mandate packets, seller portal contexts, and mandate
+packet events. It must not repair, backfill, delete, or publish data, and it must
+not send seller portal invites. The optional `--gate` and `--fail-on-warning`
+flags can be used by release checks to fail a run when signed mandate continuity
+is blocked or under review.
 
 ## Diagnostics Console Visibility
 
@@ -214,10 +294,58 @@ Platform Diagnostics operations center. The console uses
 and future release gates read the same listing, lead, document, activity, mandate
 packet, and seller portal context graph.
 
-The diagnostics panel is intentionally observational. It shows summary counts,
-release-gate status, query warnings, and the first action per blocked or warning
-record, but it does not repair records, resend documents, mutate activity, or
+The normal diagnostics load is intentionally observational: it shows summary
+counts, release-gate status, query warnings, and the first action per blocked or
+warning record. It does not repair records, resend documents, mutate activity, or
 publish listings from the diagnostics page.
+
+Seller portal invite delivery is derived from `document_packet_events` on the
+mandate packet. A `seller_portal_invite_sent_after_mandate_signed` event clears
+the invite check; ready, skipped, failed, or missing invite events leave the
+record under review so support can retry deliberately.
+
+Operational backfill is explicit and defaults to dry-run via
+`backfillSellerPortalInvitesAfterSignedMandates({ dryRun: true })`. Applying the
+backfill with `dryRun: false` targets non-blocked signed mandate records whose
+portal invite is missing or needs action, and reuses the same idempotent
+`sendSellerPortalInviteAfterMandateSigned()` helper as the finalization runtime.
+
+Phase 4 exposes this backfill in Platform Diagnostics as a two-step operational
+control: dry-run first, then a separate confirmation before any live seller
+portal password setup emails are sent. The normal continuity load remains
+read-only; only the explicit apply action may send invite emails, and the result
+is refreshed back into the same continuity view.
+
+Phase 5 suppresses legacy early seller portal invite paths. Seller onboarding
+submission may still sync portal context and notify internal users, but it must
+not send the seller portal password setup link. Manual resend/reset actions and
+the `seller_portal_link` email route must verify a signed mandate before sending
+the portal invite.
+
+Phase 6 accepts linked signed mandate packet evidence in the server email guard.
+The `seller_portal_link` route still requires a listing id, but it may verify the
+post-signature rule from either signed listing state or the listing's
+`mandate_packet_id` pointing at a completed/signed mandate packet or a
+`document_packet_versions` final signed artifact. This prevents a false block
+when listing lifecycle sync lags behind final signed document generation.
+
+Phase 7 records guarded portal invite blocks as packet events. If the
+`seller_portal_link` route is called before a signed mandate can be verified, the
+route still returns `seller_portal_invite_requires_signed_mandate`, and when the
+listing is linked to a mandate packet it also appends
+`seller_portal_invite_blocked_before_mandate_signed` to
+`document_packet_events`. Diagnostics treat blocked, failed, skipped, ready, or
+missing invite events as action required, but any
+`seller_portal_invite_sent_after_mandate_signed` event clears the invite check.
+
+Phase 8 locks live invite backfill to the dry-run plan. Platform Diagnostics
+passes the planned listing and packet pairs from the dry-run into
+`backfillSellerPortalInvitesAfterSignedMandates({ dryRun: false,
+plannedCandidates })`; the live apply only sends candidates still present in that
+plan. If a planned record no longer appears in the current signed mandate
+snapshot, the apply result marks it skipped with
+`not_in_current_signed_mandate_snapshot` instead of sending a changed candidate
+set.
 
 ## Practical Outcome
 
