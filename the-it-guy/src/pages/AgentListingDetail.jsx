@@ -4671,7 +4671,7 @@ function AgentListingDetail() {
   const arch9IsPublished = normalizeKey(marketingDraft.publicationStatus) === 'published' && normalizeKey(marketingDraft.bridgeListingStatus) === 'published'
 
   useEffect(() => {
-    setArch9LiveCheck({ status: 'idle', message: '' })
+    setArch9LiveChecking(false)
   }, [arch9PublicListingUrl])
 
   const sectionStatuses = useMemo(() => {
