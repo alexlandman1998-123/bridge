@@ -286,6 +286,19 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
 
+function resolveSelectedWorkspaceOrganisationId({ workspace = null, currentMembership = null, fallbackOrganisationId = '' } = {}) {
+  return normalizeText(
+    workspace?.id ||
+      currentMembership?.workspaceId ||
+      currentMembership?.workspace_id ||
+      currentMembership?.organisation_id ||
+      currentMembership?.organization_id ||
+      currentMembership?.raw?.organisation_id ||
+      currentMembership?.raw?.organization_id ||
+      fallbackOrganisationId,
+  )
+}
+
 function normalizeComparable(value) {
   return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim()
 }
@@ -1561,6 +1574,10 @@ function AgentListings({ initialTab = null } = {}) {
   const [isListingSaving, setIsListingSaving] = useState(false)
 
   const [form, setForm] = useState(() => buildInitialListingLeadForm(profile, workspace))
+  const selectedWorkspaceOrganisationId = useMemo(
+    () => resolveSelectedWorkspaceOrganisationId({ workspace, currentMembership }),
+    [currentMembership, workspace],
+  )
 
   const loadData = useCallback(async ({ showLoading = true } = {}) => {
     try {
@@ -1593,7 +1610,7 @@ function AgentListings({ initialTab = null } = {}) {
         assignedIds = assignedIdsResult
         userRows = Array.isArray(organisationUsersResult) ? organisationUsersResult : []
         branchRows = extractBranchOptions(organisationContext)
-        resolvedOrganisationId = String(organisationContext?.organisation?.id || '').trim()
+        resolvedOrganisationId = selectedWorkspaceOrganisationId || String(organisationContext?.organisation?.id || '').trim()
 
         options = assignedIds.length
           ? await fetchDevelopmentOptions({ developmentIds: assignedIds })
@@ -1637,10 +1654,16 @@ function AgentListings({ initialTab = null } = {}) {
     } finally {
       if (showLoading) setLoading(false)
     }
-  }, [agencyWorkflowMode, currentMembership?.organisationRole, currentMembership?.organisation_role, currentMembership?.role, currentMembership?.workspaceRole, profile?.email, profile?.id])
+  }, [agencyWorkflowMode, currentMembership, profile, selectedWorkspaceOrganisationId])
 
   useEffect(() => {
-    void loadData()
+    let cancelled = false
+    queueMicrotask(() => {
+      if (!cancelled) void loadData()
+    })
+    return () => {
+      cancelled = true
+    }
   }, [loadData])
 
   useEffect(() => {
@@ -1663,7 +1686,13 @@ function AgentListings({ initialTab = null } = {}) {
   useEffect(() => {
     const pathIsDevelopments = location.pathname.startsWith('/listings/developments')
     if (pathIsDevelopments) {
-      setListingsTab((previous) => (previous === 'developments' ? previous : 'developments'))
+      let cancelled = false
+      queueMicrotask(() => {
+        if (!cancelled) setListingsTab((previous) => (previous === 'developments' ? previous : 'developments'))
+      })
+      return () => {
+        cancelled = true
+      }
     }
   }, [location.pathname])
 
@@ -1673,17 +1702,31 @@ function AgentListings({ initialTab = null } = {}) {
       .trim()
       .toLowerCase()
     const requestedFlow = String(location.state?.listingModalFlow || 'seller_lead').trim().toLowerCase()
-    setListingModalMode(requestedMode === 'principal' ? 'principal' : 'agent')
-    setListingModalFlow(requestedFlow === 'manual' || requestedFlow === 'quick_add' ? 'quick_add' : 'seller_lead')
-    setShowNewListingModal(true)
-    navigate(location.pathname, { replace: true, state: {} })
+    let cancelled = false
+    queueMicrotask(() => {
+      if (cancelled) return
+      setListingModalMode(requestedMode === 'principal' ? 'principal' : 'agent')
+      setListingModalFlow(requestedFlow === 'manual' || requestedFlow === 'quick_add' ? 'quick_add' : 'seller_lead')
+      setShowNewListingModal(true)
+      navigate(location.pathname, { replace: true, state: {} })
+    })
+    return () => {
+      cancelled = true
+    }
   }, [agencyWorkflowMode, location.pathname, location.state, navigate])
 
   useEffect(() => {
     const message = String(location.state?.message || '').trim()
     if (!message) return
-    setWorkflowMessage(message)
-    navigate(location.pathname, { replace: true, state: {} })
+    let cancelled = false
+    queueMicrotask(() => {
+      if (cancelled) return
+      setWorkflowMessage(message)
+      navigate(location.pathname, { replace: true, state: {} })
+    })
+    return () => {
+      cancelled = true
+    }
   }, [location.pathname, location.state, navigate])
 
   function updateForm(key, value) {
@@ -2320,7 +2363,8 @@ function AgentListings({ initialTab = null } = {}) {
       }
 
       if (useDbFirstListingPersistence) {
-        if (!organisationId) {
+        const listingOrganisationId = selectedWorkspaceOrganisationId || organisationId
+        if (!listingOrganisationId) {
           setError('Organisation context is missing. Reload and try again.')
           return
         }
@@ -2331,7 +2375,7 @@ function AgentListings({ initialTab = null } = {}) {
           sellerCanonicalFactsUpdatedAt: new Date().toISOString(),
         }
         const created = await createPrivateListing({
-          organisationId,
+          organisationId: listingOrganisationId,
           branchId: resolvedBranchId || null,
           assignedAgentId: resolvedAssignedAgentId || null,
           listingStatus: resolvedListingIsActive ? 'listing_review' : resolvedListingStatus,
@@ -2450,7 +2494,7 @@ function AgentListings({ initialTab = null } = {}) {
             assignedAgent: resolvedAssignedAgentName,
             assignedAgentEmail: resolvedAssignedAgentEmail,
             branchId: resolvedBranchId,
-            workspaceId: workspace?.id || null,
+            workspaceId: listingOrganisationId || null,
             mandateStatus,
             selectedListingStatus: normalizedStatus,
             resolvedListingStatus,
@@ -2654,12 +2698,13 @@ function AgentListings({ initialTab = null } = {}) {
     }
 
     if (useDbFirstListingPersistence) {
-      if (!organisationId) {
+      const listingOrganisationId = selectedWorkspaceOrganisationId || organisationId
+      if (!listingOrganisationId) {
         setError('Organisation context is missing. Reload and try again.')
         return
       }
       const created = await createPrivateListing({
-        organisationId,
+        organisationId: listingOrganisationId,
         assignedAgentId: String(profile?.id || '').trim() || null,
         assignedAgentEmail: String(profile?.email || '').trim(),
         listingStatus: 'seller_lead',

@@ -394,8 +394,8 @@ export function buildWorkspaceResolution({
       workspace,
       workspaceType: row.workspace_type || workspace?.type || inferWorkspaceTypeFromAppRole(appRole),
       appRole: row.app_role || appRole,
-      role: row.workspace_role || row.organisation_role || row.organization_role || row.role,
-      status: row.status || row.membership_status,
+      role: row.workspace_role || row.organization_role || row.organisation_role || row.role,
+      status: row.membership_status || row.status,
       branchId: row.branch_id || null,
       primaryBranchId: row.primary_branch_id || row.branch_id || null,
       branchScope: row.branch_scope || null,
@@ -628,7 +628,7 @@ async function fetchOrganisationMembershipRows(client, user, profile) {
   const userId = normalizeText(user?.id)
   const userEmail = normalizeEmail(user?.email || profile?.email)
   const membershipSelect =
-    'id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, region_id, workspace_unit_id, scope_level, scope_metadata, module_context, module_metadata, is_primary_owner, active_workspace_selected_at, department_id, team_id, first_name, last_name, email, role, workspace_role, organisation_role, app_role, workspace_type, status, invited_by_user_id, invited_at, joined_at, accepted_at, last_active_at, created_at, updated_at'
+    'id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, region_id, workspace_unit_id, scope_level, scope_metadata, module_context, module_metadata, is_primary_owner, active_workspace_selected_at, department_id, team_id, first_name, last_name, email, role, workspace_role, organisation_role, organization_role, app_role, workspace_type, status, membership_status, invited_by_user_id, invited_at, joined_at, accepted_at, last_active_at, created_at, updated_at'
   const fallbackSelect = 'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, organisation_role, app_role, workspace_type, status, invited_by_user_id, invited_at, joined_at, accepted_at, last_active_at, created_at, updated_at'
   const currentMembershipSelect = 'id, organization_id, user_id, organization_role, membership_status, created_at, updated_at'
   let byUserId = await client
@@ -641,6 +641,8 @@ async function fetchOrganisationMembershipRows(client, user, profile) {
       isMissingColumnError(byUserId.error, 'branch_scope') ||
       isMissingColumnError(byUserId.error, 'primary_branch_id') ||
       isMissingColumnError(byUserId.error, 'workspace_role') ||
+      isMissingColumnError(byUserId.error, 'organization_role') ||
+      isMissingColumnError(byUserId.error, 'membership_status') ||
       isMissingColumnError(byUserId.error, 'scope_level') ||
       isMissingColumnError(byUserId.error, 'region_id') ||
       isMissingColumnError(byUserId.error, 'workspace_unit_id') ||
@@ -668,13 +670,14 @@ async function fetchOrganisationMembershipRows(client, user, profile) {
       .from('organisation_users')
       .select(membershipSelect)
       .eq('email', userEmail)
-      .in('status', [MEMBERSHIP_STATUSES.invited, MEMBERSHIP_STATUSES.pending])
 
     if (
       byEmail.error &&
       (isMissingColumnError(byEmail.error, 'branch_scope') ||
         isMissingColumnError(byEmail.error, 'primary_branch_id') ||
         isMissingColumnError(byEmail.error, 'workspace_role') ||
+        isMissingColumnError(byEmail.error, 'organization_role') ||
+        isMissingColumnError(byEmail.error, 'membership_status') ||
         isMissingColumnError(byEmail.error, 'scope_level') ||
         isMissingColumnError(byEmail.error, 'region_id') ||
         isMissingColumnError(byEmail.error, 'workspace_unit_id') ||
@@ -688,7 +691,6 @@ async function fetchOrganisationMembershipRows(client, user, profile) {
         .from('organisation_users')
         .select(fallbackSelect)
         .eq('email', userEmail)
-        .in('status', [MEMBERSHIP_STATUSES.invited, MEMBERSHIP_STATUSES.pending])
     }
 
     if (!byEmail.error) {

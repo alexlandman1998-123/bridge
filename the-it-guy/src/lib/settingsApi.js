@@ -2214,9 +2214,8 @@ async function getAuthenticatedUser() {
 async function findActiveMembershipByUserId(client, userId) {
   const membershipQuery = await client
     .from('organisation_users')
-    .select('id, organisation_id, role, status, email, branch_id, primary_branch_id, branch_scope')
+    .select('id, organisation_id, role, workspace_role, organisation_role, organization_role, status, membership_status, email, branch_id, primary_branch_id, branch_scope')
     .eq('user_id', userId)
-    .neq('status', 'deactivated')
     .order('updated_at', { ascending: false })
     .limit(10)
 
@@ -2224,13 +2223,15 @@ async function findActiveMembershipByUserId(client, userId) {
     if (
       isMissingColumnError(membershipQuery.error, 'branch_id') ||
       isMissingColumnError(membershipQuery.error, 'primary_branch_id') ||
-      isMissingColumnError(membershipQuery.error, 'branch_scope')
+      isMissingColumnError(membershipQuery.error, 'branch_scope') ||
+      isMissingColumnError(membershipQuery.error, 'workspace_role') ||
+      isMissingColumnError(membershipQuery.error, 'organization_role') ||
+      isMissingColumnError(membershipQuery.error, 'membership_status')
     ) {
       const fallbackQuery = await client
         .from('organisation_users')
         .select('id, organisation_id, role, status, email')
         .eq('user_id', userId)
-        .neq('status', 'deactivated')
         .order('updated_at', { ascending: false })
         .limit(10)
 
@@ -2246,8 +2247,8 @@ async function findActiveMembershipByUserId(client, userId) {
 
   const rows = membershipQuery.data || []
   return (
-    rows.find((row) => isActiveMembershipStatus(row?.status)) ||
-    rows.find((row) => normalizeMembershipStatus(row?.status) === 'pending') ||
+    rows.find((row) => isActiveMembershipStatus(row?.membership_status || row?.status)) ||
+    rows.find((row) => normalizeMembershipStatus(row?.membership_status || row?.status) === 'pending') ||
     rows[0] ||
     null
   )
@@ -2407,13 +2408,13 @@ async function ensureOrganisationContext(client) {
             organisation_id: normalizeText(rawResolvedMembership?.organisation_id || rawResolvedMembership?.organization_id || selectedResolvedMembership.workspaceId),
             role: normalizeText(
               rawResolvedMembership?.workspace_role ||
-                rawResolvedMembership?.organisation_role ||
                 rawResolvedMembership?.organization_role ||
+                rawResolvedMembership?.organisation_role ||
                 rawResolvedMembership?.role ||
                 selectedResolvedMembership.workspaceRole ||
                 selectedResolvedMembership.role,
             ),
-            status: normalizeText(rawResolvedMembership?.status || rawResolvedMembership?.membership_status || selectedResolvedMembership.status || 'active'),
+            status: normalizeText(rawResolvedMembership?.membership_status || rawResolvedMembership?.status || selectedResolvedMembership.status || 'active'),
             email: normalizeText(rawResolvedMembership?.email || user.email || profile?.email),
             branch_id: rawResolvedMembership?.branch_id || selectedResolvedMembership.branchId || null,
             primary_branch_id: rawResolvedMembership?.primary_branch_id || selectedResolvedMembership.primaryBranchId || selectedResolvedMembership.branchId || null,

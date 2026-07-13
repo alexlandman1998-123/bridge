@@ -3,10 +3,13 @@ import { readFile } from 'node:fs/promises'
 
 const source = await readFile(new URL('../src/pages/AgentListings.jsx', import.meta.url), 'utf8')
 const serviceSource = await readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
+const workspaceResolutionSource = await readFile(new URL('../src/services/workspaceResolutionService.js', import.meta.url), 'utf8')
+const settingsApiSource = await readFile(new URL('../src/lib/settingsApi.js', import.meta.url), 'utf8')
 const mandateStatusMigration = await readFile(new URL('../sql/20260630_private_listing_manual_mandate_statuses.sql', import.meta.url), 'utf8')
 const privateListingFoundation = await readFile(new URL('../sql/20260509_private_listing_foundation.sql', import.meta.url), 'utf8')
 const activeMemberInsertPolicyMigration = await readFile(new URL('../../supabase/migrations/202607130001_private_listing_insert_policy_active_member.sql', import.meta.url), 'utf8')
 const membershipHelperAlignmentMigration = await readFile(new URL('../../supabase/migrations/202607130002_membership_helper_status_alignment.sql', import.meta.url), 'utf8')
+const membershipHelperEmailAlignmentMigration = await readFile(new URL('../../supabase/migrations/202607130003_membership_helper_email_claim_alignment.sql', import.meta.url), 'utf8')
 
 assert.match(
   source,
@@ -122,6 +125,42 @@ assert.match(
   membershipHelperAlignmentMigration,
   /coalesce\(ou\.workspace_role,\s*ou\.organization_role,\s*ou\.organisation_role,\s*ou\.role,\s*''\)/,
   'Membership role helper should normalize current workspace role columns before legacy role.',
+)
+
+assert.match(
+  membershipHelperEmailAlignmentMigration,
+  /ou\.user_id\s+is\s+null[\s\S]+auth\.jwt\(\)\s*->>\s*'email'/,
+  'Active-member helper should allow active email-only memberships for the signed-in email claim.',
+)
+
+assert.match(
+  source,
+  /function resolveSelectedWorkspaceOrganisationId\(\{ workspace = null, currentMembership = null, fallbackOrganisationId = '' \} = \{\}\)/,
+  'Quick Add should resolve writes from the selected workspace before legacy organisation settings.',
+)
+
+assert.match(
+  source,
+  /organisationId: listingOrganisationId/,
+  'Quick Add should insert private listings into the selected workspace organisation.',
+)
+
+assert.match(
+  workspaceResolutionSource,
+  /status: row\.membership_status \|\| row\.status/,
+  'Workspace resolution should prefer membership_status before legacy status.',
+)
+
+assert.match(
+  workspaceResolutionSource,
+  /organization_role/,
+  'Workspace resolution should select current organization_role values.',
+)
+
+assert.match(
+  settingsApiSource,
+  /isActiveMembershipStatus\(row\?\.membership_status \|\| row\?\.status\)/,
+  'Legacy organisation settings lookup should prefer membership_status when finding active memberships.',
 )
 
 assert.match(
