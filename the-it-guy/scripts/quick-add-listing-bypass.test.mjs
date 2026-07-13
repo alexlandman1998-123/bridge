@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises'
 const source = await readFile(new URL('../src/pages/AgentListings.jsx', import.meta.url), 'utf8')
 const serviceSource = await readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
 const mandateStatusMigration = await readFile(new URL('../sql/20260630_private_listing_manual_mandate_statuses.sql', import.meta.url), 'utf8')
+const privateListingFoundation = await readFile(new URL('../sql/20260509_private_listing_foundation.sql', import.meta.url), 'utf8')
+const activeMemberInsertPolicyMigration = await readFile(new URL('../../supabase/migrations/202607130001_private_listing_insert_policy_active_member.sql', import.meta.url), 'utf8')
 
 assert.match(
   source,
@@ -88,6 +90,26 @@ assert.match(
   /function canQuickListingActivateWithMandateStatus\(value\)/,
   'Active listing selection should allow signed-uploaded and signed-external mandate states.',
 )
+
+assert.match(
+  serviceSource,
+  /const mentionsTable = Boolean\(tableNameHint && text\.includes\(tableNameHint\)\)/,
+  'Private listing schema detection should not treat any table-name mention as a missing table.',
+)
+
+assert.match(
+  serviceSource,
+  /Private listing creation was blocked by Supabase row-level security\./,
+  'Private listing insert RLS failures should surface membership/policy guidance instead of missing-table guidance.',
+)
+
+for (const migrationSource of [privateListingFoundation, activeMemberInsertPolicyMigration]) {
+  assert.match(
+    migrationSource,
+    /with check \(public\.bridge_is_active_member\(organisation_id\)\)/,
+    'Private listing insert policy should allow active organisation members without comparing profile ids to auth.uid().',
+  )
+}
 
 assert.match(
   source,

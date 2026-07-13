@@ -164,14 +164,7 @@ create policy private_listings_insert_member
 on public.private_listings
 for insert
 to authenticated
-with check (
-  public.bridge_is_active_member(organisation_id)
-  and (
-    public.bridge_is_org_admin(organisation_id)
-    or assigned_agent_id is null
-    or assigned_agent_id = auth.uid()
-  )
-);
+with check (public.bridge_is_active_member(organisation_id));
 
 drop policy if exists private_listings_update_member on public.private_listings;
 create policy private_listings_update_member

@@ -542,13 +542,39 @@ function isMissingTableError(error, tableName = '') {
   const status = Number(String(error.status || error.statusCode || 0))
   const text = String(message).toLowerCase()
   const tableNameHint = normalizeText(tableName).toLowerCase()
+  const mentionsTable = Boolean(tableNameHint && text.includes(tableNameHint))
   return (
     code === '42p01' ||
     code === 'pgrst205' ||
     code === 'not_found' ||
     status === 404 ||
-    (tableNameHint && (text.includes(tableNameHint) || text.includes('relation does not exist') || text.includes('could not find the table'))) ||
-    text.includes('schema cache')
+    text.includes('schema cache') ||
+    text.includes('could not find the table') ||
+    text.includes('relation does not exist') ||
+    (mentionsTable && (
+      text.includes('does not exist') ||
+      text.includes('not found') ||
+      text.includes('could not find') ||
+      text.includes('schema cache')
+    ))
+  )
+}
+
+function isPermissionDeniedError(error) {
+  if (!error) return false
+  const code = String(error.code || '').toLowerCase()
+  const status = Number(String(error.status || error.statusCode || 0))
+  const text = [
+    error.message,
+    error.details,
+    error.hint,
+  ].map((value) => String(value || '').toLowerCase()).join(' ')
+  return (
+    code === '42501' ||
+    status === 401 ||
+    status === 403 ||
+    text.includes('permission denied') ||
+    text.includes('row-level security')
   )
 }
 
@@ -2279,6 +2305,14 @@ export async function createPrivateListing(payload = {}, options = {}) {
       throw new Error(
         `Private listings table is unavailable to this API context. ` +
         `Run sql/20260509_private_listing_foundation.sql on the same Supabase project as this app and reload schema. ` +
+        `(${errorSummary})`,
+      )
+    }
+    if (isPermissionDeniedError(insert.error)) {
+      const errorSummary = buildSupabaseErrorSummary(insert.error)
+      throw new Error(
+        `Private listing creation was blocked by Supabase row-level security. ` +
+        `Confirm this user has an active organisation_users membership for the selected workspace and apply the private_listings_insert_member active-member policy migration. ` +
         `(${errorSummary})`,
       )
     }
