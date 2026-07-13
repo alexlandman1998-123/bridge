@@ -240,6 +240,13 @@ const RAW_SELLER_ONBOARDING_KEYS = new Set([
   'monthlyElectricitySpend',
   'askingPrice',
   'mandateType',
+  'mandateStartDate',
+  'mandateEndDate',
+  'mandateExpiryDate',
+  'specialMandateConditions',
+  'special_mandate_conditions',
+  'additionalConditions',
+  'additionalMandateConditions',
   'sellingTimeline',
   'sellingReason',
   'occupancyStatus',
@@ -560,6 +567,23 @@ function isMissingTableError(error, tableName = '') {
   )
 }
 
+function isMissingSchemaError(error) {
+  if (!error) return false
+  const code = String(error.code || '').toLowerCase()
+  const text = [
+    error.message,
+    error.details,
+    error.hint,
+  ].map((value) => String(value || '').toLowerCase()).join(' ')
+  return (
+    code === 'pgrst200' ||
+    code === 'pgrst204' ||
+    text.includes('schema cache') ||
+    text.includes('could not find') ||
+    text.includes('does not exist')
+  )
+}
+
 function isPermissionDeniedError(error) {
   if (!error) return false
   const code = String(error.code || '').toLowerCase()
@@ -754,9 +778,16 @@ async function uploadToPrivateListingDocumentsBucket(client, filePath, file, opt
   return bucket
 }
 
-async function createPrivateListingDocumentSignedUrl(client, filePath, expiresInSeconds = 120) {
+async function createPrivateListingDocumentSignedUrl(client, filePath, expiresInSeconds = 120, preferredBucket = '') {
   if (!filePath) return ''
-  for (const bucketName of DOCUMENTS_BUCKET_CANDIDATES) {
+  const bucketCandidates = [
+    normalizeText(preferredBucket),
+    ...DOCUMENTS_BUCKET_CANDIDATES,
+  ].filter(Boolean)
+  const checked = new Set()
+  for (const bucketName of bucketCandidates) {
+    if (checked.has(bucketName)) continue
+    checked.add(bucketName)
     const { data, error } = await client.storage.from(bucketName).createSignedUrl(filePath, expiresInSeconds)
     if (!error && data?.signedUrl) return data.signedUrl
     if (error && isStorageBucketNotFoundError(error)) continue
@@ -1202,12 +1233,160 @@ async function insertPrivateListingDocumentRow(client, payload = {}) {
   }
 }
 
-function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByListingId = null, documentsByListingId = null, externalLinksByListingId = null, publicationByListingId = null) {
+function getPrivateListingMandatePacketId(row = {}, mandatePacket = null) {
+  return normalizeText(
+    row?.mandate_packet_id ||
+      row?.mandatePacketId ||
+      mandatePacket?.id ||
+      mandatePacket?.packetId ||
+      mandatePacket?.packet_id ||
+      mandatePacket?.packet?.id ||
+      mandatePacket?.version?.packet_id,
+  )
+}
+
+function getPrivateListingFinalSignedMandateArtifact(mandatePacket = null) {
+  if (!mandatePacket || typeof mandatePacket !== 'object') {
+    return { filePath: '', fileUrl: '', fileName: '', fileBucket: '', signedAt: '', versionId: '' }
+  }
+  const version = mandatePacket.version && typeof mandatePacket.version === 'object' ? mandatePacket.version : {}
+  return {
+    filePath: normalizeText(
+      mandatePacket.finalSignedFilePath ||
+        mandatePacket.final_signed_file_path ||
+        version.final_signed_file_path ||
+        version.finalSignedFilePath,
+    ),
+    fileUrl: normalizeText(
+      mandatePacket.finalSignedDownloadUrl ||
+        mandatePacket.finalSignedFileAccessUrl ||
+        mandatePacket.final_signed_file_url ||
+        version.final_signed_file_access_url ||
+        version.final_signed_file_url,
+    ),
+    fileName: normalizeText(
+      mandatePacket.finalSignedFileName ||
+        mandatePacket.final_signed_file_name ||
+        version.final_signed_file_name ||
+        version.finalSignedFileName ||
+        'Signed Mandate.pdf',
+    ),
+    fileBucket: normalizeText(
+      mandatePacket.finalSignedFileBucket ||
+        mandatePacket.final_signed_file_bucket ||
+        version.final_signed_file_bucket ||
+        version.finalSignedFileBucket,
+    ),
+    signedAt: normalizeText(
+      mandatePacket.signedAt ||
+        mandatePacket.signed_at ||
+        version.finalised_at ||
+        version.finalized_at ||
+        mandatePacket.packet?.completed_at ||
+        mandatePacket.packet?.updated_at ||
+        mandatePacket.updatedAt ||
+        mandatePacket.updated_at,
+    ),
+    versionId: normalizeText(mandatePacket.packetVersionId || mandatePacket.packet_version_id || version.id),
+  }
+}
+
+function mandatePacketHasFinalSignedArtifact(mandatePacket = null) {
+  const artifact = getPrivateListingFinalSignedMandateArtifact(mandatePacket)
+  return Boolean(artifact.filePath || artifact.fileUrl)
+}
+
+function getPrivateListingDocumentFileReference(document = {}) {
+  return normalizeText(
+    document?.url ||
+      document?.signedUrl ||
+      document?.fileUrl ||
+      document?.file_url ||
+      document?.storage_path ||
+      document?.file_path ||
+      document?.filePath,
+  )
+}
+
+function documentLooksLikeSignedMandateForListing(document = {}) {
+  const searchable = [
+    document?.document_type,
+    document?.documentType,
+    document?.category,
+    document?.document_category,
+    document?.documentName,
+    document?.document_name,
+    document?.fileName,
+    document?.file_name,
+    document?.name,
+    document?.requirement_key,
+    document?.requirementKey,
+  ].map((value) => normalizeCompatibilityKey(value)).join(' ')
+
+  return Boolean(
+    getPrivateListingDocumentFileReference(document) &&
+      (
+        searchable.includes('signed_mandate') ||
+        searchable.includes('mandate_signature') ||
+        searchable.includes('final_signed_packet') ||
+        (searchable.includes('mandate') && searchable.includes('signed'))
+      ),
+  )
+}
+
+function buildSignedMandateDocumentFromPacketForListing(row = {}, mandatePacket = null) {
+  const listingId = normalizeText(row?.id || row?.private_listing_id || row?.privateListingId)
+  const packetId = getPrivateListingMandatePacketId(row, mandatePacket)
+  const artifact = getPrivateListingFinalSignedMandateArtifact(mandatePacket)
+  if (!listingId || !packetId || !mandatePacketHasFinalSignedArtifact(mandatePacket)) return null
+  const documentId = `signed-mandate-packet-${artifact.versionId || packetId}`
+  return {
+    id: documentId,
+    private_listing_id: listingId,
+    document_type: 'signed_mandate',
+    category: 'Mandate',
+    document_name: artifact.fileName || 'Signed Mandate.pdf',
+    file_name: artifact.fileName || 'Signed Mandate.pdf',
+    storage_path: artifact.filePath || '',
+    file_path: artifact.filePath || '',
+    file_url: artifact.fileUrl || '',
+    fileUrl: artifact.fileUrl || '',
+    url: artifact.fileUrl || '',
+    signedUrl: artifact.fileUrl || '',
+    status: 'signed',
+    visibility: 'seller_visible',
+    requirement_key: 'signed_mandate',
+    canonical_requirement_instance_id: normalizeText(mandatePacket.canonical_requirement_instance_id || mandatePacket.version?.canonical_requirement_instance_id),
+    uploaded_at: artifact.signedAt || row?.updated_at || row?.created_at || '',
+    created_at: artifact.signedAt || row?.updated_at || row?.created_at || null,
+    updated_at: artifact.signedAt || row?.updated_at || row?.created_at || null,
+    metadata: {
+      source: 'signed_mandate_packet',
+      packetId,
+      packetVersionId: artifact.versionId || null,
+      finalSignedFileBucket: artifact.fileBucket || null,
+      synthetic: true,
+    },
+  }
+}
+
+function mergeSignedMandatePacketDocument(row = {}, documents = [], mandatePacket = null) {
+  const rows = Array.isArray(documents) ? documents : []
+  const syntheticDocument = buildSignedMandateDocumentFromPacketForListing(row, mandatePacket)
+  if (!syntheticDocument) return rows
+  const existingSignedMandate = rows.find((document) => documentLooksLikeSignedMandateForListing(document))
+  return existingSignedMandate ? rows : [syntheticDocument, ...rows]
+}
+
+function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByListingId = null, documentsByListingId = null, externalLinksByListingId = null, publicationByListingId = null, mandatePacketsByListingId = null) {
   if (!row) return null
   const onboarding = onboardingByListingId ? onboardingByListingId.get(String(row.id || '')) || null : null
   const requirementRows = requirementsByListingId ? requirementsByListingId.get(String(row.id || '')) || [] : []
-  const documentRows = documentsByListingId ? documentsByListingId.get(String(row.id || '')) || [] : []
+  const baseDocumentRows = documentsByListingId ? documentsByListingId.get(String(row.id || '')) || [] : []
   const publicationRow = publicationByListingId ? publicationByListingId.get(String(row.id || '')) || null : null
+  const mandatePacket = mandatePacketsByListingId ? mandatePacketsByListingId.get(String(row.id || '')) || null : row.mandatePacket || row.mandate_packet || null
+  const mandateFinalArtifact = getPrivateListingFinalSignedMandateArtifact(mandatePacket)
+  const documentRows = mergeSignedMandatePacketDocument(row, baseDocumentRows, mandatePacket)
   const publicationDraft = publicationRow ? mapPublicationRowToDraft(publicationRow) : null
   const listingStatus = mapLegacyListingStatusToCanonicalStatus(row.listing_status || row.status)
   const onboardingStatus = normalizeStatus(
@@ -1265,10 +1444,17 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     primaryMandateDocument?.uploaded_at,
   )
   const mandateStartDate = pickFirstText(
+    onboardingFormData.mandateStartDate,
+    onboardingFormData.mandate_start_date,
+    onboardingFormData.mandateExpiryStartDate,
     onboardingFormData.listingDate,
     quickAddMandateDates.startDate,
   )
   const mandateEndDate = pickFirstText(
+    onboardingFormData.mandateEndDate,
+    onboardingFormData.mandate_end_date,
+    onboardingFormData.mandateExpiryDate,
+    onboardingFormData.mandate_expiry_date,
     onboardingFormData.expiryDate,
     quickAddMandateDates.endDate,
   )
@@ -1369,7 +1555,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     financeContext: row.finance_context || '',
     mandateType: row.mandate_type || 'sole',
     mandateStatus: normalizeStatus(row.mandate_status, MANDATE_STATUSES, 'not_started'),
-    mandatePacketId: row.mandate_packet_id || null,
+    mandatePacketId: getPrivateListingMandatePacketId(row, mandatePacket) || null,
     sellerOnboardingStatus: onboardingStatus,
     isActive: Boolean(row.is_active),
     createdBy: row.created_by || null,
@@ -1495,14 +1681,19 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     mandate: {
       type: row.mandate_type || onboardingFormData.mandateType || 'sole',
       status: normalizeStatus(row.mandate_status, MANDATE_STATUSES, 'not_started'),
-      packetId: row.mandate_packet_id || null,
+      packetId: getPrivateListingMandatePacketId(row, mandatePacket) || null,
+      packetVersionId: mandateFinalArtifact.versionId || null,
       signedAt: mandateSignedDate || null,
       startDate: mandateStartDate || null,
       endDate: mandateEndDate || null,
       signedUrl: mandateDocumentUrl,
       documentUrl: mandateDocumentUrl,
+      finalSignedFilePath: mandateFinalArtifact.filePath || '',
+      finalSignedFileUrl: mandateFinalArtifact.fileUrl || mandateDocumentUrl,
+      finalSignedFileName: mandateFinalArtifact.fileName || '',
       updatedAt: primaryMandateDocument?.uploaded_at || row.updated_at || row.created_at || null,
     },
+    mandatePacket: mandatePacket || null,
     commission: commissionTerms,
     seller: {
       name: '',
@@ -1809,6 +2000,10 @@ function mapSellerClientPortalPayload(payload) {
     : payload?.mandate_packet && typeof payload.mandate_packet === 'object'
       ? payload.mandate_packet
       : null
+  if (mandatePacket) {
+    listingForMap.mandatePacket = mandatePacket
+    listingForMap.mandate_packet = mandatePacket
+  }
   return {
     onboarding: onboardingRow,
     appointments,
@@ -2266,12 +2461,13 @@ export async function createPrivateListing(payload = {}, options = {}) {
       .limit(1)
       .maybeSingle()
     if (!existingQuery.error && existingQuery.data) {
-      const [onboardingMap, requirementsMap, documentsMap] = await Promise.all([
+      const [onboardingMap, requirementsMap, documentsMap, mandatePacketsMap] = await Promise.all([
         fetchOnboardingRowsForListings(client, [existingQuery.data.id]),
         includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [existingQuery.data.id]) : Promise.resolve(new Map()),
         includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, [existingQuery.data.id]) : Promise.resolve(new Map()),
+        includeRequirementsAndDocuments ? fetchMandatePacketRowsForListings(client, [existingQuery.data]) : Promise.resolve(new Map()),
       ])
-      return { listing: mapPrivateListingRow(existingQuery.data, onboardingMap, requirementsMap, documentsMap), existing: true }
+      return { listing: mapPrivateListingRow(existingQuery.data, onboardingMap, requirementsMap, documentsMap, null, null, mandatePacketsMap), existing: true }
     }
   }
 
@@ -2323,12 +2519,13 @@ export async function createPrivateListing(payload = {}, options = {}) {
     throw insert.error
   }
 
-  const [onboardingMap, requirementsMap, documentsMap] = await Promise.all([
+  const [onboardingMap, requirementsMap, documentsMap, mandatePacketsMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, [insert.data.id]),
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [insert.data.id]) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, [insert.data.id]) : Promise.resolve(new Map()),
+    includeRequirementsAndDocuments ? fetchMandatePacketRowsForListings(client, [insert.data]) : Promise.resolve(new Map()),
   ])
-  const listing = mapPrivateListingRow(insert.data, onboardingMap, requirementsMap, documentsMap)
+  const listing = mapPrivateListingRow(insert.data, onboardingMap, requirementsMap, documentsMap, null, null, mandatePacketsMap)
 
   const requirementSync = (skipRequirementSync || !includeRequirementsAndDocuments)
     ? null
@@ -2472,12 +2669,13 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
       .single()
   }
   if (updateQuery.error) throw updateQuery.error
-  const [onboardingMap, requirementsMap, documentsMap] = await Promise.all([
+  const [onboardingMap, requirementsMap, documentsMap, mandatePacketsMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, [normalizedId]),
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [normalizedId]) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, [normalizedId]) : Promise.resolve(new Map()),
+    includeRequirementsAndDocuments ? fetchMandatePacketRowsForListings(client, [updateQuery.data]) : Promise.resolve(new Map()),
   ])
-  const updatedListing = mapPrivateListingRow(updateQuery.data, onboardingMap, requirementsMap, documentsMap)
+  const updatedListing = mapPrivateListingRow(updateQuery.data, onboardingMap, requirementsMap, documentsMap, null, null, mandatePacketsMap)
   const importantFields = [
     'askingPrice',
     'asking_price',
@@ -2868,14 +3066,113 @@ async function getPrivateListingById(listingId, { includeRequirementsAndDocument
     throw query.error
   }
   if (!query.data || isDeletedPrivateListingRow(query.data)) return null
-  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap] = await Promise.all([
+  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, [query.data.id]),
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
     fetchExternalLinkRowsForListings(client, [query.data.id]),
     fetchPublicationRowsForListings(client, [query.data.id]),
+    includeRequirementsAndDocuments ? fetchMandatePacketRowsForListings(client, [query.data]) : Promise.resolve(new Map()),
   ])
-  return mapPrivateListingRow(query.data, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap)
+  return mapPrivateListingRow(query.data, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap)
+}
+
+async function fetchMandatePacketRowsForListings(client, listingRows = []) {
+  const rows = Array.isArray(listingRows) ? listingRows : []
+  const packetIdsByListingId = new Map()
+  for (const row of rows) {
+    const listingId = normalizeText(row?.id)
+    const packetId = normalizeUuid(row?.mandate_packet_id || row?.mandatePacketId)
+    if (listingId && packetId) packetIdsByListingId.set(listingId, packetId)
+  }
+  const packetIds = [...new Set([...packetIdsByListingId.values()])]
+  if (!packetIds.length) return new Map()
+
+  const packetQuery = await client
+    .from('document_packets')
+    .select('id, organisation_id, packet_type, status, title, transaction_id, lead_id, unit_id, created_at, updated_at')
+    .in('id', packetIds)
+  if (packetQuery.error) {
+    if (
+      isMissingTableError(packetQuery.error, 'document_packets') ||
+      isMissingSchemaError(packetQuery.error) ||
+      isPermissionDeniedError(packetQuery.error)
+    ) return new Map()
+    throw packetQuery.error
+  }
+
+  const packetRowsById = new Map((packetQuery.data || [])
+    .filter((packet) => normalizeText(packet?.packet_type).toLowerCase() === 'mandate')
+    .map((packet) => [normalizeText(packet.id), packet]))
+  if (!packetRowsById.size) return new Map()
+
+  const versionQuery = await client
+    .from('document_packet_versions')
+    .select('id, packet_id, version_number, render_status, rendered_file_path, rendered_file_name, final_signed_file_path, final_signed_file_name, final_signed_file_bucket, finalised_at, generated_at, created_at')
+    .in('packet_id', [...packetRowsById.keys()])
+    .order('version_number', { ascending: false })
+  let versionRows = []
+  if (versionQuery.error) {
+    if (
+      !isMissingTableError(versionQuery.error, 'document_packet_versions') &&
+      !isMissingSchemaError(versionQuery.error) &&
+      !isPermissionDeniedError(versionQuery.error)
+    ) {
+      throw versionQuery.error
+    }
+  } else {
+    versionRows = Array.isArray(versionQuery.data) ? versionQuery.data : []
+  }
+
+  const latestVersionRows = [...versionRows].sort((left, right) => {
+    const leftVersionNumber = Number(left?.version_number || 0)
+    const rightVersionNumber = Number(right?.version_number || 0)
+    if (leftVersionNumber !== rightVersionNumber) return rightVersionNumber - leftVersionNumber
+    const leftTimestamp = Date.parse(left?.created_at || left?.generated_at || '')
+    const rightTimestamp = Date.parse(right?.created_at || right?.generated_at || '')
+    return (Number.isFinite(rightTimestamp) ? rightTimestamp : 0) - (Number.isFinite(leftTimestamp) ? leftTimestamp : 0)
+  })
+  const latestVersionByPacketId = new Map()
+  for (const version of latestVersionRows) {
+    const packetId = normalizeText(version?.packet_id)
+    if (!packetId || latestVersionByPacketId.has(packetId)) continue
+    latestVersionByPacketId.set(packetId, version)
+  }
+
+  const packetSummaryByPacketId = new Map()
+  for (const [packetId, packet] of packetRowsById.entries()) {
+    const version = latestVersionByPacketId.get(packetId) || null
+    const finalSignedFilePath = normalizeText(version?.final_signed_file_path)
+    const finalSignedFileBucket = normalizeText(version?.final_signed_file_bucket)
+    const finalSignedDownloadUrl = finalSignedFilePath
+      ? await createPrivateListingDocumentSignedUrl(client, finalSignedFilePath, 120, finalSignedFileBucket)
+      : ''
+    packetSummaryByPacketId.set(packetId, {
+      id: packetId,
+      state: finalSignedFilePath
+        ? 'fully_signed'
+        : normalizeText(packet?.status).toLowerCase() || 'generated',
+      status: normalizeText(packet?.status),
+      packet,
+      version,
+      packetVersionId: normalizeText(version?.id),
+      finalSignedFilePath,
+      finalSignedFileName: normalizeText(version?.final_signed_file_name || 'Signed Mandate.pdf'),
+      finalSignedFileBucket,
+      finalSignedDownloadUrl,
+      generatedPreviewFilePath: normalizeText(version?.rendered_file_path),
+      generatedPreviewFileName: normalizeText(version?.rendered_file_name || packet?.title || 'Mandate'),
+      signedAt: normalizeText(version?.finalised_at || packet?.updated_at),
+      updatedAt: normalizeText(packet?.updated_at || packet?.created_at),
+    })
+  }
+
+  const result = new Map()
+  for (const [listingId, packetId] of packetIdsByListingId.entries()) {
+    const packetSummary = packetSummaryByPacketId.get(packetId)
+    if (packetSummary) result.set(listingId, packetSummary)
+  }
+  return result
 }
 
 export async function getOrganisationPrivateListings(organisationId, options = {}) {
@@ -2895,14 +3192,15 @@ export async function getOrganisationPrivateListings(organisationId, options = {
   }
   const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => !isDeletedPrivateListingRow(row))
   const listingIds = rows.map((row) => row.id)
-  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap] = await Promise.all([
+  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, listingIds),
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, listingIds) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, listingIds) : Promise.resolve(new Map()),
     fetchExternalLinkRowsForListings(client, listingIds),
     fetchPublicationRowsForListings(client, listingIds),
+    includeRequirementsAndDocuments ? fetchMandatePacketRowsForListings(client, rows) : Promise.resolve(new Map()),
   ])
-  return rows.map((row) => mapPrivateListingRow(row, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap)).filter(Boolean)
+  return rows.map((row) => mapPrivateListingRow(row, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap)).filter(Boolean)
 }
 
 export async function getAgentPrivateListings(
@@ -2955,28 +3253,30 @@ export async function getAgentPrivateListings(
       }
       const retryRows = (Array.isArray(retryQuery.data) ? retryQuery.data : []).filter((row) => !isDeletedPrivateListingRow(row))
       const retryListingIds = retryRows.map((row) => row.id)
-      const [retryOnboardingMap, retryRequirementsMap, retryDocumentsMap, retryExternalLinksMap, retryPublicationMap] = await Promise.all([
+      const [retryOnboardingMap, retryRequirementsMap, retryDocumentsMap, retryExternalLinksMap, retryPublicationMap, retryMandatePacketsMap] = await Promise.all([
         fetchOnboardingRowsForListings(client, retryListingIds),
         fetchRequirementRowsForListings(client, retryListingIds),
         fetchDocumentRowsForListings(client, retryListingIds),
         fetchExternalLinkRowsForListings(client, retryListingIds),
         fetchPublicationRowsForListings(client, retryListingIds),
+        fetchMandatePacketRowsForListings(client, retryRows),
       ])
-      return retryRows.map((row) => mapPrivateListingRow(row, retryOnboardingMap, retryRequirementsMap, retryDocumentsMap, retryExternalLinksMap, retryPublicationMap)).filter(Boolean)
+      return retryRows.map((row) => mapPrivateListingRow(row, retryOnboardingMap, retryRequirementsMap, retryDocumentsMap, retryExternalLinksMap, retryPublicationMap, retryMandatePacketsMap)).filter(Boolean)
     }
     if (isMissingTableError(query.error, 'private_listings')) return []
     throw query.error
   }
   const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => !isDeletedPrivateListingRow(row))
   const listingIds = rows.map((row) => row.id)
-  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap] = await Promise.all([
+  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, listingIds),
     fetchRequirementRowsForListings(client, listingIds),
     fetchDocumentRowsForListings(client, listingIds),
     fetchExternalLinkRowsForListings(client, listingIds),
     fetchPublicationRowsForListings(client, listingIds),
+    fetchMandatePacketRowsForListings(client, rows),
   ])
-  return rows.map((row) => mapPrivateListingRow(row, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap)).filter(Boolean)
+  return rows.map((row) => mapPrivateListingRow(row, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap)).filter(Boolean)
 }
 
 export async function getAgentPrivateListingSummaries(

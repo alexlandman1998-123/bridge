@@ -511,8 +511,14 @@ export default function PlatformDiagnosticsPage() {
               <div className="grid gap-3 md:grid-cols-4">
                 <StatCard label="Ready" value={mandateContinuity.summary?.ready || 0} tone="success" />
                 <StatCard label="Needs review" value={mandateContinuity.summary?.warning || 0} tone={mandateContinuity.summary?.warning ? 'warning' : 'success'} />
-                <StatCard label="Missing documents" value={mandateContinuity.summary?.missingSignedDocument || 0} tone={mandateContinuity.summary?.missingSignedDocument ? 'warning' : 'success'} />
+                <StatCard label="Linked document" value={mandateContinuity.summary?.linkedSignedDocument || 0} tone="success" />
+                <StatCard label="Packet fallback" value={mandateContinuity.summary?.packetArtifactFallback || 0} tone={mandateContinuity.summary?.packetArtifactFallback ? 'warning' : 'success'} />
+              </div>
+              <div className="grid gap-3 md:grid-cols-4">
+                <StatCard label="Missing evidence" value={mandateContinuity.summary?.missingSignedDocument || 0} tone={mandateContinuity.summary?.missingSignedDocument ? 'critical' : 'success'} />
                 <StatCard label="Missing activity" value={mandateContinuity.summary?.missingSellerActivity || 0} tone={mandateContinuity.summary?.missingSellerActivity ? 'warning' : 'success'} />
+                <StatCard label="Portal warnings" value={mandateContinuity.summary?.portalWarnings || 0} tone={mandateContinuity.summary?.portalWarnings ? 'warning' : 'success'} />
+                <StatCard label="Query warnings" value={mandateContinuityWarnings.length || 0} tone={mandateContinuityWarnings.length ? 'warning' : 'success'} />
               </div>
 
               {mandateContinuityGate?.reason ? (
@@ -528,12 +534,13 @@ export default function PlatformDiagnosticsPage() {
               ) : null}
 
               <div className="overflow-hidden rounded-[14px] border border-[#dde4ee] bg-white">
-                <table className="w-full min-w-[760px] text-left text-sm">
+                <table className="w-full min-w-[920px] text-left text-sm">
                   <thead className="bg-[#f7f9fc] text-xs uppercase tracking-[0.08em] text-[#60758d]">
                     <tr>
                       <th className="px-4 py-3">Status</th>
                       <th className="px-4 py-3">Listing</th>
                       <th className="px-4 py-3">Packet</th>
+                      <th className="px-4 py-3">Signed evidence</th>
                       <th className="px-4 py-3">Next action</th>
                     </tr>
                   </thead>
@@ -546,11 +553,23 @@ export default function PlatformDiagnosticsPage() {
                           <span className="text-xs text-[#60758d]">{record.listingId || record.leadId || 'No listing id'}</span>
                         </td>
                         <td className="px-4 py-3 text-[#60758d]">{record.packetId || '-'}</td>
+                        <td className="px-4 py-3">
+                          <span className="block font-semibold text-[#31485e]">
+                            {record.signedDocumentSource === 'packet_artifact'
+                              ? 'Packet artifact'
+                              : record.signedDocumentSource === 'listing_document'
+                                ? 'Listing document'
+                                : '-'}
+                          </span>
+                          <span className="block max-w-[220px] truncate text-xs text-[#60758d]">
+                            {record.signedDocumentName || record.finalSignedFilePath || record.finalSignedFileUrl || ''}
+                          </span>
+                        </td>
                         <td className="px-4 py-3 text-[#60758d]">{record.actionItems?.[0] || (record.ready ? 'No action required.' : 'Review continuity checks.')}</td>
                       </tr>
                     )) : (
                       <tr>
-                        <td className="px-4 py-5 text-center text-[#60758d]" colSpan={4}>No signed mandate records found for this workspace.</td>
+                        <td className="px-4 py-5 text-center text-[#60758d]" colSpan={5}>No signed mandate records found for this workspace.</td>
                       </tr>
                     )}
                   </tbody>

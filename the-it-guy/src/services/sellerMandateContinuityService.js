@@ -48,6 +48,8 @@ function getFinalSignedArtifact(mandatePacket = null) {
     fileUrl: normalizeText(
       mandatePacket.finalSignedDownloadUrl ||
         mandatePacket.finalSignedFileAccessUrl ||
+        mandatePacket.finalSignedFileUrl ||
+        mandatePacket.final_signed_file_access_url ||
         mandatePacket.final_signed_file_url ||
         mandatePacket.version?.final_signed_file_access_url ||
         mandatePacket.version?.final_signed_file_url,
@@ -63,7 +65,7 @@ function getFinalSignedArtifact(mandatePacket = null) {
 
 function hasPacketSignedSignal(mandatePacket = null) {
   const artifact = getFinalSignedArtifact(mandatePacket)
-  return Boolean((artifact.filePath || artifact.fileUrl) && isSignedStatus(mandatePacket?.state || mandatePacket?.status || mandatePacket?.packet?.status))
+  return Boolean(artifact.filePath || artifact.fileUrl)
 }
 
 function documentLooksLikeSignedMandate(document = {}) {
@@ -74,11 +76,15 @@ function documentLooksLikeSignedMandate(document = {}) {
     document.document_category,
     document.name,
     document.document_name,
+    document.file_name,
     document.fileName,
+    document.requirement_key,
+    document.requirementKey,
   ].map(normalizeKey).join(' ')
   return (
     source.includes('signed_mandate') ||
     source.includes('mandate_signature') ||
+    source.includes('final_signed_packet') ||
     (source.includes('mandate') && source.includes('signed'))
   )
 }
@@ -95,6 +101,8 @@ function documentHasFileReference(document = {}) {
         document.file_path ||
         document.storage_path ||
         document.url ||
+        document.signedUrl ||
+        document.signed_url ||
         document.fileUrl ||
         document.file_url,
     ),
@@ -173,6 +181,7 @@ export function buildSellerMandateContinuityModel({
   const signedEvent = findMandateSignedEvent(activityEvents)
   const finalArtifact = getFinalSignedArtifact(mandatePacket)
   const packetSigned = hasPacketSignedSignal(mandatePacket)
+  const hasFinalArtifact = Boolean(finalArtifact.filePath || finalArtifact.fileUrl)
   const listingSigned = isSignedStatus(listing?.mandateStatus || listing?.mandate_status || listing?.listingStatus || listing?.listing_status)
   const leadSigned = isSignedStatus(lead?.mandateStatus || lead?.mandate_status || lead?.status || lead?.stage)
   const hasPacketSource = Boolean(mandatePacket || packetId)
@@ -210,8 +219,14 @@ export function buildSellerMandateContinuityModel({
     buildCheck(
       'seller_visible_signed_document',
       'Signed mandate document is seller-visible',
-      Boolean(signedDocument || finalArtifact.filePath || finalArtifact.fileUrl),
-      { detail: signedDocument?.document_name || signedDocument?.name || finalArtifact.fileName || 'No seller-visible signed mandate document found.' },
+      Boolean(signedDocument || hasFinalArtifact),
+      {
+        detail: signedDocument
+          ? signedDocument?.document_name || signedDocument?.name || 'Seller-visible signed mandate document found.'
+          : hasFinalArtifact
+            ? `Using final signed packet artifact${finalArtifact.fileName ? `: ${finalArtifact.fileName}` : '.'}`
+            : 'No seller-visible signed mandate document or final packet artifact found.',
+      },
     ),
     buildCheck(
       'seller_visible_activity',
@@ -241,6 +256,7 @@ export function buildSellerMandateContinuityModel({
     sellerWorkspaceToken: normalizeText(sellerWorkspaceToken),
     signedDocumentId: normalizeText(signedDocument?.id),
     signedDocumentName: normalizeText(signedDocument?.document_name || signedDocument?.name || finalArtifact.fileName),
+    signedDocumentSource: signedDocument ? 'listing_document' : hasFinalArtifact ? 'packet_artifact' : '',
     finalSignedFilePath: finalArtifact.filePath,
     finalSignedFileUrl: finalArtifact.fileUrl,
     signedActivityId: normalizeText(signedEvent?.id),

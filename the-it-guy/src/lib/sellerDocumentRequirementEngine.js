@@ -604,7 +604,14 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
   )
   const mandateType = normalizeText(onboarding?.mandateType || listing?.mandateType || listing?.mandate_type)
   const mandateDuration = normalizeText(
-    onboarding?.mandateDuration || listing?.mandateDuration || (listing?.mandateStartDate && listing?.mandateEndDate ? 'custom' : ''),
+    onboarding?.mandateDuration ||
+      onboarding?.mandate_duration ||
+      listing?.mandateDuration ||
+      listing?.mandate_duration ||
+      ((onboarding?.mandateStartDate || onboarding?.mandate_start_date || listing?.mandateStartDate || listing?.mandate_start_date) &&
+      (onboarding?.mandateEndDate || onboarding?.mandate_end_date || onboarding?.mandateExpiryDate || onboarding?.mandate_expiry_date || listing?.mandateEndDate || listing?.mandate_end_date)
+        ? 'custom'
+        : ''),
   )
   const commissionTerms =
     hasValue(onboarding?.commissionRate) ||
@@ -618,7 +625,6 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
     hasValue(onboarding?.commissionAmount) ||
     hasValue(onboarding?.commission_amount) ||
     hasValue(onboarding?.mandateCommissionAmount) ||
-    hasValue(onboarding?.mandateTerms) ||
     hasValue(listing?.commission?.commission_percentage) ||
     hasValue(listing?.commission?.commission_amount)
   const sellerName = resolveSellerDisplayName({

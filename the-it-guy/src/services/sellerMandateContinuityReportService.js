@@ -50,6 +50,21 @@ function unique(values = []) {
   return Array.from(new Set(getArray(values).map(normalizeText).filter(Boolean)))
 }
 
+function comparePacketVersions(left = {}, right = {}) {
+  const leftVersionNumber = Number(left.version_number || left.versionNumber || 0)
+  const rightVersionNumber = Number(right.version_number || right.versionNumber || 0)
+  if (leftVersionNumber !== rightVersionNumber) return rightVersionNumber - leftVersionNumber
+  const leftTimestamp = Date.parse(left.updated_at || left.updatedAt || left.generated_at || left.generatedAt || left.created_at || left.createdAt || '')
+  const rightTimestamp = Date.parse(right.updated_at || right.updatedAt || right.generated_at || right.generatedAt || right.created_at || right.createdAt || '')
+  return (Number.isFinite(rightTimestamp) ? rightTimestamp : 0) - (Number.isFinite(leftTimestamp) ? leftTimestamp : 0)
+}
+
+function getLatestPacketVersion(versions = []) {
+  return getArray(versions)
+    .filter(Boolean)
+    .sort(comparePacketVersions)[0] || null
+}
+
 function firstText(...values) {
   for (const value of values) {
     const text = normalizeText(value)
@@ -89,15 +104,34 @@ function getMandatePacket(record = {}) {
   const packet = getNestedObject(record.mandatePacket || record.mandate_packet || record.documentPacket || record.document_packet)
   if (Object.keys(packet).length) return packet
   const packetId = firstText(record.mandatePacketId, record.mandate_packet_id)
-  const signedFilePath = firstText(record.finalSignedFilePath, record.final_signed_file_path, record.mandate_signed_document_path)
-  const signedFileUrl = firstText(record.finalSignedFileUrl, record.final_signed_file_url, record.mandate_signed_document_url)
+  const version = getNestedObject(record.version || record.packetVersion || record.packet_version)
+  const signedFilePath = firstText(
+    record.finalSignedFilePath,
+    record.final_signed_file_path,
+    record.mandate_signed_document_path,
+    version.final_signed_file_path,
+    version.finalSignedFilePath,
+  )
+  const signedFileUrl = firstText(
+    record.finalSignedDownloadUrl,
+    record.finalSignedFileAccessUrl,
+    record.finalSignedFileUrl,
+    record.final_signed_file_access_url,
+    record.final_signed_file_url,
+    record.mandate_signed_document_url,
+    version.final_signed_file_access_url,
+    version.final_signed_file_url,
+  )
   if (!packetId && !signedFilePath && !signedFileUrl) return null
   return {
     id: packetId,
     status: record.mandatePacketStatus || record.mandate_packet_status || record.mandateStatus || record.mandate_status,
+    state: signedFilePath || signedFileUrl ? 'fully_signed' : record.mandatePacketStatus || record.mandate_packet_status || record.mandateStatus || record.mandate_status,
+    version: Object.keys(version).length ? version : null,
     finalSignedFilePath: signedFilePath,
+    finalSignedFileBucket: record.finalSignedFileBucket || record.final_signed_file_bucket || version.final_signed_file_bucket,
     finalSignedFileUrl: signedFileUrl,
-    finalSignedFileName: record.finalSignedFileName || record.final_signed_file_name,
+    finalSignedFileName: record.finalSignedFileName || record.final_signed_file_name || version.final_signed_file_name,
   }
 }
 
@@ -115,6 +149,28 @@ function getDocuments(record = {}) {
 
 function getActivityEvents(record = {}) {
   return getArray(record.activityEvents || record.activity_events || record.events || record.activities || record.privateListingActivity || record.private_listing_activity)
+}
+
+function buildMandatePacketSummary(packet = null, version = null) {
+  if (!packet && !version) return null
+  const packetId = firstText(packet?.id, version?.packet_id)
+  const finalSignedFilePath = firstText(version?.final_signed_file_path, packet?.finalSignedFilePath, packet?.final_signed_file_path)
+  const finalSignedFileName = firstText(version?.final_signed_file_name, packet?.finalSignedFileName, packet?.final_signed_file_name, 'Signed Mandate.pdf')
+  const finalSignedFileBucket = firstText(version?.final_signed_file_bucket, packet?.finalSignedFileBucket, packet?.final_signed_file_bucket)
+  return {
+    ...(packet || {}),
+    id: packetId,
+    state: finalSignedFilePath ? 'fully_signed' : firstText(packet?.state, packet?.status, 'generated'),
+    packet: packet || null,
+    version: version || null,
+    packetVersionId: firstText(version?.id, packet?.packetVersionId, packet?.packet_version_id),
+    finalSignedFilePath,
+    finalSignedFileName,
+    finalSignedFileBucket,
+    signedAt: firstText(version?.finalised_at, version?.finalized_at, packet?.updated_at, packet?.created_at),
+    generatedPreviewFilePath: firstText(version?.rendered_file_path, packet?.rendered_file_path),
+    generatedPreviewFileName: firstText(version?.rendered_file_name, packet?.title, 'Mandate'),
+  }
 }
 
 function getActionForCheck(check = {}) {
@@ -169,6 +225,10 @@ export function buildSellerMandateContinuityAuditRecord(record = {}) {
     packetId: model.packetId,
     sellerWorkspaceToken: model.sellerWorkspaceToken,
     signedDocumentId: model.signedDocumentId,
+    signedDocumentName: model.signedDocumentName,
+    signedDocumentSource: model.signedDocumentSource,
+    finalSignedFilePath: model.finalSignedFilePath,
+    finalSignedFileUrl: model.finalSignedFileUrl,
     signedActivityId: model.signedActivityId,
     summary: model.summary,
     blockers: model.blockers,
@@ -187,6 +247,8 @@ function summarize(records = []) {
     missingPacket: 0,
     missingListingLink: 0,
     missingSignedDocument: 0,
+    linkedSignedDocument: 0,
+    packetArtifactFallback: 0,
     missingSellerActivity: 0,
     portalWarnings: 0,
     checks: {},
@@ -196,6 +258,8 @@ function summarize(records = []) {
     if (record.status === 'ready') summary.ready += 1
     else if (record.status === 'warning') summary.warning += 1
     else summary.blocked += 1
+    if (record.signedDocumentSource === 'listing_document') summary.linkedSignedDocument += 1
+    if (record.signedDocumentSource === 'packet_artifact') summary.packetArtifactFallback += 1
 
     getArray(record.checks).forEach((check) => {
       if (check.state === 'complete' || check.state === 'not_applicable') return
@@ -287,7 +351,7 @@ export async function fetchSellerMandateContinuityRows(client, { limit = 50, org
   const packetIds = unique(listings.map((listing) => listing.mandate_packet_id))
   const sellerTokens = unique(listings.map((listing) => listing.seller_workspace_token))
 
-  const [documents, activities, leads, packets, portalContexts] = await Promise.all([
+  const [documents, activities, leads, packets, packetVersions, portalContexts] = await Promise.all([
     listingIds.length
       ? safeQuery('private_listing_documents', client.from('private_listing_documents').select('*').in('private_listing_id', listingIds), queryWarnings)
       : [],
@@ -300,6 +364,16 @@ export async function fetchSellerMandateContinuityRows(client, { limit = 50, org
     packetIds.length
       ? safeQuery('document_packets', applyOrganisationFilter(client.from('document_packets').select('*').in('id', packetIds), organisationId), queryWarnings)
       : [],
+    packetIds.length
+      ? safeQuery(
+          'document_packet_versions',
+          client
+            .from('document_packet_versions')
+            .select('id, packet_id, version_number, render_status, rendered_file_path, rendered_file_name, final_signed_file_path, final_signed_file_name, final_signed_file_bucket, finalised_at, generated_at, created_at')
+            .in('packet_id', packetIds),
+          queryWarnings,
+        )
+      : [],
     sellerTokens.length
       ? safeQuery('client_portal_contexts', client.from('client_portal_contexts').select('*').in('seller_workspace_token', sellerTokens), queryWarnings)
       : [],
@@ -309,17 +383,21 @@ export async function fetchSellerMandateContinuityRows(client, { limit = 50, org
   const activitiesByListing = groupBy(activities, 'private_listing_id')
   const leadsByLeadId = groupBy(leads, 'lead_id')
   const packetsById = groupBy(packets, 'id')
+  const packetVersionsByPacketId = groupBy(packetVersions, 'packet_id')
   const portalContextsByToken = groupBy(portalContexts, 'seller_workspace_token')
 
   return listings.map((listing) => {
     const leadId = normalizeText(listing.seller_lead_id || listing.originating_crm_lead_id || listing.lead_id)
     const sellerToken = normalizeText(listing.seller_workspace_token)
+    const packetId = normalizeText(listing.mandate_packet_id)
+    const packet = packetsById[packetId]?.[0] || null
+    const latestVersion = getLatestPacketVersion(packetVersionsByPacketId[packetId] || [])
     return {
       listing,
       lead: leadsByLeadId[leadId]?.[0] || {},
       documents: documentsByListing[listing.id] || [],
       activityEvents: activitiesByListing[listing.id] || [],
-      mandatePacket: packetsById[normalizeText(listing.mandate_packet_id)]?.[0] || null,
+      mandatePacket: buildMandatePacketSummary(packet, latestVersion),
       portalContext: portalContextsByToken[sellerToken]?.[0] || {},
       sellerWorkspaceToken: sellerToken,
     }
@@ -365,6 +443,8 @@ export function renderSellerMandateContinuityMarkdown(report = {}) {
     `- Missing packet: ${Number(summary.missingPacket || 0)}`,
     `- Missing listing link: ${Number(summary.missingListingLink || 0)}`,
     `- Missing signed document: ${Number(summary.missingSignedDocument || 0)}`,
+    `- Linked signed documents: ${Number(summary.linkedSignedDocument || 0)}`,
+    `- Packet artifact fallback: ${Number(summary.packetArtifactFallback || 0)}`,
     `- Missing seller activity: ${Number(summary.missingSellerActivity || 0)}`,
     '',
     '## Records',

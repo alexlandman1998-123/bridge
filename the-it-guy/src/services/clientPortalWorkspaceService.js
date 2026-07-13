@@ -190,7 +190,14 @@ function mapSellerMandatePacket(packetPayload = null) {
     finalSignedFilePath: packetPayload.finalSignedFilePath || packetPayload.final_signed_file_path || version.final_signed_file_path || '',
     finalSignedFileName: packetPayload.finalSignedFileName || packetPayload.final_signed_file_name || version.final_signed_file_name || 'Signed Mandate',
     finalSignedFileBucket: packetPayload.finalSignedFileBucket || packetPayload.final_signed_file_bucket || version.final_signed_file_bucket || '',
-    finalSignedDownloadUrl: packetPayload.finalSignedDownloadUrl || packetPayload.final_signed_file_url || version.final_signed_file_url || '',
+    finalSignedDownloadUrl:
+      packetPayload.finalSignedDownloadUrl ||
+      packetPayload.finalSignedFileAccessUrl ||
+      packetPayload.final_signed_file_access_url ||
+      packetPayload.final_signed_file_url ||
+      version.final_signed_file_access_url ||
+      version.final_signed_file_url ||
+      '',
     generatedPreviewFilePath: packetPayload.generatedPreviewFilePath || packetPayload.rendered_file_path || version.rendered_file_path || '',
     generatedPreviewFileName: packetPayload.generatedPreviewFileName || packetPayload.rendered_file_name || version.rendered_file_name || 'Mandate',
     signedAt: packetPayload.signedAt || packetPayload.signed_at || version.finalised_at || packet.completed_at || '',
@@ -1380,11 +1387,20 @@ async function hydrateSellerMandatePacketForPortalData(token, portalData = {}, w
       clientEmail: getPortalSellerEmail(portalData),
     })
     if (!resolvedPacket) return portalData
+    const resolvedPacketId = mandatePacketId || resolvedPacket?.packet?.id || resolvedPacket?.id || ''
     return {
       ...portalData,
+      listing: {
+        ...(portalData?.listing || {}),
+        mandatePacketId: portalData?.listing?.mandatePacketId || portalData?.listing?.mandate_packet_id || resolvedPacketId,
+        mandate_packet_id: portalData?.listing?.mandate_packet_id || portalData?.listing?.mandatePacketId || resolvedPacketId,
+        mandateStatus: resolvedPacket?.state || portalData?.listing?.mandateStatus || portalData?.listing?.mandate_status || '',
+        mandate_status: resolvedPacket?.state || portalData?.listing?.mandate_status || portalData?.listing?.mandateStatus || '',
+        mandatePacket: resolvedPacket,
+      },
       activeSellingContext: {
         ...(portalData?.activeSellingContext || {}),
-        mandatePacketId: mandatePacketId || resolvedPacket?.packet?.id || resolvedPacket?.id || '',
+        mandatePacketId: resolvedPacketId,
         mandatePacket: resolvedPacket,
         mandateStatus: resolvedPacket?.state || portalData?.activeSellingContext?.mandateStatus || '',
       },

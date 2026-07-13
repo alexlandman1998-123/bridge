@@ -119,6 +119,10 @@ function normalizeDate(value) {
   return date.toISOString().slice(0, 10)
 }
 
+function normalizeRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
 function hasValue(value) {
   if (value === null || value === undefined) return false
   if (typeof value === 'boolean') return value
@@ -659,6 +663,13 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       selling_timeline: normalizeKey(form.sellingTimeline),
       selling_reason: normalizeKey(form.sellingReason),
       mandate_type: normalizeKey(form.mandateType || listingSource.mandateType),
+      mandate_start_date: normalizeDate(form.mandateStartDate || form.mandate_start_date || listingSource.mandateStartDate || listingSource.mandate_start_date),
+      mandate_end_date: normalizeDate(form.mandateEndDate || form.mandate_end_date || form.mandateExpiryDate || form.mandate_expiry_date || listingSource.mandateEndDate || listingSource.mandate_end_date || listingSource.mandateExpiryDate || listingSource.mandate_expiry_date),
+      special_mandate_conditions: {
+        ...normalizeRecord(form.special_mandate_conditions),
+        ...normalizeRecord(form.specialMandateConditions),
+      },
+      additional_conditions: normalizeText(form.additionalConditions || form.additional_conditions || form.additionalMandateConditions || form.additional_mandate_conditions),
     },
     context: {
       type: options.contextType || 'private_listing',

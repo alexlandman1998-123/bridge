@@ -238,10 +238,19 @@ const MARITAL_REGIMES = [
 ]
 
 const MANDATE_TYPE_OPTIONS = [
-  { value: 'sole', label: 'Sole' },
-  { value: 'dual', label: 'Dual' },
-  { value: 'tri_mandate', label: 'Tri-Mandate' },
-  { value: 'open', label: 'Open Mandate' },
+  { value: 'sole', label: 'Sole Mandate', description: 'One agency is appointed to sell the property.' },
+  { value: 'open', label: 'Open Mandate', description: 'More than one agency may market the property.' },
+  { value: 'dual', label: 'Dual Mandate', description: 'Two parties share the selling mandate.' },
+  { value: 'tri_mandate', label: 'Tri-Mandate', description: 'Three parties share the selling mandate.' },
+]
+
+const SPECIAL_MANDATE_CONDITION_OPTIONS = [
+  { key: 'sellerApprovalRequired', label: 'Seller must approve every offer', description: 'No offer is accepted without your final approval.' },
+  { key: 'replacementPropertyRequired', label: 'I need to secure another property first', description: 'The sale depends on finding a replacement home.' },
+  { key: 'existingLease', label: 'There is a tenant or lease in place', description: 'The agent must consider the lease when marketing.' },
+  { key: 'tenantRightsApply', label: 'Tenant rights must be considered', description: 'The agent must follow tenant notice/access rules.' },
+  { key: 'occupationBeforeRegistration', label: 'Occupation before registration may be allowed', description: 'Early occupation can be discussed if needed.' },
+  { key: 'occupationAfterRegistration', label: 'Occupation only after registration', description: 'The buyer may occupy only after transfer registers.' },
 ]
 
 const SELLING_REASON_OPTIONS = [
@@ -468,6 +477,27 @@ function formatValue(value, fallback = 'Not provided') {
   const text = String(value ?? '').trim()
   if (!text) return fallback
   return text.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function formatDateValue(value, fallback = 'Not selected') {
+  const text = String(value ?? '').trim()
+  if (!text) return fallback
+  const date = new Date(`${text}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return text
+  return new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(date)
+}
+
+function getMandateTypeLabel(value, fallback = 'Not selected') {
+  const normalized = String(value ?? '').trim()
+  if (!normalized) return fallback
+  return MANDATE_TYPE_OPTIONS.find((item) => item.value === normalized)?.label || formatValue(normalized, fallback)
+}
+
+function getSpecialMandateConditionLabels(conditions = {}) {
+  const record = conditions && typeof conditions === 'object' && !Array.isArray(conditions) ? conditions : {}
+  return SPECIAL_MANDATE_CONDITION_OPTIONS
+    .filter((option) => Boolean(record[option.key]))
+    .map((option) => option.label)
 }
 
 function resolveAgencyBrand(listing = {}) {
@@ -1384,6 +1414,10 @@ function normalizeFormData(listing) {
 
     askingPrice: existing.askingPrice || String(listing?.askingPrice || ''),
     mandateType: existing.mandateType || canonicalFacts?.transaction?.mandate_type || listing?.mandateType || '',
+    mandateStartDate: existing.mandateStartDate || existing.mandate_start_date || canonicalFacts?.transaction?.mandate_start_date || listing?.mandateStartDate || listing?.mandate_start_date || '',
+    mandateEndDate: existing.mandateEndDate || existing.mandate_end_date || existing.mandateExpiryDate || existing.mandate_expiry_date || canonicalFacts?.transaction?.mandate_end_date || canonicalFacts?.transaction?.mandate_expiry_date || listing?.mandateEndDate || listing?.mandate_end_date || listing?.mandateExpiryDate || listing?.mandate_expiry_date || '',
+    specialMandateConditions: existing.specialMandateConditions || existing.special_mandate_conditions || canonicalFacts?.transaction?.special_mandate_conditions || {},
+    additionalConditions: existing.additionalConditions || existing.additional_conditions || existing.additionalMandateConditions || existing.additional_mandate_conditions || canonicalFacts?.transaction?.additional_conditions || '',
     sellingTimeline: existing.sellingTimeline || '1_3_months',
     sellingReason: existing.sellingReason || '',
 
@@ -2248,7 +2282,11 @@ function PropertyDisclosureSection({
 }
 
 function SellerCompletedState({ listing, form, brand, onDownloadDisclosure }) {
-  const mandateTypeLabel = MANDATE_TYPE_OPTIONS.find((item) => item.value === form.mandateType)?.label || 'Not selected'
+  const mandateTypeLabel = getMandateTypeLabel(form.mandateType)
+  const mandatePeriodLabel = form.mandateStartDate || form.mandateEndDate
+    ? `${formatDateValue(form.mandateStartDate)} to ${formatDateValue(form.mandateEndDate)}`
+    : 'Not selected'
+  const mandateConditionLabels = getSpecialMandateConditionLabels(form.specialMandateConditions)
   const sellerName = getSellerDisplayName(listing, form)
   const propertyAddress = getPropertyDisplayAddress(listing, form)
   const agentName = resolveAgentName(listing)
@@ -2362,6 +2400,9 @@ function SellerCompletedState({ listing, form, brand, onDownloadDisclosure }) {
                 { label: 'Property', value: propertyAddress },
                 { label: 'Ownership', value: getOwnershipSummaryLabel(form) },
                 { label: 'Mandate Type', value: mandateTypeLabel },
+                { label: 'Mandate Period', value: mandatePeriodLabel },
+                { label: 'Special Conditions', value: mandateConditionLabels.length ? mandateConditionLabels.join(', ') : 'None selected' },
+                { label: 'Additional Conditions', value: form.additionalConditions || 'Not provided' },
                 { label: 'Asking Price', value: form.askingPrice ? formatCurrency(form.askingPrice) : 'Not provided' },
                 { label: 'Disclosure', value: disclosureComplete ? 'Signed' : 'Not signed' },
               ].map((item) => (
@@ -3384,6 +3425,17 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       if (!form.mandateType) {
         return 'Please select the mandate type for this sale.'
       }
+      if (!form.mandateStartDate) {
+        return 'Please select the mandate start date.'
+      }
+      if (!form.mandateEndDate) {
+        return 'Please select the mandate end date.'
+      }
+      const mandateStart = new Date(`${form.mandateStartDate}T00:00:00`)
+      const mandateEnd = new Date(`${form.mandateEndDate}T00:00:00`)
+      if (Number.isNaN(mandateStart.getTime()) || Number.isNaN(mandateEnd.getTime()) || mandateEnd <= mandateStart) {
+        return 'Mandate end date must be after the start date.'
+      }
     }
 
     if (currentStep === 1) {
@@ -3669,7 +3721,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const sellerPaneIndexes = {
     ownership: 0,
     identity: 1,
-    sellingContext: 2,
+    mandatePreferences: 2,
+    sellingContext: 3,
   }
   const propertyPaneIndexes = (() => {
     let paneIndex = 0
@@ -3749,11 +3802,25 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     title: 'Seller details',
     description: 'Capture the details needed for this ownership structure.',
   }
+  const selectedSpecialMandateConditionLabels = getSpecialMandateConditionLabels(form.specialMandateConditions)
+  const mandateStartDateValue = form.mandateStartDate ? new Date(`${form.mandateStartDate}T00:00:00`) : null
+  const mandateEndDateValue = form.mandateEndDate ? new Date(`${form.mandateEndDate}T00:00:00`) : null
+  const mandateDatesInvalid = Boolean(
+    mandateStartDateValue &&
+      mandateEndDateValue &&
+      (!Number.isFinite(mandateStartDateValue.getTime()) || !Number.isFinite(mandateEndDateValue.getTime()) || mandateEndDateValue <= mandateStartDateValue),
+  )
   const sellerMissing = [
     !form.sellerFirstName && 'Seller name',
     !form.sellerSurname && 'Seller surname',
     !form.email && 'Email',
     !form.phone && 'Phone',
+  ].filter(Boolean)
+  const mandateMissing = [
+    !form.mandateType && 'Mandate type',
+    !form.mandateStartDate && 'Start date',
+    !form.mandateEndDate && 'End date',
+    mandateDatesInvalid && 'End date must be after start date',
   ].filter(Boolean)
   const propertyMissing = [
     !propertyAddressDetails.line1 && 'Property address',
@@ -3784,6 +3851,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const disclosureMissing = getPropertyDisclosureMissingItems(form.propertyDisclosure || {})
   const reviewIssueGroups = [
     { label: 'Seller details', missing: sellerMissing, onEdit: () => setCurrentStep(0) },
+    { label: 'Mandate preferences', missing: mandateMissing, onEdit: () => setCurrentStep(0) },
     { label: 'Property details', missing: propertyMissing, onEdit: () => setCurrentStep(1) },
     { label: 'Property disclosure', missing: disclosureMissing, onEdit: () => setCurrentStep(2) },
     ...(bondComplianceSummary ? [{ label: 'Bond follow-up', missing: bondComplianceSummary.missing, onEdit: () => setCurrentStep(1) }] : []),
@@ -4359,14 +4427,14 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
               <FormSection
                 icon={FileCheck2}
-                title="Selling details"
-                description="Help us understand your plans so we can guide you better."
+                title="Mandate preferences"
+                description="Confirm the mandate choices your agent will use to prepare the mandate."
                 illustration="selling_context"
-                mobilePaneIndex={sellerPaneIndexes.sellingContext}
+                mobilePaneIndex={sellerPaneIndexes.mandatePreferences}
               >
                 <div className="grid gap-5">
                   <div>
-                    <p className="text-sm font-medium text-[#2a4057]">Mandate type</p>
+                    <p className="text-sm font-medium text-[#2a4057]">Choose the mandate type</p>
                     <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                       {MANDATE_TYPE_OPTIONS.map((option) => (
                         <ChoiceCard
@@ -4374,11 +4442,64 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                           active={form.mandateType === option.value}
                           icon={FileCheck2}
                           title={option.label}
+                          description={option.description}
                           onClick={() => handleFormUpdate('mandateType', option.value)}
                         />
                       ))}
                     </div>
                   </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Mandate start date
+                      <input className={DETAIL_INPUT_CLASS} type="date" value={form.mandateStartDate || ''} onChange={(event) => handleFormUpdate('mandateStartDate', event.target.value)} />
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Mandate end date
+                      <input className={DETAIL_INPUT_CLASS} type="date" value={form.mandateEndDate || ''} onChange={(event) => handleFormUpdate('mandateEndDate', event.target.value)} />
+                    </label>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-[#2a4057]">Special conditions</p>
+                    <p className="mt-1 text-sm leading-5 text-[#60748b]">Select anything that must be included or considered.</p>
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {SPECIAL_MANDATE_CONDITION_OPTIONS.map((option) => (
+                        <label key={option.key} className="flex min-h-[74px] items-start gap-3 rounded-[14px] border border-[#d8e2ec] bg-white px-3 py-3 text-sm font-medium text-[#2a4057]">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(form.specialMandateConditions?.[option.key])}
+                            onChange={(event) => handleFormUpdate('specialMandateConditions', {
+                              ...(form.specialMandateConditions || {}),
+                              [option.key]: event.target.checked,
+                            })}
+                            className="mt-1 h-4 w-4 rounded border-[#b8c7d8] accent-[#138a3d]"
+                          />
+                          <span className="min-w-0">
+                            <span className="block font-semibold text-[#172334]">{option.label}</span>
+                            <span className="mt-1 block text-xs leading-5 text-[#60748b]">{option.description}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                    Anything else to include? (optional)
+                    <textarea
+                      className={`${DETAIL_INPUT_CLASS} min-h-[120px] resize-y`}
+                      value={form.additionalConditions || ''}
+                      onChange={(event) => handleFormUpdate('additionalConditions', event.target.value)}
+                      placeholder="Access rules, timing, exclusions, or anything your agent should include in the mandate."
+                    />
+                  </label>
+                </div>
+              </FormSection>
+
+              <FormSection
+                icon={ClipboardCheck}
+                title="Selling context"
+                description="Help us understand your plans so we can guide you better."
+                mobilePaneIndex={sellerPaneIndexes.sellingContext}
+              >
+                <div className="grid gap-5">
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     Asking Price (optional)
                     <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.askingPrice} onChange={(event) => handleFormUpdate('askingPrice', event.target.value)} />
@@ -5051,12 +5172,25 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   ]}
                 />
                 <ReviewCard
+                  title="Mandate Preferences"
+                  missing={mandateMissing}
+                  onEdit={() => setCurrentStep(0)}
+                  collapsible
+                  defaultOpen
+                  items={[
+                    { label: 'Mandate Type', value: getMandateTypeLabel(form.mandateType) },
+                    { label: 'Start Date', value: formatDateValue(form.mandateStartDate) },
+                    { label: 'End Date', value: formatDateValue(form.mandateEndDate) },
+                    { label: 'Special Conditions', value: selectedSpecialMandateConditionLabels.length ? selectedSpecialMandateConditionLabels.join(', ') : 'None selected' },
+                    { label: 'Additional Conditions', value: form.additionalConditions || 'Not provided' },
+                  ]}
+                />
+                <ReviewCard
                   title="Selling Context"
                   onEdit={() => setCurrentStep(0)}
                   collapsible
                   items={[
                     { label: 'Asking Price', value: form.askingPrice ? formatCurrency(form.askingPrice) : 'Not provided' },
-                    { label: 'Mandate Type', value: MANDATE_TYPE_OPTIONS.find((item) => item.value === form.mandateType)?.label || 'Not selected' },
                     { label: 'Timeline', value: formatValue(form.sellingTimeline) },
                     { label: 'Reason', value: formatValue(form.sellingReason) },
                   ]}
