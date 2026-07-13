@@ -15400,38 +15400,23 @@ function SellerAvatar({ name = '' }) {
   )
 }
 
-function SellerLeadStatusChips({ row, journey, readiness, listing = null, onAction }) {
-  const listingMeta = getSellerListingMeta(row, listing, journey)
-  const mandateMeta = getSellerMandateMeta(row, listing, journey)
-  const chips = [
-    { label: 'Assigned Agent', value: getOwnerName(row) || 'Unassigned', tone: getOwnerName(row) === 'Unassigned' ? 'slate' : 'blue', actionId: 'assign_agent' },
-    { label: 'Current Stage', value: journey?.stage?.label || row.stage || 'Contacted', tone: 'blue', actionId: 'open_journey' },
-    { label: 'Readiness', value: readiness?.readinessLabel || 'Review', tone: readiness?.missingItems?.length ? 'amber' : 'green', actionId: 'open_readiness' },
-    { label: 'Listing', value: listingMeta.label, tone: listingMeta.tone, actionId: listingMeta.hasListing ? 'open_listing' : 'create_listing' },
-    { label: 'Mandate', value: mandateMeta.label, tone: mandateMeta.tone, actionId: mandateMeta.hasRecord ? 'view_mandate' : 'generate_mandate' },
-  ]
-
-  const toneClasses = {
-    green: 'border-emerald-100 bg-emerald-50/80 text-emerald-800',
-    amber: 'border-amber-100 bg-amber-50/80 text-amber-800',
-    blue: 'border-blue-100 bg-blue-50/80 text-blue-800',
-    slate: 'border-slate-200 bg-slate-50/90 text-slate-700',
-  }
-
+function SellerAssignedAgentIndicator({ row }) {
+  const ownerName = getOwnerName(row)
+  const unassigned = ownerName === 'Unassigned'
   return (
-    <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-5" role="list" aria-label="Seller lead status shortcuts">
-      {chips.map((chip) => (
-        <button
-          key={chip.label}
-          type="button"
-          onClick={() => onAction?.(chip.actionId)}
-          className={`min-w-0 rounded-2xl border px-3 py-2 text-left shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_34px_rgba(15,23,42,0.08)] focus:outline-none focus:ring-2 focus:ring-blue-200 ${toneClasses[chip.tone] || toneClasses.slate}`}
-          title={`Open ${chip.label.toLowerCase()} action`}
-        >
-          <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">{chip.label}</span>
-          <span className="mt-1 block truncate text-sm font-semibold capitalize">{chip.value || 'Not Set'}</span>
-        </button>
-      ))}
+    <div
+      className={`inline-flex min-h-11 min-w-0 items-center gap-3 rounded-xl border px-3.5 py-2 text-left shadow-sm ${
+        unassigned ? 'border-slate-200 bg-slate-50/90 text-slate-600' : 'border-blue-100 bg-blue-50/70 text-blue-800'
+      }`}
+      aria-label={`Assigned agent: ${ownerName}`}
+    >
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/80 text-current shadow-sm">
+        <UserRound size={15} />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">Assigned Agent</span>
+        <span className="mt-0.5 block max-w-[220px] truncate text-sm font-semibold">{ownerName}</span>
+      </span>
     </div>
   )
 }
@@ -15553,7 +15538,6 @@ function SellerLeadActions({
             </button>
           ) : null}
           <button type="button" onClick={() => closeMenuAndRun(() => onStatusAction?.('edit_seller'))} className={menuButtonClass} role="menuitem">Edit seller details</button>
-          <button type="button" onClick={() => closeMenuAndRun(() => onStatusAction?.('assign_agent'))} className={menuButtonClass} role="menuitem">Assign agent</button>
           {onboardingMeta.disabled ? (
             <button type="button" onClick={() => closeMenuAndRun(onSendSellerOnboarding)} disabled={sendingOnboarding} className={menuButtonClass} role="menuitem">
               Resend Onboarding Link
@@ -15584,7 +15568,6 @@ function SellerLeadActions({
 function SellerLeadHeader({
   row,
   journey,
-  readiness,
   listing = null,
   onboardingStatus = '',
   sendingOnboarding = false,
@@ -15601,52 +15584,48 @@ function SellerLeadHeader({
   onArchiveLead,
   onStatusAction,
 }) {
-  const headerSource = getLeadSourceInfo(row).leadSource
   return (
-    <header className={`${panelClass} overflow-visible border-slate-200/80 bg-white/95 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.07)]`}>
-      <div className="grid gap-6 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.35fr)]">
+    <header className={`${panelClass} overflow-visible border-slate-200/80 bg-white/95 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.07)] sm:p-6`}>
+      <div className="grid gap-5 xl:grid-cols-[minmax(320px,1fr)_auto] xl:items-start">
         <div className="flex min-w-0 gap-4">
           <SellerAvatar name={row.name} />
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Seller Lead</p>
-              <StatusPill tone="green">Seller Lead</StatusPill>
-            </div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Seller Lead</p>
             <h1 className="mt-2 truncate text-3xl font-semibold tracking-[-0.045em] text-slate-950">{row.name || 'Unnamed seller'}</h1>
             <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm font-medium text-slate-500">
               <span className="inline-flex min-w-0 items-center gap-1.5"><Phone size={14} />{row.phone || 'No phone'}</span>
               <span className="inline-flex min-w-0 items-center gap-1.5"><Mail size={14} /><span className="max-w-[280px] truncate">{row.email || 'No email'}</span></span>
             </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <StatusPill>{headerSource || 'Unknown source'}</StatusPill>
-              <StatusPill>{row.status || row.stage || 'Active'}</StatusPill>
+            <div className="mt-4 flex flex-wrap gap-2 text-sm">
               <StatusPill>{formatDate(row.createdAt, 'No created date')}</StatusPill>
             </div>
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-col gap-4">
-          <SellerLeadStatusChips row={row} journey={journey} readiness={readiness} listing={listing} onAction={onStatusAction} />
-          <SellerLeadActions
-            key={row?.leadId || 'seller-lead-actions'}
-            row={row}
-            journey={journey}
-            listing={listing}
-            onboardingStatus={onboardingStatus}
-            sendingOnboarding={sendingOnboarding}
-            sendingPortalLink={sendingPortalLink}
-            onSendSellerOnboarding={onSendSellerOnboarding}
-            onResendSellerPortalLink={onResendSellerPortalLink}
-            onGenerateMandate={onGenerateMandate}
-            onOpenListing={onOpenListing}
-            onOpenAppointments={onOpenAppointments}
-            onCopySellerOnboardingLink={onCopySellerOnboardingLink}
-            onCopySellerPortalLink={onCopySellerPortalLink}
-            onCopyListingLink={onCopyListingLink}
-            onMarkAsLost={onMarkAsLost}
-            onArchiveLead={onArchiveLead}
-            onStatusAction={onStatusAction}
-          />
+        <div className="flex min-w-0 flex-col gap-3 xl:items-end">
+          <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+            <SellerAssignedAgentIndicator row={row} />
+            <SellerLeadActions
+              key={row?.leadId || 'seller-lead-actions'}
+              row={row}
+              journey={journey}
+              listing={listing}
+              onboardingStatus={onboardingStatus}
+              sendingOnboarding={sendingOnboarding}
+              sendingPortalLink={sendingPortalLink}
+              onSendSellerOnboarding={onSendSellerOnboarding}
+              onResendSellerPortalLink={onResendSellerPortalLink}
+              onGenerateMandate={onGenerateMandate}
+              onOpenListing={onOpenListing}
+              onOpenAppointments={onOpenAppointments}
+              onCopySellerOnboardingLink={onCopySellerOnboardingLink}
+              onCopySellerPortalLink={onCopySellerPortalLink}
+              onCopyListingLink={onCopyListingLink}
+              onMarkAsLost={onMarkAsLost}
+              onArchiveLead={onArchiveLead}
+              onStatusAction={onStatusAction}
+            />
+          </div>
         </div>
       </div>
     </header>
@@ -15819,9 +15798,9 @@ function SellerWorkspaceTabs({ activeTab, onTabChange }) {
   )
 }
 
-function SellerOverviewTab({ row, sourceInfo, journey, timeline, organisationId, actor, onSaved, onTabChange }) {
+function SellerOverviewTab({ row, sourceInfo, journey }) {
   return (
-    <div className="grid items-stretch gap-5 xl:grid-cols-2 xl:auto-rows-[minmax(320px,auto)]">
+    <div className="grid items-stretch gap-5 xl:grid-cols-2">
       <SellerWorkspaceCard title="Lead Summary" density="compact">
         <dl className="flex flex-1 flex-col">
           <SellerInfoRow label="Source" value={sourceInfo?.leadSource || row.source} />
@@ -15833,17 +15812,6 @@ function SellerOverviewTab({ row, sourceInfo, journey, timeline, organisationId,
         </dl>
       </SellerWorkspaceCard>
       <SellerDocumentsSummaryCard journey={journey} />
-      <SellerWorkspaceCard
-        title="Recent Activity"
-        density="compact"
-        className="h-[320px] overflow-hidden"
-        action={<button type="button" onClick={() => onTabChange('activity')} className="text-xs font-semibold text-blue-700">View All</button>}
-      >
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
-          <SellerTimelineList timeline={timeline} limit={12} compact />
-        </div>
-      </SellerWorkspaceCard>
-      <SellerOwnershipSummaryCard organisationId={organisationId} lead={row} actor={actor} onSaved={onSaved} />
     </div>
   )
 }
@@ -17301,18 +17269,18 @@ function SellerProfileTab({
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={beginAgentAssistedOnboarding}
-            className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800"
+            onClick={onSendSellerOnboarding}
+            className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+            disabled={!onSendSellerOnboarding || sendingOnboarding}
           >
-            Onboard seller as agent
+            {sendingOnboarding ? 'Sending seller onboarding...' : 'Send seller onboarding'}
           </button>
           <button
             type="button"
-            onClick={onSendSellerOnboarding}
-            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={!onSendSellerOnboarding || sendingOnboarding}
+            onClick={beginAgentAssistedOnboarding}
+            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
           >
-            {sendingOnboarding ? 'Sending...' : 'Send link'}
+            Onboard as agent
           </button>
         </div>
       )
@@ -17382,7 +17350,6 @@ function SellerProfileTab({
           title="Seller Snapshot"
           action={(
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <StatusPill tone={snapshotStatusTone}>{progressMeta.label}</StatusPill>
               {snapshotAction}
             </div>
           )}
@@ -17573,18 +17540,18 @@ function SellerProfileTab({
             <div className="mt-4 flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={beginAgentAssistedOnboarding}
-                className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800"
-              >
-                Onboard seller as agent
-              </button>
-              <button
-                type="button"
                 onClick={onSendSellerOnboarding}
-                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                 disabled={!onSendSellerOnboarding || sendingOnboarding}
               >
                 {sendingOnboarding ? 'Sending seller onboarding...' : 'Send seller onboarding'}
+              </button>
+              <button
+                type="button"
+                onClick={beginAgentAssistedOnboarding}
+                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+              >
+                Onboard as agent
               </button>
             </div>
             <div className="mt-5 rounded-2xl border border-slate-200 bg-white/90 p-4 text-sm text-slate-600">
@@ -18464,12 +18431,6 @@ function SellerTabContent({
       row={row}
       sourceInfo={sourceInfo}
       journey={journey}
-      readiness={readiness}
-      timeline={timeline}
-      organisationId={organisationId}
-      actor={actor}
-      onSaved={onSaved}
-      onTabChange={onTabChange}
     />
   )
 }
@@ -18554,66 +18515,6 @@ function SellerDocumentsSummaryCard({ journey = null }) {
           )
         }) : <p className="text-sm text-slate-500">No seller document requirements have been generated yet.</p>}
       </div>
-    </SellerWorkspaceCard>
-  )
-}
-
-function SellerOwnershipSummaryCard({ organisationId, lead, actor, onSaved }) {
-  const [agentId, setAgentId] = useState(lead.assignedAgentId || '')
-  const [queueId, setQueueId] = useState(lead.assignedQueueId || 'unassigned')
-  const [saving, setSaving] = useState('')
-  const [error, setError] = useState('')
-  const canManage = canManageLeadAssignment(actor, lead)
-
-  useEffect(() => {
-    setAgentId(lead.assignedAgentId || '')
-    setQueueId(lead.assignedQueueId || 'unassigned')
-  }, [lead.assignedAgentId, lead.assignedQueueId])
-
-  async function run(label, action) {
-    try {
-      setSaving(label)
-      setError('')
-      await action()
-      await onSaved()
-    } catch (actionError) {
-      setError(actionError?.message || 'Unable to update assignment.')
-    } finally {
-      setSaving('')
-    }
-  }
-
-  return (
-    <SellerWorkspaceCard
-      density="compact"
-      className="h-[320px]"
-      title="Ownership"
-      id="seller-ownership"
-      action={<StatusPill tone={getSlaTone(lead.slaStatus)}>{formatSlaStatus(lead.slaStatus)}</StatusPill>}
-    >
-      <dl className="flex flex-1 flex-col">
-        <SellerInfoRow label="Agent" value={getOwnerName(lead)} />
-        <SellerInfoRow label="Queue" value={lead.assignedQueue || 'No queue'} />
-        <SellerInfoRow label="SLA" value={formatDateTime(lead.slaDueAt)} />
-        <SellerInfoRow label="Assigned Date" value={formatDateTime(lead.assignedAt)} />
-      </dl>
-      {error ? <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
-      {canManage ? (
-        <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <summary className="cursor-pointer text-sm font-semibold text-slate-700">Manage Assignment</summary>
-          <div className="mt-3 grid gap-3">
-            <input value={agentId} onChange={(event) => setAgentId(event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" placeholder="Agent user id" />
-            <select value={queueId} onChange={(event) => setQueueId(event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm">
-              {LEAD_ASSIGNMENT_QUEUES.map((queue) => <option key={queue} value={queue}>{queue.replace(/_/g, ' ')}</option>)}
-            </select>
-            <div className="grid gap-2 sm:grid-cols-3">
-              <button type="button" disabled={Boolean(saving) || !agentId} onClick={() => run('agent', () => assignLeadToAgent({ organisationId, leadId: lead.leadId, agentId, reason: 'Assigned from Lead Workspace' }, { actor }))} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-900 px-3 text-sm font-semibold text-white disabled:bg-slate-300">Assign</button>
-              <button type="button" disabled={Boolean(saving)} onClick={() => run('queue', () => assignLeadToQueue({ organisationId, leadId: lead.leadId, queueId, reason: 'Assigned to queue from Lead Workspace' }, { actor }))} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 disabled:opacity-60">Queue</button>
-              <button type="button" disabled={Boolean(saving)} onClick={() => run('auto', () => autoAssignLead({ organisationId, leadId: lead.leadId }, { actor }))} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 px-3 text-sm font-semibold text-blue-700 disabled:opacity-60">Auto</button>
-            </div>
-          </div>
-        </details>
-      ) : null}
     </SellerWorkspaceCard>
   )
 }
@@ -18738,10 +18639,7 @@ function SellerLeadWorkspaceLayout({
       setActiveWorkspaceTab('seller')
       focusSellerWorkspaceSection('seller-onboarding-editor')
     }
-    else if (key === 'assign_agent') {
-      setActiveWorkspaceTab('overview')
-      focusSellerWorkspaceSection('seller-ownership')
-    } else if (key === 'open_journey') {
+    else if (key === 'open_journey') {
       focusSellerWorkspaceSection('seller-journey')
     } else if (key === 'open_readiness') {
       setActiveWorkspaceTab('documents')
