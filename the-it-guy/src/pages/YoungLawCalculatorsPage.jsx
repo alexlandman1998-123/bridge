@@ -2,7 +2,6 @@ import {
   ArrowLeft,
   ArrowRight,
   BadgeCheck,
-  Building2,
   ChevronRight,
   CircleDollarSign,
   ClipboardCheck,
@@ -68,7 +67,6 @@ const calcCards = [
 ]
 
 const transferWizardSteps = [
-  { key: 'mandate', label: 'Mandate' },
   { key: 'finance', label: 'Finance' },
   { key: 'amounts', label: 'Amounts' },
   { key: 'estimate', label: 'Estimate' },
@@ -207,22 +205,20 @@ function getEstimatePack(type, result) {
 
   return {
     signal: [
-      matterPath.transactionLabel || (result.input.transactionBasis === 'vat' ? 'VAT sale' : 'Resale transfer'),
+      'Standard transfer',
       matterPath.usesBond ? `${bondRatio}% bond` : 'cash purchase',
     ].join(' / '),
     tone: 'dark',
-    narrative: matterPath.primaryDetail || 'The estimate combines the relevant transfer costs for the selected matter path.',
+    narrative: matterPath.primaryDetail || 'The estimate combines transfer duty, legal fees, disbursements and VAT on taxable legal fees.',
     assumptions: [
       `Purchase price: ${formatZar(purchasePrice)}`,
       matterPath.usesBond ? `Bond amount: ${formatZar(bondAmount)}` : 'Bond amount: not applicable',
-      `Mandate type: ${matterPath.transactionLabel || (result.input.transactionBasis === 'vat' ? 'VAT sale' : 'Resale transfer')}`,
+      'Transfer duty: included where applicable on the SARS resale table',
       `Finance type: ${matterPath.financeLabel || (result.input.financeType === 'cash' ? 'Cash purchase' : 'Bond finance')}`,
       `Buyer cash needed: ${result.primaryMetric.display}`,
     ],
     nextSteps: [
-      matterPath.isVatSale
-        ? 'Confirm that the sale agreement is VAT-inclusive and that transfer duty is excluded.'
-        : 'Confirm the purchase price against the SARS transfer-duty table.',
+      'Confirm the purchase price against the signed sale agreement.',
       matterPath.usesBond
         ? 'Check the final bond amount before issuing a formal quote.'
         : 'Confirm that no bond registration instruction is expected.',
@@ -890,60 +886,12 @@ function CalculatorHeader({ title, eyebrow, onBack, backLabel = 'All calculators
 
 function TransferCalculator({ onBack, onQuote }) {
   const [input, setInput] = useState(() => ({ ...DEFAULT_YOUNG_LAW_TRANSFER_INPUT }))
-  const [transferStep, setTransferStep] = useState('mandate')
+  const [transferStep, setTransferStep] = useState('finance')
   const result = useMemo(() => calculateYoungLawTransfer(input), [input])
   const purchasePrice = Number(input.purchasePrice)
   const bondAmount = Number(input.bondAmount)
   const minimumBondAmount = 50000
   const matterPath = result.matterPath
-  const scenarios = useMemo(() => {
-    const currentValue = result.primaryMetric.value
-    const eightyPercentBond = clampMoney(roundToStep(purchasePrice * 0.8), 0, purchasePrice)
-    const scenarioInputs = []
-
-    if (!matterPath.usesBond || Math.abs(eightyPercentBond - bondAmount) >= 50000) {
-      scenarioInputs.push({
-        key: 'eighty-bond',
-        label: '80% bond',
-        caption: 'Bond set to 80% of the purchase price.',
-        input: { ...input, financeType: 'bond', bondAmount: eightyPercentBond },
-      })
-    }
-
-    if (matterPath.usesBond) {
-      scenarioInputs.push({
-        key: 'cash-purchase',
-        label: 'Cash purchase',
-        caption: 'No bond-registration component included.',
-        input: { ...input, financeType: 'cash', bondAmount: 0 },
-      })
-    }
-
-    if (matterPath.isVatSale) {
-      scenarioInputs.push({
-        key: 'resale-transfer',
-        label: 'Resale transfer',
-        caption: 'Transfer-duty path using the SARS table.',
-        input: { ...input, transactionBasis: 'resale' },
-      })
-    } else {
-      scenarioInputs.push({
-        key: 'vat-sale',
-        label: 'VAT sale',
-        caption: 'Transfer duty excluded for the VAT-sale path.',
-        input: { ...input, transactionBasis: 'vat' },
-      })
-    }
-
-    return scenarioInputs.map((scenario) => {
-      const scenarioResult = calculateYoungLawTransfer(scenario.input)
-      return {
-        ...scenario,
-        value: scenarioResult.primaryMetric.value,
-        delta: scenarioResult.primaryMetric.value - currentValue,
-      }
-    })
-  }, [bondAmount, input, matterPath.isVatSale, matterPath.usesBond, purchasePrice, result.primaryMetric.value])
 
   useEffect(() => {
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }))
@@ -977,16 +925,7 @@ function TransferCalculator({ onBack, onQuote }) {
       setTransferStep('finance')
       return
     }
-    if (transferStep === 'finance') {
-      setTransferStep('mandate')
-      return
-    }
     onBack()
-  }
-
-  function selectMandate(transactionBasis) {
-    update('transactionBasis', transactionBasis)
-    setTransferStep('finance')
   }
 
   function selectFinance(financeType) {
@@ -999,30 +938,17 @@ function TransferCalculator({ onBack, onQuote }) {
       <CalculatorHeader
         title="Transfer Cost"
         eyebrow="Buyer estimate"
-        backLabel={transferStep === 'mandate' ? 'All calculators' : 'Previous step'}
+        backLabel={transferStep === 'finance' ? 'All calculators' : 'Previous step'}
         onBack={goBackWithinTransfer}
       />
       <div className="grid gap-4 px-4 pb-5">
         <WizardProgress steps={transferWizardSteps} activeKey={transferStep} />
 
-        {transferStep === 'mandate' ? (
-          <FlowStep
-            step="1"
-            title="Mandate type"
-            detail="Choose the legal basis first. It decides whether SARS transfer duty applies."
-          >
-            <div className="grid gap-2">
-              <ToggleButton label="Resale transfer" icon={Building2} active={input.transactionBasis === 'resale'} onClick={() => selectMandate('resale')} />
-              <ToggleButton label="VAT sale" icon={Percent} active={input.transactionBasis === 'vat'} onClick={() => selectMandate('vat')} />
-            </div>
-          </FlowStep>
-        ) : null}
-
         {transferStep === 'finance' ? (
           <FlowStep
-            step="2"
+            step="1"
             title="Finance type"
-            detail="Now choose whether Young Law should include bond registration work."
+            detail="Choose whether Young Law should include bond registration work in the estimate."
           >
             <div className="grid gap-2">
               <ToggleButton label="Bond finance" icon={CircleDollarSign} active={input.financeType === 'bond'} onClick={() => selectFinance('bond')} />
@@ -1033,7 +959,7 @@ function TransferCalculator({ onBack, onQuote }) {
 
         {transferStep === 'amounts' ? (
           <FlowStep
-            step="3"
+            step="2"
             title={input.financeType === 'bond' ? 'Finance amounts' : 'Purchase amount'}
             detail={input.financeType === 'bond' ? 'Set the purchase price and bond amount before viewing the estimate.' : 'Cash purchases only need the purchase price before viewing the estimate.'}
           >
@@ -1073,15 +999,6 @@ function TransferCalculator({ onBack, onQuote }) {
             />
             <StickyResultBar label="Cash needed" value={result.primaryMetric.display} type="transfer" result={result} onQuote={onQuote} />
 
-            <div className="grid grid-cols-3 gap-2">
-              {result.secondaryMetrics.map((metric) => (
-                <NumberDisplay key={metric.label} label={metric.label} value={metric.display || formatZar(metric.value, { compact: true })} tone={metric.tone || (metric.label === 'Transfer duty' ? 'gold' : 'dark')} />
-              ))}
-            </div>
-
-            <EstimatePack type="transfer" result={result} />
-            <ScenarioStudio metricLabel="Cash needed" scenarios={scenarios} onApply={setInput} />
-
             <div className="rounded-lg border border-[#d8d2c5] bg-white p-4 shadow-[0_8px_22px_rgba(32,27,20,0.035)]">
               <div className="mb-2 flex items-center gap-2">
                 <ReceiptText size={17} />
@@ -1090,17 +1007,25 @@ function TransferCalculator({ onBack, onQuote }) {
               <BreakdownList items={result.headlineItems} />
             </div>
 
-            <SourceStrip links={matterPath.isVatSale ? [] : [{ href: SARS_TRANSFER_DUTY_SOURCE_URL, label: `SARS transfer duty ${TRANSFER_DUTY_TABLE_EFFECTIVE}` }]} />
+            <div className="grid grid-cols-3 gap-2">
+              {result.secondaryMetrics.map((metric) => (
+                <NumberDisplay key={metric.label} label={metric.label} value={metric.display || formatZar(metric.value, { compact: true })} tone={metric.tone || (metric.label === 'Transfer duty' ? 'gold' : 'dark')} />
+              ))}
+            </div>
+
+            <EstimatePack type="transfer" result={result} />
+
+            <SourceStrip links={[{ href: SARS_TRANSFER_DUTY_SOURCE_URL, label: `SARS transfer duty ${TRANSFER_DUTY_TABLE_EFFECTIVE}` }]} />
             <QuoteCta type="transfer" result={result} onQuote={onQuote} />
           </>
         ) : null}
 
-        {transferStep === 'finance' || transferStep === 'amounts' ? (
+        {transferStep === 'amounts' ? (
           <div className="rounded-lg border border-[#d8d2c5] bg-white p-4 shadow-[0_8px_22px_rgba(32,27,20,0.035)]">
             <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8a6b0b]">Selected so far</p>
             <div className="mt-3 grid gap-2">
-              <p className="text-sm font-medium text-[#141210]">{matterPath.transactionLabel}</p>
-              {transferStep === 'amounts' ? <p className="text-sm font-normal leading-6 text-[#626766]">{matterPath.financeLabel}</p> : null}
+              <p className="text-sm font-medium text-[#141210]">{matterPath.financeLabel}</p>
+              <p className="text-sm font-normal leading-6 text-[#626766]">Standard transfer duty estimate</p>
             </div>
           </div>
         ) : null}

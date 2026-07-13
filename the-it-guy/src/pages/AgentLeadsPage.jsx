@@ -20351,6 +20351,7 @@ function SellerTimelinePanel({ timeline = [] }) {
 function SellerLeadWorkspaceLayout({
   row,
   sourceInfo,
+  initialWorkspaceTab = '',
   sellerJourney,
   sellerReadiness,
   linkedSellerListing,
@@ -20382,11 +20383,19 @@ function SellerLeadWorkspaceLayout({
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState('overview')
   const [appointmentComposerSignal, setAppointmentComposerSignal] = useState(0)
   const [agentOnboardingSignal, setAgentOnboardingSignal] = useState(0)
+  const initialWorkspaceTabHandledRef = useRef('')
   const commissionSummary = useMemo(() => getSellerCommissionWorkspace(row, linkedSellerListing), [linkedSellerListing, row])
   const [commissionDraft, setCommissionDraft] = useState(() => buildSellerCommissionDraft(commissionSummary))
   useEffect(() => {
     setCommissionDraft(buildSellerCommissionDraft(commissionSummary))
   }, [commissionSummary])
+  useEffect(() => {
+    const requestedTab = normalizeText(initialWorkspaceTab).toLowerCase()
+    if (!requestedTab || initialWorkspaceTabHandledRef.current === requestedTab) return
+    if (!['overview', 'seller', 'property', 'mandate', 'appointments', 'documents', 'activity'].includes(requestedTab)) return
+    initialWorkspaceTabHandledRef.current = requestedTab
+    setActiveWorkspaceTab(requestedTab)
+  }, [initialWorkspaceTab])
   const updateCommissionDraft = useCallback((key, value) => {
     setCommissionDraft((previous) => ({ ...previous, [key]: value }))
   }, [])
@@ -20729,6 +20738,10 @@ function AgentLeadWorkspace() {
   const workspaceAnalytics = row ? buildLeadWorkspaceAnalyticsSummary(row) : null
   const leadCategory = row ? normalizeLeadCategory(row) : 'other'
   const isSellerLeadWorkspace = leadCategory === 'seller'
+  const requestedSellerWorkspaceTab = useMemo(() => {
+    if (!location.search) return ''
+    return normalizeText(new URLSearchParams(location.search).get('sellerWorkspace')).toLowerCase()
+  }, [location.search])
   const linkedSellerListing = useMemo(() => {
     if (!row) return null
     const leadListingId = normalizeText(row.listingId || row.listing_id || row.privateListingId || row.private_listing_id)
@@ -21649,6 +21662,7 @@ function AgentLeadWorkspace() {
             <SellerLeadWorkspaceLayout
               row={row}
               sourceInfo={sourceInfo}
+              initialWorkspaceTab={requestedSellerWorkspaceTab}
               sellerJourney={sellerJourney}
               sellerReadiness={sellerReadiness}
               linkedSellerListing={linkedSellerListing}

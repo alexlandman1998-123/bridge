@@ -2281,8 +2281,8 @@ export default function LegalDocumentWorkspacePage() {
   const [routeContextSettled, setRouteContextSettled] = useState(false)
   const [initialStatus, setInitialStatus] = useState(null)
   const [validatedRoutePacketId, setValidatedRoutePacketId] = useState('')
-  const [mandateDraftOverrides, setMandateDraftOverrides] = useState({})
   const [otpDraftOverrides, setOtpDraftOverrides] = useState({})
+  const [mandateEssentialsConfirmed, setMandateEssentialsConfirmed] = useState(false)
   const initialStatusRef = useRef(null)
   const hasRenderedContextRef = useRef(false)
 
@@ -2332,28 +2332,24 @@ export default function LegalDocumentWorkspacePage() {
     }),
     [initialStatus, leadContext, transactionDetail],
   )
-  const effectiveMandateDraft = useMemo(
-    () => ({
-      ...mandateDraftDefaults,
-      ...mandateDraftOverrides,
-    }),
-    [mandateDraftDefaults, mandateDraftOverrides],
-  )
+  const effectiveMandateDraft = mandateDraftDefaults
   const showMandateDraftPanel =
     routeContextSettled &&
     packetType === 'mandate' &&
     mode === 'generate' &&
     !validatedRoutePacketId &&
-    !initialStatus?.packet?.id
-  const updateMandateDraftField = useCallback((field, value) => {
-    setMandateDraftOverrides((previous) => ({
-      ...previous,
-      [field]: value,
-    }))
-  }, [])
-  const resetMandateDraftFields = useCallback(() => {
-    setMandateDraftOverrides({})
-  }, [])
+    !initialStatus?.packet?.id &&
+    !mandateEssentialsConfirmed
+  const handleEditMandateSellerDetails = useCallback(() => {
+    if (routeLeadId) {
+      navigate(`/pipeline/leads/${encodeURIComponent(routeLeadId)}?sellerWorkspace=seller`)
+      return
+    }
+    navigate(backPath)
+  }, [backPath, navigate, routeLeadId])
+  useEffect(() => {
+    setMandateEssentialsConfirmed(false)
+  }, [routeLeadId, routeListingId, routePacketId, routeTransactionId])
   const otpDraftDefaults = useMemo(
     () => buildOtpDraftDefaults({
       transactionDetail,
@@ -3937,8 +3933,8 @@ export default function LegalDocumentWorkspacePage() {
           draft={effectiveMandateDraft}
           sourceMode={documentStartSourceMode}
           documentStart={documentStartEntryPoint}
-          onFieldChange={updateMandateDraftField}
-          onReset={resetMandateDraftFields}
+          onConfirm={() => setMandateEssentialsConfirmed(true)}
+          onEditSellerDetails={handleEditMandateSellerDetails}
         />
       ) : null}
 

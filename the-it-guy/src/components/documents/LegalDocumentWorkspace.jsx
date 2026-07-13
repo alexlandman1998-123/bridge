@@ -5190,7 +5190,7 @@ export default function LegalDocumentWorkspace({
       <div className={rootClassName}>
         <div className={shellClassName}>
           <header className="border-b border-[#e5edf7] bg-white/95 px-4 py-4 backdrop-blur sm:px-6 sm:py-5">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div className="flex min-w-0 items-start gap-3">
                 <button
                   type="button"
@@ -5210,35 +5210,11 @@ export default function LegalDocumentWorkspace({
                       {workspaceSummary.badge}
                     </span>
                   </div>
-                  <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-6">
-                    <div>
-                      <p className="text-xs font-semibold text-[#7b8ea4]">Seller</p>
-                      <p className="mt-1 font-medium text-[#102033]">{workspaceSummary.seller}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-[#7b8ea4]">Property</p>
-                      <p className="mt-1 font-medium text-[#102033]">{workspaceSummary.property}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-[#7b8ea4]">Transaction</p>
-                      <p className="mt-1 font-medium text-[#102033]">{workspaceSummary.transaction}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-[#7b8ea4]">Stage</p>
-                      <p className="mt-1 font-medium text-[#102033]">{workspaceSummary.stage}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-[#7b8ea4]">Status</p>
-                      <p className="mt-1 font-medium text-[#102033]">{workspaceSummary.status}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-[#7b8ea4]">Saved</p>
-                      <p className="mt-1 inline-flex items-center gap-2 font-medium text-[#20b26b]">
-                        <Check size={14} />
-                        {workspaceSummary.savedLabel}
-                      </p>
-                    </div>
-                  </div>
+                  <p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-[#607387]">
+                    {isMandatePacket
+                      ? 'Generate, preview and send the seller mandate. Seller and property details stay managed from the Seller workspace.'
+                      : 'Generate, preview and send this legal document from the existing packet workflow.'}
+                  </p>
                 </div>
               </div>
 
