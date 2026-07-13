@@ -79,9 +79,11 @@ function buildMailto(type, result) {
 
 function LogoMark({ compact = false }) {
   return (
-    <div className={`overflow-hidden rounded-lg border border-[#1d1d1d]/10 bg-white shadow-[0_16px_40px_rgba(0,0,0,0.08)] ${compact ? 'h-14 w-24' : 'h-24 w-40'}`}>
-      <img src={LOGO_SRC} alt="Young Law Inc." className="h-full w-full object-contain p-2" />
-    </div>
+    <img
+      src={LOGO_SRC}
+      alt="Young Law Inc."
+      className={`${compact ? 'h-12 w-24' : 'h-20 w-36'} object-contain mix-blend-multiply`}
+    />
   )
 }
 
@@ -89,7 +91,7 @@ function IconBadge({ icon: Icon, dark = false }) {
   return (
     <span
       className={`flex size-10 shrink-0 items-center justify-center rounded-lg border ${
-        dark ? 'border-white/15 bg-white/10 text-white' : 'border-[#1d1d1d]/10 bg-white text-[#111111]'
+        dark ? 'border-white/15 bg-white/10 text-white' : 'border-[#d8d2c5] bg-[#f8f7f2] text-[#191715]'
       }`}
     >
       <Icon size={18} />
@@ -100,9 +102,9 @@ function IconBadge({ icon: Icon, dark = false }) {
 function NumberDisplay({ label, value, tone = 'dark' }) {
   const toneClass = tone === 'gold' ? 'text-[#6f5609]' : tone === 'alert' ? 'text-[#9f2727]' : 'text-[#111111]'
   return (
-    <div className="min-h-[86px] rounded-lg border border-[#1d1d1d]/10 bg-white p-3 shadow-[0_12px_30px_rgba(0,0,0,0.06)]">
-      <p className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-[#6f7372]">{label}</p>
-      <strong className={`mt-2 block break-words text-[1rem] font-black leading-tight sm:text-xl ${toneClass}`}>{value}</strong>
+    <div className="min-h-[86px] rounded-lg border border-[#d9d5ca] bg-white/92 p-3 shadow-[0_8px_22px_rgba(32,27,20,0.035)]">
+      <p className="text-[0.68rem] font-medium uppercase tracking-[0.14em] text-[#6f7372]">{label}</p>
+      <strong className={`mt-2 block whitespace-nowrap text-[1.05rem] font-normal leading-tight sm:text-xl ${toneClass}`}>{value}</strong>
     </div>
   )
 }
@@ -110,10 +112,10 @@ function NumberDisplay({ label, value, tone = 'dark' }) {
 function SliderField({ label, value, min, max, step, onChange, format = formatZar, hint = '' }) {
   const percentage = max > min ? ((value - min) / (max - min)) * 100 : 0
   return (
-    <label className="grid gap-3 rounded-lg border border-[#1d1d1d]/10 bg-white p-4 shadow-[0_12px_30px_rgba(0,0,0,0.05)]">
+    <label className="grid gap-3 rounded-lg border border-[#d9d5ca] bg-white/92 p-4 shadow-[0_8px_22px_rgba(32,27,20,0.035)]">
       <span className="flex items-start justify-between gap-3">
-        <span className="text-sm font-extrabold text-[#171717]">{label}</span>
-        <span className="text-right text-sm font-black text-[#171717]">{format(value)}</span>
+        <span className="text-sm font-medium text-[#171717]">{label}</span>
+        <span className="text-right text-sm font-medium text-[#171717]">{format(value)}</span>
       </span>
       <input
         type="range"
@@ -122,13 +124,13 @@ function SliderField({ label, value, min, max, step, onChange, format = formatZa
         step={step}
         value={value}
         onChange={(event) => onChange(Number(event.target.value))}
-        className="h-2 w-full appearance-none rounded-lg bg-[#dedbd1] outline-none"
+        className="h-1.5 w-full appearance-none rounded-lg bg-[#dedbd1] outline-none"
         style={{
           accentColor: YOUNG_LAW_ACCENT,
           background: `linear-gradient(90deg, ${YOUNG_LAW_ACCENT} 0%, ${YOUNG_LAW_ACCENT} ${percentage}%, #dedbd1 ${percentage}%, #dedbd1 100%)`,
         }}
       />
-      {hint ? <span className="text-xs font-semibold leading-5 text-[#6f7372]">{hint}</span> : null}
+      {hint ? <span className="text-xs font-normal leading-5 text-[#6f7372]">{hint}</span> : null}
     </label>
   )
 }
@@ -139,9 +141,9 @@ function ToggleButton({ label, active, onClick, icon: Icon }) {
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-extrabold transition ${
+      className={`flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium transition ${
         active
-          ? 'border-[#111111] bg-[#111111] text-white shadow-[0_12px_30px_rgba(0,0,0,0.16)]'
+          ? 'border-[#191715] bg-[#191715] text-white shadow-[0_8px_20px_rgba(0,0,0,0.1)]'
           : 'border-[#1d1d1d]/10 bg-white text-[#333333]'
       }`}
     >
@@ -161,7 +163,7 @@ function SourceStrip({ links }) {
           href={link.href}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#1d1d1d]/10 bg-white px-3 text-xs font-bold text-[#464a49]"
+          className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#1d1d1d]/10 bg-white px-3 text-xs font-medium text-[#464a49]"
         >
           <Landmark size={14} />
           {link.label}
@@ -177,10 +179,10 @@ function BreakdownList({ items }) {
       {items.map((item) => (
         <div key={item.key} className="grid grid-cols-[1fr_auto] gap-3 border-b border-[#1d1d1d]/10 py-3 last:border-b-0">
           <div className="min-w-0">
-            <p className="text-sm font-extrabold text-[#191919]">{item.label}</p>
-            {item.note ? <p className="mt-1 text-xs font-semibold leading-5 text-[#6f7372]">{item.note}</p> : null}
+            <p className="text-sm font-medium text-[#191919]">{item.label}</p>
+            {item.note ? <p className="mt-1 text-xs font-normal leading-5 text-[#6f7372]">{item.note}</p> : null}
           </div>
-          <strong className="text-right text-sm font-black text-[#111111]">{formatZar(item.amount)}</strong>
+          <strong className="text-right text-sm font-medium text-[#111111]">{formatZar(item.amount)}</strong>
         </div>
       ))}
     </div>
@@ -189,10 +191,10 @@ function BreakdownList({ items }) {
 
 function QuoteCta({ type, result }) {
   return (
-    <div className="sticky bottom-0 -mx-4 mt-5 border-t border-[#1d1d1d]/10 bg-[#f4f5f5]/95 px-4 py-3 backdrop-blur sm:static sm:mx-0 sm:rounded-lg sm:border sm:bg-white">
+    <div className="sticky bottom-0 -mx-4 mt-5 border-t border-[#d9d5ca] bg-[#f7f6f1]/95 px-4 py-3 backdrop-blur sm:static sm:mx-0 sm:rounded-lg sm:border sm:bg-white">
       <a
         href={buildMailto(type, result)}
-        className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#111111] px-4 text-sm font-black text-white shadow-[0_16px_34px_rgba(0,0,0,0.22)]"
+        className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#171412] px-4 text-sm font-medium text-white shadow-[0_10px_24px_rgba(0,0,0,0.14)]"
       >
         <Mail size={17} />
         Get a quote
@@ -207,25 +209,25 @@ function Landing({ onSelect }) {
       <div>
         <div className="flex items-center justify-between gap-3">
           <LogoMark />
-          <a href={`tel:${CONTACT_PHONE.replace(/\s/g, '')}`} className="flex size-11 items-center justify-center rounded-lg border border-[#1d1d1d]/10 bg-white text-[#111111] shadow-sm" aria-label="Call Young Law">
+          <a href={`tel:${CONTACT_PHONE.replace(/\s/g, '')}`} className="flex size-11 items-center justify-center rounded-lg border border-[#d8d2c5] bg-[#f8f7f2] text-[#171412]" aria-label="Call Young Law">
             <Phone size={17} />
           </a>
         </div>
 
-        <div className="mt-8">
-          <div className="inline-flex items-center gap-2 rounded-lg border border-[#1d1d1d]/10 bg-white px-3 py-1.5 text-xs font-black uppercase tracking-[0.12em] text-[#575b5a]">
+        <div className="mt-10">
+          <div className="inline-flex items-center gap-2 rounded-lg border border-[#d8d2c5] bg-[#f8f7f2] px-3 py-1.5 text-xs font-normal uppercase tracking-[0.16em] text-[#69645c]">
             <Sparkles size={14} />
             Young Law tools
           </div>
-          <h1 className="mt-4 max-w-[12ch] text-5xl font-black leading-[0.96] text-[#111111]">
-            Know the numbers before the matter starts.
+          <h1 className="mt-5 max-w-[15ch] font-serif text-[2.35rem] font-normal leading-[1.12] text-[#191715]">
+            Legal estimates, made beautifully simple.
           </h1>
-          <p className="mt-4 max-w-sm text-sm font-semibold leading-6 text-[#5d6261]">
-            Fast property and estate estimates with a personal Young Law quote at the end.
+          <p className="mt-4 max-w-sm text-[0.95rem] font-normal leading-7 text-[#5d6261]">
+            A calm way to understand transfer costs, seller proceeds and estate liquidity before speaking to the firm.
           </p>
         </div>
 
-        <div className="mt-7 grid gap-3">
+        <div className="mt-8 grid gap-3">
           {calcCards.map((card) => {
             const Icon = card.icon
             return (
@@ -233,32 +235,32 @@ function Landing({ onSelect }) {
                 key={card.key}
                 type="button"
                 onClick={() => onSelect(card.key)}
-                className="grid min-h-[106px] grid-cols-[auto_1fr_auto] items-center gap-3 rounded-lg border border-[#1d1d1d]/10 bg-white p-4 text-left shadow-[0_18px_42px_rgba(0,0,0,0.075)] transition active:scale-[0.99]"
+                className="grid min-h-[106px] grid-cols-[auto_1fr_auto] items-center gap-3 rounded-lg border border-[#d8d2c5] bg-white/92 p-4 text-left shadow-[0_8px_24px_rgba(32,27,20,0.04)] transition active:scale-[0.99]"
               >
                 <IconBadge icon={Icon} />
                 <span className="min-w-0">
-                  <span className="block text-xs font-black uppercase tracking-[0.12em] text-[#8a6b0b]">{card.kicker}</span>
-                  <span className="mt-1 block text-lg font-black text-[#111111]">{card.title}</span>
-                  <span className="mt-1 block text-xs font-semibold leading-5 text-[#6f7372]">{card.description}</span>
+                  <span className="block text-xs font-medium uppercase tracking-[0.16em] text-[#8a6b0b]">{card.kicker}</span>
+                  <span className="mt-1 block text-lg font-medium text-[#141210]">{card.title}</span>
+                  <span className="mt-1 block text-xs font-normal leading-5 text-[#6f7372]">{card.description}</span>
                 </span>
-                <ChevronRight size={20} className="text-[#111111]" />
+                <ChevronRight size={20} className="text-[#5f5a51]" />
               </button>
             )
           })}
         </div>
       </div>
 
-      <footer className="grid gap-3 rounded-lg border border-[#1d1d1d]/10 bg-[#111111] p-4 text-white shadow-[0_20px_46px_rgba(0,0,0,0.22)]">
+      <footer className="grid gap-3 rounded-lg border border-[#d8d2c5] bg-[#171412] p-4 text-white shadow-[0_10px_28px_rgba(0,0,0,0.12)]">
         <div className="flex items-center gap-3">
           <IconBadge icon={BadgeCheck} dark />
           <div>
-            <p className="text-sm font-black">Modern and simplified legal estimates.</p>
-            <p className="mt-1 text-xs font-semibold leading-5 text-white/60">Built around transfers, selling decisions and deceased-estate liquidity.</p>
+            <p className="text-sm font-medium">Modern and simplified legal estimates.</p>
+            <p className="mt-1 text-xs font-normal leading-5 text-white/60">Built around transfers, selling decisions and deceased-estate liquidity.</p>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <a href={`mailto:${CONTACT_EMAIL}`} className="rounded-lg border border-white/12 px-3 py-2 text-center text-xs font-black text-white">Email</a>
-          <a href={YOUNG_LAW_WEBSITE_URL} target="_blank" rel="noreferrer" className="rounded-lg border border-white/12 px-3 py-2 text-center text-xs font-black text-white">Website</a>
+          <a href={`mailto:${CONTACT_EMAIL}`} className="rounded-lg border border-white/12 px-3 py-2 text-center text-xs font-medium text-white">Email</a>
+          <a href={YOUNG_LAW_WEBSITE_URL} target="_blank" rel="noreferrer" className="rounded-lg border border-white/12 px-3 py-2 text-center text-xs font-medium text-white">Website</a>
         </div>
       </footer>
     </section>
@@ -269,7 +271,7 @@ function CalculatorHeader({ title, eyebrow, onBack, icon: Icon }) {
   return (
     <header className="px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))]">
       <div className="flex items-center justify-between gap-3">
-        <button type="button" onClick={onBack} className="flex size-11 items-center justify-center rounded-lg border border-[#1d1d1d]/10 bg-white text-[#111111] shadow-sm" aria-label="Back to calculators">
+        <button type="button" onClick={onBack} className="flex size-11 items-center justify-center rounded-lg border border-[#d8d2c5] bg-[#f8f7f2] text-[#171412]" aria-label="Back to calculators">
           <ArrowLeft size={18} />
         </button>
         <LogoMark compact />
@@ -277,8 +279,8 @@ function CalculatorHeader({ title, eyebrow, onBack, icon: Icon }) {
       <div className="mt-5 flex items-start gap-3">
         <IconBadge icon={Icon} />
         <div className="min-w-0">
-          <p className="text-xs font-black uppercase tracking-[0.12em] text-[#8a6b0b]">{eyebrow}</p>
-          <h1 className="mt-1 text-3xl font-black leading-none text-[#111111]">{title}</h1>
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8a6b0b]">{eyebrow}</p>
+          <h1 className="mt-1 font-serif text-[1.95rem] font-normal leading-tight text-[#141210]">{title}</h1>
         </div>
       </div>
     </header>
@@ -312,15 +314,15 @@ function TransferCalculator({ onBack }) {
     <section>
       <CalculatorHeader title="Transfer Cost" eyebrow="Buyer estimate" icon={Home} onBack={onBack} />
       <div className="grid gap-4 px-4 pb-5">
-        <div className="rounded-lg border border-[#1d1d1d]/10 bg-[#111111] p-4 text-white shadow-[0_20px_46px_rgba(0,0,0,0.22)]">
-          <p className="text-xs font-black uppercase tracking-[0.12em] text-white/55">Cash needed before lodgement</p>
-          <strong className="mt-2 block break-words text-4xl font-black leading-none">{result.primaryMetric.display}</strong>
-          <p className="mt-3 text-xs font-semibold leading-5 text-white/65">Transfer duty, legal fees, disbursements and VAT. Bond costs appear when finance is selected.</p>
+        <div className="rounded-lg border border-[#211d19]/10 bg-[#171412] p-4 text-white shadow-[0_12px_28px_rgba(0,0,0,0.14)]">
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-white/55">Cash needed before lodgement</p>
+          <strong className="mt-2 block break-words font-serif text-[2.25rem] font-normal leading-none">{result.primaryMetric.display}</strong>
+          <p className="mt-3 text-xs font-normal leading-5 text-white/65">Transfer duty, legal fees, disbursements and VAT. Bond costs appear when finance is selected.</p>
         </div>
 
         <div className="grid grid-cols-3 gap-2">
           {result.secondaryMetrics.map((metric) => (
-            <NumberDisplay key={metric.label} label={metric.label} value={metric.display} tone={metric.label === 'Transfer duty' ? 'gold' : 'dark'} />
+            <NumberDisplay key={metric.label} label={metric.label} value={formatZar(metric.value, { compact: true })} tone={metric.label === 'Transfer duty' ? 'gold' : 'dark'} />
           ))}
         </div>
 
@@ -336,7 +338,7 @@ function TransferCalculator({ onBack }) {
         />
 
         <div className="grid gap-2">
-          <p className="text-xs font-black uppercase tracking-[0.12em] text-[#6f7372]">Matter type</p>
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#6f7372]">Matter type</p>
           <div className="flex gap-2">
             <ToggleButton label="Resale" icon={Building2} active={input.transactionBasis === 'resale'} onClick={() => update('transactionBasis', 'resale')} />
             <ToggleButton label="VAT sale" icon={Percent} active={input.transactionBasis === 'vat'} onClick={() => update('transactionBasis', 'vat')} />
@@ -347,10 +349,10 @@ function TransferCalculator({ onBack }) {
           </div>
         </div>
 
-        <div className="rounded-lg border border-[#1d1d1d]/10 bg-white p-4 shadow-[0_12px_30px_rgba(0,0,0,0.05)]">
+        <div className="rounded-lg border border-[#d8d2c5] bg-white/92 p-4 shadow-[0_8px_22px_rgba(32,27,20,0.035)]">
           <div className="mb-2 flex items-center gap-2">
             <ReceiptText size={17} />
-            <h2 className="text-base font-black text-[#111111]">Estimate breakdown</h2>
+            <h2 className="text-base font-medium text-[#141210]">Estimate breakdown</h2>
           </div>
           <BreakdownList items={result.headlineItems} />
         </div>
@@ -375,19 +377,19 @@ function SellerCalculator({ onBack }) {
     <section>
       <CalculatorHeader title="Seller Net" eyebrow="Sale proceeds" icon={WalletCards} onBack={onBack} />
       <div className="grid gap-4 px-4 pb-5">
-        <div className="rounded-lg border border-[#1d1d1d]/10 bg-white p-4 shadow-[0_20px_46px_rgba(0,0,0,0.10)]">
-          <p className="text-xs font-black uppercase tracking-[0.12em] text-[#8a6b0b]">Estimated seller payout</p>
-          <strong className={`mt-2 block break-words text-4xl font-black leading-none ${netTone === 'alert' ? 'text-[#9f2727]' : 'text-[#111111]'}`}>{formatZar(result.summary.netProceeds)}</strong>
+        <div className="rounded-lg border border-[#d8d2c5] bg-white/92 p-4 shadow-[0_8px_24px_rgba(32,27,20,0.04)]">
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8a6b0b]">Estimated seller payout</p>
+          <strong className={`mt-2 block break-words font-serif text-[2.25rem] font-normal leading-none ${netTone === 'alert' ? 'text-[#9f2727]' : 'text-[#141210]'}`}>{formatZar(result.summary.netProceeds)}</strong>
           <div className="mt-4 h-3 overflow-hidden rounded-lg bg-[#e5e2d9]">
-            <span className="block h-full rounded-lg bg-[#111111]" style={{ width: `${Math.max(5, 100 - result.summary.costRatio)}%` }} />
+            <span className="block h-full rounded-lg bg-[#171412]" style={{ width: `${Math.max(5, 100 - result.summary.costRatio)}%` }} />
           </div>
-          <p className="mt-3 text-xs font-semibold leading-5 text-[#6f7372]">{result.summary.costRatio}% of the sale price is absorbed by selected settlement and selling costs.</p>
+          <p className="mt-3 text-xs font-normal leading-5 text-[#6f7372]">{result.summary.costRatio}% of the sale price is absorbed by selected settlement and selling costs.</p>
         </div>
 
         <div className="grid grid-cols-3 gap-2">
-          <NumberDisplay label="Sale price" value={formatZar(result.summary.salePrice)} />
-          <NumberDisplay label="Settlement" value={formatZar(result.summary.settlement)} />
-          <NumberDisplay label="Commission" value={formatZar(result.summary.commission)} tone="gold" />
+          <NumberDisplay label="Sale price" value={formatZar(result.summary.salePrice, { compact: true })} />
+          <NumberDisplay label="Settlement" value={formatZar(result.summary.settlement, { compact: true })} />
+          <NumberDisplay label="Commission" value={formatZar(result.summary.commission, { compact: true })} tone="gold" />
         </div>
 
         <SliderField label="Expected sale price" min={800000} max={12000000} step={50000} value={Number(input.salePrice)} onChange={(value) => update('salePrice', value)} />
@@ -401,7 +403,7 @@ function SellerCalculator({ onBack }) {
         }} />
 
         <div className="grid gap-2">
-          <p className="text-xs font-black uppercase tracking-[0.12em] text-[#6f7372]">Planning signal</p>
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#6f7372]">Planning signal</p>
           <div className="flex gap-2">
             <ToggleButton label="CGT off" icon={ShieldCheck} active={!input.estimateCgt} onClick={() => update('estimateCgt', false)} />
             <ToggleButton label="CGT signal" icon={Percent} active={input.estimateCgt} onClick={() => update('estimateCgt', true)} />
@@ -415,10 +417,10 @@ function SellerCalculator({ onBack }) {
           </div>
         ) : null}
 
-        <div className="rounded-lg border border-[#1d1d1d]/10 bg-white p-4 shadow-[0_12px_30px_rgba(0,0,0,0.05)]">
+        <div className="rounded-lg border border-[#d8d2c5] bg-white/92 p-4 shadow-[0_8px_22px_rgba(32,27,20,0.035)]">
           <div className="mb-2 flex items-center gap-2">
             <SlidersHorizontal size={17} />
-            <h2 className="text-base font-black text-[#111111]">Deductions</h2>
+            <h2 className="text-base font-medium text-[#141210]">Deductions</h2>
           </div>
           <BreakdownList items={result.costs} />
         </div>
@@ -443,16 +445,16 @@ function EstateCalculator({ onBack }) {
     <section>
       <CalculatorHeader title="Estate Cost" eyebrow="Deceased estates" icon={Scale} onBack={onBack} />
       <div className="grid gap-4 px-4 pb-5">
-        <div className="rounded-lg border border-[#1d1d1d]/10 bg-[#111111] p-4 text-white shadow-[0_20px_46px_rgba(0,0,0,0.22)]">
-          <p className="text-xs font-black uppercase tracking-[0.12em] text-white/55">Estate duty estimate</p>
-          <strong className="mt-2 block break-words text-4xl font-black leading-none">{formatZar(result.summary.estateDuty)}</strong>
-          <p className="mt-3 text-xs font-semibold leading-5 text-white/65">Uses the SARS R3.5m abatement and current 20% / 25% estate-duty bands.</p>
+        <div className="rounded-lg border border-[#211d19]/10 bg-[#171412] p-4 text-white shadow-[0_12px_28px_rgba(0,0,0,0.14)]">
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-white/55">Estate duty estimate</p>
+          <strong className="mt-2 block break-words font-serif text-[2.25rem] font-normal leading-none">{formatZar(result.summary.estateDuty)}</strong>
+          <p className="mt-3 text-xs font-normal leading-5 text-white/65">Uses the SARS R3.5m abatement and current 20% / 25% estate-duty bands.</p>
         </div>
 
         <div className="grid grid-cols-3 gap-2">
-          <NumberDisplay label="Dutiable" value={formatZar(result.summary.dutiableEstate)} tone="gold" />
-          <NumberDisplay label="Admin costs" value={formatZar(result.summary.totalAdministrationCosts)} />
-          <NumberDisplay label="Liquidity" value={formatZar(result.summary.liquidityPosition)} tone={liquidityTone} />
+          <NumberDisplay label="Dutiable" value={formatZar(result.summary.dutiableEstate, { compact: true })} tone="gold" />
+          <NumberDisplay label="Admin costs" value={formatZar(result.summary.totalAdministrationCosts, { compact: true })} />
+          <NumberDisplay label="Liquidity" value={formatZar(result.summary.liquidityPosition, { compact: true })} tone={liquidityTone} />
         </div>
 
         <SliderField label="Gross estate value" min={500000} max={50000000} step={100000} value={Number(input.grossEstate)} onChange={(value) => update('grossEstate', value)} />
@@ -462,17 +464,17 @@ function EstateCalculator({ onBack }) {
         <SliderField label="Property transfer value" min={0} max={12000000} step={50000} value={Number(input.propertyTransferValue)} onChange={(value) => update('propertyTransferValue', value)} />
 
         <div className="grid gap-2">
-          <p className="text-xs font-black uppercase tracking-[0.12em] text-[#6f7372]">Executor VAT</p>
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#6f7372]">Executor VAT</p>
           <div className="flex gap-2">
             <ToggleButton label="VAT included" icon={ReceiptText} active={input.executorVatRegistered} onClick={() => update('executorVatRegistered', true)} />
             <ToggleButton label="VAT excluded" icon={ClipboardCheck} active={!input.executorVatRegistered} onClick={() => update('executorVatRegistered', false)} />
           </div>
         </div>
 
-        <div className="rounded-lg border border-[#1d1d1d]/10 bg-white p-4 shadow-[0_12px_30px_rgba(0,0,0,0.05)]">
+        <div className="rounded-lg border border-[#d8d2c5] bg-white/92 p-4 shadow-[0_8px_22px_rgba(32,27,20,0.035)]">
           <div className="mb-2 flex items-center gap-2">
             <FileText size={17} />
-            <h2 className="text-base font-black text-[#111111]">Estate estimate</h2>
+            <h2 className="text-base font-medium text-[#141210]">Estate estimate</h2>
           </div>
           <BreakdownList items={result.costs} />
         </div>
@@ -499,8 +501,8 @@ function YoungLawCalculatorsPage() {
 
   return (
     <main
-      className="min-h-[100dvh] bg-[#f4f5f5] text-[#111111] antialiased"
-      style={{ fontFamily: 'Montserrat, Inter, ui-sans-serif, system-ui, sans-serif' }}
+      className="min-h-[100dvh] bg-[#f7f6f1] text-[#111111] antialiased"
+      style={{ fontFamily: 'Inter, Montserrat, ui-sans-serif, system-ui, sans-serif' }}
     >
       <div className="mx-auto min-h-[100dvh] w-full max-w-[480px]">
         {!active ? <Landing onSelect={selectCalculator} /> : null}
@@ -519,9 +521,9 @@ function YoungLawCalculatorsPage() {
                     key={card.key}
                     type="button"
                     onClick={() => selectCalculator(card.key)}
-                    className={`min-h-12 rounded-lg border px-2 text-xs font-black transition ${
+                    className={`min-h-12 rounded-lg border px-2 text-xs font-medium transition ${
                       selected
-                        ? 'border-[#111111] bg-[#111111] text-white'
+                        ? 'border-[#171412] bg-[#171412] text-white'
                         : 'border-[#1d1d1d]/10 bg-white text-[#111111]'
                     }`}
                   >
@@ -541,7 +543,7 @@ function YoungLawCalculatorsPage() {
         href={YOUNG_LAW_WEBSITE_URL}
         target="_blank"
         rel="noreferrer"
-        className="fixed bottom-4 right-4 hidden min-h-10 items-center gap-2 rounded-lg border border-[#1d1d1d]/10 bg-white px-3 text-xs font-black text-[#111111] shadow-[0_12px_30px_rgba(0,0,0,0.08)] sm:inline-flex"
+        className="fixed bottom-4 right-4 hidden min-h-10 items-center gap-2 rounded-lg border border-[#d8d2c5] bg-white/92 px-3 text-xs font-medium text-[#111111] shadow-[0_8px_22px_rgba(32,27,20,0.05)] sm:inline-flex"
       >
         Young Law
         <ArrowRight size={14} />
