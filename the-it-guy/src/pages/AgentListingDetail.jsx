@@ -627,13 +627,6 @@ function mapSellerDocumentSourceRowForListing(row = {}) {
 
 const LISTING_DOCUMENT_GROUP_CONFIG = [
   {
-    key: 'fica',
-    label: 'FICA Documents',
-    description: 'Seller identity, address, marital, company, trust, and authority checks.',
-    icon: ShieldCheck,
-    toneClasses: 'bg-[#ecfaf1] text-[#1f7d44] border-[#d8eddf]',
-  },
-  {
     key: 'property',
     label: 'Property Documents',
     description: 'Title deed, rates, disclosure, compliance certificates, and property records.',
@@ -641,8 +634,15 @@ const LISTING_DOCUMENT_GROUP_CONFIG = [
     toneClasses: 'bg-[#eef5fb] text-[#1f4f78] border-[#d7e6f5]',
   },
   {
+    key: 'fica',
+    label: 'FICA Documents',
+    description: 'Seller identity, address, marital, company, trust, and authority checks.',
+    icon: ShieldCheck,
+    toneClasses: 'bg-[#ecfaf1] text-[#1f7d44] border-[#d8eddf]',
+  },
+  {
     key: 'sales',
-    label: 'Mandate & Sale',
+    label: 'Sales Documents',
     description: 'Mandates, OTPs, seller instructions, and sale-related paperwork.',
     icon: HandCoins,
     toneClasses: 'bg-[#fff8ea] text-[#8a5b16] border-[#f2dfbf]',
@@ -705,6 +705,13 @@ function groupListingDocumentsForDisplay(documents = []) {
     group.documents.push(document)
   })
   return grouped
+}
+
+function isListingDocumentComplete(document = {}) {
+  return Boolean(
+    document?.uploaded ||
+      ['uploaded', 'complete', 'completed', 'approved', 'verified', 'signed'].includes(normalizeKey(document?.status)),
+  )
 }
 
 function resolveSellerEmailFromListing(listing = {}) {
@@ -1798,6 +1805,7 @@ function AgentListingDetail() {
   const [publicationSaving, setPublicationSaving] = useState(false)
   const [arch9LiveChecking, setArch9LiveChecking] = useState(false)
   const [openingSellerDocumentKey, setOpeningSellerDocumentKey] = useState('')
+  const [activeListingDocumentTab, setActiveListingDocumentTab] = useState('property')
   const [resendingSellerPortalLink, setResendingSellerPortalLink] = useState(false)
   const [resettingSellerPortalPassword, setResettingSellerPortalPassword] = useState(false)
   const [sellerPortalAccessState, setSellerPortalAccessState] = useState(null)
@@ -4134,6 +4142,10 @@ function AgentListingDetail() {
   const listingDocumentGroups = useMemo(
     () => groupListingDocumentsForDisplay(sellerDocumentTrackerRows),
     [sellerDocumentTrackerRows],
+  )
+  const activeListingDocumentGroup = useMemo(
+    () => listingDocumentGroups.find((group) => group.key === activeListingDocumentTab) || listingDocumentGroups[0] || null,
+    [activeListingDocumentTab, listingDocumentGroups],
   )
 
   const listingReadinessItems = useMemo(() => {
@@ -8609,33 +8621,37 @@ function AgentListingDetail() {
                     {sellerDocumentTrackerRows.length} total
                   </span>
                 </div>
-                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  {listingDocumentGroups.map((group) => {
-                    const GroupIcon = group.icon
-                    const completeCount = group.documents.filter((doc) =>
-                      doc.uploaded || ['uploaded', 'complete', 'completed', 'approved', 'verified', 'signed'].includes(normalizeKey(doc.status)),
-                    ).length
-                    return (
-                      <div key={group.key} className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[14px] border ${group.toneClasses}`}>
-                            <GroupIcon size={18} />
+                <div className="mt-5 overflow-x-auto">
+                  <nav className="inline-flex min-w-full gap-2 rounded-[18px] border border-[#e2eaf3] bg-[#f8fbff] p-2" aria-label="Listing document categories">
+                    {listingDocumentGroups.map((group) => {
+                      const isActive = activeListingDocumentGroup?.key === group.key
+                      const completeCount = group.documents.filter(isListingDocumentComplete).length
+                      return (
+                        <button
+                          key={group.key}
+                          type="button"
+                          onClick={() => setActiveListingDocumentTab(group.key)}
+                          className={`inline-flex min-h-[44px] min-w-[180px] items-center justify-center rounded-[14px] px-4 py-2 text-sm font-semibold transition ${
+                            isActive
+                              ? 'border border-[#d1deeb] bg-white text-[#142132] shadow-[0_10px_22px_rgba(15,23,42,0.08)]'
+                              : 'border border-transparent text-[#5f7086] hover:border-[#d8e4ef] hover:bg-white hover:text-[#142132]'
+                          }`}
+                        >
+                          <span className="truncate">{group.label}</span>
+                          <span className="ml-2 inline-flex min-w-[32px] items-center justify-center rounded-full border border-[#dce6f0] bg-white px-1.5 py-0.5 text-[0.68rem] font-semibold text-[#5f7086]">
+                            {completeCount}/{group.documents.length}
                           </span>
-                          <span className="text-xs font-semibold text-[#7b8ca2]">{completeCount}/{group.documents.length}</span>
-                        </div>
-                        <p className="mt-3 text-sm font-semibold text-[#142132]">{group.label}</p>
-                        <p className="mt-1 text-xs leading-5 text-[#607387]">{group.description}</p>
-                      </div>
-                    )
-                  })}
+                        </button>
+                      )
+                    })}
+                  </nav>
                 </div>
               </article>
 
-              {listingDocumentGroups.map((group) => {
+              {activeListingDocumentGroup ? (() => {
+                const group = activeListingDocumentGroup
                 const GroupIcon = group.icon
-                const completeCount = group.documents.filter((doc) =>
-                  doc.uploaded || ['uploaded', 'complete', 'completed', 'approved', 'verified', 'signed'].includes(normalizeKey(doc.status)),
-                ).length
+                const completeCount = group.documents.filter(isListingDocumentComplete).length
                 return (
                   <article key={group.key} className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -8709,7 +8725,7 @@ function AgentListingDetail() {
                     )}
                   </article>
                 )
-              })}
+              })() : null}
             </section>
           ) : null}
 
