@@ -12,6 +12,7 @@ export const MEMBERSHIP_STATUS_VALUES = Object.freeze(Object.values(MEMBERSHIP_S
 export function normalizeMembershipStatus(value, fallback = MEMBERSHIP_STATUSES.pending) {
   const normalized = String(value || '').trim().toLowerCase()
   if (MEMBERSHIP_STATUS_VALUES.includes(normalized)) return normalized
+  if (normalized === 'accepted') return MEMBERSHIP_STATUSES.active
   if (normalized === 'inactive') return MEMBERSHIP_STATUSES.deactivated
   return fallback
 }

@@ -728,7 +728,30 @@ function savedSearchPayloadFromDraft(draft = {}, lead = {}, organisationId = '')
   }
 }
 
+function getMembershipOrganisationId(membership = null) {
+  return normalizeText(
+    membership?.workspaceId ||
+      membership?.workspace_id ||
+      membership?.organisationId ||
+      membership?.organisation_id ||
+      membership?.organizationId ||
+      membership?.organization_id ||
+      membership?.workspace?.id ||
+      membership?.raw?.organisation_id ||
+      membership?.raw?.organization_id,
+  )
+}
+
 function getOrganisationId(workspaceContext = {}) {
+  const currentMembershipOrganisationId = getMembershipOrganisationId(workspaceContext.currentMembership)
+  if (currentMembershipOrganisationId) return currentMembershipOrganisationId
+
+  const activeMembershipOrganisationId = [
+    ...(Array.isArray(workspaceContext.activeMemberships) ? workspaceContext.activeMemberships : []),
+    ...(Array.isArray(workspaceContext.memberships) ? workspaceContext.memberships : []),
+  ].map((membership) => getMembershipOrganisationId(membership)).find(Boolean)
+  if (activeMembershipOrganisationId) return activeMembershipOrganisationId
+
   return normalizeText(workspaceContext.currentWorkspace?.id || workspaceContext.workspace?.id)
 }
 
