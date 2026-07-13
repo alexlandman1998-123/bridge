@@ -231,25 +231,6 @@ function getEstimatePack(type, result) {
   }
 }
 
-function buildEstimatePackText(type, result) {
-  const summary = getQuoteSummary(type, result)
-  const pack = getEstimatePack(type, result)
-  return [
-    `${summary.title} estimate`,
-    `${summary.label}: ${summary.value}`,
-    summary.detail,
-    '',
-    pack.signal,
-    pack.narrative,
-    '',
-    'Assumptions',
-    ...pack.assumptions.map((item) => `- ${item}`),
-    '',
-    'Next steps',
-    ...pack.nextSteps.map((item) => `- ${item}`),
-  ].join('\n')
-}
-
 function buildQuoteRequestMailto(type, result, draft = {}) {
   const summary = getQuoteSummary(type, result)
   const pack = getEstimatePack(type, result)
@@ -315,7 +296,7 @@ function NumberDisplay({ label, value, tone = 'dark' }) {
   )
 }
 
-function PrimaryResultCard({ label, value, detail, type, result, onQuote, variant = 'dark', tone = 'dark', progress = null }) {
+function PrimaryResultCard({ label, value, detail, variant = 'dark', tone = 'dark', progress = null }) {
   const isDark = variant === 'dark'
   const valueClass = tone === 'alert' && !isDark ? 'text-[#9f2727]' : isDark ? 'text-white' : 'text-[#141210]'
   const progressWidth = progress == null ? null : `${Math.max(5, Math.min(100, Number(progress)))}%`
@@ -328,24 +309,9 @@ function PrimaryResultCard({ label, value, detail, type, result, onQuote, varian
           : 'border-[#d8d2c5] bg-white text-[#141210]'
       }`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className={`text-xs font-medium uppercase tracking-[0.16em] ${isDark ? 'text-white/60' : 'text-[#8a6b0b]'}`}>{label}</p>
-          <strong className={`mt-2 block break-words font-serif text-[2.25rem] font-normal leading-none ${valueClass}`}>{value}</strong>
-        </div>
-        <button
-          type="button"
-          onClick={() => onQuote(type, result)}
-          aria-label={`Get a quote for ${label.toLowerCase()}`}
-          className={`inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-xs font-medium transition active:scale-[0.98] ${
-            isDark
-              ? 'border border-white/15 bg-white text-[#171412]'
-              : 'bg-[#171412] text-white shadow-[0_8px_18px_rgba(0,0,0,0.12)]'
-          }`}
-        >
-          <Mail size={15} />
-          Quote
-        </button>
+      <div className="min-w-0">
+        <p className={`text-xs font-medium uppercase tracking-[0.16em] ${isDark ? 'text-white/60' : 'text-[#8a6b0b]'}`}>{label}</p>
+        <strong className={`mt-2 block break-words font-serif text-[2.25rem] font-normal leading-none ${valueClass}`}>{value}</strong>
       </div>
 
       {progressWidth ? (
@@ -604,146 +570,45 @@ function StickyResultBar({ label, value, type, result, tone = 'dark', onQuote })
 }
 
 function EstimatePack({ type, result }) {
-  const [activeTab, setActiveTab] = useState('snapshot')
-  const [copyState, setCopyState] = useState('idle')
-  const [manualCopyText, setManualCopyText] = useState('')
   const summary = getQuoteSummary(type, result)
   const pack = getEstimatePack(type, result)
   const toneClass = pack.tone === 'alert' ? 'text-[#9f2727]' : 'text-[#141210]'
 
-  useEffect(() => {
-    setActiveTab('snapshot')
-  }, [type])
-
-  useEffect(() => {
-    setCopyState('idle')
-    setManualCopyText('')
-  }, [type, summary.value, pack.signal])
-
-  async function copyEstimate() {
-    const text = buildEstimatePackText(type, result)
-    let copied = false
-
-    try {
-      if (navigator.clipboard?.writeText) {
-        try {
-          await navigator.clipboard.writeText(text)
-          copied = true
-        } catch {
-          copied = false
-        }
-      }
-
-      if (!copied) {
-        const textarea = document.createElement('textarea')
-        textarea.value = text
-        textarea.setAttribute('readonly', '')
-        textarea.style.position = 'fixed'
-        textarea.style.top = '0'
-        textarea.style.left = '-9999px'
-        textarea.style.fontSize = '16px'
-        document.body.appendChild(textarea)
-        textarea.focus()
-        textarea.select()
-        textarea.setSelectionRange(0, textarea.value.length)
-        copied = document.execCommand('copy')
-        document.body.removeChild(textarea)
-      }
-
-      if (!copied) {
-        setManualCopyText(text)
-        setCopyState('manual')
-        return
-      }
-
-      setManualCopyText('')
-      setCopyState('copied')
-    } catch {
-      setManualCopyText(text)
-      setCopyState('manual')
-    }
-  }
-
   return (
     <section className="grid gap-3 rounded-lg border border-[#d8d2c5] bg-white p-4 shadow-[0_8px_24px_rgba(32,27,20,0.04)]">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8a6b0b]">Estimate pack</p>
-          <h2 className="mt-1 text-base font-medium text-[#141210]">{summary.title}</h2>
-        </div>
-        <button
-          type="button"
-          onClick={copyEstimate}
-          className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-[#d8d2c5] bg-[#f8f7f2] px-3 text-xs font-medium text-[#171412]"
-        >
-          <ClipboardCheck size={15} />
-          {copyState === 'copied' ? 'Copied' : copyState === 'manual' ? 'Select text' : 'Copy'}
-        </button>
+      <div className="min-w-0">
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8a6b0b]">Estimate summary</p>
+        <h2 className="mt-1 text-base font-medium text-[#141210]">{summary.title}</h2>
       </div>
 
-      {manualCopyText ? (
-        <label className="grid gap-2 rounded-lg border border-[#d8d2c5] bg-[#f8f7f2] p-3">
-          <span className="text-xs font-medium uppercase tracking-[0.14em] text-[#626766]">Estimate summary</span>
-          <textarea
-            readOnly
-            rows={5}
-            value={manualCopyText}
-            onFocus={(event) => event.target.select()}
-            onClick={(event) => event.currentTarget.select()}
-            aria-label="Estimate summary text"
-            className="min-h-28 resize-none rounded-lg border border-[#d9d5ca] bg-white px-3 py-3 text-sm font-normal leading-6 text-[#171717] outline-none focus:border-[#8a6b0b] focus:ring-2 focus:ring-[#edc446]/35"
-          />
-        </label>
-      ) : null}
-
-      <div className="grid grid-cols-3 gap-2 rounded-lg bg-[#f8f7f2] p-1">
-        {[
-          ['snapshot', 'Snapshot'],
-          ['assumptions', 'Assumptions'],
-          ['next', 'Next'],
-        ].map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setActiveTab(key)}
-            aria-pressed={activeTab === key}
-            className={`min-h-9 rounded-md px-2 text-xs font-medium transition ${
-              activeTab === key ? 'bg-white text-[#141210] shadow-[0_6px_14px_rgba(32,27,20,0.08)]' : 'text-[#626766]'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+      <div className="rounded-lg border border-[#d9d5ca] bg-[#f8f7f2] p-3">
+        <p className={`text-sm font-medium ${toneClass}`}>{pack.signal}</p>
+        <p className="mt-1 text-sm font-normal leading-6 text-[#626766]">{pack.narrative}</p>
       </div>
 
-      {activeTab === 'snapshot' ? (
-        <div className="rounded-lg border border-[#d9d5ca] bg-[#f8f7f2] p-3">
-          <p className={`text-sm font-medium ${toneClass}`}>{pack.signal}</p>
-          <p className="mt-1 text-sm font-normal leading-6 text-[#626766]">{pack.narrative}</p>
-        </div>
-      ) : null}
-
-      {activeTab === 'assumptions' ? (
+      <div className="grid gap-2">
+        <p className="text-xs font-medium uppercase tracking-[0.14em] text-[#626766]">Key assumptions</p>
         <div className="grid gap-2">
           {pack.assumptions.map((item) => (
             <div key={item} className="grid grid-cols-[auto_1fr] gap-3 rounded-lg border border-[#d9d5ca] bg-[#f8f7f2] p-3">
               <ShieldCheck size={16} className="mt-0.5 text-[#6f5609]" />
-              <p className="text-sm font-medium leading-6 text-[#171717]">{item}</p>
+              <p className="text-sm font-normal leading-6 text-[#171717]">{item}</p>
             </div>
           ))}
         </div>
-      ) : null}
+      </div>
 
-      {activeTab === 'next' ? (
-        <div className="grid gap-2">
-          {pack.nextSteps.map((item, index) => (
-            <div key={item} className="grid grid-cols-[auto_1fr] gap-3 rounded-lg border border-[#d9d5ca] bg-[#f8f7f2] p-3">
+      <div className="rounded-lg border border-[#d9d5ca] bg-[#f8f7f2] p-3">
+        <p className="text-xs font-medium uppercase tracking-[0.14em] text-[#626766]">Recommended next step</p>
+        <div className="mt-2 grid gap-2">
+          {pack.nextSteps.slice(0, 2).map((item, index) => (
+            <div key={item} className="grid grid-cols-[auto_1fr] gap-3">
               <span className="flex size-6 items-center justify-center rounded-full bg-[#171412] text-xs font-medium text-white">{index + 1}</span>
-              <p className="text-sm font-medium leading-6 text-[#171717]">{item}</p>
+              <p className="text-sm font-normal leading-6 text-[#171717]">{item}</p>
             </div>
           ))}
         </div>
-      ) : null}
+      </div>
     </section>
   )
 }
@@ -993,24 +858,27 @@ function Landing({ onSelect }) {
   )
 }
 
-function CalculatorHeader({ title, eyebrow, onBack, icon: Icon }) {
+function CalculatorHeader({ title, eyebrow, onBack, backLabel = 'All calculators' }) {
   return (
     <header className="px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))]">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <button type="button" onClick={onBack} className="flex size-11 items-center justify-center rounded-lg border border-[#d8d2c5] bg-[#f8f7f2] text-[#171412]" aria-label="Back to calculators">
-            <ArrowLeft size={18} />
-          </button>
-          <LogoMark compact />
-        </div>
+        <LogoMark compact />
         <a href={`tel:${CONTACT_PHONE.replace(/\s/g, '')}`} className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-[#d8d2c5] bg-white px-3 text-xs font-medium text-[#171412] shadow-[0_8px_20px_rgba(32,27,20,0.04)]" aria-label={`Call Young Law on ${CONTACT_PHONE}`}>
           <Phone size={15} />
           <span className="hidden min-[390px]:inline">{CONTACT_PHONE}</span>
           <span className="min-[390px]:hidden">Call</span>
         </a>
       </div>
-      <div className="mt-5 flex items-start gap-3">
-        <IconBadge icon={Icon} />
+      <div className="mt-5 grid gap-2">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex min-h-8 w-fit items-center gap-2 rounded-lg text-xs font-medium text-[#5f5a51] transition hover:text-[#171412] active:scale-[0.99]"
+          aria-label={backLabel}
+        >
+          <ArrowLeft size={15} />
+          <span>{backLabel}</span>
+        </button>
         <div className="min-w-0">
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8a6b0b]">{eyebrow}</p>
           <h1 className="mt-1 font-serif text-[1.95rem] font-normal leading-tight text-[#141210]">{title}</h1>
@@ -1128,7 +996,12 @@ function TransferCalculator({ onBack, onQuote }) {
 
   return (
     <section>
-      <CalculatorHeader title="Transfer Cost" eyebrow="Buyer estimate" icon={Home} onBack={goBackWithinTransfer} />
+      <CalculatorHeader
+        title="Transfer Cost"
+        eyebrow="Buyer estimate"
+        backLabel={transferStep === 'mandate' ? 'All calculators' : 'Previous step'}
+        onBack={goBackWithinTransfer}
+      />
       <div className="grid gap-4 px-4 pb-5">
         <WizardProgress steps={transferWizardSteps} activeKey={transferStep} />
 
@@ -1283,7 +1156,7 @@ function SellerCalculator({ onBack, onQuote }) {
 
   return (
     <section>
-      <CalculatorHeader title="Seller Net" eyebrow="Sale proceeds" icon={WalletCards} onBack={onBack} />
+      <CalculatorHeader title="Seller Net" eyebrow="Sale proceeds" onBack={onBack} />
       <div className="grid gap-4 px-4 pb-5">
         <PrimaryResultCard
           label="Estimated seller payout"
@@ -1394,7 +1267,7 @@ function EstateCalculator({ onBack, onQuote }) {
 
   return (
     <section>
-      <CalculatorHeader title="Estate Cost" eyebrow="Deceased estates" icon={Scale} onBack={onBack} />
+      <CalculatorHeader title="Estate Cost" eyebrow="Deceased estates" onBack={onBack} />
       <div className="grid gap-4 px-4 pb-5">
         <PrimaryResultCard
           label="Estate duty estimate"
@@ -1475,33 +1348,6 @@ function YoungLawCalculatorsPage() {
         {active === 'seller' ? <SellerCalculator onBack={goBack} onQuote={openQuote} /> : null}
         {active === 'estate' ? <EstateCalculator onBack={goBack} onQuote={openQuote} /> : null}
 
-        {active ? (
-          <nav className="px-4 pb-6">
-            <div className="grid grid-cols-3 gap-2">
-              {calcCards.map((card) => {
-                const Icon = card.icon
-                const selected = active === card.key
-                return (
-                  <button
-                    key={card.key}
-                    type="button"
-                    onClick={() => selectCalculator(card.key)}
-                    className={`min-h-12 rounded-lg border px-2 text-xs font-medium transition ${
-                      selected
-                        ? 'border-[#171412] bg-[#171412] text-white'
-                        : 'border-[#1d1d1d]/10 bg-white text-[#111111]'
-                    }`}
-                  >
-                    <span className="flex items-center justify-center gap-1">
-                      <Icon size={14} />
-                      <span className="truncate">{card.kicker}</span>
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </nav>
-        ) : null}
       </div>
 
       <QuoteRequestSheet request={quoteRequest} onClose={() => setQuoteRequest(null)} />
