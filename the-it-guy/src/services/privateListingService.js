@@ -1170,6 +1170,7 @@ const PRIVATE_LISTING_DOCUMENT_INSERT_OPTIONAL_COLUMNS = [
   'canonical_requirement_instance_id',
   'requirement_id',
   'storage_path',
+  'uploaded_at',
 ]
 
 function getMissingPrivateListingDocumentInsertColumn(error = {}, payload = {}) {
@@ -3127,6 +3128,141 @@ export async function getPrivateListingDocuments(listingId) {
   return enrichPrivateListingDocumentRows(client, query.data)
 }
 
+export async function linkPrivateListingDocument(listingId, {
+  documentType = 'listing_document',
+  documentCategory = '',
+  documentName = '',
+  filePath = '',
+  fileUrl = '',
+  visibility = 'internal',
+  status = 'uploaded',
+  requirementKey = '',
+  uploadedAt = '',
+  metadata = {},
+} = {}) {
+  const client = requireClient()
+  if (hasMissingTableCache('private_listing_documents')) return null
+  const user = await getCurrentUser(client).catch(() => null)
+  const normalizedListingId = normalizeUuid(listingId)
+  const normalizedFilePath = normalizeText(filePath)
+  const normalizedFileUrl = normalizeText(fileUrl)
+  if (!normalizedListingId) throw new Error('Listing id is required.')
+  if (!normalizedFilePath && !normalizedFileUrl) throw new Error('A document path or URL is required.')
+
+  const existingQuery = await runSelectWithFallback(
+    (selectFields) => client
+      .from('private_listing_documents')
+      .select(selectFields)
+      .eq('private_listing_id', normalizedListingId)
+      .order('uploaded_at', { ascending: false })
+      .limit(25),
+    PRIVATE_LISTING_DOCUMENT_SELECT_VARIANTS,
+    'private_listing_documents',
+  )
+  if (existingQuery.missingTable) {
+    rememberMissingTable('private_listing_documents')
+    return null
+  }
+  if (existingQuery.error && !existingQuery.schemaIncompatible && !isMissingColumnError(existingQuery.error)) {
+    throw existingQuery.error
+  }
+
+  const normalizedExistingRows = normalizeDocumentRows(existingQuery.data || [])
+  const existingRow = normalizedExistingRows.find((row) => {
+    const rowPath = normalizeText(row?.storage_path || row?.file_path)
+    const rowUrl = normalizeText(row?.file_url || row?.url)
+    return (
+      (normalizedFilePath && rowPath && rowPath === normalizedFilePath) ||
+      (normalizedFileUrl && rowUrl && rowUrl === normalizedFileUrl)
+    )
+  })
+  if (existingRow) {
+    const enriched = await enrichPrivateListingDocumentRows(client, [existingRow])
+    return {
+      ...(enriched[0] || existingRow),
+      privateListingId: normalizedListingId,
+    }
+  }
+
+  const normalizedRequirementKey = normalizeCompatibilityKey(requirementKey || documentType || documentCategory)
+  const requirements = await getPrivateListingDocumentRequirements(normalizedListingId).catch(() => [])
+  const matchedRequirement = requirements.find((requirement) => {
+    const rowKey = normalizeCompatibilityKey(requirement?.requirement_key || requirement?.key)
+    if (normalizedRequirementKey && privateListingDocumentKeysOverlap(normalizedRequirementKey, rowKey)) return true
+    return isMandateDocumentRow({
+      document_type: rowKey,
+      category: requirement?.requirement_group,
+      document_name: requirement?.requirement_name,
+    }) && isMandateDocumentRow({
+      document_type: documentType,
+      category: documentCategory,
+      document_name: documentName,
+    })
+  }) || null
+
+  const uploadedTimestamp = normalizeText(uploadedAt) || new Date().toISOString()
+  const insertPayload = {
+    private_listing_id: normalizedListingId,
+    requirement_id: matchedRequirement?.id || null,
+    document_type: normalizeText(documentType) || 'listing_document',
+    category: normalizeText(documentCategory || documentType) || 'Other',
+    document_name: normalizeText(documentName) || normalizeText(documentType) || 'Listing document',
+    storage_path: normalizedFilePath || null,
+    file_url: normalizedFileUrl || null,
+    uploaded_by: user?.id || null,
+    status: normalizeText(status) || 'uploaded',
+    visibility: normalizeText(visibility) || 'internal',
+    canonical_requirement_instance_id: matchedRequirement?.canonical_requirement_instance_id || null,
+    uploaded_at: uploadedTimestamp,
+  }
+
+  const inserted = await insertPrivateListingDocumentRow(client, insertPayload)
+  if (inserted.error) {
+    if (isMissingTableError(inserted.error, 'private_listing_documents')) {
+      rememberMissingTable('private_listing_documents')
+      return null
+    }
+    if (!isMissingColumnError(inserted.error)) throw inserted.error
+  }
+
+  const documentRow = normalizeDocumentRows(inserted.data ? [{ ...insertPayload, ...inserted.data }] : [insertPayload])[0] || null
+  const enrichedRows = documentRow ? await enrichPrivateListingDocumentRows(client, [documentRow]) : []
+  const linkedDocument = enrichedRows[0] || documentRow
+
+  await createPrivateListingActivity({
+    privateListingId: normalizedListingId,
+    activityType: 'listing_document_linked',
+    activityTitle: 'Listing document linked',
+    activityDescription: `${insertPayload.document_name} linked to this listing.`,
+    performedBy: user?.id || null,
+    visibility: 'internal',
+    metadata: {
+      ...(metadata && typeof metadata === 'object' ? metadata : {}),
+      documentType: insertPayload.document_type,
+      documentCategory: insertPayload.category,
+      documentName: insertPayload.document_name,
+      storagePath: normalizedFilePath || null,
+      fileUrl: normalizedFileUrl || null,
+      requirementKey: normalizedRequirementKey || null,
+      source: metadata?.source || 'linked_document',
+    },
+  }).catch(() => null)
+
+  await syncSellerJourneyLeadStageForListingId(client, {
+    listingId: normalizedListingId,
+  }).catch((error) => {
+    console.warn('[Private Listings] non-blocking seller journey lead sync skipped after listing document link', error)
+    return false
+  })
+
+  return {
+    ...(linkedDocument || {}),
+    privateListingId: normalizedListingId,
+    requirementId: linkedDocument?.requirement_id || matchedRequirement?.id || null,
+    requirementKey: normalizedRequirementKey || matchedRequirement?.requirement_key || null,
+  }
+}
+
 function hydrateListingWithRequirementData(listing = {}, requirements = [], documents = []) {
   return {
     ...listing,
@@ -3831,14 +3967,16 @@ export async function submitSellerOnboarding(token, payload = {}) {
       console.warn('[Private Listings] seller client portal context sync skipped after onboarding submit', contextError)
       return null
     })
-    await notifySellerPortalDocumentsReady(client, {
-      listing: rpcContext.listing,
-      onboarding: rpcContext.onboarding,
-      formData: payload.formData,
-    }).catch((portalEmailError) => {
-      console.warn('[Private Listings] seller portal email skipped after onboarding submit', portalEmailError)
-      return null
-    })
+    if (!payload.skipPortalNotification) {
+      await notifySellerPortalDocumentsReady(client, {
+        listing: rpcContext.listing,
+        onboarding: rpcContext.onboarding,
+        formData: payload.formData,
+      }).catch((portalEmailError) => {
+        console.warn('[Private Listings] seller portal email skipped after onboarding submit', portalEmailError)
+        return null
+      })
+    }
     await persistCanonicalSellerFactPayload(client, {
       listingId: rpcContext.listing.id,
       onboardingId: rpcContext.onboarding?.id,
@@ -4011,14 +4149,16 @@ export async function submitSellerOnboarding(token, payload = {}) {
     console.warn('[Private Listings] seller client portal context sync skipped after onboarding fallback submit', contextError)
     return null
   })
-  await notifySellerPortalDocumentsReady(client, {
-    listing: listingForContext,
-    onboarding: updateOnboarding.data,
-    formData: nextFormData,
-  }).catch((portalEmailError) => {
-    console.warn('[Private Listings] seller portal email skipped after onboarding fallback submit', portalEmailError)
-    return null
-  })
+  if (!payload.skipPortalNotification) {
+    await notifySellerPortalDocumentsReady(client, {
+      listing: listingForContext,
+      onboarding: updateOnboarding.data,
+      formData: nextFormData,
+    }).catch((portalEmailError) => {
+      console.warn('[Private Listings] seller portal email skipped after onboarding fallback submit', portalEmailError)
+      return null
+    })
+  }
   await persistCanonicalSellerFactPayload(client, {
     listingId: listingForContext?.id || context.listing.id,
     onboardingId: updateOnboarding.data?.id,

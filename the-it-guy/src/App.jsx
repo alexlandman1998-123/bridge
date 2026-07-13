@@ -140,8 +140,10 @@ const ClientOtpSigning = lazy(() => import('./pages/ClientOtpSigning'))
 const ClientPortal = lazy(() => import('./pages/ClientPortal'))
 const ClientProfile = lazy(() => import('./pages/ClientProfile'))
 const Clients = lazy(() => import('./pages/Clients'))
+const ConveyancingCostCalculatorPage = lazy(() => import('./pages/ConveyancingCostCalculatorPage'))
 const ConveyancerDevelopments = lazy(() => import('./pages/ConveyancerDevelopments'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
+const YoungLawCalculatorsPage = lazy(() => import('./pages/YoungLawCalculatorsPage'))
 const BondDashboardPage = lazy(() => import('./pages/bond/BondDashboardPage'))
 const BondDevelopmentsPage = lazy(() => import('./pages/bond/BondDevelopmentsPage'))
 const BondTransactionsPage = lazy(() => import('./pages/bond/BondTransactionsPage'))
@@ -1344,6 +1346,9 @@ function AppRoutes() {
           <Route path="/arch9-launch" element={<Arch9LaunchConcierge />} />
           <Route path="/launch/arch9" element={<Arch9LaunchConcierge />} />
           <Route path="/qr/arch9" element={<Arch9LaunchConcierge />} />
+          <Route path="/young-law" element={<AppErrorBoundary scope="young-law-calculators" title="Young Law calculators failed to load"><YoungLawCalculatorsPage /></AppErrorBoundary>} />
+          <Route path="/young-law/calculators" element={<AppErrorBoundary scope="young-law-calculators" title="Young Law calculators failed to load"><YoungLawCalculatorsPage /></AppErrorBoundary>} />
+          <Route path="/demo/young-law" element={<AppErrorBoundary scope="young-law-calculators" title="Young Law calculators failed to load"><YoungLawCalculatorsPage /></AppErrorBoundary>} />
           <Route path="/referrals/invite/:token" element={<AppErrorBoundary scope="referral-invite" title="Referral invite failed to load"><ReferralInvitePage /></AppErrorBoundary>} />
           <Route element={<MobileExecutiveLayout />}>
             <Route path="/m/developments" element={<MobileDevelopmentsPage />} />
@@ -1584,6 +1589,16 @@ function AppRoutes() {
                   <RoleRoute allowedRoles={['attorney']}>
                     <AttorneyFirmRoute>
                       <AttorneySchedulingPage />
+                    </AttorneyFirmRoute>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/attorney/cost-calculator"
+                element={
+                  <RoleRoute allowedRoles={['attorney']}>
+                    <AttorneyFirmRoute>
+                      <ConveyancingCostCalculatorPage />
                     </AttorneyFirmRoute>
                   </RoleRoute>
                 }

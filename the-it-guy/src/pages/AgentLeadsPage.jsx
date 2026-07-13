@@ -94,6 +94,7 @@ import {
   getLeadFilterOptions,
   listAgentLeadWorkspaceRows,
 } from '../services/agentLeadWorkspaceService'
+import { buildPropertyDisclosureDocumentMarkup } from '../lib/propertyDisclosure'
 import {
   dismissLeadListingInterest,
   listSearchablePrivateListings,
@@ -112,6 +113,7 @@ import {
   submitSellerOnboarding,
   updatePrivateListing,
   updatePrivateListingOnboardingFormData,
+  uploadPrivateListingDocument,
 } from '../services/privateListingService'
 import {
   createBlankPropertyAddress,
@@ -14601,22 +14603,77 @@ function sellerMandateHasRecord(row = {}, listing = null, journey = null) {
     (status && status !== 'not_started') ||
       row?.mandatePacketId ||
       row?.mandate_packet_id ||
+      row?.mandateRuntimeDraftId ||
+      row?.mandate_runtime_draft_id ||
       listing?.mandatePacketId ||
       listing?.mandate_packet_id ||
       listing?.mandatePacket?.id,
   )
 }
 
+function getSellerMandatePacketId(row = {}, listing = null, journey = null) {
+  const packet = journey?.mandatePacketStatus?.packet || journey?.mandatePacket || row?.mandatePacket || listing?.mandatePacket || null
+  return normalizeText(
+    row?.mandatePacketId ||
+      row?.mandate_packet_id ||
+      listing?.mandatePacketId ||
+      listing?.mandate_packet_id ||
+      packet?.id ||
+      packet?.packetId ||
+      packet?.packet_id,
+  )
+}
+
+function getSellerMandateWorkspaceMode(status = '', hasRecord = false) {
+  const normalized = normalizeText(status).toLowerCase()
+  if (['signed', 'completed', 'fully_signed', 'uploaded_signed', 'signed_uploaded'].includes(normalized)) return 'signed'
+  if (!hasRecord) return 'generate'
+  if (['draft', 'generated', 'ready', 'ready_for_generation', 'ready_for_signature'].includes(normalized)) return 'send'
+  if (normalized.includes('sent') || normalized.includes('sign') || normalized === 'viewed' || normalized === 'partially_signed') return 'view'
+  return 'view'
+}
+
+function getSellerMandateTone(status = '', hasRecord = false) {
+  const mode = getSellerMandateWorkspaceMode(status, hasRecord)
+  if (mode === 'signed') return 'green'
+  if (mode === 'send') return 'amber'
+  if (mode === 'view') return 'blue'
+  return hasRecord ? 'blue' : 'slate'
+}
+
 function getSellerMandateMeta(row = {}, listing = null, journey = null) {
   const status = getSellerMandateStatus(row, listing, journey)
   const hasRecord = sellerMandateHasRecord(row, listing, journey)
-  if (status === 'signed' || status === 'completed' || status === 'fully_signed') {
+  const mode = getSellerMandateWorkspaceMode(status, hasRecord)
+  if (mode === 'signed') {
     return { label: 'Signed', actionLabel: 'View Signed Mandate', tone: 'green', hasRecord: true, mode: 'signed' }
   }
   if (hasRecord) {
-    return { label: formatSellerJourneyValue({ value: status }).replace(/_/g, ' ') || 'Generated', actionLabel: 'View Mandate', tone: 'blue', hasRecord: true, mode: 'view' }
+    const actionLabel = mode === 'send' ? 'Open Mandate Workspace' : 'View Mandate'
+    return { label: formatSellerJourneyValue({ value: status }).replace(/_/g, ' ') || 'Draft', actionLabel, tone: getSellerMandateTone(status, hasRecord), hasRecord: true, mode }
   }
   return { label: 'Not Generated', actionLabel: 'Generate Mandate', tone: 'slate', hasRecord: false, mode: 'generate' }
+}
+
+function buildSellerLeadMandateWorkspacePath({
+  row = {},
+  listing = null,
+  mode = 'generate',
+  sourceMode = '',
+  documentStart = '',
+  packetId = '',
+} = {}) {
+  const leadId = normalizeText(row?.leadId || row?.id)
+  if (!leadId) return ''
+  const params = new URLSearchParams()
+  params.set('mode', normalizeText(mode) || 'generate')
+  params.set('returnTo', `/pipeline/leads/${encodeURIComponent(leadId)}`)
+  const listingId = getSellerListingId(row, listing)
+  if (listingId) params.set('listingId', listingId)
+  if (sourceMode) params.set('sourceMode', sourceMode)
+  if (documentStart) params.set('documentStart', documentStart)
+  if (packetId) params.set('packetId', packetId)
+  return `/pipeline/leads/${encodeURIComponent(leadId)}/legal/mandate?${params.toString()}`
 }
 
 function getSellerPropertySummary(row = {}, listing = null) {
@@ -15805,8 +15862,8 @@ function SellerNextBestActionCard({ row, listing, journey, readiness, onboarding
       ? 'border-blue-100 bg-blue-50/70'
       : 'border-amber-100 bg-amber-50/70'
   return (
-    <section className={`${panelClass} min-h-[190px] p-5 shadow-[0_18px_45px_rgba(15,23,42,0.06)] ${toneClass}`}>
-      <div className="flex h-full flex-col justify-between gap-5">
+    <section className={`${panelClass} min-h-[210px] p-5 shadow-[0_18px_45px_rgba(15,23,42,0.06)] sm:p-6 ${toneClass}`}>
+      <div className="flex h-full min-w-0 flex-col justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-amber-200 bg-white text-amber-600"><Tag size={16} /></span>
@@ -15834,9 +15891,9 @@ function SellerReadinessScoreCard({ readiness = null, journey = null }) {
   const percent = journey?.listingLive ? 100 : listingReadiness.percent || 0
   const readyLabel = percent >= 90 ? 'Ready To Publish' : percent >= 60 ? 'Almost Ready' : 'Needs Attention'
   return (
-    <section className={`${panelClass} min-h-[190px] p-5 shadow-[0_18px_45px_rgba(15,23,42,0.06)]`}>
+    <section className={`${panelClass} min-h-[210px] p-5 shadow-[0_18px_45px_rgba(15,23,42,0.06)] sm:p-6`}>
       <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Listing Readiness Score</p>
-      <div className="mt-4 flex flex-col gap-5 sm:flex-row sm:items-center">
+      <div className="mt-5 flex min-w-0 flex-col gap-5 md:flex-row md:items-center">
         <ListingReadinessCircle percent={percent} />
         <div className="min-w-0">
           <h2 className={`text-xl font-semibold tracking-[-0.035em] ${percent >= 80 ? 'text-emerald-700' : 'text-slate-950'}`}>{readyLabel}</h2>
@@ -15855,11 +15912,11 @@ function SellerReadinessScoreCard({ readiness = null, journey = null }) {
   )
 }
 
-function SellerListingFact({ icon: Icon, label, value }) {
+function SellerListingFact({ icon, label, value }) {
   return (
     <div className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
       <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white text-slate-500 shadow-sm">
-        <Icon size={15} />
+        {createElement(icon, { size: 15 })}
       </span>
       <span className="min-w-0">
         <span className="block truncate text-sm font-semibold text-slate-950">{value || 'Pending'}</span>
@@ -15913,10 +15970,9 @@ function SellerPropertyPreviewCard({ row, listing }) {
 
 function SellerAcquisitionActionRow({ row, listing, journey, readiness, onboardingStatus, onAction }) {
   return (
-    <section className="grid gap-4 xl:grid-cols-3">
+    <section className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
       <SellerNextBestActionCard row={row} listing={listing} journey={journey} readiness={readiness} onboardingStatus={onboardingStatus} onAction={onAction} />
       <SellerReadinessScoreCard readiness={readiness} journey={journey} />
-      <SellerPropertyPreviewCard row={row} listing={listing} />
     </section>
   )
 }
@@ -17045,6 +17101,288 @@ function buildSellerOnboardingSubmissionPatch({
   }
 }
 
+function escapeSellerDocumentHtml(value = '') {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function sellerDocumentLineBreaks(value = '') {
+  return escapeSellerDocumentHtml(value).replace(/\n/g, '<br />')
+}
+
+function sanitizeSellerDocumentFilePart(value = '', fallback = 'seller') {
+  return String(value || fallback)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || fallback
+}
+
+function getSellerDocumentBranding(listing = {}, formData = {}) {
+  const listingBranding = isPlainObject(listing?.branding) ? listing.branding : {}
+  const portalBranding = isPlainObject(formData?.portalBranding) ? formData.portalBranding : {}
+  const organisationName = normalizeText(firstFilledValue(
+    portalBranding.organisationName,
+    portalBranding.organisation_name,
+    portalBranding.agencyName,
+    portalBranding.agency_name,
+    listingBranding.organisationName,
+    listingBranding.organisation_name,
+    listingBranding.agencyName,
+    listingBranding.agency_name,
+    listing?.organisationName,
+    listing?.organisation_name,
+    listing?.agencyName,
+    listing?.agency_name,
+    listing?.agencyOrganisation,
+    'Agency Workspace',
+  ))
+  const logoDarkUrl = normalizeText(firstFilledValue(
+    portalBranding.logoDarkUrl,
+    portalBranding.logo_dark_url,
+    portalBranding.logoDark,
+    listingBranding.logoDarkUrl,
+    listingBranding.logo_dark_url,
+    listingBranding.logoDark,
+    listing?.agencyLogoDarkUrl,
+    listing?.organisationLogoDarkUrl,
+  ))
+  const logoLightUrl = normalizeText(firstFilledValue(
+    portalBranding.logoLightUrl,
+    portalBranding.logo_light_url,
+    portalBranding.logoLight,
+    listingBranding.logoLightUrl,
+    listingBranding.logo_light_url,
+    listingBranding.logoLight,
+    listing?.agencyLogoLightUrl,
+    listing?.organisationLogoLightUrl,
+  ))
+  const logoUrl = normalizeText(firstFilledValue(
+    logoDarkUrl,
+    portalBranding.logoUrl,
+    portalBranding.logo_url,
+    portalBranding.organisationLogoUrl,
+    portalBranding.organisation_logo_url,
+    listingBranding.logoUrl,
+    listingBranding.logo_url,
+    listingBranding.organisationLogoUrl,
+    listingBranding.organisation_logo_url,
+    listing?.agencyLogoUrl,
+    listing?.organisationLogoUrl,
+    logoLightUrl,
+  ))
+
+  return {
+    ...listingBranding,
+    ...portalBranding,
+    organisationName,
+    agencyName: organisationName,
+    logoUrl,
+    logoDarkUrl,
+    logoLightUrl,
+  }
+}
+
+function getSellerAnnexureDisclosure(formData = {}) {
+  const candidates = [
+    formData?.propertyDisclosure,
+    formData?.property_disclosure,
+    formData?.annexureA,
+    formData?.annexure_a,
+    formData?.propertyDisclosureAnnexureA,
+    formData?.property_disclosure_annexure_a,
+  ]
+  return candidates.find((candidate) => isPlainObject(candidate)) || {}
+}
+
+function buildSellerOnboardingDocumentMarkup({
+  sections = [],
+  sellerName = '',
+  sellerEmail = '',
+  sellerPhone = '',
+  propertyAddress = '',
+  statusLabel = '',
+  lastUpdatedLabel = '',
+  organisationName = '',
+  generatedAt = '',
+} = {}) {
+  const metadataRows = [
+    ['Seller', sellerName],
+    ['Email', sellerEmail],
+    ['Phone', sellerPhone],
+    ['Property', propertyAddress],
+    ['Status', statusLabel],
+    ['Last updated', lastUpdatedLabel],
+    ['Generated', generatedAt],
+  ].filter(([, value]) => normalizeText(value))
+
+  const populatedSections = (sections || [])
+    .map((section) => {
+      const fields = (section?.fields || [])
+        .map((field) => ({
+          label: field?.label || humanizeSellerFieldKey(field?.key),
+          value: formatSubmittedSellerOnboardingFieldValue(field, field?.value),
+        }))
+        .filter((field) => normalizeText(field.value))
+      return fields.length ? { ...section, fields } : null
+    })
+    .filter(Boolean)
+
+  const metadataMarkup = metadataRows.map(([label, value]) => `
+    <div class="meta-item">
+      <span class="meta-label">${escapeSellerDocumentHtml(label)}</span>
+      <span class="meta-value">${sellerDocumentLineBreaks(value)}</span>
+    </div>
+  `).join('')
+
+  const sectionMarkup = populatedSections.length
+    ? populatedSections.map((section) => `
+      <section class="submission-section">
+        <header>
+          <h2>${escapeSellerDocumentHtml(section.title || 'Submitted Details')}</h2>
+          ${section.description ? `<p>${escapeSellerDocumentHtml(section.description)}</p>` : ''}
+        </header>
+        <table>
+          <tbody>
+            ${section.fields.map((field) => `
+              <tr>
+                <th scope="row">${escapeSellerDocumentHtml(field.label)}</th>
+                <td>${sellerDocumentLineBreaks(field.value)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </section>
+    `).join('')
+    : `
+      <section class="submission-section empty-section">
+        <header>
+          <h2>No submitted values captured</h2>
+        </header>
+        <p>No populated seller onboarding values were available when this PDF was generated.</p>
+      </section>
+    `
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Seller Onboarding Submission</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root { color-scheme: light; font-family: Helvetica, Arial, sans-serif; }
+    body { margin: 0; background: #ffffff; color: #1f2937; font-family: Helvetica, Arial, sans-serif; }
+    .seller-onboarding-document { width: 210mm; min-height: 296mm; margin: 0 auto; background: #ffffff; padding: 16mm 17mm 18mm; }
+    .document-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10mm; border-bottom: 1px solid #d7d7d7; padding-bottom: 7mm; }
+    .agency-name { margin: 0; color: #111827; font-size: 13pt; font-weight: 800; letter-spacing: 0; }
+    .document-title { margin: 5mm 0 0; color: #111827; font-size: 22pt; font-weight: 800; letter-spacing: 0; line-height: 1.15; }
+    .document-subtitle { margin: 2mm 0 0; color: #606a75; font-size: 10.5pt; line-height: 1.45; }
+    .document-badge { border: 1px solid #d7d7d7; padding: 3mm 4mm; color: #111827; font-size: 8.5pt; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; margin-top: 7mm; }
+    .meta-item { min-height: 15mm; border: 1px solid #dfe3e8; padding: 3mm; break-inside: avoid; page-break-inside: avoid; }
+    .meta-label { display: block; color: #5c6670; font-size: 7.8pt; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+    .meta-value { display: block; margin-top: 1.5mm; color: #111827; font-size: 10.5pt; font-weight: 700; line-height: 1.35; }
+    .submission-section { margin-top: 7mm; break-inside: avoid; page-break-inside: avoid; }
+    .submission-section header { margin-bottom: 3mm; }
+    .submission-section h2 { margin: 0; color: #111827; font-size: 12pt; font-weight: 800; letter-spacing: 0; }
+    .submission-section header p { margin: 1mm 0 0; color: #606a75; font-size: 9.4pt; line-height: 1.4; }
+    .submission-section table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 9.6pt; line-height: 1.4; }
+    .submission-section th, .submission-section td { border: 1px solid #d7d7d7; padding: 2.6mm 3mm; vertical-align: top; text-align: left; }
+    .submission-section th { width: 35%; background: #f7f8fa; color: #111827; font-weight: 800; }
+    .submission-section td { color: #1f2937; font-weight: 500; }
+    .empty-section { border: 1px dashed #cfd6df; padding: 5mm; color: #606a75; }
+    .empty-section p { margin: 2mm 0 0; font-size: 10pt; line-height: 1.5; }
+    @media print {
+      body { background: #ffffff; }
+      .seller-onboarding-document { margin: 0; box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="seller-onboarding-document">
+    <header class="document-header">
+      <div>
+        <p class="agency-name">${escapeSellerDocumentHtml(organisationName || 'Agency Workspace')}</p>
+        <h1 class="document-title">Seller Onboarding Submission</h1>
+        <p class="document-subtitle">Submitted seller information captured for the linked property record.</p>
+      </div>
+      <div class="document-badge">Seller Record</div>
+    </header>
+    ${metadataMarkup ? `<section class="meta-grid">${metadataMarkup}</section>` : ''}
+    ${sectionMarkup}
+  </main>
+</body>
+</html>`
+}
+
+async function downloadSellerDocumentMarkupAsPdf({
+  markup = '',
+  fileName = 'seller-document.pdf',
+  selector = '',
+} = {}) {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    throw new Error('PDF downloads are only available in the browser.')
+  }
+  let pdfStage = null
+  let styleElement = null
+  try {
+    const { default: html2pdf } = await import('html2pdf.js/src/index.js')
+    const pdfDocument = new window.DOMParser().parseFromString(markup, 'text/html')
+    const style = pdfDocument.head.querySelector('style')
+    styleElement = document.createElement('style')
+    styleElement.setAttribute('data-seller-document-pdf-style', 'true')
+    styleElement.textContent = style?.textContent || ''
+    pdfStage = document.createElement('div')
+    pdfStage.setAttribute('data-seller-document-pdf-stage', 'true')
+    pdfStage.style.position = 'fixed'
+    pdfStage.style.left = '-10000px'
+    pdfStage.style.top = '0'
+    pdfStage.style.width = '210mm'
+    pdfStage.style.background = '#ffffff'
+    pdfStage.style.pointerEvents = 'none'
+    pdfStage.innerHTML = pdfDocument.body.innerHTML
+    document.head.appendChild(styleElement)
+    document.body.appendChild(pdfStage)
+
+    const imageLoads = Array.from(pdfStage.querySelectorAll('img')).map((image) => {
+      if (image.complete) return Promise.resolve()
+      return new Promise((resolve) => {
+        image.onload = resolve
+        image.onerror = resolve
+      })
+    })
+    await Promise.all(imageLoads)
+    await new Promise((resolve) => window.requestAnimationFrame(resolve))
+
+    const exportTarget = selector ? pdfStage.querySelector(selector) || pdfStage : pdfStage
+    await html2pdf()
+      .set({
+        margin: 0,
+        filename: fileName,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          windowWidth: 794,
+          windowHeight: 1123,
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'] },
+      })
+      .from(exportTarget)
+      .save()
+  } finally {
+    pdfStage?.remove()
+    styleElement?.remove()
+  }
+}
+
 function SellerProfileTab({
   row,
   sourceInfo,
@@ -17074,9 +17412,13 @@ function SellerProfileTab({
   const [addedFieldKeys, setAddedFieldKeys] = useState([])
   const [isEditingSubmittedDetails, setIsEditingSubmittedDetails] = useState(false)
   const [agentAssistedMode, setAgentAssistedMode] = useState(false)
+  const [activeSubmittedDocumentTab, setActiveSubmittedDocumentTab] = useState('seller_onboarding')
+  const [downloadingDocument, setDownloadingDocument] = useState('')
+  const [uploadingAnnexure, setUploadingAnnexure] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const signedAnnexureUploadInputRef = useRef(null)
 
   const createComplexDraftState = useCallback((formData = sourceFormData) => ({
     companyDirectors: formatSellerOnboardingFieldValue(formData.companyDirectors || []),
@@ -17094,6 +17436,9 @@ function SellerProfileTab({
     setAddedFieldKeys([])
     setIsEditingSubmittedDetails(false)
     setAgentAssistedMode(false)
+    setActiveSubmittedDocumentTab('seller_onboarding')
+    setDownloadingDocument('')
+    setUploadingAnnexure(false)
     setMessage('')
     setError('')
   }, [createComplexDraftState, sourceKey, sourceFormData])
@@ -17125,6 +17470,14 @@ function SellerProfileTab({
     }),
     [activeOnboardingSections, addedFieldKeys, agentAssistedMode, complexDrafts, draft, onboardingEditorActive, onboardingSubmitted, sourceFormData],
   )
+  const submittedDownloadSectionModels = useMemo(
+    () => getSellerSubmittedSectionModels({
+      sections: submittedSections,
+      data: sourceFormData,
+      editable: false,
+    }),
+    [sourceFormData, submittedSections],
+  )
   const capturedSummary = useMemo(
     () => getSellerCapturedFieldSummary({ sections: activeOnboardingSections, data: sourceFormData }),
     [activeOnboardingSections, sourceFormData],
@@ -17133,10 +17486,27 @@ function SellerProfileTab({
     () => buildSellerDocumentOverviewModel({ profile: requirementProfile, listing, journey }),
     [journey, listing, requirementProfile],
   )
+  const sellerPropertySummary = useMemo(() => getSellerPropertySummary(row, listing), [listing, row])
+  const documentBranding = useMemo(() => getSellerDocumentBranding(listing || {}, sourceFormData), [listing, sourceFormData])
+  const annexureDisclosure = useMemo(() => getSellerAnnexureDisclosure(sourceFormData), [sourceFormData])
+  const annexureHasCapturedData = hasValue(annexureDisclosure)
 
   const sellerName = normalizeText(row.name || row.contact?.name || requirementProfile.sellerName) || 'Seller lead'
   const sellerPhone = normalizeText(row.phone || row.contact?.phone || requirementProfile.sellerContactPhone)
   const sellerEmail = normalizeText(row.email || row.contact?.email || requirementProfile.sellerContactEmail)
+  const sellerIdNumber = normalizeText(firstFilledValue(
+    sourceFormData.idNumber,
+    sourceFormData.id_number,
+    sourceFormData.sellerIdNumber,
+    sourceFormData.seller_id_number,
+    sourceFormData.identityNumber,
+    sourceFormData.identity_number,
+    sourceFormData.foreignPassportNumber,
+    sourceFormData.foreign_passport_number,
+    sourceFormData.passportNumber,
+    sourceFormData.passport_number,
+  ))
+  const propertyAddressLabel = normalizeText(sellerPropertySummary.address || sourceFormData.propertyAddress || sourceFormData.propertyAddressSearch)
   const sourceLabel = normalizeText(sourceInfo?.leadSource || row.source || row.leadSource || 'Unknown')
   const portalLink = getSellerPortalLink(row, listing)
   const portalStatus = normalizeText(journey?.sellerPortalStatus || (portalLink ? 'Available' : 'Not opened')) || 'Not opened'
@@ -17165,6 +17535,7 @@ function SellerProfileTab({
   }, [createComplexDraftState, sourceFormData])
 
   const beginEditing = useCallback(() => {
+    setActiveSubmittedDocumentTab('seller_onboarding')
     setIsEditingSubmittedDetails(true)
     setMessage('')
     setError('')
@@ -17195,6 +17566,7 @@ function SellerProfileTab({
   }, [agentOnboardingSignal, beginAgentAssistedOnboarding])
 
   const viewSubmittedOnboarding = useCallback(() => {
+    setActiveSubmittedDocumentTab('seller_onboarding')
     setIsEditingSubmittedDetails(false)
     setMessage('')
     setError('')
@@ -17250,6 +17622,7 @@ function SellerProfileTab({
     if (!key) return
     setError('')
     setMessage('')
+    setActiveSubmittedDocumentTab('seller_onboarding')
     setIsEditingSubmittedDetails(true)
     setAddedFieldKeys((previous) => (previous.includes(key) ? previous : [...previous, key]))
   }, [])
@@ -17389,6 +17762,139 @@ function SellerProfileTab({
     onSaved,
     row,
     sourceFormData,
+  ])
+
+  const downloadSellerOnboardingPdf = useCallback(async () => {
+    const safeFileBase = sanitizeSellerDocumentFilePart(propertyAddressLabel || sellerName, 'seller')
+    const generatedAt = formatDateTime(new Date().toISOString(), '')
+    try {
+      setDownloadingDocument('seller_onboarding')
+      setError('')
+      setMessage('')
+      const markup = buildSellerOnboardingDocumentMarkup({
+        sections: submittedDownloadSectionModels,
+        sellerName,
+        sellerEmail,
+        sellerPhone,
+        propertyAddress: propertyAddressLabel,
+        statusLabel: progressMeta.label,
+        lastUpdatedLabel,
+        organisationName: documentBranding.organisationName,
+        generatedAt,
+      })
+      await downloadSellerDocumentMarkupAsPdf({
+        markup,
+        fileName: `${safeFileBase}-seller-onboarding.pdf`,
+        selector: '.seller-onboarding-document',
+      })
+      setMessage('Seller onboarding PDF downloaded.')
+    } catch (downloadError) {
+      setError(downloadError?.message || 'Unable to download seller onboarding PDF.')
+    } finally {
+      setDownloadingDocument('')
+    }
+  }, [
+    documentBranding.organisationName,
+    lastUpdatedLabel,
+    progressMeta.label,
+    propertyAddressLabel,
+    sellerEmail,
+    sellerName,
+    sellerPhone,
+    submittedDownloadSectionModels,
+  ])
+
+  const downloadAnnexurePdf = useCallback(async () => {
+    const listingId = getSellerListingId(row, listing || journey?.listing || null)
+    const documentReference = normalizeText(firstFilledValue(
+      listing?.listingReference,
+      listing?.listing_reference,
+      listing?.reference,
+      listing?.privateListingReference,
+      listing?.private_listing_reference,
+      row?.listingReference,
+      row?.listing_reference,
+      row?.reference,
+      listingId,
+      propertyAddressLabel,
+    ))
+    const safeFileBase = sanitizeSellerDocumentFilePart(propertyAddressLabel || sellerName, 'seller')
+    try {
+      setDownloadingDocument('annexure_a')
+      setError('')
+      setMessage('')
+      const markup = buildPropertyDisclosureDocumentMarkup(annexureDisclosure, {
+        sellerName,
+        sellerIdNumber,
+        propertyAddress: propertyAddressLabel,
+        listingId,
+        documentReference,
+        assetBaseUrl: typeof window === 'undefined' ? '' : window.location.origin,
+        branding: documentBranding,
+      })
+      await downloadSellerDocumentMarkupAsPdf({
+        markup,
+        fileName: `${safeFileBase}-annexure-a.pdf`,
+        selector: '.property-disclosure-document',
+      })
+      setMessage('Annexure A PDF downloaded.')
+    } catch (downloadError) {
+      setError(downloadError?.message || 'Unable to download Annexure A PDF.')
+    } finally {
+      setDownloadingDocument('')
+    }
+  }, [
+    annexureDisclosure,
+    documentBranding,
+    journey?.listing,
+    listing,
+    propertyAddressLabel,
+    row,
+    sellerIdNumber,
+    sellerName,
+  ])
+
+  const triggerSignedAnnexureUpload = useCallback(() => {
+    setError('')
+    setMessage('')
+    signedAnnexureUploadInputRef.current?.click()
+  }, [])
+
+  const uploadSignedAnnexure = useCallback(async (event) => {
+    const file = event.target.files?.[0] || null
+    event.target.value = ''
+    if (!file) return
+
+    const listingId = getSellerListingId(row, listing || journey?.listing || null)
+    if (!listingId) {
+      setError('Link a seller listing before uploading a signed Annexure A.')
+      return
+    }
+
+    try {
+      setUploadingAnnexure(true)
+      setError('')
+      setMessage('')
+      await uploadPrivateListingDocument(listingId, file, {
+        documentType: 'property_disclosure_annexure_a_signed',
+        documentCategory: 'Property Disclosure',
+        documentName: file.name || `${sanitizeSellerDocumentFilePart(sellerName, 'seller')}-signed-annexure-a.pdf`,
+        visibility: 'seller_visible',
+        status: 'uploaded',
+      })
+      setMessage('Signed Annexure A uploaded.')
+      await onSaved?.()
+    } catch (uploadError) {
+      setError(uploadError?.message || 'Unable to upload signed Annexure A.')
+    } finally {
+      setUploadingAnnexure(false)
+    }
+  }, [
+    journey?.listing,
+    listing,
+    onSaved,
+    row,
+    sellerName,
   ])
 
   const snapshotAction = (() => {
@@ -17647,7 +18153,7 @@ function SellerProfileTab({
                   {saving ? 'Saving...' : agentAssistedMode ? 'Complete onboarding' : 'Save overrides'}
                 </button>
               </div>
-            ) : (
+            ) : activeSubmittedDocumentTab === 'annexure_a' ? null : (
               <button
                 type="button"
                 onClick={beginEditing}
@@ -17755,47 +18261,153 @@ function SellerProfileTab({
           </div>
         ) : (
           <>
-            <div className="rounded-3xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
-              Only populated submitted fields are shown by default.
-              Click Edit submitted details to reveal blank but relevant fields for overrides.
+            <input
+              ref={signedAnnexureUploadInputRef}
+              type="file"
+              accept="application/pdf,image/*,.pdf,.png,.jpg,.jpeg"
+              className="hidden"
+              onChange={uploadSignedAnnexure}
+            />
+            <div className="mb-4 flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+              {[
+                { key: 'seller_onboarding', label: 'Seller Onboarding', icon: FileText },
+                { key: 'annexure_a', label: 'Annexure A', icon: Shield },
+              ].map(({ key, label, icon }) => {
+                const selected = activeSubmittedDocumentTab === key
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => {
+                      setActiveSubmittedDocumentTab(key)
+                      setMessage('')
+                      setError('')
+                    }}
+                    aria-pressed={selected}
+                    className={`inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition sm:flex-none ${
+                      selected
+                        ? 'bg-white text-slate-950 shadow-sm ring-1 ring-slate-200'
+                        : 'text-slate-500 hover:bg-white/70 hover:text-slate-800'
+                    }`}
+                  >
+                    {createElement(icon, { className: 'h-4 w-4' })}
+                    {label}
+                  </button>
+                )
+              })}
             </div>
-            {isEditingSubmittedDetails ? (
-              <div className="mt-4 rounded-3xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                You are editing the seller submission copy.
-                Save overrides writes an audit trail against the lead record and keeps the original seller submission as the baseline.
-              </div>
-            ) : null}
-            {submittedSectionModels.length ? (
-              <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                {submittedSectionModels.map((section) => (
-                  <SellerSubmittedSectionCard
-                    key={section.id}
-                    section={section}
-                    editable={onboardingSubmitted && isEditingSubmittedDetails}
-                    onChange={updateField}
-                    onComplexChange={updateComplexField}
-                    onAddField={addMissingField}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="mt-4 rounded-3xl border border-dashed border-slate-200 bg-slate-50/70 p-6">
-                <p className="text-sm font-semibold text-slate-900">No submitted fields captured yet</p>
-                <p className="mt-2 text-sm leading-6 text-slate-500">
-                  The seller submission exists, but no populated values were returned.
-                  Click Edit submitted details to add the missing information.
-                </p>
-                {!isEditingSubmittedDetails ? (
-                  <div className="mt-4">
+
+            {activeSubmittedDocumentTab === 'seller_onboarding' ? (
+              <>
+                <div className="rounded-3xl border border-slate-200 bg-slate-50/80 px-4 py-3">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <p className="text-sm leading-6 text-slate-600">
+                      Only populated submitted fields are shown by default.
+                      Click Edit submitted details to reveal blank but relevant fields for overrides.
+                    </p>
                     <button
                       type="button"
-                      onClick={beginEditing}
-                      className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800"
+                      onClick={downloadSellerOnboardingPdf}
+                      disabled={Boolean(downloadingDocument)}
+                      className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                     >
-                      Edit submitted details
+                      <Download className="h-4 w-4" />
+                      {downloadingDocument === 'seller_onboarding' ? 'Preparing PDF...' : 'Download Seller Onboarding'}
                     </button>
                   </div>
+                </div>
+                {isEditingSubmittedDetails ? (
+                  <div className="mt-4 rounded-3xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                    You are editing the seller submission copy.
+                    Save overrides writes an audit trail against the lead record and keeps the original seller submission as the baseline.
+                  </div>
                 ) : null}
+                {submittedSectionModels.length ? (
+                  <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                    {submittedSectionModels.map((section) => (
+                      <SellerSubmittedSectionCard
+                        key={section.id}
+                        section={section}
+                        editable={onboardingSubmitted && isEditingSubmittedDetails}
+                        onChange={updateField}
+                        onComplexChange={updateComplexField}
+                        onAddField={addMissingField}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-3xl border border-dashed border-slate-200 bg-slate-50/70 p-6">
+                    <p className="text-sm font-semibold text-slate-900">No submitted fields captured yet</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-500">
+                      The seller submission exists, but no populated values were returned.
+                      Click Edit submitted details to add the missing information.
+                    </p>
+                    {!isEditingSubmittedDetails ? (
+                      <div className="mt-4">
+                        <button
+                          type="button"
+                          onClick={beginEditing}
+                          className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800"
+                        >
+                          Edit submitted details
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="grid gap-4">
+                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-950">Annexure A</p>
+                      <p className="mt-2 text-sm leading-6 text-slate-500">
+                        Download the property disclosure annexure for review or wet signature, then upload the signed copy here.
+                      </p>
+                    </div>
+                    <StatusPill tone={annexureHasCapturedData ? 'green' : 'amber'}>
+                      {annexureHasCapturedData ? 'Captured' : 'Blank template'}
+                    </StatusPill>
+                  </div>
+                  <div className="mt-5 grid gap-3 md:grid-cols-3">
+                    <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Seller</p>
+                      <p className="mt-1 truncate text-sm font-semibold text-slate-900">{sellerName}</p>
+                    </div>
+                    <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">ID / Passport</p>
+                      <p className="mt-1 truncate text-sm font-semibold text-slate-900">{sellerIdNumber || 'Not captured'}</p>
+                    </div>
+                    <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Property</p>
+                      <p className="mt-1 truncate text-sm font-semibold text-slate-900">{propertyAddressLabel || 'Not captured'}</p>
+                    </div>
+                  </div>
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={downloadAnnexurePdf}
+                      disabled={Boolean(downloadingDocument)}
+                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      <Download className="h-4 w-4" />
+                      {downloadingDocument === 'annexure_a' ? 'Preparing PDF...' : 'Download Annexure A'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={triggerSignedAnnexureUpload}
+                      disabled={uploadingAnnexure}
+                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Upload className="h-4 w-4" />
+                      {uploadingAnnexure ? 'Uploading...' : 'Upload signed Annexure A'}
+                    </button>
+                  </div>
+                </div>
+                <div className="rounded-3xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
+                  Manual signing flow: download Annexure A, have the seller sign the PDF or printout, then upload the signed copy. The uploaded file is stored against the linked seller listing.
+                </div>
               </div>
             )}
           </>
@@ -17967,6 +18579,491 @@ function SellerPropertyTab({ row, listing, onSavePropertyDetails }) {
   )
 }
 
+function getSellerMandateWorkflowState({ row = {}, listing = null, journey = null, onboardingStatus = '' } = {}) {
+  const mandateMeta = getSellerMandateMeta(row, listing, journey)
+  const mandateStatus = getSellerMandateStatus(row, listing, journey)
+  const onboardingSubmitted = sellerOnboardingIsSubmitted(onboardingStatus)
+  const onboardingStarted = sellerOnboardingHasStarted(onboardingStatus) || Boolean(getSellerOnboardingToken(row, listing))
+  if (mandateMeta.mode === 'signed') {
+    return {
+      key: 'signed',
+      label: 'Signed',
+      title: 'Signed mandate received',
+      copy: 'The mandate has been signed. The next phase will surface the signed mandate on the listing and seller portal.',
+      tone: 'green',
+      mandateMeta,
+      mandateStatus,
+      onboardingSubmitted,
+      onboardingStarted,
+    }
+  }
+  if (mandateMeta.hasRecord) {
+    const sent = ['sent', 'sent_to_seller', 'sent_to_agent', 'partially_signed'].includes(mandateStatus) || mandateStatus.includes('sent')
+    return {
+      key: sent ? 'sent' : 'generated',
+      label: sent ? 'Sent for signature' : 'Mandate generated',
+      title: sent ? 'Sent for signature' : 'Mandate generated',
+      copy: sent
+        ? 'The mandate packet exists and is awaiting signature progress.'
+        : 'The mandate packet exists. Open the mandate workspace to download, send, or regenerate it.',
+      tone: sent ? 'blue' : 'amber',
+      mandateMeta,
+      mandateStatus,
+      onboardingSubmitted,
+      onboardingStarted,
+    }
+  }
+  if (onboardingSubmitted) {
+    return {
+      key: 'ready',
+      label: 'Seller facts ready',
+      title: 'Seller facts ready',
+      copy: 'Seller onboarding has been submitted, so mandate generation can use verified seller and property facts.',
+      tone: 'green',
+      mandateMeta,
+      mandateStatus,
+      onboardingSubmitted,
+      onboardingStarted,
+    }
+  }
+  return {
+    key: 'blocked',
+    label: 'Seller onboarding required',
+    title: 'Seller onboarding required',
+    copy: 'Complete seller onboarding before generating a mandate. The agent can complete it manually or send the seller onboarding link.',
+    tone: onboardingStarted ? 'amber' : 'slate',
+    mandateMeta,
+    mandateStatus,
+    onboardingSubmitted,
+    onboardingStarted,
+  }
+}
+
+function SellerMandateWorkflowGate({
+  row,
+  listing,
+  journey,
+  onboardingStatus = '',
+  sendingOnboarding = false,
+  actionBusy = false,
+  onManualSellerOnboarding,
+  onSendSellerOnboarding,
+  onGenerateMandate,
+}) {
+  const state = getSellerMandateWorkflowState({ row, listing, journey, onboardingStatus })
+  const steps = [
+    { key: 'onboarding', label: 'Seller Facts', complete: state.onboardingSubmitted, current: state.key === 'blocked' },
+    { key: 'generated', label: 'Generate', complete: ['generated', 'sent', 'signed'].includes(state.key), current: state.key === 'ready' },
+    { key: 'sent', label: 'Signature', complete: ['sent', 'signed'].includes(state.key), current: state.key === 'generated' },
+    { key: 'signed', label: 'Signed', complete: state.key === 'signed', current: state.key === 'sent' },
+  ]
+  const primaryActionLabel = state.key === 'signed'
+    ? 'View signed mandate'
+    : state.key === 'sent'
+      ? 'View signing status'
+      : state.key === 'generated'
+        ? 'Open mandate workspace'
+        : actionBusy
+          ? 'Saving terms...'
+        : 'Generate mandate'
+
+  return (
+    <SellerWorkspaceCard
+      title="Mandate Workflow"
+      action={<StatusPill tone={state.tone}>{state.label}</StatusPill>}
+      density="compact"
+    >
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.55fr)]">
+        <div>
+          <h3 className="text-2xl font-semibold tracking-[-0.045em] text-slate-950">{state.title}</h3>
+          <p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-slate-500">{state.copy}</p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            {state.key === 'blocked' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={onManualSellerOnboarding}
+                  disabled={!onManualSellerOnboarding}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  <UserRound size={16} />
+                  Onboard seller manually
+                </button>
+                <button
+                  type="button"
+                  onClick={onSendSellerOnboarding}
+                  disabled={sendingOnboarding || !onSendSellerOnboarding}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Mail size={16} />
+                  {sendingOnboarding ? 'Sending seller onboarding...' : 'Send seller onboarding'}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onGenerateMandate?.()}
+                disabled={actionBusy || !onGenerateMandate}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                <FileText size={16} />
+                {primaryActionLabel}
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="grid gap-2">
+          {steps.map((step) => (
+            <div
+              key={step.key}
+              className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 ${
+                step.complete
+                  ? 'border-emerald-100 bg-emerald-50 text-emerald-800'
+                  : step.current
+                    ? 'border-blue-100 bg-blue-50 text-blue-800'
+                    : 'border-slate-100 bg-slate-50 text-slate-500'
+              }`}
+            >
+              <span className="text-sm font-semibold">{step.label}</span>
+              {step.complete ? <CheckCircle2 size={16} /> : step.current ? <Clock3 size={16} /> : <span className="h-2 w-2 rounded-full bg-current opacity-40" />}
+            </div>
+          ))}
+        </div>
+      </div>
+    </SellerWorkspaceCard>
+  )
+}
+
+function formatSellerMandateFactValue(key = '', value, fallback = 'Pending') {
+  if (!hasValue(value)) return fallback
+  const formatted = formatSubmittedSellerOnboardingFieldValue({ key }, value)
+  return normalizeText(formatted) || fallback
+}
+
+function getSellerMandateSellerFacts({ row = {}, listing = null, journey = null, commissionSummary = null } = {}) {
+  const formData = readSellerOnboardingFormData(listing || {}, row || {})
+  const property = getSellerPropertySummary(row, listing)
+  const onboardingStatus = getSellerOnboardingStatus(row, listing, journey)
+  const onboardingSubmitted = sellerOnboardingIsSubmitted(onboardingStatus)
+  const sellerName = firstFilledValue(
+    formData.fullName,
+    [formData.sellerFirstName, formData.sellerSurname].filter(Boolean).join(' '),
+    formData.entityName,
+    row?.name,
+    row?.contact?.name,
+  )
+  const sellerEmail = firstFilledValue(formData.email, formData.sellerEmail, row?.email, row?.sellerEmail, row?.contact?.email)
+  const sellerPhone = firstFilledValue(formData.phone, formData.sellerPhone, row?.phone, row?.sellerPhone, row?.contact?.phone)
+  const marketingAuthorisations = normalizeBooleanObject(
+    commissionSummary?.marketingAuthorisations || {
+      ...(isPlainObject(formData.marketingAuthorisations) ? formData.marketingAuthorisations : {}),
+      ...(isPlainObject(formData.marketing_authorisations) ? formData.marketing_authorisations : {}),
+      allowOnlineMarketing: formData.allowOnlineMarketing,
+      allow_online_marketing: formData.allow_online_marketing,
+      allowPropertyPortals: formData.allowPropertyPortals,
+      allow_property_portals: formData.allow_property_portals,
+      allowSocialMedia: formData.allowSocialMedia,
+      allow_social_media: formData.allow_social_media,
+      allowShowBoards: formData.allowShowBoards,
+      allow_show_boards: formData.allow_show_boards,
+    },
+    SELLER_MANDATE_MARKETING_OPTIONS,
+  )
+  const marketingLabels = SELLER_MANDATE_MARKETING_OPTIONS
+    .filter((option) => Boolean(marketingAuthorisations[option.key]))
+    .map((option) => option.documentLabel)
+
+  return {
+    onboardingLabel: onboardingSubmitted ? 'Onboarding submitted' : 'Onboarding pending',
+    onboardingTone: onboardingSubmitted ? 'green' : 'amber',
+    marketingLabels,
+    sections: [
+      {
+        title: 'Seller',
+        icon: UserRound,
+        rows: [
+          ['Seller', sellerName],
+          ['Email', sellerEmail],
+          ['Phone', sellerPhone],
+          ['Seller Type', firstFilledValue(formData.sellerType, formData.sellerLegalType, formData.legalType)],
+          ['Entity', firstFilledValue(formData.entityName, formData.companyName, formData.trustName)],
+        ],
+      },
+      {
+        title: 'Ownership',
+        icon: Shield,
+        rows: [
+          ['Ownership', firstFilledValue(formData.ownershipType, formData.ownershipStructure, formData.ownership_field_labels)],
+          ['Marital Status', firstFilledValue(formData.maritalStatus, formData.marital_status)],
+          ['Marital Regime', firstFilledValue(formData.maritalRegime, formData.marital_regime)],
+          ['Spouse', firstFilledValue(formData.spouseName, formData.spouseFullName)],
+          ['VAT Registered', firstFilledValue(formData.vatRegistered, formData.vat_registered)],
+        ],
+      },
+      {
+        title: 'Property',
+        icon: Home,
+        rows: [
+          ['Address', property.address],
+          ['Asking Price', property.askingPrice ? formatCurrency(property.askingPrice) : 'Pending'],
+          ['Property Type', property.propertyType],
+          ['Bedrooms', property.bedrooms],
+          ['Bathrooms', property.bathrooms],
+          ['Parking', property.parking],
+          ['Erf Size', property.erfSize],
+        ],
+      },
+    ],
+  }
+}
+
+function SellerMandateFactSection({ section }) {
+  const SectionIcon = section.icon || FileText
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+          <SectionIcon size={16} />
+        </span>
+        <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-blue-900">{section.title}</h3>
+      </div>
+      <dl className="grid gap-1">
+        {section.rows.map(([label, value]) => (
+          <SellerInfoRow key={label} label={label} value={formatSellerMandateFactValue(label, value)} />
+        ))}
+      </dl>
+    </section>
+  )
+}
+
+function SellerMandateSellerFactsCard({ row, listing, journey, commissionSummary }) {
+  const facts = getSellerMandateSellerFacts({ row, listing, journey, commissionSummary })
+  return (
+    <SellerWorkspaceCard
+      title="Seller Facts"
+      action={(
+        <div className="flex flex-wrap justify-end gap-2">
+          <StatusPill tone={facts.onboardingTone}>{facts.onboardingLabel}</StatusPill>
+          <StatusPill tone="blue">Read-only</StatusPill>
+        </div>
+      )}
+      density="compact"
+    >
+      <div className="flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50/70 p-3 text-sm font-medium leading-6 text-blue-900">
+        <Shield size={17} className="mt-0.5 shrink-0" />
+        <p>Seller-supplied facts are locked here and used for mandate generation. Update them through seller onboarding or the manual onboarding flow.</p>
+      </div>
+      <div className="mt-4 grid gap-3 xl:grid-cols-3">
+        {facts.sections.map((section) => (
+          <SellerMandateFactSection key={section.title} section={section} />
+        ))}
+      </div>
+      <section className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-blue-900">Marketing Permissions</h3>
+          <StatusPill tone={facts.marketingLabels.length ? 'green' : 'slate'}>
+            {facts.marketingLabels.length ? `${facts.marketingLabels.length} authorised` : 'Not captured'}
+          </StatusPill>
+        </div>
+        {facts.marketingLabels.length ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {facts.marketingLabels.map((label) => (
+              <span key={label} className="inline-flex min-h-8 items-center gap-1.5 rounded-full bg-white px-3 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
+                <CheckCircle2 size={14} className="text-emerald-600" />
+                {label}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-3 text-sm font-medium text-slate-500">No seller marketing permissions captured yet.</p>
+        )}
+      </section>
+    </SellerWorkspaceCard>
+  )
+}
+
+function getSellerMandateLatestVersion(versions = []) {
+  if (!Array.isArray(versions) || !versions.length) return null
+  return [...versions]
+    .filter(Boolean)
+    .sort((left, right) => {
+      const leftVersion = Number(left.version_number || left.versionNumber || 0)
+      const rightVersion = Number(right.version_number || right.versionNumber || 0)
+      if (leftVersion !== rightVersion) return rightVersion - leftVersion
+      return new Date(right.updated_at || right.updatedAt || right.generated_at || right.generatedAt || right.created_at || right.createdAt || 0).getTime() -
+        new Date(left.updated_at || left.updatedAt || left.generated_at || left.generatedAt || left.created_at || left.createdAt || 0).getTime()
+    })[0] || null
+}
+
+function getSellerMandatePacketSummary({ row = {}, listing = null, journey = null, mandatePacketStatus = null } = {}) {
+  const meta = getSellerMandateMeta(row, listing, journey)
+  const status = getSellerMandateStatus(row, listing, journey)
+  const packet = mandatePacketStatus?.packet || journey?.mandatePacketStatus?.packet || journey?.mandatePacket || row?.mandatePacket || listing?.mandatePacket || null
+  const sourceContext = mandatePacketStatus?.sourceContext ||
+    mandatePacketStatus?.source_context_json ||
+    packet?.sourceContextJson ||
+    packet?.source_context_json ||
+    {}
+  const versions = [
+    mandatePacketStatus?.versions,
+    mandatePacketStatus?.packetVersions,
+    packet?.versions,
+    packet?.packetVersions,
+    sourceContext?.versions,
+  ].find(Array.isArray) || []
+  const latestVersion = getSellerMandateLatestVersion(versions)
+  const draftUrl = normalizeText(
+    latestVersion?.rendered_file_access_url ||
+      latestVersion?.rendered_file_url ||
+      packet?.renderedFileUrl ||
+      packet?.rendered_file_url ||
+      sourceContext?.renderedFileUrl ||
+      sourceContext?.rendered_file_url,
+  )
+  const signedUrl = normalizeText(
+    latestVersion?.final_signed_file_access_url ||
+      latestVersion?.final_signed_file_url ||
+      packet?.finalSignedFileUrl ||
+      packet?.final_signed_file_url ||
+      sourceContext?.finalSignedFileUrl ||
+      sourceContext?.final_signed_file_url,
+  )
+  return {
+    meta,
+    status,
+    packet,
+    packetId: getSellerMandatePacketId(row, listing, journey) || normalizeText(packet?.id || packet?.packetId || packet?.packet_id),
+    sourceContext,
+    latestVersion,
+    draftUrl,
+    signedUrl,
+    generatedAt: firstFilledValue(
+      row?.mandateGeneratedAt,
+      row?.mandate_generated_at,
+      sourceContext?.generatedAt,
+      sourceContext?.generated_at,
+      latestVersion?.generated_at,
+      latestVersion?.generatedAt,
+      packet?.updatedAt,
+      packet?.updated_at,
+      packet?.createdAt,
+      packet?.created_at,
+    ),
+    sentAt: firstFilledValue(
+      row?.mandateSentAt,
+      row?.mandate_sent_at,
+      sourceContext?.sentAt,
+      sourceContext?.sent_at,
+      packet?.sentAt,
+      packet?.sent_at,
+    ),
+    signedAt: firstFilledValue(
+      mandatePacketStatus?.signedAt,
+      mandatePacketStatus?.signed_at,
+      row?.mandateSignedAt,
+      row?.mandate_signed_at,
+      sourceContext?.signedAt,
+      sourceContext?.signed_at,
+      packet?.completedAt,
+      packet?.completed_at,
+      latestVersion?.finalised_at,
+      latestVersion?.finalisedAt,
+    ),
+  }
+}
+
+function SellerMandatePacketCard({
+  row,
+  listing,
+  journey,
+  mandatePacketStatus = null,
+  savingCommission = false,
+  onGenerateMandate,
+}) {
+  const summary = getSellerMandatePacketSummary({ row, listing, journey, mandatePacketStatus })
+  const hasPacket = summary.meta.hasRecord || Boolean(summary.packetId)
+  const onboardingSubmitted = sellerOnboardingIsSubmitted(getSellerOnboardingStatus(row, listing, journey))
+  const openUrl = (url = '') => {
+    if (!url || typeof window === 'undefined') return
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+  const packetIdShort = summary.packetId ? `${summary.packetId.slice(0, 8)}...` : 'Not created'
+  const primaryLabel = (() => {
+    if (hasPacket && summary.meta.mode === 'signed') return 'Open signed mandate'
+    if (hasPacket && summary.meta.mode === 'send') return 'Open to send/download'
+    if (hasPacket) return 'Open mandate workspace'
+    if (savingCommission) return 'Saving terms...'
+    return onboardingSubmitted ? 'Save & generate mandate' : 'Choose start path'
+  })()
+  const secondaryDateLabel = summary.meta.mode === 'signed' ? 'Signed' : 'Sent'
+  const secondaryDateValue = summary.meta.mode === 'signed' ? summary.signedAt : summary.sentAt
+
+  return (
+    <SellerWorkspaceCard
+      title="Mandate Packet"
+      action={<StatusPill tone={summary.meta.tone}>{summary.meta.label}</StatusPill>}
+      density="compact"
+    >
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+        <div className="min-w-0">
+          <h3 className="text-xl font-semibold tracking-[-0.04em] text-slate-950">
+            {hasPacket ? 'Mandate workspace is ready' : 'No mandate packet yet'}
+          </h3>
+          <p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-slate-500">
+            {hasPacket
+              ? 'Generate, download, send for signature, and track the mandate from the legal document workspace.'
+              : onboardingSubmitted
+                ? 'Save the agent-owned mandate terms, then generate the mandate from the seller facts and property details above.'
+                : 'Choose whether to complete seller onboarding manually, send the seller intake, or continue with saved details.'}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 lg:justify-end">
+          <button
+            type="button"
+            onClick={() => onGenerateMandate?.({ mode: summary.meta.mode || 'generate' })}
+            disabled={savingCommission}
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            <FileText size={15} />
+            {primaryLabel}
+          </button>
+          {summary.draftUrl ? (
+            <button
+              type="button"
+              onClick={() => openUrl(summary.draftUrl)}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+            >
+              <Download size={15} />
+              Draft PDF
+            </button>
+          ) : null}
+          {summary.signedUrl ? (
+            <button
+              type="button"
+              onClick={() => openUrl(summary.signedUrl)}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-800 hover:bg-emerald-100"
+            >
+              <CheckCircle2 size={15} />
+              Signed PDF
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2 lg:grid-cols-4">
+        <SellerInfoRow label="Packet ID" value={packetIdShort} />
+        <SellerInfoRow label="State" value={summary.meta.label || 'Not generated'} />
+        <SellerInfoRow label="Generated" value={summary.generatedAt ? formatDateTime(summary.generatedAt) : 'Pending'} />
+        <SellerInfoRow label={secondaryDateLabel} value={secondaryDateValue ? formatDateTime(secondaryDateValue) : 'Pending'} />
+      </div>
+      {hasPacket && !summary.draftUrl && !summary.signedUrl ? (
+        <p className="mt-3 text-xs font-semibold text-slate-500">
+          Download links load inside the mandate workspace once a packet version has been generated.
+        </p>
+      ) : null}
+    </SellerWorkspaceCard>
+  )
+}
+
 function SellerCommissionCard({
   commissionDraft,
   commissionSummary,
@@ -17982,20 +19079,22 @@ function SellerCommissionCard({
   const estimatedExVat = commissionType === 'fixed' ? amount : commissionSummary?.estimatedExVat || 0
   const estimatedInclVat = vatIncluded ? estimatedExVat : estimatedExVat ? estimatedExVat * 1.15 : 0
   const durationLabel = getMandateDurationLabel(commissionDraft?.mandateStartDate, commissionDraft?.mandateEndDate)
-  const marketingAuthorisations = normalizeBooleanObject(commissionDraft?.marketingAuthorisations, SELLER_MANDATE_MARKETING_OPTIONS)
   const specialMandateConditions = normalizeBooleanObject(commissionDraft?.specialMandateConditions, SELLER_SPECIAL_MANDATE_CONDITION_OPTIONS)
   const update = (key, value) => {
     onCommissionDraftChange?.(key, value)
   }
-  const updateMarketing = (key, value) => update('marketingAuthorisations', { ...marketingAuthorisations, [key]: value })
   const updateCondition = (key, value) => update('specialMandateConditions', { ...specialMandateConditions, [key]: value })
 
   return (
     <SellerWorkspaceCard
-      title="Mandate Builder"
-      action={<StatusPill tone={commissionSummary?.hasData ? 'green' : 'slate'}>{commissionSummary?.hasData ? 'Captured' : 'Pending'}</StatusPill>}
+      title="Mandate Terms"
+      action={<StatusPill tone={commissionSummary?.hasData ? 'green' : 'slate'}>{commissionSummary?.hasData ? 'Terms captured' : 'Terms pending'}</StatusPill>}
       className="min-h-[560px]"
     >
+      <div className="mb-5 flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-medium leading-6 text-slate-600">
+        <FileText size={17} className="mt-0.5 shrink-0 text-blue-700" />
+        <p>Edit the mandate variables the agent owns here. Seller facts and marketing permissions are locked in the Seller Facts section above.</p>
+      </div>
       <div className="grid gap-5 xl:grid-cols-2">
         <div className="grid content-start gap-5">
           <section className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -18117,24 +19216,6 @@ function SellerCommissionCard({
 
         <div className="grid content-start gap-5">
           <section className="rounded-2xl border border-slate-200 bg-white p-4">
-            <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-blue-900">Marketing Authorisation</h3>
-            <p className="mt-1 text-sm font-medium text-slate-500">Authorise the agent to market the property through the following channels.</p>
-            <div className="mt-4 grid gap-3">
-              {SELLER_MANDATE_MARKETING_OPTIONS.map((option) => (
-                <label key={option.key} className="inline-flex items-start gap-3 text-sm font-semibold text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(marketingAuthorisations[option.key])}
-                    onChange={(event) => updateMarketing(option.key, event.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-blue-900"
-                  />
-                  {option.label}
-                </label>
-              ))}
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-slate-200 bg-white p-4">
             <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-blue-900">Special Mandate Conditions</h3>
             <p className="mt-1 text-sm font-medium text-slate-500">Select any conditions that apply to this mandate.</p>
             <div className="mt-4 grid gap-3">
@@ -18187,14 +19268,48 @@ function SellerCommissionCard({
 }
 
 function SellerMandateTab({
+  row,
+  listing,
+  journey,
+  mandatePacketStatus = null,
+  onboardingStatus = '',
   commissionDraft,
   commissionSummary,
   savingCommission = false,
+  sendingOnboarding = false,
   onCommissionDraftChange,
   onSaveCommission,
+  onManualSellerOnboarding,
+  onSendSellerOnboarding,
+  onGenerateMandate,
 }) {
   return (
     <div className="grid gap-5">
+      <SellerMandateWorkflowGate
+        row={row}
+        listing={listing}
+        journey={journey}
+        onboardingStatus={onboardingStatus}
+        sendingOnboarding={sendingOnboarding}
+        actionBusy={savingCommission}
+        onManualSellerOnboarding={onManualSellerOnboarding}
+        onSendSellerOnboarding={onSendSellerOnboarding}
+        onGenerateMandate={onGenerateMandate}
+      />
+      <SellerMandateSellerFactsCard
+        row={row}
+        listing={listing}
+        journey={journey}
+        commissionSummary={commissionSummary}
+      />
+      <SellerMandatePacketCard
+        row={row}
+        listing={listing}
+        journey={journey}
+        mandatePacketStatus={mandatePacketStatus}
+        savingCommission={savingCommission}
+        onGenerateMandate={onGenerateMandate}
+      />
       <SellerCommissionCard
         commissionDraft={commissionDraft}
         commissionSummary={commissionSummary}
@@ -18653,6 +19768,7 @@ function SellerTabContent({
   journey,
   readiness,
   listing,
+  mandatePacketStatus = null,
   onboardingStatus,
   timeline,
   organisationId,
@@ -18667,6 +19783,8 @@ function SellerTabContent({
   onSavePropertyDetails,
   onSaved,
   onSendSellerOnboarding,
+  onManualSellerOnboarding,
+  onGenerateMandate,
   onAgentCompleteSellerOnboarding,
   onResendSellerPortalLink,
   onCopySellerPortalLink,
@@ -18696,11 +19814,20 @@ function SellerTabContent({
   if (activeTab === 'mandate') {
     return (
       <SellerMandateTab
+        row={row}
+        listing={listing}
+        journey={journey}
+        mandatePacketStatus={mandatePacketStatus}
+        onboardingStatus={onboardingStatus}
         commissionDraft={commissionDraft}
         commissionSummary={commissionSummary}
         savingCommission={savingCommission}
+        sendingOnboarding={sendingSellerOnboarding}
         onCommissionDraftChange={onCommissionDraftChange}
         onSaveCommission={onSaveCommission}
+        onManualSellerOnboarding={onManualSellerOnboarding}
+        onSendSellerOnboarding={onSendSellerOnboarding}
+        onGenerateMandate={onGenerateMandate}
       />
     )
   }
@@ -18866,6 +19993,7 @@ function SellerLeadWorkspaceLayout({
   sellerJourney,
   sellerReadiness,
   linkedSellerListing,
+  mandatePacketStatus = null,
   sellerOnboardingStatus,
   sendingSellerOnboarding,
   sendingSellerPortalLink,
@@ -18912,11 +20040,32 @@ function SellerLeadWorkspaceLayout({
     setActiveWorkspaceTab('appointments')
     setAppointmentComposerSignal((value) => value + 1)
   }, [])
+  const openManualSellerOnboarding = useCallback(() => {
+    setActiveWorkspaceTab('seller')
+    setAgentOnboardingSignal((value) => value + 1)
+    focusSellerWorkspaceSection('seller-onboarding-editor')
+  }, [focusSellerWorkspaceSection])
+  const openMandateWithLatestTerms = useCallback(async (options = {}) => {
+    const mandateMeta = getSellerMandateMeta(row, linkedSellerListing, sellerJourney)
+    const requestedSourceMode = normalizeText(options?.sourceMode)
+    const shouldSaveBeforeGenerate =
+      !mandateMeta.hasRecord &&
+      typeof onSaveCommission === 'function' &&
+      (
+        sellerOnboardingIsSubmitted(sellerOnboardingStatus) ||
+        requestedSourceMode === DOCUMENT_START_SOURCE_MODES.saved
+      )
+    if (shouldSaveBeforeGenerate) {
+      const saved = await onSaveCommission(commissionDraft)
+      if (saved === false) return
+    }
+    onGenerateMandate?.(options)
+  }, [commissionDraft, linkedSellerListing, onGenerateMandate, onSaveCommission, row, sellerJourney, sellerOnboardingStatus])
   const handleAcquisitionAction = useCallback((actionId = '') => {
     const key = normalizeText(actionId).toLowerCase()
     if (key === 'send_onboarding') onSendSellerOnboarding?.()
     else if (key === 'open_seller_portal') onOpenSellerPortalLink?.()
-    else if (['generate_mandate', 'send_mandate', 'view_mandate', 'check_signature_status', 'resend_mandate'].includes(key)) onGenerateMandate?.()
+    else if (['generate_mandate', 'send_mandate', 'view_mandate', 'check_signature_status', 'resend_mandate'].includes(key)) void openMandateWithLatestTerms()
     else if (['add_commission', 'review_commission', 'open_commission'].includes(key)) setActiveWorkspaceTab('mandate')
     else if (['create_listing', 'open_listing', 'complete_listing', 'activate_listing'].includes(key)) onOpenListing?.()
     else if (['open_documents'].includes(key)) setActiveWorkspaceTab('documents')
@@ -18924,9 +20073,7 @@ function SellerLeadWorkspaceLayout({
     else if (['contact_seller', 'open_timeline'].includes(key)) setActiveWorkspaceTab('activity')
     else if (['capture_property_address'].includes(key)) setActiveWorkspaceTab('property')
     else if (key === 'agent_onboard_seller') {
-      setActiveWorkspaceTab('seller')
-      setAgentOnboardingSignal((value) => value + 1)
-      focusSellerWorkspaceSection('seller-onboarding-editor')
+      openManualSellerOnboarding()
     }
     else if (key === 'edit_seller') {
       setActiveWorkspaceTab('seller')
@@ -18938,7 +20085,7 @@ function SellerLeadWorkspaceLayout({
       setActiveWorkspaceTab('documents')
     }
     else setActiveWorkspaceTab('overview')
-  }, [focusSellerWorkspaceSection, onGenerateMandate, onOpenListing, onOpenSellerPortalLink, onSendSellerOnboarding, openAppointmentComposer])
+  }, [focusSellerWorkspaceSection, onOpenListing, onOpenSellerPortalLink, onSendSellerOnboarding, openAppointmentComposer, openManualSellerOnboarding, openMandateWithLatestTerms])
 
   return (
     <div className="space-y-6">
@@ -18952,7 +20099,7 @@ function SellerLeadWorkspaceLayout({
         sendingPortalLink={sendingSellerPortalLink}
         onSendSellerOnboarding={onSendSellerOnboarding}
         onResendSellerPortalLink={onResendSellerPortalLink}
-        onGenerateMandate={onGenerateMandate}
+        onGenerateMandate={openMandateWithLatestTerms}
         onOpenListing={onOpenListing}
         onOpenAppointments={openAppointmentComposer}
         onCopySellerOnboardingLink={onCopySellerOnboardingLink}
@@ -18981,6 +20128,7 @@ function SellerLeadWorkspaceLayout({
         journey={sellerJourney}
         readiness={sellerReadiness}
         listing={linkedSellerListing}
+        mandatePacketStatus={mandatePacketStatus}
         onboardingStatus={sellerOnboardingStatus}
         timeline={timeline}
         organisationId={organisationId}
@@ -18995,6 +20143,8 @@ function SellerLeadWorkspaceLayout({
         onSavePropertyDetails={onSavePropertyDetails}
         onSaved={onSaved}
         onSendSellerOnboarding={onSendSellerOnboarding}
+        onManualSellerOnboarding={openManualSellerOnboarding}
+        onGenerateMandate={openMandateWithLatestTerms}
         onAgentCompleteSellerOnboarding={onAgentCompleteSellerOnboarding}
         onResendSellerPortalLink={onResendSellerPortalLink}
         onCopySellerPortalLink={onCopySellerPortalLink}
@@ -19245,6 +20395,7 @@ function AgentLeadWorkspace() {
       state: sellerMandatePacket.status || sellerMandatePacket.packetStatus || sellerMandatePacket.packet_status,
       signingStatus: sourceContext.signingStatus || sourceContext.signing_status || sourceContext.mandateStatus || sourceContext.mandate_status,
       sourceContext,
+      versions: Array.isArray(sellerMandatePacket.versions) ? sellerMandatePacket.versions : [],
       signedAt: sourceContext.signedAt || sourceContext.signed_at || sellerMandatePacket.completedAt || sellerMandatePacket.completed_at,
       completedAt: sellerMandatePacket.completedAt || sellerMandatePacket.completed_at,
     }
@@ -19783,16 +20934,16 @@ function AgentLeadWorkspace() {
   }, [actor, isSellerLeadWorkspace, linkedSellerListing, loadWorkspace, organisationId, row, sellerJourney])
 
   const saveSellerCommissionForLead = useCallback(async (draft = {}) => {
-    if (!row || !isSellerLeadWorkspace || savingSellerCommission) return
+    if (!row || !isSellerLeadWorkspace || savingSellerCommission) return false
     if (!organisationId) {
       setSellerActionError('Select an agency workspace before saving commission terms.')
-      return
+      return false
     }
     const validationError = validateSellerMandateDraft(draft)
     if (validationError) {
       setSellerActionError(validationError)
       setSellerActionMessage('')
-      return
+      return false
     }
     try {
       setSavingSellerCommission(true)
@@ -19849,24 +21000,49 @@ function AgentLeadWorkspace() {
       }, { actor }).catch(() => {})
       setSellerActionMessage('Mandate saved.')
       await loadWorkspace()
+      return true
     } catch (actionError) {
       setSellerActionError(actionError?.message || 'Unable to save mandate right now.')
+      return false
     } finally {
       setSavingSellerCommission(false)
     }
   }, [actor, isSellerLeadWorkspace, linkedSellerListing, loadWorkspace, organisationId, row, savingSellerCommission, sellerJourney])
 
-  const openMandateWorkspace = useCallback(() => {
+  const openMandateWorkspace = useCallback((options = {}) => {
     if (!row) return
     const mandateMeta = getSellerMandateMeta(row, linkedSellerListing, sellerJourney)
+    const requestedMode = normalizeText(options?.mode)
+    const requestedSourceMode = normalizeText(options?.sourceMode)
+    const onboardingSubmitted = sellerOnboardingIsSubmitted(getSellerOnboardingStatus(row, linkedSellerListing, sellerJourney))
+    const packetId = getSellerMandatePacketId(row, linkedSellerListing, sellerJourney)
     setSellerActionError('')
     if (!mandateMeta.hasRecord) {
+      if (onboardingSubmitted || requestedSourceMode) {
+        const path = buildSellerLeadMandateWorkspacePath({
+          row,
+          listing: linkedSellerListing,
+          mode: 'generate',
+          sourceMode: requestedSourceMode || DOCUMENT_START_SOURCE_MODES.saved,
+          documentStart: DOCUMENT_START_ENTRY_POINTS.sellerLeadMandate,
+        })
+        if (path) {
+          setSellerActionMessage('')
+          navigate(path)
+          return
+        }
+      }
       setSellerActionMessage('')
       setMandateStartOpen(true)
       return
     }
-    const returnTo = `/pipeline/leads/${row.leadId}`
-    navigate(`/pipeline/leads/${row.leadId}/legal/mandate?mode=${mandateMeta.mode}&returnTo=${returnTo}`)
+    const path = buildSellerLeadMandateWorkspacePath({
+      row,
+      listing: linkedSellerListing,
+      mode: requestedMode || mandateMeta.mode,
+      packetId,
+    })
+    if (path) navigate(path)
   }, [linkedSellerListing, navigate, row, sellerJourney])
 
   const handleStartMandateDocument = useCallback((selection = {}) => {
@@ -19881,13 +21057,15 @@ function AgentLeadWorkspace() {
       return
     }
 
-    const params = new URLSearchParams()
-    params.set('mode', 'generate')
-    params.set('returnTo', `/pipeline/leads/${row.leadId}`)
-    params.set('sourceMode', sourceMode)
-    params.set('documentStart', DOCUMENT_START_ENTRY_POINTS.sellerLeadMandate)
-    navigate(`/pipeline/leads/${row.leadId}/legal/mandate?${params.toString()}`)
-  }, [navigate, row, sendSellerOnboardingForLead])
+    const path = buildSellerLeadMandateWorkspacePath({
+      row,
+      listing: linkedSellerListing,
+      mode: 'generate',
+      sourceMode,
+      documentStart: DOCUMENT_START_ENTRY_POINTS.sellerLeadMandate,
+    })
+    if (path) navigate(path)
+  }, [linkedSellerListing, navigate, row, sendSellerOnboardingForLead])
 
   const openSellerListing = useCallback(() => {
     const listingId = getSellerListingId(row, linkedSellerListing)
@@ -20119,6 +21297,7 @@ function AgentLeadWorkspace() {
               sellerJourney={sellerJourney}
               sellerReadiness={sellerReadiness}
               linkedSellerListing={linkedSellerListing}
+              mandatePacketStatus={sellerMandatePacketStatus}
               sellerOnboardingStatus={sellerOnboardingStatus}
               sendingSellerOnboarding={sendingSellerOnboarding}
               sendingSellerPortalLink={sendingSellerPortalLink}

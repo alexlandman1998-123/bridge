@@ -114,6 +114,7 @@ import { listListingLeadInterests } from '../services/leadListingInterestService
 import { listListingPropertyShares } from '../services/leadPropertySharingService'
 import { listCommunicationDeliveries } from '../services/communicationDeliveryService'
 import { buildListingWorkspaceAnalyticsSummary } from '../services/leadAnalyticsService'
+import { buildSellerMandateContinuityModel } from '../services/sellerMandateContinuityService'
 import {
   captureShowDayLead,
   captureShowDayLeadBatch,
@@ -3834,6 +3835,101 @@ function AgentListingDetail() {
     }
   }, [listingRecord, marketingDraft.expiryDate, marketingDraft.mandateSignedDate])
 
+  const mandateContinuity = useMemo(() => {
+    const mandate = listingRecord?.mandate || {}
+    const mandatePacketId = firstDraftValue(
+      listingRecord?.mandatePacketId,
+      listingRecord?.mandate_packet_id,
+      listingRecord?.mandate_packet?.id,
+      mandate?.packetId,
+      mandate?.packet_id,
+      mandate?.packet?.id,
+      mandate?.id,
+    )
+    const finalSignedFilePath = firstDraftValue(
+      listingRecord?.mandateSignedDocumentPath,
+      listingRecord?.mandate_signed_document_path,
+      mandate?.finalSignedFilePath,
+      mandate?.final_signed_file_path,
+      mandate?.signedFilePath,
+      mandate?.signed_file_path,
+    )
+    const finalSignedFileUrl = firstDraftValue(
+      listingRecord?.mandateSignedDocumentUrl,
+      listingRecord?.mandate_signed_document_url,
+      mandate?.finalSignedFileUrl,
+      mandate?.finalSignedDownloadUrl,
+      mandate?.final_signed_file_url,
+      mandate?.signedFileUrl,
+      mandate?.signed_file_url,
+      mandateWorkspace.signedUrl,
+      mandateWorkspace.viewUrl,
+    )
+    const mandatePacket = mandatePacketId || finalSignedFilePath || finalSignedFileUrl
+      ? {
+          id: mandatePacketId,
+          state: mandateWorkspace.isSigned ? 'fully_signed' : mandateWorkspace.status,
+          status: mandateWorkspace.status,
+          packet: { id: mandatePacketId, status: mandateWorkspace.status },
+          version: {
+            id: firstDraftValue(mandate?.versionId, mandate?.version_id, listingRecord?.mandatePacketVersionId, listingRecord?.mandate_packet_version_id),
+            final_signed_file_path: finalSignedFilePath,
+            final_signed_file_url: finalSignedFileUrl,
+            final_signed_file_name: firstDraftValue(mandate?.finalSignedFileName, mandate?.signedFileName, 'Signed Mandate.pdf'),
+            finalised_at: mandateWorkspace.signedDate,
+          },
+          finalSignedFilePath,
+          finalSignedDownloadUrl: finalSignedFileUrl,
+          finalSignedFileName: firstDraftValue(mandate?.finalSignedFileName, mandate?.signedFileName, 'Signed Mandate.pdf'),
+        }
+      : null
+    const eventSources = [
+      listingRecord?.activityEvents,
+      listingRecord?.events,
+      listingRecord?.activity,
+      listingRecord?.activities,
+      listingRecord?.privateListingActivity,
+      listingRecord?.timeline,
+    ]
+    const activityEvents = eventSources.flatMap((source) => Array.isArray(source) ? source : [])
+    if (mandateWorkspace.isSigned || mandateWorkspace.signedDate) {
+      activityEvents.push({
+        id: `mandate-continuity-${listingRecord?.id || listingRecord?.listingId || 'listing'}`,
+        eventType: 'mandate_signed',
+        visibility: 'client_visible',
+        createdAt: mandateWorkspace.signedDate || listingRecord?.updatedAt || listingRecord?.createdAt,
+        eventData: {
+          title: 'Signed mandate recorded',
+          description: 'Signed mandate continuity is visible from this listing workspace.',
+          actionRoute: 'documents',
+          audience: 'seller',
+          visibility: 'client_visible',
+        },
+      })
+    }
+    return buildSellerMandateContinuityModel({
+      lead: {
+        leadId: firstDraftValue(listingRecord?.sellerLeadId, listingRecord?.seller_lead_id, listingRecord?.originatingCrmLeadId, listingRecord?.originating_crm_lead_id),
+        mandatePacketId,
+        mandateStatus: mandateWorkspace.status,
+      },
+      listing: {
+        ...listingRecord,
+        mandatePacketId,
+        mandateStatus: mandateWorkspace.status,
+      },
+      documents: Array.isArray(listingRecord?.documents) ? listingRecord.documents : [],
+      mandatePacket,
+      activityEvents,
+      portalContext: listingRecord?.clientPortalContext || listingRecord?.sellerPortalContext || listingRecord?.portalContext || {},
+      sellerWorkspaceToken: firstDraftValue(
+        listingRecord?.sellerOnboarding?.token,
+        listingRecord?.sellerOnboardingToken,
+        listingRecord?.seller_onboarding_token,
+      ),
+    })
+  }, [listingRecord, mandateWorkspace.isSigned, mandateWorkspace.signedDate, mandateWorkspace.signedUrl, mandateWorkspace.status, mandateWorkspace.viewUrl])
+
   const sellerDocumentTrackerRows = useMemo(() => {
     const sourceRequirements = Array.isArray(dynamicSellerRequirements) ? dynamicSellerRequirements : []
     const linkedRequirementUploads = sourceRequirements.flatMap((requirement) =>
@@ -3939,10 +4035,11 @@ function AgentListingDetail() {
       { key: 'cover', label: 'Cover image selected', complete: Boolean(marketingDraft.coverImageId || marketingDraft.galleryImages[0]?.id) },
       { key: 'features', label: 'Property features captured', complete: marketingDraft.selectedFeatures.length > 0 || marketingDraft.amenities.length > 0 },
       { key: 'mandate', label: 'Mandate signed', complete: mandateWorkspace.isSigned },
+      { key: 'mandate_continuity', label: 'Mandate continuity verified', complete: mandateContinuity.ready },
       { key: 'documents', label: 'Seller documents complete', complete: sellerDocumentsComplete },
       { key: 'external_links', label: 'External links added', complete: normalizeExternalListingLinks(marketingDraft.externalLinks).some((link) => link.url) },
     ]
-  }, [listingRecord?.askingPrice, mandateWorkspace.isSigned, marketingDraft, sellerDocumentTrackerRows])
+  }, [listingRecord?.askingPrice, mandateContinuity.ready, mandateWorkspace.isSigned, marketingDraft, sellerDocumentTrackerRows])
 
   const listingReadinessCompleted = listingReadinessItems.filter((item) => item.complete).length
   const listingReadinessPercent = listingReadinessItems.length
@@ -8025,6 +8122,45 @@ function AgentListingDetail() {
                         {item.complete ? <CheckCircle2 size={15} className="shrink-0 text-[#1f7d44]" /> : <CircleAlert size={15} className="shrink-0 text-[#9a5b13]" />}
                       </div>
                     ))}
+                  </div>
+                  <div className="mt-6 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-semibold text-[#142132]">Mandate Continuity</h4>
+                        <p className="mt-1 text-xs leading-5 text-[#607387]">
+                          Confirms the signed mandate is connected across the listing, documents, seller portal and activity feed.
+                        </p>
+                      </div>
+                      <StatusPill
+                        status={mandateContinuity.ready ? 'done' : mandateContinuity.status === 'warning' ? 'pending' : 'blocked'}
+                        label={mandateContinuity.ready ? 'Ready' : mandateContinuity.status === 'warning' ? 'Review' : 'Blocked'}
+                      />
+                    </div>
+                    {mandateContinuity.packetId ? (
+                      <div className="mt-3 flex min-w-0 items-center gap-2 rounded-[12px] border border-[#e1e9f2] bg-white px-3 py-2 text-xs text-[#425970]">
+                        <ShieldCheck size={14} className="shrink-0 text-[#7b8ca2]" />
+                        <span className="truncate">Packet {mandateContinuity.packetId}</span>
+                      </div>
+                    ) : null}
+                    <div className="mt-3 space-y-2">
+                      {mandateContinuity.checks.map((check) => (
+                        <div key={check.key} className="flex items-start justify-between gap-2 rounded-[12px] border border-[#e5edf6] bg-white px-3 py-2">
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold leading-5 text-[#243d56]">{check.label}</p>
+                            {check.detail ? <p className="mt-0.5 line-clamp-2 text-[0.68rem] leading-4 text-[#7b8ca2]">{check.detail}</p> : null}
+                          </div>
+                          <span className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full ${
+                            check.state === 'complete'
+                              ? 'bg-[#ecfaf1] text-[#1f7d44]'
+                              : check.state === 'not_applicable'
+                                ? 'bg-[#f4f7fb] text-[#8aa0b6]'
+                                : 'bg-[#fff8ec] text-[#9a5b13]'
+                          }`}>
+                            {check.state === 'complete' ? <CheckCircle2 size={13} /> : <CircleAlert size={13} />}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                   <div className="mt-6 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                     <div className="flex items-start justify-between gap-3">

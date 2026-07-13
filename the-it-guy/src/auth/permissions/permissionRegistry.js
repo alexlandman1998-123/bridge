@@ -506,6 +506,7 @@ export const routePermissionRules = Object.freeze([
   { prefix: '/attorney/audit-logs', appRole: APP_ROLES.attorney, workspaceType: WORKSPACE_TYPES.attorneyFirm, permission: PERMISSIONS.viewAuditLog },
   { prefix: '/attorney/scheduling', appRole: APP_ROLES.attorney, workspaceType: WORKSPACE_TYPES.attorneyFirm, permission: PERMISSIONS.manageSigningAppointments },
   { prefix: '/attorney/operations', appRole: APP_ROLES.attorney, workspaceType: WORKSPACE_TYPES.attorneyFirm, permission: PERMISSIONS.manageTransferWorkflow },
+  { prefix: '/attorney/cost-calculator', appRole: APP_ROLES.attorney, workspaceType: WORKSPACE_TYPES.attorneyFirm, permission: PERMISSIONS.viewMatters },
   { prefix: '/attorney/transactions', appRole: APP_ROLES.attorney, workspaceType: WORKSPACE_TYPES.attorneyFirm, permission: PERMISSIONS.viewMatters },
   { prefix: '/attorney/matters', appRole: APP_ROLES.attorney, workspaceType: WORKSPACE_TYPES.attorneyFirm, permission: PERMISSIONS.viewMatters },
   { prefix: '/attorney/dashboard', appRole: APP_ROLES.attorney, workspaceType: WORKSPACE_TYPES.attorneyFirm, permission: PERMISSIONS.viewAttorneyDashboard },

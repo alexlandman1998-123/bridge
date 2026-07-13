@@ -21,6 +21,13 @@ export function buildSellerOnboardingSubmittedSubject(propertyTitle = "") {
   return `Seller onboarding submitted: ${propertyLabel}`;
 }
 
+export function buildSellerOnboardingSubmittedSellerSubject(propertyTitle = "") {
+  const propertyLabel = normalizePropertyLabel(propertyTitle);
+  return propertyLabel === "property"
+    ? "Thank you - your seller portal is ready"
+    : `Thank you - your seller portal is ready for ${propertyLabel}`;
+}
+
 export function buildSellerOnboardingSubmittedEmailHtml({
   sellerName,
   propertyTitle,
@@ -155,6 +162,96 @@ export function buildSellerOnboardingSubmittedEmailText({
     actionLink ? `Generate Mandate: ${actionLink}` : null,
     "",
     "Need help? Reply to this email or open the lead workspace to continue the mandate workflow.",
+    "",
+    organisationName || "Arch9",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function buildSellerOnboardingSubmittedSellerEmailHtml({
+  sellerName,
+  propertyTitle,
+  portalLink,
+  agentName,
+  organisationName,
+  senderOrganisationName,
+  senderOrganisationLogoUrl,
+  supportEmail,
+  supportPhone,
+}: {
+  sellerName: string;
+  propertyTitle: string;
+  portalLink: string;
+  agentName?: string;
+  organisationName?: string;
+  senderOrganisationName?: string;
+  senderOrganisationLogoUrl?: string;
+  supportEmail?: string;
+  supportPhone?: string;
+}) {
+  const propertyLabel = normalizePropertyLabel(propertyTitle);
+  const contentHtml = [
+    renderBridgeIntroParagraphs([
+      "Thank you - we have received your seller information.",
+      "Your agent will review your answers and contact you if anything needs to be added or corrected.",
+      "You can use your seller portal to view updates and upload any follow-up documents requested by your property team.",
+    ]),
+    renderBridgeSummaryCard(
+      [
+        { label: "Property", value: propertyLabel === "property" ? "" : propertyLabel },
+        { label: "Agent", value: pickText(agentName, "") },
+      ],
+      "Submission Received",
+    ),
+    renderBridgeCta("Open seller portal", portalLink),
+  ].join("");
+
+  return renderBridgeEmailLayout({
+    preheader: "Thank you - we have received your seller information. Your seller portal is ready.",
+    title: "Thank you - we received your information",
+    greeting: `Hi ${pickText(sellerName, "there")},`,
+    contentHtml,
+    securityTitle: "Your Secure Seller Portal",
+    securityBody:
+      "Your portal is protected and only authorised people working on your property sale can access the information shared through Arch9.",
+    helpBody: "Need help? Reply to this email or contact your agent directly.",
+    organisationName: organisationName || "Arch9",
+    senderOrganisationName,
+    senderOrganisationLogoUrl,
+    supportEmail: supportEmail || "",
+    supportPhone: supportPhone || "",
+  });
+}
+
+export function buildSellerOnboardingSubmittedSellerEmailText({
+  sellerName,
+  propertyTitle,
+  portalLink,
+  agentName,
+  organisationName,
+}: {
+  sellerName: string;
+  propertyTitle: string;
+  portalLink: string;
+  agentName?: string;
+  organisationName?: string;
+}) {
+  const propertyLabel = normalizePropertyLabel(propertyTitle);
+
+  return [
+    `Hi ${pickText(sellerName, "there")},`,
+    "",
+    "Thank you - we have received your seller information.",
+    "Your agent will review your answers and contact you if anything needs to be added or corrected.",
+    "You can use your seller portal to view updates and upload any follow-up documents requested by your property team.",
+    "",
+    propertyLabel === "property" ? null : `Property: ${propertyLabel}`,
+    agentName ? `Agent: ${agentName}` : null,
+    "",
+    `Open seller portal: ${portalLink}`,
+    "",
+    "Your portal is protected and only authorised people working on your property sale can access the information shared through Arch9.",
     "",
     organisationName || "Arch9",
   ]

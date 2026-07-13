@@ -211,6 +211,10 @@ function firstNonEmpty(...values) {
   return ''
 }
 
+function isImageSignature(value = '') {
+  return /^data:image\//i.test(normalizeText(value))
+}
+
 function resolveDocumentAssetUrl(value = '', assetBaseUrl = '') {
   const raw = normalizeText(value)
   if (!raw) return ''
@@ -247,39 +251,21 @@ function resolvePropertyDisclosureBranding(context = {}) {
     ),
     context.assetBaseUrl,
   )
-  const bridgeLogoUrl = resolveDocumentAssetUrl(
-    firstNonEmpty(
-      branding.bridgeLogoLightUrl,
-      branding.bridge_logo_light_url,
-      branding.bridgeLogoUrl,
-      context.bridgeLogoUrl,
-    ),
-    context.assetBaseUrl,
-  )
 
   return {
     organisationName,
     agencyLogoUrl,
-    bridgeLogoUrl,
   }
-}
-
-function renderPlatformWordmark() {
-  return '<span class="platform-wordmark"><strong>arch</strong><em>9</em></span>'
 }
 
 function renderDisclosureHeader(branding = {}) {
   const agencyBrand = branding.agencyLogoUrl
     ? `<img src="${escapeHtml(branding.agencyLogoUrl)}" alt="${escapeHtml(branding.organisationName)} logo" />`
     : escapeHtml(branding.organisationName)
-  const platformBrand = branding.bridgeLogoUrl
-    ? `<img src="${escapeHtml(branding.bridgeLogoUrl)}" alt="Arch9" />`
-    : renderPlatformWordmark()
 
   return `
     <header class="doc-header">
       <span class="agency-brand">${agencyBrand}</span>
-      <span class="bridge-brand">${platformBrand}</span>
     </header>
   `
 }
@@ -288,15 +274,11 @@ function renderDisclosureFooter(branding = {}, pageNumber = 1, pageTotal = 1) {
   const agencyBrand = branding.agencyLogoUrl
     ? `<img src="${escapeHtml(branding.agencyLogoUrl)}" alt="${escapeHtml(branding.organisationName)} logo" />`
     : escapeHtml(branding.organisationName)
-  const platformBrand = branding.bridgeLogoUrl
-    ? `<img src="${escapeHtml(branding.bridgeLogoUrl)}" alt="Arch9" />`
-    : renderPlatformWordmark()
 
   return `
     <footer class="doc-footer">
       <span class="footer-brand">${agencyBrand}</span>
       <span class="page-no">Page ${pageNumber} of ${pageTotal}</span>
-      <span class="footer-bridge">${platformBrand}</span>
     </footer>
   `
 }
@@ -470,6 +452,8 @@ export function buildPropertyDisclosureAnnexureSnapshot(disclosure = {}, context
       extraValue: question.key === 'remote_controls' ? normalized.remoteControlsQuantity : '',
     })),
     comments: normalized.comments || normalized.otherDisclosure,
+    sellerName: normalizeText(context.sellerName),
+    sellerIdNumber: normalizeText(context.sellerIdNumber || context.sellerIdNo || context.idNumber),
     sellerSignature: normalized.signature,
     sellerSignedAt: normalized.signedAt,
     sellerSignedPlace: normalized.signedPlace,
@@ -487,10 +471,15 @@ export function buildPropertyDisclosureAnnexureSnapshot(disclosure = {}, context
 
 export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context = {}) {
   const snapshot = buildPropertyDisclosureAnnexureSnapshot(disclosure, context)
-  const sellerName = normalizeText(context.sellerName || snapshot.sellerSignature || 'Seller')
+  const sellerName = normalizeText(context.sellerName || snapshot.sellerName || 'Seller')
+  const sellerIdNumber = normalizeText(context.sellerIdNumber || snapshot.sellerIdNumber)
   const propertyAddress = normalizeText(context.propertyAddress)
   const documentReference = firstNonEmpty(context.documentReference, context.listingReference, context.listingId, propertyAddress, snapshot.title)
   const branding = resolvePropertyDisclosureBranding(context)
+  const sellerSignatureIsImage = isImageSignature(snapshot.sellerSignature)
+  const sellerSignatureMarkup = sellerSignatureIsImage
+    ? `<img class="signature-image" src="${escapeHtml(snapshot.sellerSignature)}" alt="Seller signature" />`
+    : (escapeHtml(snapshot.sellerSignature) || '&nbsp;')
   const answerCell = (answer, value) => (answer === value ? '<span class="answer-mark">&#10003;</span>' : '&nbsp;')
   const pageTotal = 3
   const renderRows = (items) => items.map((item) => `
@@ -545,14 +534,9 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
     body { margin: 0; padding: 0; background: #ffffff; color: #1f2937; font-family: Helvetica, Arial, sans-serif; }
     .property-disclosure-document { width: 210mm; margin: 0 auto; background: #ffffff; }
     .property-disclosure-page { width: 210mm; height: 296mm; min-height: 296mm; margin: 0 auto; background: #ffffff; color: #1f2937; position: relative; overflow: hidden; }
-    .doc-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 18mm 18mm 8mm; border-bottom: 1px solid #d7d7d7; }
-    .agency-brand, .bridge-brand { display: inline-flex; align-items: center; min-width: 0; color: #1f2937; font-size: 16px; font-weight: 800; letter-spacing: 0; }
-    .agency-brand img { max-width: 42mm; max-height: 15mm; object-fit: contain; }
-    .bridge-brand { justify-content: flex-end; color: #68727d; }
-    .bridge-brand img { max-width: 36mm; max-height: 12mm; object-fit: contain; }
-    .platform-wordmark { display: inline-flex; align-items: baseline; gap: 1px; color: #142132; font-size: 32px; font-weight: 800; letter-spacing: 0; text-transform: lowercase; }
-    .platform-wordmark strong { font: inherit; color: #142132; }
-    .platform-wordmark em { font: inherit; font-style: normal; color: #31d08a; }
+    .doc-header { display: flex; align-items: center; justify-content: center; gap: 24px; padding: 18mm 18mm 8mm; border-bottom: 1px solid #d7d7d7; }
+    .agency-brand { display: inline-flex; align-items: center; justify-content: center; min-width: 0; color: #1f2937; font-size: 16px; font-weight: 800; letter-spacing: 0; }
+    .agency-brand img { max-width: 54mm; max-height: 17mm; object-fit: contain; }
     .doc-title { padding: 8mm 18mm 5mm; text-align: center; border-bottom: 1px solid #e4e4e4; }
     .doc-title h1 { margin: 0; color: #111827; font-size: 22px; font-weight: 700; letter-spacing: 0; line-height: 1.2; text-transform: uppercase; }
     .doc-title p { margin: 6px 0 0; color: #5c6670; font-size: 11.5px; line-height: 1.45; }
@@ -572,21 +556,19 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
     .answer-mark { display: inline-block; font-size: 12pt; font-weight: 700; line-height: 1; }
     .comments-title { color: #111827; font-weight: 700; text-transform: uppercase; }
     .comments-box { min-height: 32mm; color: #1f2937; line-height: 1.45; }
-    .initial-block { margin-top: 8mm; display: flex; justify-content: flex-end; color: #1f2937; font-size: 10.5px; }
-    .initial-line { display: inline-flex; align-items: flex-end; justify-content: flex-end; min-width: 38mm; border-bottom: 1px solid #111827; padding-bottom: 1.5mm; font-weight: 700; }
     .signature-section { margin-top: 8mm; color: #1f2937; font-size: 10.5pt; line-height: 1.5; }
     .signature-section h2 { margin: 0 0 4mm; padding-bottom: 2mm; border-bottom: 1px solid #d7d7d7; color: #111827; font-size: 11pt; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
-    .signature-block { margin-top: 6mm; break-inside: avoid; page-break-inside: avoid; }
-    .signed-line { display: grid; grid-template-columns: auto minmax(38mm, 1fr) auto minmax(32mm, 0.8fr); gap: 2mm; align-items: end; }
-    .line { display: inline-block; min-height: 7mm; border-bottom: 1px solid #111827; padding: 0 2mm 1mm; }
-    .signature-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8mm 16mm; margin-top: 5mm; align-items: end; }
-    .signature-line { min-height: 8mm; border-bottom: 1px solid #111827; padding-bottom: 1mm; }
+    .execution-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin-top: 5mm; }
+    .execution-field { min-height: 17mm; border: 1px solid #d7d7d7; padding: 3mm; }
+    .execution-label { display: block; color: #5c6670; font-size: 8.5pt; font-weight: 700; text-transform: uppercase; }
+    .execution-value { display: block; margin-top: 2mm; color: #111827; font-size: 11pt; font-weight: 700; }
+    .signature-panel { margin-top: 8mm; break-inside: avoid; page-break-inside: avoid; }
+    .signature-box { display: flex; align-items: center; justify-content: center; min-height: 34mm; border: 1px solid #111827; background: #ffffff; padding: 3mm; color: #111827; font-size: 11pt; font-weight: 700; }
+    .signature-image { max-width: 100%; max-height: 28mm; object-fit: contain; }
     .signature-label { margin-top: 1.5mm; color: #3f4a56; font-size: 10px; font-weight: 700; text-align: right; text-transform: uppercase; }
     .doc-footer { position: absolute; left: 18mm; right: 18mm; bottom: 6mm; display: flex; align-items: center; justify-content: space-between; gap: 8mm; padding-top: 4mm; border-top: 1px solid #d8d8d8; color: #606a75; font-size: 10px; }
-    .footer-brand, .footer-bridge { display: inline-flex; align-items: center; min-width: 34mm; max-width: 44mm; }
-    .footer-bridge { justify-content: flex-end; }
+    .footer-brand { display: inline-flex; align-items: center; min-width: 34mm; max-width: 48mm; }
     .doc-footer img { max-width: 34mm; max-height: 9mm; object-fit: contain; }
-    .doc-footer .platform-wordmark { font-size: 20px; }
     .page-no { flex: 1; text-align: center; font-weight: 700; }
     @media print {
       body { background: #fff; }
@@ -604,7 +586,6 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
         <p class="intro">Please answer Yes, No, or Unsure, and where necessary provide an explanation in clause 21 hereunder.</p>
         ${propertyAddress ? `<p class="meta"><strong>Property:</strong> ${escapeHtml(propertyAddress)}</p>` : ''}
         ${renderQuestionTable(pageOneRows)}
-        <div class="initial-block"><span class="initial-line">Initial</span></div>
       </section>
       ${renderDisclosureFooter(branding, 1, pageTotal)}
     </section>
@@ -616,7 +597,6 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
           <tr><td class="comments-title" colspan="4">21. Comments or explanation for any of the above</td></tr>
           <tr><td class="comments-box" colspan="4">${comments || '&nbsp;'}</td></tr>
         `)}
-        <div class="initial-block"><span class="initial-line">Initial</span></div>
       </section>
       ${renderDisclosureFooter(branding, 2, pageTotal)}
     </section>
@@ -625,36 +605,29 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
       ${renderTitle('Signature section')}
       <section class="doc-body">
         <section class="signature-section">
-          <h2>Seller and purchaser signatures</h2>
-          <div class="signature-block">
-            <div class="signed-line">
-              <span>Signed at</span>
-              <span class="line">${escapeHtml(snapshot.sellerSignedPlace)}</span>
-              <span>on</span>
-              <span class="line">${escapeHtml(snapshot.sellerSignedAt)}</span>
+          <h2>Seller declaration and signature</h2>
+          <p class="intro">I declare that the information in this Annexure A is true and complete to the best of my knowledge and that all known material facts relating to the property have been disclosed.</p>
+          <div class="execution-grid">
+            <div class="execution-field">
+              <span class="execution-label">Seller name</span>
+              <span class="execution-value">${escapeHtml(sellerName)}</span>
             </div>
-            <p>As witnesses:</p>
-            <div class="signature-grid">
-              <div>1. <span class="line">${escapeHtml(snapshot.sellerWitness1)}</span></div>
-              <div><div class="signature-line">${escapeHtml(sellerName)}</div><div class="signature-label">Seller</div></div>
-              <div>2. <span class="line">${escapeHtml(snapshot.sellerWitness2)}</span></div>
-              <div><div class="signature-line"></div><div class="signature-label">Seller</div></div>
+            <div class="execution-field">
+              <span class="execution-label">ID / passport number</span>
+              <span class="execution-value">${escapeHtml(sellerIdNumber) || '&nbsp;'}</span>
+            </div>
+            <div class="execution-field">
+              <span class="execution-label">Date signed</span>
+              <span class="execution-value">${escapeHtml(snapshot.sellerSignedAt) || '&nbsp;'}</span>
+            </div>
+            <div class="execution-field">
+              <span class="execution-label">Signed at</span>
+              <span class="execution-value">${escapeHtml(snapshot.sellerSignedPlace) || '&nbsp;'}</span>
             </div>
           </div>
-          <div class="signature-block">
-            <div class="signed-line">
-              <span>Signed at</span>
-              <span class="line">${escapeHtml(snapshot.purchaserSignedPlace)}</span>
-              <span>on</span>
-              <span class="line">${escapeHtml(snapshot.purchaserSignedAt)}</span>
-            </div>
-            <p>As witnesses:</p>
-            <div class="signature-grid">
-              <div>1. <span class="line">${escapeHtml(snapshot.purchaserWitness1)}</span></div>
-              <div><div class="signature-line">${escapeHtml(snapshot.purchaserSignature1)}</div><div class="signature-label">Purchaser</div></div>
-              <div>2. <span class="line">${escapeHtml(snapshot.purchaserWitness2)}</span></div>
-              <div><div class="signature-line">${escapeHtml(snapshot.purchaserSignature2)}</div><div class="signature-label">Purchaser</div></div>
-            </div>
+          <div class="signature-panel">
+            <div class="signature-box">${sellerSignatureMarkup}</div>
+            <div class="signature-label">Seller signature</div>
           </div>
         </section>
       </section>

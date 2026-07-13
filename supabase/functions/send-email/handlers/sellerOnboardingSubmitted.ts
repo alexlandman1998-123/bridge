@@ -3,6 +3,9 @@ import type { SendSellerOnboardingSubmittedPayload } from "../types.ts";
 import {
   buildSellerOnboardingSubmittedEmailHtml,
   buildSellerOnboardingSubmittedEmailText,
+  buildSellerOnboardingSubmittedSellerEmailHtml,
+  buildSellerOnboardingSubmittedSellerEmailText,
+  buildSellerOnboardingSubmittedSellerSubject,
   buildSellerOnboardingSubmittedSubject,
 } from "../content/sellerOnboardingSubmitted.ts";
 import { fetchOrganisationEmailTemplateOverride } from "../services/emailTemplateSettings.ts";
@@ -142,60 +145,212 @@ function collectUnique(values: unknown[]) {
   return [...new Set(values.map((value) => normalizeText(value)).filter(Boolean))];
 }
 
-async function resolveAssignedAgentRecipient(
+function normalizeUuidLike(value: unknown) {
+  const normalized = normalizeText(value);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(normalized)
+    ? normalized
+    : "";
+}
+
+function resolveSellerPortalLink(req: Request, payload: SendSellerOnboardingSubmittedPayload) {
+  const explicitLink = normalizeText(
+    payload.sellerPortalLink ??
+      payload.seller_portal_link ??
+      payload.portalLink,
+  );
+  if (explicitLink) return explicitLink;
+
+  const token = normalizeText(payload.sellerPortalToken ?? payload.seller_portal_token);
+  if (!token) return "";
+
+  const appBaseUrl = resolveAppBaseUrl(req) || "https://app.arch9.co.za";
+  return `${appBaseUrl.replace(/\/+$/, "")}/client/${encodeURIComponent(token)}/selling`;
+}
+
+type InternalRecipient = {
+  email: string;
+  name: string;
+  role: "agent" | "principal";
+  resolvedBy: string;
+  userId?: string;
+};
+
+type ProfileRecipient = {
+  email: string;
+  fullName: string;
+};
+
+function addInternalRecipient(
+  recipients: InternalRecipient[],
+  candidate: Partial<InternalRecipient> & { email?: string },
+) {
+  const email = normalizeEmail(candidate.email);
+  if (!email) return;
+  if (recipients.some((recipient) => recipient.email === email)) return;
+  recipients.push({
+    email,
+    name: normalizeText(candidate.name),
+    role: candidate.role === "principal" ? "principal" : "agent",
+    resolvedBy: normalizeText(candidate.resolvedBy) || "unknown",
+    userId: normalizeUuidLike(candidate.userId),
+  });
+}
+
+function isActiveMembershipStatus(value: unknown) {
+  const normalized = normalizeText(value).toLowerCase();
+  return !normalized || ["active", "accepted"].includes(normalized);
+}
+
+function isPrincipalLikeRole(value: unknown) {
+  return [
+    "owner",
+    "principal",
+    "director",
+    "partner",
+    "admin",
+    "admin_staff",
+    "branch_manager",
+    "manager",
+    "hq_manager",
+    "super_admin",
+  ].includes(normalizeText(value).toLowerCase());
+}
+
+async function fetchProfilesByIds(supabase: any, userIds: string[]): Promise<Map<string, ProfileRecipient>> {
+  const ids = collectUnique(userIds).map(normalizeUuidLike).filter(Boolean);
+  if (!ids.length) return new Map<string, ProfileRecipient>();
+
+  const query = await supabase
+    .from("profiles")
+    .select("id, email, full_name")
+    .in("id", ids);
+
+  if (query.error) {
+    console.error("[seller_onboarding_submitted] profile recipient list lookup failed", query.error);
+    return new Map<string, ProfileRecipient>();
+  }
+
+  return new Map((Array.isArray(query.data) ? query.data : []).map((profile: any) => [
+    normalizeText(profile.id),
+    {
+      email: normalizeEmail(profile.email),
+      fullName: normalizeText(profile.full_name),
+    },
+  ]));
+}
+
+async function fetchOrganisationPrincipalRecipients(
+  supabase: any,
+  organisationId: string,
+) {
+  const orgId = normalizeUuidLike(organisationId);
+  if (!supabase || !orgId) return [];
+
+  const selectCandidates = [
+    "user_id, email, role, workspace_role, organisation_role, organization_role, status",
+    "user_id, email, role, workspace_role, organisation_role, status",
+    "user_id, email, role, status",
+  ];
+
+  let rows: any[] = [];
+  for (const selectClause of selectCandidates) {
+    const query = await supabase
+      .from("organisation_users")
+      .select(selectClause)
+      .eq("organisation_id", orgId)
+      .limit(20);
+
+    if (!query.error) {
+      rows = Array.isArray(query.data) ? query.data : [];
+      break;
+    }
+
+    if (isMissingColumnError(query.error) || isMissingTableError(query.error, "organisation_users")) {
+      continue;
+    }
+
+    console.error("[seller_onboarding_submitted] organisation principal recipient lookup failed", query.error);
+    break;
+  }
+
+  const principalRows = rows.filter((row) => {
+    const role = row.workspace_role || row.organisation_role || row.organization_role || row.role;
+    return isActiveMembershipStatus(row.status) && isPrincipalLikeRole(role);
+  });
+  const profileById = await fetchProfilesByIds(
+    supabase,
+    principalRows.map((row) => row.user_id),
+  );
+  const recipients: InternalRecipient[] = [];
+
+  for (const row of principalRows) {
+    const userId = normalizeUuidLike(row.user_id);
+    const profile = userId ? profileById.get(userId) : null;
+    addInternalRecipient(recipients, {
+      email: normalizeEmail(row.email) || profile?.email || "",
+      name: profile?.fullName || "",
+      role: "principal",
+      resolvedBy: "organisation_users.principal_admin",
+      userId,
+    });
+  }
+
+  return recipients;
+}
+
+async function resolveInternalNotificationRecipients(
   supabase: any,
   payload: SendSellerOnboardingSubmittedPayload,
 ) {
-  const explicitEmail = normalizeEmail(payload.to);
-  const listingId = normalizeText(payload.listingId);
+  const recipients: InternalRecipient[] = [];
   const leadIds = collectUnique([payload.leadId]);
-  const agentIds = collectUnique([payload.assignedAgentId]);
-  const lookupContext = {
-    hasExplicitEmail: Boolean(explicitEmail),
-    listingId,
-    leadIds,
-    assignedAgentIds: agentIds,
-  };
+  const agentIds = collectUnique([payload.assignedAgentId]).map(normalizeUuidLike).filter(Boolean);
+  const organisationIds = collectUnique([payload.organisationId]).map(normalizeUuidLike).filter(Boolean);
+  const listingId = normalizeUuidLike(payload.listingId);
+  let resolvedAgentName = normalizeText(payload.agentName);
 
-  if (explicitEmail) {
-    return {
-      email: explicitEmail,
-      agentName: normalizeText(payload.agentName),
-      resolvedBy: "payload.to",
-      lookupContext,
-    };
-  }
+  addInternalRecipient(recipients, {
+    email: normalizeEmail(payload.to) || normalizeEmail(payload.agentEmail) || normalizeEmail(payload.assignedAgentEmail),
+    name: resolvedAgentName,
+    role: "agent",
+    resolvedBy: normalizeEmail(payload.to) ? "payload.to" : "payload.agentEmail",
+    userId: payload.assignedAgentId,
+  });
+
   if (!supabase) {
     return {
-      email: "",
-      agentName: normalizeText(payload.agentName),
-      resolvedBy: "",
-      lookupContext: { ...lookupContext, serviceRoleConfigured: false },
+      recipients,
+      lookupContext: {
+        serviceRoleConfigured: false,
+        listingId,
+        leadIds,
+        assignedAgentIds: agentIds,
+        organisationIds,
+      },
     };
   }
-
-  let resolvedAgentName = normalizeText(payload.agentName);
 
   if (listingId) {
     const listingQuery = await supabase
       .from("private_listings")
-      .select("id, assigned_agent_email, assigned_agent_id, seller_lead_id, originating_crm_lead_id")
+      .select("id, organisation_id, assigned_agent_email, assigned_agent_id, seller_lead_id, originating_crm_lead_id")
       .eq("id", listingId)
       .maybeSingle();
 
-    if (!listingQuery.error || isMissingColumnError(listingQuery.error) || isMissingTableError(listingQuery.error, "private_listings")) {
+    if (!listingQuery.error || isMissingTableError(listingQuery.error, "private_listings")) {
       const listing = listingQuery.data || {};
-      const listingEmail = normalizeEmail(listing.assigned_agent_email);
-      if (listingEmail) {
-        return {
-          email: listingEmail,
-          agentName: resolvedAgentName,
-          resolvedBy: "private_listings.assigned_agent_email",
-          lookupContext,
-        };
+      if (listing.organisation_id) organisationIds.push(normalizeUuidLike(listing.organisation_id));
+      if (listing.seller_lead_id || listing.originating_crm_lead_id) {
+        leadIds.push(...collectUnique([listing.seller_lead_id, listing.originating_crm_lead_id]));
       }
-      leadIds.push(...collectUnique([listing.seller_lead_id, listing.originating_crm_lead_id]));
-      agentIds.push(...collectUnique([listing.assigned_agent_id]));
+      if (listing.assigned_agent_id) agentIds.push(normalizeUuidLike(listing.assigned_agent_id));
+      addInternalRecipient(recipients, {
+        email: listing.assigned_agent_email,
+        name: resolvedAgentName,
+        role: "agent",
+        resolvedBy: "private_listings.assigned_agent_email",
+        userId: listing.assigned_agent_id,
+      });
     } else if (listingQuery.error) {
       console.error("[seller_onboarding_submitted] listing recipient lookup failed", listingQuery.error);
     }
@@ -204,67 +359,54 @@ async function resolveAssignedAgentRecipient(
   for (const leadId of collectUnique(leadIds)) {
     const leadQuery = await supabase
       .from("leads")
-      .select("lead_id, assigned_agent_email, assigned_agent_id")
+      .select("lead_id, organisation_id, assigned_agent_email, assigned_agent_id")
       .eq("lead_id", leadId)
       .maybeSingle();
 
-    if (!leadQuery.error || isMissingColumnError(leadQuery.error) || isMissingTableError(leadQuery.error, "leads")) {
+    if (!leadQuery.error || isMissingTableError(leadQuery.error, "leads")) {
       const lead = leadQuery.data || {};
-      const leadEmail = normalizeEmail(lead.assigned_agent_email);
-      if (leadEmail) {
-        return {
-          email: leadEmail,
-          agentName: resolvedAgentName,
-          resolvedBy: "leads.assigned_agent_email",
-          lookupContext: {
-            ...lookupContext,
-            leadIds: collectUnique(leadIds),
-          },
-        };
-      }
-      agentIds.push(...collectUnique([lead.assigned_agent_id]));
+      if (lead.organisation_id) organisationIds.push(normalizeUuidLike(lead.organisation_id));
+      if (lead.assigned_agent_id) agentIds.push(normalizeUuidLike(lead.assigned_agent_id));
+      addInternalRecipient(recipients, {
+        email: lead.assigned_agent_email,
+        name: resolvedAgentName,
+        role: "agent",
+        resolvedBy: "leads.assigned_agent_email",
+        userId: lead.assigned_agent_id,
+      });
     } else if (leadQuery.error) {
       console.error("[seller_onboarding_submitted] lead recipient lookup failed", leadQuery.error);
     }
   }
 
+  const profileById = await fetchProfilesByIds(supabase, agentIds);
   for (const agentId of collectUnique(agentIds)) {
-    const profileQuery = await supabase
-      .from("profiles")
-      .select("id, email, full_name")
-      .eq("id", agentId)
-      .maybeSingle();
+    const profile = profileById.get(agentId);
+    if (!resolvedAgentName) resolvedAgentName = profile?.fullName || "";
+    addInternalRecipient(recipients, {
+      email: profile?.email || "",
+      name: resolvedAgentName || profile?.fullName || "",
+      role: "agent",
+      resolvedBy: "profiles.email",
+      userId: agentId,
+    });
+  }
 
-    if (!profileQuery.error || isMissingColumnError(profileQuery.error) || isMissingTableError(profileQuery.error, "profiles")) {
-      const profile = profileQuery.data || {};
-      const profileEmail = normalizeEmail(profile.email);
-      if (!resolvedAgentName) resolvedAgentName = normalizeText(profile.full_name);
-      if (profileEmail) {
-        return {
-          email: profileEmail,
-          agentName: resolvedAgentName,
-          resolvedBy: "profiles.email",
-          lookupContext: {
-            ...lookupContext,
-            leadIds: collectUnique(leadIds),
-            assignedAgentIds: collectUnique(agentIds),
-          },
-        };
-      }
-    } else if (profileQuery.error) {
-      console.error("[seller_onboarding_submitted] profile recipient lookup failed", profileQuery.error);
+  for (const organisationId of collectUnique(organisationIds)) {
+    const principalRecipients = await fetchOrganisationPrincipalRecipients(supabase, organisationId);
+    for (const recipient of principalRecipients) {
+      addInternalRecipient(recipients, recipient);
     }
   }
 
   return {
-    email: "",
-    agentName: resolvedAgentName,
-    resolvedBy: "",
+    recipients,
     lookupContext: {
-      ...lookupContext,
+      serviceRoleConfigured: true,
+      listingId,
       leadIds: collectUnique(leadIds),
       assignedAgentIds: collectUnique(agentIds),
-      serviceRoleConfigured: true,
+      organisationIds: collectUnique(organisationIds),
     },
   };
 }
@@ -285,29 +427,22 @@ export async function handleSellerOnboardingSubmittedEmail(
       auth: { persistSession: false, autoRefreshToken: false },
     })
     : null;
-  const recipient = await resolveAssignedAgentRecipient(supabase, payload);
-  const to = recipient.email;
-  if (!to) {
-    console.error("[seller_onboarding_submitted] unable to resolve assigned agent email", recipient.lookupContext);
-    return jsonResponse(400, {
-      error: "Unable to resolve assigned agent email for seller onboarding submission.",
-      lookupContext: recipient.lookupContext,
-    });
-  }
-  console.info("[seller_onboarding_submitted] resolved assigned agent recipient", {
-    resolvedBy: recipient.resolvedBy,
-    listingId: payload.listingId || null,
-    leadId: payload.leadId || null,
-    assignedAgentId: payload.assignedAgentId || null,
-  });
+  const internalResolution = await resolveInternalNotificationRecipients(supabase, payload);
+  const internalRecipients = internalResolution.recipients;
 
   const sellerName = normalizeText(payload.sellerName) || "Seller";
   const propertyTitle = normalizeText(payload.propertyTitle) || "property";
-  const agentName = normalizeText(recipient.agentName || payload.agentName) || "Agent";
+  const agentName = normalizeText(payload.agentName) || "Agent";
   const transactionReference = normalizeText(payload.transactionReference);
-  const organisationId = normalizeText(payload.organisationId);
+  const lookupContext = internalResolution.lookupContext as Record<string, unknown>;
+  const resolvedOrganisationIds = Array.isArray(lookupContext.organisationIds)
+    ? lookupContext.organisationIds.map((item) => normalizeText(item)).filter(Boolean)
+    : [];
+  const organisationId = normalizeText(payload.organisationId) || resolvedOrganisationIds[0] || "";
   const leadId = normalizeText(payload.leadId);
   const listingId = normalizeText(payload.listingId);
+  const sellerEmail = normalizeEmail(payload.sellerEmail ?? payload.seller_email);
+  const sellerPortalLink = resolveSellerPortalLink(req, payload);
   const requestedActionLink = normalizeText(payload.actionLink);
   const appBaseUrl = resolveAppBaseUrl(req);
   const actionLink = requestedActionLink ||
@@ -318,6 +453,7 @@ export async function handleSellerOnboardingSubmittedEmail(
     "Arch9 <onboarding@resend.dev>";
 
   const organisationName =
+    normalizeText(payload.organisationName) ||
     normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
     normalizeText(Deno.env.get("ORGANISATION_NAME")) ||
     "Arch9";
@@ -352,84 +488,207 @@ export async function handleSellerOnboardingSubmittedEmail(
     }
   }
 
-  const subject =
+  const internalSubject =
     normalizeText(templateOverrides?.subject) ||
     buildSellerOnboardingSubmittedSubject(propertyTitle);
-  const html = buildSellerOnboardingSubmittedEmailHtml({
-    sellerName,
-    propertyTitle,
-    transactionReference,
-    agentName,
-    actionLink,
-    organisationName: senderOrganisationName || organisationName,
-    senderOrganisationName,
-    senderOrganisationLogoUrl,
-    supportEmail,
-    supportPhone,
-    templateOverrides: templateOverrides || undefined,
-  });
-  const text = buildSellerOnboardingSubmittedEmailText({
-    sellerName,
-    propertyTitle,
-    transactionReference,
-    agentName,
-    actionLink,
-    organisationName: senderOrganisationName || organisationName,
-  });
 
-  const delivery = await prepareEmailDelivery(payload as Record<string, unknown>, {
-    communicationType: "seller_onboarding_submitted_agent",
-    recipient: to,
-    recipientRole: "agent",
-    subject,
-    messagePreview: text,
-    context: {
-      organisationId,
-      leadId,
-      listingId,
-      assignedUserId: normalizeText(payload.assignedAgentId),
-      metadata: {
-        resolvedBy: recipient.resolvedBy,
-        actionLink,
-        transactionReference,
-        emailPurpose: "seller_onboarding_submitted_agent",
-      },
-    },
-  });
+  const sent: Array<Record<string, unknown>> = [];
+  const failed: Array<Record<string, unknown>> = [];
+  const skipped: Array<Record<string, unknown>> = [];
 
-  const emailResult = await sendViaResendApi({
-    apiKey: resendApiKey,
-    from: sender,
-    to,
-    subject,
-    html,
-    text,
-  });
-
-  if (!emailResult.ok) {
-    await markEmailDeliveryFailed(delivery?.id || "", {
-      errorMessage:
-        emailResult.error?.message ||
-        "Failed to send seller onboarding submitted email.",
-    });
-    return jsonResponse(500, {
-      error: emailResult.error?.message || "Failed to send seller onboarding submitted email.",
-      details: emailResult.error,
+  if (!internalRecipients.length) {
+    console.error("[seller_onboarding_submitted] unable to resolve internal recipients", internalResolution.lookupContext);
+    skipped.push({
+      target: "internal",
+      reason: "no_internal_recipient",
+      lookupContext: internalResolution.lookupContext,
     });
   }
 
-  await markEmailDeliverySent(delivery?.id || "", {
-    emailId: emailResult.data?.id || null,
-  });
+  for (const recipient of internalRecipients) {
+    const recipientName = normalizeText(recipient.name) || agentName || "there";
+    const internalHtml = buildSellerOnboardingSubmittedEmailHtml({
+      sellerName,
+      propertyTitle,
+      transactionReference,
+      agentName: recipientName,
+      actionLink,
+      organisationName: senderOrganisationName || organisationName,
+      senderOrganisationName,
+      senderOrganisationLogoUrl,
+      supportEmail,
+      supportPhone,
+      templateOverrides: templateOverrides || undefined,
+    });
+    const internalText = buildSellerOnboardingSubmittedEmailText({
+      sellerName,
+      propertyTitle,
+      transactionReference,
+      agentName: recipientName,
+      actionLink,
+      organisationName: senderOrganisationName || organisationName,
+    });
+
+    const delivery = await prepareEmailDelivery(payload as Record<string, unknown>, {
+      communicationType: "seller_onboarding_submitted_agent",
+      recipient: recipient.email,
+      recipientRole: recipient.role,
+      subject: internalSubject,
+      messagePreview: internalText,
+      context: {
+        organisationId,
+        leadId,
+        listingId,
+        assignedUserId: recipient.userId || normalizeText(payload.assignedAgentId),
+        metadata: {
+          resolvedBy: recipient.resolvedBy,
+          actionLink,
+          transactionReference,
+          emailPurpose: "seller_onboarding_submitted_agent",
+          recipientRole: recipient.role,
+        },
+      },
+    });
+
+    const emailResult = await sendViaResendApi({
+      apiKey: resendApiKey,
+      from: sender,
+      to: recipient.email,
+      subject: internalSubject,
+      html: internalHtml,
+      text: internalText,
+    });
+
+    if (!emailResult.ok) {
+      await markEmailDeliveryFailed(delivery?.id || "", {
+        errorMessage:
+          emailResult.error?.message ||
+          "Failed to send seller onboarding submitted email.",
+      });
+      failed.push({
+        target: "internal",
+        recipient: recipient.email,
+        role: recipient.role,
+        error: emailResult.error,
+      });
+      continue;
+    }
+
+    await markEmailDeliverySent(delivery?.id || "", {
+      emailId: emailResult.data?.id || null,
+    });
+    sent.push({
+      target: "internal",
+      recipient: recipient.email,
+      role: recipient.role,
+      emailId: emailResult.data?.id || null,
+      deliveryId: delivery?.id || null,
+      resolvedBy: recipient.resolvedBy,
+    });
+  }
+
+  if (!sellerEmail || !sellerPortalLink) {
+    skipped.push({
+      target: "seller",
+      reason: !sellerEmail ? "missing_seller_email" : "missing_seller_portal_link",
+    });
+  } else {
+    const sellerSubject = buildSellerOnboardingSubmittedSellerSubject(propertyTitle);
+    const sellerHtml = buildSellerOnboardingSubmittedSellerEmailHtml({
+      sellerName,
+      propertyTitle,
+      portalLink: sellerPortalLink,
+      agentName,
+      organisationName: senderOrganisationName || organisationName,
+      senderOrganisationName,
+      senderOrganisationLogoUrl,
+      supportEmail,
+      supportPhone,
+    });
+    const sellerText = buildSellerOnboardingSubmittedSellerEmailText({
+      sellerName,
+      propertyTitle,
+      portalLink: sellerPortalLink,
+      agentName,
+      organisationName: senderOrganisationName || organisationName,
+    });
+
+    const sellerDelivery = await prepareEmailDelivery(payload as Record<string, unknown>, {
+      communicationType: "seller_onboarding_submitted_seller",
+      recipient: sellerEmail,
+      recipientRole: "seller",
+      subject: sellerSubject,
+      messagePreview: sellerText,
+      context: {
+        organisationId,
+        leadId,
+        listingId,
+        metadata: {
+          sellerPortalLink,
+          transactionReference,
+          emailPurpose: "seller_onboarding_submitted_seller",
+        },
+      },
+    });
+
+    const sellerResult = await sendViaResendApi({
+      apiKey: resendApiKey,
+      from: sender,
+      to: sellerEmail,
+      subject: sellerSubject,
+      html: sellerHtml,
+      text: sellerText,
+    });
+
+    if (!sellerResult.ok) {
+      await markEmailDeliveryFailed(sellerDelivery?.id || "", {
+        errorMessage:
+          sellerResult.error?.message ||
+          "Failed to send seller onboarding confirmation email.",
+      });
+      failed.push({
+        target: "seller",
+        recipient: sellerEmail,
+        error: sellerResult.error,
+      });
+    } else {
+      await markEmailDeliverySent(sellerDelivery?.id || "", {
+        emailId: sellerResult.data?.id || null,
+      });
+      sent.push({
+        target: "seller",
+        recipient: sellerEmail,
+        emailId: sellerResult.data?.id || null,
+        deliveryId: sellerDelivery?.id || null,
+      });
+    }
+  }
+
+  if (!sent.length && failed.length) {
+    return jsonResponse(500, {
+      error: "Failed to send seller onboarding submission notifications.",
+      failed,
+      skipped,
+    });
+  }
+
+  if (!sent.length) {
+    return jsonResponse(400, {
+      error: "No seller onboarding submission notification recipients were available.",
+      skipped,
+      lookupContext: internalResolution.lookupContext,
+    });
+  }
 
   return jsonResponse(200, {
     ok: true,
     type: "seller_onboarding_submitted",
-    emailId: emailResult.data?.id || null,
-    deliveryId: delivery?.id || null,
-    resolvedBy: recipient.resolvedBy,
+    sent,
+    failed,
+    skipped,
     actionLink,
     leadId: leadId || null,
     listingId: listingId || null,
+    sellerPortalLink: sellerPortalLink || null,
   });
 }

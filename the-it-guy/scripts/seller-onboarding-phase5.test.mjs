@@ -38,15 +38,15 @@ assertContract(
 )
 assertContract(
   sellerOnboardingPage,
-  /void notifyAssignedAgentOfSellerOnboarding\(updated, form\)/,
-  'Seller onboarding submit should still trigger assigned-agent notification after save.',
+  /void notifySellerOnboardingSubmitted\(updated, form, token\)/,
+  'Seller onboarding submit should trigger post-submit notifications after save.',
 )
 
 const submittedHandler = await readWorkspaceFile('supabase/functions/send-email/handlers/sellerOnboardingSubmitted.ts')
 assertContract(
   submittedHandler,
-  /resolveAssignedAgentRecipient/,
-  'Assigned-agent seller onboarding email should resolve recipients server-side.',
+  /resolveInternalNotificationRecipients/,
+  'Seller onboarding submitted email should resolve recipients server-side.',
 )
 for (const source of [
   /\.from\("private_listings"\)/,
@@ -72,13 +72,33 @@ assertContract(
 )
 assertContract(
   submittedHandler,
-  /deliveryId: delivery\?\.id \|\| null/,
-  'Assigned-agent seller onboarding email should return the delivery id for diagnostics.',
+  /sent,/,
+  'Seller onboarding submitted email should return structured sent diagnostics.',
 )
 assertNoContract(
   submittedHandler,
   /Missing required field: to/,
   'Assigned-agent seller onboarding email must not require an explicit recipient before fallback resolution.',
+)
+assertContract(
+  submittedHandler,
+  /resolveInternalNotificationRecipients/,
+  'Seller onboarding submitted email should resolve internal recipients beyond a single explicit to address.',
+)
+assertContract(
+  submittedHandler,
+  /organisation_users\.principal_admin/,
+  'Seller onboarding submitted email should fall back to principal/admin workspace recipients.',
+)
+assertContract(
+  submittedHandler,
+  /seller_onboarding_submitted_seller/,
+  'Seller onboarding submitted email should send the seller thank-you portal email.',
+)
+assertContract(
+  submittedHandler,
+  /sellerPortalLink/,
+  'Seller onboarding submitted email should include the seller portal link in the seller notification path.',
 )
 
 const sellerEmailHandler = await readWorkspaceFile('supabase/functions/send-email/handlers/sellerOnboarding.ts')
@@ -116,24 +136,36 @@ assertContract(
 )
 for (const token of [
   'buildPremiumSellerOnboardingInvitationHtml',
-  'Welcome to your property transaction workspace.',
-  'Complete Seller Onboarding',
-  'Seller Onboarding',
-  'Valuation',
-  'Mandate',
-  'Listing',
-  'Sold',
-  'Why we need this information',
-  'Verify ownership',
-  "What you'll have access to",
-  'Your information remains secure.',
+  'Complete your seller information',
+  'Seller information',
+  'needs a few details from you before your property sale can move ahead',
+  'This usually takes about 8-10 minutes',
+  'What you will need',
+  'What happens after you submit',
+  'If the button does not work, copy this secure link',
+  'Your information is stored securely in Arch9',
   'This secure link expires in',
-  'Onboarding URL',
 ]) {
   assertContract(
     sellerEmailContent,
     new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
     `Premium seller onboarding email should include ${token}.`,
+  )
+}
+for (const token of [
+  'SELLER_JOURNEY_STEPS',
+  'renderDesktopJourneyTimeline',
+  'renderMobileJourneyTimeline',
+  'renderAccessBlocks',
+  'Property journey:',
+  'Why we need this information',
+  "What you'll have access to",
+  'Onboarding URL',
+]) {
+  assertNoContract(
+    sellerEmailContent,
+    new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+    `Premium seller onboarding email should not include the old bulky ${token} section.`,
   )
 }
 

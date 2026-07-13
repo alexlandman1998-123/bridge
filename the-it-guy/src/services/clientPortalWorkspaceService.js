@@ -23,10 +23,11 @@ import {
   resolvePortalStageKey,
 } from '../content/clientPortalEducation'
 import { getTransactionWorkflowReadModel } from './transactionWorkflowReadModelService'
-import { getSellerOnboardingByToken } from './privateListingService'
+import { getPrivateListingActivity, getSellerOnboardingByToken } from './privateListingService'
 import { buildSellerJourney } from './sellerJourneyService.js'
 import { buildSellerReadinessSummary } from './sellerReadinessService.js'
 import { getSellerRequiredDocuments } from './sellerDocumentRequirementsService.js'
+import { buildSellerMandateContinuityModel } from './sellerMandateContinuityService.js'
 import {
   getCanonicalRequirementsForContext,
   isCanonicalDocumentWorkspaceEnabled,
@@ -133,6 +134,44 @@ function mapSellerUploadedDocument(document = {}) {
     canonicalRequirementInstanceId: document?.canonicalRequirementInstanceId || document?.canonical_requirement_instance_id || '',
     canonical_requirement_instance_id: document?.canonical_requirement_instance_id || document?.canonicalRequirementInstanceId || '',
     created_at: document?.created_at || document?.uploaded_at || document?.uploadedAt || null,
+  }
+}
+
+function mapSellerListingActivityEvent(activity = {}, index = 0) {
+  const metadata = activity?.metadata && typeof activity.metadata === 'object' ? activity.metadata : {}
+  const visibility = normalizeValue(activity?.visibility || metadata.visibility) === 'client_visible'
+    ? 'client_visible'
+    : 'internal_only'
+  const createdAt =
+    activity?.created_at ||
+    metadata.createdAt ||
+    metadata.created_at ||
+    new Date().toISOString()
+  const type = normalizeValue(activity?.activity_type || metadata.type || metadata.eventType || 'note_shared_with_client')
+  return {
+    id: activity?.id || `${type || 'seller_listing_activity'}-${index}`,
+    type: type || 'note_shared_with_client',
+    eventType: type || 'note_shared_with_client',
+    createdAt,
+    created_at: createdAt,
+    timestamp: createdAt,
+    createdByRole: metadata.actorRole || metadata.createdByRole || 'Agent',
+    visibility,
+    relatedEntityType: 'private_listing',
+    relatedEntityId: activity?.private_listing_id || metadata.privateListingId || '',
+    eventData: {
+      ...metadata,
+      title: activity?.activity_title || metadata.title || '',
+      description: activity?.activity_description || metadata.description || '',
+      audience: metadata.audience || 'seller',
+      visibility,
+      actionLabel: metadata.actionLabel || metadata.action_label || '',
+      actionRoute: metadata.actionRoute || metadata.action_route || '',
+      actorName: metadata.actorName || metadata.createdByName || '',
+      actorRole: metadata.actorRole || metadata.createdByRole || 'Agent',
+      relatedEntityType: 'private_listing',
+      relatedEntityId: activity?.private_listing_id || metadata.privateListingId || '',
+    },
   }
 }
 
@@ -403,6 +442,15 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     ...(Array.isArray(context?.offers) ? context.offers : []),
     ...(Array.isArray(listing?.offers) ? listing.offers : []),
   ]
+  const sellerActivityRows = listingId
+    ? await getPrivateListingActivity(listingId).catch((error) => {
+        console.warn('[clientPortalWorkspaceService] seller listing activity feed skipped.', error)
+        return []
+      })
+    : []
+  const sellerActivityEvents = (Array.isArray(sellerActivityRows) ? sellerActivityRows : [])
+    .filter((item) => normalizeValue(item?.visibility || item?.metadata?.visibility) === 'client_visible')
+    .map((item, index) => mapSellerListingActivityEvent(item, index))
   const sellerLead = {
     id: sellerLeadId || `seller-${listingId || token}`,
     leadId: sellerLeadId || `seller-${listingId || token}`,
@@ -416,6 +464,15 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     createdAt: onboarding?.created_at || listing?.createdAt || listing?.created_at,
     updatedAt: onboarding?.submitted_at || listing?.updatedAt || listing?.updated_at,
   }
+  const sellerMandateContinuity = buildSellerMandateContinuityModel({
+    lead: sellerLead,
+    listing,
+    documents,
+    mandatePacket,
+    activityEvents: sellerActivityEvents,
+    portalContext: context?.portalContext || context?.clientPortalContext || listing?.clientPortalContext || {},
+    sellerWorkspaceToken: token,
+  })
   const sellerJourney = buildSellerJourney({
     lead: sellerLead,
     contact: {
@@ -500,12 +557,14 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     offers: rawOffers,
     sellerJourney,
     sellerPortalJourney,
+    sellerMandateContinuity,
     stage: sellerPortalStage,
     mainStage: sellerPortalStage,
     lastUpdated: listing?.updatedAt || onboarding?.submitted_at || listing?.createdAt || new Date().toISOString(),
     documents,
     additionalDocumentRequests: [],
     discussion: [],
+    events: sellerActivityEvents,
     issues: [],
     alterations: [],
     reviews: [],
@@ -554,6 +613,8 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
       listingExternalLinks: sellerVisibleExternalLinks,
       mandatePacketId,
       mandatePacket,
+      mandateContinuity: sellerMandateContinuity,
+      mandateContinuityStatus: sellerMandateContinuity.status,
       sellerWorkspaceToken: token,
       sellerJourney,
       sellerPortalJourney,

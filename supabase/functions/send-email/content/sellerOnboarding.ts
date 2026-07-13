@@ -150,186 +150,6 @@ function renderSellerOnboardingCta(label: string, url: string) {
   `;
 }
 
-const SELLER_JOURNEY_STEPS = [
-  {
-    title: "Seller Onboarding",
-    icon: "1",
-    copy: "Share a few details about yourself and the property.",
-  },
-  {
-    title: "Valuation",
-    icon: "2",
-    copy: "Your agent prepares a market valuation.",
-  },
-  {
-    title: "Mandate",
-    icon: "3",
-    copy: "Review and sign your sales mandate digitally.",
-  },
-  {
-    title: "Listing",
-    icon: "4",
-    copy: "Your property is marketed to qualified buyers.",
-  },
-  {
-    title: "Sold",
-    icon: "5",
-    copy: "Once an offer is accepted we guide you through transfer.",
-  },
-];
-
-const SELLER_NEED_CARDS = [
-  {
-    icon: "V",
-    title: "Verify ownership",
-    copy: "We collect the information required to verify ownership and prepare the legal transfer process.",
-  },
-  {
-    icon: "D",
-    title: "Prepare documentation",
-    copy: "Providing your information upfront reduces delays later in the transaction.",
-  },
-  {
-    icon: "A",
-    title: "Keep everyone aligned",
-    copy: "Your agent and authorised professionals receive the information they need at the right time.",
-  },
-];
-
-const SELLER_ACCESS_BLOCKS = [
-  {
-    icon: "P",
-    title: "Your secure seller portal",
-    copy: "View everything in one place.",
-  },
-  {
-    icon: "T",
-    title: "Real-time transaction progress",
-    copy: "Track each milestone as your sale progresses.",
-  },
-  {
-    icon: "U",
-    title: "Secure document uploads",
-    copy: "Upload and manage documents securely.",
-  },
-  {
-    icon: "M",
-    title: "Updates in one place",
-    copy: "Receive important updates from your property team.",
-  },
-];
-
-function renderIconCircle(label: string, size = 48) {
-  const safeLabel = escapeHtml(label);
-  return `
-    <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="border-collapse: separate; border-spacing: 0;">
-      <tr>
-        <td align="center" valign="middle" bgcolor="#F8FAFC" style="width: ${size}px; height: ${size}px; border: 1px solid #CFE0D9; border-radius: ${Math.round(size / 2)}px; font-family: Arial, Helvetica, sans-serif; font-size: ${size > 40 ? 16 : 12}px; line-height: ${size}px; color: #006B4D; font-weight: 700;">
-          ${safeLabel}
-        </td>
-      </tr>
-    </table>
-  `;
-}
-
-function renderDesktopJourneyTimeline() {
-  return `
-    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" class="arch9-desktop-timeline" style="width: 100%; border-collapse: collapse;">
-      <tr>
-        ${SELLER_JOURNEY_STEPS.map((step, index) => `
-          <td width="20%" valign="top" align="center" style="width: 20%; padding: 0 5px; font-family: Arial, Helvetica, sans-serif;">
-            ${renderIconCircle(step.icon, 50)}
-            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin: 8px 0 0;">
-              <tr>
-                <td align="center" style="font-family: Arial, Helvetica, sans-serif; font-size: 11px; line-height: 1; color: #FFFFFF;">
-                  <span style="display: inline-block; width: 18px; height: 18px; border-radius: 9px; background: #006B4D; color: #FFFFFF; line-height: 18px; font-weight: 700;">${index + 1}</span>
-                </td>
-              </tr>
-            </table>
-            <p style="margin: 12px 0 8px; font-size: 10px; line-height: 1.25; letter-spacing: 0.08em; color: #006B4D; font-weight: 700; text-transform: uppercase;">${escapeHtml(step.title)}</p>
-            <p style="margin: 0; font-size: 10px; line-height: 1.45; color: #17233A;">${escapeHtml(step.copy)}</p>
-          </td>
-        `).join("")}
-      </tr>
-    </table>
-  `;
-}
-
-function renderMobileJourneyTimeline() {
-  return `
-    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" class="arch9-mobile-timeline" style="display: none; max-height: 0; overflow: hidden; mso-hide: all;">
-      ${SELLER_JOURNEY_STEPS.map((step, index) => `
-        <tr>
-          <td width="58" valign="top" align="center" style="width: 58px; padding: 0 12px 0 0;">
-            ${renderIconCircle(step.icon, 44)}
-            ${index < SELLER_JOURNEY_STEPS.length - 1 ? `<div style="width: 1px; height: 28px; margin: 0 auto; background: #CFE0D9; line-height: 28px; font-size: 0;">&nbsp;</div>` : ""}
-          </td>
-          <td valign="top" style="padding: 4px 0 22px; font-family: Arial, Helvetica, sans-serif;">
-            <p style="margin: 0 0 4px; font-size: 12px; line-height: 1.3; letter-spacing: 0.08em; color: #006B4D; font-weight: 700; text-transform: uppercase;">${escapeHtml(step.title)}</p>
-            <p style="margin: 0; font-size: 13px; line-height: 1.45; color: #17233A;">${escapeHtml(step.copy)}</p>
-          </td>
-        </tr>
-      `).join("")}
-    </table>
-  `;
-}
-
-function renderHeroFact({ icon, title, copy }: { icon: string; title: string; copy: string }) {
-  return `
-    <td class="arch9-fact-col" width="33.33%" valign="top" style="width: 33.33%; padding: 0 12px 0 0; font-family: Arial, Helvetica, sans-serif;">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-        <tr>
-          <td width="28" valign="top" style="width: 28px; padding: 1px 8px 0 0;">
-            ${renderIconCircle(icon, 24)}
-          </td>
-          <td valign="top">
-            <p style="margin: 0 0 4px; font-size: 12px; line-height: 1.35; color: #17233A; font-weight: 700;">${escapeHtml(title)}</p>
-            <p style="margin: 0; font-size: 11px; line-height: 1.4; color: #64748B;">${escapeHtml(copy)}</p>
-          </td>
-        </tr>
-      </table>
-    </td>
-  `;
-}
-
-function renderNeedCards() {
-  return `
-    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="width: 100%; border-collapse: collapse;">
-      <tr>
-        ${SELLER_NEED_CARDS.map((card, index) => `
-          <td class="arch9-card-col" width="33.33%" valign="top" style="width: 33.33%; padding: 0 ${index === SELLER_NEED_CARDS.length - 1 ? "0" : "10px"} 0 ${index === 0 ? "0" : "10px"};">
-            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="border-collapse: separate; border-spacing: 0; border: 1px solid #E2E8F0; border-radius: 8px; background: #FFFFFF;">
-              <tr>
-                <td style="padding: 20px 18px 22px; font-family: Arial, Helvetica, sans-serif;">
-                  ${renderIconCircle(card.icon, 40)}
-                  <h3 style="margin: 18px 0 10px; font-size: 16px; line-height: 1.35; color: #17233A; font-weight: 700;">${escapeHtml(card.title)}</h3>
-                  <p style="margin: 0; font-size: 14px; line-height: 1.55; color: #334155;">${escapeHtml(card.copy)}</p>
-                </td>
-              </tr>
-            </table>
-          </td>
-        `).join("")}
-      </tr>
-    </table>
-  `;
-}
-
-function renderAccessBlocks() {
-  return `
-    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="width: 100%; border-collapse: collapse;">
-      <tr>
-        ${SELLER_ACCESS_BLOCKS.map((block, index) => `
-          <td class="arch9-access-col" width="25%" valign="top" style="width: 25%; padding: 0 ${index === SELLER_ACCESS_BLOCKS.length - 1 ? "0" : "14px"} 0 ${index === 0 ? "0" : "14px"}; ${index === 0 ? "" : "border-left: 1px solid #E2E8F0;"} font-family: Arial, Helvetica, sans-serif;">
-            ${renderIconCircle(block.icon, 44)}
-            <p style="margin: 14px 0 8px; font-size: 13px; line-height: 1.35; color: #17233A; font-weight: 700;">${escapeHtml(block.title)}</p>
-            <p style="margin: 0; font-size: 12px; line-height: 1.45; color: #334155;">${escapeHtml(block.copy)}</p>
-          </td>
-        `).join("")}
-      </tr>
-    </table>
-  `;
-}
-
 function renderAgencyLogo({ agencyName, agencyLogoUrl }: { agencyName: string; agencyLogoUrl?: string }) {
   const safeAgencyName = escapeHtml(agencyName);
   const safeLogoUrl = agencyLogoUrl && isHostedRasterImageUrl(agencyLogoUrl) ? escapeHtml(agencyLogoUrl) : "";
@@ -357,35 +177,120 @@ function renderAgencyLogo({ agencyName, agencyLogoUrl }: { agencyName: string; a
   `;
 }
 
+function pickSellerInvitationTitle(value: string | undefined) {
+  const normalized = String(value || "").trim();
+  if (
+    !normalized ||
+    normalized === "Your Property Sale Starts Here" ||
+    normalized === "Welcome to your property transaction workspace."
+  ) {
+    return "Complete your seller information";
+  }
+  return normalized;
+}
+
+function pickSellerInvitationCta(value: string | undefined) {
+  const normalized = String(value || "").trim();
+  if (
+    !normalized ||
+    normalized === "Complete Seller Onboarding" ||
+    normalized === "Complete Seller Information"
+  ) {
+    return "Complete seller information";
+  }
+  return normalized;
+}
+
+function pickSellerInvitationPreheader(value: string | undefined, agencyName: string) {
+  const normalized = String(value || "").trim();
+  if (
+    !normalized ||
+    normalized === "Your agent has invited you to complete seller information for your property." ||
+    normalized === `${agencyName} has prepared your secure seller workspace on Arch9.`
+  ) {
+    return `${agencyName} needs a few details to get your property sale ready.`;
+  }
+  return normalized;
+}
+
+function formatExpiryCopy(expiryDays: number) {
+  if (!Number.isFinite(expiryDays) || expiryDays <= 0) {
+    return "This secure link expires soon.";
+  }
+  return `This secure link expires in ${expiryDays} ${expiryDays === 1 ? "day" : "days"}.`;
+}
+
+function renderSimpleBullet(copy: string) {
+  return `
+    <tr>
+      <td width="18" valign="top" style="width: 18px; padding: 2px 8px 8px 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; line-height: 1.5; color: #006B4D;">&bull;</td>
+      <td valign="top" style="padding: 0 0 8px; font-family: Arial, Helvetica, sans-serif; font-size: 15px; line-height: 1.55; color: #334155;">${escapeHtml(copy)}</td>
+    </tr>
+  `;
+}
+
+function renderSummaryRows(rows: { label: string; value: string }[]) {
+  const visibleRows = rows.filter((row) => row.label && row.value);
+  if (!visibleRows.length) return "";
+  return `
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin: 22px 0 0; border-collapse: separate; border-spacing: 0; border: 1px solid #E2E8F0; border-radius: 8px; background: #F8FAFC;">
+      <tr>
+        <td style="padding: 16px 18px; font-family: Arial, Helvetica, sans-serif;">
+          ${visibleRows.map((row, index) => `
+            <p style="margin: ${index === 0 ? "0" : "8px"} 0 0; font-size: 13px; line-height: 1.5; color: #334155;">
+              <strong style="color: #17233A;">${escapeHtml(row.label)}:</strong> ${escapeHtml(row.value)}
+            </p>
+          `).join("")}
+        </td>
+      </tr>
+    </table>
+  `;
+}
+
 function buildPremiumSellerOnboardingInvitationHtml({
+  sellerName,
   agencyName,
   agencyLogoUrl,
   onboardingUrl,
   expiryDays,
+  propertyLabel,
+  agentName,
+  referenceLabel,
   agentEmail,
   agentPhone,
   ctaLabel,
   preheader,
   title,
 }: {
+  sellerName: string;
   agencyName: string;
   agencyLogoUrl?: string;
   onboardingUrl: string;
   expiryDays: number;
+  propertyLabel?: string;
+  agentName?: string;
+  referenceLabel?: string;
   agentEmail?: string;
   agentPhone?: string;
   ctaLabel?: string;
   preheader?: string;
   title?: string;
 }) {
-  const resolvedCtaLabel = pickText(ctaLabel, "Complete Seller Onboarding");
-  const resolvedPreheader = pickText(
-    preheader,
-    `${agencyName} has prepared your secure seller workspace on Arch9.`,
-  );
-  const resolvedTitle = pickText(title, "Welcome to your property transaction workspace.");
+  const resolvedCtaLabel = pickSellerInvitationCta(ctaLabel);
+  const resolvedPreheader = pickSellerInvitationPreheader(preheader, agencyName);
+  const resolvedTitle = pickSellerInvitationTitle(title);
+  const greetingName = pickText(sellerName, "there");
   const safeOnboardingUrl = escapeHtml(onboardingUrl);
+  const expiryCopy = formatExpiryCopy(expiryDays);
   const questionContact = [agentEmail, agentPhone].map((item) => String(item || "").trim()).filter(Boolean).join(" | ");
+  const summaryHtml = renderSummaryRows([
+    {
+      label: "Property",
+      value: propertyLabel && !isGenericPropertyLabel(propertyLabel) ? propertyLabel : "",
+    },
+    { label: "Agent", value: agentName || "" },
+    { label: "Reference", value: referenceLabel || "" },
+  ]);
 
   return `<!doctype html>
 <html>
@@ -400,16 +305,9 @@ function buildPremiumSellerOnboardingInvitationHtml({
         .arch9-outer { padding: 0 !important; }
         .arch9-header { height: 56px !important; padding-left: 20px !important; padding-right: 20px !important; }
         .arch9-padded { padding-left: 20px !important; padding-right: 20px !important; }
-        .arch9-hero-col, .arch9-journey-col, .arch9-fact-col, .arch9-card-col, .arch9-access-col, .arch9-footer-col { display: block !important; width: 100% !important; padding-left: 0 !important; padding-right: 0 !important; border-left: 0 !important; }
-        .arch9-journey-col { padding-top: 26px !important; }
-        .arch9-desktop-timeline { display: none !important; max-height: 0 !important; overflow: hidden !important; }
-        .arch9-mobile-timeline { display: table !important; width: 100% !important; max-height: none !important; overflow: visible !important; }
+        .arch9-footer-col { display: block !important; width: 100% !important; padding-left: 0 !important; padding-right: 0 !important; text-align: left !important; }
         .arch9-cta-table { width: 100% !important; }
         .arch9-cta-link { display: block !important; min-width: 0 !important; width: auto !important; }
-        .arch9-fact-col { padding-bottom: 18px !important; }
-        .arch9-card-col { padding-bottom: 16px !important; }
-        .arch9-access-col { padding-bottom: 22px !important; }
-        .arch9-footer-col { text-align: left !important; padding-bottom: 20px !important; }
       }
     </style>
   </head>
@@ -427,85 +325,46 @@ function buildPremiumSellerOnboardingInvitationHtml({
               </td>
             </tr>
             <tr>
-              <td class="arch9-padded" style="padding: 40px 32px 0; background: #FFFFFF;">
-                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="width: 100%; border-collapse: collapse;">
+              <td class="arch9-padded" style="padding: 36px 32px 0; background: #FFFFFF; font-family: Arial, Helvetica, sans-serif;">
+                <p style="margin: 0 0 14px; font-size: 12px; line-height: 1.3; letter-spacing: 0.12em; color: #006B4D; font-weight: 700; text-transform: uppercase;">Seller information</p>
+                <h1 style="margin: 0; font-size: 30px; line-height: 1.2; color: #17233A; font-weight: 700;">${escapeHtml(resolvedTitle)}</h1>
+                <p style="margin: 22px 0 0; font-size: 16px; line-height: 1.65; color: #334155;">Hi ${escapeHtml(greetingName)},</p>
+                <p style="margin: 10px 0 0; font-size: 16px; line-height: 1.65; color: #334155;">${escapeHtml(agencyName)} needs a few details from you before your property sale can move ahead.</p>
+                <p style="margin: 10px 0 0; font-size: 16px; line-height: 1.65; color: #334155;">Please complete the secure form so your agent can verify the basics, prepare the right documents, and let you know if anything else is needed.</p>
+
+                <div style="margin: 26px 0 0;">${renderSellerOnboardingCta(resolvedCtaLabel, onboardingUrl)}</div>
+                <p style="margin: 12px 0 0; font-size: 12px; line-height: 1.55; color: #64748B;">If the button does not work, copy this secure link:<br /><a href="${safeOnboardingUrl}" style="color: #006B4D; text-decoration: underline; word-break: break-all;">${safeOnboardingUrl}</a></p>
+
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin: 26px 0 0; border-collapse: separate; border-spacing: 0; border: 1px solid #DCE7E2; border-radius: 8px; background: #F7FBF9;">
                   <tr>
-                    <td class="arch9-hero-col" width="44%" valign="top" style="width: 44%; padding: 0 24px 0 0; font-family: Arial, Helvetica, sans-serif;">
-                      <p style="margin: 0 0 20px; font-size: 12px; line-height: 1.2; letter-spacing: 0.12em; color: #006B4D; font-weight: 700; text-transform: uppercase;">Seller onboarding</p>
-                      <h1 style="margin: 0; font-size: 29px; line-height: 1.18; color: #17233A; font-weight: 700;">${escapeHtml(resolvedTitle)}</h1>
-                      <p style="margin: 22px 0 0; font-size: 15px; line-height: 1.6; color: #334155;">${escapeHtml(agencyName)} has prepared your secure workspace on Arch9.</p>
-                      <p style="margin: 14px 0 0; font-size: 15px; line-height: 1.6; color: #334155;">Complete your seller onboarding to begin your property sale.</p>
-                      <div style="margin: 28px 0 0;">${renderSellerOnboardingCta(resolvedCtaLabel, onboardingUrl)}</div>
-                      <p style="margin: 12px 0 0; font-size: 12px; line-height: 1.5; color: #64748B;">Onboarding URL:<br /><a href="${safeOnboardingUrl}" style="color: #006B4D; text-decoration: underline; word-break: break-all;">${safeOnboardingUrl}</a></p>
-                    </td>
-                    <td class="arch9-journey-col" width="56%" valign="middle" style="width: 56%; padding: 44px 0 0;">
-                      ${renderDesktopJourneyTimeline()}
-                      ${renderMobileJourneyTimeline()}
+                    <td style="padding: 18px; font-family: Arial, Helvetica, sans-serif;">
+                      <p style="margin: 0 0 8px; font-size: 15px; line-height: 1.5; color: #17233A; font-weight: 700;">This usually takes about 8-10 minutes.</p>
+                      <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #334155;">You can complete it on any device. Your information is stored securely in Arch9 and is only shared with authorised people working on your sale.</p>
                     </td>
                   </tr>
                 </table>
 
-                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin: 30px 0 0; width: 100%; border-collapse: collapse;">
-                  <tr>
-                    ${renderHeroFact({ icon: "T", title: "8-10 minutes", copy: "Estimated time" })}
-                    ${renderHeroFact({ icon: "M", title: "Mobile friendly", copy: "Complete on any device" })}
-                    ${renderHeroFact({ icon: "S", title: "Secure & encrypted", copy: "Your information is protected" })}
-                  </tr>
+                <h2 style="margin: 28px 0 12px; font-size: 18px; line-height: 1.35; color: #17233A; font-weight: 700;">What you will need</h2>
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="border-collapse: collapse;">
+                  ${renderSimpleBullet("Your contact and ownership details.")}
+                  ${renderSimpleBullet("Basic property information.")}
+                  ${renderSimpleBullet("Any property or identity documents you already have available.")}
                 </table>
 
-                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin: 36px 0 0; border-top: 1px solid #E2E8F0;">
-                  <tr>
-                    <td style="padding: 28px 0 0; font-family: Arial, Helvetica, sans-serif;">
-                      <h2 style="margin: 0 0 20px; font-size: 20px; line-height: 1.35; color: #17233A; font-weight: 700;">Why we need this information</h2>
-                      ${renderNeedCards()}
-                    </td>
-                  </tr>
-                </table>
+                <h2 style="margin: 20px 0 8px; font-size: 18px; line-height: 1.35; color: #17233A; font-weight: 700;">What happens after you submit</h2>
+                <p style="margin: 0; font-size: 15px; line-height: 1.65; color: #334155;">Your agent will review your answers and contact you if anything needs to be added or corrected. After that, they can prepare the next step for your property sale.</p>
+                <p style="margin: 14px 0 0; font-size: 13px; line-height: 1.55; color: #64748B;">${escapeHtml(expiryCopy)}</p>
 
-                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin: 36px 0 0;">
-                  <tr>
-                    <td style="font-family: Arial, Helvetica, sans-serif;">
-                      <h2 style="margin: 0 0 20px; font-size: 20px; line-height: 1.35; color: #17233A; font-weight: 700;">What you'll have access to</h2>
-                      ${renderAccessBlocks()}
-                    </td>
-                  </tr>
-                </table>
-
-                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="border-collapse: separate; border-spacing: 0; margin: 30px 0 0; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px;">
-                  <tr>
-                    <td width="70" valign="top" style="width: 70px; padding: 22px 8px 22px 22px;">
-                      ${renderIconCircle("S", 46)}
-                    </td>
-                    <td valign="top" style="padding: 22px 24px 22px 0; font-family: Arial, Helvetica, sans-serif;">
-                      <h2 style="margin: 0 0 8px; font-size: 16px; line-height: 1.35; color: #17233A; font-weight: 700;">Your information remains secure.</h2>
-                      <p style="margin: 0; font-size: 13px; line-height: 1.6; color: #334155;">Only authorised professionals involved in your property transaction can access your information.</p>
-                      <p style="margin: 10px 0 0; font-size: 13px; line-height: 1.6; color: #334155;">All communication and document sharing takes place through your secure Arch9 workspace.</p>
-                    </td>
-                  </tr>
-                </table>
-
-                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="border-collapse: separate; border-spacing: 0; margin: 16px 0 0; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px;">
-                  <tr>
-                    <td width="78" valign="top" style="width: 78px; padding: 24px 8px 24px 24px;">
-                      ${renderIconCircle("R", 48)}
-                    </td>
-                    <td valign="top" style="padding: 24px 24px 24px 0; font-family: Arial, Helvetica, sans-serif;">
-                      <h2 style="margin: 0 0 8px; font-size: 22px; line-height: 1.25; color: #17233A; font-weight: 700;">Ready to begin?</h2>
-                      <p style="margin: 0 0 16px; font-size: 14px; line-height: 1.55; color: #334155;">Complete your seller onboarding and let's get your property sale moving.</p>
-                      ${renderSellerOnboardingCta(resolvedCtaLabel, onboardingUrl)}
-                      <p style="margin: 12px 0 0; font-size: 12px; line-height: 1.5; color: #64748B;">This secure link expires in ${escapeHtml(String(expiryDays))} days.</p>
-                    </td>
-                  </tr>
-                </table>
+                ${summaryHtml}
 
                 <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin: 28px 0 0;">
                   <tr>
-                    <td class="arch9-footer-col" width="48%" valign="top" style="width: 48%; padding: 0 20px 0 0; font-family: Arial, Helvetica, sans-serif;">
+                    <td class="arch9-footer-col" width="52%" valign="top" style="width: 52%; padding: 0 20px 0 0; font-family: Arial, Helvetica, sans-serif;">
                       <p style="margin: 0 0 6px; font-size: 14px; line-height: 1.4; color: #17233A; font-weight: 700;">Questions?</p>
                       <p style="margin: 0; font-size: 12px; line-height: 1.55; color: #334155;">Please contact your agent directly or reply to this email.</p>
                       ${questionContact ? `<p style="margin: 8px 0 0; font-size: 12px; line-height: 1.55; color: #64748B;">${escapeHtml(questionContact)}</p>` : ""}
                     </td>
-                    <td class="arch9-footer-col" width="52%" valign="top" align="right" style="width: 52%; padding: 0 0 0 20px;">
+                    <td class="arch9-footer-col" width="48%" valign="top" align="right" style="width: 48%; padding: 0 0 0 20px;">
                       ${renderAgencyLogo({ agencyName, agencyLogoUrl })}
                     </td>
                   </tr>
@@ -578,10 +437,14 @@ export function buildSellerOnboardingEmailHtml({
 
   if (!portalDocumentsMode) {
     return buildPremiumSellerOnboardingInvitationHtml({
+      sellerName,
       agencyName: pickText(senderOrganisationName || organisationName, "Your agency"),
       agencyLogoUrl: senderOrganisationLogoUrl,
       onboardingUrl: onboardingLink,
       expiryDays: resolveExpiryDays(expiryDays, expiresAt),
+      propertyLabel,
+      agentName: agentName || "",
+      referenceLabel,
       agentEmail: resolveFirstText(agentEmail, supportEmail),
       agentPhone: resolveFirstText(agentPhone, supportPhone),
       ctaLabel: templateOverrides?.ctaLabel,
@@ -660,7 +523,7 @@ export function buildSellerOnboardingEmailHtml({
         ? "Create your seller portal password first, then upload the documents needed for FICA, mandate preparation, and listing readiness."
         : "Your agent has invited you to complete seller information for your property.",
     ),
-    title: pickText(templateOverrides?.title, portalDocumentsMode ? "Upload Seller Documents" : "Your Property Sale Starts Here"),
+    title: pickText(templateOverrides?.title, portalDocumentsMode ? "Upload Seller Documents" : "Complete your seller information"),
     greeting: `Hi ${sellerName || "there"},`,
     contentHtml,
     securityTitle,
@@ -722,43 +585,38 @@ export function buildSellerOnboardingEmailText({
   if (!portalDocumentsMode) {
     const agencyName = pickText(organisationName, "Your agency");
     const days = resolveExpiryDays(expiryDays, expiresAt);
+    const resolvedCtaLabel = pickSellerInvitationCta(templateOverrides?.ctaLabel);
     const questionContact = [
       resolveFirstText(agentEmail, supportEmail),
       resolveFirstText(agentPhone, supportPhone),
     ].filter(Boolean).join(" | ");
     return [
-      "SELLER ONBOARDING",
+      "SELLER INFORMATION",
       "",
-      "Welcome to your property transaction workspace.",
-      `${agencyName} has prepared your secure workspace on Arch9.`,
-      "Complete your seller onboarding to begin your property sale.",
+      `Hi ${sellerName || "there"},`,
       "",
-      "Complete Seller Onboarding:",
+      `${agencyName} needs a few details from you before your property sale can move ahead.`,
+      "Please complete the secure form so your agent can verify the basics, prepare the right documents, and let you know if anything else is needed.",
+      "",
+      `${resolvedCtaLabel}:`,
       onboardingLink,
       "",
-      "Estimated completion time: 8-10 minutes",
-      "Mobile friendly: Complete on any device",
-      "Secure and encrypted: Your information is protected",
+      "This usually takes about 8-10 minutes. You can complete it on any device.",
       "",
-      "Property journey:",
-      ...SELLER_JOURNEY_STEPS.map((step, index) => `${index + 1}. ${step.title}: ${step.copy}`),
+      "What you will need:",
+      "1. Your contact and ownership details.",
+      "2. Basic property information.",
+      "3. Any property or identity documents you already have available.",
       "",
-      "Why we need this information:",
-      ...SELLER_NEED_CARDS.map((card) => `${card.title}: ${card.copy}`),
+      "What happens after you submit:",
+      "Your agent will review your answers and contact you if anything needs to be added or corrected. After that, they can prepare the next step for your property sale.",
       "",
-      "What you'll have access to:",
-      ...SELLER_ACCESS_BLOCKS.map((block) => `${block.title}: ${block.copy}`),
+      "Security:",
+      "Your information is stored securely in Arch9 and is only shared with authorised people working on your sale.",
+      formatExpiryCopy(days),
       "",
-      "Your information remains secure.",
-      "Only authorised professionals involved in your property transaction can access your information.",
-      "All communication and document sharing takes place through your secure Arch9 workspace.",
-      "",
-      "Ready to begin?",
-      "Complete your seller onboarding and let's get your property sale moving.",
-      `This secure link expires in ${days} days.`,
-      "",
-      propertyLabel ? `Property: ${propertyLabel}` : null,
-      agentLabel ? `Agent: ${agentLabel}` : null,
+      propertyLabel && !isGenericPropertyLabel(propertyLabel) ? `Property: ${propertyLabel}` : null,
+      agentName ? `Agent: ${agentName}` : null,
       referenceLabel ? `Reference: ${referenceLabel}` : null,
       questionContact ? `Questions: ${questionContact}` : "Questions: Please contact your agent directly or reply to this email.",
       "",

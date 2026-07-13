@@ -17,6 +17,11 @@ import { getUniversalPartnerRoutingDiagnosticsSnapshot } from '../services/unive
 import { getUniversalAssignmentDiagnosticsSnapshot } from '../services/universalAssignmentService'
 import { applyCanonicalInviteReconciliation, getCanonicalInviteHealth, reconcileCanonicalInvites } from '../services/inviteOperationsService'
 import { dispatchNotificationReminders, getNotificationAutomationHealth } from '../services/notificationAutomationOperationsService'
+import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import {
+  getSellerMandateContinuityDiagnosticsSnapshot,
+  getSellerMandateContinuityReleaseGate,
+} from '../services/sellerMandateContinuityReportService'
 
 function StatCard({ label, value, tone = 'neutral' }) {
   const toneClass =
@@ -114,6 +119,8 @@ export default function PlatformDiagnosticsPage() {
   const [notificationLoading, setNotificationLoading] = useState(false)
   const [notificationDispatchLoading, setNotificationDispatchLoading] = useState(false)
   const [notificationDispatchResult, setNotificationDispatchResult] = useState(null)
+  const [mandateContinuity, setMandateContinuity] = useState(null)
+  const [mandateContinuityLoading, setMandateContinuityLoading] = useState(false)
 
   useEffect(() => {
     if (entityType === 'user') setEntityId(authState.user?.id || '')
@@ -246,6 +253,26 @@ export default function PlatformDiagnosticsPage() {
     }
   }
 
+  async function loadSellerMandateContinuityDiagnostics() {
+    try {
+      setMandateContinuityLoading(true)
+      setError('')
+      if (!isSupabaseConfigured || !supabase) {
+        throw new Error('Supabase is not configured for seller mandate continuity diagnostics.')
+      }
+      const snapshot = await getSellerMandateContinuityDiagnosticsSnapshot({
+        client: supabase,
+        organisationId: currentWorkspace?.id || '',
+        limit: 50,
+      })
+      setMandateContinuity(snapshot)
+    } catch (mandateError) {
+      setError(mandateError?.message || 'Seller mandate continuity diagnostics failed.')
+    } finally {
+      setMandateContinuityLoading(false)
+    }
+  }
+
   async function runNotificationReminderDryRun() {
     try {
       setNotificationDispatchLoading(true)
@@ -341,6 +368,11 @@ export default function PlatformDiagnosticsPage() {
   const notificationFailureRows = notificationHealth?.recentFailures || []
   const notificationPremiumControls = notificationHealth?.premiumControls || null
   const notificationReminderPolicies = notificationHealth?.reminderPolicies || []
+  const mandateContinuityGate = mandateContinuity
+    ? mandateContinuity.gate || getSellerMandateContinuityReleaseGate(mandateContinuity)
+    : null
+  const mandateContinuityRows = mandateContinuity?.records || []
+  const mandateContinuityWarnings = mandateContinuity?.queryWarnings || []
 
   return (
     <section className="page">
@@ -454,6 +486,83 @@ export default function PlatformDiagnosticsPage() {
             </div>
           </div>
         ) : null}
+
+        <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-white p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Seller mandate continuity</h2>
+              <p className="mt-2 text-sm text-[#60758d]">
+                Audit signed mandate linkage across listings, leads, seller-visible documents, seller portal context, and activity feed.
+              </p>
+            </div>
+            <button type="button" className="header-secondary-cta" onClick={loadSellerMandateContinuityDiagnostics} disabled={mandateContinuityLoading}>
+              {mandateContinuityLoading ? 'Checking mandates...' : 'Run mandate continuity'}
+            </button>
+          </div>
+
+          {mandateContinuity ? (
+            <div className="grid gap-4">
+              <div className="grid gap-3 md:grid-cols-4">
+                <StatCard label="Continuity" value={mandateContinuity.summary?.status || 'unknown'} tone={mandateContinuity.summary?.status === 'blocked' ? 'critical' : mandateContinuity.summary?.status === 'ready' ? 'success' : 'warning'} />
+                <StatCard label="Score" value={`${mandateContinuity.summary?.score ?? 0}%`} tone={(mandateContinuity.summary?.score || 0) >= 90 ? 'success' : 'warning'} />
+                <StatCard label="Blocked" value={mandateContinuity.summary?.blocked || 0} tone={mandateContinuity.summary?.blocked ? 'critical' : 'success'} />
+                <StatCard label="Gate" value={mandateContinuityGate?.status || 'unknown'} tone={mandateContinuityGate?.status === 'fail' ? 'critical' : 'success'} />
+              </div>
+              <div className="grid gap-3 md:grid-cols-4">
+                <StatCard label="Ready" value={mandateContinuity.summary?.ready || 0} tone="success" />
+                <StatCard label="Needs review" value={mandateContinuity.summary?.warning || 0} tone={mandateContinuity.summary?.warning ? 'warning' : 'success'} />
+                <StatCard label="Missing documents" value={mandateContinuity.summary?.missingSignedDocument || 0} tone={mandateContinuity.summary?.missingSignedDocument ? 'warning' : 'success'} />
+                <StatCard label="Missing activity" value={mandateContinuity.summary?.missingSellerActivity || 0} tone={mandateContinuity.summary?.missingSellerActivity ? 'warning' : 'success'} />
+              </div>
+
+              {mandateContinuityGate?.reason ? (
+                <p className={`rounded-[12px] border px-3 py-2 text-sm ${mandateContinuityGate.status === 'fail' ? 'border-[#f2c8c4] bg-[#fff5f4] text-[#9f1c1c]' : 'border-[#cfe8d8] bg-[#effaf3] text-[#236340]'}`}>
+                  {mandateContinuityGate.reason}
+                </p>
+              ) : null}
+
+              {mandateContinuityWarnings.length ? (
+                <div className="rounded-[12px] border border-[#f5d3a4] bg-[#fff8ec] p-3 text-sm text-[#8a4b10]">
+                  {mandateContinuityWarnings.length} diagnostic query warning{mandateContinuityWarnings.length === 1 ? '' : 's'} occurred. The report is partial.
+                </div>
+              ) : null}
+
+              <div className="overflow-hidden rounded-[14px] border border-[#dde4ee] bg-white">
+                <table className="w-full min-w-[760px] text-left text-sm">
+                  <thead className="bg-[#f7f9fc] text-xs uppercase tracking-[0.08em] text-[#60758d]">
+                    <tr>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Listing</th>
+                      <th className="px-4 py-3">Packet</th>
+                      <th className="px-4 py-3">Next action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#edf1f6]">
+                    {mandateContinuityRows.length ? mandateContinuityRows.slice(0, 8).map((record) => (
+                      <tr key={record.listingId || record.leadId || record.packetId}>
+                        <td className="px-4 py-3 font-semibold capitalize">{String(record.status || 'unknown').replace(/_/g, ' ')}</td>
+                        <td className="px-4 py-3">
+                          <span className="block font-semibold text-[#31485e]">{record.title || record.listingId || 'Unlabelled listing'}</span>
+                          <span className="text-xs text-[#60758d]">{record.listingId || record.leadId || 'No listing id'}</span>
+                        </td>
+                        <td className="px-4 py-3 text-[#60758d]">{record.packetId || '-'}</td>
+                        <td className="px-4 py-3 text-[#60758d]">{record.actionItems?.[0] || (record.ready ? 'No action required.' : 'Review continuity checks.')}</td>
+                      </tr>
+                    )) : (
+                      <tr>
+                        <td className="px-4 py-5 text-center text-[#60758d]" colSpan={4}>No signed mandate records found for this workspace.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <p className="rounded-[14px] border border-dashed border-[#d7e2ee] bg-[#f9fbfe] px-4 py-6 text-center text-sm text-[#60758d]">
+              Run mandate continuity to verify signed mandates before release checks or seller support follow-up.
+            </p>
+          )}
+        </div>
 
         <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-white p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">

@@ -35,6 +35,7 @@ import {
 import { getEdgeFunctionInvokeError, invokeEdgeFunction } from '../lib/supabaseClient'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import {
+  buildSellerClientPortalLink,
   createListingDraftFromSellerLead,
   findSellerWorkflowRecordByToken,
   LISTING_STATUS,
@@ -117,21 +118,23 @@ const WATER_BILLING_OPTIONS = [
 const OWNERSHIP_TYPES = [
   { value: 'individual', label: 'Natural Person', description: 'I own the property in my own name.' },
   { value: 'married_cop', label: 'Married (COP)', description: 'Married in community of property.' },
-  { value: 'married_anc', label: 'Married (ANC)', description: 'Married out of community of property.' },
   { value: 'company', label: 'Company', description: 'A company owns the property.' },
   { value: 'trust', label: 'Trust', description: 'A trust owns the property.' },
   { value: 'deceased_estate', label: 'Deceased estate', description: 'The property forms part of a deceased estate.' },
   { value: 'power_of_attorney', label: 'Power of attorney', description: 'Someone is acting under authority.' },
   { value: 'multiple_owners', label: 'Multiple owners', description: 'Two or more individuals own the property.' },
-  { value: 'other', label: 'Other', description: 'Another ownership structure applies.' },
 ]
+
+const LEGACY_OWNERSHIP_TYPE_LABELS = {
+  married_anc: 'Married (ANC)',
+  other: 'Other structure',
+}
 
 const OWNER_ENTITY_TYPES = [
   { value: 'natural_person', label: 'Natural Person', description: 'An individual, spouse, estate, POA, or multiple natural-person owners.' },
   { value: 'company', label: 'Company', description: 'A company owns the property and needs authority details.' },
   { value: 'trust', label: 'Trust', description: 'A trust owns the property and needs trustee authority.' },
   { value: 'foreign', label: 'Foreign', description: 'A foreign person, company, or trust owns the property.' },
-  { value: 'other', label: 'Other', description: 'Another owner type applies.' },
 ]
 
 const OWNER_ENTITY_ICONS = {
@@ -146,7 +149,6 @@ const OWNER_STRUCTURE_TYPES_BY_ENTITY = {
   natural_person: [
     { value: 'individual', label: 'Single owner', description: 'One natural person owns the property.' },
     { value: 'married_cop', label: 'Married (COP)', description: 'Married in community of property.' },
-    { value: 'married_anc', label: 'Married (ANC)', description: 'Married out of community of property.' },
     { value: 'multiple_owners', label: 'Multiple owners', description: 'Two or more natural persons own the property.' },
     { value: 'deceased_estate', label: 'Deceased estate', description: 'The property forms part of a deceased estate.' },
     { value: 'power_of_attorney', label: 'Power of attorney', description: 'Someone is acting under authority.' },
@@ -254,6 +256,12 @@ const SELLING_REASON_OPTIONS = [
   { value: 'other', label: 'Other' },
 ]
 
+const SELLING_TIMELINE_OPTIONS = [
+  { value: 'urgent', label: 'Urgent', description: '0-1 month' },
+  { value: '1_3_months', label: '1-3 months', description: 'Ready in the next quarter' },
+  { value: '3_6_months', label: '3-6 months', description: 'Planning ahead' },
+]
+
 const PAGE_CONTAINER_CLASS = 'mx-auto w-full max-w-[560px] lg:max-w-[1184px]'
 const PAGE_STACK_CLASS = 'space-y-3 sm:space-y-6 lg:space-y-8'
 const SECTION_CARD_CLASS =
@@ -304,7 +312,37 @@ function areCanonicalSellerFactsEnabled() {
   return !['0', 'false', 'no', 'off', 'disabled'].includes(raw)
 }
 
-async function notifyAssignedAgentOfSellerOnboarding(updated = {}, form = {}) {
+function getRuntimeTimestampMs() {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') return performance.now()
+  return Date.now()
+}
+
+function resolveSellerSubmissionEmail(updated = {}, form = {}) {
+  return String(
+    form?.email ||
+      form?.sellerEmail ||
+      form?.contactEmail ||
+      updated?.seller?.email ||
+      updated?.sellerEmail ||
+      updated?.seller_email ||
+      updated?.sellerOnboarding?.formData?.email ||
+      updated?.sellerOnboarding?.formData?.sellerEmail ||
+      ''
+  ).trim()
+}
+
+function resolveSellerSubmissionPortalLink(updated = {}, fallbackToken = '') {
+  const token = String(
+    updated?.sellerOnboarding?.token ||
+      updated?.sellerOnboardingToken ||
+      updated?.seller_onboarding_token ||
+      fallbackToken ||
+      ''
+  ).trim()
+  return token ? buildSellerClientPortalLink(token) : ''
+}
+
+async function notifySellerOnboardingSubmitted(updated = {}, form = {}, fallbackToken = '') {
   const assignedAgentId = String(
     updated?.assignedAgentId ||
       updated?.assigned_agent_id ||
@@ -329,7 +367,10 @@ async function notifyAssignedAgentOfSellerOnboarding(updated = {}, form = {}) {
   const leadId = String(updated?.sellerLeadId || updated?.seller_lead_id || updated?.leadId || updated?.lead_id || '').trim()
   const listingId = String(updated?.id || updated?.listingId || updated?.listing_id || '').trim()
   const transactionReference = String(updated?.transactionReference || updated?.transaction_reference || updated?.reference || '').trim()
-  if (!hasValidAssignedAgentEmail && !assignedAgentId && !leadId && !listingId) return
+  const sellerEmail = resolveSellerSubmissionEmail(updated, form)
+  const sellerPortalLink = resolveSellerSubmissionPortalLink(updated, fallbackToken)
+  const hasValidSellerEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sellerEmail)
+  if (!hasValidAssignedAgentEmail && !assignedAgentId && !leadId && !listingId && !hasValidSellerEmail) return
   const actionLink = typeof window !== 'undefined' && leadId
     ? `${window.location.origin}/pipeline/leads/${encodeURIComponent(leadId)}/legal/mandate`
     : ''
@@ -344,9 +385,19 @@ async function notifyAssignedAgentOfSellerOnboarding(updated = {}, form = {}) {
             to: hasValidAssignedAgentEmail ? assignedAgentEmail : '',
             agentName: assignedAgentName,
             sellerName,
+            sellerEmail: hasValidSellerEmail ? sellerEmail : '',
+            sellerPortalLink,
+            sellerPortalToken: String(
+              updated?.sellerOnboarding?.token ||
+                updated?.sellerOnboardingToken ||
+                updated?.seller_onboarding_token ||
+                fallbackToken ||
+                ''
+            ).trim(),
             propertyTitle,
             transactionReference,
             organisationId: String(updated?.organisationId || updated?.organisation_id || '').trim(),
+            organisationName: String(updated?.organisationName || updated?.agencyOrganisation || updated?.agencyName || '').trim(),
             leadId,
             listingId,
             assignedAgentId,
@@ -362,7 +413,7 @@ async function notifyAssignedAgentOfSellerOnboarding(updated = {}, form = {}) {
       }),
     ])
   } catch (notificationError) {
-    console.error('[Seller Onboarding] assigned agent notification failed', notificationError)
+    console.error('[Seller Onboarding] submission notification failed', notificationError)
   } finally {
     if (timeoutId) clearTimeout(timeoutId)
   }
@@ -445,7 +496,7 @@ function resolveAgencyBrand(listing = {}) {
     'organisationName',
     ...brandingSources,
   )
-  const brandName = branding.organisationName || 'Arch9'
+  const brandName = branding.organisationName || 'Agency'
   const logoDarkUrl = branding.logoDarkUrl
   const logoLightUrl = branding.logoLightUrl
   const logoUrl = logoDarkUrl || branding.logoIconUrl || logoLightUrl
@@ -666,7 +717,7 @@ function getPropertyDisclosureMissingItems(disclosure = {}) {
   const unanswered = PROPERTY_DISCLOSURE_QUESTIONS.filter((question) => !normalized.responses?.[question.key]?.answer)
   if (unanswered.length) missing.push(`answer all Annexure A questions (${unanswered.length} remaining)`)
   if (!normalized.declarationAccepted) missing.push('accept the seller declaration')
-  if (!normalized.signature) missing.push('enter a signature')
+  if (!normalized.signature) missing.push('draw a signature')
   if (!normalized.signedAt) missing.push('select a signature date')
   return missing
 }
@@ -779,55 +830,6 @@ function mapGoogleAddressToPropertyAddress(value = null, fallback = {}) {
   return nextAddress
 }
 
-function buildResidentialAddressAutocompleteValue(form = {}) {
-  const details = form.residentialAddressDetails && typeof form.residentialAddressDetails === 'object'
-    ? form.residentialAddressDetails
-    : {}
-  const formattedAddress = String(
-    details.formattedAddress ||
-      details.formatted ||
-      form.residentialAddress ||
-      '',
-  ).trim()
-  if (!formattedAddress) return null
-  return {
-    formattedAddress,
-    streetAddress: String(details.streetAddress || details.line1 || formattedAddress).trim(),
-    suburb: String(details.suburb || '').trim(),
-    city: String(details.city || '').trim(),
-    province: String(details.province || '').trim(),
-    country: String(details.country || 'South Africa').trim() || 'South Africa',
-    postalCode: String(details.postalCode || details.postal_code || '').trim(),
-    placeId: String(details.placeId || details.googlePlaceId || details.place_id || '').trim(),
-    googlePlaceId: String(details.googlePlaceId || details.placeId || details.place_id || '').trim(),
-  }
-}
-
-function buildResidentialAddressPatch(value = null) {
-  if (!value) {
-    return {
-      residentialAddress: '',
-      residentialAddressDetails: {},
-    }
-  }
-  const formattedAddress = String(value.formattedAddress || value.streetAddress || '').trim()
-  return {
-    residentialAddress: formattedAddress,
-    residentialAddressDetails: {
-      formattedAddress,
-      streetAddress: String(value.streetAddress || formattedAddress).trim(),
-      suburb: String(value.suburb || '').trim(),
-      city: String(value.city || '').trim(),
-      province: String(value.province || '').trim(),
-      country: String(value.country || 'South Africa').trim() || 'South Africa',
-      postalCode: String(value.postalCode || '').trim(),
-      placeId: String(value.placeId || value.googlePlaceId || '').trim(),
-      googlePlaceId: String(value.googlePlaceId || value.placeId || '').trim(),
-      source: 'google_places',
-    },
-  }
-}
-
 function buildBondComplianceSummary(form = {}) {
   if (!form.existingBond) return null
 
@@ -935,6 +937,7 @@ function normalizeOwnerStructureType(value = '', ownerEntityType = 'natural_pers
   const normalized = String(value || '').trim().toLowerCase()
   const options = OWNER_STRUCTURE_TYPES_BY_ENTITY[ownerEntityType] || OWNER_STRUCTURE_TYPES_BY_ENTITY.natural_person
   if (options.some((item) => item.value === normalized)) return normalized
+  if (['married_anc', 'other'].includes(normalized)) return normalized
   if (ownerEntityType === 'company') return 'company'
   if (ownerEntityType === 'trust') return 'trust'
   if (ownerEntityType === 'foreign') return 'foreign_individual'
@@ -978,7 +981,7 @@ function getOwnerEntityLabel(value = '') {
 
 function getOwnerStructureLabel(value = '', ownerEntityType = 'natural_person') {
   const options = OWNER_STRUCTURE_TYPES_BY_ENTITY[ownerEntityType] || []
-  return options.find((item) => item.value === value)?.label || OWNERSHIP_TYPES.find((item) => item.value === value)?.label || 'Single owner'
+  return options.find((item) => item.value === value)?.label || OWNERSHIP_TYPES.find((item) => item.value === value)?.label || LEGACY_OWNERSHIP_TYPE_LABELS[value] || 'Single owner'
 }
 
 function getOwnershipSummaryLabel(form = {}) {
@@ -1528,7 +1531,7 @@ function AgencyMark({ brand, tone = 'dark' }) {
   if (brand?.isFallback) {
     return (
       <span className={`inline-flex h-10 items-center justify-center rounded-[14px] px-3 text-sm font-semibold shadow-[0_12px_30px_rgba(0,0,0,0.12)] sm:h-14 sm:px-4 sm:text-base ${tone === 'light' ? 'border border-[#dbe5ef] bg-white text-[#172334]' : 'border border-white/15 bg-white/10 text-white'}`}>
-        arch9
+        {brand?.name || 'Agency'}
       </span>
     )
   }
@@ -1667,7 +1670,7 @@ function SellerStepProgress({ currentStep, progress }) {
           style={{ width: `${progress}%` }}
         />
       </div>
-      <div className="mt-4 hidden gap-2 sm:grid sm:grid-cols-5">
+      <div className="mt-4 hidden gap-2 sm:grid sm:grid-cols-4">
         {STEP_META.map((step, index) => {
           const Icon = step.icon
           const isActive = index === currentStep
@@ -1750,6 +1753,147 @@ function ChoiceCard({ active, title, description, icon = Circle, onClick }) {
         {description ? <span className="mt-1 block text-xs leading-5 text-[#6b7d93] sm:mt-1.5">{description}</span> : null}
       </span>
     </button>
+  )
+}
+
+function isSignatureImage(value = '') {
+  return /^data:image\//i.test(String(value || '').trim())
+}
+
+function DrawnSignaturePad({ value = '', onChange, signerName = '' }) {
+  const canvasRef = useRef(null)
+  const drawingRef = useRef(false)
+  const lastPointRef = useRef(null)
+  const hasImageSignature = isSignatureImage(value)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const canvas = canvasRef.current
+    if (!canvas) return undefined
+
+    let cancelled = false
+    const renderCanvas = () => {
+      if (cancelled) return
+      const rect = canvas.getBoundingClientRect()
+      const width = Math.max(320, Math.round(rect.width || 640))
+      const height = Math.max(150, Math.round(rect.height || 190))
+      const ratio = window.devicePixelRatio || 1
+      canvas.width = Math.round(width * ratio)
+      canvas.height = Math.round(height * ratio)
+      const context = canvas.getContext('2d')
+      if (!context) return
+      context.setTransform(ratio, 0, 0, ratio, 0, 0)
+      context.fillStyle = '#ffffff'
+      context.fillRect(0, 0, width, height)
+      context.lineCap = 'round'
+      context.lineJoin = 'round'
+      context.lineWidth = 2.6
+      context.strokeStyle = '#142334'
+
+      if (hasImageSignature) {
+        const image = new Image()
+        image.onload = () => {
+          if (!cancelled) context.drawImage(image, 0, 0, width, height)
+        }
+        image.src = value
+      }
+    }
+
+    renderCanvas()
+    window.addEventListener('resize', renderCanvas)
+    return () => {
+      cancelled = true
+      window.removeEventListener('resize', renderCanvas)
+    }
+  }, [hasImageSignature, value])
+
+  function pointFromEvent(event) {
+    const canvas = canvasRef.current
+    if (!canvas) return { x: 0, y: 0 }
+    const rect = canvas.getBoundingClientRect()
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    }
+  }
+
+  function handlePointerDown(event) {
+    const canvas = canvasRef.current
+    const context = canvas?.getContext('2d')
+    if (!canvas || !context) return
+    canvas.setPointerCapture?.(event.pointerId)
+    drawingRef.current = true
+    const point = pointFromEvent(event)
+    lastPointRef.current = point
+    context.beginPath()
+    context.moveTo(point.x, point.y)
+  }
+
+  function handlePointerMove(event) {
+    if (!drawingRef.current) return
+    const canvas = canvasRef.current
+    const context = canvas?.getContext('2d')
+    const lastPoint = lastPointRef.current
+    if (!canvas || !context || !lastPoint) return
+    const point = pointFromEvent(event)
+    context.quadraticCurveTo(lastPoint.x, lastPoint.y, (lastPoint.x + point.x) / 2, (lastPoint.y + point.y) / 2)
+    context.stroke()
+    lastPointRef.current = point
+  }
+
+  function handlePointerUp(event) {
+    const canvas = canvasRef.current
+    if (!canvas || !drawingRef.current) return
+    canvas.releasePointerCapture?.(event.pointerId)
+    drawingRef.current = false
+    lastPointRef.current = null
+    onChange?.(canvas.toDataURL('image/png'))
+  }
+
+  function handleClear() {
+    const canvas = canvasRef.current
+    const context = canvas?.getContext('2d')
+    if (canvas && context) {
+      const rect = canvas.getBoundingClientRect()
+      context.fillStyle = '#ffffff'
+      context.fillRect(0, 0, rect.width || 640, rect.height || 190)
+    }
+    onChange?.('')
+  }
+
+  return (
+    <div className="md:col-span-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-[#2a4057]">Draw seller signature</p>
+          <p className="mt-1 text-xs leading-5 text-[#60748b]">Use a mouse, trackpad, or finger on a phone.</p>
+        </div>
+        <button
+          type="button"
+          onClick={handleClear}
+          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-3 text-xs font-semibold text-[#35546c]"
+        >
+          <Trash2 size={13} />
+          Clear
+        </button>
+      </div>
+      <div className="mt-3 overflow-hidden rounded-[18px] border border-[#cfdceb] bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+        <canvas
+          ref={canvasRef}
+          aria-label={`Signature pad${signerName ? ` for ${signerName}` : ''}`}
+          className="block h-[190px] w-full touch-none cursor-crosshair bg-white"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+        />
+      </div>
+      {value && !hasImageSignature ? (
+        <p className="mt-2 rounded-[12px] border border-[#f2dcc0] bg-[#fff9ef] px-3 py-2 text-xs leading-5 text-[#8a5a18]">
+          A typed signature is saved for this disclosure. Clear the box and draw a signature to replace it.
+        </p>
+      ) : null}
+    </div>
   )
 }
 
@@ -1900,6 +2044,7 @@ function PropertyDisclosureSection({
   disclosure,
   disclosureKind = 'residential',
   sellerName = '',
+  sellerIdNumber = '',
   onAnswerChange,
   onDownload,
   onDisclosureChange,
@@ -2064,10 +2209,14 @@ function PropertyDisclosureSection({
                 <input type="checkbox" checked={Boolean(normalized.declarationAccepted)} onChange={(event) => onDisclosureChange('declarationAccepted', event.target.checked)} />
                 I accept the seller declaration
               </label>
-              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                Signature
-                <input className={DETAIL_INPUT_CLASS} value={normalized.signature} onChange={(event) => onDisclosureChange('signature', event.target.value)} placeholder={sellerName || 'Full name'} />
-              </label>
+              <div className="rounded-[14px] border border-[#dbe6f2] bg-white px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7890a8]">Seller name</p>
+                <p className="mt-1 text-sm font-semibold text-[#172334]">{sellerName || 'Not provided'}</p>
+              </div>
+              <div className="rounded-[14px] border border-[#dbe6f2] bg-white px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7890a8]">ID / passport</p>
+                <p className="mt-1 text-sm font-semibold text-[#172334]">{sellerIdNumber || 'Not provided'}</p>
+              </div>
               <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                 Date
                 <input className={DETAIL_INPUT_CLASS} type="date" value={normalized.signedAt} onChange={(event) => onDisclosureChange('signedAt', event.target.value)} />
@@ -2076,6 +2225,11 @@ function PropertyDisclosureSection({
                 Signed at
                 <input className={DETAIL_INPUT_CLASS} value={normalized.signedPlace} onChange={(event) => onDisclosureChange('signedPlace', event.target.value)} placeholder="Place of signature" />
               </label>
+              <DrawnSignaturePad
+                value={normalized.signature}
+                signerName={sellerName}
+                onChange={(nextSignature) => onDisclosureChange('signature', nextSignature)}
+              />
             </div>
             <button
               type="button"
@@ -2638,26 +2792,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     handlePropertyAddressUpdate(mapGoogleAddressToPropertyAddress(value, propertyAddressDetails))
   }
 
-  function handleResidentialAddressChange(value = null) {
-    const patch = buildResidentialAddressPatch(value)
-    setForm((previous) => ({
-      ...(previous || {}),
-      ...patch,
-    }))
-  }
-
-  function handleResidentialAddressInputChange(value = '') {
-    setForm((previous) => ({
-      ...(previous || {}),
-      residentialAddress: value,
-      residentialAddressDetails: {
-        ...((previous?.residentialAddressDetails && typeof previous.residentialAddressDetails === 'object') ? previous.residentialAddressDetails : {}),
-        formattedAddress: value,
-        source: 'manual',
-      },
-    }))
-  }
-
   function handleSectionalIdentifierChange(value = '') {
     setForm((previous) => ({
       ...(previous || {}),
@@ -2729,15 +2863,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     return next
   }
 
-  function handleOwnershipTypeChange(value) {
-    setForm((previous) => {
-      const next = { ...(previous || {}) }
-      const ownerEntityType = deriveOwnerEntityType(value, next)
-      const ownerStructureType = deriveOwnerStructureType(value, ownerEntityType, next)
-      return applyOwnershipSelection(next, value, { ownerEntityType, ownerStructureType })
-    })
-  }
-
   function handleOwnerEntityTypeChange(value) {
     setForm((previous) => {
       const next = { ...(previous || {}) }
@@ -2795,7 +2920,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       })
       const patch = typeof patchOrKey === 'string' ? { [patchOrKey]: value } : patchOrKey
       if (patch.declarationAccepted === true) {
-        if (!patch.signature && !current.signature) patch.signature = getSellerDisplayName(listing, previous || {})
         if (!patch.signedAt && !current.signedAt) patch.signedAt = todayInputValue()
       }
       const next = normalizePropertyDisclosure({ ...current, ...patch }, { kind: current.kind })
@@ -2848,6 +2972,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       const propertyAddress = getPropertyDisplayAddress(listing, form)
       const markup = buildPropertyDisclosureDocumentMarkup(normalizedDisclosure, {
         sellerName: getSellerDisplayName(listing, form),
+        sellerIdNumber: form.idNumber || form.foreignPassportNumber || form.passportNumber || '',
         propertyAddress,
         listingId: String(listing?.id || '').trim(),
         documentReference: String(
@@ -3056,7 +3181,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     }
   }
 
-  saveDraftRef.current = saveDraft
+  useEffect(() => {
+    saveDraftRef.current = saveDraft
+  })
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
@@ -3078,16 +3205,21 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     }
 
     if (useDbFirstSellerOnboarding && isOffline) {
-      setDraftSyncStatus('offline')
-      return undefined
+      const offlineStatusTimer = window.setTimeout(() => {
+        setDraftSyncStatus('offline')
+      }, 0)
+      return () => window.clearTimeout(offlineStatusTimer)
     }
 
-    setDraftSyncStatus((previous) => (previous === 'saving' ? previous : 'pending'))
+    const pendingStatusTimer = window.setTimeout(() => {
+      setDraftSyncStatus((previous) => (previous === 'saving' ? previous : 'pending'))
+    }, 0)
     draftAutosaveTimerRef.current = window.setTimeout(() => {
       void saveDraftRef.current?.(currentStep, { silent: true, signature })
     }, 1600)
 
     return () => {
+      window.clearTimeout(pendingStatusTimer)
       if (draftAutosaveTimerRef.current) {
         window.clearTimeout(draftAutosaveTimerRef.current)
         draftAutosaveTimerRef.current = null
@@ -3177,9 +3309,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       if (ownershipBranch === 'individual' || ownershipBranch === 'married') {
         if (!form.idNumber) {
           return 'Please provide ID number / passport details.'
-        }
-        if (!resolveSellerResidentialAddress(form)) {
-          return 'Please provide the seller residential address.'
         }
       }
 
@@ -3370,7 +3499,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       return
     }
 
-    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    const startedAt = getRuntimeTimestampMs()
     setSubmitting(true)
 
     try {
@@ -3410,6 +3539,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           maritalRegime: String(form?.ownershipType || '').trim().toLowerCase().includes('married')
             ? String(form?.ownershipType || '').trim().toLowerCase()
             : null,
+          skipPortalNotification: true,
         })
         updated = submitted?.listing || null
       } else {
@@ -3466,9 +3596,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           console.error('[Seller Onboarding] submitted callback failed', callbackError)
         }
       }
-      void notifyAssignedAgentOfSellerOnboarding(updated, form)
+      void notifySellerOnboardingSubmitted(updated, form, token)
       console.debug('[Seller Onboarding] submit completed', {
-        durationMs: Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt),
+        durationMs: Math.round(getRuntimeTimestampMs() - startedAt),
         mode: useDbFirstSellerOnboarding ? 'supabase' : 'local',
       })
     } catch (submitError) {
@@ -3536,12 +3666,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const showCommercialDetails = propertyBranch === 'commercial' || propertyBranch === 'mixed_use'
   const showLandDetails = propertyBranch === 'vacant_land' || propertyBranch === 'agricultural'
   const showResidentialDetails = !showCommercialDetails && !showLandDetails
-  const showsResidentialAddressPane = !['company', 'trust', 'deceased_estate', 'power_of_attorney', 'multiple_owners'].includes(ownershipBranch)
   const sellerPaneIndexes = {
     ownership: 0,
     identity: 1,
-    residentialAddress: showsResidentialAddressPane ? 2 : -1,
-    sellingContext: showsResidentialAddressPane ? 3 : 2,
+    sellingContext: 2,
   }
   const propertyPaneIndexes = (() => {
     let paneIndex = 0
@@ -4229,23 +4357,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 ) : null}
               </FormSection>
 
-              {!['company', 'trust', 'deceased_estate', 'power_of_attorney', 'multiple_owners'].includes(ownershipBranch) ? (
-                <FormSection
-                  icon={Home}
-                  title="Residential address"
-                  description="Start typing and choose the matching Google address for the seller's residential address."
-                  mobilePaneIndex={sellerPaneIndexes.residentialAddress}
-                >
-                  <AddressAutocomplete
-                    label="Residential address"
-                    value={buildResidentialAddressAutocompleteValue(form)}
-                    onChange={handleResidentialAddressChange}
-                    onInputValueChange={handleResidentialAddressInputChange}
-                    placeholder="Start typing the residential address"
-                  />
-                </FormSection>
-              ) : null}
-
               <FormSection
                 icon={FileCheck2}
                 title="Selling details"
@@ -4253,41 +4364,55 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 illustration="selling_context"
                 mobilePaneIndex={sellerPaneIndexes.sellingContext}
               >
-                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                    Mandate Type
-                    <select className={DETAIL_INPUT_CLASS} value={form.mandateType} onChange={(event) => handleFormUpdate('mandateType', event.target.value)}>
-                      <option value="">Select mandate type</option>
+                <div className="grid gap-5">
+                  <div>
+                    <p className="text-sm font-medium text-[#2a4057]">Mandate type</p>
+                    <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                       {MANDATE_TYPE_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
+                        <ChoiceCard
+                          key={option.value}
+                          active={form.mandateType === option.value}
+                          icon={FileCheck2}
+                          title={option.label}
+                          onClick={() => handleFormUpdate('mandateType', option.value)}
+                        />
                       ))}
-                    </select>
-                  </label>
+                    </div>
+                  </div>
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     Asking Price (optional)
                     <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.askingPrice} onChange={(event) => handleFormUpdate('askingPrice', event.target.value)} />
                   </label>
-                  <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                    Selling Timeline
-                    <select className={DETAIL_INPUT_CLASS} value={form.sellingTimeline} onChange={(event) => handleFormUpdate('sellingTimeline', event.target.value)}>
-                      <option value="urgent">Urgent (0-1 month)</option>
-                      <option value="1_3_months">1-3 months</option>
-                      <option value="3_6_months">3-6 months</option>
-                    </select>
-                  </label>
-                  <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
-                    Reason for Selling (optional)
-                    <select className={DETAIL_INPUT_CLASS} value={form.sellingReason} onChange={(event) => handleFormUpdate('sellingReason', event.target.value)}>
-                      <option value="">Select reason</option>
-                      {SELLING_REASON_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
+                  <div>
+                    <p className="text-sm font-medium text-[#2a4057]">Selling timeline</p>
+                    <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      {SELLING_TIMELINE_OPTIONS.map((option) => (
+                        <ChoiceCard
+                          key={option.value}
+                          active={form.sellingTimeline === option.value}
+                          icon={ClipboardCheck}
+                          title={option.label}
+                          description={option.description}
+                          onClick={() => handleFormUpdate('sellingTimeline', option.value)}
+                        />
                       ))}
-                    </select>
-                  </label>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-[#2a4057]">Reason for selling (optional)</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {SELLING_REASON_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => handleFormUpdate('sellingReason', option.value)}
+                          className={chipChoiceClass(form.sellingReason === option.value)}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
                 <div className="mt-4">
                   <OnboardingSummaryCard title="What happens next" icon="calendar" tone="neutral">
@@ -4868,6 +4993,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               disclosure={form.propertyDisclosure}
               disclosureKind={propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential'}
               sellerName={getSellerDisplayName(listing, form)}
+              sellerIdNumber={form.idNumber || form.foreignPassportNumber || form.passportNumber || ''}
               onAnswerChange={handleDisclosureAnswerChange}
               onDownload={handleDownloadDisclosurePdf}
               onDisclosureChange={patchPropertyDisclosure}

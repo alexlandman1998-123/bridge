@@ -37,7 +37,13 @@ import { fetchTransactionById, updateOtpDocumentWorkflowState } from '../lib/api
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { fetchAgencyOnboardingSettings } from '../lib/settingsApi'
-import { createPrivateListing, createPrivateListingActivity, getSellerOnboardingByToken, updatePrivateListing } from '../services/privateListingService'
+import {
+  createPrivateListing,
+  createPrivateListingActivity,
+  getSellerOnboardingByToken,
+  linkPrivateListingDocument,
+  updatePrivateListing,
+} from '../services/privateListingService'
 import { getMandateSignerRoleLabel, resolveMandateSecondarySignerConfig } from '../lib/mandateSignatureRules'
 
 function normalizeText(value) {
@@ -1071,6 +1077,168 @@ function getLatestVersion(status = null) {
   const usableVersion = versions.find((row) => ['generated', 'draft', 'ready'].includes(normalizeKey(row?.render_status)))
   if (usableVersion) return usableVersion
   return versions[0] || null
+}
+
+function resolveSignedMandateArtifact(payload = {}, status = null) {
+  const latestVersion = payload?.version && typeof payload.version === 'object'
+    ? payload.version
+    : getLatestVersion(status)
+  const packet = payload?.packet && typeof payload.packet === 'object'
+    ? payload.packet
+    : status?.packet || null
+  const sourceContext = asRecord(packet?.source_context_json)
+  const finalArtifact = asRecord(payload?.finalArtifact)
+  return {
+    packetId: firstText(
+      payload?.packetId,
+      packet?.id,
+      latestVersion?.packet_id,
+      status?.packet?.id,
+    ),
+    packetVersionId: firstText(
+      payload?.packetVersionId,
+      payload?.versionId,
+      latestVersion?.id,
+      sourceContext.finalSignedVersionId,
+    ),
+    finalFilePath: firstText(
+      payload?.finalFilePath,
+      payload?.finalSignedFilePath,
+      finalArtifact.path,
+      finalArtifact.filePath,
+      latestVersion?.final_signed_file_path,
+      sourceContext.finalArtifactPath,
+      sourceContext.manualSignedFilePath,
+    ),
+    finalFileName: firstText(
+      payload?.finalFileName,
+      payload?.finalSignedFileName,
+      finalArtifact.fileName,
+      latestVersion?.final_signed_file_name,
+      sourceContext.manualSignedFileName,
+      'signed-mandate.pdf',
+    ),
+    finalFileUrl: firstText(
+      payload?.finalFileUrl,
+      payload?.finalSignedFileUrl,
+      finalArtifact.signedUrl,
+      finalArtifact.url,
+      latestVersion?.final_signed_file_access_url,
+      latestVersion?.final_signed_file_url,
+    ),
+    finalFileBucket: firstText(
+      payload?.finalFileBucket,
+      payload?.finalSignedFileBucket,
+      finalArtifact.bucket,
+      latestVersion?.final_signed_file_bucket,
+    ),
+    finalSignedDocumentId: firstText(
+      payload?.finalSignedDocumentId,
+      payload?.documentId,
+      latestVersion?.final_signed_document_id,
+      sourceContext.manualSignedDocumentId,
+    ),
+    signingMethod: firstText(payload?.signingMethod, sourceContext.signingMethod, sourceContext.signing_method),
+    signingStatus: firstText(payload?.signingStatus, sourceContext.signingStatus, sourceContext.signing_status, 'signed'),
+    finalizedAt: firstText(payload?.finalizedAt, sourceContext.finalizedAt, latestVersion?.finalised_at) || new Date().toISOString(),
+  }
+}
+
+function getSignedMandateNotificationContext({
+  leadContext = {},
+  profile = null,
+  actor = {},
+  transactionReference = '',
+  finalFileName = '',
+  finalFileUrl = '',
+  finalizedAt = '',
+} = {}) {
+  const lead = asRecord(leadContext?.lead)
+  const contact = asRecord(leadContext?.contact)
+  const privateListing = asRecord(leadContext?.privateListing)
+  const listing = asRecord(leadContext?.listing)
+  const formData = asRecord(
+    lead?.sellerOnboarding?.formData ||
+      privateListing?.sellerOnboarding?.formData ||
+      listing?.sellerOnboarding?.formData,
+  )
+  const contactName = [
+    contact.firstName,
+    contact.lastName,
+  ].map((item) => normalizeText(item)).filter(Boolean).join(' ')
+  const formName = [
+    formData.sellerFirstName || formData.firstName,
+    formData.sellerSurname || formData.lastName || formData.surname,
+  ].map((item) => normalizeText(item)).filter(Boolean).join(' ')
+  const sellerEmail = firstText(
+    contact.email,
+    lead.sellerEmail,
+    lead.seller_email,
+    lead.email,
+    privateListing?.seller?.email,
+    privateListing.sellerEmail,
+    privateListing.seller_email,
+    listing?.seller?.email,
+    listing.sellerEmail,
+    listing.seller_email,
+    formData.sellerEmail,
+    formData.seller_email,
+    formData.email,
+    formData.contactEmail,
+  ).toLowerCase()
+  const propertyTitle = firstText(
+    lead.sellerPropertyAddress,
+    lead.propertyAddress,
+    lead.property_address,
+    lead.propertyInterest,
+    lead.listingTitle,
+    privateListing.propertyAddress,
+    privateListing.property_address,
+    privateListing.addressLine1,
+    privateListing.address_line_1,
+    privateListing.title,
+    listing.propertyAddress,
+    listing.property_address,
+    listing.addressLine1,
+    listing.address_line_1,
+    listing.listingTitle,
+    listing.title,
+    transactionReference,
+    'your property',
+  )
+  const agentName = firstText(
+    profile?.full_name,
+    profile?.fullName,
+    profile?.name,
+    profile?.email,
+    actor?.name,
+    actor?.email,
+    'your agent',
+  )
+  const organisationName = firstText(
+    privateListing.organisationName,
+    privateListing.organisation_name,
+    privateListing.agencyName,
+    privateListing.agency_name,
+    listing.organisationName,
+    listing.organisation_name,
+    listing.agencyName,
+    listing.agency_name,
+    profile?.organisationName,
+    profile?.organisation_name,
+    'Arch9',
+  )
+  return {
+    sellerEmail,
+    sellerName: firstText(contact.name, contactName, formData.sellerName, formData.seller_name, formName, lead.sellerName, lead.name, sellerEmail, 'Seller'),
+    propertyTitle,
+    agentName,
+    organisationName,
+    supportEmail: firstText(profile?.email, actor?.email),
+    signedAt: finalizedAt || new Date().toISOString(),
+    signedDocumentName: firstText(finalFileName, 'Signed Mandate.pdf'),
+    downloadLink: normalizeText(finalFileUrl),
+  }
 }
 
 function isRuntimePacketId(value = '') {
@@ -3486,6 +3654,236 @@ export default function LegalDocumentWorkspacePage() {
     window.dispatchEvent(new Event('itg:transaction-updated'))
   }, [actor, leadContext, organisationId, packetType, profile, recordLeadMandateActivity, resolveCurrentStatus, syncLeadMandateState, transactionReference])
 
+  const handleSignedFinalized = useCallback(async (payload = {}) => {
+    if (packetType !== 'mandate') return null
+
+    let currentStatus = null
+    try {
+      currentStatus = await resolveCurrentStatus()
+    } catch (statusError) {
+      if (!isLegalWorkspaceTimeoutError(statusError)) {
+        console.warn('[LegalDocumentWorkspacePage] signed mandate status refresh skipped.', statusError)
+      }
+      currentStatus = initialStatus || null
+    }
+
+    const artifact = resolveSignedMandateArtifact(payload, currentStatus)
+    const packetId = normalizeText(artifact.packetId || validatedRoutePacketId || leadContext?.lead?.mandatePacketId)
+    const packetVersionId = normalizeText(artifact.packetVersionId)
+    const finalizedAt = normalizeText(artifact.finalizedAt) || new Date().toISOString()
+    const finalFilePath = normalizeText(artifact.finalFilePath)
+    const finalFileUrl = normalizeText(artifact.finalFileUrl)
+    const finalFileName = normalizeText(artifact.finalFileName) || 'Signed Mandate.pdf'
+    const finalFileBucket = normalizeText(artifact.finalFileBucket)
+    const signingStatus = normalizeKey(artifact.signingStatus) === 'uploaded_signed' ? 'signed_uploaded' : 'signed'
+    const sellerNotification = getSignedMandateNotificationContext({
+      leadContext,
+      profile,
+      actor,
+      transactionReference,
+      finalFileName,
+      finalFileUrl,
+      finalizedAt,
+    })
+
+    if (leadContext.lead?.leadId) {
+      await Promise.resolve(syncLeadMandateState({
+        stage: 'Mandate Signed',
+        status: 'Signed',
+        mandateStatus: signingStatus,
+        mandateSignedAt: finalizedAt,
+        mandatePacketId: packetId,
+        mandatePacketVersionId: packetVersionId,
+        mandateSignedDocumentPath: finalFilePath,
+        mandateSignedDocumentUrl: finalFileUrl,
+      }, { reason: 'persist the signed mandate state' })).catch((leadSyncError) => {
+        console.warn('[LegalDocumentWorkspacePage] signed mandate lead sync skipped.', leadSyncError)
+      })
+    }
+
+    const linkedListingId = normalizeText(
+      routeListingId ||
+        leadContext?.lead?.listingId ||
+        leadContext?.lead?.listing_id ||
+        leadContext?.lead?.privateListingId ||
+        leadContext?.lead?.private_listing_id ||
+        leadContext?.privateListing?.id ||
+        leadContext?.listing?.id,
+    )
+    let linkedDocument = null
+    const sellerWorkspaceToken = normalizeText(
+      leadContext?.lead?.sellerOnboardingToken ||
+        leadContext?.lead?.sellerOnboarding?.token ||
+        leadContext?.privateListing?.sellerOnboarding?.token ||
+        leadContext?.listing?.sellerOnboarding?.token,
+    )
+
+    if (isSupabaseConfigured && isUuidLike(linkedListingId)) {
+      try {
+        await updatePrivateListing(
+          linkedListingId,
+          {
+            listingStatus: 'mandate_signed',
+            mandateStatus: 'signed',
+            mandatePacketId: packetId,
+          },
+          { includeRequirementsAndDocuments: false },
+        )
+
+        if (finalFilePath || finalFileUrl) {
+          linkedDocument = await linkPrivateListingDocument(linkedListingId, {
+            documentType: 'signed_mandate',
+            documentCategory: 'Mandate',
+            documentName: finalFileName,
+            filePath: finalFilePath,
+            fileUrl: finalFileUrl,
+            visibility: 'seller_visible',
+            status: 'signed',
+            requirementKey: 'signed_mandate',
+            uploadedAt: finalizedAt,
+            metadata: {
+              source: 'legal_document_workspace',
+              leadId: normalizeText(leadContext?.lead?.leadId),
+              packetId,
+              packetVersionId,
+              signingMethod: artifact.signingMethod || null,
+              signingStatus: artifact.signingStatus || null,
+              finalFileBucket: finalFileBucket || null,
+              finalSignedDocumentId: artifact.finalSignedDocumentId || null,
+            },
+          })
+        }
+
+        if (sellerWorkspaceToken && isUuidLike(packetId) && supabase) {
+          const portalContextUpdate = await supabase
+            .from('client_portal_contexts')
+            .update({
+              mandate_packet_id: packetId,
+              updated_at: finalizedAt,
+            })
+            .eq('seller_workspace_token', sellerWorkspaceToken)
+          if (
+            portalContextUpdate.error &&
+            !String(portalContextUpdate.error?.message || '').toLowerCase().includes('client_portal_contexts')
+          ) {
+            console.warn('[LegalDocumentWorkspacePage] seller portal context mandate packet sync skipped.', portalContextUpdate.error)
+          }
+        }
+
+        await createPrivateListingActivity({
+          privateListingId: linkedListingId,
+          activityType: 'mandate_signed',
+          activityTitle: 'Signed mandate received',
+          activityDescription: 'Your signed mandate has been recorded and is available in your seller portal.',
+          performedBy: normalizeText(actor.id),
+          visibility: 'client_visible',
+          metadata: {
+            audience: 'seller',
+            visibility: 'client_visible',
+            actionLabel: 'View documents',
+            actionRoute: 'documents',
+            actorName: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name || actor.email || 'Agent'),
+            actorRole: 'Agent',
+            leadId: normalizeText(leadContext?.lead?.leadId),
+            packetId,
+            packetVersionId,
+            documentId: normalizeText(linkedDocument?.id || artifact.finalSignedDocumentId),
+            signingMethod: artifact.signingMethod || null,
+            signingStatus: artifact.signingStatus || null,
+          },
+        })
+      } catch (listingSyncError) {
+        console.warn('[LegalDocumentWorkspacePage] linked listing signed mandate sync skipped.', listingSyncError)
+      }
+    }
+
+    if (isSupabaseConfigured && sellerNotification.sellerEmail) {
+      try {
+        const emailResponse = await withLegalWorkspaceTimeout(
+          invokeEdgeFunction('send-email', {
+            body: {
+              type: 'seller_mandate_signed',
+              to: sellerNotification.sellerEmail,
+              recipientName: sellerNotification.sellerName,
+              sellerName: sellerNotification.sellerName,
+              propertyTitle: sellerNotification.propertyTitle,
+              signedAt: sellerNotification.signedAt,
+              signedDocumentName: sellerNotification.signedDocumentName,
+              downloadLink: sellerNotification.downloadLink,
+              agentName: sellerNotification.agentName,
+              organisationName: sellerNotification.organisationName,
+              supportEmail: sellerNotification.supportEmail,
+            },
+          }),
+          'The signed mandate notification email timed out. The mandate has still been finalized and stored.',
+          LEGAL_WORKSPACE_SIGNING_EMAIL_TIMEOUT_MS,
+        )
+        assertEdgeFunctionSuccess(emailResponse, 'The signed mandate notification email could not be sent.')
+      } catch (emailError) {
+        console.warn('[LegalDocumentWorkspacePage] seller signed mandate notification skipped.', emailError)
+      }
+    }
+
+    if (leadContext.lead?.leadId) {
+      void recordLeadMandateActivity({
+        agent: { id: actor.id, name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name), email: actor.email },
+        activityType: 'Mandate Signed',
+        activityNote: finalFilePath || finalFileUrl
+          ? 'Signed mandate was finalized and stored.'
+          : 'Mandate signing was finalized.',
+        outcome: 'Signed mandate received',
+      })
+    }
+
+    window.dispatchEvent(new Event('itg:transaction-updated'))
+    window.dispatchEvent(new Event('itg:listings-updated'))
+    window.dispatchEvent(new Event('itg:pipeline-updated'))
+    window.dispatchEvent(new CustomEvent('itg:seller-mandate-signed', {
+      detail: {
+        token: sellerWorkspaceToken,
+        sellerOnboardingToken: sellerWorkspaceToken,
+        leadId: normalizeText(leadContext?.lead?.leadId),
+        sellerLeadId: normalizeText(
+          leadContext?.lead?.sellerLeadId ||
+            leadContext?.lead?.seller_lead_id ||
+            leadContext?.lead?.sellerWorkflowLeadId ||
+            leadContext?.lead?.leadId,
+        ),
+        listingId: linkedListingId,
+        privateListingId: linkedListingId,
+        mandatePacketId: packetId,
+        mandatePacketVersionId: packetVersionId,
+        packetVersionId,
+        signedAt: finalizedAt,
+        documentId: normalizeText(linkedDocument?.id || artifact.finalSignedDocumentId),
+        documentName: finalFileName,
+        sellerPortalVisible: Boolean(linkedDocument || finalFilePath || finalFileUrl),
+        source: 'legal_document_workspace',
+      },
+    }))
+
+    return {
+      packetId,
+      packetVersionId,
+      finalFilePath,
+      finalFileUrl,
+      linkedListingId,
+      linkedDocument,
+    }
+  }, [
+    actor,
+    initialStatus,
+    leadContext,
+    packetType,
+    profile,
+    recordLeadMandateActivity,
+    resolveCurrentStatus,
+    routeListingId,
+    syncLeadMandateState,
+    transactionReference,
+    validatedRoutePacketId,
+  ])
+
   const openLatestDocument = useCallback(async ({ signed = false } = {}) => {
     const status = await resolveCurrentStatus()
     const latestVersion = getLatestVersion(status)
@@ -3571,6 +3969,7 @@ export default function LegalDocumentWorkspacePage() {
         onGenerate={handleGenerate}
         onEdit={handleGenerate}
         onSend={handleSend}
+        onSignedFinalized={handleSignedFinalized}
         onView={() => openLatestDocument({ signed: false })}
         onViewSigned={() => openLatestDocument({ signed: true })}
         onRefreshContext={undefined}

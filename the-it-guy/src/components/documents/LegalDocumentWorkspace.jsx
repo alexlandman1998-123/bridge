@@ -2434,6 +2434,7 @@ export default function LegalDocumentWorkspace({
   onEdit = null,
   onView = null,
   onViewSigned = null,
+  onSignedFinalized = null,
   onRefreshContext = null,
   autoGenerateEnabled = true,
 }) {
@@ -3305,6 +3306,21 @@ export default function LegalDocumentWorkspace({
             finalArtifactPath: normalizeText(result?.finalArtifact?.path || latestVersion?.final_signed_file_path || ''),
           },
         })
+        await onSignedFinalized?.({
+          source: 'auto_finalize',
+          packetId: resolvedPacketId,
+          packetVersionId: resolvedVersionId,
+          packet: statusState?.packet || null,
+          version: latestVersion || null,
+          finalArtifact: result?.finalArtifact || null,
+          finalFilePath: normalizeText(result?.finalArtifact?.path || latestVersion?.final_signed_file_path || ''),
+          finalFileName: normalizeText(result?.finalArtifact?.fileName || latestVersion?.final_signed_file_name || 'signed-mandate.pdf'),
+          finalFileUrl: normalizeText(result?.finalArtifact?.signedUrl || result?.finalArtifact?.url || latestVersion?.final_signed_file_url || latestVersion?.final_signed_file_access_url || ''),
+          finalFileBucket: normalizeText(result?.finalArtifact?.bucket || latestVersion?.final_signed_file_bucket || ''),
+          signingMethod: signingMethod || 'digital',
+          signingStatus: 'signed',
+          finalizedAt: nowIso,
+        })
         await onRefreshContext?.()
         await refreshWorkspaceData()
         if (active) {
@@ -3333,12 +3349,18 @@ export default function LegalDocumentWorkspace({
     hasFinalArtifact,
     latestVersion?.id,
     latestVersion?.final_signed_file_path,
+    latestVersion?.final_signed_file_name,
+    latestVersion?.final_signed_file_url,
+    latestVersion?.final_signed_file_access_url,
+    latestVersion?.final_signed_file_bucket,
     loading,
     normalizedLifecycleState,
+    onSignedFinalized,
     onRefreshContext,
     organisationId,
     open,
     refreshWorkspaceData,
+    signingMethod,
     signerBusy,
     statusState?.packet?.organisation_id,
     statusState?.packet?.id,
@@ -3732,6 +3754,21 @@ export default function LegalDocumentWorkspace({
           finalSignedVersionId: versionId,
           finalArtifactPath: normalizeText(result?.finalArtifact?.path || latestVersion?.final_signed_file_path || ''),
         },
+      })
+      await onSignedFinalized?.({
+        source: 'manual_finalize',
+        packetId: resolvedPacketId,
+        packetVersionId: versionId,
+        packet: statusState?.packet || null,
+        version: latestVersion || null,
+        finalArtifact: result?.finalArtifact || null,
+        finalFilePath: normalizeText(result?.finalArtifact?.path || latestVersion?.final_signed_file_path || ''),
+        finalFileName: normalizeText(result?.finalArtifact?.fileName || latestVersion?.final_signed_file_name || 'signed-mandate.pdf'),
+        finalFileUrl: normalizeText(result?.finalArtifact?.signedUrl || result?.finalArtifact?.url || latestVersion?.final_signed_file_url || latestVersion?.final_signed_file_access_url || ''),
+        finalFileBucket: normalizeText(result?.finalArtifact?.bucket || latestVersion?.final_signed_file_bucket || ''),
+        signingMethod: signingMethod || 'digital',
+        signingStatus: 'signed',
+        finalizedAt: nowIso,
       })
       void Promise.resolve(onRefreshContext?.()).catch((refreshError) => {
         console.warn('[LegalDocumentWorkspace] background context refresh failed after action.', refreshError)
@@ -4978,6 +5015,23 @@ export default function LegalDocumentWorkspace({
           signingStatus: 'uploaded_signed',
           allRequiredPartiesSigned: Boolean(manualSignedAllPartiesSigned),
         },
+      })
+
+      await onSignedFinalized?.({
+        source: 'manual_upload',
+        packetId: resolvedPacketId,
+        packetVersionId: versionId,
+        packet: packetForCompletion || statusState?.packet || null,
+        version: latestVersion || null,
+        finalFilePath,
+        finalFileName,
+        finalFileUrl,
+        finalFileBucket,
+        finalSignedDocumentId: documentId || null,
+        signingMethod: 'physical',
+        signingStatus: 'uploaded_signed',
+        finalizedAt: nowIso,
+        manualSignedAllPartiesSigned: Boolean(manualSignedAllPartiesSigned),
       })
 
       setManualSignedFile(null)

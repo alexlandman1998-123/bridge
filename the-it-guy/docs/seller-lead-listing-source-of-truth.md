@@ -154,6 +154,71 @@ lead communications, listing milestones, onboarding submission, mandate packet
 events, signer status, seller uploads, transactions, and transaction events in
 chronological order.
 
+## Signed Mandate Runtime Continuity
+
+When a mandate is finalized, the runtime should expose one continuity model for
+the lead, listing, document center, seller portal, and activity feed. The
+`buildSellerMandateContinuityModel()` helper checks:
+
+- the mandate packet can be resolved and has a signed signal
+- the lead and listing retain the mandate packet link when present
+- the listing mandate status is signed
+- a seller-visible signed mandate document or final packet artifact exists
+- a seller-visible `mandate_signed` activity exists
+- the seller portal context points at the same packet when that context is
+  available
+
+The finalization path also dispatches `itg:seller-mandate-signed` with the
+seller onboarding token, seller lead id, private listing id, mandate packet id,
+version id, signed timestamp, and linked document id so open agent workspaces can
+sync without waiting for a full page refresh.
+
+## Agent Operational Visibility
+
+The listing workspace surfaces signed mandate continuity in its Listing
+Readiness sidebar as `Mandate Continuity`. This panel uses the same
+`buildSellerMandateContinuityModel()` contract and shows each check so agents can
+see whether the signed mandate is connected to the listing, seller-visible
+document center, seller portal context, and activity feed before treating the
+listing as fully activation-ready.
+
+## Operational Continuity Audit
+
+Phase 8 adds a read-only signed mandate continuity report for support and release
+checks. `createSellerMandateContinuityReport()` evaluates signed mandate listing
+records with the same `buildSellerMandateContinuityModel()` contract used by the
+seller portal and listing workspace, then summarizes ready, warning, and blocked
+records.
+
+The report highlights the operational actions needed to restore continuity:
+
+- resolve the signed mandate packet id
+- sync the packet id onto the seller lead and listing
+- mark the listing mandate status as signed
+- link the seller-visible signed mandate document
+- create the seller-visible `mandate_signed` activity event
+- refresh seller portal context packet linkage
+
+`npm run report:seller-mandate-continuity` is the service-role operational entry
+point. It reads signed mandate listings, related private listing documents,
+listing activity, leads, mandate packets, and seller portal contexts. It must not
+repair, backfill, delete, or publish data. The optional `--gate` and
+`--fail-on-warning` flags can be used by release checks to fail a run when signed
+mandate continuity is blocked or under review.
+
+## Diagnostics Console Visibility
+
+Phase 9 surfaces the same read-only signed mandate continuity audit in the
+Platform Diagnostics operations center. The console uses
+`getSellerMandateContinuityDiagnosticsSnapshot()` so the in-app view, CLI report,
+and future release gates read the same listing, lead, document, activity, mandate
+packet, and seller portal context graph.
+
+The diagnostics panel is intentionally observational. It shows summary counts,
+release-gate status, query warnings, and the first action per blocked or warning
+record, but it does not repair records, resend documents, mutate activity, or
+publish listings from the diagnostics page.
+
 ## Practical Outcome
 
 Repeating final signed document generation after conversion must be safe:
