@@ -39,7 +39,7 @@ import {
   TRANSFER_DUTY_TABLE_EFFECTIVE,
 } from '../services/conveyancingCostCalculator'
 
-const LOGO_SRC = '/brand/young-law-logo.jpg'
+const LOGO_SRC = '/brand/young-law-logo-transparent.png'
 const CONTACT_EMAIL = 'info@younglaw.co.za'
 const CONTACT_PHONE = '010 446 7675'
 
@@ -270,7 +270,7 @@ function LogoMark({ compact = false }) {
     <img
       src={LOGO_SRC}
       alt="Young Law Inc."
-      className={`${compact ? 'h-11 w-24' : 'h-[4.25rem] w-[9.4rem]'} object-contain object-left mix-blend-darken`}
+      className={`${compact ? 'h-11 w-24' : 'h-[4.25rem] w-[9.4rem]'} object-contain object-left`}
     />
   )
 }
@@ -293,6 +293,50 @@ function NumberDisplay({ label, value, tone = 'dark' }) {
     <div className="min-h-[86px] rounded-lg border border-[#d9d5ca] bg-white p-3 shadow-[0_8px_22px_rgba(32,27,20,0.035)]">
       <p className="text-[0.68rem] font-medium uppercase tracking-[0.14em] text-[#626766]">{label}</p>
       <strong className={`mt-2 block whitespace-nowrap text-[1.05rem] font-normal leading-tight sm:text-xl ${toneClass}`}>{value}</strong>
+    </div>
+  )
+}
+
+function PrimaryResultCard({ label, value, detail, type, result, onQuote, variant = 'dark', tone = 'dark', progress = null }) {
+  const isDark = variant === 'dark'
+  const valueClass = tone === 'alert' && !isDark ? 'text-[#9f2727]' : isDark ? 'text-white' : 'text-[#141210]'
+  const progressWidth = progress == null ? null : `${Math.max(5, Math.min(100, Number(progress)))}%`
+
+  return (
+    <div
+      className={`rounded-lg border p-4 shadow-[0_12px_28px_rgba(0,0,0,0.10)] ${
+        isDark
+          ? 'border-[#211d19]/10 bg-[#171412] text-white'
+          : 'border-[#d8d2c5] bg-white text-[#141210]'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className={`text-xs font-medium uppercase tracking-[0.16em] ${isDark ? 'text-white/60' : 'text-[#8a6b0b]'}`}>{label}</p>
+          <strong className={`mt-2 block break-words font-serif text-[2.25rem] font-normal leading-none ${valueClass}`}>{value}</strong>
+        </div>
+        <button
+          type="button"
+          onClick={() => onQuote(type, result)}
+          aria-label={`Get a quote for ${label.toLowerCase()}`}
+          className={`inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-xs font-medium transition active:scale-[0.98] ${
+            isDark
+              ? 'border border-white/15 bg-white text-[#171412]'
+              : 'bg-[#171412] text-white shadow-[0_8px_18px_rgba(0,0,0,0.12)]'
+          }`}
+        >
+          <Mail size={15} />
+          Quote
+        </button>
+      </div>
+
+      {progressWidth ? (
+        <div className={`mt-4 h-3 overflow-hidden rounded-lg ${isDark ? 'bg-white/12' : 'bg-[#e5e2d9]'}`}>
+          <span className={`block h-full rounded-lg ${tone === 'alert' ? 'bg-[#9f2727]' : 'bg-[#171412]'}`} style={{ width: progressWidth }} />
+        </div>
+      ) : null}
+
+      <p className={`mt-3 text-xs font-normal leading-5 ${isDark ? 'text-white/70' : 'text-[#626766]'}`}>{detail}</p>
     </div>
   )
 }
@@ -446,9 +490,7 @@ function StickyResultBar({ label, value, type, result, tone = 'dark', onQuote })
   const sentinelRef = useRef(null)
   const [isDocked, setIsDocked] = useState(false)
   const toneClass = tone === 'alert' ? 'text-[#9f2727]' : tone === 'gold' ? 'text-[#6f5609]' : 'text-[#141210]'
-  const shellClass = isDocked
-    ? 'fixed left-1/2 top-0 z-40 w-full max-w-[480px] -translate-x-1/2 bg-[#f7f6f1]/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-[#f7f6f1]/85'
-    : 'relative bg-[#f7f6f1]/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-[#f7f6f1]/85'
+  const shellClass = 'fixed left-1/2 top-0 z-40 w-full max-w-[480px] -translate-x-1/2 bg-[#f7f6f1]/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-[#f7f6f1]/85'
 
   useEffect(() => {
     function updateDock() {
@@ -468,26 +510,27 @@ function StickyResultBar({ label, value, type, result, tone = 'dark', onQuote })
   return (
     <div className="-mx-4">
       <div ref={sentinelRef} className="h-px" aria-hidden="true" />
-      {isDocked ? <div className="h-[88px]" aria-hidden="true" /> : null}
-      <div className={shellClass} data-young-law-result-shell={label.toLowerCase()}>
-        <div className="grid min-h-[72px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-[#d8d2c5] bg-white p-3 shadow-[0_12px_26px_rgba(32,27,20,0.08)]">
-          <div className="min-w-0">
-            <p className="text-[0.66rem] font-medium uppercase tracking-[0.14em] text-[#626766]">{label}</p>
-            <strong aria-live="polite" className={`mt-1 block break-words font-serif text-xl font-normal leading-none ${toneClass}`}>
-              {value}
-            </strong>
+      {isDocked ? (
+        <div className={shellClass} data-young-law-result-shell={label.toLowerCase()}>
+          <div className="grid min-h-[72px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-[#d8d2c5] bg-white p-3 shadow-[0_12px_26px_rgba(32,27,20,0.08)]">
+            <div className="min-w-0">
+              <p className="text-[0.66rem] font-medium uppercase tracking-[0.14em] text-[#626766]">{label}</p>
+              <strong aria-live="polite" className={`mt-1 block break-words font-serif text-xl font-normal leading-none ${toneClass}`}>
+                {value}
+              </strong>
+            </div>
+            <button
+              type="button"
+              onClick={() => onQuote(type, result)}
+              aria-label={`Get a quote for ${label.toLowerCase()}`}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#171412] px-3 text-xs font-medium text-white shadow-[0_8px_18px_rgba(0,0,0,0.12)]"
+            >
+              <Mail size={15} />
+              Quote
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => onQuote(type, result)}
-            aria-label={`Get a quote for ${label.toLowerCase()}`}
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#171412] px-3 text-xs font-medium text-white shadow-[0_8px_18px_rgba(0,0,0,0.12)]"
-          >
-            <Mail size={15} />
-            Quote
-          </button>
         </div>
-      </div>
+      ) : null}
     </div>
   )
 }
@@ -606,15 +649,9 @@ function EstimatePack({ type, result }) {
       </div>
 
       {activeTab === 'snapshot' ? (
-        <div className="grid gap-3">
-          <div className="rounded-lg border border-[#d9d5ca] bg-[#f8f7f2] p-3">
-            <p className="text-xs font-medium uppercase tracking-[0.14em] text-[#626766]">{summary.label}</p>
-            <strong className="mt-1 block break-words font-serif text-[1.7rem] font-normal leading-none text-[#141210]">{summary.value}</strong>
-          </div>
-          <div>
-            <p className={`text-sm font-medium ${toneClass}`}>{pack.signal}</p>
-            <p className="mt-1 text-sm font-normal leading-6 text-[#626766]">{pack.narrative}</p>
-          </div>
+        <div className="rounded-lg border border-[#d9d5ca] bg-[#f8f7f2] p-3">
+          <p className={`text-sm font-medium ${toneClass}`}>{pack.signal}</p>
+          <p className="mt-1 text-sm font-normal leading-6 text-[#626766]">{pack.narrative}</p>
         </div>
       ) : null}
 
@@ -829,7 +866,7 @@ function QuoteRequestSheet({ request, onClose }) {
 function Landing({ onSelect }) {
   return (
     <section className="relative grid min-h-[100dvh] content-between gap-6 overflow-hidden px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(0.9rem,env(safe-area-inset-top))]">
-      <img src={LOGO_SRC} alt="" aria-hidden="true" className="pointer-events-none absolute -right-24 top-24 w-[23rem] opacity-[0.025] mix-blend-darken" />
+      <img src={LOGO_SRC} alt="" aria-hidden="true" className="pointer-events-none absolute -right-24 top-24 w-[23rem] opacity-[0.035]" />
       <div className="relative z-10">
         <div className="flex items-center justify-between gap-4">
           <LogoMark />
@@ -975,13 +1012,15 @@ function TransferCalculator({ onBack, onQuote }) {
     <section>
       <CalculatorHeader title="Transfer Cost" eyebrow="Buyer estimate" icon={Home} onBack={onBack} />
       <div className="grid gap-4 px-4 pb-5">
+        <PrimaryResultCard
+          label="Cash needed before lodgement"
+          value={result.primaryMetric.display}
+          detail="Transfer duty, legal fees, disbursements and VAT. Bond costs appear when finance is selected."
+          type="transfer"
+          result={result}
+          onQuote={onQuote}
+        />
         <StickyResultBar label="Cash needed" value={result.primaryMetric.display} type="transfer" result={result} onQuote={onQuote} />
-
-        <div className="rounded-lg border border-[#211d19]/10 bg-[#171412] p-4 text-white shadow-[0_12px_28px_rgba(0,0,0,0.14)]">
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-white/60">Cash needed before lodgement</p>
-          <strong className="mt-2 block break-words font-serif text-[2.25rem] font-normal leading-none">{result.primaryMetric.display}</strong>
-          <p className="mt-3 text-xs font-normal leading-5 text-white/70">Transfer duty, legal fees, disbursements and VAT. Bond costs appear when finance is selected.</p>
-        </div>
 
         <div className="grid grid-cols-3 gap-2">
           {result.secondaryMetrics.map((metric) => (
@@ -1079,16 +1118,18 @@ function SellerCalculator({ onBack, onQuote }) {
     <section>
       <CalculatorHeader title="Seller Net" eyebrow="Sale proceeds" icon={WalletCards} onBack={onBack} />
       <div className="grid gap-4 px-4 pb-5">
+        <PrimaryResultCard
+          label="Estimated seller payout"
+          value={formatZar(result.summary.netProceeds)}
+          detail={`${result.summary.costRatio}% of the sale price is absorbed by selected settlement and selling costs.`}
+          type="seller"
+          result={result}
+          onQuote={onQuote}
+          variant="light"
+          tone={netTone}
+          progress={100 - result.summary.costRatio}
+        />
         <StickyResultBar label="Seller payout" value={formatZar(result.summary.netProceeds)} type="seller" result={result} tone={netTone} onQuote={onQuote} />
-
-        <div className="rounded-lg border border-[#d8d2c5] bg-white p-4 shadow-[0_8px_24px_rgba(32,27,20,0.04)]">
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8a6b0b]">Estimated seller payout</p>
-          <strong className={`mt-2 block break-words font-serif text-[2.25rem] font-normal leading-none ${netTone === 'alert' ? 'text-[#9f2727]' : 'text-[#141210]'}`}>{formatZar(result.summary.netProceeds)}</strong>
-          <div className="mt-4 h-3 overflow-hidden rounded-lg bg-[#e5e2d9]">
-            <span className="block h-full rounded-lg bg-[#171412]" style={{ width: `${Math.max(5, 100 - result.summary.costRatio)}%` }} />
-          </div>
-          <p className="mt-3 text-xs font-normal leading-5 text-[#626766]">{result.summary.costRatio}% of the sale price is absorbed by selected settlement and selling costs.</p>
-        </div>
 
         <div className="grid grid-cols-3 gap-2">
           <NumberDisplay label="Sale price" value={formatZar(result.summary.salePrice, { compact: true })} />
@@ -1188,13 +1229,15 @@ function EstateCalculator({ onBack, onQuote }) {
     <section>
       <CalculatorHeader title="Estate Cost" eyebrow="Deceased estates" icon={Scale} onBack={onBack} />
       <div className="grid gap-4 px-4 pb-5">
+        <PrimaryResultCard
+          label="Estate duty estimate"
+          value={formatZar(result.summary.estateDuty)}
+          detail="Uses the SARS R3.5m abatement and current 20% / 25% estate-duty bands."
+          type="estate"
+          result={result}
+          onQuote={onQuote}
+        />
         <StickyResultBar label="Estate duty" value={formatZar(result.summary.estateDuty)} type="estate" result={result} tone="gold" onQuote={onQuote} />
-
-        <div className="rounded-lg border border-[#211d19]/10 bg-[#171412] p-4 text-white shadow-[0_12px_28px_rgba(0,0,0,0.14)]">
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-white/60">Estate duty estimate</p>
-          <strong className="mt-2 block break-words font-serif text-[2.25rem] font-normal leading-none">{formatZar(result.summary.estateDuty)}</strong>
-          <p className="mt-3 text-xs font-normal leading-5 text-white/70">Uses the SARS R3.5m abatement and current 20% / 25% estate-duty bands.</p>
-        </div>
 
         <div className="grid grid-cols-3 gap-2">
           <NumberDisplay label="Dutiable" value={formatZar(result.summary.dutiableEstate, { compact: true })} tone="gold" />
