@@ -22,6 +22,20 @@ const clientPortalSource = await fs.readFile(new URL('../src/pages/ClientPortal.
 assert.match(clientPortalSource, /sharedSellerPortalJourney/)
 assert.match(clientPortalSource, /SellerPortalDashboard/)
 assert.match(clientPortalSource, /buildSellerPortalProgressModelFromSharedJourney/)
+assert.match(clientPortalSource, /SELLER_PORTAL_NAV_GROUPS[\s\S]*Your Sale[\s\S]*Property[\s\S]*Account/)
+assert.match(clientPortalSource, /SellerPropertyHero/)
+assert.match(clientPortalSource, /SellerTransactionHealthCard/)
+assert.match(clientPortalSource, /SellerPropertyPerformance/)
+assert.match(clientPortalSource, /SellerMarketingActivity/)
+assert.match(clientPortalSource, /SellerJourneyTimeline/)
+assert.match(clientPortalSource, /SellerImportantDocuments/)
+assert.match(clientPortalSource, /SELLER_SALE_PROGRESS_STEPS[\s\S]*OTP[\s\S]*Finance[\s\S]*Transfer[\s\S]*Registration/)
+assert.match(clientPortalSource, /function buildSellerSaleProgressModel/)
+assert.match(
+  clientPortalSource,
+  /const sellerProgressModel =[\s\S]*buildSellerSaleProgressModel\([\s\S]*buildSellerPortalProgressModelFromSharedJourney/,
+  'completed seller document progress should hand off to the OTP / Finance / Transfer / Registration sale journey before the legacy onboarding rail',
+)
 assert.match(clientPortalSource, /sellerStageMeta/)
 
 const sellerOnboardingSource = await fs.readFile(new URL('../src/pages/SellerOnboarding.jsx', import.meta.url), 'utf8')

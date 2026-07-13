@@ -18,6 +18,7 @@ import {
   Eye,
   Loader2,
   MapPin,
+  MoreVertical,
   Plus,
   Copy,
   Link2,
@@ -545,14 +546,6 @@ function getArch9PublicationBlockers(draft = {}, coverImage = null) {
   return blockers
 }
 
-function arch9LiveCheckClass(status = '') {
-  if (status === 'live') return 'border-[#d8eddf] bg-[#f2fbf5] text-[#1f7d44]'
-  if (status === 'checking') return 'border-[#cfe0f4] bg-[#f5f9ff] text-[#1f4f78]'
-  if (status === 'paused') return 'border-[#dbe6f2] bg-white text-[#607387]'
-  if (['not_found', 'missing_url', 'error'].includes(status)) return 'border-[#f2dfbf] bg-[#fff8ea] text-[#8a5b16]'
-  return 'border-[#dbe6f2] bg-white text-[#607387]'
-}
-
 function formatCurrency(value) {
   const amount = Number(value || 0)
   if (!Number.isFinite(amount) || amount <= 0) return 'Price on request'
@@ -630,6 +623,88 @@ function mapSellerDocumentSourceRowForListing(row = {}) {
     url,
     sourceLabel: getSellerDocumentSourceLabel(row),
   }
+}
+
+const LISTING_DOCUMENT_GROUP_CONFIG = [
+  {
+    key: 'fica',
+    label: 'FICA Documents',
+    description: 'Seller identity, address, marital, company, trust, and authority checks.',
+    icon: ShieldCheck,
+    toneClasses: 'bg-[#ecfaf1] text-[#1f7d44] border-[#d8eddf]',
+  },
+  {
+    key: 'property',
+    label: 'Property Documents',
+    description: 'Title deed, rates, disclosure, compliance certificates, and property records.',
+    icon: Building2,
+    toneClasses: 'bg-[#eef5fb] text-[#1f4f78] border-[#d7e6f5]',
+  },
+  {
+    key: 'sales',
+    label: 'Mandate & Sale',
+    description: 'Mandates, OTPs, seller instructions, and sale-related paperwork.',
+    icon: HandCoins,
+    toneClasses: 'bg-[#fff8ea] text-[#8a5b16] border-[#f2dfbf]',
+  },
+  {
+    key: 'requests',
+    label: 'Additional Requests',
+    description: 'Ad hoc requests and any requirement that does not fit the standard packs.',
+    icon: FileText,
+    toneClasses: 'bg-[#f8fbfd] text-[#607387] border-[#dbe6f2]',
+  },
+]
+
+function getListingDocumentGroupingKey(document = {}) {
+  const category = normalizeKey(document?.category)
+  const group = normalizeKey(document?.group)
+  const source = [
+    document?.key,
+    document?.label,
+    document?.description,
+    document?.category,
+    document?.group,
+    document?.sourceLabel,
+    document?.fileName,
+  ].map((value) => String(value || '').toLowerCase()).join(' ')
+
+  if (
+    category === 'fica' ||
+    ['seller_identity', 'fica', 'marital', 'company', 'trust', 'deceased_estate', 'power_of_attorney'].includes(group) ||
+    /fica|identity|id document|passport|proof of residential address|proof of address|marriage|anc|spouse|company registration|cipc|director|authority|resolution|trust deed|trustee|letter of authority/.test(source)
+  ) {
+    return 'fica'
+  }
+
+  if (
+    category === 'property' ||
+    ['property', 'compliance', 'property_compliance', 'financial', 'occupancy'].includes(group) ||
+    /title deed|rates|levy|levies|body corporate|hoa|homeowners|property condition|disclosure|gas|solar|electrical|electric|beetle|plumbing|compliance|certificate|coc|building plan|approved plan|occupancy|occupation|erf|sectional title/.test(source)
+  ) {
+    return 'property'
+  }
+
+  if (
+    category === 'sales' ||
+    group === 'mandate' ||
+    /mandate|otp|offer to purchase|sale agreement|sale instruction|seller instruction|commission/.test(source)
+  ) {
+    return 'sales'
+  }
+
+  return 'requests'
+}
+
+function groupListingDocumentsForDisplay(documents = []) {
+  const grouped = LISTING_DOCUMENT_GROUP_CONFIG.map((config) => ({ ...config, documents: [] }))
+  const groupByKey = new Map(grouped.map((group) => [group.key, group]))
+  documents.forEach((document) => {
+    const key = getListingDocumentGroupingKey(document)
+    const group = groupByKey.get(key) || groupByKey.get('requests')
+    group.documents.push(document)
+  })
+  return grouped
 }
 
 function resolveSellerEmailFromListing(listing = {}) {
@@ -1722,7 +1797,6 @@ function AgentListingDetail() {
   const [gallerySaving, setGallerySaving] = useState(false)
   const [publicationSaving, setPublicationSaving] = useState(false)
   const [arch9LiveChecking, setArch9LiveChecking] = useState(false)
-  const [arch9LiveCheck, setArch9LiveCheck] = useState({ status: 'idle', message: '' })
   const [openingSellerDocumentKey, setOpeningSellerDocumentKey] = useState('')
   const [resendingSellerPortalLink, setResendingSellerPortalLink] = useState(false)
   const [resettingSellerPortalPassword, setResettingSellerPortalPassword] = useState(false)
@@ -2419,12 +2493,18 @@ function AgentListingDetail() {
     const slug = getPublicListingSlugFromUrl(publicUrlOverride)
     if (!slug) {
       const nextCheck = { status: 'missing_url', message: 'Save listing data before checking the public page.' }
-      setArch9LiveCheck(nextCheck)
+      if (!options.silent) {
+        setDetailMessage('')
+        setDetailError(nextCheck.message)
+      }
       return nextCheck
     }
 
     setArch9LiveChecking(true)
-    if (!options.silent) setArch9LiveCheck({ status: 'checking', message: 'Checking the public catalogue...' })
+    if (!options.silent) {
+      setDetailError('')
+      setDetailMessage('Checking the public catalogue...')
+    }
     try {
       const response = await fetch(`${ARCH9_PUBLIC_LISTINGS_API_PATH}?slug=${encodeURIComponent(slug)}`, {
         headers: { Accept: 'application/json' },
@@ -2432,8 +2512,7 @@ function AgentListingDetail() {
       })
       const payload = await response.json().catch(() => null)
       if (response.ok && payload?.listing?.slug) {
-        const nextCheck = { status: 'live', message: 'Confirmed live on Arch9 Buy.' }
-        setArch9LiveCheck(nextCheck)
+        const nextCheck = { status: 'live', message: 'Confirmed live on the public catalogue.' }
         if (!options.silent) {
           setDetailError('')
           setDetailMessage(nextCheck.message)
@@ -2445,14 +2524,20 @@ function AgentListingDetail() {
         status: 'not_found',
         message: payload?.message || 'Not visible on the public catalogue yet. Check readiness, save, then try again.',
       }
-      setArch9LiveCheck(nextCheck)
+      if (!options.silent) {
+        setDetailMessage('')
+        setDetailError(nextCheck.message)
+      }
       return nextCheck
     } catch (error) {
       const nextCheck = {
         status: 'error',
         message: error?.message || 'The public catalogue could not be checked from this browser.',
       }
-      setArch9LiveCheck(nextCheck)
+      if (!options.silent) {
+        setDetailMessage('')
+        setDetailError(nextCheck.message)
+      }
       return nextCheck
     } finally {
       setArch9LiveChecking(false)
@@ -2463,7 +2548,7 @@ function AgentListingDetail() {
     const blockers = getArch9PublicationBlockers(marketingDraft, coverImage)
     if (blockers.length) {
       setDetailMessage('')
-      setDetailError(`Before publishing to Arch9 Buy: ${blockers.join(' ')}`)
+      setDetailError(`Before publishing the public listing: ${blockers.join(' ')}`)
       return
     }
 
@@ -2484,13 +2569,13 @@ function AgentListingDetail() {
     try {
       const saveResult = await saveMarketingDraft(nextDraft, {
         listingVisibility: 'active_market',
-        successMessage: 'Listing published to Arch9 Buy.',
+        successMessage: 'Listing published to the public catalogue.',
       })
       if (saveResult?.ok && !saveResult.localOnly) {
         const liveResult = await verifyArch9PublicListing(publicUrl, { silent: true })
         if (liveResult.status === 'live') {
           setDetailError('')
-          setDetailMessage('Listing published and confirmed live on Arch9 Buy.')
+          setDetailMessage('Listing published and confirmed live on the public catalogue.')
         }
       }
     } finally {
@@ -2511,10 +2596,11 @@ function AgentListingDetail() {
     setMarketingDraft(nextDraft)
     try {
       const saveResult = await saveMarketingDraft(nextDraft, {
-        successMessage: 'Listing removed from Arch9 Buy.',
+        successMessage: 'Listing removed from the public catalogue.',
       })
       if (saveResult?.ok) {
-        setArch9LiveCheck({ status: 'paused', message: 'Publication paused. The public link should no longer resolve once cache refreshes.' })
+        setDetailError('')
+        setDetailMessage('Publication paused. The public link should no longer resolve once cache refreshes.')
       }
     } finally {
       setPublicationSaving(false)
@@ -2526,10 +2612,10 @@ function AgentListingDetail() {
     try {
       await navigator.clipboard.writeText(arch9PublicListingUrl)
       setDetailError('')
-      setDetailMessage('Arch9 Buy link copied.')
+      setDetailMessage('Public listing link copied.')
     } catch {
       setDetailMessage('')
-      setDetailError('Unable to copy the Arch9 Buy link from this browser.')
+      setDetailError('Unable to copy the public listing link from this browser.')
     }
   }
 
@@ -4045,6 +4131,11 @@ function AgentListingDetail() {
     [sellerDocumentTrackerRows],
   )
 
+  const listingDocumentGroups = useMemo(
+    () => groupListingDocumentsForDisplay(sellerDocumentTrackerRows),
+    [sellerDocumentTrackerRows],
+  )
+
   const listingReadinessItems = useMemo(() => {
     const requiredSellerDocuments = sellerDocumentTrackerRows.filter((doc) => doc.required)
     const sellerDocumentsComplete = requiredSellerDocuments.length
@@ -4737,6 +4828,59 @@ function AgentListingDetail() {
       },
     ]
   }, [listingPerformance])
+
+  const viewingRequestOverview = useMemo(() => {
+    const statusFor = (viewing) => String(viewing?.status || '').trim().toLowerCase()
+    const timestampFor = (viewing) => {
+      const scheduleValue = [viewing?.proposed_date, viewing?.proposed_time].filter(Boolean).join(' ')
+      const timestamp = new Date(scheduleValue || viewing?.updated_at || viewing?.created_at || 0).getTime()
+      return Number.isFinite(timestamp) ? timestamp : 0
+    }
+    const scheduleLabelFor = (viewing) => {
+      const date = viewing?.proposed_date ? formatDate(viewing.proposed_date) : ''
+      const time = String(viewing?.proposed_time || '').trim()
+      return [date, time].filter(Boolean).join(' at ') || 'Date pending'
+    }
+    const pendingStatuses = [
+      VIEWING_STATUS.PENDING_APPROVAL,
+      VIEWING_STATUS.RESCHEDULE_REQUESTED,
+      VIEWING_STATUS.VIEWING_REQUESTED,
+    ]
+    const pendingRows = viewings.filter((viewing) => pendingStatuses.includes(statusFor(viewing)))
+    const confirmedRows = viewings.filter((viewing) => statusFor(viewing) === VIEWING_STATUS.CONFIRMED)
+    const completedRows = viewings.filter((viewing) => statusFor(viewing) === VIEWING_STATUS.COMPLETED)
+    const needsFeedbackRows = completedRows.filter((viewing) => !viewing?.feedback)
+    const priorityFor = (viewing) => {
+      const status = statusFor(viewing)
+      if (pendingStatuses.includes(status)) return 0
+      if (status === VIEWING_STATUS.CONFIRMED) return 1
+      if (status === VIEWING_STATUS.COMPLETED && !viewing?.feedback) return 2
+      if (status === VIEWING_STATUS.COMPLETED) return 3
+      return 4
+    }
+    const activeRows = [...pendingRows, ...confirmedRows].sort((left, right) => timestampFor(left) - timestampFor(right))
+    const rows = [...viewings]
+      .sort((left, right) => {
+        const priorityDifference = priorityFor(left) - priorityFor(right)
+        if (priorityDifference) return priorityDifference
+        return timestampFor(left) - timestampFor(right)
+      })
+      .slice(0, 4)
+      .map((viewing) => ({
+        ...viewing,
+        scheduleLabel: scheduleLabelFor(viewing),
+      }))
+    const nextViewing = activeRows[0] || null
+    return {
+      pendingCount: pendingRows.length,
+      confirmedCount: confirmedRows.length,
+      completedCount: completedRows.length,
+      needsFeedbackCount: needsFeedbackRows.length,
+      attentionCount: pendingRows.length + needsFeedbackRows.length,
+      nextViewing: nextViewing ? { ...nextViewing, scheduleLabel: scheduleLabelFor(nextViewing) } : null,
+      rows,
+    }
+  }, [viewings])
 
   const offerPriceOverview = useMemo(() => {
     const askingPrice = Number(marketingDraft.price || listingRecord?.askingPrice || 0) || 0
@@ -7337,32 +7481,6 @@ function AgentListingDetail() {
             </div>
           </nav>
 
-          {shouldShowListingFollowUps ? (
-            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              <div>
-                <h2 className="text-base font-semibold text-[#142132]">Listing Follow-Ups</h2>
-                <p className="mt-1 text-sm text-[#607387]">Complete a Quick Add listing here without restarting seller onboarding.</p>
-              </div>
-              <StatusPill
-                status={listingFollowUpsComplete ? 'done' : 'pending'}
-                label={`${completedFollowUpCount}/${followUpActions.length} complete`}
-              />
-            </div>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {followUpActions.map((action) => (
-                <FollowUpActionCard
-                  key={action.key}
-                  action={action}
-                  loading={followUpActionId === action.key}
-                  onAction={handleFollowUpAction}
-                  onUpload={action.key === 'upload_signed_mandate' ? handleSignedMandateUpload : undefined}
-                />
-              ))}
-            </div>
-            </section>
-          ) : null}
-
           {sellerWorkspaceTab === 'overview' ? (
             <section className="space-y-6">
               <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
@@ -7415,6 +7533,103 @@ function AgentListingDetail() {
                       <p className="shrink-0 text-xl font-semibold text-[#1f4f78]">{formatPercentValue(metric.value)}</p>
                     </div>
                   ))}
+                </div>
+              </article>
+
+              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold text-[#142132]">Viewings & Viewing Requests</h3>
+                    <p className="mt-1 text-sm text-[#607387]">Keep pending requests, confirmed appointments, and feedback follow-ups visible from the overview.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => setActiveTab('pipeline')}>
+                      Open Viewings
+                    </Button>
+                    <Button size="sm" onClick={() => { setActiveTab('pipeline'); setShowViewingForm(true) }}>
+                      <Plus size={14} />
+                      New Request
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid items-stretch gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    { label: 'Requests', value: viewingRequestOverview.pendingCount, meta: 'Awaiting approval or reschedule', icon: CircleAlert },
+                    { label: 'Confirmed', value: viewingRequestOverview.confirmedCount, meta: 'Booked appointments', icon: CalendarDays },
+                    { label: 'Completed', value: viewingRequestOverview.completedCount, meta: 'Held viewings', icon: CheckCircle2 },
+                    { label: 'Feedback Due', value: viewingRequestOverview.needsFeedbackCount, meta: 'Completed without notes', icon: FileText },
+                  ].map((item) => {
+                    const Icon = item.icon
+                    return (
+                      <div key={item.label} className="flex min-h-[104px] items-start justify-between gap-3 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                        <div>
+                          <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{item.label}</p>
+                          <p className="mt-2 text-2xl font-semibold text-[#10243a]">{formatCompactNumber(item.value)}</p>
+                          <p className="mt-1 text-xs font-medium text-[#607387]">{item.meta}</p>
+                        </div>
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-[#eef5fb] text-[#1f4f78]">
+                          <Icon size={16} />
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+                  <div className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <h4 className="text-sm font-semibold text-[#142132]">Latest Viewing Activity</h4>
+                      <span className="rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#35546c]">
+                        {viewingRequestOverview.rows.length} shown
+                      </span>
+                    </div>
+                    <div className="mt-3 space-y-3">
+                      {viewingRequestOverview.rows.length ? viewingRequestOverview.rows.map((viewing) => (
+                        <article key={viewing.viewing_id || `${viewing.buyer_name}-${viewing.scheduleLabel}`} className="flex flex-col gap-3 rounded-[14px] border border-[#dce6f2] bg-white px-3 py-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-[#22374d]">{viewing.buyer_name || 'Buyer'}</p>
+                            <p className="mt-1 text-xs font-semibold text-[#607387]">{viewing.scheduleLabel}</p>
+                            <p className="mt-1 line-clamp-2 text-xs text-[#7b8ca2]">{viewing.notes || 'No viewing notes captured.'}</p>
+                          </div>
+                          <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${statusClass(viewing.status)}`}>
+                            {formatViewingStatusLabel(viewing.status)}
+                          </span>
+                        </article>
+                      )) : (
+                        <div className="rounded-[14px] border border-dashed border-[#d3deea] bg-white px-3 py-5 text-sm text-[#607387]">
+                          No viewing requests or appointments have been captured for this listing yet.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <aside className="flex min-h-[220px] flex-col rounded-[18px] border border-[#dce6f2] bg-[#f7fbff] p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Next Viewing</p>
+                        <p className="mt-2 text-sm font-semibold leading-5 text-[#142132]">
+                          {viewingRequestOverview.nextViewing?.buyer_name || 'No upcoming viewing'}
+                        </p>
+                        <p className="mt-1 text-sm text-[#607387]">
+                          {viewingRequestOverview.nextViewing?.scheduleLabel || 'Create a request when a buyer is ready to view.'}
+                        </p>
+                      </div>
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-white text-[#1f4f78]">
+                        <CalendarDays size={16} />
+                      </span>
+                    </div>
+                    <div className="mt-auto border-t border-[#d9e5f1] pt-4">
+                      <p className="text-sm font-semibold text-[#22374d]">
+                        {viewingRequestOverview.attentionCount
+                          ? `${viewingRequestOverview.attentionCount} item${viewingRequestOverview.attentionCount === 1 ? '' : 's'} need attention`
+                          : 'No viewing action due'}
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-[#607387]">
+                        Pending requests and completed viewings without feedback are counted here.
+                      </p>
+                    </div>
+                  </aside>
                 </div>
               </article>
 
@@ -7599,6 +7814,32 @@ function AgentListingDetail() {
                   </div>
                 </article>
               </section>
+
+              {shouldShowListingFollowUps ? (
+                <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <h2 className="text-base font-semibold text-[#142132]">Listing Follow-Ups</h2>
+                      <p className="mt-1 text-sm text-[#607387]">Complete a Quick Add listing here without restarting seller onboarding.</p>
+                    </div>
+                    <StatusPill
+                      status={listingFollowUpsComplete ? 'done' : 'pending'}
+                      label={`${completedFollowUpCount}/${followUpActions.length} complete`}
+                    />
+                  </div>
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {followUpActions.map((action) => (
+                      <FollowUpActionCard
+                        key={action.key}
+                        action={action}
+                        loading={followUpActionId === action.key}
+                        onAction={handleFollowUpAction}
+                        onUpload={action.key === 'upload_signed_mandate' ? handleSignedMandateUpload : undefined}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ) : null}
             </section>
           ) : null}
 
@@ -7946,43 +8187,75 @@ function AgentListingDetail() {
 
           {sellerWorkspaceTab === 'listing' ? (
             <section className="space-y-5">
-              <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-                <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+              <section className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+                <article className="flex h-full flex-col rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
                   <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                     <div>
                       <h3 className="text-base font-semibold text-[#142132]">Listing Site Data</h3>
                       <p className="mt-1 text-sm text-[#607387]">Canonical data for the future Arch9 listing site.</p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button size="sm" variant="secondary" asChild>
-                        <a href={arch9PublicListingUrl || `${ARCH9_PUBLIC_SITE_ORIGIN}/buy`} target="_blank" rel="noreferrer">
-                          <Eye size={15} />
-                          Preview Listing
-                        </a>
-                      </Button>
-                      <Button size="sm" variant="secondary" onClick={copyArch9PublicListingUrl} disabled={!arch9PublicListingUrl}>
-                        <Copy size={15} />
-                        Copy Link
-                      </Button>
-                      <Button size="sm" variant="secondary" onClick={() => verifyArch9PublicListing()} disabled={!arch9PublicListingUrl || arch9LiveChecking}>
-                        {arch9LiveChecking ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
-                        Check Live
-                      </Button>
-                      {arch9IsPublished ? (
-                        <Button size="sm" variant="secondary" onClick={pauseArch9BuyPublication} disabled={publicationSaving}>
-                          {publicationSaving ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />}
-                          Pause Arch9 Buy
-                        </Button>
-                      ) : (
-                        <Button size="sm" onClick={publishToArch9Buy} disabled={publicationSaving || !arch9CanPublish}>
-                          {publicationSaving ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />}
-                          Publish to Arch9 Buy
-                        </Button>
-                      )}
+                    <div className="flex flex-wrap justify-end gap-2">
                       <Button size="sm" variant="secondary" onClick={() => saveMarketingDraft()}>
                         <FileText size={15} />
                         Save Listing Data
                       </Button>
+                      <details className="group relative">
+                        <summary className="inline-flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] [&::-webkit-details-marker]:hidden">
+                          <MoreVertical size={15} />
+                          Actions
+                        </summary>
+                        <div className="absolute right-0 z-30 mt-2 w-56 overflow-hidden rounded-[16px] border border-[#dbe6f2] bg-white p-1.5 shadow-[0_18px_34px_rgba(15,23,42,0.14)]">
+                          <a
+                            href={arch9PublicListingUrl || `${ARCH9_PUBLIC_SITE_ORIGIN}/buy`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex min-h-10 items-center gap-2 rounded-[12px] px-3 text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff]"
+                          >
+                            <Eye size={15} />
+                            Preview listing
+                          </a>
+                          <button
+                            type="button"
+                            onClick={copyArch9PublicListingUrl}
+                            disabled={!arch9PublicListingUrl}
+                            className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <Copy size={15} />
+                            Copy public link
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => verifyArch9PublicListing()}
+                            disabled={!arch9PublicListingUrl || arch9LiveChecking}
+                            className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {arch9LiveChecking ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+                            Check live status
+                          </button>
+                          <div className="my-1 h-px bg-[#eef3f8]" />
+                          {arch9IsPublished ? (
+                            <button
+                              type="button"
+                              onClick={pauseArch9BuyPublication}
+                              disabled={publicationSaving}
+                              className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {publicationSaving ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />}
+                              Pause public listing
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={publishToArch9Buy}
+                              disabled={publicationSaving || !arch9CanPublish}
+                              className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {publicationSaving ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />}
+                              Publish public listing
+                            </button>
+                          )}
+                        </div>
+                      </details>
                     </div>
                   </div>
 
@@ -8127,7 +8400,7 @@ function AgentListingDetail() {
                   </div>
                 </article>
 
-                <aside className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                <aside className="flex h-full flex-col rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
                   <h3 className="text-base font-semibold text-[#142132]">Listing Readiness</h3>
                   <p className="mt-1 text-sm text-[#607387]">{listingReadinessCompleted} of {listingReadinessItems.length} completed</p>
                   <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#e5edf6]">
@@ -8145,95 +8418,6 @@ function AgentListingDetail() {
                         {item.complete ? <CheckCircle2 size={15} className="shrink-0 text-[#1f7d44]" /> : <CircleAlert size={15} className="shrink-0 text-[#9a5b13]" />}
                       </div>
                     ))}
-                  </div>
-                  <div className="mt-6 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h4 className="text-sm font-semibold text-[#142132]">Mandate Continuity</h4>
-                        <p className="mt-1 text-xs leading-5 text-[#607387]">
-                          Confirms the signed mandate is connected across the listing, documents, seller portal and activity feed.
-                        </p>
-                      </div>
-                      <StatusPill
-                        status={mandateContinuity.ready ? 'done' : mandateContinuity.status === 'warning' ? 'pending' : 'blocked'}
-                        label={mandateContinuity.ready ? 'Ready' : mandateContinuity.status === 'warning' ? 'Review' : 'Blocked'}
-                      />
-                    </div>
-                    {mandateContinuity.packetId ? (
-                      <div className="mt-3 flex min-w-0 items-center gap-2 rounded-[12px] border border-[#e1e9f2] bg-white px-3 py-2 text-xs text-[#425970]">
-                        <ShieldCheck size={14} className="shrink-0 text-[#7b8ca2]" />
-                        <span className="truncate">Packet {mandateContinuity.packetId}</span>
-                      </div>
-                    ) : null}
-                    <div className="mt-3 space-y-2">
-                      {mandateContinuity.checks.map((check) => (
-                        <div key={check.key} className="flex items-start justify-between gap-2 rounded-[12px] border border-[#e5edf6] bg-white px-3 py-2">
-                          <div className="min-w-0">
-                            <p className="text-xs font-semibold leading-5 text-[#243d56]">{check.label}</p>
-                            {check.detail ? <p className="mt-0.5 line-clamp-2 text-[0.68rem] leading-4 text-[#7b8ca2]">{check.detail}</p> : null}
-                          </div>
-                          <span className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full ${
-                            check.state === 'complete'
-                              ? 'bg-[#ecfaf1] text-[#1f7d44]'
-                              : check.state === 'not_applicable'
-                                ? 'bg-[#f4f7fb] text-[#8aa0b6]'
-                                : 'bg-[#fff8ec] text-[#9a5b13]'
-                          }`}>
-                            {check.state === 'complete' ? <CheckCircle2 size={13} /> : <CircleAlert size={13} />}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="mt-6 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h4 className="text-sm font-semibold text-[#142132]">Arch9 Buy</h4>
-                        <p className="mt-1 text-xs leading-5 text-[#607387]">
-                          {arch9IsPublished ? 'Live on the public property catalogue.' : 'Ready listings can be published to www.arch9.co.za/buy.'}
-                        </p>
-                      </div>
-                      <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
-                        arch9IsPublished
-                          ? 'border-[#d8eddf] bg-[#f2fbf5] text-[#1f7d44]'
-                          : 'border-[#dbe6f2] bg-white text-[#607387]'
-                      }`}>
-                        {arch9IsPublished ? 'Published' : 'Not live'}
-                      </span>
-                    </div>
-                    {arch9PublicListingUrl ? (
-                      <div className="mt-3 flex min-w-0 items-center gap-2 rounded-[12px] border border-[#e1e9f2] bg-white px-3 py-2 text-xs text-[#425970]">
-                        <Link2 size={14} className="shrink-0 text-[#7b8ca2]" />
-                        <span className="truncate">{arch9PublicListingUrl}</span>
-                      </div>
-                    ) : null}
-                    {arch9LiveCheck.message ? (
-                      <div className={`mt-3 flex items-start gap-2 rounded-[12px] border px-3 py-2 text-xs font-semibold leading-5 ${arch9LiveCheckClass(arch9LiveCheck.status)}`}>
-                        {arch9LiveChecking || arch9LiveCheck.status === 'checking' ? (
-                          <Loader2 size={14} className="mt-0.5 shrink-0 animate-spin" />
-                        ) : arch9LiveCheck.status === 'live' ? (
-                          <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
-                        ) : (
-                          <CircleAlert size={14} className="mt-0.5 shrink-0" />
-                        )}
-                        <span>{arch9LiveCheck.message}</span>
-                      </div>
-                    ) : null}
-                    {arch9PublicationBlockers.length ? (
-                      <div className="mt-4 space-y-2">
-                        {arch9PublicationBlockers.map((blocker) => (
-                          <div key={blocker} className="flex items-start gap-2 text-xs leading-5 text-[#7a5a1b]">
-                            <CircleAlert size={14} className="mt-0.5 shrink-0" />
-                            <span>{blocker}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="mt-4 flex items-start gap-2 text-xs leading-5 text-[#1f7d44]">
-                        <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
-                        <span>Meets the public listing requirements.</span>
-                      </div>
-                    )}
                   </div>
                 </aside>
               </section>
@@ -8412,49 +8596,121 @@ function AgentListingDetail() {
           ) : null}
 
           {sellerWorkspaceTab === 'documents' ? (
-            <article className="overflow-hidden rounded-[24px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] table-fixed text-left text-sm">
-                  <thead className="bg-[#f8fbfd] text-[0.66rem] uppercase tracking-[0.1em] text-[#7b8ca2]">
-                    <tr className="border-b border-[#e5edf6]">
-                      <th className="w-[34%] px-5 py-3">Document</th>
-                      <th className="w-[18%] px-5 py-3">Source</th>
-                      <th className="w-[16%] px-5 py-3">Status</th>
-                      <th className="w-[18%] px-5 py-3">Uploaded On</th>
-                      <th className="w-[14%] px-5 py-3 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#edf2f7]">
-                    {sellerDocumentTrackerRows.map((doc) => (
-                      <tr key={doc.key} className="text-[#425970] transition hover:bg-[#fbfdff]">
-                        <td className="px-5 py-4">
-                          <p className="truncate font-semibold text-[#243d56]" title={doc.label}>{doc.label}</p>
-                          <p className="mt-1 text-xs text-[#74879d]">{doc.required ? 'Required seller document' : 'Optional seller document'}</p>
-                        </td>
-                        <td className="px-5 py-4 text-sm text-[#607387]">{doc.sourceLabel || (doc.uploaded ? 'Seller portal / linked document' : 'Requirement checklist')}</td>
-                        <td className="px-5 py-4"><StatusPill status={doc.status} label={doc.statusLabel || formatStatusLabel(doc.status)} /></td>
-                        <td className="px-5 py-4">{doc.uploadedOn ? formatDate(doc.uploadedOn) : '—'}</td>
-                        <td className="px-5 py-4 text-right">
-                          {doc.url || doc.filePath ? (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenSellerDocument(doc)}
-                              disabled={openingSellerDocumentKey === doc.key}
-                              className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f4f78] disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              {openingSellerDocumentKey === doc.key ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
-                              Download
-                            </button>
-                          ) : (
-                            <span className="text-xs text-[#9aa9b8]">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </article>
+            <section className="space-y-5">
+              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold text-[#142132]">Seller Document Centre</h3>
+                    <p className="mt-1 max-w-3xl text-sm leading-6 text-[#607387]">
+                      Documents are grouped the same way the seller sees them in the portal, so FICA, property records, sale documents, and requests are easy to review.
+                    </p>
+                  </div>
+                  <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-3 py-1.5 text-xs font-semibold text-[#607387]">
+                    {sellerDocumentTrackerRows.length} total
+                  </span>
+                </div>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {listingDocumentGroups.map((group) => {
+                    const GroupIcon = group.icon
+                    const completeCount = group.documents.filter((doc) =>
+                      doc.uploaded || ['uploaded', 'complete', 'completed', 'approved', 'verified', 'signed'].includes(normalizeKey(doc.status)),
+                    ).length
+                    return (
+                      <div key={group.key} className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-4 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[14px] border ${group.toneClasses}`}>
+                            <GroupIcon size={18} />
+                          </span>
+                          <span className="text-xs font-semibold text-[#7b8ca2]">{completeCount}/{group.documents.length}</span>
+                        </div>
+                        <p className="mt-3 text-sm font-semibold text-[#142132]">{group.label}</p>
+                        <p className="mt-1 text-xs leading-5 text-[#607387]">{group.description}</p>
+                      </div>
+                    )
+                  })}
+                </div>
+              </article>
+
+              {listingDocumentGroups.map((group) => {
+                const GroupIcon = group.icon
+                const completeCount = group.documents.filter((doc) =>
+                  doc.uploaded || ['uploaded', 'complete', 'completed', 'approved', 'verified', 'signed'].includes(normalizeKey(doc.status)),
+                ).length
+                return (
+                  <article key={group.key} className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-[15px] border ${group.toneClasses}`}>
+                          <GroupIcon size={19} />
+                        </span>
+                        <div className="min-w-0">
+                          <h3 className="text-base font-semibold text-[#142132]">{group.label}</h3>
+                          <p className="mt-1 text-sm leading-6 text-[#607387]">{group.description}</p>
+                        </div>
+                      </div>
+                      <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-3 py-1.5 text-xs font-semibold text-[#607387]">
+                        {completeCount} of {group.documents.length} complete
+                      </span>
+                    </div>
+
+                    {group.documents.length ? (
+                      <div className="mt-5 grid gap-3 lg:grid-cols-2">
+                        {group.documents.map((doc) => (
+                          <div key={doc.key} className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="break-words text-sm font-semibold leading-5 text-[#243d56]">{doc.label}</p>
+                                <p className="mt-1 text-xs leading-5 text-[#74879d]">
+                                  {doc.required ? 'Required seller document' : 'Optional seller document'}
+                                </p>
+                              </div>
+                              <StatusPill status={doc.status} label={doc.statusLabel || formatStatusLabel(doc.status)} />
+                            </div>
+                            <div className="mt-4 grid gap-2 text-xs leading-5 text-[#607387] sm:grid-cols-2">
+                              <p>
+                                <span className="font-semibold text-[#425970]">Source:</span>{' '}
+                                {doc.sourceLabel || (doc.uploaded ? 'Seller portal / linked document' : 'Requirement checklist')}
+                              </p>
+                              <p>
+                                <span className="font-semibold text-[#425970]">Uploaded:</span>{' '}
+                                {doc.uploadedOn ? formatDate(doc.uploadedOn) : 'Not uploaded'}
+                              </p>
+                              {doc.fileName ? (
+                                <p className="min-w-0 sm:col-span-2">
+                                  <span className="font-semibold text-[#425970]">File:</span>{' '}
+                                  <span className="break-words">{doc.fileName}</span>
+                                </p>
+                              ) : null}
+                            </div>
+                            <div className="mt-4 flex flex-wrap justify-end gap-2">
+                              {doc.url || doc.filePath ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenSellerDocument(doc)}
+                                  disabled={openingSellerDocumentKey === doc.key}
+                                  className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {openingSellerDocumentKey === doc.key ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
+                                  Download
+                                </button>
+                              ) : (
+                                <span className="inline-flex min-h-9 items-center rounded-lg border border-dashed border-[#dbe6f2] px-3 text-xs font-semibold text-[#9aa9b8]">
+                                  Awaiting upload
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-5 rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-5 text-sm leading-6 text-[#607387]">
+                        No documents in this group yet.
+                      </div>
+                    )}
+                  </article>
+                )
+              })}
+            </section>
           ) : null}
 
           {sellerWorkspaceTab === 'commission' ? (

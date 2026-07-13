@@ -3600,59 +3600,19 @@ function AgentListings({ initialTab = null } = {}) {
                       </div>
                     ) : null}
 
-                    {card.followUpQueue?.length ? (
-                      <div className="border-t border-[#eef3f8] pt-3">
-                        <div className="mb-2 flex items-center justify-between gap-2 text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">
-                          <span>Listing follow-ups</span>
-                          <span>{card.followUpCount}</span>
-                        </div>
-                        <div className="space-y-1.5">
-                          {card.followUpQueue.slice(0, 3).map((item) => (
-                            <div key={item.key} className="flex items-center gap-2 text-[0.78rem] font-semibold text-[#35546c]">
-                              <span className={`h-2 w-2 shrink-0 rounded-full ${item.priority === 'urgent' ? 'bg-[#b84432]' : item.priority === 'high' ? 'bg-[#d78a16]' : item.priority === 'blocked' ? 'bg-[#8da0b5]' : 'bg-[#1f7d44]'}`} />
-                              <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                              {item.reminderLabel ? (
-                                <span className={`ml-auto shrink-0 rounded-full px-2 py-0.5 text-[0.66rem] ${
-                                  item.reminderStatus === 'overdue'
-                                    ? 'bg-[#fff1f0] text-[#b84432]'
-                                    : item.reminderStatus === 'due_today'
-                                      ? 'bg-[#fff8ea] text-[#8a5b16]'
-                                      : 'bg-[#eef5fb] text-[#607387]'
-                                }`}>
-                                  {item.reminderLabel}
-                                </span>
-                              ) : null}
-                            </div>
-                          ))}
-                          {card.followUpQueue.length > 3 ? (
-                            <p className="text-[0.76rem] font-semibold text-[#7b8ca2]">+{card.followUpQueue.length - 3} more in workspace</p>
-                          ) : null}
-                        </div>
-                      </div>
-                    ) : null}
-
                     <div className="mt-auto space-y-3 border-t border-[#eef3f8] pt-3 text-[0.82rem] text-[#53687f]">
                       <span className="inline-flex min-w-0 items-center gap-1.5 font-semibold">
                         <UserRound size={14} className="shrink-0 text-[#1f4f78]" />
                         <span className="truncate">{card.agentName || 'Assigned Agent'}</span>
                       </span>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={(event) => openListingMandateWorkspace(card, event)}
-                          className="inline-flex min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-full border border-[#1f4f78] bg-[#1f4f78] px-2 text-[0.76rem] font-semibold text-white transition hover:border-[#163c5d] hover:bg-[#163c5d]"
-                          aria-label={`Generate mandate for ${card.title}`}
-                        >
-                          <FileText size={14} className="shrink-0" />
-                          <span className="truncate">Generate Mandate</span>
-                        </button>
+                      <div>
                         <button
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation()
                             navigate(`/agent/listings/${encodeURIComponent(card.id)}`)
                           }}
-                          className="inline-flex min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-full border border-[#c6d8ea] bg-white px-2 text-[0.76rem] font-semibold text-[#1f4f78] transition hover:border-[#9fb7d1] hover:bg-[#f6faff]"
+                          className="inline-flex min-h-9 w-full min-w-0 items-center justify-center gap-1.5 rounded-full border border-[#c6d8ea] bg-white px-3 text-[0.76rem] font-semibold text-[#1f4f78] transition hover:border-[#9fb7d1] hover:bg-[#f6faff]"
                         >
                           <span className="truncate">Open</span>
                           <ArrowRight size={14} className="shrink-0" />
