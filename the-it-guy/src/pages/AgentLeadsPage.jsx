@@ -19508,46 +19508,176 @@ function SellerMandateTab({
   onSendSellerOnboarding,
   onGenerateMandate,
 }) {
+  const [activeScreen, setActiveScreen] = useState('overview')
+  const workflowState = getSellerMandateWorkflowState({ row, listing, journey, onboardingStatus })
+  const preferences = getSellerMandatePreferenceSummary(commissionSummary)
+  const packetSummary = getSellerMandatePacketSummary({ row, listing, journey, mandatePacketStatus })
+  const hasPacket = packetSummary.meta.hasRecord || Boolean(packetSummary.packetId)
+  const screens = [
+    {
+      key: 'overview',
+      label: 'Overview',
+      helper: 'Start here',
+      status: workflowState.label,
+      tone: workflowState.tone,
+      icon: FileText,
+    },
+    {
+      key: 'facts',
+      label: 'Seller Facts',
+      helper: 'Seller and property facts',
+      status: workflowState.onboardingSubmitted ? 'Ready' : 'Needed',
+      tone: workflowState.onboardingSubmitted ? 'green' : 'amber',
+      icon: UserRound,
+    },
+    {
+      key: 'preferences',
+      label: 'Mandate Choices',
+      helper: 'Seller-owned terms',
+      status: preferences.complete ? 'Ready' : 'Needed',
+      tone: preferences.complete ? 'green' : 'amber',
+      icon: Shield,
+    },
+    {
+      key: 'commission',
+      label: 'Agent Commission',
+      helper: 'Commission and VAT',
+      status: commissionSummary?.hasData ? 'Ready' : 'Needed',
+      tone: commissionSummary?.hasData ? 'green' : 'slate',
+      icon: Banknote,
+    },
+    {
+      key: 'packet',
+      label: 'Packet & Signing',
+      helper: 'Generate and send',
+      status: hasPacket ? packetSummary.meta.label : 'Not generated',
+      tone: hasPacket ? packetSummary.meta.tone : 'slate',
+      icon: BadgeCheck,
+    },
+  ]
+  const activeScreenIndex = Math.max(0, screens.findIndex((screen) => screen.key === activeScreen))
+  const currentScreen = screens[activeScreenIndex] || screens[0]
+  const previousScreen = activeScreenIndex > 0 ? screens[activeScreenIndex - 1] : null
+  const nextScreen = activeScreenIndex < screens.length - 1 ? screens[activeScreenIndex + 1] : null
+  const screenContent = (() => {
+    switch (currentScreen.key) {
+      case 'facts':
+        return (
+          <SellerMandateSellerFactsCard
+            row={row}
+            listing={listing}
+            journey={journey}
+            commissionSummary={commissionSummary}
+          />
+        )
+      case 'preferences':
+        return (
+          <SellerMandatePreferencesCard
+            commissionSummary={commissionSummary}
+            onManualSellerOnboarding={onManualSellerOnboarding}
+          />
+        )
+      case 'commission':
+        return (
+          <SellerCommissionCard
+            commissionDraft={commissionDraft}
+            commissionSummary={commissionSummary}
+            savingCommission={savingCommission}
+            onCommissionDraftChange={onCommissionDraftChange}
+            onSaveCommission={onSaveCommission}
+          />
+        )
+      case 'packet':
+        return (
+          <SellerMandatePacketCard
+            row={row}
+            listing={listing}
+            journey={journey}
+            mandatePacketStatus={mandatePacketStatus}
+            savingCommission={savingCommission}
+            onGenerateMandate={onGenerateMandate}
+          />
+        )
+      default:
+        return (
+          <SellerMandateWorkflowGate
+            row={row}
+            listing={listing}
+            journey={journey}
+            onboardingStatus={onboardingStatus}
+            sendingOnboarding={sendingOnboarding}
+            actionBusy={savingCommission}
+            onManualSellerOnboarding={onManualSellerOnboarding}
+            onSendSellerOnboarding={onSendSellerOnboarding}
+            onGenerateMandate={onGenerateMandate}
+          />
+        )
+    }
+  })()
+
   return (
     <div className="grid gap-5">
-      <SellerMandateWorkflowGate
-        row={row}
-        listing={listing}
-        journey={journey}
-        onboardingStatus={onboardingStatus}
-        sendingOnboarding={sendingOnboarding}
-        actionBusy={savingCommission}
-        onManualSellerOnboarding={onManualSellerOnboarding}
-        onSendSellerOnboarding={onSendSellerOnboarding}
-        onGenerateMandate={onGenerateMandate}
-      />
-      <SellerMandateSellerFactsCard
-        row={row}
-        listing={listing}
-        journey={journey}
-        commissionSummary={commissionSummary}
-      />
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-        <SellerMandatePreferencesCard
-          commissionSummary={commissionSummary}
-          onManualSellerOnboarding={onManualSellerOnboarding}
-        />
-        <SellerCommissionCard
-          commissionDraft={commissionDraft}
-          commissionSummary={commissionSummary}
-          savingCommission={savingCommission}
-          onCommissionDraftChange={onCommissionDraftChange}
-          onSaveCommission={onSaveCommission}
-        />
+      <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+          {screens.map((screen, index) => {
+            const Icon = screen.icon
+            const active = currentScreen.key === screen.key
+            return (
+              <button
+                key={screen.key}
+                type="button"
+                onClick={() => setActiveScreen(screen.key)}
+                className={`group flex min-h-[4.5rem] min-w-0 items-center gap-3 rounded-xl border px-3 py-2 text-left transition ${
+                  active
+                    ? 'border-blue-200 bg-blue-50 text-blue-950 shadow-sm'
+                    : 'border-transparent bg-white text-slate-600 hover:border-slate-200 hover:bg-slate-50'
+                }`}
+                aria-current={active ? 'step' : undefined}
+              >
+                <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                  active ? 'bg-white text-blue-700 ring-1 ring-blue-100' : 'bg-slate-100 text-slate-500 group-hover:bg-white'
+                }`}>
+                  <Icon size={17} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate text-sm font-semibold">{screen.label}</span>
+                    <span className="hidden text-[0.68rem] font-bold text-slate-400 sm:inline">{index + 1}</span>
+                  </span>
+                  <span className="mt-0.5 block truncate text-xs font-medium text-slate-500">{screen.helper}</span>
+                  <StatusPill tone={screen.tone} className="mt-1 max-w-full truncate px-2 py-0 text-[0.68rem]">
+                    {screen.status}
+                  </StatusPill>
+                </span>
+              </button>
+            )
+          })}
+        </div>
       </div>
-      <SellerMandatePacketCard
-        row={row}
-        listing={listing}
-        journey={journey}
-        mandatePacketStatus={mandatePacketStatus}
-        savingCommission={savingCommission}
-        onGenerateMandate={onGenerateMandate}
-      />
+      {screenContent}
+      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <button
+          type="button"
+          onClick={() => previousScreen && setActiveScreen(previousScreen.key)}
+          disabled={!previousScreen}
+          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          <ArrowLeft size={15} />
+          {previousScreen ? previousScreen.label : 'First screen'}
+        </button>
+        <div className="text-center text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+          {activeScreenIndex + 1} of {screens.length}
+        </div>
+        <button
+          type="button"
+          onClick={() => nextScreen && setActiveScreen(nextScreen.key)}
+          disabled={!nextScreen}
+          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+        >
+          {nextScreen ? nextScreen.label : 'Complete'}
+          <ArrowRight size={15} />
+        </button>
+      </div>
     </div>
   )
 }

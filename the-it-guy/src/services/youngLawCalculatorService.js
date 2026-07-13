@@ -67,40 +67,99 @@ function makeLineItem(key, label, amount, tone = 'neutral', note = '') {
   }
 }
 
+function getTransferMatterPath(quote) {
+  const purchasePrice = toMoneyNumber(quote.input.purchasePrice)
+  const bondAmount = toMoneyNumber(quote.input.bondAmount)
+  const usesBond = quote.input.financeType !== 'cash' && bondAmount > 0
+  const isVatSale = Boolean(quote.vatTransaction)
+  const transactionLabel = isVatSale ? 'VAT sale' : 'Resale transfer'
+  const financeLabel = usesBond ? 'Bond finance' : 'Cash purchase'
+
+  const primaryDetail = [
+    isVatSale
+      ? 'Transfer duty is excluded for the VAT sale path.'
+      : 'Transfer duty is included where the SARS table applies.',
+    usesBond
+      ? 'Bond registration costs are included.'
+      : 'Bond registration costs are excluded.',
+    'VAT shown is VAT on taxable legal fees, not VAT on the property price.',
+  ].join(' ')
+
+  return {
+    purchasePrice,
+    bondAmount: usesBond ? bondAmount : 0,
+    depositBalance: usesBond ? Math.max(0, purchasePrice - bondAmount) : purchasePrice,
+    usesBond,
+    isVatSale,
+    transactionLabel,
+    financeLabel,
+    primaryDetail,
+    transactionNote: isVatSale
+      ? 'VAT sale selected: transfer duty is not charged in this estimate.'
+      : `Resale selected: transfer duty follows the SARS table effective ${TRANSFER_DUTY_TABLE_EFFECTIVE}.`,
+    financeNote: usesBond
+      ? 'Bond finance selected: bond registration fees and deeds-office bond charges are included.'
+      : 'Cash purchase selected: bond registration fees and bank instruction charges are excluded.',
+  }
+}
+
 export function calculateYoungLawTransfer(input = {}) {
-  const quote = calculateConveyancingQuote({
+  const mergedInput = {
     ...DEFAULT_YOUNG_LAW_TRANSFER_INPUT,
     ...input,
+  }
+  const normalisedBondAmount = toMoneyNumber(mergedInput.bondAmount)
+  const financeType = mergedInput.financeType === 'cash' || normalisedBondAmount <= 0
+    ? 'cash'
+    : mergedInput.financeType
+  const quote = calculateConveyancingQuote({
+    ...mergedInput,
+    financeType,
+    bondAmount: financeType === 'cash' ? 0 : normalisedBondAmount,
   })
+  const matterPath = getTransferMatterPath(quote)
   const transferDuty = quote.summary.transferDuty
   const professional = quote.summary.professionalFees
   const government = quote.summary.governmentCharges
   const disbursements = quote.summary.thirdParty
   const vat = quote.summary.vatTotal
   const cashNeeded = quote.summary.buyerTotal
-  const depositHint = Math.max(0, toMoneyNumber(quote.input.purchasePrice) - toMoneyNumber(quote.input.bondAmount))
 
   const headlineItems = [
     makeLineItem('transfer-duty', 'SARS transfer duty', transferDuty, 'government', `Current SARS table effective ${TRANSFER_DUTY_TABLE_EFFECTIVE}.`),
-    makeLineItem('professional', 'Attorney and bond fees', professional, 'firm', 'Includes transfer and selected bond registration estimates.'),
+    makeLineItem(
+      'professional',
+      matterPath.usesBond ? 'Attorney and bond fees' : 'Transfer attorney fees',
+      professional,
+      'firm',
+      matterPath.usesBond ? 'Includes transfer and bond registration estimates.' : 'Includes transfer work only; no bond registration fees.'
+    ),
     makeLineItem('disbursements', 'Deeds, rates and admin', government + disbursements, 'thirdParty', 'Municipal figures remain final-statement dependent.'),
     makeLineItem('vat', 'VAT on taxable fees', vat, 'tax', 'Calculated at 15% on taxable fees.'),
   ].filter((item) => item.amount > 0)
 
+  const secondaryMetrics = [
+    matterPath.isVatSale
+      ? { label: 'Transfer duty', value: 0, display: 'Excluded', tone: 'muted' }
+      : { label: 'Transfer duty', value: transferDuty, display: formatZar(transferDuty, { compact: true }), tone: transferDuty > 0 ? 'gold' : 'muted' },
+    matterPath.usesBond
+      ? { label: 'Deposit balance', value: matterPath.depositBalance, display: formatZar(matterPath.depositBalance, { compact: true }), tone: 'dark' }
+      : { label: 'Purchase price', value: matterPath.purchasePrice, display: formatZar(matterPath.purchasePrice, { compact: true }), tone: 'dark' },
+    { label: 'VAT on fees', value: vat, display: formatZar(vat, { compact: true }), tone: 'dark' },
+  ]
+
   return {
     ...quote,
+    matterPath,
     headlineItems,
-    sources: [SARS_TRANSFER_DUTY_SOURCE_URL],
+    sources: matterPath.isVatSale ? [] : [SARS_TRANSFER_DUTY_SOURCE_URL],
     primaryMetric: {
       label: 'Cash needed before lodgement',
       value: cashNeeded,
       display: formatZar(cashNeeded),
+      detail: matterPath.primaryDetail,
     },
-    secondaryMetrics: [
-      { label: 'Transfer duty', value: transferDuty, display: formatZar(transferDuty) },
-      { label: 'Estimated deposit gap', value: depositHint, display: formatZar(depositHint) },
-      { label: 'VAT', value: vat, display: formatZar(vat) },
-    ],
+    secondaryMetrics,
   }
 }
 

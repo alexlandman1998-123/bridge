@@ -67,6 +67,13 @@ const calcCards = [
   },
 ]
 
+const transferWizardSteps = [
+  { key: 'mandate', label: 'Mandate' },
+  { key: 'finance', label: 'Finance' },
+  { key: 'amounts', label: 'Amounts' },
+  { key: 'estimate', label: 'Estimate' },
+]
+
 function clampMoney(value, min, max) {
   return Math.min(Math.max(Number(value || 0), min), max)
 }
@@ -142,7 +149,9 @@ function getQuoteSummary(type, result) {
     eyebrow: 'Buyer transfer estimate',
     label: 'Cash needed before lodgement',
     value: result.primaryMetric.display,
-    detail: `Purchase price ${formatZar(result.input.purchasePrice)} with bond amount ${formatZar(result.input.bondAmount)}.`,
+    detail: result.matterPath?.usesBond
+      ? `Purchase price ${formatZar(result.matterPath.purchasePrice)} with bond finance of ${formatZar(result.matterPath.bondAmount)}.`
+      : `Purchase price ${formatZar(result.matterPath?.purchasePrice ?? result.input.purchasePrice)} as a cash purchase.`,
   }
 }
 
@@ -191,23 +200,32 @@ function getEstimatePack(type, result) {
     }
   }
 
-  const bondAmount = Number(result.input.bondAmount || 0)
-  const purchasePrice = Number(result.input.purchasePrice || 0)
-  const bondRatio = purchasePrice > 0 ? Math.round((bondAmount / purchasePrice) * 100) : 0
+  const matterPath = result.matterPath || {}
+  const bondAmount = Number(matterPath.bondAmount || 0)
+  const purchasePrice = Number(matterPath.purchasePrice || result.input.purchasePrice || 0)
+  const bondRatio = matterPath.usesBond && purchasePrice > 0 ? Math.round((bondAmount / purchasePrice) * 100) : 0
 
   return {
-    signal: bondAmount > 0 ? `${bondRatio}% bond scenario` : 'Cash purchase scenario',
+    signal: [
+      matterPath.transactionLabel || (result.input.transactionBasis === 'vat' ? 'VAT sale' : 'Resale transfer'),
+      matterPath.usesBond ? `${bondRatio}% bond` : 'cash purchase',
+    ].join(' / '),
     tone: 'dark',
-    narrative: 'The estimate combines transfer duty, attorney fees, bond registration where selected, disbursements and VAT.',
+    narrative: matterPath.primaryDetail || 'The estimate combines the relevant transfer costs for the selected matter path.',
     assumptions: [
       `Purchase price: ${formatZar(purchasePrice)}`,
-      `Bond amount: ${formatZar(bondAmount)}`,
-      `Mandate type: ${result.input.transactionBasis === 'vat' ? 'VAT sale' : 'Resale transfer'}`,
+      matterPath.usesBond ? `Bond amount: ${formatZar(bondAmount)}` : 'Bond amount: not applicable',
+      `Mandate type: ${matterPath.transactionLabel || (result.input.transactionBasis === 'vat' ? 'VAT sale' : 'Resale transfer')}`,
+      `Finance type: ${matterPath.financeLabel || (result.input.financeType === 'cash' ? 'Cash purchase' : 'Bond finance')}`,
       `Buyer cash needed: ${result.primaryMetric.display}`,
     ],
     nextSteps: [
-      'Confirm whether the transaction is a resale or VAT-inclusive sale.',
-      'Check the final bond amount before issuing a formal quote.',
+      matterPath.isVatSale
+        ? 'Confirm that the sale agreement is VAT-inclusive and that transfer duty is excluded.'
+        : 'Confirm the purchase price against the SARS transfer-duty table.',
+      matterPath.usesBond
+        ? 'Check the final bond amount before issuing a formal quote.'
+        : 'Confirm that no bond registration instruction is expected.',
       'Prepare FICA, offer-to-purchase and property description details.',
     ],
   }
@@ -288,7 +306,7 @@ function IconBadge({ icon: Icon, dark = false }) {
 }
 
 function NumberDisplay({ label, value, tone = 'dark' }) {
-  const toneClass = tone === 'gold' ? 'text-[#6f5609]' : tone === 'alert' ? 'text-[#9f2727]' : 'text-[#111111]'
+  const toneClass = tone === 'gold' ? 'text-[#6f5609]' : tone === 'alert' ? 'text-[#9f2727]' : tone === 'muted' ? 'text-[#626766]' : 'text-[#111111]'
   return (
     <div className="min-h-[86px] rounded-lg border border-[#d9d5ca] bg-white p-3 shadow-[0_8px_22px_rgba(32,27,20,0.035)]">
       <p className="text-[0.68rem] font-medium uppercase tracking-[0.14em] text-[#626766]">{label}</p>
@@ -353,6 +371,41 @@ function FlowStep({ step, title, detail, children }) {
       </div>
       {children}
     </section>
+  )
+}
+
+function WizardProgress({ steps, activeKey }) {
+  const activeIndex = Math.max(0, steps.findIndex((step) => step.key === activeKey))
+
+  return (
+    <div className="grid gap-2 rounded-lg border border-[#d8d2c5] bg-white p-3 shadow-[0_8px_22px_rgba(32,27,20,0.035)]">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8a6b0b]">Step {activeIndex + 1} of {steps.length}</p>
+        <p className="text-xs font-medium text-[#626766]">{steps[activeIndex]?.label}</p>
+      </div>
+      <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
+        {steps.map((step, index) => (
+          <span
+            key={step.key}
+            className={`h-1.5 rounded-full ${index <= activeIndex ? 'bg-[#171412]' : 'bg-[#dedbd1]'}`}
+            aria-label={step.label}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function StepActionButton({ children, onClick, icon: Icon = ArrowRight }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#171412] px-4 text-sm font-medium text-white shadow-[0_10px_24px_rgba(0,0,0,0.12)] transition active:scale-[0.99]"
+    >
+      {children}
+      <Icon size={16} />
+    </button>
   )
 }
 
@@ -969,32 +1022,50 @@ function CalculatorHeader({ title, eyebrow, onBack, icon: Icon }) {
 
 function TransferCalculator({ onBack, onQuote }) {
   const [input, setInput] = useState(() => ({ ...DEFAULT_YOUNG_LAW_TRANSFER_INPUT }))
+  const [transferStep, setTransferStep] = useState('mandate')
   const result = useMemo(() => calculateYoungLawTransfer(input), [input])
   const purchasePrice = Number(input.purchasePrice)
   const bondAmount = Number(input.bondAmount)
+  const minimumBondAmount = 50000
+  const matterPath = result.matterPath
   const scenarios = useMemo(() => {
     const currentValue = result.primaryMetric.value
     const eightyPercentBond = clampMoney(roundToStep(purchasePrice * 0.8), 0, purchasePrice)
-    const scenarioInputs = [
-      {
+    const scenarioInputs = []
+
+    if (!matterPath.usesBond || Math.abs(eightyPercentBond - bondAmount) >= 50000) {
+      scenarioInputs.push({
         key: 'eighty-bond',
         label: '80% bond',
         caption: 'Bond set to 80% of the purchase price.',
         input: { ...input, financeType: 'bond', bondAmount: eightyPercentBond },
-      },
-      {
+      })
+    }
+
+    if (matterPath.usesBond) {
+      scenarioInputs.push({
         key: 'cash-purchase',
         label: 'Cash purchase',
         caption: 'No bond-registration component included.',
         input: { ...input, financeType: 'cash', bondAmount: 0 },
-      },
-      {
+      })
+    }
+
+    if (matterPath.isVatSale) {
+      scenarioInputs.push({
+        key: 'resale-transfer',
+        label: 'Resale transfer',
+        caption: 'Transfer-duty path using the SARS table.',
+        input: { ...input, transactionBasis: 'resale' },
+      })
+    } else {
+      scenarioInputs.push({
         key: 'vat-sale',
         label: 'VAT sale',
-        caption: 'VAT-inclusive transaction treatment.',
+        caption: 'Transfer duty excluded for the VAT-sale path.',
         input: { ...input, transactionBasis: 'vat' },
-      },
-    ]
+      })
+    }
 
     return scenarioInputs.map((scenario) => {
       const scenarioResult = calculateYoungLawTransfer(scenario.input)
@@ -1004,73 +1075,101 @@ function TransferCalculator({ onBack, onQuote }) {
         delta: scenarioResult.primaryMetric.value - currentValue,
       }
     })
-  }, [input, purchasePrice, result.primaryMetric.value])
+  }, [bondAmount, input, matterPath.isVatSale, matterPath.usesBond, purchasePrice, result.primaryMetric.value])
+
+  useEffect(() => {
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }))
+  }, [transferStep])
 
   function update(field, value) {
     setInput((previous) => {
       const next = { ...previous, [field]: value }
       if (field === 'purchasePrice') {
         next.purchasePrice = value
-        next.bondAmount = clampMoney(previous.bondAmount, 0, value)
+        next.bondAmount = clampMoney(previous.bondAmount, previous.financeType === 'bond' ? minimumBondAmount : 0, value)
       }
       if (field === 'financeType' && value === 'cash') {
         next.bondAmount = 0
       }
-      if (field === 'financeType' && value === 'bond' && previous.bondAmount === 0) {
-        next.bondAmount = Math.round(previous.purchasePrice * 0.8)
+      if (field === 'financeType' && value === 'bond') {
+        next.bondAmount = previous.bondAmount > 0
+          ? clampMoney(previous.bondAmount, minimumBondAmount, previous.purchasePrice)
+          : Math.round(previous.purchasePrice * 0.8)
       }
       return next
     })
   }
 
+  function goBackWithinTransfer() {
+    if (transferStep === 'estimate') {
+      setTransferStep('amounts')
+      return
+    }
+    if (transferStep === 'amounts') {
+      setTransferStep('finance')
+      return
+    }
+    if (transferStep === 'finance') {
+      setTransferStep('mandate')
+      return
+    }
+    onBack()
+  }
+
+  function selectMandate(transactionBasis) {
+    update('transactionBasis', transactionBasis)
+    setTransferStep('finance')
+  }
+
+  function selectFinance(financeType) {
+    update('financeType', financeType)
+    setTransferStep('amounts')
+  }
+
   return (
     <section>
-      <CalculatorHeader title="Transfer Cost" eyebrow="Buyer estimate" icon={Home} onBack={onBack} />
+      <CalculatorHeader title="Transfer Cost" eyebrow="Buyer estimate" icon={Home} onBack={goBackWithinTransfer} />
       <div className="grid gap-4 px-4 pb-5">
-        <PrimaryResultCard
-          label="Cash needed before lodgement"
-          value={result.primaryMetric.display}
-          detail="Transfer duty, legal fees, disbursements and VAT. Bond costs appear when finance is selected."
-          type="transfer"
-          result={result}
-          onQuote={onQuote}
-        />
-        <StickyResultBar label="Cash needed" value={result.primaryMetric.display} type="transfer" result={result} onQuote={onQuote} />
+        <WizardProgress steps={transferWizardSteps} activeKey={transferStep} />
 
-        <div className="grid gap-5 pt-1">
+        {transferStep === 'mandate' ? (
           <FlowStep
             step="1"
             title="Mandate type"
-            detail="Start with how the transfer mandate should be treated for the estimate."
+            detail="Choose the legal basis first. It decides whether SARS transfer duty applies."
           >
-            <div className="flex gap-2">
-              <ToggleButton label="Resale transfer" icon={Building2} active={input.transactionBasis === 'resale'} onClick={() => update('transactionBasis', 'resale')} />
-              <ToggleButton label="VAT sale" icon={Percent} active={input.transactionBasis === 'vat'} onClick={() => update('transactionBasis', 'vat')} />
+            <div className="grid gap-2">
+              <ToggleButton label="Resale transfer" icon={Building2} active={input.transactionBasis === 'resale'} onClick={() => selectMandate('resale')} />
+              <ToggleButton label="VAT sale" icon={Percent} active={input.transactionBasis === 'vat'} onClick={() => selectMandate('vat')} />
             </div>
           </FlowStep>
+        ) : null}
 
+        {transferStep === 'finance' ? (
           <FlowStep
             step="2"
             title="Finance type"
-            detail="Then choose whether bond registration work should be included."
+            detail="Now choose whether Young Law should include bond registration work."
           >
-            <div className="flex gap-2">
-              <ToggleButton label="Bond finance" icon={CircleDollarSign} active={input.financeType === 'bond'} onClick={() => update('financeType', 'bond')} />
-              <ToggleButton label="Cash purchase" icon={WalletCards} active={input.financeType === 'cash'} onClick={() => update('financeType', 'cash')} />
+            <div className="grid gap-2">
+              <ToggleButton label="Bond finance" icon={CircleDollarSign} active={input.financeType === 'bond'} onClick={() => selectFinance('bond')} />
+              <ToggleButton label="Cash purchase" icon={WalletCards} active={input.financeType === 'cash'} onClick={() => selectFinance('cash')} />
             </div>
           </FlowStep>
+        ) : null}
 
+        {transferStep === 'amounts' ? (
           <FlowStep
             step="3"
             title={input.financeType === 'bond' ? 'Finance amounts' : 'Purchase amount'}
-            detail={input.financeType === 'bond' ? 'Now set the purchase price and bond amount.' : 'Cash purchases only need the purchase price.'}
+            detail={input.financeType === 'bond' ? 'Set the purchase price and bond amount before viewing the estimate.' : 'Cash purchases only need the purchase price before viewing the estimate.'}
           >
             <div className="grid gap-3">
               <SliderField label="Purchase price" min={500000} max={10000000} step={50000} value={purchasePrice} onChange={(value) => update('purchasePrice', value)} />
               {input.financeType === 'bond' ? (
                 <SliderField
                   label="Bond amount"
-                  min={0}
+                  min={minimumBondAmount}
                   max={purchasePrice}
                   step={50000}
                   value={bondAmount}
@@ -1082,29 +1181,56 @@ function TransferCalculator({ onBack, onQuote }) {
                   Bond registration costs are excluded while cash purchase is selected.
                 </p>
               )}
+              <StepActionButton onClick={() => setTransferStep('estimate')}>
+                View estimate
+              </StepActionButton>
             </div>
           </FlowStep>
-        </div>
+        ) : null}
 
-        <div className="grid grid-cols-3 gap-2">
-          {result.secondaryMetrics.map((metric) => (
-            <NumberDisplay key={metric.label} label={metric.label} value={formatZar(metric.value, { compact: true })} tone={metric.label === 'Transfer duty' ? 'gold' : 'dark'} />
-          ))}
-        </div>
+        {transferStep === 'estimate' ? (
+          <>
+            <PrimaryResultCard
+              label="Cash needed before lodgement"
+              value={result.primaryMetric.display}
+              detail={result.primaryMetric.detail}
+              type="transfer"
+              result={result}
+              onQuote={onQuote}
+            />
+            <StickyResultBar label="Cash needed" value={result.primaryMetric.display} type="transfer" result={result} onQuote={onQuote} />
 
-        <EstimatePack type="transfer" result={result} />
-        <ScenarioStudio metricLabel="Cash needed" scenarios={scenarios} onApply={setInput} />
+            <div className="grid grid-cols-3 gap-2">
+              {result.secondaryMetrics.map((metric) => (
+                <NumberDisplay key={metric.label} label={metric.label} value={metric.display || formatZar(metric.value, { compact: true })} tone={metric.tone || (metric.label === 'Transfer duty' ? 'gold' : 'dark')} />
+              ))}
+            </div>
 
-        <div className="rounded-lg border border-[#d8d2c5] bg-white p-4 shadow-[0_8px_22px_rgba(32,27,20,0.035)]">
-          <div className="mb-2 flex items-center gap-2">
-            <ReceiptText size={17} />
-            <h2 className="text-base font-medium text-[#141210]">Estimate breakdown</h2>
+            <EstimatePack type="transfer" result={result} />
+            <ScenarioStudio metricLabel="Cash needed" scenarios={scenarios} onApply={setInput} />
+
+            <div className="rounded-lg border border-[#d8d2c5] bg-white p-4 shadow-[0_8px_22px_rgba(32,27,20,0.035)]">
+              <div className="mb-2 flex items-center gap-2">
+                <ReceiptText size={17} />
+                <h2 className="text-base font-medium text-[#141210]">Estimate breakdown</h2>
+              </div>
+              <BreakdownList items={result.headlineItems} />
+            </div>
+
+            <SourceStrip links={matterPath.isVatSale ? [] : [{ href: SARS_TRANSFER_DUTY_SOURCE_URL, label: `SARS transfer duty ${TRANSFER_DUTY_TABLE_EFFECTIVE}` }]} />
+            <QuoteCta type="transfer" result={result} onQuote={onQuote} />
+          </>
+        ) : null}
+
+        {transferStep === 'finance' || transferStep === 'amounts' ? (
+          <div className="rounded-lg border border-[#d8d2c5] bg-white p-4 shadow-[0_8px_22px_rgba(32,27,20,0.035)]">
+            <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8a6b0b]">Selected so far</p>
+            <div className="mt-3 grid gap-2">
+              <p className="text-sm font-medium text-[#141210]">{matterPath.transactionLabel}</p>
+              {transferStep === 'amounts' ? <p className="text-sm font-normal leading-6 text-[#626766]">{matterPath.financeLabel}</p> : null}
+            </div>
           </div>
-          <BreakdownList items={result.headlineItems} />
-        </div>
-
-        <SourceStrip links={[{ href: SARS_TRANSFER_DUTY_SOURCE_URL, label: `SARS transfer duty ${TRANSFER_DUTY_TABLE_EFFECTIVE}` }]} />
-        <QuoteCta type="transfer" result={result} onQuote={onQuote} />
+        ) : null}
       </div>
     </section>
   )

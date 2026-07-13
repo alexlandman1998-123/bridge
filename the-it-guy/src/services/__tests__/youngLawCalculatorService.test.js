@@ -27,6 +27,45 @@ test('transfer calculator uses current transfer-duty threshold', () => {
   assert.ok(result.primaryMetric.value > 0)
 })
 
+test('transfer calculator excludes transfer duty on VAT sale path', () => {
+  const result = calculateYoungLawTransfer({
+    purchasePrice: 2500000,
+    bondAmount: 1500000,
+    transactionBasis: 'vat',
+  })
+
+  assert.equal(result.summary.transferDuty, 0)
+  assert.equal(result.matterPath.isVatSale, true)
+  assert.equal(result.secondaryMetrics[0].display, 'Excluded')
+  assert.deepEqual(result.sources, [])
+})
+
+test('transfer calculator removes bond registration costs for cash purchase path', () => {
+  const result = calculateYoungLawTransfer({
+    purchasePrice: 2500000,
+    financeType: 'cash',
+    bondAmount: 0,
+  })
+
+  assert.equal(result.matterPath.usesBond, false)
+  assert.equal(result.matterPath.financeLabel, 'Cash purchase')
+  assert.equal(result.lineItems.some((item) => item.key === 'bond-professional-fee'), false)
+  assert.equal(result.secondaryMetrics.some((metric) => metric.label === 'Deposit balance'), false)
+  assert.ok(result.secondaryMetrics.some((metric) => metric.label === 'Purchase price'))
+})
+
+test('transfer calculator treats zero bond amount as cash path', () => {
+  const result = calculateYoungLawTransfer({
+    purchasePrice: 2500000,
+    financeType: 'bond',
+    bondAmount: 0,
+  })
+
+  assert.equal(result.input.financeType, 'cash')
+  assert.equal(result.matterPath.usesBond, false)
+  assert.equal(result.lineItems.some((item) => item.key === 'deeds-office-bond'), false)
+})
+
 test('seller proceeds subtracts settlement, commission and clearance costs', () => {
   const result = calculateSellerNetProceeds({
     salePrice: 2000000,
