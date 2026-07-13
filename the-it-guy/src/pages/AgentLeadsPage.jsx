@@ -19367,6 +19367,12 @@ function SellerCommissionCard({
   const commissionValueLabel = commissionType === 'fixed'
     ? amount ? formatCurrency(amount) : 'Fixed amount pending'
     : percentage ? `${percentage}%` : 'Percentage pending'
+  const commissionSummaryItems = [
+    ['Structure', commissionType === 'fixed' ? 'Fixed amount' : 'Percentage'],
+    ['Commission', commissionValueLabel],
+    ['Ex VAT', estimatedExVat ? formatCurrency(estimatedExVat) : 'Not captured'],
+    ['Incl VAT', estimatedInclVat ? formatCurrency(estimatedInclVat) : 'Not captured'],
+  ]
   const update = (key, value) => {
     onCommissionDraftChange?.(key, value)
   }
@@ -19381,87 +19387,96 @@ function SellerCommissionCard({
         <FileText size={17} className="mt-0.5 shrink-0 text-blue-700" />
         <p>The agent only completes the commission structure and VAT treatment. Everything else comes from seller onboarding.</p>
       </div>
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(220px,0.92fr)]">
         <section className="rounded-2xl border border-slate-200 bg-white p-4">
-            <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-blue-900">Commission Structure</h3>
-            <div className="mt-4 flex flex-wrap gap-5">
-              {[
-                ['percentage', 'Percentage'],
-                ['fixed', 'Fixed Amount'],
-              ].map(([value, label]) => (
-                <label key={value} className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
-                  <input
-                    type="radio"
-                    name="seller-mandate-commission-type"
-                    value={value}
-                    checked={commissionType === value}
-                    onChange={(event) => update('commissionType', event.target.value)}
-                    className="h-4 w-4 accent-blue-900"
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
-            {commissionType === 'percentage' ? (
-              <label className="mt-4 grid gap-2">
-                <span className="text-xs font-semibold text-slate-600">Commission % *</span>
-                <div className="flex min-h-11 items-center rounded-xl border border-slate-200 bg-white focus-within:border-blue-300">
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.01"
-                    value={commissionDraft?.percentage || ''}
-                    onChange={(event) => update('percentage', event.target.value)}
-                    placeholder="5"
-                    className="min-h-10 flex-1 rounded-xl border-0 bg-transparent px-3 text-sm font-semibold text-slate-900 outline-none"
-                  />
-                  <span className="px-3 text-sm font-semibold text-slate-500">%</span>
-                </div>
-                <span className="text-xs font-medium text-slate-500">Commission will be calculated as a percentage of the sale price.</span>
+          <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-blue-900">Commission Structure</h3>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {[
+              ['percentage', 'Percentage'],
+              ['fixed', 'Fixed Amount'],
+            ].map(([value, label]) => (
+              <label
+                key={value}
+                className={`flex min-h-11 items-center gap-3 rounded-xl border px-3 text-sm font-semibold transition ${
+                  commissionType === value
+                    ? 'border-blue-200 bg-blue-50 text-blue-950'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="seller-mandate-commission-type"
+                  value={value}
+                  checked={commissionType === value}
+                  onChange={(event) => update('commissionType', event.target.value)}
+                  className="h-4 w-4 shrink-0 accent-blue-900"
+                />
+                <span className="min-w-0 truncate">{label}</span>
               </label>
-            ) : (
-              <label className="mt-4 grid gap-2">
-                <span className="text-xs font-semibold text-slate-600">Commission Amount *</span>
-                <div className="flex min-h-11 items-center rounded-xl border border-slate-200 bg-white focus-within:border-blue-300">
-                  <span className="px-3 text-sm font-semibold text-slate-500">R</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1000"
-                    value={commissionDraft?.amount || ''}
-                    onChange={(event) => update('amount', event.target.value)}
-                    placeholder={estimatedExVat ? String(Math.round(estimatedExVat)) : '150000'}
-                    className="min-h-10 flex-1 rounded-xl border-0 bg-transparent px-3 text-sm font-semibold text-slate-900 outline-none"
-                  />
-                </div>
-              </label>
-            )}
+            ))}
+          </div>
+          {commissionType === 'percentage' ? (
+            <label className="mt-4 grid gap-2">
+              <span className="text-xs font-semibold text-slate-600">Commission % *</span>
+              <div className="flex min-h-11 items-center rounded-xl border border-slate-200 bg-white focus-within:border-blue-300">
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={commissionDraft?.percentage || ''}
+                  onChange={(event) => update('percentage', event.target.value)}
+                  placeholder="5"
+                  className="min-h-10 min-w-0 flex-1 rounded-xl border-0 bg-transparent px-3 text-sm font-semibold text-slate-900 outline-none"
+                />
+                <span className="px-3 text-sm font-semibold text-slate-500">%</span>
+              </div>
+              <span className="text-xs font-medium leading-5 text-slate-500">Calculated as a percentage of the sale price.</span>
+            </label>
+          ) : (
+            <label className="mt-4 grid gap-2">
+              <span className="text-xs font-semibold text-slate-600">Commission Amount *</span>
+              <div className="flex min-h-11 items-center rounded-xl border border-slate-200 bg-white focus-within:border-blue-300">
+                <span className="px-3 text-sm font-semibold text-slate-500">R</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="1000"
+                  value={commissionDraft?.amount || ''}
+                  onChange={(event) => update('amount', event.target.value)}
+                  placeholder={estimatedExVat ? String(Math.round(estimatedExVat)) : '150000'}
+                  className="min-h-10 min-w-0 flex-1 rounded-xl border-0 bg-transparent px-3 text-sm font-semibold text-slate-900 outline-none"
+                />
+              </div>
+            </label>
+          )}
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-4">
-            <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-blue-900">VAT Treatment</h3>
-            <label className="mt-4 grid gap-2">
-              <span className="text-xs font-semibold text-slate-600">VAT Handling *</span>
-              <select
-                value={vatHandling}
-                onChange={(event) => update('vatHandling', event.target.value)}
-                className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
-              >
-                {SELLER_MANDATE_VAT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </label>
-            <p className="mt-3 text-xs font-medium text-slate-500">How VAT is applied to the commission clause.</p>
+          <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-blue-900">VAT Treatment</h3>
+          <label className="mt-4 grid gap-2">
+            <span className="text-xs font-semibold text-slate-600">VAT Handling *</span>
+            <select
+              value={vatHandling}
+              onChange={(event) => update('vatHandling', event.target.value)}
+              className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
+            >
+              {SELLER_MANDATE_VAT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          <p className="mt-3 text-xs font-medium leading-5 text-slate-500">Applied to the commission clause in the mandate.</p>
         </section>
       </div>
 
-      <div className="mt-5 grid gap-3 rounded-xl border border-blue-100 bg-blue-50/70 p-3 sm:grid-cols-2 lg:grid-cols-4">
-        <SellerInfoRow label="Structure" value={commissionType === 'fixed' ? 'Fixed amount' : 'Percentage'} />
-        <SellerInfoRow label="Commission" value={commissionValueLabel} />
-        <SellerInfoRow label="Ex VAT" value={estimatedExVat ? formatCurrency(estimatedExVat) : 'Not captured'} />
-        <SellerInfoRow label="Incl VAT" value={estimatedInclVat ? formatCurrency(estimatedInclVat) : 'Not captured'} />
+      <div className="mt-4 grid gap-3 rounded-xl border border-blue-100 bg-blue-50/70 p-3 [grid-template-columns:repeat(auto-fit,minmax(8.75rem,1fr))]">
+        {commissionSummaryItems.map(([label, value]) => (
+          <div key={label} className="min-w-0 rounded-lg bg-white/70 px-3 py-2 ring-1 ring-blue-100/70">
+            <p className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-slate-400">{label}</p>
+            <p className="mt-1 min-w-0 truncate text-sm font-semibold text-slate-950" title={value}>{value}</p>
+          </div>
+        ))}
       </div>
       <button
         type="button"

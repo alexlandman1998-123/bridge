@@ -202,7 +202,7 @@ function getEstimatePack(type, result) {
     assumptions: [
       `Purchase price: ${formatZar(purchasePrice)}`,
       `Bond amount: ${formatZar(bondAmount)}`,
-      `Matter type: ${result.input.transactionBasis === 'vat' ? 'VAT sale' : 'Resale'}`,
+      `Mandate type: ${result.input.transactionBasis === 'vat' ? 'VAT sale' : 'Resale transfer'}`,
       `Buyer cash needed: ${result.primaryMetric.display}`,
     ],
     nextSteps: [
@@ -338,6 +338,21 @@ function PrimaryResultCard({ label, value, detail, type, result, onQuote, varian
 
       <p className={`mt-3 text-xs font-normal leading-5 ${isDark ? 'text-white/70' : 'text-[#626766]'}`}>{detail}</p>
     </div>
+  )
+}
+
+function FlowStep({ step, title, detail, children }) {
+  return (
+    <section className="grid gap-3">
+      <div className="flex items-start gap-3">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[#171412] text-[0.68rem] font-medium text-white">{step}</span>
+        <div className="min-w-0">
+          <h2 className="text-sm font-medium text-[#141210]">{title}</h2>
+          {detail ? <p className="mt-1 text-xs font-normal leading-5 text-[#626766]">{detail}</p> : null}
+        </div>
+      </div>
+      {children}
+    </section>
   )
 }
 
@@ -1022,6 +1037,55 @@ function TransferCalculator({ onBack, onQuote }) {
         />
         <StickyResultBar label="Cash needed" value={result.primaryMetric.display} type="transfer" result={result} onQuote={onQuote} />
 
+        <div className="grid gap-5 pt-1">
+          <FlowStep
+            step="1"
+            title="Mandate type"
+            detail="Start with how the transfer mandate should be treated for the estimate."
+          >
+            <div className="flex gap-2">
+              <ToggleButton label="Resale transfer" icon={Building2} active={input.transactionBasis === 'resale'} onClick={() => update('transactionBasis', 'resale')} />
+              <ToggleButton label="VAT sale" icon={Percent} active={input.transactionBasis === 'vat'} onClick={() => update('transactionBasis', 'vat')} />
+            </div>
+          </FlowStep>
+
+          <FlowStep
+            step="2"
+            title="Finance type"
+            detail="Then choose whether bond registration work should be included."
+          >
+            <div className="flex gap-2">
+              <ToggleButton label="Bond finance" icon={CircleDollarSign} active={input.financeType === 'bond'} onClick={() => update('financeType', 'bond')} />
+              <ToggleButton label="Cash purchase" icon={WalletCards} active={input.financeType === 'cash'} onClick={() => update('financeType', 'cash')} />
+            </div>
+          </FlowStep>
+
+          <FlowStep
+            step="3"
+            title={input.financeType === 'bond' ? 'Finance amounts' : 'Purchase amount'}
+            detail={input.financeType === 'bond' ? 'Now set the purchase price and bond amount.' : 'Cash purchases only need the purchase price.'}
+          >
+            <div className="grid gap-3">
+              <SliderField label="Purchase price" min={500000} max={10000000} step={50000} value={purchasePrice} onChange={(value) => update('purchasePrice', value)} />
+              {input.financeType === 'bond' ? (
+                <SliderField
+                  label="Bond amount"
+                  min={0}
+                  max={purchasePrice}
+                  step={50000}
+                  value={bondAmount}
+                  onChange={(value) => update('bondAmount', value)}
+                  hint={`${Math.round((bondAmount / Math.max(purchasePrice, 1)) * 100)}% finance selected.`}
+                />
+              ) : (
+                <p className="rounded-lg border border-[#d8d2c5] bg-white px-4 py-3 text-xs font-normal leading-5 text-[#626766] shadow-[0_8px_22px_rgba(32,27,20,0.035)]">
+                  Bond registration costs are excluded while cash purchase is selected.
+                </p>
+              )}
+            </div>
+          </FlowStep>
+        </div>
+
         <div className="grid grid-cols-3 gap-2">
           {result.secondaryMetrics.map((metric) => (
             <NumberDisplay key={metric.label} label={metric.label} value={formatZar(metric.value, { compact: true })} tone={metric.label === 'Transfer duty' ? 'gold' : 'dark'} />
@@ -1030,29 +1094,6 @@ function TransferCalculator({ onBack, onQuote }) {
 
         <EstimatePack type="transfer" result={result} />
         <ScenarioStudio metricLabel="Cash needed" scenarios={scenarios} onApply={setInput} />
-
-        <SliderField label="Purchase price" min={500000} max={10000000} step={50000} value={purchasePrice} onChange={(value) => update('purchasePrice', value)} />
-        <SliderField
-          label="Bond amount"
-          min={0}
-          max={purchasePrice}
-          step={50000}
-          value={bondAmount}
-          onChange={(value) => update('bondAmount', value)}
-          hint={input.financeType === 'cash' ? 'Cash purchase selected.' : `${Math.round((bondAmount / Math.max(purchasePrice, 1)) * 100)}% finance selected.`}
-        />
-
-        <div className="grid gap-2">
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#626766]">Matter type</p>
-          <div className="flex gap-2">
-            <ToggleButton label="Resale" icon={Building2} active={input.transactionBasis === 'resale'} onClick={() => update('transactionBasis', 'resale')} />
-            <ToggleButton label="VAT sale" icon={Percent} active={input.transactionBasis === 'vat'} onClick={() => update('transactionBasis', 'vat')} />
-          </div>
-          <div className="flex gap-2">
-            <ToggleButton label="Bond" icon={CircleDollarSign} active={input.financeType === 'bond'} onClick={() => update('financeType', 'bond')} />
-            <ToggleButton label="Cash" icon={WalletCards} active={input.financeType === 'cash'} onClick={() => update('financeType', 'cash')} />
-          </div>
-        </div>
 
         <div className="rounded-lg border border-[#d8d2c5] bg-white p-4 shadow-[0_8px_22px_rgba(32,27,20,0.035)]">
           <div className="mb-2 flex items-center gap-2">
