@@ -368,12 +368,10 @@ function AgentReportingPage() {
             <SectionHeader
               eyebrow="Seller Funnel"
               title="Seller Journey Analytics"
-              copy="Seller lead, valuation, mandate, and listing-live metrics derived from the existing seller journey service."
+              copy="Seller lead, mandate, and listing-live metrics derived from the existing seller journey service."
             />
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
               <MetricCard label="Seller Leads" value={formatNumber(analytics.seller?.overview?.sellerLeads)} icon={Users} tone="blue" />
-              <MetricCard label="Valuations Booked" value={formatNumber(analytics.seller?.overview?.valuationsScheduled)} icon={CalendarDays} tone="amber" />
-              <MetricCard label="Valuations Done" value={formatNumber(analytics.seller?.overview?.valuationsCompleted)} icon={CheckCircle2} tone="green" />
               <MetricCard label="Mandates Sent" value={formatNumber(analytics.seller?.overview?.mandatesSent)} icon={MessageSquareText} tone="blue" />
               <MetricCard label="Mandates Signed" value={formatNumber(analytics.seller?.overview?.mandatesSigned)} icon={CheckCircle2} tone="green" />
               <MetricCard label="Listings Live" value={formatNumber(analytics.seller?.overview?.listingsLive)} icon={TrendingUp} tone="green" />
@@ -416,7 +414,6 @@ function AgentReportingPage() {
                   columns={[
                     { key: 'source', label: 'Source' },
                     { key: 'sellerLeads', label: 'Leads', render: (row) => formatNumber(row.sellerLeads) },
-                    { key: 'valuationsScheduled', label: 'Valuations', render: (row) => formatNumber(row.valuationsScheduled) },
                     { key: 'mandatesSigned', label: 'Mandates Signed', render: (row) => formatNumber(row.mandatesSigned) },
                     { key: 'listingsLive', label: 'Listings Live', render: (row) => formatNumber(row.listingsLive) },
                     { key: 'listingLiveConversionPercent', label: 'Live %', render: (row) => formatPercent(row.listingLiveConversionPercent) },
@@ -434,7 +431,6 @@ function AgentReportingPage() {
                   columns={[
                     { key: 'agentName', label: 'Agent' },
                     { key: 'sellerLeads', label: 'Leads', render: (row) => formatNumber(row.sellerLeads) },
-                    { key: 'valuationsCompleted', label: 'Valuations Done', render: (row) => formatNumber(row.valuationsCompleted) },
                     { key: 'mandatesSigned', label: 'Mandates Signed', render: (row) => formatNumber(row.mandatesSigned) },
                     { key: 'listingsLive', label: 'Listings Live', render: (row) => formatNumber(row.listingsLive) },
                     { key: 'averageDaysToListingLive', label: 'Avg Live Time', render: (row) => formatDays(row.averageDaysToListingLive) },
@@ -452,7 +448,6 @@ function AgentReportingPage() {
                   columns={[
                     { key: 'branchName', label: 'Branch' },
                     { key: 'sellerLeads', label: 'Leads', render: (row) => formatNumber(row.sellerLeads) },
-                    { key: 'valuationsScheduled', label: 'Valuations', render: (row) => formatNumber(row.valuationsScheduled) },
                     { key: 'mandatesSigned', label: 'Mandates Signed', render: (row) => formatNumber(row.mandatesSigned) },
                     { key: 'listingsLive', label: 'Listings Live', render: (row) => formatNumber(row.listingsLive) },
                     { key: 'listingLiveConversionPercent', label: 'Live %', render: (row) => formatPercent(row.listingLiveConversionPercent) },

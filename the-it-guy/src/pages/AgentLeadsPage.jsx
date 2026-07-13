@@ -11946,10 +11946,10 @@ function SellerAppointmentForm({ organisationId, lead, listing = null, actor, on
   const contact = getLeadContactSnapshot(lead)
   const listingId = getSellerListingId(lead, listing)
   const property = getSellerPropertySummary(lead, listing)
-  const defaultJourneyAppointmentTitle = getSellerAppointmentDefaultTitle('seller_consultation', contact.name, lead?.name)
+  const defaultAppointmentTitle = getSellerAppointmentDefaultTitle('seller_consultation', contact.name, lead?.name)
   const [draft, setDraft] = useState({
     appointmentType: 'seller_consultation',
-    title: defaultJourneyAppointmentTitle,
+    title: defaultAppointmentTitle,
     appointmentStatus: 'confirmed',
     sendInviteEmails: false,
     date: getTodayInputValue(),
@@ -11983,12 +11983,9 @@ function SellerAppointmentForm({ organisationId, lead, listing = null, actor, on
       setSaving(true)
       setError('')
       setMessage('')
-      const journeyAppointment = draft.appointmentType === 'seller_consultation'
-      const linkedWorkflow = journeyAppointment ? 'seller_listing' : 'seller_lead_add_on'
-      const linkedWorkflowStage = journeyAppointment ? 'seller_consultation' : 'optional_appointment'
-      const appointmentInstructions = journeyAppointment
-        ? 'Seller consultation appointment for this lead.'
-        : 'Supplemental seller appointment for this lead.'
+      const linkedWorkflow = 'seller_lead_add_on'
+      const linkedWorkflowStage = 'optional_appointment'
+      const appointmentInstructions = 'Optional seller appointment for this lead.'
       const sellerParticipant = {
         name: contact.name || lead.name || 'Seller',
         email: contact.email,
@@ -12050,13 +12047,11 @@ function SellerAppointmentForm({ organisationId, lead, listing = null, actor, on
         <div className="min-w-0">
           <p className="text-sm font-semibold text-slate-950">Seller appointment</p>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
-            {draft.appointmentType === 'seller_consultation'
-              ? `Linked to this seller lead${listingId ? ' and listing' : ''}; use this for seller consultations when needed.`
-              : `Linked to this seller lead${listingId ? ' and listing' : ''}; supplemental appointment types stay outside the main seller journey.`}
+            {`Linked to this seller lead${listingId ? ' and listing' : ''}; appointments stay outside the main seller journey.`}
           </p>
         </div>
-        <StatusPill tone={draft.appointmentType === 'seller_consultation' ? 'green' : 'blue'} className="shrink-0 text-nowrap">
-          {draft.appointmentType === 'seller_consultation' ? 'Primary appointment' : 'Add-on'}
+        <StatusPill tone="blue" className="shrink-0 text-nowrap">
+          Optional
         </StatusPill>
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(170px,0.85fr)_minmax(260px,1.45fr)_minmax(160px,0.75fr)_minmax(150px,0.7fr)]">
@@ -15647,7 +15642,7 @@ function SellerJourneyRail({ journey = null, row = {}, listing = null }) {
         <StatusPill tone={journey.listingLive ? 'green' : journey.listingCreated ? 'amber' : 'blue'}>{journey.stage?.status || journey.status?.status || 'Active'}</StatusPill>
       </div>
       <ol
-        className="mt-7 grid min-w-0 grid-cols-2 gap-x-4 gap-y-6 px-1 sm:grid-cols-3 sm:px-2 lg:grid-cols-4 lg:px-3 xl:grid-cols-9 xl:gap-x-3"
+        className="mt-7 grid min-w-0 grid-cols-2 gap-x-4 gap-y-6 px-1 sm:grid-cols-3 sm:px-2 lg:grid-cols-4 lg:px-3 xl:grid-cols-8 xl:gap-x-3"
       >
         {(journey.steps || []).map((step, index, steps) => {
           const date = getSellerJourneyStepDate(row, listing, journey, step)

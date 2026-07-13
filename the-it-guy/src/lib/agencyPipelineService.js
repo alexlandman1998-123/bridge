@@ -33,7 +33,6 @@ import {
   isBuyerLifecycleAppointment,
 } from './buyerLifecycleService'
 import { inferLeadCategoryFromRecord, normalizeLeadCategory } from './leadCategory'
-import { isSellerValuationAppointment } from '../services/sellerJourneyService.js'
 
 const STORAGE_PREFIX = 'itg:agency-crm:v1'
 const CRM_UPDATED_EVENT = 'itg:agency-crm-updated'
@@ -2234,13 +2233,6 @@ async function fetchAppointmentByIdFromSupabase(organisationId, appointmentId, o
   return rows.find((row) => normalizeText(row?.appointmentId) === normalizeText(appointmentId)) || null
 }
 
-async function syncSellerJourneyStageFromAppointment(organisationId, leadId, appointment = {}) {
-  const scopedOrganisationId = normalizeText(organisationId)
-  const scopedLeadId = toNullableUuid(leadId)
-  if (!scopedOrganisationId || !scopedLeadId || !isSellerValuationAppointment(appointment)) return false
-  return false
-}
-
 export function createLeadTask(organisationId, leadId, payload = {}, { actor = null } = {}) {
   assertLocalFallbackAllowed('agencyPipelineService.createLeadTask', organisationId)
   const store = safeReadStore(organisationId)
@@ -2533,7 +2525,6 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
         activityNote: `${appointment.appointmentTypeLabel || getAppointmentTypeLabel(appointment.appointmentType)} scheduled.`,
       }).catch(() => null)
     }
-    await syncSellerJourneyStageFromAppointment(scopedOrganisationId, appointment.leadId, appointment).catch(() => false)
   }
 
   if (normalizeText(appointment.transactionId)) {
@@ -2709,7 +2700,6 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
         activityNote: `${merged.appointmentTypeLabel || getAppointmentTypeLabel(merged.appointmentType)} completed.`,
       }).catch(() => null)
     }
-    await syncSellerJourneyStageFromAppointment(scopedOrganisationId, merged.leadId, merged).catch(() => false)
   }
 
   const saved = await fetchAppointmentByIdFromSupabase(scopedOrganisationId, scopedAppointmentId)

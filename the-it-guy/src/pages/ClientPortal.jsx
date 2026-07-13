@@ -324,7 +324,6 @@ function buildSellerPortalProgressModel({
 
 const SELLER_PROGRESS_PORTAL_KEY_BY_JOURNEY_KEY = {
   contacted: 'contacted',
-  appointment_valuation: 'contacted',
   seller_onboarding_sent: 'onboarding',
   seller_onboarding_submitted: 'submitted',
   mandate_sent: 'mandate_sent',

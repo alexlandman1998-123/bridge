@@ -25,8 +25,8 @@ const baseLead = {
     lead: baseLead,
     appointments: [{ appointmentType: 'seller_valuation', status: 'requested', dateTime: '2026-06-03T10:00:00Z' }],
   })
-  assert.equal(stage.key, 'appointment_valuation')
-  assert.equal(stage.status, 'Scheduled')
+  assert.equal(stage.key, 'contacted')
+  assert.equal(stage.status, 'Active')
 }
 
 {
@@ -34,8 +34,8 @@ const baseLead = {
     lead: baseLead,
     appointments: [{ appointmentType: 'other', customTypeLabel: 'Seller Appointment', status: 'confirmed', dateTime: '2026-06-03T10:00:00Z' }],
   })
-  assert.equal(stage.key, 'appointment_valuation')
-  assert.equal(stage.status, 'Scheduled')
+  assert.equal(stage.key, 'contacted')
+  assert.equal(stage.status, 'Active')
 }
 
 {
@@ -43,8 +43,10 @@ const baseLead = {
     lead: baseLead,
     appointments: [{ appointmentType: 'seller_consultation', status: 'completed', completedAt: '2026-06-03T12:00:00Z' }],
   })
-  assert.equal(journey.stage.key, 'appointment_valuation')
-  assert.equal(journey.steps.find((step) => step.key === 'appointment_valuation').status, 'Completed')
+  assert.equal(journey.stage.key, 'contacted')
+  assert.equal(journey.steps.some((step) => step.key === 'appointment_valuation'), false)
+  assert.equal(Object.prototype.hasOwnProperty.call(journey, 'valuationAppointment'), false)
+  assert.equal(Object.prototype.hasOwnProperty.call(journey, 'valuationStatus'), false)
 }
 
 {
@@ -98,8 +100,6 @@ const baseLead = {
   assert.equal(journey.kpis.find((item) => item.key === 'mandate').value, 'Not started')
   assert.equal(journey.kpis.find((item) => item.key === 'listing').value, 'Not created')
   assert.equal(journey.sellerPortalStatus, 'Sent')
-  assert.equal(journey.steps.find((step) => step.key === 'appointment_valuation').state, 'upcoming')
-  assert.equal(journey.steps.find((step) => step.key === 'appointment_valuation').status, 'Not scheduled')
   assert.equal(journey.steps.find((step) => step.key === 'seller_onboarding_sent').state, 'current')
   assert.equal(journey.steps.find((step) => step.key === 'mandate_sent').state, 'upcoming')
   assert.equal(journey.steps.find((step) => step.key === 'mandate_signed').state, 'upcoming')
@@ -330,8 +330,8 @@ const baseLead = {
     ],
   })
   assert.equal(metrics.sellerLeads, 2)
-  assert.equal(metrics.valuationsScheduled, 2)
-  assert.equal(metrics.valuationsCompleted, 1)
+  assert.equal(Object.prototype.hasOwnProperty.call(metrics, 'valuationsScheduled'), false)
+  assert.equal(Object.prototype.hasOwnProperty.call(metrics, 'valuationsCompleted'), false)
   assert.equal(metrics.listingsCreated, 1)
   assert.equal(metrics.listingsLive, 1)
 }

@@ -4550,7 +4550,7 @@ export default function LegalDocumentWorkspace({
             setStatusState(refreshed.resolved)
           }
         }
-        setActionFeedback('Draft generated successfully.')
+        setActionFeedback(generationResult?.actionFeedback || 'Draft generated successfully.')
       } catch (error) {
         await logMandateFailure('auto_generate', error)
         if (isCurrentAutoGenerateRun()) setLoadError(toFriendlyWorkspaceError(error, 'Unable to generate this mandate draft right now.'))
@@ -5056,7 +5056,7 @@ export default function LegalDocumentWorkspace({
           setStatusState(refreshed.resolved)
         }
       }
-      setActionFeedback(`${isOtpPacket ? 'OTP' : 'Mandate'} generated successfully.`)
+      setActionFeedback(generationResult?.actionFeedback || `${isOtpPacket ? 'OTP' : 'Mandate'} generated successfully.`)
     } catch (error) {
       await logMandateFailure(`generate_${isOtpPacket ? 'otp' : 'mandate'}`, error)
       setLoadError(toFriendlyWorkspaceError(error, `Unable to generate this ${isOtpPacket ? 'OTP' : 'mandate'} draft right now.`))

@@ -132,8 +132,8 @@ try {
 
   const seller = getSellerAnalyticsMetrics(data)
   assert.equal(seller.overview.sellerLeads, 3)
-  assert.equal(seller.overview.valuationsScheduled, 2)
-  assert.equal(seller.overview.valuationsCompleted, 1)
+  assert.equal(Object.prototype.hasOwnProperty.call(seller.overview, 'valuationsScheduled'), false)
+  assert.equal(Object.prototype.hasOwnProperty.call(seller.overview, 'valuationsCompleted'), false)
   assert.equal(seller.overview.mandatesSent, 2)
   assert.equal(seller.overview.mandatesSigned, 1)
   assert.equal(seller.overview.listingsCreated, 1)
@@ -151,8 +151,8 @@ try {
 
   const funnel = getSellerFunnelMetrics(data)
   assert.equal(funnel.find((stage) => stage.key === 'seller_leads').volume, 3)
-  assert.equal(funnel.find((stage) => stage.key === 'valuations_scheduled').volume, 2)
-  assert.equal(funnel.find((stage) => stage.key === 'valuations_completed').volume, 1)
+  assert.equal(funnel.some((stage) => stage.key === 'valuations_scheduled'), false)
+  assert.equal(funnel.some((stage) => stage.key === 'valuations_completed'), false)
   assert.equal(funnel.find((stage) => stage.key === 'mandates_sent').volume, 2)
   assert.equal(funnel.find((stage) => stage.key === 'mandates_signed').volume, 1)
   assert.equal(funnel.find((stage) => stage.key === 'listings_created').volume, 1)

@@ -3,7 +3,6 @@ import {
   buildSellerReadinessSummary,
   canActivateListing,
   canCreateListing,
-  canScheduleValuation,
   canSendMandate,
   getListingReadiness,
   getNextSellerAction,
@@ -24,14 +23,14 @@ const baseLead = {
   const missingContact = { leadId: 'seller-missing', leadCategory: 'seller', sellerPropertyAddress: '1 Road' }
   const blockers = getSellerBlockers({ lead: missingContact })
   assert.equal(blockers.find((item) => item.id === 'missing_seller_contact').label, 'Missing Seller Contact')
-  assert.equal(canScheduleValuation({ lead: missingContact }), false)
 }
 
 {
   const readiness = getSellerReadiness({ lead: baseLead })
   assert.equal(readiness.readinessStatus, 'ready')
-  assert.equal(readiness.nextAction.id, 'schedule_valuation')
-  assert.equal(readiness.actions.find((item) => item.id === 'schedule_valuation').primary, true)
+  assert.equal(readiness.nextAction.id, 'open_seller_portal')
+  assert.equal(readiness.actions.find((item) => item.id === 'open_seller_portal').primary, true)
+  assert.equal(readiness.actions.some((item) => item.id === 'schedule_valuation'), false)
 }
 
 {
@@ -42,8 +41,8 @@ const baseLead = {
   const readiness = getSellerReadiness({ lead: baseLead, journey })
   assert.equal(readiness.nextAction.id, 'open_seller_portal')
   assert.equal(readiness.nextAction.label, 'Send Seller Onboarding')
-  assert.equal(readiness.actions.some((item) => item.id === 'mark_valuation_complete'), true)
-  assert.equal(readiness.actions.find((item) => item.id === 'mark_valuation_complete')?.label, 'Mark as Completed')
+  assert.equal(readiness.actions.some((item) => item.id === 'mark_valuation_complete'), false)
+  assert.equal(readiness.actions.some((item) => item.id === 'open_appointment'), false)
 }
 
 {
@@ -51,7 +50,7 @@ const baseLead = {
     lead: { ...baseLead, mandatePacketId: 'packet-1' },
     mandatePacketStatus: { packet: { id: 'packet-1', status: 'generated' } },
   }
-  assert.equal(getNextSellerAction(args).id, 'schedule_valuation')
+  assert.equal(getNextSellerAction(args).id, 'open_seller_portal')
 }
 
 {
@@ -177,8 +176,8 @@ const baseLead = {
 
 {
   const summary = buildSellerReadinessSummary({ lead: baseLead })
-  assert.equal(summary.kpis.find((item) => item.key === 'readiness').value, 'Ready To Schedule Valuation')
-  assert.equal(summary.kpis.find((item) => item.key === 'next_action').value, 'Schedule Valuation')
+  assert.equal(summary.kpis.find((item) => item.key === 'readiness').value, 'Ready To Send Seller Onboarding')
+  assert.equal(summary.kpis.find((item) => item.key === 'next_action').value, 'Send Seller Onboarding')
 }
 
 console.log('seller readiness tests passed')

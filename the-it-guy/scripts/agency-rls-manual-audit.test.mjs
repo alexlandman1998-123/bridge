@@ -371,9 +371,6 @@ async function auditManualListingInterventionUi() {
 
   const sellerReadiness = await readAppFile('src/services/sellerReadinessService.js')
   assertIncludesAll(sellerReadiness, [
-    'mark_valuation_complete',
-    'appointment_valuation',
-    'Mark as Completed',
     'generate_mandate',
     'Mandate Not Generated',
     'Required Documents Missing',

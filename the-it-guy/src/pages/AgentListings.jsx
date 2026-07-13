@@ -3286,6 +3286,17 @@ function AgentListings({ initialTab = null } = {}) {
     navigate(path)
   }
 
+  function openMandateFirstWorkspace() {
+    const draftId = `mandate-draft-${Date.now().toString(36)}`
+    const params = new URLSearchParams()
+    params.set('mode', 'generate')
+    params.set('sourceMode', DOCUMENT_START_SOURCE_MODES.manual)
+    params.set('documentStart', DOCUMENT_START_ENTRY_POINTS.listingMandate)
+    params.set('autoCreateListing', '1')
+    params.set('returnTo', '/listings')
+    navigate(`/pipeline/leads/${encodeURIComponent(draftId)}/legal/mandate?${params.toString()}`)
+  }
+
   return (
     <section className="space-y-5">
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
@@ -3311,7 +3322,11 @@ function AgentListings({ initialTab = null } = {}) {
 
           {listingsTab !== 'developments' ? (
             <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-              <Button type="button" onClick={openQuickAddListingModal}>
+              <Button type="button" onClick={openMandateFirstWorkspace}>
+                <FileText size={16} />
+                Generate Mandate
+              </Button>
+              <Button type="button" variant="secondary" onClick={openQuickAddListingModal}>
                 <Plus size={16} />
                 Quick Add Listing
               </Button>
@@ -3613,11 +3628,15 @@ function AgentListings({ initialTab = null } = {}) {
                 Start a seller workflow or add a manual listing. Listings become live here once onboarding, mandate, and required documents are ready.
               </p>
               <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                <Button type="button" onClick={openMandateFirstWorkspace}>
+                  <FileText size={16} />
+                  Generate Mandate
+                </Button>
                 <Button type="button" variant="secondary" onClick={openSellerLeadModal}>
                   <Plus size={16} />
                   Guided Listing
                 </Button>
-                <Button type="button" onClick={openManualListingModal}>
+                <Button type="button" variant="secondary" onClick={openManualListingModal}>
                   <Plus size={16} />
                   Quick Add Listing
                 </Button>

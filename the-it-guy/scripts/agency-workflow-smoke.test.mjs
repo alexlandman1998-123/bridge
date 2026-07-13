@@ -12,7 +12,7 @@ const workflows = [
     label: 'Seller lead -> lead -> listing process',
     checks: [
       ['test:agent-leads-workspace', 'seller workspace, manual action anchors, buyer/seller lead shells'],
-      ['test:seller-journey', 'seller journey stages, readiness, document state, appointment milestones'],
+      ['test:seller-journey', 'seller journey stages, readiness, document state'],
       ['test:seller-readiness', 'seller readiness calculation and manual completion gates'],
       ['test:seller-mandate-save-preserves-data', 'agent-entered mandate data preservation'],
       ['test:seller-listing-conversion-idempotency', 'seller lead to listing conversion repeat-safety'],

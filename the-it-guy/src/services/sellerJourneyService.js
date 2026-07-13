@@ -44,7 +44,6 @@ function firstDate(...values) {
 
 export const SELLER_JOURNEY_STAGES = [
   { key: 'contacted', label: 'Contacted' },
-  { key: 'appointment_valuation', label: 'Appointment / Valuation' },
   { key: 'seller_onboarding_sent', label: 'Seller Onboarding Sent' },
   { key: 'seller_onboarding_submitted', label: 'Seller Onboarding Submitted' },
   { key: 'mandate_sent', label: 'Mandate Sent' },
@@ -64,10 +63,10 @@ const STAGE_LABEL_INDEX = new Map(
 const STAGE_KEY_BY_TOKEN = new Map(SELLER_JOURNEY_STAGES.map((stage) => [normalizeText(stage.key).toLowerCase(), stage.key]))
 const STAGE_KEY_BY_LABEL = new Map(SELLER_JOURNEY_STAGES.map((stage) => [normalizeText(stage.label).toLowerCase(), stage.key]))
 const SELLER_JOURNEY_STAGE_ALIASES = new Map([
-  ['appointment_valuation', 'appointment_valuation'],
-  ['valuation', 'appointment_valuation'],
-  ['seller_valuation', 'appointment_valuation'],
-  ['seller_consultation', 'appointment_valuation'],
+  ['appointment_valuation', 'contacted'],
+  ['valuation', 'contacted'],
+  ['seller_valuation', 'contacted'],
+  ['seller_consultation', 'contacted'],
   ['converted_to_listing', 'listing_created'],
   ['converted_listing', 'listing_created'],
   ['onboarding_sent', 'seller_onboarding_sent'],
@@ -82,7 +81,6 @@ const SELLER_JOURNEY_STAGE_ALIASES = new Map([
 
 const SELLER_JOURNEY_STATUS_RANKS = {
   contacted: { active: 1, contacted: 1, initial: 1, start: 1 },
-  appointment_valuation: { requested: 1, scheduled: 2, confirmed: 2, completed: 3 },
   seller_onboarding_sent: { draft: 1, pending: 1, sent: 2, opened: 2, in_progress: 3, active: 3 },
   seller_onboarding_submitted: { sent: 1, in_progress: 1, submitted: 2, completed: 2, under_review: 2 },
   mandate_sent: { draft: 1, pending: 1, sent: 2, scheduled: 2, completed: 2 },
@@ -132,6 +130,12 @@ function normalizeSellerStageRank(stage = '', text = '') {
 
 function normalizeSellerJourneyDefaultStatus(stageKey) {
   return SELLER_JOURNEY_DEFAULT_STATUS_BY_STAGE[stageKey] || 'Active'
+}
+
+function sellerJourneyStageSnapshot(stageKey, status = '') {
+  const index = STAGE_INDEX.get(stageKey)
+  const stage = Number.isInteger(index) ? SELLER_JOURNEY_STAGES[index] : SELLER_JOURNEY_STAGES[0]
+  return { ...stage, status }
 }
 
 export function getSellerJourneyStageFromLead(lead = {}) {
@@ -233,29 +237,6 @@ export function isSellerLead(lead = {}) {
   return inferLeadCategoryFromRecord(lead, 'other') === 'seller'
 }
 
-export function isSellerValuationAppointment(appointment = {}) {
-  const signal = normalizeKey([
-    appointment?.appointmentType,
-    appointment?.appointment_type,
-    appointment?.customTypeLabel,
-    appointment?.custom_type_label,
-    appointment?.title,
-    appointment?.linkedWorkflow,
-    appointment?.linked_workflow,
-    appointment?.linkedWorkflowStage,
-    appointment?.linked_workflow_stage,
-  ].map(normalizeText).join(' '))
-  return (
-    signal.includes('seller_consultation') ||
-    signal.includes('seller_valuation') ||
-    signal.includes('seller_appointment') ||
-    signal.includes('appointment_valuation') ||
-    signal.includes('valuation') ||
-    signal.includes('appraisal') ||
-    signal.includes('mandate_consultation')
-  )
-}
-
 function getSellerOnboardingSignals({ lead = {}, listing = {} } = {}) {
   const status = normalizeKey(
     lead?.sellerOnboardingStatus ||
@@ -300,31 +281,6 @@ function getSellerOnboardingSignals({ lead = {}, listing = {} } = {}) {
     status,
     token,
   }
-}
-
-function appointmentStatus(appointment = null) {
-  if (!appointment) return ''
-  const status = normalizeKey(appointment?.status || appointment?.appointmentStatus || appointment?.appointment_status)
-  if (status.includes('cancel')) return 'Cancelled'
-  if (status.includes('complete') || appointment?.completedAt || appointment?.completed_at) return 'Completed'
-  if (status.includes('declin')) return 'Cancelled'
-  return 'Scheduled'
-}
-
-function appointmentCompleted(appointment = null) {
-  if (!appointment) return false
-  const status = normalizeKey(appointment?.status || appointment?.appointmentStatus || appointment?.appointment_status)
-  return status.includes('complete') || Boolean(appointment?.completedAt || appointment?.completed_at)
-}
-
-function findValuationAppointment(appointments = []) {
-  return (Array.isArray(appointments) ? appointments : [])
-    .filter(isSellerValuationAppointment)
-    .sort((left, right) => {
-      const leftDate = readDate(left?.dateTime || left?.date_time || left?.startTime || left?.start_time || left?.createdAt || left?.created_at)
-      const rightDate = readDate(right?.dateTime || right?.date_time || right?.startTime || right?.start_time || right?.createdAt || right?.created_at)
-      return (rightDate?.getTime() || 0) - (leftDate?.getTime() || 0)
-    })[0] || null
 }
 
 function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, mandatePacket = null } = {}) {
@@ -434,10 +390,9 @@ function laterSellerJourneyStage(left = null, right = null) {
   return rightIndex > leftIndex ? right : left
 }
 
-export function getSellerJourneyStage({ lead = {}, appointments = [], listing = null, mandatePacketStatus = null, mandatePacket = null } = {}) {
+export function getSellerJourneyStage({ lead = {}, listing = null, mandatePacketStatus = null, mandatePacket = null } = {}) {
   if (!isSellerLead(lead)) return null
   const leadStage = getSellerJourneyStageFromLead(lead)
-  const valuationAppointment = findValuationAppointment(appointments)
   const onboardingSignals = getSellerOnboardingSignals({ lead, listing })
   const mandateStatus = getMandateStatus({ lead, listing, mandatePacketStatus, mandatePacket })
   const listingCreated = hasListingCreated({ lead, listing, mandateStatus })
@@ -449,19 +404,18 @@ export function getSellerJourneyStage({ lead = {}, appointments = [], listing = 
   })
 
   let derivedStage = null
-  if (listingCreated && isListingLive(listing || lead) && documentsSubmitted) derivedStage = { ...SELLER_JOURNEY_STAGES[8], status: 'Submitted' }
-  else if (listingCreated && isListingLive(listing || lead)) derivedStage = { ...SELLER_JOURNEY_STAGES[7], status: 'Live' }
-  else if (listingCreated) derivedStage = { ...SELLER_JOURNEY_STAGES[6], status: 'Draft' }
-  else if (mandateStatus === 'signed') derivedStage = { ...SELLER_JOURNEY_STAGES[5], status: 'Signed' }
+  if (listingCreated && isListingLive(listing || lead) && documentsSubmitted) derivedStage = sellerJourneyStageSnapshot('documents_submitted', 'Submitted')
+  else if (listingCreated && isListingLive(listing || lead)) derivedStage = sellerJourneyStageSnapshot('listing_live', 'Live')
+  else if (listingCreated) derivedStage = sellerJourneyStageSnapshot('listing_created', 'Draft')
+  else if (mandateStatus === 'signed') derivedStage = sellerJourneyStageSnapshot('mandate_signed', 'Signed')
   if (!derivedStage && ['sent', 'draft'].includes(mandateStatus)) {
-    derivedStage = { ...SELLER_JOURNEY_STAGES[4], status: mandateStatus === 'sent' ? 'Sent' : 'Draft' }
+    derivedStage = sellerJourneyStageSnapshot('mandate_sent', mandateStatus === 'sent' ? 'Sent' : 'Draft')
   }
-  if (!derivedStage && onboardingSignals.submitted) derivedStage = { ...SELLER_JOURNEY_STAGES[3], status: 'Submitted' }
-  if (!derivedStage && onboardingSignals.sent) derivedStage = { ...SELLER_JOURNEY_STAGES[2], status: onboardingSignals.status === 'in_progress' ? 'In Progress' : 'Sent' }
-  if (!derivedStage && valuationAppointment) derivedStage = { ...SELLER_JOURNEY_STAGES[1], status: appointmentStatus(valuationAppointment) }
-  const evidenceStage = derivedStage || { ...SELLER_JOURNEY_STAGES[0], status: 'Active' }
+  if (!derivedStage && onboardingSignals.submitted) derivedStage = sellerJourneyStageSnapshot('seller_onboarding_submitted', 'Submitted')
+  if (!derivedStage && onboardingSignals.sent) derivedStage = sellerJourneyStageSnapshot('seller_onboarding_sent', onboardingSignals.status === 'in_progress' ? 'In Progress' : 'Sent')
+  const evidenceStage = derivedStage || sellerJourneyStageSnapshot('contacted', 'Active')
   const leadStageIndex = STAGE_INDEX.get(leadStage?.key) ?? 0
-  const listingCreatedIndex = STAGE_INDEX.get('listing_created') ?? 5
+  const listingCreatedIndex = STAGE_INDEX.get('listing_created') ?? 0
   const canUseLeadStageAsProgressFloor = leadStageIndex < listingCreatedIndex || hasListingShell({ lead, listing })
   return canUseLeadStageAsProgressFloor ? laterSellerJourneyStage(evidenceStage, leadStage) : evidenceStage
 }
@@ -684,9 +638,8 @@ export function getSellerJourneyStatus(args = {}) {
   }
 }
 
-export function buildSellerJourney({ lead = {}, contact = {}, appointments = [], listing = null, mandatePacketStatus = null, mandatePacket = null, documents = [] } = {}) {
-  const stage = getSellerJourneyStage({ lead, appointments, listing, mandatePacketStatus, mandatePacket }) || { key: 'contacted', label: 'Contacted', status: '' }
-  const valuationAppointment = findValuationAppointment(appointments)
+export function buildSellerJourney({ lead = {}, contact = {}, listing = null, mandatePacketStatus = null, mandatePacket = null, documents = [] } = {}) {
+  const stage = getSellerJourneyStage({ lead, listing, mandatePacketStatus, mandatePacket }) || { key: 'contacted', label: 'Contacted', status: '' }
   const onboardingSignals = getSellerOnboardingSignals({ lead, listing })
   const mandateStatus = getMandateStatus({ lead, listing, mandatePacketStatus, mandatePacket })
   const listingCreated = hasListingCreated({ lead, listing, mandateStatus })
@@ -694,14 +647,9 @@ export function buildSellerJourney({ lead = {}, contact = {}, appointments = [],
   const sellerDocuments = buildSellerDocuments({ listing, documents })
   const documentsOutstanding = sellerDocuments.filter(isDocumentOutstanding).length
   const documentsSubmitted = sellerDocuments.length > 0 && documentsOutstanding === 0
-  const valuationStatus = valuationAppointment
-    ? appointmentStatus(valuationAppointment)
-    : 'Not scheduled'
   const evidence = {
     contacted: isSellerLead(lead),
     contactedStatus: 'Active',
-    appointment_valuation: Boolean(valuationAppointment),
-    appointment_valuationStatus: valuationStatus,
     seller_onboarding_sent: onboardingSignals.sent,
     seller_onboarding_sentStatus: onboardingSignals.status === 'in_progress' ? 'In Progress' : onboardingSignals.sent ? 'Sent' : '',
     seller_onboarding_submitted: onboardingSignals.submitted,
@@ -729,7 +677,7 @@ export function buildSellerJourney({ lead = {}, contact = {}, appointments = [],
     lead?.property_interest,
   )
   const estimatedValue = toNumber(listing?.estimatedValue || listing?.estimated_value || listing?.askingPrice || listing?.asking_price || lead?.estimatedValue || lead?.estimated_value)
-  const actions = getSellerJourneyActions({ lead, contact, appointments, listing, mandatePacketStatus })
+  const actions = getSellerJourneyActions({ lead, contact, listing, mandatePacketStatus })
   const nextRecommendedAction = actions.find((action) => action.enabled && !['contact_seller', 'open_seller_portal'].includes(action.id)) ||
     actions.find((action) => action.enabled) ||
     null
@@ -762,9 +710,8 @@ export function buildSellerJourney({ lead = {}, contact = {}, appointments = [],
   return {
     isSeller: isSellerLead(lead),
     stage,
-    status: getSellerJourneyStatus({ lead, appointments, listing, mandatePacketStatus, mandatePacket }),
+    status: getSellerJourneyStatus({ lead, listing, mandatePacketStatus, mandatePacket }),
     steps,
-    valuationAppointment,
     mandateStatus,
     onboardingSent: onboardingSignals.sent,
     onboardingSubmitted: onboardingSignals.submitted,
@@ -778,7 +725,6 @@ export function buildSellerJourney({ lead = {}, contact = {}, appointments = [],
     currentStageStartedAt,
     daysInCurrentStage,
     nextRecommendedAction,
-    valuationStatus,
     sellerPortalStatus,
     kpis,
     workspaceKpis,
@@ -790,21 +736,18 @@ function matchingListingForLead(lead = {}, listings = []) {
   return (Array.isArray(listings) ? listings : []).find((listing) => listingBelongsToLead(listing, lead)) || null
 }
 
-export function getSellerJourneyMetrics({ leads = [], appointments = [], listings = [], mandatePacketsByLeadId = new Map() } = {}) {
+export function getSellerJourneyMetrics({ leads = [], listings = [], mandatePacketsByLeadId = new Map() } = {}) {
   const sellerLeads = (Array.isArray(leads) ? leads : []).filter(isSellerLead)
   const journeys = sellerLeads.map((lead) => {
     const leadId = readLeadId(lead)
     return buildSellerJourney({
       lead,
-      appointments: (Array.isArray(appointments) ? appointments : []).filter((appointment) => firstPresent(appointment?.leadId, appointment?.lead_id, appointment?.relatedEntityId, appointment?.related_entity_id) === leadId),
       listing: matchingListingForLead(lead, listings),
       mandatePacketStatus: mandatePacketsByLeadId instanceof Map ? mandatePacketsByLeadId.get(leadId) : null,
     })
   })
   return {
     sellerLeads: sellerLeads.length,
-    valuationsScheduled: journeys.filter((journey) => Boolean(journey.valuationAppointment)).length,
-    valuationsCompleted: journeys.filter((journey) => appointmentCompleted(journey.valuationAppointment)).length,
     mandatesSent: journeys.filter((journey) => ['sent', 'signed'].includes(journey.mandateStatus)).length,
     mandatesSigned: journeys.filter((journey) => journey.mandateStatus === 'signed').length,
     listingsCreated: journeys.filter((journey) => journey.listingCreated).length,
@@ -813,8 +756,6 @@ export function getSellerJourneyMetrics({ leads = [], appointments = [], listing
 }
 
 export const __sellerJourneyServiceTestUtils = {
-  appointmentCompleted,
-  appointmentStatus,
   buildJourneySteps,
   getMandateStatus,
   hasListingCreated,

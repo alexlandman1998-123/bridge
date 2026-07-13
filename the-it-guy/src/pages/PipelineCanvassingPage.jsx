@@ -211,6 +211,54 @@ const PROSPECT_LOST_REASONS = [
 
 const ACTIVITY_TYPES = ['Call', 'WhatsApp', 'Email', 'Door Knock', 'Note', 'Follow-Up']
 const CANVASSING_ACTION_MENU_WIDTH = 192
+const CANVASSING_ACTION_MENU_VIEWPORT_PADDING = 12
+const CANVASSING_ACTION_MENU_TRIGGER_GAP = 8
+const CANVASSING_ACTION_MENU_ITEM_HEIGHT = 32
+const CANVASSING_ACTION_MENU_VERTICAL_PADDING = 8
+const CANVASSING_ACTION_MENU_MIN_HEIGHT = 96
+const CANVASSING_ACTION_MENU_ITEM_COUNT = 7
+
+function getCanvassingActionMenuPosition(triggerRect, itemCount = CANVASSING_ACTION_MENU_ITEM_COUNT) {
+  if (!triggerRect || typeof window === 'undefined') return null
+
+  const viewportHeight = Math.max(window.innerHeight || 0, CANVASSING_ACTION_MENU_VIEWPORT_PADDING * 2)
+  const viewportWidth = Math.max(
+    window.innerWidth || 0,
+    CANVASSING_ACTION_MENU_WIDTH + (CANVASSING_ACTION_MENU_VIEWPORT_PADDING * 2),
+  )
+  const naturalMenuHeight =
+    (itemCount * CANVASSING_ACTION_MENU_ITEM_HEIGHT) + CANVASSING_ACTION_MENU_VERTICAL_PADDING
+  const viewportMaxHeight = Math.max(
+    CANVASSING_ACTION_MENU_MIN_HEIGHT,
+    viewportHeight - (CANVASSING_ACTION_MENU_VIEWPORT_PADDING * 2),
+  )
+  const menuHeight = Math.min(naturalMenuHeight, viewportMaxHeight)
+  const spaceBelow =
+    viewportHeight - triggerRect.bottom - CANVASSING_ACTION_MENU_TRIGGER_GAP - CANVASSING_ACTION_MENU_VIEWPORT_PADDING
+  const shouldOpenAbove = spaceBelow < menuHeight && triggerRect.top > spaceBelow
+  const preferredTop = shouldOpenAbove
+    ? triggerRect.top - menuHeight - CANVASSING_ACTION_MENU_TRIGGER_GAP
+    : triggerRect.bottom + CANVASSING_ACTION_MENU_TRIGGER_GAP
+  const maxTop = viewportHeight - menuHeight - CANVASSING_ACTION_MENU_VIEWPORT_PADDING
+  const top = Math.min(
+    Math.max(CANVASSING_ACTION_MENU_VIEWPORT_PADDING, preferredTop),
+    Math.max(CANVASSING_ACTION_MENU_VIEWPORT_PADDING, maxTop),
+  )
+  const maxLeft = viewportWidth - CANVASSING_ACTION_MENU_WIDTH - CANVASSING_ACTION_MENU_VIEWPORT_PADDING
+  const left = Math.min(
+    Math.max(CANVASSING_ACTION_MENU_VIEWPORT_PADDING, triggerRect.right - CANVASSING_ACTION_MENU_WIDTH),
+    Math.max(CANVASSING_ACTION_MENU_VIEWPORT_PADDING, maxLeft),
+  )
+
+  return {
+    top,
+    left,
+    maxHeight: Math.max(
+      CANVASSING_ACTION_MENU_MIN_HEIGHT,
+      Math.min(naturalMenuHeight, viewportHeight - top - CANVASSING_ACTION_MENU_VIEWPORT_PADDING),
+    ),
+  }
+}
 
 const CANVASSING_SOURCE_PILL_STYLES = {
   property24: { tone: 'blue', label: 'Property24' },
@@ -1560,12 +1608,7 @@ function PipelineCanvassingPage() {
 
     const nextButton = event?.currentTarget
     const nextRect = nextButton?.getBoundingClientRect?.()
-    const nextPosition = nextRect
-      ? {
-        top: Math.min(nextRect.bottom + 8, window.innerHeight - 12),
-        left: Math.max(12, nextRect.right - CANVASSING_ACTION_MENU_WIDTH),
-      }
-      : null
+    const nextPosition = getCanvassingActionMenuPosition(nextRect)
 
     setOpenActionMenuId((previous) => {
       if (previous === nextId) {
@@ -3878,11 +3921,12 @@ function PipelineCanvassingPage() {
             onClick={closeActionMenu}
           >
             <div
-              className="absolute w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-left shadow-[0_18px_38px_rgba(15,23,42,0.14)]"
+              className="absolute w-48 overflow-x-hidden overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 text-left shadow-[0_18px_38px_rgba(15,23,42,0.14)]"
               style={{
                 top: `${openActionMenuPosition.top}px`,
                 left: `${openActionMenuPosition.left}px`,
                 width: `${CANVASSING_ACTION_MENU_WIDTH}px`,
+                maxHeight: `${openActionMenuPosition.maxHeight}px`,
               }}
               onClick={(event) => event.stopPropagation()}
               role="menu"
@@ -3895,6 +3939,7 @@ function PipelineCanvassingPage() {
                   className={`block w-full px-3 py-2 text-left text-xs font-semibold transition hover:bg-slate-50 ${
                     label === 'Delete' ? 'text-rose-700' : 'text-slate-700'
                   }`}
+                  role="menuitem"
                   onClick={() => {
                     closeActionMenu()
                     action()

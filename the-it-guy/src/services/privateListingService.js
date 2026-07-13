@@ -2219,6 +2219,7 @@ function buildPrivateListingPayload(payload = {}, userId = null) {
     finance_context: normalizeNullableText(payload.financeContext),
     mandate_type: normalizeNullableText(payload.mandateType) || 'sole',
     mandate_status: normalizeStatus(payload.mandateStatus, MANDATE_STATUSES, 'not_started'),
+    mandate_packet_id: normalizeUuid(payload.mandatePacketId || payload.mandate_packet_id),
     seller_onboarding_status: normalizeStatus(payload.sellerOnboardingStatus, SELLER_ONBOARDING_STATUSES, 'not_started'),
     is_active: payload.isActive === undefined ? false : Boolean(payload.isActive),
     created_by: normalizeUuid(payload.createdBy || userId),
@@ -2281,6 +2282,7 @@ export async function createPrivateListing(payload = {}, options = {}) {
     isMissingColumnError(insert.error, 'listing_source') ||
     isMissingColumnError(insert.error, 'property_structure_type') ||
     isMissingColumnError(insert.error, 'assigned_agent_email') ||
+    isMissingColumnError(insert.error, 'mandate_packet_id') ||
     isMissingColumnError(insert.error, 'seller_canonical_facts_json') ||
     isMissingColumnError(insert.error, 'seller_canonical_fact_readiness_json') ||
     isMissingColumnError(insert.error, 'seller_canonical_facts_updated_at') ||
@@ -2289,6 +2291,7 @@ export async function createPrivateListing(payload = {}, options = {}) {
   )) {
     const fallbackPayload = { ...listingPayload }
     if (isMissingColumnError(insert.error, 'assigned_agent_email')) delete fallbackPayload.assigned_agent_email
+    if (isMissingColumnError(insert.error, 'mandate_packet_id')) delete fallbackPayload.mandate_packet_id
     if (isMissingColumnError(insert.error, 'seller_canonical_facts_json')) delete fallbackPayload.seller_canonical_facts_json
     if (isMissingColumnError(insert.error, 'seller_canonical_fact_readiness_json')) delete fallbackPayload.seller_canonical_fact_readiness_json
     if (isMissingColumnError(insert.error, 'seller_canonical_facts_updated_at')) delete fallbackPayload.seller_canonical_facts_updated_at
@@ -2423,6 +2426,9 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
   if (payload.financeContext !== undefined) patch.finance_context = normalizeNullableText(payload.financeContext)
   if (payload.mandateType !== undefined) patch.mandate_type = normalizeNullableText(payload.mandateType)
   if (payload.mandateStatus !== undefined) patch.mandate_status = normalizeStatus(payload.mandateStatus, MANDATE_STATUSES, 'not_started')
+  if (payload.mandatePacketId !== undefined || payload.mandate_packet_id !== undefined) {
+    patch.mandate_packet_id = normalizeUuid(payload.mandatePacketId || payload.mandate_packet_id)
+  }
   if (payload.sellerOnboardingStatus !== undefined) {
     patch.seller_onboarding_status = normalizeStatus(payload.sellerOnboardingStatus, SELLER_ONBOARDING_STATUSES, 'not_started')
   }
@@ -2444,6 +2450,7 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
     isMissingColumnError(updateQuery.error, 'listing_source') ||
     isMissingColumnError(updateQuery.error, 'property_structure_type') ||
     isMissingColumnError(updateQuery.error, 'assigned_agent_email') ||
+    isMissingColumnError(updateQuery.error, 'mandate_packet_id') ||
     isMissingColumnError(updateQuery.error, 'seller_canonical_facts_json') ||
     isMissingColumnError(updateQuery.error, 'seller_canonical_fact_readiness_json') ||
     isMissingColumnError(updateQuery.error, 'seller_canonical_facts_updated_at') ||
@@ -2452,6 +2459,7 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
   )) {
     const compatiblePatch = { ...patch }
     if (isMissingColumnError(updateQuery.error, 'assigned_agent_email')) delete compatiblePatch.assigned_agent_email
+    if (isMissingColumnError(updateQuery.error, 'mandate_packet_id')) delete compatiblePatch.mandate_packet_id
     delete compatiblePatch.seller_canonical_facts_json
     delete compatiblePatch.seller_canonical_fact_readiness_json
     delete compatiblePatch.seller_canonical_facts_updated_at

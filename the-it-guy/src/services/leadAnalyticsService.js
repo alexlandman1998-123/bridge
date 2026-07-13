@@ -12,7 +12,6 @@ import { inferLeadCategoryFromRecord } from '../lib/leadCategory'
 import {
   buildSellerJourney,
   isSellerLead,
-  isSellerValuationAppointment,
 } from './sellerJourneyService.js'
 import { getSellerReadiness } from './sellerReadinessService.js'
 
@@ -624,14 +623,6 @@ function getSellerListingForLead(lead = {}, listings = []) {
   }) || null
 }
 
-function getSellerAppointmentsForLead(lead = {}, appointments = []) {
-  const leadId = getLeadId(lead)
-  return (Array.isArray(appointments) ? appointments : []).filter((appointment) =>
-    isSellerValuationAppointment(appointment) &&
-    (getLeadId(appointment) === leadId || getSellerLinkedLeadIds(appointment).includes(leadId)),
-  )
-}
-
 function getMandatePacketForLead(lead = {}, packets = []) {
   const leadId = getLeadId(lead)
   const packetId = readId(lead, ['mandatePacketId', 'mandate_packet_id'])
@@ -660,24 +651,13 @@ function firstDate(...dates) {
 function getSellerJourneyAnalyticsRows(data = {}) {
   return (data.leads || []).filter(isSellerLead).map((lead) => {
     const leadId = getLeadId(lead)
-    const appointments = getSellerAppointmentsForLead(lead, data.appointments || [])
     const listing = getSellerListingForLead(lead, data.listings || [])
     const packet = getMandatePacketForLead(lead, data.documentPackets || [])
     const mandatePacketStatus = packet ? { packet, state: packet.status || packet.packetStatus || packet.packet_status } : null
-    const journey = buildSellerJourney({ lead, appointments, listing, mandatePacketStatus, mandatePacket: packet })
-    const readiness = getSellerReadiness({ lead, appointments, listing, mandatePacketStatus, mandatePacket: packet, journey })
-    const valuationAppointment = journey.valuationAppointment
+    const journey = buildSellerJourney({ lead, listing, mandatePacketStatus, mandatePacket: packet })
+    const readiness = getSellerReadiness({ lead, listing, mandatePacketStatus, mandatePacket: packet, journey })
     const context = sourceContext(packet || {})
     const leadCreatedAt = dateFromRows(lead, ['createdAt', 'created_at'])
-    const valuationScheduledAt = valuationAppointment
-      ? dateFromRows(valuationAppointment, ['scheduledAt', 'scheduled_at', 'dateTime', 'date_time', 'startTime', 'start_time', 'createdAt', 'created_at'])
-      : null
-    const valuationCompletedAt = journey.valuationStatus === 'Completed'
-      ? firstDate(
-        dateFromRows(valuationAppointment, ['completedAt', 'completed_at']),
-        valuationScheduledAt,
-      )
-      : null
     const mandateSentAt = ['sent', 'signed'].includes(journey.mandateStatus)
       ? firstDate(
         dateFromRows(packet, ['sentAt', 'sent_at', 'createdAt', 'created_at']),
@@ -716,8 +696,6 @@ function getSellerJourneyAnalyticsRows(data = {}) {
       dates: {
         seller_leads: leadCreatedAt,
         contacted: firstDate(dateFromRows(lead, ['firstContactedAt', 'first_contacted_at']), leadCreatedAt),
-        valuations_scheduled: valuationScheduledAt,
-        valuations_completed: valuationCompletedAt,
         mandates_sent: mandateSentAt,
         mandates_signed: mandateSignedAt,
         listings_created: listingCreatedAt,
@@ -730,8 +708,6 @@ function getSellerJourneyAnalyticsRows(data = {}) {
 const SELLER_FUNNEL_STAGES = [
   { key: 'seller_leads', label: 'Seller Leads', test: () => true },
   { key: 'contacted', label: 'Contacted', test: () => true },
-  { key: 'valuations_scheduled', label: 'Valuations Scheduled', test: (row) => Boolean(row.journey.valuationAppointment) },
-  { key: 'valuations_completed', label: 'Valuations Completed', test: (row) => row.journey.valuationStatus === 'Completed' },
   { key: 'mandates_sent', label: 'Mandates Sent', test: (row) => ['sent', 'signed'].includes(row.journey.mandateStatus) },
   { key: 'mandates_signed', label: 'Mandates Signed', test: (row) => row.journey.mandateStatus === 'signed' },
   { key: 'listings_created', label: 'Listings Created', test: (row) => row.journey.listingCreated },
@@ -741,8 +717,6 @@ const SELLER_FUNNEL_STAGES = [
 const SELLER_FUNNEL_ACTIVE_STAGE_KEYS = {
   seller_leads: 'contacted',
   contacted: 'contacted',
-  valuations_scheduled: 'appointment_valuation',
-  valuations_completed: 'appointment_valuation',
   mandates_sent: 'mandate_sent',
   mandates_signed: 'mandate_signed',
   listings_created: 'listing_created',
@@ -799,8 +773,6 @@ function buildSellerPerformanceRows(rows = [], keyFn, labelKeys = {}) {
       branchId: labelKeys.branch ? key : undefined,
       branchName: labelKeys.branch ? first.branchName : undefined,
       sellerLeads: groupedRows.length,
-      valuationsScheduled: groupedRows.filter((row) => Boolean(row.journey.valuationAppointment)).length,
-      valuationsCompleted: groupedRows.filter((row) => row.journey.valuationStatus === 'Completed').length,
       mandatesSent: groupedRows.filter((row) => ['sent', 'signed'].includes(row.journey.mandateStatus)).length,
       mandatesSigned: groupedRows.filter((row) => row.journey.mandateStatus === 'signed').length,
       listingsCreated: groupedRows.filter((row) => row.journey.listingCreated).length,
@@ -847,8 +819,6 @@ export function getSellerAnalyticsMetrics(data = {}) {
   return {
     overview: {
       sellerLeads: rows.length,
-      valuationsScheduled: rows.filter((row) => Boolean(row.journey.valuationAppointment)).length,
-      valuationsCompleted: rows.filter((row) => row.journey.valuationStatus === 'Completed').length,
       mandatesSent: rows.filter((row) => ['sent', 'signed'].includes(row.journey.mandateStatus)).length,
       mandatesSigned: rows.filter((row) => row.journey.mandateStatus === 'signed').length,
       listingsCreated: rows.filter((row) => row.journey.listingCreated).length,

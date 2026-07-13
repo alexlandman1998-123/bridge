@@ -8,6 +8,10 @@ import Button from '../components/ui/Button'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { archivePacket, generatePacketVersion, listPacketTemplates, resolveActiveTemplate } from '../core/documents/packetService'
 import {
+  DOCUMENT_START_ENTRY_POINTS,
+  DOCUMENT_START_SOURCE_MODES,
+} from '../core/documents/documentStartRules'
+import {
   buildPacketSectionManifest,
   renderPacketPreviewHtml,
   resolveMandatePacketPlaceholders,
@@ -26,13 +30,14 @@ import {
   fetchDocumentPacket,
   listDocumentPackets,
   resolveDocumentPacketBranding,
+  updateDocumentPacket,
 } from '../lib/documentPacketsApi'
 import { createAgencyCrmLeadActivity, updateAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
 import { fetchTransactionById, updateOtpDocumentWorkflowState } from '../lib/api'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { fetchAgencyOnboardingSettings } from '../lib/settingsApi'
-import { createPrivateListingActivity, getSellerOnboardingByToken, updatePrivateListing } from '../services/privateListingService'
+import { createPrivateListing, createPrivateListingActivity, getSellerOnboardingByToken, updatePrivateListing } from '../services/privateListingService'
 import { getMandateSignerRoleLabel, resolveMandateSecondarySignerConfig } from '../lib/mandateSignatureRules'
 
 function normalizeText(value) {
@@ -144,6 +149,245 @@ function compactObjectValues(source = {}) {
     if (text) output[key] = value
   }
   return output
+}
+
+function parseListingMoney(...values) {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+    const text = normalizeText(value)
+    if (!text) continue
+    const cleaned = text.replace(/[^\d.-]+/g, '')
+    if (!cleaned) continue
+    const number = Number(cleaned)
+    if (Number.isFinite(number)) return number
+  }
+  return null
+}
+
+function splitDisplayName(fullName = '') {
+  const parts = normalizeText(fullName).split(/\s+/).filter(Boolean)
+  if (!parts.length) return { firstName: '', lastName: '' }
+  if (parts.length === 1) return { firstName: parts[0], lastName: '' }
+  return {
+    firstName: parts.slice(0, -1).join(' '),
+    lastName: parts[parts.length - 1],
+  }
+}
+
+function buildMandateFirstListingTitle({ property = {}, mandateDraft = {} } = {}) {
+  const propertyType = firstText(property.propertyType, property.type, mandateDraft.propertyType, 'Property')
+  const location = firstText(property.suburb, mandateDraft.propertySuburb, property.city, mandateDraft.propertyCity)
+  const address = firstText(property.displayAddress, property.fullAddress, property.address, mandateDraft.propertyAddress)
+  return firstText(
+    [propertyType, location].filter(Boolean).join(' - '),
+    address,
+    'Mandate listing',
+  )
+}
+
+function buildMandateFirstListingPayload({
+  organisationId = null,
+  actor = {},
+  packet = {},
+  mandateData = {},
+  mandateDraft = {},
+  leadContext = {},
+  routeLeadId = '',
+} = {}) {
+  const seller = asRecord(mandateData?.seller)
+  const property = asRecord(mandateData?.property)
+  const mandate = asRecord(mandateData?.mandate)
+  const sourceContext = asRecord(mandateData?.sourceContext)
+  const draft = asRecord(mandateDraft)
+  const packetId = normalizeText(packet?.id)
+  const realLeadId = normalizeLeadUuid(leadContext?.lead?.leadId || routeLeadId)
+  const sellerFullName = firstText(seller.fullName, seller.name, draft.sellerFullName)
+  const sellerEmail = firstText(seller.email, draft.sellerEmail).toLowerCase()
+  const sellerPhone = firstText(seller.phone, draft.sellerPhone)
+  const sellerIdNumber = firstText(seller.identityNumber, seller.idNumber, draft.sellerIdNumber)
+  const sellerEntityType = normalizeEntityType(firstText(seller.entityType, draft.sellerEntityType, 'individual'), 'individual')
+  const propertyAddress = firstText(property.fullAddress, property.address, draft.propertyAddress)
+  const displayAddress = firstText(property.displayAddress, propertyAddress)
+  const propertyType = firstText(property.propertyType, property.type, draft.propertyType, 'Property')
+  const suburb = firstText(property.suburb, draft.propertySuburb)
+  const city = firstText(property.city, draft.propertyCity)
+  const province = firstText(property.province, draft.propertyProvince)
+  const postalCode = firstText(property.postalCode, draft.propertyPostalCode)
+  const unitNumber = firstText(property.unitNumber, draft.unitNumber)
+  const sectionNumber = firstText(property.sectionNumber, draft.sectionNumber)
+  const complexName = firstText(property.complexName, property.estateComplexName, draft.complexName)
+  const estateName = firstText(property.estateName, draft.estateName)
+  const erfNumber = firstText(property.erfNumber, draft.erfNumber)
+  const askingPrice = parseListingMoney(mandate.askingPrice, property.askingPrice, draft.askingPrice)
+  const mandateType = normalizeKey(firstText(mandate.type, draft.mandateType, 'sole')) || 'sole'
+  const mandateStartDate = toIsoDate(firstText(mandate.startDate, draft.mandateStartDate))
+  const mandateEndDate = toIsoDate(firstText(mandate.expiryDate, mandate.endDate, draft.mandateEndDate))
+  const commissionStructure = normalizeKey(firstText(mandate.commissionStructure, draft.commissionStructure, 'percentage')) || 'percentage'
+  const commissionPercent = parseListingMoney(mandate.commissionPercent, mandate.commissionPercentage, draft.commissionPercent)
+  const commissionAmount = parseListingMoney(mandate.commissionAmount, draft.commissionAmount)
+  const now = new Date().toISOString()
+  const sellerCanonicalFacts = {
+    source: 'mandate_first',
+    packetId,
+    mandatePacketId: packetId,
+    sellerName: sellerFullName,
+    sellerFullName,
+    fullName: sellerFullName,
+    name: sellerFullName,
+    entityType: sellerEntityType,
+    sellerType: sellerEntityType,
+    idNumber: sellerIdNumber,
+    identityNumber: sellerIdNumber,
+    email: sellerEmail,
+    phone: sellerPhone,
+    domiciliumAddress: firstText(seller.domiciliumAddress, draft.sellerDomiciliumAddress),
+    representativeName: firstText(seller.representativeName, draft.sellerRepresentativeName),
+    representativeCapacity: firstText(seller.representativeCapacity, draft.sellerRepresentativeCapacity),
+    property: compactObjectValues({
+      address: propertyAddress,
+      fullAddress: propertyAddress,
+      displayAddress,
+      suburb,
+      city,
+      province,
+      postalCode,
+      propertyType,
+      unitNumber,
+      sectionNumber,
+      complexName,
+      estateName,
+      erfNumber,
+      sectionalTitleScheme: firstText(property.sectionalTitleScheme, draft.sectionalTitleScheme),
+    }),
+    mandate: compactObjectValues({
+      type: mandateType,
+      status: 'generated',
+      packetId,
+      startDate: mandateStartDate,
+      expiryDate: mandateEndDate,
+      endDate: mandateEndDate,
+      askingPrice: askingPrice === null ? '' : askingPrice,
+      commissionStructure,
+      commissionPercent: commissionPercent === null ? '' : commissionPercent,
+      commissionAmount: commissionAmount === null ? '' : commissionAmount,
+      vatHandling: firstText(mandate.vatHandling, draft.vatHandling),
+      specialConditions: firstText(mandate.specialConditions, draft.specialConditions),
+    }),
+    sourceContext,
+    updatedAt: now,
+  }
+  const sellerCanonicalFactReadiness = {
+    sellerName: Boolean(sellerFullName),
+    sellerEmail: Boolean(sellerEmail),
+    sellerPhone: Boolean(sellerPhone),
+    sellerIdentity: Boolean(sellerIdNumber),
+    propertyAddress: Boolean(propertyAddress),
+    askingPrice: askingPrice !== null,
+    mandateGenerated: true,
+    mandatePacketLinked: Boolean(packetId),
+    autoCreatedFromMandate: true,
+  }
+  const title = buildMandateFirstListingTitle({ property, mandateDraft: draft })
+  const notes = [
+    'Created automatically after mandate generation.',
+    mandateStartDate || mandateEndDate ? `Mandate dates: ${mandateStartDate || 'not set'} to ${mandateEndDate || 'not set'}.` : '',
+  ].filter(Boolean).join('\n')
+
+  return {
+    organisationId,
+    assignedAgentId: isUuidLike(actor.id) ? actor.id : null,
+    assignedAgentEmail: actor.email,
+    sellerLeadId: realLeadId || undefined,
+    originatingCrmLeadId: realLeadId || undefined,
+    listingStatus: 'mandate_ready',
+    listingVisibility: 'internal',
+    sellerOnboardingStatus: 'not_started',
+    mandateStatus: 'generated',
+    mandatePacketId: packetId,
+    isActive: false,
+    title,
+    description: firstText(mandate.specialConditions, draft.specialConditions),
+    propertyCategory: 'residential',
+    listingSource: 'private_listing',
+    propertyStructureType: unitNumber || sectionNumber || complexName ? 'sectional_title' : 'freehold',
+    propertyType,
+    listingCategory: 'private_sale',
+    askingPrice: askingPrice === null ? 0 : askingPrice,
+    estimatedValue: askingPrice === null ? 0 : askingPrice,
+    addressLine1: propertyAddress,
+    formattedAddress: displayAddress,
+    streetAddress: propertyAddress,
+    suburb,
+    city,
+    province,
+    country: firstText(property.country, draft.propertyCountry, 'South Africa'),
+    postalCode,
+    sellerType: sellerEntityType,
+    mandateType,
+    listingPreviewDescription: firstText(displayAddress, title),
+    internalListingNotes: notes,
+    sellerCanonicalFacts,
+    sellerCanonicalFactReadiness,
+    sellerCanonicalFactsUpdatedAt: now,
+    completeness: {
+      source: 'mandate_first',
+      missingItems: Object.entries(sellerCanonicalFactReadiness)
+        .filter(([, ready]) => ready === false)
+        .map(([key]) => key),
+    },
+    source: 'mandate_first',
+    origin: 'mandate_first',
+  }
+}
+
+function buildMandateFirstLeadContext({ listing = {}, payload = {}, routeLeadId = '', previous = {} } = {}) {
+  const canonicalFacts = asRecord(payload.sellerCanonicalFacts)
+  const nameParts = splitDisplayName(canonicalFacts.sellerFullName || canonicalFacts.fullName || canonicalFacts.name)
+  const listingId = normalizeText(listing?.id)
+  const leadId = normalizeText(payload.sellerLeadId || routeLeadId)
+  const property = asRecord(canonicalFacts.property)
+  const contact = canonicalFacts.sellerName || canonicalFacts.email || canonicalFacts.phone
+    ? {
+        ...(previous?.contact || {}),
+        contactId: normalizeText(previous?.contact?.contactId),
+        organisationId: normalizeText(listing?.organisationId || payload.organisationId),
+        firstName: normalizeText(previous?.contact?.firstName) || nameParts.firstName,
+        lastName: normalizeText(previous?.contact?.lastName) || nameParts.lastName,
+        phone: canonicalFacts.phone || normalizeText(previous?.contact?.phone),
+        email: canonicalFacts.email || normalizeText(previous?.contact?.email),
+        contactType: 'Seller',
+      }
+    : previous?.contact || null
+
+  return {
+    ...previous,
+    privateListing: listing,
+    listing,
+    contact,
+    lead: {
+      ...(previous?.lead || {}),
+      leadId,
+      organisationId: normalizeText(listing?.organisationId || payload.organisationId),
+      leadCategory: 'seller',
+      leadDirection: 'Listing',
+      leadSource: 'Mandate',
+      stage: 'Mandate Draft',
+      status: 'Mandate Draft',
+      priority: 'Medium',
+      budget: listing?.estimatedValue || listing?.askingPrice || payload.estimatedValue || payload.askingPrice || 0,
+      areaInterest: listing?.suburb || property.suburb || '',
+      propertyInterest: listing?.propertyType || property.propertyType || listing?.title || '',
+      sellerPropertyAddress: listing?.formattedAddress || listing?.addressLine1 || property.displayAddress || property.address || '',
+      sellerName: canonicalFacts.sellerName || canonicalFacts.fullName || '',
+      sellerEmail: canonicalFacts.email || '',
+      sellerPhone: canonicalFacts.phone || '',
+      sellerOnboardingStatus: listing?.sellerOnboardingStatus || payload.sellerOnboardingStatus || 'not_started',
+      mandateStatus: listing?.mandateStatus || payload.mandateStatus || 'generated',
+      mandatePacketId: listing?.mandatePacketId || payload.mandatePacketId || '',
+      listingId,
+      privateListingId: listingId,
+    },
+  }
 }
 
 function toFriendlyPageError(error = null) {
@@ -1892,6 +2136,7 @@ export default function LegalDocumentWorkspacePage() {
     : normalizeKey(initialStatus?.packet?.packet_type || initialStatus?.packetType || 'mandate')
   const documentStartSourceMode = normalizeKey(searchParams.get('sourceMode'))
   const documentStartEntryPoint = normalizeKey(searchParams.get('documentStart'))
+  const autoCreateListingFromMandate = ['1', 'true', 'yes'].includes(normalizeKey(searchParams.get('autoCreateListing')))
   const actor = useMemo(() => buildAgentFromProfile(profile), [profile])
   const initialStatusValueRef = useRef(initialStatus)
 
@@ -2571,6 +2816,164 @@ export default function LegalDocumentWorkspacePage() {
     return packet
   }, [actor.id, documentStartEntryPoint, documentStartSourceMode, effectiveMandateDraft, effectiveOtpDraft, initialStatus, leadContext.lead, leadContext.listing, leadContext.privateListing, organisationId, packetType, resolveCurrentStatus, routeLeadId, routeListingId, routeOfferId, syncLeadMandateState, transactionId, transactionReference, validatedRoutePacketId])
 
+  const createListingFromGeneratedMandate = useCallback(async ({
+    packet = null,
+    status = null,
+    mandateData = null,
+    sourceListingId = '',
+    onProgress = null,
+  } = {}) => {
+    const existingListingId = normalizeText(
+      sourceListingId ||
+        routeListingId ||
+        leadContext?.privateListing?.id ||
+        leadContext?.listing?.id ||
+        leadContext?.lead?.listingId,
+    )
+    if (!autoCreateListingFromMandate || packetType !== 'mandate' || existingListingId) {
+      return { listing: null, packet, status }
+    }
+    const packetId = normalizeText(packet?.id || status?.packet?.id)
+    if (!isUuidLike(packetId)) {
+      return { listing: null, packet, status }
+    }
+    if (!organisationId) {
+      throw new Error('Organisation context is missing. The mandate was generated, but the listing could not be created automatically.')
+    }
+
+    onProgress?.('Creating listing from generated mandate...')
+    const basePacket = packet?.id ? packet : status?.packet
+    const listingPayload = buildMandateFirstListingPayload({
+      organisationId,
+      actor,
+      packet: basePacket,
+      mandateData,
+      mandateDraft: effectiveMandateDraft,
+      leadContext,
+      routeLeadId,
+    })
+    const created = await createPrivateListing(listingPayload, {
+      includeRequirementsAndDocuments: false,
+      syncRequirements: false,
+    })
+    const listing = created?.listing || created
+    if (!listing?.id) {
+      throw new Error('The mandate was generated, but Arch9 could not create the listing record.')
+    }
+
+    await createPrivateListingActivity({
+      privateListingId: listing.id,
+      activityType: 'mandate_first_listing_created',
+      activityTitle: 'Listing created from generated mandate',
+      activityDescription: 'Mandate was generated first and the private listing was created automatically.',
+      performedBy: normalizeText(actor.id),
+      visibility: 'internal',
+      metadata: {
+        origin: 'mandate_first',
+        source: 'legal_document_workspace',
+        packetId,
+        routeLeadId: normalizeText(routeLeadId),
+        documentStart: documentStartEntryPoint || null,
+        sourceMode: documentStartSourceMode || null,
+        listingStatus: listing.listingStatus || listingPayload.listingStatus,
+        mandateStatus: listing.mandateStatus || listingPayload.mandateStatus,
+      },
+    }).catch((activityError) => {
+      console.warn('[LegalDocumentWorkspacePage] mandate-first listing activity skipped.', activityError)
+    })
+
+    const linkedAt = new Date().toISOString()
+    const existingSourceContext = asRecord(basePacket?.source_context_json || status?.packet?.source_context_json)
+    const linkedSourceContext = {
+      ...existingSourceContext,
+      autoCreateListing: true,
+      autoCreatedListingId: listing.id,
+      autoCreatedListingAt: linkedAt,
+      privateListingId: listing.id,
+      private_listing_id: listing.id,
+      listingId: listing.id,
+      listing_id: listing.id,
+      leadId: normalizeLeadUuid(listingPayload.sellerLeadId || leadContext?.lead?.leadId || routeLeadId) || null,
+      uiLeadId: normalizeText(routeLeadId) || null,
+      sourceMode: documentStartSourceMode || null,
+      documentStart: documentStartEntryPoint || null,
+      mandateDraft: effectiveMandateDraft,
+      generatedDataSnapshot: mandateData || existingSourceContext.generatedDataSnapshot || null,
+      sourceContext: {
+        ...(asRecord(existingSourceContext.sourceContext)),
+        listingId: listing.id,
+        privateListingId: listing.id,
+        autoCreateListing: true,
+      },
+      generationPayload: existingSourceContext.generationPayload && typeof existingSourceContext.generationPayload === 'object'
+        ? {
+            ...existingSourceContext.generationPayload,
+            mandateData: mandateData || existingSourceContext.generationPayload.mandateData || null,
+            listingId: listing.id,
+            privateListingId: listing.id,
+          }
+        : existingSourceContext.generationPayload,
+    }
+    let linkedPacket = {
+      ...(basePacket || {}),
+      id: packetId,
+      source_context_json: linkedSourceContext,
+    }
+    try {
+      linkedPacket = await updateDocumentPacket(packetId, {
+        sourceContextJson: linkedSourceContext,
+      })
+    } catch (packetUpdateError) {
+      console.warn('[LegalDocumentWorkspacePage] generated mandate packet listing metadata update skipped.', packetUpdateError)
+    }
+
+    const nextStatus = status
+      ? {
+          ...status,
+          packet: {
+            ...(status.packet || basePacket || {}),
+            ...(linkedPacket || {}),
+            source_context_json: linkedSourceContext,
+          },
+          actionHint: 'Mandate generated and listing created.',
+        }
+      : status
+    const nextLeadContext = buildMandateFirstLeadContext({
+      listing,
+      payload: listingPayload,
+      routeLeadId,
+      previous: leadContext,
+    })
+    setLeadContext(nextLeadContext)
+    if (nextStatus) setInitialStatus(nextStatus)
+    setValidatedRoutePacketId(packetId)
+
+    const nextParams = new URLSearchParams()
+    nextParams.set('mode', 'generate')
+    nextParams.set('sourceMode', DOCUMENT_START_SOURCE_MODES.saved)
+    nextParams.set('documentStart', DOCUMENT_START_ENTRY_POINTS.listingMandate)
+    nextParams.set('listingId', listing.id)
+    nextParams.set('packetId', packetId)
+    nextParams.set('returnTo', '/listings')
+    const linkedLeadId = normalizeLeadUuid(listingPayload.sellerLeadId || leadContext?.lead?.leadId || routeLeadId)
+    if (linkedLeadId && linkedLeadId !== listing.id) nextParams.set('leadId', linkedLeadId)
+    navigate(`/agent/listings/${encodeURIComponent(listing.id)}/legal/mandate?${nextParams.toString()}`, { replace: true })
+
+    return { listing, packet: linkedPacket, status: nextStatus }
+  }, [
+    actor,
+    autoCreateListingFromMandate,
+    documentStartEntryPoint,
+    documentStartSourceMode,
+    effectiveMandateDraft,
+    leadContext,
+    navigate,
+    organisationId,
+    packetType,
+    routeLeadId,
+    routeListingId,
+  ])
+
   const handleGenerate = useCallback(async ({ onProgress, persistForSend = false, resetExisting = false } = {}) => {
     onProgress?.('Preparing draft...')
     const generationLookupTimeoutMs = 8000
@@ -2897,13 +3300,30 @@ export default function LegalDocumentWorkspacePage() {
       setInitialStatus(refreshedStatus)
     }
 
+    let autoCreatedListing = null
+    const autoCreateResult = await createListingFromGeneratedMandate({
+      packet: generationResult.packet || refreshedStatus?.packet || packet,
+      status: refreshedStatus,
+      mandateData: generationContext.mandateData,
+      sourceListingId,
+      onProgress,
+    })
+    if (autoCreateResult?.listing) {
+      autoCreatedListing = autoCreateResult.listing
+      refreshedStatus = autoCreateResult.status || refreshedStatus
+      if (refreshedStatus) setInitialStatus(refreshedStatus)
+    }
+
     window.dispatchEvent(new Event('itg:transaction-updated'))
     return {
       ...generationResult,
+      autoCreatedListing,
+      actionFeedback: autoCreatedListing ? 'Mandate generated and listing created.' : undefined,
       status: refreshedStatus,
     }
   }, [
     actor,
+    createListingFromGeneratedMandate,
     documentStartEntryPoint,
     documentStartSourceMode,
     ensurePacket,

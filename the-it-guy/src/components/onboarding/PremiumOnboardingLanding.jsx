@@ -115,12 +115,9 @@ function AgencyLogo({ logoUrl = '', agencyName = '' }) {
   }
 
   return (
-    <div className="flex min-w-0 items-center gap-3">
+    <div className="flex min-w-0 items-center">
       <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] border bg-[var(--landing-accent-soft)] text-[var(--landing-accent)] shadow-[0_18px_42px_rgba(0,0,0,0.28)] backdrop-blur-xl" style={{ borderColor: 'var(--landing-accent-border)' }}>
         <Home size={25} strokeWidth={1.8} />
-      </span>
-      <span className="hidden min-w-0 text-sm font-semibold leading-5 text-white sm:block">
-        {safeName}
       </span>
     </div>
   )
@@ -173,11 +170,8 @@ export default function PremiumOnboardingLanding({
       <div aria-hidden className="absolute inset-0" style={{ background: theme.overlayVertical }} />
 
       <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-[1440px] flex-col px-5 py-5 sm:px-8 sm:py-7 lg:px-10 lg:py-8">
-        <header className="flex items-center justify-between gap-4">
+        <header className="flex items-center">
           <AgencyLogo logoUrl={agencyLogo} agencyName={agencyName} />
-          <span className="hidden rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-semibold uppercase text-white/75 backdrop-blur-xl sm:inline-flex">
-            Secure intake
-          </span>
         </header>
 
         <div className="grid flex-1 items-center gap-8 py-9 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-12 lg:py-8 xl:grid-cols-[minmax(0,1fr)_400px]">
