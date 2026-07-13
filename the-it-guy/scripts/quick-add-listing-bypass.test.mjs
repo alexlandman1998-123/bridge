@@ -6,6 +6,7 @@ const serviceSource = await readFile(new URL('../src/services/privateListingServ
 const mandateStatusMigration = await readFile(new URL('../sql/20260630_private_listing_manual_mandate_statuses.sql', import.meta.url), 'utf8')
 const privateListingFoundation = await readFile(new URL('../sql/20260509_private_listing_foundation.sql', import.meta.url), 'utf8')
 const activeMemberInsertPolicyMigration = await readFile(new URL('../../supabase/migrations/202607130001_private_listing_insert_policy_active_member.sql', import.meta.url), 'utf8')
+const membershipHelperAlignmentMigration = await readFile(new URL('../../supabase/migrations/202607130002_membership_helper_status_alignment.sql', import.meta.url), 'utf8')
 
 assert.match(
   source,
@@ -110,6 +111,18 @@ for (const migrationSource of [privateListingFoundation, activeMemberInsertPolic
     'Private listing insert policy should allow active organisation members without comparing profile ids to auth.uid().',
   )
 }
+
+assert.match(
+  membershipHelperAlignmentMigration,
+  /coalesce\(ou\.membership_status,\s*ou\.status,\s*''\)/,
+  'Active-member helper should honor the canonical membership_status column before legacy status.',
+)
+
+assert.match(
+  membershipHelperAlignmentMigration,
+  /coalesce\(ou\.workspace_role,\s*ou\.organization_role,\s*ou\.organisation_role,\s*ou\.role,\s*''\)/,
+  'Membership role helper should normalize current workspace role columns before legacy role.',
+)
 
 assert.match(
   source,
