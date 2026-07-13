@@ -5,7 +5,9 @@ import {
   ArrowRight,
   BadgeCheck,
   BarChart3,
+  Bath,
   CalendarDays,
+  BedDouble,
   ChevronDown,
   CheckCircle2,
   Clock3,
@@ -21,9 +23,13 @@ import {
   MessageSquarePlus,
   MoreVertical,
   Banknote,
+  Car,
+  Pencil,
   Phone,
   Plus,
   RefreshCw,
+  Ruler,
+  Save,
   Search,
   Send,
   Shield,
@@ -33,6 +39,7 @@ import {
   Trash2,
   UserRound,
   Upload,
+  X,
 } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -14643,15 +14650,121 @@ function getSellerPropertySummary(row = {}, listing = null) {
   const addressParts = [address]
   if (suburb && !lowerAddress.includes(suburb.toLowerCase())) addressParts.push(suburb)
   if (city && !lowerAddress.includes(city.toLowerCase())) addressParts.push(city)
+  const askingPrice = Number(formData?.askingPrice || propertyDetails?.price || propertyDetails?.askingPrice || propertyDetails?.asking_price || listing?.estimatedValue || listing?.estimated_value || listing?.askingPrice || listing?.asking_price || row?.estimatedValue || row?.estimated_value || row?.budget || 0) || 0
+  const parking = normalizeText(
+    formData?.parking ||
+      formData?.parkingSpaces ||
+      formData?.parking_spaces ||
+      formData?.garages ||
+      formData?.coveredParking ||
+      formData?.covered_parking ||
+      propertyDetails?.parking ||
+      propertyDetails?.parkingSpaces ||
+      propertyDetails?.parking_spaces ||
+      propertyDetails?.garages ||
+      propertyDetails?.coveredParking ||
+      propertyDetails?.covered_parking ||
+      listing?.parking ||
+      listing?.parkingSpaces ||
+      listing?.parking_spaces ||
+      listing?.garages ||
+      row?.parking ||
+      row?.garages,
+  )
   return {
     address: addressParts.filter(Boolean).join(', ') || 'Property address pending',
     propertyType: normalizeText(formData?.propertyType || propertyDetails?.propertyType || propertyDetails?.property_type || listing?.propertyType || listing?.property_type || row?.propertyType || row?.property_type) || 'Property type pending',
-    estimatedValue: Number(formData?.askingPrice || propertyDetails?.price || propertyDetails?.askingPrice || propertyDetails?.asking_price || listing?.estimatedValue || listing?.estimated_value || listing?.askingPrice || listing?.asking_price || row?.estimatedValue || row?.estimated_value || row?.budget || 0) || 0,
+    askingPrice,
+    estimatedValue: askingPrice,
     bedrooms: normalizeText(formData?.bedrooms || propertyDetails?.bedrooms || listing?.bedrooms || listing?.propertyDetails?.bedrooms || row?.bedrooms),
     bathrooms: normalizeText(formData?.bathrooms || propertyDetails?.bathrooms || listing?.bathrooms || listing?.propertyDetails?.bathrooms || row?.bathrooms),
+    parking,
     erfSize: normalizeText(formData?.erfSize || propertyDetails?.erfSize || propertyDetails?.erf_size || listing?.erfSize || listing?.erf_size || listing?.propertyDetails?.erfSize || row?.erfSize || row?.erf_size),
     description: normalizeText(formData?.propertyDescription || formData?.propertyNotes || formData?.description || propertyDetails?.description || propertyDetails?.notes || listing?.marketing?.description || listing?.description || listing?.propertyDescription || listing?.property_description || row?.notes),
   }
+}
+
+function createSellerPropertyDraft(property = {}) {
+  return {
+    address: property.address === 'Property address pending' ? '' : normalizeText(property.address),
+    propertyType: property.propertyType === 'Property type pending' ? '' : normalizeText(property.propertyType),
+    askingPrice: property.askingPrice ? String(property.askingPrice) : '',
+    bedrooms: normalizeText(property.bedrooms),
+    bathrooms: normalizeText(property.bathrooms),
+    parking: normalizeText(property.parking),
+    erfSize: normalizeText(property.erfSize),
+    description: normalizeText(property.description),
+  }
+}
+
+function normalizeSellerPropertyDraft(draft = {}) {
+  const askingPrice = Number(String(draft.askingPrice || '').replace(/[^\d.]/g, '')) || 0
+  return {
+    address: normalizeText(draft.address),
+    propertyType: normalizeText(draft.propertyType),
+    askingPrice,
+    bedrooms: normalizeText(draft.bedrooms),
+    bathrooms: normalizeText(draft.bathrooms),
+    parking: normalizeText(draft.parking),
+    erfSize: normalizeText(draft.erfSize),
+    description: normalizeText(draft.description),
+  }
+}
+
+function buildSellerPropertyOverridePatches(draft = {}) {
+  const normalized = normalizeSellerPropertyDraft(draft)
+  const listingPatch = {}
+  if (normalized.address) {
+    listingPatch.title = normalized.address
+    listingPatch.addressLine1 = normalized.address
+    listingPatch.formattedAddress = normalized.address
+    listingPatch.streetAddress = normalized.address
+  }
+  if (normalized.propertyType) listingPatch.propertyType = normalized.propertyType
+  if (normalized.askingPrice) {
+    listingPatch.askingPrice = normalized.askingPrice
+    listingPatch.estimatedValue = normalized.askingPrice
+  }
+  if (normalized.description) listingPatch.description = normalized.description
+  const formPatch = {
+    propertyAddress: normalized.address,
+    propertyAddressSearch: normalized.address,
+    propertyAddressLine1: normalized.address,
+    propertyType: normalized.propertyType,
+    askingPrice: normalized.askingPrice,
+    bedrooms: normalized.bedrooms,
+    bathrooms: normalized.bathrooms,
+    parking: normalized.parking,
+    garages: normalized.parking,
+    erfSize: normalized.erfSize,
+    propertyDescription: normalized.description,
+    propertyNotes: normalized.description,
+    agentPropertyOverride: true,
+    agentPropertyOverrideAt: new Date().toISOString(),
+  }
+  const leadPatch = {}
+  if (normalized.address) {
+    leadPatch.sellerPropertyAddress = normalized.address
+    leadPatch.formattedAddress = normalized.address
+    leadPatch.streetAddress = normalized.address
+    leadPatch.propertyInterest = normalized.address
+  }
+  if (normalized.askingPrice) leadPatch.estimatedValue = normalized.askingPrice
+  return { normalized, listingPatch, formPatch, leadPatch }
+}
+
+function hasSellerPropertyOverrideValues(draft = {}) {
+  const normalized = normalizeSellerPropertyDraft(draft)
+  return Boolean(
+    normalized.address ||
+      normalized.propertyType ||
+      normalized.askingPrice ||
+      normalized.bedrooms ||
+      normalized.bathrooms ||
+      normalized.parking ||
+      normalized.erfSize ||
+      normalized.description,
+  )
 }
 
 function getSellerListingImageUrl(listing = null) {
@@ -15742,21 +15855,57 @@ function SellerReadinessScoreCard({ readiness = null, journey = null }) {
   )
 }
 
+function SellerListingFact({ icon: Icon, label, value }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white text-slate-500 shadow-sm">
+        <Icon size={15} />
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-semibold text-slate-950">{value || 'Pending'}</span>
+        <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">{label}</span>
+      </span>
+    </div>
+  )
+}
+
 function SellerPropertyPreviewCard({ row, listing }) {
   const property = getSellerPropertySummary(row, listing)
   const imageUrl = getSellerListingImageUrl(listing)
+  const priceLabel = property.askingPrice ? formatCurrency(property.askingPrice) : 'Asking price pending'
+  const description = property.description || 'Listing description pending.'
   return (
-    <section className={`${panelClass} min-h-[190px] overflow-hidden shadow-[0_18px_45px_rgba(15,23,42,0.06)]`}>
-      <div className="flex h-36 items-center justify-center bg-slate-100 text-slate-400">
-        {imageUrl ? <img src={imageUrl} alt="" className="h-full w-full object-cover" /> : <Home size={30} />}
+    <section className={`${panelClass} overflow-hidden shadow-[0_18px_45px_rgba(15,23,42,0.06)]`}>
+      <div className="relative flex h-56 items-center justify-center overflow-hidden bg-slate-100 text-slate-400">
+        {imageUrl ? <img src={imageUrl} alt="" className="h-full w-full object-cover" /> : (
+          <div className="flex flex-col items-center gap-3 text-slate-400">
+            <span className="grid h-16 w-16 place-items-center rounded-2xl bg-white shadow-sm">
+              <Home size={30} />
+            </span>
+            <span className="text-xs font-semibold uppercase tracking-[0.14em]">Image pending</span>
+          </div>
+        )}
+        <div className="absolute left-4 top-4 flex flex-wrap gap-2">
+          <span className="rounded-full bg-white/95 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">Draft Listing</span>
+          {property.propertyType && property.propertyType !== 'Property type pending' ? (
+            <span className="rounded-full bg-slate-950/85 px-3 py-1 text-xs font-semibold text-white shadow-sm">{property.propertyType}</span>
+          ) : null}
+        </div>
       </div>
       <div className="p-5">
         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Property Preview</p>
-        <h2 className="mt-2 line-clamp-2 text-lg font-semibold tracking-[-0.035em] text-slate-950">{property.address}</h2>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <StatusPill>{property.propertyType}</StatusPill>
-          <StatusPill>{property.estimatedValue ? formatCurrency(property.estimatedValue) : 'Value pending'}</StatusPill>
+        <h2 className="mt-2 line-clamp-2 text-2xl font-semibold tracking-[-0.045em] text-slate-950">{priceLabel}</h2>
+        <div className="mt-2 flex items-start gap-2 text-sm font-semibold leading-6 text-slate-600">
+          <MapPin size={16} className="mt-1 shrink-0 text-slate-400" />
+          <span className="line-clamp-2">{property.address}</span>
         </div>
+        <div className="mt-5 grid gap-2 sm:grid-cols-2">
+          <SellerListingFact icon={BedDouble} label="Bedrooms" value={property.bedrooms || 'Pending'} />
+          <SellerListingFact icon={Bath} label="Bathrooms" value={property.bathrooms || 'Pending'} />
+          <SellerListingFact icon={Car} label="Parking" value={property.parking || 'Pending'} />
+          <SellerListingFact icon={Ruler} label="Erf Size" value={property.erfSize || 'Pending'} />
+        </div>
+        <p className="mt-5 line-clamp-3 text-sm leading-6 text-slate-500">{description}</p>
       </div>
     </section>
   )
@@ -17656,21 +17805,163 @@ function SellerProfileTab({
   )
 }
 
-function SellerPropertyTab({ row, listing }) {
-  const property = getSellerPropertySummary(row, listing)
+function SellerPropertyEditField({ label, value, onChange, type = 'text', multiline = false, placeholder = '' }) {
+  return (
+    <label className="grid gap-2">
+      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">{label}</span>
+      {multiline ? (
+        <textarea
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          rows={4}
+          className="min-h-28 resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-50"
+        />
+      ) : (
+        <input
+          type={type}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-50"
+        />
+      )}
+    </label>
+  )
+}
+
+function SellerPropertyTab({ row, listing, onSavePropertyDetails }) {
+  const property = useMemo(() => getSellerPropertySummary(row, listing), [listing, row])
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [draft, setDraft] = useState(() => createSellerPropertyDraft(property))
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (editing) return
+    setDraft(createSellerPropertyDraft(property))
+  }, [
+    editing,
+    property.address,
+    property.askingPrice,
+    property.bathrooms,
+    property.bedrooms,
+    property.description,
+    property.erfSize,
+    property.parking,
+    property.propertyType,
+  ])
+
+  const updateDraft = useCallback((key, value) => {
+    setError('')
+    setMessage('')
+    setDraft((previous) => ({ ...(previous || {}), [key]: value }))
+  }, [])
+
+  const beginEditing = useCallback(() => {
+    setDraft(createSellerPropertyDraft(property))
+    setEditing(true)
+    setError('')
+    setMessage('')
+  }, [property])
+
+  const cancelEditing = useCallback(() => {
+    setDraft(createSellerPropertyDraft(property))
+    setEditing(false)
+    setError('')
+    setMessage('')
+  }, [property])
+
+  const savePropertyDetails = useCallback(async () => {
+    if (!hasSellerPropertyOverrideValues(draft)) {
+      setError('Add at least one property detail before saving.')
+      return
+    }
+    if (!onSavePropertyDetails) {
+      setError('Property detail saving is unavailable in this workspace.')
+      return
+    }
+    try {
+      setSaving(true)
+      setError('')
+      setMessage('')
+      await onSavePropertyDetails(draft)
+      setEditing(false)
+      setMessage('Property details saved.')
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to save property details.')
+    } finally {
+      setSaving(false)
+    }
+  }, [draft, onSavePropertyDetails])
+
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
       <SellerPropertyPreviewCard row={row} listing={listing} />
-      <SellerWorkspaceCard title="Property Detail">
-        <dl className="flex flex-1 flex-col">
-          <SellerInfoRow label="Address" value={property.address} />
-          <SellerInfoRow label="Property Type" value={property.propertyType} />
-          <SellerInfoRow label="Estimated Value" value={property.estimatedValue ? formatCurrency(property.estimatedValue) : 'Value pending'} />
-          <SellerInfoRow label="Bedrooms" value={property.bedrooms || 'Pending'} />
-          <SellerInfoRow label="Bathrooms" value={property.bathrooms || 'Pending'} />
-          <SellerInfoRow label="Erf Size" value={property.erfSize || 'Pending'} />
-          <SellerInfoRow label="Description" value={property.description || 'Pending'} />
-        </dl>
+      <SellerWorkspaceCard
+        title="Property Detail"
+        action={editing ? (
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={cancelEditing}
+              disabled={saving}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60"
+            >
+              <X size={14} />
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={savePropertyDetails}
+              disabled={saving}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-950 px-3 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:bg-slate-300"
+            >
+              <Save size={14} />
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={beginEditing}
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            <Pencil size={14} />
+            Edit
+          </button>
+        )}
+      >
+        {editing ? (
+          <div className="grid gap-4">
+            <SellerPropertyEditField label="Address" value={draft.address} onChange={(value) => updateDraft('address', value)} placeholder="Street address, suburb, city" />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <SellerPropertyEditField label="Property Type" value={draft.propertyType} onChange={(value) => updateDraft('propertyType', value)} placeholder="House, apartment, townhouse" />
+              <SellerPropertyEditField label="Asking Price" type="number" value={draft.askingPrice} onChange={(value) => updateDraft('askingPrice', value)} placeholder="0" />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <SellerPropertyEditField label="Bedrooms" value={draft.bedrooms} onChange={(value) => updateDraft('bedrooms', value)} placeholder="Pending" />
+              <SellerPropertyEditField label="Bathrooms" value={draft.bathrooms} onChange={(value) => updateDraft('bathrooms', value)} placeholder="Pending" />
+              <SellerPropertyEditField label="Parking" value={draft.parking} onChange={(value) => updateDraft('parking', value)} placeholder="Pending" />
+              <SellerPropertyEditField label="Erf Size" value={draft.erfSize} onChange={(value) => updateDraft('erfSize', value)} placeholder="Pending" />
+            </div>
+            <SellerPropertyEditField label="Description" value={draft.description} onChange={(value) => updateDraft('description', value)} multiline placeholder="Listing description or agent notes" />
+          </div>
+        ) : (
+          <dl className="flex flex-1 flex-col">
+            <SellerInfoRow label="Address" value={property.address} />
+            <SellerInfoRow label="Property Type" value={property.propertyType} />
+            <SellerInfoRow label="Asking Price" value={property.askingPrice ? formatCurrency(property.askingPrice) : 'Asking price pending'} />
+            <SellerInfoRow label="Bedrooms" value={property.bedrooms || 'Pending'} />
+            <SellerInfoRow label="Bathrooms" value={property.bathrooms || 'Pending'} />
+            <SellerInfoRow label="Parking" value={property.parking || 'Pending'} />
+            <SellerInfoRow label="Erf Size" value={property.erfSize || 'Pending'} />
+            <SellerInfoRow label="Description" value={property.description || 'Pending'} />
+          </dl>
+        )}
+        {error ? <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
+        {message ? <p className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">{message}</p> : null}
       </SellerWorkspaceCard>
     </div>
   )
@@ -18373,6 +18664,7 @@ function SellerTabContent({
   agentOnboardingSignal = 0,
   onCommissionDraftChange,
   onSaveCommission,
+  onSavePropertyDetails,
   onSaved,
   onSendSellerOnboarding,
   onAgentCompleteSellerOnboarding,
@@ -18400,7 +18692,7 @@ function SellerTabContent({
       />
     )
   }
-  if (activeTab === 'property') return <SellerPropertyTab row={row} listing={listing} />
+  if (activeTab === 'property') return <SellerPropertyTab row={row} listing={listing} onSavePropertyDetails={onSavePropertyDetails} />
   if (activeTab === 'mandate') {
     return (
       <SellerMandateTab
@@ -18585,6 +18877,7 @@ function SellerLeadWorkspaceLayout({
   savingCommission,
   onSaved,
   onSaveCommission,
+  onSavePropertyDetails,
   onSendSellerOnboarding,
   onAgentCompleteSellerOnboarding,
   onResendSellerPortalLink,
@@ -18699,6 +18992,7 @@ function SellerLeadWorkspaceLayout({
         agentOnboardingSignal={agentOnboardingSignal}
         onCommissionDraftChange={updateCommissionDraft}
         onSaveCommission={onSaveCommission}
+        onSavePropertyDetails={onSavePropertyDetails}
         onSaved={onSaved}
         onSendSellerOnboarding={onSendSellerOnboarding}
         onAgentCompleteSellerOnboarding={onAgentCompleteSellerOnboarding}
@@ -19390,6 +19684,104 @@ function AgentLeadWorkspace() {
     }
   }, [actor, isSellerLeadWorkspace, linkedSellerListing, organisationId, row, sendingSellerPortalLink, workspaceName])
 
+  const saveSellerPropertyForLead = useCallback(async (draft = {}) => {
+    if (!row || !isSellerLeadWorkspace) return null
+    if (!organisationId) {
+      throw new Error('Select an agency workspace before saving property details.')
+    }
+    if (!hasSellerPropertyOverrideValues(draft)) {
+      throw new Error('Add at least one property detail before saving.')
+    }
+
+    const { normalized, listingPatch, formPatch, leadPatch } = buildSellerPropertyOverridePatches(draft)
+    const existingProperty = getSellerPropertySummary(row, linkedSellerListing)
+    const fallbackAddress = normalized.address || (existingProperty.address === 'Property address pending' ? '' : existingProperty.address)
+    const fallbackPropertyType = normalized.propertyType || (existingProperty.propertyType === 'Property type pending' ? '' : existingProperty.propertyType)
+    const fallbackPrice = normalized.askingPrice || existingProperty.askingPrice || Number(row.estimatedValue || row.estimated_value || row.budget || 0) || 0
+
+    let listingId = getSellerListingId(row, linkedSellerListing)
+    if (!listingId) {
+      const created = await createPrivateListing({
+        organisationId,
+        assignedAgentId: normalizeText(row.assignedAgentId || actor.id),
+        sellerLeadId: normalizeText(row.leadId),
+        originatingCrmLeadId: normalizeText(row.leadId),
+        listingStatus: 'seller_lead',
+        sellerOnboardingStatus: 'in_progress',
+        mandateStatus: 'not_started',
+        listingVisibility: 'internal',
+        title: fallbackAddress || normalizeText(row.propertyInterest || row.property_interest || row.sellerPropertyAddress || row.seller_property_address),
+        propertyType: fallbackPropertyType || 'House',
+        listingCategory: 'private_sale',
+        askingPrice: fallbackPrice,
+        estimatedValue: fallbackPrice,
+        addressLine1: fallbackAddress || normalizeText(row.sellerPropertyAddress || row.seller_property_address || row.areaInterest || row.area_interest),
+        suburb: normalizeText(row.suburb || row.areaInterest || row.area_interest),
+        city: normalizeText(row.city),
+        description: normalized.description || existingProperty.description || normalizeText(row.notes),
+        source: 'lead_workspace_property_override',
+      }, {
+        includeRequirementsAndDocuments: false,
+        syncRequirements: false,
+      })
+      listingId = normalizeText(created?.listing?.id)
+    }
+    if (!listingId) throw new Error('Create or link a seller listing before saving property details.')
+
+    if (Object.keys(listingPatch).length) {
+      await updatePrivateListing(listingId, listingPatch, {
+        includeRequirementsAndDocuments: false,
+        syncRequirements: false,
+      })
+    }
+
+    const currentStatus = getSellerOnboardingStatus(row, linkedSellerListing, sellerJourney)
+    await updatePrivateListingOnboardingFormData(listingId, formPatch, {
+      status: sellerOnboardingIsSubmitted(currentStatus) ? currentStatus : 'in_progress',
+    })
+
+    const leadSyncPatch = {
+      ...(getSellerListingId(row, linkedSellerListing) ? {} : { listingId }),
+      ...leadPatch,
+    }
+    if (Object.keys(leadSyncPatch).length) {
+      await updateAgencyCrmLeadRecord(organisationId, row.leadId, leadSyncPatch).catch((syncError) => {
+        console.warn('[AgentLeadsPage] Seller property lead sync failed.', syncError)
+        return null
+      })
+    }
+
+    const changedFields = [
+      normalized.address ? 'address' : '',
+      normalized.propertyType ? 'property type' : '',
+      normalized.askingPrice ? 'asking price' : '',
+      normalized.bedrooms ? 'bedrooms' : '',
+      normalized.bathrooms ? 'bathrooms' : '',
+      normalized.parking ? 'parking' : '',
+      normalized.erfSize ? 'erf size' : '',
+      normalized.description ? 'description' : '',
+    ].filter(Boolean)
+    await createPrivateListingActivity({
+      privateListingId: listingId,
+      activityType: 'seller_property_overrides_saved',
+      activityTitle: 'Seller property details updated',
+      activityDescription: changedFields.length
+        ? `Updated ${changedFields.join(', ')} from the Property tab.`
+        : 'Updated property details from the Property tab.',
+      performedBy: actor?.id || actor?.userId || null,
+      visibility: 'internal',
+      metadata: {
+        source: 'seller_lead_property_tab',
+        changedFields,
+      },
+    }).catch(() => {})
+
+    setSellerActionError('')
+    setSellerActionMessage('Property details saved.')
+    await loadWorkspace()
+    return normalized
+  }, [actor, isSellerLeadWorkspace, linkedSellerListing, loadWorkspace, organisationId, row, sellerJourney])
+
   const saveSellerCommissionForLead = useCallback(async (draft = {}) => {
     if (!row || !isSellerLeadWorkspace || savingSellerCommission) return
     if (!organisationId) {
@@ -19738,6 +20130,7 @@ function AgentLeadWorkspace() {
               savingCommission={savingSellerCommission}
               onSaved={loadWorkspace}
               onSaveCommission={saveSellerCommissionForLead}
+              onSavePropertyDetails={saveSellerPropertyForLead}
               onSendSellerOnboarding={sendSellerOnboardingForLead}
               onAgentCompleteSellerOnboarding={completeSellerOnboardingAsAgent}
               onResendSellerPortalLink={resendSellerPortalLink}
