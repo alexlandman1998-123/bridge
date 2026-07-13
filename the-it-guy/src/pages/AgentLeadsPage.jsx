@@ -15549,9 +15549,9 @@ function SellerWorkspaceCard({ title, action, children, className = '', id = '',
 
 function SellerInfoRow({ label, value }) {
   return (
-    <div className="flex min-h-8 items-center justify-between gap-4 border-b border-slate-100 py-2 last:border-b-0">
-      <dt className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">{label}</dt>
-      <dd className="min-w-0 truncate text-right text-sm font-semibold text-slate-900">{value || '—'}</dd>
+    <div className="grid min-h-8 min-w-0 grid-cols-[minmax(6.5rem,0.42fr)_minmax(0,1fr)] items-start gap-3 border-b border-slate-100 py-2 last:border-b-0">
+      <dt className="min-w-0 pt-0.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">{label}</dt>
+      <dd className="min-w-0 break-words text-right text-sm font-semibold leading-6 text-slate-900">{value || '—'}</dd>
     </div>
   )
 }
@@ -18820,14 +18820,14 @@ function getSellerMandateSellerFacts({ row = {}, listing = null, journey = null,
 function SellerMandateFactSection({ section }) {
   const SectionIcon = section.icon || FileText
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4">
+    <section className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white p-4">
       <div className="mb-3 flex items-center gap-2">
         <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
           <SectionIcon size={16} />
         </span>
         <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-blue-900">{section.title}</h3>
       </div>
-      <dl className="grid gap-1">
+      <dl className="grid min-w-0 gap-1">
         {section.rows.map(([label, value]) => (
           <SellerInfoRow key={label} label={label} value={formatSellerMandateFactValue(label, value)} />
         ))}
@@ -18853,7 +18853,7 @@ function SellerMandateSellerFactsCard({ row, listing, journey, commissionSummary
         <Shield size={17} className="mt-0.5 shrink-0" />
         <p>Seller-supplied facts are locked here and used for mandate generation. Update them through seller onboarding or the manual onboarding flow.</p>
       </div>
-      <div className="mt-4 grid gap-3 xl:grid-cols-3">
+      <div className="mt-4 grid min-w-0 gap-3 xl:grid-cols-[repeat(3,minmax(0,1fr))]">
         {facts.sections.map((section) => (
           <SellerMandateFactSection key={section.title} section={section} />
         ))}
