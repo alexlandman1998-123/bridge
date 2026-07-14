@@ -481,22 +481,22 @@ function buildSellerSaleProgressModel({
   portal = {},
   sellerOfferItems = [],
 } = {}) {
-  if (!shouldShowSellerSaleProgress({ hasDocumentsComplete, sellerStageMeta, mainStage })) return null
-
-  const currentKey = resolveSellerSaleProgressKey({
-    sellerStageMeta,
-    mainStage,
-    activeSellingContext,
-    portal,
-    sellerOfferItems,
-  })
-  const currentIndex = Math.max(
-    SELLER_SALE_PROGRESS_STEPS.findIndex((step) => step.key === currentKey),
-    0,
-  )
+  const isStarted = shouldShowSellerSaleProgress({ hasDocumentsComplete, sellerStageMeta, mainStage })
+  const currentKey = isStarted
+    ? resolveSellerSaleProgressKey({
+        sellerStageMeta,
+        mainStage,
+        activeSellingContext,
+        portal,
+        sellerOfferItems,
+      })
+    : ''
+  const currentIndex = isStarted
+    ? Math.max(SELLER_SALE_PROGRESS_STEPS.findIndex((step) => step.key === currentKey), 0)
+    : -1
   const steps = SELLER_SALE_PROGRESS_STEPS.map((step, index) => ({
     ...step,
-    state: index < currentIndex ? 'completed' : index === currentIndex ? 'current' : 'upcoming',
+    state: isStarted && index < currentIndex ? 'completed' : isStarted && index === currentIndex ? 'current' : 'upcoming',
   }))
   const helperMessageByKey = {
     otp: 'Your seller file is complete. The next milestone is OTP activity for the sale.',
@@ -509,11 +509,17 @@ function buildSellerSaleProgressModel({
     steps,
     currentKey,
     currentIndex,
-    percent: Math.round((currentIndex / Math.max(SELLER_SALE_PROGRESS_STEPS.length - 1, 1)) * 100),
-    helperMessage: helperMessageByKey[currentKey] || helperMessageByKey.otp,
+    percent: isStarted ? Math.round((currentIndex / Math.max(SELLER_SALE_PROGRESS_STEPS.length - 1, 1)) * 100) : 0,
+    helperMessage: isStarted
+      ? helperMessageByKey[currentKey] || helperMessageByKey.otp
+      : 'Your sale workflow will begin once the listing journey is complete and the sale moves into OTP.',
+    title: 'Sale Progress',
+    workflowKey: 'sale',
+    isStarted,
+    statusLabel: isStarted ? '' : 'Not started',
     description: 'Track OTP, finance, transfer, and registration milestones for your sale.',
-    actionLabel: currentKey === 'otp' ? 'View offers' : 'View documents',
-    actionTo: currentKey === 'otp' ? 'offers' : 'documents',
+    actionLabel: !isStarted || currentKey === 'otp' ? 'View offers' : 'View documents',
+    actionTo: !isStarted || currentKey === 'otp' ? 'offers' : 'documents',
   }
 }
 
@@ -3299,31 +3305,57 @@ function SellerWelcomeHero({
   )
 }
 
-function SellerProgressJourney({ progressModel, token, workspaceNavigationScope }) {
+function SellerProgressJourney({ listingProgressModel, saleProgressModel, token, workspaceNavigationScope }) {
+  const defaultWorkflowKey = saleProgressModel?.isStarted ? 'sale' : 'listing'
+  const [activeWorkflowKey, setActiveWorkflowKey] = useState(defaultWorkflowKey)
+  const progressModel = activeWorkflowKey === 'sale' ? saleProgressModel : listingProgressModel
   const stepCount = Math.max(progressModel?.steps?.length || 0, 1)
   const steps = Array.isArray(progressModel?.steps) ? progressModel.steps : []
   const currentIndex = Math.max(Number(progressModel?.currentIndex || 0), 0)
-  const lineInset = `calc(100% / ${stepCount * 2})`
-  const lineProgressRatio = currentIndex / Math.max(stepCount - 1, 1)
+  const lineInset = '60px'
+  const lineProgressRatio = progressModel?.isStarted === false ? 0 : currentIndex / Math.max(stepCount - 1, 1)
   const minRailWidth = Math.max(stepCount * 120, 720)
+  const completionLabel = progressModel?.statusLabel || `${progressModel?.percent || 0}% complete`
 
   return (
     <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-[1.28rem] font-semibold tracking-[-0.03em] text-[#142132]">Your Sale Progress</h2>
+          <h2 className="text-[1.28rem] font-semibold tracking-[-0.03em] text-[#142132]">{progressModel?.title || 'Your Progress'}</h2>
           <p className="mt-1 text-sm leading-6 text-[#64748b]">{progressModel?.description || 'A simple view of where your property sale stands.'}</p>
         </div>
         <span className="inline-flex items-center rounded-full border border-[#d8e7f7] bg-[#eef5ff] px-3.5 py-2 text-sm font-semibold text-[#0f65b7]">
-          {progressModel?.percent || 0}% complete
+          {completionLabel}
         </span>
+      </div>
+
+      <div className="mt-5 inline-flex rounded-[12px] border border-[#dce6ef] bg-[#f5f8fb] p-1" role="tablist" aria-label="Seller journey progress">
+        {[
+          { key: 'listing', label: 'Listing Progress', model: listingProgressModel },
+          { key: 'sale', label: 'Sale Progress', model: saleProgressModel },
+        ].map((workflow) => {
+          const isActive = activeWorkflowKey === workflow.key
+          return (
+            <button
+              key={workflow.key}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => setActiveWorkflowKey(workflow.key)}
+              className={`rounded-[9px] px-3.5 py-2 text-sm font-semibold transition ${isActive ? 'bg-white text-[#123f3a] shadow-[0_3px_10px_rgba(15,23,42,0.1)]' : 'text-[#64748b] hover:text-[#274158]'}`}
+            >
+              {workflow.label}
+              {workflow.key === 'sale' && workflow.model?.isStarted === false ? <span className="ml-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-[#8a9aab]">Next</span> : null}
+            </button>
+          )
+        })}
       </div>
 
       <div className="mt-7 overflow-x-auto pb-2">
         <div className="relative px-2 pb-1" style={{ minWidth: `${minRailWidth}px` }}>
           <div className="absolute top-5 h-[2px] rounded-full bg-[#dce6f1]" style={{ left: lineInset, right: lineInset }} />
           <div className="absolute top-5 h-[2px] rounded-full bg-[#16a34a]" style={{ left: lineInset, width: `calc((100% - (${lineInset} * 2)) * ${lineProgressRatio})` }} />
-          <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${stepCount}, minmax(120px, 1fr))` }}>
+          <div className="grid justify-between gap-0" style={{ gridTemplateColumns: `repeat(${stepCount}, 120px)` }}>
             {steps.map((stage) => {
               const isComplete = stage.state === 'completed'
               const isCurrent = stage.state === 'current'
@@ -3959,7 +3991,8 @@ function SellerPortalDashboard({
   sellerPropertyImageUrl,
   sellerStatusLabel,
   sellerHealth,
-  sellerProgressModel,
+  sellerListingProgressModel,
+  sellerSaleProgressModel,
   sellerMarketingChannels,
   sellerAgentUpdate,
   sellerTimelineItems,
@@ -3990,7 +4023,8 @@ function SellerPortalDashboard({
       />
       <SellerTransactionHealthCard health={sellerHealth} />
       <SellerProgressJourney
-        progressModel={sellerProgressModel}
+        listingProgressModel={sellerListingProgressModel}
+        saleProgressModel={sellerSaleProgressModel}
         token={token}
         workspaceNavigationScope={workspaceNavigationScope}
       />
@@ -6666,26 +6700,35 @@ function ClientPortal() {
       sellerDocumentsNeedingAttention.length === 0 &&
       hasListingCreated,
   )
-  const sellerProgressModel =
-    buildSellerSaleProgressModel({
-      hasDocumentsComplete,
-      sellerStageMeta,
-      mainStage,
-      activeSellingContext,
-      portal,
-      sellerOfferItems,
-    }) ||
-    buildSellerPortalProgressModelFromSharedJourney(sharedSellerPortalJourney) ||
-    buildSellerPortalProgressModel({
-      hasSellingContext,
-      hasAppointment: clientVisibleAppointments.length > 0,
-      hasOnboardingStarted: hasSellerOnboardingData || Boolean(normalizedSellerOnboardingStatus && normalizedSellerOnboardingStatus !== 'not_started'),
-      hasOnboardingSubmitted: hasSellerOnboardingSubmitted,
-      hasMandatePacket,
-      hasMandateSigned,
-      hasListingCreated,
-      hasDocumentsComplete,
-    })
+  const inferredSellerListingProgressModel = buildSellerPortalProgressModel({
+    hasSellingContext,
+    hasAppointment: clientVisibleAppointments.length > 0,
+    hasOnboardingStarted: hasSellerOnboardingData || Boolean(normalizedSellerOnboardingStatus && normalizedSellerOnboardingStatus !== 'not_started'),
+    hasOnboardingSubmitted: hasSellerOnboardingSubmitted,
+    hasMandatePacket,
+    hasMandateSigned,
+    hasListingCreated,
+    hasDocumentsComplete,
+  })
+  const sharedSellerListingProgressModel = buildSellerPortalProgressModelFromSharedJourney(sharedSellerPortalJourney)
+  const sellerListingProgressModel = {
+    ...(hasDocumentsComplete ? inferredSellerListingProgressModel : sharedSellerListingProgressModel || inferredSellerListingProgressModel),
+    title: 'Listing Progress',
+    workflowKey: 'listing',
+    isStarted: true,
+    description: 'Track onboarding, mandate, listing activation, and seller document milestones.',
+    actionLabel: 'View documents',
+    actionTo: 'documents',
+  }
+  const sellerSaleProgressModel = buildSellerSaleProgressModel({
+    hasDocumentsComplete,
+    sellerStageMeta,
+    mainStage,
+    activeSellingContext,
+    portal,
+    sellerOfferItems,
+  })
+  const sellerProgressModel = sellerSaleProgressModel?.isStarted ? sellerSaleProgressModel : sellerListingProgressModel
   const sellerDetailsSections = buildSellerPortalDetailsSections({
     formData: sellerOnboardingFormData,
     propertyAddress: sellerPropertyTitle,
@@ -7829,7 +7872,8 @@ function ClientPortal() {
                       sellerPropertyImageUrl={sellerPropertyImageUrl}
                       sellerStatusLabel={sellerDashboardStatusLabel}
                       sellerHealth={sellerHealth}
-                      sellerProgressModel={sellerProgressModel}
+                      sellerListingProgressModel={sellerListingProgressModel}
+                      sellerSaleProgressModel={sellerSaleProgressModel}
                       sellerMarketingChannels={sellerMarketingChannels}
                       sellerAgentUpdate={sellerAgentUpdate}
                       sellerTimelineItems={sellerTimelineItems}

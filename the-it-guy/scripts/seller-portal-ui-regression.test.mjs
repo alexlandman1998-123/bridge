@@ -25,5 +25,9 @@ assert.match(workspaceServiceSource, /branding: sellerPortalBranding/, 'seller p
 assert.doesNotMatch(workspaceServiceSource, /name: listing\?\.agencyName \|\| listing\?\.organisationName \|\| 'Selling'/, 'seller portal payload should not use Selling as an agency name')
 assert.doesNotMatch(sellerHero, /Your listing/i, 'seller hero should not render the redundant listing summary card')
 assert.match(sellerHero, /Your agent/i, 'seller hero should retain the expanded agent card')
+assert.match(source, /Listing Progress[\s\S]*Sale Progress/, 'seller progress should expose both listing and sale workflow tabs')
+assert.match(source, /listingProgressModel=\{sellerListingProgressModel\}/, 'seller dashboard should retain the listing workflow after sale progress starts')
+assert.match(source, /saleProgressModel=\{sellerSaleProgressModel\}/, 'seller dashboard should expose the sale workflow independently')
+assert.match(source, /gridTemplateColumns: `repeat\(\$\{stepCount\}, 120px\)`/, 'seller progress nodes should stretch across the available timeline rail')
 
 console.log('Seller portal UI regression checks passed.')
