@@ -74,9 +74,12 @@ begin
       nullif(trim(agent.full_name), ''),
       nullif(trim(concat_ws(' ', agent.first_name, agent.last_name)), ''),
       nullif(trim(agent.email), ''),
-      nullif(trim(listing.assigned_agent_email), '')
+      nullif(trim(to_jsonb(listing) ->> 'assigned_agent_email'), '')
     ) as assigned_agent_name,
-    coalesce(nullif(trim(agent.email), ''), nullif(trim(listing.assigned_agent_email), '')) as assigned_agent_email,
+    coalesce(
+      nullif(trim(agent.email), ''),
+      nullif(trim(to_jsonb(listing) ->> 'assigned_agent_email'), '')
+    ) as assigned_agent_email,
     allocation.allocation_status,
     allocation.mandate_packet_id,
     allocation.mandate_signed_at,

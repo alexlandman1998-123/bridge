@@ -47,6 +47,7 @@ alter table if exists public.transaction_role_players
       'development_default',
       'preferred_partner',
       'recently_used',
+      'routing_rule',
       'invited_partner',
       'partner_prospect',
       'transaction_direct',

@@ -14,6 +14,7 @@ alter table if exists public.transaction_role_players
       'development_default',
       'preferred_partner',
       'recently_used',
+      'routing_rule',
       'partner_prospect',
       'invited_partner',
       'transaction_direct',
@@ -34,4 +35,3 @@ comment on table public.private_listing_role_players is
   'Preserves every mandate and replacement allocation row. Phase 6 inserts a new instructed row while retaining the withdrawn declined allocation.';
 
 commit;
-
