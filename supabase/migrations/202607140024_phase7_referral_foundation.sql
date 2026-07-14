@@ -1,3 +1,7 @@
+-- Phase 7 promotion of the canonical referral schema into migration history.
+-- Source mirror: the-it-guy/sql/20260704_lead_referrals.sql
+-- The historical referral enhancement migrations are applied after this foundation.
+
 begin;
 
 create table if not exists public.lead_referrals (
