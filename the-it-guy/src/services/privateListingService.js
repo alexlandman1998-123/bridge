@@ -1987,6 +1987,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     agencyLogoLightUrl: resolvedPortalBranding.logoLightUrl,
     organisationLogoUrl: pickFirstText(resolvedPortalBranding.logoDarkUrl, resolvedPortalBranding.logoLightUrl, resolvedPortalBranding.logoIconUrl),
     organisationLogoDarkUrl: resolvedPortalBranding.logoDarkUrl,
+    organisationLogoLightUrl: resolvedPortalBranding.logoLightUrl,
     branding: {
       ...portalBranding,
       organisationName: resolvedPortalBranding.organisationName,
@@ -2388,6 +2389,7 @@ function attachBrandingToListing(listing = null, branding = null) {
     agencyLogoLightUrl: pickFirstText(mergedBranding.logoLightUrl, listing.agencyLogoLightUrl),
     organisationLogoUrl: pickFirstText(mergedBranding.logoDarkUrl, mergedBranding.logoUrl, listing.organisationLogoUrl),
     organisationLogoDarkUrl: pickFirstText(mergedBranding.logoDarkUrl, listing.organisationLogoDarkUrl),
+    organisationLogoLightUrl: pickFirstText(mergedBranding.logoLightUrl, listing.organisationLogoLightUrl),
     branding: mergedBranding,
   }
 }

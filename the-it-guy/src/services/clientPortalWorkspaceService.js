@@ -521,8 +521,8 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     organisationName: listing?.organisationName || listing?.agencyName || listing?.branding?.organisationName || '',
     agencyName: listing?.agencyName || listing?.organisationName || listing?.branding?.agencyName || '',
     logoUrl: listing?.agencyLogoUrl || listing?.organisationLogoUrl || listing?.branding?.logoUrl || '',
-    logoDarkUrl: listing?.agencyLogoDarkUrl || listing?.organisationLogoDarkUrl || listing?.branding?.logoDarkUrl || '',
-    logoLightUrl: listing?.agencyLogoLightUrl || listing?.branding?.logoLightUrl || '',
+    logoDarkUrl: listing?.agencyLogoDarkUrl || listing?.agency_logo_dark_url || listing?.organisationLogoDarkUrl || listing?.organisation_logo_dark_url || listing?.branding?.logoDarkUrl || listing?.branding?.logoDark || '',
+    logoLightUrl: listing?.agencyLogoLightUrl || listing?.agency_logo_light_url || listing?.organisationLogoLightUrl || listing?.organisation_logo_light_url || listing?.branding?.logoLightUrl || listing?.branding?.logoLight || '',
   }
 
   return {
@@ -628,6 +628,7 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
       listingId,
       agencyName: sellerPortalBranding.agencyName || sellerPortalBranding.organisationName || '',
       agencyLogoUrl: sellerPortalBranding.logoDarkUrl || sellerPortalBranding.logoUrl || sellerPortalBranding.logoLightUrl || '',
+      agencyLogoLightUrl: sellerPortalBranding.logoLightUrl || '',
       branding: sellerPortalBranding,
       externalListingLinks: sellerVisibleExternalLinks,
       listingExternalLinks: sellerVisibleExternalLinks,
