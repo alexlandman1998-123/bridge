@@ -1,0 +1,29 @@
+name: Supabase migration safety
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - 'scripts/supabase-**'
+      - 'sql/supabase-**'
+      - 'package.json'
+      - 'the-it-guy/package.json'
+      - '.github/workflows/supabase-migration-safety.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+      - 'scripts/supabase-**'
+      - 'sql/supabase-**'
+      - 'package.json'
+      - 'the-it-guy/package.json'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/supabase-migration-safety-check.mjs

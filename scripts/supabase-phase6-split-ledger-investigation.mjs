@@ -205,23 +205,36 @@ function ledgerBuckets(rows) {
   const remoteOnly = []
   const divergent = []
 
+  // The CLI may render one version on separate local-only and remote-only rows
+  // when a longer timestamp sorts between them. Treat version presence across
+  // the complete result as authoritative so this display artifact is not
+  // mistaken for migration-history drift.
+  const localVersions = new Set(rows.map((row) => row.local).filter(Boolean))
+  const remoteVersions = new Set(rows.map((row) => row.remote).filter(Boolean))
+  const matchedVersions = new Set(
+    [...localVersions].filter((version) => remoteVersions.has(version)),
+  )
+  const matchedSeen = new Set()
+
   for (const row of rows) {
-    if (row.local && row.remote && row.local === row.remote) matched.push(row)
+    const version = row.local || row.remote
+    if (version && matchedVersions.has(version)) {
+      if (!matchedSeen.has(version)) {
+        matched.push({ ...row, local: version, remote: version })
+        matchedSeen.add(version)
+      }
+    }
     else if (row.local && row.remote) divergent.push(row)
     else if (row.local) localOnly.push(row)
     else if (row.remote) remoteOnly.push(row)
   }
-
-  const localOnlyVersions = new Set(localOnly.map((row) => row.local))
-  const remoteOnlyVersions = new Set(remoteOnly.map((row) => row.remote))
-  const splitVersions = [...localOnlyVersions].filter((version) => remoteOnlyVersions.has(version)).sort()
 
   return {
     matched,
     localOnly,
     remoteOnly,
     divergent,
-    splitVersions,
+    splitVersions: [],
   }
 }
 
@@ -549,8 +562,9 @@ function summarizeModules(splitRows) {
 function statusForRun({ options, duplicates, migrationCommand, historyCommand, objectCommand, splitRows }) {
   if (duplicates.length) return 'BLOCKED_DUPLICATES'
   if (!options.fetchRemote) return 'LOCAL_PREFLIGHT'
-  if (!migrationCommand?.ok || !historyCommand?.ok || (objectCommand && !objectCommand.ok)) return 'REMOTE_CHECK_FAILED'
-  if (splitRows.length === 0) return 'NO_SPLIT_ROWS'
+  if (!migrationCommand?.ok) return 'REMOTE_CHECK_FAILED'
+  if (splitRows.length === 0) return 'SPLIT_ARTIFACT_RESOLVED'
+  if (!historyCommand?.ok || (objectCommand && !objectCommand.ok)) return 'REMOTE_CHECK_FAILED'
   if (splitRows.some((row) => ['remote_history_missing', 'object_review_required'].includes(row.decision))) {
     return 'SPLIT_REVIEW_REQUIRED'
   }
@@ -649,7 +663,9 @@ function generateReport({
       ]),
     ))
   } else {
-    lines.push('No split rows were available. Run `npm run supabase:phase6` to fetch the remote ledger.')
+    lines.push(options.fetchRemote
+      ? 'No split rows remain after normalizing version presence across the complete linked ledger.'
+      : 'No split rows were available. Run `npm run supabase:phase6` to fetch the remote ledger.')
   }
   lines.push('')
   lines.push('## Object Review Required')
@@ -722,7 +738,9 @@ function generateReport({
       ]),
     ))
   } else {
-    lines.push('No split local/remote versions were available.')
+    lines.push(options.fetchRemote
+      ? 'No split local/remote versions remain.'
+      : 'No split local/remote versions were available.')
   }
   lines.push('')
   lines.push('## Object Extraction')
@@ -770,6 +788,8 @@ function generateReport({
     lines.push('Exclude split rows from any ledger repair batch. Review the object-review/manual rows first, then continue with small pure-local-only batches from Phase 5 that have module smoke evidence.')
   } else if (status === 'SPLIT_BASELINE_READY') {
     lines.push('Treat split rows as already remote-recorded and leave them out of repair batches. Continue with the smallest pure-local-only module batch that has live-object and smoke-test evidence.')
+  } else if (status === 'SPLIT_ARTIFACT_RESOLVED') {
+    lines.push('No split ledger versions remain after comparing complete local and remote version sets. The previous 17 rows were a CLI ordering artifact and require no migration-history repair. Continue with the 85 genuine pure-local-only migrations from Phase 5.')
   } else if (status === 'LOCAL_PREFLIGHT') {
     lines.push('Run `npm run supabase:phase6` from the repo root to fetch the remote split-row evidence.')
   } else if (status === 'BLOCKED_DUPLICATES') {

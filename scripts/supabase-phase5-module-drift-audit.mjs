@@ -217,26 +217,44 @@ function ledgerBuckets(rows) {
   const remoteOnly = []
   const divergent = []
 
+  // Supabase CLI can emit the same version as two separate rows when a longer
+  // timestamp sorts between its local and remote entries, for example:
+  //
+  //   remote 202606010001
+  //   local+remote 20260601000101
+  //   local  202606010001
+  //
+  // Compare version presence across the complete result instead of treating
+  // each display row as authoritative. Otherwise a fully matched version is
+  // incorrectly reported as both local-only and remote-only.
+  const localVersions = new Set(rows.map((row) => row.local).filter(Boolean))
+  const remoteVersions = new Set(rows.map((row) => row.remote).filter(Boolean))
+  const matchedVersions = new Set(
+    [...localVersions].filter((version) => remoteVersions.has(version)),
+  )
+  const matchedSeen = new Set()
+
   for (const row of rows) {
-    if (row.local && row.remote && row.local === row.remote) matched.push(row)
+    const version = row.local || row.remote
+    if (version && matchedVersions.has(version)) {
+      if (!matchedSeen.has(version)) {
+        matched.push({ ...row, local: version, remote: version })
+        matchedSeen.add(version)
+      }
+    }
     else if (row.local && row.remote) divergent.push(row)
     else if (row.local) localOnly.push(row)
     else if (row.remote) remoteOnly.push(row)
   }
-
-  const localOnlyVersions = new Set(localOnly.map((row) => row.local))
-  const remoteOnlyVersions = new Set(remoteOnly.map((row) => row.remote))
-  const splitVersions = [...localOnlyVersions].filter((version) => remoteOnlyVersions.has(version)).sort()
-  const splitSet = new Set(splitVersions)
 
   return {
     matched,
     localOnly,
     remoteOnly,
     divergent,
-    splitVersions,
-    pureLocalOnly: localOnly.filter((row) => !splitSet.has(row.local)),
-    pureRemoteOnly: remoteOnly.filter((row) => !splitSet.has(row.remote)),
+    splitVersions: [],
+    pureLocalOnly: localOnly,
+    pureRemoteOnly: remoteOnly,
   }
 }
 

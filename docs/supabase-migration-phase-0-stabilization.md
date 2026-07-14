@@ -29,6 +29,7 @@ Allowed without changing data:
 
 - `npx supabase migration list --linked`
 - `npx supabase db query --linked "select ..."` for catalog checks
+- `npm run supabase:phase0:evidence` for the ledger and catalog-fingerprint baseline
 - REST RPC visibility probes that do not authenticate as a real user
 - local migration and duplicate-timestamp audits
 
@@ -120,6 +121,8 @@ npm run supabase:phase6
 ```
 
 `supabase:phase6` is read-only. It fetches the linked migration list, checks live catalog objects for split-row migrations, reads `supabase_migrations.schema_migrations` metadata, and writes `docs/supabase-migration-phase-6-split-ledger-investigation-report.md`. Split rows should stay out of repair batches until this report has been reviewed.
+
+The reviewed 17 split rows were caused by Supabase CLI display ordering when a longer timestamp sorts between the local and remote rows for the same shorter version. Phase 5 now compares complete local and remote version sets, so these versions are classified as matched. No production ledger mutation is required for this display artifact.
 
 Phase 7 is the first small pure-local-only repair batch after split-row investigation:
 

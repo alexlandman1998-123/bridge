@@ -346,6 +346,8 @@
     "verify:cross-module-documents": "node scripts/verify-cross-module-documents.mjs",
     "prepare:cross-module-documents": "node scripts/prepare-cross-module-document-consistency-packet.mjs",
     "supabase:phase0": "node ../scripts/supabase-phase0-guard.mjs",
+    "supabase:phase0:evidence": "node ../scripts/supabase-phase0-evidence.mjs",
+    "supabase:safety-check": "node ../scripts/supabase-migration-safety-check.mjs",
     "supabase:phase1": "node ../scripts/supabase-phase1-reconciliation.mjs --fetch-remote --write",
     "supabase:phase1:local": "node ../scripts/supabase-phase1-reconciliation.mjs --write",
     "supabase:phase2": "node ../scripts/supabase-phase2-onboarding-readiness.mjs --fetch-remote --rest-probe --write",

@@ -7,10 +7,19 @@ Broad linked-database pushes remain frozen while historical migration drift exis
 Before every release, run:
 
 ```bash
+npm run supabase:safety-check
 npm run supabase:phase5
 ```
 
 The report must show zero duplicate local timestamps. A migration that appears local-only is not automatically safe to apply: it may already be live, partially live, or genuinely absent.
+
+Refresh the read-only production baseline before a reconciliation batch:
+
+```bash
+npm run supabase:phase0:evidence
+```
+
+The baseline records catalog fingerprints and the exact CLI migration ledger without application data or function bodies. Direct `db push`, `db reset`, `--include-all`, and unreviewed migration repair remain prohibited while Phase 0 is active. Pull requests that touch migration infrastructure run the same safety check in CI.
 
 ## Releasing a new database change during reconciliation
 
