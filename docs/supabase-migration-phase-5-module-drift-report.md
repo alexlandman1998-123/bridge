@@ -1,6 +1,6 @@
 # Supabase Migration Phase 5 Module Drift Report
 
-Generated: 2026-07-14T20:44:44.723Z
+Generated: 2026-07-14T21:01:00.691Z
 Repo: /Users/alexanderlandman/the-it-guy
 
 ## Safety Scope
@@ -12,14 +12,14 @@ Phase 5 is read-only. It classifies the remaining migration ledger drift by modu
 | Field | Value |
 | --- | --- |
 | Status | MODULE_AUDIT_READY |
-| Local migration files | 358 |
+| Local migration files | 359 |
 | Duplicate local timestamps | 0 |
 | Remote ledger fetched | yes |
-| Matched rows | 315 |
+| Matched rows | 321 |
 | Split local/remote versions | 0 |
-| Pure local-only rows | 43 |
+| Pure local-only rows | 38 |
 | Pure remote-only rows | 0 |
-| Extracted objects checked | 335 |
+| Extracted objects checked | 299 |
 
 ## Module Summary
 
@@ -28,11 +28,10 @@ Phase 5 is read-only. It classifies the remaining migration ledger drift by modu
 | transaction_network | 13 | 0 | 0 | 3 | 10 | 0 | Needs object-level review; do not repair as a batch yet. |
 | developer_referral | 8 | 0 | 0 | 1 | 7 | 0 | Needs object-level review; do not repair as a batch yet. |
 | notification_automation | 6 | 0 | 0 | 0 | 6 | 0 | Needs object-level review; do not repair as a batch yet. |
-| lead_capture_crm | 4 | 0 | 0 | 3 | 1 | 0 | Needs object-level review; do not repair as a batch yet. |
 | canonical_documents | 3 | 0 | 0 | 1 | 2 | 0 | Needs object-level review; do not repair as a batch yet. |
 | commercial | 3 | 0 | 0 | 2 | 0 | 1 | Needs object-level review; do not repair as a batch yet. |
-| other | 3 | 0 | 0 | 1 | 2 | 0 | Needs object-level review; do not repair as a batch yet. |
 | bond_finance | 2 | 0 | 0 | 0 | 2 | 0 | Needs object-level review; do not repair as a batch yet. |
+| other | 2 | 0 | 0 | 0 | 2 | 0 | Needs object-level review; do not repair as a batch yet. |
 | workspace_platform | 1 | 0 | 0 | 0 | 1 | 0 | Needs object-level review; do not repair as a batch yet. |
 
 ## Split Ledger Rows
@@ -62,17 +61,12 @@ No pure local-only migration is ready for repair from static object evidence alo
 | 202607050004 | developer_referral | 202607050004_referral_mvp_phase6_external_invite_response.sql | none_live | 0/2 |
 | 202607050005 | developer_referral | 202607050005_referral_mvp_phase9_activity_signals.sql | none_live | 0/2 |
 | 202607080004 | developer_referral | 202607080004_developer_partner_invite_bind_partner_org.sql | none_live | 0/1 |
-| 202607140005 | lead_capture_crm | 202607140005_seller_portal_stable_links_and_invites.sql | partial_live | 6/10 |
-| 202607140006 | lead_capture_crm | 202607140006_seller_portal_security_controls.sql | partial_live | 3/4 |
-| 202607140007 | lead_capture_crm | 202607140007_seller_portal_operational_monitoring.sql | partial_live | 1/6 |
-| 202607140008 | lead_capture_crm | 202607140008_seller_portal_password_recovery.sql | none_live | 0/5 |
 | 202607050009 | notification_automation | 202607050009_notification_automation_foundation.sql | none_live | 0/18 |
 | 202607050010 | notification_automation | 202607050010_notification_automation_phase2_acceptance_events.sql | none_live | 0/12 |
 | 202607060001 | notification_automation | 202607060001_notification_automation_phase3_reminder_queue.sql | none_live | 0/7 |
 | 202607060002 | notification_automation | 202607060002_notification_automation_phase4_reminder_dispatch.sql | none_live | 0/5 |
 | 202607060003 | notification_automation | 202607060003_notification_automation_phase5_observability.sql | none_live | 0/1 |
 | 202607060004 | notification_automation | 202607060004_notification_automation_phase6_premium_controls.sql | none_live | 0/2 |
-| 202607140004 | other | 202607140004_client_portal_phase1_access_stability.sql | partial_live | 6/11 |
 | 202607140016 | other | 202607140016_sa_legal_instrument_family_governance.sql | none_live | 0/9 |
 | 202607140017 | other | 202607140017_sa_legal_deal_facts_phase2.sql | none_live | 0/4 |
 | 202606260002 | transaction_network | 202606260002_transaction_partner_invite_resend_phase3.sql | partial_live | 1/2 |
@@ -110,17 +104,12 @@ No pure local-only migration is ready for repair from static object evidence alo
 | 202607050004 | pure_local_only | developer_referral | 202607050004_referral_mvp_phase6_external_invite_response.sql | none_live | 0/2 |
 | 202607050005 | pure_local_only | developer_referral | 202607050005_referral_mvp_phase9_activity_signals.sql | none_live | 0/2 |
 | 202607080004 | pure_local_only | developer_referral | 202607080004_developer_partner_invite_bind_partner_org.sql | none_live | 0/1 |
-| 202607140005 | pure_local_only | lead_capture_crm | 202607140005_seller_portal_stable_links_and_invites.sql | partial_live | 6/10 |
-| 202607140006 | pure_local_only | lead_capture_crm | 202607140006_seller_portal_security_controls.sql | partial_live | 3/4 |
-| 202607140007 | pure_local_only | lead_capture_crm | 202607140007_seller_portal_operational_monitoring.sql | partial_live | 1/6 |
-| 202607140008 | pure_local_only | lead_capture_crm | 202607140008_seller_portal_password_recovery.sql | none_live | 0/5 |
 | 202607050009 | pure_local_only | notification_automation | 202607050009_notification_automation_foundation.sql | none_live | 0/18 |
 | 202607050010 | pure_local_only | notification_automation | 202607050010_notification_automation_phase2_acceptance_events.sql | none_live | 0/12 |
 | 202607060001 | pure_local_only | notification_automation | 202607060001_notification_automation_phase3_reminder_queue.sql | none_live | 0/7 |
 | 202607060002 | pure_local_only | notification_automation | 202607060002_notification_automation_phase4_reminder_dispatch.sql | none_live | 0/5 |
 | 202607060003 | pure_local_only | notification_automation | 202607060003_notification_automation_phase5_observability.sql | none_live | 0/1 |
 | 202607060004 | pure_local_only | notification_automation | 202607060004_notification_automation_phase6_premium_controls.sql | none_live | 0/2 |
-| 202607140004 | pure_local_only | other | 202607140004_client_portal_phase1_access_stability.sql | partial_live | 6/11 |
 | 202607140016 | pure_local_only | other | 202607140016_sa_legal_instrument_family_governance.sql | none_live | 0/9 |
 | 202607140017 | pure_local_only | other | 202607140017_sa_legal_deal_facts_phase2.sql | none_live | 0/4 |
 | 202606260002 | pure_local_only | transaction_network | 202606260002_transaction_partner_invite_resend_phase3.sql | partial_live | 1/2 |
@@ -142,8 +131,8 @@ No pure local-only migration is ready for repair from static object evidence alo
 
 | Metric | Value |
 | --- | --- |
-| Static objects extracted | 335 |
-| Catalog rows returned | 335 |
+| Static objects extracted | 299 |
+| Catalog rows returned | 299 |
 | Object check command | ok |
 
 ## Command Evidence
@@ -151,7 +140,7 @@ No pure local-only migration is ready for repair from static object evidence alo
 | Command | Status | Notes |
 | --- | --- | --- |
 | npx supabase migration list --linked --output-format json | ok | Initialising login role... Connecting to remote database... |
-| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase5-object-checks-57170.sql --output-format json | ok | Initialising login role... |
+| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase5-object-checks-72330.sql --output-format json | ok | Initialising login role... |
 
 ## Next Step
 
