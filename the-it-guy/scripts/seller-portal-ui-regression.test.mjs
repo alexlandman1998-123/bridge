@@ -6,6 +6,7 @@ const privateListingSource = await fs.readFile(new URL('../src/services/privateL
 const workspaceServiceSource = await fs.readFile(new URL('../src/services/clientPortalWorkspaceService.js', import.meta.url), 'utf8')
 const linkNormalizer = source.match(/function normalizeSellerVisibleListingLinks[\s\S]*?\n}\n\nfunction getFriendlySellerStatusLabel/)?.[0] || ''
 const marketingBuilder = source.match(/function buildSellerMarketingChannels[\s\S]*?\n}\n\nfunction buildSellerAgentUpdate/)?.[0] || ''
+const sellerHero = source.match(/function SellerPropertyHero[\s\S]*?\n}\n\nfunction SellerTransactionHealthCard/)?.[0] || ''
 
 assert.match(linkNormalizer, /const linksByChannel = new Map\(\)/, 'seller-visible links should be deduplicated before dashboard models are built')
 assert.match(linkNormalizer, /const channelKey = platformKey \|\| urlKey/, 'marketing channels should deduplicate by platform with URL fallback')
@@ -22,6 +23,7 @@ assert.match(source, /function pickSellerBrandText/, 'seller portal should rejec
 assert.doesNotMatch(source, /portal\?\.unit\?\.development\?\.name,\n\s+'Arch9'/, 'seller branding should not fall back to the selling workspace label')
 assert.match(workspaceServiceSource, /branding: sellerPortalBranding/, 'seller portal payload should carry the organisation branding snapshot explicitly')
 assert.doesNotMatch(workspaceServiceSource, /name: listing\?\.agencyName \|\| listing\?\.organisationName \|\| 'Selling'/, 'seller portal payload should not use Selling as an agency name')
-assert.match(source, /sellerListedDateLabel/, 'seller hero should display listing metadata when available')
+assert.doesNotMatch(sellerHero, /Your listing/i, 'seller hero should not render the redundant listing summary card')
+assert.match(sellerHero, /Your agent/i, 'seller hero should retain the expanded agent card')
 
 console.log('Seller portal UI regression checks passed.')
