@@ -1,6 +1,6 @@
 # Supabase Migration Phase 5 Module Drift Report
 
-Generated: 2026-07-14T18:14:11.599Z
+Generated: 2026-07-14T20:24:46.103Z
 Repo: /Users/alexanderlandman/the-it-guy
 
 ## Safety Scope
@@ -15,9 +15,9 @@ Phase 5 is read-only. It classifies the remaining migration ledger drift by modu
 | Local migration files | 358 |
 | Duplicate local timestamps | 0 |
 | Remote ledger fetched | yes |
-| Matched rows | 273 |
+| Matched rows | 274 |
 | Split local/remote versions | 0 |
-| Pure local-only rows | 85 |
+| Pure local-only rows | 84 |
 | Pure remote-only rows | 0 |
 | Extracted objects checked | 451 |
 
@@ -28,8 +28,8 @@ Phase 5 is read-only. It classifies the remaining migration ledger drift by modu
 | transaction_network | 17 | 0 | 4 | 3 | 10 | 0 | Needs object-level review; do not repair as a batch yet. |
 | developer_referral | 11 | 0 | 2 | 1 | 7 | 1 | Needs object-level review; do not repair as a batch yet. |
 | lead_capture_crm | 11 | 0 | 7 | 3 | 1 | 0 | Needs object-level review; do not repair as a batch yet. |
-| workspace_platform | 11 | 0 | 5 | 0 | 2 | 4 | Needs object-level review; do not repair as a batch yet. |
 | commercial | 10 | 0 | 5 | 2 | 0 | 3 | Needs object-level review; do not repair as a batch yet. |
+| workspace_platform | 10 | 0 | 5 | 0 | 2 | 3 | Needs object-level review; do not repair as a batch yet. |
 | other | 9 | 0 | 6 | 1 | 2 | 0 | Needs object-level review; do not repair as a batch yet. |
 | notification_automation | 7 | 0 | 1 | 0 | 6 | 0 | Needs object-level review; do not repair as a batch yet. |
 | canonical_documents | 5 | 0 | 0 | 1 | 4 | 0 | Needs object-level review; do not repair as a batch yet. |
@@ -216,7 +216,6 @@ These pure local-only migrations have all statically extracted objects present i
 | 202606240001 | pure_local_only | workspace_platform | 202606240001_arch9_launch_follow_up_fields.sql | all_live | 1/1 |
 | 202606280003 | pure_local_only | workspace_platform | 202606280003_demo_enquiries.sql | all_live | 10/10 |
 | 202607020001 | pure_local_only | workspace_platform | 202607020001_remove_free_trial_entitlement_limits.sql | no_static_objects | n/a |
-| 202607070001 | pure_local_only | workspace_platform | 202607070001_drop_demo_all_rls_grants.sql | no_static_objects | n/a |
 | 202607080007 | pure_local_only | workspace_platform | 202607080007_profile_settings_metadata.sql | no_static_objects | n/a |
 
 ## Object Extraction
@@ -232,7 +231,7 @@ These pure local-only migrations have all statically extracted objects present i
 | Command | Status | Notes |
 | --- | --- | --- |
 | npx supabase migration list --linked --output-format json | ok | Initialising login role... Connecting to remote database... |
-| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase5-object-checks-16031.sql --output-format json | ok | Initialising login role... |
+| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase5-object-checks-38495.sql --output-format json | ok | Initialising login role... |
 
 ## Next Step
 
