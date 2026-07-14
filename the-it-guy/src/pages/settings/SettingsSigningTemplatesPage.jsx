@@ -112,6 +112,8 @@ import {
   DOCUMENT_START_SOURCE_MODES,
 } from '../../core/documents/documentStartRules'
 import { buildLegalDocumentTemplateCoverageAudit } from '../../core/documents/legalDocumentTemplateRouting'
+import { normalizeLegalDocumentEditorScope } from '../../core/documents/legalDocumentCatalog'
+import { listScopedLegalDocumentSectionEntries } from '../../core/documents/legalDocumentEditorScope'
 
 const SUPPORTED_PACKET_TYPES = [
   {
@@ -5683,6 +5685,10 @@ export default function SettingsSigningTemplatesPage({
   allowedPacketTypes = DEFAULT_ALLOWED_PACKET_TYPES,
   title = 'Document Builder',
   description = 'Create, preview, send, and manage the documents your agency uses every day.',
+  initialPacketType = '',
+  initialTemplateId = '',
+  editorScope = 'all',
+  focusedLegalDocumentKey = '',
 } = {}) {
   const { role, currentMembership, currentWorkspace, workspaceType } = useWorkspace()
   const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
@@ -5723,7 +5729,12 @@ export default function SettingsSigningTemplatesPage({
     () => (allowedPacketTypesKey ? allowedPacketTypesKey.split('|') : DEFAULT_ALLOWED_PACKET_TYPES),
     [allowedPacketTypesKey],
   )
-  const defaultPacketType = stableAllowedPacketTypes[0] || 'otp'
+  const requestedPacketType = normalizeText(initialPacketType).toLowerCase()
+  const defaultPacketType = stableAllowedPacketTypes.includes(requestedPacketType)
+    ? requestedPacketType
+    : stableAllowedPacketTypes[0] || 'otp'
+  const normalizedEditorScope = normalizeLegalDocumentEditorScope(editorScope)
+  const isFocusedLegalDocumentEditor = Boolean(normalizeText(focusedLegalDocumentKey))
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [cloning, setCloning] = useState(false)
@@ -5751,7 +5762,7 @@ export default function SettingsSigningTemplatesPage({
   const [selectedLibraryPacketDetail, setSelectedLibraryPacketDetail] = useState(null)
   const [selectedPacketSigningSummary, setSelectedPacketSigningSummary] = useState(null)
   const [signingLinksResult, setSigningLinksResult] = useState(null)
-  const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  const [selectedTemplateId, setSelectedTemplateId] = useState(() => normalizeText(initialTemplateId))
   const [templateDetail, setTemplateDetail] = useState(null)
   const [form, setForm] = useState(toTemplateForm(null))
   const [documentRunForm, setDocumentRunForm] = useState(createDefaultDocumentRunForm(defaultPacketType))
@@ -5790,7 +5801,7 @@ export default function SettingsSigningTemplatesPage({
   const simpleDocumentBuilderEnabled = isSimpleDocumentBuilderEnabled()
   const visiblePacketTypes = useMemo(() => SUPPORTED_PACKET_TYPES.filter((item) => stableAllowedPacketTypes.includes(item.key)), [stableAllowedPacketTypes])
   const normalizedModuleType = normalizeText(templateModuleType || 'agency').toLowerCase() || 'agency'
-  const visibleDescription = normalizedModuleType === 'agency'
+  const visibleDescription = normalizedModuleType === 'agency' && !isFocusedLegalDocumentEditor
     ? 'Choose the templates your agency uses for offers, mandates, and related documents.'
     : description
   const loadDocumentLinkOptions = useCallback(async () => {
@@ -5965,7 +5976,7 @@ export default function SettingsSigningTemplatesPage({
         }
         await loadTemplatesAndRegistry({
           targetPacketType: defaultPacketType,
-          preferredTemplateId: '',
+          preferredTemplateId: normalizeText(initialTemplateId),
         })
       } catch (loadError) {
         if (active) {
@@ -5981,7 +5992,7 @@ export default function SettingsSigningTemplatesPage({
     return () => {
       active = false
     }
-  }, [defaultPacketType, loadTemplatesAndRegistry, resolvedWorkspaceType, role, workspaceMembershipRole])
+  }, [defaultPacketType, initialTemplateId, loadTemplatesAndRegistry, resolvedWorkspaceType, role, workspaceMembershipRole])
 
   useEffect(() => {
     void loadDocumentLibrary({ targetPacketType: packetType })
@@ -6340,10 +6351,27 @@ export default function SettingsSigningTemplatesPage({
     setActiveTab('template')
     setTemplateStarterMenuOpen(false)
   }, [templatesByType])
-  const selectedSection = useMemo(
-    () => (Array.isArray(form.sections) ? form.sections[selectedSectionIndex] || null : null),
-    [form.sections, selectedSectionIndex],
+  const scopedSectionEntries = useMemo(
+    () => listScopedLegalDocumentSectionEntries(form.sections || [], {
+      scope: normalizedEditorScope,
+      packetType,
+    }),
+    [form.sections, normalizedEditorScope, packetType],
   )
+  const selectedSection = useMemo(
+    () => {
+      const candidate = Array.isArray(form.sections) ? form.sections[selectedSectionIndex] || null : null
+      if (normalizedEditorScope === 'all') return candidate
+      return scopedSectionEntries.some((entry) => entry.index === selectedSectionIndex) ? candidate : null
+    },
+    [form.sections, normalizedEditorScope, scopedSectionEntries, selectedSectionIndex],
+  )
+
+  useEffect(() => {
+    if (normalizedEditorScope === 'all' || !scopedSectionEntries.length) return
+    if (scopedSectionEntries.some((entry) => entry.index === selectedSectionIndex)) return
+    setSelectedSectionIndex(scopedSectionEntries[0].index)
+  }, [normalizedEditorScope, scopedSectionEntries, selectedSectionIndex])
 
   useEffect(() => {
     if (!pendingSectionTitleFocus || !selectedSection) return
@@ -8419,7 +8447,11 @@ export default function SettingsSigningTemplatesPage({
   }
 
   return (
-    <div className="space-y-6" data-simple-document-builder={simpleDocumentBuilderEnabled ? 'enabled' : 'off'}>
+    <div
+      className="space-y-6 [&[data-legal-document-editor-scope=standard]_[data-editor-tool=situation]]:hidden [&[data-legal-document-editor-scope=standard]_[data-editor-tool=signing]]:hidden [&[data-legal-document-editor-scope=situations]_[data-editor-tool=signing]]:hidden [&[data-legal-document-editor-scope=signing]_[data-editor-tool=content]]:hidden [&[data-legal-document-editor-scope=signing]_[data-editor-tool=situation]]:hidden"
+      data-simple-document-builder={simpleDocumentBuilderEnabled ? 'enabled' : 'off'}
+      data-legal-document-editor-scope={normalizedEditorScope}
+    >
       <StartDocumentModal
         open={documentLibraryStartOpen}
         onClose={() => setDocumentLibraryStartOpen(false)}
@@ -8452,7 +8484,7 @@ export default function SettingsSigningTemplatesPage({
         {message ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}
 
         <div className="grid gap-3">
-          <div className="overflow-x-auto rounded-[16px] border border-[#dbe7f3] bg-[#f8fbff] p-1">
+          <div className={isFocusedLegalDocumentEditor ? 'hidden' : 'overflow-x-auto rounded-[16px] border border-[#dbe7f3] bg-[#f8fbff] p-1'}>
             <div className="flex min-w-max gap-1">
               {simpleDocumentTabs.map((item) => {
                 const Icon = item.icon
@@ -8727,9 +8759,9 @@ export default function SettingsSigningTemplatesPage({
                   </button>
                 </div>
 
-                {(form.sections || []).length ? (
+                {scopedSectionEntries.length ? (
                   <div className="space-y-2 xl:max-h-[calc(100vh-300px)] xl:overflow-y-auto xl:pr-1">
-                    {(form.sections || []).map((section, index) => {
+                    {scopedSectionEntries.map(({ section, index }) => {
                       const active = selectedSectionIndex === index
                       const label = getFriendlySectionLabel(section, index)
                       return (
@@ -8773,21 +8805,25 @@ export default function SettingsSigningTemplatesPage({
                   </div>
                 ) : (
                   <SettingsEmptyState
-                    title="No sections yet"
-                    description="Add a section to start editing this document."
+                    title={normalizedEditorScope === 'situations' ? 'No situation wording yet' : 'No sections yet'}
+                    description={normalizedEditorScope === 'situations'
+                      ? 'Use an approved clause to add wording that appears only for a specific buyer, seller, property or finance situation.'
+                      : 'Add a section to start editing this document.'}
                   />
                 )}
 
-                <button
-                  type="button"
-                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[10px] border border-[#dbe7f3] bg-white px-3 py-2.5 text-sm font-semibold text-[#128642] shadow-[0_10px_18px_rgba(15,23,42,0.04)] transition hover:bg-[#f6fbf8] disabled:cursor-not-allowed disabled:opacity-60"
-                  onClick={addSection}
-                  disabled={!canEdit}
-                  title="Add Section"
-                >
-                  <Plus size={15} />
-                  <span className={outlineCollapsed ? 'sr-only' : ''}>Add Section</span>
-                </button>
+                {normalizedEditorScope === 'all' || normalizedEditorScope === 'standard' ? (
+                  <button
+                    type="button"
+                    className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[10px] border border-[#dbe7f3] bg-white px-3 py-2.5 text-sm font-semibold text-[#128642] shadow-[0_10px_18px_rgba(15,23,42,0.04)] transition hover:bg-[#f6fbf8] disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={addSection}
+                    disabled={!canEdit}
+                    title="Add Section"
+                  >
+                    <Plus size={15} />
+                    <span className={outlineCollapsed ? 'sr-only' : ''}>Add Section</span>
+                  </button>
+                ) : null}
               </aside>
 
               <main className="min-w-0 overflow-hidden rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)] sm:p-5">
@@ -8859,7 +8895,21 @@ export default function SettingsSigningTemplatesPage({
                       </SettingsBanner>
                     ) : null}
 
-                    <div className="min-w-0 overflow-hidden rounded-[18px] border border-[#dbe7f3] bg-white">
+                    {normalizedEditorScope === 'signing' ? (
+                      <section className="rounded-[18px] border border-[#eadfc5] bg-[#fffaf0] px-5 py-5">
+                        <div className="flex items-start gap-3">
+                          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] border border-[#e5d5ad] bg-white text-[#8a630f]">
+                            <FileSignature size={18} />
+                          </span>
+                          <div>
+                            <h2 className="text-base font-semibold text-[#493b1d]">Signing setup for this section</h2>
+                            <p className="mt-1 text-sm leading-6 text-[#756541]">Use the Signing Fields panel to add the correct signer, field type, page and position. The document wording is protected while you work in this view.</p>
+                          </div>
+                        </div>
+                      </section>
+                    ) : null}
+
+                    <div data-editor-tool="content" className="min-w-0 overflow-hidden rounded-[18px] border border-[#dbe7f3] bg-white">
                       <div className="border-b border-[#e7eef6] bg-[#fbfdff] px-3 py-3 sm:px-4">
                         <div className="flex min-w-0 flex-col gap-3">
                           <div className="min-w-0">
@@ -9101,7 +9151,7 @@ export default function SettingsSigningTemplatesPage({
               </main>
 
               <aside className="min-w-0 max-w-full space-y-4 overflow-x-hidden xl:sticky xl:top-4 xl:max-h-[calc(100vh-140px)] xl:overflow-y-auto xl:pr-1">
-                <section className="min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
+                <section data-editor-tool="content" className="min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Standard Conditions</p>
@@ -9161,7 +9211,7 @@ export default function SettingsSigningTemplatesPage({
                   </button>
                 </section>
 
-                <section className="min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
+                <section data-editor-tool="content" className="min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Inspector</p>
@@ -9247,6 +9297,7 @@ export default function SettingsSigningTemplatesPage({
                 </section>
 
                 <details
+                  data-editor-tool="situation"
                   defaultOpen={selectedSectionCondition.enabled}
                   className="group min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]"
                 >
@@ -9337,7 +9388,10 @@ export default function SettingsSigningTemplatesPage({
                 </details>
 
                 <details
-                  defaultOpen={Boolean(selectedSigningFields.length)}
+                  data-editor-tool="signing"
+                  {...(normalizedEditorScope === 'signing'
+                    ? { open: true }
+                    : { defaultOpen: Boolean(selectedSigningFields.length) })}
                   className="group min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]"
                 >
                   <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
@@ -9524,6 +9578,7 @@ export default function SettingsSigningTemplatesPage({
                 </details>
 
                 <details
+                  data-editor-tool="content"
                   defaultOpen
                   className="group min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]"
                 >

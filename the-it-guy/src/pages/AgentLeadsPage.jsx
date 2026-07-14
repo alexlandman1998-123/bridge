@@ -108,6 +108,7 @@ import {
 import {
   createPrivateListing,
   createPrivateListingActivity,
+  issueSellerPortalInvite,
   isSellerPortalInviteReadyAfterSignedMandate,
   markSellerOnboardingSent,
   sendSellerOnboarding,
@@ -14493,6 +14494,20 @@ function getSellerOnboardingToken(row = {}, listing = null) {
   )
 }
 
+function getSellerPortalToken(row = {}, listing = null) {
+  return normalizeText(
+    row?.sellerPortalToken ||
+      row?.seller_portal_token ||
+      row?.sellerOnboarding?.sellerPortalToken ||
+      row?.sellerOnboarding?.seller_portal_token ||
+      listing?.sellerOnboarding?.sellerPortalToken ||
+      listing?.sellerOnboarding?.seller_portal_token ||
+      listing?.sellerPortalToken ||
+      listing?.seller_portal_token ||
+      getSellerOnboardingToken(row, listing),
+  )
+}
+
 function getSellerOnboardingLink(row = {}, listing = null) {
   const directLink = normalizeText(
     row?.sellerOnboardingLink ||
@@ -14515,7 +14530,7 @@ function getSellerOnboardingLink(row = {}, listing = null) {
 }
 
 function getSellerPortalLink(row = {}, listing = null) {
-  const token = getSellerOnboardingToken(row, listing)
+  const token = getSellerPortalToken(row, listing)
   const portalBaseLink = buildSellerClientPortalLink(token)
   const portalLink = portalBaseLink ? `${portalBaseLink}/documents` : ''
   if (portalLink) return portalLink
@@ -21304,8 +21319,8 @@ function AgentLeadWorkspace() {
       setSellerActionError('Seller email is required to resend the seller portal link.')
       return
     }
-    const portalLink = getSellerPortalLink(row, linkedSellerListing)
-    if (!portalLink) {
+    const sellerPortalToken = getSellerPortalToken(row, linkedSellerListing)
+    if (!sellerPortalToken) {
       setSellerActionError('Send seller onboarding first to create the seller portal link.')
       return
     }
@@ -21324,6 +21339,10 @@ function AgentLeadWorkspace() {
       setSendingSellerPortalLink(true)
       setSellerActionError('')
       setSellerActionMessage('Sending seller portal link...')
+      const invitation = await issueSellerPortalInvite(sellerPortalToken)
+      const inviteBaseLink = buildSellerClientPortalLink(invitation?.inviteToken)
+      const portalLink = inviteBaseLink ? `${inviteBaseLink}/documents` : ''
+      if (!portalLink) throw new Error('Seller portal invitation could not be created.')
       const portalEmail = await withActionTimeout(
         invokeEdgeFunction('send-email', {
           body: buildSellerOnboardingEmailPayload({

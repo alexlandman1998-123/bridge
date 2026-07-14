@@ -164,6 +164,15 @@ export function isSellerPortalAuthRequiredError(error = null) {
   return Boolean(error?.code === 'seller_portal_auth_required' || error?.portalAuth?.authRequired)
 }
 
+export function isSellerPortalSessionExpiredError(error = null) {
+  const message = normalizeKey(error?.message || error)
+  return Boolean(
+    error?.code === 'seller_portal_session_expired' ||
+      message.includes('seller portal session has expired') ||
+      message.includes('seller portal password is required'),
+  )
+}
+
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
@@ -2123,6 +2132,15 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     sellerOnboarding: onboarding
       ? {
           token: onboarding.token || '',
+          sellerPortalToken: onboarding.seller_portal_token || '',
+          clientPortalLink: onboarding.seller_portal_token
+            ? buildSellerClientPortalLink(onboarding.seller_portal_token)
+            : onboarding.token
+              ? buildSellerClientPortalLink(onboarding.token)
+              : '',
+          inviteCreatedAt: onboarding.seller_portal_invite_created_at || null,
+          inviteExpiresAt: onboarding.seller_portal_invite_expires_at || null,
+          inviteConsumedAt: onboarding.seller_portal_invite_consumed_at || null,
           link: onboarding.token ? buildSellerOnboardingLink(onboarding.token) : '',
           status: onboardingStatus,
           sentAt: onboarding.created_at || null,
@@ -2137,6 +2155,11 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
         }
       : {
           token: '',
+          sellerPortalToken: '',
+          clientPortalLink: '',
+          inviteCreatedAt: null,
+          inviteExpiresAt: null,
+          inviteConsumedAt: null,
           link: '',
           status: onboardingStatus,
           sentAt: null,
@@ -2467,7 +2490,13 @@ async function fetchSellerClientPortalPayloadByToken(client, token, options = {}
     throw rpc.error
   }
   if (rpc.data?.authRequired) {
-    return { portalAuth: rpc.data }
+    if (accessToken) clearSellerPortalAccessToken(normalizedToken)
+    return {
+      portalAuth: {
+        ...rpc.data,
+        sessionExpired: Boolean(rpc.data?.sessionExpired || accessToken),
+      },
+    }
   }
   return mapSellerClientPortalPayload(rpc.data)
 }
@@ -2493,7 +2522,14 @@ function getSellerClientPortalEmail(listing = {}, onboarding = {}, formData = {}
 }
 
 function buildSellerClientPortalContextPayload({ listing = {}, onboarding = {}, formData = {}, status = 'active' } = {}) {
-  const token = normalizeText(onboarding?.token || listing?.sellerOnboarding?.token)
+  const token = normalizeText(
+    onboarding?.seller_portal_token ||
+      onboarding?.sellerPortalToken ||
+      listing?.sellerOnboarding?.sellerPortalToken ||
+      listing?.sellerOnboarding?.seller_portal_token ||
+      onboarding?.token ||
+      listing?.sellerOnboarding?.token,
+  )
   const listingId = normalizeText(listing?.id)
   if (!token || !listingId) return null
 
@@ -2515,13 +2551,13 @@ function buildSellerClientPortalContextPayload({ listing = {}, onboarding = {}, 
   }
 }
 
-function buildSellerPortalDocumentsEmailPayload({ listing = {}, onboarding = {}, formData = {} } = {}) {
+function buildSellerPortalDocumentsEmailPayload({ listing = {}, onboarding = {}, formData = {}, portalLink = '' } = {}) {
   if (!isSellerPortalInviteReadyAfterSignedMandate(listing)) return null
 
   const token = normalizeText(onboarding?.token || listing?.sellerOnboarding?.token || listing?.seller_onboarding_token)
-  const portalLink = buildSellerClientPortalLink(token)
+  const resolvedPortalLink = normalizeText(portalLink) || buildSellerClientPortalLink(token)
   const to = getSellerClientPortalEmail(listing, onboarding, formData)
-  if (!to || !portalLink) return null
+  if (!to || !resolvedPortalLink) return null
 
   const propertyTitle = normalizeText(
     listing?.propertyAddress ||
@@ -2547,7 +2583,8 @@ function buildSellerPortalDocumentsEmailPayload({ listing = {}, onboarding = {},
     ),
     propertyTitle,
     propertyType: normalizeText(listing?.propertyType || listing?.property_type),
-    onboardingLink: portalLink,
+    onboardingLink: resolvedPortalLink,
+    portalLink: resolvedPortalLink,
     transactionReference: normalizeText(listing?.listingReference || listing?.listing_reference),
     agentName: normalizeText(listing?.assignedAgentName || listing?.assignedAgent || listing?.agentName || 'Your agent'),
     organisationName: normalizeText(listing?.agencyOrganisation || listing?.organisationName || listing?.agencyName || 'Arch9'),
@@ -2555,11 +2592,11 @@ function buildSellerPortalDocumentsEmailPayload({ listing = {}, onboarding = {},
   }
 }
 
-async function notifySellerPortalDocumentsReady(client, { listing = {}, onboarding = {}, formData = {} } = {}) {
+async function notifySellerPortalDocumentsReady(client, { listing = {}, onboarding = {}, formData = {}, portalLink = '' } = {}) {
   if (!isSellerPortalInviteReadyAfterSignedMandate(listing)) {
     return { skipped: true, reason: 'mandate_not_signed' }
   }
-  const payload = buildSellerPortalDocumentsEmailPayload({ listing, onboarding, formData })
+  const payload = buildSellerPortalDocumentsEmailPayload({ listing, onboarding, formData, portalLink })
   if (!payload) return { skipped: true, reason: 'email_or_portal_link_missing' }
 
   const { data, error } = await client.functions.invoke('send-email', { body: payload })
@@ -2590,20 +2627,29 @@ async function hasSellerPortalMandateInviteBeenSent(client, packetId) {
 async function fetchSellerOnboardingForInvite(client, { listingId = '', sellerWorkspaceToken = '' } = {}) {
   const normalizedListingId = normalizeUuid(listingId)
   const normalizedToken = normalizeText(sellerWorkspaceToken)
+  const phase2Columns = 'id, private_listing_id, token, token_expires_at, seller_portal_token, seller_portal_invite_created_at, seller_portal_invite_expires_at, seller_portal_invite_consumed_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at'
+  const legacyColumns = 'id, private_listing_id, token, token_expires_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at'
+  const fetchBy = async (column, value) => {
+    let result = await client
+      .from('private_listing_seller_onboarding')
+      .select(phase2Columns)
+      .eq(column, value)
+      .maybeSingle()
+    if (result.error && isMissingSchemaError(result.error)) {
+      result = await client
+        .from('private_listing_seller_onboarding')
+        .select(legacyColumns)
+        .eq(column, value)
+        .maybeSingle()
+    }
+    return result
+  }
   let query = null
   if (normalizedListingId) {
-    query = await client
-      .from('private_listing_seller_onboarding')
-      .select('id, private_listing_id, token, token_expires_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at')
-      .eq('private_listing_id', normalizedListingId)
-      .maybeSingle()
+    query = await fetchBy('private_listing_id', normalizedListingId)
   }
   if ((!query || (!query.error && !query.data)) && normalizedToken) {
-    query = await client
-      .from('private_listing_seller_onboarding')
-      .select('id, private_listing_id, token, token_expires_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at')
-      .eq('token', normalizedToken)
-      .maybeSingle()
+    query = await fetchBy('token', normalizedToken)
   }
 
   if (!query) return null
@@ -2733,7 +2779,11 @@ export async function sendSellerPortalInviteAfterMandateSigned({
   })
 
   let emailResult = null
+  let invitation = null
   try {
+    invitation = await issueSellerPortalInvite(token)
+    const invitationLink = buildSellerClientPortalLink(invitation?.inviteToken)
+    if (!invitationLink) throw new Error('Seller portal invitation could not be created.')
     emailResult = await notifySellerPortalDocumentsReady(client, {
       listing: {
         ...listing,
@@ -2750,6 +2800,7 @@ export async function sendSellerPortalInviteAfterMandateSigned({
         token,
       },
       formData,
+      portalLink: invitationLink,
     })
   } catch (emailError) {
     await appendSellerPortalMandateInviteEvent(SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_FAILED_EVENT, {
@@ -2804,6 +2855,8 @@ export async function sendSellerPortalInviteAfterMandateSigned({
       recipientEmailPresent: true,
       deliveryId: normalizeText(emailResult?.deliveryId) || null,
       canonicalInviteId: normalizeText(emailResult?.canonicalInviteId) || null,
+      inviteExpiresAt: normalizeText(invitation?.inviteExpiresAt) || null,
+      stablePortalTokenPresent: Boolean(normalizeText(invitation?.stablePortalToken)),
     },
   })
 
@@ -2813,6 +2866,7 @@ export async function sendSellerPortalInviteAfterMandateSigned({
     listingId: listing.id,
     deliveryId: emailResult?.deliveryId || null,
     canonicalInviteId: emailResult?.canonicalInviteId || null,
+    inviteExpiresAt: invitation?.inviteExpiresAt || null,
   }
 }
 
@@ -2936,6 +2990,61 @@ export async function getSellerPortalAccessState(token) {
   return data || { valid: false, reason: 'unavailable' }
 }
 
+export async function getSellerPortalSecurityDiagnostics(token) {
+  const client = requireClient()
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken) throw new Error('Seller portal token is required.')
+
+  const { data, error } = await client.rpc('bridge_private_listing_seller_portal_diagnostics', {
+    p_token: normalizedToken,
+  })
+  if (error && isMissingRpcError(error, 'bridge_private_listing_seller_portal_diagnostics')) {
+    const accessState = await getSellerPortalAccessState(normalizedToken)
+    return {
+      ok: true,
+      health: accessState?.linkActive === false ? 'revoked' : accessState?.locked ? 'locked' : 'unavailable',
+      linkActive: accessState?.linkActive !== false,
+      invitation: { status: 'unavailable' },
+      session: {
+        status: accessState?.passwordSet ? 'unknown' : 'password_not_set',
+        expiresAt: accessState?.accessTokenExpiresAt || null,
+        lastLoginAt: accessState?.lastLoginAt || null,
+      },
+      authentication: {
+        failedLoginCount: Number(accessState?.failedLoginCount || 0),
+        lockedUntil: accessState?.lockedUntil || null,
+      },
+      openAlerts: [],
+      recentEvents: [],
+      legacyFallback: true,
+    }
+  }
+  if (error) throw error
+  return data || { ok: false, health: 'unavailable', openAlerts: [], recentEvents: [] }
+}
+
+export async function issueSellerPortalInvite(token, { ttlHours = 72 } = {}) {
+  const client = requireClient()
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken) throw new Error('Seller portal token is required.')
+
+  const { data, error } = await client.rpc('bridge_issue_private_listing_seller_portal_invite', {
+    p_token: normalizedToken,
+    p_ttl_hours: Math.max(1, Math.min(Number(ttlHours) || 72, 168)),
+  })
+  if (error && isMissingRpcError(error, 'bridge_issue_private_listing_seller_portal_invite')) {
+    return {
+      ok: true,
+      inviteToken: normalizedToken,
+      stablePortalToken: normalizedToken,
+      legacyFallback: true,
+    }
+  }
+  if (error) throw error
+  if (!data?.inviteToken) throw new Error('Seller portal invitation could not be created.')
+  return data
+}
+
 export async function setSellerPortalPassword({ token, password } = {}) {
   const client = requireClient()
   const normalizedToken = normalizeText(token)
@@ -2947,6 +3056,45 @@ export async function setSellerPortalPassword({ token, password } = {}) {
   })
   if (error) throw error
   const accessToken = storeSellerPortalAccessToken(normalizedToken, data)
+  const stablePortalToken = normalizeText(data?.stablePortalToken)
+  if (stablePortalToken && stablePortalToken !== normalizedToken) {
+    storeSellerPortalAccessToken(stablePortalToken, data)
+  }
+  return { ...(data || {}), accessToken }
+}
+
+export async function requestSellerPortalPasswordRecovery(token) {
+  const client = requireClient()
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken) throw new Error('Seller portal token is required.')
+
+  const { data, error } = await client.functions.invoke('seller-portal-password-recovery', {
+    body: { token: normalizedToken },
+  })
+  if (error || data?.error) {
+    throw new Error(error?.message || data?.error || 'Password recovery is temporarily unavailable.')
+  }
+  return data || {
+    ok: true,
+    message: 'If this portal can be recovered, a password reset email will arrive shortly.',
+  }
+}
+
+export async function completeSellerPortalPasswordRecovery({ token, password } = {}) {
+  const client = requireClient()
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken) throw new Error('Seller portal recovery token is required.')
+
+  const { data, error } = await client.rpc('bridge_complete_private_listing_seller_portal_recovery', {
+    p_token: normalizedToken,
+    p_password: password || '',
+  })
+  if (error) throw error
+  const accessToken = storeSellerPortalAccessToken(normalizedToken, data)
+  const stablePortalToken = normalizeText(data?.stablePortalToken)
+  if (stablePortalToken && stablePortalToken !== normalizedToken) {
+    storeSellerPortalAccessToken(stablePortalToken, data)
+  }
   return { ...(data || {}), accessToken }
 }
 
@@ -2960,8 +3108,49 @@ export async function verifySellerPortalPassword({ token, password } = {}) {
     p_password: password || '',
   })
   if (error) throw error
+  if (data?.ok === false) {
+    const reason = normalizeKey(data?.reason)
+    const lockedUntil = normalizeText(data?.lockedUntil)
+    const attemptsRemaining = Number(data?.attemptsRemaining)
+    const authError = new Error(
+      reason === 'temporarily_locked'
+        ? `Too many unsuccessful attempts. Try again${lockedUntil ? ` after ${new Date(lockedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ' in 15 minutes'}.`
+        : reason === 'portal_inactive'
+          ? 'This seller portal has been revoked. Contact your property representative.'
+          : reason === 'password_not_set'
+            ? 'Set a seller portal password before signing in.'
+            : Number.isFinite(attemptsRemaining)
+              ? `Incorrect seller portal password. ${attemptsRemaining} attempt${attemptsRemaining === 1 ? '' : 's'} remaining.`
+              : 'Incorrect seller portal password.',
+    )
+    authError.code = reason === 'temporarily_locked' ? 'seller_portal_temporarily_locked' : reason || 'seller_portal_auth_failed'
+    authError.portalAuth = data
+    throw authError
+  }
   const accessToken = storeSellerPortalAccessToken(normalizedToken, data)
+  const stablePortalToken = normalizeText(data?.stablePortalToken)
+  if (stablePortalToken && stablePortalToken !== normalizedToken) {
+    storeSellerPortalAccessToken(stablePortalToken, data)
+  }
   return { ...(data || {}), accessToken }
+}
+
+export async function manageSellerPortalAccess(token, { action, reason = '' } = {}) {
+  const client = requireClient()
+  const normalizedToken = normalizeText(token)
+  const normalizedAction = normalizeKey(action)
+  if (!normalizedToken) throw new Error('Seller portal token is required.')
+  if (!['revoke', 'reactivate', 'revoke_sessions'].includes(normalizedAction)) {
+    throw new Error('A valid seller portal management action is required.')
+  }
+
+  const { data, error } = await client.rpc('bridge_manage_private_listing_seller_portal', {
+    p_token: normalizedToken,
+    p_action: normalizedAction,
+    p_reason: normalizeText(reason) || null,
+  })
+  if (error) throw error
+  return data || { ok: true, action: normalizedAction }
 }
 
 export async function resetSellerPortalPassword(token) {

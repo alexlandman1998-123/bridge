@@ -28,10 +28,6 @@ import { buildSellerJourney } from './sellerJourneyService.js'
 import { buildSellerReadinessSummary } from './sellerReadinessService.js'
 import { getSellerRequiredDocuments } from './sellerDocumentRequirementsService.js'
 import { buildSellerMandateContinuityModel } from './sellerMandateContinuityService.js'
-import {
-  getCanonicalRequirementsForContext,
-  isCanonicalDocumentWorkspaceEnabled,
-} from './documents/canonicalDocumentWorkspaceService'
 
 function normalizeWorkspace(value = 'shared') {
   const normalized = String(value || 'shared').trim().toLowerCase()
@@ -1563,23 +1559,13 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
   }
 }
 
-async function fetchCanonicalDocumentRequirementsForPortal(portalData = {}, workspaceMode = 'buying') {
-  if (!isCanonicalDocumentWorkspaceEnabled()) return []
-  const contextType = workspaceMode === 'selling' ? 'private_listing' : 'transaction'
-  const contextId = workspaceMode === 'selling'
-    ? String(portalData?.activeSellingContext?.listingId || portalData?.listing?.id || '').trim()
-    : String(portalData?.transaction?.id || '').trim()
-  if (!contextId) return []
-  try {
-    return await getCanonicalRequirementsForContext({ contextType, contextId })
-  } catch (error) {
-    console.warn('[client-portal-documents] Canonical document requirements unavailable', {
-      contextType,
-      contextId,
-      error,
-    })
-    return []
-  }
+async function fetchCanonicalDocumentRequirementsForPortal(portalData = {}) {
+  // Public client portals must use requirements already returned by their
+  // token-scoped payload. Direct table access is intentionally blocked by RLS.
+  const embeddedRequirements = Array.isArray(portalData?.canonicalRequirements)
+    ? portalData.canonicalRequirements
+    : []
+  return embeddedRequirements
 }
 
 function buildLifecycle(portalData = {}) {

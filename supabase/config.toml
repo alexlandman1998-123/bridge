@@ -90,6 +90,12 @@ verify_jwt = false
 import_map = "./functions/send-mandate-signing-email/deno.json"
 entrypoint = "./functions/send-mandate-signing-email/index.ts"
 
+[functions.seller-portal-password-recovery]
+enabled = true
+verify_jwt = true
+import_map = "./functions/seller-portal-password-recovery/deno.json"
+entrypoint = "./functions/seller-portal-password-recovery/index.ts"
+
 [functions.send-whatsapp]
 enabled = true
 verify_jwt = true

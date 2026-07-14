@@ -104,7 +104,10 @@ import {
   createPrivateListingDocumentDownloadUrl,
   deletePrivateListing,
   getSellerPortalAccessState,
+  getSellerPortalSecurityDiagnostics,
+  issueSellerPortalInvite,
   isSellerPortalInviteReadyAfterSignedMandate,
+  manageSellerPortalAccess,
   resetSellerPortalPassword,
   sendSellerOnboarding,
   syncPrivateListingDistributionData,
@@ -797,7 +800,11 @@ function extractSellerPortalTokenFromLink(link = '') {
 
 function resolveSellerPortalTokenFromListing(listing = {}) {
   let token = toCleanText(
-    listing?.sellerOnboarding?.token ||
+    listing?.sellerOnboarding?.sellerPortalToken ||
+      listing?.sellerOnboarding?.seller_portal_token ||
+      listing?.sellerPortalToken ||
+      listing?.seller_portal_token ||
+      listing?.sellerOnboarding?.token ||
       listing?.sellerOnboardingToken ||
       listing?.seller_onboarding_token,
   )
@@ -1811,8 +1818,11 @@ function AgentListingDetail() {
   const [activeListingDocumentTab, setActiveListingDocumentTab] = useState('property')
   const [resendingSellerPortalLink, setResendingSellerPortalLink] = useState(false)
   const [resettingSellerPortalPassword, setResettingSellerPortalPassword] = useState(false)
+  const [managingSellerPortalAction, setManagingSellerPortalAction] = useState('')
   const [sellerPortalAccessState, setSellerPortalAccessState] = useState(null)
   const [sellerPortalAccessLoading, setSellerPortalAccessLoading] = useState(false)
+  const [sellerPortalSecurityDiagnostics, setSellerPortalSecurityDiagnostics] = useState(null)
+  const [sellerPortalSecurityDiagnosticsLoading, setSellerPortalSecurityDiagnosticsLoading] = useState(false)
   const [followUpActionId, setFollowUpActionId] = useState('')
   const [mandateStartOpen, setMandateStartOpen] = useState(false)
   const [acceptedOfferOtpStartOffer, setAcceptedOfferOtpStartOffer] = useState(null)
@@ -1964,11 +1974,14 @@ function AgentListingDetail() {
     if (!token || !isSupabaseConfigured) {
       setSellerPortalAccessState(null)
       setSellerPortalAccessLoading(false)
+      setSellerPortalSecurityDiagnostics(null)
+      setSellerPortalSecurityDiagnosticsLoading(false)
       return
     }
 
     let cancelled = false
     setSellerPortalAccessLoading(true)
+    setSellerPortalSecurityDiagnosticsLoading(true)
     getSellerPortalAccessState(token)
       .then((state) => {
         if (!cancelled) setSellerPortalAccessState(state || null)
@@ -1979,6 +1992,17 @@ function AgentListingDetail() {
       })
       .finally(() => {
         if (!cancelled) setSellerPortalAccessLoading(false)
+      })
+    getSellerPortalSecurityDiagnostics(token)
+      .then((diagnostics) => {
+        if (!cancelled) setSellerPortalSecurityDiagnostics(diagnostics || null)
+      })
+      .catch((error) => {
+        console.warn('[AgentListingDetail] Seller portal security diagnostics unavailable', error)
+        if (!cancelled) setSellerPortalSecurityDiagnostics(null)
+      })
+      .finally(() => {
+        if (!cancelled) setSellerPortalSecurityDiagnosticsLoading(false)
       })
 
     return () => {
@@ -2770,11 +2794,25 @@ function AgentListingDetail() {
     let onboardingRow = null
 
     if (isSupabaseConfigured && supabase && (!token || !sellerEmail)) {
-      const onboardingQuery = await supabase
+      let onboardingQuery = await supabase
         .from('private_listing_seller_onboarding')
-        .select('token, status, form_data, updated_at')
+        .select('token, seller_portal_token, status, form_data, updated_at')
         .eq('private_listing_id', listingRecord.id)
         .maybeSingle()
+
+      if (
+        onboardingQuery.error &&
+        (
+          ['PGRST204', '42703'].includes(String(onboardingQuery.error?.code || '').toUpperCase()) ||
+          String(onboardingQuery.error?.message || '').includes('seller_portal_token')
+        )
+      ) {
+        onboardingQuery = await supabase
+          .from('private_listing_seller_onboarding')
+          .select('token, status, form_data, updated_at')
+          .eq('private_listing_id', listingRecord.id)
+          .maybeSingle()
+      }
 
       if (onboardingQuery.error && String(onboardingQuery.error?.code || '') !== '42P01') {
         throw onboardingQuery.error
@@ -2782,7 +2820,7 @@ function AgentListingDetail() {
 
       onboardingRow = onboardingQuery.data || null
       const formData = onboardingRow?.form_data && typeof onboardingRow.form_data === 'object' ? onboardingRow.form_data : {}
-      token = token || toCleanText(onboardingRow?.token)
+      token = token || toCleanText(onboardingRow?.seller_portal_token || onboardingRow?.token)
       sellerEmail = sellerEmail || toCleanText(formData.sellerEmail || formData.email || formData.contactEmail).toLowerCase()
       sellerName = sellerName || toCleanText(
         [formData.sellerFirstName || formData.firstName, formData.sellerSurname || formData.lastName].filter(Boolean).join(' ') ||
@@ -2803,7 +2841,8 @@ function AgentListingDetail() {
       throw new Error('Sign the seller mandate before resending the seller portal password setup link.')
     }
 
-    const portalLink = buildSellerClientPortalLink(token)
+    const stablePortalToken = toCleanText(onboardingRow?.seller_portal_token || listingRecord?.sellerOnboarding?.sellerPortalToken || token)
+    const portalLink = buildSellerClientPortalLink(stablePortalToken)
     if (!portalLink) throw new Error('Seller client portal link could not be built from the saved token.')
 
     if (onboardingRow) {
@@ -2813,6 +2852,7 @@ function AgentListingDetail() {
         sellerOnboarding: {
           ...(listingRecord?.sellerOnboarding || {}),
           token,
+          sellerPortalToken: stablePortalToken,
           status: onboardingRow.status || listingRecord?.sellerOnboarding?.status,
           updatedAt: onboardingRow.updated_at || listingRecord?.sellerOnboarding?.updatedAt,
           link: listingRecord?.sellerOnboarding?.link || portalLink,
@@ -2827,6 +2867,7 @@ function AgentListingDetail() {
 
     return {
       token,
+      stablePortalToken,
       portalLink,
       sellerEmail,
       sellerName: sellerName || 'Seller',
@@ -2841,7 +2882,10 @@ function AgentListingDetail() {
       if (!isSupabaseConfigured) {
         throw new Error('Email sending requires Supabase to be configured.')
       }
-      const { portalLink, sellerEmail, sellerName } = await resolveSellerClientPortalInviteContext()
+      const { token, sellerEmail, sellerName } = await resolveSellerClientPortalInviteContext()
+      const invitation = await issueSellerPortalInvite(token)
+      const portalLink = buildSellerClientPortalLink(invitation?.inviteToken)
+      if (!portalLink) throw new Error('Seller portal invitation could not be created.')
       const agent = getCanonicalOfferActor()
       const emailResponse = await invokeEdgeFunction('send-email', {
         body: {
@@ -2866,6 +2910,9 @@ function AgentListingDetail() {
       if (typeof navigator !== 'undefined') {
         void navigator.clipboard?.writeText(portalLink)
       }
+      void getSellerPortalSecurityDiagnostics(token)
+        .then((diagnostics) => setSellerPortalSecurityDiagnostics(diagnostics || null))
+        .catch(() => null)
       setDetailMessage(`Seller client portal link resent to ${sellerEmail}. Link copied.`)
     } catch (error) {
       setDetailError(error?.message || 'Unable to resend the seller client portal link.')
@@ -2895,6 +2942,50 @@ function AgentListingDetail() {
       setDetailError(error?.message || 'Unable to reset the seller portal password.')
     } finally {
       setResettingSellerPortalPassword(false)
+    }
+  }
+
+  async function handleManageSellerPortalAccess(action) {
+    const token = resolveSellerPortalTokenFromListing(listingRecord)
+    if (!token) {
+      setDetailError('No seller portal is linked to this listing yet.')
+      return
+    }
+    if (
+      action === 'revoke' &&
+      typeof window !== 'undefined' &&
+      !window.confirm('Revoke this seller portal? The seller will immediately lose access until it is reactivated.')
+    ) return
+
+    setDetailError('')
+    setDetailMessage('')
+    try {
+      setManagingSellerPortalAction(action)
+      const result = await manageSellerPortalAccess(token, {
+        action,
+        reason: action === 'revoke' ? 'Revoked from listing workspace' : '',
+      })
+      setSellerPortalAccessState((previous) => ({
+        ...(previous || {}),
+        valid: Boolean(result?.linkActive),
+        linkActive: Boolean(result?.linkActive),
+        revokedAt: result?.revokedAt || null,
+        revocationReason: result?.revocationReason || '',
+        accessTokenExpiresAt: result?.sessionsRevoked ? null : previous?.accessTokenExpiresAt,
+      }))
+      const diagnostics = await getSellerPortalSecurityDiagnostics(token)
+      setSellerPortalSecurityDiagnostics(diagnostics || null)
+      setDetailMessage(
+        action === 'revoke'
+          ? 'Seller portal access revoked and active sessions ended.'
+          : action === 'reactivate'
+            ? 'Seller portal access reactivated. Send a fresh seller link when ready.'
+            : 'The seller has been signed out on all devices.',
+      )
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to update seller portal access.')
+    } finally {
+      setManagingSellerPortalAction('')
     }
   }
 
@@ -5034,6 +5125,14 @@ function AgentListingDetail() {
     if (!sellerPortalAccessState?.valid) return 'Unknown'
     if (sellerPortalAccessState?.passwordSet) return 'Password set'
     return 'Password not set'
+  }, [listingRecord, sellerPortalAccessLoading, sellerPortalAccessState])
+
+  const sellerPortalAccessStatus = useMemo(() => {
+    if (!resolveSellerPortalTokenFromListing(listingRecord)) return 'No portal link'
+    if (sellerPortalAccessLoading) return 'Checking...'
+    if (sellerPortalAccessState?.linkActive === false || sellerPortalAccessState?.revokedAt) return 'Revoked'
+    if (sellerPortalAccessState?.locked) return 'Temporarily locked'
+    return sellerPortalAccessState?.valid ? 'Active' : 'Unknown'
   }, [listingRecord, sellerPortalAccessLoading, sellerPortalAccessState])
 
   const sellerOnboardingEmailDiagnostics = useMemo(
@@ -7769,9 +7868,56 @@ function AgentListingDetail() {
                   <div className="mt-5 grid gap-x-6 sm:grid-cols-2">
                     <CompactSnapshotRow label="Portal Viewed" value={sellerCommunicationMetrics.portalViewedAt ? formatDate(sellerCommunicationMetrics.portalViewedAt) : 'Not viewed'} />
                     <CompactSnapshotRow label="Last Login" value={sellerCommunicationMetrics.lastLogin ? formatDate(sellerCommunicationMetrics.lastLogin) : 'No login yet'} />
+                    <CompactSnapshotRow label="Portal Access" value={sellerPortalAccessStatus} />
                     <CompactSnapshotRow label="Portal Password" value={sellerPortalPasswordStatus} />
                     <CompactSnapshotRow label="Unread Messages" value={formatCompactNumber(sellerCommunicationMetrics.unreadMessages)} />
                     <CompactSnapshotRow label="Documents Uploaded" value={formatCompactNumber(sellerCommunicationMetrics.uploadedDocuments)} />
+                  </div>
+                  <div className="mt-5 border-t border-[#e7edf5] pt-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h4 className="text-sm font-semibold text-[#22374d]">Portal Security</h4>
+                        <p className="mt-1 text-xs text-[#6b7d93]">Authentication health, invitation state, and recent secure access activity.</p>
+                      </div>
+                      <span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
+                        ['locked', 'attention_required', 'revoked'].includes(sellerPortalSecurityDiagnostics?.health)
+                          ? 'border-[#f2d0c9] bg-[#fff4f1] text-[#a43f2d]'
+                          : 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
+                      }`}>
+                        {sellerPortalSecurityDiagnosticsLoading ? 'Checking...' : formatStatusLabel(sellerPortalSecurityDiagnostics?.health || 'unavailable')}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-x-5 sm:grid-cols-2">
+                      <CompactSnapshotRow label="Invitation" value={formatStatusLabel(sellerPortalSecurityDiagnostics?.invitation?.status || 'unavailable')} />
+                      <CompactSnapshotRow label="Recovery" value={formatStatusLabel(sellerPortalSecurityDiagnostics?.recovery?.status || 'not_requested')} />
+                      <CompactSnapshotRow label="Session" value={formatStatusLabel(sellerPortalSecurityDiagnostics?.session?.status || 'unavailable')} />
+                      <CompactSnapshotRow label="Failed Attempts" value={formatCompactNumber(sellerPortalSecurityDiagnostics?.authentication?.failedLoginCount || 0)} />
+                      <CompactSnapshotRow label="Failures (24h)" value={formatCompactNumber(sellerPortalSecurityDiagnostics?.authentication?.failedEvents24h || 0)} />
+                    </div>
+                    {sellerPortalSecurityDiagnostics?.openAlerts?.length ? (
+                      <div className="mt-3 rounded-[12px] border border-[#f2d0c9] bg-[#fff4f1] px-3 py-2">
+                        <p className="text-xs font-semibold text-[#a43f2d]">
+                          {sellerPortalSecurityDiagnostics.openAlerts.length} open security alert{sellerPortalSecurityDiagnostics.openAlerts.length === 1 ? '' : 's'}
+                        </p>
+                        <p className="mt-1 text-xs text-[#7b5148]">
+                          Latest: {formatStatusLabel(sellerPortalSecurityDiagnostics.openAlerts[0]?.alert_type || 'security alert')}
+                          {sellerPortalSecurityDiagnostics.openAlerts[0]?.created_at ? ` • ${formatDateTime(sellerPortalSecurityDiagnostics.openAlerts[0].created_at)}` : ''}
+                        </p>
+                      </div>
+                    ) : null}
+                    {sellerPortalSecurityDiagnostics?.recentEvents?.length ? (
+                      <div className="mt-3 space-y-2">
+                        {sellerPortalSecurityDiagnostics.recentEvents.slice(0, 4).map((event) => (
+                          <div key={event.id} className="flex items-center justify-between gap-3 border-b border-[#edf2f7] pb-2 last:border-b-0 last:pb-0">
+                            <div className="min-w-0">
+                              <p className="truncate text-xs font-semibold text-[#2d445e]">{formatStatusLabel(event.event_name)}</p>
+                              <p className="mt-0.5 truncate text-xs text-[#6b7d93]">{formatStatusLabel(event.reason || event.outcome)}</p>
+                            </div>
+                            <span className="shrink-0 text-[0.68rem] font-semibold text-[#7b8ca2]">{formatDateTime(event.created_at)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="mt-5 border-t border-[#e7edf5] pt-4">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -7829,20 +7975,30 @@ function AgentListingDetail() {
                       ) : null}
                     </div>
                   </div>
-                  <div className="mt-auto grid gap-2 pt-5 sm:grid-cols-3">
-                    {listingRecord?.sellerOnboarding?.link ? (
-                      <a href={listingRecord.sellerOnboarding.link} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 py-2 text-sm font-semibold text-[#1f4f78]">
+                  <div className="mt-auto grid gap-2 pt-5 sm:grid-cols-2 xl:grid-cols-5">
+                    {resolveSellerPortalTokenFromListing(listingRecord) && sellerPortalAccessState?.linkActive !== false ? (
+                      <a href={buildSellerClientPortalLink(resolveSellerPortalTokenFromListing(listingRecord))} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 py-2 text-sm font-semibold text-[#1f4f78]">
                         Open Seller Portal
                         <ExternalLink size={14} />
                       </a>
                     ) : (
                       <Button size="sm" variant="secondary" disabled>Open Seller Portal</Button>
                     )}
-                    <Button size="sm" onClick={() => void handleResendSellerClientPortalLink()} disabled={resendingSellerPortalLink}>
+                    <Button size="sm" onClick={() => void handleResendSellerClientPortalLink()} disabled={resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false}>
                       {resendingSellerPortalLink ? 'Sending...' : 'Resend Seller Link'}
                     </Button>
-                    <Button size="sm" variant="secondary" onClick={() => void handleResetSellerPortalPasswordAndResend()} disabled={resettingSellerPortalPassword || resendingSellerPortalLink || !resolveSellerPortalTokenFromListing(listingRecord)}>
+                    <Button size="sm" variant="secondary" onClick={() => void handleResetSellerPortalPasswordAndResend()} disabled={resettingSellerPortalPassword || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false || !resolveSellerPortalTokenFromListing(listingRecord)}>
                       {resettingSellerPortalPassword ? 'Resetting...' : 'Reset Password'}
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => void handleManageSellerPortalAccess('revoke_sessions')} disabled={Boolean(managingSellerPortalAction) || sellerPortalAccessState?.linkActive === false || !sellerPortalAccessState?.passwordSet}>
+                      {managingSellerPortalAction === 'revoke_sessions' ? 'Signing out...' : 'Sign Out Sessions'}
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => void handleManageSellerPortalAccess(sellerPortalAccessState?.linkActive === false ? 'reactivate' : 'revoke')} disabled={Boolean(managingSellerPortalAction) || !resolveSellerPortalTokenFromListing(listingRecord)}>
+                      {managingSellerPortalAction
+                        ? 'Updating...'
+                        : sellerPortalAccessState?.linkActive === false
+                          ? 'Reactivate Portal'
+                          : 'Revoke Portal'}
                     </Button>
                   </div>
                 </article>
@@ -8167,11 +8323,11 @@ function AgentListingDetail() {
                     <FileText size={15} />
                     Download PDF
                   </Button>
-                  <Button size="sm" onClick={() => void handleResendSellerClientPortalLink()} disabled={resendingSellerPortalLink}>
+                  <Button size="sm" onClick={() => void handleResendSellerClientPortalLink()} disabled={resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false}>
                     <Link2 size={15} />
                     {resendingSellerPortalLink ? 'Sending...' : 'Send Seller Portal Link'}
                   </Button>
-                  <Button size="sm" variant="secondary" onClick={() => void handleResetSellerPortalPasswordAndResend()} disabled={resettingSellerPortalPassword || resendingSellerPortalLink || !resolveSellerPortalTokenFromListing(listingRecord)}>
+                  <Button size="sm" variant="secondary" onClick={() => void handleResetSellerPortalPasswordAndResend()} disabled={resettingSellerPortalPassword || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false || !resolveSellerPortalTokenFromListing(listingRecord)}>
                     <ShieldCheck size={15} />
                     {resettingSellerPortalPassword ? 'Resetting...' : 'Reset Portal Password'}
                   </Button>

@@ -60,9 +60,13 @@ import {
 } from '../lib/api'
 import { getClientPortalWorkspaceData } from '../services/clientPortalWorkspaceService'
 import {
+  clearSellerPortalAccessToken,
+  completeSellerPortalPasswordRecovery,
   createSellerClientPortalDocumentSignedUrl,
   getStoredSellerPortalAccessToken,
   isSellerPortalAuthRequiredError,
+  isSellerPortalSessionExpiredError,
+  requestSellerPortalPasswordRecovery,
   setSellerPortalPassword,
   uploadSellerClientPortalDocument,
   verifySellerPortalPassword,
@@ -4108,14 +4112,23 @@ function SellerPortalPasswordGate({
   authState = {},
   form,
   feedback = '',
+  notice = '',
   saving = false,
+  recoveryRequesting = false,
   onChange,
+  onRequestRecovery,
   onSubmit,
 }) {
   const passwordSet = Boolean(authState?.passwordSet)
-  const title = passwordSet ? 'Enter your seller portal password' : 'Set your seller portal password'
-  const description = passwordSet
-    ? 'Use the password you created for this seller portal.'
+  const recoveryMode = authState?.tokenKind === 'recovery'
+  const sessionExpired = Boolean(authState?.sessionExpired)
+  const title = recoveryMode ? 'Reset your seller portal password' : passwordSet ? 'Enter your seller portal password' : 'Set your seller portal password'
+  const description = recoveryMode
+    ? 'Create a new password to secure your seller portal. This recovery link can only be used once.'
+    : passwordSet
+    ? sessionExpired
+      ? 'Your secure session ended. Enter your password to continue—your portal link is still active.'
+      : 'Use the password you created for this seller portal.'
     : 'Create a password before opening your seller portal and document centre.'
   const propertyTitle = String(authState?.propertyTitle || '').trim()
   const sellerEmail = String(authState?.sellerEmail || '').trim()
@@ -4148,13 +4161,13 @@ function SellerPortalPasswordGate({
               type="password"
               value={form.password}
               onChange={(event) => onChange('password', event.target.value)}
-              autoComplete={passwordSet ? 'current-password' : 'new-password'}
+              autoComplete={passwordSet && !recoveryMode ? 'current-password' : 'new-password'}
               className="mt-2 h-12 w-full rounded-[14px] border border-[#dbe5ef] bg-white px-4 text-sm text-[#142132] outline-none transition focus:border-[#7ea1c4] focus:ring-4 focus:ring-[#d9e9f8]"
               placeholder="At least 8 characters"
             />
           </label>
 
-          {!passwordSet ? (
+          {!passwordSet || recoveryMode ? (
             <label className="block">
               <span className="text-sm font-semibold text-[#24364a]">Confirm password</span>
               <input
@@ -4175,14 +4188,30 @@ function SellerPortalPasswordGate({
             </div>
           ) : null}
 
+          {notice ? (
+            <div className="rounded-[14px] border border-[#cfe8d8] bg-[#f2fbf5] px-3 py-3 text-sm leading-6 text-[#1f7d44]">
+              {notice}
+            </div>
+          ) : null}
+
           <button
             type="submit"
             disabled={saving}
             className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[14px] bg-[#2f5478] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#244463] disabled:cursor-not-allowed disabled:opacity-60"
           >
             <ShieldCheck size={18} aria-hidden="true" />
-            {saving ? 'Checking password...' : passwordSet ? 'Open seller portal' : 'Set password and open portal'}
+            {saving ? 'Saving password...' : recoveryMode ? 'Reset password and continue' : passwordSet ? 'Open seller portal' : 'Set password and open portal'}
           </button>
+          {passwordSet && !recoveryMode ? (
+            <button
+              type="button"
+              disabled={recoveryRequesting}
+              onClick={onRequestRecovery}
+              className="w-full text-center text-sm font-semibold text-[#2f5478] underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {recoveryRequesting ? 'Requesting secure reset...' : 'Forgot your password?'}
+            </button>
+          ) : null}
         </form>
       </section>
     </main>
@@ -4203,6 +4232,8 @@ function ClientPortal() {
   const [sellerPortalPasswordForm, setSellerPortalPasswordForm] = useState({ password: '', confirmPassword: '' })
   const [sellerPortalPasswordFeedback, setSellerPortalPasswordFeedback] = useState('')
   const [sellerPortalPasswordSaving, setSellerPortalPasswordSaving] = useState(false)
+  const [sellerPortalRecoveryNotice, setSellerPortalRecoveryNotice] = useState('')
+  const [sellerPortalRecoveryRequesting, setSellerPortalRecoveryRequesting] = useState(false)
   const [commentDraft, setCommentDraft] = useState('')
   const [uploadingDocumentKey, setUploadingDocumentKey] = useState('')
   const [activeDocumentsTab, setActiveDocumentsTab] = useState('sales')
@@ -4290,6 +4321,8 @@ function ClientPortal() {
     setSellerPortalAccessToken(getStoredSellerPortalAccessToken(token))
     setSellerPortalAuth(null)
     setSellerPortalPasswordFeedback('')
+    setSellerPortalRecoveryNotice('')
+    setSellerPortalRecoveryRequesting(false)
     setSellerPortalPasswordForm({ password: '', confirmPassword: '' })
   }, [token])
 
@@ -4428,20 +4461,39 @@ function ClientPortal() {
       [field]: value,
     }))
     setSellerPortalPasswordFeedback('')
+    setSellerPortalRecoveryNotice('')
   }, [])
+
+  const handleSellerPortalRecoveryRequest = useCallback(async () => {
+    try {
+      setSellerPortalRecoveryRequesting(true)
+      setSellerPortalPasswordFeedback('')
+      setSellerPortalRecoveryNotice('')
+      const recoveryToken = String(sellerPortalAuth?.stablePortalToken || token || '').trim()
+      const result = await requestSellerPortalPasswordRecovery(recoveryToken)
+      setSellerPortalRecoveryNotice(
+        result?.message || 'If this portal can be recovered, a password reset email will arrive shortly.',
+      )
+    } catch (recoveryError) {
+      setSellerPortalPasswordFeedback(recoveryError?.message || 'Password recovery is temporarily unavailable.')
+    } finally {
+      setSellerPortalRecoveryRequesting(false)
+    }
+  }, [sellerPortalAuth?.stablePortalToken, token])
 
   const handleSellerPortalPasswordSubmit = useCallback(async (event) => {
     event.preventDefault()
     const password = String(sellerPortalPasswordForm.password || '')
     const confirmPassword = String(sellerPortalPasswordForm.confirmPassword || '')
     const passwordSet = Boolean(sellerPortalAuth?.passwordSet)
+    const recoveryMode = sellerPortalAuth?.tokenKind === 'recovery'
 
     if (password.length < 8) {
       setSellerPortalPasswordFeedback('Password must be at least 8 characters.')
       return
     }
 
-    if (!passwordSet && password !== confirmPassword) {
+    if ((!passwordSet || recoveryMode) && password !== confirmPassword) {
       setSellerPortalPasswordFeedback('Passwords do not match.')
       return
     }
@@ -4449,21 +4501,29 @@ function ClientPortal() {
     try {
       setSellerPortalPasswordSaving(true)
       setSellerPortalPasswordFeedback('')
-      const session = passwordSet
-        ? await verifySellerPortalPassword({ token, password })
-        : await setSellerPortalPassword({ token, password })
+      const session = recoveryMode
+        ? await completeSellerPortalPasswordRecovery({ token, password })
+        : passwordSet
+          ? await verifySellerPortalPassword({ token, password })
+          : await setSellerPortalPassword({ token, password })
       const accessToken = session?.accessToken || getStoredSellerPortalAccessToken(token)
+      const stablePortalToken = String(session?.stablePortalToken || '').trim()
+      const stablePortalPath = String(session?.stablePortalPath || '').trim()
       setLoading(true)
       setSellerPortalAccessToken(accessToken)
       setSellerPortalAuth(null)
       setSellerPortalPasswordForm({ password: '', confirmPassword: '' })
       setError('')
+      if (stablePortalToken && stablePortalToken !== token && stablePortalPath) {
+        clearSellerPortalAccessToken(token)
+        navigate(stablePortalPath, { replace: true })
+      }
     } catch (passwordError) {
       setSellerPortalPasswordFeedback(passwordError?.message || 'Unable to open your seller portal right now.')
     } finally {
       setSellerPortalPasswordSaving(false)
     }
-  }, [sellerPortalAuth?.passwordSet, sellerPortalPasswordForm.confirmPassword, sellerPortalPasswordForm.password, token])
+  }, [navigate, sellerPortalAuth?.passwordSet, sellerPortalAuth?.tokenKind, sellerPortalPasswordForm.confirmPassword, sellerPortalPasswordForm.password, token])
 
   const applyUploadedPortalDocument = useCallback(
     (uploadedDocument, { requiredDocumentKey = null } = {}) => {
@@ -5094,6 +5154,17 @@ function ClientPortal() {
       }
       void loadPortal({ background: true })
     } catch (uploadError) {
+      if (effectiveWorkspace === 'seller' && isSellerPortalSessionExpiredError(uploadError)) {
+        clearSellerPortalAccessToken(token)
+        setSellerPortalAccessToken('')
+        setSellerPortalAuth({
+          authRequired: true,
+          passwordSet: true,
+          sessionExpired: true,
+        })
+        setError('')
+        return
+      }
       setError(uploadError.message)
       if (isReservationProofUpload) {
         setReservationProofUploadFeedback({
@@ -5387,8 +5458,11 @@ function ClientPortal() {
         authState={sellerPortalAuth}
         form={sellerPortalPasswordForm}
         feedback={sellerPortalPasswordFeedback}
+        notice={sellerPortalRecoveryNotice}
         saving={sellerPortalPasswordSaving}
+        recoveryRequesting={sellerPortalRecoveryRequesting}
         onChange={handleSellerPortalPasswordChange}
+        onRequestRecovery={handleSellerPortalRecoveryRequest}
         onSubmit={handleSellerPortalPasswordSubmit}
       />
     )
