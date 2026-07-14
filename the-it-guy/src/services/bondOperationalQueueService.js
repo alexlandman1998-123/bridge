@@ -36,6 +36,8 @@ export const BOND_OPERATIONAL_QUEUE_KEYS = Object.freeze({
 })
 
 const NEW_APPLICATION_INTAKE_STATUSES = new Set([
+  BOND_INTAKE_STATUSES.AWAITING_BUYER_APPLICATION,
+  BOND_INTAKE_STATUSES.BUYER_IN_PROGRESS,
   BOND_INTAKE_STATUSES.AWAITING_OTP,
   BOND_INTAKE_STATUSES.READY_TO_START,
   BOND_INTAKE_STATUSES.APPLICATION_IN_PROGRESS,
@@ -427,7 +429,18 @@ export function buildBondNewApplicationViewModel(row = {}) {
 }
 
 export function isNewBondApplicationRow(row = {}) {
-  return getBondOriginatorQueueState(row).bucket === 'pipeline'
+  const state = getBondOriginatorQueueState(row)
+  if (state.bucket !== 'pipeline') return false
+  if (![BOND_INTAKE_STATUSES.AWAITING_BUYER_APPLICATION, BOND_INTAKE_STATUSES.BUYER_IN_PROGRESS].includes(state.status)) return true
+  const transaction = row?.transaction || row || {}
+  return Boolean(
+    getRolePlayers(row).some((item) => ['bond_originator', 'bond originator'].includes(
+      normalizeText(item?.role_type || item?.roleType || item?.role).toLowerCase(),
+    )) ||
+    normalizeText(transaction.bond_originator || transaction.bondOriginator) ||
+    normalizeText(transaction.assigned_bond_originator_email || transaction.assignedBondOriginatorEmail) ||
+    normalizeText(transaction.bond_workspace_id || transaction.bondWorkspaceId),
+  )
 }
 
 export function isBondApplicationTrackerRow(row = {}) {

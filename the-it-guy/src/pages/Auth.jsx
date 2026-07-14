@@ -5,16 +5,13 @@ import {
   Check,
   CheckCircle2,
   Circle,
-  Clock3,
+  Eye,
+  EyeOff,
   Hammer,
   Landmark,
-  Shield,
   Scale,
   ShieldCheck,
-  TrendingDown,
-  TrendingUp,
   UserRound,
-  UsersRound,
   WalletCards,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -302,12 +299,6 @@ const ROLE_DISPLAY_ORDER = [
   SIGNUP_BUSINESS_TYPES.bondOriginator,
   SIGNUP_BUSINESS_TYPES.client,
 ]
-const MARKET_METRICS = [
-  { label: 'Transactions Today', value: '24,812', delta: '143 since page load', trend: 'up', icon: TrendingUp },
-  { label: 'Avg. Registration Time', value: '63 Days', delta: '5 Days this week', trend: 'down', icon: Clock3 },
-  { label: 'Active Professionals', value: '18,240', delta: '78 this week', trend: 'up', icon: UsersRound },
-  { label: 'Value Moving Today', value: 'R14.2B', delta: 'R1.8B since yesterday', trend: 'up', icon: WalletCards },
-]
 const WORKSPACE_CHECKLIST = [
   'Configuring role permissions',
   'Preparing transaction workflows',
@@ -383,6 +374,7 @@ function Auth({ onDevBypass = null }) {
   const [email, setEmail] = useState(() => initialInvitedEmail)
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [resendLoading, setResendLoading] = useState(false)
   const [error, setError] = useState('')
@@ -708,7 +700,7 @@ function Auth({ onDevBypass = null }) {
   const showingWorkspaceBuild = mode === 'signup' && signupStep === 2 && loading && !inviteDrivenSignup
 
   return (
-    <div className="auth-page">
+    <div className={`auth-page auth-page-${mode}`}>
       <main className="auth-shell">
         <section className="auth-hero">
           <div className="auth-hero-glow" aria-hidden="true" />
@@ -717,25 +709,21 @@ function Auth({ onDevBypass = null }) {
           <div className="auth-hero-top">
             <p className="auth-brand">Arch9</p>
           </div>
-          <h1>The Property Industry,<br /> <span>Connected.</span></h1>
-          <p>Real-time infrastructure powering every transaction, every professional, every day.</p>
+          <div className="auth-hero-copy">
+            <h1>The property industry, <span>connected.</span></h1>
+            <p>Infrastructure for every property transaction.</p>
+          </div>
 
-          <div className="auth-market-metrics" aria-label="Live market metrics">
-            {MARKET_METRICS.map((metric) => {
-              const MetricIcon = metric.icon
-              const TrendIcon = metric.trend === 'down' ? TrendingDown : TrendingUp
-              return (
-              <article key={metric.label}>
-                <span className="auth-metric-icon"><MetricIcon size={18} /></span>
-                <span className="auth-metric-label">{metric.label}</span>
-                <strong>{metric.value}</strong>
-                <em className={metric.trend === 'down' ? 'down' : ''}>
-                  <TrendIcon size={13} />
-                  {metric.delta}
-                </em>
-              </article>
-              )
-            })}
+          <div className="auth-architecture" aria-hidden="true">
+            <span className="auth-building auth-building-one" />
+            <span className="auth-building auth-building-two" />
+            <span className="auth-building auth-building-three" />
+            <span className="auth-connection auth-connection-one" />
+            <span className="auth-connection auth-connection-two" />
+            <span className="auth-connection auth-connection-three" />
+            <i className="auth-node auth-node-one" />
+            <i className="auth-node auth-node-two" />
+            <i className="auth-node auth-node-three" />
           </div>
 
           <div className="auth-hero-trust">
@@ -744,35 +732,13 @@ function Auth({ onDevBypass = null }) {
           </div>
         </section>
 
-        <section className={`auth-card ${inviteDrivenSignup ? 'invite-auth-card' : ''}`}>
+        <section className={`auth-card ${mode === 'login' ? 'auth-card-login' : 'auth-card-signup'} ${inviteDrivenSignup ? 'invite-auth-card' : ''}`}>
           {mode === 'login' && securityLogoutMessage ? (
-            <p className="auth-feedback success">You were signed out for security. Please log in again.</p>
+            <div className="auth-security-notice" role="status">
+              <span><ShieldCheck size={18} /></span>
+              <p>Your session expired for security. Please sign in again.</p>
+            </div>
           ) : null}
-
-          <div className="auth-mode-switch" role="tablist" aria-label="Authentication mode">
-            <button
-              type="button"
-              className={mode === 'login' ? 'active' : ''}
-              onClick={() => {
-                setMode('login')
-                setError('')
-                setMessage('')
-              }}
-            >
-              Login
-            </button>
-            <button
-              type="button"
-              className={mode === 'signup' ? 'active' : ''}
-              onClick={() => {
-                setMode('signup')
-                setError('')
-                setMessage('')
-              }}
-            >
-              Sign Up
-            </button>
-          </div>
 
           <form id="auth-form" ref={authFormRef} className="auth-form" onSubmit={handleSubmit}>
             {mode === 'signup' ? (
@@ -924,9 +890,8 @@ function Auth({ onDevBypass = null }) {
               <>
                 {mode === 'login' ? (
                   <div className="auth-card-head compact">
-                    <span className="auth-card-eyebrow">SECURE ACCESS</span>
-                    <h2>Sign in to Arch9</h2>
-                    <p>Use your workspace credentials to open the property transaction platform.</p>
+                    <h2>Welcome back</h2>
+                    <p>Sign in to continue to your Arch9 workspace.</p>
                   </div>
                 ) : null}
 
@@ -1014,17 +979,28 @@ function Auth({ onDevBypass = null }) {
                     ) : null}
                   </label>
 
-                  <label>
-                    Password
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                      placeholder={mode === 'signup' ? 'At least 6 characters' : 'Your password'}
-                      autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                      required
-                    />
-                  </label>
+                  <div className="auth-password-field">
+                    <label htmlFor="auth-password">Password</label>
+                    <div className="auth-password-input">
+                      <input
+                        id="auth-password"
+                        type={showPassword ? 'text' : 'password'}
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        placeholder={mode === 'signup' ? 'At least 6 characters' : 'Your password'}
+                        autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                        required
+                      />
+                      <button
+                        type="button"
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        aria-pressed={showPassword}
+                        onClick={() => setShowPassword((current) => !current)}
+                      >
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                  </div>
                 </div>
                   </>
                 ) : null}
@@ -1072,13 +1048,13 @@ function Auth({ onDevBypass = null }) {
 
           {mode === 'login' || signupStep === 2 ? (
             <button type="submit" form="auth-form" className="auth-submit" disabled={loading}>
-              {loading ? 'Processing...' : mode === 'login' ? 'Sign in securely' : 'Create Account'}
+              {loading ? 'Processing...' : mode === 'login' ? 'Sign in' : 'Create Account'}
               {!loading ? <ArrowRight size={15} /> : null}
             </button>
           ) : null}
 
-          {mode === 'login' ? (
-            <div className="auth-footer" style={{ borderTop: 0, paddingTop: 0 }}>
+          {mode === 'login' && (pendingVerificationEmail || message) ? (
+            <div className="auth-footer auth-verification-action">
               <span>Didn&apos;t receive the verification email?</span>
               <button
                 type="button"
@@ -1102,10 +1078,6 @@ function Auth({ onDevBypass = null }) {
               {mode === 'login' ? 'Create one' : 'Sign in'}
             </button>
           </div>
-          ) : null}
-
-          {!inviteDrivenSignup ? (
-            <p className="auth-trust-line"><Shield size={14} /> Trusted by property professionals across South Africa</p>
           ) : null}
 
           {!isSupabaseConfigured ? (

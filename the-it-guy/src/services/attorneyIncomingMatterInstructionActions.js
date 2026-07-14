@@ -190,6 +190,108 @@ async function getActorUserId(client, actorUserId = '') {
   }
 }
 
+async function selectRowsWithMissingTableFallback(client, table, filters = []) {
+  let query = client.from(table).select('*')
+  for (const [column, value] of filters) query = query.eq(column, value)
+  const result = await query
+  if (result.error) {
+    if (isMissingTableError(result.error, table) || isMissingColumnError(result.error) || isPermissionDeniedError(result.error)) return []
+    throw result.error
+  }
+  return result.data || []
+}
+
+async function syncTransferInstructionDecisionLifecycle(client, {
+  transactionId = '',
+  decision = '',
+  actorUserId = '',
+  decidedAt = null,
+  reason = '',
+  note = '',
+  source = 'attorney_incoming_queue',
+} = {}) {
+  const normalizedTransactionId = normalizeText(transactionId)
+  if (!normalizedTransactionId) return { roleplayersUpdated: 0, allocationsUpdated: 0 }
+
+  const normalizedDecision = normalizeText(decision).toLowerCase()
+  const accepted = normalizedDecision === ATTORNEY_INCOMING_INSTRUCTION_STATUSES.accepted
+  const occurredAt = decidedAt || new Date().toISOString()
+  const decisionNote = normalizeNullableText(reason) || normalizeNullableText(note)
+  const roleplayers = await selectRowsWithMissingTableFallback(client, 'transaction_role_players', [
+    ['transaction_id', normalizedTransactionId],
+    ['role_type', 'transfer_attorney'],
+  ])
+
+  let roleplayersUpdated = 0
+  for (const roleplayer of roleplayers) {
+    const rows = await updateRowWithMissingColumnFallback(
+      client,
+      'transaction_role_players',
+      roleplayer.id,
+      accepted
+        ? {
+            status: 'active',
+            assignment_status: 'active',
+            updated_at: occurredAt,
+          }
+        : {
+            status: 'removed',
+            assignment_status: 'removed',
+            removed_at: occurredAt,
+            updated_at: occurredAt,
+          },
+      'id',
+    )
+    if (rows?.length) roleplayersUpdated += 1
+  }
+
+  const transactionRows = await selectRowsWithMissingTableFallback(client, 'transactions', [
+    ['id', normalizedTransactionId],
+  ])
+  const listingId = normalizeText(transactionRows[0]?.listing_id || transactionRows[0]?.listingId)
+  let allocations = await selectRowsWithMissingTableFallback(client, 'private_listing_role_players', [
+    ['transaction_id', normalizedTransactionId],
+    ['role_type', 'transfer_attorney'],
+  ])
+  if (!allocations.length && listingId) {
+    allocations = await selectRowsWithMissingTableFallback(client, 'private_listing_role_players', [
+      ['private_listing_id', listingId],
+      ['role_type', 'transfer_attorney'],
+    ])
+  }
+
+  let allocationsUpdated = 0
+  for (const allocation of allocations) {
+    const rows = await updateRowWithMissingColumnFallback(
+      client,
+      'private_listing_role_players',
+      allocation.id,
+      accepted
+        ? {
+            allocation_status: 'converted',
+            transaction_id: normalizedTransactionId,
+            instruction_accepted_at: occurredAt,
+            instruction_accepted_by: normalizeText(actorUserId) || null,
+            instruction_decision_note: decisionNote,
+            instruction_decision_source: normalizeText(source) || 'attorney_incoming_queue',
+            updated_at: occurredAt,
+          }
+        : {
+            allocation_status: 'withdrawn',
+            instruction_declined_at: occurredAt,
+            instruction_declined_by: normalizeText(actorUserId) || null,
+            instruction_decision_note: decisionNote,
+            instruction_decision_source: normalizeText(source) || 'attorney_incoming_queue',
+            updated_at: occurredAt,
+          },
+      'id',
+    )
+    if (rows?.length) allocationsUpdated += 1
+  }
+
+  return { roleplayersUpdated, allocationsUpdated }
+}
+
 export function buildAttorneyIncomingInstructionDecisionEventPayload({
   transactionId = '',
   assignmentId = '',
@@ -425,6 +527,14 @@ export async function acceptAttorneyIncomingInstruction(client, {
       TRANSACTION_RESULT_SELECT,
     )
   }
+  const lifecycleSync = await syncTransferInstructionDecisionLifecycle(client, {
+    transactionId: resolvedTransactionId,
+    decision: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.accepted,
+    actorUserId: resolvedActorUserId,
+    decidedAt: occurredAt,
+    note,
+    source,
+  })
   const auditEvent = resolvedTransactionId
     ? await recordAttorneyIncomingInstructionDecisionEvent(client, {
         transactionId: resolvedTransactionId,
@@ -446,6 +556,7 @@ export async function acceptAttorneyIncomingInstruction(client, {
     status: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.accepted,
     alreadyAccepted: false,
     acceptedAt: occurredAt,
+    lifecycleSync,
     auditEvent,
     actionHref: resolvedTransactionId ? `/transactions/${resolvedTransactionId}` : '',
   }
@@ -511,6 +622,14 @@ export async function declineAttorneyIncomingInstruction(client, {
       TRANSACTION_RESULT_SELECT,
     )
   }
+  const lifecycleSync = await syncTransferInstructionDecisionLifecycle(client, {
+    transactionId: resolvedTransactionId,
+    decision: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.declined,
+    actorUserId: resolvedActorUserId,
+    decidedAt: occurredAt,
+    reason,
+    source,
+  })
   const auditEvent = resolvedTransactionId
     ? await recordAttorneyIncomingInstructionDecisionEvent(client, {
         transactionId: resolvedTransactionId,
@@ -532,6 +651,7 @@ export async function declineAttorneyIncomingInstruction(client, {
     status: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.declined,
     alreadyDeclined: false,
     declinedAt: occurredAt,
+    lifecycleSync,
     auditEvent,
     actionHref: resolvedTransactionId ? `/transactions/${resolvedTransactionId}` : '',
   }
@@ -548,4 +668,5 @@ export const __attorneyIncomingMatterInstructionActionsTestUtils = Object.freeze
   buildDeclineAttorneyIncomingInstructionPayload,
   errorMentionsColumn,
   isEventTypeConstraintError,
+  syncTransferInstructionDecisionLifecycle,
 })

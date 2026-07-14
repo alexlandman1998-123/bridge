@@ -142,6 +142,8 @@ class FakeQuery {
 function createFakeClient({
   assignments = [],
   transactions = [],
+  roleplayers = null,
+  listingAllocations = null,
   transactionEvents = [],
   includeTransactionEvents = true,
   actorUserId = 'actor-1',
@@ -152,6 +154,8 @@ function createFakeClient({
     tables: {
       transaction_attorney_assignments: assignments.map((row) => ({ ...row })),
       transactions: transactions.map((row) => ({ ...row })),
+      ...(roleplayers ? { transaction_role_players: roleplayers.map((row) => ({ ...row })) } : {}),
+      ...(listingAllocations ? { private_listing_role_players: listingAllocations.map((row) => ({ ...row })) } : {}),
       ...(includeTransactionEvents ? { transaction_events: transactionEvents.map((row) => ({ ...row })) } : {}),
     },
     missingColumns: new Set(missingColumns),
@@ -196,7 +200,9 @@ try {
           status: 'active',
         },
       ],
-      transactions: [{ id: 'tx-ready', current_main_stage: 'OTP' }],
+      transactions: [{ id: 'tx-ready', listing_id: 'listing-ready', current_main_stage: 'OTP' }],
+      roleplayers: [{ id: 'roleplayer-ready', transaction_id: 'tx-ready', role_type: 'transfer_attorney', status: 'active', assignment_status: 'active' }],
+      listingAllocations: [{ id: 'allocation-ready', private_listing_id: 'listing-ready', transaction_id: 'tx-ready', role_type: 'transfer_attorney', allocation_status: 'instructed' }],
     })
 
     const result = await acceptAttorneyIncomingInstruction(client, {
@@ -216,6 +222,9 @@ try {
     assert.equal(transaction.current_main_stage, 'ATTY')
     assert.equal(transaction.attorney_stage, 'instruction_received')
     assert.equal(transaction.next_action, 'Transfer instruction accepted. Begin attorney preparation.')
+    assert.equal(client.tables.private_listing_role_players[0].allocation_status, 'converted')
+    assert.equal(client.tables.private_listing_role_players[0].instruction_accepted_by, 'attorney-user-1')
+    assert.equal(result.lifecycleSync.allocationsUpdated, 1)
     assert.equal(client.tables.transaction_events.length, 1)
     assert.equal(client.tables.transaction_events[0].event_type, 'AttorneyIncomingInstructionAccepted')
     assert.equal(client.tables.transaction_events[0].transaction_id, 'tx-ready')
@@ -304,7 +313,9 @@ try {
           status: 'active',
         },
       ],
-      transactions: [{ id: 'tx-decline', current_main_stage: 'OTP' }],
+      transactions: [{ id: 'tx-decline', listing_id: 'listing-decline', current_main_stage: 'OTP' }],
+      roleplayers: [{ id: 'roleplayer-decline', transaction_id: 'tx-decline', role_type: 'transfer_attorney', status: 'active', assignment_status: 'active' }],
+      listingAllocations: [{ id: 'allocation-decline', private_listing_id: 'listing-decline', transaction_id: 'tx-decline', role_type: 'transfer_attorney', allocation_status: 'instructed' }],
     })
 
     const result = await declineAttorneyIncomingInstruction(client, {
@@ -325,6 +336,10 @@ try {
     assert.equal(assignment.instruction_declined_at, '2026-07-09T08:15:00.000Z')
     assert.equal(assignment.instruction_decision_note, 'Conflict check failed.')
     assert.equal(transaction.next_action, 'Conflict check failed.')
+    assert.equal(client.tables.transaction_role_players[0].status, 'removed')
+    assert.equal(client.tables.private_listing_role_players[0].allocation_status, 'withdrawn')
+    assert.equal(client.tables.private_listing_role_players[0].instruction_declined_by, 'attorney-user-2')
+    assert.equal(result.lifecycleSync.roleplayersUpdated, 1)
     assert.equal(client.tables.transaction_events.length, 1)
     assert.equal(client.tables.transaction_events[0].event_type, 'AttorneyIncomingInstructionDeclined')
     assert.equal(client.tables.transaction_events[0].event_data.assignmentId, 'assign-decline')

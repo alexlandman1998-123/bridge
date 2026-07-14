@@ -127,6 +127,7 @@ const DEVELOPMENT_COLUMNS = ['id', 'name', 'development_name', 'code']
 const PROFILE_COLUMNS = ['id', 'full_name', 'first_name', 'last_name', 'email']
 
 const STATUS_SORT_RANK = {
+  awaiting_buyer: -1,
   [ATTORNEY_INCOMING_INSTRUCTION_STATUSES.awaitingSignedOtp]: 0,
   [ATTORNEY_INCOMING_INSTRUCTION_STATUSES.awaitingDocuments]: 1,
   [ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance]: 2,
@@ -139,6 +140,7 @@ const STATUS_SORT_RANK = {
 }
 
 const WAITING_ON_LABELS = {
+  buyer: 'Buyer',
   [ATTORNEY_INCOMING_WAITING_ON.buyerOnboarding]: 'Buyer onboarding',
   [ATTORNEY_INCOMING_WAITING_ON.signedOtp]: 'Signed OTP',
   [ATTORNEY_INCOMING_WAITING_ON.documents]: 'Documents',
@@ -385,6 +387,71 @@ function buildSearchText(row = {}) {
   ].map((value) => normalizeKey(value)).join(' ')
 }
 
+export function buildAttorneyPreInstructionRow(allocation = {}, firm = null) {
+  const allocationId = allocation.allocation_id || allocation.allocationId || allocation.id || ''
+  const listingId = allocation.private_listing_id || allocation.privateListingId || ''
+  const mandatePacketId = allocation.mandate_packet_id || allocation.mandatePacketId || ''
+  const firmName = firm?.name || allocation.company_name || allocation.companyName || 'Transfer firm'
+  const selectedAt = allocation.mandate_signed_at || allocation.mandateSignedAt || allocation.selected_at || allocation.selectedAt || null
+  const property = allocation.property_label || allocation.propertyLabel || 'Property pending'
+  const sellerName = allocation.seller_name || allocation.sellerName || 'Seller pending'
+  const reference = allocation.listing_reference || allocation.listingReference || `PL-${String(listingId).slice(0, 8).toUpperCase()}`
+  const agent = allocation.assigned_agent_name || allocation.assignedAgentName || allocation.assigned_agent_email || allocation.assignedAgentEmail || ''
+  const row = {
+    rowKind: 'pre_instruction',
+    isPreInstruction: true,
+    id: allocationId,
+    assignmentId: allocationId,
+    transactionId: '',
+    matterId: `listing:${listingId}`,
+    privateListingId: listingId,
+    mandatePacketId,
+    reference,
+    matterType: 'Transfer',
+    status: 'awaiting_buyer',
+    statusLabel: 'Awaiting Buyer',
+    waitingOn: ['buyer'],
+    waitingOnLabels: ['Buyer'],
+    incomingSince: selectedAt,
+    incomingAgeDays: daysSince(selectedAt),
+    buyerName: 'Buyer not yet found',
+    buyerEmail: '',
+    sellerName,
+    property,
+    development: '',
+    unit: '',
+    phase: '',
+    purchasePrice: safeNumber(allocation.asking_price || allocation.askingPrice),
+    financeType: '',
+    onboardingStatus: 'not_started',
+    onboardingSubmittedAt: null,
+    otpStatus: { key: 'not_started', label: 'No OTP yet' },
+    documents: {
+      totalCount: 0,
+      openCount: 0,
+      reviewCount: 0,
+      rejectedCount: 0,
+      openRequests: [],
+      reviewRequests: [],
+      missingLabels: [],
+    },
+    nextAction: 'Await a buyer before the formal transfer instruction is activated.',
+    assignedAttorney: {
+      id: firm?.id || '',
+      name: firmName,
+      initials: getInitials(firmName),
+      email: '',
+    },
+    assignedSecretary: { id: '', name: '', initials: '', email: '' },
+    assignedAdminHandler: { id: '', name: '', initials: '', email: '' },
+    agent,
+    actionHref: mandatePacketId ? `/legal-documents/${encodeURIComponent(mandatePacketId)}` : '',
+    raw: { allocation },
+  }
+  row.searchText = buildSearchText(row)
+  return row
+}
+
 function buildIncomingMatterRow({ assignment, transaction, onboarding, documentRequests, buyer, unit, development, profilesById }) {
   const normalizedAssignment = normalizeAssignment(assignment)
   const contract = buildAttorneyIncomingMatterContract({
@@ -479,9 +546,10 @@ function sortRows(rows = []) {
 function filterRows(rows = [], { includePreIncoming = false, includeClosed = false, search = '' } = {}) {
   const searchTerm = normalizeKey(search)
   return rows.filter((row) => {
-    if (!includePreIncoming && row.contract.visibleInPreIncoming) return false
+    if (row.isPreInstruction) return !searchTerm || row.searchText.includes(searchTerm)
+    if (!includePreIncoming && row.contract?.visibleInPreIncoming) return false
     if (!includeClosed && isAttorneyInstructionClosedStatus(row.status)) return false
-    if (!row.contract.visibleInIncomingQueue && !includePreIncoming && !includeClosed) return false
+    if (!row.contract?.visibleInIncomingQueue && !includePreIncoming && !includeClosed) return false
     if (searchTerm && !row.searchText.includes(searchTerm)) return false
     return true
   })
@@ -510,6 +578,7 @@ function buildSummary(rows = [], allRows = []) {
   return {
     totalIncoming: rows.length,
     allTransferInstructions: allRows.length,
+    awaitingBuyer: rows.filter((row) => row.status === 'awaiting_buyer').length,
     awaitingSignedOtp: rows.filter((row) => row.status === ATTORNEY_INCOMING_INSTRUCTION_STATUSES.awaitingSignedOtp).length,
     awaitingDocuments: rows.filter((row) => row.status === ATTORNEY_INCOMING_INSTRUCTION_STATUSES.awaitingDocuments).length,
     readyForAcceptance: rows.filter((row) => row.status === ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance).length,
@@ -529,6 +598,7 @@ export function buildAttorneyIncomingMatterQueueFromSources({
   units = [],
   developments = [],
   profiles = [],
+  preInstructionAllocations = [],
 } = {}, options = {}) {
   const transactionsById = mapById(transactions)
   const onboardingByTransactionId = groupBy(onboardingRows, 'transaction_id')
@@ -538,7 +608,7 @@ export function buildAttorneyIncomingMatterQueueFromSources({
   const developmentsById = mapById(developments)
   const profilesById = mapById(profiles)
 
-  const allRows = (assignments || [])
+  const instructionRows = (assignments || [])
     .map(normalizeAssignment)
     .filter((assignment) => isTransferAttorneyAssignment(assignment))
     .map((assignment) => {
@@ -560,6 +630,11 @@ export function buildAttorneyIncomingMatterQueueFromSources({
       })
     })
     .filter(Boolean)
+
+  const preInstructionRows = (preInstructionAllocations || []).map((allocation) =>
+    buildAttorneyPreInstructionRow(allocation, firm),
+  )
+  const allRows = [...preInstructionRows, ...instructionRows]
 
   const filteredRows = sortRows(filterRows(allRows, options))
   const { tableRows, pagination } = paginateRows(filteredRows, options)
@@ -689,6 +764,17 @@ async function fetchOnboardingRows(client, transactionIds = []) {
   )
 }
 
+async function fetchPreInstructionAllocations(client, firmId) {
+  const result = await client.rpc('bridge_attorney_pre_instruction_pipeline', {
+    p_firm_id: firmId,
+  })
+  if (!result.error) return result.data || []
+  const code = String(result.error.code || '').toUpperCase()
+  const message = String(result.error.message || '').toLowerCase()
+  if (['42883', 'PGRST202'].includes(code) || message.includes('bridge_attorney_pre_instruction_pipeline')) return []
+  throw result.error
+}
+
 function mapCurrentUser(authUser = {}, membership = null, permissions = {}) {
   return {
     id: authUser.id || '',
@@ -712,6 +798,8 @@ export async function getAttorneyIncomingMatterQueue(options = {}) {
   const role = membership?.role || authUser.user_metadata?.attorney_role || 'candidate_attorney'
   const permissions = getAttorneyRolePermissions(role)
   const canViewAll = Boolean(permissions.can_view_all_firm_matters || MANAGEMENT_ROLES.has(role))
+
+  const preInstructionAllocations = await fetchPreInstructionAllocations(client, firm.id)
 
   const assignments = await fetchAssignments(client, {
     firmId: firm.id,
@@ -758,6 +846,7 @@ export async function getAttorneyIncomingMatterQueue(options = {}) {
     units,
     developments,
     profiles,
+    preInstructionAllocations,
   }, options)
 }
 

@@ -43,7 +43,7 @@ import { createAgencyCrmLeadActivity, updateAgencyCrmLeadRecord } from '../lib/a
 import { fetchTransactionById, updateOtpDocumentWorkflowState } from '../lib/api'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
-import { fetchAgencyOnboardingSettings } from '../lib/settingsApi'
+import { fetchAgencyOnboardingSettings, listOrganisationPreferredPartners } from '../lib/settingsApi'
 import {
   createPrivateListing,
   createPrivateListingActivity,
@@ -53,6 +53,7 @@ import {
   updatePrivateListing,
 } from '../services/privateListingService'
 import { getMandateSignerRoleLabel, resolveMandateSecondarySignerConfig } from '../lib/mandateSignatureRules'
+import { allocatePrivateListingTransferAttorney } from '../services/privateListingAttorneyAllocationService'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -1598,6 +1599,9 @@ function buildMandateDraftDefaults({ leadContext = {}, initialStatus = null, tra
         ? packetSourceContext.generatedDataSnapshot
         : {}
   const snapshotMandate = generatedSnapshot?.mandate && typeof generatedSnapshot.mandate === 'object' ? generatedSnapshot.mandate : {}
+  const snapshotTransferAttorney = generatedSnapshot?.transferAttorney && typeof generatedSnapshot.transferAttorney === 'object'
+    ? generatedSnapshot.transferAttorney
+    : {}
   const snapshotSeller = generatedSnapshot?.seller && typeof generatedSnapshot.seller === 'object' ? generatedSnapshot.seller : {}
   const snapshotProperty = generatedSnapshot?.property && typeof generatedSnapshot.property === 'object' ? generatedSnapshot.property : {}
   const sellerFirstName = firstText(
@@ -1866,6 +1870,38 @@ function buildMandateDraftDefaults({ leadContext = {}, initialStatus = null, tra
       onboarding.additional_conditions,
       transactionOnboarding.specialConditions,
       lead.specialConditions,
+    ),
+    transferAttorneyPreferredPartnerId: firstText(
+      packetDraft.transferAttorneyPreferredPartnerId,
+      snapshotTransferAttorney.preferredPartnerId,
+    ),
+    transferAttorneyPartnerOrganisationId: firstText(
+      packetDraft.transferAttorneyPartnerOrganisationId,
+      snapshotTransferAttorney.partnerOrganisationId,
+    ),
+    transferAttorneyCompanyName: firstText(
+      packetDraft.transferAttorneyCompanyName,
+      snapshotTransferAttorney.companyName,
+    ),
+    transferAttorneyContactPerson: firstText(
+      packetDraft.transferAttorneyContactPerson,
+      snapshotTransferAttorney.contactPerson,
+    ),
+    transferAttorneyEmail: firstText(
+      packetDraft.transferAttorneyEmail,
+      snapshotTransferAttorney.email,
+    ),
+    transferAttorneyPhone: firstText(
+      packetDraft.transferAttorneyPhone,
+      snapshotTransferAttorney.phone,
+    ),
+    transferAttorneySelectionSource: firstText(
+      packetDraft.transferAttorneySelectionSource,
+      snapshotTransferAttorney.selectionSource,
+      'seller_mandate',
+    ),
+    transferAttorneySelectionDeferred: Boolean(
+      packetDraft.transferAttorneySelectionDeferred || snapshotTransferAttorney.selectionDeferred,
     ),
   }
 }
@@ -2380,6 +2416,11 @@ export default function LegalDocumentWorkspacePage() {
   const [validatedRoutePacketId, setValidatedRoutePacketId] = useState('')
   const [otpDraftOverrides, setOtpDraftOverrides] = useState({})
   const [mandateEssentialsConfirmed, setMandateEssentialsConfirmed] = useState(false)
+  const [preferredTransferAttorneys, setPreferredTransferAttorneys] = useState([])
+  const [preferredTransferAttorneysLoading, setPreferredTransferAttorneysLoading] = useState(false)
+  const [preferredTransferAttorneysError, setPreferredTransferAttorneysError] = useState('')
+  const [selectedTransferAttorneyId, setSelectedTransferAttorneyId] = useState('')
+  const [transferAttorneySelectionDeferred, setTransferAttorneySelectionDeferred] = useState(false)
   const initialStatusRef = useRef(null)
   const hasRenderedContextRef = useRef(false)
 
@@ -2433,8 +2474,56 @@ export default function LegalDocumentWorkspacePage() {
     }),
     [initialStatus, leadContext, transactionDetail],
   )
+  useEffect(() => {
+    if (packetType !== 'mandate' || !organisationId) return undefined
+    let active = true
+
+    void Promise.resolve()
+      .then(() => {
+        if (!active) return []
+        setPreferredTransferAttorneysLoading(true)
+        setPreferredTransferAttorneysError('')
+        return listOrganisationPreferredPartners()
+      })
+      .then((partners) => {
+        if (!active) return
+        const attorneys = (partners || []).filter((partner) => partner?.isActive && partner?.partnerType === 'transfer_attorney')
+        setPreferredTransferAttorneys(attorneys)
+        const savedAttorneyId = normalizeText(mandateDraftDefaults.transferAttorneyPreferredPartnerId)
+        const defaultAttorney = attorneys.find((partner) => String(partner.id) === savedAttorneyId)
+          || attorneys.find((partner) => partner.isPreferredDefault)
+          || attorneys[0]
+          || null
+        setSelectedTransferAttorneyId(defaultAttorney?.id || savedAttorneyId || '')
+        setTransferAttorneySelectionDeferred(Boolean(mandateDraftDefaults.transferAttorneySelectionDeferred))
+      })
+      .catch((error) => {
+        if (!active) return
+        setPreferredTransferAttorneys([])
+        setPreferredTransferAttorneysError(error?.message || 'Preferred transfer attorneys could not be loaded.')
+      })
+      .finally(() => {
+        if (active) setPreferredTransferAttorneysLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [mandateDraftDefaults, organisationId, packetType, routeLeadId, routeListingId, routePacketId])
+  const selectedTransferAttorney = useMemo(
+    () => preferredTransferAttorneys.find((partner) => String(partner.id) === String(selectedTransferAttorneyId)) || null,
+    [preferredTransferAttorneys, selectedTransferAttorneyId],
+  )
   const effectiveMandateDraft = useMemo(() => ({
     ...mandateDraftDefaults,
+    transferAttorneyPreferredPartnerId: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.id || normalizeText(mandateDraftDefaults.transferAttorneyPreferredPartnerId),
+    transferAttorneyPartnerOrganisationId: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.partnerOrganisationId || normalizeText(mandateDraftDefaults.transferAttorneyPartnerOrganisationId),
+    transferAttorneyCompanyName: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.companyName || normalizeText(mandateDraftDefaults.transferAttorneyCompanyName),
+    transferAttorneyContactPerson: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.contactPerson || normalizeText(mandateDraftDefaults.transferAttorneyContactPerson),
+    transferAttorneyEmail: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.email || normalizeText(mandateDraftDefaults.transferAttorneyEmail),
+    transferAttorneyPhone: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.phone || normalizeText(mandateDraftDefaults.transferAttorneyPhone),
+    transferAttorneySelectionSource: normalizeText(mandateDraftDefaults.transferAttorneySelectionSource) || 'seller_mandate',
+    transferAttorneySelectionDeferred,
     ...(documentStartLegalScenario.sellerEntityType ? { sellerEntityType: documentStartLegalScenario.sellerEntityType } : {}),
     ...(documentStartLegalScenario.sellerMaritalRegime ? {
       sellerMaritalRegime: documentStartLegalScenario.sellerMaritalRegime,
@@ -2444,7 +2533,7 @@ export default function LegalDocumentWorkspacePage() {
       propertyTitleType: documentStartLegalScenario.propertyTitleType,
       propertyStructureType: documentStartLegalScenario.propertyTitleType,
     } : {}),
-  }), [documentStartLegalScenario, mandateDraftDefaults])
+  }), [documentStartLegalScenario, mandateDraftDefaults, selectedTransferAttorney, transferAttorneySelectionDeferred])
   const showMandateDraftPanel =
     routeContextSettled &&
     packetType === 'mandate' &&
@@ -2459,6 +2548,14 @@ export default function LegalDocumentWorkspacePage() {
     }
     navigate(backPath)
   }, [backPath, navigate, routeLeadId])
+  const handleConfirmMandateEssentials = useCallback(() => {
+    if (!selectedTransferAttorneyId && !transferAttorneySelectionDeferred) {
+      setPreferredTransferAttorneysError('Select the seller\'s transfer attorney or explicitly defer the nomination.')
+      return
+    }
+    setPreferredTransferAttorneysError('')
+    setMandateEssentialsConfirmed(true)
+  }, [selectedTransferAttorneyId, transferAttorneySelectionDeferred])
   useEffect(() => {
     setMandateEssentialsConfirmed(false)
   }, [routeLeadId, routeListingId, routePacketId, routeTransactionId])
@@ -3267,6 +3364,9 @@ export default function LegalDocumentWorkspacePage() {
 
   const handleGenerate = useCallback(async ({ onProgress, persistForSend = false, resetExisting = false } = {}) => {
     onProgress?.('Preparing draft...')
+    if (packetType === 'mandate' && !effectiveMandateDraft.transferAttorneyPreferredPartnerId && !effectiveMandateDraft.transferAttorneySelectionDeferred) {
+      throw new Error('Select the seller\'s transfer attorney or explicitly defer the nomination before generating the mandate.')
+    }
     const generationLookupTimeoutMs = 8000
     let template = null
     const resetMandatePacket = packetType === 'mandate' && resetExisting === true
@@ -3965,6 +4065,63 @@ export default function LegalDocumentWorkspacePage() {
       }
     }
 
+    const signedMandateAttorney = {
+      preferredPartnerId: normalizeText(effectiveMandateDraft.transferAttorneyPreferredPartnerId),
+      partnerOrganisationId: normalizeText(effectiveMandateDraft.transferAttorneyPartnerOrganisationId),
+      companyName: normalizeText(effectiveMandateDraft.transferAttorneyCompanyName),
+      contactPerson: normalizeText(effectiveMandateDraft.transferAttorneyContactPerson),
+      email: normalizeText(effectiveMandateDraft.transferAttorneyEmail),
+      phone: normalizeText(effectiveMandateDraft.transferAttorneyPhone),
+    }
+    if (
+      isSupabaseConfigured &&
+      isUuidLike(linkedListingId) &&
+      !effectiveMandateDraft.transferAttorneySelectionDeferred
+    ) {
+      const allocation = await allocatePrivateListingTransferAttorney({
+        privateListingId: linkedListingId,
+        attorney: signedMandateAttorney,
+        mandatePacketId: packetId,
+        mandateSignedAt: finalizedAt,
+        source: normalizeText(effectiveMandateDraft.transferAttorneySelectionSource) || 'seller_mandate',
+        metadata: {
+          source: 'legal_document_workspace',
+          phase: 'mandate_attorney_allocation_phase1',
+          leadId: normalizeText(leadContext?.lead?.leadId) || null,
+          packetVersionId: packetVersionId || null,
+        },
+      })
+      await createPrivateListingActivity({
+        privateListingId: linkedListingId,
+        activityType: 'transfer_attorney_allocated',
+        activityTitle: 'Transfer attorney allocated',
+        activityDescription: `${allocation.companyName} was allocated when the mandate was signed.`,
+        performedBy: normalizeText(actor.id),
+        visibility: 'internal',
+        metadata: {
+          allocationId: allocation.id,
+          preferredPartnerId: allocation.preferredPartnerId,
+          attorneyCompanyName: allocation.companyName,
+          attorneyEmail: allocation.email || null,
+          allocationStatus: allocation.status,
+          mandatePacketId: packetId || null,
+        },
+      })
+    } else if (isSupabaseConfigured && isUuidLike(linkedListingId) && effectiveMandateDraft.transferAttorneySelectionDeferred) {
+      await createPrivateListingActivity({
+        privateListingId: linkedListingId,
+        activityType: 'transfer_attorney_allocation_deferred',
+        activityTitle: 'Transfer attorney nomination deferred',
+        activityDescription: 'The mandate was signed with the seller attorney nomination still outstanding.',
+        performedBy: normalizeText(actor.id),
+        visibility: 'internal',
+        metadata: {
+          mandatePacketId: packetId || null,
+          requiresAttorneySelection: true,
+        },
+      })
+    }
+
     if (isSupabaseConfigured && isUuidLike(packetId)) {
       await appendDocumentPacketEvent({
         packetId,
@@ -4095,6 +4252,7 @@ export default function LegalDocumentWorkspacePage() {
     transactionReference,
     validatedRoutePacketId,
     organisationId,
+    effectiveMandateDraft,
   ])
 
   const openLatestDocument = useCallback(async ({ signed = false } = {}) => {
@@ -4150,7 +4308,17 @@ export default function LegalDocumentWorkspacePage() {
           draft={effectiveMandateDraft}
           sourceMode={documentStartSourceMode}
           documentStart={documentStartEntryPoint}
-          onConfirm={() => setMandateEssentialsConfirmed(true)}
+          preferredAttorneys={preferredTransferAttorneys}
+          preferredAttorneysLoading={preferredTransferAttorneysLoading}
+          preferredAttorneysError={preferredTransferAttorneysError}
+          selectedAttorneyId={selectedTransferAttorneyId}
+          attorneySelectionDeferred={transferAttorneySelectionDeferred}
+          onAttorneyChange={(partnerId) => {
+            setSelectedTransferAttorneyId(partnerId)
+            if (partnerId) setTransferAttorneySelectionDeferred(false)
+          }}
+          onAttorneySelectionDeferredChange={setTransferAttorneySelectionDeferred}
+          onConfirm={handleConfirmMandateEssentials}
           onEditSellerDetails={handleEditMandateSellerDetails}
         />
       ) : null}

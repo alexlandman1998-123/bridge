@@ -96,6 +96,23 @@ try {
   const bondAwaitingBuyer = makeRow('bond-awaiting-buyer')
   assert.equal(getNewApplicationsQueue([bondAwaitingBuyer]).length, 0, 'bond awaiting buyer onboarding is not visible yet')
 
+  const originatorSelectedAtOnboardingSend = makeRow('originator-selected-at-send', {
+    transaction: {
+      finance_type: null,
+      bond_assignment_status: 'awaiting_buyer_onboarding',
+    },
+    rolePlayers: [
+      {
+        role_type: 'bond_originator',
+        status: 'selected',
+        partner_name: 'Preferred Originator',
+      },
+    ],
+  })
+  const originatorInboxRow = getNewApplicationsQueue([originatorSelectedAtOnboardingSend])[0]
+  assert.equal(originatorInboxRow.intakeStatus, BOND_INTAKE_STATUSES.AWAITING_BUYER_APPLICATION)
+  assert.equal(originatorInboxRow.preferredOriginatorName, 'Preferred Originator')
+
   const bondAwaitingOtp = makeRow('bond-awaiting-otp', {
     transaction: { onboarding_completed_at: '2026-05-02T09:00:00.000Z' },
   })

@@ -20,6 +20,20 @@ try {
   const source = {
     firm: { id: 'firm-1', name: 'Arch9 Attorneys' },
     currentUser: { id: 'att-1', email: 'attorney@example.com' },
+    preInstructionAllocations: [
+      {
+        allocation_id: 'allocation-awaiting-buyer',
+        private_listing_id: 'listing-1',
+        listing_reference: 'PL-MANDATE',
+        property_label: '9 Mandate Avenue',
+        seller_name: 'Mandate Seller',
+        asking_price: 2250000,
+        assigned_agent_name: 'Agent Mandate',
+        allocation_status: 'awaiting_buyer',
+        mandate_packet_id: 'packet-mandate',
+        mandate_signed_at: '2026-06-30T08:00:00.000Z',
+      },
+    ],
     assignments: [
       {
         id: 'assign-awaiting-otp',
@@ -226,23 +240,28 @@ try {
 
   {
     const queue = buildAttorneyIncomingMatterQueueFromSources(source, { pageSize: 20 })
-    assert.deepEqual(queue.rows.map((row) => row.id), ['assign-awaiting-otp', 'assign-docs', 'assign-ready'])
+    assert.deepEqual(queue.rows.map((row) => row.id), ['allocation-awaiting-buyer', 'assign-awaiting-otp', 'assign-docs', 'assign-ready'])
     assert.deepEqual(queue.allRows.map((row) => row.id), [
+      'allocation-awaiting-buyer',
       'assign-awaiting-otp',
       'assign-docs',
       'assign-ready',
       'assign-pre',
       'assign-accepted',
     ])
-    assert.equal(queue.summary.totalIncoming, 3)
-    assert.equal(queue.summary.allTransferInstructions, 5)
+    assert.equal(queue.summary.totalIncoming, 4)
+    assert.equal(queue.summary.allTransferInstructions, 6)
+    assert.equal(queue.summary.awaitingBuyer, 1)
     assert.equal(queue.summary.awaitingSignedOtp, 1)
     assert.equal(queue.summary.awaitingDocuments, 1)
     assert.equal(queue.summary.readyForAcceptance, 1)
     assert.equal(queue.summary.documentBlockers, 2)
-    assert.deepEqual(queue.rows[0].waitingOn, ['signed_otp', 'documents'])
-    assert.equal(queue.rows[1].documents.reviewCount, 1)
-    assert.equal(queue.rows[2].nextAction, 'Accept the transfer instruction.')
+    assert.deepEqual(queue.rows[0].waitingOn, ['buyer'])
+    assert.equal(queue.rows[0].actionHref, '/legal-documents/packet-mandate')
+    assert.equal(queue.rows[0].transactionId, '')
+    assert.deepEqual(queue.rows[1].waitingOn, ['signed_otp', 'documents'])
+    assert.equal(queue.rows[2].documents.reviewCount, 1)
+    assert.equal(queue.rows[3].nextAction, 'Accept the transfer instruction.')
   }
 
   {

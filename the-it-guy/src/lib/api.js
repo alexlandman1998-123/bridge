@@ -169,6 +169,10 @@ import {
   declineAttorneyIncomingInstruction as declineAttorneyIncomingInstructionService,
 } from '../services/attorneyIncomingMatterInstructionActions'
 import { ATTORNEY_INCOMING_INSTRUCTION_STATUSES } from '../core/transactions/attorneyIncomingMatterContract'
+import {
+  shouldActivateAttorneyRoleplayerAtSignedOtp,
+  shouldCreateAttorneyAssignmentForSelection,
+} from '../core/transactions/attorneyInstructionActivation'
 
 const CANONICAL_PILOT_BUILD_MARKER = 'CANONICAL_PILOT_BUILD_MARKER_20260525'
 const CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH_FLAG = 'VITE_CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH'
@@ -20767,6 +20771,8 @@ function resolveTransactionRoleplayerSelectionSource(item = {}, partner = {}, op
       'invited_partner',
       'transaction_direct',
       'partner_routing_rule',
+      'seller_mandate',
+      'agent_reassignment',
     ])
   const explicitSource = normalizeTextValue(
     item.source ||
@@ -21448,7 +21454,10 @@ async function propagateTransactionRoleplayersIfPossible(
     })
     if (participant) results.participants.push(participant)
 
-    if (['transfer_attorney', 'cancellation_attorney'].includes(selection.roleType)) {
+    if (
+      ['transfer_attorney', 'cancellation_attorney'].includes(selection.roleType) &&
+      shouldCreateAttorneyAssignmentForSelection(selection)
+    ) {
       const assignment = await ensureAttorneyMatterAssignment(client, { transactionId, selection, actorProfile })
       if (assignment) {
         results.attorneyAssignments.push(assignment)
@@ -21984,7 +21993,7 @@ function isTransactionOnboardingCompleteForRoleplayerReplay(transaction = {}, on
 
 function isTransactionSignedOtpReadyForRoleplayerReplay(transaction = {}) {
   const transactionStatus = normalizeTextValue(transaction?.onboarding_status || transaction?.onboardingStatus).toLowerCase()
-  return transactionStatus === 'signed_otp_received'
+  return ['signed_otp_received', 'otp_uploaded'].includes(transactionStatus)
 }
 
 async function replayRoleplayerAllocationForCompletedOnboarding(
@@ -22094,12 +22103,12 @@ export async function saveTransactionRoleplayerSelections({
     .filter(Boolean)
     .map((selection) => ({
       ...selection,
-      assignmentStatus: 'active',
-      activationTrigger: 'immediate',
+      assignmentStatus: selection.assignmentStatus || 'active',
+      activationTrigger: selection.activationTrigger || 'immediate',
       snapshot: {
         ...(selection.snapshot || {}),
-        assignmentStatus: 'active',
-        activationTrigger: 'immediate',
+        assignmentStatus: selection.assignmentStatus || 'active',
+        activationTrigger: selection.activationTrigger || 'immediate',
       },
     }))
   const transferAttorney = selections.find((item) => item.roleType === 'transfer_attorney')
@@ -22150,6 +22159,8 @@ export async function saveTransactionRoleplayerSelections({
     rolePlayers: selections.map((selection) => ({
       roleType: selection.roleType,
       selectionSource: selection.selectionSource,
+      assignmentStatus: selection.assignmentStatus,
+      activationTrigger: selection.activationTrigger,
       partnerOrganisationId: selection.organisationId || null,
       partnerRelationshipId: selection.relationshipId || null,
       partnerName: selection.companyName || selection.contactPerson || null,
@@ -22248,6 +22259,208 @@ export async function saveTransactionRoleplayerSelections({
   return fetchTransactionById(transactionId)
 }
 
+export async function reassignDeclinedTransferAttorneyInstruction({
+  transactionId,
+  replacement = {},
+  reason = '',
+  actorRole = null,
+} = {}) {
+  const normalizedTransactionId = normalizeNullableUuid(transactionId)
+  if (!normalizedTransactionId) throw new Error('Transaction is required.')
+
+  const client = requireClient()
+  const actorProfile = await resolveActiveProfileContext(client)
+  const normalizedActorRole = normalizeRoleType(actorRole || actorProfile.role || 'agent')
+  if (!['agent', 'agency_admin', 'developer', 'internal_admin', 'admin'].includes(normalizedActorRole)) {
+    throw new Error('Your role does not have permission to reassign the transfer attorney.')
+  }
+
+  const transaction = await fetchTransactionRowById(client, normalizedTransactionId)
+  if (!transaction?.id) throw new Error('Transaction not found.')
+  if (!isTransactionSignedOtpReadyForRoleplayerReplay(transaction)) {
+    throw new Error('A replacement transfer instruction can only be issued after the signed OTP is received.')
+  }
+
+  const assignmentQuery = await client
+    .from('transaction_attorney_assignments')
+    .select('id, attorney_role, assignment_type, matter_type, instruction_status, assignment_status, status')
+    .eq('transaction_id', normalizedTransactionId)
+  if (assignmentQuery.error && !isMissingTableError(assignmentQuery.error, 'transaction_attorney_assignments')) {
+    throw assignmentQuery.error
+  }
+  const declinedTransferAssignment = (assignmentQuery.data || []).find((assignment) => {
+    const transfer =
+      assignment.attorney_role === 'transfer_attorney' ||
+      ['transfer', 'transfer_and_bond'].includes(assignment.assignment_type || assignment.matter_type)
+    return transfer && ['declined', 'removed'].includes(normalizeTextValue(assignment.instruction_status || assignment.assignment_status || assignment.status).toLowerCase())
+  })
+  if (!declinedTransferAssignment) {
+    throw new Error('This transaction does not have a declined transfer instruction to reassign.')
+  }
+
+  const selection = normalizeTransactionRoleplayerSelection({
+    ...replacement,
+    roleType: 'transfer_attorney',
+    selectionSource: 'agent_reassignment',
+    assignmentStatus: 'active',
+    activationTrigger: 'immediate',
+  })
+  if (!selection) throw new Error('Select a valid replacement transfer attorney.')
+
+  const existingRoleplayers = await fetchTransactionRolePlayersIfPossible(client, normalizedTransactionId)
+  const existingActiveTransferAttorney = existingRoleplayers.find((roleplayer) => {
+    const status = normalizeTextValue(roleplayer.assignmentStatus || roleplayer.status).toLowerCase()
+    return roleplayer.roleType === 'transfer_attorney' && !['removed', 'declined', 'rejected'].includes(status)
+  })
+  if (existingActiveTransferAttorney) {
+    throw new Error('This transaction already has an active transfer attorney selection.')
+  }
+  const sameDeclinedAttorney = existingRoleplayers.some((roleplayer) => {
+    const removed = ['removed', 'declined', 'rejected'].includes(normalizeTextValue(roleplayer.assignmentStatus || roleplayer.status).toLowerCase())
+    if (!removed || roleplayer.roleType !== 'transfer_attorney') return false
+    return (
+      (selection.organisationId && selection.organisationId === roleplayer.organisationId) ||
+      (selection.email && selection.email === normalizeEmailAddress(roleplayer.emailAddress))
+    )
+  })
+  if (sameDeclinedAttorney) {
+    throw new Error('Choose a different transfer attorney from the firm that declined the instruction.')
+  }
+
+  const savedRows = await upsertTransactionRoleplayerSelection(client, {
+    transactionId: normalizedTransactionId,
+    selection,
+    actorProfile,
+  })
+  if (!savedRows?.length) throw new Error('Unable to save the replacement transfer attorney.')
+
+  const nowIso = new Date().toISOString()
+  await updateRecordByIdWithMissingColumnFallback(
+    client,
+    'transactions',
+    normalizedTransactionId,
+    {
+      attorney: selection.companyName || selection.contactPerson || null,
+      assigned_attorney_email: selection.email || null,
+      current_main_stage: 'ATT',
+      attorney_stage: 'instruction_sent',
+      next_action: 'Replacement transfer instruction sent. Awaiting attorney acceptance.',
+      comment: normalizeNullableText(reason) || 'Replacement transfer attorney selected after the original firm declined.',
+      last_meaningful_activity_at: nowIso,
+      updated_at: nowIso,
+    },
+    'id',
+  )
+
+  await propagateTransactionRoleplayersIfPossible(client, {
+    transactionId: normalizedTransactionId,
+    transaction: {
+      ...transaction,
+      attorney: selection.companyName || selection.contactPerson || null,
+      assigned_attorney_email: selection.email || null,
+    },
+    rolePlayers: [{
+      roleType: 'transfer_attorney',
+      selectionSource: 'agent_reassignment',
+      assignmentStatus: 'active',
+      activationTrigger: 'immediate',
+      partnerOrganisationId: selection.organisationId || null,
+      partnerRelationshipId: selection.relationshipId || null,
+      partnerName: selection.companyName || selection.contactPerson || null,
+      contactPerson: selection.contactPerson || selection.companyName || null,
+      email: selection.email || null,
+      phone: selection.phone || null,
+      userId: selection.userId || null,
+      snapshot: {
+        ...(selection.snapshot || {}),
+        source: 'declined_transfer_instruction_reassignment',
+        replacementReason: normalizeNullableText(reason),
+        previousAssignmentId: declinedTransferAssignment.id || null,
+      },
+    }],
+    actorProfile,
+    actorRole: normalizedActorRole,
+    buyerId: transaction.buyer_id || null,
+    financeType: transaction.finance_type || 'cash',
+  })
+
+  await syncAttorneyIncomingInstructionStatus(client, {
+    transactionId: normalizedTransactionId,
+    status: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance,
+    occurredAt: nowIso,
+    source: 'declined_transfer_instruction_reassignment',
+  })
+
+  if (transaction.listing_id && transaction.organisation_id) {
+    await insertRecordWithMissingColumnFallback(
+      client,
+      'private_listing_role_players',
+      {
+        organisation_id: transaction.organisation_id,
+        private_listing_id: transaction.listing_id,
+        role_type: 'transfer_attorney',
+        partner_organisation_id: selection.organisationId || null,
+        company_name: selection.companyName || selection.contactPerson,
+        contact_person: selection.contactPerson || selection.companyName || null,
+        email_address: selection.email || null,
+        phone_number: selection.phone || null,
+        selection_source: 'agency_recommended',
+        allocation_status: 'instructed',
+        selected_by: actorProfile.userId || null,
+        selected_at: nowIso,
+        transaction_id: normalizedTransactionId,
+        instructed_at: nowIso,
+        instruction_source: 'declined_transfer_instruction_reassignment',
+        metadata: {
+          replacementReason: normalizeNullableText(reason),
+          previousAssignmentId: declinedTransferAssignment.id || null,
+          replacementSelectionSource: 'agent_reassignment',
+        },
+        created_at: nowIso,
+        updated_at: nowIso,
+      },
+      'id',
+    )
+  }
+
+  await logTransactionEventIfPossible(client, {
+    transactionId: normalizedTransactionId,
+    eventType: 'transfer_attorney_reassigned',
+    createdBy: actorProfile.userId || null,
+    createdByRole: normalizedActorRole,
+    eventData: {
+      source: 'declined_transfer_instruction_reassignment',
+      previousAssignmentId: declinedTransferAssignment.id || null,
+      replacementOrganisationId: selection.organisationId || null,
+      replacementName: selection.companyName || selection.contactPerson || null,
+      replacementEmail: selection.email || null,
+      reason: normalizeNullableText(reason),
+    },
+  })
+
+  try {
+    await notifyRolesForTransaction(client, {
+      transactionId: normalizedTransactionId,
+      roleTypes: ['attorney', 'agent', 'seller'],
+      title: 'Replacement transfer instruction issued',
+      message: `${selection.companyName || selection.contactPerson || 'The replacement attorney'} received the transfer instruction and must accept the matter.`,
+      notificationType: 'lane_handoff',
+      eventType: 'TransactionUpdated',
+      eventData: {
+        source: 'declined_transfer_instruction_reassignment',
+        replacementName: selection.companyName || selection.contactPerson || null,
+      },
+      dedupePrefix: 'replacement-transfer-instruction',
+      excludeUserId: actorProfile.userId || null,
+    })
+    await sendRoleplayerHandoffEmailForOnboarding(client, { transactionId: normalizedTransactionId })
+  } catch (notificationError) {
+    console.warn('Replacement transfer instruction notification skipped', notificationError)
+  }
+
+  return fetchTransactionById(normalizedTransactionId)
+}
+
 export async function saveAttorneyMatterParty({ transactionId, party = {}, actorRole = 'attorney' } = {}) {
   const normalizedTransactionId = normalizeNullableUuid(transactionId)
   if (!normalizedTransactionId) throw new Error('A linked matter is required before this party can be saved to the matter.')
@@ -22306,6 +22519,22 @@ export async function recordBuyerOnboardingSent({ transactionId, actorRole = nul
   const client = requireClient()
   const actorProfile = await resolveActiveProfileContext(client)
   const normalizedActorRole = normalizeRoleType(actorRole || actorProfile.role || 'agent')
+  const selectedBondOriginator = roleplayers.find((roleplayer) =>
+    normalizeRoleType(roleplayer?.roleType || roleplayer?.role_type) === 'bond_originator',
+  )
+  if (selectedBondOriginator) {
+    await updateRecordByIdWithMissingColumnFallback(
+      client,
+      'transactions',
+      transactionId,
+      {
+        bond_assignment_status: 'awaiting_buyer_onboarding',
+        bond_assignment_source: 'buyer_onboarding_send',
+        updated_at: new Date().toISOString(),
+      },
+      'id, bond_assignment_status, bond_assignment_source, updated_at',
+    )
+  }
   await logTransactionEventIfPossible(client, {
     transactionId,
     eventType: 'buyer_onboarding_sent',
@@ -23172,15 +23401,15 @@ export async function resolveBuyerAppointedBondOriginatorRequest({
 
 async function activateSelectedAttorneyRoleplayersForOnboarding(client, { transaction, financeType, buyer = null, formData = {}, source = 'buyer_onboarding_completed', createdByRole = 'client' } = {}) {
   const transactionId = normalizeTextValue(transaction?.id || transaction?.transaction_id)
-  if (!transactionId || !isBondActivationRequestedForOnboarding({ financeType, formData, transaction })) {
+  if (!transactionId) {
     return []
   }
 
   const rolePlayers = await fetchTransactionRolePlayersIfPossible(client, transactionId)
-  const selectedAttorneyRoleplayers = rolePlayers.filter((item) => {
-    const status = normalizeTextValue(item.assignmentStatus || item.status).toLowerCase()
-    return ['transfer_attorney', 'bond_attorney'].includes(item.roleType) && !['removed', 'declined', 'rejected'].includes(status)
-  })
+  const bondActivationRequested = isBondActivationRequestedForOnboarding({ financeType, formData, transaction })
+  const selectedAttorneyRoleplayers = rolePlayers.filter((item) =>
+    shouldActivateAttorneyRoleplayerAtSignedOtp(item, { bondActivationRequested }),
+  )
 
   const now = new Date().toISOString()
   const activated = []
@@ -23237,6 +23466,55 @@ async function activateSelectedAttorneyRoleplayersForOnboarding(client, { transa
   }
 
   return activated
+}
+
+async function promoteMandateTransferAttorneyAllocationToInstruction(client, {
+  transaction,
+  source = 'signed_otp_received',
+} = {}) {
+  const transactionId = normalizeNullableUuid(transaction?.id || transaction?.transaction_id)
+  const listingId = normalizeNullableUuid(
+    transaction?.listing_id || transaction?.listingId || transaction?.private_listing_id || transaction?.privateListingId,
+  )
+  if (!transactionId || !listingId) return { updatedCount: 0, reason: 'missing_transaction_or_listing' }
+
+  const allocationsQuery = await client
+    .from('private_listing_role_players')
+    .select('*')
+    .eq('private_listing_id', listingId)
+    .eq('role_type', 'transfer_attorney')
+    .in('allocation_status', ['awaiting_buyer', 'under_offer', 'instructed'])
+
+  if (allocationsQuery.error) {
+    if (
+      isMissingTableError(allocationsQuery.error, 'private_listing_role_players') ||
+      isPermissionDeniedError(allocationsQuery.error)
+    ) {
+      return { updatedCount: 0, reason: 'allocation_unavailable' }
+    }
+    throw allocationsQuery.error
+  }
+
+  const instructedAt = new Date().toISOString()
+  let updatedCount = 0
+  for (const allocation of allocationsQuery.data || []) {
+    const updated = await updateRecordByIdWithMissingColumnFallback(
+      client,
+      'private_listing_role_players',
+      allocation.id,
+      {
+        allocation_status: 'instructed',
+        transaction_id: transactionId,
+        instructed_at: allocation.instructed_at || instructedAt,
+        instruction_source: allocation.instruction_source || source,
+        updated_at: instructedAt,
+      },
+      'id, allocation_status, transaction_id, instructed_at, instruction_source, updated_at',
+    )
+    if (updated?.length) updatedCount += 1
+  }
+
+  return { updatedCount, transactionId, listingId, instructedAt }
 }
 
 async function sendBuyerRoleplayerIntroEmailForOnboarding(client, { transaction, buyer = null } = {}) {
@@ -33702,13 +33980,35 @@ export async function acceptAttorneyIncomingMatterInstruction({
 } = {}) {
   const client = requireClient()
   const actorUserId = await getCurrentSupabaseUserId(client)
-  return acceptAttorneyIncomingInstructionService(client, {
+  const result = await acceptAttorneyIncomingInstructionService(client, {
     assignmentId,
     transactionId,
     actorUserId,
     note,
     source: 'attorney_incoming_queue',
   })
+  if (result?.transactionId && !result?.alreadyAccepted) {
+    try {
+      await notifyRolesForTransaction(client, {
+        transactionId: result.transactionId,
+        roleTypes: ['agent', 'developer', 'seller'],
+        title: 'Transfer instruction accepted',
+        message: 'The transferring attorney accepted the instruction and the active transfer matter has started.',
+        notificationType: 'lane_handoff',
+        eventType: 'TransactionUpdated',
+        eventData: {
+          source: 'attorney_incoming_queue',
+          decision: 'accepted',
+          assignmentId: result.assignment?.id || assignmentId || null,
+        },
+        dedupePrefix: 'transfer-instruction-accepted',
+        excludeUserId: actorUserId || null,
+      })
+    } catch (notificationError) {
+      console.warn('Transfer instruction acceptance notification skipped', notificationError)
+    }
+  }
+  return result
 }
 
 export async function declineAttorneyIncomingMatterInstruction({
@@ -33718,13 +34018,38 @@ export async function declineAttorneyIncomingMatterInstruction({
 } = {}) {
   const client = requireClient()
   const actorUserId = await getCurrentSupabaseUserId(client)
-  return declineAttorneyIncomingInstructionService(client, {
+  const result = await declineAttorneyIncomingInstructionService(client, {
     assignmentId,
     transactionId,
     actorUserId,
     reason,
     source: 'attorney_incoming_queue',
   })
+  if (result?.transactionId && !result?.alreadyDeclined) {
+    try {
+      await notifyRolesForTransaction(client, {
+        transactionId: result.transactionId,
+        roleTypes: ['agent', 'developer'],
+        title: 'Transfer attorney reassignment required',
+        message: reason
+          ? `The transferring attorney declined the instruction: ${reason}`
+          : 'The transferring attorney declined the instruction. Select a replacement attorney.',
+        notificationType: 'lane_handoff',
+        eventType: 'TransactionUpdated',
+        eventData: {
+          source: 'attorney_incoming_queue',
+          decision: 'declined',
+          reason: normalizeNullableText(reason),
+          assignmentId: result.assignment?.id || assignmentId || null,
+        },
+        dedupePrefix: 'transfer-instruction-declined',
+        excludeUserId: actorUserId || null,
+      })
+    } catch (notificationError) {
+      console.warn('Transfer instruction decline notification skipped', notificationError)
+    }
+  }
+  return result
 }
 
 async function resolveTransactionAndContext(client, transactionId) {
@@ -39142,14 +39467,26 @@ async function triggerPostSigningWorkflowIfNeeded(
   })
 
   let activation = null
+  let attorneyActivation = []
+  let mandateAllocationPromotion = null
   try {
-    await activateSelectedAttorneyRoleplayersForOnboarding(client, {
+    attorneyActivation = await activateSelectedAttorneyRoleplayersForOnboarding(client, {
       transaction,
       financeType: normalizedFinanceType,
       buyer,
       formData: onboardingFormData,
       source: 'signed_otp_received',
       createdByRole: actorRole,
+    })
+    await syncAttorneyIncomingInstructionStatus(client, {
+      transactionId: normalizedTransactionId,
+      status: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance,
+      occurredAt: new Date().toISOString(),
+      source: 'signed_otp_attorney_activation',
+    })
+    mandateAllocationPromotion = await promoteMandateTransferAttorneyAllocationToInstruction(client, {
+      transaction,
+      source: 'signed_otp_received',
     })
     activation = await activateSelectedBondOriginatorForOnboarding(client, {
       transaction,
@@ -39271,6 +39608,8 @@ async function triggerPostSigningWorkflowIfNeeded(
     financeManagedBy,
     originatorManagedFinance,
     activation,
+    attorneyActivation,
+    mandateAllocationPromotion,
     stageResult,
   }
 }

@@ -67,7 +67,7 @@ const COMPLETED_DOCUMENT_STATUSES = new Set(['uploaded', 'under_review', 'approv
 const APPROVED_DOCUMENT_STATUSES = new Set(['approved', 'accepted', 'completed'])
 const REJECTED_DOCUMENT_STATUSES = new Set(['rejected', 'declined', 'failed', 'reupload_required', 'needs_reupload'])
 const NOT_REQUIRED_DOCUMENT_STATUSES = new Set(['waived', 'not_required', 'not_applicable'])
-const ACTIVE_ROLE_PLAYER_STATUSES = new Set(['', 'active', 'assigned', 'in_progress', 'started', 'current'])
+const ACTIVE_ROLE_PLAYER_STATUSES = new Set(['', 'selected', 'pending', 'active', 'assigned', 'in_progress', 'started', 'current'])
 const ACCEPTED_ASSIGNMENT_STATUSES = new Set(['workspace_assigned', 'consultant_assigned', 'processor_assigned', 'fully_assigned'])
 const DECLINED_MARKER_VALUES = new Set(['declined', 'rejected', 'not_accepted', 'intake_declined'])
 const ACCEPTED_MARKER_VALUES = new Set(['accepted', 'intake_accepted', 'ready_accepted', 'assigned'])
@@ -672,6 +672,17 @@ function hasAcceptedAssignment(input = {}) {
 
 export function getBondIntakeStatus(input = {}) {
   const transaction = input.transaction || {}
+  const assignmentStatus = normalizeLower(transaction.bond_assignment_status || transaction.bondAssignmentStatus)
+  const hasOnboardingHandoff = ['awaiting_buyer_onboarding', 'buyer_onboarding_sent'].includes(assignmentStatus)
+    && getRolePlayers(input).some((rolePlayer) => rolePlayerIsBondOriginator(rolePlayer, input.currentOrganisationId))
+    && !isBuyerOnboardingComplete(input)
+
+  if (hasOnboardingHandoff) {
+    return getBondApplicationProgress(input).status === BOND_APPLICATION_PROGRESS_STATUSES.IN_PROGRESS
+      ? BOND_INTAKE_STATUSES.BUYER_IN_PROGRESS
+      : BOND_INTAKE_STATUSES.AWAITING_BUYER_APPLICATION
+  }
+
   if (!isOriginatorManagedBondFinance(transaction, input.onboardingFormData)) {
     return BOND_INTAKE_STATUSES.NOT_BOND_RELEVANT
   }

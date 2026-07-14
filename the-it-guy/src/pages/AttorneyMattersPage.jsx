@@ -94,9 +94,11 @@ const STATUS_STYLES = {
   'Awaiting Signed OTP': 'bg-orange-50 text-orange-700',
   'Awaiting Documents': 'bg-blue-50 text-blue-700',
   'Ready For Acceptance': 'bg-violet-50 text-violet-700',
+  'Awaiting Buyer': 'bg-amber-50 text-amber-700',
 }
 
 const WAITING_ON_STYLES = {
+  Buyer: 'border-amber-200 bg-amber-50 text-amber-700',
   'Buyer onboarding': 'border-slate-200 bg-slate-50 text-slate-700',
   'Signed OTP': 'border-orange-200 bg-orange-50 text-orange-700',
   Documents: 'border-blue-200 bg-blue-50 text-blue-700',
@@ -114,6 +116,7 @@ const QUICK_FILTER_ICONS = {
   awaiting_signed_otp: ClipboardCheck,
   awaiting_documents: FileText,
   ready_for_acceptance: CheckCircle2,
+  awaiting_buyer: UsersRound,
   document_blockers: AlertTriangle,
   delayed: AlertTriangle,
   due_for_registration: Flag,
@@ -297,6 +300,7 @@ function MatterWorkspaceHeader({ summary, view, onSaveView }) {
   const primaryMetricValue = summary[primaryMetricKey] ?? summary.activeMatters
   const legend = activeView.usesIncomingQueue
     ? [
+        { label: 'Awaiting Buyer', value: summary.awaitingBuyer, dot: 'bg-amber-400' },
         { label: 'Awaiting Signed OTP', value: summary.awaitingSignedOtp, dot: 'bg-orange-400' },
         { label: 'Awaiting Documents', value: summary.awaitingDocuments, dot: 'bg-blue-500' },
         { label: 'Ready For Acceptance', value: summary.readyForAcceptance, dot: 'bg-violet-500' },
@@ -591,6 +595,7 @@ function canAcceptIncomingMatter(row = {}) {
 }
 
 function canDeclineIncomingMatter(row = {}) {
+  if (row.isPreInstruction) return false
   return !['accepted', 'declined', 'removed', 'completed'].includes(normalize(row.statusKey || row.status))
 }
 
@@ -606,7 +611,11 @@ function IncomingRowActions({ row, onAcceptMatter, onDeclineMatter, accepting = 
         <MoreHorizontal size={17} />
       </summary>
       <div className="absolute right-0 z-20 mt-2 w-56 rounded-xl border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-xl">
-        <Link className="block rounded-lg px-3 py-2 hover:bg-slate-50" to={href} state={{ matterPreview: preview }}>Open Transfer</Link>
+        {row.actionHref ? (
+          <Link className="block rounded-lg px-3 py-2 hover:bg-slate-50" to={href} state={{ matterPreview: preview }}>
+            {row.isPreInstruction ? 'Open Signed Mandate' : 'Open Transfer'}
+          </Link>
+        ) : null}
         {readyForAcceptance ? (
           <button
             type="button"
@@ -627,10 +636,16 @@ function IncomingRowActions({ row, onAcceptMatter, onDeclineMatter, accepting = 
             {declining ? 'Declining Transfer' : 'Decline Transfer'}
           </button>
         ) : null}
-        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Follow Up OTP</button>
-        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Request Documents</button>
-        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Assign Attorney</button>
-        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Email Client</button>
+        {row.isPreInstruction ? (
+          <p className="px-3 py-2 text-xs font-medium leading-5 text-slate-500">Formal instruction actions unlock after an accepted OTP.</p>
+        ) : (
+          <>
+            <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Follow Up OTP</button>
+            <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Request Documents</button>
+            <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Assign Attorney</button>
+            <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Email Client</button>
+          </>
+        )}
       </div>
     </details>
   )
@@ -786,9 +801,17 @@ function IncomingMattersTable({
                           {accepting ? 'Accepting' : 'Accept Transfer'}
                         </button>
                       ) : null}
-                      <Link to={href} state={{ matterPreview: preview }} onClick={(event) => event.stopPropagation()} className="text-xs font-semibold text-[#00614f]">Open Transfer</Link>
-                      <button type="button" onClick={(event) => event.stopPropagation()} className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Documents</button>
-                      <button type="button" onClick={(event) => event.stopPropagation()} className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Email Client</button>
+                      {row.actionHref ? (
+                        <Link to={href} state={{ matterPreview: preview }} onClick={(event) => event.stopPropagation()} className="text-xs font-semibold text-[#00614f]">
+                          {row.isPreInstruction ? 'Open Mandate' : 'Open Transfer'}
+                        </Link>
+                      ) : null}
+                      {!row.isPreInstruction ? (
+                        <>
+                          <button type="button" onClick={(event) => event.stopPropagation()} className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Documents</button>
+                          <button type="button" onClick={(event) => event.stopPropagation()} className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Email Client</button>
+                        </>
+                      ) : null}
                     </div>
                   </td>
                   <td className="px-4 py-3">
@@ -806,17 +829,17 @@ function IncomingMattersTable({
                           <CheckCircle2 size={14} />
                           {accepting ? 'Accepting' : 'Accept Transfer'}
                         </button>
-                      ) : (
+                      ) : row.actionHref ? (
                         <Link
                           to={href}
                           state={{ matterPreview: preview }}
                           onClick={(event) => event.stopPropagation()}
                           className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#00463d] px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-[#00614f]"
                         >
-                          Open Transfer
+                          {row.isPreInstruction ? 'Open Mandate' : 'Open Transfer'}
                           <ArrowRight size={14} />
                         </Link>
-                      )}
+                      ) : null}
                       {readyForAcceptance ? (
                         <Link
                           to={href}
@@ -1273,12 +1296,17 @@ function AttorneyMattersPage() {
 
     setIncomingAction({ pendingId: assignmentId || transactionId, kind: 'accept', error: '' })
     try {
-      await acceptAttorneyIncomingMatterInstruction({
+      const result = await acceptAttorneyIncomingMatterInstruction({
         assignmentId,
         transactionId,
       })
       await refreshIncomingWorkspaceAfterDecision(row)
       setIncomingAction({ pendingId: '', error: '' })
+      if (result?.actionHref) {
+        navigate(result.actionHref, {
+          state: { instructionAccepted: true },
+        })
+      }
     } catch (actionError) {
       setIncomingAction({
         pendingId: '',

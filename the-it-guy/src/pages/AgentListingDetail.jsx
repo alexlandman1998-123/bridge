@@ -3596,46 +3596,24 @@ function AgentListingDetail() {
           offerInviteDraft.clientIntakePreference,
       )
       const intakeLabel = getClientIntakePreferenceLabel(intakePreference)
-      let onboardingSendWarning = ''
-      let manualHandoff = false
-      if (transactionId && isSupabaseConfigured) {
-        const onboardingEmail = await invokeEdgeFunction('send-email', {
-          body: {
-            type: 'client_onboarding',
-            transactionId,
-            source: 'accepted_offer_conversion',
-            deliveryMode: intakePreference,
-          },
-        })
-        manualHandoff = onboardingEmail?.data?.manualHandoff === true
-        const onboardingEmailError = onboardingEmail?.error || onboardingEmail?.data?.error
-        if (onboardingEmailError) {
-          onboardingSendWarning = typeof onboardingEmailError === 'string'
-            ? onboardingEmailError
-            : onboardingEmailError?.message || 'Buyer onboarding email could not be sent.'
-        }
-      }
       if (transactionId) {
         await recordBuyerLeadActivity({
           organisationId: listingOrganisationId,
           leadId: acceptedOffer?.buyerLeadId || canonicalOffer?.buyerLeadId || linkedLead?.leadId,
-          activityType: reusedTransaction ? 'Buyer Onboarding Resent' : 'Buyer Onboarding Sent',
-          activityNote: onboardingSendWarning
-            ? `${manualHandoff ? `${intakeLabel} onboarding prepared` : 'Buyer onboarding delivery attempted'} for transaction ${transactionId}, but delivery needs attention: ${onboardingSendWarning}`
-            : manualHandoff
-              ? `${reusedTransaction ? 'Manual onboarding pack reopened' : 'Manual onboarding pack prepared'} for transaction ${transactionId} via ${intakeLabel}.`
-              : `${reusedTransaction ? 'Buyer onboarding resent' : 'Buyer onboarding sent'} for transaction ${transactionId}.`,
-          outcome: onboardingSendWarning ? 'Delivery Warning' : 'Sent',
+          activityType: reusedTransaction ? 'Buyer Onboarding Prepared' : 'Transaction Created',
+          activityNote: `${reusedTransaction ? 'Existing transaction reopened' : 'Transaction created'} for ${intakeLabel}. Confirm the preferred bond originator before sending buyer onboarding.`,
+          outcome: 'Roleplayer Confirmation Required',
           actor: getCanonicalOfferActor(),
         }).catch(() => null)
       }
       setOfferNotesDraftById((previous) => ({ ...previous, [offerRow.id]: '' }))
-      setOfferActionMessage(onboardingSendWarning
-        ? `${reusedTransaction ? 'Buyer onboarding resend attempted' : 'Transaction created from accepted canonical offer'}. ${onboardingSendWarning}`
-        : reusedTransaction
-          ? 'Buyer onboarding was resent for the existing transaction.'
-          : 'Transaction created from accepted canonical offer and buyer onboarding was sent.')
+      setOfferActionMessage('Transaction ready. Confirm the preferred bond originator before sending buyer onboarding.')
       setOffersRefreshTick((value) => value + 1)
+      if (transactionId) {
+        navigate(`/transactions/${transactionId}`, {
+          state: { openBuyerOnboardingRoleplayers: true },
+        })
+      }
     } catch (error) {
       setOfferActionError(error?.message || 'Unable to create a transaction from this offer.')
     } finally {
@@ -7537,8 +7515,8 @@ function AgentListingDetail() {
                             onClick={() => void handleCanonicalListingOfferConversion(offer)}
                           >
                             {normalizeOfferWorkflowStatus(offer.status) === OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION
-                              ? 'Resend Buyer Onboarding'
-                              : 'Create Transaction & Send Onboarding'}
+                              ? 'Confirm Originator & Send Onboarding'
+                              : 'Create Transaction & Choose Originator'}
                           </Button>
                         ) : null}
                         {offer.buyerLeadId ? (

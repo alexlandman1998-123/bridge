@@ -62,6 +62,15 @@ function buildReadinessChecks(draft = {}) {
         : hasAnyDraftValue(draft, ['commissionPercent']),
       missing: commissionStructure === 'fixed' ? 'Fixed amount' : 'Percentage',
     },
+    {
+      key: 'transfer_attorney',
+      label: 'Transfer attorney',
+      complete: Boolean(
+        getFieldValue(draft, 'transferAttorneyPreferredPartnerId') ||
+        draft.transferAttorneySelectionDeferred,
+      ),
+      missing: 'Select or defer',
+    },
   ]
 }
 
@@ -126,6 +135,13 @@ export default function MandateDraftIntakePanel({
   draft = {},
   sourceMode = '',
   documentStart = '',
+  preferredAttorneys = [],
+  preferredAttorneysLoading = false,
+  preferredAttorneysError = '',
+  selectedAttorneyId = '',
+  attorneySelectionDeferred = false,
+  onAttorneyChange = null,
+  onAttorneySelectionDeferredChange = null,
   onConfirm = null,
   onEditSellerDetails = null,
 }) {
@@ -149,6 +165,10 @@ export default function MandateDraftIntakePanel({
     scenarioProfile,
     draft: { ...draft, propertyTitleType },
   })
+  const selectedAttorney = attorneySelectionDeferred
+    ? null
+    : preferredAttorneys.find((attorney) => String(attorney.id) === String(selectedAttorneyId)) || null
+  const attorneyReady = Boolean(selectedAttorneyId || attorneySelectionDeferred)
 
   return (
     <section className="mb-5 rounded-[24px] border border-[#dbe7f4] bg-white p-4 shadow-[0_14px_34px_rgba(16,32,51,0.05)] sm:p-5">
@@ -180,7 +200,7 @@ export default function MandateDraftIntakePanel({
               Edit in Seller
             </Button>
           ) : null}
-          <Button type="button" onClick={onConfirm}>
+          <Button type="button" onClick={onConfirm} disabled={!attorneyReady}>
             <CheckCircle2 size={15} />
             Looks good
           </Button>
@@ -226,6 +246,57 @@ export default function MandateDraftIntakePanel({
             )
           })}
         </div>
+      </div>
+
+      <div className="mt-4 rounded-[18px] border border-[#dbe7f4] bg-[#fbfdff] p-4">
+        <div className="grid gap-4 lg:grid-cols-[1fr_0.8fr] lg:items-end">
+          <label className="block">
+            <span className="text-sm font-semibold text-[#243b53]">Seller's transferring attorney</span>
+            <span className="mt-1 block text-xs leading-5 text-[#6b7d93]">
+              Select the attorney allocated under this mandate. The formal transfer instruction remains inactive until a buyer and accepted OTP exist.
+            </span>
+            <select
+              className="mt-2 h-11 w-full rounded-[12px] border border-[#d7e1ec] bg-white px-3 text-sm text-[#142132] outline-none focus:border-[#2f6fed] focus:ring-2 focus:ring-[#2f6fed]/15 disabled:cursor-not-allowed disabled:bg-[#f4f7fa]"
+              value={attorneySelectionDeferred ? '' : selectedAttorneyId}
+              disabled={preferredAttorneysLoading || attorneySelectionDeferred}
+              onChange={(event) => onAttorneyChange?.(event.target.value)}
+            >
+              <option value="">{preferredAttorneysLoading ? 'Loading preferred attorneys…' : 'Select transfer attorney'}</option>
+              {preferredAttorneys.map((attorney) => (
+                <option key={attorney.id} value={attorney.id}>
+                  {attorney.companyName}{attorney.contactPerson ? ` · ${attorney.contactPerson}` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="rounded-[14px] border border-[#e6edf7] bg-white px-4 py-3 text-sm text-[#607387]">
+            {selectedAttorney ? (
+              <>
+                <p className="font-semibold text-[#142132]">{selectedAttorney.companyName}</p>
+                <p className="mt-1">{selectedAttorney.contactPerson || 'Contact pending'}</p>
+                <p className="mt-1">{selectedAttorney.email || 'No email'}{selectedAttorney.phone ? ` · ${selectedAttorney.phone}` : ''}</p>
+              </>
+            ) : preferredAttorneysError ? (
+              <p className="font-semibold text-[#a33b2f]">{preferredAttorneysError}</p>
+            ) : preferredAttorneys.length ? (
+              <p>Select the attorney that should receive this listing after signature.</p>
+            ) : (
+              <p>No preferred transfer attorneys are configured. Add one under Organisation → Partners, or defer the selection.</p>
+            )}
+          </div>
+        </div>
+        <label className="mt-3 flex items-start gap-3 rounded-[14px] border border-[#e6edf7] bg-white px-4 py-3 text-sm text-[#455d75]">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={attorneySelectionDeferred}
+            onChange={(event) => onAttorneySelectionDeferredChange?.(event.target.checked)}
+          />
+          <span>
+            <strong className="block text-[#243b53]">Seller will nominate the transferring attorney later</strong>
+            Use this exception only when the mandate does not yet authorise an allocation. The listing will require attorney selection before instruction.
+          </span>
+        </label>
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">

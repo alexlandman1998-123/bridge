@@ -4,7 +4,7 @@ import { getAttorneyIncomingMatterQueue } from './attorneyIncomingMatterQueue'
 export const ATTORNEY_MATTER_PAGE_SIZES = [20, 50, 100]
 
 const STAGE_STEPS = ['Instruction', 'Documents', 'Signing', 'Finance', 'Lodgement', 'Registration']
-const INCOMING_STAGE_STEPS = ['Onboarding', 'OTP', 'Documents', 'Acceptance']
+const INCOMING_STAGE_STEPS = ['Buyer', 'Onboarding', 'OTP', 'Documents', 'Acceptance']
 
 const STATUS_FILTERS = [
   { key: 'all', label: 'All' },
@@ -16,6 +16,7 @@ const STATUS_FILTERS = [
 
 const INCOMING_STATUS_FILTERS = [
   { key: 'all', label: 'All' },
+  { key: 'awaiting_buyer', label: 'Awaiting Buyer' },
   { key: 'awaiting_signed_otp', label: 'Awaiting Signed OTP' },
   { key: 'awaiting_documents', label: 'Awaiting Documents' },
   { key: 'ready_for_acceptance', label: 'Ready For Acceptance' },
@@ -41,6 +42,7 @@ const QUICK_FILTERS = [
 ]
 
 const INCOMING_QUICK_FILTERS = [
+  { key: 'awaiting_buyer', label: 'Awaiting Buyer', query: { status: 'awaiting_buyer' } },
   { key: 'awaiting_signed_otp', label: 'Awaiting OTP', query: { status: 'awaiting_signed_otp' } },
   { key: 'awaiting_documents', label: 'Awaiting Documents', query: { status: 'awaiting_documents' } },
   { key: 'ready_for_acceptance', label: 'Ready For Acceptance', query: { status: 'ready_for_acceptance' } },
@@ -58,6 +60,7 @@ const SAVED_VIEWS = [
 ]
 
 const INCOMING_SAVED_VIEWS = [
+  { id: 'incoming-awaiting-buyer', name: 'Awaiting Buyer', filters: { status: 'awaiting_buyer' } },
   { id: 'incoming-awaiting-otp', name: 'Awaiting OTP', filters: { status: 'awaiting_signed_otp' } },
   { id: 'incoming-awaiting-documents', name: 'Awaiting Documents', filters: { status: 'awaiting_documents' } },
   { id: 'incoming-ready-for-acceptance', name: 'Ready For Acceptance', filters: { status: 'ready_for_acceptance' } },
@@ -77,7 +80,7 @@ const ATTORNEY_MATTER_VIEW_CONFIGS = {
   active: {
     key: 'active',
     title: 'Incoming Matters',
-    description: 'Transfer instructions received by the firm before they become active matters.',
+    description: 'Allocated mandates and transfer instructions received by the firm before they become active matters.',
     primaryMetric: 'incomingMatters',
     primaryMetricLabel: 'Incoming Matters',
     itemLabel: 'incoming matters',
@@ -147,6 +150,10 @@ const ATTORNEY_MATTER_VIEW_CONFIGS = {
 
 function normalize(value = '') {
   return String(value || '').trim().toLowerCase()
+}
+
+function isIncomingQueueRow(row = {}) {
+  return ['incoming', 'pre_instruction'].includes(row.rowKind)
 }
 
 function getAttorneyMatterViewConfig(view = 'all') {
@@ -247,12 +254,14 @@ function getMatterTypeLabel(matter = {}) {
 function getIncomingMatterStage(row = {}) {
   const status = normalize(row.status)
   const index = status === 'ready_for_acceptance'
-    ? 3
+    ? 4
     : status === 'awaiting_documents'
-      ? 2
+      ? 3
       : status === 'awaiting_signed_otp'
-        ? 1
-        : 0
+        ? 2
+        : status === 'awaiting_client_onboarding'
+          ? 1
+          : 0
 
   return {
     key: normalize(INCOMING_STAGE_STEPS[index]),
@@ -284,9 +293,12 @@ function normalizeIncomingMatterRow(row = {}, { currentUser = {} } = {}) {
   const statusKey = row.status || ''
 
   const nextRow = {
-    rowKind: 'incoming',
-    incomingSortRank: statusKey === 'awaiting_signed_otp' ? 0 : statusKey === 'awaiting_documents' ? 1 : statusKey === 'ready_for_acceptance' ? 2 : 9,
+    rowKind: row.rowKind || 'incoming',
+    isPreInstruction: Boolean(row.isPreInstruction),
+    incomingSortRank: statusKey === 'awaiting_buyer' ? -1 : statusKey === 'awaiting_signed_otp' ? 0 : statusKey === 'awaiting_documents' ? 1 : statusKey === 'ready_for_acceptance' ? 2 : 9,
     matterId: row.matterId || row.transactionId,
+    privateListingId: row.privateListingId || '',
+    mandatePacketId: row.mandatePacketId || '',
     assignmentId: row.assignmentId || row.id,
     reference: row.reference || row.matterReference,
     matterReference: row.reference || row.matterReference,
@@ -579,7 +591,7 @@ function normalizeMatterRow(matter = {}, { documentStatus = {}, currentUser = {}
 function applyBaseView(rows = [], view = 'all') {
   const normalized = getAttorneyMatterViewConfig(view).key
   if (normalized === 'all') return rows
-  if (normalized === 'active' && rows.some((row) => row.rowKind === 'incoming')) return rows
+  if (normalized === 'active' && rows.some(isIncomingQueueRow)) return rows
   if (normalized === 'active') return rows.filter((row) => ['Active', 'Attention', 'Delayed'].includes(row.status))
   if (normalized === 'registered') return rows.filter((row) => row.status === 'Registered')
   if (normalized === 'archived') return rows.filter((row) => row.status === 'Archived')
@@ -650,6 +662,7 @@ function applyWorkspaceFilters(rows = [], { search = '', filters = {}, quickFilt
     if (quick === 'today') return isSameDay(row.expectedDue)
     if (quick === 'this_week') return isWithin(row.expectedDue || row.expectedRegistration, weekStart, weekEnd)
     if (quick === 'needs_attention') return ['critical', 'attention'].includes(row.health.key)
+    if (quick === 'awaiting_buyer') return row.statusKey === 'awaiting_buyer'
     if (quick === 'awaiting_signed_otp') return row.statusKey === 'awaiting_signed_otp'
     if (quick === 'awaiting_documents') return row.statusKey === 'awaiting_documents'
     if (quick === 'ready_for_acceptance') return row.statusKey === 'ready_for_acceptance'
@@ -666,7 +679,7 @@ function applyWorkspaceFilters(rows = [], { search = '', filters = {}, quickFilt
 
 function sortWorkspaceRows(rows = []) {
   return [...rows].sort((left, right) => {
-    if (left.rowKind === 'incoming' || right.rowKind === 'incoming') {
+    if (isIncomingQueueRow(left) || isIncomingQueueRow(right)) {
       const incomingDiff = (left.incomingSortRank ?? 99) - (right.incomingSortRank ?? 99)
       if (incomingDiff !== 0) return incomingDiff
 
@@ -698,7 +711,7 @@ function createSparkline(value = 0, slope = 1) {
 }
 
 function buildSummary(rows = [], { usesIncomingQueue = false } = {}) {
-  const incomingRows = rows.filter((row) => row.rowKind === 'incoming')
+  const incomingRows = rows.filter(isIncomingQueueRow)
   if (usesIncomingQueue || incomingRows.length) {
     return {
       totalMatters: incomingRows.length,
@@ -708,6 +721,7 @@ function buildSummary(rows = [], { usesIncomingQueue = false } = {}) {
       delayedMatters: 0,
       registeredMatters: 0,
       archivedMatters: 0,
+      awaitingBuyer: incomingRows.filter((row) => row.statusKey === 'awaiting_buyer').length,
       awaitingSignedOtp: incomingRows.filter((row) => row.statusKey === 'awaiting_signed_otp').length,
       awaitingDocuments: incomingRows.filter((row) => row.statusKey === 'awaiting_documents').length,
       readyForAcceptance: incomingRows.filter((row) => row.statusKey === 'ready_for_acceptance').length,
@@ -734,8 +748,9 @@ function buildSummary(rows = [], { usesIncomingQueue = false } = {}) {
 }
 
 function buildKpis(rows = [], { usesIncomingQueue = false } = {}) {
-  const incomingRows = rows.filter((row) => row.rowKind === 'incoming')
+  const incomingRows = rows.filter(isIncomingQueueRow)
   if (usesIncomingQueue || incomingRows.length) {
+    const awaitingBuyer = incomingRows.filter((row) => row.statusKey === 'awaiting_buyer')
     const awaitingSignedOtp = incomingRows.filter((row) => row.statusKey === 'awaiting_signed_otp')
     const awaitingDocuments = incomingRows.filter((row) => row.statusKey === 'awaiting_documents')
     const readyForAcceptance = incomingRows.filter((row) => row.statusKey === 'ready_for_acceptance')
@@ -753,35 +768,35 @@ function buildKpis(rows = [], { usesIncomingQueue = false } = {}) {
       },
       {
         key: 'awaiting_client',
-        label: 'Awaiting Signed OTP',
-        value: awaitingSignedOtp.length,
-        helper: 'Buyer signature needed',
+        label: 'Awaiting Buyer',
+        value: awaitingBuyer.length,
+        helper: 'Mandate allocated',
         tone: 'amber',
-        sparkline: createSparkline(awaitingSignedOtp.length, 2),
+        sparkline: createSparkline(awaitingBuyer.length, 2),
       },
       {
         key: 'lodgement_today',
-        label: 'Awaiting Documents',
-        value: awaitingDocuments.length,
-        helper: `${documentBlockers.length} blockers`,
+        label: 'Awaiting Signed OTP',
+        value: awaitingSignedOtp.length,
+        helper: 'Buyer signature needed',
         tone: 'blue',
-        sparkline: createSparkline(awaitingDocuments.length),
+        sparkline: createSparkline(awaitingSignedOtp.length, 2),
       },
       {
         key: 'registration_this_week',
-        label: 'Ready For Acceptance',
-        value: readyForAcceptance.length,
-        helper: 'Attorney action',
+        label: 'Awaiting Documents',
+        value: awaitingDocuments.length,
+        helper: `${documentBlockers.length} blockers`,
         tone: 'violet',
-        sparkline: createSparkline(readyForAcceptance.length),
+        sparkline: createSparkline(awaitingDocuments.length),
       },
       {
         key: 'delayed',
-        label: 'Document Blockers',
-        value: documentBlockers.length,
-        helper: 'Require follow-up',
+        label: 'Ready For Acceptance',
+        value: readyForAcceptance.length,
+        helper: 'Attorney action',
         tone: 'red',
-        sparkline: createSparkline(documentBlockers.length, 2),
+        sparkline: createSparkline(readyForAcceptance.length),
       },
     ]
   }

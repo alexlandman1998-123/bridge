@@ -92,6 +92,7 @@ import {
   markTransactionCompleted,
   markTransactionRegistered,
   recordBuyerOnboardingSent,
+  reassignDeclinedTransferAttorneyInstruction,
   reviewCanonicalDocumentRequirement,
   runWorkflowAction,
   saveTransactionRoleplayerSelections,
@@ -111,6 +112,8 @@ import { listUserPreferredPartnerRoutingRules } from '../lib/settingsApi'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { getFinanceReadiness } from '../services/bondFinanceReadinessService'
+import { getPrivateListingTransferAttorneyAllocation } from '../services/privateListingAttorneyAllocationService'
+import { getTransferInstructionLifecycle } from '../services/transferInstructionLifecycleService'
 import { getDocumentReadiness } from '../services/documentReadinessService'
 import { getBankPanelForCurrentUser } from '../services/bondOriginatorBankService'
 import {
@@ -7176,17 +7179,24 @@ function AttorneyTransactionDetail() {
   const [onboardingActionMessage, setOnboardingActionMessage] = useState('')
   const [onboardingActionBusy, setOnboardingActionBusy] = useState(false)
   const [sellerPortalBusy, setSellerPortalBusy] = useState(false)
-  const [roleplayerConfirmOpen, setRoleplayerConfirmOpen] = useState(false)
+  const [roleplayerConfirmOpen, setRoleplayerConfirmOpen] = useState(() => Boolean(location.state?.openBuyerOnboardingRoleplayers))
   const [roleplayerConfirmError, setRoleplayerConfirmError] = useState('')
   const [roleplayerConfirmDraft, setRoleplayerConfirmDraft] = useState({
     transferAttorney: '',
     bondOriginator: '',
+    bondOriginatorNotRequired: false,
     bondAttorney: '',
     cancellationAttorney: '',
   })
   const [partnerSnapshot, setPartnerSnapshot] = useState(null)
   const [preferredRoutingRules, setPreferredRoutingRules] = useState([])
   const [partnerOptionsLoading, setPartnerOptionsLoading] = useState(false)
+  const [mandateTransferAttorney, setMandateTransferAttorney] = useState(null)
+  const [transferInstructionLifecycle, setTransferInstructionLifecycle] = useState(null)
+  const [transferReassignmentOpen, setTransferReassignmentOpen] = useState(false)
+  const [transferReassignmentDraft, setTransferReassignmentDraft] = useState({ attorneyId: '', reason: '' })
+  const [transferReassignmentError, setTransferReassignmentError] = useState('')
+  const [transferReassignmentBusy, setTransferReassignmentBusy] = useState(false)
   const [detailPanelOpen, setDetailPanelOpen] = useState(false)
   const [detailPanelKey, setDetailPanelKey] = useState('matter')
   const [hydratingDetail, setHydratingDetail] = useState(false)
@@ -7205,6 +7215,14 @@ function AttorneyTransactionDetail() {
   const [bondHybridFinanceActionLoading, setBondHybridFinanceActionLoading] = useState('')
   const [bondApplicationPdfBusy, setBondApplicationPdfBusy] = useState(false)
   const [activityFilter, setActivityFilter] = useState('all')
+
+  useEffect(() => {
+    if (!location.state?.openBuyerOnboardingRoleplayers) return
+    navigate(location.pathname, {
+      replace: true,
+      state: { ...location.state, openBuyerOnboardingRoleplayers: false },
+    })
+  }, [location.pathname, location.state, navigate])
 
   const loadData = useCallback(async ({ background = false } = {}) => {
     if (!isSupabaseConfigured) {
@@ -7351,6 +7369,46 @@ function AttorneyTransactionDetail() {
   const buyer = data?.buyer || null
   const development = data?.development || null
   const unit = data?.unit || null
+
+  useEffect(() => {
+    let active = true
+    const listingId = transaction?.listing_id || transaction?.listingId
+    if (!listingId) {
+      setMandateTransferAttorney(null)
+      return () => {
+        active = false
+      }
+    }
+    getPrivateListingTransferAttorneyAllocation(listingId)
+      .then((allocation) => {
+        if (active) setMandateTransferAttorney(allocation)
+      })
+      .catch(() => {
+        if (active) setMandateTransferAttorney(null)
+      })
+    return () => {
+      active = false
+    }
+  }, [transaction?.listingId, transaction?.listing_id])
+  useEffect(() => {
+    let active = true
+    if (!transaction?.id) {
+      setTransferInstructionLifecycle(null)
+      return () => {
+        active = false
+      }
+    }
+    getTransferInstructionLifecycle(transaction.id)
+      .then((lifecycle) => {
+        if (active) setTransferInstructionLifecycle(lifecycle)
+      })
+      .catch(() => {
+        if (active) setTransferInstructionLifecycle(null)
+      })
+    return () => {
+      active = false
+    }
+  }, [transaction?.id, transaction?.updated_at, transaction?.updatedAt])
   const documents = data?.documents ?? EMPTY_ARRAY
   const routingDiagnostics = useMemo(
     () => (transaction ? buildTransactionRoutingDiagnostics(transaction) : null),
@@ -8024,6 +8082,30 @@ function AttorneyTransactionDetail() {
     () => transactionRolePlayers.find((item) => item?.roleType === 'transfer_attorney' || item?.role_type === 'transfer_attorney') || null,
     [transactionRolePlayers],
   )
+  const declinedTransferRoleplayer = useMemo(
+    () => transactionRolePlayers.find((item) => {
+      const roleType = item?.roleType || item?.role_type
+      const status = String(item?.assignmentStatus || item?.assignment_status || item?.status || '').toLowerCase()
+      return roleType === 'transfer_attorney' && ['removed', 'declined', 'rejected'].includes(status)
+    }) || null,
+    [transactionRolePlayers],
+  )
+  const activeTransferRoleplayer = useMemo(
+    () => transactionRolePlayers.find((item) => {
+      const roleType = item?.roleType || item?.role_type
+      const status = String(item?.assignmentStatus || item?.assignment_status || item?.status || '').toLowerCase()
+      return roleType === 'transfer_attorney' && !['removed', 'declined', 'rejected'].includes(status)
+    }) || null,
+    [transactionRolePlayers],
+  )
+  const transferAttorneyReassignmentRequired = Boolean(
+    isAgentTransactionView &&
+    declinedTransferRoleplayer &&
+    !activeTransferRoleplayer &&
+    ['signed_otp_received', 'otp_uploaded'].includes(
+      String(transaction?.onboarding_status || transaction?.onboardingStatus || '').toLowerCase(),
+    ),
+  )
   const savedBondOriginatorRoleplayer = useMemo(
     () => transactionRolePlayers.find((item) => item?.roleType === 'bond_originator' || item?.role_type === 'bond_originator') || null,
     [transactionRolePlayers],
@@ -8038,6 +8120,15 @@ function AttorneyTransactionDetail() {
         .map((option) => buildPartnerRoleplayerOption(option, 'transfer_attorney')),
     [partnerAccessContext, partnerSnapshot],
   )
+  const transferReassignmentOptions = useMemo(() => {
+    const declinedOrganisationId = declinedTransferRoleplayer?.organisationId || declinedTransferRoleplayer?.organisation_id || ''
+    const declinedEmail = String(declinedTransferRoleplayer?.emailAddress || declinedTransferRoleplayer?.email_address || '').toLowerCase()
+    return attorneyPartnerOptions.filter((option) => {
+      if (declinedOrganisationId && option.organisationId === declinedOrganisationId) return false
+      if (declinedEmail && String(option.email || '').toLowerCase() === declinedEmail) return false
+      return true
+    })
+  }, [attorneyPartnerOptions, declinedTransferRoleplayer])
   const bondOriginatorPartnerOptions = useMemo(
     () =>
       getPartnerAssignmentOptions(partnerSnapshot || {}, 'bond_originator', partnerAccessContext)
@@ -8047,6 +8138,18 @@ function AttorneyTransactionDetail() {
   const transferAttorneyOptions = useMemo(
     () =>
       dedupeRoleplayerOptions([
+        mandateTransferAttorney ? {
+          id: `mandate:${mandateTransferAttorney.id}`,
+          roleType: 'transfer_attorney',
+          organisationId: mandateTransferAttorney.partnerOrganisationId,
+          companyName: mandateTransferAttorney.companyName,
+          contactPerson: mandateTransferAttorney.contactPerson || mandateTransferAttorney.companyName,
+          email: mandateTransferAttorney.email,
+          phone: mandateTransferAttorney.phone,
+          preferred: true,
+          group: 'Signed Mandate',
+          selectionSource: 'seller_mandate',
+        } : null,
         buildExistingRoleplayerOption(savedTransferRoleplayer, 'transfer_attorney'),
         buildExistingRoleplayerOption(transferAttorney, 'transfer_attorney'),
         transaction?.attorney || transaction?.assigned_attorney_email
@@ -8060,7 +8163,7 @@ function AttorneyTransactionDetail() {
           : null,
         ...attorneyPartnerOptions,
       ]),
-    [attorneyPartnerOptions, savedTransferRoleplayer, transaction?.assigned_attorney_email, transaction?.attorney, transferAttorney],
+    [attorneyPartnerOptions, mandateTransferAttorney, savedTransferRoleplayer, transaction?.assigned_attorney_email, transaction?.attorney, transferAttorney],
   )
   const bondOriginatorOptions = useMemo(
     () =>
@@ -9817,8 +9920,8 @@ function AttorneyTransactionDetail() {
       company: transferAttorney?.organisationName || transferAttorney?.firmName || transaction?.attorney || 'Not assigned',
       contact: transferAttorney?.participantName || transferAttorney?.participantEmail || transaction?.attorney || 'Not assigned',
       email: transferAttorney?.participantEmail || transaction?.assigned_attorney_email || 'Not captured',
-      status: transferAttorney ? 'Assigned' : 'Not assigned',
-      actionLabel: transferAttorney ? 'Change Assignment' : 'Assign Transfer Attorney',
+      status: transferAttorneyReassignmentRequired ? 'Reassignment required' : transferAttorney ? 'Assigned' : 'Not assigned',
+      actionLabel: transferAttorneyReassignmentRequired ? 'Choose Replacement Attorney' : transferAttorney ? 'Change Assignment' : 'Assign Transfer Attorney',
     },
     {
       key: 'bond_originator',
@@ -10331,6 +10434,7 @@ function AttorneyTransactionDetail() {
     setRoleplayerConfirmDraft({
       transferAttorney: transferAttorneyOptions[0]?.id || '',
       bondOriginator: bondOriginatorOptions[0]?.id || '',
+      bondOriginatorNotRequired: false,
       bondAttorney: bondAttorneyOptions[0]?.id || '',
       cancellationAttorney: cancellationAttorneyOptions[0]?.id || '',
     })
@@ -10341,6 +10445,7 @@ function AttorneyTransactionDetail() {
     setRoleplayerConfirmDraft((previous) => ({
       transferAttorney: findRoleplayerOptionInList(transferAttorneyOptions, previous.transferAttorney)?.id || transferAttorneyOptions[0]?.id || '',
       bondOriginator: findRoleplayerOptionInList(bondOriginatorOptions, previous.bondOriginator)?.id || bondOriginatorOptions[0]?.id || '',
+      bondOriginatorNotRequired: previous.bondOriginatorNotRequired,
       bondAttorney: findRoleplayerOptionInList(bondAttorneyOptions, previous.bondAttorney)?.id || bondAttorneyOptions[0]?.id || '',
       cancellationAttorney:
         findRoleplayerOptionInList(cancellationAttorneyOptions, previous.cancellationAttorney)?.id ||
@@ -10577,11 +10682,11 @@ function AttorneyTransactionDetail() {
       preferred: option.preferred,
       preferredRoutingRuleId: option.preferredRoutingRuleId || null,
       selectionSource:
-        option.preferredRoutingRuleId || option.preferred
+        option.selectionSource || (option.preferredRoutingRuleId || option.preferred
           ? 'preferred_partner'
           : option.group === 'Recently Used'
             ? 'recently_used'
-            : 'connected_partner',
+            : 'connected_partner'),
       assignmentStatus: 'selected',
       activationTrigger:
         roleType === 'bond_originator'
@@ -10602,6 +10707,7 @@ function AttorneyTransactionDetail() {
     setRoleplayerConfirmDraft({
       transferAttorney: findRoleplayerOptionInList(transferAttorneyOptions, roleplayerConfirmDraft.transferAttorney)?.id || transferAttorneyOptions[0]?.id || '',
       bondOriginator: findRoleplayerOptionInList(bondOriginatorOptions, roleplayerConfirmDraft.bondOriginator)?.id || bondOriginatorOptions[0]?.id || '',
+      bondOriginatorNotRequired: false,
       bondAttorney: findRoleplayerOptionInList(bondAttorneyOptions, roleplayerConfirmDraft.bondAttorney)?.id || bondAttorneyOptions[0]?.id || '',
       cancellationAttorney:
         findRoleplayerOptionInList(cancellationAttorneyOptions, roleplayerConfirmDraft.cancellationAttorney)?.id ||
@@ -10611,13 +10717,127 @@ function AttorneyTransactionDetail() {
     setRoleplayerConfirmOpen(true)
   }
 
+  function openTransferAttorneyReassignment() {
+    setTransferReassignmentError('')
+    setTransferReassignmentDraft({
+      attorneyId: transferReassignmentOptions[0]?.id || '',
+      reason: '',
+    })
+    setTransferReassignmentOpen(true)
+  }
+
+  async function handleTransferAttorneyReassignment() {
+    const replacement = transferReassignmentOptions.find((option) => option.id === transferReassignmentDraft.attorneyId) || null
+    const reason = String(transferReassignmentDraft.reason || '').trim()
+    if (!replacement) {
+      setTransferReassignmentError('Select a replacement transfer attorney.')
+      return
+    }
+    if (!reason) {
+      setTransferReassignmentError('Record why this replacement is being issued.')
+      return
+    }
+
+    try {
+      setTransferReassignmentBusy(true)
+      setTransferReassignmentError('')
+      await reassignDeclinedTransferAttorneyInstruction({
+        transactionId: transaction.id,
+        replacement: {
+          organisationId: replacement.organisationId,
+          relationshipId: replacement.relationshipId,
+          userId: replacement.userId,
+          companyName: replacement.companyName,
+          contactPerson: replacement.contactPerson,
+          email: replacement.email,
+          phone: replacement.phone,
+          scopeType: replacement.scopeType,
+          scopeId: replacement.scopeId,
+          scopeLabel: replacement.scopeLabel,
+          preferred: replacement.preferred,
+        },
+        reason,
+        actorRole: workspaceRole,
+      })
+      setTransferReassignmentOpen(false)
+      setOnboardingActionMessage('Replacement transfer instruction issued and placed in the new attorney firm’s incoming queue.')
+      await loadData({ background: true })
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+    } catch (reassignmentError) {
+      setTransferReassignmentError(reassignmentError?.message || 'Unable to issue the replacement transfer instruction.')
+    } finally {
+      setTransferReassignmentBusy(false)
+    }
+  }
+
+  function resolveBuyerOnboardingRoleplayerSelections() {
+    const transferOption =
+      (mandateTransferAttorney ? transferAttorneyOptions.find((option) => option.group === 'Signed Mandate') : null) ||
+      findRoleplayerOption('transfer_attorney', roleplayerConfirmDraft.transferAttorney) ||
+      buildExistingRoleplayerOption(savedTransferRoleplayer, 'transfer_attorney') ||
+      buildExistingRoleplayerOption(transferAttorney, 'transfer_attorney') ||
+      (transaction?.attorney || transaction?.assigned_attorney_email
+        ? buildExistingRoleplayerOption(
+            {
+              partnerName: transaction?.attorney,
+              emailAddress: transaction?.assigned_attorney_email,
+            },
+            'transfer_attorney',
+          )
+        : null) ||
+      transferAttorneyOptions[0] ||
+      null
+    const bondOriginatorOption = findRoleplayerOption('bond_originator', roleplayerConfirmDraft.bondOriginator)
+    const bondAttorneyOption = findRoleplayerOption('bond_attorney', roleplayerConfirmDraft.bondAttorney)
+    const cancellationAttorneyOption = findRoleplayerOption('cancellation_attorney', roleplayerConfirmDraft.cancellationAttorney)
+
+    if (!transferOption) {
+      throw new Error('Transfer Attorney is required before buyer onboarding can be sent.')
+    }
+    if (!bondOriginatorOption && !roleplayerConfirmDraft.bondOriginatorNotRequired) {
+      throw new Error('Select a preferred bond originator, or confirm that this buyer does not require one.')
+    }
+
+    return {
+      bondOriginatorOption,
+      selections: [
+        buildRoleplayerSelection('transfer_attorney', transferOption),
+        buildRoleplayerSelection('bond_originator', bondOriginatorOption),
+        buildRoleplayerSelection('bond_attorney', bondAttorneyOption),
+        buildRoleplayerSelection('cancellation_attorney', cancellationAttorneyOption),
+      ].filter(Boolean),
+    }
+  }
+
   async function handleCopyBuyerOnboardingLinkFromConfirmation() {
     try {
       setOnboardingActionBusy(true)
       setRoleplayerConfirmError('')
+      const { bondOriginatorOption, selections } = resolveBuyerOnboardingRoleplayerSelections()
+      const refreshed = await saveTransactionRoleplayerSelections({
+        transactionId: transaction.id,
+        roleplayers: selections,
+        actorRole: workspaceRole,
+      })
+      if (refreshed) {
+        setData(refreshed)
+      }
       const linkUrl = await getOnboardingLinkUrl()
       await navigator.clipboard.writeText(linkUrl)
-      setOnboardingActionMessage('Buyer onboarding link copied. The agent can paste it into WhatsApp, SMS, or a manual email.')
+      await recordBuyerOnboardingSent({
+        transactionId: transaction.id,
+        actorRole: workspaceRole,
+        recipientEmail: buyer?.email || roleplayerForm.buyerEmail || '',
+        roleplayers: selections,
+      })
+      setRoleplayerConfirmOpen(false)
+      setOnboardingActionMessage(
+        bondOriginatorOption
+          ? `Buyer onboarding link copied. The application is now in ${bondOriginatorOption.companyName || 'the selected originator'}'s inbox awaiting the buyer.`
+          : 'Buyer onboarding link copied without a bond originator.',
+      )
+      await loadData({ background: true })
+      window.dispatchEvent(new Event('itg:transaction-updated'))
     } catch (copyError) {
       setRoleplayerConfirmError(copyError?.message || 'Unable to copy the buyer onboarding link right now.')
     } finally {
@@ -10711,51 +10931,17 @@ function AttorneyTransactionDetail() {
     }
   }
 
-  async function handleConfirmRoleplayersAndSendOnboarding({ allowMissingBondOriginator = false } = {}) {
+  async function handleConfirmRoleplayersAndSendOnboarding() {
     const recipient = {
       roleLabel: 'Buyer',
       name: buyer?.name || 'Buyer',
       email: buyer?.email || roleplayerForm.buyerEmail || '',
     }
-    const transferOption =
-      findRoleplayerOption('transfer_attorney', roleplayerConfirmDraft.transferAttorney) ||
-      buildExistingRoleplayerOption(savedTransferRoleplayer, 'transfer_attorney') ||
-      buildExistingRoleplayerOption(transferAttorney, 'transfer_attorney') ||
-      (transaction?.attorney || transaction?.assigned_attorney_email
-        ? buildExistingRoleplayerOption(
-            {
-              partnerName: transaction?.attorney,
-              emailAddress: transaction?.assigned_attorney_email,
-            },
-            'transfer_attorney',
-          )
-        : null) ||
-      transferAttorneyOptions[0] ||
-      null
-    const bondOriginatorOption = findRoleplayerOption('bond_originator', roleplayerConfirmDraft.bondOriginator)
-    const bondAttorneyOption = findRoleplayerOption('bond_attorney', roleplayerConfirmDraft.bondAttorney)
-    const cancellationAttorneyOption = findRoleplayerOption('cancellation_attorney', roleplayerConfirmDraft.cancellationAttorney)
-
-    if (!transferOption) {
-      setRoleplayerConfirmError('Transfer Attorney is required before buyer onboarding can be sent.')
-      return
-    }
-    if (!bondOriginatorOption && !allowMissingBondOriginator) {
-      setRoleplayerConfirmError('No bond originator selected. If the buyer chooses bond finance, no originator will be notified automatically.')
-      return
-    }
-
-    const selections = [
-      buildRoleplayerSelection('transfer_attorney', transferOption),
-      buildRoleplayerSelection('bond_originator', bondOriginatorOption),
-      buildRoleplayerSelection('bond_attorney', bondAttorneyOption),
-      buildRoleplayerSelection('cancellation_attorney', cancellationAttorneyOption),
-    ].filter(Boolean)
-
     try {
       setOnboardingActionBusy(true)
       setRoleplayerConfirmError('')
       setError('')
+      const { bondOriginatorOption, selections } = resolveBuyerOnboardingRoleplayerSelections()
       const refreshed = await saveTransactionRoleplayerSelections({
         transactionId: transaction.id,
         roleplayers: selections,
@@ -10775,7 +10961,11 @@ function AttorneyTransactionDetail() {
         roleplayers: selections,
       })
       setRoleplayerConfirmOpen(false)
-      setOnboardingActionMessage(`Buyer onboarding sent to ${sendResult?.recipientEmail || recipient.email} after confirming roleplayers.`)
+      setOnboardingActionMessage(
+        bondOriginatorOption
+          ? `Buyer onboarding sent to ${sendResult?.recipientEmail || recipient.email}. The application is now in ${bondOriginatorOption.companyName || 'the selected originator'}'s inbox awaiting the buyer.`
+          : `Buyer onboarding sent to ${sendResult?.recipientEmail || recipient.email} without a bond originator.`,
+      )
       await loadData({ background: true })
       window.dispatchEvent(new Event('itg:transaction-updated'))
     } catch (sendError) {
@@ -13327,9 +13517,62 @@ function AttorneyTransactionDetail() {
                 </div>
               </div>
 
+              {transferInstructionLifecycle ? (
+                <section className="mt-5 rounded-[16px] border border-borderSoft bg-surfaceAlt px-4 py-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <strong className="text-sm text-textStrong">Transfer instruction lifecycle</strong>
+                      <p className="mt-1 text-xs text-textMuted">Mandate allocation through attorney acceptance.</p>
+                    </div>
+                    <span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                      transferInstructionLifecycle.health === 'on_track'
+                        ? 'border-success/30 bg-successSoft text-success'
+                        : transferInstructionLifecycle.health === 'blocked'
+                          ? 'border-danger/30 bg-dangerSoft text-danger'
+                          : 'border-warning/30 bg-warningSoft text-warning'
+                    }`}>
+                      {transferInstructionLifecycle.health === 'on_track' ? 'On track' : transferInstructionLifecycle.health === 'blocked' ? 'Blocked' : 'Needs attention'}
+                    </span>
+                  </div>
+                  <div className="mt-4 grid gap-2 sm:grid-cols-5">
+                    {transferInstructionLifecycle.steps.map((step) => (
+                      <article key={step.key} className={`rounded-[12px] border px-3 py-3 ${
+                        step.status === 'complete'
+                          ? 'border-success/30 bg-successSoft'
+                          : step.status === 'attention'
+                            ? 'border-danger/30 bg-dangerSoft'
+                            : step.status === 'current'
+                              ? 'border-primary/30 bg-primarySoft'
+                              : 'border-borderSoft bg-white'
+                      }`}>
+                        <span className="block text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{step.label}</span>
+                        <strong className="mt-1 block text-xs text-textStrong">{step.detail}</strong>
+                      </article>
+                    ))}
+                  </div>
+                  {transferInstructionLifecycle.issues.length ? (
+                    <p className="mt-3 rounded-[10px] border border-warning/30 bg-warningSoft px-3 py-2 text-xs font-semibold text-warning">
+                      Reconciliation: {transferInstructionLifecycle.issues.map((issue) => issue.replaceAll('_', ' ')).join(', ')}
+                    </p>
+                  ) : null}
+                </section>
+              ) : null}
+
+              {transferAttorneyReassignmentRequired ? (
+                <div className="mt-5 flex flex-col gap-3 rounded-[16px] border border-danger/30 bg-dangerSoft px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <strong className="text-sm text-danger">Transfer attorney reassignment required</strong>
+                    <p className="mt-1 text-sm text-textMuted">The instructed firm declined after OTP. Select a different preferred attorney to reissue the instruction.</p>
+                  </div>
+                  <Button type="button" size="sm" onClick={openTransferAttorneyReassignment} disabled={partnerOptionsLoading}>
+                    Choose Replacement
+                  </Button>
+                </div>
+              ) : null}
+
               <div className="mt-6 grid max-w-5xl gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {transactionTeamCards.map((card) => {
-                  const isAssigned = Boolean(card.assigned)
+                  const isAssigned = Boolean(card.assigned) && !(card.key === 'transfer_attorney' && transferAttorneyReassignmentRequired)
                   return (
                     <article key={card.key} className="flex min-h-[230px] min-w-0 flex-col rounded-[14px] border border-borderSoft bg-surfaceAlt p-4">
                       <div className="flex items-start justify-between gap-3">
@@ -13364,7 +13607,9 @@ function AttorneyTransactionDetail() {
                           variant="secondary"
                           size="sm"
                           className="mt-3 w-full justify-center whitespace-normal text-center leading-5"
-                          onClick={openRoleplayerConfirmation}
+                          onClick={card.key === 'transfer_attorney' && transferAttorneyReassignmentRequired
+                            ? openTransferAttorneyReassignment
+                            : openRoleplayerConfirmation}
                           disabled={!canManageTransactionRoleplayers || partnerOptionsLoading}
                         >
                           {card.actionLabel}
@@ -13636,24 +13881,64 @@ function AttorneyTransactionDetail() {
       </Modal>
 
       <Modal
+        open={transferReassignmentOpen}
+        onClose={transferReassignmentBusy ? undefined : () => setTransferReassignmentOpen(false)}
+        title="Replace Declined Transfer Attorney"
+        subtitle="Reissue the signed-OTP transfer instruction to a different preferred attorney."
+        footer={(
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" onClick={() => setTransferReassignmentOpen(false)} disabled={transferReassignmentBusy}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void handleTransferAttorneyReassignment()} disabled={transferReassignmentBusy || !transferReassignmentOptions.length}>
+              <Send size={14} />
+              {transferReassignmentBusy ? 'Issuing...' : 'Issue Replacement Instruction'}
+            </Button>
+          </div>
+        )}
+      >
+        <div className="space-y-4">
+          <p className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-sm text-textMuted">
+            The original mandate selection and decline remain in the audit history. The replacement receives a new instruction in “Ready for Acceptance”.
+          </p>
+          {transferReassignmentOptions.length ? (
+            <RoleplayerSelect
+              label="Replacement Transfer Attorney"
+              required
+              value={transferReassignmentDraft.attorneyId}
+              onChange={(value) => setTransferReassignmentDraft((previous) => ({ ...previous, attorneyId: value }))}
+              options={transferReassignmentOptions}
+              helper="The firm that declined is excluded from this list."
+            />
+          ) : (
+            <p className="rounded-[14px] border border-warning/30 bg-warningSoft px-4 py-3 text-sm font-semibold text-warning">
+              No alternative preferred transfer attorneys are available. Add another firm under Partners first.
+            </p>
+          )}
+          <label className="block space-y-2">
+            <span className="text-sm font-semibold text-textStrong">Replacement reason</span>
+            <textarea
+              className="min-h-24 w-full rounded-[12px] border border-borderDefault bg-white px-3 py-2 text-sm text-textStrong outline-none focus:border-primary"
+              value={transferReassignmentDraft.reason}
+              onChange={(event) => setTransferReassignmentDraft((previous) => ({ ...previous, reason: event.target.value }))}
+              placeholder="For example: Original firm declined due to a conflict check."
+            />
+          </label>
+          {transferReassignmentError ? (
+            <p className="rounded-[14px] border border-danger/30 bg-dangerSoft px-4 py-3 text-sm font-semibold text-danger">
+              {transferReassignmentError}
+            </p>
+          ) : null}
+        </div>
+      </Modal>
+
+      <Modal
         open={roleplayerConfirmOpen}
         onClose={onboardingActionBusy ? undefined : () => setRoleplayerConfirmOpen(false)}
         title="Confirm Roleplayers"
         subtitle="Select the trusted roleplayers for this transaction before sending buyer onboarding."
         footer={(
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              {!roleplayerConfirmDraft.bondOriginator ? (
-                <button
-                  type="button"
-                  className="text-sm font-semibold text-textMuted underline-offset-4 hover:text-textStrong hover:underline"
-                  onClick={() => void handleConfirmRoleplayersAndSendOnboarding({ allowMissingBondOriginator: true })}
-                  disabled={onboardingActionBusy}
-                >
-                  Send without bond originator
-                </button>
-              ) : null}
-            </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
               <Button type="button" variant="secondary" onClick={() => setRoleplayerConfirmOpen(false)} disabled={onboardingActionBusy}>
                 Cancel
@@ -13672,7 +13957,7 @@ function AttorneyTransactionDetail() {
       >
         <div className="space-y-4">
           <p className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-secondary text-textMuted">
-            The bond originator will only be notified if the buyer selects Bond or Hybrid finance.
+            Choose the preferred bond originator that should receive this buyer application. The transferring attorney is inherited from the seller's signed mandate.
           </p>
           {partnerOptionsLoading ? (
             <p className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-sm font-semibold text-textMuted">
@@ -13680,26 +13965,35 @@ function AttorneyTransactionDetail() {
             </p>
           ) : null}
           <div className="grid gap-4">
-            <RoleplayerSelect
-              label="Transfer Attorney"
-              required
-              value={roleplayerConfirmDraft.transferAttorney}
-              onChange={(value) => updateRoleplayerConfirmDraft('transferAttorney', value)}
-              options={transferAttorneyOptions}
-              helper="Required. Defaults follow branch, region, organisation, then existing transaction context."
-            />
+            <div className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.1em] text-textMuted">Transferring attorney · signed mandate</p>
+              <p className="mt-1 text-sm font-semibold text-textStrong">{transferAttorneyOptions[0]?.companyName || transferAttorneyOptions[0]?.contactPerson || 'Mandate attorney not available'}</p>
+              <p className="mt-1 text-xs text-textMuted">The buyer does not reselect the seller's transferring attorney.</p>
+            </div>
             <RoleplayerSelect
               label="Bond Originator"
+              required={!roleplayerConfirmDraft.bondOriginatorNotRequired}
               value={roleplayerConfirmDraft.bondOriginator}
-              onChange={(value) => updateRoleplayerConfirmDraft('bondOriginator', value)}
+              onChange={(value) => setRoleplayerConfirmDraft((previous) => ({ ...previous, bondOriginator: value, bondOriginatorNotRequired: false }))}
               options={bondOriginatorOptions}
-              helper="Optional. Activation waits until the buyer chooses Bond or Hybrid finance."
+              helper="The selected originator receives an inbox item as soon as buyer onboarding is sent."
             />
-            {!roleplayerConfirmDraft.bondOriginator ? (
-              <p className="rounded-[14px] border border-warning/30 bg-warningSoft px-4 py-3 text-sm font-semibold text-warning">
-                No bond originator selected. If the buyer chooses bond finance, no originator will be notified automatically.
-              </p>
-            ) : null}
+            <label className="flex items-start gap-3 rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-sm text-textMuted">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={roleplayerConfirmDraft.bondOriginatorNotRequired}
+                onChange={(event) => setRoleplayerConfirmDraft((previous) => ({
+                  ...previous,
+                  bondOriginatorNotRequired: event.target.checked,
+                  bondOriginator: event.target.checked ? '' : previous.bondOriginator,
+                }))}
+              />
+              <span>
+                <strong className="block text-textStrong">No bond originator required</strong>
+                Use this only for a confirmed cash or buyer-managed finance process.
+              </span>
+            </label>
             <RoleplayerSelect
               label="Bond Attorney"
               value={roleplayerConfirmDraft.bondAttorney}

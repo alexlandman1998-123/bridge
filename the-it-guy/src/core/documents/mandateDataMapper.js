@@ -752,6 +752,40 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
   const sellerParties = buildSellerParties(seller)
   const property = resolvePropertyProfile(onboarding, lead, privateListing, transaction, mandateDraft)
   const mandate = resolveMandateProfile(onboarding, lead, agency, organisation, privateListing, transaction, mandateDraft)
+  const transferAttorney = {
+    preferredPartnerId: firstText(
+      mandateDraft.transferAttorneyPreferredPartnerId,
+      mandateDraft.transfer_attorney_preferred_partner_id,
+    ),
+    partnerOrganisationId: firstText(
+      mandateDraft.transferAttorneyPartnerOrganisationId,
+      mandateDraft.transfer_attorney_partner_organisation_id,
+    ),
+    companyName: firstText(
+      mandateDraft.transferAttorneyCompanyName,
+      mandateDraft.transfer_attorney_company_name,
+    ),
+    contactPerson: firstText(
+      mandateDraft.transferAttorneyContactPerson,
+      mandateDraft.transfer_attorney_contact_person,
+    ),
+    email: firstText(
+      mandateDraft.transferAttorneyEmail,
+      mandateDraft.transfer_attorney_email,
+    ).toLowerCase(),
+    phone: firstText(
+      mandateDraft.transferAttorneyPhone,
+      mandateDraft.transfer_attorney_phone,
+    ),
+    selectionSource: firstText(
+      mandateDraft.transferAttorneySelectionSource,
+      mandateDraft.transfer_attorney_selection_source,
+      'seller_mandate',
+    ),
+    selectionDeferred: Boolean(
+      mandateDraft.transferAttorneySelectionDeferred || mandateDraft.transfer_attorney_selection_deferred,
+    ),
+  }
   const propertyDisclosureAnnexure = resolvePropertyDisclosureAnnexure(onboarding, privateListing, transaction)
   if (propertyDisclosureAnnexure) {
     mandate.annexuresList = appendAnnexureLabel(mandate.annexuresList, propertyDisclosureAnnexure.title)
@@ -863,6 +897,11 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     property_disclosure_status: propertyDisclosureAnnexure ? safePlaceholder(propertyDisclosureAnnexure.status) : '',
     property_disclosure_comments: propertyDisclosureAnnexure ? safePlaceholder(propertyDisclosureAnnexure.comments) : '',
     special_conditions: safePlaceholder(mandate.specialConditions),
+    transfer_attorney_company_name: safePlaceholder(transferAttorney.companyName),
+    transfer_attorney_contact_person: safePlaceholder(transferAttorney.contactPerson),
+    transfer_attorney_email: safePlaceholder(transferAttorney.email),
+    transfer_attorney_phone: safePlaceholder(transferAttorney.phone),
+    transfer_attorney_selection_source: safePlaceholder(toTitleCase(transferAttorney.selectionSource)),
 
     agency: safePlaceholder(agencyProfile.tradingName || agencyProfile.legalName),
     agency_name: safePlaceholder(agencyProfile.legalName),
@@ -908,6 +947,7 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     seller,
     property,
     mandate,
+    transferAttorney,
     agency: agencyProfile,
     agent: agentProfile,
     signatures: {

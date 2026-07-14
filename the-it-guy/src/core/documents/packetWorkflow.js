@@ -949,6 +949,10 @@ const MANDATE_SECTION_DEFINITIONS = [
       ['mandate_start_date', 'Mandate Start Date'],
       ['mandate_end_date', 'Mandate End Date'],
       ['mandate_authority_granted', 'Authority Granted'],
+      ['transfer_attorney_company_name', 'Transferring Attorney'],
+      ['transfer_attorney_contact_person', 'Attorney Contact'],
+      ['transfer_attorney_email', 'Attorney Email'],
+      ['transfer_attorney_phone', 'Attorney Phone'],
     ],
   }),
   createPacketSection({
