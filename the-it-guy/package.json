@@ -239,6 +239,7 @@
     "verify:seller-documents": "node scripts/reconcile-seller-documents.mjs --gate",
     "prepare:seller-documents": "node scripts/prepare-seller-document-reconciliation-packet.mjs",
     "test:seller-portal-alignment": "node scripts/seller-portal-alignment.test.mjs",
+    "test:seller-portal-ui-regression": "node scripts/seller-portal-ui-regression.test.mjs",
     "test:seller-onboarding-phase5": "node scripts/seller-onboarding-phase5.test.mjs",
     "test:seller-onboarding-phase6": "node scripts/seller-onboarding-phase6.test.mjs",
     "test:seller-readiness": "node scripts/seller-readiness.test.mjs",

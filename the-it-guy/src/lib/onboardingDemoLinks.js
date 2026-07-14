@@ -260,6 +260,7 @@ function getDemoBuyerPortalSeed(token = BUYER_PORTAL_DEMO_TOKEN) {
   }
   const portalData = {
     __demoPortal: true,
+    branding: DEMO_BRAND,
     buyer: buyerPayload.buyer,
     transaction,
     unit,
@@ -625,6 +626,12 @@ function getDemoSellerPortalSeed(token = SELLER_PORTAL_DEMO_TOKEN) {
       id: 'demo-seller-listing',
       title: '2 Pine Avenue, Unit 4, Sea Point',
       address: DEMO_PROPERTY_ADDRESS.formatted,
+      agencyName: DEMO_BRAND.agencyName,
+      organisationName: DEMO_BRAND.organisationName,
+      agencyLogoUrl: DEMO_BRAND.logoUrl,
+      agencyLogoDarkUrl: DEMO_BRAND.logoDarkUrl,
+      agencyLogoLightUrl: DEMO_BRAND.logoLightUrl,
+      branding: DEMO_BRAND,
       seller: {
         name: 'Thabo Mokoena',
         email: 'thabo.demo@arch9.co.za',

@@ -313,14 +313,6 @@ function formatSellerPortalCurrency(value) {
   return ZAR_CURRENCY.format(amount)
 }
 
-function buildSellerPortalStatusChip(status = '') {
-  const normalized = normalizePortalStatus(status)
-  const label = SELLER_ONBOARDING_STATUS_LABELS[normalized]
-  if (label) return `Seller Onboarding ${label}`
-  if (normalized) return toTitleLabel(normalized)
-  return 'Seller Journey Active'
-}
-
 function buildSellerPortalProgressModel({
   hasSellingContext = false,
   hasOnboardingStarted = false,
@@ -2063,7 +2055,7 @@ function normalizeSellerPortalKey(value = '') {
 }
 
 function normalizeSellerVisibleListingLinks(items = []) {
-  return (Array.isArray(items) ? items : [])
+  const normalizedLinks = (Array.isArray(items) ? items : [])
     .filter((item) => {
       const status = normalizeSellerPortalKey(item?.status || '')
       const visible = item?.visibleToSeller ?? item?.visible_to_seller
@@ -2076,6 +2068,16 @@ function normalizeSellerVisibleListingLinks(items = []) {
       status: String(item.status || 'Live').trim(),
       publishedAt: item.publishedAt || item.published_at || '',
     }))
+
+  const linksByChannel = new Map()
+  for (const link of normalizedLinks) {
+    const platformKey = normalizeSellerPortalKey(link.platform)
+    const urlKey = String(link.url || '').trim().toLowerCase().replace(/\/+$/, '')
+    const channelKey = platformKey || urlKey
+    if (!channelKey || linksByChannel.has(channelKey)) continue
+    linksByChannel.set(channelKey, link)
+  }
+  return [...linksByChannel.values()]
 }
 
 function getFriendlySellerStatusLabel(value = '', fallback = 'Awaiting update') {
@@ -3137,13 +3139,20 @@ function buildSellerTransactionHealth({
 }
 
 function buildSellerMarketingChannels(links = []) {
-  return links.map((link, index) => ({
-    id: link.id || `${link.platform || 'listing'}-${index}`,
-    label: link.platform || 'Listing channel',
-    status: link.status || 'Live',
-    href: link.url || '',
-    updatedLabel: formatShortPortalDate(link.publishedAt || link.updatedAt || link.createdAt, ''),
-  }))
+  const channels = new Map()
+  for (const [index, link] of links.entries()) {
+    const label = link.platform || 'Listing channel'
+    const key = normalizeSellerPortalKey(label) || String(link.url || '').trim().toLowerCase() || `listing-${index}`
+    if (channels.has(key)) continue
+    channels.set(key, {
+      id: link.id || key,
+      label,
+      status: link.status || 'Live',
+      href: link.url || '',
+      updatedLabel: formatShortPortalDate(link.publishedAt || link.updatedAt || link.createdAt, ''),
+    })
+  }
+  return [...channels.values()]
 }
 
 function buildSellerAgentUpdate({ items = [], sellerAgentName = '', sellerAgencyName = '', sellerAgentAvatarUrl = '' } = {}) {
@@ -5603,7 +5612,6 @@ function ClientPortal() {
   })
   const sellerStageMeta = sharedSellerPortalJourney?.stageMeta || fallbackSellerStageMeta
   const sellerCurrentStage = sellerStageMeta.currentStage.label
-  const sellerProgressPercent = sellerStageMeta.progressPercent
   const missingRequired = Math.max(
     Number(portal.requiredDocumentSummary?.totalRequired || 0) - Number(portal.requiredDocumentSummary?.uploadedCount || 0),
     0,
@@ -6749,8 +6757,43 @@ function ClientPortal() {
     activeSellingContext?.listing_title,
     'Property sale',
   )
-  const sellerAddressLines = splitSellerPortalAddress(sellerPropertyTitle)
-  const sellerAgencyName = pickFirstText(portal?.unit?.development?.name, activeSellingContext?.agencyName, activeSellingContext?.agency_name, 'Arch9')
+  const sellerAgencyName = pickFirstText(
+    portal?.listing?.agencyName,
+    portal?.listing?.agency_name,
+    portal?.listing?.organisationName,
+    portal?.listing?.organisation_name,
+    portal?.listing?.branding?.agencyName,
+    portal?.listing?.branding?.organisationName,
+    activeSellingContext?.agencyName,
+    activeSellingContext?.agency_name,
+    portal?.branding?.agencyName,
+    portal?.branding?.organisationName,
+    portal?.unit?.development?.developer_company,
+    portal?.unit?.development?.name,
+    'Arch9',
+  )
+  const sellerAgencyLogoUrl = pickFirstText(
+    portal?.listing?.agencyLogoDarkUrl,
+    portal?.listing?.agency_logo_dark_url,
+    portal?.listing?.organisationLogoDarkUrl,
+    portal?.listing?.organisation_logo_dark_url,
+    portal?.listing?.branding?.logoDarkUrl,
+    portal?.listing?.branding?.logoDark,
+    portal?.listing?.agencyLogoUrl,
+    portal?.listing?.agency_logo_url,
+    portal?.listing?.organisationLogoUrl,
+    portal?.listing?.organisation_logo_url,
+    portal?.listing?.branding?.logoUrl,
+    portal?.listing?.agencyLogoLightUrl,
+    portal?.listing?.branding?.logoLightUrl,
+    activeSellingContext?.agencyLogoUrl,
+    activeSellingContext?.agency_logo_url,
+    activeSellingContext?.branding?.logoDarkUrl,
+    activeSellingContext?.branding?.logoUrl,
+    portal?.branding?.logoDarkUrl,
+    portal?.branding?.logoUrl,
+    portal?.branding?.logoLightUrl,
+  )
   const sellerAgentName = pickFirstText(
     portal?.transaction?.assigned_agent,
     activeSellingContext?.assignedAgentName,
@@ -6810,7 +6853,6 @@ function ClientPortal() {
       portal?.onboardingFormData?.status,
   )
   const hasSellerOnboardingSubmitted = ['submitted', 'under_review', 'completed', 'reviewed', 'approved'].includes(normalizedSellerOnboardingStatus)
-  const sellerStatusChipLabel = buildSellerPortalStatusChip(normalizedSellerOnboardingStatus)
   const hasSellerOnboardingData = Object.keys(sellerOnboardingFormData).length > 0
   const hasMandatePacket = Boolean(
     activeSellingContext?.mandatePacketId ||
@@ -7486,25 +7528,23 @@ function ClientPortal() {
       <div className="flex min-h-screen">
         <aside className="fixed inset-y-0 left-0 z-30 hidden w-[280px] flex-col overflow-y-auto bg-[#152432] px-5 py-4 text-slate-100 [background-image:radial-gradient(circle_at_18%_-6%,rgba(108,152,193,0.18)_0%,transparent_34%),linear-gradient(180deg,#243c4f_0%,#152432_100%)] lg:flex">
           <div className="border-b border-white/10 pb-3 pt-[1.2rem]">
-            <h1 className="text-[3rem] font-bold leading-none tracking-[-0.05em] text-[#f8fbff]">Arch9</h1>
-            <p className="mt-2.5 text-[0.82rem] tracking-[0.02em] text-[#c8d5e3]">Client Transaction Workspace</p>
             {effectiveWorkspace === 'seller' ? (
-              <div className="mt-4 rounded-[18px] border border-white/10 bg-[rgba(7,14,24,0.34)] px-3.5 py-3.5">
-                <span className="inline-flex items-center rounded-full border border-white/12 bg-white/6 px-2.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-[#c3d3e3]">
-                  {sellerStatusChipLabel}
-                </span>
-                <strong className="mt-3 block text-sm font-semibold leading-5 text-white">
-                  {sellerAddressLines.line1}
-                </strong>
-                {sellerAddressLines.line2 ? (
-                  <p className="mt-1 text-xs leading-5 text-[#b8c8d8]">{sellerAddressLines.line2}</p>
-                ) : null}
-                <p className="mt-3 text-xs leading-5 text-[#d7e3ef]">{sellerAgencyName || sellerAgentName || 'Arch9 Property Team'}</p>
-                <div className="mt-3 h-1 rounded-full bg-white/10">
-                  <div className="h-1 rounded-full bg-[linear-gradient(90deg,#34d399,#38bdf8)]" style={{ width: `${sellerProgressPercent}%` }} />
-                </div>
+              <div className="min-h-[72px]">
+                {sellerAgencyLogoUrl ? (
+                  <img
+                    src={sellerAgencyLogoUrl}
+                    alt={`${sellerAgencyName || 'Agency'} logo`}
+                    className="max-h-14 max-w-[210px] object-contain object-left"
+                  />
+                ) : (
+                  <h1 className="text-[2rem] font-bold leading-tight tracking-[-0.04em] text-[#f8fbff]">{sellerAgencyName || 'Seller Portal'}</h1>
+                )}
+                <p className="mt-2 text-[0.82rem] tracking-[0.02em] text-[#c8d5e3]">Seller Portal</p>
               </div>
             ) : (
+            <>
+              <h1 className="text-[3rem] font-bold leading-none tracking-[-0.05em] text-[#f8fbff]">Arch9</h1>
+              <p className="mt-2.5 text-[0.82rem] tracking-[0.02em] text-[#c8d5e3]">Client Transaction Workspace</p>
             <div className="mt-4 rounded-[14px] border border-white/10 bg-[rgba(7,14,24,0.34)] px-3 py-3">
               <label htmlFor="client-journey-selector" className="block text-[0.64rem] font-semibold uppercase tracking-[0.14em] text-[#a8bdd2]">
                 Journey
@@ -7519,6 +7559,7 @@ function ClientPortal() {
                 <option value="seller">{canSwitchJourney ? 'Selling' : 'Selling (Request access)'}</option>
               </select>
             </div>
+            </>
             )}
           </div>
 
@@ -7631,18 +7672,13 @@ function ClientPortal() {
         <div className="min-w-0 flex-1 lg:pl-[280px]">
           <div className="border-b border-[#dbe5ef] bg-white/80 px-5 py-4 backdrop-blur lg:hidden">
             {effectiveWorkspace === 'seller' ? (
-              <div className="mb-3 rounded-[14px] border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-3">
-                <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-2.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-[#64748b]">
-                  {sellerStatusChipLabel}
-                </span>
-                <strong className="mt-2 block text-sm font-semibold text-[#142132]">{sellerAddressLines.line1}</strong>
-                {sellerAddressLines.line2 ? (
-                  <p className="mt-1 text-xs font-medium text-[#64748b]">{sellerAddressLines.line2}</p>
-                ) : null}
-                <p className="mt-2 text-xs text-[#64748b]">{sellerAgencyName || sellerAgentName || 'Arch9 Property Team'}</p>
-                <div className="mt-3 h-1 rounded-full bg-[#dde7f1]">
-                  <div className="h-1 rounded-full bg-[#17a37a]" style={{ width: `${sellerProgressPercent}%` }} />
-                </div>
+              <div className="mb-3 flex min-h-[54px] items-center gap-3">
+                {sellerAgencyLogoUrl ? (
+                  <img src={sellerAgencyLogoUrl} alt={`${sellerAgencyName || 'Agency'} logo`} className="max-h-11 max-w-[180px] object-contain object-left" />
+                ) : (
+                  <strong className="text-base font-semibold text-[#142132]">{sellerAgencyName || 'Seller Portal'}</strong>
+                )}
+                <span className="ml-auto text-xs font-semibold uppercase tracking-[0.12em] text-[#64748b]">Seller Portal</span>
               </div>
             ) : (
             <div className="mb-3 rounded-[12px] border border-[#dbe5ef] bg-[#f8fbff] px-3 py-2.5">
