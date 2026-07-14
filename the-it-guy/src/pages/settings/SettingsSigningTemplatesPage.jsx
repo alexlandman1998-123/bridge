@@ -8262,7 +8262,7 @@ export default function SettingsSigningTemplatesPage({
   }
 
   return (
-    <div className="space-y-6 pb-10" data-simple-document-builder={simpleDocumentBuilderEnabled ? 'enabled' : 'off'}>
+    <div className="space-y-6" data-simple-document-builder={simpleDocumentBuilderEnabled ? 'enabled' : 'off'}>
       <StartDocumentModal
         open={documentLibraryStartOpen}
         onClose={() => setDocumentLibraryStartOpen(false)}
@@ -8543,7 +8543,7 @@ export default function SettingsSigningTemplatesPage({
             <form
               onSubmit={handleSaveDraftAction}
               className={[
-                'grid min-w-0 gap-4 pb-8 lg:gap-5 xl:min-h-[760px] xl:items-start',
+                'grid min-w-0 gap-4 lg:gap-5 xl:min-h-[760px] xl:items-start',
                 outlineCollapsed
                   ? 'xl:grid-cols-[64px_minmax(0,1fr)_minmax(260px,300px)] 2xl:grid-cols-[64px_minmax(0,1fr)_minmax(280px,320px)]'
                   : 'xl:grid-cols-[220px_minmax(0,1fr)_minmax(260px,300px)] 2xl:grid-cols-[260px_minmax(0,1fr)_minmax(280px,320px)]',

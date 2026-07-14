@@ -3744,81 +3744,106 @@ function SellerPropertyHero({
   sellerStatusLabel,
   daysOnMarketLabel,
   buyerInterestLabel,
-  nextMilestoneLabel,
+  sellerPerformanceMetrics,
+  sellerMarketingChannels,
+  sellerAskingPrice,
+  sellerListedDateLabel,
   sellerListingUrl,
   token,
   workspaceNavigationScope,
 }) {
   const sellerAddressLines = splitSellerPortalAddress(sellerPropertyTitle)
+  const normalizedStatus = normalizeSellerPortalKey(sellerStatusLabel)
+  const isListingLive = normalizedStatus.includes('listing_live') || normalizedStatus === 'live'
+  const statusHeadline = isListingLive
+    ? 'Your property is live and everything is on track.'
+    : normalizedStatus.includes('offers_received')
+      ? 'Your property is attracting buyer interest and offers are coming in.'
+      : normalizedStatus.includes('offer_accepted')
+        ? 'Your offer is accepted and the sale is moving forward.'
+        : normalizedStatus.includes('transfer')
+          ? 'Your property transfer is underway and on track.'
+          : normalizedStatus.includes('registered')
+            ? 'Your property sale is registered and complete.'
+            : 'Your property sale is moving forward and everything is on track.'
+  const metricValue = (key) => sellerPerformanceMetrics?.find((metric) => metric?.key === key)?.valueLabel || '—'
+  const visibleMarketingChannels = (Array.isArray(sellerMarketingChannels) ? sellerMarketingChannels : []).slice(0, 3)
   const messageAction = sellerAgentEmail
     ? { label: 'Message Agent', href: `mailto:${sellerAgentEmail}` }
-    : { label: 'Message Agent', disabled: true }
+    : sellerAgentPhone
+      ? { label: 'Call Agent', href: `tel:${sellerAgentPhone}` }
+      : { label: 'Message Agent', disabled: true }
   const scheduleAction = { label: 'Schedule Call', to: 'appointments' }
   const listingAction = sellerListingUrl
     ? { label: 'View Listing', href: sellerListingUrl }
     : null
   const primaryButtonClass = 'inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[10px] bg-[#063f37] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#052f2a]'
   const secondaryButtonClass = 'inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[10px] border border-[#dbe5ef] bg-white px-4 py-2.5 text-sm font-semibold text-[#20384f] transition hover:border-[#bfd0e1] hover:bg-[#f8fbff]'
-  const agentLabel = sellerAgentName && sellerAgentName !== sellerAgencyName
-    ? `${sellerAgentName} | ${sellerAgencyName || 'Your property team'}`
-    : sellerAgentName || sellerAgencyName || 'Your property team'
+  const agentName = sellerAgentName || sellerAgencyName || 'Your property team'
+  const askingPriceLabel = Number(sellerAskingPrice) > 0 ? formatSellerMoney(sellerAskingPrice) : ''
 
   return (
-    <section id="seller-property-hero" className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.68fr)]">
-      <div className="min-w-0 py-1 lg:py-4">
-        <h1 className="text-[1.75rem] font-semibold leading-tight tracking-[-0.03em] text-[#0e1a2a] sm:text-[2rem]">
-          {sellerGreeting}, {sellerFirstName}
+    <section id="seller-property-hero" className="grid gap-5 lg:grid-cols-[minmax(0,0.98fr)_minmax(460px,1.08fr)] lg:items-stretch">
+      <div className="min-w-0 py-1 lg:py-3">
+        <h1 className="font-serif text-[2.25rem] font-semibold leading-[1.04] tracking-[-0.035em] text-[#082a2b] sm:text-[2.75rem]">
+          {sellerGreeting}, {sellerFirstName}.
         </h1>
-        <p className="mt-4 max-w-2xl text-sm leading-6 text-[#52647a]">
-          Your property sale is progressing smoothly. We&apos;ll keep you updated every step of the way.
+        <p className="mt-3 max-w-2xl text-lg font-medium leading-7 text-[#078449] sm:text-[1.3rem]">
+          {statusHeadline}
+        </p>
+        <p className="mt-3 max-w-xl text-sm leading-6 text-[#617187]">
+          We&apos;re actively marketing your property across leading platforms and we&apos;ll let you know whenever something important happens.
         </p>
 
-        <div className="mt-6 flex items-start gap-3">
-          <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-[#eef8f4] text-[#047857]">
-            <MapPin size={18} />
-          </span>
-          <div className="min-w-0">
-            <strong className="block text-[1.05rem] font-semibold text-[#102032]">{sellerAddressLines.line1}</strong>
-            {sellerAddressLines.line2 ? (
-              <p className="mt-0.5 text-sm leading-6 text-[#64748b]">{sellerAddressLines.line2}</p>
-            ) : null}
-          </div>
-        </div>
+        <div className="mt-6 grid gap-3 sm:grid-cols-2">
+          <article className="rounded-[16px] border border-[#dce5eb] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eef8f4] text-[#078449]">
+                <MapPin size={21} />
+              </span>
+              <div className="min-w-0 pt-0.5">
+                <strong className="block text-[1.02rem] font-semibold text-[#102032]">{sellerAddressLines.line1}</strong>
+                <p className="mt-0.5 text-sm leading-5 text-[#64748b]">{sellerAddressLines.line2 || 'Property address'}</p>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-[#e7edf2] pt-3 text-[0.69rem] text-[#64748b]">
+              {sellerListedDateLabel ? <span className="flex items-center gap-1"><CalendarClock size={12} /> Listed {sellerListedDateLabel}</span> : null}
+              {askingPriceLabel ? <span className="flex items-center gap-1"><Tag size={12} /> Asking {askingPriceLabel}</span> : null}
+              <span className="rounded-full bg-[#eef8f4] px-2 py-1 font-semibold text-[#078449]">{sellerStatusLabel}</span>
+            </div>
+          </article>
 
-        <div className="mt-6 flex min-w-0 items-center gap-3">
-          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#e6f2ef] text-sm font-semibold text-[#063f37]">
-            {sellerAgentAvatarUrl ? <img src={sellerAgentAvatarUrl} alt="" className="h-full w-full object-cover" /> : getSellerInitials(sellerAgentName || sellerAgencyName)}
-          </span>
-          <p className="min-w-0 text-sm leading-5 text-[#52647a]">
-            <span className="font-semibold text-[#102032]">Agent:</span> {agentLabel}
-          </p>
-        </div>
-
-        <div className="mt-7 flex flex-wrap gap-2.5">
-          <SellerPortalAction action={messageAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={primaryButtonClass}>
-            <MessageCircle size={15} />
-            <span>Message Agent</span>
-          </SellerPortalAction>
-          <SellerPortalAction action={scheduleAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={secondaryButtonClass}>
-            <PhoneCall size={15} />
-            <span>Schedule Call</span>
-          </SellerPortalAction>
-          {listingAction ? (
-            <SellerPortalAction action={listingAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={secondaryButtonClass}>
-              <ExternalLink size={15} />
-              <span>View Listing</span>
-            </SellerPortalAction>
-          ) : null}
-          {!sellerAgentEmail && sellerAgentPhone ? (
-            <SellerPortalAction action={{ label: 'Call Agent', href: `tel:${sellerAgentPhone}` }} token={token} workspaceNavigationScope={workspaceNavigationScope} className={secondaryButtonClass}>
-              <PhoneCall size={15} />
-              <span>Call Agent</span>
-            </SellerPortalAction>
-          ) : null}
+          <article className="rounded-[16px] border border-[#dce5eb] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#e6f2ef] text-base font-semibold text-[#063f37] ring-2 ring-white shadow-sm">
+                {sellerAgentAvatarUrl ? <img src={sellerAgentAvatarUrl} alt="" className="h-full w-full object-cover" /> : getSellerInitials(agentName)}
+              </span>
+              <div className="min-w-0">
+                <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#078449]">Your Agent</span>
+                <strong className="mt-0.5 block truncate text-sm font-semibold text-[#102032]">{agentName}</strong>
+                {sellerAgencyName && sellerAgencyName !== agentName ? <p className="truncate text-xs text-[#64748b]">{sellerAgencyName}</p> : null}
+                <p className="mt-1 flex items-center gap-1.5 text-[0.7rem] text-[#64748b]"><span className="h-1.5 w-1.5 rounded-full bg-[#16a466]" /> Here when you need us</p>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2 border-t border-[#e7edf2] pt-3">
+              <SellerPortalAction action={messageAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={primaryButtonClass}>
+                {messageAction.label === 'Call Agent' ? <PhoneCall size={14} /> : <MessageCircle size={14} />}
+                <span>{messageAction.label === 'Call Agent' ? 'Call' : 'Message'}</span>
+              </SellerPortalAction>
+              <SellerPortalAction action={scheduleAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={secondaryButtonClass}>
+                <PhoneCall size={14} /><span>Schedule</span>
+              </SellerPortalAction>
+              {listingAction ? (
+                <SellerPortalAction action={listingAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={secondaryButtonClass}>
+                  <ExternalLink size={14} /><span>Listing</span>
+                </SellerPortalAction>
+              ) : null}
+            </div>
+          </article>
         </div>
       </div>
 
-      <div className="relative min-h-[280px] overflow-hidden rounded-[18px] border border-[#dbe5ef] bg-[#0b2e2a] shadow-[0_18px_36px_rgba(15,23,42,0.12)]">
+      <div className="relative min-h-[390px] overflow-hidden rounded-[18px] border border-[#dbe5ef] bg-[#0b2e2a] shadow-[0_18px_36px_rgba(15,23,42,0.14)]">
         {sellerPropertyImageUrl ? (
           <img src={sellerPropertyImageUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
         ) : (
@@ -3832,19 +3857,34 @@ function SellerPropertyHero({
         <div className="absolute left-4 top-4 rounded-[8px] bg-[#047857] px-3 py-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-white shadow-[0_10px_22px_rgba(4,120,87,0.28)]">
           {sellerStatusLabel}
         </div>
-        <div className="absolute inset-x-3 bottom-3 rounded-[14px] border border-white/15 bg-[#061916]/90 p-3 text-white shadow-[0_16px_32px_rgba(0,0,0,0.22)] backdrop-blur">
-          <div className="grid divide-y divide-white/10 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-            <div className="px-2 py-2">
-              <p className="flex items-center gap-1.5 text-[0.7rem] text-white/72"><Clock3 size={13} /> Days on Market</p>
-              <strong className="mt-1 block text-lg font-semibold">{daysOnMarketLabel}</strong>
-            </div>
-            <div className="px-2 py-2">
-              <p className="flex items-center gap-1.5 text-[0.7rem] text-white/72"><BarChart3 size={13} /> Buyer Interest</p>
-              <strong className="mt-1 block text-lg font-semibold">{buyerInterestLabel}</strong>
-            </div>
-            <div className="px-2 py-2">
-              <p className="text-[0.7rem] text-white/72">Estimated next milestone</p>
-              <strong className="mt-1 block text-sm font-semibold leading-5">{nextMilestoneLabel}</strong>
+        <div className="absolute inset-x-3 bottom-3 rounded-[16px] border border-white/15 bg-[#061d1d] p-4 text-white shadow-[0_18px_36px_rgba(0,0,0,0.28)] sm:inset-y-4 sm:left-auto sm:right-4 sm:w-[48%]">
+          <p className="flex items-center gap-2 text-xs font-semibold text-white/90"><BarChart3 size={15} /> Property Performance</p>
+          <div className="mt-3 grid grid-cols-2 border-y border-white/12">
+            {[
+              { label: 'Days Live', value: daysOnMarketLabel },
+              { label: 'Views', value: metricValue('views') },
+              { label: 'Buyer Enquiries', value: metricValue('enquiries') },
+              { label: 'Saved Searches', value: metricValue('saves') },
+            ].map((metric, index) => (
+              <div key={metric.label} className={`px-2 py-3 ${index % 2 ? 'border-l border-white/12' : ''} ${index > 1 ? 'border-t border-white/12' : ''}`}>
+                <strong className="block text-xl font-semibold leading-none">{metric.value}</strong>
+                <span className="mt-1.5 block text-[0.66rem] leading-4 text-white/70">{metric.label}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <span className="text-[0.68rem] font-semibold text-white/70">Buyer interest</span>
+            <strong className="text-xs font-semibold">{buyerInterestLabel}</strong>
+          </div>
+          <div className="mt-3 border-t border-white/12 pt-3">
+            <p className="flex items-center gap-1.5 text-[0.7rem] font-semibold text-white"><Megaphone size={13} /> Marketing Active</p>
+            <div className="mt-2 space-y-1.5">
+              {visibleMarketingChannels.length ? visibleMarketingChannels.map((channel) => (
+                <p key={channel.key || channel.label} className="flex items-center gap-2 text-[0.68rem] text-[#d7e8e4]">
+                  <CheckCircle2 size={13} className="shrink-0 text-[#74d39d]" />
+                  <span className="truncate">{channel.label}</span>
+                </p>
+              )) : <p className="text-[0.68rem] leading-4 text-[#a9c1bc]">Channels will appear as your agent publishes them.</p>}
             </div>
           </div>
         </div>
@@ -4168,13 +4208,14 @@ function SellerPortalDashboard({
   sellerNextMilestone,
   sellerImportantDocuments,
   sellerListingUrl,
+  sellerAskingPrice,
+  sellerListedDateLabel,
   daysOnMarketLabel,
   buyerInterestLabel,
   token,
   workspaceNavigationScope,
 }) {
   const sellerGreeting = getSellerDashboardGreeting()
-  const nextMilestoneLabel = sellerNextMilestone?.title || 'Awaiting update'
 
   return (
     <section className="space-y-6">
@@ -4191,7 +4232,10 @@ function SellerPortalDashboard({
         sellerStatusLabel={sellerStatusLabel}
         daysOnMarketLabel={daysOnMarketLabel}
         buyerInterestLabel={buyerInterestLabel}
-        nextMilestoneLabel={nextMilestoneLabel}
+        sellerPerformanceMetrics={sellerPerformanceMetrics}
+        sellerMarketingChannels={sellerMarketingChannels}
+        sellerAskingPrice={sellerAskingPrice}
+        sellerListedDateLabel={sellerListedDateLabel}
         sellerListingUrl={sellerListingUrl}
         token={token}
         workspaceNavigationScope={workspaceNavigationScope}
@@ -7061,8 +7105,10 @@ function ClientPortal() {
     sellerOfferItems,
     mainStage,
   })
+  const sellerListingPublishedAt = resolveSellerListingPublishedAt({ portal, activeSellingContext })
+  const sellerListedDateLabel = formatShortPortalDate(sellerListingPublishedAt, '')
   const daysOnMarketLabel = hasListingCreated
-    ? formatSellerDaysOnMarket(resolveSellerListingPublishedAt({ portal, activeSellingContext }))
+    ? formatSellerDaysOnMarket(sellerListingPublishedAt)
     : 'Awaiting listing'
   const buyerInterestLabel = resolveSellerBuyerInterest({
     performanceMetrics: sellerPerformanceMetrics,
@@ -8078,6 +8124,8 @@ function ClientPortal() {
                       sellerNextMilestone={sellerNextMilestone}
                       sellerImportantDocuments={sellerImportantDocuments}
                       sellerListingUrl={sellerListingUrl}
+                      sellerAskingPrice={sellerOfferAskingPrice}
+                      sellerListedDateLabel={sellerListedDateLabel}
                       daysOnMarketLabel={daysOnMarketLabel}
                       buyerInterestLabel={buyerInterestLabel}
                       token={token}

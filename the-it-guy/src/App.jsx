@@ -404,6 +404,16 @@ function AppLayout({ onLogout, session = null, user }) {
   const defaultDevelopmentId = workspace.id === 'all' ? '' : workspace.id
 
   useEffect(() => {
+    const documentElement = document.documentElement
+    documentElement.classList.add('ui-shell-scroll-locked')
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+
+    return () => {
+      documentElement.classList.remove('ui-shell-scroll-locked')
+    }
+  }, [])
+
+  useEffect(() => {
     function clearSessionTimers() {
       if (inactivityTimerRef.current) window.clearTimeout(inactivityTimerRef.current)
       if (warningTimerRef.current) window.clearTimeout(warningTimerRef.current)

@@ -11,5 +11,9 @@ assert.match(marketingBuilder, /const channels = new Map\(\)/, 'marketing cards 
 assert.match(source, /const sellerAgencyLogoUrl = pickFirstText\(/, 'seller portal should resolve the agent entity logo from listing branding')
 assert.match(source, /src=\{sellerAgencyLogoUrl\}/, 'seller sidebar should render the agent entity logo')
 assert.doesNotMatch(source, /return `Seller Onboarding \$\{label\}`/, 'seller sidebar should not render the redundant onboarding completion badge')
+assert.match(source, /Your property is live and everything is on track\./, 'seller hero should lead with the listing status message')
+assert.match(source, /Property Performance/, 'seller hero should include the property performance overlay')
+assert.match(source, /visibleMarketingChannels\.map/, 'seller hero should show deduplicated live marketing channels')
+assert.match(source, /sellerListedDateLabel/, 'seller hero should display listing metadata when available')
 
 console.log('Seller portal UI regression checks passed.')
