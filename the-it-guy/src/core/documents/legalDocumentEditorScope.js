@@ -1,5 +1,6 @@
 import { listConditionalPackDataRules } from './conditionalPackDataRules.js'
 import { normalizeLegalDocumentEditorScope } from './legalDocumentCatalog.js'
+import { sectionMatchesLegalDocumentEditorSituation } from './legalDocumentEditorSituations.js'
 
 const SITUATION_KEYS_BY_PACKET_TYPE = new Map()
 
@@ -66,6 +67,7 @@ export function classifyLegalDocumentEditorSection(section = {}, { packetType = 
 export function listScopedLegalDocumentSectionEntries(sections = [], {
   scope = 'all',
   packetType = '',
+  situationKey = '',
 } = {}) {
   const normalizedScope = normalizeLegalDocumentEditorScope(scope)
   const entries = (Array.isArray(sections) ? sections : []).map((section, index) => ({
@@ -80,6 +82,10 @@ export function listScopedLegalDocumentSectionEntries(sections = [], {
     if (normalizedScope === 'signing') return entry.classification.isSigning
     return true
   })
+  if (normalizedScope === 'situations') {
+    if (!situationKey) return []
+    return matches.filter((entry) => sectionMatchesLegalDocumentEditorSituation(entry.section, situationKey))
+  }
   if (normalizedScope === 'signing' && !matches.length) return entries
   return matches
 }

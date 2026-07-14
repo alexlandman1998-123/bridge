@@ -21,13 +21,17 @@ test('classifies standard, situation and signing sections from the shared contra
 
 test('keeps original section indexes when creating focused editor lists', () => {
   assert.deepEqual(
-    listScopedLegalDocumentSectionEntries(sections, { scope: 'situations', packetType: 'otp' }).map((entry) => entry.index),
-    [1, 2],
+    listScopedLegalDocumentSectionEntries(sections, { scope: 'situations', packetType: 'otp', situationKey: 'company' }).map((entry) => entry.index),
+    [1],
   )
   assert.deepEqual(
     listScopedLegalDocumentSectionEntries(sections, { scope: 'signing', packetType: 'otp' }).map((entry) => entry.index),
     [3],
   )
+})
+
+test('requires a plain-language situation choice before showing conditional wording', () => {
+  assert.deepEqual(listScopedLegalDocumentSectionEntries(sections, { scope: 'situations', packetType: 'otp' }), [])
 })
 
 test('keeps sections selectable when a template has no signing setup yet', () => {

@@ -114,6 +114,7 @@ import {
 import { buildLegalDocumentTemplateCoverageAudit } from '../../core/documents/legalDocumentTemplateRouting'
 import { normalizeLegalDocumentEditorScope } from '../../core/documents/legalDocumentCatalog'
 import { listScopedLegalDocumentSectionEntries } from '../../core/documents/legalDocumentEditorScope'
+import { getLegalDocumentEditorSituation } from '../../core/documents/legalDocumentEditorSituations'
 
 const SUPPORTED_PACKET_TYPES = [
   {
@@ -5688,6 +5689,7 @@ export default function SettingsSigningTemplatesPage({
   initialPacketType = '',
   initialTemplateId = '',
   editorScope = 'all',
+  editorSituationKey = '',
   focusedLegalDocumentKey = '',
 } = {}) {
   const { role, currentMembership, currentWorkspace, workspaceType } = useWorkspace()
@@ -5734,6 +5736,7 @@ export default function SettingsSigningTemplatesPage({
     ? requestedPacketType
     : stableAllowedPacketTypes[0] || 'otp'
   const normalizedEditorScope = normalizeLegalDocumentEditorScope(editorScope)
+  const editorSituation = getLegalDocumentEditorSituation(editorSituationKey)
   const isFocusedLegalDocumentEditor = Boolean(normalizeText(focusedLegalDocumentKey))
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -6355,8 +6358,9 @@ export default function SettingsSigningTemplatesPage({
     () => listScopedLegalDocumentSectionEntries(form.sections || [], {
       scope: normalizedEditorScope,
       packetType,
+      situationKey: editorSituation?.key || '',
     }),
-    [form.sections, normalizedEditorScope, packetType],
+    [editorSituation?.key, form.sections, normalizedEditorScope, packetType],
   )
   const selectedSection = useMemo(
     () => {
@@ -8805,9 +8809,13 @@ export default function SettingsSigningTemplatesPage({
                   </div>
                 ) : (
                   <SettingsEmptyState
-                    title={normalizedEditorScope === 'situations' ? 'No situation wording yet' : 'No sections yet'}
+                    title={normalizedEditorScope === 'situations'
+                      ? editorSituation ? `No ${editorSituation.label.toLowerCase()} wording yet` : 'Choose a situation above'
+                      : 'No sections yet'}
                     description={normalizedEditorScope === 'situations'
-                      ? 'Use an approved clause to add wording that appears only for a specific buyer, seller, property or finance situation.'
+                      ? editorSituation
+                        ? `Use an approved clause to add buyer or seller wording for ${editorSituation.label.toLowerCase()}.`
+                        : 'Select Individual, Company, Trust, Married in community, Sectional title or Finance before editing.'
                       : 'Add a section to start editing this document.'}
                   />
                 )}
@@ -8822,6 +8830,17 @@ export default function SettingsSigningTemplatesPage({
                   >
                     <Plus size={15} />
                     <span className={outlineCollapsed ? 'sr-only' : ''}>Add Section</span>
+                  </button>
+                ) : null}
+                {normalizedEditorScope === 'situations' && editorSituation ? (
+                  <button
+                    type="button"
+                    className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[10px] border border-[#a9d8bd] bg-[#eef9f2] px-3 py-2.5 text-sm font-semibold text-[#128642] transition hover:border-[#75bd90] hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={() => setActiveStudioArea('clauseLibrary')}
+                    disabled={!canEdit}
+                  >
+                    <Layers3 size={15} />
+                    <span className={outlineCollapsed ? 'sr-only' : ''}>Add {editorSituation.label} wording</span>
                   </button>
                 ) : null}
               </aside>
@@ -9144,8 +9163,12 @@ export default function SettingsSigningTemplatesPage({
                   </div>
                 ) : (
                   <SettingsEmptyState
-                    title="Choose a section"
-                    description="Select a section from the outline to edit the document wording."
+                    title={normalizedEditorScope === 'situations' && !editorSituation ? 'Choose a situation first' : 'Choose a section'}
+                    description={normalizedEditorScope === 'situations'
+                      ? editorSituation
+                        ? `Select ${editorSituation.label.toLowerCase()} wording from the outline, or add an approved clause.`
+                        : 'Use the simple choices above to tell Bridge whether you are editing individual, company, trust, marriage, property or finance wording.'
+                      : 'Select a section from the outline to edit the document wording.'}
                   />
                 )}
               </main>
@@ -9154,19 +9177,39 @@ export default function SettingsSigningTemplatesPage({
                 <section data-editor-tool="content" className="min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Standard Conditions</p>
-                      <h2 className="mt-2 text-base font-semibold text-[#102033]">Legal Coverage</h2>
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">{normalizedEditorScope === 'situations' ? 'Selected situation' : 'Standard Conditions'}</p>
+                      <h2 className="mt-2 text-base font-semibold text-[#102033]">{normalizedEditorScope === 'situations' ? editorSituation?.label || 'Choose a situation' : 'Legal Coverage'}</h2>
                     </div>
                     <span className="rounded-full border border-[#cdebd8] bg-[#eef9f1] px-2.5 py-1 text-[0.68rem] font-semibold text-[#128642]">
-                      {legalConditionCoverage.coveredCount}/{legalConditionCoverage.totalCount}
+                      {normalizedEditorScope === 'situations' ? scopedSectionEntries.length : `${legalConditionCoverage.coveredCount}/${legalConditionCoverage.totalCount}`}
                     </span>
                   </div>
-                  <p className="mt-3 text-sm leading-6 text-[#607387]">
-                    The longer legal wording is organised into sections. Open a row to jump to the wording your attorney can review.
-                  </p>
+                  {normalizedEditorScope === 'situations' ? (
+                    <div className="mt-3">
+                      <p className="text-sm leading-6 text-[#607387]">
+                        {editorSituation
+                          ? `Only ${editorSituation.label.toLowerCase()} wording is shown. Standard clauses remain unchanged.`
+                          : 'Choose a situation above before editing conditional legal wording.'}
+                      </p>
+                      {editorSituation ? (
+                        <button
+                          type="button"
+                          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[12px] border border-[#a9d8bd] bg-[#eef9f2] px-3 py-2.5 text-sm font-semibold text-[#128642] transition hover:bg-white"
+                          onClick={() => setActiveStudioArea('clauseLibrary')}
+                        >
+                          <Layers3 size={14} />
+                          <span>Browse {editorSituation.label} Clauses</span>
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <>
+                      <p className="mt-3 text-sm leading-6 text-[#607387]">
+                        The longer legal wording is organised into sections. Open a row to jump to the wording your attorney can review.
+                      </p>
 
-                  <div className="mt-4 space-y-2">
-                    {legalConditionCoverage.items.map((item) => (
+                      <div className="mt-4 space-y-2">
+                        {legalConditionCoverage.items.map((item) => (
                       <button
                         key={item.key}
                         type="button"
@@ -9198,17 +9241,19 @@ export default function SettingsSigningTemplatesPage({
                           </span>
                         </span>
                       </button>
-                    ))}
-                  </div>
+                        ))}
+                      </div>
 
-                  <button
-                    type="button"
-                    className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[12px] border border-[#dbe7f3] bg-[#f8fbff] px-3 py-2.5 text-sm font-semibold text-[#24518a] transition hover:bg-white"
-                    onClick={() => setActiveStudioArea('clauseLibrary')}
-                  >
-                    <Layers3 size={14} />
-                    <span>Use Approved Clauses</span>
-                  </button>
+                      <button
+                        type="button"
+                        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[12px] border border-[#dbe7f3] bg-[#f8fbff] px-3 py-2.5 text-sm font-semibold text-[#24518a] transition hover:bg-white"
+                        onClick={() => setActiveStudioArea('clauseLibrary')}
+                      >
+                        <Layers3 size={14} />
+                        <span>Use Approved Clauses</span>
+                      </button>
+                    </>
+                  )}
                 </section>
 
                 <section data-editor-tool="content" className="min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">

@@ -16,7 +16,13 @@ function withTemplate(path, templateId) {
   return templateId ? `${path}?template=${encodeURIComponent(templateId)}` : path
 }
 
-export default function LegalDocumentEditorScopeNav({ documentKey, documentLabel, scope, templateId = '' }) {
+function withSituation(path, templateId, situationKey, includeSituation) {
+  const base = withTemplate(path, templateId)
+  if (!includeSituation || !situationKey) return base
+  return `${base}${base.includes('?') ? '&' : '?'}situation=${encodeURIComponent(situationKey)}`
+}
+
+export default function LegalDocumentEditorScopeNav({ documentKey, documentLabel, scope, templateId = '', situationKey = '' }) {
   return (
     <div className="space-y-4">
       <Link
@@ -35,7 +41,7 @@ export default function LegalDocumentEditorScopeNav({ documentKey, documentLabel
             return (
               <Link
                 key={option.key}
-                to={withTemplate(buildLegalDocumentEditorPath(documentKey, option.key), templateId)}
+                to={withSituation(buildLegalDocumentEditorPath(documentKey, option.key), templateId, situationKey, option.key === 'situations')}
                 aria-current={active ? 'page' : undefined}
                 className={`inline-flex min-h-10 items-center gap-2 rounded-[11px] border px-3.5 py-2 text-sm font-semibold transition ${active
                   ? 'border-[#a9d8bd] bg-[#eef9f2] text-[#117443]'
