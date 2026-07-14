@@ -398,7 +398,7 @@ function SellerOffersPage({ offers = [], askingPrice = 0, agent = {}, transactio
   const sortedOffers = useMemo(() => sortOffers(payload.offers, sortMode), [payload.offers, sortMode])
 
   return (
-    <div className="mx-auto w-full max-w-[1440px] px-4 py-6 lg:px-6">
+    <div className="w-full space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold tracking-[-0.04em] text-[#0f2137]">Offers</h1>
@@ -415,7 +415,7 @@ function SellerOffersPage({ offers = [], askingPrice = 0, agent = {}, transactio
         </button>
       </header>
 
-      <div className="mt-6 space-y-6">
+      <div className="space-y-6">
         <OfferKpiCards summary={payload.summary} />
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">

@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
+import { createServer } from 'vite'
 
 const source = await fs.readFile(new URL('../src/pages/ClientPortal.jsx', import.meta.url), 'utf8')
 const privateListingSource = await fs.readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
 const workspaceServiceSource = await fs.readFile(new URL('../src/services/clientPortalWorkspaceService.js', import.meta.url), 'utf8')
 const stageWorkspaceSource = await fs.readFile(new URL('../src/components/client-portal/seller/TransactionStageWorkspace.jsx', import.meta.url), 'utf8')
+const sellerOffersSource = await fs.readFile(new URL('../src/components/client-portal/offers/SellerOffersPage.jsx', import.meta.url), 'utf8')
+const sellerAppointmentsSource = await fs.readFile(new URL('../src/components/client-portal/appointments/SellerAppointmentsPage.jsx', import.meta.url), 'utf8')
+const sellerDocumentsSource = await fs.readFile(new URL('../src/components/client-portal/documents/SellerDocumentWorkspace.jsx', import.meta.url), 'utf8')
 const linkNormalizer = source.match(/function normalizeSellerVisibleListingLinks[\s\S]*?\n}\n\nfunction getFriendlySellerStatusLabel/)?.[0] || ''
 const marketingBuilder = source.match(/function buildSellerMarketingChannels[\s\S]*?\n}\n\nfunction buildSellerAgentUpdate/)?.[0] || ''
 const sellerHero = source.match(/function SellerPropertyHero[\s\S]*?\n}\n\nfunction SellerTransactionHealthCard/)?.[0] || ''
@@ -53,10 +57,29 @@ assert.match(source, /progress: true/, 'seller progress should be enabled as its
 assert.match(source, /<TransactionStageWorkspace/, 'seller progress should render the dedicated transaction-stage workspace')
 assert.doesNotMatch(source, /key: 'progress'.*hash: '#seller-sale-progress'/, 'seller progress navigation should not redirect into the overview dashboard')
 assert.match(stageWorkspaceSource, /SELLER_TRANSACTION_STAGE_DEFINITIONS/, 'seller progress should use a central reusable stage registry')
+assert.match(stageWorkspaceSource, /otp:[\s\S]*title: 'Offer to Purchase'/, 'seller progress should represent the pre-acceptance OTP milestone instead of falling through to Offer Accepted')
 assert.match(stageWorkspaceSource, /instruction_sent:[\s\S]*attorney_opening_file:[\s\S]*fica_verification:[\s\S]*transfer_documents:/, 'stage registry should cover the detailed transfer workflow')
 assert.match(stageWorkspaceSource, /Frequently asked at this stage/, 'stage workspace should provide stage-specific FAQs')
 assert.match(stageWorkspaceSource, /Who is working on this\?/, 'stage workspace should expose assigned transaction participants')
 assert.match(stageWorkspaceSource, /Recent activity/, 'stage workspace should expose seller-facing activity')
 assert.match(stageWorkspaceSource, /fixed inset-x-0 bottom-0/, 'action-required stages should provide a mobile sticky CTA')
+assert.doesNotMatch(sellerOffersSource, /max-w-\[1440px\]|lg:px-6/, 'seller offers should inherit the dashboard page gutter without a nested width cap or horizontal padding')
+assert.doesNotMatch(sellerAppointmentsSource, /max-w-\[1440px\]/, 'seller appointments should inherit the full dashboard content width')
+assert.doesNotMatch(sellerDocumentsSource, /rounded-\[32px\][^\n]*p-4/, 'seller documents should not add a second padded page shell inside the dashboard gutter')
+
+const server = await createServer({
+  root: process.cwd(),
+  logLevel: 'silent',
+  server: { middlewareMode: true },
+})
+
+try {
+  const { resolveSellerTransactionStageKey } = await server.ssrLoadModule('/src/components/client-portal/seller/TransactionStageWorkspace.jsx')
+  assert.equal(resolveSellerTransactionStageKey('listing_live', 'otp'), 'otp', 'canonical OTP progress must not fall through to Offer Accepted')
+  assert.equal(resolveSellerTransactionStageKey('offer_accepted', 'finance'), 'bond_approval', 'finance progress should continue into the detailed post-acceptance workflow')
+  assert.equal(resolveSellerTransactionStageKey('fica_verification', 'transfer'), 'fica_verification', 'a detailed transaction stage should take precedence over the coarse sale phase')
+} finally {
+  await server.close()
+}
 
 console.log('Seller portal UI regression checks passed.')

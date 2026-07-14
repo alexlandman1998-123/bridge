@@ -111,7 +111,7 @@ function SellerDocumentWorkspace({
   }
 
   return (
-    <section className="space-y-6 rounded-[32px] bg-[#f4f7fb] p-4 sm:p-5 lg:p-6">
+    <section className="w-full space-y-6">
       <header className="rounded-[28px] border border-[#dde6f0] bg-white px-5 py-5 shadow-[0_20px_40px_rgba(15,23,42,0.06)] sm:px-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-2xl">

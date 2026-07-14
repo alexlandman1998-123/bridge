@@ -31,6 +31,7 @@ const COMMON_RESOURCES = [
 ]
 
 export const SELLER_TRANSACTION_STAGE_ORDER = [
+  'otp',
   'offer_accepted',
   'instruction_sent',
   'attorney_opening_file',
@@ -44,6 +45,22 @@ export const SELLER_TRANSACTION_STAGE_ORDER = [
 ]
 
 export const SELLER_TRANSACTION_STAGE_DEFINITIONS = {
+  otp: {
+    title: 'Offer to Purchase',
+    shortLabel: 'OTP',
+    icon: FileSignature,
+    description: 'Your seller file is ready and the next sale milestone is an Offer to Purchase.',
+    detail: 'Your agent is marketing the property, coordinating buyer interest and will present any offers for your review.',
+    duration: { min: null, max: null, label: 'Until an offer is accepted' },
+    bullets: ['Marketing the property to buyers', 'Following up on buyer interest', 'Preparing offers for your review'],
+    reassurance: 'No offer has been accepted yet. You remain in control of which offer, if any, you choose to accept.',
+    faqs: [
+      ['Has my property been sold?', 'Not yet. A sale moves forward only after you accept and sign an Offer to Purchase.'],
+      ['What happens when an offer arrives?', 'Your agent will present the terms, explain any conditions and help you decide whether to accept, reject or counter.'],
+      ['Do I need to do anything now?', 'No action is required unless your agent shares an offer or asks for additional information.'],
+    ],
+    resources: COMMON_RESOURCES,
+  },
   offer_accepted: {
     title: 'Offer Accepted',
     shortLabel: 'Offer Accepted',
@@ -217,6 +234,7 @@ export function resolveSellerTransactionStageKey(...values) {
   if (/fica|compliance|verification/.test(haystack)) return 'fica_verification'
   if (/opening_file|file_open|attorney_open/.test(haystack)) return 'attorney_opening_file'
   if (/instruction|instructed|attorney_assigned|transfer/.test(haystack)) return 'instruction_sent'
+  if (/(^|_)otp($|_)|offer_to_purchase|listing_live|listed|offers/.test(haystack)) return 'otp'
   return 'offer_accepted'
 }
 
@@ -290,6 +308,7 @@ export default function TransactionStageWorkspace({
   const isCurrent = selectedKey === resolvedCurrentKey
   const isCompleted = selectedIndex < currentIndex || resolvedCurrentKey === 'completed'
   const day = getElapsedDay(startedAt)
+  const tracksElapsedTime = Number.isFinite(stage.duration.max) && stage.duration.max > 0
   const approximateMax = stage.duration.max || day
   const durationProgress = Math.min(100, Math.round((day / approximateMax) * 100))
   const actionRequired = isCurrent && pendingAction?.tone === 'action'
@@ -335,8 +354,8 @@ export default function TransactionStageWorkspace({
           <dl className="grid gap-4 border-t border-[#e2e9ef] pt-5 lg:border-l lg:border-t-0 lg:pl-7 lg:pt-0">
             <div className="flex items-center justify-between gap-4"><dt className="flex items-center gap-2 text-sm text-[#53667a]"><Clock3 size={16} /> Estimated duration</dt><dd className="text-sm font-semibold text-[#102032]">{stage.duration.label}</dd></div>
             <div className="flex items-center justify-between gap-4"><dt className="flex items-center gap-2 text-sm text-[#53667a]"><CircleDot size={16} /> Status</dt><dd className={`rounded-md px-2.5 py-1 text-xs font-semibold ${isCurrent ? 'bg-[#e4f7ee] text-[#067451]' : isCompleted ? 'bg-[#e7f5ef] text-[#067451]' : 'bg-[#edf2f6] text-[#637589]'}`}>{isCurrent ? 'In Progress' : isCompleted ? 'Completed' : 'Upcoming'}</dd></div>
-            <div className="flex items-center justify-between gap-4"><dt className="flex items-center gap-2 text-sm text-[#53667a]"><CalendarDays size={16} /> {isCompleted ? 'Completed' : isCurrent ? 'Started' : 'Starts after'}</dt><dd className="text-sm font-semibold text-[#102032]">{isCompleted ? formatDate(completedAt || startedAt) : isCurrent ? formatDate(startedAt) : SELLER_TRANSACTION_STAGE_DEFINITIONS[resolvedCurrentKey].shortLabel}</dd></div>
-            {isCurrent ? <div className="flex items-center justify-between gap-4"><dt className="flex items-center gap-2 text-sm text-[#53667a]"><CheckCircle2 size={16} /> Current day</dt><dd className="text-sm font-semibold text-[#102032]">Day {day}</dd></div> : null}
+            {isCurrent && !tracksElapsedTime ? <div className="flex items-center justify-between gap-4"><dt className="flex items-center gap-2 text-sm text-[#53667a]"><CalendarDays size={16} /> Next milestone</dt><dd className="text-sm font-semibold text-[#102032]">Offer accepted</dd></div> : <div className="flex items-center justify-between gap-4"><dt className="flex items-center gap-2 text-sm text-[#53667a]"><CalendarDays size={16} /> {isCompleted ? 'Completed' : isCurrent ? 'Started' : 'Starts after'}</dt><dd className="text-sm font-semibold text-[#102032]">{isCompleted ? formatDate(completedAt || startedAt) : isCurrent ? formatDate(startedAt) : SELLER_TRANSACTION_STAGE_DEFINITIONS[resolvedCurrentKey].shortLabel}</dd></div>}
+            {isCurrent && tracksElapsedTime ? <div className="flex items-center justify-between gap-4"><dt className="flex items-center gap-2 text-sm text-[#53667a]"><CheckCircle2 size={16} /> Current day</dt><dd className="text-sm font-semibold text-[#102032]">Day {day}</dd></div> : null}
           </dl>
         </div>
       </article>
@@ -373,7 +392,7 @@ export default function TransactionStageWorkspace({
           <div className="mt-5 rounded-[12px] border border-[#e0e7ee] p-4">
             <span className="text-xs text-[#68798c]">Typical duration</span>
             <strong className="mt-1 block text-xl tracking-[-0.03em] text-[#102032]">{stage.duration.label}</strong>
-            {isCurrent ? <><div className="my-4 border-t border-[#e5ebf0]" /><span className="text-xs text-[#68798c]">Current progress</span><p className="mt-2 text-sm text-[#20384f]">Day {day} of approximately {approximateMax}</p><div className="mt-3 h-2 overflow-hidden rounded-full bg-[#e8edf3]"><div className="h-full rounded-full bg-[#08765a]" style={{ width: `${durationProgress}%` }} /></div></> : null}
+            {isCurrent && tracksElapsedTime ? <><div className="my-4 border-t border-[#e5ebf0]" /><span className="text-xs text-[#68798c]">Current progress</span><p className="mt-2 text-sm text-[#20384f]">Day {day} of approximately {approximateMax}</p><div className="mt-3 h-2 overflow-hidden rounded-full bg-[#e8edf3]"><div className="h-full rounded-full bg-[#08765a]" style={{ width: `${durationProgress}%` }} /></div></> : null}
           </div>
           <p className="mt-4 text-xs leading-5 text-[#607286]">Timelines can vary depending on how quickly information is received.</p>
         </article>
@@ -427,7 +446,7 @@ export default function TransactionStageWorkspace({
       </section>
 
       <article className="flex flex-col gap-5 rounded-[16px] border border-[#d3e8df] bg-[linear-gradient(100deg,#edf9f4_0%,#f8fcfa_100%)] p-5 md:flex-row md:items-center md:justify-between">
-        <div className="flex items-start gap-4"><span className="inline-flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#08765a] text-white"><ShieldCheck size={32} /></span><div><h3 className="text-lg font-semibold tracking-[-0.03em] text-[#10392f]">You’re exactly where you should be.</h3><p className="mt-2 text-sm leading-6 text-[#46675f]">Most sellers spend around {stage.duration.max || 'a few'} days in this stage.<br />We’ll automatically notify you as soon as your transaction moves forward.</p></div></div>
+        <div className="flex items-start gap-4"><span className="inline-flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#08765a] text-white"><ShieldCheck size={32} /></span><div><h3 className="text-lg font-semibold tracking-[-0.03em] text-[#10392f]">You’re exactly where you should be.</h3><p className="mt-2 text-sm leading-6 text-[#46675f]">{tracksElapsedTime ? `Most sellers spend around ${stage.duration.max} days in this stage.` : 'This stage depends on buyer activity and the offer terms you are willing to accept.'}<br />We’ll automatically notify you as soon as your transaction moves forward.</p></div></div>
         <div className="flex flex-wrap gap-2">
           <WorkspaceAction action={primaryAction} className="inline-flex h-10 items-center gap-2 rounded-[9px] bg-[#087057] px-4 text-sm font-semibold text-white">{primaryAction?.label}<MessageCircle size={14} /></WorkspaceAction>
           {listingUrl ? <a href={listingUrl} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-[9px] border border-[#bcd9cd] bg-white px-4 text-sm font-semibold text-[#175444]">View Listing <ArrowRight size={14} /></a> : null}

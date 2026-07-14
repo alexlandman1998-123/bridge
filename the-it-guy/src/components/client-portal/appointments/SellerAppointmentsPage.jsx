@@ -482,7 +482,7 @@ function SellerAppointmentsPage({
   const appointmentData = useMemo(() => buildSellerPortalAppointmentsPayload(appointments), [appointments])
 
   return (
-    <section className="mx-auto w-full max-w-[1440px] space-y-6">
+    <section className="w-full space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-[1.85rem] font-semibold text-[#142132]">Appointments</h1>
