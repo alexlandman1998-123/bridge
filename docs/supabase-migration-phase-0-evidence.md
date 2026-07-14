@@ -1,6 +1,6 @@
 # Supabase Phase 0 Production Evidence
 
-Generated: 2026-07-14T20:25:32.999Z
+Generated: 2026-07-14T20:35:59.070Z
 
 This is a read-only production baseline. It contains migration-ledger entries and catalog fingerprints only. It contains no application table data and no function bodies.
 
@@ -9,12 +9,12 @@ This is a read-only production baseline. It contains migration-ledger entries an
 | Field | Value |
 | --- | --- |
 | Git branch | codex/db-phase0-reconciliation |
-| Git commit | 6b1ae05b574f2f0ae2efdb2313e4382d3bc025b0 |
+| Git commit | 80510b950aea5836c8f4dfb33ea5a98d7df935ab |
 | Migration rows | 375 |
-| CLI local-only display rows | 101 |
+| CLI local-only display rows | 67 |
 | CLI remote-only display rows | 17 |
-| Normalized matched versions | 274 |
-| Normalized local-only versions | 84 |
+| Normalized matched versions | 308 |
+| Normalized local-only versions | 50 |
 | Normalized remote-only versions | 0 |
 | Catalog objects | 11934 |
 
@@ -32,8 +32,8 @@ This is a read-only production baseline. It contains migration-ledger entries an
 
 ## Integrity hashes
 
-- Catalog snapshot SHA-256: `e6f304ee210f71f72cbbdcf3f6e52f8a0cfcb61ee38dbf7b65de064863b6aef9`
-- Ledger snapshot SHA-256: `ef7d45f356c75667a4595fb745aae2bde76a449241cb6c9a7d11f26f98c59e04`
+- Catalog snapshot SHA-256: `8e6b16c726a984a94560fe6db8fb65901227a53ee308fd8cc8b3c0b7452adf38`
+- Ledger snapshot SHA-256: `a7e8645dd3a56889ad8393b9e89cbd774b6348c60f4b3e615f681c682d8ab4db`
 
 ## Files
 
