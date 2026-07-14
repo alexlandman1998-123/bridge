@@ -13,6 +13,12 @@ assert.match(
 )
 
 const privateListingServiceSource = await fs.readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
+const sellerPortalPayloadLoader = privateListingServiceSource.match(/async function fetchSellerClientPortalPayloadByToken[\s\S]*?\n}\n\nfunction getSellerClientPortalEmail/)?.[0] || ''
+assert.match(
+  sellerPortalPayloadLoader,
+  /isMissingRpcError\(rpc\.error, 'bridge_private_listing_seller_portal_payload'\)[\s\S]*p_token: normalizedToken/,
+  'seller portal payload loading should retry the legacy token-only RPC while production schema reconciliation is pending',
+)
 const sellerOnboardingLoader = privateListingServiceSource.match(/export async function getSellerOnboardingByToken[\s\S]*?\n}\n\nasync function maybeResolveCanonicalSellerRequirements/)?.[0] || ''
 assert.match(sellerOnboardingLoader, /fetchOrganisationBrandingSnapshot\(client, portalPayload\.listing\.organisationId\)/, 'seller onboarding portal should fetch latest organisation branding for RPC payloads')
 assert.match(sellerOnboardingLoader, /fetchOrganisationBrandingSnapshot\(client, listing\?\.organisationId\)/, 'seller onboarding portal should fetch latest organisation branding for fallback listing payloads')

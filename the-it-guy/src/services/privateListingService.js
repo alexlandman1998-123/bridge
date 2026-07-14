@@ -2384,7 +2384,16 @@ async function fetchSellerClientPortalPayloadByToken(client, token, options = {}
     : {
         p_token: normalizedToken,
       }
-  const rpc = await client.rpc('bridge_private_listing_seller_portal_payload', rpcArgs)
+  let rpc = await client.rpc('bridge_private_listing_seller_portal_payload', rpcArgs)
+  if (
+    rpc.error &&
+    (requirePortalAccess || accessToken) &&
+    isMissingRpcError(rpc.error, 'bridge_private_listing_seller_portal_payload')
+  ) {
+    rpc = await client.rpc('bridge_private_listing_seller_portal_payload', {
+      p_token: normalizedToken,
+    })
+  }
   if (rpc.error) {
     if (isMissingRpcError(rpc.error, 'bridge_private_listing_seller_portal_payload')) return null
     throw rpc.error
