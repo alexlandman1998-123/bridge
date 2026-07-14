@@ -1096,15 +1096,6 @@ function SellerCalculator({ onBack, onQuote }) {
         />
         <StickyResultBar label="Seller payout" value={formatZar(result.summary.netProceeds)} type="seller" result={result} tone={netTone} onQuote={onQuote} />
 
-        <div className="grid grid-cols-3 gap-2">
-          <NumberDisplay label="Sale price" value={formatZar(result.summary.salePrice, { compact: true })} />
-          <NumberDisplay label="Settlement" value={formatZar(result.summary.settlement, { compact: true })} />
-          <NumberDisplay label="Commission" value={formatZar(result.summary.commission, { compact: true })} tone="gold" />
-        </div>
-
-        <EstimatePack type="seller" result={result} />
-        <ScenarioStudio metricLabel="Net" scenarios={scenarios} positiveDirection="higher" onApply={setInput} />
-
         <SliderField label="Expected sale price" min={800000} max={12000000} step={50000} value={Number(input.salePrice)} onChange={(value) => update('salePrice', value)} />
         <SliderField label="Bond settlement" min={0} max={Number(input.salePrice)} step={25000} value={Number(input.bondSettlement)} onChange={(value) => update('bondSettlement', value)} />
         <SliderField label="Agent commission" min={0} max={8} step={0.25} value={Number(input.agentCommissionRate)} onChange={(value) => update('agentCommissionRate', value)} format={(value) => `${Number(value).toFixed(2)}%`} />
@@ -1129,6 +1120,15 @@ function SellerCalculator({ onBack, onQuote }) {
             <SliderField label="Capital improvements" min={0} max={1000000} step={10000} value={Number(input.improvementCost)} onChange={(value) => update('improvementCost', value)} />
           </div>
         ) : null}
+
+        <div className="grid grid-cols-3 gap-2">
+          <NumberDisplay label="Sale price" value={formatZar(result.summary.salePrice, { compact: true })} />
+          <NumberDisplay label="Settlement" value={formatZar(result.summary.settlement, { compact: true })} />
+          <NumberDisplay label="Commission" value={formatZar(result.summary.commission, { compact: true })} tone="gold" />
+        </div>
+
+        <EstimatePack type="seller" result={result} />
+        <ScenarioStudio metricLabel="Net" scenarios={scenarios} positiveDirection="higher" onApply={setInput} />
 
         <div className="rounded-lg border border-[#d8d2c5] bg-white p-4 shadow-[0_8px_22px_rgba(32,27,20,0.035)]">
           <div className="mb-2 flex items-center gap-2">
@@ -1204,15 +1204,6 @@ function EstateCalculator({ onBack, onQuote }) {
         />
         <StickyResultBar label="Estate duty" value={formatZar(result.summary.estateDuty)} type="estate" result={result} tone="gold" onQuote={onQuote} />
 
-        <div className="grid grid-cols-3 gap-2">
-          <NumberDisplay label="Dutiable" value={formatZar(result.summary.dutiableEstate, { compact: true })} tone="gold" />
-          <NumberDisplay label="Admin costs" value={formatZar(result.summary.totalAdministrationCosts, { compact: true })} />
-          <NumberDisplay label="Liquidity" value={formatZar(result.summary.liquidityPosition, { compact: true })} tone={liquidityTone} />
-        </div>
-
-        <EstimatePack type="estate" result={result} />
-        <ScenarioStudio metricLabel="Liquidity" scenarios={scenarios} positiveDirection="higher" onApply={setInput} />
-
         <SliderField label="Gross estate value" min={500000} max={50000000} step={100000} value={Number(input.grossEstate)} onChange={(value) => update('grossEstate', value)} />
         <SliderField label="Estate liabilities" min={0} max={Number(input.grossEstate)} step={50000} value={Number(input.liabilities)} onChange={(value) => update('liabilities', value)} />
         <SliderField label="Spouse deduction" min={0} max={Number(input.grossEstate)} step={50000} value={Number(input.spouseDeduction)} onChange={(value) => update('spouseDeduction', value)} />
@@ -1226,6 +1217,15 @@ function EstateCalculator({ onBack, onQuote }) {
             <ToggleButton label="VAT excluded" icon={ClipboardCheck} active={!input.executorVatRegistered} onClick={() => update('executorVatRegistered', false)} />
           </div>
         </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          <NumberDisplay label="Dutiable" value={formatZar(result.summary.dutiableEstate, { compact: true })} tone="gold" />
+          <NumberDisplay label="Admin costs" value={formatZar(result.summary.totalAdministrationCosts, { compact: true })} />
+          <NumberDisplay label="Liquidity" value={formatZar(result.summary.liquidityPosition, { compact: true })} tone={liquidityTone} />
+        </div>
+
+        <EstimatePack type="estate" result={result} />
+        <ScenarioStudio metricLabel="Liquidity" scenarios={scenarios} positiveDirection="higher" onApply={setInput} />
 
         <div className="rounded-lg border border-[#d8d2c5] bg-white p-4 shadow-[0_8px_22px_rgba(32,27,20,0.035)]">
           <div className="mb-2 flex items-center gap-2">
