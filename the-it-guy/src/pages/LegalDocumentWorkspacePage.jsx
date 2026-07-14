@@ -11,6 +11,12 @@ import {
   DOCUMENT_START_ENTRY_POINTS,
   DOCUMENT_START_SOURCE_MODES,
 } from '../core/documents/documentStartRules'
+import { readDocumentStartLegalScenarioParams } from '../core/documents/documentStartLegalScenario'
+import {
+  normalizeLegalPropertyTitleType,
+  resolveLegalDocumentScenarioProfile,
+} from '../core/documents/legalDocumentScenarioProfile'
+import { resolveLegalDocumentScenarioRequirements } from '../core/documents/legalDocumentScenarioRequirements'
 import {
   buildPacketSectionManifest,
   renderPacketPreviewHtml,
@@ -1682,6 +1688,20 @@ function buildMandateDraftDefaults({ leadContext = {}, initialStatus = null, tra
       onboarding.companyDirectorCapacity,
       onboarding.trusteeCapacity,
     ),
+    sellerMaritalRegime: firstText(
+      packetDraft.sellerMaritalRegime,
+      snapshotSeller.maritalRegime,
+      snapshotSeller.maritalStatus,
+      onboarding.maritalRegime,
+      onboarding.maritalStatus,
+      onboarding.marital_status,
+    ),
+    sellerSpouseFullName: firstText(packetDraft.sellerSpouseFullName, snapshotSeller.spouseFullName, onboarding.spouseFullName, onboarding.spouse_name),
+    sellerSpouseIdNumber: firstText(packetDraft.sellerSpouseIdNumber, snapshotSeller.spouseIdNumber, onboarding.spouseIdNumber, onboarding.spouse_id_number),
+    sellerSpouseEmail: firstText(packetDraft.sellerSpouseEmail, snapshotSeller.spouseEmail, onboarding.spouseEmail, onboarding.spouse_email),
+    sellerTrusteeNames: firstText(packetDraft.sellerTrusteeNames, snapshotSeller.trusteeNames, onboarding.trusteeNames),
+    sellerResolutionDate: toIsoDate(firstText(packetDraft.sellerResolutionDate, snapshotSeller.resolutionDate, onboarding.resolutionDate)),
+    sellerAuthorityBasis: firstText(packetDraft.sellerAuthorityBasis, snapshotSeller.authorityBasis, onboarding.authorityBasis),
     propertyAddress: firstText(
       packetDraft.propertyAddress,
       snapshotProperty.fullAddress,
@@ -1721,6 +1741,13 @@ function buildMandateDraftDefaults({ leadContext = {}, initialStatus = null, tra
       privateListing.propertyType,
       lead.propertyType,
       lead.propertyInterest,
+    ),
+    propertyTitleType: firstText(
+      packetDraft.propertyTitleType,
+      snapshotProperty.propertyTitleType,
+      snapshotProperty.titleType,
+      onboarding.propertyTitleType,
+      onboarding.propertyStructureType,
     ),
     unitNumber: firstText(
       packetDraft.unitNumber,
@@ -1969,6 +1996,13 @@ function buildOtpDraftDefaults({ transactionDetail = null, initialStatus = null,
     ),
     buyerRepresentativeName: firstText(packetDraft.buyerRepresentativeName, sourceBuyer.representativeName, onboarding.authorizedRepresentativeName, onboarding.authorisedRepresentativeName),
     buyerRepresentativeCapacity: firstText(packetDraft.buyerRepresentativeCapacity, sourceBuyer.representativeCapacity, onboarding.authorizedRepresentativeCapacity, onboarding.authorisedRepresentativeCapacity),
+    buyerMaritalRegime: firstText(packetDraft.buyerMaritalRegime, sourceBuyer.maritalRegime, sourceBuyer.maritalStatus, onboarding.maritalRegime, onboarding.maritalStatus),
+    buyerSpouseFullName: firstText(packetDraft.buyerSpouseFullName, sourceBuyer.spouseFullName, onboarding.spouseFullName, onboarding.spouse_name),
+    buyerSpouseIdNumber: firstText(packetDraft.buyerSpouseIdNumber, sourceBuyer.spouseIdNumber, onboarding.spouseIdNumber, onboarding.spouse_id_number),
+    buyerSpouseEmail: firstText(packetDraft.buyerSpouseEmail, sourceBuyer.spouseEmail, onboarding.spouseEmail, onboarding.spouse_email),
+    buyerTrusteeNames: firstText(packetDraft.buyerTrusteeNames, sourceBuyer.trusteeNames, onboarding.trusteeNames),
+    buyerResolutionDate: toIsoDate(firstText(packetDraft.buyerResolutionDate, sourceBuyer.resolutionDate, onboarding.resolutionDate)),
+    buyerAuthorityBasis: firstText(packetDraft.buyerAuthorityBasis, sourceBuyer.authorityBasis, onboarding.authorityBasis),
     coBuyerFullName: firstText(packetDraft.coBuyerFullName, secondaryPurchaser.name, secondaryPurchaser.fullName, secondaryPurchaser.full_name, onboarding.co_buyer_name, onboarding.coBuyerName, onboarding.co_buyer_full_name, onboarding.coBuyerFullName),
     coBuyerEmail: firstText(packetDraft.coBuyerEmail, secondaryPurchaser.email, onboarding.co_buyer_email, onboarding.coBuyerEmail),
     coBuyerPhone: firstText(packetDraft.coBuyerPhone, secondaryPurchaser.phone, onboarding.co_buyer_phone, onboarding.coBuyerPhone),
@@ -1994,11 +2028,19 @@ function buildOtpDraftDefaults({ transactionDetail = null, initialStatus = null,
     sellerRepresentativeEmail: firstText(packetDraft.sellerRepresentativeEmail, sourceSeller.representativeEmail, sellerSignatory.email),
     sellerRepresentativePhone: firstText(packetDraft.sellerRepresentativePhone, sourceSeller.representativePhone, sellerSignatory.phone),
     sellerRepresentativeIdNumber: firstText(packetDraft.sellerRepresentativeIdNumber, sourceSeller.representativeIdNumber, sellerSignatory.idNumber),
+    sellerMaritalRegime: firstText(packetDraft.sellerMaritalRegime, sourceSeller.maritalRegime, sourceSeller.maritalStatus, sellerDetails.maritalRegime, sellerDetails.maritalStatus),
+    sellerSpouseFullName: firstText(packetDraft.sellerSpouseFullName, sourceSeller.spouseFullName, sellerDetails.spouseFullName),
+    sellerSpouseIdNumber: firstText(packetDraft.sellerSpouseIdNumber, sourceSeller.spouseIdNumber, sellerDetails.spouseIdNumber),
+    sellerSpouseEmail: firstText(packetDraft.sellerSpouseEmail, sourceSeller.spouseEmail, sellerDetails.spouseEmail),
+    sellerTrusteeNames: firstText(packetDraft.sellerTrusteeNames, sourceSeller.trusteeNames, sellerDetails.trusteeNames),
+    sellerResolutionDate: toIsoDate(firstText(packetDraft.sellerResolutionDate, sourceSeller.resolutionDate, sellerDetails.resolutionDate)),
+    sellerAuthorityBasis: firstText(packetDraft.sellerAuthorityBasis, sourceSeller.authorityBasis, sellerDetails.authorityBasis),
 
     propertyAddress,
     propertySuburb: firstText(packetDraft.propertySuburb, sourceProperty.suburb, transaction.suburb, onboarding.suburb, onboarding.propertySuburb, privateListing.suburb, unit?.development?.suburb),
     propertyCity: firstText(packetDraft.propertyCity, sourceProperty.city, transaction.city, onboarding.city, onboarding.propertyCity, privateListing.city, unit?.development?.city),
     propertyType: firstText(packetDraft.propertyType, sourceProperty.propertyType, transaction.property_type, onboarding.propertyType, unit?.property_type, privateListing.propertyType),
+    propertyTitleType: firstText(packetDraft.propertyTitleType, sourceProperty.propertyTitleType, sourceProperty.titleType, transaction.property_title_type, onboarding.propertyTitleType),
     unitNumber: firstText(packetDraft.unitNumber, sourceProperty.unitNumber, unit.unit_number, onboarding.unitNumber, onboarding.unit_number, privateListing.unitNumber),
     complexName: firstText(packetDraft.complexName, sourceProperty.complexName, onboarding.complexName, onboarding.estateComplexName, privateListing.complexName),
     erfNumber: firstText(packetDraft.erfNumber, sourceProperty.erfNumber, onboarding.erfNumber, privateListing.erfNumber),
@@ -2030,6 +2072,9 @@ function buildOtpDraftGenerationOverrides({
   const buyerEntityType = normalizeEntityType(draft.buyerEntityType, 'individual')
   const sellerEntityType = normalizeEntityType(draft.sellerEntityType, 'company')
   const financeType = normalizeOtpFinanceType(draft.financeType)
+  const propertyTitleType = normalizeLegalPropertyTitleType(
+    draft.propertyTitleType || (draft.unitNumber || draft.complexName ? 'sectional_title' : 'full_title'),
+  ) || 'full_title'
   const existingTransaction = transaction && typeof transaction === 'object' ? transaction : {}
   const existingBuyer = buyer && typeof buyer === 'object' ? buyer : {}
   const existingSeller = sellerDetails && typeof sellerDetails === 'object' ? sellerDetails : {}
@@ -2044,6 +2089,7 @@ function buildOtpDraftGenerationOverrides({
     suburb: draft.propertySuburb,
     city: draft.propertyCity,
     property_type: draft.propertyType,
+    property_title_type: propertyTitleType,
     seller_type: sellerEntityType,
     seller_registration_number: draft.sellerIdNumber,
   })
@@ -2062,6 +2108,14 @@ function buildOtpDraftGenerationOverrides({
       name: draft.buyerFullName,
       email: draft.buyerEmail,
       phone: draft.buyerPhone,
+      maritalRegime: draft.buyerMaritalRegime,
+      maritalStatus: draft.buyerMaritalRegime,
+      spouseFullName: draft.buyerSpouseFullName,
+      spouseIdNumber: draft.buyerSpouseIdNumber,
+      spouseEmail: draft.buyerSpouseEmail,
+      trusteeNames: draft.buyerTrusteeNames,
+      resolutionDate: draft.buyerResolutionDate,
+      authorityBasis: draft.buyerAuthorityBasis,
     }),
   }
   const nextSellerDetails = {
@@ -2075,6 +2129,14 @@ function buildOtpDraftGenerationOverrides({
       phone: draft.sellerPhone,
       registeredAddress: draft.sellerRegisteredAddress,
       postalAddress: draft.sellerRegisteredAddress,
+      maritalRegime: draft.sellerMaritalRegime,
+      maritalStatus: draft.sellerMaritalRegime,
+      spouseFullName: draft.sellerSpouseFullName,
+      spouseIdNumber: draft.sellerSpouseIdNumber,
+      spouseEmail: draft.sellerSpouseEmail,
+      trusteeNames: draft.sellerTrusteeNames,
+      resolutionDate: draft.sellerResolutionDate,
+      authorityBasis: draft.sellerAuthorityBasis,
     }),
     signatory: {
       ...existingSignatory,
@@ -2111,6 +2173,8 @@ function buildOtpDraftGenerationOverrides({
       full_name: draft.buyerFullName,
       idNumber: draft.buyerIdNumber,
       identityNumber: draft.buyerIdNumber,
+      companyRegistrationNumber: ['company', 'close_corporation'].includes(buyerEntityType) ? draft.buyerIdNumber : '',
+      trustRegistrationNumber: buyerEntityType === 'trust' ? draft.buyerIdNumber : '',
       email: draft.buyerEmail,
       phone: draft.buyerPhone,
       residentialAddress: draft.buyerDomiciliumAddress,
@@ -2119,6 +2183,14 @@ function buildOtpDraftGenerationOverrides({
       authorisedRepresentativeName: draft.buyerRepresentativeName,
       authorizedRepresentativeCapacity: draft.buyerRepresentativeCapacity,
       authorisedRepresentativeCapacity: draft.buyerRepresentativeCapacity,
+      maritalRegime: draft.buyerMaritalRegime,
+      maritalStatus: draft.buyerMaritalRegime,
+      spouseFullName: draft.buyerSpouseFullName,
+      spouseIdNumber: draft.buyerSpouseIdNumber,
+      spouseEmail: draft.buyerSpouseEmail,
+      trusteeNames: draft.buyerTrusteeNames,
+      resolutionDate: draft.buyerResolutionDate,
+      authorityBasis: draft.buyerAuthorityBasis,
       co_buyer_name: draft.coBuyerFullName,
       coBuyerName: draft.coBuyerFullName,
       co_buyer_email: draft.coBuyerEmail,
@@ -2134,6 +2206,8 @@ function buildOtpDraftGenerationOverrides({
       city: draft.propertyCity,
       propertyCity: draft.propertyCity,
       propertyType: draft.propertyType,
+      propertyTitleType,
+      property_title_type: propertyTitleType,
       unitNumber: draft.unitNumber,
       unit_number: draft.unitNumber,
       complexName: draft.complexName,
@@ -2168,10 +2242,19 @@ function buildOtpDraftGenerationOverrides({
       fullName: draft.buyerFullName,
       name: draft.buyerFullName,
       idNumber: draft.buyerIdNumber,
+      registrationNumber: draft.buyerIdNumber,
       email: draft.buyerEmail,
       phone: draft.buyerPhone,
       representativeName: draft.buyerRepresentativeName,
       representativeCapacity: draft.buyerRepresentativeCapacity,
+      maritalRegime: draft.buyerMaritalRegime,
+      maritalStatus: draft.buyerMaritalRegime,
+      spouseFullName: draft.buyerSpouseFullName,
+      spouseIdNumber: draft.buyerSpouseIdNumber,
+      spouseEmail: draft.buyerSpouseEmail,
+      trusteeNames: draft.buyerTrusteeNames,
+      resolutionDate: draft.buyerResolutionDate,
+      authorityBasis: draft.buyerAuthorityBasis,
       domiciliumAddress: draft.buyerDomiciliumAddress,
     }),
     seller: compactObjectValues({
@@ -2188,6 +2271,14 @@ function buildOtpDraftGenerationOverrides({
       representativeEmail: draft.sellerRepresentativeEmail || draft.sellerEmail,
       representativePhone: draft.sellerRepresentativePhone || draft.sellerPhone,
       representativeIdNumber: draft.sellerRepresentativeIdNumber,
+      maritalRegime: draft.sellerMaritalRegime,
+      maritalStatus: draft.sellerMaritalRegime,
+      spouseFullName: draft.sellerSpouseFullName,
+      spouseIdNumber: draft.sellerSpouseIdNumber,
+      spouseEmail: draft.sellerSpouseEmail,
+      trusteeNames: draft.sellerTrusteeNames,
+      resolutionDate: draft.sellerResolutionDate,
+      authorityBasis: draft.sellerAuthorityBasis,
     }),
     property: compactObjectValues({
       address: draft.propertyAddress,
@@ -2195,6 +2286,8 @@ function buildOtpDraftGenerationOverrides({
       suburb: draft.propertySuburb,
       city: draft.propertyCity,
       propertyType: draft.propertyType,
+      propertyTitleType,
+      titleType: propertyTitleType,
       unitNumber: draft.unitNumber,
       complexName: draft.complexName,
       estateComplexName: draft.complexName,
@@ -2308,6 +2401,10 @@ export default function LegalDocumentWorkspacePage() {
     : normalizeKey(initialStatus?.packet?.packet_type || initialStatus?.packetType || 'mandate')
   const documentStartSourceMode = normalizeKey(searchParams.get('sourceMode'))
   const documentStartEntryPoint = normalizeKey(searchParams.get('documentStart'))
+  const documentStartLegalScenario = useMemo(
+    () => readDocumentStartLegalScenarioParams(searchParams, packetType),
+    [packetType, searchParams],
+  )
   const autoCreateListingFromMandate = ['1', 'true', 'yes'].includes(normalizeKey(searchParams.get('autoCreateListing')))
   const actor = useMemo(() => buildAgentFromProfile(profile), [profile])
   const initialStatusValueRef = useRef(initialStatus)
@@ -2336,7 +2433,18 @@ export default function LegalDocumentWorkspacePage() {
     }),
     [initialStatus, leadContext, transactionDetail],
   )
-  const effectiveMandateDraft = mandateDraftDefaults
+  const effectiveMandateDraft = useMemo(() => ({
+    ...mandateDraftDefaults,
+    ...(documentStartLegalScenario.sellerEntityType ? { sellerEntityType: documentStartLegalScenario.sellerEntityType } : {}),
+    ...(documentStartLegalScenario.sellerMaritalRegime ? {
+      sellerMaritalRegime: documentStartLegalScenario.sellerMaritalRegime,
+      sellerMaritalStatus: documentStartLegalScenario.sellerMaritalRegime,
+    } : {}),
+    ...(documentStartLegalScenario.propertyTitleType ? {
+      propertyTitleType: documentStartLegalScenario.propertyTitleType,
+      propertyStructureType: documentStartLegalScenario.propertyTitleType,
+    } : {}),
+  }), [documentStartLegalScenario, mandateDraftDefaults])
   const showMandateDraftPanel =
     routeContextSettled &&
     packetType === 'mandate' &&
@@ -2365,9 +2473,24 @@ export default function LegalDocumentWorkspacePage() {
   const effectiveOtpDraft = useMemo(
     () => ({
       ...otpDraftDefaults,
+      ...(documentStartLegalScenario.sellerEntityType ? { sellerEntityType: documentStartLegalScenario.sellerEntityType } : {}),
+      ...(documentStartLegalScenario.sellerMaritalRegime ? {
+        sellerMaritalRegime: documentStartLegalScenario.sellerMaritalRegime,
+        sellerMaritalStatus: documentStartLegalScenario.sellerMaritalRegime,
+      } : {}),
+      ...(documentStartLegalScenario.buyerEntityType ? { buyerEntityType: documentStartLegalScenario.buyerEntityType } : {}),
+      ...(documentStartLegalScenario.buyerMaritalRegime ? {
+        buyerMaritalRegime: documentStartLegalScenario.buyerMaritalRegime,
+        buyerMaritalStatus: documentStartLegalScenario.buyerMaritalRegime,
+      } : {}),
+      ...(documentStartLegalScenario.propertyTitleType ? {
+        propertyTitleType: documentStartLegalScenario.propertyTitleType,
+        propertyStructureType: documentStartLegalScenario.propertyTitleType,
+      } : {}),
+      ...(documentStartLegalScenario.financeType ? { financeType: documentStartLegalScenario.financeType } : {}),
       ...otpDraftOverrides,
     }),
-    [otpDraftDefaults, otpDraftOverrides],
+    [documentStartLegalScenario, otpDraftDefaults, otpDraftOverrides],
   )
   const showOtpDraftPanel =
     routeContextSettled &&
@@ -3145,30 +3268,7 @@ export default function LegalDocumentWorkspacePage() {
   const handleGenerate = useCallback(async ({ onProgress, persistForSend = false, resetExisting = false } = {}) => {
     onProgress?.('Preparing draft...')
     const generationLookupTimeoutMs = 8000
-    const templateResolution = await withLegalWorkspaceTimeout(
-      resolveActiveTemplate({
-        packetType,
-        moduleType: 'residential',
-        organisationId,
-        context: { organisationId },
-      }),
-      'Template lookup is taking too long.',
-      generationLookupTimeoutMs,
-    )
-    let template = templateResolution?.template || null
-    if (!template?.id) {
-      const templates = await withLegalWorkspaceTimeout(
-        listPacketTemplates({
-          packetType,
-          moduleType: 'agency',
-          includeInactive: false,
-          organisationId,
-        }),
-        'Template lookup is taking too long.',
-        generationLookupTimeoutMs,
-      )
-      template = getFirstTemplate(templates, packetType)
-    }
+    let template = null
     const resetMandatePacket = packetType === 'mandate' && resetExisting === true
     const existingPacketIdForReset = normalizeText(
       validatedRoutePacketId ||
@@ -3266,6 +3366,49 @@ export default function LegalDocumentWorkspacePage() {
         ...otpContext.sourceContext,
       }
       generationContext.generatedDataSnapshot = otpContext.generatedDataSnapshot
+
+      const otpScenarioProfile = resolveLegalDocumentScenarioProfile({
+        packetType: 'otp',
+        seller: {
+          entityType: effectiveOtpDraft.sellerEntityType,
+          maritalStatus: effectiveOtpDraft.sellerMaritalRegime,
+        },
+        buyer: {
+          entityType: effectiveOtpDraft.buyerEntityType,
+          maritalStatus: effectiveOtpDraft.buyerMaritalRegime,
+        },
+        property: {
+          propertyType: effectiveOtpDraft.propertyTitleType || effectiveOtpDraft.propertyType,
+          unitNumber: effectiveOtpDraft.unitNumber,
+          complexName: effectiveOtpDraft.complexName,
+        },
+        transaction: { financeType: effectiveOtpDraft.financeType },
+      })
+      const otpLegalRequirements = resolveLegalDocumentScenarioRequirements({
+        scenarioProfile: otpScenarioProfile,
+        draft: {
+          ...effectiveOtpDraft,
+          propertyTitleType: otpScenarioProfile.propertyTitleType,
+        },
+      })
+      if (!otpLegalRequirements.complete) {
+        const validationError = new Error('Complete the legal details shown above before generating this OTP.')
+        validationError.code = 'VALIDATION_BLOCKED'
+        validationError.validation = {
+          legalDocumentMissingRoutingFacts: otpScenarioProfile.missingRoutingFacts,
+          legalDocumentScenarioProfile: otpScenarioProfile,
+          legalScenarioRequirements: otpLegalRequirements,
+          critical: otpLegalRequirements.missingFields.map((field) => ({
+            source: 'legal_scenario_requirement',
+            sectionKey: 'legal_scenario',
+            sectionLabel: field.group,
+            placeholderKey: field.key,
+            placeholderLabel: field.label,
+            message: `${field.label} is required for this legal situation.`,
+          })),
+        }
+        throw validationError
+      }
     }
     const sourceListingId = normalizeText(
       routeListingId ||
@@ -3381,6 +3524,31 @@ export default function LegalDocumentWorkspacePage() {
           warnings: mandatePreflight.warnings,
         })
       }
+    }
+
+    const templateResolution = await withLegalWorkspaceTimeout(
+      resolveActiveTemplate({
+        packetType,
+        moduleType: 'residential',
+        organisationId,
+        context: generationContext,
+      }),
+      'Template lookup is taking too long.',
+      generationLookupTimeoutMs,
+    )
+    template = templateResolution?.template || null
+    if (!template?.id) {
+      const templates = await withLegalWorkspaceTimeout(
+        listPacketTemplates({
+          packetType,
+          moduleType: 'agency',
+          includeInactive: false,
+          organisationId,
+        }),
+        'Template lookup is taking too long.',
+        generationLookupTimeoutMs,
+      )
+      template = getFirstTemplate(templates, packetType)
     }
 
     onProgress?.('Preparing mandate packet...')

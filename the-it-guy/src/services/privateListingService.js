@@ -613,6 +613,72 @@ function normalizeMediaItems(items = []) {
     }))
 }
 
+function normalizeListingMediaRows(rows = []) {
+  return (Array.isArray(rows) ? rows : [])
+    .filter((row) => normalizeText(row?.file_url) && normalizeKey(row?.media_type) === 'image')
+    .sort((left, right) => {
+      const coverDifference = Number(Boolean(right?.is_cover)) - Number(Boolean(left?.is_cover))
+      if (coverDifference) return coverDifference
+      return Number(left?.sort_order || 0) - Number(right?.sort_order || 0)
+    })
+    .map((row, index) => ({
+      id: normalizeText(row?.id || `listing-media-${index + 1}`),
+      name: normalizeText(row?.caption || `Property image ${index + 1}`),
+      label: normalizeText(row?.caption),
+      url: normalizeText(row?.file_url),
+      isCover: Boolean(row?.is_cover),
+      sortOrder: Number(row?.sort_order || 0),
+    }))
+}
+
+async function fetchMediaRowsForListings(client, listingIds = []) {
+  const ids = [...new Set((Array.isArray(listingIds) ? listingIds : []).map((id) => normalizeUuid(id)).filter(Boolean))]
+  if (!ids.length) return new Map()
+
+  const query = await client
+    .from('listing_media')
+    .select('id, listing_id, media_type, file_url, caption, sort_order, is_cover')
+    .in('listing_id', ids)
+    .order('sort_order', { ascending: true })
+  if (query.error) {
+    if (
+      isMissingTableError(query.error, 'listing_media') ||
+      isMissingSchemaError(query.error) ||
+      isPermissionDeniedError(query.error)
+    ) return new Map()
+    throw query.error
+  }
+
+  const mediaByListingId = new Map()
+  for (const row of query.data || []) {
+    const listingId = normalizeText(row?.listing_id)
+    if (!listingId) continue
+    if (!mediaByListingId.has(listingId)) mediaByListingId.set(listingId, [])
+    mediaByListingId.get(listingId).push(row)
+  }
+  return mediaByListingId
+}
+
+function attachDistributionMediaToListing(listing = null, rows = []) {
+  if (!listing) return listing
+  const galleryImages = normalizeListingMediaRows(rows)
+  if (!galleryImages.length) return listing
+  const coverImage = galleryImages.find((image) => image.isCover) || galleryImages[0]
+
+  return {
+    ...listing,
+    heroImageUrl: coverImage.url,
+    images: galleryImages,
+    galleryImages,
+    marketing: {
+      ...(listing.marketing || {}),
+      mediaUrl: coverImage.url,
+      imageGallery: galleryImages,
+      coverImageId: coverImage.id,
+    },
+  }
+}
+
 function normalizeStatus(value, allowed, fallback) {
   const normalized = normalizeText(value).toLowerCase()
   return allowed.includes(normalized) ? normalized : fallback
@@ -3805,15 +3871,17 @@ async function getPrivateListingById(listingId, { includeRequirementsAndDocument
     throw query.error
   }
   if (!query.data || isDeletedPrivateListingRow(query.data)) return null
-  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap] = await Promise.all([
+  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, mediaMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, [query.data.id]),
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
     fetchExternalLinkRowsForListings(client, [query.data.id]),
     fetchPublicationRowsForListings(client, [query.data.id]),
     includeRequirementsAndDocuments ? fetchMandatePacketRowsForListings(client, [query.data]) : Promise.resolve(new Map()),
+    fetchMediaRowsForListings(client, [query.data.id]),
   ])
-  return mapPrivateListingRow(query.data, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap)
+  const listing = mapPrivateListingRow(query.data, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap)
+  return attachDistributionMediaToListing(listing, mediaMap.get(String(query.data.id)) || [])
 }
 
 async function fetchMandatePacketRowsForListings(client, listingRows = []) {
@@ -4893,10 +4961,17 @@ export async function getSellerOnboardingByToken(token, options = {}) {
     throw buildSellerPortalAuthRequiredError(portalPayload.portalAuth)
   }
   if (portalPayload?.listing) {
-    const branding = await fetchOrganisationBrandingSnapshot(client, portalPayload.listing.organisationId)
+    const [branding, mediaByListingId] = await Promise.all([
+      fetchOrganisationBrandingSnapshot(client, portalPayload.listing.organisationId),
+      fetchMediaRowsForListings(client, [portalPayload.listing.id]),
+    ])
+    const listingWithMedia = attachDistributionMediaToListing(
+      portalPayload.listing,
+      mediaByListingId.get(String(portalPayload.listing.id)) || [],
+    )
     return {
       ...portalPayload,
-      listing: attachBrandingToListing(portalPayload.listing, branding),
+      listing: attachBrandingToListing(listingWithMedia, branding),
     }
   }
 

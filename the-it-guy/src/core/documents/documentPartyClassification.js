@@ -75,6 +75,14 @@ export function normalizeDocumentMaritalRegime(value = '') {
   if (!normalized) return ''
   if (/(^|_)(single|unmarried|divorced|widowed|not_married|never_married)(_|$)/.test(normalized)) return 'single'
   if (
+    normalized === 'married_anc' ||
+    normalized === 'anc' ||
+    normalized.includes('antenuptial') ||
+    normalized.includes('out_of_community')
+  ) {
+    return 'out_of_community'
+  }
+  if (
     normalized === 'married_cop' ||
     normalized === 'cop' ||
     normalized.includes('in_community') ||
@@ -82,14 +90,6 @@ export function normalizeDocumentMaritalRegime(value = '') {
     normalized.includes('community_property')
   ) {
     return 'in_community'
-  }
-  if (
-    normalized === 'married_anc' ||
-    normalized === 'anc' ||
-    normalized.includes('antenuptial') ||
-    normalized.includes('out_of_community')
-  ) {
-    return 'out_of_community'
   }
   if (normalized.includes('married')) return 'married'
   return normalized

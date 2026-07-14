@@ -1,4 +1,10 @@
 import { CheckCircle2, CircleAlert, RotateCcw } from 'lucide-react'
+import {
+  normalizeLegalMaritalRegime,
+  normalizeLegalPropertyTitleType,
+  resolveLegalDocumentScenarioProfile,
+} from '../../core/documents/legalDocumentScenarioProfile'
+import { resolveLegalDocumentScenarioRequirements } from '../../core/documents/legalDocumentScenarioRequirements'
 import Button from '../ui/Button'
 
 function normalizeText(value) {
@@ -21,52 +27,6 @@ function getSourceModeLabel(sourceMode = '') {
   return 'Draft details'
 }
 
-function getFieldValue(draft = {}, field = '') {
-  return normalizeText(draft?.[field])
-}
-
-function hasAnyDraftValue(draft = {}, fields = []) {
-  return fields.some((field) => getFieldValue(draft, field))
-}
-
-function buildReadinessChecks(draft = {}) {
-  return [
-    {
-      key: 'buyer',
-      label: 'Buyer',
-      complete: hasAnyDraftValue(draft, ['buyerFullName', 'buyerIdNumber', 'buyerEmail']),
-      missing: 'Name, ID, or email',
-    },
-    {
-      key: 'seller',
-      label: 'Seller',
-      complete: hasAnyDraftValue(draft, ['sellerFullName', 'sellerIdNumber', 'sellerRepresentativeName']),
-      missing: 'Seller or representative',
-    },
-    {
-      key: 'property',
-      label: 'Property',
-      complete: hasAnyDraftValue(draft, ['propertyAddress']),
-      missing: 'Address',
-    },
-    {
-      key: 'price',
-      label: 'Price',
-      complete: hasAnyDraftValue(draft, ['purchasePrice']),
-      missing: 'Purchase price',
-    },
-    {
-      key: 'signing',
-      label: 'Signing parties',
-      complete: Boolean(
-        hasAnyDraftValue(draft, ['buyerFullName', 'buyerRepresentativeName']) &&
-        hasAnyDraftValue(draft, ['sellerFullName', 'sellerRepresentativeName']),
-      ),
-      missing: 'Buyer and seller',
-    },
-  ]
-}
-
 function OtpField({ label, children, className = '' }) {
   return (
     <label className={`grid min-w-0 gap-1.5 ${className}`}>
@@ -83,16 +43,64 @@ export default function OtpDraftIntakePanel({
   onFieldChange = null,
   onReset = null,
 }) {
-  const readinessChecks = buildReadinessChecks(draft)
-  const missingChecks = readinessChecks.filter((item) => !item.complete)
   const sourceLabel = getSourceModeLabel(sourceMode)
   const hasManualStart = normalizeKey(sourceMode) === 'manual_details'
   const startLabel = normalizeText(documentStart).replace(/_/g, ' ') || 'transaction otp'
   const buyerEntityType = normalizeKey(draft.buyerEntityType || 'individual') || 'individual'
   const sellerEntityType = normalizeKey(draft.sellerEntityType || 'company') || 'company'
   const financeType = normalizeKey(draft.financeType || 'cash') || 'cash'
+  const propertyTitleType = normalizeLegalPropertyTitleType(
+    draft.propertyTitleType || (draft.unitNumber || draft.complexName ? 'sectional_title' : 'full_title'),
+  ) || 'full_title'
+  const buyerMaritalRegime = normalizeLegalMaritalRegime(draft.buyerMaritalRegime || '')
+  const sellerMaritalRegime = normalizeLegalMaritalRegime(draft.sellerMaritalRegime || '')
+  const scenarioProfile = resolveLegalDocumentScenarioProfile({
+    packetType: 'otp',
+    seller: { entityType: sellerEntityType, maritalStatus: sellerMaritalRegime },
+    buyer: { entityType: buyerEntityType, maritalStatus: buyerMaritalRegime },
+    property: { propertyType: propertyTitleType },
+    transaction: { financeType },
+  })
+  const requirements = resolveLegalDocumentScenarioRequirements({
+    scenarioProfile,
+    draft: { ...draft, propertyTitleType },
+  })
+  const readinessChecks = requirements.groups.map((group) => ({
+    key: group.key,
+    label: group.label,
+    complete: group.complete,
+    missing: group.fields.filter((field) => field.missing).map((field) => field.label).slice(0, 2).join(', '),
+  }))
+  const missingChecks = readinessChecks.filter((item) => !item.complete)
   const update = (field) => (event) => {
-    onFieldChange?.(field, event.target.value)
+    const value = event.target.value
+    onFieldChange?.(field, value)
+    const role = field === 'buyerEntityType' ? 'buyer' : field === 'sellerEntityType' ? 'seller' : ''
+    if (role && value !== 'individual') {
+      for (const dependentField of ['MaritalRegime', 'SpouseFullName', 'SpouseIdNumber', 'SpouseEmail']) {
+        onFieldChange?.(`${role}${dependentField}`, '')
+      }
+    }
+    if (role && value !== 'trust') onFieldChange?.(`${role}TrusteeNames`, '')
+    if (role && !['company', 'close_corporation'].includes(value)) onFieldChange?.(`${role}ResolutionDate`, '')
+    if (role && value === 'individual') {
+      for (const dependentField of ['RepresentativeName', 'RepresentativeCapacity', 'ResolutionDate', 'AuthorityBasis']) {
+        onFieldChange?.(`${role}${dependentField}`, '')
+      }
+    }
+    if (field === 'buyerMaritalRegime' && value !== 'in_community') {
+      for (const dependentField of ['buyerSpouseFullName', 'buyerSpouseIdNumber', 'buyerSpouseEmail']) onFieldChange?.(dependentField, '')
+    }
+    if (field === 'sellerMaritalRegime' && value !== 'in_community') {
+      for (const dependentField of ['sellerSpouseFullName', 'sellerSpouseIdNumber', 'sellerSpouseEmail']) onFieldChange?.(dependentField, '')
+    }
+    if (field === 'propertyTitleType' && value === 'full_title') {
+      onFieldChange?.('unitNumber', '')
+      onFieldChange?.('complexName', '')
+    }
+    if (field === 'propertyTitleType' && value === 'sectional_title') onFieldChange?.('erfNumber', '')
+    if (field === 'financeType' && value === 'cash') onFieldChange?.('bondAmount', '')
+    if (field === 'financeType' && value === 'bond') onFieldChange?.('cashAmount', '')
   }
 
   return (
@@ -124,6 +132,14 @@ export default function OtpDraftIntakePanel({
             Use defaults
           </Button>
         </div>
+      </div>
+
+      <div className="mt-5 rounded-[18px] border border-[#dbeafe] bg-[#f4f8ff] px-4 py-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#456b98]">Prepared for this situation</p>
+        <p className="mt-1 text-sm font-semibold capitalize text-[#173b63]">
+          {scenarioProfile.sellerClauseProfile.replace(/_/g, ' ')} seller · {scenarioProfile.buyerClauseProfile.replace(/_/g, ' ')} buyer · {scenarioProfile.propertyClauseProfile.replace(/_/g, ' ')} · {scenarioProfile.financeClauseProfile.replace(/_/g, ' ')}
+        </p>
+        <p className="mt-1 text-xs leading-5 text-[#5f7894]">Only the legal details required for this combination are shown below.</p>
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
@@ -180,13 +196,50 @@ export default function OtpDraftIntakePanel({
             <OtpField label="Domicilium address">
               <input value={draft.buyerDomiciliumAddress || ''} onChange={update('buyerDomiciliumAddress')} placeholder="Address for notices" className={FIELD_CLASS} />
             </OtpField>
-            {buyerEntityType === 'individual' ? null : (
+            {buyerEntityType === 'individual' ? (
+              <>
+                <OtpField label="Marital position">
+                  <select value={buyerMaritalRegime} onChange={update('buyerMaritalRegime')} className={FIELD_CLASS}>
+                    <option value="">Choose marital position</option>
+                    <option value="single">Single / not married</option>
+                    <option value="out_of_community">Married out of community</option>
+                    <option value="in_community">Married in community</option>
+                  </select>
+                </OtpField>
+                {buyerMaritalRegime === 'in_community' ? (
+                  <>
+                    <OtpField label="Spouse full name">
+                      <input value={draft.buyerSpouseFullName || ''} onChange={update('buyerSpouseFullName')} placeholder="Full legal name" className={FIELD_CLASS} />
+                    </OtpField>
+                    <OtpField label="Spouse ID number">
+                      <input value={draft.buyerSpouseIdNumber || ''} onChange={update('buyerSpouseIdNumber')} placeholder="South African ID or passport" className={FIELD_CLASS} />
+                    </OtpField>
+                    <OtpField label="Spouse email">
+                      <input type="email" value={draft.buyerSpouseEmail || ''} onChange={update('buyerSpouseEmail')} placeholder="spouse@example.com" className={FIELD_CLASS} />
+                    </OtpField>
+                  </>
+                ) : null}
+              </>
+            ) : (
               <>
                 <OtpField label="Representative">
                   <input value={draft.buyerRepresentativeName || ''} onChange={update('buyerRepresentativeName')} placeholder="Director, trustee..." className={FIELD_CLASS} />
                 </OtpField>
                 <OtpField label="Capacity">
                   <input value={draft.buyerRepresentativeCapacity || ''} onChange={update('buyerRepresentativeCapacity')} placeholder="Signing capacity" className={FIELD_CLASS} />
+                </OtpField>
+                {buyerEntityType === 'company' ? (
+                  <OtpField label="Resolution date">
+                    <input type="date" value={draft.buyerResolutionDate || ''} onChange={update('buyerResolutionDate')} className={FIELD_CLASS} />
+                  </OtpField>
+                ) : null}
+                {buyerEntityType === 'trust' ? (
+                  <OtpField label="Trustee names" className="md:col-span-2">
+                    <input value={draft.buyerTrusteeNames || ''} onChange={update('buyerTrusteeNames')} placeholder="Names of authorised trustees" className={FIELD_CLASS} />
+                  </OtpField>
+                ) : null}
+                <OtpField label="Authority / resolution" className="md:col-span-2">
+                  <input value={draft.buyerAuthorityBasis || ''} onChange={update('buyerAuthorityBasis')} placeholder="Board or trustee resolution details" className={FIELD_CLASS} />
                 </OtpField>
               </>
             )}
@@ -219,12 +272,53 @@ export default function OtpDraftIntakePanel({
             <OtpField label="Phone">
               <input value={draft.sellerPhone || ''} onChange={update('sellerPhone')} placeholder="+27..." className={FIELD_CLASS} />
             </OtpField>
-            <OtpField label="Representative">
-              <input value={draft.sellerRepresentativeName || ''} onChange={update('sellerRepresentativeName')} placeholder="For company or trust" className={FIELD_CLASS} />
-            </OtpField>
-            <OtpField label="Capacity">
-              <input value={draft.sellerRepresentativeCapacity || ''} onChange={update('sellerRepresentativeCapacity')} placeholder="Director, trustee..." className={FIELD_CLASS} />
-            </OtpField>
+            {sellerEntityType === 'individual' ? (
+              <>
+                <OtpField label="Marital position">
+                  <select value={sellerMaritalRegime} onChange={update('sellerMaritalRegime')} className={FIELD_CLASS}>
+                    <option value="">Choose marital position</option>
+                    <option value="single">Single / not married</option>
+                    <option value="out_of_community">Married out of community</option>
+                    <option value="in_community">Married in community</option>
+                  </select>
+                </OtpField>
+                {sellerMaritalRegime === 'in_community' ? (
+                  <>
+                    <OtpField label="Spouse full name">
+                      <input value={draft.sellerSpouseFullName || ''} onChange={update('sellerSpouseFullName')} placeholder="Full legal name" className={FIELD_CLASS} />
+                    </OtpField>
+                    <OtpField label="Spouse ID number">
+                      <input value={draft.sellerSpouseIdNumber || ''} onChange={update('sellerSpouseIdNumber')} placeholder="South African ID or passport" className={FIELD_CLASS} />
+                    </OtpField>
+                    <OtpField label="Spouse email">
+                      <input type="email" value={draft.sellerSpouseEmail || ''} onChange={update('sellerSpouseEmail')} placeholder="spouse@example.com" className={FIELD_CLASS} />
+                    </OtpField>
+                  </>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <OtpField label="Representative">
+                  <input value={draft.sellerRepresentativeName || ''} onChange={update('sellerRepresentativeName')} placeholder="For company or trust" className={FIELD_CLASS} />
+                </OtpField>
+                <OtpField label="Capacity">
+                  <input value={draft.sellerRepresentativeCapacity || ''} onChange={update('sellerRepresentativeCapacity')} placeholder="Director, trustee..." className={FIELD_CLASS} />
+                </OtpField>
+                {['company', 'close_corporation'].includes(sellerEntityType) ? (
+                  <OtpField label="Resolution date">
+                    <input type="date" value={draft.sellerResolutionDate || ''} onChange={update('sellerResolutionDate')} className={FIELD_CLASS} />
+                  </OtpField>
+                ) : null}
+                {sellerEntityType === 'trust' ? (
+                  <OtpField label="Trustee names" className="md:col-span-2">
+                    <input value={draft.sellerTrusteeNames || ''} onChange={update('sellerTrusteeNames')} placeholder="Names of authorised trustees" className={FIELD_CLASS} />
+                  </OtpField>
+                ) : null}
+                <OtpField label="Authority / resolution" className="md:col-span-2">
+                  <input value={draft.sellerAuthorityBasis || ''} onChange={update('sellerAuthorityBasis')} placeholder="Board or trustee resolution details" className={FIELD_CLASS} />
+                </OtpField>
+              </>
+            )}
             <OtpField label="Registered address">
               <input value={draft.sellerRegisteredAddress || ''} onChange={update('sellerRegisteredAddress')} placeholder="Address for notices" className={FIELD_CLASS} />
             </OtpField>
@@ -249,15 +343,26 @@ export default function OtpDraftIntakePanel({
             <OtpField label="Property type">
               <input value={draft.propertyType || ''} onChange={update('propertyType')} placeholder="House, apartment..." className={FIELD_CLASS} />
             </OtpField>
-            <OtpField label="Unit number">
-              <input value={draft.unitNumber || ''} onChange={update('unitNumber')} placeholder="Optional" className={FIELD_CLASS} />
+            <OtpField label="Title type">
+              <select value={propertyTitleType} onChange={update('propertyTitleType')} className={FIELD_CLASS}>
+                <option value="full_title">Full title</option>
+                <option value="sectional_title">Sectional title</option>
+              </select>
             </OtpField>
-            <OtpField label="Complex / estate">
-              <input value={draft.complexName || ''} onChange={update('complexName')} placeholder="Optional" className={FIELD_CLASS} />
-            </OtpField>
-            <OtpField label="Erf / section no.">
-              <input value={draft.erfNumber || ''} onChange={update('erfNumber')} placeholder="Optional" className={FIELD_CLASS} />
-            </OtpField>
+            {propertyTitleType === 'sectional_title' ? (
+              <>
+                <OtpField label="Unit / section number">
+                  <input value={draft.unitNumber || ''} onChange={update('unitNumber')} placeholder="Section number" className={FIELD_CLASS} />
+                </OtpField>
+                <OtpField label="Scheme / complex">
+                  <input value={draft.complexName || ''} onChange={update('complexName')} placeholder="Registered scheme name" className={FIELD_CLASS} />
+                </OtpField>
+              </>
+            ) : (
+              <OtpField label="Erf number">
+                <input value={draft.erfNumber || ''} onChange={update('erfNumber')} placeholder="Registered erf number" className={FIELD_CLASS} />
+              </OtpField>
+            )}
           </div>
         </div>
 
@@ -277,15 +382,19 @@ export default function OtpDraftIntakePanel({
               <select value={financeType} onChange={update('financeType')} className={FIELD_CLASS}>
                 <option value="cash">Cash</option>
                 <option value="bond">Bond</option>
-                <option value="combination">Hybrid</option>
+                <option value="combination">Cash and bond</option>
               </select>
             </OtpField>
-            <OtpField label="Bond amount">
-              <input type="number" min="0" step="1000" value={draft.bondAmount || ''} onChange={update('bondAmount')} placeholder="If applicable" className={FIELD_CLASS} />
-            </OtpField>
-            <OtpField label="Cash amount">
-              <input type="number" min="0" step="1000" value={draft.cashAmount || ''} onChange={update('cashAmount')} placeholder="If applicable" className={FIELD_CLASS} />
-            </OtpField>
+            {['bond', 'combination'].includes(financeType) ? (
+              <OtpField label="Bond amount">
+                <input type="number" min="0" step="1000" value={draft.bondAmount || ''} onChange={update('bondAmount')} placeholder="Bond amount" className={FIELD_CLASS} />
+              </OtpField>
+            ) : null}
+            {['cash', 'combination'].includes(financeType) ? (
+              <OtpField label={financeType === 'cash' ? 'Cash purchase amount' : 'Cash contribution'}>
+                <input type="number" min="0" step="1000" value={draft.cashAmount || ''} onChange={update('cashAmount')} placeholder={financeType === 'cash' ? 'Cash purchase amount' : 'Cash contribution'} className={FIELD_CLASS} />
+              </OtpField>
+            ) : null}
             <OtpField label="Occupation date">
               <input type="date" value={draft.occupationDate || ''} onChange={update('occupationDate')} className={FIELD_CLASS} />
             </OtpField>

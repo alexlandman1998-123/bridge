@@ -69,6 +69,19 @@ import {
 import { classifySellerParty } from './documentPartyClassification'
 import { resolveConditionalPackAudit } from './conditionalPackAudit'
 import { evaluateVisibilityRules } from './sectionVisibilityRules'
+import {
+  buildLegalDocumentScenarioPlaceholders,
+  resolveLegalDocumentScenarioProfile,
+} from './legalDocumentScenarioProfile'
+import {
+  buildLegalDocumentTemplateRoutingAudit,
+  scoreLegalDocumentTemplateCandidate,
+} from './legalDocumentTemplateRouting'
+import {
+  buildLegalDocumentRequirementDraftFromPlaceholders,
+  resolveLegalDocumentScenarioRequirements,
+} from './legalDocumentScenarioRequirements'
+import { resolveLegalDocumentSignerProfile } from './legalDocumentSignerProfile'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -80,10 +93,33 @@ function normalizeNullableText(value) {
 }
 
 const TEMPLATE_PREVIEW_VALIDATION_ACTION = 'template_preview'
+const LEGAL_ROUTING_FACT_LABELS = {
+  seller_entity_type: 'Seller type',
+  seller_marital_regime: 'Seller marital position',
+  buyer_entity_type: 'Buyer type',
+  buyer_marital_regime: 'Buyer marital position',
+  property_title_type: 'Property title type',
+  finance_type: 'Finance type',
+}
 
 function normalizeValidationAction(value, fallback = 'preview') {
   const action = normalizeText(value || fallback).toLowerCase()
   return action || fallback
+}
+
+function buildLegalScenarioIssues(profile = null) {
+  return (profile?.missingRoutingFacts || []).map((placeholderKey) => {
+    const placeholderLabel = LEGAL_ROUTING_FACT_LABELS[placeholderKey] || humanizePlaceholderKey(placeholderKey)
+    return {
+      source: 'legal_scenario',
+      sectionKey: 'legal_scenario',
+      sectionLabel: 'Legal setup',
+      placeholderKey,
+      placeholderLabel,
+      message: `${placeholderLabel} is required to select the correct legal wording.`,
+      required: true,
+    }
+  })
 }
 
 function mapMandateValidationIssue(issue = {}) {
@@ -272,11 +308,16 @@ function buildGenerationPayload({
     mandateData?.scenarioProfile ||
     mandateData?.mandateScenarioProfile ||
     null
+  const legalDocumentScenarioProfile = validation?.legalDocumentScenarioProfile ||
+    mandateData?.legalDocumentScenarioProfile ||
+    mandateScenarioProfile ||
+    null
   const mandateTemplateVariant =
     normalizeText(validation?.placeholders?.mandate_template_variant) ||
     normalizeText(mandateData?.placeholders?.mandate_template_variant) ||
     normalizeText(mandateScenarioProfile?.templateVariant)
   const templateRouting = templateResolution?.mandateTemplateRouting || null
+  const legalDocumentTemplateRouting = templateResolution?.legalDocumentTemplateRouting || null
   const templateResolutionSource = normalizeText(templateResolution?.source) || null
   const outputBucket =
     normalizeText(template?.template_output_bucket) ||
@@ -288,12 +329,17 @@ function buildGenerationPayload({
   return {
     packetId: normalizeText(packet?.id) || null,
     mandateData,
+    legalDocumentScenarioProfile,
+    legalDocumentScenarioKey: normalizeText(legalDocumentScenarioProfile?.scenarioKey) || null,
     mandateScenarioProfile,
     mandateTemplateVariant: mandateTemplateVariant || null,
     mandateTemplateRouting: templateRouting,
+    legalDocumentTemplateRouting,
     templateResolutionSource,
     mandateTemplateFallback: Boolean(validation?.mandateTemplateFallback),
     mandateTemplateFallbackWarning: validation?.mandateTemplateFallbackWarning || null,
+    legalDocumentTemplateFallback: Boolean(validation?.legalDocumentTemplateFallback),
+    legalDocumentTemplateFallbackWarning: validation?.legalDocumentTemplateFallbackWarning || null,
     mandateTemplateContentGate: validation?.mandateTemplateContentGate || null,
     mandateTemplateLaunchReadiness: validation?.mandateTemplateLaunchReadiness || null,
     validation: mandateValidation || buildValidationSummary(validation),
@@ -310,6 +356,7 @@ function buildGenerationPayload({
             : null,
           mandateTemplateVariant: mandateTemplateVariant || null,
           mandateTemplateRouting: templateRouting,
+          legalDocumentTemplateRouting,
         }
       : null,
     templateResolution: templateResolution
@@ -322,6 +369,7 @@ function buildGenerationPayload({
             ? templateResolution.candidateModuleTypes
             : [],
           mandateTemplateRouting: templateRouting,
+          legalDocumentTemplateRouting,
         }
       : null,
     sourceContext: mandateData?.sourceContext || context?.sourceContext || null,
@@ -354,6 +402,10 @@ function buildRenderProvenance({
   const rendererVersion = renderMode === 'native_structured' ? NATIVE_RENDERER_VERSION : 'legacy_docx'
   const sectionManifest = Array.isArray(validation?.sectionManifest) ? validation.sectionManifest : []
   const mandateScenarioProfile = generationPayload?.mandateScenarioProfile || validation?.mandateScenarioProfile || null
+  const legalDocumentScenarioProfile = generationPayload?.legalDocumentScenarioProfile ||
+    validation?.legalDocumentScenarioProfile ||
+    mandateScenarioProfile ||
+    null
   const mandateTemplateVariant =
     normalizeText(generationPayload?.mandateTemplateVariant) ||
     normalizeText(mandateScenarioProfile?.templateVariant) ||
@@ -379,9 +431,14 @@ function buildRenderProvenance({
     templateResolutionSource: normalizeText(generationPayload?.templateResolutionSource) || null,
     mandateTemplateVariant: mandateTemplateVariant || null,
     mandateTemplateFallback: Boolean(generationPayload?.mandateTemplateFallback),
+    legalDocumentTemplateFallback: Boolean(generationPayload?.legalDocumentTemplateFallback),
     mandateTemplateLaunchReadinessStatus: normalizeText(generationPayload?.mandateTemplateLaunchReadiness?.status) || null,
-    sellerClauseProfile: normalizeText(mandateScenarioProfile?.sellerClauseProfile || pdfPlaceholders?.seller_clause_profile) || null,
-    propertyClauseProfile: normalizeText(mandateScenarioProfile?.propertyClauseProfile || pdfPlaceholders?.property_clause_profile) || null,
+    legalDocumentScenarioKey: normalizeText(legalDocumentScenarioProfile?.scenarioKey || pdfPlaceholders?.legal_document_scenario) || null,
+    legalDocumentScenarioComplete: Boolean(legalDocumentScenarioProfile?.complete),
+    sellerClauseProfile: normalizeText(legalDocumentScenarioProfile?.sellerClauseProfile || pdfPlaceholders?.seller_clause_profile) || null,
+    buyerClauseProfile: normalizeText(legalDocumentScenarioProfile?.buyerClauseProfile || pdfPlaceholders?.buyer_clause_profile) || null,
+    propertyClauseProfile: normalizeText(legalDocumentScenarioProfile?.propertyClauseProfile || pdfPlaceholders?.property_clause_profile) || null,
+    financeClauseProfile: normalizeText(legalDocumentScenarioProfile?.financeClauseProfile || pdfPlaceholders?.finance_clause_profile) || null,
     generatedAt: generatedAt || null,
     sectionManifestHash: buildContentFingerprint(sectionManifest),
     placeholderHash: buildContentFingerprint(pdfPlaceholders && typeof pdfPlaceholders === 'object' ? pdfPlaceholders : {}),
@@ -711,6 +768,8 @@ async function resolveMandateScenarioTemplateForPacket({
       packetType: normalizedPacketType,
       candidateModuleTypes: moduleCandidates,
       candidateCount: templateById.size,
+      legalDocumentScenarioProfile: scenarioProfile,
+      legalDocumentTemplateRouting: buildLegalDocumentTemplateRoutingAudit(null, { profile: scenarioProfile }),
       mandateScenarioProfile: scenarioProfile,
       mandateTemplateRouting: buildMandateTemplateRoutingAudit(null, {
         profile: scenarioProfile,
@@ -732,9 +791,10 @@ async function resolveMandateScenarioTemplateForPacket({
     'property_profile_metadata',
     'template_name_variant_match',
   ].includes(reason))
+  const selectedTemplate = hydratedTemplate || selection.template
 
   return {
-    template: hydratedTemplate || selection.template,
+    template: selectedTemplate,
     source: matchedSpecificRoute
       ? 'mandate_scenario_variant'
       : 'mandate_scenario_fallback',
@@ -743,8 +803,120 @@ async function resolveMandateScenarioTemplateForPacket({
     packetType: normalizedPacketType,
     candidateModuleTypes: moduleCandidates,
     candidateCount: templateById.size,
+    legalDocumentScenarioProfile: scenarioProfile,
+    legalDocumentTemplateRouting: buildLegalDocumentTemplateRoutingAudit({
+      template: selectedTemplate,
+      profile: scenarioProfile,
+      metadata: { hasRoutingMetadata: matchedSpecificRoute },
+      reasons: selection.reasons || [],
+      score: selection.score,
+    }),
     mandateScenarioProfile: scenarioProfile,
     mandateTemplateRouting: routingAudit,
+  }
+}
+
+async function resolveOtpScenarioTemplateForPacket({
+  packetType,
+  context = {},
+  moduleType = '',
+  organisationId = null,
+  includeSections = true,
+} = {}) {
+  const normalizedPacketType = normalizeText(packetType).toLowerCase()
+  if (normalizedPacketType !== 'otp') return null
+
+  const resolvedModuleType = normalizeText(moduleType) || resolveTemplateModuleType(normalizedPacketType, context)
+  const moduleCandidates = resolveTemplateModuleCandidatesForPacket(normalizedPacketType, resolvedModuleType)
+  const resolvedOrganisationId = organisationId || resolveTemplateOrganisationId(context)
+  const rawPlaceholders = resolvePacketTypeContext(normalizedPacketType, context)
+  const placeholders = normalizeMergeFieldPayload(rawPlaceholders, {
+    packetType: normalizedPacketType,
+    includeAliasKeys: true,
+  }).payload
+  const scenarioProfile = resolveLegalDocumentScenarioProfile({
+    packetType: normalizedPacketType,
+    placeholders,
+    seller: context?.seller || context?.sellerDetails || context?.seller_details || null,
+    buyer: context?.buyer || context?.purchaser || null,
+    property:
+      context?.property ||
+      context?.unit ||
+      context?.listing ||
+      context?.privateListing ||
+      context?.private_listing ||
+      null,
+    transaction: context?.transaction || null,
+    sourceContext: context?.sourceContext || null,
+    context,
+  })
+
+  const templateGroups = await Promise.all(
+    moduleCandidates.map((candidateModuleType) => getPacketTemplates({
+      packetType: normalizedPacketType,
+      moduleType: candidateModuleType,
+      includeInactive: false,
+      organisationId: resolvedOrganisationId,
+    }).catch((error) => {
+      if (isMissingPacketTemplateSchemaError(error)) return []
+      throw error
+    })),
+  )
+  const templateById = new Map()
+  for (const template of templateGroups.flat()) {
+    if (!template?.id || !templateIsPublishedForRouting(template)) continue
+    templateById.set(template.id, template)
+  }
+
+  const scored = Array.from(templateById.values())
+    .map((candidateTemplate) => scoreLegalDocumentTemplateCandidate(candidateTemplate, {
+      scenarioProfile,
+      placeholders,
+      context,
+    }))
+    .filter((row) => row.compatible)
+    .sort((left, right) => {
+      if (right.score !== left.score) return right.score - left.score
+      return compareTemplateRoutingTie(left.template, right.template, {
+        organisationId: resolvedOrganisationId,
+        moduleCandidates,
+      })
+    })
+
+  const selection = scored[0] || null
+  if (!selection?.template?.id) {
+    return {
+      template: null,
+      source: 'none',
+      organisationId: resolvedOrganisationId,
+      moduleType: resolvedModuleType,
+      packetType: normalizedPacketType,
+      candidateModuleTypes: moduleCandidates,
+      candidateCount: templateById.size,
+      legalDocumentScenarioProfile: scenarioProfile,
+      legalDocumentTemplateRouting: buildLegalDocumentTemplateRoutingAudit(null, { profile: scenarioProfile }),
+    }
+  }
+
+  const hydratedTemplate = includeSections
+    ? await getPacketTemplate(selection.template.id, { includeSections: true })
+    : selection.template
+  const selectedTemplate = hydratedTemplate || selection.template
+  const routingAudit = buildLegalDocumentTemplateRoutingAudit({
+    ...selection,
+    template: selectedTemplate,
+  })
+
+  return {
+    template: selectedTemplate,
+    source: routingAudit.matchedSpecificScenario ? 'legal_scenario_variant' : 'legal_scenario_fallback',
+    organisationId: resolvedOrganisationId,
+    moduleType: normalizeText(selectedTemplate?.module_type || resolvedModuleType),
+    packetType: normalizedPacketType,
+    candidateModuleTypes: moduleCandidates,
+    candidateCount: templateById.size,
+    legalDocumentScenarioProfile: scenarioProfile,
+    legalDocumentTemplateRouting: routingAudit,
   }
 }
 
@@ -776,6 +948,16 @@ async function resolveTemplateForPacket({ packetType, context = {}, template = n
         includeSections: true,
       })
       if (mandateTemplateResolution?.template) return mandateTemplateResolution
+    }
+    if (normalizedPacketType === 'otp') {
+      const otpTemplateResolution = await resolveOtpScenarioTemplateForPacket({
+        packetType: normalizedPacketType,
+        context,
+        moduleType: resolveTemplateModuleType(normalizedPacketType, context, template),
+        organisationId: resolveTemplateOrganisationId(context),
+        includeSections: true,
+      })
+      if (otpTemplateResolution?.template) return otpTemplateResolution
     }
 
     return await resolveActivePacketTemplate({
@@ -1003,7 +1185,9 @@ const DEFAULT_SIGNING_LAYOUT = {
 const ROLE_FIELD_POSITION = {
   purchaser_1: { initialX: 140, signatureX: 120 },
   purchaser_2: { initialX: 300, signatureX: 280 },
+  buyer_spouse: { initialX: 300, signatureX: 280 },
   seller: { initialX: 460, signatureX: 440 },
+  seller_spouse: { initialX: 620, signatureX: 600 },
   agent: { initialX: 620, signatureX: 600 },
   contractor: { initialX: 780, signatureX: 760 },
   witness_1: { initialX: 300, signatureX: 300 },
@@ -1206,6 +1390,13 @@ function buildDefaultSigningSeeds({
 } = {}) {
   const normalizedPacketType = normalizeText(packetType).toLowerCase()
   const config = DEFAULT_SIGNING_LAYOUT[normalizedPacketType] || DEFAULT_SIGNING_LAYOUT.otp
+  const legalSignerProfile = normalizedPacketType === 'otp'
+    ? resolveLegalDocumentSignerProfile({
+        packetType: normalizedPacketType,
+        placeholders,
+        context,
+      })
+    : null
   const signaturePage = config.pageCount
   const initialsPages = Array.from({ length: config.pageCount }, (_, index) => index + 1)
   const initialY = 748
@@ -1215,9 +1406,30 @@ function buildDefaultSigningSeeds({
   const signatureWidth = 168
   const signatureHeight = 44
 
-  const uniqueRoles = Array.from(new Set([...(config.signerOrder || []), ...config.initialsRoles, ...config.conditionalInitialRoles, ...config.signatureRoles]))
+  const legalSignerSeeds = (legalSignerProfile?.signers || []).map((signer) => ({
+    role: signer.role,
+    signerName: signer.signerName || createFallbackSignerName(signer.role),
+    signerEmail: signer.signerEmail || buildSyntheticEmail(signer.role),
+    hasSignal: Boolean(signer.signerName || signer.signerEmail),
+    required: Boolean(signer.required),
+    conditional: false,
+    label: signer.label,
+    reason: signer.reason,
+  }))
+  const configuredSignatureRoles = legalSignerProfile
+    ? legalSignerSeeds.map((signer) => signer.role)
+    : config.signatureRoles
+  const optionalOtpRoles = legalSignerProfile ? ['agent', 'contractor'] : []
+  const uniqueRoles = Array.from(new Set([
+    ...(config.signerOrder || []),
+    ...config.initialsRoles,
+    ...config.conditionalInitialRoles,
+    ...configuredSignatureRoles,
+    ...optionalOtpRoles,
+  ]))
+  const legalSignerByRole = new Map(legalSignerSeeds.map((signer) => [signer.role, signer]))
   const signerSeeds = uniqueRoles
-    .map((role) => resolveSignerSeed({ role, placeholders, context: { ...context, packetType: normalizedPacketType } }))
+    .map((role) => legalSignerByRole.get(role) || resolveSignerSeed({ role, placeholders, context: { ...context, packetType: normalizedPacketType } }))
     .filter((seed) => seed.required || seed.hasSignal)
 
   const signerByRole = signerSeeds.reduce((accumulator, signer) => {
@@ -1265,7 +1477,7 @@ function buildDefaultSigningSeeds({
     })
   }
 
-  for (const role of config.signatureRoles) {
+  for (const role of [...configuredSignatureRoles, ...optionalOtpRoles]) {
     if (!signerByRole[role]) continue
     const position = ROLE_FIELD_POSITION[role] || ROLE_FIELD_POSITION.other
     fields.push({
@@ -1297,6 +1509,7 @@ function buildDefaultSigningSeeds({
     signers,
     fields,
     pageCount: config.pageCount,
+    legalSignerProfile,
   }
 }
 
@@ -1530,8 +1743,14 @@ function buildValidationSummary(validation = {}) {
     templateResolutionSource: validation?.templateResolutionSource || null,
     mandateTemplateFallback: Boolean(validation?.mandateTemplateFallback),
     mandateTemplateFallbackWarning: validation?.mandateTemplateFallbackWarning || null,
+    legalDocumentTemplateFallback: Boolean(validation?.legalDocumentTemplateFallback),
+    legalDocumentTemplateFallbackWarning: validation?.legalDocumentTemplateFallbackWarning || null,
     mandateTemplateContentGate: validation?.mandateTemplateContentGate || null,
     mandateTemplateLaunchReadiness: validation?.mandateTemplateLaunchReadiness || null,
+    legalDocumentScenarioKey: validation?.legalDocumentScenarioKey || null,
+    legalDocumentScenarioComplete: Boolean(validation?.legalDocumentScenarioComplete),
+    legalDocumentMissingRoutingFacts: validation?.legalDocumentMissingRoutingFacts || [],
+    legalScenarioValidation: validation?.legalScenarioValidation || null,
   }
 }
 
@@ -1573,6 +1792,36 @@ function buildMandateTemplateFallbackWarning({
     required: false,
     warningCode: 'MANDATE_TEMPLATE_ROUTE_FALLBACK',
     mandateTemplateVariant,
+    selectedTemplateId: routing?.selectedTemplateId || null,
+    selectedTemplateKey: routing?.selectedTemplateKey || null,
+  }
+}
+
+function buildLegalDocumentTemplateFallbackWarning({
+  validation = {},
+  templateResolution = null,
+} = {}) {
+  const packetType = normalizeText(validation?.packetType || templateResolution?.packetType).toLowerCase()
+  if (packetType !== 'otp') return null
+  if (normalizeText(templateResolution?.source) !== 'legal_scenario_fallback') return null
+
+  const routing = templateResolution?.legalDocumentTemplateRouting || {}
+  if (!routing?.scenarioComplete && !validation?.legalDocumentScenarioComplete) return null
+  const selectedTemplate =
+    normalizeText(routing?.selectedTemplateLabel) ||
+    normalizeText(routing?.selectedTemplateKey) ||
+    'the broad OTP template'
+
+  return {
+    source: 'legal_template_routing',
+    sectionKey: 'legal_document_template_routing',
+    sectionLabel: 'OTP template routing',
+    placeholderKey: 'legal_document_scenario',
+    placeholderLabel: 'Legal situation',
+    message: `The legal setup is complete, but no specialised OTP rule matches it. Generation will safely use ${selectedTemplate}; ask an administrator to review template coverage if different wording is required.`,
+    required: false,
+    warningCode: 'LEGAL_TEMPLATE_GENERIC_FALLBACK',
+    legalDocumentScenarioKey: normalizeText(routing?.legalDocumentScenarioKey) || null,
     selectedTemplateId: routing?.selectedTemplateId || null,
     selectedTemplateKey: routing?.selectedTemplateKey || null,
   }
@@ -1682,6 +1931,10 @@ function withMandateTemplateRoutingWarnings(validation = {}, templateResolution 
     validation,
     templateResolution,
   })
+  const legalFallbackWarning = buildLegalDocumentTemplateFallbackWarning({
+    validation,
+    templateResolution,
+  })
   const contentGate = buildMandateTemplateRuntimeContentGate(validation, templateResolution)
   const launchReadiness = buildMandateTemplateRuntimeLaunchReadiness(validation, templateResolution, {
     action: validation?.validationAction,
@@ -1744,9 +1997,12 @@ function withMandateTemplateRoutingWarnings(validation = {}, templateResolution 
     ]),
     mandateTemplateFallback: Boolean(fallbackWarning || validation?.mandateTemplateFallback),
     mandateTemplateFallbackWarning: fallbackWarning || validation?.mandateTemplateFallbackWarning || null,
+    legalDocumentTemplateFallback: Boolean(legalFallbackWarning || validation?.legalDocumentTemplateFallback),
+    legalDocumentTemplateFallbackWarning: legalFallbackWarning || validation?.legalDocumentTemplateFallbackWarning || null,
     warnings: dedupeValidationIssues([
       ...(validation?.warnings || []),
       ...(fallbackWarning ? [fallbackWarning] : []),
+      ...(legalFallbackWarning ? [legalFallbackWarning] : []),
       ...contentGateWarnings,
       ...launchReadinessWarnings,
     ]),
@@ -1800,6 +2056,20 @@ export async function resolveActiveTemplate({
     })
     if (mandateTemplateResolution?.template) return mandateTemplateResolution
   }
+  if (normalizedPacketType === 'otp') {
+    const otpTemplateResolution = await resolveOtpScenarioTemplateForPacket({
+      packetType: normalizedPacketType,
+      context: {
+        ...context,
+        moduleType,
+        organisationId,
+      },
+      moduleType: normalizeText(moduleType) || resolveTemplateModuleType(normalizedPacketType, context),
+      organisationId: organisationId || resolveTemplateOrganisationId(context),
+      includeSections,
+    })
+    if (otpTemplateResolution?.template) return otpTemplateResolution
+  }
 
   return resolveActivePacketTemplate({
     packetType,
@@ -1844,10 +2114,36 @@ export async function validatePacket({
     context,
     packetBranding,
   )
-  const placeholders = normalizeMergeFieldPayload(placeholdersRaw, {
+  const normalizedPlaceholders = normalizeMergeFieldPayload(placeholdersRaw, {
     packetType: normalizedPacketType,
     includeAliasKeys: true,
   }).payload
+  const supportsLegalScenario = ['mandate', 'otp'].includes(normalizedPacketType)
+  const legalDocumentScenarioProfile = supportsLegalScenario
+    ? resolveLegalDocumentScenarioProfile({
+        packetType: normalizedPacketType,
+        placeholders: normalizedPlaceholders,
+        seller: context?.mandateData?.seller || context?.seller || context?.sellerDetails || context?.seller_details || null,
+        buyer: context?.buyer || context?.purchaser || null,
+        property:
+          context?.mandateData?.property ||
+          context?.property ||
+          context?.unit ||
+          context?.listing ||
+          context?.privateListing ||
+          context?.private_listing ||
+          null,
+        transaction: context?.transaction || null,
+        sourceContext: context?.mandateData?.sourceContext || context?.sourceContext || null,
+        context,
+      })
+    : null
+  const placeholders = legalDocumentScenarioProfile
+    ? {
+        ...normalizedPlaceholders,
+        ...buildLegalDocumentScenarioPlaceholders(legalDocumentScenarioProfile),
+      }
+    : normalizedPlaceholders
   const sectionManifest = await resolveSeededSectionManifest({
     packetType: normalizedPacketType,
     template,
@@ -1870,6 +2166,26 @@ export async function validatePacket({
     packetType: normalizedPacketType,
     placeholders,
   })
+  const legalScenarioIssues = buildLegalScenarioIssues(legalDocumentScenarioProfile)
+  const legalScenarioCanProceed = !supportsLegalScenario || legalScenarioIssues.length === 0
+  const legalScenarioRequirements = supportsLegalScenario
+    ? resolveLegalDocumentScenarioRequirements({
+        scenarioProfile: legalDocumentScenarioProfile,
+        draft: buildLegalDocumentRequirementDraftFromPlaceholders(placeholders),
+      })
+    : null
+  const legalScenarioRequirementIssues = legalDocumentScenarioProfile?.complete
+    ? (legalScenarioRequirements?.missingFields || []).map((field) => ({
+        source: 'legal_scenario_requirement',
+        sectionKey: 'legal_scenario',
+        sectionLabel: field.group,
+        placeholderKey: field.key,
+        placeholderLabel: field.label,
+        message: `${field.label} is required for this legal situation.`,
+        required: true,
+      }))
+    : []
+  const legalScenarioRequirementsCanProceed = !supportsLegalScenario || legalScenarioRequirementIssues.length === 0
   const mandateScenarioProfile = normalizedPacketType === 'mandate'
     ? resolveMandateTemplateRoutingProfile({
         placeholders,
@@ -1957,6 +2273,8 @@ export async function validatePacket({
           ...issue,
           source: 'conditional_pack',
         })),
+        ...legalScenarioIssues,
+        ...legalScenarioRequirementIssues,
       ])
     : []
   const criticalIssues = isTemplatePreview
@@ -1965,12 +2283,16 @@ export async function validatePacket({
       ? [
           ...sellerCriticalIssues,
           ...conditionalPackMissingPlaceholders,
+          ...legalScenarioIssues,
+          ...legalScenarioRequirementIssues,
         ]
       : [
           ...ruleCritical,
           ...sellerCriticalIssues,
           ...mandateBlockingIssues,
           ...conditionalPackMissingPlaceholders,
+          ...legalScenarioIssues,
+          ...legalScenarioRequirementIssues,
         ]
   const warningIssues = isTemplatePreview
     ? [...structuralRuleWarnings]
@@ -1981,6 +2303,8 @@ export async function validatePacket({
       ]
   const missingPlaceholders = dedupeValidationIssues([
     ...conditionalPackMissingPlaceholders,
+    ...legalScenarioIssues,
+    ...legalScenarioRequirementIssues,
     ...(ruleValidation.missingPlaceholders || []),
   ])
   const conditionalPackCanProceed = Boolean(conditionalPackPreflight.canProceed)
@@ -1996,6 +2320,15 @@ export async function validatePacket({
     conditionalPackDataRequirements,
     conditionalPackMissingPlaceholders,
     conditionalPackAudit,
+    legalDocumentScenarioProfile,
+    legalDocumentScenarioKey: legalDocumentScenarioProfile?.scenarioKey || null,
+    legalDocumentScenarioComplete: Boolean(legalDocumentScenarioProfile?.complete),
+    legalDocumentMissingRoutingFacts: legalDocumentScenarioProfile?.missingRoutingFacts || [],
+    legalScenarioValidation: {
+      canProceed: legalScenarioCanProceed && legalScenarioRequirementsCanProceed,
+      issues: [...legalScenarioIssues, ...legalScenarioRequirementIssues],
+      requirements: legalScenarioRequirements,
+    },
     mandateScenarioProfile,
     mandateTemplateVariant: mandateScenarioProfile?.templateVariant || null,
     missingPlaceholders,
@@ -2006,6 +2339,8 @@ export async function validatePacket({
       : isCommercialPacket
       ? ruleValidation.isValidForGeneration && conditionalPackCanProceed
       : (
+          legalScenarioCanProceed &&
+          legalScenarioRequirementsCanProceed &&
           conditionalPackCanProceed &&
           sellerValidation.canProceed &&
           (allowMandateGenerationGaps || (ruleValidation.isValidForGeneration && (!mandateValidation || mandateValidation.canProceed)))
@@ -2179,6 +2514,8 @@ export async function savePacketDraft({
       mandateTemplateRouting: templateResolution?.mandateTemplateRouting || null,
       mandateTemplateFallback: Boolean(rendered.mandateTemplateFallback),
       mandateTemplateFallbackWarning: rendered.mandateTemplateFallbackWarning || null,
+      legalDocumentTemplateFallback: Boolean(rendered.legalDocumentTemplateFallback),
+      legalDocumentTemplateFallbackWarning: rendered.legalDocumentTemplateFallbackWarning || null,
       mandateTemplateContentGate: rendered.mandateTemplateContentGate || null,
       mandateTemplateLaunchReadiness: rendered.mandateTemplateLaunchReadiness || null,
       generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
@@ -2228,9 +2565,18 @@ export async function generatePacketVersion({
   const effectiveTemplate = prepared.template || template || null
   const isMandatePacket = validation.packetType === 'mandate'
   const hasConditionalPackBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'conditional_pack')
+  const hasLegalScenarioBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'legal_scenario')
+  const hasLegalScenarioRequirementBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'legal_scenario_requirement')
   const hasMandateTemplateContentGateBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'mandate_template_content_gate')
   const hasMandateTemplateLaunchReadinessBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'mandate_template_launch_readiness')
-  const allowGenerationBypass = (isMandatePacket && !hasConditionalPackBlockingIssues && !hasMandateTemplateContentGateBlockingIssues && !hasMandateTemplateLaunchReadinessBlockingIssues) || forceGenerate
+  const allowGenerationBypass = (
+    isMandatePacket &&
+    !hasConditionalPackBlockingIssues &&
+    !hasLegalScenarioBlockingIssues &&
+    !hasLegalScenarioRequirementBlockingIssues &&
+    !hasMandateTemplateContentGateBlockingIssues &&
+    !hasMandateTemplateLaunchReadinessBlockingIssues
+  ) || forceGenerate
   if (!validation.isValidForGeneration && !allowGenerationBypass) {
     const error = createPacketError(
       hasMandateTemplateLaunchReadinessBlockingIssues
@@ -2287,6 +2633,8 @@ export async function generatePacketVersion({
       mandateTemplateRouting: generationPayload.mandateTemplateRouting || null,
       mandateTemplateFallback: Boolean(generationPayload.mandateTemplateFallback),
       mandateTemplateFallbackWarning: generationPayload.mandateTemplateFallbackWarning || null,
+      legalDocumentTemplateFallback: Boolean(generationPayload.legalDocumentTemplateFallback),
+      legalDocumentTemplateFallbackWarning: generationPayload.legalDocumentTemplateFallbackWarning || null,
       mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
       mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
       generatedAt,
@@ -2493,6 +2841,8 @@ export async function generatePacketVersion({
       mandateTemplateRouting: generationPayload.mandateTemplateRouting || null,
       mandateTemplateFallback: Boolean(generationPayload.mandateTemplateFallback),
       mandateTemplateFallbackWarning: generationPayload.mandateTemplateFallbackWarning || null,
+      legalDocumentTemplateFallback: Boolean(generationPayload.legalDocumentTemplateFallback),
+      legalDocumentTemplateFallbackWarning: generationPayload.legalDocumentTemplateFallbackWarning || null,
       mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
       mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
       generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
@@ -2529,6 +2879,8 @@ export async function generatePacketVersion({
       mandateTemplateRouting: generationPayload.mandateTemplateRouting || null,
       mandateTemplateFallback: Boolean(generationPayload.mandateTemplateFallback),
       mandateTemplateFallbackWarning: generationPayload.mandateTemplateFallbackWarning || null,
+      legalDocumentTemplateFallback: Boolean(generationPayload.legalDocumentTemplateFallback),
+      legalDocumentTemplateFallbackWarning: generationPayload.legalDocumentTemplateFallbackWarning || null,
       mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
       mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
       message: previewOnlyGeneration
@@ -2814,6 +3166,12 @@ export async function prepareSigningFields({
       packetType: normalizeText(packetType) || normalizeText(packet?.packet_type),
       signerCount: seed.signers.length,
       fieldCount: seed.fields.length,
+      legalDocumentScenarioKey: seed.legalSignerProfile?.scenarioProfile?.scenarioKey || null,
+      scenarioDrivenSignerRoles: seed.legalSignerProfile?.signers?.map((signer) => signer.role) || [],
+      scenarioDrivenSignerReasons: seed.legalSignerProfile?.signers?.map((signer) => ({
+        role: signer.role,
+        reason: signer.reason,
+      })) || [],
     },
   })
 

@@ -186,6 +186,7 @@ import {
   DOCUMENT_START_PACKET_TYPES,
   DOCUMENT_START_SOURCE_MODES,
 } from '../core/documents/documentStartRules'
+import { appendDocumentStartLegalScenarioParams } from '../core/documents/documentStartLegalScenario'
 import {
   buildSellerRequirementProfile,
 } from '../lib/sellerDocumentRequirementEngine'
@@ -12215,6 +12216,7 @@ function buildAcceptedOfferOtpWorkspacePath({
   leadId = '',
   listingId = '',
   sourceMode = DOCUMENT_START_SOURCE_MODES.saved,
+  legalScenario = null,
   returnTo = '',
 } = {}) {
   const resolvedTransactionId = normalizeText(transactionId)
@@ -12223,6 +12225,7 @@ function buildAcceptedOfferOtpWorkspacePath({
   params.set('mode', 'generate')
   params.set('sourceMode', normalizeText(sourceMode) || DOCUMENT_START_SOURCE_MODES.saved)
   params.set('documentStart', DOCUMENT_START_ENTRY_POINTS.acceptedOfferOtp)
+  appendDocumentStartLegalScenarioParams(params, legalScenario || {}, 'otp')
   if (offerId) params.set('offerId', normalizeText(offerId))
   if (leadId) params.set('leadId', normalizeText(leadId))
   if (listingId) params.set('listingId', normalizeText(listingId))
@@ -12941,6 +12944,25 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
     { label: 'Property', value: acceptedProperty?.title || property?.title || acceptedOtpListingId || 'Property pending' },
     { label: 'Transaction', value: resolvedTransactionId || 'Create transaction first' },
   ]
+  const acceptedOtpLegalScenario = {
+    sellerEntityType:
+      acceptedProperty?.sellerEntityType || acceptedProperty?.sellerType ||
+      acceptedOtpOffer?.sellerEntityType || acceptedOtpOffer?.sellerType,
+    sellerMaritalRegime:
+      acceptedOtpOffer?.sellerMaritalRegime || acceptedOtpOffer?.sellerMaritalStatus,
+    buyerEntityType:
+      acceptedOtpOffer?.buyerEntityType || acceptedOtpOffer?.purchaserType ||
+      lead?.buyerEntityType || lead?.purchaserType,
+    buyerMaritalRegime:
+      acceptedOtpOffer?.buyerMaritalRegime || acceptedOtpOffer?.buyerMaritalStatus ||
+      lead?.buyerMaritalRegime || lead?.buyerMaritalStatus,
+    propertyTitleType:
+      acceptedProperty?.propertyTitleType || acceptedProperty?.propertyStructureType || acceptedProperty?.type ||
+      property?.propertyTitleType || property?.propertyStructureType || property?.type,
+    financeType:
+      acceptedOtpOffer?.financeType || acceptedOtpOffer?.finance_type ||
+      acceptedOtpOffer?.conditions?.financeType || acceptedOtpOffer?.conditionsJson?.financeType,
+  }
 
   function openOfferModal(mode = 'send_link') {
     setOfferModalInitialMode(mode)
@@ -13175,6 +13197,7 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
       leadId: lead?.leadId,
       listingId: acceptedOtpListingId,
       sourceMode,
+      legalScenario: selection?.legalScenario,
       returnTo: `/pipeline/leads/${encodeURIComponent(normalizeText(lead?.leadId))}?tab=offers`,
     })
     if (!path) {
@@ -13197,6 +13220,7 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
         hasClientContact={Boolean(buyerContact.email || buyerContact.phone)}
         hasParentDocument
         contextSummary={acceptedOtpStartSummary}
+        initialLegalScenario={acceptedOtpLegalScenario}
         title="Create OTP"
         subtitle="Start from the accepted offer and review the OTP before sending it for signature."
         busy={workingAction === 'otp_onboarding'}
@@ -13559,6 +13583,19 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
     { label: 'Property', value: acceptedListing?.label || acceptedListingId || 'Property pending' },
     { label: 'Transaction', value: createdTransactionId || 'Create transaction first' },
   ]
+  const acceptedOfferOtpLegalScenario = {
+    sellerEntityType: acceptedOffer?.sellerEntityType || acceptedOffer?.sellerType || acceptedListing?.sellerEntityType || acceptedListing?.sellerType,
+    sellerMaritalRegime: acceptedOffer?.sellerMaritalRegime || acceptedOffer?.sellerMaritalStatus,
+    buyerEntityType:
+      acceptedOffer?.buyerEntityType || acceptedOffer?.purchaserType || lead?.buyerEntityType || lead?.purchaserType,
+    buyerMaritalRegime:
+      acceptedOffer?.buyerMaritalRegime || acceptedOffer?.buyerMaritalStatus || lead?.buyerMaritalRegime || lead?.buyerMaritalStatus,
+    propertyTitleType:
+      acceptedListing?.propertyTitleType || acceptedListing?.propertyStructureType || acceptedListing?.type,
+    financeType:
+      acceptedOffer?.financeType || acceptedOffer?.finance_type ||
+      acceptedOffer?.conditions?.financeType || acceptedOffer?.conditionsJson?.financeType,
+  }
 
   useEffect(() => {
     setCreatedTransactionId(existingTransactionId)
@@ -13695,6 +13732,7 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
       leadId: lead?.leadId,
       listingId: acceptedListingId,
       sourceMode,
+      legalScenario: selection?.legalScenario,
       returnTo: `/pipeline/leads/${encodeURIComponent(normalizeText(lead?.leadId))}?tab=offers`,
     })
     if (!path) {
@@ -13731,6 +13769,7 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
         hasClientContact={Boolean(contact.email || contact.phone)}
         hasParentDocument
         contextSummary={acceptedOfferOtpStartSummary}
+        initialLegalScenario={acceptedOfferOtpLegalScenario}
         title="Create OTP"
         subtitle="Start from the accepted offer and review the OTP before sending it for signature."
         onContinue={(selection) => void startAcceptedOfferOtp(selection)}
@@ -14672,6 +14711,7 @@ function buildSellerLeadMandateWorkspacePath({
   sourceMode = '',
   documentStart = '',
   packetId = '',
+  legalScenario = null,
 } = {}) {
   const leadId = normalizeText(row?.leadId || row?.id)
   if (!leadId) return ''
@@ -14683,6 +14723,7 @@ function buildSellerLeadMandateWorkspacePath({
   if (sourceMode) params.set('sourceMode', sourceMode)
   if (documentStart) params.set('documentStart', documentStart)
   if (packetId) params.set('packetId', packetId)
+  appendDocumentStartLegalScenarioParams(params, legalScenario || {}, 'mandate')
   return `/pipeline/leads/${encodeURIComponent(leadId)}/legal/mandate?${params.toString()}`
 }
 
@@ -20909,6 +20950,21 @@ function AgentLeadWorkspace() {
       { label: 'Mandate', value: mandateMeta.label || commissionLabel },
     ]
   }, [isSellerLeadWorkspace, linkedSellerListing, row, sellerJourney, sellerOnboardingStatus])
+  const sellerMandateLegalScenario = useMemo(() => ({
+    sellerEntityType:
+      linkedSellerListing?.sellerEntityType || linkedSellerListing?.seller_entity_type ||
+      linkedSellerListing?.sellerType || linkedSellerListing?.seller_type ||
+      row?.sellerEntityType || row?.seller_entity_type || row?.sellerType || row?.seller_type || row?.ownershipType,
+    sellerMaritalRegime:
+      linkedSellerListing?.sellerMaritalRegime || linkedSellerListing?.seller_marital_regime ||
+      linkedSellerListing?.sellerMaritalStatus || linkedSellerListing?.seller_marital_status ||
+      row?.sellerMaritalRegime || row?.seller_marital_regime || row?.sellerMaritalStatus || row?.seller_marital_status,
+    propertyTitleType:
+      linkedSellerListing?.propertyTitleType || linkedSellerListing?.property_title_type ||
+      linkedSellerListing?.propertyStructureType || linkedSellerListing?.property_structure_type ||
+      linkedSellerListing?.propertyType || linkedSellerListing?.property_type ||
+      row?.propertyTitleType || row?.propertyStructureType || row?.propertyType || row?.property_type,
+  }), [linkedSellerListing, row])
   const workspaceName = normalizeText(workspaceContext.currentWorkspace?.name || workspaceContext.workspace?.name)
   const tabs = useMemo(() => isSellerLeadWorkspace
     ? [
@@ -21475,25 +21531,9 @@ function AgentLeadWorkspace() {
     if (!row) return
     const mandateMeta = getSellerMandateMeta(row, linkedSellerListing, sellerJourney)
     const requestedMode = normalizeText(options?.mode)
-    const requestedSourceMode = normalizeText(options?.sourceMode)
-    const onboardingSubmitted = sellerOnboardingIsSubmitted(getSellerOnboardingStatus(row, linkedSellerListing, sellerJourney))
     const packetId = getSellerMandatePacketId(row, linkedSellerListing, sellerJourney)
     setSellerActionError('')
     if (!mandateMeta.hasRecord) {
-      if (onboardingSubmitted || requestedSourceMode) {
-        const path = buildSellerLeadMandateWorkspacePath({
-          row,
-          listing: linkedSellerListing,
-          mode: 'generate',
-          sourceMode: requestedSourceMode || DOCUMENT_START_SOURCE_MODES.saved,
-          documentStart: DOCUMENT_START_ENTRY_POINTS.sellerLeadMandate,
-        })
-        if (path) {
-          setSellerActionMessage('')
-          navigate(path)
-          return
-        }
-      }
       setSellerActionMessage('')
       setMandateStartOpen(true)
       return
@@ -21525,6 +21565,7 @@ function AgentLeadWorkspace() {
       mode: 'generate',
       sourceMode,
       documentStart: DOCUMENT_START_ENTRY_POINTS.sellerLeadMandate,
+      legalScenario: selection?.legalScenario,
     })
     if (path) navigate(path)
   }, [linkedSellerListing, navigate, row, sendSellerOnboardingForLead])
@@ -21921,6 +21962,7 @@ function AgentLeadWorkspace() {
           hasClientContact={Boolean(normalizeText(row.email || row.contact?.email || row.phone || row.contact?.phone))}
           hasParentDocument
           contextSummary={sellerMandateStartSummary}
+          initialLegalScenario={sellerMandateLegalScenario}
           busy={sendingSellerOnboarding}
           onContinue={handleStartMandateDocument}
         />

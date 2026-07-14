@@ -504,7 +504,10 @@ function formatDocumentDisplayValue(key, value) {
     normalizedKey === 'mandate_template_variant' ||
     normalizedKey === 'mandate_clause_profile' ||
     normalizedKey === 'seller_clause_profile' ||
+    normalizedKey === 'buyer_clause_profile' ||
     normalizedKey === 'property_clause_profile' ||
+    normalizedKey === 'finance_clause_profile' ||
+    normalizedKey === 'legal_document_scenario' ||
     normalizedKey === 'vat_handling'
   ) {
     return toTitleCase(text)

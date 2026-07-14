@@ -516,6 +516,14 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     ...(Array.isArray(listing?.marketing?.externalLinks) ? listing.marketing.externalLinks : []),
     ...(Array.isArray(formData.externalListingLinks) ? formData.externalListingLinks : []),
   ])
+  const sellerPortalBranding = {
+    ...(listing?.branding || {}),
+    organisationName: listing?.organisationName || listing?.agencyName || listing?.branding?.organisationName || '',
+    agencyName: listing?.agencyName || listing?.organisationName || listing?.branding?.agencyName || '',
+    logoUrl: listing?.agencyLogoUrl || listing?.organisationLogoUrl || listing?.branding?.logoUrl || '',
+    logoDarkUrl: listing?.agencyLogoDarkUrl || listing?.organisationLogoDarkUrl || listing?.branding?.logoDarkUrl || '',
+    logoLightUrl: listing?.agencyLogoLightUrl || listing?.branding?.logoLightUrl || '',
+  }
 
   return {
     link: {
@@ -530,6 +538,7 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
       externalLinks: sellerVisibleExternalLinks,
       listingExternalLinks: sellerVisibleExternalLinks,
     },
+    branding: sellerPortalBranding,
     settings: {
       client_portal_enabled: true,
       snag_reporting_enabled: false,
@@ -543,7 +552,8 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
       status: sellerPortalStage,
       development: {
         id: listing?.organisationId || null,
-        name: listing?.agencyName || listing?.organisationName || 'Selling',
+        name: sellerPortalBranding.agencyName || sellerPortalBranding.organisationName || 'Arch9',
+        developer_company: sellerPortalBranding.organisationName || sellerPortalBranding.agencyName || '',
       },
     },
     transaction: {
@@ -616,6 +626,9 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
       mandateStatus: mandatePacket?.state || listing?.mandateStatus || listing?.mandate_status || '',
       sellerLeadId,
       listingId,
+      agencyName: sellerPortalBranding.agencyName || sellerPortalBranding.organisationName || '',
+      agencyLogoUrl: sellerPortalBranding.logoDarkUrl || sellerPortalBranding.logoUrl || sellerPortalBranding.logoLightUrl || '',
+      branding: sellerPortalBranding,
       externalListingLinks: sellerVisibleExternalLinks,
       listingExternalLinks: sellerVisibleExternalLinks,
       mandatePacketId,

@@ -24,6 +24,15 @@ function normalizeText(value) {
 function resolvePacketErrorFeedback(error = null) {
   const code = normalizeText(error?.code)
   if (code === 'VALIDATION_BLOCKED') {
+    const legalScenarioMissing = Array.isArray(error?.validation?.legalDocumentMissingRoutingFacts)
+      ? error.validation.legalDocumentMissingRoutingFacts
+      : []
+    if (legalScenarioMissing.length) {
+      return {
+        label: 'Legal setup incomplete',
+        message: `Confirm ${legalScenarioMissing.map((field) => String(field).replace(/_/g, ' ')).join(', ')} before generating the document.`,
+      }
+    }
     const packMissing = Array.isArray(error?.validation?.conditionalPackMissingPlaceholders)
       ? error.validation.conditionalPackMissingPlaceholders
       : []

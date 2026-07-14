@@ -45,6 +45,7 @@ import {
   DOCUMENT_START_PACKET_TYPES,
   DOCUMENT_START_SOURCE_MODES,
 } from '../core/documents/documentStartRules'
+import { appendDocumentStartLegalScenarioParams } from '../core/documents/documentStartLegalScenario'
 import {
   getListingReadinessSummary,
   getRequiredSellerDocuments,
@@ -201,6 +202,7 @@ function buildAcceptedOfferOtpWorkspacePath({
   leadId = '',
   listingId = '',
   sourceMode = DOCUMENT_START_SOURCE_MODES.saved,
+  legalScenario = null,
   returnTo = '',
 } = {}) {
   const resolvedTransactionId = normalizeText(transactionId)
@@ -209,6 +211,7 @@ function buildAcceptedOfferOtpWorkspacePath({
   params.set('mode', 'generate')
   params.set('sourceMode', normalizeText(sourceMode) || DOCUMENT_START_SOURCE_MODES.saved)
   params.set('documentStart', DOCUMENT_START_ENTRY_POINTS.acceptedOfferOtp)
+  appendDocumentStartLegalScenarioParams(params, legalScenario || {}, 'otp')
   if (offerId) params.set('offerId', normalizeText(offerId))
   if (leadId) params.set('leadId', normalizeText(leadId))
   if (listingId) params.set('listingId', normalizeText(listingId))
@@ -3123,6 +3126,7 @@ function AgentListingDetail() {
     params.set('sourceMode', sourceMode)
     params.set('documentStart', DOCUMENT_START_ENTRY_POINTS.listingMandate)
     params.set('listingId', String(listingRecord.id))
+    appendDocumentStartLegalScenarioParams(params, selection?.legalScenario || {}, 'mandate')
     params.set('returnTo', `/agent/listings/${encodeURIComponent(String(listingRecord.id))}?tab=seller`)
 
     navigate(`/agent/listings/${encodeURIComponent(String(listingRecord.id))}/legal/mandate?${params.toString()}`)
@@ -3597,6 +3601,7 @@ function AgentListingDetail() {
       leadId: offer.buyerLeadId,
       listingId: listingRecord?.id,
       sourceMode,
+      legalScenario: selection?.legalScenario,
       returnTo: `/agent/listings/${encodeURIComponent(String(listingRecord?.id || ''))}?tab=offers`,
     })
     if (!path) {
@@ -4604,6 +4609,43 @@ function AgentListingDetail() {
       },
     ]
   }, [acceptedOfferOtpStartOffer, listingRecord, marketingDraft.headline])
+  const listingMandateLegalScenario = useMemo(() => ({
+    sellerEntityType:
+      listingRecord?.sellerEntityType ||
+      listingRecord?.seller_entity_type ||
+      listingRecord?.sellerType ||
+      listingRecord?.seller_type ||
+      sellerProfile?.entityType ||
+      sellerProfile?.sellerType,
+    sellerMaritalRegime:
+      listingRecord?.sellerMaritalRegime ||
+      listingRecord?.seller_marital_regime ||
+      listingRecord?.sellerMaritalStatus ||
+      listingRecord?.seller_marital_status,
+    propertyTitleType:
+      listingRecord?.propertyTitleType ||
+      listingRecord?.property_title_type ||
+      listingRecord?.propertyStructureType ||
+      listingRecord?.property_structure_type ||
+      listingRecord?.propertyType ||
+      listingRecord?.property_type,
+  }), [listingRecord, sellerProfile])
+  const acceptedOfferOtpLegalScenario = useMemo(() => {
+    const offer = acceptedOfferOtpStartOffer || {}
+    return {
+      sellerEntityType: listingMandateLegalScenario.sellerEntityType,
+      sellerMaritalRegime: listingMandateLegalScenario.sellerMaritalRegime,
+      buyerEntityType:
+        offer.buyerEntityType || offer.buyer_entity_type || offer.purchaserType || offer.purchaser_type ||
+        offer.conditionsJson?.buyerEntityType || offer.conditions?.buyerEntityType,
+      buyerMaritalRegime:
+        offer.buyerMaritalRegime || offer.buyer_marital_regime || offer.buyerMaritalStatus || offer.buyer_marital_status ||
+        offer.conditionsJson?.buyerMaritalRegime || offer.conditions?.buyerMaritalRegime,
+      propertyTitleType: listingMandateLegalScenario.propertyTitleType,
+      financeType:
+        offer.financeType || offer.finance_type || offer.conditionsJson?.financeType || offer.conditions?.financeType,
+    }
+  }, [acceptedOfferOtpStartOffer, listingMandateLegalScenario])
   const completedFollowUpCount = followUpActions.filter((action) => action.complete).length
   const listingFollowUpsComplete = !followUpActions.length || followUpActions.every((action) => action.complete)
   const shouldShowListingFollowUps = sellerWorkspaceTab === 'overview' && !listingFollowUpsComplete
@@ -5635,6 +5677,7 @@ function AgentListingDetail() {
         hasClientContact={Boolean(resolveSellerEmailFromListing(listingRecord) || formatSouthAfricanWhatsAppNumber(resolveSellerPhoneFromListing(listingRecord)))}
         hasParentDocument
         contextSummary={listingMandateStartSummary}
+        initialLegalScenario={listingMandateLegalScenario}
         title="Create Mandate"
         subtitle="Choose the quickest way to prepare this listing mandate. You can still edit the document before sending it for signature."
         busy={followUpActionId === 'generate_mandate' || followUpActionId === 'send_onboarding'}
@@ -5656,6 +5699,7 @@ function AgentListingDetail() {
         )}
         hasParentDocument
         contextSummary={acceptedOfferOtpStartSummary}
+        initialLegalScenario={acceptedOfferOtpLegalScenario}
         title="Create OTP"
         subtitle="Start from the accepted offer and review the OTP before sending it for signature."
         busy={canonicalOfferActionId === `${acceptedOfferOtpStartOffer?.id}:otp_onboarding`}

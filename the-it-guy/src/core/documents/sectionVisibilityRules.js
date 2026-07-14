@@ -63,7 +63,11 @@ const FIELD_ALIAS_MAP = {
   mandate_template_variant: ['mandate_template_variant', 'mandate.template_variant', 'mandateClauseProfile', 'mandate_clause_profile'],
   mandate_clause_profile: ['mandate_clause_profile', 'mandate.clause_profile', 'mandateTemplateVariant', 'mandate_template_variant'],
   seller_clause_profile: ['seller_clause_profile', 'seller.clause_profile'],
+  buyer_clause_profile: ['buyer_clause_profile', 'buyer.clause_profile'],
   property_clause_profile: ['property_clause_profile', 'property.clause_profile'],
+  finance_clause_profile: ['finance_clause_profile', 'finance.clause_profile'],
+  legal_document_scenario: ['legal_document_scenario', 'legal.document_scenario'],
+  legal_active_clause_packs: ['legal_active_clause_packs', 'legal.active_clause_packs'],
 }
 
 export function normalizeVisibilityFieldKey(value = '') {

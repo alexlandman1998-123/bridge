@@ -1,4 +1,6 @@
 import { CheckCircle2, CircleAlert, Pencil } from 'lucide-react'
+import { resolveLegalDocumentScenarioProfile } from '../../core/documents/legalDocumentScenarioProfile'
+import { resolveLegalDocumentScenarioRequirements } from '../../core/documents/legalDocumentScenarioRequirements'
 import Button from '../ui/Button'
 
 function normalizeText(value) {
@@ -134,6 +136,19 @@ export default function MandateDraftIntakePanel({
   const sourceLabel = getSourceModeLabel(sourceMode)
   const hasManualStart = normalizeKey(sourceMode) === 'manual_details'
   const startLabel = normalizeText(documentStart).replace(/_/g, ' ') || 'seller lead mandate'
+  const propertyTitleType = normalizeKey(draft.propertyTitleType || (draft.unitNumber || draft.complexName ? 'sectional_title' : 'full_title'))
+  const scenarioProfile = resolveLegalDocumentScenarioProfile({
+    packetType: 'mandate',
+    seller: {
+      entityType: draft.sellerEntityType || 'individual',
+      maritalStatus: draft.sellerMaritalRegime || draft.sellerMaritalStatus,
+    },
+    property: { propertyType: propertyTitleType },
+  })
+  const legalRequirements = resolveLegalDocumentScenarioRequirements({
+    scenarioProfile,
+    draft: { ...draft, propertyTitleType },
+  })
 
   return (
     <section className="mb-5 rounded-[24px] border border-[#dbe7f4] bg-white p-4 shadow-[0_14px_34px_rgba(16,32,51,0.05)] sm:p-5">
@@ -170,6 +185,18 @@ export default function MandateDraftIntakePanel({
             Looks good
           </Button>
         </div>
+      </div>
+
+      <div className="mt-5 flex flex-col gap-2 rounded-[18px] border border-[#dbeafe] bg-[#f4f8ff] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#456b98]">Legal situation</p>
+          <p className="mt-1 text-sm font-semibold capitalize text-[#173b63]">
+            {scenarioProfile.sellerClauseProfile.replace(/_/g, ' ')} seller · {scenarioProfile.propertyClauseProfile.replace(/_/g, ' ')}
+          </p>
+        </div>
+        <span className={`w-fit rounded-full border px-3 py-1.5 text-xs font-semibold ${legalRequirements.complete ? 'border-[#cdebd8] bg-white text-[#20895a]' : 'border-[#f5d9b8] bg-[#fffaf3] text-[#9a5b1d]'}`}>
+          {legalRequirements.complete ? 'Legal details ready' : `${legalRequirements.missingFields.length} legal detail${legalRequirements.missingFields.length === 1 ? '' : 's'} to check`}
+        </span>
       </div>
 
       <div className="mt-5 grid gap-3 lg:grid-cols-[0.72fr_1.28fr]">

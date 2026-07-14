@@ -140,6 +140,7 @@ import {
   DOCUMENT_START_PACKET_TYPES,
   DOCUMENT_START_SOURCE_MODES,
 } from '../core/documents/documentStartRules'
+import { appendDocumentStartLegalScenarioParams } from '../core/documents/documentStartLegalScenario'
 import { generatePacketVersion, listPacketTemplates } from '../core/documents/packetService'
 import { resolveDocumentPacketActionState, resolveDocumentPacketStatus } from '../core/documents/packetStatusResolver'
 import { createDocumentPacket, listDocumentPackets } from '../lib/documentPacketsApi'
@@ -4632,6 +4633,7 @@ function UnitDetail() {
     const documentStart = normalizeText(options?.documentStart)
     if (sourceMode) params.set('sourceMode', sourceMode)
     if (documentStart) params.set('documentStart', documentStart)
+    appendDocumentStartLegalScenarioParams(params, options?.legalScenario || {}, 'otp')
     return `/transactions/${resolvedTransactionId}/legal/otp?${params.toString()}`
   }
 
@@ -4761,6 +4763,7 @@ function UnitDetail() {
     const path = buildOtpLegalWorkspacePath('generate', {
       sourceMode,
       documentStart: DOCUMENT_START_ENTRY_POINTS.transactionOtp,
+      legalScenario: selection?.legalScenario,
     })
     if (!path) {
       setError('Transaction data is not available for the legal document workspace.')
@@ -6728,6 +6731,24 @@ function UnitDetail() {
         : toTitleLabel(normalizeFinanceType(transaction?.finance_type || clientInfoForm.finance_type || 'cash')),
     },
   ]
+  const transactionOtpLegalScenario = {
+    sellerEntityType:
+      transaction?.seller_entity_type || transaction?.seller_type ||
+      developmentSellerSnapshot?.entityType || developmentSellerSnapshot?.sellerType,
+    sellerMaritalRegime:
+      transaction?.seller_marital_regime || transaction?.seller_marital_status ||
+      developmentSellerSnapshot?.maritalRegime || developmentSellerSnapshot?.maritalStatus,
+    buyerEntityType:
+      transaction?.buyer_entity_type || transaction?.purchaser_type ||
+      buyer?.entity_type || buyer?.entityType || buyer?.purchaserType,
+    buyerMaritalRegime:
+      transaction?.buyer_marital_regime || transaction?.buyer_marital_status ||
+      buyer?.marital_regime || buyer?.maritalRegime || buyer?.maritalStatus,
+    propertyTitleType:
+      transaction?.property_title_type || transaction?.property_structure_type || transaction?.property_type ||
+      unit?.property_title_type || unit?.property_structure_type || unit?.property_type,
+    financeType: transaction?.finance_type || clientInfoForm.finance_type,
+  }
   const developmentModuleState = developmentSettings?.enabledModules || {}
   const developmentTeams = developmentSettings?.stakeholderTeams || {}
   const agentOptions = developmentTeams.agents || []
@@ -10925,6 +10946,7 @@ function UnitDetail() {
       hasClientContact={Boolean(buyerEmailForOtpStart || onboardingRequiresManualHandoff)}
       hasParentDocument
       contextSummary={transactionOtpStartSummary}
+      initialLegalScenario={transactionOtpLegalScenario}
       title="Create OTP"
       subtitle="Choose the quickest way to prepare this transaction OTP. You can still review and edit the document before sending."
       busy={salesActionLoading === 'generate_otp' || sendingOnboardingEmail || otpPacketStatusLoading}

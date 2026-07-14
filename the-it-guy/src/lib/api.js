@@ -37126,11 +37126,11 @@ function normalizePacketSignerRole(value = '') {
 
 function isPacketSignerRoleClientFacing(value = '') {
   const normalized = normalizePacketSignerRole(value)
-  return normalized === 'purchaser_1' || normalized === 'purchaser_2'
+  return ['purchaser_1', 'purchaser_2', 'buyer_spouse'].includes(normalized)
 }
 
 function isPacketSignerRoleSellerFacing(value = '') {
-  return normalizePacketSignerRole(value) === 'seller'
+  return ['seller', 'seller_spouse'].includes(normalizePacketSignerRole(value))
 }
 
 function isPacketSignerStatusSigned(value = '') {
@@ -37288,7 +37288,7 @@ async function resolveClientPortalPacketSummary(
   const matchingRoleSigners = signers.filter((signer) => matcher(signer?.signer_role))
   const requiredSigners = signers.filter((signer) => {
     const role = normalizePacketSignerRole(signer?.signer_role)
-    return ['purchaser_1', 'purchaser_2', 'seller', 'agent', 'contractor', 'witness_1', 'witness_2'].includes(role)
+    return ['purchaser_1', 'purchaser_2', 'buyer_spouse', 'seller', 'seller_spouse', 'agent', 'contractor', 'witness_1', 'witness_2'].includes(role)
   })
   const allRequiredSigned = requiredSigners.length > 0 && requiredSigners.every((signer) => isPacketSignerStatusSigned(signer?.status))
 

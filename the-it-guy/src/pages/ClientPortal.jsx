@@ -5,15 +5,12 @@ import {
   CalendarClock,
   CheckCircle2,
   ChevronRight,
-  Clock3,
   AlertTriangle,
   Download,
   ExternalLink,
-  Eye,
   FileSignature,
   FileText,
   HandCoins,
-  Heart,
   Home,
   KeyRound,
   LayoutDashboard,
@@ -2098,6 +2095,22 @@ function pickFirstText(...values) {
   return ''
 }
 
+const SELLER_BRAND_PLACEHOLDERS = new Set([
+  'selling',
+  'seller',
+  'seller portal',
+  'property sale',
+])
+
+function pickSellerBrandText(...values) {
+  for (const value of values) {
+    const normalized = String(value || '').trim()
+    if (!normalized || SELLER_BRAND_PLACEHOLDERS.has(normalized.toLowerCase())) continue
+    return normalized
+  }
+  return ''
+}
+
 function formatSellerMoney(value) {
   const amount = Number(value || 0)
   if (!Number.isFinite(amount) || amount <= 0) return 'Amount to be confirmed'
@@ -2868,6 +2881,8 @@ function resolveSellerPropertyImageUrl({ portal = {}, activeSellingContext = {},
     portal?.listing?.image_url,
     portal?.listing?.propertyImage,
     portal?.listing?.property_image,
+    portal?.listing?.marketing?.mediaUrl,
+    portal?.listing?.marketing?.media_url,
     portal?.unit?.imageUrl,
     portal?.unit?.image_url,
     portal?.unit?.propertyImage,
@@ -2886,6 +2901,8 @@ function resolveSellerPropertyImageUrl({ portal = {}, activeSellingContext = {},
     getFirstImageUrl(portal?.listing?.photos),
     getFirstImageUrl(portal?.listing?.galleryImages),
     getFirstImageUrl(portal?.listing?.gallery_images),
+    getFirstImageUrl(portal?.listing?.marketing?.imageGallery),
+    getFirstImageUrl(portal?.listing?.marketing?.galleryImages),
     getFirstImageUrl(activeSellingContext?.images),
     getFirstImageUrl(activeSellingContext?.photos),
     getFirstImageUrl(formData?.images),
@@ -2929,140 +2946,6 @@ function resolveSellerListingPublishedAt({ portal = {}, activeSellingContext = {
     portal?.unit?.published_at,
     portal?.unit?.created_at,
   )
-}
-
-function formatSellerDaysOnMarket(value) {
-  const timestamp = Date.parse(value || '')
-  if (Number.isNaN(timestamp)) return 'Awaiting update'
-  const elapsedMs = Date.now() - timestamp
-  if (elapsedMs < 0) return '0'
-  return String(Math.max(1, Math.floor(elapsedMs / (1000 * 60 * 60 * 24))))
-}
-
-function readSellerMetricValue(sources = [], keys = []) {
-  for (const source of sources) {
-    if (!source || typeof source !== 'object') continue
-    for (const key of keys) {
-      const value = key.includes('.')
-        ? key.split('.').reduce((current, part) => (current && typeof current === 'object' ? current[part] : undefined), source)
-        : source[key]
-      if (value === null || value === undefined || value === '') continue
-      const numeric = Number(value)
-      if (Number.isFinite(numeric)) return numeric
-    }
-  }
-  return null
-}
-
-function readSellerMetricText(sources = [], keys = []) {
-  for (const source of sources) {
-    if (!source || typeof source !== 'object') continue
-    for (const key of keys) {
-      const value = key.includes('.')
-        ? key.split('.').reduce((current, part) => (current && typeof current === 'object' ? current[part] : undefined), source)
-        : source[key]
-      const text = String(value || '').trim()
-      if (text) return text
-    }
-  }
-  return ''
-}
-
-function formatSellerMetricNumber(value) {
-  const numeric = Number(value)
-  if (!Number.isFinite(numeric)) return ''
-  return new Intl.NumberFormat('en-ZA', { maximumFractionDigits: 0 }).format(numeric)
-}
-
-function buildSellerPerformanceMetrics({
-  performanceSources = [],
-  sellerOfferItems = [],
-  appointments = [],
-} = {}) {
-  const explicitMetrics = [
-    {
-      key: 'views',
-      label: 'Views',
-      icon: Eye,
-      tone: 'green',
-      keys: ['views', 'viewCount', 'view_count', 'listingViews', 'listing_views', 'propertyViews', 'property_views'],
-      deltaKeys: ['viewsDelta', 'views_delta', 'viewsDeltaPercent', 'views_delta_percent'],
-    },
-    {
-      key: 'enquiries',
-      label: 'Buyer Enquiries',
-      icon: MessageCircle,
-      tone: 'blue',
-      keys: ['enquiries', 'enquiryCount', 'enquiry_count', 'buyerEnquiries', 'buyer_enquiries', 'leads', 'leadCount', 'lead_count'],
-      deltaKeys: ['enquiriesDelta', 'enquiries_delta', 'enquiryDeltaPercent', 'enquiry_delta_percent'],
-    },
-    {
-      key: 'viewings',
-      label: 'Viewings',
-      icon: CalendarClock,
-      tone: 'amber',
-      keys: ['viewings', 'viewingCount', 'viewing_count', 'scheduledViewings', 'scheduled_viewings'],
-      deltaKeys: ['viewingsDelta', 'viewings_delta', 'viewingDeltaPercent', 'viewing_delta_percent'],
-    },
-    {
-      key: 'offers',
-      label: 'Offers Received',
-      icon: Tag,
-      tone: 'red',
-      keys: ['offers', 'offerCount', 'offer_count', 'offersReceived', 'offers_received'],
-      deltaKeys: ['offersDelta', 'offers_delta', 'offerDeltaPercent', 'offer_delta_percent'],
-    },
-    {
-      key: 'saves',
-      label: 'Saved by Buyers',
-      icon: Heart,
-      tone: 'blue',
-      keys: ['saves', 'savedCount', 'saved_count', 'favourites', 'favorites', 'wishlistCount', 'wishlist_count'],
-      deltaKeys: ['savesDelta', 'saves_delta', 'savedDeltaPercent', 'saved_delta_percent'],
-    },
-  ]
-
-  const appointmentCount = appointments.filter((appointment) => {
-    const status = normalizePortalStatus(appointment?.status)
-    return !status.includes('cancel') && !status.includes('declin')
-  }).length
-  const offerCount = sellerOfferItems.length
-  const sourceStatus = readSellerMetricText(performanceSources, ['sourceStatus', 'source_status', 'source', 'provider']) || 'Portal data'
-  const lastUpdated = readSellerMetricText(performanceSources, ['lastUpdated', 'last_updated', 'updatedAt', 'updated_at', 'syncedAt', 'synced_at'])
-
-  return explicitMetrics.reduce((metrics, config) => {
-    let value = readSellerMetricValue(performanceSources, config.keys)
-    let derived = false
-    if (value === null && config.key === 'viewings' && appointmentCount > 0) {
-      value = appointmentCount
-      derived = true
-    }
-    if (value === null && config.key === 'offers' && offerCount > 0) {
-      value = offerCount
-      derived = true
-    }
-    if (value === null) return metrics
-
-    const delta = readSellerMetricValue(performanceSources, config.deltaKeys)
-    metrics.push({
-      ...config,
-      value,
-      valueLabel: formatSellerMetricNumber(value),
-      deltaLabel: delta === null ? '' : `${delta > 0 ? '+' : ''}${delta}%`,
-      sourceLabel: derived ? (config.key === 'offers' ? 'Offers' : 'Appointments') : sourceStatus,
-      lastUpdatedLabel: formatShortPortalDate(lastUpdated, ''),
-    })
-    return metrics
-  }, [])
-}
-
-function resolveSellerBuyerInterest({ performanceMetrics = [], sellerOfferItems = [], appointments = [], hasListingCreated = false } = {}) {
-  const enquiryMetric = performanceMetrics.find((metric) => metric.key === 'enquiries')
-  const viewingMetric = performanceMetrics.find((metric) => metric.key === 'viewings')
-  if (sellerOfferItems.length > 0) return 'Offer activity'
-  if (Number(enquiryMetric?.value || 0) >= 5 || Number(viewingMetric?.value || 0) >= 3) return 'Strong'
-  if (Number(enquiryMetric?.value || 0) > 0 || Number(viewingMetric?.value || 0) > 0 || appointments.length > 0) return 'Building'
-  return hasListingCreated ? 'Awaiting activity' : 'Awaiting listing'
 }
 
 function resolveSellerStatusLabel({
@@ -3742,10 +3625,6 @@ function SellerPropertyHero({
   sellerPropertyTitle,
   sellerPropertyImageUrl,
   sellerStatusLabel,
-  daysOnMarketLabel,
-  buyerInterestLabel,
-  sellerPerformanceMetrics,
-  sellerMarketingChannels,
   sellerAskingPrice,
   sellerListedDateLabel,
   sellerListingUrl,
@@ -3766,8 +3645,6 @@ function SellerPropertyHero({
           : normalizedStatus.includes('registered')
             ? 'Your property sale is registered and complete.'
             : 'Your property sale is moving forward and everything is on track.'
-  const metricValue = (key) => sellerPerformanceMetrics?.find((metric) => metric?.key === key)?.valueLabel || '—'
-  const visibleMarketingChannels = (Array.isArray(sellerMarketingChannels) ? sellerMarketingChannels : []).slice(0, 3)
   const messageAction = sellerAgentEmail
     ? { label: 'Message Agent', href: `mailto:${sellerAgentEmail}` }
     : sellerAgentPhone
@@ -3777,15 +3654,15 @@ function SellerPropertyHero({
   const listingAction = sellerListingUrl
     ? { label: 'View Listing', href: sellerListingUrl }
     : null
-  const primaryButtonClass = 'inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[10px] bg-[#063f37] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#052f2a]'
-  const secondaryButtonClass = 'inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[10px] border border-[#dbe5ef] bg-white px-4 py-2.5 text-sm font-semibold text-[#20384f] transition hover:border-[#bfd0e1] hover:bg-[#f8fbff]'
+  const primaryButtonClass = 'inline-flex min-h-[40px] flex-1 items-center justify-center gap-2 rounded-[11px] bg-[#123f3a] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#0b312d]'
+  const secondaryButtonClass = 'inline-flex min-h-[40px] flex-1 items-center justify-center gap-2 rounded-[11px] border border-[#d7e2ea] bg-white px-3.5 py-2 text-sm font-semibold text-[#274158] transition hover:border-[#b8cbd9] hover:bg-[#f7fafc]'
   const agentName = sellerAgentName || sellerAgencyName || 'Your property team'
   const askingPriceLabel = Number(sellerAskingPrice) > 0 ? formatSellerMoney(sellerAskingPrice) : ''
 
   return (
-    <section id="seller-property-hero" className="grid gap-5 lg:grid-cols-[minmax(0,0.98fr)_minmax(460px,1.08fr)] lg:items-stretch">
-      <div className="min-w-0 py-1 lg:py-3">
-        <h1 className="font-serif text-[2.25rem] font-semibold leading-[1.04] tracking-[-0.035em] text-[#082a2b] sm:text-[2.75rem]">
+    <section id="seller-property-hero" className="grid gap-5 xl:grid-cols-[minmax(520px,0.92fr)_minmax(0,1.08fr)] xl:items-stretch">
+      <div className="min-w-0 py-1 xl:py-3">
+        <h1 className="text-[2.1rem] font-semibold leading-[1.08] tracking-[-0.045em] text-[#102a2b] sm:text-[2.55rem]">
           {sellerGreeting}, {sellerFirstName}.
         </h1>
         <p className="mt-3 max-w-2xl text-lg font-medium leading-7 text-[#078449] sm:text-[1.3rem]">
@@ -3795,37 +3672,40 @@ function SellerPropertyHero({
           We&apos;re actively marketing your property across leading platforms and we&apos;ll let you know whenever something important happens.
         </p>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2">
-          <article className="rounded-[16px] border border-[#dce5eb] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-            <div className="flex items-start gap-3">
-              <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eef8f4] text-[#078449]">
-                <MapPin size={21} />
+        <div className="mt-6 grid gap-3 md:grid-cols-2">
+          <article className="flex min-h-[190px] flex-col rounded-[20px] border border-[#dbe5ec] bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.055)]">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[0.67rem] font-semibold uppercase tracking-[0.13em] text-[#718196]">Your listing</p>
+              <span className="rounded-full border border-[#d8eee3] bg-[#effaf4] px-2.5 py-1 text-[0.66rem] font-semibold text-[#078449]">{sellerStatusLabel}</span>
+            </div>
+            <div className="mt-4 flex items-start gap-3.5">
+              <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[#eaf7f1] text-[#078449]">
+                <MapPin size={22} />
               </span>
               <div className="min-w-0 pt-0.5">
-                <strong className="block text-[1.02rem] font-semibold text-[#102032]">{sellerAddressLines.line1}</strong>
+                <strong className="block text-[1.05rem] font-semibold leading-6 text-[#102032]">{sellerAddressLines.line1}</strong>
                 <p className="mt-0.5 text-sm leading-5 text-[#64748b]">{sellerAddressLines.line2 || 'Property address'}</p>
               </div>
             </div>
-            <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-[#e7edf2] pt-3 text-[0.69rem] text-[#64748b]">
-              {sellerListedDateLabel ? <span className="flex items-center gap-1"><CalendarClock size={12} /> Listed {sellerListedDateLabel}</span> : null}
-              {askingPriceLabel ? <span className="flex items-center gap-1"><Tag size={12} /> Asking {askingPriceLabel}</span> : null}
-              <span className="rounded-full bg-[#eef8f4] px-2 py-1 font-semibold text-[#078449]">{sellerStatusLabel}</span>
+            <div className="mt-auto grid gap-2 border-t border-[#e7edf2] pt-3 text-xs text-[#617187] sm:grid-cols-2">
+              {sellerListedDateLabel ? <span className="flex items-center gap-1.5"><CalendarClock size={13} /> Listed {sellerListedDateLabel}</span> : null}
+              {askingPriceLabel ? <span className="flex items-center gap-1.5 sm:justify-end"><Tag size={13} /> {askingPriceLabel}</span> : null}
             </div>
           </article>
 
-          <article className="rounded-[16px] border border-[#dce5eb] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#e6f2ef] text-base font-semibold text-[#063f37] ring-2 ring-white shadow-sm">
+          <article className="flex min-h-[190px] flex-col rounded-[20px] border border-[#dbe5ec] bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.055)]">
+            <p className="text-[0.67rem] font-semibold uppercase tracking-[0.13em] text-[#718196]">Your agent</p>
+            <div className="mt-3 flex min-w-0 items-center gap-3.5">
+              <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-[14px] bg-[#e6f2ef] text-base font-semibold text-[#063f37] ring-1 ring-[#d6e8e2]">
                 {sellerAgentAvatarUrl ? <img src={sellerAgentAvatarUrl} alt="" className="h-full w-full object-cover" /> : getSellerInitials(agentName)}
               </span>
               <div className="min-w-0">
-                <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#078449]">Your Agent</span>
-                <strong className="mt-0.5 block truncate text-sm font-semibold text-[#102032]">{agentName}</strong>
+                <strong className="block truncate text-[0.98rem] font-semibold text-[#102032]">{agentName}</strong>
                 {sellerAgencyName && sellerAgencyName !== agentName ? <p className="truncate text-xs text-[#64748b]">{sellerAgencyName}</p> : null}
                 <p className="mt-1 flex items-center gap-1.5 text-[0.7rem] text-[#64748b]"><span className="h-1.5 w-1.5 rounded-full bg-[#16a466]" /> Here when you need us</p>
               </div>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2 border-t border-[#e7edf2] pt-3">
+            <div className="mt-auto flex gap-2 border-t border-[#e7edf2] pt-3">
               <SellerPortalAction action={messageAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={primaryButtonClass}>
                 {messageAction.label === 'Call Agent' ? <PhoneCall size={14} /> : <MessageCircle size={14} />}
                 <span>{messageAction.label === 'Call Agent' ? 'Call' : 'Message'}</span>
@@ -3833,19 +3713,15 @@ function SellerPropertyHero({
               <SellerPortalAction action={scheduleAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={secondaryButtonClass}>
                 <PhoneCall size={14} /><span>Schedule</span>
               </SellerPortalAction>
-              {listingAction ? (
-                <SellerPortalAction action={listingAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={secondaryButtonClass}>
-                  <ExternalLink size={14} /><span>Listing</span>
-                </SellerPortalAction>
-              ) : null}
             </div>
+            {listingAction ? <SellerPortalAction action={listingAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className="mt-2 inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-[#547087] transition hover:text-[#123f3a]"><ExternalLink size={13} /><span>Open listing</span></SellerPortalAction> : null}
           </article>
         </div>
       </div>
 
-      <div className="relative min-h-[390px] overflow-hidden rounded-[18px] border border-[#dbe5ef] bg-[#0b2e2a] shadow-[0_18px_36px_rgba(15,23,42,0.14)]">
+      <div className="relative min-h-[360px] overflow-hidden rounded-[20px] border border-[#dbe5ef] bg-[#0b2e2a] shadow-[0_18px_38px_rgba(15,23,42,0.13)] xl:min-h-[410px]">
         {sellerPropertyImageUrl ? (
-          <img src={sellerPropertyImageUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          <img src={sellerPropertyImageUrl} alt={sellerPropertyTitle || 'Property listing'} className="absolute inset-0 h-full w-full object-cover" />
         ) : (
           <div className="absolute inset-0 grid place-items-center bg-[linear-gradient(135deg,#0b2e2a_0%,#173f55_58%,#f3f8f5_58%,#f3f8f5_100%)]">
             <div className="rounded-[16px] border border-white/20 bg-white/85 px-4 py-3 text-center shadow-[0_12px_28px_rgba(15,23,42,0.16)]">
@@ -3857,37 +3733,7 @@ function SellerPropertyHero({
         <div className="absolute left-4 top-4 rounded-[8px] bg-[#047857] px-3 py-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-white shadow-[0_10px_22px_rgba(4,120,87,0.28)]">
           {sellerStatusLabel}
         </div>
-        <div className="absolute inset-x-3 bottom-3 rounded-[16px] border border-white/15 bg-[#061d1d] p-4 text-white shadow-[0_18px_36px_rgba(0,0,0,0.28)] sm:inset-y-4 sm:left-auto sm:right-4 sm:w-[48%]">
-          <p className="flex items-center gap-2 text-xs font-semibold text-white/90"><BarChart3 size={15} /> Property Performance</p>
-          <div className="mt-3 grid grid-cols-2 border-y border-white/12">
-            {[
-              { label: 'Days Live', value: daysOnMarketLabel },
-              { label: 'Views', value: metricValue('views') },
-              { label: 'Buyer Enquiries', value: metricValue('enquiries') },
-              { label: 'Saved Searches', value: metricValue('saves') },
-            ].map((metric, index) => (
-              <div key={metric.label} className={`px-2 py-3 ${index % 2 ? 'border-l border-white/12' : ''} ${index > 1 ? 'border-t border-white/12' : ''}`}>
-                <strong className="block text-xl font-semibold leading-none">{metric.value}</strong>
-                <span className="mt-1.5 block text-[0.66rem] leading-4 text-white/70">{metric.label}</span>
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <span className="text-[0.68rem] font-semibold text-white/70">Buyer interest</span>
-            <strong className="text-xs font-semibold">{buyerInterestLabel}</strong>
-          </div>
-          <div className="mt-3 border-t border-white/12 pt-3">
-            <p className="flex items-center gap-1.5 text-[0.7rem] font-semibold text-white"><Megaphone size={13} /> Marketing Active</p>
-            <div className="mt-2 space-y-1.5">
-              {visibleMarketingChannels.length ? visibleMarketingChannels.map((channel) => (
-                <p key={channel.key || channel.label} className="flex items-center gap-2 text-[0.68rem] text-[#d7e8e4]">
-                  <CheckCircle2 size={13} className="shrink-0 text-[#74d39d]" />
-                  <span className="truncate">{channel.label}</span>
-                </p>
-              )) : <p className="text-[0.68rem] leading-4 text-[#a9c1bc]">Channels will appear as your agent publishes them.</p>}
-            </div>
-          </div>
-        </div>
+        {sellerPropertyImageUrl ? <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-[#071f22]/55 to-transparent" /> : null}
       </div>
     </section>
   )
@@ -3927,52 +3773,6 @@ function SellerTransactionHealthCard({ health }) {
           <ShieldCheck size={34} />
         </span>
       </div>
-    </section>
-  )
-}
-
-function SellerPropertyPerformance({ metrics = [] }) {
-  return (
-    <section className="rounded-[18px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <SellerSectionHeading title="Property Performance" subtitle="Live insights on your property's exposure and buyer activity." />
-        {metrics[0]?.lastUpdatedLabel ? (
-          <span className="inline-flex items-center gap-2 rounded-[8px] border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#41566c]">
-            <Clock3 size={13} />
-            {metrics[0].lastUpdatedLabel}
-          </span>
-        ) : null}
-      </div>
-      {metrics.length ? (
-        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          {metrics.map((metric) => {
-            const Icon = metric.icon || BarChart3
-            const toneClass = metric.tone === 'green'
-              ? 'bg-[#e8f7ef] text-[#047857]'
-              : metric.tone === 'amber'
-                ? 'bg-[#fff4e5] text-[#c2410c]'
-                : metric.tone === 'red'
-                  ? 'bg-[#fff1f2] text-[#be123c]'
-                  : 'bg-[#eff6ff] text-[#2563eb]'
-            return (
-              <article key={metric.key} className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
-                <span className={`inline-flex h-9 w-9 items-center justify-center rounded-[12px] ${toneClass}`}>
-                  <Icon size={17} />
-                </span>
-                <strong className="mt-4 block text-[1.5rem] font-semibold leading-none text-[#0e1a2a]">{metric.valueLabel}</strong>
-                <p className="mt-1 text-sm font-semibold text-[#26384d]">{metric.label}</p>
-                <p className="mt-2 text-xs leading-5 text-[#64748b]">
-                  {metric.deltaLabel ? `${metric.deltaLabel} vs last period` : `Source: ${metric.sourceLabel}`}
-                </p>
-              </article>
-            )
-          })}
-        </div>
-      ) : (
-        <div className="mt-5 rounded-[14px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-5 text-sm leading-6 text-[#64748b]">
-          Performance analytics have not been shared yet. When listing views, enquiries, viewings, offers, or saves are available, they will appear here.
-        </div>
-      )}
     </section>
   )
 }
@@ -4201,7 +4001,6 @@ function SellerPortalDashboard({
   sellerStatusLabel,
   sellerHealth,
   sellerProgressModel,
-  sellerPerformanceMetrics,
   sellerMarketingChannels,
   sellerAgentUpdate,
   sellerTimelineItems,
@@ -4210,8 +4009,6 @@ function SellerPortalDashboard({
   sellerListingUrl,
   sellerAskingPrice,
   sellerListedDateLabel,
-  daysOnMarketLabel,
-  buyerInterestLabel,
   token,
   workspaceNavigationScope,
 }) {
@@ -4230,10 +4027,6 @@ function SellerPortalDashboard({
         sellerPropertyTitle={sellerPropertyTitle}
         sellerPropertyImageUrl={sellerPropertyImageUrl}
         sellerStatusLabel={sellerStatusLabel}
-        daysOnMarketLabel={daysOnMarketLabel}
-        buyerInterestLabel={buyerInterestLabel}
-        sellerPerformanceMetrics={sellerPerformanceMetrics}
-        sellerMarketingChannels={sellerMarketingChannels}
         sellerAskingPrice={sellerAskingPrice}
         sellerListedDateLabel={sellerListedDateLabel}
         sellerListingUrl={sellerListingUrl}
@@ -4246,7 +4039,6 @@ function SellerPortalDashboard({
         token={token}
         workspaceNavigationScope={workspaceNavigationScope}
       />
-      <SellerPropertyPerformance metrics={sellerPerformanceMetrics} />
       <section className="grid gap-5 xl:grid-cols-3">
         <SellerMarketingActivity channels={sellerMarketingChannels} />
         <SellerAgentUpdate update={sellerAgentUpdate} />
@@ -6801,7 +6593,7 @@ function ClientPortal() {
     activeSellingContext?.listing_title,
     'Property sale',
   )
-  const sellerAgencyName = pickFirstText(
+  const sellerAgencyName = pickSellerBrandText(
     portal?.listing?.agencyName,
     portal?.listing?.agency_name,
     portal?.listing?.organisationName,
@@ -6813,7 +6605,6 @@ function ClientPortal() {
     portal?.branding?.agencyName,
     portal?.branding?.organisationName,
     portal?.unit?.development?.developer_company,
-    portal?.unit?.development?.name,
     'Arch9',
   )
   const sellerAgencyLogoUrl = pickFirstText(
@@ -7068,28 +6859,6 @@ function ClientPortal() {
   const sellerAgentAvatarUrl = resolveSellerAgentAvatarUrl({ portal, activeSellingContext })
   const sellerListingUrl = sellerVisibleListingLinks[0]?.url || ''
   const sellerMarketingChannels = buildSellerMarketingChannels(sellerVisibleListingLinks)
-  const sellerPerformanceSources = [
-    workspaceData?.sellerDashboard?.performance,
-    workspaceData?.propertyPerformance,
-    workspaceData?.listingPerformance,
-    portal?.sellerDashboard?.performance,
-    portal?.sellerPortalDashboard?.performance,
-    portal?.propertyPerformance,
-    portal?.listingPerformance,
-    portal?.listing?.performance,
-    portal?.listing?.metrics,
-    activeSellingContext?.performance,
-    activeSellingContext?.metrics,
-    activeSellingContext?.listingPerformance,
-    activeSellingContext?.listing_performance,
-    activeSellingContext?.listingMetrics,
-    activeSellingContext?.listing_metrics,
-  ].filter(Boolean)
-  const sellerPerformanceMetrics = buildSellerPerformanceMetrics({
-    performanceSources: sellerPerformanceSources,
-    sellerOfferItems,
-    appointments: clientVisibleAppointments,
-  })
   const sellerHealth = buildSellerTransactionHealth({
     hasOnboardingSubmitted: hasSellerOnboardingSubmitted,
     hasMandatePacket,
@@ -7107,15 +6876,6 @@ function ClientPortal() {
   })
   const sellerListingPublishedAt = resolveSellerListingPublishedAt({ portal, activeSellingContext })
   const sellerListedDateLabel = formatShortPortalDate(sellerListingPublishedAt, '')
-  const daysOnMarketLabel = hasListingCreated
-    ? formatSellerDaysOnMarket(sellerListingPublishedAt)
-    : 'Awaiting listing'
-  const buyerInterestLabel = resolveSellerBuyerInterest({
-    performanceMetrics: sellerPerformanceMetrics,
-    sellerOfferItems,
-    appointments: clientVisibleAppointments,
-    hasListingCreated,
-  })
   const sellerAgentUpdate = buildSellerAgentUpdate({
     items: sellerActivityItems,
     sellerAgentName,
@@ -7766,7 +7526,7 @@ function ClientPortal() {
             </div>
           </div>
 
-          <div className="space-y-6 px-5 py-5 md:px-8 md:py-8 xl:px-10">
+          <div className="space-y-6 px-3 py-5 md:px-4 md:py-8 xl:px-5">
             {hideSellerWorkspaceHeader ? null : (
             <section className="rounded-[24px] border border-[#223d57] bg-[linear-gradient(135deg,#10253a_0%,#1d3c5b_60%,#2a5078_100%)] px-5 py-5 text-white shadow-[0_20px_36px_rgba(12,24,40,0.3)]">
               <h2 className="text-[1.35rem] font-semibold tracking-[-0.03em] text-[#f8fbff]">Welcome, {clientFirstName}</h2>
@@ -8117,7 +7877,6 @@ function ClientPortal() {
                       sellerStatusLabel={sellerDashboardStatusLabel}
                       sellerHealth={sellerHealth}
                       sellerProgressModel={sellerProgressModel}
-                      sellerPerformanceMetrics={sellerPerformanceMetrics}
                       sellerMarketingChannels={sellerMarketingChannels}
                       sellerAgentUpdate={sellerAgentUpdate}
                       sellerTimelineItems={sellerTimelineItems}
@@ -8126,8 +7885,6 @@ function ClientPortal() {
                       sellerListingUrl={sellerListingUrl}
                       sellerAskingPrice={sellerOfferAskingPrice}
                       sellerListedDateLabel={sellerListedDateLabel}
-                      daysOnMarketLabel={daysOnMarketLabel}
-                      buyerInterestLabel={buyerInterestLabel}
                       token={token}
                       workspaceNavigationScope={workspaceNavigationScope}
                     />

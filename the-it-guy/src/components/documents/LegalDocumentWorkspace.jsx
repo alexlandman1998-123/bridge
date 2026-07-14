@@ -44,6 +44,7 @@ import {
   resolveMandateSpouseRequirementFromFields,
 } from '../../lib/mandateSignatureRules'
 import { templateIsUsableForGeneration } from '../../core/documents/structuredTemplateRenderer'
+import { resolveLegalDocumentSignerProfile } from '../../core/documents/legalDocumentSignerProfile'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -350,6 +351,16 @@ function toFriendlyWorkspaceError(error = null, fallback = 'Unable to complete t
   if (code === 'MISSING_TEMPLATE_FILE') return 'The active legal template is not available for rendering. Check the current template configuration first.'
   if (code === 'NATIVE_TEMPLATE_NOT_RENDERABLE') return 'The active native template is not renderable yet. Cover the required sections and merge fields first.'
   if (code === 'VALIDATION_BLOCKED') {
+    const legalScenarioMissing = Array.isArray(error?.validation?.legalDocumentMissingRoutingFacts)
+      ? error.validation.legalDocumentMissingRoutingFacts
+      : []
+    if (legalScenarioMissing.length) {
+      return [
+        'Legal Setup Incomplete',
+        ...legalScenarioMissing.map((field) => `- ${String(field).replace(/_/g, ' ')}`),
+        'Confirm these answers before generating the document.',
+      ].join('\n')
+    }
     const conditionalPackMissing = Array.isArray(error?.validation?.conditionalPackMissingPlaceholders)
       ? error.validation.conditionalPackMissingPlaceholders
       : []
@@ -468,6 +479,13 @@ function isLegacyBridgeLogoUrl(value) {
 
 function resolveSignerBlueprint(packetType = 'mandate', options = {}) {
   const key = normalizeKey(packetType)
+  if (key === 'otp' && Array.isArray(options.legalSignerProfile?.signers)) {
+    return options.legalSignerProfile.signers.map((signer) => ({
+      role: signer.role,
+      label: signer.label,
+      required: Boolean(signer.required),
+    }))
+  }
   const mandateType = normalizeKey(options.mandateType || options.contextType)
   if (key === 'mandate' && mandateType === 'developer_agent_mandate') {
     return [
@@ -577,7 +595,7 @@ function resolveSignerStatusTone(status = '', statusState = '') {
   return 'border-[#dfe6ef] bg-[#f5f8fb] text-[#60758d]'
 }
 
-function resolveSignerRoster({ packetType = 'mandate', signers = [], mandateSecondarySignerRequired = false, secondarySignerLabel = 'Co-signer', signerDefaults = {}, sourceContext = {} } = {}) {
+function resolveSignerRoster({ packetType = 'mandate', signers = [], mandateSecondarySignerRequired = false, secondarySignerLabel = 'Co-signer', signerDefaults = {}, sourceContext = {}, legalSignerProfile = null } = {}) {
   const rows = Array.isArray(signers) ? signers : []
   const byRole = new Map()
   for (const row of rows) {
@@ -589,7 +607,7 @@ function resolveSignerRoster({ packetType = 'mandate', signers = [], mandateSeco
   const normalizedPacketType = normalizeKey(packetType)
   const mandateType = normalizeKey(sourceContext?.mandateType || sourceContext?.contextType)
   const blueprint = [
-    ...resolveSignerBlueprint(packetType, { mandateType }),
+    ...resolveSignerBlueprint(packetType, { mandateType, legalSignerProfile }),
     ...(normalizedPacketType === 'mandate' && mandateSecondarySignerRequired
       ? [{ role: 'purchaser_2', label: secondarySignerLabel, required: true }]
       : []),
@@ -2789,11 +2807,23 @@ export default function LegalDocumentWorkspace({
     },
     [isMandatePacket, latestVersion, sourceContext, statusState?.signingSummary],
   )
-  const signerDefaults = useMemo(() => (
-    isMandatePacket
-      ? buildSignerDefaultsFromContext({ sourceContext, latestVersion })
-      : {}
-  ), [isMandatePacket, latestVersion, sourceContext])
+  const legalSignerProfile = useMemo(() => (
+    isOtpPacket
+      ? resolveLegalDocumentSignerProfile({
+          packetType: 'otp',
+          placeholders: latestVersion?.placeholders_resolved_json || {},
+          context: sourceContext,
+        })
+      : null
+  ), [isOtpPacket, latestVersion?.placeholders_resolved_json, sourceContext])
+  const signerDefaults = useMemo(() => {
+    if (isMandatePacket) return buildSignerDefaultsFromContext({ sourceContext, latestVersion })
+    if (!legalSignerProfile) return {}
+    return Object.fromEntries(legalSignerProfile.signers.map((signer) => [signer.role, {
+      signerName: signer.signerName,
+      signerEmail: signer.signerEmail,
+    }]))
+  }, [isMandatePacket, latestVersion, legalSignerProfile, sourceContext])
 
   const signerRoster = useMemo(() => {
     return resolveSignerRoster({
@@ -2803,8 +2833,9 @@ export default function LegalDocumentWorkspace({
       secondarySignerLabel: mandateSecondarySignerConfig?.label || 'Co-signer',
       signerDefaults,
       sourceContext,
+      legalSignerProfile,
     })
-  }, [mandateSecondarySignerConfig?.label, mandateSecondarySignerConfig?.required, packetType, signerDefaults, sourceContext, statusState?.signingSummary?.signers])
+  }, [legalSignerProfile, mandateSecondarySignerConfig?.label, mandateSecondarySignerConfig?.required, packetType, signerDefaults, sourceContext, statusState?.signingSummary?.signers])
 
   const signerValidation = useMemo(() => {
     const rosterWithDraft = signerRoster.map((row) => {
@@ -3786,6 +3817,7 @@ export default function LegalDocumentWorkspace({
       secondarySignerLabel: mandateSecondarySignerConfig?.label || 'Co-signer',
       signerDefaults,
       sourceContext: workingStatus?.packet?.source_context_json || sourceContext,
+      legalSignerProfile,
     }).map((row) => {
       const draft = signerDraftByRole[row.role] || null
       if (!draft) return row
@@ -3810,6 +3842,7 @@ export default function LegalDocumentWorkspace({
         secondarySignerLabel: mandateSecondarySignerConfig?.label || 'Co-signer',
         signerDefaults,
         sourceContext: workingStatus?.packet?.source_context_json || sourceContext,
+        legalSignerProfile,
       }).map((row) => {
         const draft = signerDraftByRole[row.role] || null
         if (!draft) return row
@@ -4503,6 +4536,7 @@ export default function LegalDocumentWorkspace({
       secondarySignerLabel: mandateSecondarySignerConfig?.label || 'Co-signer',
       signerDefaults,
       sourceContext: currentStatus?.packet?.source_context_json || sourceContext,
+      legalSignerProfile,
     })
     const currentAgentSigner = currentRoster.find((row) => normalizeKey(row.role) === 'agent') || null
     const agentHasSigned = Boolean(currentAgentSigner?.signedAt) || normalizeKey(currentAgentSigner?.statusRaw || currentAgentSigner?.status) === 'signed'

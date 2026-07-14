@@ -111,6 +111,7 @@ import {
   DOCUMENT_START_ENTRY_POINTS,
   DOCUMENT_START_SOURCE_MODES,
 } from '../../core/documents/documentStartRules'
+import { buildLegalDocumentTemplateCoverageAudit } from '../../core/documents/legalDocumentTemplateRouting'
 
 const SUPPORTED_PACKET_TYPES = [
   {
@@ -174,6 +175,24 @@ const MANDATE_TEMPLATE_ROUTE_OPTIONS = [
   { key: 'individual_sectional_title', label: 'Individual + Sectional Title' },
   { key: 'individual_spouse_consent_full_title', label: 'Married ICOP + Full Title' },
   { key: 'individual_spouse_consent_sectional_title', label: 'Married ICOP + Sectional Title' },
+]
+const LEGAL_PARTY_ROUTE_OPTIONS = [
+  { key: 'any', label: 'Any party type' },
+  { key: 'individual', label: 'Individual' },
+  { key: 'individual_spouse_consent', label: 'Individual married in community' },
+  { key: 'company', label: 'Company or CC' },
+  { key: 'trust', label: 'Trust' },
+]
+const LEGAL_PROPERTY_ROUTE_OPTIONS = [
+  { key: 'any', label: 'Any property type' },
+  { key: 'full_title', label: 'Full title' },
+  { key: 'sectional_title', label: 'Sectional title' },
+]
+const LEGAL_FINANCE_ROUTE_OPTIONS = [
+  { key: 'any', label: 'Any finance type' },
+  { key: 'cash', label: 'Cash' },
+  { key: 'bond', label: 'Bond' },
+  { key: 'combination', label: 'Cash and bond' },
 ]
 const LEGAL_TEMPLATE_TABLE_SNIPPET = [
   '| Detail | Value |',
@@ -630,7 +649,9 @@ function createConditionalPackCondition({ field = '', operator = 'equals', value
 const SIGNER_ROLE_OPTIONS = [
   { key: 'purchaser_1', label: 'Buyer' },
   { key: 'purchaser_2', label: 'Second buyer' },
+  { key: 'buyer_spouse', label: 'Buyer spouse' },
   { key: 'seller', label: 'Seller' },
+  { key: 'seller_spouse', label: 'Seller spouse' },
   { key: 'agent', label: 'Agent' },
   { key: 'contractor', label: 'Contractor' },
   { key: 'witness_1', label: 'Witness 1' },
@@ -2935,6 +2956,59 @@ function getMandateTemplateRouteFromTemplate(template = null) {
   )
 }
 
+function normalizeLegalRouteTarget(value = '', allowedOptions = []) {
+  const normalized = createTemplateKeySegment(value)
+  return allowedOptions.some((option) => option.key === normalized) ? normalized : 'any'
+}
+
+function getFirstLegalRouteMetadataValue(metadata = {}, keys = []) {
+  for (const key of keys) {
+    const value = Array.isArray(metadata?.[key]) ? metadata[key][0] : metadata?.[key]
+    if (normalizeText(value)) return value
+  }
+  return ''
+}
+
+function buildOtpLegalScenarioKey(form = {}) {
+  const seller = normalizeLegalRouteTarget(form.legalSellerClauseProfile, LEGAL_PARTY_ROUTE_OPTIONS)
+  const buyer = normalizeLegalRouteTarget(form.legalBuyerClauseProfile, LEGAL_PARTY_ROUTE_OPTIONS)
+  const property = normalizeLegalRouteTarget(form.legalPropertyClauseProfile, LEGAL_PROPERTY_ROUTE_OPTIONS)
+  const finance = normalizeLegalRouteTarget(form.legalFinanceClauseProfile, LEGAL_FINANCE_ROUTE_OPTIONS)
+  if ([seller, buyer, property, finance].includes('any')) return ''
+  return `${seller}_seller__${buyer}_buyer__${property}__${finance}`
+}
+
+function getLegalRouteOptionLabel(options = [], value = '') {
+  const normalized = normalizeLegalRouteTarget(value, options)
+  return options.find((option) => option.key === normalized)?.label || options[0]?.label || 'Any'
+}
+
+function getOtpLegalRouteSummary(form = {}) {
+  const values = [
+    getLegalRouteOptionLabel(LEGAL_PARTY_ROUTE_OPTIONS, form.legalSellerClauseProfile),
+    getLegalRouteOptionLabel(LEGAL_PARTY_ROUTE_OPTIONS, form.legalBuyerClauseProfile),
+    getLegalRouteOptionLabel(LEGAL_PROPERTY_ROUTE_OPTIONS, form.legalPropertyClauseProfile),
+    getLegalRouteOptionLabel(LEGAL_FINANCE_ROUTE_OPTIONS, form.legalFinanceClauseProfile),
+  ]
+  return values.every((value) => value.startsWith('Any ')) ? 'All OTP situations' : values.join(' · ')
+}
+
+function getOtpCoverageEntrySummary(entry = {}) {
+  if (entry.isGeneric) return 'All OTP situations (fallback)'
+  const metadata = entry.metadata || {}
+  const labelFor = (options, values, anyLabel) => (
+    Array.isArray(values) && values.length
+      ? values.map((value) => getLegalRouteOptionLabel(options, value)).join(' or ')
+      : anyLabel
+  )
+  return [
+    labelFor(LEGAL_PARTY_ROUTE_OPTIONS, metadata.sellerProfiles, 'Any seller'),
+    labelFor(LEGAL_PARTY_ROUTE_OPTIONS, metadata.buyerProfiles, 'Any buyer'),
+    labelFor(LEGAL_PROPERTY_ROUTE_OPTIONS, metadata.propertyProfiles, 'Any property'),
+    labelFor(LEGAL_FINANCE_ROUTE_OPTIONS, metadata.financeProfiles, 'Any finance'),
+  ].join(' · ')
+}
+
 function getMandateVariantTemplateLabel(baseLabel = 'Mandate Agreement', routeKey = 'default') {
   const routeLabel = getMandateTemplateRouteLabel(routeKey)
   if (normalizeMandateTemplateRoute(routeKey) === 'default') return normalizeText(baseLabel) || 'Mandate Agreement'
@@ -3325,6 +3399,22 @@ function toTemplateForm(template = null) {
         metadata.templateVariant ||
         '',
     ),
+    legalSellerClauseProfile: normalizeLegalRouteTarget(
+      getFirstLegalRouteMetadataValue(metadata, ['seller_clause_profile', 'sellerClauseProfile', 'seller_clause_profiles']),
+      LEGAL_PARTY_ROUTE_OPTIONS,
+    ),
+    legalBuyerClauseProfile: normalizeLegalRouteTarget(
+      getFirstLegalRouteMetadataValue(metadata, ['buyer_clause_profile', 'buyerClauseProfile', 'buyer_clause_profiles']),
+      LEGAL_PARTY_ROUTE_OPTIONS,
+    ),
+    legalPropertyClauseProfile: normalizeLegalRouteTarget(
+      getFirstLegalRouteMetadataValue(metadata, ['property_clause_profile', 'propertyClauseProfile', 'property_clause_profiles']),
+      LEGAL_PROPERTY_ROUTE_OPTIONS,
+    ),
+    legalFinanceClauseProfile: normalizeLegalRouteTarget(
+      getFirstLegalRouteMetadataValue(metadata, ['finance_clause_profile', 'financeClauseProfile', 'finance_clause_profiles']),
+      LEGAL_FINANCE_ROUTE_OPTIONS,
+    ),
     sections: sectionsFromTemplate(template),
     metadataJson: metadata,
   }
@@ -3630,12 +3720,22 @@ function buildTemplateMetadata(form = {}, existingMetadata = {}, uploadMeta = nu
     nextMetadata.template_upload_source = 'settings_legal_templates'
   }
 
-  if (normalizeText(form.packetType || form.packet_type).toLowerCase() === 'mandate') {
+  const packetType = normalizeText(form.packetType || form.packet_type).toLowerCase()
+  if (packetType === 'mandate') {
     const mandateTemplateVariant = normalizeMandateTemplateRoute(form.mandateTemplateVariant)
     const mandateContentScan = serializeMandateTemplatePublishGateScan(form.mandateContentScan)
     nextMetadata.mandate_template_variant = mandateTemplateVariant
     nextMetadata.mandateTemplateVariant = mandateTemplateVariant
     nextMetadata.mandate_template_variants = [mandateTemplateVariant]
+    if (mandateTemplateVariant === 'default') {
+      delete nextMetadata.legal_document_scenario
+      delete nextMetadata.legalDocumentScenario
+      delete nextMetadata.supported_legal_document_scenarios
+    } else {
+      nextMetadata.legal_document_scenario = mandateTemplateVariant
+      nextMetadata.legalDocumentScenario = mandateTemplateVariant
+      nextMetadata.supported_legal_document_scenarios = [mandateTemplateVariant]
+    }
     if (mandateContentScan) {
       nextMetadata.last_mandate_content_scan = mandateContentScan
       nextMetadata.lastMandateContentScan = mandateContentScan
@@ -3655,6 +3755,37 @@ function buildTemplateMetadata(form = {}, existingMetadata = {}, uploadMeta = nu
     delete nextMetadata.last_mandate_content_scan
     delete nextMetadata.lastMandateContentScan
     delete nextMetadata.mandate_content_publish_gate_version
+
+    const legalTargets = [
+      ['seller_clause_profile', 'sellerClauseProfile', normalizeLegalRouteTarget(form.legalSellerClauseProfile, LEGAL_PARTY_ROUTE_OPTIONS)],
+      ['buyer_clause_profile', 'buyerClauseProfile', normalizeLegalRouteTarget(form.legalBuyerClauseProfile, LEGAL_PARTY_ROUTE_OPTIONS)],
+      ['property_clause_profile', 'propertyClauseProfile', normalizeLegalRouteTarget(form.legalPropertyClauseProfile, LEGAL_PROPERTY_ROUTE_OPTIONS)],
+      ['finance_clause_profile', 'financeClauseProfile', normalizeLegalRouteTarget(form.legalFinanceClauseProfile, LEGAL_FINANCE_ROUTE_OPTIONS)],
+    ]
+    for (const [snakeKey, camelKey, value] of legalTargets) {
+      if (value === 'any') {
+        delete nextMetadata[snakeKey]
+        delete nextMetadata[camelKey]
+        delete nextMetadata[`${snakeKey}s`]
+        delete nextMetadata[`${camelKey}s`]
+      } else {
+        nextMetadata[snakeKey] = value
+        nextMetadata[camelKey] = value
+        nextMetadata[`${snakeKey}s`] = [value]
+        nextMetadata[`${camelKey}s`] = [value]
+      }
+    }
+    const legalDocumentScenario = buildOtpLegalScenarioKey(form)
+    if (legalDocumentScenario) {
+      nextMetadata.legal_document_scenario = legalDocumentScenario
+      nextMetadata.legalDocumentScenario = legalDocumentScenario
+      nextMetadata.supported_legal_document_scenarios = [legalDocumentScenario]
+    } else {
+      delete nextMetadata.legal_document_scenario
+      delete nextMetadata.legalDocumentScenario
+      delete nextMetadata.supported_legal_document_scenarios
+      delete nextMetadata.supportedLegalDocumentScenarios
+    }
   }
 
   return nextMetadata
@@ -6001,6 +6132,28 @@ export default function SettingsSigningTemplatesPage({
     if (!mandateOperationalAudit) return null
     return buildMandateTemplateLaunchReadiness(mandateOperationalAudit, { includeDefaultRoute: true })
   }, [mandateOperationalAudit])
+  const otpTemplateCoverageAudit = useMemo(() => {
+    if (packetType !== 'otp') return null
+    const effectiveTemplates = selectedList.map((template) => {
+      if (normalizeText(template.id) !== normalizeText(selectedTemplateId)) return template
+      return {
+        ...template,
+        packet_type: 'otp',
+        packetType: 'otp',
+        template_status: form.templateStatus,
+        is_active: Boolean(form.isActive),
+        is_default: Boolean(form.isDefault),
+        metadata_json: buildTemplateMetadata({ ...form, packetType: 'otp' }, form.metadataJson || {}, null),
+      }
+    })
+    const liveTemplates = effectiveTemplates.filter((template) => (
+      template?.is_active !== false && (
+        Boolean(template?.is_default) ||
+        isLiveTemplateStatus(template?.template_status || template?.status || template?.lifecycle_status)
+      )
+    ))
+    return buildLegalDocumentTemplateCoverageAudit(liveTemplates, { packetType: 'otp' })
+  }, [form, packetType, selectedList, selectedTemplateId])
   const mandateVariantOptions = useMemo(
     () => MANDATE_TEMPLATE_ROUTE_OPTIONS.filter((option) => option.key !== 'default'),
     [],
@@ -6345,6 +6498,10 @@ export default function SettingsSigningTemplatesPage({
       'templateFileName',
       'templateOutputBucket',
       'mandateTemplateVariant',
+      'legalSellerClauseProfile',
+      'legalBuyerClauseProfile',
+      'legalPropertyClauseProfile',
+      'legalFinanceClauseProfile',
     ].some((key) => stableStringify(form[key]) !== stableStringify(baselineForm[key])) : Boolean(selectedTemplate)
     const contentScanBlockers = mandatePublishGateReport?.blockingMessages || []
     const contentScanWarnings = mandatePublishGateReport?.warningMessages || []
@@ -10368,7 +10525,64 @@ export default function SettingsSigningTemplatesPage({
                       ))}
                     </select>
                   </label>
-                ) : null}
+                ) : (
+                  <fieldset className={`${settingsFieldSpanClass} rounded-[18px] border border-[#dbe7f3] bg-[#fbfdff] p-4`}>
+                    <legend className="px-2 text-sm font-semibold text-[#102033]">Used when…</legend>
+                    <p className="mb-4 text-xs leading-5 text-[#6b7c93]">
+                      Choose only what makes this OTP version different. Leave a field on “Any” when it applies broadly.
+                    </p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className={settingsFieldClass}>
+                        Seller
+                        <select
+                          value={form.legalSellerClauseProfile || 'any'}
+                          disabled={!canEdit || !selectedIsOrgOwned}
+                          onChange={(event) => setForm((previous) => ({ ...previous, legalSellerClauseProfile: event.target.value }))}
+                        >
+                          {LEGAL_PARTY_ROUTE_OPTIONS.map((option) => (
+                            <option key={option.key} value={option.key}>{option.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className={settingsFieldClass}>
+                        Buyer
+                        <select
+                          value={form.legalBuyerClauseProfile || 'any'}
+                          disabled={!canEdit || !selectedIsOrgOwned}
+                          onChange={(event) => setForm((previous) => ({ ...previous, legalBuyerClauseProfile: event.target.value }))}
+                        >
+                          {LEGAL_PARTY_ROUTE_OPTIONS.map((option) => (
+                            <option key={option.key} value={option.key}>{option.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className={settingsFieldClass}>
+                        Property
+                        <select
+                          value={form.legalPropertyClauseProfile || 'any'}
+                          disabled={!canEdit || !selectedIsOrgOwned}
+                          onChange={(event) => setForm((previous) => ({ ...previous, legalPropertyClauseProfile: event.target.value }))}
+                        >
+                          {LEGAL_PROPERTY_ROUTE_OPTIONS.map((option) => (
+                            <option key={option.key} value={option.key}>{option.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className={settingsFieldClass}>
+                        Finance
+                        <select
+                          value={form.legalFinanceClauseProfile || 'any'}
+                          disabled={!canEdit || !selectedIsOrgOwned}
+                          onChange={(event) => setForm((previous) => ({ ...previous, legalFinanceClauseProfile: event.target.value }))}
+                        >
+                          {LEGAL_FINANCE_ROUTE_OPTIONS.map((option) => (
+                            <option key={option.key} value={option.key}>{option.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  </fieldset>
+                )}
 
                 <label className="flex items-center gap-3 rounded-[18px] border border-[#dbe7f3] bg-[#fbfdff] px-4 py-3 text-sm text-[#445b73]">
                   <input
@@ -10419,7 +10633,15 @@ export default function SettingsSigningTemplatesPage({
                       The generator uses this route when onboarding data matches the seller and property situation.
                     </p>
                   </div>
-                ) : null}
+                ) : (
+                  <div className="rounded-[20px] border border-[#dbe7f3] bg-[#f8fbff] p-4">
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Automatic Use</p>
+                    <p className="mt-3 text-sm font-semibold text-[#102033]">{getOtpLegalRouteSummary(form)}</p>
+                    <p className="mt-2 text-xs leading-5 text-[#6b7c93]">
+                      Agents never choose this template manually. Arch9 matches it from the legal setup answers.
+                    </p>
+                  </div>
+                )}
                 <div className="rounded-[20px] border border-[#dbe7f3] bg-[#f8fbff] p-4">
                   <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Live Use</p>
                   <p className="mt-3 text-sm font-semibold text-[#102033]">{form.isDefault ? 'Currently live default' : 'Not the live default'}</p>
@@ -10430,6 +10652,55 @@ export default function SettingsSigningTemplatesPage({
                   </p>
                 </div>
               </div>
+
+              {packetType === 'otp' && otpTemplateCoverageAudit ? (
+                <div className="mt-5 rounded-[22px] border border-[#dbe7f3] bg-[#fbfdff] p-4">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Live Routing</p>
+                      <h3 className="mt-2 text-base font-semibold text-[#102033]">OTP Template Coverage</h3>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7c93]">
+                        {otpTemplateCoverageAudit.targetedCount} specialised rule{otpTemplateCoverageAudit.targetedCount === 1 ? '' : 's'} plus {otpTemplateCoverageAudit.genericCount} broad fallback{otpTemplateCoverageAudit.genericCount === 1 ? '' : 's'} are available.
+                      </p>
+                    </div>
+                    <span className={`inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-semibold ${otpTemplateCoverageAudit.hasGenericFallback && !otpTemplateCoverageAudit.conflictCount ? 'bg-[#e8f7ef] text-[#24734d]' : 'bg-[#fff3df] text-[#9a5d00]'}`}>
+                      {otpTemplateCoverageAudit.hasGenericFallback && !otpTemplateCoverageAudit.conflictCount ? 'Routing ready' : 'Review routing'}
+                    </span>
+                  </div>
+
+                  {!otpTemplateCoverageAudit.hasGenericFallback ? (
+                    <div className="mt-4">
+                      <SettingsBanner tone="warning">
+                        Add one live template with every “Used when…” field set to Any. It safely catches valid situations that do not yet have specialised wording.
+                      </SettingsBanner>
+                    </div>
+                  ) : null}
+                  {otpTemplateCoverageAudit.conflictCount ? (
+                    <div className="mt-4">
+                      <SettingsBanner tone="warning">
+                        {otpTemplateCoverageAudit.conflictCount} duplicate live routing rule{otpTemplateCoverageAudit.conflictCount === 1 ? '' : 's'} found. Give each live template a unique “Used when…” combination so the selected wording is predictable.
+                      </SettingsBanner>
+                    </div>
+                  ) : null}
+
+                  <div className="mt-4 grid gap-2">
+                    {otpTemplateCoverageAudit.entries.map((entry) => (
+                      <div key={entry.id || entry.key || entry.signature} className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-3">
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                          <p className="text-sm font-semibold text-[#102033]">{entry.label}</p>
+                          <span className="text-xs font-semibold text-[#6b7c93]">{entry.isGeneric ? 'Fallback' : entry.isExactScenario ? 'Exact match' : 'Rule match'}</span>
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7c93]">{getOtpCoverageEntrySummary(entry)}</p>
+                      </div>
+                    ))}
+                    {!otpTemplateCoverageAudit.entries.length ? (
+                      <p className="rounded-[16px] border border-dashed border-[#cddbeb] px-4 py-5 text-sm text-[#6b7c93]">
+                        No live OTP templates are routable yet. Publish a broad fallback first.
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
 
               {packetType === 'mandate' ? (
                 <div className="mt-5 rounded-[22px] border border-[#dbe7f3] bg-[#fbfdff] p-4">
