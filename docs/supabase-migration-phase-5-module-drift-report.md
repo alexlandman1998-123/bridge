@@ -1,6 +1,6 @@
 # Supabase Migration Phase 5 Module Drift Report
 
-Generated: 2026-07-14T21:22:40.255Z
+Generated: 2026-07-14T21:42:24.483Z
 Repo: /Users/alexanderlandman/the-it-guy
 
 ## Safety Scope
@@ -12,23 +12,21 @@ Phase 5 is read-only. It classifies the remaining migration ledger drift by modu
 | Field | Value |
 | --- | --- |
 | Status | MODULE_AUDIT_READY |
-| Local migration files | 361 |
+| Local migration files | 362 |
 | Duplicate local timestamps | 0 |
 | Remote ledger fetched | yes |
-| Matched rows | 326 |
+| Matched rows | 343 |
 | Split local/remote versions | 0 |
-| Pure local-only rows | 35 |
+| Pure local-only rows | 19 |
 | Pure remote-only rows | 0 |
-| Extracted objects checked | 258 |
+| Extracted objects checked | 149 |
 
 ## Module Summary
 
 | Module | Pure Local-Only | Split Rows | All Live | Partial Live | None Live | No Static Objects | Recommendation |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| transaction_network | 13 | 0 | 0 | 3 | 10 | 0 | Needs object-level review; do not repair as a batch yet. |
 | developer_referral | 8 | 0 | 0 | 1 | 7 | 0 | Needs object-level review; do not repair as a batch yet. |
 | notification_automation | 6 | 0 | 0 | 0 | 6 | 0 | Needs object-level review; do not repair as a batch yet. |
-| commercial | 3 | 0 | 0 | 2 | 0 | 1 | Needs object-level review; do not repair as a batch yet. |
 | bond_finance | 2 | 0 | 0 | 0 | 2 | 0 | Needs object-level review; do not repair as a batch yet. |
 | other | 2 | 0 | 0 | 1 | 1 | 0 | Needs object-level review; do not repair as a batch yet. |
 | workspace_platform | 1 | 0 | 0 | 0 | 1 | 0 | Needs object-level review; do not repair as a batch yet. |
@@ -47,8 +45,6 @@ No pure local-only migration is ready for repair from static object evidence alo
 | --- | --- | --- | --- | --- |
 | 202607050008 | bond_finance | 202607050008_commission_levels_targets_rules.sql | none_live | 0/26 |
 | 202607080001 | bond_finance | 202607080001_commission_targets_period_metric_phase1.sql | none_live | 0/6 |
-| 202606160002 | commercial | 202606160002_commercial_landlord_onboarding_workspace.sql | partial_live | 36/37 |
-| 202606210004 | commercial | 202606210004_commercial_role_formalisation_phase1.sql | partial_live | 3/5 |
 | 202606290016 | developer_referral | 202606290016_developer_partner_relationships_phase1.sql | none_live | 0/26 |
 | 202606290017 | developer_referral | 202606290017_developer_partner_invites_phase5.sql | none_live | 0/4 |
 | 202606290018 | developer_referral | 202606290018_developer_partner_defaults_phase6.sql | partial_live | 1/6 |
@@ -65,19 +61,6 @@ No pure local-only migration is ready for repair from static object evidence alo
 | 202607060004 | notification_automation | 202607060004_notification_automation_phase6_premium_controls.sql | none_live | 0/2 |
 | 202607140016 | other | 202607140016_sa_legal_instrument_family_governance.sql | partial_live | 2/9 |
 | 202607140017 | other | 202607140017_sa_legal_deal_facts_phase2.sql | none_live | 0/4 |
-| 202606260002 | transaction_network | 202606260002_transaction_partner_invite_resend_phase3.sql | partial_live | 1/2 |
-| 202606260003 | transaction_network | 202606260003_transaction_partner_invite_audit_phase5.sql | none_live | 0/1 |
-| 202606260004 | transaction_network | 202606260004_transaction_partner_invite_expiry_phase6.sql | none_live | 0/1 |
-| 202606290015 | transaction_network | 202606290015_transaction_comments_shared_activity_metadata.sql | none_live | 0/5 |
-| 202606300003 | transaction_network | 202606300003_transaction_participant_role_normalization_phase2.sql | partial_live | 6/7 |
-| 202606300004 | transaction_network | 202606300004_canonical_transaction_partner_invites_phase3.sql | none_live | 0/2 |
-| 202606300006 | transaction_network | 202606300006_client_invite_acceptance_sync_phase5.sql | none_live | 0/4 |
-| 202606300007 | transaction_network | 202606300007_canonical_invite_operations_phase6.sql | none_live | 0/2 |
-| 202606300008 | transaction_network | 202606300008_canonical_invite_control_phase7.sql | none_live | 0/3 |
-| 202607010002 | transaction_network | 202607010002_partner_portal_assignment_persistence.sql | none_live | 0/33 |
-| 202607050007 | transaction_network | 202607050007_partner_invitation_sender_management.sql | none_live | 0/1 |
-| 202607080002 | transaction_network | 202607080002_partner_invitation_delete_rpc.sql | partial_live | 3/4 |
-| 202607080006 | transaction_network | 202607080006_invite_acceptance_reconciliation_phase5.sql | none_live | 0/2 |
 | 202606220002 | workspace_platform | 202606220002_admin_mobile_dashboard_events.sql | none_live | 0/9 |
 
 ## Local-Only Drift Detail
@@ -86,9 +69,6 @@ No pure local-only migration is ready for repair from static object evidence alo
 | --- | --- | --- | --- | --- | --- |
 | 202607050008 | pure_local_only | bond_finance | 202607050008_commission_levels_targets_rules.sql | none_live | 0/26 |
 | 202607080001 | pure_local_only | bond_finance | 202607080001_commission_targets_period_metric_phase1.sql | none_live | 0/6 |
-| 202606160002 | pure_local_only | commercial | 202606160002_commercial_landlord_onboarding_workspace.sql | partial_live | 36/37 |
-| 202606210004 | pure_local_only | commercial | 202606210004_commercial_role_formalisation_phase1.sql | partial_live | 3/5 |
-| 202606290010 | pure_local_only | commercial | 202606290010_commercial_landlord_workspace_schema_cache.sql | no_static_objects | n/a |
 | 202606290016 | pure_local_only | developer_referral | 202606290016_developer_partner_relationships_phase1.sql | none_live | 0/26 |
 | 202606290017 | pure_local_only | developer_referral | 202606290017_developer_partner_invites_phase5.sql | none_live | 0/4 |
 | 202606290018 | pure_local_only | developer_referral | 202606290018_developer_partner_defaults_phase6.sql | partial_live | 1/6 |
@@ -105,27 +85,14 @@ No pure local-only migration is ready for repair from static object evidence alo
 | 202607060004 | pure_local_only | notification_automation | 202607060004_notification_automation_phase6_premium_controls.sql | none_live | 0/2 |
 | 202607140016 | pure_local_only | other | 202607140016_sa_legal_instrument_family_governance.sql | partial_live | 2/9 |
 | 202607140017 | pure_local_only | other | 202607140017_sa_legal_deal_facts_phase2.sql | none_live | 0/4 |
-| 202606260002 | pure_local_only | transaction_network | 202606260002_transaction_partner_invite_resend_phase3.sql | partial_live | 1/2 |
-| 202606260003 | pure_local_only | transaction_network | 202606260003_transaction_partner_invite_audit_phase5.sql | none_live | 0/1 |
-| 202606260004 | pure_local_only | transaction_network | 202606260004_transaction_partner_invite_expiry_phase6.sql | none_live | 0/1 |
-| 202606290015 | pure_local_only | transaction_network | 202606290015_transaction_comments_shared_activity_metadata.sql | none_live | 0/5 |
-| 202606300003 | pure_local_only | transaction_network | 202606300003_transaction_participant_role_normalization_phase2.sql | partial_live | 6/7 |
-| 202606300004 | pure_local_only | transaction_network | 202606300004_canonical_transaction_partner_invites_phase3.sql | none_live | 0/2 |
-| 202606300006 | pure_local_only | transaction_network | 202606300006_client_invite_acceptance_sync_phase5.sql | none_live | 0/4 |
-| 202606300007 | pure_local_only | transaction_network | 202606300007_canonical_invite_operations_phase6.sql | none_live | 0/2 |
-| 202606300008 | pure_local_only | transaction_network | 202606300008_canonical_invite_control_phase7.sql | none_live | 0/3 |
-| 202607010002 | pure_local_only | transaction_network | 202607010002_partner_portal_assignment_persistence.sql | none_live | 0/33 |
-| 202607050007 | pure_local_only | transaction_network | 202607050007_partner_invitation_sender_management.sql | none_live | 0/1 |
-| 202607080002 | pure_local_only | transaction_network | 202607080002_partner_invitation_delete_rpc.sql | partial_live | 3/4 |
-| 202607080006 | pure_local_only | transaction_network | 202607080006_invite_acceptance_reconciliation_phase5.sql | none_live | 0/2 |
 | 202606220002 | pure_local_only | workspace_platform | 202606220002_admin_mobile_dashboard_events.sql | none_live | 0/9 |
 
 ## Object Extraction
 
 | Metric | Value |
 | --- | --- |
-| Static objects extracted | 258 |
-| Catalog rows returned | 258 |
+| Static objects extracted | 149 |
+| Catalog rows returned | 149 |
 | Object check command | ok |
 
 ## Command Evidence
@@ -133,7 +100,7 @@ No pure local-only migration is ready for repair from static object evidence alo
 | Command | Status | Notes |
 | --- | --- | --- |
 | npx supabase migration list --linked --output-format json | ok | Initialising login role... Connecting to remote database... |
-| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase5-object-checks-87961.sql --output-format json | ok | Initialising login role... |
+| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase5-object-checks-98973.sql --output-format json | ok | Initialising login role... |
 
 ## Next Step
 
