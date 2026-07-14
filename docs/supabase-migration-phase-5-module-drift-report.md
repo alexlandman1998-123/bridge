@@ -1,6 +1,6 @@
 # Supabase Migration Phase 5 Module Drift Report
 
-Generated: 2026-07-14T20:35:04.414Z
+Generated: 2026-07-14T20:44:44.723Z
 Repo: /Users/alexanderlandman/the-it-guy
 
 ## Safety Scope
@@ -15,26 +15,25 @@ Phase 5 is read-only. It classifies the remaining migration ledger drift by modu
 | Local migration files | 358 |
 | Duplicate local timestamps | 0 |
 | Remote ledger fetched | yes |
-| Matched rows | 308 |
+| Matched rows | 315 |
 | Split local/remote versions | 0 |
-| Pure local-only rows | 50 |
+| Pure local-only rows | 43 |
 | Pure remote-only rows | 0 |
-| Extracted objects checked | 349 |
+| Extracted objects checked | 335 |
 
 ## Module Summary
 
 | Module | Pure Local-Only | Split Rows | All Live | Partial Live | None Live | No Static Objects | Recommendation |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | transaction_network | 13 | 0 | 0 | 3 | 10 | 0 | Needs object-level review; do not repair as a batch yet. |
-| developer_referral | 9 | 0 | 0 | 1 | 7 | 1 | Needs object-level review; do not repair as a batch yet. |
+| developer_referral | 8 | 0 | 0 | 1 | 7 | 0 | Needs object-level review; do not repair as a batch yet. |
 | notification_automation | 6 | 0 | 0 | 0 | 6 | 0 | Needs object-level review; do not repair as a batch yet. |
-| canonical_documents | 5 | 0 | 0 | 1 | 4 | 0 | Needs object-level review; do not repair as a batch yet. |
-| commercial | 4 | 0 | 0 | 2 | 0 | 2 | Needs object-level review; do not repair as a batch yet. |
 | lead_capture_crm | 4 | 0 | 0 | 3 | 1 | 0 | Needs object-level review; do not repair as a batch yet. |
-| bond_finance | 3 | 0 | 0 | 1 | 2 | 0 | Needs object-level review; do not repair as a batch yet. |
+| canonical_documents | 3 | 0 | 0 | 1 | 2 | 0 | Needs object-level review; do not repair as a batch yet. |
+| commercial | 3 | 0 | 0 | 2 | 0 | 1 | Needs object-level review; do not repair as a batch yet. |
 | other | 3 | 0 | 0 | 1 | 2 | 0 | Needs object-level review; do not repair as a batch yet. |
-| workspace_platform | 2 | 0 | 0 | 0 | 1 | 1 | Needs object-level review; do not repair as a batch yet. |
-| attorney | 1 | 0 | 0 | 0 | 1 | 0 | Needs object-level review; do not repair as a batch yet. |
+| bond_finance | 2 | 0 | 0 | 0 | 2 | 0 | Needs object-level review; do not repair as a batch yet. |
+| workspace_platform | 1 | 0 | 0 | 0 | 1 | 0 | Needs object-level review; do not repair as a batch yet. |
 
 ## Split Ledger Rows
 
@@ -48,15 +47,11 @@ No pure local-only migration is ready for repair from static object evidence alo
 
 | Version | Module | File | Object Status | Objects Live |
 | --- | --- | --- | --- | --- |
-| 202607080008 | attorney | 202607080008_attorney_firm_branding_storage_rls.sql | none_live | 0/4 |
-| 202607050001 | bond_finance | 202607050001_bond_grant_workflow_milestones.sql | partial_live | 4/6 |
 | 202607050008 | bond_finance | 202607050008_commission_levels_targets_rules.sql | none_live | 0/26 |
 | 202607080001 | bond_finance | 202607080001_commission_targets_period_metric_phase1.sql | none_live | 0/6 |
 | 202606210001 | canonical_documents | 202606210001_organisation_legal_template_registry_phase1.sql | partial_live | 2/24 |
 | 202606210002 | canonical_documents | 202606210002_legal_template_storage_phase2.sql | none_live | 0/6 |
 | 202606210003 | canonical_documents | 202606210003_admin_legal_template_bridge_phase7.sql | none_live | 0/11 |
-| 202606300005 | canonical_documents | 202606300005_canonical_client_onboarding_invites_phase4.sql | none_live | 0/2 |
-| 202607140003 | canonical_documents | 202607140003_legal_document_signer_roles.sql | none_live | 0/2 |
 | 202606160002 | commercial | 202606160002_commercial_landlord_onboarding_workspace.sql | partial_live | 36/37 |
 | 202606210004 | commercial | 202606210004_commercial_role_formalisation_phase1.sql | partial_live | 3/5 |
 | 202606290016 | developer_referral | 202606290016_developer_partner_relationships_phase1.sql | none_live | 0/26 |
@@ -99,20 +94,14 @@ No pure local-only migration is ready for repair from static object evidence alo
 
 | Version | Bucket | Module | File | Object Status | Objects Live |
 | --- | --- | --- | --- | --- | --- |
-| 202607080008 | pure_local_only | attorney | 202607080008_attorney_firm_branding_storage_rls.sql | none_live | 0/4 |
-| 202607050001 | pure_local_only | bond_finance | 202607050001_bond_grant_workflow_milestones.sql | partial_live | 4/6 |
 | 202607050008 | pure_local_only | bond_finance | 202607050008_commission_levels_targets_rules.sql | none_live | 0/26 |
 | 202607080001 | pure_local_only | bond_finance | 202607080001_commission_targets_period_metric_phase1.sql | none_live | 0/6 |
 | 202606210001 | pure_local_only | canonical_documents | 202606210001_organisation_legal_template_registry_phase1.sql | partial_live | 2/24 |
 | 202606210002 | pure_local_only | canonical_documents | 202606210002_legal_template_storage_phase2.sql | none_live | 0/6 |
 | 202606210003 | pure_local_only | canonical_documents | 202606210003_admin_legal_template_bridge_phase7.sql | none_live | 0/11 |
-| 202606300005 | pure_local_only | canonical_documents | 202606300005_canonical_client_onboarding_invites_phase4.sql | none_live | 0/2 |
-| 202607140003 | pure_local_only | canonical_documents | 202607140003_legal_document_signer_roles.sql | none_live | 0/2 |
 | 202606160002 | pure_local_only | commercial | 202606160002_commercial_landlord_onboarding_workspace.sql | partial_live | 36/37 |
 | 202606210004 | pure_local_only | commercial | 202606210004_commercial_role_formalisation_phase1.sql | partial_live | 3/5 |
 | 202606290010 | pure_local_only | commercial | 202606290010_commercial_landlord_workspace_schema_cache.sql | no_static_objects | n/a |
-| 202607010001 | pure_local_only | commercial | 202607010001_replace_mandate_agency_name_placeholder.sql | no_static_objects | n/a |
-| 202606290014 | pure_local_only | developer_referral | 202606290014_development_seller_details_phase1.sql | no_static_objects | n/a |
 | 202606290016 | pure_local_only | developer_referral | 202606290016_developer_partner_relationships_phase1.sql | none_live | 0/26 |
 | 202606290017 | pure_local_only | developer_referral | 202606290017_developer_partner_invites_phase5.sql | none_live | 0/4 |
 | 202606290018 | pure_local_only | developer_referral | 202606290018_developer_partner_defaults_phase6.sql | partial_live | 1/6 |
@@ -148,14 +137,13 @@ No pure local-only migration is ready for repair from static object evidence alo
 | 202607080002 | pure_local_only | transaction_network | 202607080002_partner_invitation_delete_rpc.sql | partial_live | 3/4 |
 | 202607080006 | pure_local_only | transaction_network | 202607080006_invite_acceptance_reconciliation_phase5.sql | none_live | 0/2 |
 | 202606220002 | pure_local_only | workspace_platform | 202606220002_admin_mobile_dashboard_events.sql | none_live | 0/9 |
-| 202607080007 | pure_local_only | workspace_platform | 202607080007_profile_settings_metadata.sql | no_static_objects | n/a |
 
 ## Object Extraction
 
 | Metric | Value |
 | --- | --- |
-| Static objects extracted | 349 |
-| Catalog rows returned | 349 |
+| Static objects extracted | 335 |
+| Catalog rows returned | 335 |
 | Object check command | ok |
 
 ## Command Evidence
@@ -163,7 +151,7 @@ No pure local-only migration is ready for repair from static object evidence alo
 | Command | Status | Notes |
 | --- | --- | --- |
 | npx supabase migration list --linked --output-format json | ok | Initialising login role... Connecting to remote database... |
-| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase5-object-checks-46943.sql --output-format json | ok | Initialising login role... |
+| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase5-object-checks-57170.sql --output-format json | ok | Initialising login role... |
 
 ## Next Step
 
