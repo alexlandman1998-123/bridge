@@ -32,9 +32,9 @@ const STATUS_PRESENTATION = Object.freeze({
 })
 
 const ASSEMBLY_STEPS = Object.freeze([
-  { key: 'standard', label: 'Standard wording', Icon: FileText },
+  { key: 'standard', label: 'Standard template', Icon: FileText },
   { key: 'answers', label: 'Onboarding answers', Icon: UserRound },
-  { key: 'situations', label: 'Situation clauses', Icon: Puzzle },
+  { key: 'situations', label: 'Matching conditional clauses', Icon: Puzzle },
   { key: 'ready', label: 'Ready-to-sign document', Icon: FileCheck2 },
 ])
 
@@ -64,7 +64,6 @@ export default function LegalDocumentOverviewPage() {
   if (!definition) return <Navigate to={buildLegalDocumentsLandingPath()} replace />
 
   const primaryTemplateId = document?.primaryTemplateId || ''
-  const fullEditorPath = withTemplate(buildLegalDocumentEditorPath(definition.key), primaryTemplateId)
   const previewPath = buildLegalDocumentPreviewPath(definition.key)
   const standardEditorPath = withTemplate(buildLegalDocumentEditorPath(definition.key, 'standard'), primaryTemplateId)
   const situationsEditorPath = withTemplate(buildLegalDocumentEditorPath(definition.key, 'situations'), primaryTemplateId)
@@ -89,7 +88,7 @@ export default function LegalDocumentOverviewPage() {
         <div className="max-w-3xl">
           <h1 id="document-overview-title" className="text-3xl font-semibold tracking-[-0.03em] text-[#101c2d] sm:text-[2.15rem]">{definition.label}</h1>
           <p className="mt-2 text-[15px] leading-7 text-[#62758a]">
-            Bridge automatically builds the correct {definition.shortLabel || definition.label} from your standard wording and situation clauses.
+            Start with one standard template. Bridge then adds the relevant conditional clauses from the onboarding answers.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -99,9 +98,9 @@ export default function LegalDocumentOverviewPage() {
               Preview a situation
             </Link>
           ) : null}
-          <Link to={fullEditorPath} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[11px] border border-[#0f7f4f] bg-[#0f7f4f] px-5 text-sm font-semibold text-white shadow-[0_9px_20px_rgba(15,127,79,0.2)] transition hover:bg-[#0d7045]">
+          <Link to={standardEditorPath} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[11px] border border-[#0f7f4f] bg-[#0f7f4f] px-5 text-sm font-semibold text-white shadow-[0_9px_20px_rgba(15,127,79,0.2)] transition hover:bg-[#0d7045]">
             <PencilLine className="h-4 w-4" aria-hidden="true" />
-            {document?.status === 'missing' ? 'Set up wording' : 'Edit wording'}
+            {document?.status === 'missing' ? 'Set up template' : 'Edit standard template'}
           </Link>
         </div>
       </header>
@@ -146,22 +145,22 @@ export default function LegalDocumentOverviewPage() {
       ) : (
         <section className="grid gap-4 lg:grid-cols-3" aria-label={`${definition.label} building blocks`}>
           <LegalDocumentBuildingBlockCard
-            title="Standard wording"
-            description={`Wording included in every ${definition.shortLabel || 'document'}.`}
+            title="Standard template"
+            description={`Core wording included in every ${definition.shortLabel || 'document'}.`}
             countLabel={`${document?.standardSectionCount || 0} sections`}
             items={standardItems}
-            emptyLabel="No standard sections have been set up yet."
-            actionLabel="Manage standard wording"
+            emptyLabel="No standard template sections have been set up yet."
+            actionLabel="Edit standard template"
             actionTo={standardEditorPath}
             Icon={FileText}
           />
           <LegalDocumentBuildingBlockCard
-            title="Special situations"
-            description="Extra wording Bridge adds only when it applies."
-            countLabel={`${document?.situationClauseCount || 0} situation clauses`}
+            title="Conditional clauses"
+            description="Added automatically when onboarding answers make them relevant."
+            countLabel={`${document?.situationClauseCount || 0} conditional clauses`}
             items={situationItems}
-            emptyLabel="No automatic situation wording has been set up yet."
-            actionLabel="Manage situation clauses"
+            emptyLabel="No conditional clauses have been set up yet."
+            actionLabel="Manage conditional clauses"
             actionTo={situationsEditorPath}
             Icon={Puzzle}
             itemDisplay="tags"

@@ -9136,12 +9136,12 @@ export default function SettingsSigningTemplatesPage({
                 ) : (
                   <SettingsEmptyState
                     title={normalizedEditorScope === 'situations'
-                      ? editorSituation ? `No ${editorSituation.label.toLowerCase()} wording yet` : 'Choose a situation above'
+                      ? editorSituation ? `No ${editorSituation.label.toLowerCase()} clauses yet` : 'Choose an onboarding answer group above'
                       : 'No sections yet'}
                     description={normalizedEditorScope === 'situations'
                       ? editorSituation
-                        ? `Use an approved clause to add buyer or seller wording for ${editorSituation.label.toLowerCase()}.`
-                        : 'Select Individual, Company, Trust, Married in community, Sectional title or Finance before editing.'
+                        ? `Use an approved clause to add wording triggered by ${editorSituation.label.toLowerCase()}.`
+                        : 'Choose from people and legal capacity, property and occupation, or sale and finance.'
                       : 'Add a section to start editing this document.'}
                   />
                 )}
@@ -9489,11 +9489,11 @@ export default function SettingsSigningTemplatesPage({
                   </div>
                 ) : (
                   <SettingsEmptyState
-                    title={normalizedEditorScope === 'situations' && !editorSituation ? 'Choose a situation first' : 'Choose a section'}
+                    title={normalizedEditorScope === 'situations' && !editorSituation ? 'Choose an onboarding answer group first' : 'Choose a section'}
                     description={normalizedEditorScope === 'situations'
                       ? editorSituation
-                        ? `Select ${editorSituation.label.toLowerCase()} wording from the outline, or add an approved clause.`
-                        : 'Use the simple choices above to tell Bridge whether you are editing individual, company, trust, marriage, property or finance wording.'
+                        ? `Select the ${editorSituation.label.toLowerCase()} clauses from the outline, or add an approved clause.`
+                        : 'Choose the type of onboarding answer that should trigger the clause.'
                       : 'Select a section from the outline to edit the document wording.'}
                   />
                 )}
@@ -9503,8 +9503,8 @@ export default function SettingsSigningTemplatesPage({
                 <section data-editor-tool="content" className="min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">{normalizedEditorScope === 'situations' ? 'Selected situation' : 'Standard Conditions'}</p>
-                      <h2 className="mt-2 text-base font-semibold text-[#102033]">{normalizedEditorScope === 'situations' ? editorSituation?.label || 'Choose a situation' : 'Legal Coverage'}</h2>
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">{normalizedEditorScope === 'situations' ? 'Conditional clause group' : 'Standard template'}</p>
+                      <h2 className="mt-2 text-base font-semibold text-[#102033]">{normalizedEditorScope === 'situations' ? editorSituation?.label || 'Choose an answer group' : 'Legal Coverage'}</h2>
                     </div>
                     <span className="rounded-full border border-[#cdebd8] bg-[#eef9f1] px-2.5 py-1 text-[0.68rem] font-semibold text-[#128642]">
                       {normalizedEditorScope === 'situations' ? scopedSectionEntries.length : `${legalConditionCoverage.coveredCount}/${legalConditionCoverage.totalCount}`}
@@ -9514,8 +9514,8 @@ export default function SettingsSigningTemplatesPage({
                     <div className="mt-3">
                       <p className="text-sm leading-6 text-[#607387]">
                         {editorSituation
-                          ? `Only ${editorSituation.label.toLowerCase()} wording is shown. Standard clauses remain unchanged.`
-                          : 'Choose a situation above before editing conditional legal wording.'}
+                          ? `Only clauses triggered by ${editorSituation.label.toLowerCase()} are shown. The standard template remains unchanged.`
+                          : 'Choose an onboarding answer group above before editing conditional clauses.'}
                       </p>
                       {editorSituation ? (
                         <button
@@ -9524,7 +9524,7 @@ export default function SettingsSigningTemplatesPage({
                           onClick={() => setActiveStudioArea('clauseLibrary')}
                         >
                           <Layers3 size={14} />
-                          <span>Browse {editorSituation.label} Clauses</span>
+                          <span>Browse {editorSituation.label} clauses</span>
                         </button>
                       ) : null}
                     </div>

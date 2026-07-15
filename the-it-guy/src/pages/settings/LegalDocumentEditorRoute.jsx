@@ -21,11 +21,11 @@ export default function LegalDocumentEditorRoute() {
   const situationKey = selectedSituation?.key || ''
   const normalizedScope = normalizeLegalDocumentEditorScope(editorScope)
   const scopeDescription = normalizedScope === 'standard'
-    ? 'Edit the wording included in every version of this document.'
+    ? 'Edit the core wording that is included in every generated document.'
     : normalizedScope === 'situations'
       ? selectedSituation
-        ? `Edit only the wording Bridge includes for ${selectedSituation.label.toLowerCase()} situations.`
-        : 'Choose a person, property or finance situation before editing conditional wording.'
+        ? `Edit the clauses Bridge adds when onboarding identifies ${selectedSituation.label.toLowerCase()}.`
+        : 'Choose an onboarding answer group before editing conditional clauses.'
       : normalizedScope === 'signing'
         ? 'Set up who signs and where signatures, initials and dates are placed.'
         : `Manage all wording and document pieces used to build your ${definition.shortLabel}.`
@@ -46,7 +46,7 @@ export default function LegalDocumentEditorRoute() {
         situationKey={situationKey}
       />
       <SettingsSigningTemplatesPage
-        title={normalizedScope === 'all' ? definition.label : `${definition.label} · ${normalizedScope === 'standard' ? 'Standard wording' : normalizedScope === 'situations' ? selectedSituation ? `${selectedSituation.label} wording` : 'Situation wording' : 'Signing setup'}`}
+        title={normalizedScope === 'all' ? definition.label : `${definition.label} · ${normalizedScope === 'standard' ? 'Standard template' : normalizedScope === 'situations' ? selectedSituation ? `${selectedSituation.label} clauses` : 'Conditional clauses' : 'Signing fields'}`}
         description={scopeDescription}
         allowedPacketTypes={[definition.packetType]}
         initialPacketType={definition.packetType}

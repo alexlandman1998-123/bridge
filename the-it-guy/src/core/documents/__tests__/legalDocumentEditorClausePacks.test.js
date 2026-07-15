@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { classifyLegalDocumentEditorSection } from '../legalDocumentEditorScope.js'
 import {
+  LEGAL_DOCUMENT_EDITOR_SITUATION_GROUPS,
   listLegalDocumentEditorSituations,
   sectionMatchesLegalDocumentEditorSituation,
 } from '../legalDocumentEditorSituations.js'
@@ -13,6 +14,17 @@ test('exposes the day-to-day South African OTP situations in the editor', () => 
   assert.ok(keys.includes('occupation_lease'))
   assert.ok(keys.includes('linked_sale'))
   assert.ok(keys.includes('tax_vat'))
+})
+
+test('separates conditional clauses into onboarding answer groups', () => {
+  const situations = listLegalDocumentEditorSituations()
+  const groupKeys = new Set(LEGAL_DOCUMENT_EDITOR_SITUATION_GROUPS.map((group) => group.key))
+
+  assert.deepEqual([...groupKeys], ['party', 'property', 'sale'])
+  assert.ok(situations.every((situation) => groupKeys.has(situation.groupKey)))
+  assert.equal(situations.find((situation) => situation.key === 'company')?.groupKey, 'party')
+  assert.equal(situations.find((situation) => situation.key === 'sectional_title')?.groupKey, 'property')
+  assert.equal(situations.find((situation) => situation.key === 'finance')?.groupKey, 'sale')
 })
 
 test('classifies canonical Phase 3 clause sections as situation wording', () => {

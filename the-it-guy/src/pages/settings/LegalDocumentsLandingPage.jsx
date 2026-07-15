@@ -28,7 +28,7 @@ const BUILD_STEPS = Object.freeze([
   },
   {
     label: 'Bridge selects the wording',
-    description: 'The right standard and situation clauses are assembled.',
+    description: 'The standard template and matching conditional clauses are assembled.',
     Icon: Puzzle,
   },
   {

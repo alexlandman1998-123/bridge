@@ -61,14 +61,14 @@ export default function LegalDocumentLibraryCard({ document, compact = false }) 
           <dl className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[#738599]">
             <div className="inline-flex items-center gap-1.5">
               <FileText className="h-3.5 w-3.5" aria-hidden="true" />
-              <dt className="sr-only">Standard sections</dt>
-              <dd>{document.standardSectionCount} standard sections</dd>
+              <dt className="sr-only">Standard template sections</dt>
+              <dd>{document.standardSectionCount} template sections</dd>
             </div>
             <span className="hidden text-[#c3cdd7] sm:inline" aria-hidden="true">•</span>
             <div className="inline-flex items-center gap-1.5">
               <Layers3 className="h-3.5 w-3.5" aria-hidden="true" />
-              <dt className="sr-only">Situation clauses</dt>
-              <dd>{document.situationClauseCount} situation clauses</dd>
+              <dt className="sr-only">Conditional clauses</dt>
+              <dd>{document.situationClauseCount} conditional clauses</dd>
             </div>
             {document.signerRuleCount > 0 ? (
               <div className="inline-flex items-center gap-1.5">

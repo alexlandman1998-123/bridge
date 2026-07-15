@@ -6,10 +6,10 @@ import {
 } from '../../core/documents/legalDocumentRoutes'
 
 const SCOPE_OPTIONS = Object.freeze([
-  { key: 'all', label: 'Whole document', Icon: LayoutList },
-  { key: 'standard', label: 'Standard wording', Icon: FileText },
-  { key: 'situations', label: 'Situation wording', Icon: Layers3 },
-  { key: 'signing', label: 'Signing setup', Icon: UsersRound },
+  { key: 'standard', label: 'Standard template', Icon: FileText },
+  { key: 'situations', label: 'Conditional clauses', Icon: Layers3 },
+  { key: 'all', label: 'Full document', Icon: LayoutList },
+  { key: 'signing', label: 'Signing fields', Icon: UsersRound },
 ])
 
 function withTemplate(path, templateId) {
