@@ -43,10 +43,20 @@ select
 from public.platform_revenue_targets
 order by month_start desc, currency;
 
--- Run through an authenticated platform-admin session. The response should
--- reconcile with the source queries above and should return null, not zero,
--- when recognised revenue or a monthly target is genuinely unavailable.
-select public.arch9_admin_ceo_dashboard_v1(
-  date_trunc('month', now()),
-  now()
-);
+-- The CLI verification role is intentionally not a platform admin, so it must
+-- not invoke the guarded RPC. Verify registration and grants here; exercise
+-- the response separately through an authenticated Arch9 executive session.
+select
+  p.proname,
+  p.prosecdef as security_definer,
+  has_function_privilege('authenticated', p.oid, 'execute') as authenticated_execute,
+  has_function_privilege('anon', p.oid, 'execute') as anon_execute
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and p.proname in (
+    'arch9_admin_ceo_dashboard_v1',
+    'arch9_admin_set_revenue_target_v1',
+    'arch9_admin_update_demo_enquiry_v1'
+  )
+order by p.proname;

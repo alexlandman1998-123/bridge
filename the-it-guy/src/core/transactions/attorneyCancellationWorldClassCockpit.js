@@ -1,4 +1,7 @@
 import { ATTORNEY_WORKFLOW_STAGE_DEFINITIONS, normalizeAttorneyStageKey } from '../../constants/attorneyWorkflowStages.js'
+import { buildCancellationAttorneyPhase1Usability } from './cancellationAttorneyModulePhase1.js'
+import { resolveCancellationAttorneyCanonicalData } from './cancellationAttorneyModulePhase2.js'
+import { buildCancellationPackWorkspace } from './cancellationAttorneyModulePhase3.js'
 
 export const ATTORNEY_THREE_ROLE_PHASE5_VERSION = 'attorney_cancellation_cockpit_phase5_v1'
 
@@ -84,6 +87,33 @@ export function buildCancellationAttorneyCockpit(workflow = {}) {
   }))
   const primaryAction = usability.primaryNextAction || null
   const canAct = lane.permissions?.canUpdateStage === true
+  const phase1Usability = buildCancellationAttorneyPhase1Usability({
+    ...lane,
+    currentStage: stageKey,
+    label: 'Cancellation Attorney',
+  })
+  const phase2CanonicalData = resolveCancellationAttorneyCanonicalData({
+    transaction: workflow.transaction || lane.transaction || {},
+    lane: {
+      ...lane,
+      currentStage: stageKey,
+    },
+    evidence: workflow.evidence || lane.evidence || lane.cancellationEvidence || {},
+    resolvedAt: workflow.resolvedAt || lane.resolvedAt || new Date().toISOString(),
+  })
+  const phase3PackWorkspace = buildCancellationPackWorkspace({
+    transaction: workflow.transaction || lane.transaction || {},
+    lane: {
+      ...lane,
+      currentStage: stageKey,
+    },
+    evidence: workflow.evidence || lane.evidence || lane.cancellationEvidence || {},
+    canonicalData: phase2CanonicalData,
+    phase1Usability,
+    versions: workflow.versions || lane.versions || lane.packVersions || [],
+    status: workflow.packStatus || lane.packStatus || '',
+    generatedAt: workflow.resolvedAt || lane.resolvedAt || new Date().toISOString(),
+  })
   const blockers = [
     ...(Array.isArray(workflow.blockers) ? workflow.blockers : []),
     ...(readiness.assignment && !readiness.assignment.complete ? ['Cancellation attorney assignment is outstanding.'] : []),
@@ -106,6 +136,9 @@ export function buildCancellationAttorneyCockpit(workflow = {}) {
     canAct,
     readOnlyReason: canAct ? '' : (lane.permissions?.readOnlyReason || 'This lane is visible for coordination, but only the assigned cancellation team may change it.'),
     primaryAction,
+    phase1Usability,
+    phase2CanonicalData,
+    phase3PackWorkspace,
     domains: Object.freeze(domains),
     readiness: Object.freeze(readiness),
     metrics: Object.freeze({
@@ -120,4 +153,3 @@ export function buildCancellationAttorneyCockpit(workflow = {}) {
     healthy: blockers.length === 0 && blockedDependencies === 0,
   })
 }
-

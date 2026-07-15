@@ -15,6 +15,7 @@ import {
   getAttorneyManualBlockers,
   resolveAttorneyManualBlocker,
 } from '../../../services/attorneyWorkflow/attorneyReadinessEngine'
+import { buildAttorneyLanePhase1Usability } from '../../../core/transactions/bondAttorneyModulePhase1'
 import Button from '../../ui/Button'
 import Field from '../../ui/Field'
 import Modal from '../../ui/Modal'
@@ -32,6 +33,15 @@ const SEVERITY_CLASS = {
   medium: 'border-warning/30 bg-warningSoft text-warning',
   high: 'border-danger/30 bg-dangerSoft text-danger',
   critical: 'border-danger bg-danger text-white',
+}
+
+const ACTION_STATUS_CLASS = {
+  done: 'border-success/30 bg-successSoft text-success',
+  next: 'border-[#244966] bg-[#244966] text-white',
+  available: 'border-info/30 bg-infoSoft text-info',
+  waiting: 'border-borderSoft bg-surface text-textMuted',
+  manual_or_later: 'border-warning/30 bg-warningSoft text-warning',
+  not_applicable: 'border-borderSoft bg-surfaceAlt text-textMuted opacity-70',
 }
 
 function toTitle(value = '') {
@@ -94,6 +104,15 @@ function readinessTone(value = 0) {
   if (value >= 60) return 'bg-info'
   if (value >= 40) return 'bg-warning'
   return 'bg-danger'
+}
+
+function actionStatusLabel(value = '') {
+  if (value === 'done') return 'Done'
+  if (value === 'next') return 'Next'
+  if (value === 'available') return 'Ready'
+  if (value === 'manual_or_later') return 'Manual'
+  if (value === 'not_applicable') return 'N/A'
+  return 'Waiting'
 }
 
 function timelineFilterMatches(item, filter) {
@@ -270,14 +289,14 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
     }
   }
 
-  async function handleGenerateLaneRequests(laneKey) {
+  async function handleCreateMissingDocumentRequests(laneKey) {
     setSaving(true)
     setState((previous) => ({ ...previous, error: '' }))
     try {
       const next = await generateMissingAttorneyDocumentRequests(transactionId, { laneKey })
       await refreshAfterChange(next)
     } catch (error) {
-      setState((previous) => ({ ...previous, error: error?.message || 'Unable to generate document requests.' }))
+      setState((previous) => ({ ...previous, error: error?.message || 'Unable to create document requests.' }))
     } finally {
       setSaving(false)
     }
@@ -316,6 +335,10 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
   }
 
   const filteredTimeline = (state.operations?.legalTimeline || []).filter((item) => timelineFilterMatches(item, timelineFilter)).slice(0, 30)
+  const roleFocusLanes = orderedLanes.filter((lane) =>
+    lane.permissions?.canUpdateStage || lane.permissions?.canRequestDocuments || lane.permissions?.canAddInternalNote,
+  )
+  const primaryFocusLane = roleFocusLanes[0] || null
 
   return (
     <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
@@ -325,6 +348,11 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
           <p className="mt-1 text-secondary text-textMuted">
             Role-aware transfer, bond, and cancellation lanes for this transaction.
           </p>
+          {primaryFocusLane ? (
+            <p className="mt-2 rounded-control border border-info/30 bg-infoSoft px-3 py-2 text-sm text-info">
+              Your focus: {primaryFocusLane.label} - {primaryFocusLane.summary?.nextAction || primaryFocusLane.currentStageLabel || 'Review the lane and clear the next blocker.'}
+            </p>
+          ) : null}
         </div>
         {state.operations?.missingRequiredRoles?.length ? (
           <span className="rounded-full border border-warning/30 bg-warningSoft px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-warning">
@@ -418,7 +446,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                     <span className="text-xs text-textMuted">{readiness.blockers.length} open</span>
                   </div>
                   <div className="mt-3 grid gap-2">
-                    {readiness.blockers.slice(0, 8).map((item) => (
+                    {readiness.blockers.map((item) => (
                       <div key={item.id} className="flex flex-col gap-2 rounded-control border border-borderSoft bg-surfaceAlt px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
@@ -430,11 +458,19 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                           <p className="mt-1 text-sm font-semibold text-textStrong">{item.label}</p>
                           <p className="mt-0.5 text-xs text-textMuted">{item.recommendedAction}</p>
                         </div>
-                        {item.manual ? (
-                          <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void handleResolveBlocker(item.id)}>
-                            Resolve
-                          </Button>
-                        ) : null}
+                        <div className="flex shrink-0 flex-wrap gap-2">
+                          <a
+                            href={`#attorney-lane-${item.laneKey || 'transfer'}`}
+                            className="inline-flex min-h-[34px] items-center justify-center rounded-control border border-borderSoft bg-surface px-3 text-xs font-semibold text-textMuted transition hover:border-[#244966]/40 hover:text-textStrong"
+                          >
+                            Open lane
+                          </a>
+                          {item.manual ? (
+                            <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void handleResolveBlocker(item.id)}>
+                              Resolve
+                            </Button>
+                          ) : null}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -445,8 +481,9 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
 
           {orderedLanes.map((lane) => {
             const Icon = getLaneIcon(lane.laneStatus)
+            const phase1Usability = buildAttorneyLanePhase1Usability(lane)
             return (
-              <article key={lane.id} className="rounded-[18px] border border-borderSoft bg-surfaceAlt/70 p-4">
+              <article id={`attorney-lane-${lane.laneKey}`} key={lane.id} className="scroll-mt-6 rounded-[18px] border border-borderSoft bg-surfaceAlt/70 p-4">
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-3">
@@ -497,56 +534,88 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                       </div>
                     ) : null}
 
+                    <div className="mt-4 rounded-control border border-info/20 bg-surface px-4 py-3">
+                      <span className="text-label font-semibold uppercase text-textMuted">Primary Next Step</span>
+                      <p className="mt-1 text-sm font-semibold text-textStrong">
+                        {phase1Usability.nextAction || lane.summary?.nextAction || 'Review this lane and clear the next open item.'}
+                      </p>
+                    </div>
+
                     {lane.documentRequirements?.length ? (
                       <div className="mt-4 rounded-[16px] border border-borderSoft bg-surface px-4 py-3">
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                           <div>
                             <span className="text-label font-semibold uppercase text-textMuted">{lane.label} Documents</span>
                             <p className="mt-1 text-xs text-textMuted">
-                              {lane.documentSummary.missing} missing • {lane.documentSummary.requested} requested • {lane.documentSummary.rejected} rejected • {lane.documentSummary.complete} complete
+                              {phase1Usability.requirementCount} tracked • {lane.documentSummary?.missing || 0} missing • {lane.documentSummary?.requested || 0} requested • {lane.documentSummary?.rejected || 0} rejected • {lane.documentSummary?.complete || 0} complete
                             </p>
+                            <p className="mt-1 text-xs text-textMuted">{phase1Usability.documentRequestActionDescription}</p>
                           </div>
-                          {lane.permissions?.canRequestDocuments && lane.documentSummary?.missing ? (
+                          {lane.permissions?.canRequestDocuments && (lane.documentSummary?.missing || phase1Usability.counts.missing) ? (
                             <Button
                               type="button"
                               size="sm"
                               variant="secondary"
                               disabled={saving}
-                              onClick={() => void handleGenerateLaneRequests(lane.laneKey)}
+                              onClick={() => void handleCreateMissingDocumentRequests(lane.laneKey)}
                             >
-                              Generate Missing Requests
+                              {phase1Usability.documentRequestActionLabel}
                             </Button>
                           ) : null}
                         </div>
                         <div className="mt-3 grid gap-2">
-                          {lane.documentRequirements.slice(0, 8).map((requirement) => (
-                            <div key={requirement.id} className="flex flex-col gap-2 rounded-control border border-borderSoft bg-surfaceAlt px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-                              <div className="min-w-0">
-                                <p className="text-sm font-semibold text-textStrong">{requirement.label}</p>
-                                <p className="mt-0.5 text-xs text-textMuted">
-                                  {toTitle(requirement.category)} • From {toTitle(requirement.requiredFrom)} • {toTitle(requirement.status)}
-                                </p>
+                          {phase1Usability.groups.map((group) => (
+                            <div key={group.key} className="rounded-[14px] border border-borderSoft bg-surfaceAlt p-3">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-textMuted">{group.label}</span>
+                                <span className="text-xs text-textMuted">{group.openCount} open / {group.count} total</span>
                               </div>
-                              {lane.permissions?.canReviewDocuments && requirement.requestId ? (
-                                <div className="flex shrink-0 flex-wrap gap-2">
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="secondary"
-                                    onClick={() => setReviewDraft({ laneKey: lane.laneKey, requestId: requirement.requestId, decision: 'approved', reason: '', title: requirement.label })}
-                                  >
-                                    Approve
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="secondary"
-                                    onClick={() => setReviewDraft({ laneKey: lane.laneKey, requestId: requirement.requestId, decision: 'rejected', reason: '', title: requirement.label })}
-                                  >
-                                    Reject
-                                  </Button>
-                                </div>
-                              ) : null}
+                              <div className="mt-3 grid gap-2">
+                                {group.requirements.map((requirement) => (
+                                  <div key={requirement.id} className="rounded-control border border-borderSoft bg-surface px-3 py-3">
+                                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                      <div className="min-w-0">
+                                        <p className="text-sm font-semibold text-textStrong">{requirement.label}</p>
+                                        <p className="mt-0.5 text-xs text-textMuted">
+                                          Owner: {requirement.ownerLabel} • Status: {toTitle(requirement.status)} • Next: {requirement.nextAction}
+                                        </p>
+                                        <p className="mt-1 text-xs leading-5 text-textMuted">{requirement.why}</p>
+                                      </div>
+                                      {lane.permissions?.canReviewDocuments && requirement.requestId ? (
+                                        <div className="flex shrink-0 flex-wrap gap-2">
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="secondary"
+                                            onClick={() => setReviewDraft({ laneKey: lane.laneKey, requestId: requirement.requestId, decision: 'approved', reason: '', title: requirement.label })}
+                                          >
+                                            Approve
+                                          </Button>
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="secondary"
+                                            onClick={() => setReviewDraft({ laneKey: lane.laneKey, requestId: requirement.requestId, decision: 'rejected', reason: '', title: requirement.label })}
+                                          >
+                                            Reject
+                                          </Button>
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                    <div className="mt-3 flex flex-wrap gap-1.5">
+                                      {requirement.actionMap.map((action) => (
+                                        <span
+                                          key={`${requirement.id}-${action.id}`}
+                                          className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${ACTION_STATUS_CLASS[action.status] || ACTION_STATUS_CLASS.waiting}`}
+                                          title={action.description}
+                                        >
+                                          {action.label}: {actionStatusLabel(action.status)}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           ))}
                         </div>
