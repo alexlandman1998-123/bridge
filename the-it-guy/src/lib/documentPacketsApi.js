@@ -8,6 +8,10 @@ import {
 import { DOCUMENTS_BUCKET_CANDIDATES, LEGAL_TEMPLATES_BUCKET_CANDIDATES, supabase } from './supabaseClient'
 import { uploadToStorageCandidateBuckets } from './storageFallbacks'
 import { linkPacketToRequirement } from '../services/documents/canonicalDocumentLifecycleService'
+import { normalizeLegalInstrumentFamily } from '../core/documents/legalInstrumentFamilyRouter'
+import {
+  resolveLegalTemplateGovernance,
+} from '../core/documents/legalTemplateGovernance'
 
 export const DOCUMENT_PACKET_TYPES = ['otp', 'mandate', 'addendum', 'supporting_legal', 'custom', 'commercial_sale', 'commercial_lease']
 export const DOCUMENT_PACKET_STATUSES = [
@@ -207,9 +211,12 @@ function normalizeStorageSafeName(value = '', fallback = 'asset') {
 
 function normalizeTemplateRegistryStatus(value = '', { isActive = false, isDefault = false } = {}) {
   const normalized = normalizeText(value).toLowerCase()
-  if (['published', 'active', 'approved', 'live'].includes(normalized)) return 'published'
-  if (['archived', 'deprecated', 'superseded'].includes(normalized)) return 'archived'
-  if (['draft', 'in_review', 'review'].includes(normalized)) return 'draft'
+  if (['published', 'active', 'live'].includes(normalized)) return 'published'
+  if (normalized === 'approved') return 'approved'
+  if (['in_review', 'review', 'attorney_review', 'under_review'].includes(normalized)) return 'attorney_review'
+  if (['deprecated', 'superseded'].includes(normalized)) return 'superseded'
+  if (['archived', 'withdrawn'].includes(normalized)) return 'withdrawn'
+  if (normalized === 'draft') return 'draft'
   return isActive || isDefault ? 'published' : 'draft'
 }
 
@@ -485,9 +492,14 @@ function hydrateTemplateRecord(template = {}) {
       'templateFilename',
     ]),
     template_output_bucket: resolveTemplateMetadataValue(template, ['template_output_bucket', 'output_bucket', 'outputBucket']),
+    instrument_family: resolveTemplateMetadataValue(template, ['instrument_family', 'legal_instrument_family']),
+    jurisdiction_code: resolveTemplateMetadataValue(template, ['jurisdiction_code']) || 'ZA',
+    language_code: resolveTemplateMetadataValue(template, ['language_code']) || 'en-ZA',
   }
 }
 
+const DOCUMENT_PACKET_TEMPLATE_SELECT_PHASE3 =
+  'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_bucket, template_storage_path, template_file_name, version_tag, description, status, is_default, is_active, metadata_json, instrument_family, jurisdiction_code, language_code, effective_from, effective_until, governance_version, reviewed_by, reviewed_at, approved_by, approved_at, published_by, published_at, superseded_by, superseded_at, withdrawn_by, withdrawn_at, archived_by, archived_at, created_by, updated_by, created_at, updated_at'
 const DOCUMENT_PACKET_TEMPLATE_SELECT_PHASE2 =
   'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_bucket, template_storage_path, template_file_name, version_tag, description, status, is_default, is_active, metadata_json, created_by, updated_by, published_by, published_at, archived_by, archived_at, created_at, updated_at'
 const DOCUMENT_PACKET_TEMPLATE_SELECT =
@@ -498,6 +510,10 @@ const DOCUMENT_PACKET_TEMPLATE_SELECT_LEGACY =
   'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, is_default, metadata_json, created_by, created_at, updated_at'
 
 const DOCUMENT_PACKET_TEMPLATE_QUERY_PLANS = [
+  {
+    select: DOCUMENT_PACKET_TEMPLATE_SELECT_PHASE3,
+    activeFilter: ({ includeInactive }) => !includeInactive,
+  },
   {
     select: DOCUMENT_PACKET_TEMPLATE_SELECT_PHASE2,
     activeFilter: ({ includeInactive }) => !includeInactive,
@@ -531,6 +547,20 @@ const DOCUMENT_PACKET_TEMPLATE_SCHEMA_COMPAT_COLUMNS = [
   'published_at',
   'archived_by',
   'archived_at',
+  'instrument_family',
+  'jurisdiction_code',
+  'language_code',
+  'effective_from',
+  'effective_until',
+  'governance_version',
+  'reviewed_by',
+  'reviewed_at',
+  'approved_by',
+  'approved_at',
+  'superseded_by',
+  'superseded_at',
+  'withdrawn_by',
+  'withdrawn_at',
 ]
 
 const DOCUMENT_PACKET_TEMPLATE_WRITE_COMPAT_COLUMNS = new Set([
@@ -545,6 +575,20 @@ const DOCUMENT_PACKET_TEMPLATE_WRITE_COMPAT_COLUMNS = new Set([
   'published_at',
   'archived_by',
   'archived_at',
+  'instrument_family',
+  'jurisdiction_code',
+  'language_code',
+  'effective_from',
+  'effective_until',
+  'governance_version',
+  'reviewed_by',
+  'reviewed_at',
+  'approved_by',
+  'approved_at',
+  'superseded_by',
+  'superseded_at',
+  'withdrawn_by',
+  'withdrawn_at',
 ])
 
 function getDocumentPacketTemplateCompatibleMissingColumn(error) {
@@ -612,6 +656,12 @@ function buildDocumentPacketTemplateMetadata(metadataJson = {}, {
   templateStoragePath,
   templateFileName,
   status,
+  instrumentFamily,
+  jurisdictionCode,
+  languageCode,
+  effectiveFrom,
+  effectiveUntil,
+  governanceVersion,
 } = {}) {
   const metadata = metadataJson && typeof metadataJson === 'object' ? { ...metadataJson } : {}
   assignTemplateMetadataCompatibilityValue(metadata, [
@@ -632,8 +682,14 @@ function buildDocumentPacketTemplateMetadata(metadataJson = {}, {
   if (status !== undefined) {
     const normalizedStatus = normalizeNullableText(status)
     metadata.template_status = normalizedStatus
-    metadata.lifecycle_status = normalizedStatus === 'published' ? 'active' : normalizedStatus
+    metadata.lifecycle_status = normalizedStatus
   }
+  if (instrumentFamily !== undefined) metadata.instrument_family = normalizeNullableText(instrumentFamily)
+  if (jurisdictionCode !== undefined) metadata.jurisdiction_code = normalizeNullableText(jurisdictionCode)
+  if (languageCode !== undefined) metadata.language_code = normalizeNullableText(languageCode)
+  if (effectiveFrom !== undefined) metadata.effective_from = normalizeNullableText(effectiveFrom)
+  if (effectiveUntil !== undefined) metadata.effective_until = normalizeNullableText(effectiveUntil)
+  if (governanceVersion !== undefined) metadata.governance_version = Number(governanceVersion) || 0
 
   return metadata
 }
@@ -1162,6 +1218,15 @@ export async function createDocumentPacketTemplate(input = {}) {
     isActive,
     isDefault,
   })
+  const instrumentFamily = normalizeLegalInstrumentFamily(
+    input.instrumentFamily || input.instrument_family || input.metadataJson?.instrument_family,
+  ) || (packetType === 'otp' ? 'residential_resale' : packetType === 'mandate' ? 'residential_mandate' : packetType)
+  const jurisdictionCode = normalizeText(input.jurisdictionCode || input.jurisdiction_code || 'ZA') || 'ZA'
+  const languageCode = normalizeText(input.languageCode || input.language_code || 'en-ZA') || 'en-ZA'
+  const effectiveFrom = normalizeNullableText(input.effectiveFrom || input.effective_from)
+  const effectiveUntil = normalizeNullableText(input.effectiveUntil || input.effective_until)
+  const governanceVersion = 1
+  const lifecycleAt = new Date().toISOString()
   const metadataJson = buildDocumentPacketTemplateMetadata(
     input.metadataJson && typeof input.metadataJson === 'object' ? input.metadataJson : {},
     {
@@ -1169,6 +1234,12 @@ export async function createDocumentPacketTemplate(input = {}) {
       templateStoragePath: input.templateStoragePath,
       templateFileName: input.templateFileName,
       status: templateStatus,
+      instrumentFamily,
+      jurisdictionCode,
+      languageCode,
+      effectiveFrom,
+      effectiveUntil,
+      governanceVersion,
     },
   )
 
@@ -1189,6 +1260,21 @@ export async function createDocumentPacketTemplate(input = {}) {
     is_active: isActive,
     metadata_json: metadataJson,
     created_by: context.user.id,
+    instrument_family: instrumentFamily,
+    jurisdiction_code: jurisdictionCode,
+    language_code: languageCode,
+    effective_from: effectiveFrom,
+    effective_until: effectiveUntil,
+    governance_version: governanceVersion,
+    ...(templateStatus === 'attorney_review'
+      ? { reviewed_by: context.user.id, reviewed_at: lifecycleAt }
+      : {}),
+    ...(['approved', 'published'].includes(templateStatus)
+      ? { approved_by: context.user.id, approved_at: lifecycleAt }
+      : {}),
+    ...(templateStatus === 'published'
+      ? { published_by: context.user.id, published_at: lifecycleAt }
+      : {}),
   }
 
   const template = await insertDocumentPacketTemplateWithFallback(client, payload)
@@ -1217,6 +1303,17 @@ export async function updateDocumentPacketTemplate(templateId, updates = {}) {
     throw new Error('You can only edit templates owned by your organisation.')
   }
 
+  const existingGovernance = resolveLegalTemplateGovernance(existing)
+  const contentMutationKeys = [
+    'templateLabel', 'description', 'templateStorageBucket', 'templateStoragePath', 'templateFileName',
+    'templateFormat', 'versionTag', 'metadataJson', 'sections', 'instrumentFamily', 'jurisdictionCode',
+    'languageCode', 'effectiveFrom', 'effectiveUntil',
+  ]
+  const mutatesPublishedContent = contentMutationKeys.some((key) => updates[key] !== undefined)
+  if (existingGovernance.immutable && mutatesPublishedContent) {
+    throw new Error('Published legal template versions are immutable. Create a new draft version before changing wording or routing.')
+  }
+
   const payload = {}
   let nextStatus = null
   if (updates.templateLabel !== undefined) payload.template_label = normalizeText(updates.templateLabel)
@@ -1228,12 +1325,53 @@ export async function updateDocumentPacketTemplate(templateId, updates = {}) {
   if (updates.templateFileName !== undefined) payload.template_file_name = normalizeNullableText(updates.templateFileName)
   if (updates.templateFormat !== undefined) payload.template_format = normalizeText(updates.templateFormat).toLowerCase() || 'docx'
   if (updates.versionTag !== undefined) payload.version_tag = normalizeText(updates.versionTag) || existing.version_tag
+  if (updates.instrumentFamily !== undefined || updates.instrument_family !== undefined) {
+    payload.instrument_family = normalizeLegalInstrumentFamily(updates.instrumentFamily || updates.instrument_family) || null
+  }
+  if (updates.jurisdictionCode !== undefined || updates.jurisdiction_code !== undefined) {
+    payload.jurisdiction_code = normalizeText(updates.jurisdictionCode || updates.jurisdiction_code || 'ZA') || 'ZA'
+  }
+  if (updates.languageCode !== undefined || updates.language_code !== undefined) {
+    payload.language_code = normalizeText(updates.languageCode || updates.language_code || 'en-ZA') || 'en-ZA'
+  }
+  if (updates.effectiveFrom !== undefined || updates.effective_from !== undefined) {
+    payload.effective_from = normalizeNullableText(updates.effectiveFrom ?? updates.effective_from)
+  }
+  if (updates.effectiveUntil !== undefined || updates.effective_until !== undefined) {
+    payload.effective_until = normalizeNullableText(updates.effectiveUntil ?? updates.effective_until)
+  }
   if (updates.status !== undefined || updates.templateStatus !== undefined || updates.isActive !== undefined || updates.isDefault !== undefined) {
     nextStatus = normalizeTemplateRegistryStatus(updates.status || updates.templateStatus || existing.status, {
       isActive: updates.isActive === undefined ? existing.is_active : updates.isActive,
       isDefault: updates.isDefault === undefined ? existing.is_default : updates.isDefault,
     })
     payload.status = nextStatus
+    payload.governance_version = Math.max(1, Number(existing.governance_version || 0))
+    const lifecycleAt = new Date().toISOString()
+    if (nextStatus === 'attorney_review') {
+      payload.reviewed_by = context.user.id
+      payload.reviewed_at = lifecycleAt
+    }
+    if (['approved', 'published'].includes(nextStatus)) {
+      payload.approved_by = existing.approved_by || context.user.id
+      payload.approved_at = existing.approved_at || lifecycleAt
+    }
+    if (nextStatus === 'published') {
+      payload.published_by = context.user.id
+      payload.published_at = existing.published_at || lifecycleAt
+    }
+    if (nextStatus === 'superseded') {
+      payload.superseded_by = context.user.id
+      payload.superseded_at = lifecycleAt
+      payload.is_active = false
+      payload.is_default = false
+    }
+    if (nextStatus === 'withdrawn') {
+      payload.withdrawn_by = context.user.id
+      payload.withdrawn_at = lifecycleAt
+      payload.is_active = false
+      payload.is_default = false
+    }
   }
 
   const shouldUpdateMetadata =
@@ -1241,6 +1379,16 @@ export async function updateDocumentPacketTemplate(templateId, updates = {}) {
     updates.templateStorageBucket !== undefined ||
     updates.templateStoragePath !== undefined ||
     updates.templateFileName !== undefined ||
+    updates.instrumentFamily !== undefined ||
+    updates.instrument_family !== undefined ||
+    updates.jurisdictionCode !== undefined ||
+    updates.jurisdiction_code !== undefined ||
+    updates.languageCode !== undefined ||
+    updates.language_code !== undefined ||
+    updates.effectiveFrom !== undefined ||
+    updates.effective_from !== undefined ||
+    updates.effectiveUntil !== undefined ||
+    updates.effective_until !== undefined ||
     nextStatus !== null
 
   if (shouldUpdateMetadata) {
@@ -1260,6 +1408,12 @@ export async function updateDocumentPacketTemplate(templateId, updates = {}) {
         ? updates.templateFileName
         : existing.template_file_name,
       status: nextStatus !== null ? nextStatus : existing.status,
+      instrumentFamily: payload.instrument_family !== undefined ? payload.instrument_family : existing.instrument_family,
+      jurisdictionCode: payload.jurisdiction_code !== undefined ? payload.jurisdiction_code : existing.jurisdiction_code,
+      languageCode: payload.language_code !== undefined ? payload.language_code : existing.language_code,
+      effectiveFrom: payload.effective_from !== undefined ? payload.effective_from : existing.effective_from,
+      effectiveUntil: payload.effective_until !== undefined ? payload.effective_until : existing.effective_until,
+      governanceVersion: payload.governance_version !== undefined ? payload.governance_version : existing.governance_version,
     })
   }
 

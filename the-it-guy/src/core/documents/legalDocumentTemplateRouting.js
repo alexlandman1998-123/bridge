@@ -1,4 +1,9 @@
 import { resolveLegalDocumentScenarioProfile } from './legalDocumentScenarioProfile.js'
+import {
+  LEGAL_INSTRUMENT_FAMILIES,
+  resolveLegalInstrumentFamilyProfile,
+  resolveTemplateLegalInstrumentFamily,
+} from './legalInstrumentFamilyRouter.js'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -70,9 +75,12 @@ export function resolveLegalDocumentTemplateRoutingMetadata(template = {}) {
     'finance_clause_profiles',
     'financeClauseProfiles',
   ])
+  const instrumentFamily = resolveTemplateLegalInstrumentFamily(template, packetType)
 
   return {
     packetType,
+    instrumentFamily: instrumentFamily.familyKey,
+    instrumentFamilyExplicit: instrumentFamily.explicit,
     scenarios,
     sellerProfiles,
     buyerProfiles,
@@ -94,7 +102,33 @@ function profileMatches(values = [], actual = '') {
 
 export function scoreLegalDocumentTemplateCandidate(template = {}, options = {}) {
   const profile = options.scenarioProfile || resolveLegalDocumentScenarioProfile(options)
+  const instrumentFamilyProfile = options.instrumentFamilyProfile || resolveLegalInstrumentFamilyProfile({
+    ...options,
+    packetType: profile.packetType,
+  })
   const metadata = resolveLegalDocumentTemplateRoutingMetadata(template)
+  if (!instrumentFamilyProfile?.generationAllowed) {
+    return {
+      template,
+      profile,
+      instrumentFamilyProfile,
+      metadata,
+      compatible: false,
+      score: Number.NEGATIVE_INFINITY,
+      reasons: ['instrument_family_not_automated'],
+    }
+  }
+  if (metadata.instrumentFamily !== instrumentFamilyProfile.familyKey) {
+    return {
+      template,
+      profile,
+      instrumentFamilyProfile,
+      metadata,
+      compatible: false,
+      score: Number.NEGATIVE_INFINITY,
+      reasons: ['instrument_family_mismatch'],
+    }
+  }
   const scenarioKey = normalizeKey(profile.scenarioKey)
   const checks = [
     ['scenario', metadata.scenarios, scenarioKey, 500, 'exact_scenario_metadata'],
@@ -104,7 +138,8 @@ export function scoreLegalDocumentTemplateCandidate(template = {}, options = {})
     ['finance', metadata.financeProfiles, profile.financeClauseProfile, 100, 'finance_profile_metadata'],
   ]
   const reasons = []
-  let score = 0
+  let score = metadata.instrumentFamilyExplicit ? 1000 : 0
+  if (metadata.instrumentFamilyExplicit) reasons.push('instrument_family_metadata')
 
   for (const [dimension, allowed, actual, weight, reason] of checks) {
     if (!allowed.length) continue
@@ -154,8 +189,13 @@ export function selectLegalDocumentTemplateCandidate(templates = [], options = {
 
 export function buildLegalDocumentTemplateRoutingAudit(selection = null, options = {}) {
   const profile = selection?.profile || options.profile || resolveLegalDocumentScenarioProfile(options)
+  const instrumentFamilyProfile = selection?.instrumentFamilyProfile || options.instrumentFamilyProfile ||
+    resolveLegalInstrumentFamilyProfile({ ...options, packetType: profile.packetType })
   return {
     packetType: profile.packetType,
+    instrumentFamily: instrumentFamilyProfile?.familyKey || LEGAL_INSTRUMENT_FAMILIES.UNKNOWN,
+    instrumentFamilySource: instrumentFamilyProfile?.source || null,
+    instrumentFamilyGenerationAllowed: Boolean(instrumentFamilyProfile?.generationAllowed),
     legalDocumentScenarioKey: profile.scenarioKey,
     scenarioComplete: Boolean(profile.complete),
     missingRoutingFacts: [...(profile.missingRoutingFacts || [])],
@@ -184,6 +224,7 @@ export function buildLegalDocumentTemplateRouteSignature(template = {}) {
   const metadata = resolveLegalDocumentTemplateRoutingMetadata(template)
   const segment = (values = []) => values.length ? [...values].sort().join(',') : '*'
   return [
+    `family:${metadata.instrumentFamily}`,
     `scenario:${segment(metadata.scenarios)}`,
     `seller:${segment(metadata.sellerProfiles)}`,
     `buyer:${segment(metadata.buyerProfiles)}`,

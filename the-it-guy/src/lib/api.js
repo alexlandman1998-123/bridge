@@ -12028,6 +12028,32 @@ async function notifyRolesForTransaction(
   return notifications
 }
 
+export async function notifyTransactionRoles({
+  transactionId,
+  roleTypes = [],
+  title = 'Legal document review required',
+  message = '',
+  notificationType = 'readiness_updated',
+  eventType = 'TransactionUpdated',
+  eventData = {},
+  dedupePrefix = 'legal-document-review',
+  excludeUserId = null,
+} = {}) {
+  const client = requireClient()
+  if (!normalizeNullableUuid(transactionId)) throw new Error('A valid transactionId is required for role notifications.')
+  return notifyRolesForTransaction(client, {
+    transactionId,
+    roleTypes,
+    title,
+    message,
+    notificationType,
+    eventType,
+    eventData,
+    dedupePrefix,
+    excludeUserId,
+  })
+}
+
 async function computeTransactionReadinessSnapshot(client, transactionId) {
   if (!transactionId) {
     return null
@@ -15453,7 +15479,7 @@ async function fetchTransactionRowById(client, transactionId) {
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, matter_number, transaction_reference, transaction_type, property_type, property_tenure, seller_type, seller_has_existing_bond, existing_bond, cancellation_required, vat_treatment, routing_profile_version, routing_profile_json, development_id, unit_id, listing_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, alteration_charge_treatment, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+        'id, matter_number, transaction_reference, transaction_type, property_type, property_tenure, seller_type, seller_has_existing_bond, existing_bond, cancellation_required, vat_treatment, routing_profile_version, routing_profile_json, legal_instrument_family, legal_deal_facts_json, legal_deal_facts_version, legal_deal_facts_updated_at, legal_deal_facts_updated_by, development_id, unit_id, listing_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, alteration_charge_treatment, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
       ),
     )
     .eq('id', transactionId)
@@ -15473,6 +15499,11 @@ async function fetchTransactionRowById(client, transactionId) {
       isMissingColumnError(query.error, 'vat_treatment') ||
       isMissingColumnError(query.error, 'routing_profile_version') ||
       isMissingColumnError(query.error, 'routing_profile_json') ||
+      isMissingColumnError(query.error, 'legal_instrument_family') ||
+      isMissingColumnError(query.error, 'legal_deal_facts_json') ||
+      isMissingColumnError(query.error, 'legal_deal_facts_version') ||
+      isMissingColumnError(query.error, 'legal_deal_facts_updated_at') ||
+      isMissingColumnError(query.error, 'legal_deal_facts_updated_by') ||
       isMissingColumnError(query.error, 'property_address_line_1') ||
       isMissingColumnError(query.error, 'matter_owner') ||
       isMissingColumnError(query.error, 'development_id') ||
@@ -15541,6 +15572,11 @@ async function fetchTransactionRowById(client, transactionId) {
       'vat_treatment',
       'routing_profile_version',
       'routing_profile_json',
+      'legal_instrument_family',
+      'legal_deal_facts_json',
+      'legal_deal_facts_version',
+      'legal_deal_facts_updated_at',
+      'legal_deal_facts_updated_by',
       'property_address_line_1',
       'matter_owner',
       'development_id',
@@ -28217,6 +28253,14 @@ export async function fetchTransactionById(transactionId) {
       })
       return {
         ...unitDetail,
+        transaction: {
+          ...(unitDetail.transaction || {}),
+          legal_instrument_family: transaction.legal_instrument_family || null,
+          legal_deal_facts_json: transaction.legal_deal_facts_json || {},
+          legal_deal_facts_version: transaction.legal_deal_facts_version || null,
+          legal_deal_facts_updated_at: transaction.legal_deal_facts_updated_at || null,
+          legal_deal_facts_updated_by: transaction.legal_deal_facts_updated_by || null,
+        },
         transactionRequiredDocuments: liveChecklist.requiredDocuments,
         requiredDocumentChecklist: liveChecklist.requiredDocumentChecklist,
         documentSummary: liveChecklist.documentSummary,

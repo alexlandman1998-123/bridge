@@ -60,6 +60,23 @@ test('rejects a template when any configured legal dimension conflicts', () => {
   assert.deepEqual(candidate.reasons, ['finance_mismatch'])
 })
 
+test('will not route a specialist agreement through a residential OTP template', () => {
+  const candidate = scoreLegalDocumentTemplateCandidate({
+    id: 'residential-default',
+    packet_type: 'otp',
+    metadata_json: {},
+  }, {
+    scenarioProfile: otpProfile,
+    instrumentFamilyProfile: {
+      familyKey: 'developer_sale',
+      generationAllowed: false,
+    },
+  })
+
+  assert.equal(candidate.compatible, false)
+  assert.deepEqual(candidate.reasons, ['instrument_family_not_automated'])
+})
+
 test('reads existing mandate route metadata through the shared router', () => {
   const metadata = resolveLegalDocumentTemplateRoutingMetadata({
     packet_type: 'mandate',

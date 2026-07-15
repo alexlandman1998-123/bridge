@@ -32,6 +32,8 @@ import {
   fetchCrossModuleDocumentConsistencySnapshot,
   summarizeCrossModuleDocumentConsistencyAudit,
 } from '../services/documents/crossModuleDocumentConsistencyService'
+import { getLegalClausePackOperationalDiagnosticsSnapshot } from '../services/documents/legalClausePackOperationalDiagnosticsService'
+import { executeLegalClausePackEscalationPlan } from '../services/documents/legalClausePackEscalationService'
 
 function StatCard({ label, value, tone = 'neutral' }) {
   const toneClass =
@@ -230,6 +232,11 @@ export default function PlatformDiagnosticsPage() {
   const [sellerDocumentReconciliationApplyLoading, setSellerDocumentReconciliationApplyLoading] = useState(false)
   const [documentConsistency, setDocumentConsistency] = useState(null)
   const [documentConsistencyLoading, setDocumentConsistencyLoading] = useState(false)
+  const [legalOtpDiagnostics, setLegalOtpDiagnostics] = useState(null)
+  const [legalOtpDiagnosticsLoading, setLegalOtpDiagnosticsLoading] = useState(false)
+  const [legalOtpEscalationPlan, setLegalOtpEscalationPlan] = useState(null)
+  const [legalOtpEscalationLoading, setLegalOtpEscalationLoading] = useState(false)
+  const [legalOtpEscalationApplying, setLegalOtpEscalationApplying] = useState(false)
 
   const summary = useMemo(() => result?.summary || result || {}, [result])
   const issues = result?.issues || []
@@ -518,6 +525,70 @@ export default function PlatformDiagnosticsPage() {
     }
   }
 
+  async function loadLegalOtpDiagnostics() {
+    try {
+      setLegalOtpDiagnosticsLoading(true)
+      setError('')
+      const snapshot = await getLegalClausePackOperationalDiagnosticsSnapshot({
+        client: supabase,
+        organisationId: currentWorkspace?.id || '',
+        limit: 100,
+      })
+      setLegalOtpDiagnostics(snapshot)
+      setLegalOtpEscalationPlan(null)
+    } catch (diagnosticError) {
+      setError(diagnosticError?.message || 'Governed OTP signature-release diagnostics failed.')
+    } finally {
+      setLegalOtpDiagnosticsLoading(false)
+    }
+  }
+
+  async function planLegalOtpEscalations() {
+    if (!legalOtpDiagnostics) return
+    try {
+      setLegalOtpEscalationLoading(true)
+      setError('')
+      const plan = await executeLegalClausePackEscalationPlan({
+        diagnostics: legalOtpDiagnostics,
+        dryRun: true,
+      })
+      setLegalOtpEscalationPlan(plan)
+    } catch (planError) {
+      setError(planError?.message || 'Unable to prepare the OTP escalation plan.')
+    } finally {
+      setLegalOtpEscalationLoading(false)
+    }
+  }
+
+  async function applyLegalOtpEscalations() {
+    const executableCount = Number(legalOtpEscalationPlan?.summary?.executableActions || 0)
+    if (!executableCount) return
+    const confirmed = window.confirm(`Create in-app review notifications for ${executableCount} OTP escalation action${executableCount === 1 ? '' : 's'}? Existing unread notifications with the same packet/version state will not be duplicated.`)
+    if (!confirmed) return
+    try {
+      setLegalOtpEscalationApplying(true)
+      setError('')
+      const latestDiagnostics = await getLegalClausePackOperationalDiagnosticsSnapshot({
+        client: supabase,
+        organisationId: currentWorkspace?.id || '',
+        limit: 100,
+      })
+      const applied = await executeLegalClausePackEscalationPlan({
+        diagnostics: latestDiagnostics,
+        dryRun: false,
+        approvedPlanFingerprint: legalOtpEscalationPlan.planFingerprint,
+        approvedActionKeys: legalOtpEscalationPlan.actionKeys,
+        actorUserId: authState.user?.id || null,
+      })
+      setLegalOtpDiagnostics(latestDiagnostics)
+      setLegalOtpEscalationPlan(applied)
+    } catch (applyError) {
+      setError(applyError?.message || 'Unable to apply the OTP escalation plan.')
+    } finally {
+      setLegalOtpEscalationApplying(false)
+    }
+  }
+
   async function runNotificationReminderDryRun() {
     try {
       setNotificationDispatchLoading(true)
@@ -625,6 +696,8 @@ export default function PlatformDiagnosticsPage() {
   const documentConsistencyGate = documentConsistency
     ? documentConsistency.gate || buildCrossModuleDocumentConsistencyGate(documentConsistency)
     : null
+  const legalOtpDiagnosticRows = legalOtpDiagnostics?.records || []
+  const legalOtpDiagnosticWarnings = legalOtpDiagnostics?.queryWarnings || []
 
   return (
     <section className="page">
@@ -738,6 +811,127 @@ export default function PlatformDiagnosticsPage() {
             </div>
           </div>
         ) : null}
+
+        <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-white p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Governed OTP signature release</h2>
+              <p className="mt-2 max-w-3xl text-sm text-[#60758d]">
+                Audit the latest generated OTP version, transaction-readiness evidence, reviewer authority, approval fingerprint, and release state. This check is read-only.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="header-secondary-cta" onClick={loadLegalOtpDiagnostics} disabled={legalOtpDiagnosticsLoading || legalOtpEscalationApplying}>
+                {legalOtpDiagnosticsLoading ? 'Checking OTP releases...' : 'Run OTP release audit'}
+              </button>
+              <button type="button" className="header-secondary-cta" onClick={planLegalOtpEscalations} disabled={!legalOtpDiagnostics || legalOtpEscalationLoading || legalOtpEscalationApplying}>
+                {legalOtpEscalationLoading ? 'Planning...' : 'Plan review notifications'}
+              </button>
+              <button type="button" className="header-primary-cta" onClick={applyLegalOtpEscalations} disabled={legalOtpEscalationApplying || legalOtpEscalationLoading || !legalOtpEscalationPlan?.dryRun || !legalOtpEscalationPlan?.summary?.executableActions}>
+                {legalOtpEscalationApplying ? 'Notifying...' : 'Apply reviewed plan'}
+              </button>
+            </div>
+          </div>
+
+          {legalOtpDiagnostics ? (
+            <div className="grid gap-4">
+              <div className="grid gap-3 md:grid-cols-5">
+                <StatCard label="Gate" value={legalOtpDiagnostics.gate?.status || 'unknown'} tone={getDiagnosticStatusTone(legalOtpDiagnostics.gate?.status)} />
+                <StatCard label="Score" value={`${legalOtpDiagnostics.summary?.score ?? 0}%`} tone={(legalOtpDiagnostics.summary?.score || 0) >= 90 ? 'success' : 'warning'} />
+                <StatCard label="Governed" value={legalOtpDiagnostics.summary?.governedPackets || 0} />
+                <StatCard label="Attorney queue" value={legalOtpDiagnostics.summary?.awaitingAttorney || 0} tone={legalOtpDiagnostics.summary?.awaitingAttorney ? 'warning' : 'success'} />
+                <StatCard label="Critical" value={legalOtpDiagnostics.summary?.criticalPackets || 0} tone={legalOtpDiagnostics.summary?.criticalPackets ? 'critical' : 'success'} />
+              </div>
+              <div className="grid gap-3 md:grid-cols-4">
+                <StatCard label="Approved" value={legalOtpDiagnostics.summary?.approvedPackets || 0} tone="success" />
+                <StatCard label="Safely released" value={legalOtpDiagnostics.summary?.releasedPackets || 0} tone="success" />
+                <StatCard label="Approval queue" value={legalOtpDiagnostics.summary?.awaitingApproval || 0} tone={legalOtpDiagnostics.summary?.awaitingApproval ? 'warning' : 'success'} />
+                <StatCard label="Legacy visible" value={legalOtpDiagnostics.summary?.legacyPackets || 0} />
+              </div>
+              <p className={`rounded-[12px] border px-3 py-2 text-sm ${legalOtpDiagnostics.gate?.status === 'fail' ? 'border-[#f2c8c4] bg-[#fff5f4] text-[#9f1c1c]' : legalOtpDiagnostics.gate?.status === 'warning' ? 'border-[#f5d3a4] bg-[#fff8ec] text-[#8a4b10]' : 'border-[#cfe8d8] bg-[#effaf3] text-[#236340]'}`}>
+                Phase 8 gate {legalOtpDiagnostics.gate?.status || 'unknown'}: {legalOtpDiagnostics.gate?.reason || 'No result recorded.'}
+              </p>
+              {legalOtpDiagnosticWarnings.length ? (
+                <p className="rounded-[12px] border border-[#f5d3a4] bg-[#fff8ec] px-3 py-2 text-sm text-[#8a4b10]">
+                  The audit is partial because {legalOtpDiagnosticWarnings.length} diagnostic quer{legalOtpDiagnosticWarnings.length === 1 ? 'y' : 'ies'} could not be completed.
+                </p>
+              ) : null}
+              <div className="overflow-hidden rounded-[14px] border border-[#dde4ee] bg-white">
+                <table className="w-full min-w-[980px] text-left text-sm">
+                  <thead className="bg-[#f7f9fc] text-xs uppercase tracking-[0.08em] text-[#60758d]">
+                    <tr>
+                      <th className="px-4 py-3">Severity</th>
+                      <th className="px-4 py-3">OTP</th>
+                      <th className="px-4 py-3">Release state</th>
+                      <th className="px-4 py-3">Reviewer</th>
+                      <th className="px-4 py-3">Next action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#edf1f6]">
+                    {legalOtpDiagnosticRows.map((row) => (
+                      <tr key={row.packetId}>
+                        <td className="px-4 py-3 font-semibold capitalize">{row.severity}</td>
+                        <td className="px-4 py-3">
+                          <p className="font-semibold text-[#31485e]">{row.title}</p>
+                          <p className="mt-1 text-xs text-[#60758d]">Version {row.versionNumber || '-'} · {row.packetStatus}</p>
+                        </td>
+                        <td className="px-4 py-3">{String(row.operationalState || '').replace(/_/g, ' ')}</td>
+                        <td className="px-4 py-3">{row.approvedByRole ? row.approvedByRole.replace(/_/g, ' ') : row.requiresLegalSpecialist ? 'Attorney required' : 'Not approved'}</td>
+                        <td className="px-4 py-3 text-[#60758d]">{row.action}</td>
+                      </tr>
+                    ))}
+                    {!legalOtpDiagnosticRows.length ? (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-8 text-center text-[#60758d]">No OTP packets were found in this organisation.</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+              {legalOtpEscalationPlan ? (
+                <div className={`rounded-[14px] border p-4 ${legalOtpEscalationPlan.dryRun ? 'border-[#f5d3a4] bg-[#fff8ec]' : 'border-[#cfe8d8] bg-[#effaf3]'}`}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">
+                        {legalOtpEscalationPlan.dryRun ? 'Phase 9 notification plan' : 'Phase 9 notifications applied'}
+                      </h3>
+                      <p className="mt-2 text-sm text-[#60758d]">
+                        {legalOtpEscalationPlan.dryRun
+                          ? 'Review the target roles and actions below. No notifications have been created.'
+                          : `Plan ${legalOtpEscalationPlan.planFingerprint} was revalidated immediately before notification.`}
+                      </p>
+                    </div>
+                    <span className="text-xs font-semibold text-[#31485e]">Plan {legalOtpEscalationPlan.planFingerprint}</span>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-5">
+                    <StatCard label="Actions" value={legalOtpEscalationPlan.summary?.totalActions || 0} />
+                    <StatCard label="Executable" value={legalOtpEscalationPlan.summary?.executableActions || 0} tone={legalOtpEscalationPlan.summary?.executableActions ? 'warning' : 'success'} />
+                    <StatCard label="Critical" value={legalOtpEscalationPlan.summary?.criticalActions || 0} tone={legalOtpEscalationPlan.summary?.criticalActions ? 'critical' : 'success'} />
+                    <StatCard label="Attorney" value={legalOtpEscalationPlan.summary?.attorneyActions || 0} />
+                    <StatCard label="Failed" value={legalOtpEscalationPlan.applySummary?.failed || 0} tone={legalOtpEscalationPlan.applySummary?.failed ? 'critical' : 'success'} />
+                  </div>
+                  {legalOtpEscalationPlan.actions?.length ? (
+                    <ul className="mt-4 divide-y divide-[#e5d8bf] text-sm text-[#60758d]">
+                      {legalOtpEscalationPlan.actions.slice(0, 12).map((action) => (
+                        <li key={action.actionKey} className="grid gap-2 py-3 md:grid-cols-[minmax(0,1fr)_180px_minmax(0,1.4fr)]">
+                          <span className="font-semibold text-[#31485e]">{action.title}</span>
+                          <span>{action.targetRoles.join(', ')}</span>
+                          <span>{action.executable ? action.message : action.skipReason}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-sm text-[#60758d]">No review notifications are required for the current audit.</p>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <p className="rounded-[14px] border border-dashed border-[#d7e2ee] bg-[#f9fbfe] px-4 py-6 text-center text-sm text-[#60758d]">
+              Run the audit before enabling governed OTP signature release in a production organisation.
+            </p>
+          )}
+        </div>
 
         <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-white p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">

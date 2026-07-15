@@ -30,6 +30,7 @@ export const CANONICAL_MERGE_FIELD_CATEGORIES = [
   'Retail',
   'Agricultural',
   'Document Metadata',
+  'Legal Deal Facts',
 ]
 
 const CANONICAL_MERGE_FIELD_DEFINITIONS = [
@@ -1604,6 +1605,45 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     validationRule: 'text_or_empty',
     aliases: ['transaction.reference'],
   },
+
+  // Canonical South African Legal Deal Facts
+  ...[
+    ['legal_deal_facts_version', 'Legal Facts Version', 'Version of the canonical legal-facts schema.', 'sa_legal_deal_facts_v1'],
+    ['legal_deal_facts_key', 'Legal Facts Route Key', 'Stable summary key for the captured legal situation.', 'residential_resale__company__trust__sectional_title__bond'],
+    ['legal_instrument_family', 'Agreement Family', 'Agreement family selected before clause routing.', 'residential_resale'],
+    ['legal_clause_pack_version', 'Clause Pack Resolver Version', 'Version of the deterministic clause-pack resolver.', 'sa_legal_clause_packs_v1'],
+    ['legal_clause_pack_selection_key', 'Clause Pack Selection Key', 'Stable key for the clause decision captured with this document.', 'sa_legal_clause_packs_v1__residential_resale__company__trust'],
+    ['legal_clause_pack_review_items', 'Clause Pack Review Items', 'Comma-separated review decisions that must be resolved before signature.', 'vat_treatment_unknown'],
+    ['legal_clause_pack_conflicts', 'Clause Pack Conflicts', 'Contradictory fact codes that prevent safe clause assembly.', 'exclusive_use_without_sectional_title'],
+    ['legal_clause_pack_draft_allowed', 'Clause Pack Draft Allowed', 'Whether the captured facts allow automated draft assembly.', 'yes'],
+    ['legal_clause_pack_signing_ready', 'Clause Pack Signing Ready', 'Whether all clause-selection review items are resolved.', 'no'],
+    ['seller_marriage_country', 'Seller Country of Marriage', 'Country whose matrimonial law may govern the seller.', 'South Africa'],
+    ['buyer_marriage_country', 'Buyer Country of Marriage', 'Country whose matrimonial law may govern the buyer.', 'South Africa'],
+    ['property_in_estate_or_hoa', 'Estate / HOA Applies', 'Whether estate or homeowners-association rules apply.', 'yes'],
+    ['property_estate_or_hoa_name', 'Estate / HOA Name', 'Registered estate or homeowners-association name.', 'Waterfall Country Estate'],
+    ['property_exclusive_use_areas', 'Exclusive-use Areas', 'Whether sectional-title exclusive-use areas form part of the sale.', 'yes'],
+    ['deposit_holder', 'Deposit Holder', 'Party nominated to hold the deposit in trust.', 'transfer_attorney'],
+    ['bond_approval_deadline', 'Bond Approval Deadline', 'Deadline for fulfilment of the bond suspensive condition.', '2026-08-14'],
+    ['sale_of_existing_property_condition', 'Linked Property Sale Condition', 'Whether the offer depends on sale of another property.', 'yes'],
+    ['linked_sale_deadline', 'Linked Sale Deadline', 'Deadline for the linked-property-sale condition.', '2026-08-31'],
+    ['occupation_before_transfer', 'Occupation Before Transfer', 'Whether occupation is expected before registration of transfer.', 'yes'],
+    ['occupational_rent', 'Occupational Rent', 'Monthly occupational consideration before or after transfer.', '15000'],
+    ['existing_lease', 'Existing Lease / Occupier', 'Whether an existing lease or occupier affects vacant occupation.', 'no'],
+    ['lease_expiry_date', 'Existing Lease Expiry', 'Expiry date of the existing lease, when applicable.', '2026-12-31'],
+    ['seller_vat_status', 'Seller VAT Status', 'Seller VAT status for this disposal.', 'not_vendor'],
+    ['vat_treatment', 'VAT / Transfer-duty Treatment', 'Tax treatment selected or marked for attorney confirmation.', 'transfer_duty'],
+  ].map(([key, label, description, sampleValue]) => ({
+    key,
+    label,
+    category: 'Legal Deal Facts',
+    description,
+    dataSource: `transactions.legal_deal_facts_json (${key})`,
+    required: false,
+    packetTypes: ['otp'],
+    sampleValue,
+    validationRule: 'text_or_empty',
+    aliases: [],
+  })),
 
   // Commercial Context
   {

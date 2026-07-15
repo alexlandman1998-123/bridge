@@ -45,6 +45,10 @@ import {
 } from '../../lib/mandateSignatureRules'
 import { templateIsUsableForGeneration } from '../../core/documents/structuredTemplateRenderer'
 import { resolveLegalDocumentSignerProfile } from '../../core/documents/legalDocumentSignerProfile'
+import {
+  buildLegalSignatureReleaseApproval,
+  resolveLegalClausePackSignatureRelease,
+} from '../../core/documents/legalClausePackSignatureRelease'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -350,6 +354,19 @@ function toFriendlyWorkspaceError(error = null, fallback = 'Unable to complete t
   }
   if (code === 'MISSING_TEMPLATE_FILE') return 'The active legal template is not available for rendering. Check the current template configuration first.'
   if (code === 'NATIVE_TEMPLATE_NOT_RENDERABLE') return 'The active native template is not renderable yet. Cover the required sections and merge fields first.'
+  if (code === 'LEGAL_CLAUSE_PACK_TRANSACTION_READINESS_BLOCKED') {
+    const missing = Array.isArray(error?.validation?.legalClausePackTransactionReadiness?.missingFields)
+      ? error.validation.legalClausePackTransactionReadiness.missingFields
+      : []
+    return [
+      'OTP Details Incomplete',
+      ...missing.slice(0, 8).map((issue) => `- ${issue.placeholderLabel || issue.fieldKey}`),
+      'Complete the highlighted transaction details before generating the OTP.',
+    ].join('\n')
+  }
+  if (code === 'LEGAL_SIGNATURE_RELEASE_BLOCKED') {
+    return raw || 'Approve the current OTP version before sending it for signature.'
+  }
   if (code === 'VALIDATION_BLOCKED') {
     const legalScenarioMissing = Array.isArray(error?.validation?.legalDocumentMissingRoutingFacts)
       ? error.validation.legalDocumentMissingRoutingFacts
@@ -1363,7 +1380,7 @@ function resolveModeFromAction(actionKey) {
   return 'view'
 }
 
-const NORMALIZED_LIFECYCLE_STEPS = ['draft', 'approved', 'locked', 'sent', 'partially_signed', 'signed', 'archived']
+const NORMALIZED_LIFECYCLE_STEPS = ['draft', 'in_review', 'approved', 'locked', 'sent', 'partially_signed', 'signed', 'archived']
 const PHYSICAL_MANDATE_LIFECYCLE_STEPS = ['draft', 'approved', 'locked', 'printed', 'uploaded', 'signed', 'archived']
 const PHYSICAL_LIFECYCLE_STATE_MAP = {
   sent: 'printed',
@@ -2630,6 +2647,87 @@ function MandateRoutePanel({ routing = null, className = '' }) {
   )
 }
 
+function LegalSignatureReleasePanel({ release, onApprove, onReturn, busy = false, className = '' }) {
+  if (!release?.governed) return null
+  const reviewItems = Array.isArray(release.attorneyReviewItems) ? release.attorneyReviewItems : []
+  const approvedAt = normalizeText(release.approval?.reviewedAt || release.approval?.reviewed_at)
+  const statusLabel = release.approved
+    ? 'Approved for signature'
+    : release.staleApproval
+      ? 'Approval expired'
+      : release.requiresLegalSpecialist
+        ? 'Attorney review required'
+        : 'Approval required'
+  const statusClassName = release.approved
+    ? 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
+    : 'border-[#f1dfb8] bg-[#fff8eb] text-[#8a5b12]'
+
+  return (
+    <section className={`rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_14px_34px_rgba(16,32,51,0.05)] ${className}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#effaf4] text-[#238457]">
+            <ShieldCheck size={19} />
+          </span>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ea4]">Signature release</p>
+            <h4 className="mt-1 text-[1rem] font-semibold text-[#102033]">Legal review checkpoint</h4>
+          </div>
+        </div>
+        <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusClassName}`}>
+          {statusLabel}
+        </span>
+      </div>
+
+      {release.approved ? (
+        <div className="mt-4 rounded-[18px] border border-[#d9eee4] bg-[#effaf4] px-4 py-3 text-sm text-[#23784d]">
+          <p className="font-semibold">Current OTP version cleared</p>
+          <p className="mt-1 text-xs leading-5">
+            Approved by {normalizeText(release.approval?.reviewedByRole || release.approval?.reviewed_by_role).replace(/_/g, ' ') || 'an authorised reviewer'}
+            {approvedAt ? ` · ${formatDateTime(approvedAt)}` : ''}.
+          </p>
+        </div>
+      ) : (
+        <p className="mt-4 text-sm leading-6 text-[#60758d]">
+          {release.requiresLegalSpecialist
+            ? 'The transaction contains legal exceptions. A logged-in attorney must approve this exact OTP version before links can be created.'
+            : 'Review the generated OTP, then approve this exact version before releasing it to the parties.'}
+        </p>
+      )}
+
+      {reviewItems.length ? (
+        <div className="mt-4 space-y-2">
+          {reviewItems.map((item, index) => (
+            <div key={normalizeText(item?.code) || index} className="rounded-[16px] border border-[#f1dfb8] bg-[#fffaf1] px-3 py-2.5">
+              <p className="text-xs font-semibold text-[#7a4d10]">{normalizeText(item?.relatedPackLabel || item?.section || 'Specialist review')}</p>
+              <p className="mt-1 text-xs leading-5 text-[#795f32]">{normalizeText(item?.message) || 'Attorney confirmation is required.'}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {!release.approved ? (
+        <div className="mt-4">
+          <Button type="button" size="sm" onClick={onApprove} disabled={busy || !release.canApprove}>
+            {release.requiresLegalSpecialist ? 'Attorney Approve OTP' : 'Approve OTP Version'}
+          </Button>
+          {!release.canApprove ? (
+            <p className="mt-2 text-xs leading-5 text-[#8a6a1d]">
+              {release.requiresLegalSpecialist
+                ? 'Your role cannot clear specialist legal items. Open this matter in the attorney workspace.'
+                : 'Your role cannot approve legal documents.'}
+            </p>
+          ) : null}
+        </div>
+      ) : onReturn ? (
+        <button type="button" onClick={onReturn} disabled={busy} className="mt-4 text-xs font-semibold text-[#60758d] hover:text-[#102033]">
+          Return to draft
+        </button>
+      ) : null}
+    </section>
+  )
+}
+
 export default function LegalDocumentWorkspace({
   open = true,
   onClose,
@@ -2654,7 +2752,7 @@ export default function LegalDocumentWorkspace({
   autoGenerateEnabled = true,
 }) {
   const isPageMode = displayMode === 'page'
-  const { role: workspaceRole } = useWorkspace()
+  const { role: workspaceRole, profile: workspaceProfile } = useWorkspace()
   const legalPermissions = useMemo(
     () => resolveLegalPermissions(workspaceRole),
     [workspaceRole],
@@ -2778,6 +2876,11 @@ export default function LegalDocumentWorkspace({
   )
   const isMandatePacket = normalizeKey(packetType) === 'mandate'
   const isOtpPacket = normalizeKey(packetType) === 'otp'
+  const legalSignatureRelease = useMemo(() => resolveLegalClausePackSignatureRelease({
+    packet: statusState?.packet || packetDetail,
+    version: latestVersion,
+    actorRole: workspaceRole,
+  }), [latestVersion, packetDetail, statusState?.packet, workspaceRole])
   const sourceContext = useMemo(() => (
     statusState?.packet?.source_context_json && typeof statusState.packet.source_context_json === 'object'
       ? statusState.packet.source_context_json
@@ -3152,7 +3255,8 @@ export default function LegalDocumentWorkspace({
   ])
 
   const primaryLabel = useMemo(() => {
-    if (normalizedLifecycleState === 'approved' || normalizedLifecycleState === 'locked') return 'Send for Signature'
+    if (normalizedLifecycleState === 'approved') return 'Lock Approved Document'
+    if (normalizedLifecycleState === 'locked') return 'Send for Signature'
     return resolvePrimaryActionLabel(effectiveMode, statusState?.state, packetType)
   }, [effectiveMode, normalizedLifecycleState, packetType, statusState?.state])
 
@@ -4119,9 +4223,9 @@ export default function LegalDocumentWorkspace({
     const current = normalizedLifecycleState
     const target = normalizeLifecycleState(nextState)
     const allowedTransitions = {
-      draft: ['sent'],
-      in_review: ['draft', 'sent'],
-      approved: ['locked', 'sent'],
+      draft: legalSignatureRelease.governed ? ['in_review', 'approved'] : ['approved', 'sent'],
+      in_review: legalSignatureRelease.governed ? ['draft', 'approved'] : ['draft', 'approved', 'sent'],
+      approved: ['draft', 'locked'],
       locked: ['sent'],
       sent: [],
       partially_signed: [],
@@ -4134,7 +4238,12 @@ export default function LegalDocumentWorkspace({
     }
   }
 
-  function getApprovalAndSendBlockers({ requireSendState = false, packetOverride = null, statusOverride = null } = {}) {
+  function getApprovalAndSendBlockers({
+    requireSendState = false,
+    requireSignatureRelease = false,
+    packetOverride = null,
+    statusOverride = null,
+  } = {}) {
     const effectiveStatus = statusOverride || statusStateRef.current || statusState || null
     const packet = packetOverride || effectiveStatus?.packet || null
     const versionRows = Array.isArray(effectiveStatus?.versions) ? effectiveStatus.versions : []
@@ -4143,6 +4252,14 @@ export default function LegalDocumentWorkspace({
     if (!packet?.id) blockers.push('Packet record is missing.')
     if (!signingVersion?.id) blockers.push('Generate a packet version before this action.')
     if (!draftValidationSummary.isValid) blockers.push('Resolve merge field blockers before continuing.')
+    if (requireSignatureRelease) {
+      const release = resolveLegalClausePackSignatureRelease({
+        packet,
+        version: signingVersion,
+        actorRole: workspaceRole,
+      })
+      if (!release.canSendForSignature && release.blockers.length) blockers.push(release.blockers[0])
+    }
     if (requireSendState && signerValidation.blockers.length) {
       blockers.push(signerValidation.blockers[0])
     }
@@ -4241,11 +4358,24 @@ export default function LegalDocumentWorkspace({
     }
 
     if (target === 'approved') {
+      const legalSignatureReleaseApproval = legalSignatureRelease.governed
+        ? buildLegalSignatureReleaseApproval({
+            version,
+            reviewerRole: workspaceRole,
+            reviewerId: workspaceProfile?.id,
+            reviewerName: workspaceProfile?.fullName || workspaceProfile?.full_name,
+            reviewedAt: nowIso,
+          })
+        : null
       nextSummary.approval_snapshot = {
         approvedAt: nowIso,
         approvedByRole: normalizeText(workspaceRole) || null,
         reviewState: target,
         ...frozenRenderSnapshot,
+        legalSignatureRelease: legalSignatureReleaseApproval,
+      }
+      if (legalSignatureReleaseApproval) {
+        nextSummary.legal_signature_release = legalSignatureReleaseApproval
       }
     }
 
@@ -4262,6 +4392,13 @@ export default function LegalDocumentWorkspace({
 
     if (target === 'draft' || target === 'in_review') {
       nextSummary.content_locked = false
+      delete nextSummary.legal_signature_release
+      if (nextSummary.approval_snapshot && typeof nextSummary.approval_snapshot === 'object') {
+        const approvalSnapshot = { ...nextSummary.approval_snapshot }
+        delete approvalSnapshot.legalSignatureRelease
+        delete approvalSnapshot.legal_signature_release
+        nextSummary.approval_snapshot = approvalSnapshot
+      }
     }
 
     return nextSummary
@@ -4275,7 +4412,10 @@ export default function LegalDocumentWorkspace({
     assertLifecycleTransitionAllowed(target)
 
     if (requireApprovalValidation) {
-      const blockers = getApprovalAndSendBlockers({ requireSendState: false })
+      const blockers = getApprovalAndSendBlockers({
+        requireSendState: false,
+        requireSignatureRelease: target === 'locked' || target === 'sent',
+      })
       if (blockers.length) {
         throw new Error(`Cannot continue: ${blockers[0]}`)
       }
@@ -4370,6 +4510,10 @@ export default function LegalDocumentWorkspace({
             normalizeText(updatedVersion?.validation_summary_json?.frozen_render_snapshot?.contentFingerprint) ||
             normalizeText(latestVersion?.validation_summary_json?.frozen_render_snapshot?.contentFingerprint) ||
             null,
+          legalSignatureReleaseVersion:
+            normalizeText(updatedVersion?.validation_summary_json?.legal_signature_release?.schemaVersion) || null,
+          legalSignatureReleaseReviewCodes:
+            updatedVersion?.validation_summary_json?.legal_signature_release?.attorneyReviewCodes || [],
         },
       })
     }
@@ -4510,6 +4654,7 @@ export default function LegalDocumentWorkspace({
         : await ensureTemplateReferenceBeforeSend()
       const blockers = getApprovalAndSendBlockers({
         requireSendState: true,
+        requireSignatureRelease: true,
         packetOverride: packetForSend,
         statusOverride: persistedStatus,
       })
@@ -4868,6 +5013,11 @@ export default function LegalDocumentWorkspace({
         setActionFeedback('Document returned to draft.')
       } else if (actionKey === 'approve_draft') {
         assertWorkspacePermission('canApprove', 'approve legal drafts')
+        if (legalSignatureRelease.governed && !legalSignatureRelease.canApprove) {
+          throw new Error(legalSignatureRelease.requiresLegalSpecialist
+            ? 'Only an attorney can approve the specialist legal items on this OTP.'
+            : 'Your role cannot approve this OTP for signature release.')
+        }
         const blockers = getApprovalAndSendBlockers({ requireSendState: false })
         if (blockers.length) throw new Error(`Cannot approve: ${blockers[0]}`)
         await transitionLifecycleState('approved', { requireApprovalValidation: true })
@@ -5788,6 +5938,16 @@ export default function LegalDocumentWorkspace({
 
             <div className={secondaryGridClassName}>
               <aside className="h-full space-y-5">
+                {isOtpPacket ? (
+                  <LegalSignatureReleasePanel
+                    release={legalSignatureRelease}
+                    onApprove={() => runReviewAction('approve_draft')}
+                    onReturn={normalizedLifecycleState === 'approved' ? () => runReviewAction('return_draft') : null}
+                    busy={actionBusy || loading}
+                    className={reviewRailPanelClassName}
+                  />
+                ) : null}
+
                 {isMandatePacket ? (
                   <MandateRoutePanel routing={mandateRoutingSnapshot} />
                 ) : null}

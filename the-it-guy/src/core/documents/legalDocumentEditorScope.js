@@ -1,6 +1,7 @@
 import { listConditionalPackDataRules } from './conditionalPackDataRules.js'
 import { normalizeLegalDocumentEditorScope } from './legalDocumentCatalog.js'
 import { sectionMatchesLegalDocumentEditorSituation } from './legalDocumentEditorSituations.js'
+import { SOUTH_AFRICAN_LEGAL_CLAUSE_PACK_DEFINITIONS } from './southAfricanLegalClausePacks.js'
 
 const SITUATION_KEYS_BY_PACKET_TYPE = new Map()
 
@@ -45,7 +46,12 @@ function getSituationSectionKeys(packetType = '') {
   const normalizedPacketType = normalizeKey(packetType)
   if (SITUATION_KEYS_BY_PACKET_TYPE.has(normalizedPacketType)) return SITUATION_KEYS_BY_PACKET_TYPE.get(normalizedPacketType)
   const keys = new Set(
-    listConditionalPackDataRules({ packetType })
+    [
+      ...listConditionalPackDataRules({ packetType }),
+      ...(normalizedPacketType === 'otp'
+        ? SOUTH_AFRICAN_LEGAL_CLAUSE_PACK_DEFINITIONS.filter((pack) => pack.category !== 'core')
+        : []),
+    ]
       .flatMap((rule) => rule.sectionKeys || [rule.key])
       .map(normalizeKey),
   )

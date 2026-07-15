@@ -23,6 +23,24 @@ function normalizeText(value) {
 
 function resolvePacketErrorFeedback(error = null) {
   const code = normalizeText(error?.code)
+  if (code === 'LEGAL_CLAUSE_PACK_TRANSACTION_READINESS_BLOCKED') {
+    const missing = Array.isArray(error?.validation?.legalClausePackTransactionReadiness?.missingFields)
+      ? error.validation.legalClausePackTransactionReadiness.missingFields
+      : []
+    const summary = missing.slice(0, 5).map((issue) => issue.placeholderLabel || issue.fieldKey).filter(Boolean).join(', ')
+    return {
+      label: 'OTP details incomplete',
+      message: summary
+        ? `Complete these active clause details before generating: ${summary}.`
+        : 'Complete the active clause-pack transaction details before generating this OTP.',
+    }
+  }
+  if (code === 'LEGAL_SIGNATURE_RELEASE_BLOCKED') {
+    return {
+      label: 'OTP approval required',
+      message: normalizeText(error?.message) || 'Review and approve the current OTP version before generating signer links.',
+    }
+  }
   if (code === 'VALIDATION_BLOCKED') {
     const legalScenarioMissing = Array.isArray(error?.validation?.legalDocumentMissingRoutingFacts)
       ? error.validation.legalDocumentMissingRoutingFacts
@@ -269,6 +287,24 @@ function ValidationSummary({ validation = null, showAuditDetails = false }) {
     ? conditionalPackAudit.documentTriggers
     : []
   const groupedConditionalMissing = groupConditionalPackIssues(conditionalPackMissingPlaceholders)
+  const legalClausePackResolution = validation?.legalClausePackResolution && typeof validation.legalClausePackResolution === 'object'
+    ? validation.legalClausePackResolution
+    : null
+  const legalClausePacks = Array.isArray(legalClausePackResolution?.activePacks)
+    ? legalClausePackResolution.activePacks
+    : []
+  const legalClauseReviews = Array.isArray(legalClausePackResolution?.reviewItems)
+    ? legalClausePackResolution.reviewItems
+    : []
+  const legalClauseConflicts = Array.isArray(legalClausePackResolution?.conflicts)
+    ? legalClausePackResolution.conflicts
+    : []
+  const legalClausePackTransactionReadiness = validation?.legalClausePackTransactionReadiness && typeof validation.legalClausePackTransactionReadiness === 'object'
+    ? validation.legalClausePackTransactionReadiness
+    : null
+  const transactionReadinessMissing = Array.isArray(legalClausePackTransactionReadiness?.missingFields)
+    ? legalClausePackTransactionReadiness.missingFields
+    : []
 
   return (
     <section className="rounded-[14px] border border-[#dfe8f2] bg-white p-3.5">
@@ -285,7 +321,83 @@ function ValidationSummary({ validation = null, showAuditDetails = false }) {
             Active packs: {conditionalPackRows.length}
           </span>
         ) : null}
+        {legalClausePacks.length ? (
+          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 ${
+            legalClauseConflicts.length
+              ? 'border-[#f3d1ce] bg-[#fff4f3] text-[#b42318]'
+              : legalClauseReviews.length
+                ? 'border-[#f4e2bf] bg-[#fff8ec] text-[#9a640f]'
+                : 'border-[#d7e9dd] bg-[#eefaf1] text-[#1c7d45]'
+          }`}>
+            OTP clause groups: {legalClausePacks.length}
+          </span>
+        ) : null}
+        {legalClausePackTransactionReadiness ? (
+          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 ${
+            legalClausePackTransactionReadiness.canGenerate
+              ? 'border-[#d7e9dd] bg-[#eefaf1] text-[#1c7d45]'
+              : 'border-[#f3d1ce] bg-[#fff4f3] text-[#b42318]'
+          }`}>
+            Transaction details: {legalClausePackTransactionReadiness.canGenerate ? 'ready' : `${transactionReadinessMissing.length} missing`}
+          </span>
+        ) : null}
       </div>
+      {legalClausePackResolution ? (
+        <div className="mt-3 rounded-[12px] border border-[#dce8e1] bg-[#f7fbf8] p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#527263]">OTP clause decision</p>
+              <p className="mt-1 text-xs text-[#61786d]">Built from the saved legal facts for this transaction.</p>
+            </div>
+            <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
+              legalClauseConflicts.length
+                ? 'border-[#f3d1ce] bg-[#fff4f3] text-[#b42318]'
+                : legalClauseReviews.length
+                  ? 'border-[#f4e2bf] bg-[#fff8ec] text-[#9a640f]'
+                  : 'border-[#d7e9dd] bg-white text-[#1c7d45]'
+            }`}>
+              {legalClauseConflicts.length
+                ? 'Conflicting answers'
+                : legalClauseReviews.length
+                  ? `${legalClauseReviews.length} to review`
+                  : 'Ready for legal checks'}
+            </span>
+          </div>
+          {legalClausePacks.length ? (
+            <ul className="mt-2 flex flex-wrap gap-1.5">
+              {legalClausePacks.map((pack) => (
+                <li key={pack.key} className="rounded-full border border-[#d8e7de] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#315e48]">
+                  {pack.label}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-xs text-[#8b5f28]">No automated residential clause set can be assembled for this agreement family.</p>
+          )}
+          {legalClauseConflicts.length ? (
+            <ul className="mt-2 grid gap-1 border-t border-[#efd8d5] pt-2 text-xs text-[#8e1f15]" role="alert">
+              {legalClauseConflicts.map((conflict) => <li key={conflict.code}>• {conflict.message}</li>)}
+            </ul>
+          ) : null}
+          {showAuditDetails && legalClauseReviews.length ? (
+            <ul className="mt-2 grid gap-1 border-t border-[#eadfc8] pt-2 text-xs text-[#7b5b21]">
+              {legalClauseReviews.map((item) => <li key={item.code}>• {item.message}</li>)}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+      {legalClausePackTransactionReadiness && transactionReadinessMissing.length ? (
+        <div className="mt-3 rounded-[12px] border border-[#f3d1ce] bg-[#fff8f7] p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#a43b27]">OTP information to complete</p>
+          <ul className="mt-2 grid gap-1 text-xs text-[#81261e]">
+            {transactionReadinessMissing.slice(0, 8).map((issue) => (
+              <li key={`${issue.packKey || issue.sectionKey}-${issue.fieldKey}`}>
+                • {issue.placeholderLabel} <span className="text-[#86675f]">({issue.sectionLabel})</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {conditionalPackRows.length ? (
         <div className="mt-3 rounded-[12px] border border-[#e1eaf4] bg-[#fbfdff] p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">

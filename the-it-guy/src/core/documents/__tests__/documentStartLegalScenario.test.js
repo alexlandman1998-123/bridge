@@ -65,4 +65,21 @@ test('round trips the scenario through workspace query parameters', () => {
   assert.equal(scenario.buyerEntityType, 'trust')
   assert.equal(scenario.propertyTitleType, 'full_title')
   assert.equal(scenario.financeType, 'cash')
+  assert.equal(scenario.legalInstrumentFamily, 'residential_resale')
+})
+
+test('carries a specialist agreement family into the legal workspace', () => {
+  const params = new URLSearchParams()
+  appendDocumentStartLegalScenarioParams(params, {
+    legalInstrumentFamily: 'auction_sale',
+    sellerEntityType: 'company',
+    buyerEntityType: 'company',
+    propertyTitleType: 'full_title',
+    financeType: 'cash',
+  }, 'otp')
+
+  const scenario = readDocumentStartLegalScenarioParams(params, 'otp')
+  assert.equal(scenario.legalInstrumentFamily, 'auction_sale')
+  assert.equal(scenario.legalInstrumentFamilyGenerationAllowed, false)
+  assert.equal(getDocumentStartLegalScenarioInclusions(scenario, 'otp')[0], 'Attorney-approved specialist agreement required')
 })

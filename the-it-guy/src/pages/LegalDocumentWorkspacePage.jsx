@@ -18,6 +18,11 @@ import {
 } from '../core/documents/legalDocumentScenarioProfile'
 import { resolveLegalDocumentScenarioRequirements } from '../core/documents/legalDocumentScenarioRequirements'
 import {
+  buildSouthAfricanLegalDealFacts,
+  validateSouthAfricanLegalDealFacts,
+} from '../core/documents/southAfricanLegalDealFacts'
+import { resolveLegalClausePackTransactionReadiness } from '../core/documents/legalClausePackTransactionReadiness'
+import {
   buildPacketSectionManifest,
   renderPacketPreviewHtml,
   resolveMandatePacketPlaceholders,
@@ -54,6 +59,7 @@ import {
 } from '../services/privateListingService'
 import { getMandateSignerRoleLabel, resolveMandateSecondarySignerConfig } from '../lib/mandateSignatureRules'
 import { allocatePrivateListingTransferAttorney } from '../services/privateListingAttorneyAllocationService'
+import { saveTransactionLegalDealFacts } from '../services/documents/legalDealFactsService'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -1946,6 +1952,18 @@ function buildOtpDraftDefaults({ transactionDetail = null, initialStatus = null,
         : generatedSnapshot?.otpDraft && typeof generatedSnapshot.otpDraft === 'object'
           ? generatedSnapshot.otpDraft
           : {}
+  const storedLegalFacts =
+    transaction?.legal_deal_facts_json &&
+    typeof transaction.legal_deal_facts_json === 'object' &&
+    Object.keys(transaction.legal_deal_facts_json).length > 0
+      ? transaction.legal_deal_facts_json
+      : nestedSourceContext?.canonicalLegalDealFacts &&
+          typeof nestedSourceContext.canonicalLegalDealFacts === 'object' &&
+          Object.keys(nestedSourceContext.canonicalLegalDealFacts).length > 0
+        ? nestedSourceContext.canonicalLegalDealFacts
+        : generatedSnapshot?.canonicalLegalDealFacts && typeof generatedSnapshot.canonicalLegalDealFacts === 'object'
+          ? generatedSnapshot.canonicalLegalDealFacts
+          : {}
   const sourceProperty =
     nestedSourceContext?.property && typeof nestedSourceContext.property === 'object'
       ? nestedSourceContext.property
@@ -1999,7 +2017,13 @@ function buildOtpDraftDefaults({ transactionDetail = null, initialStatus = null,
     leadContext?.lead?.propertyInterest,
   )
 
-  return {
+  const defaults = {
+    legalInstrumentFamily: firstText(
+      packetDraft.legalInstrumentFamily,
+      storedLegalFacts?.instrument?.familyKey,
+      transaction.legal_instrument_family,
+      transaction.transaction_type,
+    ),
     buyerEntityType: normalizeEntityType(firstText(
       packetDraft.buyerEntityType,
       sourceBuyer.entityType,
@@ -2033,6 +2057,8 @@ function buildOtpDraftDefaults({ transactionDetail = null, initialStatus = null,
     buyerRepresentativeName: firstText(packetDraft.buyerRepresentativeName, sourceBuyer.representativeName, onboarding.authorizedRepresentativeName, onboarding.authorisedRepresentativeName),
     buyerRepresentativeCapacity: firstText(packetDraft.buyerRepresentativeCapacity, sourceBuyer.representativeCapacity, onboarding.authorizedRepresentativeCapacity, onboarding.authorisedRepresentativeCapacity),
     buyerMaritalRegime: firstText(packetDraft.buyerMaritalRegime, sourceBuyer.maritalRegime, sourceBuyer.maritalStatus, onboarding.maritalRegime, onboarding.maritalStatus),
+    buyerForeignMarriage: firstText(packetDraft.buyerForeignMarriage, storedLegalFacts?.parties?.buyer?.foreignMarriage, 'unknown'),
+    buyerMarriageCountry: firstText(packetDraft.buyerMarriageCountry, storedLegalFacts?.parties?.buyer?.marriageCountry),
     buyerSpouseFullName: firstText(packetDraft.buyerSpouseFullName, sourceBuyer.spouseFullName, onboarding.spouseFullName, onboarding.spouse_name),
     buyerSpouseIdNumber: firstText(packetDraft.buyerSpouseIdNumber, sourceBuyer.spouseIdNumber, onboarding.spouseIdNumber, onboarding.spouse_id_number),
     buyerSpouseEmail: firstText(packetDraft.buyerSpouseEmail, sourceBuyer.spouseEmail, onboarding.spouseEmail, onboarding.spouse_email),
@@ -2065,6 +2091,8 @@ function buildOtpDraftDefaults({ transactionDetail = null, initialStatus = null,
     sellerRepresentativePhone: firstText(packetDraft.sellerRepresentativePhone, sourceSeller.representativePhone, sellerSignatory.phone),
     sellerRepresentativeIdNumber: firstText(packetDraft.sellerRepresentativeIdNumber, sourceSeller.representativeIdNumber, sellerSignatory.idNumber),
     sellerMaritalRegime: firstText(packetDraft.sellerMaritalRegime, sourceSeller.maritalRegime, sourceSeller.maritalStatus, sellerDetails.maritalRegime, sellerDetails.maritalStatus),
+    sellerForeignMarriage: firstText(packetDraft.sellerForeignMarriage, storedLegalFacts?.parties?.seller?.foreignMarriage, 'unknown'),
+    sellerMarriageCountry: firstText(packetDraft.sellerMarriageCountry, storedLegalFacts?.parties?.seller?.marriageCountry),
     sellerSpouseFullName: firstText(packetDraft.sellerSpouseFullName, sourceSeller.spouseFullName, sellerDetails.spouseFullName),
     sellerSpouseIdNumber: firstText(packetDraft.sellerSpouseIdNumber, sourceSeller.spouseIdNumber, sellerDetails.spouseIdNumber),
     sellerSpouseEmail: firstText(packetDraft.sellerSpouseEmail, sourceSeller.spouseEmail, sellerDetails.spouseEmail),
@@ -2080,17 +2108,34 @@ function buildOtpDraftDefaults({ transactionDetail = null, initialStatus = null,
     unitNumber: firstText(packetDraft.unitNumber, sourceProperty.unitNumber, unit.unit_number, onboarding.unitNumber, onboarding.unit_number, privateListing.unitNumber),
     complexName: firstText(packetDraft.complexName, sourceProperty.complexName, onboarding.complexName, onboarding.estateComplexName, privateListing.complexName),
     erfNumber: firstText(packetDraft.erfNumber, sourceProperty.erfNumber, onboarding.erfNumber, privateListing.erfNumber),
+    propertyInEstateOrHoa: firstText(packetDraft.propertyInEstateOrHoa, storedLegalFacts?.property?.inEstateOrHoa, 'unknown'),
+    propertyEstateOrHoaName: firstText(packetDraft.propertyEstateOrHoaName, storedLegalFacts?.property?.estateOrHoaName),
+    propertyExclusiveUseAreas: firstText(packetDraft.propertyExclusiveUseAreas, storedLegalFacts?.property?.existingExclusiveUseAreas, 'unknown'),
 
     purchasePrice: String(firstText(packetDraft.purchasePrice, sourceOffer.purchasePrice, transaction.purchase_price, transaction.sales_price, unit.price)),
     depositAmount: String(firstText(packetDraft.depositAmount, sourceOffer.depositAmount, transaction.deposit_amount, onboarding.depositAmount, onboarding.deposit_amount)),
     financeType: normalizeOtpFinanceType(firstText(packetDraft.financeType, sourceOffer.financeType, transaction.finance_type, onboarding.financeType, onboarding.finance_type, 'cash')),
     bondAmount: String(firstText(packetDraft.bondAmount, sourceOffer.bondAmount, transaction.bond_amount, onboarding.bondAmount, onboarding.bond_amount)),
     cashAmount: String(firstText(packetDraft.cashAmount, sourceOffer.cashAmount, transaction.cash_amount, onboarding.cashAmount, onboarding.cash_amount)),
+    depositHolder: firstText(packetDraft.depositHolder, storedLegalFacts?.finance?.depositHolder, 'unknown'),
+    bondApprovalDeadline: toIsoDate(firstText(packetDraft.bondApprovalDeadline, storedLegalFacts?.finance?.bondApprovalDeadline)),
+    saleOfExistingPropertyCondition: firstText(packetDraft.saleOfExistingPropertyCondition, storedLegalFacts?.conditions?.saleOfExistingProperty, 'unknown'),
+    linkedSaleDeadline: toIsoDate(firstText(packetDraft.linkedSaleDeadline, storedLegalFacts?.conditions?.linkedSaleDeadline)),
     occupationDate: toIsoDate(firstText(packetDraft.occupationDate, offerConditions.occupationDate, offerConditions.occupation_date, onboarding.occupationDate, onboarding.occupation_date)),
+    occupationBeforeTransfer: firstText(packetDraft.occupationBeforeTransfer, storedLegalFacts?.occupation?.beforeTransfer, 'unknown'),
+    occupationalRent: String(firstText(packetDraft.occupationalRent, storedLegalFacts?.occupation?.occupationalRent)),
+    existingLease: firstText(packetDraft.existingLease, storedLegalFacts?.occupation?.existingLease, 'unknown'),
+    leaseExpiryDate: toIsoDate(firstText(packetDraft.leaseExpiryDate, storedLegalFacts?.occupation?.leaseExpiryDate)),
+    sellerVatStatus: firstText(packetDraft.sellerVatStatus, storedLegalFacts?.tax?.sellerVatStatus, 'unknown'),
+    vatTreatment: firstText(packetDraft.vatTreatment, storedLegalFacts?.tax?.vatTreatment, 'unknown'),
     transferDate: toIsoDate(firstText(packetDraft.transferDate, sourceOffer.transferDate, sourceOffer.transfer_date, transaction.expected_transfer_date, transaction.target_registration_date, onboarding.transferDate, onboarding.transfer_date)),
     suspensiveConditions: firstText(packetDraft.suspensiveConditions, offerConditions.suspensiveConditions, offerConditions.suspensive_conditions, onboarding.suspensiveConditions, onboarding.suspensive_conditions),
     specialConditions: firstText(packetDraft.specialConditions, nestedSourceContext.specialConditions, onboarding.specialConditions, onboarding.special_conditions),
   }
+  if (defaults.financeType === 'cash' && !normalizeText(defaults.cashAmount) && normalizeText(defaults.purchasePrice)) {
+    defaults.cashAmount = defaults.purchasePrice
+  }
+  return defaults
 }
 
 function buildOtpDraftGenerationOverrides({
@@ -2116,6 +2161,14 @@ function buildOtpDraftGenerationOverrides({
   const existingSeller = sellerDetails && typeof sellerDetails === 'object' ? sellerDetails : {}
   const existingSignatory = existingSeller.signatory && typeof existingSeller.signatory === 'object' ? existingSeller.signatory : {}
   const existingOnboarding = onboardingFormData && typeof onboardingFormData === 'object' ? onboardingFormData : {}
+  const canonicalLegalDealFacts = buildSouthAfricanLegalDealFacts({
+    draft,
+    transaction: existingTransaction,
+    buyer: existingBuyer,
+    seller: existingSeller,
+    sourceContext: existingOnboarding,
+    facts: existingTransaction.legal_deal_facts_json,
+  })
 
   const transactionPatch = compactObjectValues({
     purchaser_type: buyerEntityType,
@@ -2128,6 +2181,9 @@ function buildOtpDraftGenerationOverrides({
     property_title_type: propertyTitleType,
     seller_type: sellerEntityType,
     seller_registration_number: draft.sellerIdNumber,
+    legal_instrument_family: canonicalLegalDealFacts.instrument.familyKey,
+    legal_deal_facts_json: canonicalLegalDealFacts,
+    legal_deal_facts_version: canonicalLegalDealFacts.schemaVersion,
   })
   if (purchasePrice !== null) transactionPatch.purchase_price = purchasePrice
   if (depositAmount !== null) transactionPatch.deposit_amount = depositAmount
@@ -2265,6 +2321,8 @@ function buildOtpDraftGenerationOverrides({
       suspensive_conditions: draft.suspensiveConditions,
       specialConditions: draft.specialConditions,
       special_conditions: draft.specialConditions,
+      canonicalLegalDealFacts,
+      canonical_legal_deal_facts: canonicalLegalDealFacts,
     }),
   }
   if (draftPurchasers.length) {
@@ -2273,6 +2331,8 @@ function buildOtpDraftGenerationOverrides({
 
   const sourceContext = {
     otpDraft: draft,
+    canonicalLegalDealFacts,
+    canonical_legal_deal_facts: canonicalLegalDealFacts,
     buyer: compactObjectValues({
       entityType: buyerEntityType,
       fullName: draft.buyerFullName,
@@ -2365,6 +2425,7 @@ function buildOtpDraftGenerationOverrides({
       sellerDetails: nextSellerDetails,
       onboardingFormData: nextOnboardingFormData,
       sourceContext,
+      canonicalLegalDealFacts,
     },
   }
 }
@@ -2570,6 +2631,9 @@ export default function LegalDocumentWorkspacePage() {
   const effectiveOtpDraft = useMemo(
     () => ({
       ...otpDraftDefaults,
+      ...(documentStartLegalScenario.legalInstrumentFamily ? {
+        legalInstrumentFamily: documentStartLegalScenario.legalInstrumentFamily,
+      } : {}),
       ...(documentStartLegalScenario.sellerEntityType ? { sellerEntityType: documentStartLegalScenario.sellerEntityType } : {}),
       ...(documentStartLegalScenario.sellerMaritalRegime ? {
         sellerMaritalRegime: documentStartLegalScenario.sellerMaritalRegime,
@@ -3467,22 +3531,83 @@ export default function LegalDocumentWorkspacePage() {
       }
       generationContext.generatedDataSnapshot = otpContext.generatedDataSnapshot
 
+      const canonicalLegalDealFacts = otpContext.generatedDataSnapshot.canonicalLegalDealFacts
+      const legalDealFactsValidation = validateSouthAfricanLegalDealFacts(canonicalLegalDealFacts)
+      if (!legalDealFactsValidation.complete) {
+        const validationError = new Error('Complete the legal setup shown above before generating this OTP.')
+        validationError.code = 'VALIDATION_BLOCKED'
+        validationError.validation = {
+          legalDealFacts: canonicalLegalDealFacts,
+          legalDealFactsValidation,
+          critical: legalDealFactsValidation.blockers.map((issue) => ({
+            ...issue,
+            source: 'legal_deal_facts',
+            sectionKey: 'legal_setup',
+            sectionLabel: 'Legal setup',
+            placeholderKey: issue.key,
+            placeholderLabel: issue.label,
+          })),
+        }
+        throw validationError
+      }
+
+      const clausePackTransactionReadiness = resolveLegalClausePackTransactionReadiness({
+        draft: effectiveOtpDraft,
+        facts: canonicalLegalDealFacts,
+      })
+      generationContext.sourceContext.legalClausePackTransactionReadiness = {
+        schemaVersion: clausePackTransactionReadiness.schemaVersion,
+        selectionKey: clausePackTransactionReadiness.selectionKey,
+        activePackCount: clausePackTransactionReadiness.activePackCount,
+        readyPackCount: clausePackTransactionReadiness.readyPackCount,
+        missingFieldCount: clausePackTransactionReadiness.missingFieldCount,
+        attorneyReviewCount: clausePackTransactionReadiness.attorneyReviewCount,
+        canGenerate: clausePackTransactionReadiness.canGenerate,
+        canSendForSignature: clausePackTransactionReadiness.canSendForSignature,
+      }
+      if (!clausePackTransactionReadiness.canGenerate) {
+        const validationError = new Error('Complete the highlighted clause-pack details before generating this OTP.')
+        validationError.code = 'VALIDATION_BLOCKED'
+        validationError.validation = {
+          legalDealFacts: canonicalLegalDealFacts,
+          legalDealFactsValidation,
+          legalClausePackTransactionReadiness: clausePackTransactionReadiness,
+          critical: [
+            ...clausePackTransactionReadiness.missingFields,
+            ...clausePackTransactionReadiness.conflicts.map((conflict) => ({
+              source: 'legal_clause_pack_transaction_readiness',
+              sectionKey: 'legal_clause_packs',
+              sectionLabel: 'Clause selection',
+              placeholderKey: conflict.factPaths?.[0] || conflict.code,
+              placeholderLabel: 'Conflicting legal facts',
+              message: conflict.message,
+              required: true,
+            })),
+          ],
+        }
+        throw validationError
+      }
+
+      const factsPersistence = await saveTransactionLegalDealFacts({
+        transactionId: transactionId || generationContext.transaction?.id,
+        facts: canonicalLegalDealFacts,
+        actorUserId: actor?.id || profile?.id,
+      }).catch((factsError) => {
+        console.warn('[LegalDocumentWorkspacePage] canonical legal facts could not be saved to the transaction; packet snapshot will be used.', factsError)
+        return { persisted: false, error: factsError?.message || 'save_failed' }
+      })
+      generationContext.sourceContext.legalDealFactsPersistence = factsPersistence
+
       const otpScenarioProfile = resolveLegalDocumentScenarioProfile({
         packetType: 'otp',
-        seller: {
-          entityType: effectiveOtpDraft.sellerEntityType,
-          maritalStatus: effectiveOtpDraft.sellerMaritalRegime,
-        },
-        buyer: {
-          entityType: effectiveOtpDraft.buyerEntityType,
-          maritalStatus: effectiveOtpDraft.buyerMaritalRegime,
-        },
+        seller: canonicalLegalDealFacts.parties.seller,
+        buyer: canonicalLegalDealFacts.parties.buyer,
         property: {
-          propertyType: effectiveOtpDraft.propertyTitleType || effectiveOtpDraft.propertyType,
+          propertyType: canonicalLegalDealFacts.property.titleType,
           unitNumber: effectiveOtpDraft.unitNumber,
           complexName: effectiveOtpDraft.complexName,
         },
-        transaction: { financeType: effectiveOtpDraft.financeType },
+        transaction: { financeType: canonicalLegalDealFacts.finance.type },
       })
       const otpLegalRequirements = resolveLegalDocumentScenarioRequirements({
         scenarioProfile: otpScenarioProfile,

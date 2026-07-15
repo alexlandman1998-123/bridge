@@ -78,10 +78,37 @@ import {
   scoreLegalDocumentTemplateCandidate,
 } from './legalDocumentTemplateRouting'
 import {
+  buildLegalInstrumentFamilyAudit,
+  buildLegalInstrumentFamilyIssue,
+  resolveLegalInstrumentFamilyProfile,
+  resolveTemplateLegalInstrumentFamily,
+} from './legalInstrumentFamilyRouter'
+import {
+  isLegalTemplateSelectableForSigning,
+  resolveLegalTemplateGovernance,
+} from './legalTemplateGovernance'
+import {
   buildLegalDocumentRequirementDraftFromPlaceholders,
   resolveLegalDocumentScenarioRequirements,
 } from './legalDocumentScenarioRequirements'
 import { resolveLegalDocumentSignerProfile } from './legalDocumentSignerProfile'
+import {
+  buildSouthAfricanLegalDealFactPlaceholders,
+  buildSouthAfricanLegalDealFacts,
+  validateSouthAfricanLegalDealFacts,
+} from './southAfricanLegalDealFacts'
+import {
+  buildSouthAfricanLegalClausePackPlaceholders,
+  resolveSouthAfricanLegalClausePacks,
+} from './southAfricanLegalClausePacks'
+import {
+  applyLegalClausePackCoverageRuntimePolicy,
+  buildLegalClausePackCoverage,
+  buildLegalClausePackCoverageIssues,
+} from './legalClausePackCoverage'
+import { resolveLegalClausePackScenarioMatrixGovernance } from './legalClausePackScenarioMatrixGovernance'
+import { resolveLegalClausePackTransactionReadiness } from './legalClausePackTransactionReadiness'
+import { resolveLegalClausePackSignatureRelease } from './legalClausePackSignatureRelease'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -312,6 +339,20 @@ function buildGenerationPayload({
     mandateData?.legalDocumentScenarioProfile ||
     mandateScenarioProfile ||
     null
+  const legalDealFacts = validation?.legalDealFacts ||
+    mandateData?.canonicalLegalDealFacts ||
+    context?.sourceContext?.canonicalLegalDealFacts ||
+    null
+  const legalClausePackResolution = validation?.legalClausePackResolution ||
+    mandateData?.legalClausePackResolution ||
+    context?.sourceContext?.legalClausePackResolution ||
+    null
+  const legalClausePackCoverage = validation?.legalClausePackCoverage ||
+    mandateData?.legalClausePackCoverage ||
+    context?.sourceContext?.legalClausePackCoverage ||
+    null
+  const legalClausePackScenarioMatrix = validation?.legalClausePackScenarioMatrix || null
+  const legalClausePackTransactionReadiness = validation?.legalClausePackTransactionReadiness || null
   const mandateTemplateVariant =
     normalizeText(validation?.placeholders?.mandate_template_variant) ||
     normalizeText(mandateData?.placeholders?.mandate_template_variant) ||
@@ -329,6 +370,29 @@ function buildGenerationPayload({
   return {
     packetId: normalizeText(packet?.id) || null,
     mandateData,
+    legalDealFacts,
+    legalDealFactsVersion: legalDealFacts?.schemaVersion || null,
+    legalDealFactsKey: legalDealFacts?.factsKey || null,
+    legalClausePackResolution,
+    legalClausePackVersion: legalClausePackResolution?.schemaVersion || null,
+    legalClausePackSelectionKey: legalClausePackResolution?.selectionKey || null,
+    legalClausePackSigningReady: Boolean(legalClausePackResolution?.signingReady),
+    legalClausePackCoverage,
+    legalClausePackCoverageVersion: legalClausePackCoverage?.schemaVersion || null,
+    legalClausePackCoveragePercent: Number(legalClausePackCoverage?.coveragePercent || 0),
+    legalClausePackCoverageReady: Boolean(
+      legalClausePackCoverage && (!legalClausePackCoverage.runtimeEnforced || legalClausePackCoverage.canAssemble),
+    ),
+    legalClausePackScenarioMatrix,
+    legalClausePackScenarioMatrixVersion: legalClausePackScenarioMatrix?.contractVersion || null,
+    legalClausePackScenarioMatrixPassed: Boolean(
+      !legalClausePackScenarioMatrix?.runtimeEnforced || legalClausePackScenarioMatrix?.passed,
+    ),
+    legalClausePackTransactionReadiness,
+    legalClausePackTransactionReadinessVersion: legalClausePackTransactionReadiness?.schemaVersion || null,
+    legalClausePackTransactionReady: Boolean(
+      !legalClausePackTransactionReadiness?.runtimeEnforced || legalClausePackTransactionReadiness?.canGenerate,
+    ),
     legalDocumentScenarioProfile,
     legalDocumentScenarioKey: normalizeText(legalDocumentScenarioProfile?.scenarioKey) || null,
     mandateScenarioProfile,
@@ -410,6 +474,11 @@ function buildRenderProvenance({
     normalizeText(generationPayload?.mandateTemplateVariant) ||
     normalizeText(mandateScenarioProfile?.templateVariant) ||
     normalizeText(pdfPlaceholders?.mandate_template_variant)
+  const legalDealFacts = generationPayload?.legalDealFacts || validation?.legalDealFacts || null
+  const legalClausePackResolution = generationPayload?.legalClausePackResolution || validation?.legalClausePackResolution || null
+  const legalClausePackCoverage = generationPayload?.legalClausePackCoverage || validation?.legalClausePackCoverage || null
+  const legalClausePackScenarioMatrix = generationPayload?.legalClausePackScenarioMatrix || validation?.legalClausePackScenarioMatrix || null
+  const legalClausePackTransactionReadiness = generationPayload?.legalClausePackTransactionReadiness || validation?.legalClausePackTransactionReadiness || null
   const contentFingerprint = buildContentFingerprint({
     packetType: normalizedPacketType,
     renderMode,
@@ -435,6 +504,35 @@ function buildRenderProvenance({
     mandateTemplateLaunchReadinessStatus: normalizeText(generationPayload?.mandateTemplateLaunchReadiness?.status) || null,
     legalDocumentScenarioKey: normalizeText(legalDocumentScenarioProfile?.scenarioKey || pdfPlaceholders?.legal_document_scenario) || null,
     legalDocumentScenarioComplete: Boolean(legalDocumentScenarioProfile?.complete),
+    legalDealFactsVersion: normalizeText(legalDealFacts?.schemaVersion || pdfPlaceholders?.legal_deal_facts_version) || null,
+    legalDealFactsKey: normalizeText(legalDealFacts?.factsKey || pdfPlaceholders?.legal_deal_facts_key) || null,
+    legalInstrumentFamily: normalizeText(legalDealFacts?.instrument?.familyKey || pdfPlaceholders?.legal_instrument_family) || null,
+    legalClausePackVersion: normalizeText(legalClausePackResolution?.schemaVersion || pdfPlaceholders?.legal_clause_pack_version) || null,
+    legalClausePackSelectionKey: normalizeText(legalClausePackResolution?.selectionKey || pdfPlaceholders?.legal_clause_pack_selection_key) || null,
+    legalClausePackSigningReady: legalClausePackResolution
+      ? Boolean(legalClausePackResolution.signingReady)
+      : normalizeText(pdfPlaceholders?.legal_clause_pack_signing_ready).toLowerCase() === 'yes',
+    legalActiveClausePacks: legalClausePackResolution?.activePackKeys || [],
+    legalClausePackReviewCodes: (legalClausePackResolution?.reviewItems || []).map((item) => item.code),
+    legalClausePackConflictCodes: (legalClausePackResolution?.conflicts || []).map((item) => item.code),
+    legalClausePackCoverageVersion: normalizeText(legalClausePackCoverage?.schemaVersion) || null,
+    legalClausePackCoveragePercent: Number(legalClausePackCoverage?.coveragePercent || 0),
+    legalClausePackCoverageReady: Boolean(
+      legalClausePackCoverage && (!legalClausePackCoverage.runtimeEnforced || legalClausePackCoverage.canAssemble),
+    ),
+    legalClausePackMissingWording: (legalClausePackCoverage?.missingWording || []).map((item) => item.key),
+    legalClausePackApprovalRequired: (legalClausePackCoverage?.approvalRequired || []).map((item) => item.key),
+    legalClausePackScenarioMatrixVersion: normalizeText(legalClausePackScenarioMatrix?.contractVersion) || null,
+    legalClausePackScenarioMatrixPassed: Boolean(
+      !legalClausePackScenarioMatrix?.runtimeEnforced || legalClausePackScenarioMatrix?.passed,
+    ),
+    legalClausePackScenarioMatrixFailedScenarios: legalClausePackScenarioMatrix?.failedScenarioKeys || [],
+    legalClausePackTransactionReadinessVersion: normalizeText(legalClausePackTransactionReadiness?.schemaVersion) || null,
+    legalClausePackTransactionReady: Boolean(
+      !legalClausePackTransactionReadiness?.runtimeEnforced || legalClausePackTransactionReadiness?.canGenerate,
+    ),
+    legalClausePackTransactionMissingFields: (legalClausePackTransactionReadiness?.missingFields || []).map((item) => item.fieldKey),
+    legalClausePackTransactionAttorneyReviewCodes: (legalClausePackTransactionReadiness?.attorneyReviewItems || []).map((item) => item.code),
     sellerClauseProfile: normalizeText(legalDocumentScenarioProfile?.sellerClauseProfile || pdfPlaceholders?.seller_clause_profile) || null,
     buyerClauseProfile: normalizeText(legalDocumentScenarioProfile?.buyerClauseProfile || pdfPlaceholders?.buyer_clause_profile) || null,
     propertyClauseProfile: normalizeText(legalDocumentScenarioProfile?.propertyClauseProfile || pdfPlaceholders?.property_clause_profile) || null,
@@ -668,9 +766,7 @@ function resolveTemplateOrganisationId(context = {}) {
 }
 
 function templateIsPublishedForRouting(template = {}) {
-  const status = normalizeText(template?.status).toLowerCase()
-  if (status) return status === 'published'
-  return template?.is_active !== false
+  return isLegalTemplateSelectableForSigning(template)
 }
 
 function resolveTemplateUpdatedAt(template = {}) {
@@ -829,6 +925,28 @@ async function resolveOtpScenarioTemplateForPacket({
   const resolvedModuleType = normalizeText(moduleType) || resolveTemplateModuleType(normalizedPacketType, context)
   const moduleCandidates = resolveTemplateModuleCandidatesForPacket(normalizedPacketType, resolvedModuleType)
   const resolvedOrganisationId = organisationId || resolveTemplateOrganisationId(context)
+  const instrumentFamilyProfile = resolveLegalInstrumentFamilyProfile({
+    packetType: normalizedPacketType,
+    transaction: context?.transaction || null,
+    property: context?.property || context?.unit || null,
+    listing: context?.listing || context?.privateListing || context?.private_listing || null,
+    sourceContext: context?.sourceContext || null,
+    context,
+  })
+  if (!instrumentFamilyProfile?.generationAllowed) {
+    return {
+      template: null,
+      source: 'instrument_family_review_required',
+      blocking: true,
+      organisationId: resolvedOrganisationId,
+      moduleType: resolvedModuleType,
+      packetType: normalizedPacketType,
+      candidateModuleTypes: moduleCandidates,
+      candidateCount: 0,
+      legalInstrumentFamilyProfile: instrumentFamilyProfile,
+      legalInstrumentFamilyAudit: buildLegalInstrumentFamilyAudit(instrumentFamilyProfile),
+    }
+  }
   const rawPlaceholders = resolvePacketTypeContext(normalizedPacketType, context)
   const placeholders = normalizeMergeFieldPayload(rawPlaceholders, {
     packetType: normalizedPacketType,
@@ -871,6 +989,7 @@ async function resolveOtpScenarioTemplateForPacket({
   const scored = Array.from(templateById.values())
     .map((candidateTemplate) => scoreLegalDocumentTemplateCandidate(candidateTemplate, {
       scenarioProfile,
+      instrumentFamilyProfile,
       placeholders,
       context,
     }))
@@ -893,8 +1012,13 @@ async function resolveOtpScenarioTemplateForPacket({
       packetType: normalizedPacketType,
       candidateModuleTypes: moduleCandidates,
       candidateCount: templateById.size,
+      legalInstrumentFamilyProfile: instrumentFamilyProfile,
+      legalInstrumentFamilyAudit: buildLegalInstrumentFamilyAudit(instrumentFamilyProfile),
       legalDocumentScenarioProfile: scenarioProfile,
-      legalDocumentTemplateRouting: buildLegalDocumentTemplateRoutingAudit(null, { profile: scenarioProfile }),
+      legalDocumentTemplateRouting: buildLegalDocumentTemplateRoutingAudit(null, {
+        profile: scenarioProfile,
+        instrumentFamilyProfile,
+      }),
     }
   }
 
@@ -915,6 +1039,8 @@ async function resolveOtpScenarioTemplateForPacket({
     packetType: normalizedPacketType,
     candidateModuleTypes: moduleCandidates,
     candidateCount: templateById.size,
+    legalInstrumentFamilyProfile: instrumentFamilyProfile,
+    legalInstrumentFamilyAudit: buildLegalInstrumentFamilyAudit(instrumentFamilyProfile),
     legalDocumentScenarioProfile: scenarioProfile,
     legalDocumentTemplateRouting: routingAudit,
   }
@@ -922,10 +1048,30 @@ async function resolveOtpScenarioTemplateForPacket({
 
 async function resolveTemplateForPacket({ packetType, context = {}, template = null } = {}) {
   if (template?.id) {
+    const instrumentFamilyProfile = resolveLegalInstrumentFamilyProfile({
+      packetType,
+      transaction: context?.transaction || null,
+      property: context?.property || context?.unit || null,
+      listing: context?.listing || context?.privateListing || context?.private_listing || null,
+      sourceContext: context?.sourceContext || null,
+      context,
+    })
+    const templateInstrumentFamily = resolveTemplateLegalInstrumentFamily(template, packetType)
+    const familyMismatch = instrumentFamilyProfile &&
+      templateInstrumentFamily.familyKey !== instrumentFamilyProfile.familyKey
+    const isTemplatePreview = normalizeValidationAction(context?.validationAction) === TEMPLATE_PREVIEW_VALIDATION_ACTION
+    const canUseExplicitTemplate = isTemplatePreview || (instrumentFamilyProfile?.generationAllowed && !familyMismatch)
     return {
-      template,
-      source: 'explicit',
+      template: canUseExplicitTemplate ? template : null,
+      source: canUseExplicitTemplate
+        ? isTemplatePreview ? 'explicit_template_preview' : 'explicit'
+        : 'instrument_family_review_required',
+      blocking: !isTemplatePreview && Boolean(instrumentFamilyProfile && (!instrumentFamilyProfile.generationAllowed || familyMismatch)),
       candidateCount: 1,
+      legalInstrumentFamilyProfile: instrumentFamilyProfile,
+      legalInstrumentFamilyAudit: buildLegalInstrumentFamilyAudit(instrumentFamilyProfile),
+      templateInstrumentFamily,
+      familyMismatch,
     }
   }
 
@@ -957,7 +1103,7 @@ async function resolveTemplateForPacket({ packetType, context = {}, template = n
         organisationId: resolveTemplateOrganisationId(context),
         includeSections: true,
       })
-      if (otpTemplateResolution?.template) return otpTemplateResolution
+      if (otpTemplateResolution?.template || otpTemplateResolution?.blocking) return otpTemplateResolution
     }
 
     return await resolveActivePacketTemplate({
@@ -1751,6 +1897,30 @@ function buildValidationSummary(validation = {}) {
     legalDocumentScenarioComplete: Boolean(validation?.legalDocumentScenarioComplete),
     legalDocumentMissingRoutingFacts: validation?.legalDocumentMissingRoutingFacts || [],
     legalScenarioValidation: validation?.legalScenarioValidation || null,
+    legalDealFactsVersion: validation?.legalDealFacts?.schemaVersion || null,
+    legalDealFactsKey: validation?.legalDealFacts?.factsKey || null,
+    legalDealFactsValidation: validation?.legalDealFactsValidation || null,
+    legalClausePackVersion: validation?.legalClausePackResolution?.schemaVersion || null,
+    legalClausePackSelectionKey: validation?.legalClausePackResolution?.selectionKey || null,
+    legalClausePackResolution: validation?.legalClausePackResolution || null,
+    legalClausePackCoverage: validation?.legalClausePackCoverage || null,
+    legalClausePackCoverageVersion: validation?.legalClausePackCoverage?.schemaVersion || null,
+    legalClausePackCoveragePercent: Number(validation?.legalClausePackCoverage?.coveragePercent || 0),
+    legalClausePackCoverageReady: Boolean(
+      validation?.legalClausePackCoverage && (
+        !validation.legalClausePackCoverage.runtimeEnforced || validation.legalClausePackCoverage.canAssemble
+      ),
+    ),
+    legalClausePackScenarioMatrix: validation?.legalClausePackScenarioMatrix || null,
+    legalClausePackScenarioMatrixVersion: validation?.legalClausePackScenarioMatrix?.contractVersion || null,
+    legalClausePackScenarioMatrixPassed: Boolean(
+      !validation?.legalClausePackScenarioMatrix?.runtimeEnforced || validation?.legalClausePackScenarioMatrix?.passed,
+    ),
+    legalClausePackTransactionReadiness: validation?.legalClausePackTransactionReadiness || null,
+    legalClausePackTransactionReadinessVersion: validation?.legalClausePackTransactionReadiness?.schemaVersion || null,
+    legalClausePackTransactionReady: Boolean(
+      !validation?.legalClausePackTransactionReadiness?.runtimeEnforced || validation?.legalClausePackTransactionReadiness?.canGenerate,
+    ),
   }
 }
 
@@ -2068,7 +2238,7 @@ export async function resolveActiveTemplate({
       organisationId: organisationId || resolveTemplateOrganisationId(context),
       includeSections,
     })
-    if (otpTemplateResolution?.template) return otpTemplateResolution
+    if (otpTemplateResolution?.template || otpTemplateResolution?.blocking) return otpTemplateResolution
   }
 
   return resolveActivePacketTemplate({
@@ -2118,14 +2288,45 @@ export async function validatePacket({
     packetType: normalizedPacketType,
     includeAliasKeys: true,
   }).payload
+  const legalDealFacts = normalizedPacketType === 'otp'
+    ? buildSouthAfricanLegalDealFacts({
+        draft: {
+          ...normalizedPlaceholders,
+          ...(context?.otpDraft && typeof context.otpDraft === 'object' ? context.otpDraft : {}),
+        },
+        transaction: context?.transaction || null,
+        buyer: context?.buyer || context?.purchaser || null,
+        seller: context?.sellerDetails || context?.seller || null,
+        property: context?.property || context?.unit || null,
+        sourceContext: context?.sourceContext || null,
+        context,
+      })
+    : null
+  const legalDealFactsValidation = legalDealFacts ? validateSouthAfricanLegalDealFacts(legalDealFacts) : null
+  const legalClausePackResolution = legalDealFacts
+    ? resolveSouthAfricanLegalClausePacks(legalDealFacts)
+    : null
+  const scenarioPlaceholders = legalDealFacts
+    ? { ...normalizedPlaceholders, ...buildSouthAfricanLegalDealFactPlaceholders(legalDealFacts) }
+    : normalizedPlaceholders
+  const legalInstrumentFamilyProfile = resolveLegalInstrumentFamilyProfile({
+    packetType: normalizedPacketType,
+    legalInstrumentFamily: legalDealFacts?.instrument?.familyKey,
+    transaction: context?.transaction || null,
+    property: context?.property || context?.unit || null,
+    listing: context?.listing || context?.privateListing || context?.private_listing || null,
+    sourceContext: context?.sourceContext || null,
+    context,
+  })
   const supportsLegalScenario = ['mandate', 'otp'].includes(normalizedPacketType)
   const legalDocumentScenarioProfile = supportsLegalScenario
     ? resolveLegalDocumentScenarioProfile({
         packetType: normalizedPacketType,
-        placeholders: normalizedPlaceholders,
-        seller: context?.mandateData?.seller || context?.seller || context?.sellerDetails || context?.seller_details || null,
-        buyer: context?.buyer || context?.purchaser || null,
+        placeholders: scenarioPlaceholders,
+        seller: legalDealFacts?.parties?.seller || context?.mandateData?.seller || context?.seller || context?.sellerDetails || context?.seller_details || null,
+        buyer: legalDealFacts?.parties?.buyer || context?.buyer || context?.purchaser || null,
         property:
+          (legalDealFacts ? { propertyType: legalDealFacts.property?.titleType } : null) ||
           context?.mandateData?.property ||
           context?.property ||
           context?.unit ||
@@ -2133,17 +2334,23 @@ export async function validatePacket({
           context?.privateListing ||
           context?.private_listing ||
           null,
-        transaction: context?.transaction || null,
+        transaction: legalDealFacts
+          ? { ...(context?.transaction || {}), financeType: legalDealFacts.finance?.type }
+          : context?.transaction || null,
         sourceContext: context?.mandateData?.sourceContext || context?.sourceContext || null,
         context,
       })
     : null
   const placeholders = legalDocumentScenarioProfile
     ? {
-        ...normalizedPlaceholders,
+        ...scenarioPlaceholders,
         ...buildLegalDocumentScenarioPlaceholders(legalDocumentScenarioProfile),
+        ...(legalClausePackResolution ? buildSouthAfricanLegalClausePackPlaceholders(legalClausePackResolution) : {}),
       }
-    : normalizedPlaceholders
+    : {
+        ...scenarioPlaceholders,
+        ...(legalClausePackResolution ? buildSouthAfricanLegalClausePackPlaceholders(legalClausePackResolution) : {}),
+      }
   const sectionManifest = await resolveSeededSectionManifest({
     packetType: normalizedPacketType,
     template,
@@ -2162,6 +2369,14 @@ export async function validatePacket({
   const conditionalPackDataRequirements = conditionalPackPreflight.dataRequirements || []
   const conditionalPackMissingPlaceholders = conditionalPackPreflight.missingPlaceholders || []
   const conditionalPackMissingKeys = conditionalPackPreflight.missingKeys || new Set()
+  const legalClausePackTransactionReadiness = normalizedPacketType === 'otp' && legalDealFacts && legalClausePackResolution
+    ? resolveLegalClausePackTransactionReadiness({
+        facts: legalDealFacts,
+        resolution: legalClausePackResolution,
+        draft: context?.otpDraft || null,
+        placeholders,
+      })
+    : null
   const sellerValidation = validateSellerPartyReadiness({
     packetType: normalizedPacketType,
     placeholders,
@@ -2186,6 +2401,17 @@ export async function validatePacket({
       }))
     : []
   const legalScenarioRequirementsCanProceed = !supportsLegalScenario || legalScenarioRequirementIssues.length === 0
+  const legalClausePackConflictIssues = (legalClausePackResolution?.conflicts || []).map((conflict) => ({
+    source: 'legal_clause_pack_conflict',
+    sectionKey: 'legal_clause_packs',
+    sectionLabel: 'Clause selection',
+    placeholderKey: conflict.factPaths?.[0] || conflict.code,
+    placeholderLabel: 'Conflicting legal facts',
+    message: conflict.message,
+    required: true,
+    conflictCode: conflict.code,
+    packKeys: conflict.packKeys || [],
+  }))
   const mandateScenarioProfile = normalizedPacketType === 'mandate'
     ? resolveMandateTemplateRoutingProfile({
         placeholders,
@@ -2198,6 +2424,65 @@ export async function validatePacket({
     : null
   const mandateValidationAction = normalizeValidationAction(validationAction || context?.validationAction || 'preview')
   const isTemplatePreview = mandateValidationAction === TEMPLATE_PREVIEW_VALIDATION_ACTION
+  const legalInstrumentFamilyIssue = buildLegalInstrumentFamilyIssue(legalInstrumentFamilyProfile)
+  const templateGovernance = template?.id ? resolveLegalTemplateGovernance(template) : null
+  const templateGovernanceIssue = templateGovernance && !templateGovernance.selectableForSigning
+    ? {
+        source: 'legal_template_governance',
+        sectionKey: 'legal_template_governance',
+        sectionLabel: 'Template approval',
+        placeholderKey: 'legal_template_status',
+        placeholderLabel: 'Approved template',
+        message: `This template cannot be used for signing (${templateGovernance.blockingReasons.join(', ').replaceAll('_', ' ')}).`,
+        required: true,
+      }
+    : null
+  const resolvedLegalClausePackCoverage = normalizedPacketType === 'otp' && template?.id && legalClausePackResolution
+    ? buildLegalClausePackCoverage({
+        template,
+        sections: Array.isArray(template.sections) ? template.sections : null,
+        requiredPackKeys: (legalClausePackResolution.activePackKeys || []).filter((key) => key !== 'residential_resale_core_pack'),
+        allowLegacy: true,
+        requireApproval: true,
+      })
+    : null
+  const legalClausePackCoverage = applyLegalClausePackCoverageRuntimePolicy(template || {}, resolvedLegalClausePackCoverage)
+  const legalClausePackCoverageRuntimeEnforced = Boolean(legalClausePackCoverage?.runtimeEnforced)
+  const legalClausePackScenarioMatrix = normalizedPacketType === 'otp' && template?.id
+    ? resolveLegalClausePackScenarioMatrixGovernance(template)
+    : null
+  const legalClausePackScenarioMatrixIssue = legalClausePackScenarioMatrix?.runtimeEnforced && !legalClausePackScenarioMatrix.passed
+    ? {
+        source: 'legal_clause_pack_scenario_matrix',
+        sectionKey: 'legal_clause_pack_scenario_matrix',
+        sectionLabel: 'Reference transaction testing',
+        placeholderKey: 'legal_clause_pack_scenario_matrix',
+        placeholderLabel: 'Passing reference transactions',
+        message: 'This template has not retained a complete passing Phase 5 reference transaction matrix.',
+        required: true,
+        failedScenarioKeys: legalClausePackScenarioMatrix.failedScenarioKeys,
+      }
+    : null
+  const legalClausePackTransactionReadinessRuntimeEnforced = Boolean(
+    legalClausePackTransactionReadiness && legalClausePackScenarioMatrix?.runtimeEnforced,
+  )
+  const legalClausePackTransactionReadinessIssues = legalClausePackTransactionReadinessRuntimeEnforced
+    ? [...(legalClausePackTransactionReadiness.missingFields || [])]
+    : []
+  const legalClausePackCoverageIssues = legalClausePackCoverage
+    ? buildLegalClausePackCoverageIssues(legalClausePackCoverage, { runtime: true })
+    : []
+  const governedLegalClausePackCoverageIssues = legalClausePackCoverageRuntimeEnforced
+    ? legalClausePackCoverageIssues
+    : []
+  const legacyLegalClausePackCoverageWarnings = legalClausePackCoverage && !legalClausePackCoverageRuntimeEnforced
+    ? legalClausePackCoverageIssues.map((issue) => ({
+        ...issue,
+        source: 'legal_clause_pack_coverage_legacy',
+        message: `${issue.message} This pre-Phase 4 template remains available, but should be republished with governed clause-pack wording.`,
+        required: false,
+      }))
+    : []
   const isCommercialPacket = COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(normalizedPacketType)
   const allowMandateGenerationGaps = normalizedPacketType === 'mandate' && mandateValidationAction !== 'upload_signed'
   const mandateValidation = normalizedPacketType === 'mandate'
@@ -2275,6 +2560,12 @@ export async function validatePacket({
         })),
         ...legalScenarioIssues,
         ...legalScenarioRequirementIssues,
+        ...legalClausePackConflictIssues,
+        ...governedLegalClausePackCoverageIssues,
+        ...legalClausePackTransactionReadinessIssues,
+        ...(legalClausePackScenarioMatrixIssue ? [legalClausePackScenarioMatrixIssue] : []),
+        ...(legalInstrumentFamilyIssue ? [legalInstrumentFamilyIssue] : []),
+        ...(templateGovernanceIssue ? [templateGovernanceIssue] : []),
       ])
     : []
   const criticalIssues = isTemplatePreview
@@ -2285,6 +2576,12 @@ export async function validatePacket({
           ...conditionalPackMissingPlaceholders,
           ...legalScenarioIssues,
           ...legalScenarioRequirementIssues,
+          ...legalClausePackConflictIssues,
+          ...governedLegalClausePackCoverageIssues,
+          ...legalClausePackTransactionReadinessIssues,
+          ...(legalClausePackScenarioMatrixIssue ? [legalClausePackScenarioMatrixIssue] : []),
+          ...(legalInstrumentFamilyIssue ? [legalInstrumentFamilyIssue] : []),
+          ...(templateGovernanceIssue ? [templateGovernanceIssue] : []),
         ]
       : [
           ...ruleCritical,
@@ -2293,6 +2590,12 @@ export async function validatePacket({
           ...conditionalPackMissingPlaceholders,
           ...legalScenarioIssues,
           ...legalScenarioRequirementIssues,
+          ...legalClausePackConflictIssues,
+          ...governedLegalClausePackCoverageIssues,
+          ...legalClausePackTransactionReadinessIssues,
+          ...(legalClausePackScenarioMatrixIssue ? [legalClausePackScenarioMatrixIssue] : []),
+          ...(legalInstrumentFamilyIssue ? [legalInstrumentFamilyIssue] : []),
+          ...(templateGovernanceIssue ? [templateGovernanceIssue] : []),
         ]
   const warningIssues = isTemplatePreview
     ? [...structuralRuleWarnings]
@@ -2301,10 +2604,43 @@ export async function validatePacket({
         ...sellerWarningIssues,
         ...mandateWarningIssues,
       ]
+  const legalDealFactReviewWarnings = (
+    legalClausePackResolution?.reviewItems || legalDealFactsValidation?.reviewItems || []
+  ).map((item) => ({
+    source: 'legal_clause_pack_review',
+    sectionKey: item.section || 'legal_setup',
+    sectionLabel: item.relatedPackLabel || 'Legal setup review',
+    placeholderKey: item.code,
+    placeholderLabel: item.code.replaceAll('_', ' '),
+    message: item.message,
+    required: false,
+    packKey: item.relatedPackKey || null,
+  }))
+  const existingLegalReviewCodes = new Set(legalDealFactReviewWarnings.map((item) => item.placeholderKey))
+  const transactionAttorneyReviewWarnings = (legalClausePackTransactionReadiness?.attorneyReviewItems || [])
+    .filter((item) => !existingLegalReviewCodes.has(item.code))
+    .map((item) => ({
+      source: 'legal_clause_pack_attorney_review',
+      sectionKey: item.section || 'legal_setup',
+      sectionLabel: item.relatedPackLabel || 'Attorney review',
+      placeholderKey: item.code,
+      placeholderLabel: item.code.replaceAll('_', ' '),
+      message: item.message,
+      required: false,
+      packKey: item.relatedPackKey || null,
+    }))
+  warningIssues.push(...legalDealFactReviewWarnings)
+  warningIssues.push(...transactionAttorneyReviewWarnings)
+  warningIssues.push(...legacyLegalClausePackCoverageWarnings)
   const missingPlaceholders = dedupeValidationIssues([
     ...conditionalPackMissingPlaceholders,
     ...legalScenarioIssues,
     ...legalScenarioRequirementIssues,
+    ...governedLegalClausePackCoverageIssues,
+    ...legalClausePackTransactionReadinessIssues,
+    ...(legalClausePackScenarioMatrixIssue ? [legalClausePackScenarioMatrixIssue] : []),
+    ...(legalInstrumentFamilyIssue ? [legalInstrumentFamilyIssue] : []),
+    ...(templateGovernanceIssue ? [templateGovernanceIssue] : []),
     ...(ruleValidation.missingPlaceholders || []),
   ])
   const conditionalPackCanProceed = Boolean(conditionalPackPreflight.canProceed)
@@ -2321,6 +2657,20 @@ export async function validatePacket({
     conditionalPackMissingPlaceholders,
     conditionalPackAudit,
     legalDocumentScenarioProfile,
+    legalDealFacts,
+    legalDealFactsValidation,
+    legalClausePackResolution,
+    legalClausePackCoverage,
+    legalClausePackScenarioMatrix,
+    legalClausePackTransactionReadiness: legalClausePackTransactionReadiness
+      ? {
+          ...legalClausePackTransactionReadiness,
+          runtimeEnforced: legalClausePackTransactionReadinessRuntimeEnforced,
+        }
+      : null,
+    legalInstrumentFamilyProfile,
+    legalInstrumentFamilyAudit: buildLegalInstrumentFamilyAudit(legalInstrumentFamilyProfile),
+    templateGovernance,
     legalDocumentScenarioKey: legalDocumentScenarioProfile?.scenarioKey || null,
     legalDocumentScenarioComplete: Boolean(legalDocumentScenarioProfile?.complete),
     legalDocumentMissingRoutingFacts: legalDocumentScenarioProfile?.missingRoutingFacts || [],
@@ -2341,6 +2691,12 @@ export async function validatePacket({
       : (
           legalScenarioCanProceed &&
           legalScenarioRequirementsCanProceed &&
+          (!legalClausePackResolution || legalClausePackResolution.draftAssemblyAllowed) &&
+          (!legalClausePackCoverage || !legalClausePackCoverage.runtimeEnforced || legalClausePackCoverage.canAssemble) &&
+          (!legalClausePackScenarioMatrix || !legalClausePackScenarioMatrix.runtimeEnforced || legalClausePackScenarioMatrix.passed) &&
+          (!legalClausePackTransactionReadinessRuntimeEnforced || legalClausePackTransactionReadiness?.canGenerate) &&
+          (!legalInstrumentFamilyProfile || legalInstrumentFamilyProfile.generationAllowed) &&
+          (!templateGovernance || templateGovernance.selectableForSigning) &&
           conditionalPackCanProceed &&
           sellerValidation.canProceed &&
           (allowMandateGenerationGaps || (ruleValidation.isValidForGeneration && (!mandateValidation || mandateValidation.canProceed)))
@@ -2361,7 +2717,11 @@ export async function renderPacketPreview({
   template = null,
   validationAction = 'preview',
 } = {}) {
-  const templateResolution = await resolveTemplateForPacket({ packetType, context, template })
+  const templateResolution = await resolveTemplateForPacket({
+    packetType,
+    context: { ...context, validationAction },
+    template,
+  })
   const resolvedTemplate = templateResolution.template || null
   const baseValidation = await validatePacket({
     packetType,
@@ -2567,23 +2927,64 @@ export async function generatePacketVersion({
   const hasConditionalPackBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'conditional_pack')
   const hasLegalScenarioBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'legal_scenario')
   const hasLegalScenarioRequirementBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'legal_scenario_requirement')
+  const hasLegalInstrumentFamilyBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'legal_instrument_family')
+  const hasLegalTemplateGovernanceBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'legal_template_governance')
+  const hasLegalClausePackConflictBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'legal_clause_pack_conflict')
+  const hasLegalClausePackCoverageBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'legal_clause_pack_coverage')
+  const hasLegalClausePackScenarioMatrixBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'legal_clause_pack_scenario_matrix')
+  const hasLegalClausePackTransactionReadinessBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'legal_clause_pack_transaction_readiness')
   const hasMandateTemplateContentGateBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'mandate_template_content_gate')
   const hasMandateTemplateLaunchReadinessBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'mandate_template_launch_readiness')
+  const hasNonBypassableLegalGovernanceIssues =
+    hasLegalInstrumentFamilyBlockingIssues ||
+    hasLegalTemplateGovernanceBlockingIssues ||
+    hasLegalClausePackConflictBlockingIssues ||
+    hasLegalClausePackCoverageBlockingIssues ||
+    hasLegalClausePackScenarioMatrixBlockingIssues ||
+    hasLegalClausePackTransactionReadinessBlockingIssues
   const allowGenerationBypass = (
-    isMandatePacket &&
-    !hasConditionalPackBlockingIssues &&
-    !hasLegalScenarioBlockingIssues &&
-    !hasLegalScenarioRequirementBlockingIssues &&
-    !hasMandateTemplateContentGateBlockingIssues &&
-    !hasMandateTemplateLaunchReadinessBlockingIssues
-  ) || forceGenerate
+    !hasNonBypassableLegalGovernanceIssues && (
+      (
+        isMandatePacket &&
+        !hasConditionalPackBlockingIssues &&
+        !hasLegalScenarioBlockingIssues &&
+        !hasLegalScenarioRequirementBlockingIssues &&
+        !hasMandateTemplateContentGateBlockingIssues &&
+        !hasMandateTemplateLaunchReadinessBlockingIssues
+      ) || forceGenerate
+    )
+  )
   if (!validation.isValidForGeneration && !allowGenerationBypass) {
     const error = createPacketError(
       hasMandateTemplateLaunchReadinessBlockingIssues
         ? 'MANDATE_TEMPLATE_LAUNCH_READINESS_BLOCKED'
+        : hasLegalInstrumentFamilyBlockingIssues
+          ? 'LEGAL_INSTRUMENT_FAMILY_BLOCKED'
+          : hasLegalTemplateGovernanceBlockingIssues
+            ? 'LEGAL_TEMPLATE_GOVERNANCE_BLOCKED'
+          : hasLegalClausePackCoverageBlockingIssues
+            ? 'LEGAL_CLAUSE_PACK_COVERAGE_BLOCKED'
+          : hasLegalClausePackScenarioMatrixBlockingIssues
+            ? 'LEGAL_CLAUSE_PACK_SCENARIO_MATRIX_BLOCKED'
+          : hasLegalClausePackTransactionReadinessBlockingIssues
+            ? 'LEGAL_CLAUSE_PACK_TRANSACTION_READINESS_BLOCKED'
+          : hasLegalClausePackConflictBlockingIssues
+            ? 'LEGAL_CLAUSE_PACK_CONFLICT'
         : hasMandateTemplateContentGateBlockingIssues ? 'MANDATE_TEMPLATE_CONTENT_GATE_BLOCKED' : 'VALIDATION_BLOCKED',
       hasMandateTemplateLaunchReadinessBlockingIssues
         ? 'Mandate template launch readiness is blocked. Publish the correct route template before generation.'
+        : hasLegalInstrumentFamilyBlockingIssues
+          ? 'This agreement family requires an attorney-approved template before generation.'
+          : hasLegalTemplateGovernanceBlockingIssues
+            ? 'Only a currently effective, attorney-approved published template can be generated for signing.'
+          : hasLegalClausePackCoverageBlockingIssues
+            ? 'The selected OTP clause pack has no approved, locked wording in this template.'
+          : hasLegalClausePackScenarioMatrixBlockingIssues
+            ? 'This OTP template has not passed its governed reference transaction matrix.'
+          : hasLegalClausePackTransactionReadinessBlockingIssues
+            ? 'Complete the active clause-pack transaction details before generating this OTP.'
+          : hasLegalClausePackConflictBlockingIssues
+            ? 'The captured legal facts select conflicting clauses. Correct the highlighted facts before generation.'
         : hasMandateTemplateContentGateBlockingIssues
           ? 'Mandate template wording does not match the selected route. Fix the template content before generation.'
           : 'Critical packet data is missing. Fix validation issues before generation.',
@@ -3273,8 +3674,37 @@ export async function generateSigningLinks({
   regenerate = false,
   targetSignerRole = '',
 } = {}) {
+  const resolvedPacketId = normalizeText(packetId)
+  if (!resolvedPacketId) throw new Error('packetId is required.')
+
+  // A resend must remain available for packets that are already in flight. The
+  // first release, however, is always checked against the exact generated OTP.
+  if (!regenerate) {
+    const packet = await fetchDocumentPacket(resolvedPacketId, {
+      includeVersions: true,
+      includeEvents: false,
+    })
+    if (!packet) throw new Error('Document packet not found.')
+    const targetVersion =
+      (packetVersionId
+        ? (packet.versions || []).find((item) => String(item?.id || '') === String(packetVersionId))
+        : getLatestGeneratedVersion(packet.versions || [])) || null
+    if (!targetVersion?.id) {
+      throw createPacketError('NO_SIGNING_VERSION', 'No generated packet version found for signature release.')
+    }
+    const signatureRelease = resolveLegalClausePackSignatureRelease({ packet, version: targetVersion })
+    if (!signatureRelease.canSendForSignature) {
+      const error = createPacketError(
+        'LEGAL_SIGNATURE_RELEASE_BLOCKED',
+        signatureRelease.blockers[0] || 'This OTP requires approval before signature release.',
+      )
+      error.signatureRelease = signatureRelease
+      throw error
+    }
+  }
+
   return generatePacketSigningLinksRecord({
-    packetId,
+    packetId: resolvedPacketId,
     packetVersionId,
     expiresInHours,
     baseUrl,

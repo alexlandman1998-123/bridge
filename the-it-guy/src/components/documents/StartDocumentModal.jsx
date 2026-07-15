@@ -20,6 +20,7 @@ import {
 } from '../../core/documents/documentStartRules'
 import {
   DOCUMENT_START_FINANCE_TYPES,
+  DOCUMENT_START_INSTRUMENT_FAMILIES,
   DOCUMENT_START_MARITAL_REGIMES,
   DOCUMENT_START_PARTY_TYPES,
   DOCUMENT_START_PROPERTY_TITLE_TYPES,
@@ -83,6 +84,7 @@ function getNextStepCopy(sourceMode = DOCUMENT_START_SOURCE_MODES.saved, documen
 
 const LEGAL_FIELD_CLASS = 'min-h-11 w-full rounded-xl border border-[#dbe6f2] bg-white px-3 text-sm font-semibold text-[#102033] outline-none transition focus:border-[#0a66ff]'
 const LEGAL_FIELD_LABELS = {
+  legal_instrument_family: 'agreement type',
   seller_entity_type: 'seller type',
   seller_marital_regime: 'seller marital position',
   buyer_entity_type: 'buyer type',
@@ -298,6 +300,15 @@ export default function StartDocumentModal({
             </div>
 
             <div className={`mt-4 grid gap-4 ${resolvedPacketType === 'otp' ? 'md:grid-cols-2' : 'md:grid-cols-2'}`}>
+              {resolvedPacketType === 'otp' ? (
+                <LegalScenarioField
+                  label="Agreement type"
+                  value={legalScenario.legalInstrumentFamily}
+                  options={DOCUMENT_START_INSTRUMENT_FAMILIES}
+                  placeholder="Choose agreement type"
+                  onChange={(value) => updateLegalScenario('legalInstrumentFamily', value)}
+                />
+              ) : null}
               <LegalScenarioField
                 label="Seller type"
                 value={legalScenario.sellerEntityType}

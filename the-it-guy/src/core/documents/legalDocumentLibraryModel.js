@@ -2,6 +2,7 @@ import { listConditionalPackDataRules } from './conditionalPackDataRules.js'
 import { listLegalDocumentDefinitions } from './legalDocumentCatalog.js'
 import { classifyLegalDocumentEditorSection } from './legalDocumentEditorScope.js'
 import { buildLegalDocumentTemplateCoverageAudit } from './legalDocumentTemplateRouting.js'
+import { SOUTH_AFRICAN_LEGAL_CLAUSE_PACK_DEFINITIONS } from './southAfricanLegalClausePacks.js'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -139,7 +140,12 @@ function buildDocumentModel(definition = {}, templates = []) {
   const liveTemplate = matchingTemplates.find(isLiveTemplate) || null
   const draftTemplates = matchingTemplates.filter((template) => !isLiveTemplate(template) && getTemplateStatus(template) !== 'archived')
   const sections = getSections(primaryTemplate)
-  const conditionalRules = listConditionalPackDataRules({ packetType: definition.packetType })
+  const conditionalRules = [
+    ...listConditionalPackDataRules({ packetType: definition.packetType }),
+    ...(definition.packetType === 'otp'
+      ? SOUTH_AFRICAN_LEGAL_CLAUSE_PACK_DEFINITIONS.filter((pack) => pack.category !== 'core')
+      : []),
+  ]
   const conditionalRuleBySectionKey = new Map(
     conditionalRules.flatMap((rule) => (rule.sectionKeys || [rule.key]).map((key) => [normalizeKey(key), rule])),
   )

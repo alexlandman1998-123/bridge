@@ -115,6 +115,23 @@ import { buildLegalDocumentTemplateCoverageAudit } from '../../core/documents/le
 import { normalizeLegalDocumentEditorScope } from '../../core/documents/legalDocumentCatalog'
 import { listScopedLegalDocumentSectionEntries } from '../../core/documents/legalDocumentEditorScope'
 import { getLegalDocumentEditorSituation } from '../../core/documents/legalDocumentEditorSituations'
+import {
+  LEGAL_INSTRUMENT_FAMILIES,
+  LEGAL_INSTRUMENT_FAMILY_DEFINITIONS,
+  normalizeLegalInstrumentFamily,
+} from '../../core/documents/legalInstrumentFamilyRouter'
+import { normalizeLegalTemplateLifecycleStatus } from '../../core/documents/legalTemplateGovernance'
+import {
+  buildLegalClausePackCoverage,
+  listPublishableLegalClausePackKeys,
+} from '../../core/documents/legalClausePackCoverage'
+import { SOUTH_AFRICAN_LEGAL_CLAUSE_STARTERS } from '../../core/documents/southAfricanLegalClauseLibrary'
+import {
+  SOUTH_AFRICAN_OTP_REFERENCE_SCENARIOS,
+  buildSouthAfricanOtpScenarioPreviewContext,
+  getSouthAfricanOtpReferenceScenario,
+  runLegalClausePackScenarioMatrix,
+} from '../../core/documents/legalClausePackScenarioMatrix'
 
 const SUPPORTED_PACKET_TYPES = [
   {
@@ -841,12 +858,16 @@ const SECTION_HELP_TEXT = {
 
 const TEMPLATE_STATUS_OPTIONS = [
   { key: 'draft', label: 'Draft' },
-  { key: 'in_review', label: 'In Review' },
+  { key: 'attorney_review', label: 'Attorney review' },
   { key: 'approved', label: 'Approved' },
-  { key: 'active', label: 'Active' },
-  { key: 'deprecated', label: 'Deprecated' },
-  { key: 'archived', label: 'Archived' },
+  { key: 'published', label: 'Published' },
+  { key: 'superseded', label: 'Superseded' },
+  { key: 'withdrawn', label: 'Withdrawn' },
 ]
+
+const OTP_INSTRUMENT_FAMILY_OPTIONS = LEGAL_INSTRUMENT_FAMILY_DEFINITIONS
+  .filter((definition) => definition.packetTypes.includes('otp'))
+  .map((definition) => ({ key: definition.key, label: definition.label }))
 
 const PLACEHOLDER_KEY_PATTERN = /^[a-z0-9_.-]+$/i
 const TEMPLATE_TOKEN_REPLACEMENTS = {
@@ -3019,7 +3040,7 @@ function getMandateVariantTemplateLabel(baseLabel = 'Mandate Agreement', routeKe
 }
 
 function isLiveTemplateStatus(status = '') {
-  return ['active', 'published', 'approved', 'live'].includes(normalizeText(status).toLowerCase())
+  return ['active', 'published', 'live'].includes(normalizeText(status).toLowerCase())
 }
 
 function classifyMandateVariantTemplateReadiness(template = null) {
@@ -3279,10 +3300,10 @@ function normalizeNullableText(value) {
 
 function normalizeTemplateStatus(template = {}) {
   const metadata = template?.metadata_json && typeof template.metadata_json === 'object' ? template.metadata_json : {}
-  const fromMetadata = normalizeText(metadata.lifecycle_status || metadata.template_status).toLowerCase()
-  if (fromMetadata) return fromMetadata
-  if (template?.is_active === false) return 'archived'
-  return template?.is_default ? 'active' : 'draft'
+  return normalizeLegalTemplateLifecycleStatus(
+    template?.status || metadata.lifecycle_status || metadata.template_status ||
+      (template?.is_active === false ? 'draft' : template?.is_default ? 'published' : 'draft'),
+  )
 }
 
 function detectTemplateTokenIssues(text = '') {
@@ -3402,6 +3423,9 @@ function toTemplateForm(template = null) {
         metadata.templateVariant ||
         '',
     ),
+    instrumentFamily: normalizeLegalInstrumentFamily(
+      template?.instrument_family || metadata.instrument_family || metadata.legal_instrument_family,
+    ) || (packetType === 'otp' ? LEGAL_INSTRUMENT_FAMILIES.RESIDENTIAL_RESALE : ''),
     legalSellerClauseProfile: normalizeLegalRouteTarget(
       getFirstLegalRouteMetadataValue(metadata, ['seller_clause_profile', 'sellerClauseProfile', 'seller_clause_profiles']),
       LEGAL_PARTY_ROUTE_OPTIONS,
@@ -3695,6 +3719,10 @@ function buildTemplateMetadata(form = {}, existingMetadata = {}, uploadMeta = nu
   const nextMetadata = {
     ...(existingMetadata && typeof existingMetadata === 'object' ? existingMetadata : {}),
     lifecycle_status: normalizeText(form.templateStatus || 'draft') || 'draft',
+    instrument_family: normalizeLegalInstrumentFamily(form.instrumentFamily) ||
+      (normalizeText(form.packetType || form.packet_type).toLowerCase() === 'otp'
+        ? LEGAL_INSTRUMENT_FAMILIES.RESIDENTIAL_RESALE
+        : null),
     render_mode: renderMode,
     template_storage_path: normalizeNullableText(form.templateStoragePath),
     template_storage_bucket: normalizeNullableText(form.templateStorageBucket),
@@ -3724,6 +3752,39 @@ function buildTemplateMetadata(form = {}, existingMetadata = {}, uploadMeta = nu
   }
 
   const packetType = normalizeText(form.packetType || form.packet_type).toLowerCase()
+  if (packetType === 'otp' && form.clausePackCoverage && typeof form.clausePackCoverage === 'object') {
+    const clausePackCoverage = form.clausePackCoverage
+    nextMetadata.governance_version = Math.max(1, Number(nextMetadata.governance_version || 0))
+    nextMetadata.legal_clause_pack_coverage_version = clausePackCoverage.schemaVersion || null
+    nextMetadata.supported_clause_pack_keys = Array.isArray(clausePackCoverage.requiredPackKeys)
+      ? clausePackCoverage.requiredPackKeys
+      : []
+    nextMetadata.last_clause_pack_coverage = {
+      schemaVersion: clausePackCoverage.schemaVersion || null,
+      coveredCount: Number(clausePackCoverage.coveredCount || 0),
+      requiredCount: Number(clausePackCoverage.requiredCount || 0),
+      coveragePercent: Number(clausePackCoverage.coveragePercent || 0),
+      missingWording: (clausePackCoverage.missingWording || []).map((item) => item.key),
+      approvalRequired: (clausePackCoverage.approvalRequired || []).map((item) => item.key),
+      canPublish: Boolean(clausePackCoverage.canPublish),
+      validatedAt: new Date().toISOString(),
+    }
+  }
+  if (packetType === 'otp' && form.clausePackScenarioMatrix && typeof form.clausePackScenarioMatrix === 'object') {
+    const scenarioMatrix = form.clausePackScenarioMatrix
+    nextMetadata.legal_clause_pack_scenario_matrix_version = scenarioMatrix.schemaVersion || null
+    nextMetadata.last_clause_pack_scenario_matrix = {
+      schemaVersion: scenarioMatrix.schemaVersion || null,
+      scenarioCount: Number(scenarioMatrix.scenarioCount || 0),
+      passedCount: Number(scenarioMatrix.passedCount || 0),
+      failedCount: Number(scenarioMatrix.failedCount || 0),
+      exercisedPackCount: Number(scenarioMatrix.exercisedPackCount || 0),
+      failedScenarioKeys: (scenarioMatrix.failedScenarios || []).map((item) => item.key),
+      unexercisedPackKeys: scenarioMatrix.unexercisedPackKeys || [],
+      canPublish: Boolean(scenarioMatrix.canPublish),
+      validatedAt: new Date().toISOString(),
+    }
+  }
   if (packetType === 'mandate') {
     const mandateTemplateVariant = normalizeMandateTemplateRoute(form.mandateTemplateVariant)
     const mandateContentScan = serializeMandateTemplatePublishGateScan(form.mandateContentScan)
@@ -5521,6 +5582,12 @@ function getSectionGovernance(section = {}) {
     lockReason: normalizeText(governance.lockReason || governance.lock_reason),
     lockedByRole: normalizeText(governance.lockedByRole || governance.locked_by_role || 'principal') || 'principal',
     lockedAt: normalizeText(governance.lockedAt || governance.locked_at),
+    approvalStatus: normalizeText(governance.approvalStatus || governance.approval_status || 'unreviewed') || 'unreviewed',
+    approvedAt: normalizeText(governance.approvedAt || governance.approved_at),
+    approvedByRole: normalizeText(governance.approvedByRole || governance.approved_by_role),
+    clausePackKeys: Array.isArray(governance.clause_pack_keys)
+      ? governance.clause_pack_keys.map((item) => normalizeText(item)).filter(Boolean)
+      : [],
   }
 }
 
@@ -5784,6 +5851,9 @@ export default function SettingsSigningTemplatesPage({
     isActive: true,
   })
   const [previewState, setPreviewState] = useState({ loading: false, html: '', warnings: [], critical: [], dataRequirements: [], error: '' })
+  const [selectedOtpPreviewScenarioKey, setSelectedOtpPreviewScenarioKey] = useState(
+    SOUTH_AFRICAN_OTP_REFERENCE_SCENARIOS[0]?.key || '',
+  )
   const [mergeFieldSearch, setMergeFieldSearch] = useState('')
   const [mergeFieldCategory, setMergeFieldCategory] = useState('all')
   const [activeStudioArea, setActiveStudioArea] = useState('templates')
@@ -6335,6 +6405,48 @@ export default function SettingsSigningTemplatesPage({
       routeKey: mandateTemplateVariant,
     })
   }, [form, packetType, selectedTemplate, templateDetail])
+  const otpClausePackCoverage = useMemo(() => {
+    if (packetType !== 'otp') return null
+    const metadataJson = form.metadataJson && typeof form.metadataJson === 'object' ? form.metadataJson : {}
+    return buildLegalClausePackCoverage({
+      template: {
+        ...(selectedTemplate || {}),
+        status: form.templateStatus,
+        is_active: form.isActive,
+        governance_version: Math.max(1, Number(selectedTemplate?.governance_version || metadataJson.governance_version || 0)),
+        metadata_json: {
+          ...metadataJson,
+          governance_version: Math.max(1, Number(metadataJson.governance_version || selectedTemplate?.governance_version || 0)),
+        },
+        sections: form.sections || [],
+      },
+      sections: form.sections || [],
+      requiredPackKeys: listPublishableLegalClausePackKeys(),
+      allowLegacy: false,
+      requireApproval: true,
+    })
+  }, [form.isActive, form.metadataJson, form.sections, form.templateStatus, packetType, selectedTemplate])
+  const otpClausePackScenarioMatrix = useMemo(() => {
+    if (packetType !== 'otp') return null
+    return runLegalClausePackScenarioMatrix({
+      template: {
+        ...(selectedTemplate || {}),
+        governance_version: Math.max(1, Number(selectedTemplate?.governance_version || form.metadataJson?.governance_version || 0)),
+        sections: form.sections || [],
+      },
+      sections: form.sections || [],
+      allowLegacy: false,
+      requireApproval: true,
+    })
+  }, [form.metadataJson?.governance_version, form.sections, packetType, selectedTemplate])
+  const selectedOtpPreviewScenario = useMemo(
+    () => getSouthAfricanOtpReferenceScenario(selectedOtpPreviewScenarioKey),
+    [selectedOtpPreviewScenarioKey],
+  )
+  const selectedOtpPreviewMatrixResult = useMemo(
+    () => otpClausePackScenarioMatrix?.scenarios?.find((item) => item.key === selectedOtpPreviewScenario?.key) || null,
+    [otpClausePackScenarioMatrix, selectedOtpPreviewScenario?.key],
+  )
   const variableGroups = useMemo(
     () => getVariableGroups(canonicalFields),
     [canonicalFields],
@@ -6496,6 +6608,8 @@ export default function SettingsSigningTemplatesPage({
     + validationSummary.warnings.length
     + (mandatePublishGateReport?.blockingCount || 0)
     + (mandatePublishGateReport?.warningCount || 0)
+    + (otpClausePackCoverage?.blockingItems?.length || 0)
+    + (otpClausePackScenarioMatrix?.failedCount || 0)
   const liveTemplate = useMemo(
     () => migrationReport.defaultTemplate?.template || selectedList.find((row) => row?.is_default) || null,
     [migrationReport.defaultTemplate, selectedList],
@@ -6530,6 +6644,7 @@ export default function SettingsSigningTemplatesPage({
       'templateFileName',
       'templateOutputBucket',
       'mandateTemplateVariant',
+      'instrumentFamily',
       'legalSellerClauseProfile',
       'legalBuyerClauseProfile',
       'legalPropertyClauseProfile',
@@ -6537,9 +6652,26 @@ export default function SettingsSigningTemplatesPage({
     ].some((key) => stableStringify(form[key]) !== stableStringify(baselineForm[key])) : Boolean(selectedTemplate)
     const contentScanBlockers = mandatePublishGateReport?.blockingMessages || []
     const contentScanWarnings = mandatePublishGateReport?.warningMessages || []
+    const clausePackCoverageBlockers = (otpClausePackCoverage?.blockingItems || []).map((item) => (
+      item.status === 'missing_wording'
+        ? `${item.label}: add linked wording before publishing.`
+        : `${item.label}: wording requires approval and a section lock before publishing.`
+    ))
+    const clausePackScenarioBlockers = (otpClausePackScenarioMatrix?.failedScenarios || []).flatMap((scenarioResult) => (
+      (scenarioResult.issues || [])
+        .filter((item) => !['missing_wording', 'approval_required'].includes(item.code))
+        .map((item) => `${scenarioResult.label}: ${item.message}`)
+    ))
+    if (otpClausePackScenarioMatrix?.unexercisedPackKeys?.length) {
+      clausePackScenarioBlockers.push(
+        `Reference scenarios do not exercise: ${otpClausePackScenarioMatrix.unexercisedPackKeys.join(', ')}.`,
+      )
+    }
     const blockers = [
       ...validationSummary.blockers,
       ...contentScanBlockers,
+      ...clausePackCoverageBlockers,
+      ...clausePackScenarioBlockers,
       ...(!selectedIsOrgOwned ? ['Save your agency version before publishing.'] : []),
       ...(!canPublishTemplate ? [`Only ${administratorLabel} can publish templates.`] : []),
       ...(hasUnsavedChanges ? ['Save the latest edits before publishing.'] : []),
@@ -6560,17 +6692,23 @@ export default function SettingsSigningTemplatesPage({
       contentScan: mandatePublishGateReport,
       contentScanBlockers,
       contentScanWarnings,
+      clausePackCoverage: otpClausePackCoverage,
+      clausePackCoverageBlockers,
+      clausePackScenarioMatrix: otpClausePackScenarioMatrix,
+      clausePackScenarioBlockers,
       blockers,
       warnings: [...validationSummary.warnings, ...contentScanWarnings],
       liveTemplateLabel: liveTemplate?.template_label || liveTemplate?.template_key || 'No live template',
       currentTemplateLabel: form.templateLabel || selectedTemplate?.template_label || selectedTemplate?.template_key || 'Current draft',
     }
-  }, [administratorLabel, baselineForm, canPublishTemplate, form, hasUnsavedChanges, liveTemplate, mandatePublishGateReport, selectedIsOrgOwned, selectedTemplate, validationSummary.blockers, validationSummary.renderable, validationSummary.warnings])
+  }, [administratorLabel, baselineForm, canPublishTemplate, form, hasUnsavedChanges, liveTemplate, mandatePublishGateReport, otpClausePackCoverage, otpClausePackScenarioMatrix, selectedIsOrgOwned, selectedTemplate, validationSummary.blockers, validationSummary.renderable, validationSummary.warnings])
   const studioHealthChecks = useMemo(() => {
     const docxReady = normalizeText(form.renderMode) === TEMPLATE_RENDER_MODES.LEGACY_DOCX
       ? Boolean(normalizeText(form.templateStoragePath))
       : true
     const publishReady = validationSummary.blockers.length === 0
+      && (!otpClausePackCoverage || otpClausePackCoverage.canPublish)
+      && (!otpClausePackScenarioMatrix || otpClausePackScenarioMatrix.canPublish)
       && (normalizeText(form.renderMode) === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? validationSummary.renderable : docxReady)
 
     return [
@@ -6586,12 +6724,24 @@ export default function SettingsSigningTemplatesPage({
         label: previewState.html ? 'Test preview generated' : 'Test preview not generated yet',
         passed: Boolean(previewState.html) && !previewState.error,
       },
+      ...(otpClausePackCoverage ? [{
+        label: otpClausePackCoverage.canPublish
+          ? 'Clause packs approved and covered'
+          : `${otpClausePackCoverage.blockingItems.length} clause pack${otpClausePackCoverage.blockingItems.length === 1 ? '' : 's'} need attention`,
+        passed: otpClausePackCoverage.canPublish,
+      }] : []),
+      ...(otpClausePackScenarioMatrix ? [{
+        label: otpClausePackScenarioMatrix.canPublish
+          ? 'Reference transactions all pass'
+          : `${otpClausePackScenarioMatrix.failedCount} reference transaction${otpClausePackScenarioMatrix.failedCount === 1 ? '' : 's'} failed`,
+        passed: otpClausePackScenarioMatrix.canPublish,
+      }] : []),
       {
         label: publishReady ? 'Ready to publish' : 'Save and preview before publishing',
         passed: publishReady,
       },
     ]
-  }, [form.renderMode, form.templateStoragePath, previewState.error, previewState.html, validationSummary.blockers.length, validationSummary.missingRequired.length, validationSummary.renderable])
+  }, [form.renderMode, form.templateStoragePath, otpClausePackCoverage, otpClausePackScenarioMatrix, previewState.error, previewState.html, validationSummary.blockers.length, validationSummary.missingRequired.length, validationSummary.renderable])
   const templateHealthPercent = useMemo(() => {
     if (!studioHealthChecks.length) return 0
     const passedCount = studioHealthChecks.filter((item) => item.passed).length
@@ -6829,11 +6979,23 @@ export default function SettingsSigningTemplatesPage({
       packetVersionId: latestGeneratedLibraryPacketVersion?.id || '',
     })
   }, [latestGeneratedLibraryPacketVersion?.id, loadLibraryPacketSigningSummary, selectedLibraryPacket?.id])
-  const clauseLibraryItems = useMemo(() => CONTRACT_CLAUSE_LIBRARY_ITEMS.map((item) => ({
-    ...item,
-    tokens: detectTemplateTokenIssues(item.snippet).tokens,
-    tokenLabels: detectTemplateTokenIssues(item.snippet).tokens.map((token) => tokenLabelByKey[token] || humanizeKey(token)),
-  })), [tokenLabelByKey])
+  const clauseLibraryItems = useMemo(() => {
+    const packKeys = new Set(listPublishableLegalClausePackKeys())
+    return [...CONTRACT_CLAUSE_LIBRARY_ITEMS, ...SOUTH_AFRICAN_LEGAL_CLAUSE_STARTERS].map((item) => {
+      const tokens = detectTemplateTokenIssues(item.snippet).tokens
+      const packKey = normalizeText(item.packKey || (packKeys.has(item.key) ? item.key : ''))
+      const approvalStatus = normalizeText(item.approvalStatus) || (
+        normalizeText(item.status).toLowerCase() === 'legal reviewed' ? 'approved' : 'attorney_review'
+      )
+      return {
+        ...item,
+        packKey,
+        approvalStatus,
+        tokens,
+        tokenLabels: tokens.map((token) => tokenLabelByKey[token] || humanizeKey(token)),
+      }
+    })
+  }, [tokenLabelByKey])
   const templateTypeConfig = visiblePacketTypes.find((item) => item.key === packetType) || visiblePacketTypes[0] || SUPPORTED_PACKET_TYPES[0]
 
   useEffect(() => {
@@ -7447,9 +7609,47 @@ export default function SettingsSigningTemplatesPage({
     setHasUnsavedChanges(true)
     setForm((previous) => ({
       ...previous,
-      sections: (previous.sections || []).map((section, sectionIndex) => (
-        sectionIndex === index ? { ...section, ...patch } : section
-      )),
+      sections: (previous.sections || []).map((section, sectionIndex) => {
+        if (sectionIndex !== index) return section
+        const contentChanged = [
+          'sectionKey',
+          'legalText',
+          'placeholderKeysText',
+          'placeholderKeys',
+          'conditionJson',
+        ].some((key) => Object.prototype.hasOwnProperty.call(patch, key) && stableStringify(patch[key]) !== stableStringify(section[key]))
+        const nextSection = { ...section, ...patch }
+        if (!contentChanged) return nextSection
+        const metadataJson = nextSection.metadataJson && typeof nextSection.metadataJson === 'object'
+          ? nextSection.metadataJson
+          : {}
+        const governance = metadataJson.governance && typeof metadataJson.governance === 'object'
+          ? metadataJson.governance
+          : {}
+        const previouslyApproved = Boolean(
+          getSectionGovernance(section).locked ||
+          ['approved', 'attorney_approved', 'legal_approved'].includes(normalizeText(getSectionGovernance(section).approvalStatus).toLowerCase()),
+        )
+        if (!previouslyApproved && !governance.locked) return nextSection
+        return {
+          ...nextSection,
+          metadataJson: {
+            ...metadataJson,
+            governance: {
+              ...governance,
+              locked: false,
+              locked_at: null,
+              locked_by_role: null,
+              lockReason: 'Wording changed after approval',
+              approval_status: 'attorney_review',
+              approved_at: null,
+              approved_by: null,
+              approved_by_role: null,
+              review_invalidated_at: new Date().toISOString(),
+            },
+          },
+        }
+      }),
     }))
   }
 
@@ -7532,18 +7732,39 @@ export default function SettingsSigningTemplatesPage({
       setError('Mandate content scanner found blockers. Resolve the route wording before activating this mandate template.')
       return
     }
+    const isActivatingOtpTemplate = packetType === 'otp' && (
+      Boolean(form.isDefault) ||
+      Boolean(form.isActive) ||
+      isLiveTemplateStatus(form.templateStatus)
+    )
+    if (isActivatingOtpTemplate && otpClausePackCoverage?.canPublish === false) {
+      setError('Complete and approve every supported OTP clause pack before activating this template.')
+      return
+    }
+    if (isActivatingOtpTemplate && otpClausePackScenarioMatrix?.canPublish === false) {
+      setError('Fix the failed reference transactions before activating this OTP template.')
+      return
+    }
 
     try {
       setSaving(true)
       setError('')
       setMessage('')
 
-      const metadataJson = buildTemplateMetadata({ ...form, packetType, validationSummary, mandateContentScan: mandatePublishGateReport }, form.metadataJson || {}, null)
+      const metadataJson = buildTemplateMetadata({
+        ...form,
+        packetType,
+        validationSummary,
+        mandateContentScan: mandatePublishGateReport,
+        clausePackCoverage: otpClausePackCoverage,
+        clausePackScenarioMatrix: otpClausePackScenarioMatrix,
+      }, form.metadataJson || {}, null)
       await updateDocumentPacketTemplate(selectedTemplateId, {
         templateLabel: form.templateLabel,
         description: form.description,
         versionTag: form.versionTag,
         templateStatus: form.templateStatus,
+        instrumentFamily: form.instrumentFamily,
         templateFormat: getTemplateFormatForMode(form.renderMode),
         templateStorageBucket: form.templateStorageBucket,
         templateStoragePath: form.templateStoragePath,
@@ -7582,18 +7803,35 @@ export default function SettingsSigningTemplatesPage({
       setError('Mandate content scanner found blockers. Resolve the route wording before publishing this mandate template.')
       return
     }
+    if (packetType === 'otp' && otpClausePackCoverage?.canPublish === false) {
+      setError('Complete and approve every supported OTP clause pack before publishing this template.')
+      return
+    }
+    if (packetType === 'otp' && otpClausePackScenarioMatrix?.canPublish === false) {
+      setError('Fix the failed reference transactions before publishing this OTP template.')
+      return
+    }
 
     try {
       setSaving(true)
       setError('')
       setMessage('')
 
-      const metadataJson = buildTemplateMetadata({ ...form, packetType, validationSummary, mandateContentScan: mandatePublishGateReport }, form.metadataJson || {}, null)
+      const metadataJson = buildTemplateMetadata({
+        ...form,
+        templateStatus: 'published',
+        packetType,
+        validationSummary,
+        mandateContentScan: mandatePublishGateReport,
+        clausePackCoverage: otpClausePackCoverage,
+        clausePackScenarioMatrix: otpClausePackScenarioMatrix,
+      }, form.metadataJson || {}, null)
       await updateDocumentPacketTemplate(selectedTemplateId, {
         templateLabel: form.templateLabel,
         description: form.description,
         versionTag: form.versionTag,
-        templateStatus: 'active',
+        templateStatus: 'published',
+        instrumentFamily: form.instrumentFamily,
         templateFormat: getTemplateFormatForMode(form.renderMode),
         templateStorageBucket: form.templateStorageBucket,
         templateStoragePath: form.templateStoragePath,
@@ -7641,10 +7879,21 @@ export default function SettingsSigningTemplatesPage({
         moduleType: normalizedModuleType,
         validationSummary,
       })
+      const sampleContext = buildSamplePreviewContext(packetType)
+      const scenarioContext = packetType === 'otp'
+        ? buildSouthAfricanOtpScenarioPreviewContext(selectedOtpPreviewScenarioKey)
+        : {}
 
       const preview = await renderPacketPreview({
         packetType,
-        context: buildSamplePreviewContext(packetType),
+        context: {
+          ...sampleContext,
+          ...scenarioContext,
+          sourceContext: {
+            ...(sampleContext.sourceContext && typeof sampleContext.sourceContext === 'object' ? sampleContext.sourceContext : {}),
+            ...(scenarioContext.sourceContext && typeof scenarioContext.sourceContext === 'object' ? scenarioContext.sourceContext : {}),
+          },
+        },
         template: previewTemplate,
         title: `${templateTypeConfig.shortLabel} template validation preview`,
         validationAction: 'template_preview',
@@ -8330,13 +8579,26 @@ export default function SettingsSigningTemplatesPage({
       ...currentGovernance,
       ...patch,
     }
-    if (patch.locked === true && !nextGovernance.locked_at) {
-      nextGovernance.locked_at = new Date().toISOString()
+    if (patch.locked === true) {
+      const approvalRole = normalizeText(
+        patch.approved_by_role || membershipRole || workspaceMembershipRole || role || 'principal',
+      ).toLowerCase() || 'principal'
+      const approvedAt = new Date().toISOString()
+      nextGovernance.locked_at = approvedAt
+      nextGovernance.locked_by_role = normalizeText(patch.locked_by_role || approvalRole) || approvalRole
+      nextGovernance.approval_status = 'approved'
+      nextGovernance.approved_at = approvedAt
+      nextGovernance.approved_by_role = approvalRole
+      nextGovernance.review_invalidated_at = null
     }
     if (patch.locked === false) {
       nextGovernance.locked_at = null
       nextGovernance.locked_by_role = null
-      nextGovernance.lockReason = ''
+      nextGovernance.approval_status = 'attorney_review'
+      nextGovernance.approved_at = null
+      nextGovernance.approved_by = null
+      nextGovernance.approved_by_role = null
+      nextGovernance.lockReason = normalizeText(patch.lockReason) || 'Returned for wording review'
     }
     updateSection(index, {
       metadataJson: {
@@ -8378,13 +8640,77 @@ export default function SettingsSigningTemplatesPage({
       ...normalizedCondition,
       label: normalizedCondition.label || describeConditionRule(normalizedCondition, tokenLabelByKey),
     })
-    updateSection(selectedSectionIndex, {
+    const packKey = normalizeText(clause.packKey)
+    const existingMetadata = selectedSection.metadataJson && typeof selectedSection.metadataJson === 'object'
+      ? selectedSection.metadataJson
+      : {}
+    const clauseMetadata = {
+      ...existingMetadata,
+      source_clause_key: normalizeText(clause.key) || null,
+      clause_pack_keys: Array.from(new Set([
+        ...(Array.isArray(existingMetadata.clause_pack_keys) ? existingMetadata.clause_pack_keys : []),
+        packKey,
+      ].map((item) => normalizeText(item)).filter(Boolean))),
+      governance: {
+        ...(existingMetadata.governance && typeof existingMetadata.governance === 'object' ? existingMetadata.governance : {}),
+        locked: false,
+        locked_at: null,
+        locked_by_role: null,
+        lockReason: packKey ? 'New clause pack wording requires approval' : 'Inserted wording requires approval',
+        approval_status: 'attorney_review',
+        approved_at: null,
+        approved_by: null,
+        approved_by_role: null,
+        source_clause_status: normalizeText(clause.approvalStatus || clause.status) || 'attorney_review',
+        clause_pack_keys: packKey ? [packKey] : [],
+      },
+    }
+    const sectionPatch = {
+      ...(packKey ? { sectionKey: packKey, sectionLabel: normalizeText(clause.title) || selectedSection.sectionLabel } : {}),
       legalText: nextValue,
       conditionJson: nextConditionJson || selectedSection.conditionJson || {},
       placeholderKeysText: nextPlaceholderKeys.join(', '),
       placeholderKeys: nextPlaceholderKeys,
-    })
-    setMessage(`Inserted clause: ${clause.title}`)
+      metadataJson: clauseMetadata,
+    }
+    if (packKey && normalizeText(currentValue)) {
+      const nextIndex = (form.sections || []).length
+      const snippetTokens = detectTemplateTokenIssues(snippet).tokens
+      setHasUnsavedChanges(true)
+      setForm((previous) => ({
+        ...previous,
+        sections: [
+          ...(previous.sections || []),
+          {
+            id: null,
+            sectionKey: packKey,
+            sectionLabel: normalizeText(clause.title) || humanizeKey(packKey),
+            sectionType: 'legal_text',
+            legalText: snippet,
+            placeholderKeysText: snippetTokens.join(', '),
+            placeholderKeys: snippetTokens,
+            isRequired: false,
+            conditionJson: nextConditionJson || {},
+            requiresInitial: false,
+            initialPlaceholderKey: '',
+            signingFields: [],
+            sortOrder: nextIndex,
+            metadataJson: {
+              source_clause_key: normalizeText(clause.key) || null,
+              clause_pack_keys: [packKey],
+              governance: {
+                ...clauseMetadata.governance,
+                clause_pack_keys: [packKey],
+              },
+            },
+          },
+        ],
+      }))
+      setSelectedSectionIndex(nextIndex)
+    } else {
+      updateSection(selectedSectionIndex, sectionPatch)
+    }
+    setMessage(`Inserted clause: ${clause.title}. Review and approve the wording before publishing.`)
   }
 
   function focusSourceEditor() {
@@ -9314,10 +9640,14 @@ export default function SettingsSigningTemplatesPage({
                           <p className="text-sm font-semibold text-[#102033]">Section lock</p>
                           <span className={[
                             'rounded-full border px-2 py-0.5 text-[0.66rem] font-semibold',
-                            selectedSectionGovernance.locked ? 'border-[#cdebd8] bg-[#eef9f1] text-[#128642]' : 'border-[#dbe7f3] bg-white text-[#607387]',
+                            selectedSectionGovernance.approvalStatus === 'approved' && selectedSectionGovernance.locked
+                              ? 'border-[#cdebd8] bg-[#eef9f1] text-[#128642]'
+                              : 'border-[#f1d8aa] bg-[#fff8eb] text-[#8a5a12]',
                           ].join(' ')}
                           >
-                            {selectedSectionGovernance.locked ? 'Locked' : 'Open'}
+                            {selectedSectionGovernance.approvalStatus === 'approved' && selectedSectionGovernance.locked
+                              ? 'Approved & locked'
+                              : 'Attorney review'}
                           </span>
                         </div>
                         <button
@@ -9326,12 +9656,16 @@ export default function SettingsSigningTemplatesPage({
                           disabled={!canPublishTemplate || !selectedSection}
                           onClick={() => updateSelectedSectionGovernance({
                             locked: !selectedSectionGovernance.locked,
-                            locked_by_role: !selectedSectionGovernance.locked ? 'principal' : null,
                             lockReason: !selectedSectionGovernance.locked ? 'Approved wording' : '',
                           })}
                         >
-                          {selectedSectionGovernance.locked ? 'Unlock wording' : 'Lock approved wording'}
+                          {selectedSectionGovernance.locked ? 'Return to review' : 'Approve and lock wording'}
                         </button>
+                        {selectedSectionGovernance.approvedAt ? (
+                          <p className="mt-2 text-[11px] leading-4 text-[#6b7c93]">
+                            Approved {formatDateTime(selectedSectionGovernance.approvedAt)} by {selectedSectionGovernance.approvedByRole || 'authorised reviewer'}.
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                   ) : (
@@ -10632,6 +10966,23 @@ export default function SettingsSigningTemplatesPage({
                       Choose only what makes this OTP version different. Leave a field on “Any” when it applies broadly.
                     </p>
                     <div className="grid gap-3 sm:grid-cols-2">
+                      {packetType === 'otp' ? (
+                        <label className={`${settingsFieldClass} sm:col-span-2`}>
+                          Agreement family
+                          <select
+                            value={form.instrumentFamily || LEGAL_INSTRUMENT_FAMILIES.RESIDENTIAL_RESALE}
+                            disabled={!canEdit || !selectedIsOrgOwned}
+                            onChange={(event) => setForm((previous) => ({ ...previous, instrumentFamily: event.target.value }))}
+                          >
+                            {OTP_INSTRUMENT_FAMILY_OPTIONS.map((option) => (
+                              <option key={option.key} value={option.key}>{option.label}</option>
+                            ))}
+                          </select>
+                          <span className="text-xs font-normal leading-5 text-[#6b7c93]">
+                            Residential resale is automated. Specialist families stay in attorney review until an approved family template is configured.
+                          </span>
+                        </label>
+                      ) : null}
                       <label className={settingsFieldClass}>
                         Seller
                         <select
@@ -11036,6 +11387,109 @@ export default function SettingsSigningTemplatesPage({
                   ))}
                 </div>
 
+                {packetType === 'otp' && otpClausePackCoverage ? (
+                  <div className={[
+                    'mt-4 rounded-[18px] border px-4 py-3',
+                    otpClausePackCoverage.canPublish
+                      ? 'border-[#cdebd8] bg-[#eef9f1]'
+                      : 'border-[#f1d8aa] bg-[#fff8eb]',
+                  ].join(' ')}
+                  >
+                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">OTP Clause Pack Gate</p>
+                        <p className="mt-1 text-sm font-semibold text-[#102033]">
+                          {otpClausePackCoverage.coveredCount}/{otpClausePackCoverage.requiredCount} packs ready for day-to-day use
+                        </p>
+                      </div>
+                      <span className={[
+                        'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold',
+                        otpClausePackCoverage.canPublish
+                          ? 'border-[#b8e5c7] bg-white text-[#128642]'
+                          : 'border-[#e5c58c] bg-white text-[#8a5a12]',
+                      ].join(' ')}
+                      >
+                        {otpClausePackCoverage.coveragePercent}% ready
+                      </span>
+                    </div>
+                    {otpClausePackCoverage.blockingItems.length ? (
+                      <div className="mt-3 space-y-2">
+                        {otpClausePackCoverage.blockingItems.slice(0, 5).map((item) => (
+                          <p key={`otp-pack-gate-${item.key}`} className="text-sm leading-6 text-[#7a5416]">
+                            <span className="font-semibold">{item.label}:</span>{' '}
+                            {item.status === 'missing_wording' ? 'add wording' : 'approve and lock wording'}.
+                          </p>
+                        ))}
+                        {otpClausePackCoverage.blockingItems.length > 5 ? (
+                          <p className="text-xs font-semibold text-[#7a5416]">+{otpClausePackCoverage.blockingItems.length - 5} more packs need attention</p>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm leading-6 text-[#52667d]">
+                        Every supported transaction pack has linked, approved and locked wording.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+
+                {packetType === 'otp' && otpClausePackScenarioMatrix ? (
+                  <div className={[
+                    'mt-4 rounded-[18px] border px-4 py-3',
+                    otpClausePackScenarioMatrix.canPublish
+                      ? 'border-[#cdebd8] bg-[#eef9f1]'
+                      : 'border-[#f3d1ce] bg-[#fff4f3]',
+                  ].join(' ')}
+                  >
+                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">Reference Transaction Test</p>
+                        <p className="mt-1 text-sm font-semibold text-[#102033]">
+                          {otpClausePackScenarioMatrix.passedCount}/{otpClausePackScenarioMatrix.scenarioCount} everyday transaction types pass
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-[#607387]">
+                          The matrix exercises {otpClausePackScenarioMatrix.exercisedPackCount}/{otpClausePackScenarioMatrix.publishablePackCount} supported clause packs.
+                        </p>
+                      </div>
+                      <span className={[
+                        'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold',
+                        otpClausePackScenarioMatrix.canPublish
+                          ? 'border-[#b8e5c7] bg-white text-[#128642]'
+                          : 'border-[#e9b7b2] bg-white text-[#8e1f15]',
+                      ].join(' ')}
+                      >
+                        {otpClausePackScenarioMatrix.canPublish ? 'All passed' : `${otpClausePackScenarioMatrix.failedCount} failed`}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-2 md:grid-cols-2">
+                      {otpClausePackScenarioMatrix.scenarios.map((scenarioResult) => (
+                        <button
+                          key={`otp-reference-scenario-${scenarioResult.key}`}
+                          type="button"
+                          className="flex items-start justify-between gap-3 rounded-[12px] border border-white/80 bg-white px-3 py-2.5 text-left transition hover:border-[#96d7ad]"
+                          onClick={() => {
+                            setSelectedOtpPreviewScenarioKey(scenarioResult.key)
+                            setActiveTab('preview')
+                          }}
+                        >
+                          <span className="min-w-0">
+                            <span className="block text-xs font-semibold text-[#102033]">{scenarioResult.label}</span>
+                            {!scenarioResult.passed ? (
+                              <span className="mt-1 block text-[11px] leading-4 text-[#8e1f15]">
+                                {scenarioResult.issues[0]?.message || scenarioResult.reviewItems[0]?.message || 'Needs review'}
+                              </span>
+                            ) : null}
+                          </span>
+                          {scenarioResult.passed ? (
+                            <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-[#128642]" />
+                          ) : (
+                            <AlertTriangle size={15} className="mt-0.5 shrink-0 text-[#b64736]" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
                 {packetType === 'mandate' && mandatePublishGateReport ? (
                   <div className={[
                     'mt-4 rounded-[18px] border px-4 py-3',
@@ -11083,18 +11537,20 @@ export default function SettingsSigningTemplatesPage({
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold text-[#102033]">{getFriendlySectionLabel(section, index)}</p>
                           <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
-                            {governance.locked
-                              ? `Locked for ${governance.lockedByRole || 'principal'} review${governance.lockReason ? `: ${governance.lockReason}` : ''}`
-                              : 'Unlocked wording'}
+                            {governance.approvalStatus === 'approved' && governance.locked
+                              ? `Approved by ${governance.approvedByRole || governance.lockedByRole || 'authorised reviewer'}${governance.lockReason ? `: ${governance.lockReason}` : ''}`
+                              : `Awaiting wording approval${governance.lockReason ? `: ${governance.lockReason}` : ''}`}
                           </p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                           <span className={[
                             'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold',
-                            governance.locked ? 'border-[#cdebd8] bg-[#eef9f1] text-[#128642]' : 'border-[#dbe7f3] bg-[#f8fbff] text-[#607387]',
+                            governance.approvalStatus === 'approved' && governance.locked
+                              ? 'border-[#cdebd8] bg-[#eef9f1] text-[#128642]'
+                              : 'border-[#f1d8aa] bg-[#fff8eb] text-[#8a5a12]',
                           ].join(' ')}
                           >
-                            {governance.locked ? 'Locked' : 'Open'}
+                            {governance.approvalStatus === 'approved' && governance.locked ? 'Approved' : 'Review'}
                           </span>
                           <button
                             type="button"
@@ -11102,12 +11558,11 @@ export default function SettingsSigningTemplatesPage({
                             disabled={!canPublishTemplate || !selectedIsOrgOwned}
                             onClick={() => updateSectionGovernance(index, {
                               locked: !governance.locked,
-                              locked_by_role: !governance.locked ? 'principal' : null,
                               lockReason: !governance.locked ? 'Approved wording' : '',
                             })}
                           >
                             <ShieldCheck size={14} />
-                            <span>{governance.locked ? 'Unlock' : 'Lock'}</span>
+                            <span>{governance.locked ? 'Return to review' : 'Approve & lock'}</span>
                           </button>
                         </div>
                       </div>
@@ -11282,6 +11737,42 @@ export default function SettingsSigningTemplatesPage({
                 </button>
               }
             >
+              {packetType === 'otp' ? (
+                <div className="mb-4 rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                    <label className="min-w-0 flex-1 text-sm font-semibold text-[#102033]">
+                      Test transaction
+                      <select
+                        className="mt-2 w-full rounded-[12px] border border-[#dbe7f3] bg-white px-3 py-2.5 text-sm font-medium text-[#233246] outline-none transition focus:border-[#96d7ad] focus:ring-2 focus:ring-[#dff4e7]"
+                        value={selectedOtpPreviewScenario?.key || ''}
+                        onChange={(event) => {
+                          setSelectedOtpPreviewScenarioKey(event.target.value)
+                          setPreviewState({ loading: false, html: '', warnings: [], critical: [], dataRequirements: [], error: '' })
+                        }}
+                      >
+                        {SOUTH_AFRICAN_OTP_REFERENCE_SCENARIOS.map((scenarioOption) => (
+                          <option key={`preview-scenario-option-${scenarioOption.key}`} value={scenarioOption.key}>
+                            {scenarioOption.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <span className={[
+                      'inline-flex shrink-0 items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold',
+                      selectedOtpPreviewMatrixResult?.passed
+                        ? 'border-[#cdebd8] bg-[#eef9f1] text-[#128642]'
+                        : 'border-[#f3d1ce] bg-[#fff4f3] text-[#8e1f15]',
+                    ].join(' ')}
+                    >
+                      {selectedOtpPreviewMatrixResult?.passed ? 'Scenario passed' : 'Scenario needs attention'}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-[#607387]">{selectedOtpPreviewScenario?.description}</p>
+                  <p className="mt-1 text-[11px] font-semibold text-[#6b7c93]">
+                    {selectedOtpPreviewMatrixResult?.activePackKeys?.length || 0} clause packs selected for this transaction
+                  </p>
+                </div>
+              ) : null}
               <div className="rounded-[20px] border border-[#dbe7f3] bg-[#f6f8fb] p-3 sm:p-5" data-testid="sample-preview-stage">
                 <div className="flex min-h-[560px] items-start justify-center overflow-auto rounded-[16px] border border-[#e2eaf3] bg-[#eef3f8] p-3 sm:p-6">
                   <div className="w-full max-w-[760px] rounded-[10px] border border-[#e2eaf3] bg-white px-5 py-6 shadow-[0_18px_34px_rgba(15,23,42,0.10)] sm:px-10 sm:py-12" data-testid="sample-preview-page">
@@ -11438,8 +11929,8 @@ export default function SettingsSigningTemplatesPage({
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
           <TemplateStudioPanel
             eyebrow="Clause Library"
-            title="Approved Clause Library"
-            description="Reusable approved wording that can be inserted directly into the selected document section."
+            title="Clause Pack Library"
+            description="Reusable South African transaction wording. New and edited wording must be approved and locked before the OTP template can be published."
             actions={
               <button type="button" className={studioPrimaryButtonClass} onClick={() => setActiveStudioArea('templates')}>
                 <Plus size={14} />
@@ -11468,6 +11959,9 @@ export default function SettingsSigningTemplatesPage({
                   <p className="mt-4 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">{item.category}</p>
                   <h3 className="mt-4 text-base font-semibold text-[#102033]">{item.title}</h3>
                   <p className="mt-2 text-sm leading-6 text-[#607387]">{item.description}</p>
+                  {item.packKey ? (
+                    <p className="mt-2 break-all font-mono text-[11px] text-[#7a8da6]">{item.packKey}</p>
+                  ) : null}
                   <div className="mt-4 rounded-[14px] border border-[#dbe7f3] bg-white px-3 py-3 text-sm leading-6 text-[#233246]">
                     {renderTemplateEditorInline(item.snippet, tokenLabelByKey)}
                   </div>

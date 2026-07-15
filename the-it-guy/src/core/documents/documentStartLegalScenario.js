@@ -33,6 +33,12 @@ export const DOCUMENT_START_FINANCE_TYPES = Object.freeze([
   { value: 'combination', label: 'Cash and bond' },
 ])
 
+export const DOCUMENT_START_INSTRUMENT_FAMILIES = Object.freeze(
+  LEGAL_INSTRUMENT_FAMILY_DEFINITIONS
+    .filter((definition) => definition.packetTypes.includes('otp'))
+    .map((definition) => ({ value: definition.key, label: definition.label })),
+)
+
 function normalizePartyType(value = '') {
   const key = normalizeKey(value)
   if (['single', 'married'].includes(key)) return 'individual'
@@ -77,6 +83,12 @@ function getOptionLabel(options = [], value = '') {
 
 export function normalizeDocumentStartLegalScenario(input = {}, packetType = '') {
   const normalizedPacketType = normalizeKey(packetType || input.packetType)
+  const instrumentFamilyProfile = normalizedPacketType === 'otp'
+    ? resolveLegalInstrumentFamilyProfile({
+        packetType: 'otp',
+        legalInstrumentFamily: input.legalInstrumentFamily || input.legal_instrument_family || LEGAL_INSTRUMENT_FAMILIES.RESIDENTIAL_RESALE,
+      })
+    : null
   const sellerEntityType = normalizePartyType(input.sellerEntityType || input.seller_entity_type || input.sellerType || input.seller_type)
   const buyerEntityType = normalizedPacketType === 'otp'
     ? normalizePartyType(input.buyerEntityType || input.buyer_entity_type || input.buyerType || input.buyer_type || input.purchaserType || input.purchaser_type)
@@ -113,6 +125,9 @@ export function normalizeDocumentStartLegalScenario(input = {}, packetType = '')
     ? `${sellerProfile}_${propertyTitleType}`
     : ''
   const summaryParts = [
+    normalizedPacketType === 'otp'
+      ? getOptionLabel(DOCUMENT_START_INSTRUMENT_FAMILIES, instrumentFamilyProfile?.familyKey)
+      : '',
     sellerProfile ? `${getOptionLabel(DOCUMENT_START_PARTY_TYPES, sellerEntityType)} seller${sellerProfile === 'individual_spouse_consent' ? ' (married in community)' : ''}` : '',
     normalizedPacketType === 'otp' && buyerProfile
       ? `${getOptionLabel(DOCUMENT_START_PARTY_TYPES, buyerEntityType)} buyer${buyerProfile === 'individual_spouse_consent' ? ' (married in community)' : ''}`
@@ -123,6 +138,8 @@ export function normalizeDocumentStartLegalScenario(input = {}, packetType = '')
 
   return {
     packetType: normalizedPacketType,
+    legalInstrumentFamily: instrumentFamilyProfile?.familyKey || '',
+    legalInstrumentFamilyGenerationAllowed: instrumentFamilyProfile?.generationAllowed ?? true,
     sellerEntityType,
     sellerMaritalRegime,
     sellerProfile,
@@ -143,6 +160,9 @@ export function getDocumentStartLegalScenarioInclusions(input = {}, packetType =
   const scenario = normalizeDocumentStartLegalScenario(input, packetType)
   const inclusions = []
   const profiles = [scenario.sellerProfile, scenario.buyerProfile].filter(Boolean)
+  if (scenario.legalInstrumentFamily && scenario.legalInstrumentFamily !== LEGAL_INSTRUMENT_FAMILIES.RESIDENTIAL_RESALE) {
+    inclusions.push('Attorney-approved specialist agreement required')
+  }
   if (profiles.includes('company') || profiles.includes('close_corporation')) inclusions.push('Company authority and representative wording')
   if (profiles.includes('trust')) inclusions.push('Trustee authority and signature wording')
   if (profiles.includes('individual_spouse_consent')) inclusions.push('Spouse consent and signature wording')
@@ -158,6 +178,7 @@ export function appendDocumentStartLegalScenarioParams(params, input = {}, packe
   if (!params || typeof params.set !== 'function') return params
   const scenario = normalizeDocumentStartLegalScenario(input, packetType)
   const values = {
+    legalInstrumentFamily: scenario.legalInstrumentFamily,
     sellerEntityType: scenario.sellerEntityType,
     sellerMaritalRegime: scenario.sellerMaritalRegime,
     buyerEntityType: scenario.buyerEntityType,
@@ -174,6 +195,7 @@ export function appendDocumentStartLegalScenarioParams(params, input = {}, packe
 export function readDocumentStartLegalScenarioParams(searchParams, packetType = '') {
   if (!searchParams || typeof searchParams.get !== 'function') return normalizeDocumentStartLegalScenario({}, packetType)
   return normalizeDocumentStartLegalScenario({
+    legalInstrumentFamily: searchParams.get('legalInstrumentFamily'),
     sellerEntityType: searchParams.get('sellerEntityType'),
     sellerMaritalRegime: searchParams.get('sellerMaritalRegime'),
     buyerEntityType: searchParams.get('buyerEntityType'),
@@ -188,3 +210,8 @@ import {
   normalizeLegalPartyEntityType,
   normalizeLegalPropertyTitleType,
 } from './legalDocumentScenarioProfile.js'
+import {
+  LEGAL_INSTRUMENT_FAMILIES,
+  LEGAL_INSTRUMENT_FAMILY_DEFINITIONS,
+  resolveLegalInstrumentFamilyProfile,
+} from './legalInstrumentFamilyRouter.js'
