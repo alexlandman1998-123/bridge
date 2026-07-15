@@ -4,8 +4,12 @@ import {
   CircleDollarSign,
   FileText,
   HeartHandshake,
+  House,
+  KeyRound,
   Landmark,
   Layers3,
+  Link2,
+  ReceiptText,
   UserRound,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -18,7 +22,11 @@ const SITUATION_ICONS = Object.freeze({
   trust: Landmark,
   married_in_community: HeartHandshake,
   sectional_title: Layers3,
+  estate_hoa: House,
   finance: CircleDollarSign,
+  occupation_lease: KeyRound,
+  linked_sale: Link2,
+  tax_vat: ReceiptText,
 })
 
 function buildEditorLink(documentKey, scope, templateId, situationKey = '') {
@@ -47,7 +55,7 @@ export default function LegalDocumentEditorContextPanel({ documentKey, documentL
         </div>
         <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3" role="list">
           {situations.map((situation) => {
-            const SituationIcon = SITUATION_ICONS[situation.key]
+            const SituationIcon = SITUATION_ICONS[situation.key] || FileText
             const active = situation.key === selected?.key
             return (
               <Link
