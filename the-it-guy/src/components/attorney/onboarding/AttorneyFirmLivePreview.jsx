@@ -3,6 +3,7 @@ import { AlertCircle, BriefcaseBusiness, Check, FileText, Mail, Monitor, Scale, 
 const DEPARTMENT_LABELS = {
   transfer: 'Transfer',
   bond: 'Bond',
+  cancellation: 'Cancellation',
   admin: 'Admin',
   management: 'Management',
 }
@@ -11,6 +12,7 @@ const ROLE_LABELS = {
   director_partner: 'Director',
   transfer_attorney: 'Conveyancer',
   bond_attorney: 'Bond Attorney',
+  cancellation_attorney: 'Cancellation Attorney',
   conveyancing_secretary: 'Secretary',
   admin_staff: 'Admin',
   reception_scheduling: 'Reception',
@@ -60,7 +62,7 @@ function AttorneyFirmLivePreview({ preview = null, progressPercent = 0, readines
   const email = normalizeText(firmInformation.email) || 'transfers@yourfirm.co.za'
   const phone = normalizeText(firmInformation.phone) || '+27 00 000 0000'
   const website = normalizeText(firmInformation.website) || 'www.yourfirm.co.za'
-  const visibleDepartments = activeDepartmentTypes.length ? activeDepartmentTypes : ['transfer', 'bond', 'management']
+  const visibleDepartments = activeDepartmentTypes.length ? activeDepartmentTypes : ['transfer', 'bond', 'cancellation', 'management']
   const visibleInvites = invites.filter((invite) => normalizeText(invite.email)).slice(0, 3)
   const previewClassName = variant ? `attorney-firm-preview is-${variant}` : 'attorney-firm-preview'
 

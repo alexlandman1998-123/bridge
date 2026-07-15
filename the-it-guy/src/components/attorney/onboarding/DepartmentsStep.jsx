@@ -3,6 +3,7 @@ import { BriefcaseBusiness, CheckCircle2, Circle, Landmark, LockKeyhole, Scale, 
 const LABELS = {
   transfer: 'Transfer Department',
   bond: 'Bond Department',
+  cancellation: 'Bond Cancellation Department',
   admin: 'Admin Department',
   management: 'Management',
   litigation: 'Litigation',
@@ -14,6 +15,7 @@ const LABELS = {
 const DESCRIPTIONS = {
   transfer: 'Transfer matters, registration, and conveyancing workflow.',
   bond: 'Bond registration and mortgage-related workflow.',
+  cancellation: 'Existing-bond cancellation, figures, guarantees, consent, and discharge workflow.',
   admin: 'Operations, support, finance handoffs, and coordination tasks.',
   management: 'Leadership, oversight, reporting, and firm governance.',
   litigation: 'Disputes, court process, and legal representation workflow.',
@@ -25,6 +27,7 @@ const DESCRIPTIONS = {
 const METADATA = {
   transfer: { icon: Scale, accent: 'Conveyancing', lanes: ['Sale transfer', 'Documents', 'Registration'] },
   bond: { icon: Landmark, accent: 'Finance', lanes: ['Bond instruction', 'Guarantees', 'Lodgement'] },
+  cancellation: { icon: Landmark, accent: 'Discharge', lanes: ['Bank instruction', 'Cancellation figures', 'Consent'] },
   admin: { icon: Users, accent: 'Operations', lanes: ['Intake', 'Billing', 'Scheduling'] },
   management: { icon: BriefcaseBusiness, accent: 'Governance', lanes: ['Oversight', 'Reporting', 'Permissions'] },
 }
@@ -73,7 +76,7 @@ function onToggleDepartmentSafe(onToggle, type) {
 }
 
 function DepartmentsStep({ selectedDepartments = {}, onToggleDepartment }) {
-  const activeCount = ['transfer', 'bond', 'admin', 'management'].filter((departmentType) => Boolean(selectedDepartments[departmentType])).length
+  const activeCount = ['transfer', 'bond', 'cancellation', 'admin', 'management'].filter((departmentType) => Boolean(selectedDepartments[departmentType])).length
 
   return (
     <div className="attorney-step-flow">
@@ -95,7 +98,7 @@ function DepartmentsStep({ selectedDepartments = {}, onToggleDepartment }) {
       </div>
 
       <div className="attorney-departments-grid">
-        {['transfer', 'bond', 'admin', 'management'].map((departmentType) => (
+        {['transfer', 'bond', 'cancellation', 'admin', 'management'].map((departmentType) => (
           <DepartmentCard
             key={departmentType}
             type={departmentType}

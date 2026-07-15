@@ -1,0 +1,3255 @@
+{
+  "schemaVersion": "kingstons_2026_otp_docx_v1",
+  "canonicalContractVersion": "kingstons_2026_otp_phase_1_v1",
+  "sourceDocument": "2026 OTP - Cover Page.docx",
+  "sourceSha256": "a1f8f2e82611f44aead9b2f9ac6fdaa19c8577038b17ca1a6666f2cd4e9910cc",
+  "templateEngine": "docxtemplater_single_brace",
+  "editablePackageParts": [
+    "word/document.xml"
+  ],
+  "preserveOnlyPackageParts": "all_other_parts",
+  "emptyValuePolicy": "blank_preserve_layout",
+  "formattingRules": {
+    "text": {
+      "kind": "text",
+      "trim": true,
+      "empty": ""
+    },
+    "multilineText": {
+      "kind": "multiline_text",
+      "trim": true,
+      "preserveLineBreaks": true,
+      "empty": ""
+    },
+    "currency": {
+      "kind": "currency",
+      "currency": "ZAR",
+      "decimalPlaces": 2,
+      "thousandsSeparator": " ",
+      "symbol": "R",
+      "empty": ""
+    },
+    "dateLong": {
+      "kind": "date",
+      "pattern": "D MMMM YYYY",
+      "locale": "en-ZA",
+      "empty": ""
+    },
+    "yearSuffix": {
+      "kind": "date_component",
+      "pattern": "YY",
+      "locale": "en-ZA",
+      "empty": ""
+    },
+    "selectionMark": {
+      "kind": "selection_mark",
+      "selected": "X",
+      "unselected": "",
+      "empty": ""
+    },
+    "legalText": {
+      "kind": "multiline_text",
+      "trim": true,
+      "preserveLineBreaks": true,
+      "empty": ""
+    }
+  },
+  "fields": [
+    {
+      "key": "cover.property_address",
+      "section": "cover",
+      "label": "Property address",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "property.physical_address",
+        "listing.address"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "cover_property_address",
+          "locator": {
+            "type": "paragraph_text_append",
+            "labelText": "ADDRESS:"
+          },
+          "mode": "append",
+          "sample": "14 Example Avenue, Northmead, Benoni"
+        }
+      ]
+    },
+    {
+      "key": "cover.agent_name",
+      "section": "cover",
+      "label": "Agent name",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.assigned_agent.name",
+        "agent.full_name"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "cover_agent_name",
+          "locator": {
+            "type": "paragraph_text_append",
+            "labelText": "AGENT NAME:"
+          },
+          "mode": "append",
+          "sample": "Alyssa Macdonald"
+        }
+      ]
+    },
+    {
+      "key": "purchaser_1.full_name",
+      "section": "schedule_1.purchasers",
+      "label": "Purchaser 1 name and surname / legal name",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "buyer.person.full_name",
+        "buyer.entity.legal_name"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "purchaser_1_full_name",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 0,
+            "rowIndex": 0,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Alexander Example"
+        }
+      ]
+    },
+    {
+      "key": "purchaser_1.identity_or_registration_number",
+      "section": "schedule_1.purchasers",
+      "label": "Purchaser 1 ID or registration number",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "buyer.person.identity_number_or_passport_number",
+        "buyer.entity.registration_number"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "purchaser_1_identity_number",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 0,
+            "rowIndex": 1,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "9001015009087"
+        }
+      ]
+    },
+    {
+      "key": "purchaser_1.current_address",
+      "section": "schedule_1.purchasers",
+      "label": "Purchaser 1 current address",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "buyer.person.residential_address",
+        "buyer.entity.registered_address"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "purchaser_1_current_address",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 0,
+            "rowIndex": 2,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "10 Sample Street, Benoni"
+        }
+      ]
+    },
+    {
+      "key": "purchaser_1.income_tax_number",
+      "section": "schedule_1.purchasers",
+      "label": "Purchaser 1 income tax number",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "buyer.person.tax_number",
+        "buyer.entity.tax_number"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "purchaser_1_income_tax_number",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 0,
+            "rowIndex": 3,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "0123456789"
+        }
+      ]
+    },
+    {
+      "key": "purchaser_1.vat_number",
+      "section": "schedule_1.purchasers",
+      "label": "Purchaser 1 VAT number",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "buyer.person.vat_number",
+        "buyer.entity.vat_number"
+      ],
+      "required": false,
+      "applicableWhen": "purchaser_is_vat_registered",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "purchaser_1_vat_number",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 0,
+            "rowIndex": 4,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": ""
+        }
+      ]
+    },
+    {
+      "key": "purchaser_2.full_name",
+      "section": "schedule_1.purchasers",
+      "label": "Purchaser 2 name and surname / legal name",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "buyer.co_purchasers[0].full_name"
+      ],
+      "required": false,
+      "applicableWhen": "second_purchaser_exists",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "purchaser_2_full_name",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 1,
+            "rowIndex": 0,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Jordan Example"
+        }
+      ]
+    },
+    {
+      "key": "purchaser_2.identity_or_registration_number",
+      "section": "schedule_1.purchasers",
+      "label": "Purchaser 2 ID or registration number",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "buyer.co_purchasers[0].identity_number_or_passport_number"
+      ],
+      "required": false,
+      "applicableWhen": "second_purchaser_exists",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "purchaser_2_identity_number",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 1,
+            "rowIndex": 1,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "9202025009088"
+        }
+      ]
+    },
+    {
+      "key": "purchaser_2.current_address",
+      "section": "schedule_1.purchasers",
+      "label": "Purchaser 2 current address",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "buyer.co_purchasers[0].residential_address"
+      ],
+      "required": false,
+      "applicableWhen": "second_purchaser_exists",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "purchaser_2_current_address",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 1,
+            "rowIndex": 2,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "10 Sample Street, Benoni"
+        }
+      ]
+    },
+    {
+      "key": "purchaser_2.income_tax_number",
+      "section": "schedule_1.purchasers",
+      "label": "Purchaser 2 income tax number",
+      "coverage": "gap",
+      "sourcePaths": [],
+      "required": false,
+      "applicableWhen": "second_purchaser_exists",
+      "legalText": false,
+      "notes": "Add a co-purchaser tax-number question.",
+      "bindingMode": "docxtemplater_pending_source",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "purchaser_2_income_tax_number",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 1,
+            "rowIndex": 3,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "0987654321"
+        }
+      ]
+    },
+    {
+      "key": "purchaser_2.vat_number",
+      "section": "schedule_1.purchasers",
+      "label": "Purchaser 2 VAT number",
+      "coverage": "gap",
+      "sourcePaths": [],
+      "required": false,
+      "applicableWhen": "second_purchaser_is_vat_registered",
+      "legalText": false,
+      "notes": "Add a co-purchaser VAT-number question.",
+      "bindingMode": "docxtemplater_pending_source",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "purchaser_2_vat_number",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 1,
+            "rowIndex": 4,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": ""
+        }
+      ]
+    },
+    {
+      "key": "purchaser.marital_status",
+      "section": "schedule_1.purchasers",
+      "label": "Purchaser marital status",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "buyer.person.marital_status",
+        "buyer.person.marital_regime"
+      ],
+      "required": false,
+      "applicableWhen": "purchaser_is_natural_person",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "selection_mark",
+        "selected": "X",
+        "unselected": "",
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "marital_anc_mark",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 2,
+            "rowIndex": 1,
+            "gridColumn": 0
+          },
+          "mode": "set",
+          "sample": ""
+        },
+        {
+          "token": "marital_community_mark",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 2,
+            "rowIndex": 1,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "X"
+        },
+        {
+          "token": "marital_customary_mark",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 2,
+            "rowIndex": 1,
+            "gridColumn": 2
+          },
+          "mode": "set",
+          "sample": ""
+        },
+        {
+          "token": "marital_islamic_mark",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 2,
+            "rowIndex": 1,
+            "gridColumn": 3
+          },
+          "mode": "set",
+          "sample": ""
+        },
+        {
+          "token": "marital_unmarried_mark",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 2,
+            "rowIndex": 1,
+            "gridColumn": 4
+          },
+          "mode": "set",
+          "sample": ""
+        },
+        {
+          "token": "marital_foreign_law_mark",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 2,
+            "rowIndex": 1,
+            "gridColumn": 5
+          },
+          "mode": "set",
+          "sample": ""
+        }
+      ]
+    },
+    {
+      "key": "property.physical_address",
+      "section": "schedule_1.property",
+      "label": "Property physical address",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "property.physical_address",
+        "listing.address"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "property_physical_address",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 3,
+            "rowIndex": 0,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "14 Example Avenue, Northmead, Benoni"
+        }
+      ]
+    },
+    {
+      "key": "property.erf_number",
+      "section": "schedule_1.property",
+      "label": "Erf number",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "property.erf_number",
+        "listing.erf_number"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "property_erf_number",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 3,
+            "rowIndex": 1,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Erf 1234"
+        }
+      ]
+    },
+    {
+      "key": "property.township",
+      "section": "schedule_1.property",
+      "label": "Township",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "property.township",
+        "listing.township"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "property_township",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 3,
+            "rowIndex": 2,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Northmead Township"
+        }
+      ]
+    },
+    {
+      "key": "property.hoa_name",
+      "section": "schedule_1.property",
+      "label": "Homeowners association name",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "property.estate_or_hoa_name",
+        "listing.complex_name"
+      ],
+      "required": false,
+      "applicableWhen": "property_in_estate_or_hoa",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "property_hoa_name",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 4,
+            "rowIndex": 0,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Example Estate HOA"
+        }
+      ]
+    },
+    {
+      "key": "offer.purchase_price",
+      "section": "schedule_1.offer",
+      "label": "Purchase price",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.purchase_price",
+        "transaction.sales_price"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "currency",
+        "currency": "ZAR",
+        "decimalPlaces": 2,
+        "thousandsSeparator": " ",
+        "symbol": "R",
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "offer_purchase_price",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 5,
+            "rowIndex": 0,
+            "gridColumn": 1
+          },
+          "mode": "append",
+          "sample": "2 500 000.00"
+        }
+      ]
+    },
+    {
+      "key": "offer.purchase_price_words",
+      "section": "schedule_1.offer",
+      "label": "Purchase price in words",
+      "coverage": "calculated",
+      "sourcePaths": [
+        "offer.purchase_price"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "offer_purchase_price_words",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 5,
+            "rowIndex": 1,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Two million five hundred thousand rand"
+        }
+      ]
+    },
+    {
+      "key": "offer.deposit_amount",
+      "section": "schedule_1.offer",
+      "label": "Deposit due in seven days",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.deposit_amount"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "currency",
+        "currency": "ZAR",
+        "decimalPlaces": 2,
+        "thousandsSeparator": " ",
+        "symbol": "R",
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "offer_deposit_amount",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 5,
+            "rowIndex": 2,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "100 000.00"
+        }
+      ]
+    },
+    {
+      "key": "offer.cash_contribution",
+      "section": "schedule_1.offer",
+      "label": "Cash contribution",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.cash_amount"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "currency",
+        "currency": "ZAR",
+        "decimalPlaces": 2,
+        "thousandsSeparator": " ",
+        "symbol": "R",
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "offer_cash_contribution",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 5,
+            "rowIndex": 3,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "400 000.00"
+        }
+      ]
+    },
+    {
+      "key": "offer.cash_fulfilment_date",
+      "section": "schedule_1.offer",
+      "label": "Cash contribution fulfilment date",
+      "coverage": "gap",
+      "sourcePaths": [],
+      "required": false,
+      "applicableWhen": "cash_contribution_greater_than_zero",
+      "legalText": false,
+      "notes": "Add a cash-contribution fulfilment date question.",
+      "bindingMode": "docxtemplater_pending_source",
+      "outputFormat": {
+        "kind": "date",
+        "pattern": "D MMMM YYYY",
+        "locale": "en-ZA",
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "offer_cash_fulfilment_date",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 5,
+            "rowIndex": 3,
+            "gridColumn": 3
+          },
+          "mode": "set",
+          "sample": "31 July 2026"
+        }
+      ]
+    },
+    {
+      "key": "offer.cash_from_sale_proceeds",
+      "section": "schedule_1.offer",
+      "label": "Cash from proceeds of sale",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.cash_from_sale_proceeds"
+      ],
+      "required": false,
+      "applicableWhen": "linked_property_sale",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "currency",
+        "currency": "ZAR",
+        "decimalPlaces": 2,
+        "thousandsSeparator": " ",
+        "symbol": "R",
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "offer_cash_from_sale_proceeds",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 5,
+            "rowIndex": 4,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "250 000.00"
+        }
+      ]
+    },
+    {
+      "key": "offer.bond_finance_amount",
+      "section": "schedule_1.suspensive_conditions",
+      "label": "Bond finance amount",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.bond_amount"
+      ],
+      "required": false,
+      "applicableWhen": "finance_type_is_bond_or_combination",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "currency",
+        "currency": "ZAR",
+        "decimalPlaces": 2,
+        "thousandsSeparator": " ",
+        "symbol": "R",
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "offer_bond_finance_amount",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 6,
+            "rowIndex": 0,
+            "gridColumn": 1
+          },
+          "mode": "append",
+          "sample": "2 000 000.00"
+        }
+      ]
+    },
+    {
+      "key": "offer.linked_property_sale_amount",
+      "section": "schedule_1.suspensive_conditions",
+      "label": "Linked property sale amount",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.linked_sale_amount"
+      ],
+      "required": false,
+      "applicableWhen": "linked_property_sale",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "currency",
+        "currency": "ZAR",
+        "decimalPlaces": 2,
+        "thousandsSeparator": " ",
+        "symbol": "R",
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "offer_linked_property_sale_amount",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 6,
+            "rowIndex": 1,
+            "gridColumn": 1
+          },
+          "mode": "append",
+          "sample": "500 000.00"
+        }
+      ]
+    },
+    {
+      "key": "offer.linked_property_minimum_price",
+      "section": "schedule_1.suspensive_conditions",
+      "label": "Linked property minimum purchase price",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.linked_sale_minimum_price"
+      ],
+      "required": false,
+      "applicableWhen": "linked_property_sale",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "currency",
+        "currency": "ZAR",
+        "decimalPlaces": 2,
+        "thousandsSeparator": " ",
+        "symbol": "R",
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "offer_linked_property_minimum_price",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 6,
+            "rowIndex": 2,
+            "gridColumn": 1
+          },
+          "mode": "append",
+          "sample": "1 500 000.00"
+        }
+      ]
+    },
+    {
+      "key": "linked_property.physical_address",
+      "section": "schedule_1.linked_property",
+      "label": "Linked property physical address",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.linked_property.address"
+      ],
+      "required": false,
+      "applicableWhen": "linked_property_sale",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "linked_property_physical_address",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 7,
+            "rowIndex": 0,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "20 Existing Property Road, Benoni"
+        }
+      ]
+    },
+    {
+      "key": "linked_property.erf_number",
+      "section": "schedule_1.linked_property",
+      "label": "Linked property erf number",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.linked_property.erf_number"
+      ],
+      "required": false,
+      "applicableWhen": "linked_property_sale",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "linked_property_erf_number",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 7,
+            "rowIndex": 1,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Erf 5678"
+        }
+      ]
+    },
+    {
+      "key": "linked_property.registered_owner",
+      "section": "schedule_1.linked_property",
+      "label": "Linked property registered owner",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.linked_property.registered_owner"
+      ],
+      "required": false,
+      "applicableWhen": "linked_property_sale",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "linked_property_registered_owner",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 7,
+            "rowIndex": 2,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Alexander Example"
+        }
+      ]
+    },
+    {
+      "key": "linked_property.bond_details",
+      "section": "schedule_1.linked_property",
+      "label": "Linked property bond details",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.linked_property.bond_details"
+      ],
+      "required": false,
+      "applicableWhen": "linked_property_sale",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "linked_property_bond_details",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 7,
+            "rowIndex": 3,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Example Bank, account ending 1234"
+        }
+      ]
+    },
+    {
+      "key": "conditions.other_suspensive_conditions",
+      "section": "schedule_1.conditions",
+      "label": "Other suspensive conditions",
+      "coverage": "approved_clause",
+      "sourcePaths": [
+        "transaction.approved_suspensive_conditions"
+      ],
+      "required": false,
+      "applicableWhen": "approved_condition_selected",
+      "legalText": true,
+      "notes": "Only approved wording or attorney-reviewed free text may be inserted.",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "multiline_text",
+        "trim": true,
+        "preserveLineBreaks": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "other_suspensive_conditions",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 8,
+            "rowIndex": 1,
+            "gridColumn": 0
+          },
+          "mode": "set",
+          "sample": "Subject to an approved inspection condition."
+        }
+      ]
+    },
+    {
+      "key": "conditions.other_suspensive_fulfilment_date",
+      "section": "schedule_1.conditions",
+      "label": "Other suspensive-condition fulfilment date",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.suspensive_condition_fulfilment_date"
+      ],
+      "required": false,
+      "applicableWhen": "other_suspensive_condition_exists",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "date",
+        "pattern": "D MMMM YYYY",
+        "locale": "en-ZA",
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "other_suspensive_fulfilment_date",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 8,
+            "rowIndex": 1,
+            "gridColumn": 3
+          },
+          "mode": "set",
+          "sample": "15 August 2026"
+        }
+      ]
+    },
+    {
+      "key": "offer.irrevocable_offer_date",
+      "section": "schedule_1.offer",
+      "label": "Irrevocable offer date",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.irrevocable_offer_date"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "date",
+        "pattern": "D MMMM YYYY",
+        "locale": "en-ZA",
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "offer_irrevocable_date",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 8,
+            "rowIndex": 6,
+            "gridColumn": 4
+          },
+          "mode": "set",
+          "sample": "20 July 2026"
+        }
+      ]
+    },
+    {
+      "key": "occupation.after_registration",
+      "section": "schedule_1.occupation",
+      "label": "Occupation 48 hours after registration",
+      "coverage": "calculated",
+      "sourcePaths": [
+        "transaction.occupation_date",
+        "transaction.expected_transfer_date"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "selection_mark",
+        "selected": "X",
+        "unselected": "",
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "occupation_after_registration_yes_mark",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 8,
+            "rowIndex": 7,
+            "gridColumn": 4
+          },
+          "mode": "append",
+          "sample": ""
+        },
+        {
+          "token": "occupation_after_registration_no_mark",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 8,
+            "rowIndex": 7,
+            "gridColumn": 6
+          },
+          "mode": "append",
+          "sample": "X"
+        }
+      ]
+    },
+    {
+      "key": "occupation.date",
+      "section": "schedule_1.occupation",
+      "label": "Occupation date",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.occupation_date"
+      ],
+      "required": false,
+      "applicableWhen": "occupation_not_48_hours_after_registration",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "date",
+        "pattern": "D MMMM YYYY",
+        "locale": "en-ZA",
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "occupation_date",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 8,
+            "rowIndex": 8,
+            "gridColumn": 4
+          },
+          "mode": "set",
+          "sample": "1 September 2026"
+        }
+      ]
+    },
+    {
+      "key": "occupation.occupational_rental",
+      "section": "schedule_1.occupation",
+      "label": "Occupational rental amount",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.occupational_rent"
+      ],
+      "required": false,
+      "applicableWhen": "occupation_before_or_after_transfer",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "currency",
+        "currency": "ZAR",
+        "decimalPlaces": 2,
+        "thousandsSeparator": " ",
+        "symbol": "R",
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "occupation_occupational_rental",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 8,
+            "rowIndex": 8,
+            "gridColumn": 4
+          },
+          "mode": "append",
+          "sample": "R 12 500.00"
+        }
+      ]
+    },
+    {
+      "key": "offer.guarantee_delivery_period",
+      "section": "schedule_1.offer",
+      "label": "Guarantee delivery period",
+      "coverage": "gap",
+      "sourcePaths": [],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "Add a guarantee-delivery date or period question.",
+      "bindingMode": "docxtemplater_pending_source",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "offer_guarantee_delivery_period",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 8,
+            "rowIndex": 9,
+            "gridColumn": 4
+          },
+          "mode": "set",
+          "sample": "14 days after fulfilment"
+        }
+      ]
+    },
+    {
+      "key": "fixtures.standard_selection",
+      "section": "schedule_1.fixtures",
+      "label": "Standard fixtures and fittings selection",
+      "coverage": "manual",
+      "sourcePaths": [
+        "transaction.fixtures_selection"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "Digitise the existing include/delete selection without changing its legal wording.",
+      "bindingMode": "retained_manual",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": []
+    },
+    {
+      "key": "fixtures.additional_inclusions",
+      "section": "schedule_1.fixtures",
+      "label": "Additional fixtures included",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.fixture_inclusions"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "multiline_text",
+        "trim": true,
+        "preserveLineBreaks": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "fixtures_additional_inclusions",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 10,
+            "rowIndex": 0,
+            "gridColumn": 0
+          },
+          "mode": "set",
+          "sample": "Freestanding dishwasher and entrance mirror"
+        }
+      ]
+    },
+    {
+      "key": "fixtures.exclusions",
+      "section": "schedule_1.fixtures",
+      "label": "Fixtures excluded",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.fixture_exclusions"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "multiline_text",
+        "trim": true,
+        "preserveLineBreaks": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "fixtures_exclusions",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 11,
+            "rowIndex": 0,
+            "gridColumn": 0
+          },
+          "mode": "set",
+          "sample": "Seller’s freestanding refrigerator"
+        }
+      ]
+    },
+    {
+      "key": "conditions.special_conditions",
+      "section": "schedule_1.conditions",
+      "label": "Special conditions",
+      "coverage": "approved_clause",
+      "sourcePaths": [
+        "transaction.approved_special_conditions"
+      ],
+      "required": false,
+      "applicableWhen": "approved_condition_selected",
+      "legalText": true,
+      "notes": "Only approved wording or attorney-reviewed free text may be inserted.",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "multiline_text",
+        "trim": true,
+        "preserveLineBreaks": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "special_conditions",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 12,
+            "rowIndex": 0,
+            "gridColumn": 0
+          },
+          "mode": "set",
+          "sample": "Seller to repair the pool pump before transfer."
+        }
+      ]
+    },
+    {
+      "key": "agency.name",
+      "section": "schedule_1.agent",
+      "label": "Agency name",
+      "coverage": "agency_setting",
+      "sourcePaths": [
+        "organisation.legal_name"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "agency_name",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 13,
+            "rowIndex": 1,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Kingstons Real Estate"
+        }
+      ]
+    },
+    {
+      "key": "agency.ffc_number",
+      "section": "schedule_1.agent",
+      "label": "Agency Fidelity Fund Certificate number",
+      "coverage": "agency_setting",
+      "sourcePaths": [
+        "organisation.ffc_number"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "agency_ffc_number",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 13,
+            "rowIndex": 1,
+            "gridColumn": 2
+          },
+          "mode": "set",
+          "sample": "202614013910000"
+        }
+      ]
+    },
+    {
+      "key": "agent.name",
+      "section": "schedule_1.agent",
+      "label": "Individual representative",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.assigned_agent.name"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "agent_name",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 13,
+            "rowIndex": 2,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Alyssa Macdonald"
+        }
+      ]
+    },
+    {
+      "key": "agent.ffc_number",
+      "section": "schedule_1.agent",
+      "label": "Agent Fidelity Fund Certificate number",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.assigned_agent.ffc_number"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "agent_ffc_number",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 13,
+            "rowIndex": 2,
+            "gridColumn": 2
+          },
+          "mode": "set",
+          "sample": "202577711630000"
+        }
+      ]
+    },
+    {
+      "key": "principal.name",
+      "section": "schedule_1.agent",
+      "label": "Principal agent name",
+      "coverage": "agency_setting",
+      "sourcePaths": [
+        "organisation.principal_agent.name"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "principal_name",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 13,
+            "rowIndex": 3,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "David Helena"
+        }
+      ]
+    },
+    {
+      "key": "principal.ffc_number",
+      "section": "schedule_1.agent",
+      "label": "Principal agent Fidelity Fund Certificate number",
+      "coverage": "agency_setting",
+      "sourcePaths": [
+        "organisation.principal_agent.ffc_number"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "principal_ffc_number",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 13,
+            "rowIndex": 3,
+            "gridColumn": 2
+          },
+          "mode": "set",
+          "sample": "202523021540000"
+        }
+      ]
+    },
+    {
+      "key": "agency.physical_address",
+      "section": "schedule_1.agent",
+      "label": "Agency physical address",
+      "coverage": "agency_setting",
+      "sourcePaths": [
+        "organisation.physical_address"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "agency_physical_address",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 14,
+            "rowIndex": 0,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Corner 14th Avenue and Dalrymple Street, Northmead, Benoni, 1501"
+        }
+      ]
+    },
+    {
+      "key": "agency.postal_address",
+      "section": "schedule_1.agent",
+      "label": "Agency postal address",
+      "coverage": "agency_setting",
+      "sourcePaths": [
+        "organisation.postal_address"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "agency_postal_address",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 14,
+            "rowIndex": 1,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "PO Box 6224, Dunswart, 1508"
+        }
+      ]
+    },
+    {
+      "key": "agency.vat_number",
+      "section": "schedule_1.agent",
+      "label": "Agency VAT number",
+      "coverage": "agency_setting",
+      "sourcePaths": [
+        "organisation.vat_number"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "agency_vat_number",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 14,
+            "rowIndex": 2,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "4350267052"
+        }
+      ]
+    },
+    {
+      "key": "agency.phone",
+      "section": "schedule_1.agent",
+      "label": "Agency telephone number",
+      "coverage": "agency_setting",
+      "sourcePaths": [
+        "organisation.phone"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "agency_phone",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 14,
+            "rowIndex": 3,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "010 020 2431"
+        }
+      ]
+    },
+    {
+      "key": "agency.email",
+      "section": "schedule_1.agent",
+      "label": "Agency email address",
+      "coverage": "agency_setting",
+      "sourcePaths": [
+        "organisation.email"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "agency_email",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 14,
+            "rowIndex": 4,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "offers@example.co.za"
+        }
+      ]
+    },
+    {
+      "key": "seller_1.full_name",
+      "section": "schedule_1.sellers",
+      "label": "Seller 1 name and surname / legal name",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "seller.owners[0].full_name",
+        "seller.entity.legal_name"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "seller_1_full_name",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 15,
+            "rowIndex": 0,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Taylor Seller"
+        }
+      ]
+    },
+    {
+      "key": "seller_1.identity_or_registration_number",
+      "section": "schedule_1.sellers",
+      "label": "Seller 1 ID or registration number",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "seller.owners[0].id_number",
+        "seller.entity.registration_number"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "seller_1_identity_number",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 15,
+            "rowIndex": 1,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "8001015009089"
+        }
+      ]
+    },
+    {
+      "key": "seller_1.current_address",
+      "section": "schedule_1.sellers",
+      "label": "Seller 1 current address",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "seller.owners[0].residential_address",
+        "seller.entity.registered_address"
+      ],
+      "required": true,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "seller_1_current_address",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 15,
+            "rowIndex": 2,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "14 Example Avenue, Northmead, Benoni"
+        }
+      ]
+    },
+    {
+      "key": "seller_1.postal_address",
+      "section": "schedule_1.sellers",
+      "label": "Seller 1 postal address",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "seller.owners[0].postal_address",
+        "seller.entity.postal_address"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "seller_1_postal_address",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 15,
+            "rowIndex": 3,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "PO Box 100, Benoni, 1500"
+        }
+      ]
+    },
+    {
+      "key": "seller_1.vat_number",
+      "section": "schedule_1.sellers",
+      "label": "Seller 1 VAT number",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "seller.owners[0].vat_number",
+        "seller.entity.vat_number"
+      ],
+      "required": false,
+      "applicableWhen": "seller_is_vat_registered",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "seller_1_vat_number",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 15,
+            "rowIndex": 4,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": ""
+        }
+      ]
+    },
+    {
+      "key": "seller_2.full_name",
+      "section": "schedule_1.sellers",
+      "label": "Seller 2 name and surname / legal name",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "seller.owners[1].full_name"
+      ],
+      "required": false,
+      "applicableWhen": "second_seller_exists",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "seller_2_full_name",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 16,
+            "rowIndex": 0,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Morgan Seller"
+        }
+      ]
+    },
+    {
+      "key": "seller_2.identity_or_registration_number",
+      "section": "schedule_1.sellers",
+      "label": "Seller 2 ID or registration number",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "seller.owners[1].id_number"
+      ],
+      "required": false,
+      "applicableWhen": "second_seller_exists",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "seller_2_identity_number",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 16,
+            "rowIndex": 1,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "8202025009080"
+        }
+      ]
+    },
+    {
+      "key": "seller_2.current_address",
+      "section": "schedule_1.sellers",
+      "label": "Seller 2 current address",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "seller.owners[1].residential_address"
+      ],
+      "required": false,
+      "applicableWhen": "second_seller_exists",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "seller_2_current_address",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 16,
+            "rowIndex": 2,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "14 Example Avenue, Northmead, Benoni"
+        }
+      ]
+    },
+    {
+      "key": "seller_2.postal_address",
+      "section": "schedule_1.sellers",
+      "label": "Seller 2 postal address",
+      "coverage": "gap",
+      "sourcePaths": [],
+      "required": false,
+      "applicableWhen": "second_seller_exists",
+      "legalText": false,
+      "notes": "Add a second-seller postal-address question.",
+      "bindingMode": "docxtemplater_pending_source",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "seller_2_postal_address",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 16,
+            "rowIndex": 3,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "PO Box 100, Benoni, 1500"
+        }
+      ]
+    },
+    {
+      "key": "seller_2.vat_number",
+      "section": "schedule_1.sellers",
+      "label": "Seller 2 VAT number",
+      "coverage": "gap",
+      "sourcePaths": [],
+      "required": false,
+      "applicableWhen": "second_seller_is_vat_registered",
+      "legalText": false,
+      "notes": "Add a second-seller VAT-number question.",
+      "bindingMode": "docxtemplater_pending_source",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "seller_2_vat_number",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 16,
+            "rowIndex": 4,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": ""
+        }
+      ]
+    },
+    {
+      "key": "seller_bond.institution",
+      "section": "schedule_1.seller_bond",
+      "label": "Seller bond institution",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "seller.bond.institution"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "seller_bond_institution",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 17,
+            "rowIndex": 0,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Example Bank"
+        }
+      ]
+    },
+    {
+      "key": "seller_bond.account_number",
+      "section": "schedule_1.seller_bond",
+      "label": "Seller bond account number",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "seller.bond.account_number"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "seller_bond_account_number",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 17,
+            "rowIndex": 1,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "1234567890"
+        }
+      ]
+    },
+    {
+      "key": "seller_bond.outstanding_amount",
+      "section": "schedule_1.seller_bond",
+      "label": "Outstanding seller bond amount",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "seller.bond.outstanding_amount"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "currency",
+        "currency": "ZAR",
+        "decimalPlaces": 2,
+        "thousandsSeparator": " ",
+        "symbol": "R",
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "seller_bond_outstanding_amount",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 17,
+            "rowIndex": 2,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "R 850 000.00"
+        }
+      ]
+    },
+    {
+      "key": "seller_bond.accounts_up_to_date",
+      "section": "schedule_1.seller_bond",
+      "label": "Rates, taxes and bond up to date",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "seller.bond.accounts_up_to_date"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "seller_bond_accounts_up_to_date",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 17,
+            "rowIndex": 3,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "YES"
+        }
+      ]
+    },
+    {
+      "key": "seller_bond.rates_account_number",
+      "section": "schedule_1.seller_bond",
+      "label": "Rates and taxes account number",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "seller.rates_account_number"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "seller_rates_account_number",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 17,
+            "rowIndex": 4,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "RATES-12345"
+        }
+      ]
+    },
+    {
+      "key": "conveyancer.firm",
+      "section": "schedule_1.conveyancer",
+      "label": "Conveyancing firm",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.conveyancer.firm"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "conveyancer_firm",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 18,
+            "rowIndex": 0,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Example Conveyancers Inc."
+        }
+      ]
+    },
+    {
+      "key": "conveyancer.attorney",
+      "section": "schedule_1.conveyancer",
+      "label": "Conveyancing attorney",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.conveyancer.name"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "conveyancer_attorney",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 18,
+            "rowIndex": 1,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Sam Attorney"
+        }
+      ]
+    },
+    {
+      "key": "conveyancer.physical_address",
+      "section": "schedule_1.conveyancer",
+      "label": "Conveyancer physical address",
+      "coverage": "gap",
+      "sourcePaths": [],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "Resolve from the assigned partner profile or collect it.",
+      "bindingMode": "docxtemplater_pending_source",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "conveyancer_physical_address",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 18,
+            "rowIndex": 2,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "1 Legal Street, Johannesburg"
+        }
+      ]
+    },
+    {
+      "key": "conveyancer.phone",
+      "section": "schedule_1.conveyancer",
+      "label": "Conveyancer telephone number",
+      "coverage": "gap",
+      "sourcePaths": [],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "Resolve from the assigned partner profile or collect it.",
+      "bindingMode": "docxtemplater_pending_source",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "conveyancer_phone",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 18,
+            "rowIndex": 3,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "011 555 0100"
+        }
+      ]
+    },
+    {
+      "key": "conveyancer.email",
+      "section": "schedule_1.conveyancer",
+      "label": "Conveyancer email address",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.conveyancer.email"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "conveyancer_email",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 18,
+            "rowIndex": 4,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "transfers@example.co.za"
+        }
+      ]
+    },
+    {
+      "key": "bond.purchaser_acknowledgement_initials",
+      "section": "schedule_2.bond",
+      "label": "Purchaser transfer and bond cost acknowledgement",
+      "coverage": "signing_preset",
+      "sourcePaths": [
+        "signing.purchaser_initials"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "signing_overlay",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": []
+    },
+    {
+      "key": "bond.applicant_1_employment",
+      "section": "schedule_2.bond",
+      "label": "Applicant 1 employment details",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "buyer.finance.applicants[0].employment"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "bond_applicant_1_full_time_mark",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 20,
+            "rowIndex": 1,
+            "gridColumn": 1
+          },
+          "mode": "append",
+          "sample": "X"
+        },
+        {
+          "token": "bond_applicant_1_self_employed_mark",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 20,
+            "rowIndex": 1,
+            "gridColumn": 2
+          },
+          "mode": "append",
+          "sample": ""
+        },
+        {
+          "token": "bond_applicant_1_employer",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 20,
+            "rowIndex": 2,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Example Employer (Pty) Ltd"
+        },
+        {
+          "token": "bond_applicant_1_employment_period",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 20,
+            "rowIndex": 3,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "5 years"
+        },
+        {
+          "token": "bond_applicant_1_occupation",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 20,
+            "rowIndex": 4,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Director"
+        },
+        {
+          "token": "bond_applicant_1_gross_income",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 20,
+            "rowIndex": 5,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "R 85 000.00"
+        },
+        {
+          "token": "bond_applicant_1_spouse_income",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 20,
+            "rowIndex": 6,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "R 60 000.00"
+        },
+        {
+          "token": "bond_applicant_1_bank",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 20,
+            "rowIndex": 7,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Example Bank"
+        }
+      ]
+    },
+    {
+      "key": "bond.applicant_2_employment",
+      "section": "schedule_2.bond",
+      "label": "Applicant 2 employment details",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "buyer.finance.applicants[1].employment"
+      ],
+      "required": false,
+      "applicableWhen": "second_purchaser_exists",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "bond_applicant_2_full_time_mark",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 20,
+            "rowIndex": 1,
+            "gridColumn": 3
+          },
+          "mode": "append",
+          "sample": "X"
+        },
+        {
+          "token": "bond_applicant_2_self_employed_mark",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 20,
+            "rowIndex": 1,
+            "gridColumn": 4
+          },
+          "mode": "append",
+          "sample": ""
+        },
+        {
+          "token": "bond_applicant_2_employer",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 20,
+            "rowIndex": 2,
+            "gridColumn": 3
+          },
+          "mode": "set",
+          "sample": "Second Employer CC"
+        },
+        {
+          "token": "bond_applicant_2_employment_period",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 20,
+            "rowIndex": 3,
+            "gridColumn": 3
+          },
+          "mode": "set",
+          "sample": "3 years"
+        },
+        {
+          "token": "bond_applicant_2_occupation",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 20,
+            "rowIndex": 4,
+            "gridColumn": 3
+          },
+          "mode": "set",
+          "sample": "Consultant"
+        },
+        {
+          "token": "bond_applicant_2_gross_income",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 20,
+            "rowIndex": 5,
+            "gridColumn": 3
+          },
+          "mode": "set",
+          "sample": "R 60 000.00"
+        },
+        {
+          "token": "bond_applicant_2_spouse_income",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 20,
+            "rowIndex": 6,
+            "gridColumn": 3
+          },
+          "mode": "set",
+          "sample": "R 85 000.00"
+        },
+        {
+          "token": "bond_applicant_2_bank",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 20,
+            "rowIndex": 7,
+            "gridColumn": 3
+          },
+          "mode": "set",
+          "sample": "Example Bank"
+        }
+      ]
+    },
+    {
+      "key": "bond.income_structure",
+      "section": "schedule_2.bond",
+      "label": "Applicable bond document income structure",
+      "coverage": "calculated",
+      "sourcePaths": [
+        "buyer.finance.applicants[].income_structure"
+      ],
+      "required": false,
+      "applicableWhen": "finance_type_is_bond_or_combination",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "selection_mark",
+        "selected": "X",
+        "unselected": "",
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "bond_regular_salary_mark",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 21,
+            "rowIndex": 0,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "X"
+        },
+        {
+          "token": "bond_variable_income_mark",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 21,
+            "rowIndex": 0,
+            "gridColumn": 3
+          },
+          "mode": "set",
+          "sample": ""
+        },
+        {
+          "token": "bond_self_employed_mark",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 21,
+            "rowIndex": 0,
+            "gridColumn": 6
+          },
+          "mode": "set",
+          "sample": ""
+        }
+      ]
+    },
+    {
+      "key": "bond.origination_acknowledgement_initials",
+      "section": "schedule_2.bond",
+      "label": "Bond origination acknowledgement",
+      "coverage": "signing_preset",
+      "sourcePaths": [
+        "signing.purchaser_initials"
+      ],
+      "required": false,
+      "applicableWhen": "finance_type_is_bond_or_combination",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "signing_overlay",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": []
+    },
+    {
+      "key": "signing.purchaser_place_and_date",
+      "section": "signatures",
+      "label": "Purchaser signing place and date",
+      "coverage": "signing_preset",
+      "sourcePaths": [
+        "signing.purchaser.place",
+        "signing.purchaser.date"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater_and_signing",
+      "outputFormat": {
+        "kind": "signing_date_parts",
+        "day": "D",
+        "month": "MMMM",
+        "year": "YY",
+        "locale": "en-ZA",
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "purchaser_signing_place",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 23,
+            "rowIndex": 0,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Benoni"
+        },
+        {
+          "token": "purchaser_signing_day",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 23,
+            "rowIndex": 0,
+            "gridColumn": 3
+          },
+          "mode": "set",
+          "sample": "15"
+        },
+        {
+          "token": "purchaser_signing_month",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 23,
+            "rowIndex": 0,
+            "gridColumn": 5
+          },
+          "mode": "set",
+          "sample": "July"
+        },
+        {
+          "token": "purchaser_signing_year_suffix",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 23,
+            "rowIndex": 0,
+            "gridColumn": 7
+          },
+          "mode": "set",
+          "sample": "26"
+        }
+      ]
+    },
+    {
+      "key": "signing.seller_place_and_date",
+      "section": "signatures",
+      "label": "Seller signing place and date",
+      "coverage": "signing_preset",
+      "sourcePaths": [
+        "signing.seller.place",
+        "signing.seller.date"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater_and_signing",
+      "outputFormat": {
+        "kind": "signing_date_parts",
+        "day": "D",
+        "month": "MMMM",
+        "year": "YY",
+        "locale": "en-ZA",
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "seller_signing_place",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 27,
+            "rowIndex": 0,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Benoni"
+        },
+        {
+          "token": "seller_signing_day",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 27,
+            "rowIndex": 0,
+            "gridColumn": 3
+          },
+          "mode": "set",
+          "sample": "15"
+        },
+        {
+          "token": "seller_signing_month",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 27,
+            "rowIndex": 0,
+            "gridColumn": 5
+          },
+          "mode": "set",
+          "sample": "July"
+        },
+        {
+          "token": "seller_signing_year_suffix",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 27,
+            "rowIndex": 0,
+            "gridColumn": 7
+          },
+          "mode": "set",
+          "sample": "26"
+        }
+      ]
+    },
+    {
+      "key": "signing.agent_place_and_date",
+      "section": "signatures",
+      "label": "Agent signing place and date",
+      "coverage": "signing_preset",
+      "sourcePaths": [
+        "signing.agent.place",
+        "signing.agent.date"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater_and_signing",
+      "outputFormat": {
+        "kind": "signing_date_parts",
+        "day": "D",
+        "month": "MMMM",
+        "year": "YY",
+        "locale": "en-ZA",
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "agent_signing_place",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 31,
+            "rowIndex": 0,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "Benoni"
+        },
+        {
+          "token": "agent_signing_day",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 31,
+            "rowIndex": 0,
+            "gridColumn": 3
+          },
+          "mode": "set",
+          "sample": "15"
+        },
+        {
+          "token": "agent_signing_month",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 31,
+            "rowIndex": 0,
+            "gridColumn": 5
+          },
+          "mode": "set",
+          "sample": "July"
+        },
+        {
+          "token": "agent_signing_year_suffix",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 31,
+            "rowIndex": 0,
+            "gridColumn": 7
+          },
+          "mode": "set",
+          "sample": "26"
+        }
+      ]
+    },
+    {
+      "key": "signing.parties_and_witnesses",
+      "section": "signatures",
+      "label": "Purchaser, seller, agent and witness signatures",
+      "coverage": "signing_preset",
+      "sourcePaths": [
+        "signing.fields"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "signing_overlay",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": []
+    },
+    {
+      "key": "contact.purchasers",
+      "section": "contact_form",
+      "label": "Purchaser telephone and email details",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "buyer.person.phone",
+        "buyer.person.email",
+        "buyer.co_purchasers[].phone",
+        "buyer.co_purchasers[].email"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "purchaser_1_phone",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 34,
+            "rowIndex": 0,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "082 555 0101"
+        },
+        {
+          "token": "purchaser_1_email",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 34,
+            "rowIndex": 1,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "alex@example.com"
+        },
+        {
+          "token": "purchaser_2_phone",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 35,
+            "rowIndex": 0,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "082 555 0102"
+        },
+        {
+          "token": "purchaser_2_email",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 35,
+            "rowIndex": 1,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "jordan@example.com"
+        }
+      ]
+    },
+    {
+      "key": "contact.sellers",
+      "section": "contact_form",
+      "label": "Seller telephone and email details",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "seller.owners[].phone",
+        "seller.owners[].email"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "seller_1_phone",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 36,
+            "rowIndex": 0,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "082 555 0201"
+        },
+        {
+          "token": "seller_1_email",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 36,
+            "rowIndex": 1,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "taylor@example.com"
+        },
+        {
+          "token": "seller_2_phone",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 37,
+            "rowIndex": 0,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "082 555 0202"
+        },
+        {
+          "token": "seller_2_email",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 37,
+            "rowIndex": 1,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "morgan@example.com"
+        }
+      ]
+    },
+    {
+      "key": "contact.agent",
+      "section": "contact_form",
+      "label": "Agent telephone and email details",
+      "coverage": "mapped",
+      "sourcePaths": [
+        "transaction.assigned_agent.phone",
+        "transaction.assigned_agent.email"
+      ],
+      "required": false,
+      "applicableWhen": "always",
+      "legalText": false,
+      "notes": "",
+      "bindingMode": "docxtemplater",
+      "outputFormat": {
+        "kind": "text",
+        "trim": true,
+        "empty": ""
+      },
+      "emptyValuePolicy": "blank_preserve_layout",
+      "slots": [
+        {
+          "token": "agent_phone",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 38,
+            "rowIndex": 0,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "082 555 0301"
+        },
+        {
+          "token": "agent_email",
+          "locator": {
+            "type": "table_cell",
+            "tableIndex": 38,
+            "rowIndex": 1,
+            "gridColumn": 1
+          },
+          "mode": "set",
+          "sample": "agent@example.co.za"
+        }
+      ]
+    }
+  ]
+}

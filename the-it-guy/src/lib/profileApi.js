@@ -12,6 +12,7 @@ const ATTORNEY_FIRM_ROLE_VALUES = [
   'director_partner',
   'transfer_attorney',
   'bond_attorney',
+  'cancellation_attorney',
   'conveyancing_secretary',
   'admin_staff',
   'reception_scheduling',

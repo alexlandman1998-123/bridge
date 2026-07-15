@@ -434,7 +434,7 @@ export default function LegalDocumentOverviewPage() {
                 </div>
                 <h2 id="otp-assurance-heading" className="mt-1 text-lg font-semibold text-[#142033]">Are generated OTPs being released safely?</h2>
                 <p className="mt-1 max-w-3xl text-sm leading-6 text-[#687b90]">
-                  Read-only check of generated versions, transaction readiness, reviewer authority, approval fingerprints and signing release. It never edits wording, approves a document or triggers rollback.
+                  Read-only check that each generated OTP came from an exact approved master version, then passed readiness, approval and signing-release checks. It never edits wording, approves a document or triggers rollback.
                 </p>
               </div>
             </div>
@@ -494,8 +494,14 @@ export default function LegalDocumentOverviewPage() {
                   <dd className="mt-1 text-lg font-semibold text-[#24364b]">{otpAssurance.summary.score}%</dd>
                 </div>
                 <div className="rounded-[13px] border border-[#e0e8ef] bg-[#f8fafc] px-4 py-3">
-                  <dt className="text-xs font-semibold text-[#718397]">Governed OTPs</dt>
-                  <dd className="mt-1 text-lg font-semibold text-[#24364b]">{otpAssurance.summary.governedPackets}</dd>
+                  <dt className="text-xs font-semibold text-[#718397]">
+                    {otpAssurance.summary.canonicalPackets ? 'Exact master versions' : 'Governed OTPs'}
+                  </dt>
+                  <dd className="mt-1 text-lg font-semibold text-[#24364b]">
+                    {otpAssurance.summary.canonicalPackets
+                      ? `${otpAssurance.summary.canonicalPackets - otpAssurance.summary.invalidCanonicalVersions}/${otpAssurance.summary.canonicalPackets}`
+                      : otpAssurance.summary.governedPackets}
+                  </dd>
                 </div>
                 <div className="rounded-[13px] border border-[#e0e8ef] bg-[#f8fafc] px-4 py-3">
                   <dt className="text-xs font-semibold text-[#718397]">Need action</dt>
@@ -536,6 +542,9 @@ export default function LegalDocumentOverviewPage() {
                             <td className="px-4 py-3">
                               <p className="font-semibold text-[#304258]">{row.title}</p>
                               <p className="mt-1 text-xs text-[#718397]">Version {row.versionNumber || '—'}</p>
+                              {row.canonicalTemplateVersionId ? (
+                                <p className="mt-1 text-[11px] text-[#8796a6]">Master {row.canonicalTemplateVersionId.slice(0, 8)}</p>
+                              ) : null}
                             </td>
                             <td className="px-4 py-3 capitalize text-[#52677e]">{String(row.operationalState || '').replaceAll('_', ' ')}</td>
                             <td className="px-4 py-3 text-[#63768a]">{row.action}</td>
@@ -587,7 +596,12 @@ export default function LegalDocumentOverviewPage() {
                     <ul className="mt-4 divide-y divide-[#e5d8bf] text-sm text-[#60758d]">
                       {activeOtpEscalationPlan.actions.slice(0, 12).map((action) => (
                         <li key={action.actionKey} className="grid gap-2 py-3 md:grid-cols-[minmax(0,1fr)_150px_minmax(0,1.5fr)]">
-                          <span className="font-semibold text-[#304258]">{action.title}</span>
+                          <span className="font-semibold text-[#304258]">
+                            {action.title}
+                            {action.canonicalTemplateVersionId ? (
+                              <small className="mt-1 block font-normal text-[#8796a6]">Master {action.canonicalTemplateVersionId.slice(0, 8)}</small>
+                            ) : null}
+                          </span>
                           <span className="capitalize">{action.targetRoles.join(', ')}</span>
                           <span>{action.executable ? action.message : action.skipReason}</span>
                         </li>
@@ -650,7 +664,12 @@ export default function LegalDocumentOverviewPage() {
                     <ul className="mt-4 divide-y divide-[#dfe7ed] text-sm">
                       {activeOtpResolutionReport.current.slice(0, 12).map((item) => (
                         <li key={item.actionKey} className="grid gap-2 py-3 md:grid-cols-[minmax(0,1fr)_190px_minmax(0,1.5fr)]">
-                          <span className="font-semibold text-[#304258]">{item.title}</span>
+                          <span className="font-semibold text-[#304258]">
+                            {item.title}
+                            {item.canonicalTemplateVersionId ? (
+                              <small className="mt-1 block font-normal text-[#8796a6]">Master {item.canonicalTemplateVersionId.slice(0, 8)}</small>
+                            ) : null}
+                          </span>
                           <span className="capitalize text-[#52677e]">{String(item.resolutionState || '').replaceAll('_', ' ')}</span>
                           <span className="text-[#63768a]">{item.detail}</span>
                         </li>
@@ -665,7 +684,11 @@ export default function LegalDocumentOverviewPage() {
                       <summary className="cursor-pointer text-sm font-semibold text-[#236340]">Show {activeOtpResolutionReport.resolved.length} resolved follow-up item{activeOtpResolutionReport.resolved.length === 1 ? '' : 's'}</summary>
                       <ul className="mt-3 space-y-2 text-xs leading-5 text-[#63768a]">
                         {activeOtpResolutionReport.resolved.slice(0, 12).map((item) => (
-                          <li key={item.actionId}>Packet {item.packetId || 'unknown'} · {item.detail}</li>
+                          <li key={item.actionId}>
+                            Packet {item.packetId || 'unknown'}
+                            {item.canonicalTemplateVersionId ? ` · Master ${item.canonicalTemplateVersionId.slice(0, 8)}` : ''}
+                            {' · '}{item.detail}
+                          </li>
                         ))}
                       </ul>
                     </details>
@@ -769,7 +792,7 @@ export default function LegalDocumentOverviewPage() {
             <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8b641b]">Human follow-up only</p>
             <h2 id="otp-followup-confirm-title" className="mt-3 text-xl font-semibold text-[#102033]">Notify the assigned reviewers?</h2>
             <p className="mt-3 text-sm leading-7 text-[#6b7c93]">
-              Arch9 will re-run the audit first. If any packet, version, state or routing action changed, nothing will be sent and a new plan will be required.
+              Arch9 will re-run the audit first. If any packet, generated version, master-version evidence, state or routing action changed, nothing will be sent and a new plan will be required.
             </p>
             <div className="mt-5 rounded-[15px] border border-[#ead9b9] bg-[#fffaf1] p-4 text-sm leading-6 text-[#6f5b35]">
               <strong className="text-[#4d4028]">{activeOtpEscalationPlan.summary?.executableActions || 0} notification action{activeOtpEscalationPlan.summary?.executableActions === 1 ? '' : 's'}</strong>

@@ -161,7 +161,7 @@ import { getCanonicalDocumentRolloutMode } from '../services/documents/canonical
 import { resolveCrossModuleDocumentReference } from '../services/documents/crossModuleDocumentKeyMapService'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService'
 import { buildTransactionRoutingBackfillPlan } from '../services/transactionRoutingGovernanceService'
-import { inferUniversalPartnerRoutingRoleTypes, resolvePartnerRoutingSelections } from '../services/universalPartnerRoutingService'
+import { inferPartnerRoutingRoleTypesForTransaction, resolvePartnerRoutingSelections } from '../services/universalPartnerRoutingService'
 import { recordUniversalAssignmentEvent, UNIVERSAL_ASSIGNMENT_METHODS } from '../services/universalAssignmentService'
 import { syncAttorneyIncomingInstructionStatus } from '../services/attorneyIncomingMatterInstructionSync'
 import {
@@ -272,6 +272,7 @@ export const ATTORNEY_FIRM_ROLE_VALUES = [
   'director_partner',
   'transfer_attorney',
   'bond_attorney',
+  'cancellation_attorney',
   'conveyancing_secretary',
   'admin_staff',
   'reception_scheduling',
@@ -20683,6 +20684,7 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = [], options = {}) {
     'partner_prospect',
     'invited_partner',
     'transaction_direct',
+    'seller_mandate',
   ])
 
   return rolePlayers
@@ -20742,10 +20744,26 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = [], options = {}) {
         return null
       }
       const roleplayerSnapshot = buildDeveloperTransactionRoleplayerSnapshot({ roleType }, relationshipProfile)
+      const assignmentStatus = normalizeTextValue(
+        item?.assignmentStatus || item?.assignment_status || (['transfer_attorney', 'bond_attorney', 'cancellation_attorney', 'bond_originator'].includes(roleType) ? 'selected' : 'active'),
+      ).toLowerCase()
+      const activationTrigger = normalizeTextValue(
+        item?.activationTrigger ||
+          item?.activation_trigger ||
+          (roleType === 'transfer_attorney'
+            ? 'attorney_instruction_stage'
+            : roleType === 'bond_originator'
+              ? 'buyer_selects_bond_or_hybrid'
+              : ['bond_attorney', 'cancellation_attorney'].includes(roleType)
+                ? 'bank_appointment_confirmed'
+                : 'immediate'),
+      ).toLowerCase()
 
       return {
         roleType,
         selectionSource: normalizedSource,
+        assignmentStatus,
+        activationTrigger,
         preferredPartnerId: normalizeNullableUuid(item?.preferredPartnerId || partner.partnerId),
         partnerRelationshipId: normalizeNullableUuid(item?.partnerRelationshipId || partner.partnerRelationshipId),
         partnerConnectionId: normalizeNullableUuid(item?.partnerConnectionId || item?.connectionId || partner.partnerConnectionId || partner.connectionId),
@@ -20768,6 +20786,8 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = [], options = {}) {
           ...roleplayerSnapshot,
           roleType,
           selectionSource: normalizedSource,
+          assignmentStatus,
+          activationTrigger,
           preferredPartnerId: normalizeNullableUuid(item?.preferredPartnerId || partner.partnerId),
           partnerRelationshipId: normalizeNullableUuid(item?.partnerRelationshipId || partner.partnerRelationshipId),
           partnerConnectionId: normalizeNullableUuid(item?.partnerConnectionId || item?.connectionId || partner.partnerConnectionId || partner.connectionId),
@@ -20876,6 +20896,8 @@ async function persistTransactionRolePlayersIfPossible(client, { transactionId, 
   )
 
   for (const item of rolePlayers) {
+    const assignmentStatus = normalizeTextValue(item.assignmentStatus || item.assignment_status || 'active').toLowerCase()
+    const awaitingActivation = ['selected', 'pending', 'pending_assignment', 'awaiting_activation'].includes(assignmentStatus)
     const resolvedUserId = item.userId || (item.email ? profileIdByEmail[item.email] || null : null)
     const scope = resolveRoleplayerSelectionScope(item, resolvedUserId)
     const payload = {
@@ -20910,16 +20932,16 @@ async function persistTransactionRolePlayersIfPossible(client, { transactionId, 
       physical_address: item.physicalAddress || null,
       province: item.province || null,
       notes: item.notes || null,
-      status: item.assignmentStatus === 'pending_assignment' ? 'pending' : 'active',
-      assignment_status: item.assignmentStatus || 'active',
-      activation_trigger: item.assignmentStatus === 'pending_assignment' ? 'routing_queue' : 'immediate',
-      activated_at: nowIso,
+      status: awaitingActivation ? 'pending' : 'active',
+      assignment_status: assignmentStatus,
+      activation_trigger: item.activationTrigger || item.activation_trigger || (awaitingActivation ? 'manual' : 'immediate'),
+      activated_at: awaitingActivation ? null : nowIso,
       assigned_by: actorProfile?.userId || null,
       removed_at: null,
       snapshot_json: {
         ...(item.snapshot || {}),
         canonicalTransactionId: transactionId,
-        roleplayerStatus: item.assignmentStatus || 'assigned',
+        roleplayerStatus: assignmentStatus,
         userId: resolvedUserId,
         organisationId: scope.organisationId || item.partnerOrganisationId || null,
         partnerOrganisationId: scope.organisationId || item.partnerOrganisationId || null,
@@ -20975,8 +20997,8 @@ async function persistTransactionRolePlayersIfPossible(client, { transactionId, 
         selectionSource: item.selectionSource || '',
         actorUserId: actorProfile?.userId || null,
         previousOwnerId: null,
-        fallbackUsed: item.assignmentStatus === 'pending_assignment',
-        assignmentStatus: item.assignmentStatus || 'active',
+        fallbackUsed: assignmentStatus === 'pending_assignment',
+        assignmentStatus,
         metadata: {
           ...(item.snapshot || {}),
         },
@@ -21003,8 +21025,8 @@ async function persistTransactionRolePlayersIfPossible(client, { transactionId, 
       selectionSource: item.selectionSource || '',
       actorUserId: actorProfile?.userId || null,
       previousOwnerId: null,
-      fallbackUsed: item.assignmentStatus === 'pending_assignment',
-      assignmentStatus: item.assignmentStatus || 'active',
+      fallbackUsed: assignmentStatus === 'pending_assignment',
+      assignmentStatus,
       metadata: {
         ...(item.snapshot || {}),
       },
@@ -21081,12 +21103,14 @@ async function ensureRoleplayerTransactionParticipant(client, { transactionId, s
   const participantName = selection.partnerName || selection.contactPerson || null
   const participantEmail = selection.email || null
   const nowIso = new Date().toISOString()
+  const assignmentStatus = normalizeTextValue(selection.assignmentStatus || selection.assignment_status || 'active').toLowerCase()
+  const awaitingActivation = ['selected', 'pending', 'pending_assignment', 'awaiting_activation'].includes(assignmentStatus)
   const payload = {
     transaction_id: transactionId,
     role_type: roleType,
     legal_role: roleType === 'attorney' ? legalRole : 'none',
     transaction_role: selection.roleType,
-    status: 'active',
+    status: awaitingActivation ? 'pending' : 'active',
     user_id: resolvedUserId,
     assigned_organisation_id: scope.organisationId,
     assigned_workspace_unit_id: scope.workspaceUnitId,
@@ -21102,13 +21126,13 @@ async function ensureRoleplayerTransactionParticipant(client, { transactionId, s
     participant_name: participantName,
     participant_email: participantEmail,
     invited_by_user_id: actorProfile?.userId || null,
-    invited_at: nowIso,
-    accepted_at: nowIso,
+    invited_at: awaitingActivation ? null : nowIso,
+    accepted_at: awaitingActivation ? null : nowIso,
     removed_at: null,
     visibility_scope: 'shared',
     is_internal: isInternalStakeholderRole(roleType),
     participant_scope: 'transaction',
-    assignment_source: 'transaction_direct',
+    assignment_source: selection.selectionSource || selection.selection_source || 'transaction_direct',
     ...buildStakeholderPermissionPayload(roleType, financeManagedBy),
   }
 
@@ -21171,7 +21195,7 @@ async function ensureRoleplayerTransactionParticipant(client, { transactionId, s
     assignmentSource: 'transaction_direct',
     selectionSource: 'transaction_direct',
     actorUserId: actorProfile?.userId || null,
-    assignmentStatus: scope.assignmentStatus || 'active',
+    assignmentStatus,
     metadata: {
       participantName,
       participantEmail,
@@ -21613,9 +21637,11 @@ function normalizeTransactionRoleplayerSelection(item = {}) {
     (roleType === 'bond_originator'
       ? 'buyer_selects_bond_or_hybrid'
       : roleType === 'bond_attorney'
-        ? 'bond_approved'
+        ? 'bank_appointment_confirmed'
         : roleType === 'transfer_attorney'
           ? 'attorney_instruction_stage'
+          : roleType === 'cancellation_attorney'
+            ? 'bank_appointment_confirmed'
           : 'manual')
 
   if (roleType === 'transfer_attorney' && !organisationId && !companyName && !email) return null
@@ -23995,12 +24021,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     ? (
         Array.isArray(options?.partnerRoleTypes) && options.partnerRoleTypes.length
           ? options.partnerRoleTypes.map((roleType) => normalizeRoleType(roleType)).filter(Boolean)
-          : inferUniversalPartnerRoutingRoleTypes({
-              role: actorRole,
-              workspaceRole: actorProfile.role,
-              appRole: actorProfile.role,
-              transactionType,
-              financeManagedBy: setup.financeManagedBy,
+          : inferPartnerRoutingRoleTypesForTransaction({
+              financeType: setup.financeType,
             })
       )
     : []
@@ -24025,9 +24047,18 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         transactionOverride: options?.transactionOverride || null,
       })
     : []
+  const dealCreationAutoResolvedSelections = autoResolvedSelections.map((selection) => {
+    if (selection?.roleType === 'transfer_attorney') {
+      return { ...selection, assignmentStatus: 'selected', activationTrigger: 'attorney_instruction_stage' }
+    }
+    if (selection?.roleType === 'bond_originator') {
+      return { ...selection, assignmentStatus: 'selected', activationTrigger: 'buyer_selects_bond_or_hybrid' }
+    }
+    return selection
+  })
   const mergedRolePlayerSelections = [
     ...rolePlayerSelections,
-    ...autoResolvedSelections.filter(
+    ...dealCreationAutoResolvedSelections.filter(
       (selection) => selection?.roleType && !rolePlayerSelections.some((existing) => normalizeRoleType(existing.roleType) === normalizeRoleType(selection.roleType)),
     ),
   ]
@@ -24126,6 +24157,11 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     seller_name: normalizeNullableText(setup.sellerName),
     seller_email: normalizeNullableText(setup.sellerEmail)?.toLowerCase() || null,
     seller_phone: normalizeNullableText(setup.sellerPhone),
+    seller_has_existing_bond: Boolean(setup.sellerHasExistingBond ?? setup.seller_has_existing_bond),
+    current_bond_bank: normalizeNullableText(setup.currentBondBank || setup.current_bond_bank),
+    current_bond_account_number: normalizeNullableText(setup.currentBondAccountNumber || setup.current_bond_account_number),
+    cancellation_notice_status: normalizeNullableText(setup.cancellationNoticeStatus || setup.cancellation_notice_status) || 'unknown',
+    cancellation_notice_date: normalizeNullableText(setup.cancellationNoticeDate || setup.cancellation_notice_date),
     finance_type: persistedFinanceType,
     purchaser_type: purchaserType,
     finance_managed_by: normalizeFinanceManagedBy(setup.financeManagedBy),
@@ -24198,6 +24234,11 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     seller_name: normalizeNullableText(setup.sellerName),
     seller_email: normalizeNullableText(setup.sellerEmail)?.toLowerCase() || null,
     seller_phone: normalizeNullableText(setup.sellerPhone),
+    seller_has_existing_bond: Boolean(setup.sellerHasExistingBond ?? setup.seller_has_existing_bond),
+    current_bond_bank: normalizeNullableText(setup.currentBondBank || setup.current_bond_bank),
+    current_bond_account_number: normalizeNullableText(setup.currentBondAccountNumber || setup.current_bond_account_number),
+    cancellation_notice_status: normalizeNullableText(setup.cancellationNoticeStatus || setup.cancellation_notice_status) || 'unknown',
+    cancellation_notice_date: normalizeNullableText(setup.cancellationNoticeDate || setup.cancellation_notice_date),
     finance_type: persistedFinanceType,
     purchaser_type: purchaserType,
     finance_managed_by: normalizeFinanceManagedBy(setup.financeManagedBy),
@@ -24301,6 +24342,11 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       isMissingColumnError(transactionResult.error, 'seller_name') ||
       isMissingColumnError(transactionResult.error, 'seller_email') ||
       isMissingColumnError(transactionResult.error, 'seller_phone') ||
+      isMissingColumnError(transactionResult.error, 'seller_has_existing_bond') ||
+      isMissingColumnError(transactionResult.error, 'current_bond_bank') ||
+      isMissingColumnError(transactionResult.error, 'current_bond_account_number') ||
+      isMissingColumnError(transactionResult.error, 'cancellation_notice_status') ||
+      isMissingColumnError(transactionResult.error, 'cancellation_notice_date') ||
       isMissingColumnError(transactionResult.error, 'cash_amount') ||
       isMissingColumnError(transactionResult.error, 'deposit_amount') ||
       isMissingColumnError(transactionResult.error, 'reservation_required') ||
@@ -24357,6 +24403,22 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     delete fallbackPayload.seller_name
     delete fallbackPayload.seller_email
     delete fallbackPayload.seller_phone
+    const missingExistingBondCaptureColumns =
+      isMissingColumnError(transactionResult.error, 'seller_has_existing_bond') ||
+      isMissingColumnError(transactionResult.error, 'current_bond_bank') ||
+      isMissingColumnError(transactionResult.error, 'current_bond_account_number')
+    if (missingExistingBondCaptureColumns) {
+      delete fallbackPayload.seller_has_existing_bond
+      delete fallbackPayload.current_bond_bank
+      delete fallbackPayload.current_bond_account_number
+    }
+    const missingCancellationNoticeColumns =
+      isMissingColumnError(transactionResult.error, 'cancellation_notice_status') ||
+      isMissingColumnError(transactionResult.error, 'cancellation_notice_date')
+    if (missingCancellationNoticeColumns) {
+      delete fallbackPayload.cancellation_notice_status
+      delete fallbackPayload.cancellation_notice_date
+    }
     if (isMissingColumnError(transactionResult.error, 'reservation_amount_type')) {
       delete fallbackPayload.reservation_amount_type
     }
@@ -35878,6 +35940,7 @@ export async function generateOtpDocumentFromTemplate({
   generatedByRole = '',
   generatedByUserId = '',
   clientVisible = false,
+  templateContractVersion = '',
 } = {}) {
   const normalizedTransactionId = String(transactionId || '').trim()
   if (!normalizedTransactionId) {
@@ -35897,6 +35960,7 @@ export async function generateOtpDocumentFromTemplate({
     generatedByRole: String(generatedByRole || '').trim() || undefined,
     generatedByUserId: String(generatedByUserId || '').trim() || undefined,
     clientVisible: Boolean(clientVisible),
+    templateContractVersion: String(templateContractVersion || '').trim() || undefined,
   }
 
   const { data, error } = await invokeEdgeFunction('generate-otp', {

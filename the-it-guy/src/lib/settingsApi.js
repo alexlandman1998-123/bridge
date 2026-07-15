@@ -1454,6 +1454,14 @@ function buildDefaultOrganisation(profile = null) {
     workspace_kind: 'agency',
     logoUrl: '',
     logoIconUrl: '',
+    logoBucket: '',
+    logoPath: '',
+    logoDarkUrl: '',
+    logoDarkBucket: '',
+    logoDarkPath: '',
+    primaryColour: '',
+    secondaryColour: '',
+    vatNumber: '',
     companyEmail: profile?.email || '',
     companyPhone: profile?.phoneNumber || '',
     website: '',
@@ -1499,11 +1507,21 @@ function normalizeOrganisationRow(row, profile = null) {
     id: row?.id || fallback.id,
     name: normalizeText(row?.name) || fallback.name,
     displayName: normalizeText(row?.display_name) || fallback.displayName,
+    legalName: normalizeText(row?.legal_name || row?.name) || fallback.name,
+    registrationNumber: normalizeText(row?.registration_number),
+    vatNumber: normalizeText(row?.vat_number),
     type: normalizeText(row?.type) || fallback.type,
     workspaceKind: normalizeText(row?.workspace_kind || row?.workspaceKind) || fallback.workspaceKind,
     workspace_kind: normalizeText(row?.workspace_kind || row?.workspaceKind) || fallback.workspace_kind,
     logoUrl: normalizeText(row?.logo_url),
     logoIconUrl: normalizeText(row?.logo_icon_url || row?.logoIconUrl),
+    logoBucket: normalizeText(row?.logo_bucket),
+    logoPath: normalizeText(row?.logo_path),
+    logoDarkUrl: normalizeText(row?.logo_dark_url),
+    logoDarkBucket: normalizeText(row?.logo_dark_bucket),
+    logoDarkPath: normalizeText(row?.logo_dark_path),
+    primaryColour: normalizeText(row?.primary_colour),
+    secondaryColour: normalizeText(row?.secondary_colour),
     companyEmail: normalizeText(row?.company_email) || fallback.companyEmail,
     companyPhone: normalizeText(row?.company_phone) || fallback.companyPhone,
     website: normalizeText(row?.website),
@@ -3423,7 +3441,17 @@ export async function updateOrganisationSettings(input = {}) {
     id: context.organisation.id,
     name: normalizeText(input.name) || context.organisation.name,
     display_name: normalizeNullableText(input.displayName) || normalizeText(input.name) || context.organisation.displayName,
+    legal_name: normalizeNullableText(input.legalName) || normalizeText(input.name) || context.organisation.legalName,
+    registration_number: normalizeNullableText(input.registrationNumber),
+    vat_number: normalizeNullableText(input.vatNumber),
     logo_url: normalizeNullableText(input.logoUrl),
+    logo_bucket: normalizeNullableText(input.logoBucket),
+    logo_path: normalizeNullableText(input.logoPath),
+    logo_dark_url: normalizeNullableText(input.logoDarkUrl),
+    logo_dark_bucket: normalizeNullableText(input.logoDarkBucket),
+    logo_dark_path: normalizeNullableText(input.logoDarkPath),
+    primary_colour: normalizeNullableText(input.primaryColour),
+    secondary_colour: normalizeNullableText(input.secondaryColour),
     settings_json: (() => {
       const existingSettingsJson = safeJson(context.organisation?.settingsJson, {})
       const inputSettingsJson = input.settingsJson && typeof input.settingsJson === 'object' ? input.settingsJson : {}
@@ -3464,16 +3492,26 @@ export async function updateOrganisationSettings(input = {}) {
     primary_contact_person: normalizeNullableText(input.primaryContactPerson),
   }
 
-  const { data, error } = await client
+  let organisationResult = await client
     .from('organisations')
     .upsert(organisationPayload, { onConflict: 'id' })
     .select(`
       id,
       name,
       display_name,
+      legal_name,
+      registration_number,
+      vat_number,
       type,
       workspace_kind,
       logo_url,
+      logo_bucket,
+      logo_path,
+      logo_dark_url,
+      logo_dark_bucket,
+      logo_dark_path,
+      primary_colour,
+      secondary_colour,
       settings_json,
       company_email,
       company_phone,
@@ -3496,8 +3534,70 @@ export async function updateOrganisationSettings(input = {}) {
     `)
     .single()
 
-  if (error) {
-    throw error
+  if (
+    organisationResult.error &&
+    [
+      'vat_number',
+      'logo_bucket',
+      'logo_path',
+      'logo_dark_url',
+      'logo_dark_bucket',
+      'logo_dark_path',
+      'primary_colour',
+      'secondary_colour',
+    ].some((column) => isMissingColumnError(organisationResult.error, column))
+  ) {
+    const legacyPayload = { ...organisationPayload }
+    for (const column of [
+      'vat_number',
+      'logo_bucket',
+      'logo_path',
+      'logo_dark_url',
+      'logo_dark_bucket',
+      'logo_dark_path',
+      'primary_colour',
+      'secondary_colour',
+    ]) {
+      delete legacyPayload[column]
+    }
+
+    organisationResult = await client
+      .from('organisations')
+      .upsert(legacyPayload, { onConflict: 'id' })
+      .select(`
+        id,
+        name,
+        display_name,
+        legal_name,
+        registration_number,
+        type,
+        workspace_kind,
+        logo_url,
+        settings_json,
+        company_email,
+        company_phone,
+        website,
+        address,
+        address_line_1,
+        address_line_2,
+        formatted_address,
+        suburb,
+        city,
+        province,
+        postal_code,
+        country,
+        latitude,
+        longitude,
+        google_place_id,
+        support_email,
+        support_phone,
+        primary_contact_person
+      `)
+      .single()
+  }
+
+  if (organisationResult.error) {
+    throw organisationResult.error
   }
 
   void recordSecurityAuditEvent({
@@ -3511,7 +3611,7 @@ export async function updateOrganisationSettings(input = {}) {
   clearOrganisationRuntimeCache()
   return {
     ...context,
-    organisation: normalizeOrganisationRow(data, context.profile),
+    organisation: normalizeOrganisationRow(organisationResult.data, context.profile),
   }
 }
 

@@ -1,0 +1,119 @@
+{
+  "schemaVersion": "kingstons_2026_otp_reference_matrix_v1",
+  "templateFingerprint": "fnv1a_7d6a0305",
+  "certificationKey": "fnv1a_1e5486d9",
+  "assetEvidence": {
+    "contractVersion": "kingstons_2026_otp_phase_1_v1",
+    "runtimeVersion": "kingstons_2026_otp_runtime_v1",
+    "assetVersion": "kingstons_2026_otp_docx_v1",
+    "docxSha256": "4e7fb4415a7b412dbbfb4fbdc430d62f4146a5eed68a619c3c83d3d685bdd691",
+    "manifestSha256": "15c9ed00779a4d4173eec89822437e714d141c7b11c975720d3ffc1828f2135f",
+    "tokenCount": 118
+  },
+  "scenarioCount": 6,
+  "passedCount": 6,
+  "failedCount": 0,
+  "scenarios": [
+    {
+      "key": "individual_cash",
+      "label": "Individual buying with cash",
+      "capabilities": [
+        "individual",
+        "cash"
+      ],
+      "passed": true,
+      "resolvedTokenCount": 37,
+      "tokenCount": 118,
+      "issues": []
+    },
+    {
+      "key": "joint_married_bond",
+      "label": "Married joint purchasers using a bond",
+      "capabilities": [
+        "individual",
+        "second_purchaser",
+        "marital",
+        "bond"
+      ],
+      "passed": true,
+      "resolvedTokenCount": 49,
+      "tokenCount": 118,
+      "issues": []
+    },
+    {
+      "key": "company_bond",
+      "label": "Company buying with bond finance",
+      "capabilities": [
+        "company",
+        "bond"
+      ],
+      "passed": true,
+      "resolvedTokenCount": 31,
+      "tokenCount": 118,
+      "issues": []
+    },
+    {
+      "key": "trust_cash",
+      "label": "Trust buying with cash",
+      "capabilities": [
+        "trust",
+        "cash"
+      ],
+      "passed": true,
+      "resolvedTokenCount": 29,
+      "tokenCount": 118,
+      "issues": []
+    },
+    {
+      "key": "linked_sale_early_occupation",
+      "label": "Linked property sale and early occupation",
+      "capabilities": [
+        "linked_sale",
+        "occupation"
+      ],
+      "passed": true,
+      "resolvedTokenCount": 46,
+      "tokenCount": 118,
+      "issues": []
+    },
+    {
+      "key": "attorney_approved_exception",
+      "label": "Attorney-approved exceptional conditions",
+      "capabilities": [
+        "approved_exception"
+      ],
+      "passed": true,
+      "resolvedTokenCount": 40,
+      "tokenCount": 118,
+      "issues": []
+    }
+  ],
+  "failedScenarios": [],
+  "exercisedCapabilities": [
+    "approved_exception",
+    "bond",
+    "cash",
+    "company",
+    "individual",
+    "linked_sale",
+    "marital",
+    "occupation",
+    "second_purchaser",
+    "trust"
+  ],
+  "missingCapabilities": [],
+  "exercisedPackCount": 10,
+  "publishablePackCount": 10,
+  "unexercisedPackKeys": [],
+  "safetyChecks": [
+    {
+      "key": "unapproved_exception_blocked",
+      "label": "Unapproved legal wording is blocked",
+      "passed": true
+    }
+  ],
+  "failedSafetyChecks": [],
+  "canPublish": true,
+  "blockingMessages": [],
+  "certifiedAt": "2026-07-15T11:12:45.067Z"
+}

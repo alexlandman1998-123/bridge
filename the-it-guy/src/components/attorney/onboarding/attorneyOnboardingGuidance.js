@@ -15,7 +15,7 @@ export const ONBOARDING_STEPS = [
   {
     key: 'departments',
     label: 'Active Departments',
-    description: 'Choose transfer, bond, admin, and management lanes.',
+    description: 'Choose transfer, bond, cancellation, admin, and management lanes.',
   },
   {
     key: 'team_invites',
@@ -65,6 +65,7 @@ export const DEFAULT_BRANDING = {
 export const DEFAULT_DEPARTMENTS = {
   transfer: true,
   bond: true,
+  cancellation: true,
   admin: true,
   management: true,
 }
@@ -72,6 +73,7 @@ export const DEFAULT_DEPARTMENTS = {
 const DEPARTMENT_LABELS = {
   transfer: 'Transfer Department',
   bond: 'Bond Department',
+  cancellation: 'Bond Cancellation Department',
   admin: 'Admin Department',
   management: 'Management',
 }
@@ -80,6 +82,7 @@ const ROLE_LABELS = {
   director_partner: 'Director / Partner',
   transfer_attorney: 'Transfer Attorney',
   bond_attorney: 'Bond Attorney',
+  cancellation_attorney: 'Cancellation Attorney',
   conveyancing_secretary: 'Conveyancing Secretary',
   admin_staff: 'Admin Staff',
   reception_scheduling: 'Reception / Scheduling',
@@ -158,12 +161,12 @@ export function buildSelectedDepartmentsFromRows(rows = []) {
       if (type) accumulator[type] = department.isActive !== false
       return accumulator
     },
-    { ...DEFAULT_DEPARTMENTS, transfer: false, bond: false, admin: false, management: true },
+    { ...DEFAULT_DEPARTMENTS, transfer: false, bond: false, cancellation: false, admin: false, management: true },
   )
 }
 
 export function getActiveDepartmentTypes(selectedDepartments = {}) {
-  return ['transfer', 'bond', 'admin', 'management'].filter((type) => Boolean(selectedDepartments[type]))
+  return ['transfer', 'bond', 'cancellation', 'admin', 'management'].filter((type) => Boolean(selectedDepartments[type]))
 }
 
 export function validateFirmInformation(values = {}) {

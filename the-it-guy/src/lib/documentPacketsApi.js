@@ -478,6 +478,7 @@ function resolveTemplateMetadataValue(template = {}, keys = []) {
 }
 
 function hydrateTemplateRecord(template = {}) {
+  const metadata = template?.metadata_json && typeof template.metadata_json === 'object' ? template.metadata_json : {}
   return {
     ...template,
     template_storage_path: resolveTemplateMetadataValue(template, ['template_storage_path', 'templatePath']),
@@ -495,9 +496,62 @@ function hydrateTemplateRecord(template = {}) {
     instrument_family: resolveTemplateMetadataValue(template, ['instrument_family', 'legal_instrument_family']),
     jurisdiction_code: resolveTemplateMetadataValue(template, ['jurisdiction_code']) || 'ZA',
     language_code: resolveTemplateMetadataValue(template, ['language_code']) || 'en-ZA',
+    document_model: normalizeText(template.document_model || metadata.document_model) || 'legacy_sectioned',
+    canonical_contract_version: normalizeText(template.canonical_contract_version || metadata.canonical_contract_version) || null,
+    live_version_id: template.live_version_id || metadata.live_version_id || null,
+    candidate_version_id: template.candidate_version_id || metadata.candidate_version_id || null,
+    previous_live_version_id: template.previous_live_version_id || metadata.previous_live_version_id || null,
   }
 }
 
+async function resolveCanonicalLiveTemplateVersion(client, template = {}) {
+  if (normalizeText(template.document_model).toLowerCase() !== 'single_master_document') return template
+  const liveVersionId = normalizeText(template.live_version_id)
+  if (!liveVersionId) {
+    throw new Error('The canonical OTP has no live version pointer. Generation was stopped before selecting a document.')
+  }
+  const { data: version, error } = await client
+    .from('document_packet_template_versions')
+    .select('id, template_id, organisation_id, status, version_tag, storage_bucket, storage_path, file_name, content_hash, canonical_contract_version, canonical_runtime_binding_version, canonical_template_asset_version, certification_key, template_fingerprint, metadata_json, published_at')
+    .eq('id', liveVersionId)
+    .eq('template_id', template.id)
+    .maybeSingle()
+  if (error) {
+    if (isMissingTableOrSchemaError(error)) {
+      throw new Error('The canonical OTP live-version registry is unavailable. Generation was stopped without using a fallback template.')
+    }
+    throw error
+  }
+  if (!version || normalizeText(version.status).toLowerCase() !== 'published') {
+    throw new Error('The canonical OTP live-version pointer does not resolve to a published version. Generation was stopped.')
+  }
+  if (!normalizeText(version.storage_bucket) || !normalizeText(version.storage_path)) {
+    throw new Error('The canonical OTP live version has no stored DOCX asset. Generation was stopped.')
+  }
+  const versionMetadata = version.metadata_json && typeof version.metadata_json === 'object' ? version.metadata_json : {}
+  return hydrateTemplateRecord({
+    ...template,
+    template_storage_bucket: version.storage_bucket,
+    template_storage_path: version.storage_path,
+    template_file_name: version.file_name,
+    version_tag: version.version_tag,
+    canonical_contract_version: version.canonical_contract_version || template.canonical_contract_version,
+    canonical_runtime_binding_version: version.canonical_runtime_binding_version || versionMetadata.canonical_runtime_binding_version,
+    canonical_template_asset_version: version.canonical_template_asset_version || versionMetadata.canonical_template_asset_version,
+    content_hash: version.content_hash,
+    template_version_id: version.id,
+    resolved_live_version_id: version.id,
+    metadata_json: {
+      ...(template.metadata_json || {}),
+      canonical_runtime_binding_version: version.canonical_runtime_binding_version || versionMetadata.canonical_runtime_binding_version,
+      canonical_template_asset_version: version.canonical_template_asset_version || versionMetadata.canonical_template_asset_version,
+      resolved_live_version_id: version.id,
+    },
+  })
+}
+
+const DOCUMENT_PACKET_TEMPLATE_SELECT_CANONICAL =
+  'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_bucket, template_storage_path, template_file_name, version_tag, description, status, is_default, is_active, metadata_json, document_model, canonical_contract_version, live_version_id, candidate_version_id, previous_live_version_id, instrument_family, jurisdiction_code, language_code, effective_from, effective_until, governance_version, reviewed_by, reviewed_at, approved_by, approved_at, published_by, published_at, superseded_by, superseded_at, withdrawn_by, withdrawn_at, archived_by, archived_at, created_by, updated_by, created_at, updated_at'
 const DOCUMENT_PACKET_TEMPLATE_SELECT_PHASE3 =
   'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_bucket, template_storage_path, template_file_name, version_tag, description, status, is_default, is_active, metadata_json, instrument_family, jurisdiction_code, language_code, effective_from, effective_until, governance_version, reviewed_by, reviewed_at, approved_by, approved_at, published_by, published_at, superseded_by, superseded_at, withdrawn_by, withdrawn_at, archived_by, archived_at, created_by, updated_by, created_at, updated_at'
 const DOCUMENT_PACKET_TEMPLATE_SELECT_PHASE2 =
@@ -510,6 +564,10 @@ const DOCUMENT_PACKET_TEMPLATE_SELECT_LEGACY =
   'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, is_default, metadata_json, created_by, created_at, updated_at'
 
 const DOCUMENT_PACKET_TEMPLATE_QUERY_PLANS = [
+  {
+    select: DOCUMENT_PACKET_TEMPLATE_SELECT_CANONICAL,
+    activeFilter: ({ includeInactive }) => !includeInactive,
+  },
   {
     select: DOCUMENT_PACKET_TEMPLATE_SELECT_PHASE3,
     activeFilter: ({ includeInactive }) => !includeInactive,
@@ -1071,9 +1129,10 @@ export async function resolveActiveDocumentPacketTemplate({
     }))
 
   const selected = candidates[0] || null
-  const hydratedTemplate = selected?.id && includeSections
+  const resolvedSelected = selected ? await resolveCanonicalLiveTemplateVersion(client, selected) : null
+  const hydratedTemplate = resolvedSelected?.id && includeSections
     ? await fetchDocumentPacketTemplate(selected.id, { includeSections: true })
-    : selected
+    : resolvedSelected
 
   return {
     template: hydratedTemplate || null,
@@ -1176,8 +1235,9 @@ export async function uploadDocumentPacketTemplateAsset({
 export async function fetchDocumentPacketTemplate(templateId, { includeSections = true } = {}) {
   const client = requireClient()
   if (!templateId) throw new Error('templateId is required.')
-  const template = await queryDocumentPacketTemplatesWithFallback(client, { templateId })
+  let template = await queryDocumentPacketTemplatesWithFallback(client, { templateId })
   if (!template) return null
+  template = await resolveCanonicalLiveTemplateVersion(client, template)
 
   let sections = []
   if (includeSections) {
@@ -1458,6 +1518,87 @@ export async function rollbackGovernedOtpTemplate({ currentTemplateId, rollbackT
     throw error
   }
   return data || { rolledBack: true, fromTemplateId: normalizedCurrentId, toTemplateId: normalizedRollbackId }
+}
+
+export async function activateCanonicalOtpCandidate({
+  templateId,
+  candidateVersionId,
+  certificationKey,
+  templateFingerprint,
+} = {}) {
+  const client = requireClient()
+  const normalizedTemplateId = normalizeText(templateId)
+  let normalizedCandidateId = normalizeText(candidateVersionId)
+  const normalizedCertificationKey = normalizeText(certificationKey)
+  const normalizedFingerprint = normalizeText(templateFingerprint)
+  if (!normalizedTemplateId || !normalizedCertificationKey || !normalizedFingerprint) {
+    throw new Error('The canonical OTP candidate and its Phase 5 certification are required for activation.')
+  }
+  const context = await resolvePacketContext(client)
+  if (!context.isOrgAdmin) {
+    throw new Error('Only Principal/Super Admin/Admin can activate the canonical OTP.')
+  }
+  if (!normalizedCandidateId) {
+    const { data: pointer, error: pointerError } = await client
+      .from('document_packet_templates')
+      .select('candidate_version_id')
+      .eq('id', normalizedTemplateId)
+      .eq('organisation_id', context.organisationId)
+      .maybeSingle()
+    if (pointerError) {
+      const message = normalizeText(pointerError.message)
+      if (pointerError.code === '42703' || pointerError.code === 'PGRST204' || message.includes('candidate_version_id')) {
+        throw new Error('The canonical OTP version-pointer migration is not installed. No version was changed.')
+      }
+      throw pointerError
+    }
+    normalizedCandidateId = normalizeText(pointer?.candidate_version_id)
+  }
+  if (!normalizedCandidateId) {
+    throw new Error('No canonical OTP rollout candidate is currently assigned to this template.')
+  }
+  const { data, error } = await client.rpc('activate_canonical_otp_candidate', {
+    p_template_id: normalizedTemplateId,
+    p_candidate_version_id: normalizedCandidateId,
+    p_certification_key: normalizedCertificationKey,
+    p_template_fingerprint: normalizedFingerprint,
+  })
+  if (error) {
+    const message = normalizeText(error.message)
+    if (error.code === 'PGRST202' || error.code === '42883' || message.toLowerCase().includes('activate_canonical_otp_candidate')) {
+      throw new Error('The canonical OTP controlled-activation migration is not installed. No version was changed.')
+    }
+    throw error
+  }
+  return data || {
+    activated: true,
+    templateId: normalizedTemplateId,
+    liveVersionId: normalizedCandidateId,
+  }
+}
+
+export async function rollbackCanonicalOtpVersion({ templateId, reason } = {}) {
+  const client = requireClient()
+  const normalizedTemplateId = normalizeText(templateId)
+  const normalizedReason = normalizeText(reason)
+  if (!normalizedTemplateId) throw new Error('A canonical OTP template is required for rollback.')
+  if (normalizedReason.length < 12) throw new Error('A rollback reason of at least 12 characters is required.')
+  const context = await resolvePacketContext(client)
+  if (!context.isOrgAdmin) {
+    throw new Error('Only Principal/Super Admin/Admin can restore the previous canonical OTP.')
+  }
+  const { data, error } = await client.rpc('rollback_canonical_otp_version', {
+    p_template_id: normalizedTemplateId,
+    p_reason: normalizedReason,
+  })
+  if (error) {
+    const message = normalizeText(error.message)
+    if (error.code === 'PGRST202' || error.code === '42883' || message.toLowerCase().includes('rollback_canonical_otp_version')) {
+      throw new Error('The canonical OTP recovery migration is not installed. The current live version was preserved.')
+    }
+    throw error
+  }
+  return data || { rolledBack: true, templateId: normalizedTemplateId }
 }
 
 export async function deleteDocumentPacketTemplate(templateId, { organisationId = null, replacementTemplateId = null } = {}) {

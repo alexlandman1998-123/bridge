@@ -18,6 +18,8 @@ import { Link, Navigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import { getAttorneyOperationalWorkspaceData } from '../services/attorneyOperations'
+import { buildAttorneyThreeRolePortfolioRollout } from '../core/transactions/attorneyThreeRolePortfolioRollout.js'
+import { buildAttorneyThreeRoleInterventionQueue } from '../core/transactions/attorneyThreeRoleInterventionEngine.js'
 
 const PIPELINE_STAGES = [
   { key: 'instruction', label: 'Instruction', match: ['instruction', 'attorney preparation', 'avail'] },
@@ -499,6 +501,95 @@ function OperationalIntelligence({ metrics, appointmentRows, matterRows }) {
   )
 }
 
+function ThreeRoleRolloutIntelligence({ rollout, interventionQueue }) {
+  if (!rollout || rollout.decision === 'insufficient_data') return null
+  const decisionTone = rollout.decision === 'go'
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+    : rollout.decision === 'observe'
+      ? 'border-amber-200 bg-amber-50 text-amber-700'
+      : 'border-red-200 bg-red-50 text-red-700'
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#12314f] text-white">
+              <BarChart3 size={16} />
+            </span>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Three-role rollout</p>
+              <h2 className="text-base font-semibold text-slate-950">Portfolio Assurance</h2>
+            </div>
+          </div>
+          <p className="mt-3 max-w-3xl text-sm text-slate-500">Firm-wide coverage, intervention pressure, and expansion thresholds across transfer, bond, and cancellation matters.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className={`w-fit rounded-full border px-3 py-1.5 text-xs font-semibold ${decisionTone}`}>{rollout.decisionLabel}</span>
+          <span className={`w-fit rounded-full border px-3 py-1.5 text-xs font-semibold ${interventionQueue?.canExpandPilot ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-700'}`}>
+            Expansion guard · {interventionQueue?.canExpandPilot ? 'Open' : 'Closed'}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          ['Visible matters', rollout.matterCount],
+          ['Matters at risk', `${rollout.metrics.atRiskCount} · ${rollout.metrics.atRiskPercent}%`],
+          ['Inactive 7+ days', `${rollout.metrics.staleCount} · ${rollout.metrics.stalePercent}%`],
+          ['Role coverage gaps', rollout.metrics.coverageGapCount],
+        ].map(([label, value]) => (
+          <article key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{label}</p>
+            <p className="mt-2 text-xl font-semibold text-slate-950">{value}</p>
+          </article>
+        ))}
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <h3 className="text-sm font-semibold text-slate-950">Required-role coverage</h3>
+          <div className="mt-3 space-y-2">
+            {rollout.roleCoverage.map((role) => (
+              <div key={role.roleKey} className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-slate-700">{role.label}</span>
+                  <span className={`text-xs font-semibold ${role.gap ? 'text-red-700' : 'text-emerald-700'}`}>{role.coveragePercent}%</span>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">{role.assigned}/{role.required} required matters assigned</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-slate-950">Intervention command queue</h3>
+            <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600">{interventionQueue?.openCount || 0}</span>
+          </div>
+          <p className="mt-2 text-xs leading-5 text-slate-500">{interventionQueue?.expansionGuardReason}</p>
+          <div className="mt-3 space-y-2">
+            {(interventionQueue?.items || []).slice(0, 5).map((item) => (
+              <article key={item.id} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <strong className="block text-sm text-slate-900">{item.title}</strong>
+                    <span className={`rounded-full px-2 py-0.5 text-[0.68rem] font-semibold ${item.priority === 'critical' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}>{titleize(item.priority)}</span>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">{item.matterReference} · {item.ownerLabel} · Due {formatDate(item.dueDate)}</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">{item.detail}</p>
+                </div>
+                {item.actionHref ? <Link to={item.actionHref} className="shrink-0 text-xs font-semibold text-[#12314f]">Open matter</Link> : null}
+              </article>
+            ))}
+            {!interventionQueue?.openCount ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-4 text-sm font-semibold text-emerald-700">No portfolio interventions are required.</p> : null}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function AttorneyOperationsPage() {
   const { role } = useWorkspace()
   const permissionsState = useAttorneyPermissions()
@@ -612,6 +703,15 @@ function AttorneyOperationsPage() {
     }
   }, [data?.kpis?.pendingSignatures, stageFilteredMatterRows])
 
+  const portfolioRollout = useMemo(
+    () => (data?.canViewFirmDashboard ? buildAttorneyThreeRolePortfolioRollout({ matterRows: data?.matterQueue || [] }) : null),
+    [data?.canViewFirmDashboard, data?.matterQueue],
+  )
+  const interventionQueue = useMemo(
+    () => (portfolioRollout ? buildAttorneyThreeRoleInterventionQueue({ rollout: portfolioRollout }) : null),
+    [portfolioRollout],
+  )
+
   const lastUpdated = useMemo(() => {
     const latest = [...(data?.matterQueue || []), ...(data?.recentUpdates || [])]
       .map((row) => new Date(row.lastUpdated || row.occurredAt || '').getTime())
@@ -684,6 +784,8 @@ function AttorneyOperationsPage() {
         />
 
         <MetricStrip metrics={metrics} />
+
+        <ThreeRoleRolloutIntelligence rollout={portfolioRollout} interventionQueue={interventionQueue} />
 
         <PipelineStrip rows={visibleMatterRows} activeStage={pipelineStage} onStageChange={setPipelineStage} />
 

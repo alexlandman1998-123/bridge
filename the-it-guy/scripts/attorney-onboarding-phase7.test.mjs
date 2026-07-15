@@ -42,7 +42,7 @@ assert.equal(packet.inviteCount, 1)
 assert.match(packet.text, /^Kingstons Legal Launch Packet/)
 assert.match(packet.text, /Status: Launch dossier is ready/)
 assert.match(packet.text, /- Primary colour: #123456/)
-assert.match(packet.text, /- Active lanes: Transfer Department, Bond Department, Admin Department, Management/)
+assert.match(packet.text, /- Active lanes: Transfer Department, Bond Department, Bond Cancellation Department, Admin Department, Management/)
 assert.match(packet.text, /- Team access: Ready - 1 invite prepared\./)
 assert.match(packet.text, /- transfer@kingstons\.co\.za - Transfer Attorney \/ Transfer Department/)
 

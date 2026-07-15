@@ -29,6 +29,7 @@ import Field from '../../components/ui/Field'
 import { useOrganisation } from '../../context/OrganisationContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import { buildAttorneyOrganisationSettingsInput } from '../../core/organisations/attorneyOrganisationSettings'
 import { upsertAreaFromAddress } from '../../lib/location/upsertArea'
 import {
   saveAgencyOnboardingDraft,
@@ -45,6 +46,7 @@ import {
 const WORKSPACE_TYPE_COPY_KEYS = {
   agency: 'agency',
   bond_originator: 'bond',
+  attorney_firm: 'attorney',
 }
 
 const PERMISSION_SCOPE_OPTIONS = [
@@ -57,6 +59,18 @@ const CRM_VISIBILITY_OPTIONS = [
   { value: 'private', label: 'Private by Default' },
   { value: 'branch', label: 'Visible to Branch' },
   { value: 'organisation', label: 'Visible to Organisation' },
+]
+
+const ATTORNEY_PERMISSION_SCOPE_OPTIONS = [
+  { value: 'all', label: 'All Firm Data' },
+  { value: 'branch', label: 'Assigned Office' },
+  { value: 'own', label: 'Own Matters Only' },
+]
+
+const ATTORNEY_VISIBILITY_OPTIONS = [
+  { value: 'private', label: 'Private by Default' },
+  { value: 'branch', label: 'Visible to Office' },
+  { value: 'organisation', label: 'Visible to Firm' },
 ]
 
 const BOND_ORIGINATOR_TYPE_OPTIONS = [
@@ -81,6 +95,21 @@ const AGENCY_BUSINESS_FOCUS_OPTIONS = [
   { value: 'sales', label: 'Sales' },
   { value: 'rentals', label: 'Rentals' },
   { value: 'sales_rentals', label: 'Sales & Rentals' },
+]
+
+const ATTORNEY_FIRM_TYPE_OPTIONS = [
+  { value: 'independent_firm', label: 'Independent firm' },
+  { value: 'multi_office_firm', label: 'Multi-office firm' },
+  { value: 'specialist_practice', label: 'Specialist practice' },
+  { value: 'full_service_firm', label: 'Full-service firm' },
+]
+
+const ATTORNEY_PRACTICE_FOCUS_OPTIONS = [
+  { value: 'conveyancing', label: 'Conveyancing' },
+  { value: 'property_law', label: 'Property law' },
+  { value: 'commercial_law', label: 'Commercial law' },
+  { value: 'litigation', label: 'Litigation' },
+  { value: 'full_service', label: 'Full-service legal practice' },
 ]
 
 const ORGANISATION_DEFAULTS = {
@@ -240,6 +269,49 @@ const AGENCY_SETTINGS_COPY = {
   branchesHref: '/agency/branches',
 }
 
+const ATTORNEY_SETTINGS_COPY = {
+  ...AGENCY_SETTINGS_COPY,
+  unavailable: 'Attorney firm settings are unavailable right now. Please retry from the attorney dashboard.',
+  readOnly: 'Read-only for your role. Only firm administrators can edit attorney organisation settings.',
+  organisationNameLabel: 'Firm Name',
+  agencyTypeLabel: 'Firm Operating Model',
+  businessFocusLabel: 'Primary Practice Focus',
+  principalTitle: 'Firm Administrator',
+  principalDescription: 'Primary firm administrator identity used for organisation control.',
+  principalNameLabel: 'Administrator Name',
+  principalEmailLabel: 'Administrator Email',
+  complianceNumberLabel: 'Legal Practice Number',
+  branchLabel: 'Offices',
+  branchCopy: 'Office entities drive staff scope, reporting visibility, and operational ownership.',
+  branchCountLabel: 'Offices',
+  agentScopeLabel: 'Attorney Scope',
+  leadVisibilityLabel: 'Matter Visibility',
+  sharingLabel: 'Allow cross-office collaboration',
+  queueLabel: 'Allow shared matter queues',
+  listingsLabel: 'Allow shared transaction access',
+  branchesHref: '/attorney/firm-settings',
+  organisationDescription: 'Manage your firm identity, registered office, branding, access and operational defaults.',
+  brandingDescription: 'Manage your firm’s visual identity across Arch9, client portals and communications.',
+  informationTitle: 'Firm Information',
+  informationDescription: 'Canonical registered and trading information for this attorney firm.',
+  addressTitle: 'Registered Office',
+  addressDescription: 'Canonical office address used across matters, portals and firm communications.',
+  addressLabel: 'Registered Office Address',
+  statusLabel: 'Firm Status',
+  complianceLabel: 'LPC',
+  complianceVerifiedLabel: 'LPC Recorded',
+  compliancePendingLabel: 'LPC Not Recorded',
+  publicProfileLabel: 'View Firm Profile',
+  managerCountLabel: 'Office Managers',
+  ownerLabel: 'Managing Partner',
+  principalScopeLabel: 'Firm Administrator Scope',
+  managerScopeLabel: 'Office Manager Scope',
+  manageBranchesLabel: 'Manage Offices',
+  viewBranchesLabel: 'View Offices',
+  overviewTitle: 'Firm Overview',
+  documentationLabel: 'Attorney Firm Documentation',
+}
+
 function normalizeText(value = '') {
   return String(value || '').trim()
 }
@@ -318,7 +390,8 @@ function getOrganisationDisplayName(form = {}, onboarding = {}) {
   )
 }
 
-function getOrganisationTypeLabel(onboarding = {}) {
+function getOrganisationTypeLabel(onboarding = {}, workspaceType = '') {
+  if (workspaceType === 'attorney_firm') return 'Attorney Firm'
   const type = onboarding?.agencyInformation?.agencyType
   if (type === 'mixed') return 'Residential • Commercial'
   return titleize(type || 'Residential')
@@ -1276,7 +1349,12 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
   const copyKey = WORKSPACE_TYPE_COPY_KEYS[resolvedWorkspaceType] || (role === 'bond_originator' ? 'bond' : 'agency')
   const isBondOriginator = copyKey === 'bond'
-  const copy = isBondOriginator ? BOND_SETTINGS_COPY : AGENCY_SETTINGS_COPY
+  const isAttorneyFirm = copyKey === 'attorney'
+  const copy = copyKey === 'attorney'
+    ? ATTORNEY_SETTINGS_COPY
+    : isBondOriginator
+      ? BOND_SETTINGS_COPY
+      : AGENCY_SETTINGS_COPY
   const {
     state: organisationContextState,
     loading: organisationContextLoading,
@@ -1592,6 +1670,11 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
     })
   }
 
+  function getCanonicalOrganisationSettingsInput(nextState = state) {
+    if (!isAttorneyFirm) return nextState?.organisation || {}
+    return buildAttorneyOrganisationSettingsInput(nextState)
+  }
+
   function rollbackBrandAsset(targetKey, historyEntry = {}) {
     const assetConfig = BRAND_ASSET_TARGETS[targetKey]
     const url = normalizeText(historyEntry.url)
@@ -1721,8 +1804,8 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
       setState(nextState)
 
       const saveTasks = [saveAgencyOnboardingDraft(nextState.onboarding)]
-      if (targetKey === 'logoLight') {
-        saveTasks.push(updateOrganisationSettings(nextState.organisation))
+      if (targetKey === 'logoLight' || (isAttorneyFirm && targetKey === 'logoDark')) {
+        saveTasks.push(updateOrganisationSettings(getCanonicalOrganisationSettingsInput(nextState)))
       }
       await Promise.all(saveTasks)
 
@@ -1749,7 +1832,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
       setMessage('')
 
       const [organisationResponse, onboardingResponse] = await Promise.all([
-        updateOrganisationSettings(state.organisation),
+        updateOrganisationSettings(getCanonicalOrganisationSettingsInput(state)),
         saveAgencyOnboardingDraft({
           ...state.onboarding,
           organisationType: isBondOriginator ? 'bond_originator' : state.onboarding?.organisationType,
@@ -1807,10 +1890,13 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   const managerCount = getManagerCount(branchRows)
   const userCount = getBranchUserCount(branchRows)
   const organisationName = getOrganisationDisplayName(form, onboarding)
-  const organisationTypeLabel = getOrganisationTypeLabel(onboarding)
+  const organisationTypeLabel = getOrganisationTypeLabel(onboarding, resolvedWorkspaceType)
   const primaryLogo = getPrimaryLogo(form, onboarding)
   const defaults = getOrganisationDefaults(form)
-  const isPpraVerified = Boolean(normalizeText(agencyInfo.eaabPpraNumber))
+  const complianceNumber = normalizeText(
+    isAttorneyFirm ? agencyInfo.legalPracticeNumber || agencyInfo.eaabPpraNumber : agencyInfo.eaabPpraNumber,
+  )
+  const isComplianceVerified = Boolean(complianceNumber)
   const isRegistrationVerified = Boolean(normalizeText(agencyInfo.companyRegistrationNumber))
   const isBrandingConfigured = Boolean(primaryLogo || branding.logoIcon || branding.logoDark)
   const addressText = normalizeText(form.formattedAddress || [form.city, form.province].filter(Boolean).join(', ')) || 'Johannesburg, Gauteng'
@@ -1878,7 +1964,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
       <div className={settingsPageClass}>
         <OrganisationPageHeader
           sectionTitle="Branding"
-          description="Manage your agency's visual identity across Arch9, client portals and communications."
+          description={isAttorneyFirm ? copy.brandingDescription : "Manage your agency's visual identity across Arch9, client portals and communications."}
         />
 
         {!canEdit ? <SettingsBanner tone="warning">{copy.readOnly}</SettingsBanner> : null}
@@ -2093,7 +2179,9 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
     <div className={settingsPageClass}>
       <OrganisationPageHeader
         sectionTitle={showBrandingOnly ? 'Branding' : 'Organisation'}
-        description={showBrandingOnly ? 'Manage logos, colours, and brand assets used across Arch9.' : 'Manage your agency information, branding, permissions and operational defaults.'}
+        description={showBrandingOnly
+          ? (isAttorneyFirm ? copy.brandingDescription : 'Manage logos, colours, and brand assets used across Arch9.')
+          : (isAttorneyFirm ? copy.organisationDescription : 'Manage your agency information, branding, permissions and operational defaults.')}
       />
 
       {!canEdit ? <SettingsBanner tone="warning">{copy.readOnly}</SettingsBanner> : null}
@@ -2114,8 +2202,12 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="min-w-0 text-[1.45rem] font-semibold leading-tight text-[#17233a]">{organisationName}</h2>
-                    <VerificationBadge verified={isPpraVerified}>{isPpraVerified ? 'EAAB Verified' : 'EAAB Pending'}</VerificationBadge>
-                    {isRegistrationVerified ? <VerificationBadge verified>Pty Ltd</VerificationBadge> : null}
+                    <VerificationBadge verified={isComplianceVerified}>
+                      {isAttorneyFirm
+                        ? (isComplianceVerified ? copy.complianceVerifiedLabel : copy.compliancePendingLabel)
+                        : (isComplianceVerified ? 'EAAB Verified' : 'EAAB Pending')}
+                    </VerificationBadge>
+                    {isRegistrationVerified ? <VerificationBadge verified>{isAttorneyFirm ? 'Registration Recorded' : 'Pty Ltd'}</VerificationBadge> : null}
                   </div>
                   <p className="mt-2 text-sm font-semibold text-[#40566d]">{organisationTypeLabel}</p>
                   <p className="mt-1 flex items-center gap-1.5 text-sm leading-6 text-[#60758d]">
@@ -2150,7 +2242,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                       className="inline-flex h-11 items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#24364b] shadow-[0_6px_16px_rgba(15,23,42,0.04)] transition hover:bg-[#f7fafc]"
                     >
                       <ExternalLink className="h-4 w-4" strokeWidth={2} />
-                      View Public Profile
+                      {isAttorneyFirm ? copy.publicProfileLabel : 'View Public Profile'}
                     </Link>
                   </div>
                 </div>
@@ -2162,7 +2254,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                 <StatTile label={copy.branchCountLabel} value={branchCount}>
                   <GitBranch className="h-4 w-4 text-[#0f7f4f]" strokeWidth={2} />
                 </StatTile>
-                <StatTile label="Active Managers" value={managerCount}>
+                <StatTile label={isAttorneyFirm ? copy.managerCountLabel : 'Active Managers'} value={managerCount}>
                   <ShieldCheck className="h-4 w-4 text-[#0f7f4f]" strokeWidth={2} />
                 </StatTile>
               </div>
@@ -2174,7 +2266,10 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
           <div className="space-y-6">
             {!showBrandingOnly ? (
               <>
-                <OrganisationCard title="Agency Information" description="General company information.">
+                <OrganisationCard
+                  title={isAttorneyFirm ? copy.informationTitle : 'Agency Information'}
+                  description={isAttorneyFirm ? copy.informationDescription : 'General company information.'}
+                >
                   <div className="grid gap-4 md:grid-cols-2">
                     <OrganisationField label={copy.organisationNameLabel} id="organisation-agency-name">
                       <Field
@@ -2221,9 +2316,15 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                     <OrganisationField
                       label={copy.complianceNumberLabel}
                       id="organisation-ppra-number"
-                      badge={isPpraVerified ? <VerificationBadge verified>Verified</VerificationBadge> : null}
+                      badge={isComplianceVerified ? <VerificationBadge verified>Recorded</VerificationBadge> : null}
                     >
-                      <Field id="organisation-ppra-number" className={INPUT_CLASS} value={agencyInfo.eaabPpraNumber || ''} disabled={!canEdit} onChange={(event) => updateAgencyField('eaabPpraNumber', event.target.value)} />
+                      <Field
+                        id="organisation-ppra-number"
+                        className={INPUT_CLASS}
+                        value={complianceNumber}
+                        disabled={!canEdit}
+                        onChange={(event) => updateAgencyField(isAttorneyFirm ? 'legalPracticeNumber' : 'eaabPpraNumber', event.target.value)}
+                      />
                     </OrganisationField>
                     <OrganisationField label="Website" id="organisation-website">
                       <Field
@@ -2239,13 +2340,13 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                       />
                     </OrganisationField>
                     <OrganisationField label={copy.agencyTypeLabel} id="organisation-agency-type">
-                      <Field as="select" id="organisation-agency-type" className={INPUT_CLASS} value={agencyInfo.agencyType || (isBondOriginator ? 'national' : 'residential')} disabled={!canEdit} onChange={(event) => updateAgencyField('agencyType', event.target.value)}>
-                        {(isBondOriginator ? BOND_ORIGINATOR_TYPE_OPTIONS : AGENCY_TYPE_OPTIONS).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      <Field as="select" id="organisation-agency-type" className={INPUT_CLASS} value={agencyInfo.agencyType || (isAttorneyFirm ? 'independent_firm' : isBondOriginator ? 'national' : 'residential')} disabled={!canEdit} onChange={(event) => updateAgencyField('agencyType', event.target.value)}>
+                        {(isAttorneyFirm ? ATTORNEY_FIRM_TYPE_OPTIONS : isBondOriginator ? BOND_ORIGINATOR_TYPE_OPTIONS : AGENCY_TYPE_OPTIONS).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </Field>
                     </OrganisationField>
                     <OrganisationField label={copy.businessFocusLabel} id="organisation-business-focus">
-                      <Field as="select" id="organisation-business-focus" className={INPUT_CLASS} value={agencyInfo.businessFocus || (isBondOriginator ? 'bond_applications' : 'sales')} disabled={!canEdit} onChange={(event) => updateAgencyField('businessFocus', event.target.value)}>
-                        {(isBondOriginator ? BOND_BUSINESS_FOCUS_OPTIONS : AGENCY_BUSINESS_FOCUS_OPTIONS).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      <Field as="select" id="organisation-business-focus" className={INPUT_CLASS} value={agencyInfo.businessFocus || (isAttorneyFirm ? 'conveyancing' : isBondOriginator ? 'bond_applications' : 'sales')} disabled={!canEdit} onChange={(event) => updateAgencyField('businessFocus', event.target.value)}>
+                        {(isAttorneyFirm ? ATTORNEY_PRACTICE_FOCUS_OPTIONS : isBondOriginator ? BOND_BUSINESS_FOCUS_OPTIONS : AGENCY_BUSINESS_FOCUS_OPTIONS).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </Field>
                     </OrganisationField>
                   </div>
@@ -2298,9 +2399,12 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                   </div>
                 </OrganisationCard>
 
-                <OrganisationCard title="Address" description="Office location used for branch routing, profile quality and local search.">
+                <OrganisationCard
+                  title={isAttorneyFirm ? copy.addressTitle : 'Address'}
+                  description={isAttorneyFirm ? copy.addressDescription : 'Office location used for branch routing, profile quality and local search.'}
+                >
                   <div className="grid gap-4 md:grid-cols-2">
-                    <OrganisationField label="Office Address" id="organisation-office-address" className="md:col-span-2">
+                    <OrganisationField label={isAttorneyFirm ? copy.addressLabel : 'Office Address'} id="organisation-office-address" className="md:col-span-2">
                       <Field id="organisation-office-address" className={INPUT_CLASS} value={form.addressLine1 || agencyInfo.physicalAddress || ''} disabled={!canEdit} onChange={(event) => updateField('addressLine1', event.target.value)} />
                     </OrganisationField>
                     <div className="md:col-span-2">
@@ -2354,7 +2458,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
 
                 <OrganisationCard title={copy.principalTitle} description={copy.principalDescription}>
                   <div className="grid gap-4 md:grid-cols-2">
-                    <OrganisationField label="Owner" id="organisation-principal-owner">
+                    <OrganisationField label={isAttorneyFirm ? copy.ownerLabel : 'Owner'} id="organisation-principal-owner">
                       <Field id="organisation-principal-owner" className={INPUT_CLASS} value={principal.ownerName || principal.principalFullName || ''} disabled={!canEdit} onChange={(event) => updatePrincipalField('ownerName', event.target.value)} />
                     </OrganisationField>
                     <OrganisationField label={copy.principalNameLabel} id="organisation-principal-name">
@@ -2404,31 +2508,34 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
 
             {!showBrandingOnly ? (
               <>
-                <OrganisationCard title="Permissions & Visibility" description="Grouped controls for workspace scope, lead visibility and collaboration defaults.">
+                <OrganisationCard
+                  title={isAttorneyFirm ? 'Access & Matter Visibility' : 'Permissions & Visibility'}
+                  description={isAttorneyFirm ? 'Control firm scope, matter visibility and cross-office collaboration.' : 'Grouped controls for workspace scope, lead visibility and collaboration defaults.'}
+                >
                   <div className="grid gap-4 md:grid-cols-2">
-                    <OrganisationField label="Principal Scope" id="organisation-principal-scope">
+                    <OrganisationField label={isAttorneyFirm ? copy.principalScopeLabel : 'Principal Scope'} id="organisation-principal-scope">
                       <Field as="select" id="organisation-principal-scope" className={INPUT_CLASS} value={permissions.principalScope || 'all'} disabled={!canEdit} onChange={(event) => updatePermissionField('principalScope', event.target.value)}>
-                        {PERMISSION_SCOPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        {(isAttorneyFirm ? ATTORNEY_PERMISSION_SCOPE_OPTIONS : PERMISSION_SCOPE_OPTIONS).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </Field>
                     </OrganisationField>
-                    <OrganisationField label="Branch Manager Scope" id="organisation-branch-manager-scope">
+                    <OrganisationField label={isAttorneyFirm ? copy.managerScopeLabel : 'Branch Manager Scope'} id="organisation-branch-manager-scope">
                       <Field as="select" id="organisation-branch-manager-scope" className={INPUT_CLASS} value={permissions.branchManagerScope || 'branch'} disabled={!canEdit} onChange={(event) => updatePermissionField('branchManagerScope', event.target.value)}>
-                        {PERMISSION_SCOPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        {(isAttorneyFirm ? ATTORNEY_PERMISSION_SCOPE_OPTIONS : PERMISSION_SCOPE_OPTIONS).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </Field>
                     </OrganisationField>
                     <OrganisationField label={copy.agentScopeLabel} id="organisation-agent-scope">
                       <Field as="select" id="organisation-agent-scope" className={INPUT_CLASS} value={permissions.agentScope || 'own'} disabled={!canEdit} onChange={(event) => updatePermissionField('agentScope', event.target.value)}>
-                        {PERMISSION_SCOPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        {(isAttorneyFirm ? ATTORNEY_PERMISSION_SCOPE_OPTIONS : PERMISSION_SCOPE_OPTIONS).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </Field>
                     </OrganisationField>
                     <OrganisationField label={copy.leadVisibilityLabel} id="organisation-lead-visibility">
                       <Field as="select" id="organisation-lead-visibility" className={INPUT_CLASS} value={permissions.crmLeadVisibility || 'private'} disabled={!canEdit} onChange={(event) => updatePermissionField('crmLeadVisibility', event.target.value)}>
-                        {CRM_VISIBILITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        {(isAttorneyFirm ? ATTORNEY_VISIBILITY_OPTIONS : CRM_VISIBILITY_OPTIONS).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </Field>
                     </OrganisationField>
                     <OrganisationField label="Default Matter Visibility" id="organisation-matter-visibility" className="md:col-span-2">
                       <Field as="select" id="organisation-matter-visibility" className={INPUT_CLASS} value={defaults.defaultMatterVisibility} disabled={!canEdit} onChange={(event) => updateOrganisationDefault('defaultMatterVisibility', event.target.value)}>
-                        {CRM_VISIBILITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        {(isAttorneyFirm ? ATTORNEY_VISIBILITY_OPTIONS : CRM_VISIBILITY_OPTIONS).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </Field>
                     </OrganisationField>
                   </div>
@@ -2436,21 +2543,21 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                     <p className="mb-1 text-sm font-semibold text-[#17233a]">Collaboration</p>
                     <PermissionRow
                       title={copy.sharingLabel}
-                      description="Let managers coordinate work outside their home branch when needed."
+                      description={isAttorneyFirm ? 'Let approved teams coordinate matters across firm offices.' : 'Let managers coordinate work outside their home branch when needed.'}
                       checked={Boolean(permissions.allowCrossBranchCollaboration)}
                       disabled={!canEdit}
                       onChange={(value) => updatePermissionField('allowCrossBranchCollaboration', value)}
                     />
                     <PermissionRow
                       title={copy.queueLabel}
-                      description="Allow approved teams to work from shared operational queues."
+                      description={isAttorneyFirm ? 'Allow approved legal teams to work from shared matter queues.' : 'Allow approved teams to work from shared operational queues.'}
                       checked={Boolean(permissions.allowSharedLeadPools)}
                       disabled={!canEdit}
                       onChange={(value) => updatePermissionField('allowSharedLeadPools', value)}
                     />
                     <PermissionRow
                       title={copy.listingsLabel}
-                      description="Permit shared property or development visibility for collaboration."
+                      description={isAttorneyFirm ? 'Permit shared transaction and matter visibility for legal collaboration.' : 'Permit shared property or development visibility for collaboration.'}
                       checked={Boolean(permissions.allowSharedListings)}
                       disabled={!canEdit}
                       onChange={(value) => updatePermissionField('allowSharedListings', value)}
@@ -2458,7 +2565,10 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                   </div>
                 </OrganisationCard>
 
-                <OrganisationCard title="Operational Defaults" description="Default regional and workspace behaviour for new records.">
+                <OrganisationCard
+                  title="Operational Defaults"
+                  description={isAttorneyFirm ? 'Default firm behaviour for new matters and records.' : 'Default regional and workspace behaviour for new records.'}
+                >
                   <div className="grid gap-4 md:grid-cols-2">
                     <OrganisationField label="Default Timezone" id="organisation-default-timezone">
                       <Field as="select" id="organisation-default-timezone" className={INPUT_CLASS} value={defaults.timezone} disabled={!canEdit} onChange={(event) => updateOrganisationDefault('timezone', event.target.value)}>
@@ -2499,21 +2609,23 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                   actions={
                     <Link to={copy.branchesHref} className="inline-flex h-10 items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc]">
                       <GitBranch className="h-4 w-4" strokeWidth={2} />
-                      Manage Branches
+                      {isAttorneyFirm ? copy.manageBranchesLabel : 'Manage Branches'}
                     </Link>
                   }
                 >
                   <div className="flex flex-col gap-4 rounded-[18px] border border-[#e4ecf5] bg-[#fbfdff] p-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-2xl font-semibold text-[#17233a]">{branchCount} Active {copy.branchCountLabel}</p>
-                      <p className="mt-1 text-sm leading-6 text-[#60758d]">Branch records are managed in the dedicated branch workspace.</p>
+                      <p className="mt-1 text-sm leading-6 text-[#60758d]">
+                        {isAttorneyFirm ? 'Office records and legal team access are managed in firm settings.' : 'Branch records are managed in the dedicated branch workspace.'}
+                      </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Link to={copy.branchesHref} className="inline-flex h-10 items-center justify-center rounded-[12px] border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc]">
-                        View Branches
+                        {isAttorneyFirm ? copy.viewBranchesLabel : 'View Branches'}
                       </Link>
                       <Link to={copy.branchesHref} className="inline-flex h-10 items-center justify-center rounded-[12px] border border-[#0f7f4f] bg-[#0f7f4f] px-3 text-sm font-semibold text-white transition hover:bg-[#0d6f45]">
-                        Manage Branches
+                        {isAttorneyFirm ? copy.manageBranchesLabel : 'Manage Branches'}
                       </Link>
                     </div>
                   </div>
@@ -2525,15 +2637,15 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
           <aside className="hidden xl:block">
             <div className="sticky top-4 space-y-4 rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_14px_36px_rgba(15,23,42,0.045)]">
               <div>
-                <h2 className="text-base font-semibold text-[#17233a]">Organisation Overview</h2>
+                <h2 className="text-base font-semibold text-[#17233a]">{isAttorneyFirm ? copy.overviewTitle : 'Organisation Overview'}</h2>
                 <p className="mt-2 text-sm leading-6 text-[#60758d]">Status signals for this workspace.</p>
               </div>
               <div className="space-y-3 border-y border-[#e5edf4] py-4">
-                <OverviewRow label="Agency Status" value={isPpraVerified ? 'Verified' : 'Pending'} verified={isPpraVerified} />
+                <OverviewRow label={isAttorneyFirm ? copy.statusLabel : 'Agency Status'} value={isComplianceVerified ? 'Recorded' : 'Pending'} verified={isComplianceVerified} />
                 <OverviewRow label="Users" value={userCount} />
-                <OverviewRow label="Branches" value={branchCount} />
+                <OverviewRow label={isAttorneyFirm ? 'Offices' : 'Branches'} value={branchCount} />
                 <OverviewRow label="Branding" value={isBrandingConfigured ? 'Configured' : 'Incomplete'} verified={isBrandingConfigured} />
-                <OverviewRow label="PPRA" value={isPpraVerified ? 'Verified' : 'Pending'} verified={isPpraVerified} />
+                <OverviewRow label={isAttorneyFirm ? copy.complianceLabel : 'PPRA'} value={isComplianceVerified ? 'Recorded' : 'Pending'} verified={isComplianceVerified} />
               </div>
               <div className="rounded-[16px] bg-[#f8fbfa] p-4">
                 <div className="flex items-center gap-2 text-sm font-semibold text-[#17233a]">
@@ -2544,7 +2656,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                   to="/settings/help"
                   className="mt-3 inline-flex h-10 w-full items-center justify-center rounded-[12px] border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc]"
                 >
-                  Organisation Documentation
+                  {isAttorneyFirm ? copy.documentationLabel : 'Organisation Documentation'}
                 </Link>
               </div>
             </div>

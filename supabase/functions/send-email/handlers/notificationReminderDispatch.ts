@@ -17,6 +17,7 @@ const REMINDER_AUTOMATION_KEYS = [
   "attorney_invite_reminder",
   "bond_originator_invite_reminder",
   "agent_invite_reminder",
+  "legal_role_coordination_reminder",
 ] as const;
 
 const REMINDER_EVENT_SELECT = [
@@ -192,6 +193,13 @@ function resolveActionLink(event: ReminderEventRow, req: Request) {
     return `${appBaseUrl}/invite/${encodeURIComponent(inviteToken)}`;
   }
 
+  if (
+    automationKey === "legal_role_coordination_reminder" &&
+    normalizeUuid(event.transaction_id)
+  ) {
+    return `${appBaseUrl}/transactions/${normalizeUuid(event.transaction_id)}`;
+  }
+
   return "";
 }
 
@@ -207,6 +215,9 @@ function reminderDisplayName(automationKey: string) {
   }
   if (automationKey === "bond_originator_invite_reminder") {
     return "bond originator invite";
+  }
+  if (automationKey === "legal_role_coordination_reminder") {
+    return "legal role coordination";
   }
   return "workspace invite";
 }
@@ -233,6 +244,42 @@ function resolveTemplate(event: ReminderEventRow, actionLink: string) {
   const reminderLabel = reminderDay
     ? `Day ${reminderDay} reminder`
     : "Reminder";
+
+  if (automationKey === "legal_role_coordination_reminder") {
+    const actionLabel = coalesceText(
+      payload.actionLabel,
+      payload.action_label,
+      payload.actionKey,
+      payload.action_key,
+      "legal role coordination",
+    ).replaceAll("_", " ");
+    const roleLabel = coalesceText(
+      payload.roleLabel,
+      payload.role_label,
+      payload.roleType,
+      payload.role_type,
+      "appointed attorney",
+    ).replaceAll("_", " ");
+    return {
+      title: "Legal role action needs attention",
+      ctaLabel: "Open Transaction",
+      greeting,
+      organisationName,
+      intro: [
+        `The ${roleLabel} workflow is waiting for ${actionLabel}.`,
+        "Please review the transaction and complete or coordinate the outstanding action.",
+      ],
+      summaryTitle: "Legal Role Reminder",
+      summaryFields: [
+        { label: "Reminder", value: reminderLabel },
+        { label: "Outstanding action", value: actionLabel },
+      ],
+      fallback:
+        "Open the transaction in Arch9 to review the bank-appointed legal role workflow.",
+      security:
+        "Only authorised transaction participants can access the legal role and instruction details.",
+    };
+  }
 
   if (automationKey === "buyer_onboarding_reminder") {
     return {
@@ -546,6 +593,16 @@ function isMissingPhase6QueueRpc(error: unknown) {
     message.includes("bridge_queue_notification_reminder_events_phase6");
 }
 
+function isMissingLegalRoleQueueRpc(error: unknown) {
+  const record = error && typeof error === "object"
+    ? error as Record<string, unknown>
+    : {};
+  const code = normalizeText(record.code).toUpperCase();
+  const message = normalizeText(record.message).toLowerCase();
+  return code === "42883" ||
+    message.includes("bridge_queue_legal_role_coordination_reminders_phase6");
+}
+
 async function queueDueNotificationReminderEvents(
   supabase: any,
   {
@@ -568,33 +625,46 @@ async function queueDueNotificationReminderEvents(
     },
   );
 
-  if (!phase6.error) {
-    return phase6;
+  let standardQueue = phase6;
+  if (phase6.error && isMissingPhase6QueueRpc(phase6.error)) {
+    const phase3 = await supabase.rpc(
+      "bridge_queue_notification_reminder_events_phase3",
+      {
+        p_limit: queueLimit,
+        p_now: now,
+        p_dry_run: dryRun,
+      },
+    );
+    standardQueue = phase3.error
+      ? phase3
+      : {
+        ...phase3,
+        data: {
+          ...(asRecord(phase3.data)),
+          phase6Fallback: true,
+          phase: "phase_3_reminder_queue",
+        },
+      };
   }
+  if (standardQueue.error) return standardQueue;
 
-  if (!isMissingPhase6QueueRpc(phase6.error)) {
-    return phase6;
-  }
-
-  const phase3 = await supabase.rpc(
-    "bridge_queue_notification_reminder_events_phase3",
+  const legalRoleQueue = await supabase.rpc(
+    "bridge_queue_legal_role_coordination_reminders_phase6",
     {
       p_limit: queueLimit,
       p_now: now,
       p_dry_run: dryRun,
     },
   );
-
-  if (phase3.error) {
-    return phase3;
-  }
+  const legalRoleQueueMissing = isMissingLegalRoleQueueRpc(legalRoleQueue.error);
+  if (legalRoleQueue.error && !legalRoleQueueMissing) return legalRoleQueue;
 
   return {
-    ...phase3,
+    ...standardQueue,
     data: {
-      ...(asRecord(phase3.data)),
-      phase6Fallback: true,
-      phase: "phase_3_reminder_queue",
+      ...(asRecord(standardQueue.data)),
+      legalRoleQueue: legalRoleQueue.error ? null : legalRoleQueue.data,
+      legalRoleQueueAvailable: !legalRoleQueue.error,
     },
   };
 }

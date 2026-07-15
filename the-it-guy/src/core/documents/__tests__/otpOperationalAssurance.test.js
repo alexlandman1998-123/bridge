@@ -80,3 +80,26 @@ test('distinguishes no generated governed packets from proven healthy release be
   assert.equal(result.releaseDecision, 'no_evidence')
   assert.equal(result.canContinueSignatureRelease, false)
 })
+
+test('surfaces canonical version mismatch as the release-evidence reason', () => {
+  const result = buildOtpOperationalAssurance({
+    rolloutOperations: healthyRollout,
+    releaseDiagnostics: diagnostics({
+      gate: { status: 'fail', reason: 'Canonical version mismatch.' },
+      summary: {
+        governedPackets: 1,
+        canonicalPackets: 1,
+        canonicalVersionEvidenceInvalid: 1,
+        criticalPackets: 1,
+        warningPackets: 0,
+        awaitingAttorney: 0,
+        awaitingApproval: 0,
+        score: 0,
+      },
+    }),
+  })
+
+  assert.equal(result.status, 'critical')
+  assert.equal(result.summary.invalidCanonicalVersions, 1)
+  assert.match(result.steps.find((step) => step.key === 'release_evidence').detail, /immutable template-version evidence/i)
+})

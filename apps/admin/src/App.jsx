@@ -1,6 +1,7 @@
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
   ArrowLeft,
   BarChart3,
   Ban,
@@ -9,6 +10,7 @@ import {
   CheckCircle2,
   CircleDollarSign,
   CircleDot,
+  Clock3,
   CreditCard,
   Database,
   Download,
@@ -20,21 +22,28 @@ import {
   Lock,
   LogOut,
   MoreVertical,
+  Mail,
+  Phone,
   Plus,
   RefreshCw,
   Search,
   Settings,
   ShieldCheck,
+  Target,
   Ticket,
   UserCog,
   Users,
+  UserRoundCheck,
   X,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ADMIN_LEVELS, formatAdminLevelLabel, formatRoleLabel, resolveAdminAccess } from './lib/adminAccess'
 import {
   archiveAdminLegalTemplate,
+  buildCeoDashboardCsv,
   loadAdminProfile,
+  loadCeoDashboardSnapshot,
+  loadCeoLeadWorkflow,
   loadAdminLegalTemplateGovernance,
   loadDashboardSnapshot,
   loadLegalTemplateBridgeReadiness,
@@ -43,8 +52,10 @@ import {
   restoreAdminLegalTemplateVersion,
   saveAdminLegalTemplate,
   searchPlatform,
+  setCeoRevenueTarget,
   setAdminLegalTemplateDefault,
   uploadAdminLegalTemplateAsset,
+  updateCeoLeadWorkflow,
 } from './lib/adminData'
 import { getSupabaseConfigStatus, isSupabaseConfigured, supabase } from './lib/supabaseClient'
 
@@ -99,9 +110,34 @@ const MOBILE_NAV_ITEMS = [
   { id: 'more', label: 'More', icon: MoreVertical, path: '/admin/more' },
 ]
 
+const ATTENTION_CONTEXT_LABELS = {
+  documents: 'Document failures',
+  onboarding: 'Stalled onboarding accounts',
+  overdue: 'Overdue collections',
+  stalled: 'Stalled transactions',
+}
+
+function attentionContextFromPath(path = '') {
+  const query = String(path).split('?')[1] || ''
+  const key = new URLSearchParams(query).get('attention') || ''
+  return key ? { key, label: ATTENTION_CONTEXT_LABELS[key] || 'Attention required' } : null
+}
+
 const EMPTY_SNAPSHOT = {
   activities: [],
   attention: [],
+  ceoDashboard: {
+    available: false,
+    attention: [],
+    businessPulse: {},
+    error: '',
+    generatedAt: '',
+    metrics: {},
+    newBusinessIntake: [],
+    range: null,
+    topOrganisations: [],
+    warnings: [],
+  },
   customers: [],
   ecosystem: { hasData: false, metrics: [], total: 0 },
   financials: {
@@ -184,6 +220,24 @@ function useIsMobile() {
   return isMobile
 }
 
+function useNetworkStatus() {
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine))
+
+  useEffect(() => {
+    function updateOnlineStatus() {
+      setIsOnline(navigator.onLine)
+    }
+    window.addEventListener('online', updateOnlineStatus)
+    window.addEventListener('offline', updateOnlineStatus)
+    return () => {
+      window.removeEventListener('online', updateOnlineStatus)
+      window.removeEventListener('offline', updateOnlineStatus)
+    }
+  }, [])
+
+  return isOnline
+}
+
 function viewFromPath(level = '', isMobile = false) {
   if (typeof window === 'undefined') return getDefaultView(level)
   const path = window.location.pathname
@@ -199,6 +253,15 @@ function viewFromPath(level = '', isMobile = false) {
   if (path.includes('/admin/organisations')) return 'organisations'
   if (path.includes('/admin/roleplayers')) return 'roleplayers'
   if (path.includes('/admin/legal-templates')) return 'legalTemplates'
+  if (path.includes('/admin/platform-health')) return 'health'
+  if (path.includes('/admin/transactions')) return 'transactions'
+  if (path.includes('/admin/revenue')) return 'revenue'
+  if (path.includes('/admin/growth')) return 'growth'
+  if (path.includes('/admin/ecosystem')) return 'ecosystem'
+  if (path.includes('/admin/users')) return 'users'
+  if (path.includes('/admin/service-desk')) return 'service'
+  if (path.includes('/admin/audit')) return 'audit'
+  if (path.includes('/admin/settings')) return 'settings'
   if (path.includes('/admin/search')) return 'search'
   return getDefaultView(level)
 }
@@ -213,6 +276,15 @@ function adminPathForView(viewId = '') {
   if (viewId === 'organisations') return '/admin/organisations'
   if (viewId === 'roleplayers') return '/admin/roleplayers'
   if (viewId === 'legalTemplates') return '/admin/legal-templates'
+  if (viewId === 'health') return '/admin/platform-health'
+  if (viewId === 'transactions') return '/admin/transactions'
+  if (viewId === 'revenue') return '/admin/revenue'
+  if (viewId === 'growth') return '/admin/growth'
+  if (viewId === 'ecosystem') return '/admin/ecosystem'
+  if (viewId === 'users') return '/admin/users'
+  if (viewId === 'service') return '/admin/service-desk'
+  if (viewId === 'audit') return '/admin/audit'
+  if (viewId === 'settings') return '/admin/settings'
   if (viewId === 'search') return '/admin/search'
   return '/admin'
 }
@@ -376,7 +448,7 @@ function Sidebar({ activeView, allowedGroups, level, onViewChange, profile, onSi
   )
 }
 
-function Topbar({ activeView, dateRange, isLoading, onDateRangeChange, onRefresh }) {
+function Topbar({ activeView, canExportDashboard, dateRange, isLoading, onDashboardExport, onDateRangeChange, onRefresh }) {
   const view = ALL_VIEWS.find((item) => item.id === activeView)
   const title = activeView === 'dashboard' ? 'Executive Command Centre' : view?.label || 'Executive Command Centre'
   const subtitle =
@@ -411,6 +483,12 @@ function Topbar({ activeView, dateRange, isLoading, onDateRangeChange, onRefresh
           <RefreshCw className={isLoading ? 'spin' : ''} size={16} />
           <span>Refresh</span>
         </button>
+        {activeView === 'dashboard' ? (
+          <button className="secondary-button compact" disabled={!canExportDashboard} onClick={onDashboardExport} type="button">
+            <Download size={16} />
+            <span>Export report</span>
+          </button>
+        ) : null}
         {activeView === 'growth' || activeView === 'revenue' ? (
           <button className="secondary-button compact" type="button">
             <Download size={16} />
@@ -1466,85 +1544,432 @@ function EcosystemSection({ ecosystem }) {
   )
 }
 
-function CommandCentreRail() {
-  const essentials = [
-    { icon: CheckCircle2, title: 'Platform Adoption', text: 'Users, organisations, and role participation show platform traction.' },
-    { icon: Activity, title: 'Transaction Health', text: 'Funnel progression and stage distribution indicate platform value.' },
-    { icon: CircleDollarSign, title: 'Revenue Metrics', text: 'Commercial performance validates the business model.' },
-    { icon: Users, title: 'Ecosystem Activity', text: 'Active participants across roles show marketplace health.' },
-    { icon: AlertTriangle, title: 'Risk Indicators', text: 'Inactive users, stalled transactions, and renewals need attention.' },
-  ]
-  const sources = [
-    { icon: Database, title: 'Supabase Database', text: 'Users, organisations, transactions, roleplayers, activity logs.' },
-    { icon: BarChart3, title: 'Analytics Events', text: 'Interaction, feature usage, and performance signals.' },
-    { icon: CreditCard, title: 'Financial Data', text: 'Revenue, subscriptions, billing, payments.' },
-    { icon: Lock, title: 'External Integrations', text: 'Email, payments, and third-party APIs.' },
-  ]
-  const principles = ['Real-time or near real-time data', 'Actionable insights, not just metrics', 'Role-based relevance', 'Mobile-responsive design', 'Clear visual hierarchy']
+function dashboardDelta(metric = {}) {
+  const current = Number(metric.currentPeriod) || 0
+  const previous = Number(metric.previousPeriod) || 0
+  if (!current && !previous) return { label: 'No change this period', tone: 'neutral' }
+  if (!previous) return { label: `+${formatCount(current)} this period`, tone: 'positive' }
+  const change = Math.round(((current - previous) / previous) * 100)
+  return {
+    label: `${change > 0 ? '+' : ''}${change}% vs previous period`,
+    tone: change >= 0 ? 'positive' : 'negative',
+  }
+}
+
+function formatDashboardTimestamp(value) {
+  const date = new Date(value)
+  if (!value || Number.isNaN(date.getTime())) return 'Awaiting first refresh'
+  return `Updated ${new Intl.DateTimeFormat('en-ZA', {
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    month: 'short',
+  }).format(date)}`
+}
+
+function formatLeadType(value = '') {
+  return String(value || 'New business')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function CeoMetricCard({ accent, actionLabel = '', icon: Icon, label, metric = {}, onAction, revenue = false }) {
+  const available = !revenue || metric.available
+  const delta = revenue
+    ? metric.targetProgress == null
+      ? { label: 'Target not configured', tone: 'neutral' }
+      : { label: `${metric.targetProgress}% of monthly target`, tone: 'positive' }
+    : dashboardDelta(metric)
 
   return (
-    <aside className="command-centre-rail" aria-label="Dashboard data guide">
-      <section>
-        <h2>What data do we show?</h2>
-        <h3>Essential Data to Display</h3>
-        <div className="rail-list">
-          {essentials.map((item) => {
-            const Icon = item.icon
-            return (
-              <article key={item.title}>
-                <Icon size={16} />
-                <div>
-                  <strong>{item.title}</strong>
-                  <span>{item.text}</span>
-                </div>
-              </article>
-            )
-          })}
+    <article className={`ceo-metric-card ${accent}`}>
+      <div className="ceo-metric-heading">
+        <span className="ceo-metric-icon"><Icon size={18} /></span>
+        <span>{label}</span>
+      </div>
+      <strong>{available ? (revenue ? formatMoney((Number(metric.valueCents) || 0) / 100) : formatCount(metric.value)) : '—'}</strong>
+      <p className={delta.tone}>{available ? delta.label : 'Recognised revenue unavailable'}</p>
+      {revenue && metric.targetProgress != null ? (
+        <div className="ceo-target-track" aria-label={`${metric.targetProgress}% of revenue target`}>
+          <span style={{ width: `${Math.min(100, Math.max(0, Number(metric.targetProgress) || 0))}%` }} />
         </div>
-      </section>
-      <section>
-        <h3>Data Sources</h3>
-        <div className="rail-list">
-          {sources.map((item) => {
-            const Icon = item.icon
-            return (
-              <article key={item.title}>
-                <Icon size={16} />
-                <div>
-                  <strong>{item.title}</strong>
-                  <span>{item.text}</span>
-                </div>
-              </article>
-            )
-          })}
-        </div>
-      </section>
-      <section>
-        <h3>Key Principles</h3>
-        <ul>
-          {principles.map((principle) => (
-            <li key={principle}>{principle}</li>
-          ))}
-        </ul>
-      </section>
-    </aside>
+      ) : null}
+      {actionLabel && onAction ? <button className="ceo-metric-action" onClick={onAction} type="button">{actionLabel}<ArrowRight size={14} /></button> : null}
+    </article>
   )
 }
 
-function ExecutiveDashboardView({ snapshot }) {
+function CeoMetricGrid({ metrics = {}, onSetRevenueTarget }) {
   return (
-    <div className="executive-command-layout">
-      <div className="executive-command-main">
-        <ExecutiveKpiRow kpis={snapshot.kpis} />
-        <PlatformHealthSection health={snapshot.platformHealth} />
-        <div className="dashboard-mid-grid">
-          <GrowthSection growth={snapshot.growth} />
-          <AttentionSection attention={snapshot.attention} />
+    <section className="ceo-metric-grid" aria-label="Company overview">
+      <CeoMetricCard accent="agents" icon={UserRoundCheck} label="Active agents" metric={metrics.activeAgents} />
+      <CeoMetricCard accent="listings" icon={Building2} label="Active listings" metric={metrics.activeListings} />
+      <CeoMetricCard accent="transactions" icon={BarChart3} label="Active transactions" metric={metrics.activeTransactions} />
+      <CeoMetricCard accent="revenue" actionLabel="Set monthly target" icon={CircleDollarSign} label="Revenue this month" metric={metrics.revenueMtd} onAction={onSetRevenueTarget} revenue />
+    </section>
+  )
+}
+
+function NewBusinessIntake({ leads = [], onManageLead }) {
+  return (
+    <section className="ceo-section" id="new-business-intake">
+      <div className="ceo-section-heading">
+        <div>
+          <p>Sales intake</p>
+          <h2>New business enquiries</h2>
         </div>
-        <FinancialSection financials={snapshot.financials} snapshot={snapshot} />
-        <EcosystemSection ecosystem={snapshot.ecosystem} />
+        <span>{leads.length} in queue</span>
       </div>
-      <CommandCentreRail />
+      {leads.length ? (
+        <div className="lead-card-row" role="list" tabIndex="0" aria-label="New business enquiry queue">
+          {leads.map((lead) => (
+            <article className="lead-intake-card" key={lead.id} role="listitem">
+              <div className="lead-intake-topline">
+                <span className="lead-type-badge">{formatLeadType(lead.organisationType)}</span>
+                <span className={`lead-priority ${lead.priority || 'normal'}`}>{formatLeadType(lead.priority || 'normal')}</span>
+              </div>
+              <div>
+                <h3>{lead.organisationName || lead.contactName || 'New enquiry'}</h3>
+                <p>{lead.contactName || 'Contact not supplied'}</p>
+              </div>
+              <dl>
+                <div><dt>Stage</dt><dd>{formatLeadType(lead.stage || 'new')}</dd></div>
+                <div><dt>Volume</dt><dd>{lead.monthlyVolume || lead.businessSize || 'Not supplied'}</dd></div>
+                <div><dt>Next action</dt><dd>{lead.nextAction || (lead.assignedToUserId ? 'Follow up' : 'Assign owner')}</dd></div>
+              </dl>
+              <div className="lead-intake-actions">
+                {lead.email ? <a href={`mailto:${lead.email}`}><Mail size={15} /> Email</a> : null}
+                {lead.phone ? <a href={`tel:${lead.phone}`}><Phone size={15} /> Call</a> : null}
+                <button onClick={() => onManageLead(lead.id)} type="button">Manage <ArrowRight size={14} /></button>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="ceo-empty-state"><CheckCircle2 size={20} /><div><strong>Intake queue is clear</strong><span>New website enquiries will appear here automatically.</span></div></div>
+      )}
+    </section>
+  )
+}
+
+function toLocalDateTimeInput(value) {
+  const date = new Date(value)
+  if (!value || Number.isNaN(date.getTime())) return ''
+  const offset = date.getTimezoneOffset() * 60000
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
+}
+
+function leadWorkflowForm(lead = {}) {
+  return {
+    assignedToUserId: lead.assignedToUserId || '',
+    internalNotes: lead.internalNotes || '',
+    lostReason: lead.lostReason || '',
+    nextAction: lead.nextAction || '',
+    nextActionAt: toLocalDateTimeInput(lead.nextActionAt),
+    priority: lead.priority || 'normal',
+    salesStage: lead.stage || 'new',
+  }
+}
+
+function LeadWorkflowDrawer({ leadId, onClose, onSaved }) {
+  const [workflow, setWorkflow] = useState(null)
+  const [form, setForm] = useState(leadWorkflowForm())
+  const [error, setError] = useState('')
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    function handleEscape(event) {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleEscape)
+
+    async function loadWorkflow() {
+      setIsLoading(true)
+      setError('')
+      try {
+        const nextWorkflow = await loadCeoLeadWorkflow(leadId)
+        if (cancelled) return
+        setWorkflow(nextWorkflow)
+        setForm(leadWorkflowForm(nextWorkflow.lead))
+      } catch (nextError) {
+        if (!cancelled) setError(nextError.message || 'Unable to load this lead.')
+      } finally {
+        if (!cancelled) setIsLoading(false)
+      }
+    }
+
+    loadWorkflow()
+    return () => {
+      cancelled = true
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [leadId])
+
+  function updateField(field, value) {
+    setForm((current) => ({ ...current, [field]: value }))
+  }
+
+  async function handleSave(event) {
+    event.preventDefault()
+    if (form.salesStage === 'lost' && !form.lostReason.trim()) {
+      setError('Add a reason before marking this lead as lost.')
+      return
+    }
+
+    const original = leadWorkflowForm(workflow?.lead)
+    const patch = {}
+    for (const field of ['assignedToUserId', 'priority', 'salesStage', 'nextAction', 'lostReason', 'internalNotes']) {
+      if (form[field] !== original[field]) patch[field] = form[field]
+    }
+    if (form.nextActionAt !== original.nextActionAt) {
+      patch.nextActionAt = form.nextActionAt ? new Date(form.nextActionAt).toISOString() : ''
+    }
+    if (!Object.keys(patch).length) {
+      setError('Make at least one change before saving.')
+      return
+    }
+
+    setIsSaving(true)
+    setError('')
+    try {
+      await updateCeoLeadWorkflow(leadId, patch)
+      await onSaved()
+      onClose()
+    } catch (nextError) {
+      setError(nextError.message || 'Unable to save this lead.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const lead = workflow?.lead
+  return (
+    <div className="lead-workflow-overlay" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <aside aria-labelledby="lead-workflow-title" aria-modal="true" className="lead-workflow-drawer" role="dialog">
+        <header>
+          <div><p>Business intake</p><h2 id="lead-workflow-title">Manage lead</h2></div>
+          <button aria-label="Close lead workflow" className="icon-button light" onClick={onClose} type="button"><X size={18} /></button>
+        </header>
+        {isLoading ? <div className="lead-workflow-loading"><RefreshCw className="spin" size={20} /><span>Loading lead workflow…</span></div> : null}
+        {!isLoading && error && !workflow ? <div className="notice danger"><AlertTriangle size={16} /><span>{error}</span></div> : null}
+        {!isLoading && lead ? (
+          <form onSubmit={handleSave}>
+            <section className="lead-workflow-identity">
+              <span>{formatLeadType(lead.organisationType)}</span>
+              <h3>{lead.organisationName || lead.contactName || 'New business enquiry'}</h3>
+              <p>{lead.contactName || 'Contact not supplied'}</p>
+              <div>
+                {lead.email ? <a href={`mailto:${lead.email}`}><Mail size={15} /> {lead.email}</a> : null}
+                {lead.phone ? <a href={`tel:${lead.phone}`}><Phone size={15} /> {lead.phone}</a> : null}
+              </div>
+            </section>
+
+            <section className="lead-workflow-fields">
+              <label><span>Owner</span><select autoFocus onChange={(event) => updateField('assignedToUserId', event.target.value)} value={form.assignedToUserId}><option value="">Unassigned</option>{workflow.assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}{assignee.role ? ` · ${formatLeadType(assignee.role)}` : ''}</option>)}</select></label>
+              <div className="lead-workflow-field-row">
+                <label><span>Priority</span><select onChange={(event) => updateField('priority', event.target.value)} value={form.priority}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></label>
+                <label><span>Sales stage</span><select onChange={(event) => updateField('salesStage', event.target.value)} value={form.salesStage}><option value="new">New</option><option value="contacted">Contacted</option><option value="qualified">Qualified</option><option value="demo_scheduled">Demo scheduled</option><option value="proposal">Proposal</option><option value="won">Won</option><option value="lost">Lost</option><option value="spam">Spam</option></select></label>
+              </div>
+              <label><span>Next action</span><input onChange={(event) => updateField('nextAction', event.target.value)} placeholder="e.g. Call to confirm demo attendees" value={form.nextAction} /></label>
+              <label><span>Next action date</span><input onChange={(event) => updateField('nextActionAt', event.target.value)} type="datetime-local" value={form.nextActionAt} /></label>
+              {form.salesStage === 'lost' ? <label><span>Lost reason</span><input onChange={(event) => updateField('lostReason', event.target.value)} placeholder="Why was this opportunity lost?" required value={form.lostReason} /></label> : null}
+              <label><span>Internal notes</span><textarea onChange={(event) => updateField('internalNotes', event.target.value)} placeholder="Context for the next person working this lead" rows="5" value={form.internalNotes} /></label>
+            </section>
+
+            {error ? <div className="notice danger"><AlertTriangle size={16} /><span>{error}</span></div> : null}
+            <footer><button className="secondary-button compact" onClick={onClose} type="button">Cancel</button><button className="primary-button compact" disabled={isSaving} type="submit">{isSaving ? <RefreshCw className="spin" size={16} /> : <CheckCircle2 size={16} />} Save changes</button></footer>
+          </form>
+        ) : null}
+      </aside>
+    </div>
+  )
+}
+
+function revenueTargetMonth(value) {
+  const date = new Date(value)
+  const target = Number.isNaN(date.getTime()) ? new Date() : date
+  return `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-01`
+}
+
+function RevenueTargetDialog({ dashboard, onClose, onSaved }) {
+  const revenue = dashboard.metrics?.revenueMtd || {}
+  const [amount, setAmount] = useState(revenue.targetCents == null ? '' : String(Number(revenue.targetCents) / 100))
+  const [notes, setNotes] = useState('')
+  const [error, setError] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+  const monthStart = revenueTargetMonth(dashboard.generatedAt)
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    function handleEscape(event) {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [])
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    setIsSaving(true)
+    setError('')
+    try {
+      await setCeoRevenueTarget({ monthStart, notes, targetAmount: amount })
+      await onSaved()
+      onClose()
+    } catch (nextError) {
+      setError(nextError.message || 'Unable to update the revenue target.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <div className="lead-workflow-overlay revenue-target-overlay" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section aria-labelledby="revenue-target-title" aria-modal="true" className="revenue-target-dialog" role="dialog">
+        <header><div><p>Executive control</p><h2 id="revenue-target-title">Monthly revenue target</h2></div><button aria-label="Close revenue target" className="icon-button light" onClick={onClose} type="button"><X size={18} /></button></header>
+        <form onSubmit={handleSubmit}>
+          <div className="revenue-target-period"><Calendar size={17} /><div><span>Target period</span><strong>{new Intl.DateTimeFormat('en-ZA', { month: 'long', year: 'numeric' }).format(new Date(`${monthStart}T12:00:00`))}</strong></div></div>
+          <label><span>Target amount</span><div className="currency-input"><b>R</b><input autoFocus inputMode="decimal" min="0" onChange={(event) => setAmount(event.target.value)} placeholder="250 000" required step="1000" type="number" value={amount} /></div></label>
+          <label><span>Executive note <em>Optional</em></span><textarea onChange={(event) => setNotes(event.target.value)} placeholder="Context behind this month’s target" rows="4" value={notes} /></label>
+          <p className="revenue-target-audit"><ShieldCheck size={15} />Changes are recorded in the platform audit trail.</p>
+          {error ? <div className="notice danger"><AlertTriangle size={16} /><span>{error}</span></div> : null}
+          <footer><button className="secondary-button compact" onClick={onClose} type="button">Cancel</button><button className="primary-button compact" disabled={isSaving} type="submit">{isSaving ? <RefreshCw className="spin" size={16} /> : <Target size={16} />} Save target</button></footer>
+        </form>
+      </section>
+    </div>
+  )
+}
+
+function AttentionRequired({ items = [], onOpenPath }) {
+  const activeItems = items.filter((item) => Number(item.value) > 0)
+  return (
+    <article className="ceo-panel ceo-attention-panel">
+      <div className="ceo-panel-heading">
+        <div><p>Operations</p><h2>Attention required</h2></div>
+        <span className={activeItems.length ? 'attention-count' : 'attention-count clear'}>{activeItems.length}</span>
+      </div>
+      {activeItems.length ? (
+        <div className="ceo-attention-list">
+          {activeItems.map((item) => (
+            <button key={item.key} onClick={() => onOpenPath(item.path)} type="button">
+              <span className={`attention-indicator ${item.severity}`}><AlertTriangle size={16} /></span>
+              <span><strong>{item.label}</strong><small>{item.severity === 'critical' ? 'Resolve as soon as possible' : 'Review and assign an owner'}</small></span>
+              <b>{formatCount(item.value)}</b>
+              <ArrowRight size={16} />
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="ceo-empty-state"><CheckCircle2 size={20} /><div><strong>No urgent exceptions</strong><span>All monitored queues are within their thresholds.</span></div></div>
+      )}
+    </article>
+  )
+}
+
+function BusinessPulse({ pulse = {} }) {
+  const rows = [
+    { key: 'leadConversion', label: 'Lead conversion' },
+    { key: 'onboardingCompletion', label: 'Onboarding completion' },
+    { key: 'transactionCompletion', label: 'Transaction completion' },
+    { key: 'revenueTarget', label: 'Revenue target' },
+  ]
+  return (
+    <article className="ceo-panel">
+      <div className="ceo-panel-heading"><div><p>Performance</p><h2>Business pulse</h2></div><Target size={19} /></div>
+      <div className="business-pulse-list">
+        {rows.map((row) => {
+          const value = pulse[row.key]
+          const percentage = value == null ? null : Math.min(100, Math.max(0, Number(value) || 0))
+          return (
+            <div key={row.key}>
+              <span><strong>{row.label}</strong><b>{percentage == null ? 'Awaiting data' : `${value}%`}</b></span>
+              <div className={percentage == null ? 'pulse-track unavailable' : 'pulse-track'}><span style={{ width: `${percentage || 0}%` }} /></div>
+            </div>
+          )
+        })}
+      </div>
+    </article>
+  )
+}
+
+function TopOrganisations({ onOpenOrganisation, organisations = [] }) {
+  return (
+    <article className="ceo-panel ceo-top-organisations">
+      <div className="ceo-panel-heading"><div><p>Portfolio</p><h2>Top organisations</h2></div><Building2 size={19} /></div>
+      {organisations.length ? (
+        <ol>
+          {organisations.map((organisation, index) => (
+            <li key={organisation.id}>
+              <button onClick={() => onOpenOrganisation(organisation.id)} type="button">
+                <span>{index + 1}</span>
+                <div><strong>{organisation.name}</strong><small>{formatCount(organisation.activeTransactions)} active transactions</small></div>
+                <b>{formatMoney((Number(organisation.revenueCents) || 0) / 100)}</b>
+                <ArrowRight size={14} />
+              </button>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <div className="ceo-empty-state"><Building2 size={20} /><div><strong>No ranked organisations yet</strong><span>Recognised revenue and active transactions determine this list.</span></div></div>
+      )}
+    </article>
+  )
+}
+
+function CeoDashboardSkeleton() {
+  return <div className="ceo-dashboard-skeleton" aria-label="Loading CEO dashboard" aria-busy="true"><div /><div /><div /><div /><section /><section /></div>
+}
+
+function ExecutiveDashboardView({ isLoading, isOnline, onOpenOrganisation, onOpenPath, onRefresh, refreshError, snapshot }) {
+  const [managedLeadId, setManagedLeadId] = useState('')
+  const [isRevenueTargetOpen, setIsRevenueTargetOpen] = useState(false)
+  const dashboard = snapshot.ceoDashboard || EMPTY_SNAPSHOT.ceoDashboard
+  const generatedAt = new Date(dashboard.generatedAt)
+  const isStale = dashboard.generatedAt && !Number.isNaN(generatedAt.getTime()) && Date.now() - generatedAt.getTime() > 5 * 60 * 1000
+  if (isLoading && !dashboard.available) return <CeoDashboardSkeleton />
+  if (!dashboard.available) {
+    return (
+      <section className="ceo-dashboard-unavailable">
+        <AlertTriangle size={24} />
+        <div><h2>CEO dashboard data is unavailable</h2><p>{dashboard.error || 'The secured dashboard service has not returned data.'}</p></div>
+        <button className="secondary-button compact" onClick={onRefresh} type="button"><RefreshCw size={16} /> Retry</button>
+      </section>
+    )
+  }
+
+  return (
+    <div className={isLoading ? 'ceo-dashboard is-refreshing' : 'ceo-dashboard'}>
+      <div className="ceo-dashboard-status">
+        <span className={!isOnline || isStale ? 'stale' : ''}><i /> {!isOnline ? 'Offline · showing last update' : isLoading ? 'Refreshing platform data' : isStale ? 'Data may be stale' : 'Live platform data'}</span>
+        <time>{formatDashboardTimestamp(dashboard.generatedAt)}</time>
+      </div>
+      {refreshError ? <div className="ceo-warning-strip"><AlertTriangle size={16} /><span>{refreshError}</span></div> : null}
+      {dashboard.warnings.length ? (
+        <div className="ceo-warning-strip"><AlertTriangle size={16} /><span>{dashboard.warnings.map((warning) => warning.message).join(' ')}</span></div>
+      ) : null}
+      <CeoMetricGrid metrics={dashboard.metrics} onSetRevenueTarget={() => setIsRevenueTargetOpen(true)} />
+      <NewBusinessIntake leads={dashboard.newBusinessIntake} onManageLead={setManagedLeadId} />
+      <section className="ceo-insight-grid">
+        <AttentionRequired items={dashboard.attention} onOpenPath={onOpenPath} />
+        <BusinessPulse pulse={dashboard.businessPulse} />
+        <TopOrganisations onOpenOrganisation={onOpenOrganisation} organisations={dashboard.topOrganisations} />
+      </section>
+      {managedLeadId ? (
+        <LeadWorkflowDrawer leadId={managedLeadId} onClose={() => setManagedLeadId('')} onSaved={onRefresh} />
+      ) : null}
+      {isRevenueTargetOpen ? (
+        <RevenueTargetDialog dashboard={dashboard} onClose={() => setIsRevenueTargetOpen(false)} onSaved={onRefresh} />
+      ) : null}
     </div>
   )
 }
@@ -1601,6 +2026,17 @@ function WarningStrip({ warnings = [] }) {
           </span>
         </div>
       ))}
+    </div>
+  )
+}
+
+function ExecutiveAttentionContext({ context, onClear }) {
+  if (!context) return null
+  return (
+    <div className="executive-attention-context">
+      <span className="attention-indicator critical"><AlertTriangle size={15} /></span>
+      <div><strong>{context.label}</strong><span>Opened from the CEO dashboard attention queue.</span></div>
+      <button onClick={onClear} type="button">Clear context <X size={14} /></button>
     </div>
   )
 }
@@ -4082,6 +4518,8 @@ function UnauthorizedScreen({ roles, onSignOut }) {
 
 export default function App() {
   const isMobile = useIsMobile()
+  const isOnline = useNetworkStatus()
+  const refreshInFlight = useRef(false)
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
   const [access, setAccess] = useState({ allowed: false, level: '', roles: [] })
@@ -4089,15 +4527,37 @@ export default function App() {
   const [authError, setAuthError] = useState('')
   const [dateRange, setDateRange] = useState('30d')
   const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT)
+  const [attentionContext, setAttentionContext] = useState(() => {
+    if (typeof window === 'undefined') return null
+    return attentionContextFromPath(`${window.location.pathname}${window.location.search}`)
+  })
   const [isBooting, setIsBooting] = useState(true)
   const [isLoading, setIsLoading] = useState(false)
+  const [dashboardRefreshError, setDashboardRefreshError] = useState('')
   const [legalTemplateScope, setLegalTemplateScope] = useState({ organisationId: '', organisationName: '' })
 
   async function refreshData(nextRange = dateRange) {
-    if (!session?.user) return
+    if (!session?.user || refreshInFlight.current) return
+    refreshInFlight.current = true
     setIsLoading(true)
-    setSnapshot(await loadDashboardSnapshot(nextRange))
-    setIsLoading(false)
+    try {
+      if (activeView === 'dashboard' && snapshot.ceoDashboard?.available) {
+        const nextDashboard = await loadCeoDashboardSnapshot(nextRange)
+        if (nextDashboard.available) {
+          setSnapshot((current) => ({ ...current, ceoDashboard: nextDashboard }))
+          setDashboardRefreshError('')
+        } else {
+          setDashboardRefreshError(nextDashboard.error || 'Dashboard refresh failed. Showing the last successful update.')
+        }
+      } else {
+        const nextSnapshot = await loadDashboardSnapshot(nextRange)
+        setSnapshot(nextSnapshot)
+        setDashboardRefreshError(nextSnapshot.ceoDashboard?.error || '')
+      }
+    } finally {
+      refreshInFlight.current = false
+      setIsLoading(false)
+    }
   }
 
   async function handleDateRangeChange(nextRange) {
@@ -4115,8 +4575,55 @@ export default function App() {
 
   function handleDesktopNavigate(viewId) {
     setActiveView(viewId)
+    setAttentionContext(null)
     if (viewId !== 'legalTemplates') setLegalTemplateScope({ organisationId: '', organisationName: '' })
     pushAdminPath(adminPathForView(viewId))
+  }
+
+  function handleDashboardPath(path = '') {
+    if (path.includes('sales-pipeline')) {
+      document.getElementById('new-business-intake')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return
+    }
+    const viewId = path.includes('organisations')
+      ? 'organisations'
+      : path.includes('transactions')
+        ? 'transactions'
+        : path.includes('revenue')
+          ? 'revenue'
+          : path.includes('platform-health')
+            ? 'health'
+            : ''
+    if (!viewId) return
+    setAttentionContext(attentionContextFromPath(path))
+    setActiveView(viewId)
+    pushAdminPath(path)
+  }
+
+  function clearAttentionContext() {
+    setAttentionContext(null)
+    pushAdminPath(adminPathForView(activeView))
+  }
+
+  function handleOpenOrganisation(organisationId) {
+    if (!organisationId) return
+    setAttentionContext(null)
+    pushAdminPath(`/admin/organisations/${encodeURIComponent(organisationId)}`)
+    setActiveView('organisations')
+  }
+
+  function exportCeoDashboard() {
+    if (!snapshot.ceoDashboard?.available) return
+    const csv = buildCeoDashboardCsv(snapshot.ceoDashboard)
+    const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `arch9-ceo-dashboard-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(url)
   }
 
   function handleManageLegalTemplates(roleplayer) {
@@ -4168,6 +4675,7 @@ export default function App() {
         setProfile(null)
         setAccess({ allowed: false, level: '', roles: [] })
         setSnapshot(EMPTY_SNAPSHOT)
+        setDashboardRefreshError('')
         return
       }
 
@@ -4180,7 +4688,10 @@ export default function App() {
         setActiveView(viewFromPath(nextAccess.level, isMobile))
         setIsLoading(true)
         const nextSnapshot = await loadDashboardSnapshot(dateRange)
-        if (!cancelled) setSnapshot(nextSnapshot)
+        if (!cancelled) {
+          setSnapshot(nextSnapshot)
+          setDashboardRefreshError(nextSnapshot.ceoDashboard?.error || '')
+        }
         setIsLoading(false)
       }
     }
@@ -4190,6 +4701,44 @@ export default function App() {
       cancelled = true
     }
   }, [isMobile, session])
+
+  useEffect(() => {
+    if (!session?.user || access.level !== ADMIN_LEVELS.EXECUTIVE || activeView !== 'dashboard') return undefined
+    let cancelled = false
+
+    async function refreshCeoDashboard() {
+      if (refreshInFlight.current || !navigator.onLine || document.hidden) return
+      refreshInFlight.current = true
+      setIsLoading(true)
+      try {
+        const nextDashboard = await loadCeoDashboardSnapshot(dateRange)
+        if (cancelled) return
+        if (nextDashboard.available) {
+          setSnapshot((current) => ({ ...current, ceoDashboard: nextDashboard }))
+          setDashboardRefreshError('')
+        } else {
+          setDashboardRefreshError(nextDashboard.error || 'Automatic refresh failed. Showing the last successful update.')
+        }
+      } finally {
+        refreshInFlight.current = false
+        if (!cancelled) setIsLoading(false)
+      }
+    }
+
+    function handleVisibilityChange() {
+      if (!document.hidden) refreshCeoDashboard()
+    }
+
+    const intervalId = window.setInterval(refreshCeoDashboard, 90000)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('online', refreshCeoDashboard)
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('online', refreshCeoDashboard)
+    }
+  }, [access.level, activeView, dateRange, session?.user?.id])
 
   async function handleSignIn({ email, password }) {
     setAuthError('')
@@ -4259,13 +4808,26 @@ export default function App() {
       <main className="admin-main">
         <Topbar
           activeView={activeView}
+          canExportDashboard={Boolean(snapshot.ceoDashboard?.available)}
           dateRange={dateRange}
           isLoading={isLoading}
+          onDashboardExport={exportCeoDashboard}
           onDateRangeChange={handleDateRangeChange}
           onRefresh={() => refreshData()}
         />
+        {activeView !== 'dashboard' ? <ExecutiveAttentionContext context={attentionContext} onClear={clearAttentionContext} /> : null}
         {!canViewActive ? <ServiceDeskView snapshot={snapshot} /> : null}
-        {activeView === 'dashboard' && canViewActive ? <ExecutiveDashboardView snapshot={snapshot} /> : null}
+        {activeView === 'dashboard' && canViewActive ? (
+          <ExecutiveDashboardView
+            isLoading={isLoading}
+            isOnline={isOnline}
+            onOpenOrganisation={handleOpenOrganisation}
+            onOpenPath={handleDashboardPath}
+            onRefresh={() => refreshData()}
+            refreshError={dashboardRefreshError}
+            snapshot={snapshot}
+          />
+        ) : null}
         {activeView === 'growth' && canViewActive ? <GrowthDashboardView snapshot={snapshot} /> : null}
         {activeView === 'revenue' && canViewActive ? <RevenueDashboardView snapshot={snapshot} /> : null}
         {activeView === 'ecosystem' && canViewActive ? <EcosystemSection ecosystem={snapshot.ecosystem} /> : null}

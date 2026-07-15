@@ -1,5 +1,5 @@
 import { buildLegalClausePackCoverage, listPublishableLegalClausePackKeys } from './legalClausePackCoverage.js'
-import { resolveLegalClausePackScenarioMatrixGovernance } from './legalClausePackScenarioMatrixGovernance.js'
+import { resolveOtpReferenceMatrixGovernance } from './otpReferenceMatrixGovernance.js'
 import { resolveLegalTemplateGovernance } from './legalTemplateGovernance.js'
 import { buildOtpAttorneyReadiness } from './otpAttorneyReadiness.js'
 import { OTP_RUNTIME_ASSEMBLY_VERSION } from './otpRuntimeAssembly.js'
@@ -54,7 +54,7 @@ export function buildOtpLaunchReadiness({ candidateTemplate = null, liveTemplate
     allowLegacy: false,
     requireApproval: true,
   })
-  const matrix = resolveLegalClausePackScenarioMatrixGovernance(candidateTemplate)
+  const matrix = resolveOtpReferenceMatrixGovernance(candidateTemplate)
   const governance = resolveLegalTemplateGovernance(candidateTemplate, { allowLegacy: false })
   const runtimeContractVersion = normalizeText(metadata.otp_runtime_assembly_version || candidateTemplate.otp_runtime_assembly_version)
   const runtimeReady = runtimeContractVersion === OTP_RUNTIME_ASSEMBLY_VERSION

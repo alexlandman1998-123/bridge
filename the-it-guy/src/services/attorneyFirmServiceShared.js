@@ -3,6 +3,7 @@ import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
 export const DEFAULT_ATTORNEY_DEPARTMENTS = [
   { name: 'Transfer Department', department_type: 'transfer' },
   { name: 'Bond Department', department_type: 'bond' },
+  { name: 'Bond Cancellation Department', department_type: 'cancellation' },
   { name: 'Admin Department', department_type: 'admin' },
   { name: 'Management', department_type: 'management' },
 ]

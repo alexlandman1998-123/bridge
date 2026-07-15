@@ -7,7 +7,7 @@ import {
   requireClient,
 } from './attorneyFirmServiceShared'
 import { getAttorneyFirmMembers } from './attorneyFirmMembers'
-import { getAttorneyFirmById, getAttorneyFirmDepartments } from './attorneyFirms'
+import { getAttorneyFirmById, getAttorneyFirmDepartments, getCurrentUserAttorneyFirms } from './attorneyFirms'
 import { prepareBondAssignmentPayload } from './bondAssignmentService'
 import { recordUniversalAssignmentEvent, UNIVERSAL_ASSIGNMENT_METHODS } from './universalAssignmentService'
 
@@ -15,14 +15,20 @@ export const ATTORNEY_ASSIGNMENT_TYPES = ['transfer', 'bond', 'transfer_and_bond
 export const TRANSACTION_ATTORNEY_ROLES = ['transfer_attorney', 'bond_attorney', 'cancellation_attorney']
 export const ATTORNEY_ASSIGNMENT_STATUSES = ['pending', 'active', 'paused', 'completed', 'removed']
 const ATTORNEY_ASSIGNMENTS_MIGRATION_HINT = 'Attorney assignment table is not set up yet. Run the attorney assignment migrations and refresh.'
+const APPOINTED_FIRM_MIGRATION_HINT = 'Appointed-firm acceptance is not set up yet. Run the Phase 4 legal role migration and refresh.'
 const ASSIGNMENT_SELECT =
   'id, transaction_id, firm_id, attorney_firm_id, assignment_type, attorney_role, department_id, attorney_department_id, primary_attorney_id, attorney_user_id, secretary_id, admin_handler_id, status, assignment_status, is_primary, visibility_scope, can_edit, can_manage_documents, can_manage_signing, can_add_internal_notes, can_add_shared_updates, can_update_workflow_lane, assigned_by, assigned_at, created_at, updated_at'
 
 const TRANSFER_PRIMARY_ROLES = new Set(['transfer_attorney', 'director_partner', 'firm_admin'])
 const BOND_PRIMARY_ROLES = new Set(['bond_attorney', 'director_partner', 'firm_admin'])
-const CANCELLATION_PRIMARY_ROLES = new Set(['transfer_attorney', 'director_partner', 'firm_admin'])
+const CANCELLATION_PRIMARY_ROLES = new Set(['cancellation_attorney', 'director_partner', 'firm_admin'])
 const SECRETARY_ALLOWED_ROLES = new Set(['conveyancing_secretary', 'admin_staff', 'candidate_attorney'])
 const ADMIN_ALLOWED_ROLES = new Set(['admin_staff', 'conveyancing_secretary', 'candidate_attorney'])
+const BANK_APPOINTED_ATTORNEY_ROLES = new Set(['bond_attorney', 'cancellation_attorney'])
+
+export function isBankAppointedAttorneyRole(role) {
+  return BANK_APPOINTED_ATTORNEY_ROLES.has(normalizeText(role).toLowerCase())
+}
 
 function normalizeType(value) {
   const normalized = normalizeText(value).toLowerCase()
@@ -177,6 +183,38 @@ async function assertActorCanManageAssignment(client, { actorId, firmId }) {
 
   if (ownerFallback.error || !ownerFallback.data?.id) {
     throw new Error('You do not have permission to assign attorneys to this transaction.')
+  }
+}
+
+async function assertBankAppointedFirmAssignmentAuthority(client, { transactionId, attorneyRole, firmId, assignmentStatus, status }) {
+  if (!isBankAppointedAttorneyRole(attorneyRole)) return
+
+  if (assignmentStatus === 'removed' || status === 'removed') {
+    throw new Error('A bank-appointed firm cannot be removed through staff assignment. Start the appointment replacement workflow instead.')
+  }
+
+  const query = await client
+    .from('transaction_legal_role_appointments')
+    .select('id, accepted_firm_id, coordination_state, staff_assignment_status')
+    .eq('transaction_id', transactionId)
+    .eq('role_type', attorneyRole)
+    .in('coordination_state', ['invite_accepted', 'instruction_confirmed', 'active'])
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'transaction_legal_role_appointments') || isMissingColumnError(query.error)) {
+      throw new Error(APPOINTED_FIRM_MIGRATION_HINT)
+    }
+    throw query.error
+  }
+
+  if (!query.data?.accepted_firm_id) {
+    throw new Error('The bank-appointed firm must accept its invitation before staff can be assigned.')
+  }
+  if (query.data.accepted_firm_id !== firmId) {
+    throw new Error('Bond and cancellation staff must be assigned from the bank-appointed firm.')
   }
 }
 
@@ -551,6 +589,7 @@ export async function createTransactionAttorneyAssignment(payload = {}) {
   const actor = await getAuthenticatedUser(client)
 
   const validated = await validateAttorneyAssignment(payload, { client })
+  await assertBankAppointedFirmAssignmentAuthority(client, validated)
   await assertActorCanManageAssignment(client, { actorId: actor.id, firmId: validated.firmId })
 
   const insertPayload = {
@@ -677,6 +716,7 @@ export async function updateTransactionAttorneyAssignment(assignmentId, payload 
     },
     { client, assignmentId: existing.id },
   )
+  await assertBankAppointedFirmAssignmentAuthority(client, validated)
   await assertActorCanManageAssignment(client, { actorId: actor.id, firmId: validated.firmId })
 
   const updatePayload = {
@@ -1054,48 +1094,13 @@ export async function getAssignableAttorneyFirmMembers(firmId, assignmentType = 
 }
 
 export async function listAttorneyFirmsForAssignment() {
-  const client = requireClient()
-  const user = await getAuthenticatedUser(client)
-
-  const membershipQuery = await client
-    .from('attorney_firm_members')
-    .select('firm_id, role, status')
-    .eq('user_id', user.id)
-    .eq('status', 'active')
-
-  if (membershipQuery.error) {
-    if (isMissingTableError(membershipQuery.error, 'attorney_firm_members')) {
-      return []
-    }
-    throw membershipQuery.error
-  }
-
-  const rows = membershipQuery.data || []
-  const firmIds = [...new Set(rows.map((item) => item.firm_id).filter(Boolean))]
-  if (!firmIds.length) return []
-
-  const firmsQuery = await client
-    .from('attorney_firms')
-    .select('id, name, is_active')
-    .in('id', firmIds)
-    .eq('is_active', true)
-
-  if (firmsQuery.error) {
-    if (isMissingTableError(firmsQuery.error, 'attorney_firms')) {
-      return []
-    }
-    throw firmsQuery.error
-  }
-
-  const roleByFirmId = rows.reduce((accumulator, item) => {
-    accumulator[item.firm_id] = item.role
-    return accumulator
-  }, {})
-
-  return (firmsQuery.data || []).map((firm) => ({
+  const firms = await getCurrentUserAttorneyFirms()
+  return firms
+    .filter((firm) => firm.isActive !== false && firm.membershipStatus === 'active')
+    .map((firm) => ({
     id: firm.id,
     name: firm.name,
-    membershipRole: roleByFirmId[firm.id] || null,
+    membershipRole: firm.membershipRole || null,
   }))
 }
 

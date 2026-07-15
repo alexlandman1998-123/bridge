@@ -1,0 +1,36 @@
+{
+  "contractVersion": "attorney_organisation_identity_v1",
+  "environment": "staging",
+  "generatedAt": "2026-07-15T10:20:13.394Z",
+  "readOnly": true,
+  "redacted": true,
+  "summary": {
+    "firms": 4,
+    "linked": 4,
+    "healthy": 1,
+    "withDrift": 3,
+    "missingLinks": 0,
+    "missingOrganisationRows": 0,
+    "missingCanonicalValues": 16,
+    "valueMismatches": 1,
+    "schemaGaps": 9,
+    "environmentIssues": 1
+  },
+  "issuesByField": {
+    "city": 3,
+    "postalCode": 3,
+    "vatNumber": 2,
+    "primaryColour": 3,
+    "secondaryColour": 3,
+    "website": 2,
+    "email": 2,
+    "phone": 2,
+    "addressLine1": 2,
+    "province": 2,
+    "logoUrl": 1,
+    "logoDarkUrl": 1
+  },
+  "environmentIssueKinds": {
+    "missing_attorney_firm_branding_metadata_columns": 1
+  }
+}

@@ -33,6 +33,7 @@ test('routes specialist approvals to attorneys and ordinary approvals to agents'
   assert.equal(plan.summary.totalActions, 2)
   assert.deepEqual(plan.actions[0].targetRoles, ['attorney'])
   assert.deepEqual(plan.actions[1].targetRoles, ['agent'])
+  assert.equal(plan.actions[1].actionKey, '2:version-2:awaiting_operational_approval:agent')
   assert.equal(plan.summary.attorneyActions, 1)
   assert.equal(plan.summary.agentActions, 1)
 })
@@ -118,4 +119,37 @@ test('refuses to apply a reviewed plan from incomplete diagnostics', async () =>
     }),
     (error) => error?.code === 'LEGAL_ESCALATION_DIAGNOSTICS_INCOMPLETE',
   )
+})
+
+test('routes canonical master-version mismatches as critical human review', () => {
+  const plan = buildLegalClausePackEscalationPlan({
+    diagnostics: {
+      records: [record('12', 'canonical_version_evidence_invalid', {
+        canonicalTemplateVersionId: 'template-version-12345678',
+        canonicalVersionEvidenceIssues: ['The generated OTP content hash does not match its canonical template version.'],
+      })],
+    },
+  })
+
+  assert.equal(plan.summary.criticalActions, 1)
+  assert.deepEqual(plan.actions[0].targetRoles, ['agent', 'attorney'])
+  assert.equal(plan.actions[0].canonicalTemplateVersionId, 'template-version-12345678')
+  assert.match(plan.actions[0].title, /Canonical OTP version evidence mismatch/)
+  assert.match(plan.actions[0].message, /Stop signature progression/)
+})
+
+test('invalidates a reviewed plan when canonical evidence changes', () => {
+  const base = record('13', 'canonical_version_evidence_invalid', {
+    canonicalTemplateVersionId: 'template-version-1',
+    canonicalVersionEvidenceIssues: ['Missing content hash.'],
+  })
+  const changed = {
+    ...base,
+    canonicalVersionEvidenceIssues: ['Content hash does not match.'],
+  }
+  const first = buildLegalClausePackEscalationPlan({ diagnostics: { records: [base] } })
+  const second = buildLegalClausePackEscalationPlan({ diagnostics: { records: [changed] } })
+
+  assert.notEqual(first.planFingerprint, second.planFingerprint)
+  assert.notEqual(first.actions[0].canonicalEvidenceKey, second.actions[0].canonicalEvidenceKey)
 })

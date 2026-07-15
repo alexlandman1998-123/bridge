@@ -73,7 +73,7 @@ export function normalizeOrgRole(value, { appRole = '', workspaceType = '' } = {
   if (normalized === 'firm_admin') return ORG_ROLES.owner
   if (normalized === 'director_partner') return ORG_ROLES.partner
   if (normalized === 'compliance') return ORG_ROLES.compliance
-  if (normalized === 'transfer_attorney' || normalized === 'bond_attorney' || normalized === 'candidate_attorney') {
+  if (normalized === 'transfer_attorney' || normalized === 'bond_attorney' || normalized === 'cancellation_attorney' || normalized === 'candidate_attorney') {
     return ORG_ROLES.attorney
   }
   if (normalized === 'conveyancing_secretary' || normalized === 'reception_scheduling') {

@@ -1,4 +1,4 @@
-export const OTP_OPERATIONAL_ASSURANCE_VERSION = 'otp_operational_assurance_v1'
+export const OTP_OPERATIONAL_ASSURANCE_VERSION = 'otp_operational_assurance_v2'
 
 function normalizeText(value = '') {
   return String(value ?? '').trim()
@@ -21,6 +21,8 @@ export function buildOtpOperationalAssurance({ rolloutOperations = null, release
   const governedPackets = Number(summary.governedPackets || 0)
   const criticalPackets = Number(summary.criticalPackets || 0)
   const warningPackets = Number(summary.warningPackets || 0)
+  const canonicalPackets = Number(summary.canonicalPackets || 0)
+  const invalidCanonicalVersions = Number(summary.canonicalVersionEvidenceInvalid || 0)
   const outstandingPackets = Number(summary.awaitingAttorney || 0) + Number(summary.awaitingApproval || 0)
   const templateHealthy = rolloutOperations?.status === 'healthy'
   const templateNeedsAttention = ['degraded', 'critical'].includes(rolloutOperations?.status)
@@ -81,9 +83,13 @@ export function buildOtpOperationalAssurance({ rolloutOperations = null, release
       label: 'Release evidence safe',
       passed: dataComplete && criticalPackets === 0,
       detail: criticalPackets
-        ? `${criticalPackets} governed OTP${criticalPackets === 1 ? '' : 's'} have unsafe release evidence.`
+        ? invalidCanonicalVersions
+          ? `${invalidCanonicalVersions} canonical OTP${invalidCanonicalVersions === 1 ? '' : 's'} do not match their immutable template-version evidence.`
+          : `${criticalPackets} governed OTP${criticalPackets === 1 ? '' : 's'} have unsafe release evidence.`
         : dataComplete
-          ? 'No governed OTP was released with unsafe approval evidence.'
+          ? canonicalPackets
+            ? `${canonicalPackets} canonical OTP${canonicalPackets === 1 ? '' : 's'} match their recorded immutable template version; no unsafe approval evidence was found.`
+            : 'No governed OTP was released with unsafe approval evidence.'
           : 'Release evidence has not been fully assessed.',
     },
     {
@@ -137,6 +143,8 @@ export function buildOtpOperationalAssurance({ rolloutOperations = null, release
       criticalPackets,
       warningPackets,
       outstandingPackets,
+      canonicalPackets,
+      invalidCanonicalVersions,
       score: Number(summary.score ?? 0),
     },
   }

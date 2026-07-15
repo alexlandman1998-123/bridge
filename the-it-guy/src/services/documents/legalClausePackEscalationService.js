@@ -1,4 +1,5 @@
-export const LEGAL_CLAUSE_PACK_ESCALATION_VERSION = 'sa_legal_clause_pack_escalation_v1'
+export const LEGAL_CLAUSE_PACK_ESCALATION_LEGACY_VERSION = 'sa_legal_clause_pack_escalation_v1'
+export const LEGAL_CLAUSE_PACK_ESCALATION_VERSION = 'sa_legal_clause_pack_escalation_v2'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -6,6 +7,10 @@ function normalizeText(value) {
 
 function asArray(value) {
   return Array.isArray(value) ? value : []
+}
+
+function sortedUnique(values = []) {
+  return [...new Set(asArray(values).map(normalizeText).filter(Boolean))].sort()
 }
 
 function stableHash(value = '') {
@@ -19,6 +24,15 @@ function stableHash(value = '') {
 
 function escalationDefinition(record = {}) {
   const state = normalizeText(record.operationalState)
+  if (state === 'canonical_version_evidence_invalid') {
+    const masterVersion = normalizeText(record.canonicalTemplateVersionId)
+    return {
+      priority: 'critical',
+      targetRoles: ['agent', 'attorney'],
+      title: 'Canonical OTP version evidence mismatch',
+      message: `${record.title || 'An OTP'} does not match its recorded approved master${masterVersion ? ` (${masterVersion.slice(0, 8)})` : ''}. Stop signature progression and verify the generated document evidence.`,
+    }
+  }
   if (state === 'awaiting_attorney_approval') {
     return {
       priority: 'high',
@@ -64,7 +78,12 @@ export function buildLegalClausePackEscalationPlan({ diagnostics = null, generat
     const packetId = normalizeText(record.packetId)
     const versionId = normalizeText(record.versionId)
     const operationalState = normalizeText(record.operationalState)
-    const actionKey = [packetId, versionId, operationalState, ...definition.targetRoles].join(':')
+    const canonicalTemplateVersionId = normalizeText(record.canonicalTemplateVersionId)
+    const canonicalEvidenceIssues = sortedUnique(record.canonicalVersionEvidenceIssues)
+    const canonicalEvidenceKey = canonicalEvidenceIssues.length ? stableHash(canonicalEvidenceIssues.join('|')) : ''
+    const actionKey = canonicalTemplateVersionId || canonicalEvidenceKey
+      ? [packetId, versionId, operationalState, canonicalTemplateVersionId, canonicalEvidenceKey, ...definition.targetRoles].join(':')
+      : [packetId, versionId, operationalState, ...definition.targetRoles].join(':')
     return [{
       actionKey,
       actionId: stableHash(actionKey),
@@ -73,6 +92,9 @@ export function buildLegalClausePackEscalationPlan({ diagnostics = null, generat
       versionNumber: Number(record.versionNumber || 0) || null,
       transactionId: transactionId || null,
       operationalState,
+      canonicalTemplateVersionId: canonicalTemplateVersionId || null,
+      canonicalEvidenceIssues,
+      canonicalEvidenceKey: canonicalEvidenceKey || null,
       priority: definition.priority,
       targetRoles: definition.targetRoles,
       title: definition.title,
@@ -153,6 +175,9 @@ export async function executeLegalClausePackEscalationPlan({
           versionId: action.versionId,
           versionNumber: action.versionNumber,
           operationalState: action.operationalState,
+          canonicalTemplateVersionId: action.canonicalTemplateVersionId,
+          canonicalEvidenceIssues: action.canonicalEvidenceIssues,
+          canonicalEvidenceKey: action.canonicalEvidenceKey,
           priority: action.priority,
           planFingerprint: plan.planFingerprint,
         },

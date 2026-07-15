@@ -110,9 +110,10 @@ import {
   buildOtpRuntimeAssembly,
   buildOtpRuntimeAssemblyIssues,
 } from './otpRuntimeAssembly'
-import { resolveLegalClausePackScenarioMatrixGovernance } from './legalClausePackScenarioMatrixGovernance'
+import { resolveOtpReferenceMatrixGovernance } from './otpReferenceMatrixGovernance'
 import { resolveLegalClausePackTransactionReadiness } from './legalClausePackTransactionReadiness'
 import { resolveLegalClausePackSignatureRelease } from './legalClausePackSignatureRelease'
+import { OTP_CANONICAL_RUNTIME_BINDING_VERSION } from './otpCanonicalTemplatePreparation'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -490,10 +491,13 @@ function buildRenderProvenance({
   const otpRuntimeAssembly = generationPayload?.otpRuntimeAssembly || validation?.otpRuntimeAssembly || null
   const legalClausePackScenarioMatrix = generationPayload?.legalClausePackScenarioMatrix || validation?.legalClausePackScenarioMatrix || null
   const legalClausePackTransactionReadiness = generationPayload?.legalClausePackTransactionReadiness || validation?.legalClausePackTransactionReadiness || null
+  const templateVersionId = normalizeText(template?.resolved_live_version_id || template?.template_version_id) || null
+  const templateContentHash = normalizeText(template?.content_hash || template?.contentHash) || null
   const contentFingerprint = buildContentFingerprint({
     packetType: normalizedPacketType,
     renderMode,
     templateId: normalizeText(template?.id) || null,
+    templateVersionId,
     templateVersion: templateVersion || null,
     mandateTemplateVariant: mandateTemplateVariant || null,
     placeholders: pdfPlaceholders && typeof pdfPlaceholders === 'object' ? pdfPlaceholders : {},
@@ -507,7 +511,9 @@ function buildRenderProvenance({
     templateId: normalizeText(template?.id) || null,
     templateKey: normalizeText(template?.template_key || template?.key) || null,
     templateLabel: normalizeText(template?.template_label || template?.label) || null,
+    templateVersionId,
     templateVersion: templateVersion || null,
+    templateContentHash,
     templateResolutionSource: normalizeText(generationPayload?.templateResolutionSource) || null,
     mandateTemplateVariant: mandateTemplateVariant || null,
     mandateTemplateFallback: Boolean(generationPayload?.mandateTemplateFallback),
@@ -734,6 +740,28 @@ function isMissingPacketTemplateSchemaError(error) {
 
 function resolveTemplateConfig(template = null) {
   return resolveStructuredTemplateStorageConfig(template)
+}
+
+function resolveCanonicalOtpRuntimeConfig(template = null) {
+  const metadata = template?.metadata_json && typeof template.metadata_json === 'object'
+    ? template.metadata_json
+    : template?.metadataJson && typeof template.metadataJson === 'object'
+      ? template.metadataJson
+      : {}
+  const documentModel = normalizeText(template?.document_model || template?.documentModel || metadata.document_model).toLowerCase()
+  if (documentModel !== 'single_master_document') {
+    return { enabled: false, templateContractVersion: '', templateConfig: {} }
+  }
+  return {
+    enabled: true,
+    templateContractVersion: normalizeText(
+      template?.canonical_runtime_binding_version ||
+      template?.canonicalRuntimeBindingVersion ||
+      metadata.canonical_runtime_binding_version ||
+      metadata.canonicalRuntimeBindingVersion,
+    ) || OTP_CANONICAL_RUNTIME_BINDING_VERSION,
+    templateConfig: resolveTemplateConfig(template),
+  }
 }
 
 function resolveTemplateRenderMode(template = null, packetType = '') {
@@ -2498,7 +2526,7 @@ export async function validatePacket({
       }))
     : []
   const legalClausePackScenarioMatrix = normalizedPacketType === 'otp' && template?.id
-    ? resolveLegalClausePackScenarioMatrixGovernance(template)
+    ? resolveOtpReferenceMatrixGovernance(template)
     : null
   const legalClausePackScenarioMatrixIssue = legalClausePackScenarioMatrix?.runtimeEnforced && !legalClausePackScenarioMatrix.passed
     ? {
@@ -3080,6 +3108,7 @@ export async function generatePacketVersion({
   })
   const pdfPlaceholders = sanitizeTemplatePlaceholders(validation.placeholders || {})
   const templateVersion = resolveTemplateVersion(effectiveTemplate)
+  const templateVersionId = normalizeText(effectiveTemplate?.resolved_live_version_id || effectiveTemplate?.template_version_id) || null
   const sourceContextSnapshot = context?.mandateData?.sourceContext || context?.sourceContext || null
   const readOnlyAnnexures = resolveReadOnlyAnnexures(sourceContextSnapshot)
   await addPacketEvent({
@@ -3095,6 +3124,7 @@ export async function generatePacketVersion({
       leadId: context?.lead?.lead_id || context?.lead?.id || context?.leadId || null,
       transactionId: context?.transaction?.id || context?.transactionId || null,
       packetType: validation.packetType,
+      templateVersionId,
       templateVersion,
       templateResolutionSource: generationPayload.templateResolutionSource || null,
       mandateTemplateVariant: generationPayload.mandateTemplateVariant || null,
@@ -3128,9 +3158,15 @@ export async function generatePacketVersion({
 
   try {
     if (validation.packetType === 'otp') {
+      const canonicalRuntime = resolveCanonicalOtpRuntimeConfig(effectiveTemplate)
       const otpResult = await withPacketRetries(() => generateOtpDocumentFromTemplate({
         transactionId: context?.transaction?.id || context?.transactionId,
         specialConditions: context?.specialConditions || '',
+        templatePath: canonicalRuntime.templateConfig.templatePath || '',
+        templateBucket: canonicalRuntime.templateConfig.templateBucket || '',
+        templateFilename: canonicalRuntime.templateConfig.templateFilename || '',
+        outputBucket: canonicalRuntime.templateConfig.outputBucket || '',
+        templateContractVersion: canonicalRuntime.templateContractVersion,
         placeholders: pdfPlaceholders,
         sourceContext: sourceContextSnapshot,
         generatedByRole: context?.generatedByRole || '',

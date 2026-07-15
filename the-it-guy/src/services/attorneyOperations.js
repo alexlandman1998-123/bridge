@@ -891,6 +891,8 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
         registrationDate: transaction.registration_date || transaction.registered_at || null,
         lifecycleState: transaction.lifecycle_state || null,
         matterType,
+        attorneyRole: assignment.attorneyRole || null,
+        assignmentType: assignment.assignmentType || null,
         currentStage: buildStageLabel(transaction),
         nextAction: transaction.next_action || '',
         assignedRole: assignmentRole,

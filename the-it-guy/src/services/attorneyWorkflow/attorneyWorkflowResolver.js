@@ -1,4 +1,5 @@
 import { resolveTransactionFacts } from './transactionFactsResolver.js'
+import { LEGAL_ROLE_TYPES } from '../../core/transactions/legalRoleCoordinationContract.js'
 import {
   ATTORNEY_LANE_STAGES,
   getAttorneyDataRequirementsForLane,
@@ -83,7 +84,7 @@ export function resolveAttorneyLanes(transactionOrFacts = {}) {
   return {
     transfer: {
       required: true,
-      role: 'transfer_attorney',
+      role: LEGAL_ROLE_TYPES.transferAttorney,
       label: 'Transfer Attorney',
       reason: 'All property transfers require transfer attorney handling.',
       stages: ATTORNEY_LANE_STAGES.transfer,
@@ -93,7 +94,7 @@ export function resolveAttorneyLanes(transactionOrFacts = {}) {
     },
     bond: {
       required: Boolean(facts.requiresBondAttorney),
-      role: 'bond_attorney',
+      role: LEGAL_ROLE_TYPES.bondAttorney,
       label: 'Bond Attorney',
       reason: facts.requiresBondAttorney
         ? `Required because finance type is ${facts.financeType === 'hybrid' ? 'Hybrid' : 'Bond'}.`
@@ -107,7 +108,7 @@ export function resolveAttorneyLanes(transactionOrFacts = {}) {
     },
     cancellation: {
       required: Boolean(facts.requiresCancellationAttorney),
-      role: 'cancellation_attorney',
+      role: LEGAL_ROLE_TYPES.cancellationAttorney,
       label: 'Cancellation Attorney',
       reason: facts.requiresCancellationAttorney
         ? 'Required because seller bond cancellation is flagged for this transaction.'

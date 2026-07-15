@@ -52,22 +52,25 @@ for (const token of [
 }
 
 for (const token of [
-  'CANCELLATION_PARTNER_ROLE_FIELD_OPTIONS',
   'FINANCE_TYPE_OPTIONS',
   'Seller has existing bond to cancel',
-  'cancellationAttorneyPreferredPartnerId',
-  'const cancellationAttorneySelection',
-  "roleType: 'cancellation_attorney'",
-  "cancellationAttorney: cancellationAttorneyLabel",
-  'Existing bond cancellation attorney not assigned yet.',
+  'Existing Bond Cancellation Details',
+  'currentBondBank',
+  'currentBondAccountNumber',
+  'cancellationNoticeStatus',
+  'Awaiting appointment by the buyer\'s new lender.',
+  "const CORE_ROUTING_ROLE_TYPES = ['transfer_attorney', 'bond_originator']",
 ]) {
-  assert(files.wizard.includes(token), `AgentNewDealWizard should preserve cancellation attorney transaction setup: ${token}`)
+  assert(files.wizard.includes(token), `AgentNewDealWizard should preserve Phase 2 bank fact capture: ${token}`)
 }
 
-assert(
-  files.wizard.includes("partnerType: 'cancellation_attorney'") &&
-    files.wizard.includes("const roleTypes = ['transfer_attorney', 'bond_originator', 'bond_attorney', 'cancellation_attorney']"),
-  'AgentNewDealWizard fallback partner snapshot should include cancellation attorney options',
-)
+for (const removedToken of [
+  'CANCELLATION_PARTNER_ROLE_FIELD_OPTIONS',
+  'cancellationAttorneyPreferredPartnerId',
+  'const cancellationAttorneySelection',
+  "partnerType: 'cancellation_attorney'",
+]) {
+  assert(!files.wizard.includes(removedToken), `deal creation must not select a bank-appointed attorney: ${removedToken}`)
+}
 
 console.log('Partner directory Phase 5 contract passed.')

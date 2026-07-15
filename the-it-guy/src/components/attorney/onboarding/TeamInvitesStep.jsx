@@ -6,6 +6,7 @@ const ROLE_LABELS = {
   director_partner: 'Director',
   transfer_attorney: 'Conveyancer',
   bond_attorney: 'Attorney',
+  cancellation_attorney: 'Cancellation Attorney',
   conveyancing_secretary: 'Assistant',
   admin_staff: 'Admin / Accounts',
   reception_scheduling: 'Reception',
@@ -15,6 +16,7 @@ const ROLE_LABELS = {
 const DEPARTMENT_LABELS = {
   transfer: 'Transfer Department',
   bond: 'Bond Department',
+  cancellation: 'Bond Cancellation Department',
   admin: 'Admin Department',
   management: 'Management',
 }
@@ -31,7 +33,7 @@ function PremiumSelectField({ label, icon: Icon, value, onChange, children, erro
   return (
     <label className={`attorney-premium-field ${error ? 'has-error' : ''}`}>
       <span>
-        <Icon size={14} aria-hidden="true" />
+        {Icon ? <Icon size={14} aria-hidden="true" /> : null}
         {label}
       </span>
       <select value={value} onChange={onChange} required>

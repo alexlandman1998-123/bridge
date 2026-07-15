@@ -122,6 +122,7 @@ export default function useAttorneyPermissions({ firmId = null } = {}) {
     canViewAssignedMatters: hasPermission('can_view_assigned_matters'),
     canEditTransferWorkflow: hasPermission('can_edit_transfer_workflow'),
     canEditBondWorkflow: hasPermission('can_edit_bond_workflow'),
+    canEditCancellationWorkflow: hasPermission('can_edit_cancellation_workflow'),
     canManageFirmSettings: hasPermission('can_manage_firm_settings'),
     loading,
     error,

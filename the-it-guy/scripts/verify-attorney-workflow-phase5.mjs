@@ -58,7 +58,7 @@ function verifyPersistenceWiring() {
   assert.match(serviceSource, /workPacketMetadata/)
   assert.match(serviceSource, /metadata:\s*\{ stepId:[\s\S]*\.\.\.workPacketMetadata/)
   assert.match(serviceSource, /eventData:\s*\{[\s\S]*\.\.\.workPacketMetadata/)
-  assert.match(pageSource, /workPacket:\s*workflowStepDraft\.workPacket/)
+  assert.match(pageSource, /workPacket:\s*draft\.workPacket/)
   assert.match(pageSource, /workPacket:\s*workflowNoteDraft\.workPacket/)
   assert.match(pageSource, /workPacket:\s*workflowDocumentDraft\.workPacket/)
   assert.match(pageSource, /function WorkflowActivityPacketMeta/)

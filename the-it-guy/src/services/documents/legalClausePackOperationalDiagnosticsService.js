@@ -8,6 +8,7 @@ const CRITICAL_STATES = new Set([
   'released_without_valid_approval',
   'invalid_approval_role',
   'generated_with_readiness_blockers',
+  'canonical_version_evidence_invalid',
 ])
 
 function normalizeText(value) {
@@ -22,6 +23,10 @@ function asArray(value) {
   return Array.isArray(value) ? value : []
 }
 
+function asRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
 function isMissingSchemaError(error) {
   const code = normalizeKey(error?.code)
   const message = `${error?.message || ''} ${error?.details || ''}`.toLowerCase()
@@ -34,9 +39,46 @@ function latestUsableVersion(versions = []) {
     .find((version) => ['generated', 'draft', ''].includes(normalizeKey(version?.render_status))) || null
 }
 
-function resolveOperationalState(packet, version, release) {
+function resolveCanonicalVersionEvidence(packet, version, templateVersionById = new Map()) {
+  const summary = asRecord(version?.validation_summary_json || version?.validationSummaryJson)
+  const provenance = asRecord(summary.render_provenance || summary.renderProvenance)
+  const templateVersionId = normalizeText(provenance.templateVersionId || provenance.template_version_id)
+  if (!templateVersionId) {
+    return { canonical: false, valid: null, templateVersionId: null, contentHash: null, issues: [] }
+  }
+  const registryVersion = templateVersionById.get(templateVersionId) || null
+  const contentHash = normalizeText(provenance.templateContentHash || provenance.template_content_hash)
+  const templateId = normalizeText(provenance.templateId || provenance.template_id || packet?.template_id || packet?.templateId)
+  const issues = []
+  if (!registryVersion) issues.push('The generated OTP references a canonical template version that is not in the version registry.')
+  if (registryVersion && templateId && normalizeText(registryVersion.template_id || registryVersion.templateId) !== templateId) {
+    issues.push('The generated OTP version belongs to a different canonical template.')
+  }
+  if (registryVersion && normalizeText(packet?.organisation_id || packet?.organisationId) &&
+    normalizeText(registryVersion.organisation_id || registryVersion.organisationId) !== normalizeText(packet?.organisation_id || packet?.organisationId)) {
+    issues.push('The generated OTP version belongs to a different organisation.')
+  }
+  if (registryVersion && !['published', 'superseded'].includes(normalizeKey(registryVersion.status))) {
+    issues.push('The generated OTP references a canonical version that was never released.')
+  }
+  if (!contentHash) issues.push('The generated OTP did not retain the canonical template content hash.')
+  if (registryVersion && contentHash && normalizeText(registryVersion.content_hash || registryVersion.contentHash) !== contentHash) {
+    issues.push('The generated OTP content hash does not match its canonical template version.')
+  }
+  return {
+    canonical: true,
+    valid: issues.length === 0,
+    templateVersionId,
+    contentHash: contentHash || null,
+    registryStatus: normalizeKey(registryVersion?.status) || null,
+    issues,
+  }
+}
+
+function resolveOperationalState(packet, version, release, canonicalEvidence) {
   const packetStatus = normalizeKey(packet?.status)
   if (!version?.id) return 'missing_generated_version'
+  if (canonicalEvidence.canonical && !canonicalEvidence.valid) return 'canonical_version_evidence_invalid'
   if (!release.governed) return 'legacy_not_governed'
   if (release.readiness?.canGenerate !== true) return 'generated_with_readiness_blockers'
   if (RELEASED_PACKET_STATUSES.has(packetStatus) && !release.approved) return 'released_without_valid_approval'
@@ -52,6 +94,7 @@ function resolveOperationalState(packet, version, release) {
 function stateAction(state) {
   const actions = {
     missing_generated_version: 'Generate the OTP again and inspect the failed generation event.',
+    canonical_version_evidence_invalid: 'Stop signature progression and verify the immutable canonical template-version evidence.',
     legacy_not_governed: 'No Phase 8 action. Migrate only if this OTP is still active and unsigned.',
     generated_with_readiness_blockers: 'Regenerate after resolving the transaction-readiness blockers.',
     released_without_valid_approval: 'Stop signature progression and escalate this packet for legal review immediately.',
@@ -73,7 +116,12 @@ function stateSeverity(state) {
   return 'healthy'
 }
 
-export function buildLegalClausePackOperationalDiagnostics({ packets = [], versions = [], generatedAt = new Date().toISOString() } = {}) {
+export function buildLegalClausePackOperationalDiagnostics({
+  packets = [],
+  versions = [],
+  templateVersions = [],
+  generatedAt = new Date().toISOString(),
+} = {}) {
   const versionsByPacketId = asArray(versions).reduce((groups, version) => {
     const packetId = normalizeText(version?.packet_id || version?.packetId)
     if (!packetId) return groups
@@ -81,13 +129,18 @@ export function buildLegalClausePackOperationalDiagnostics({ packets = [], versi
     groups[packetId].push(version)
     return groups
   }, {})
+  const templateVersionById = new Map(asArray(templateVersions)
+    .filter((version) => normalizeText(version?.id))
+    .map((version) => [normalizeText(version.id), version]))
 
   const records = asArray(packets)
     .filter((packet) => normalizeKey(packet?.packet_type || packet?.packetType) === 'otp')
     .map((packet) => {
       const version = latestUsableVersion(versionsByPacketId[normalizeText(packet?.id)] || packet?.versions)
       const release = resolveLegalClausePackSignatureRelease({ packet, version })
-      const state = resolveOperationalState(packet, version, release)
+      const canonicalEvidence = resolveCanonicalVersionEvidence(packet, version, templateVersionById)
+      const governed = release.governed || canonicalEvidence.canonical
+      const state = resolveOperationalState(packet, version, { ...release, governed }, canonicalEvidence)
       return {
         packetId: normalizeText(packet?.id),
         transactionId: normalizeText(packet?.transaction_id || packet?.transactionId) || null,
@@ -95,7 +148,11 @@ export function buildLegalClausePackOperationalDiagnostics({ packets = [], versi
         packetStatus: normalizeKey(packet?.status) || 'unknown',
         versionId: normalizeText(version?.id) || null,
         versionNumber: Number(version?.version_number || 0) || null,
-        governed: release.governed,
+        governed,
+        canonical: canonicalEvidence.canonical,
+        canonicalTemplateVersionId: canonicalEvidence.templateVersionId,
+        canonicalVersionEvidenceValid: canonicalEvidence.valid,
+        canonicalVersionEvidenceIssues: canonicalEvidence.issues,
         operationalState: state,
         severity: stateSeverity(state),
         action: stateAction(state),
@@ -119,6 +176,8 @@ export function buildLegalClausePackOperationalDiagnostics({ packets = [], versi
   const warningRecords = governedRecords.filter((record) => record.severity === 'warning')
   const approvedRecords = governedRecords.filter((record) => record.approved)
   const releasedRecords = governedRecords.filter((record) => record.operationalState === 'released_with_valid_approval')
+  const canonicalRecords = governedRecords.filter((record) => record.canonical)
+  const invalidCanonicalRecords = canonicalRecords.filter((record) => record.canonicalVersionEvidenceValid !== true)
   const attorneyQueue = governedRecords.filter((record) => record.operationalState === 'awaiting_attorney_approval')
   const approvalQueue = governedRecords.filter((record) => ['awaiting_operational_approval', 'stale_approval', 'invalid_approval_role'].includes(record.operationalState))
   const score = governedRecords.length
@@ -139,6 +198,9 @@ export function buildLegalClausePackOperationalDiagnostics({ packets = [], versi
       legacyPackets: records.length - governedRecords.length,
       approvedPackets: approvedRecords.length,
       releasedPackets: releasedRecords.length,
+      canonicalPackets: canonicalRecords.length,
+      canonicalVersionEvidenceValid: canonicalRecords.length - invalidCanonicalRecords.length,
+      canonicalVersionEvidenceInvalid: invalidCanonicalRecords.length,
       awaitingAttorney: attorneyQueue.length,
       awaitingApproval: approvalQueue.length,
       warningPackets: warningRecords.length,
@@ -169,7 +231,7 @@ export async function getLegalClausePackOperationalDiagnosticsSnapshot({
   const queryWarnings = []
   const packetResult = await client
     .from('document_packets')
-    .select('id, organisation_id, packet_type, title, status, transaction_id, current_version_number, source_context_json, created_at, updated_at', { count: 'exact' })
+    .select('id, organisation_id, packet_type, template_id, title, status, transaction_id, current_version_number, source_context_json, created_at, updated_at', { count: 'exact' })
     .eq('organisation_id', resolvedOrganisationId)
     .eq('packet_type', 'otp')
     .order('updated_at', { ascending: false })
@@ -206,8 +268,30 @@ export async function getLegalClausePackOperationalDiagnosticsSnapshot({
       versions = versionResult.data || []
     }
   }
+  const canonicalTemplateVersionIds = [...new Set(versions.flatMap((version) => {
+    const summary = asRecord(version?.validation_summary_json)
+    const provenance = asRecord(summary.render_provenance || summary.renderProvenance)
+    const id = normalizeText(provenance.templateVersionId || provenance.template_version_id)
+    return id ? [id] : []
+  }))]
+  let templateVersions = []
+  if (canonicalTemplateVersionIds.length) {
+    const templateVersionResult = await client
+      .from('document_packet_template_versions')
+      .select('id, template_id, organisation_id, status, content_hash, version_tag, published_at')
+      .in('id', canonicalTemplateVersionIds)
+    if (templateVersionResult.error) {
+      if (isMissingSchemaError(templateVersionResult.error)) {
+        queryWarnings.push({ source: 'document_packet_template_versions', message: templateVersionResult.error.message })
+      } else {
+        throw templateVersionResult.error
+      }
+    } else {
+      templateVersions = templateVersionResult.data || []
+    }
+  }
   return {
-    ...buildLegalClausePackOperationalDiagnostics({ packets, versions }),
+    ...buildLegalClausePackOperationalDiagnostics({ packets, versions, templateVersions }),
     queryWarnings,
     organisationId: resolvedOrganisationId,
   }

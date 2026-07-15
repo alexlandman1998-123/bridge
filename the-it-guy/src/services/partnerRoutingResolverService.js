@@ -574,17 +574,12 @@ export function inferUniversalPartnerRoutingRoleTypes(moduleContext = {}) {
 
 export function inferPartnerRoutingRoleTypesForTransaction({
   financeType = '',
-  hasExistingBondToCancel = false,
 } = {}) {
   const normalizedFinanceType = normalizeLower(financeType).replace(/[\s-]+/g, '_')
   const roleTypes = [PARTNER_ROUTING_ROLE_TYPES.transferAttorney]
 
   if (['bond', 'combination', 'hybrid'].includes(normalizedFinanceType)) {
-    roleTypes.push(PARTNER_ROUTING_ROLE_TYPES.bondOriginator, PARTNER_ROUTING_ROLE_TYPES.bondAttorney)
-  }
-
-  if (hasExistingBondToCancel) {
-    roleTypes.push(PARTNER_ROUTING_ROLE_TYPES.cancellationAttorney)
+    roleTypes.push(PARTNER_ROUTING_ROLE_TYPES.bondOriginator)
   }
 
   return [...new Set(roleTypes)]

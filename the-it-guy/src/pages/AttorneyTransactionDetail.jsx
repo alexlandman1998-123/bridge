@@ -50,6 +50,11 @@ import {
 } from '../core/transactions/bondHybridFinanceWorkflow'
 import { buildFinanceReadinessHandoffPacket } from '../core/finance/financeReadinessSelectors'
 import { getAttorneyTransferStage, stageLabelFromAttorneyKey } from '../core/transactions/attorneySelectors'
+import { buildTransferAttorneyCockpit } from '../core/transactions/attorneyTransferWorldClassCockpit.js'
+import { buildBondAttorneyCockpit } from '../core/transactions/attorneyBondWorldClassCockpit.js'
+import { buildCancellationAttorneyCockpit } from '../core/transactions/attorneyCancellationWorldClassCockpit.js'
+import { buildAttorneyThreeRoleRegistrationRoom } from '../core/transactions/attorneyThreeRoleRegistrationRoom.js'
+import { buildAttorneyThreeRoleOperationalAssurance } from '../core/transactions/attorneyThreeRoleOperationalAssurance.js'
 import { isBondFinanceType, normalizeFinanceType } from '../core/transactions/financeType'
 import {
   buildTransactionLifecycleSummaryFromRollup,
@@ -126,12 +131,20 @@ import {
 } from '../services/transactionRoutingDiagnosticsService'
 import {
   buildTransactionPartnerInvitationLink,
-  createTransactionPartnerInvitation,
   getTransactionPartnerRoleLabel,
   listTransactionPartnerInvitations,
   recordTransactionPartnerInvitationLinkCopied,
   resendTransactionPartnerInvitation,
 } from '../services/transactionPartnerInvitationService'
+import {
+  captureBankAppointmentAndInvite,
+  confirmBankLegalRoleInstruction,
+  decideBankLegalRoleInstruction,
+  deriveBankLegalRoleAssurance,
+  deriveBankLegalRoleOperationalHealth,
+  listBankLegalRoleAssurance,
+  listBankLegalRoleAppointments,
+} from '../services/legalRoleAppointmentService'
 import {
   buildBondApplicationPdfHtml,
   buildBondApplicationViewModel,
@@ -6062,6 +6075,266 @@ function MatterOverviewHeader({
     </div>
   )
 }
+function AttorneyRoleCommandCentre({ cockpit, workflow, onOpenWorkflow, onExecuteAction, onExecuteCoordination }) {
+  if (!cockpit || !workflow) return null
+  const lane = workflow.lane || null
+  const primaryAction = cockpit.primaryAction
+  const primaryCommand = primaryAction && lane ? getWorkflowActionCommand(primaryAction, lane) : null
+  const domainMeta = (status) => {
+    if (status === 'completed') return { label: 'Complete', className: 'border-success/30 bg-successSoft text-success' }
+    if (status === 'blocked') return { label: 'Blocked', className: 'border-danger/30 bg-dangerSoft text-danger' }
+    if (status === 'waiting') return { label: 'Waiting', className: 'border-warning/30 bg-warningSoft text-warning' }
+    if (status === 'active') return { label: 'In progress', className: 'border-primary/30 bg-primarySoft text-primary' }
+    return { label: 'Upcoming', className: 'border-borderSoft bg-surfaceAlt text-textMuted' }
+  }
+
+  return (
+    <section className="overflow-hidden rounded-[20px] border border-primary/20 bg-white shadow-[0_14px_30px_rgba(15,23,42,0.06)]">
+      <div className="border-b border-primary/15 bg-primarySoft px-4 py-5 sm:px-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex size-10 items-center justify-center rounded-[13px] bg-white text-primary ring-1 ring-primary/20">
+                <Landmark size={18} />
+              </span>
+              <div>
+                <span className="block text-[0.68rem] font-bold uppercase tracking-[0.1em] text-primary">Role cockpit</span>
+                <h2 className="text-lg font-semibold tracking-[-0.02em] text-textStrong">{cockpit.title}</h2>
+              </div>
+            </div>
+            <p className="mt-3 max-w-3xl text-sm leading-6 text-textBody">{cockpit.valueProposition}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${cockpit.canAct ? 'border-success/30 bg-successSoft text-success' : 'border-borderDefault bg-white text-textMuted'}`}>
+              {cockpit.canAct ? cockpit.controlLabel : 'Read-only coordination view'}
+            </span>
+            <Button type="button" size="sm" variant="secondary" onClick={onOpenWorkflow}>Open full workflow</Button>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-5 p-4 sm:p-5 2xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.34fr)]">
+        <div className="min-w-0 space-y-4">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {cockpit.domains.map((domain) => {
+              const meta = domainMeta(domain.status)
+              return (
+                <article key={domain.key} className={`min-w-0 rounded-[14px] border px-3 py-3 ${meta.className}`}>
+                  <span className="block text-[0.66rem] font-bold uppercase tracking-[0.08em]">{meta.label}</span>
+                  <strong className="mt-1 block text-sm">{domain.label}</strong>
+                </article>
+              )
+            })}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {[
+              ['Progress', `${cockpit.progressPercent}%`],
+              ['Missing data', cockpit.metrics.missingData],
+              ['Missing documents', cockpit.metrics.missingDocuments],
+              ['Open signatures', cockpit.metrics.openSignatures],
+              ['Open handoffs', cockpit.metrics.openDependencies],
+            ].map(([label, value]) => (
+              <article key={label} className="rounded-[13px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+                <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
+                <strong className="mt-1 block text-base text-textStrong">{value}</strong>
+              </article>
+            ))}
+          </div>
+
+          {primaryAction ? (
+            <article className="rounded-[15px] border border-primary/20 bg-primarySoft px-4 py-4">
+              <span className="block text-[0.68rem] font-bold uppercase tracking-[0.08em] text-primary">Best next action</span>
+              <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <strong className="block text-sm text-textStrong">{primaryAction.label}</strong>
+                  {primaryAction.description ? <p className="mt-1 text-xs leading-5 text-textMuted">{primaryAction.description}</p> : null}
+                </div>
+                {cockpit.canAct && primaryCommand ? (
+                  <Button type="button" size="sm" onClick={() => onExecuteAction?.(lane, primaryAction, primaryCommand)}>{primaryCommand.label}</Button>
+                ) : null}
+              </div>
+              {!cockpit.canAct ? <p className="mt-3 text-xs font-medium text-textMuted">{cockpit.readOnlyReason}</p> : null}
+            </article>
+          ) : null}
+        </div>
+
+        <aside className="min-w-0 rounded-[16px] border border-borderDefault bg-surfaceAlt p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-textStrong">{cockpit.dependencyTitle}</h3>
+              <p className="mt-1 text-xs leading-5 text-textMuted">{cockpit.dependencyDescription}</p>
+            </div>
+            <span className="rounded-full border border-borderDefault bg-white px-2.5 py-1 text-xs font-semibold text-textMuted">{cockpit.dependencies.length}</span>
+          </div>
+          <div className="mt-3 space-y-2">
+            {cockpit.dependencies.map((dependency) => {
+              const meta = domainMeta(dependency.status === 'ready' ? 'completed' : dependency.status)
+              return (
+                <article key={dependency.id} className="rounded-[13px] border border-borderSoft bg-white px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.07em] text-textMuted">{dependency.laneLabel}</span>
+                      <strong className="mt-1 block text-sm text-textStrong">{dependency.title}</strong>
+                    </div>
+                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[0.66rem] font-semibold ${meta.className}`}>{meta.label}</span>
+                  </div>
+                  {cockpit.canAct && dependency.status !== 'ready' ? (
+                    <div className="mt-3">
+                      <Button type="button" size="sm" variant="secondary" onClick={() => onExecuteCoordination?.(lane, dependency.source)}>
+                        {dependency.escalationNeeded ? 'Escalate handoff' : 'Request handoff'}
+                      </Button>
+                    </div>
+                  ) : null}
+                </article>
+              )
+            })}
+            {!cockpit.dependencies.length ? (
+              <p className="rounded-[13px] border border-dashed border-borderDefault bg-white px-3 py-5 text-sm text-textMuted">{cockpit.emptyDependencyMessage}</p>
+            ) : null}
+          </div>
+        </aside>
+      </div>
+    </section>
+  )
+}
+
+function TransferAttorneyCommandCentre(props) {
+  return <AttorneyRoleCommandCentre {...props} />
+}
+
+function BondAttorneyCommandCentre(props) {
+  return <AttorneyRoleCommandCentre {...props} />
+}
+
+function CancellationAttorneyCommandCentre(props) {
+  return <AttorneyRoleCommandCentre {...props} />
+}
+
+function AttorneyThreeRoleRegistrationRoom({ room, operationalAssurance = null, onOpenWorkflow, onExecuteAction }) {
+  if (!room?.roles?.length) return null
+  const statusMeta = (status) => {
+    if (status === 'completed') return { label: 'Complete', className: 'border-success/30 bg-successSoft text-success' }
+    if (status === 'blocked') return { label: 'Blocked', className: 'border-danger/30 bg-dangerSoft text-danger' }
+    if (status === 'active') return { label: 'Current gate', className: 'border-primary/30 bg-primarySoft text-primary' }
+    return { label: 'Upcoming', className: 'border-borderSoft bg-surfaceAlt text-textMuted' }
+  }
+
+  return (
+    <section className="rounded-[20px] border border-borderDefault bg-white p-4 shadow-[0_14px_30px_rgba(15,23,42,0.06)] sm:p-5">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex size-10 items-center justify-center rounded-[13px] bg-slate-950 text-white">
+              <Workflow size={18} />
+            </span>
+            <div>
+              <span className="block text-[0.68rem] font-bold uppercase tracking-[0.1em] text-textMuted">Cross-lane coordination</span>
+              <h2 className="text-lg font-semibold tracking-[-0.02em] text-textStrong">{room.title}</h2>
+            </div>
+          </div>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-textMuted">
+            One critical path across {room.requiredRoleCount} required legal {room.requiredRoleCount === 1 ? 'lane' : 'lanes'}, with each attorney retaining control of their own work.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${room.jointLodgementReady ? 'border-success/30 bg-successSoft text-success' : 'border-warning/30 bg-warningSoft text-warning'}`}>
+            {room.jointLodgementReady ? 'Joint lodgement ready' : 'Lodgement not aligned'}
+          </span>
+          <span className="rounded-full border border-borderDefault bg-surfaceAlt px-3 py-1 text-xs font-semibold text-textMuted">
+            {room.totalOpenDependencies} open handoff{room.totalOpenDependencies === 1 ? '' : 's'}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-2 md:grid-cols-5">
+        {room.gates.map((gate) => {
+          const meta = statusMeta(gate.status)
+          return (
+            <article key={gate.key} className={`rounded-[13px] border px-3 py-3 ${meta.className}`}>
+              <span className="block text-[0.65rem] font-bold uppercase tracking-[0.07em]">{meta.label}</span>
+              <strong className="mt-1 block text-sm">{gate.label}</strong>
+              <span className="mt-1 block text-xs">{gate.roleStates.filter((role) => role.complete).length}/{gate.roleStates.length} lanes ready</span>
+            </article>
+          )
+        })}
+      </div>
+
+      {room.criticalPath ? (
+        <article className={`mt-4 rounded-[15px] border px-4 py-4 ${room.criticalPath.blockerCount ? 'border-danger/30 bg-dangerSoft' : 'border-primary/20 bg-primarySoft'}`}>
+          <span className={`block text-[0.68rem] font-bold uppercase tracking-[0.08em] ${room.criticalPath.blockerCount ? 'text-danger' : 'text-primary'}`}>Current critical path</span>
+          <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <strong className="block text-sm text-textStrong">{room.criticalPath.label} · {room.criticalPath.progressPercent}%</strong>
+              <p className="mt-1 text-xs leading-5 text-textMuted">
+                {room.criticalPath.primaryAction?.label || 'Review the active legal workflow and confirm the next evidence-backed milestone.'}
+              </p>
+            </div>
+            <Button type="button" size="sm" variant="secondary" onClick={() => onOpenWorkflow?.(room.criticalPath.workflow)}>
+              Open critical lane
+            </Button>
+          </div>
+        </article>
+      ) : null}
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        {room.roles.map((role) => {
+          const action = role.primaryAction
+          const command = action ? getWorkflowActionCommand(action, role.workflow?.lane || {}) : null
+          return (
+            <article key={role.roleKey} className="flex min-w-0 flex-col rounded-[15px] border border-borderSoft bg-surfaceAlt px-4 py-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Lane owner</span>
+                  <strong className="mt-1 block text-sm text-textStrong">{role.label}</strong>
+                </div>
+                <span className="rounded-full border border-borderDefault bg-white px-2.5 py-1 text-xs font-semibold text-textMuted">{role.progressPercent}%</span>
+              </div>
+              <p className="mt-3 text-xs leading-5 text-textMuted">{action?.label || 'No immediate action surfaced.'}</p>
+              <div className="mt-auto flex flex-wrap gap-2 pt-4">
+                <Button type="button" size="sm" variant="secondary" onClick={() => onOpenWorkflow?.(role.workflow)}>Open lane</Button>
+                {role.canAct && action && command ? (
+                  <Button type="button" size="sm" onClick={() => onExecuteAction?.(role.workflow.lane, action, command)}>{command.label}</Button>
+                ) : null}
+              </div>
+            </article>
+          )
+        })}
+      </div>
+
+      {operationalAssurance ? (
+        <section className="mt-4 rounded-[15px] border border-borderDefault bg-white px-4 py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <span className="block text-[0.68rem] font-bold uppercase tracking-[0.08em] text-textMuted">Operational assurance</span>
+              <h3 className="mt-1 text-sm font-semibold text-textStrong">Pilot release evidence</h3>
+              <p className="mt-1 text-xs leading-5 text-textMuted">
+                Platform controls and live matter health are evaluated separately so ordinary outstanding work is not mistaken for a product defect.
+              </p>
+            </div>
+            <span className={`w-fit shrink-0 rounded-full border px-3 py-1 text-xs font-semibold ${operationalAssurance.decision === 'ready' ? 'border-success/30 bg-successSoft text-success' : operationalAssurance.decision === 'observe' ? 'border-warning/30 bg-warningSoft text-warning' : 'border-danger/30 bg-dangerSoft text-danger'}`}>
+              {operationalAssurance.decisionLabel}
+            </span>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            {operationalAssurance.checks.map((item) => (
+              <article key={item.id} className={`rounded-[12px] border px-3 py-3 ${item.passed ? 'border-success/20 bg-successSoft' : item.severity === 'critical' ? 'border-danger/30 bg-dangerSoft' : 'border-warning/30 bg-warningSoft'}`}>
+                <span className={`block text-[0.65rem] font-bold uppercase tracking-[0.07em] ${item.passed ? 'text-success' : item.severity === 'critical' ? 'text-danger' : 'text-warning'}`}>
+                  {item.passed ? 'Verified' : item.severity === 'critical' ? 'Release blocker' : 'Matter attention'}
+                </span>
+                <strong className="mt-1 block text-xs text-textStrong">{item.label}</strong>
+                <p className="mt-1 text-[0.7rem] leading-5 text-textMuted">{item.detail}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <p className="mt-4 text-xs leading-5 text-textMuted">Cross-lane editing is disabled. Commands are offered only when the current user has action permission on that specific attorney lane.</p>
+    </section>
+  )
+}
+
 function LegalWorkflowHubCard({ workflow, onOpen, onExecuteAction = null }) {
   const accent = LANE_ACCENTS[workflow?.accentKey] || LANE_ACCENTS.transfer
   const statusMeta = WORKFLOW_STATUS_META[workflow?.statusKey] || WORKFLOW_STATUS_META.not_started
@@ -6224,20 +6497,47 @@ const LEGAL_PARTNER_INVITE_ROLE_OPTIONS = [
 function createInitialLegalPartnerInviteDraft() {
   return {
     roleType: 'bond_attorney',
+    appointingBank: '',
+    appointmentReference: '',
     companyName: '',
     contactName: '',
     email: '',
     phone: '',
+    evidenceConfirmed: false,
   }
+}
+
+function createInitialBankInstructionDraft() {
+  return {
+    instructionReference: '',
+    instructionSource: 'appointed_firm_capture',
+    instructionIssuedAt: '',
+    evidenceConfirmed: false,
+    note: '',
+  }
+}
+
+function getLegalRoleCoordinationStateLabel(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'invite_accepted') return 'Firm accepted platform invite'
+  if (normalized === 'instruction_confirmed') return 'Bank instruction ready for firm decision'
+  if (normalized === 'active') return 'Instruction accepted · role active'
+  if (normalized === 'replacement_required') return 'Replacement firm required'
+  if (normalized === 'invite_sent') return 'Awaiting firm acceptance'
+  return normalized ? normalized.replaceAll('_', ' ') : 'Appointment pending'
 }
 
 function PartnerInvitesSidePanel({
   invitations = [],
+  appointments = [],
+  assurances = [],
+  managedWorkspaceIds = [],
   loading = false,
   busyId = '',
   message = '',
   error = '',
   canCreateLegalInvite = false,
+  legalInviteGateMessage = '',
   createDraft = createInitialLegalPartnerInviteDraft(),
   createBusy = false,
   onCreateDraftChange,
@@ -6245,14 +6545,19 @@ function PartnerInvitesSidePanel({
   onRefresh,
   onResend,
   onCopy,
+  instructionDrafts = {},
+  instructionBusyId = '',
+  onInstructionDraftChange,
+  onInstructionConfirm,
+  onInstructionDecision,
 }) {
-  if (!loading && !invitations.length && !message && !error && !canCreateLegalInvite) return null
+  if (!loading && !invitations.length && !message && !error && !canCreateLegalInvite && !legalInviteGateMessage) return null
 
   return (
     <OverviewSidePanel title="Partner Invites">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs leading-5 text-textMuted">
-          Track invited attorneys, originators, developers, and collaborators.
+          Track bank appointments separately from platform invitation acceptance.
         </p>
         <Button type="button" variant="ghost" size="sm" onClick={onRefresh} disabled={loading}>
           {loading ? 'Loading' : 'Refresh'}
@@ -6271,7 +6576,7 @@ function PartnerInvitesSidePanel({
       {canCreateLegalInvite ? (
         <form className="mt-3 rounded-[14px] border border-borderSoft bg-surfaceAlt p-3" onSubmit={onCreateSubmit}>
           <div className="flex items-center justify-between gap-2">
-            <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">Invite Legal Partner</h4>
+            <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-textMuted">Confirm Bank Appointment & Invite</h4>
           </div>
           <div className="mt-3 grid gap-2">
             <Field
@@ -6286,6 +6591,18 @@ function PartnerInvitesSidePanel({
                 </option>
               ))}
             </Field>
+            <Field
+              value={createDraft.appointingBank}
+              onChange={(event) => onCreateDraftChange?.({ ...createDraft, appointingBank: event.target.value })}
+              placeholder="Appointing bank"
+              disabled={createBusy}
+            />
+            <Field
+              value={createDraft.appointmentReference}
+              onChange={(event) => onCreateDraftChange?.({ ...createDraft, appointmentReference: event.target.value })}
+              placeholder="Bank appointment reference"
+              disabled={createBusy}
+            />
             <Field
               value={createDraft.companyName}
               onChange={(event) => onCreateDraftChange?.({ ...createDraft, companyName: event.target.value })}
@@ -6311,12 +6628,27 @@ function PartnerInvitesSidePanel({
               placeholder="Phone optional"
               disabled={createBusy}
             />
+            <label className="flex items-start gap-2 rounded-[10px] border border-borderSoft bg-white px-3 py-2 text-xs leading-5 text-textMuted">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={createDraft.evidenceConfirmed}
+                onChange={(event) => onCreateDraftChange?.({ ...createDraft, evidenceConfirmed: event.target.checked })}
+                disabled={createBusy}
+              />
+              <span>I confirm this firm was appointed by the relevant bank. I am coordinating the invite, not choosing the firm.</span>
+            </label>
             <Button type="submit" size="sm" disabled={createBusy}>
               <Send size={13} />
-              {createBusy ? 'Inviting' : 'Send Invite'}
+              {createBusy ? 'Recording & inviting' : 'Record Appointment & Invite'}
             </Button>
           </div>
         </form>
+      ) : null}
+      {!canCreateLegalInvite && legalInviteGateMessage ? (
+        <p className="mt-3 rounded-[12px] border border-warning/25 bg-warningSoft px-3 py-2 text-xs font-semibold text-warning">
+          {legalInviteGateMessage}
+        </p>
       ) : null}
       <div className="mt-3 space-y-3">
         {loading && !invitations.length ? (
@@ -6330,6 +6662,21 @@ function PartnerInvitesSidePanel({
           const isBusy = busyId === invitation.id
           const canCopy = Boolean(invitation.invitationLink || invitation.invitationToken)
           const lifecycleRows = getPartnerInviteLifecycleRows(invitation)
+          const appointment = appointments.find((item) =>
+            String(item.invitation_id || '') === String(invitation.id || '') ||
+            String(item.id || '') === String(invitation.metadata?.legal_role_appointment_id || ''))
+          const instructionDraft = instructionDrafts[appointment?.id] || createInitialBankInstructionDraft()
+          const canManageInstruction = Boolean(
+            appointment && [appointment.accepted_firm_id, appointment.accepted_organisation_id]
+              .filter(Boolean)
+              .some((id) => managedWorkspaceIds.includes(String(id))),
+          )
+          const isInstructionBusy = instructionBusyId === appointment?.id
+          const operationalHealth = appointment ? deriveBankLegalRoleOperationalHealth(appointment) : null
+          const assuranceRow = appointment
+            ? assurances.find((item) => String(item.appointment_id || '') === String(appointment.id || ''))
+            : null
+          const assuranceHealth = appointment ? deriveBankLegalRoleAssurance(appointment, assuranceRow) : null
           return (
             <article key={invitation.id} className="rounded-[14px] border border-borderSoft bg-surfaceAlt p-3">
               <div className="flex items-start justify-between gap-3">
@@ -6382,6 +6729,158 @@ function PartnerInvitesSidePanel({
                     <div className="flex items-center justify-between gap-3 text-[0.72rem]">
                       <span className="font-semibold uppercase tracking-[0.08em] text-textMuted">Copied</span>
                       <span className="text-textStrong">{invitation.linkCopyCount}</span>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              {appointment ? (
+                <div className="mt-3 rounded-[12px] border border-borderSoft bg-white px-3 py-3">
+                  <span className="block text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Legal instruction</span>
+                  <strong className="mt-1 block text-xs text-textStrong">
+                    {getLegalRoleCoordinationStateLabel(appointment.coordination_state)}
+                  </strong>
+                  {operationalHealth ? (
+                    <div className={`mt-2 rounded-[10px] border px-3 py-2 text-xs ${
+                      operationalHealth.severity === 'escalated'
+                        ? 'border-danger/30 bg-dangerSoft text-danger'
+                        : operationalHealth.severity === 'overdue'
+                          ? 'border-warning/30 bg-warningSoft text-warning'
+                          : operationalHealth.severity === 'complete'
+                            ? 'border-success/30 bg-successSoft text-success'
+                            : 'border-blue-100 bg-blue-50 text-blue-700'
+                    }`}>
+                      <strong className="block">{operationalHealth.actionLabel}</strong>
+                      {operationalHealth.isOverdue ? (
+                        <span className="mt-1 block">
+                          Overdue{operationalHealth.daysOverdue ? ` by ${operationalHealth.daysOverdue} day${operationalHealth.daysOverdue === 1 ? '' : 's'}` : ''}. Reminder escalation is active.
+                        </span>
+                      ) : operationalHealth.dueAt ? (
+                        <span className="mt-1 block">Target: {formatDate(operationalHealth.dueAt)}</span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {assuranceHealth ? (
+                    <div className={`mt-2 rounded-[10px] border px-3 py-2 text-xs ${
+                      assuranceHealth.health === 'blocked'
+                        ? 'border-danger/30 bg-dangerSoft text-danger'
+                        : assuranceHealth.health === 'attention'
+                          ? 'border-warning/30 bg-warningSoft text-warning'
+                          : assuranceHealth.health === 'on_track'
+                            ? 'border-success/30 bg-successSoft text-success'
+                            : 'border-blue-100 bg-blue-50 text-blue-700'
+                    }`}>
+                      <strong className="block">
+                        {assuranceHealth.health === 'blocked'
+                          ? 'Coordination reconciliation blocked'
+                          : assuranceHealth.health === 'attention'
+                            ? 'Coordination reconciliation needs attention'
+                            : assuranceHealth.health === 'on_track'
+                              ? 'Coordination records reconciled'
+                              : 'Database assurance pending'}
+                      </strong>
+                      {assuranceHealth.issueLabel ? <span className="mt-1 block">{assuranceHealth.issueLabel}.</span> : null}
+                    </div>
+                  ) : null}
+                  {appointment.instruction_reference ? (
+                    <p className="mt-1 text-xs text-textMuted">
+                      Bank reference: {appointment.instruction_reference}
+                    </p>
+                  ) : null}
+                  {canManageInstruction && appointment.coordination_state === 'invite_accepted' ? (
+                    <div className="mt-3 grid gap-2 border-t border-borderSoft pt-3">
+                      <Field
+                        value={instructionDraft.instructionReference}
+                        onChange={(event) => onInstructionDraftChange?.(appointment.id, {
+                          ...instructionDraft,
+                          instructionReference: event.target.value,
+                        })}
+                        placeholder="Bank instruction reference"
+                        disabled={isInstructionBusy}
+                      />
+                      <Field
+                        as="select"
+                        value={instructionDraft.instructionSource}
+                        onChange={(event) => onInstructionDraftChange?.(appointment.id, {
+                          ...instructionDraft,
+                          instructionSource: event.target.value,
+                        })}
+                        disabled={isInstructionBusy}
+                      >
+                        <option value="appointed_firm_capture">Received directly from bank</option>
+                        <option value="instruction_document">Bank instruction document</option>
+                        <option value="bank_integration">Bank integration</option>
+                        <option value="legacy_manual">Legacy instruction record</option>
+                      </Field>
+                      <Field
+                        type="date"
+                        value={instructionDraft.instructionIssuedAt}
+                        onChange={(event) => onInstructionDraftChange?.(appointment.id, {
+                          ...instructionDraft,
+                          instructionIssuedAt: event.target.value,
+                        })}
+                        disabled={isInstructionBusy}
+                      />
+                      <label className="flex items-start gap-2 rounded-[10px] border border-borderSoft bg-surfaceAlt px-3 py-2 text-xs leading-5 text-textMuted">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={instructionDraft.evidenceConfirmed}
+                          onChange={(event) => onInstructionDraftChange?.(appointment.id, {
+                            ...instructionDraft,
+                            evidenceConfirmed: event.target.checked,
+                          })}
+                          disabled={isInstructionBusy}
+                        />
+                        <span>I confirm the appointing bank issued this formal legal instruction.</span>
+                      </label>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => onInstructionConfirm?.(appointment, instructionDraft)}
+                        disabled={isInstructionBusy}
+                      >
+                        <FileCheck2 size={13} />
+                        {isInstructionBusy ? 'Recording' : 'Record Bank Instruction'}
+                      </Button>
+                    </div>
+                  ) : null}
+                  {canManageInstruction && appointment.coordination_state === 'instruction_confirmed' ? (
+                    <div className="mt-3 grid gap-2 border-t border-borderSoft pt-3">
+                      <Field
+                        value={instructionDraft.note}
+                        onChange={(event) => onInstructionDraftChange?.(appointment.id, {
+                          ...instructionDraft,
+                          note: event.target.value,
+                        })}
+                        placeholder="Decision note (required to decline)"
+                        disabled={isInstructionBusy}
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => onInstructionDecision?.(appointment, 'accepted', instructionDraft.note)}
+                          disabled={isInstructionBusy}
+                        >
+                          <CheckCircle2 size={13} />
+                          Accept Instruction
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => onInstructionDecision?.(appointment, 'declined', instructionDraft.note)}
+                          disabled={isInstructionBusy}
+                        >
+                          <X size={13} />
+                          Decline
+                        </Button>
+                      </div>
+                      {appointment.staff_assignment_status !== 'staff_assigned' ? (
+                        <p className="text-xs font-semibold text-warning">
+                          Assign a primary attorney before accepting and activating this role.
+                        </p>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -7128,12 +7627,16 @@ function AttorneyTransactionDetail() {
   const [roleplayerIntroBusy, setRoleplayerIntroBusy] = useState(false)
   const [roleplayerHandoffBusy, setRoleplayerHandoffBusy] = useState(false)
   const [partnerInvitations, setPartnerInvitations] = useState([])
+  const [legalRoleAppointments, setLegalRoleAppointments] = useState([])
+  const [legalRoleAssurances, setLegalRoleAssurances] = useState([])
   const [partnerInvitationLoading, setPartnerInvitationLoading] = useState(false)
   const [partnerInvitationBusyId, setPartnerInvitationBusyId] = useState('')
   const [partnerInvitationMessage, setPartnerInvitationMessage] = useState('')
   const [partnerInvitationError, setPartnerInvitationError] = useState('')
   const [legalPartnerInviteDraft, setLegalPartnerInviteDraft] = useState(createInitialLegalPartnerInviteDraft)
   const [legalPartnerInviteBusy, setLegalPartnerInviteBusy] = useState(false)
+  const [bankInstructionDrafts, setBankInstructionDrafts] = useState({})
+  const [bankInstructionBusyId, setBankInstructionBusyId] = useState('')
   const [roleplayerForm, setRoleplayerForm] = useState({
     buyerName: '',
     buyerEmail: '',
@@ -7185,8 +7688,6 @@ function AttorneyTransactionDetail() {
     transferAttorney: '',
     bondOriginator: '',
     bondOriginatorNotRequired: false,
-    bondAttorney: '',
-    cancellationAttorney: '',
   })
   const [partnerSnapshot, setPartnerSnapshot] = useState(null)
   const [preferredRoutingRules, setPreferredRoutingRules] = useState([])
@@ -7510,8 +8011,22 @@ function AttorneyTransactionDetail() {
   )
   const activeLegalWorkflowDetailKey = normalizeLegalWorkflowDetailKey(workflowDetailKey)
   const canManageTransactionRoleplayers = ['agent', 'agency_admin', 'principal', 'admin', 'internal_admin', 'developer'].includes(String(workspaceRole || '').toLowerCase())
-  const canCreateLegalPartnerInvites = workspaceRole === 'attorney'
-  const canViewPartnerInvitations = canManageTransactionRoleplayers || canCreateLegalPartnerInvites
+  const transferInstructionAccepted = transferInstructionLifecycle?.decisionState === 'accepted'
+  const canCreateLegalPartnerInvites = workspaceRole === 'attorney' && transferInstructionAccepted
+  const legalPartnerInviteGateMessage = workspaceRole === 'attorney' && !transferInstructionAccepted
+    ? 'The primary transferring attorney must accept the signed-OTP instruction before coordinating bank-appointed firms.'
+    : ''
+  const canViewPartnerInvitations = canManageTransactionRoleplayers || workspaceRole === 'attorney'
+  const managedAttorneyWorkspaceIds = useMemo(
+    () => [
+      workspace?.id,
+      workspaceOrganisationId,
+      currentMembership?.workspaceId,
+      currentMembership?.organisationId,
+      currentMembership?.organisation_id,
+    ].filter(Boolean).map(String),
+    [currentMembership, workspace?.id, workspaceOrganisationId],
+  )
   const requestedWorkspaceMenu = useMemo(() => {
     if (activeLegalWorkflowDetailKey) return 'transfer'
     if (workspaceRole === 'bond_originator' && (workspaceMenu === 'finance' || workspaceMenu === 'bond')) return 'banks_quotes'
@@ -7532,6 +8047,8 @@ function AttorneyTransactionDetail() {
   const loadPartnerInvitations = useCallback(async () => {
     if (!transaction?.id || !canViewPartnerInvitations) {
       setPartnerInvitations([])
+      setLegalRoleAppointments([])
+      setLegalRoleAssurances([])
       setPartnerInvitationLoading(false)
       setPartnerInvitationError('')
       return
@@ -7540,10 +8057,18 @@ function AttorneyTransactionDetail() {
     try {
       setPartnerInvitationLoading(true)
       setPartnerInvitationError('')
-      const rows = await listTransactionPartnerInvitations(transaction.id)
+      const [rows, appointments, assurances] = await Promise.all([
+        listTransactionPartnerInvitations(transaction.id),
+        listBankLegalRoleAppointments(transaction.id),
+        listBankLegalRoleAssurance(transaction.id),
+      ])
       setPartnerInvitations(rows)
+      setLegalRoleAppointments(appointments)
+      setLegalRoleAssurances(assurances)
     } catch (loadError) {
       setPartnerInvitations([])
+      setLegalRoleAppointments([])
+      setLegalRoleAssurances([])
       setPartnerInvitationError(loadError?.message || 'Unable to load partner invitations.')
     } finally {
       setPartnerInvitationLoading(false)
@@ -7609,18 +8134,25 @@ function AttorneyTransactionDetail() {
 
     const draft = {
       roleType: legalPartnerInviteDraft.roleType,
+      appointingBank: String(legalPartnerInviteDraft.appointingBank || '').trim(),
+      appointmentReference: String(legalPartnerInviteDraft.appointmentReference || '').trim(),
       companyName: String(legalPartnerInviteDraft.companyName || '').trim(),
       contactName: String(legalPartnerInviteDraft.contactName || '').trim(),
       email: String(legalPartnerInviteDraft.email || '').trim().toLowerCase(),
       phone: String(legalPartnerInviteDraft.phone || '').trim(),
+      evidenceConfirmed: legalPartnerInviteDraft.evidenceConfirmed === true,
     }
 
     if (!LEGAL_PARTNER_INVITE_ROLE_OPTIONS.some((option) => option.value === draft.roleType)) {
       setPartnerInvitationError('Choose a valid legal partner role.')
       return
     }
-    if (!draft.companyName || !draft.contactName || !draft.email) {
-      setPartnerInvitationError('Firm, contact, and email are required.')
+    if (!draft.appointingBank || !draft.appointmentReference || !draft.companyName || !draft.contactName || !draft.email) {
+      setPartnerInvitationError('Bank, appointment reference, firm, contact, and email are required.')
+      return
+    }
+    if (!draft.evidenceConfirmed) {
+      setPartnerInvitationError('Confirm that the appointment came from the relevant bank.')
       return
     }
 
@@ -7628,13 +8160,11 @@ function AttorneyTransactionDetail() {
       setLegalPartnerInviteBusy(true)
       setPartnerInvitationMessage('')
       setPartnerInvitationError('')
-      const result = await createTransactionPartnerInvitation({
+      const result = await captureBankAppointmentAndInvite({
         transactionId: transaction.id,
         ...draft,
-        metadata: {
-          source: 'attorney_transaction_detail_legal_partner_invite',
-          invitedByRole: workspaceRole,
-        },
+        transferInstructionAccepted,
+        isPrimaryTransferAttorney: true,
       })
       const sent = result?.emailResult?.sent === true || result?.emailResult?.ok === true
       setLegalPartnerInviteDraft(createInitialLegalPartnerInviteDraft())
@@ -7648,6 +8178,50 @@ function AttorneyTransactionDetail() {
       setPartnerInvitationError(inviteError?.message || 'Unable to create this legal partner invite.')
     } finally {
       setLegalPartnerInviteBusy(false)
+    }
+  }
+
+  function handleBankInstructionDraftChange(appointmentId, draft) {
+    setBankInstructionDrafts((previous) => ({ ...previous, [appointmentId]: draft }))
+  }
+
+  async function handleConfirmBankInstruction(appointment, draft) {
+    if (!appointment?.id) return
+    try {
+      setBankInstructionBusyId(appointment.id)
+      setPartnerInvitationMessage('')
+      setPartnerInvitationError('')
+      await confirmBankLegalRoleInstruction({
+        appointmentId: appointment.id,
+        ...draft,
+      })
+      setPartnerInvitationMessage('Bank instruction recorded. The appointed firm can now accept or decline the instruction.')
+      await loadPartnerInvitations()
+    } catch (instructionError) {
+      setPartnerInvitationError(instructionError?.message || 'Unable to record the bank instruction.')
+    } finally {
+      setBankInstructionBusyId('')
+    }
+  }
+
+  async function handleBankInstructionDecision(appointment, decision, note = '') {
+    if (!appointment?.id) return
+    if (decision === 'declined' && !window.confirm('Decline this instruction and require a replacement bank-appointed firm?')) return
+    try {
+      setBankInstructionBusyId(appointment.id)
+      setPartnerInvitationMessage('')
+      setPartnerInvitationError('')
+      await decideBankLegalRoleInstruction({ appointmentId: appointment.id, decision, note })
+      setPartnerInvitationMessage(
+        decision === 'accepted'
+          ? 'Bank instruction accepted. This legal role is now active.'
+          : 'Instruction declined. A replacement bank appointment is required.',
+      )
+      await loadPartnerInvitations()
+    } catch (decisionError) {
+      setPartnerInvitationError(decisionError?.message || 'Unable to record the instruction decision.')
+    } finally {
+      setBankInstructionBusyId('')
     }
   }
 
@@ -8110,10 +8684,6 @@ function AttorneyTransactionDetail() {
     () => transactionRolePlayers.find((item) => item?.roleType === 'bond_originator' || item?.role_type === 'bond_originator') || null,
     [transactionRolePlayers],
   )
-  const savedBondAttorneyRoleplayer = useMemo(
-    () => transactionRolePlayers.find((item) => item?.roleType === 'bond_attorney' || item?.role_type === 'bond_attorney') || null,
-    [transactionRolePlayers],
-  )
   const attorneyPartnerOptions = useMemo(
     () =>
       getPartnerAssignmentOptions(partnerSnapshot || {}, 'transfer_attorney', partnerAccessContext)
@@ -8182,23 +8752,6 @@ function AttorneyTransactionDetail() {
         ...bondOriginatorPartnerOptions,
       ]),
     [assignedBondOriginator, bondOriginatorPartnerOptions, savedBondOriginatorRoleplayer, transaction?.assigned_bond_originator_email, transaction?.bond_originator],
-  )
-  const bondAttorneyOptions = useMemo(
-    () =>
-      dedupeRoleplayerOptions([
-        buildExistingRoleplayerOption(savedBondAttorneyRoleplayer, 'bond_attorney'),
-        buildExistingRoleplayerOption(bondAttorney, 'bond_attorney'),
-        ...attorneyPartnerOptions.map((option) => ({ ...option, roleType: 'bond_attorney' })),
-      ]),
-    [attorneyPartnerOptions, bondAttorney, savedBondAttorneyRoleplayer],
-  )
-  const cancellationAttorneyOptions = useMemo(
-    () =>
-      dedupeRoleplayerOptions([
-        buildExistingRoleplayerOption(cancellationAttorney, 'cancellation_attorney'),
-        ...attorneyPartnerOptions.map((option) => ({ ...option, roleType: 'cancellation_attorney' })),
-      ]),
-    [attorneyPartnerOptions, cancellationAttorney],
   )
   const activityFeed = useMemo(
     () =>
@@ -10173,6 +10726,41 @@ function AttorneyTransactionDetail() {
     () => legalWorkflowModels.find((item) => item.detailKey === activeLegalWorkflowDetailKey) || null,
     [activeLegalWorkflowDetailKey, legalWorkflowModels],
   )
+  const transferWorkflowModel = useMemo(
+    () => legalWorkflowModels.find((item) => item.key === 'transfer') || null,
+    [legalWorkflowModels],
+  )
+  const transferAttorneyCockpit = useMemo(
+    () => (transferWorkflowModel ? buildTransferAttorneyCockpit(transferWorkflowModel) : null),
+    [transferWorkflowModel],
+  )
+  const bondWorkflowModel = useMemo(
+    () => legalWorkflowModels.find((item) => item.key === 'bond_registration' && item.required) || null,
+    [legalWorkflowModels],
+  )
+  const bondAttorneyCockpit = useMemo(
+    () => (bondWorkflowModel ? buildBondAttorneyCockpit(bondWorkflowModel) : null),
+    [bondWorkflowModel],
+  )
+  const cancellationWorkflowModel = useMemo(
+    () => legalWorkflowModels.find((item) => item.key === 'bond_cancellation' && item.required) || null,
+    [legalWorkflowModels],
+  )
+  const cancellationAttorneyCockpit = useMemo(
+    () => (cancellationWorkflowModel ? buildCancellationAttorneyCockpit(cancellationWorkflowModel) : null),
+    [cancellationWorkflowModel],
+  )
+  const threeRoleRegistrationRoom = useMemo(
+    () => buildAttorneyThreeRoleRegistrationRoom(legalWorkflowModels.filter((item) => item.required)),
+    [legalWorkflowModels],
+  )
+  const operationalAssurance = useMemo(
+    () => (workflowLoading ? null : buildAttorneyThreeRoleOperationalAssurance({
+      workflows: legalWorkflowModels,
+      registrationRoom: threeRoleRegistrationRoom,
+    })),
+    [legalWorkflowModels, threeRoleRegistrationRoom, workflowLoading],
+  )
   const handleDraftAttorneyStatusBrief = useCallback(({ audience = 'professional', body = '', target = null } = {}) => {
     const nextTarget = target || getAttorneyBriefComposerTarget(legalWorkflowModels, audience)
     if (!nextTarget?.laneKey || !nextTarget?.actionKey || !nextTarget?.visibility) {
@@ -10435,10 +11023,8 @@ function AttorneyTransactionDetail() {
       transferAttorney: transferAttorneyOptions[0]?.id || '',
       bondOriginator: bondOriginatorOptions[0]?.id || '',
       bondOriginatorNotRequired: false,
-      bondAttorney: bondAttorneyOptions[0]?.id || '',
-      cancellationAttorney: cancellationAttorneyOptions[0]?.id || '',
     })
-  }, [bondAttorneyOptions, bondOriginatorOptions, cancellationAttorneyOptions, isAgentTransactionView, roleplayerConfirmOpen, transferAttorneyOptions])
+  }, [bondOriginatorOptions, isAgentTransactionView, roleplayerConfirmOpen, transferAttorneyOptions])
 
   useEffect(() => {
     if (!isAgentTransactionView || !roleplayerConfirmOpen) return
@@ -10446,13 +11032,8 @@ function AttorneyTransactionDetail() {
       transferAttorney: findRoleplayerOptionInList(transferAttorneyOptions, previous.transferAttorney)?.id || transferAttorneyOptions[0]?.id || '',
       bondOriginator: findRoleplayerOptionInList(bondOriginatorOptions, previous.bondOriginator)?.id || bondOriginatorOptions[0]?.id || '',
       bondOriginatorNotRequired: previous.bondOriginatorNotRequired,
-      bondAttorney: findRoleplayerOptionInList(bondAttorneyOptions, previous.bondAttorney)?.id || bondAttorneyOptions[0]?.id || '',
-      cancellationAttorney:
-        findRoleplayerOptionInList(cancellationAttorneyOptions, previous.cancellationAttorney)?.id ||
-        cancellationAttorneyOptions[0]?.id ||
-        '',
     }))
-  }, [bondAttorneyOptions, bondOriginatorOptions, cancellationAttorneyOptions, isAgentTransactionView, roleplayerConfirmOpen, transferAttorneyOptions])
+  }, [bondOriginatorOptions, isAgentTransactionView, roleplayerConfirmOpen, transferAttorneyOptions])
 
   function openPrintDocument(content, popupErrorMessage) {
     const blob = new Blob([content], { type: 'text/html;charset=utf-8' })
@@ -10653,17 +11234,10 @@ function AttorneyTransactionDetail() {
     const options =
       roleType === 'bond_originator'
         ? bondOriginatorOptions
-        : roleType === 'bond_attorney'
-          ? bondAttorneyOptions
-          : transferAttorneyOptions
+        : transferAttorneyOptions
     const normalizedId = normalizeRoleplayerOptionValue(id)
     if (!normalizedId) return null
     return options.find((option) => normalizeRoleplayerOptionValue(option.id) === normalizedId) || null
-  }
-
-  function updateRoleplayerConfirmDraft(field, value) {
-    setRoleplayerConfirmError('')
-    setRoleplayerConfirmDraft((previous) => ({ ...previous, [field]: value }))
   }
 
   function buildRoleplayerSelection(roleType, option) {
@@ -10692,7 +11266,7 @@ function AttorneyTransactionDetail() {
         roleType === 'bond_originator'
           ? 'buyer_selects_bond_or_hybrid'
           : roleType === 'bond_attorney'
-            ? 'bond_approved'
+            ? 'bank_appointment_confirmed'
             : 'attorney_instruction_stage',
     }
   }
@@ -10708,11 +11282,6 @@ function AttorneyTransactionDetail() {
       transferAttorney: findRoleplayerOptionInList(transferAttorneyOptions, roleplayerConfirmDraft.transferAttorney)?.id || transferAttorneyOptions[0]?.id || '',
       bondOriginator: findRoleplayerOptionInList(bondOriginatorOptions, roleplayerConfirmDraft.bondOriginator)?.id || bondOriginatorOptions[0]?.id || '',
       bondOriginatorNotRequired: false,
-      bondAttorney: findRoleplayerOptionInList(bondAttorneyOptions, roleplayerConfirmDraft.bondAttorney)?.id || bondAttorneyOptions[0]?.id || '',
-      cancellationAttorney:
-        findRoleplayerOptionInList(cancellationAttorneyOptions, roleplayerConfirmDraft.cancellationAttorney)?.id ||
-        cancellationAttorneyOptions[0]?.id ||
-        '',
     })
     setRoleplayerConfirmOpen(true)
   }
@@ -10788,8 +11357,6 @@ function AttorneyTransactionDetail() {
       transferAttorneyOptions[0] ||
       null
     const bondOriginatorOption = findRoleplayerOption('bond_originator', roleplayerConfirmDraft.bondOriginator)
-    const bondAttorneyOption = findRoleplayerOption('bond_attorney', roleplayerConfirmDraft.bondAttorney)
-    const cancellationAttorneyOption = findRoleplayerOption('cancellation_attorney', roleplayerConfirmDraft.cancellationAttorney)
 
     if (!transferOption) {
       throw new Error('Transfer Attorney is required before buyer onboarding can be sent.')
@@ -10803,8 +11370,6 @@ function AttorneyTransactionDetail() {
       selections: [
         buildRoleplayerSelection('transfer_attorney', transferOption),
         buildRoleplayerSelection('bond_originator', bondOriginatorOption),
-        buildRoleplayerSelection('bond_attorney', bondAttorneyOption),
-        buildRoleplayerSelection('cancellation_attorney', cancellationAttorneyOption),
       ].filter(Boolean),
     }
   }
@@ -11838,6 +12403,37 @@ function AttorneyTransactionDetail() {
                         <h2 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-textStrong">Transfer</h2>
                         <p className="mt-1 text-sm leading-6 text-textMuted">Manage the legal workflows for this transaction.</p>
                       </section>
+
+                      <TransferAttorneyCommandCentre
+                        cockpit={transferAttorneyCockpit}
+                        workflow={transferWorkflowModel}
+                        onOpenWorkflow={() => openLegalWorkflowDetail('transfer')}
+                        onExecuteAction={handleWorkflowActionCommand}
+                        onExecuteCoordination={handleWorkflowCoordinationCommand}
+                      />
+
+                      <BondAttorneyCommandCentre
+                        cockpit={bondAttorneyCockpit}
+                        workflow={bondWorkflowModel}
+                        onOpenWorkflow={() => openLegalWorkflowDetail('bond-registration')}
+                        onExecuteAction={handleWorkflowActionCommand}
+                        onExecuteCoordination={handleWorkflowCoordinationCommand}
+                      />
+
+                      <CancellationAttorneyCommandCentre
+                        cockpit={cancellationAttorneyCockpit}
+                        workflow={cancellationWorkflowModel}
+                        onOpenWorkflow={() => openLegalWorkflowDetail('bond-cancellation')}
+                        onExecuteAction={handleWorkflowActionCommand}
+                        onExecuteCoordination={handleWorkflowCoordinationCommand}
+                      />
+
+                      <AttorneyThreeRoleRegistrationRoom
+                        room={threeRoleRegistrationRoom}
+                        operationalAssurance={operationalAssurance}
+                        onOpenWorkflow={(workflow) => openLegalWorkflowDetail(workflow.detailKey)}
+                        onExecuteAction={handleWorkflowActionCommand}
+                      />
 
                       <LegalWorkflowRoutingPanel
                         diagnostics={routingDiagnostics}
@@ -13558,6 +14154,36 @@ function AttorneyTransactionDetail() {
                 </section>
               ) : null}
 
+              {workspaceRole === 'attorney' ? (
+                <div className="mt-5 max-w-2xl">
+                  <PartnerInvitesSidePanel
+                    invitations={partnerInvitations.filter((invitation) =>
+                      LEGAL_PARTNER_INVITE_ROLE_OPTIONS.some((option) => option.value === invitation.roleType))}
+                    appointments={legalRoleAppointments}
+                    assurances={legalRoleAssurances}
+                    managedWorkspaceIds={managedAttorneyWorkspaceIds}
+                    loading={partnerInvitationLoading}
+                    busyId={partnerInvitationBusyId}
+                    message={partnerInvitationMessage}
+                    error={partnerInvitationError}
+                    canCreateLegalInvite={canCreateLegalPartnerInvites}
+                    legalInviteGateMessage={legalPartnerInviteGateMessage}
+                    createDraft={legalPartnerInviteDraft}
+                    createBusy={legalPartnerInviteBusy}
+                    onCreateDraftChange={setLegalPartnerInviteDraft}
+                    onCreateSubmit={handleCreateLegalPartnerInvite}
+                    onRefresh={() => void loadPartnerInvitations()}
+                    onResend={(invitation) => void handleResendPartnerInvitation(invitation)}
+                    onCopy={(invitation) => void handleCopyPartnerInvitation(invitation)}
+                    instructionDrafts={bankInstructionDrafts}
+                    instructionBusyId={bankInstructionBusyId}
+                    onInstructionDraftChange={handleBankInstructionDraftChange}
+                    onInstructionConfirm={(appointment, draft) => void handleConfirmBankInstruction(appointment, draft)}
+                    onInstructionDecision={(appointment, decision, note) => void handleBankInstructionDecision(appointment, decision, note)}
+                  />
+                </div>
+              ) : null}
+
               {transferAttorneyReassignmentRequired ? (
                 <div className="mt-5 flex flex-col gap-3 rounded-[16px] border border-danger/30 bg-dangerSoft px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -13994,23 +14620,9 @@ function AttorneyTransactionDetail() {
                 Use this only for a confirmed cash or buyer-managed finance process.
               </span>
             </label>
-            <RoleplayerSelect
-              label="Bond Attorney"
-              value={roleplayerConfirmDraft.bondAttorney}
-              onChange={(value) => updateRoleplayerConfirmDraft('bondAttorney', value)}
-              options={bondAttorneyOptions}
-              helper="Optional. Usually activated after bond approval or bank instruction."
-            />
-            <RoleplayerSelect
-              label="Cancellation Attorney"
-              value={roleplayerConfirmDraft.cancellationAttorney}
-              onChange={(value) => updateRoleplayerConfirmDraft('cancellationAttorney', value)}
-              options={cancellationAttorneyOptions}
-              helper="Optional. Use when the seller bond cancellation leg needs its own attorney."
-            />
           </div>
           <div className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-helper leading-5 text-textMuted">
-            Need someone else? Add or invite a partner from <Link to="/partners" className="font-semibold text-primary hover:underline">Partners</Link>, then reopen this confirmation.
+            Bank-appointed bond and cancellation attorneys are added later by the accepted transferring attorney after appointment confirmation.
           </div>
           {roleplayerConfirmError ? (
             <p className="rounded-[14px] border border-danger/30 bg-dangerSoft px-4 py-3 text-sm font-semibold text-danger">

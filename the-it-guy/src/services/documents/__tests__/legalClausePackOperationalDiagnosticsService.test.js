@@ -7,7 +7,15 @@ import {
 import { buildLegalSignatureReleaseApproval } from '../../../core/documents/legalClausePackSignatureRelease.js'
 
 function packet(id, status = 'generated') {
-  return { id, packet_type: 'otp', title: `OTP ${id}`, status, updated_at: '2026-07-14T10:00:00.000Z' }
+  return {
+    id,
+    organisation_id: 'org-1',
+    template_id: 'template-1',
+    packet_type: 'otp',
+    title: `OTP ${id}`,
+    status,
+    updated_at: '2026-07-14T10:00:00.000Z',
+  }
 }
 
 function version(packetId, { reviewItems = [], approvalRole = '', fingerprint = `fp-${packetId}`, canGenerate = true } = {}) {
@@ -104,3 +112,54 @@ test('keeps legacy OTPs visible without failing the governed release gate', () =
   assert.match(renderLegalClausePackOperationalDiagnosticsMarkdown(report), /Governed OTP Signature Release Report/)
 })
 
+test('proves a canonical generated OTP against its immutable template version', () => {
+  const canonicalVersion = version('canonical')
+  canonicalVersion.validation_summary_json.render_provenance = {
+    contentFingerprint: 'fp-canonical',
+    templateId: 'template-1',
+    templateVersionId: 'template-version-1',
+    templateContentHash: 'sha256-canonical',
+  }
+  const report = buildLegalClausePackOperationalDiagnostics({
+    packets: [packet('canonical')],
+    versions: [canonicalVersion],
+    templateVersions: [{
+      id: 'template-version-1',
+      template_id: 'template-1',
+      organisation_id: 'org-1',
+      status: 'published',
+      content_hash: 'sha256-canonical',
+    }],
+  })
+
+  assert.equal(report.summary.canonicalPackets, 1)
+  assert.equal(report.summary.canonicalVersionEvidenceValid, 1)
+  assert.equal(report.records[0].canonicalVersionEvidenceValid, true)
+  assert.equal(report.records[0].operationalState, 'awaiting_operational_approval')
+})
+
+test('stops release when canonical provenance does not match the immutable registry', () => {
+  const canonicalVersion = version('canonical-mismatch')
+  canonicalVersion.validation_summary_json.render_provenance = {
+    contentFingerprint: 'fp-canonical-mismatch',
+    templateId: 'template-1',
+    templateVersionId: 'template-version-1',
+    templateContentHash: 'unexpected-hash',
+  }
+  const report = buildLegalClausePackOperationalDiagnostics({
+    packets: [packet('canonical-mismatch', 'sent')],
+    versions: [canonicalVersion],
+    templateVersions: [{
+      id: 'template-version-1',
+      template_id: 'template-1',
+      organisation_id: 'org-1',
+      status: 'superseded',
+      content_hash: 'sha256-canonical',
+    }],
+  })
+
+  assert.equal(report.gate.status, 'fail')
+  assert.equal(report.summary.canonicalVersionEvidenceInvalid, 1)
+  assert.equal(report.records[0].operationalState, 'canonical_version_evidence_invalid')
+  assert.match(report.records[0].canonicalVersionEvidenceIssues[0], /content hash/i)
+})

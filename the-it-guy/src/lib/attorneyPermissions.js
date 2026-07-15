@@ -17,6 +17,7 @@ export const ATTORNEY_FIRM_ROLE_VALUES = [
   'director_partner',
   'transfer_attorney',
   'bond_attorney',
+  'cancellation_attorney',
   'conveyancing_secretary',
   'admin_staff',
   'reception_scheduling',
@@ -25,7 +26,7 @@ export const ATTORNEY_FIRM_ROLE_VALUES = [
 
 export const ATTORNEY_FIRM_MEMBER_STATUS_VALUES = ['invited', 'active', 'suspended', 'removed']
 
-export const ATTORNEY_FIRM_DEPARTMENT_TYPES = ['transfer', 'bond', 'admin', 'management']
+export const ATTORNEY_FIRM_DEPARTMENT_TYPES = ['transfer', 'bond', 'cancellation', 'admin', 'management']
 
 export const ATTORNEY_INVITATION_STATUS_VALUES = ['pending', 'accepted', 'expired', 'cancelled']
 
@@ -44,11 +45,13 @@ export const ATTORNEY_PERMISSION_KEYS = [
   'can_view_assigned_matters',
   'can_view_transfer_matters',
   'can_view_bond_matters',
+  'can_view_cancellation_matters',
   'can_create_attorney_assignments',
   'can_update_attorney_assignments',
   'can_remove_attorney_assignments',
   'can_edit_transfer_workflow',
   'can_edit_bond_workflow',
+  'can_edit_cancellation_workflow',
   'can_request_documents',
   'can_review_documents',
   'can_upload_documents',
@@ -81,6 +84,7 @@ export const ATTORNEY_ROLE_PERMISSION_MAP = {
     'can_view_all_firm_matters',
     'can_view_transfer_matters',
     'can_view_bond_matters',
+    'can_view_cancellation_matters',
     'can_create_attorney_assignments',
     'can_update_attorney_assignments',
     'can_remove_attorney_assignments',
@@ -119,6 +123,22 @@ export const ATTORNEY_ROLE_PERMISSION_MAP = {
     'can_view_assigned_matters',
     'can_view_bond_matters',
     'can_edit_bond_workflow',
+    'can_request_documents',
+    'can_review_documents',
+    'can_upload_documents',
+    'can_reject_documents',
+    'can_mark_documents_complete',
+    'can_comment_shared',
+    'can_comment_internal',
+    'can_view_internal_comments',
+    'can_manage_signing_appointments',
+    'can_view_client_visible_updates',
+    'can_publish_client_visible_updates',
+  ]),
+  cancellation_attorney: buildPermissionRecord([
+    'can_view_assigned_matters',
+    'can_view_cancellation_matters',
+    'can_edit_cancellation_workflow',
     'can_request_documents',
     'can_review_documents',
     'can_upload_documents',
@@ -393,7 +413,7 @@ function canDepartmentViewAssignment(assignment = {}, permissions = {}, membersh
     return Boolean(permissions.can_view_transfer_matters || permissions.can_view_bond_matters)
   }
   if (assignmentType === 'cancellation' || assignmentType === 'cancellation_attorney') {
-    return Boolean(permissions.can_view_transfer_matters)
+    return Boolean(permissions.can_view_cancellation_matters)
   }
   return false
 }

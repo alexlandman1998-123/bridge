@@ -146,10 +146,20 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash', transa
   }
 
   function renderAssignmentBlock({ type, assignment, supportingAssignments = [], title, helper }) {
+    const isBankAppointedRole = type === 'bond' || type === 'cancellation'
     const isEditing = activeForm.type === type
     const editingAssignment = isEditing && activeForm.assignmentId
       ? [assignment, ...supportingAssignments].find((item) => item?.id === activeForm.assignmentId) || assignment
-      : assignment
+      : null
+    const assignmentFormSeed = editingAssignment || (
+      isEditing && isBankAppointedRole && assignment
+        ? {
+            firmId: assignment.firmId,
+            status: 'active',
+            isPrimary: activeForm.isPrimary !== false,
+          }
+        : null
+    )
 
     return (
       <article className="rounded-control border border-borderSoft bg-surface p-4">
@@ -158,7 +168,7 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash', transa
             <h4 className="text-base font-semibold text-textStrong">{title}</h4>
             <p className="mt-1 text-sm text-textMuted">{helper}</p>
           </div>
-          {!isEditing && !assignment ? (
+          {!isEditing && !assignment && !isBankAppointedRole ? (
             <button
               type="button"
               className="header-secondary-cta"
@@ -191,7 +201,7 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash', transa
               transactionId={transactionId}
               assignmentType={type}
               firms={firms}
-              initialAssignment={editingAssignment || null}
+              initialAssignment={assignmentFormSeed}
               isPrimaryDefault={activeForm.isPrimary !== false}
               onSaved={handleSaved}
               onCancel={() => setActiveForm({ type: '', assignmentId: '' })}
@@ -204,13 +214,15 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash', transa
                   assignment={item}
                   busy={busy}
                   onEdit={canUpdateAssignments ? () => setActiveForm({ type, assignmentId: item.id, isPrimary: item.isPrimary !== false }) : null}
-                  onRemove={canRemoveAssignments ? () => void handleRemove(item) : null}
+                  onRemove={canRemoveAssignments && !isBankAppointedRole ? () => void handleRemove(item) : null}
                 />
               ))}
             </div>
           ) : (
             <p className="rounded-control border border-dashed border-borderSoft bg-surfaceAlt px-4 py-3 text-sm text-textMuted">
-              No {type === 'bond' ? 'bond' : type === 'cancellation' ? 'cancellation' : 'transfer'} attorney firm has been assigned to this matter yet.
+              {isBankAppointedRole
+                ? `Awaiting the ${type} firm appointed by the bank to accept its platform invitation.`
+                : 'No transfer attorney firm has been assigned to this matter yet.'}
             </p>
           )}
         </div>
@@ -395,16 +407,9 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash', transa
             <article className="rounded-control border border-borderSoft bg-surface p-4">
               <h4 className="text-base font-semibold text-textStrong">Cancellation Attorney Assignment</h4>
               <p className="mt-2 text-sm text-textMuted">{workflow.lanes.cancellation.reason}</p>
-              {canCreateAssignments ? (
-                <button
-                  type="button"
-                  className="header-secondary-cta mt-3"
-                  onClick={() => setActiveForm({ type: 'cancellation', assignmentId: '', isPrimary: true })}
-                  disabled={busy || loading}
-                >
-                  Add Cancellation Attorney
-                </button>
-              ) : null}
+              <p className="mt-3 rounded-control border border-dashed border-borderSoft bg-surfaceAlt px-4 py-3 text-sm text-textMuted">
+                If cancellation becomes required, the bank-appointed firm must accept its invitation before that firm assigns staff.
+              </p>
             </article>
           )}
         </div>

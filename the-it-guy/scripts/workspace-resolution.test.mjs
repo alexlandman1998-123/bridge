@@ -103,6 +103,17 @@ try {
     organisation_id: '44444444-4444-4444-8444-444444444444',
     name: 'Tuckers Mock',
     type: 'attorney_firm',
+    registration_number: '2020/123456/07',
+    vat_number: '4123456789',
+    website: 'https://tuckers.example.test',
+    email: 'legal@tuckers.example.test',
+    phone: '+27115550100',
+    address_line_1: '12 Main Road',
+    address_line_2: 'Suite 4',
+    city: 'Johannesburg',
+    province: 'Gauteng',
+    postal_code: '2000',
+    country: 'South Africa',
     logo_url: 'https://example.test/tuckers-logo.png',
   }
   const attorneyProfile = {
@@ -128,6 +139,12 @@ try {
   assert.equal(attorney.currentWorkspace.id, attorneyFirm.id)
   assert.equal(attorney.currentWorkspace.organisationId, attorneyFirm.organisation_id)
   assert.equal(attorney.currentWorkspace.logoUrl, attorneyFirm.logo_url)
+  assert.equal(attorney.currentWorkspace.website, attorneyFirm.website)
+  assert.equal(attorney.currentWorkspace.registrationNumber, attorneyFirm.registration_number)
+  assert.equal(attorney.currentWorkspace.addressLine1, attorneyFirm.address_line_1)
+  assert.equal(attorney.currentWorkspace.addressLine2, attorneyFirm.address_line_2)
+  assert.equal(attorney.currentWorkspace.city, attorneyFirm.city)
+  assert.equal(attorney.currentWorkspace.postalCode, attorneyFirm.postal_code)
 
   assert.throws(
     () => assertResolvedWorkspaceContext({ organisationId: 'default', appRole: 'agent' }),

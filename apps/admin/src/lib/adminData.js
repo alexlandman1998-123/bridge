@@ -26,6 +26,19 @@ const RANGE_OPTIONS = {
 const TRANSACTION_FEE_ESTIMATE = 1000
 const LEGAL_TEMPLATES_BUCKET = 'legal-templates'
 
+const EMPTY_CEO_DASHBOARD = {
+  available: false,
+  attention: [],
+  businessPulse: {},
+  error: '',
+  generatedAt: '',
+  metrics: {},
+  newBusinessIntake: [],
+  range: null,
+  topOrganisations: [],
+  warnings: [],
+}
+
 const LEGAL_TEMPLATE_COLUMNS =
   'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_bucket, template_storage_path, template_file_name, version_tag, description, status, is_default, is_active, metadata_json, change_summary, content_hash, created_by, updated_by, published_by, published_at, archived_by, archived_at, created_at, updated_at'
 
@@ -500,6 +513,48 @@ async function tryRpc(label, functionName, args = {}) {
     return { data, error: null }
   } catch (error) {
     return { data: null, error: { label, message: error?.message || 'RPC failed' } }
+  }
+}
+
+function normalizeCeoDashboard(result, range) {
+  if (result?.error) {
+    return {
+      ...EMPTY_CEO_DASHBOARD,
+      error: result.error.message || 'The CEO dashboard could not be loaded.',
+      range,
+    }
+  }
+
+  const payload = result?.data
+  if (!payload || typeof payload !== 'object' || Number(payload.version) !== 1) {
+    return {
+      ...EMPTY_CEO_DASHBOARD,
+      error: 'The CEO dashboard data contract is not available yet.',
+      range,
+    }
+  }
+
+  const warnings = Object.entries(payload.warnings || {})
+    .filter(([, message]) => Boolean(message))
+    .map(([key, message]) => ({ key, message: String(message) }))
+
+  return {
+    available: true,
+    attention: asArray(payload.attention).map((item) => ({
+      key: normalizeText(item?.key),
+      label: normalizeText(item?.label) || 'Attention required',
+      path: normalizeText(item?.path),
+      severity: normalizeToken(item?.severity) || 'warning',
+      value: Math.max(0, Number(item?.value) || 0),
+    })),
+    businessPulse: payload.businessPulse && typeof payload.businessPulse === 'object' ? payload.businessPulse : {},
+    error: '',
+    generatedAt: normalizeText(payload.generatedAt),
+    metrics: payload.metrics && typeof payload.metrics === 'object' ? payload.metrics : {},
+    newBusinessIntake: asArray(payload.newBusinessIntake),
+    range: payload.range || range,
+    topOrganisations: asArray(payload.topOrganisations),
+    warnings,
   }
 }
 
@@ -1355,6 +1410,7 @@ function buildExecutiveSnapshot(raw, range) {
     raw.organisationUsers.error,
     raw.branchMembers.error,
     raw.invitedUsersSummary.error,
+    raw.ceoDashboard.error,
   ].filter(Boolean)
 
   return {
@@ -1373,6 +1429,7 @@ function buildExecutiveSnapshot(raw, range) {
       time: formatDate(rowUpdatedAt(customer)),
       title: rowName(customer),
     })),
+    ceoDashboard: normalizeCeoDashboard(raw.ceoDashboard, range),
     ecosystem: {
       change: percentChange(
         profiles.filter((row) => inRange(createdAt(row), range)).length,
@@ -2046,9 +2103,119 @@ export async function restoreAdminLegalTemplateVersion(template = {}, version = 
   })
 }
 
+export async function loadCeoLeadWorkflow(enquiryId) {
+  if (!supabase) throw new Error('Supabase is not configured.')
+  if (!enquiryId) throw new Error('Choose a lead to manage.')
+
+  const { data, error } = await supabase.rpc('arch9_admin_ceo_lead_workflow_v1', {
+    p_enquiry_id: enquiryId,
+  })
+  if (error) throw new Error(error.message || 'Unable to load the lead workflow.')
+  if (!data || Number(data.version) !== 1 || !data.lead) throw new Error('The lead workflow data contract is unavailable.')
+
+  return {
+    assignees: asArray(data.assignees).map((assignee) => ({
+      email: normalizeText(assignee?.email),
+      id: normalizeText(assignee?.id),
+      name: normalizeText(assignee?.name) || normalizeText(assignee?.email) || 'Arch9 staff',
+      role: normalizeText(assignee?.role),
+    })),
+    lead: data.lead,
+  }
+}
+
+export async function updateCeoLeadWorkflow(enquiryId, patch = {}) {
+  if (!supabase) throw new Error('Supabase is not configured.')
+  if (!enquiryId) throw new Error('Choose a lead to update.')
+
+  const allowedKeys = new Set([
+    'assignedToUserId',
+    'convertedOrganisationId',
+    'internalNotes',
+    'lostReason',
+    'nextAction',
+    'nextActionAt',
+    'priority',
+    'salesStage',
+  ])
+  const safePatch = Object.fromEntries(Object.entries(patch).filter(([key]) => allowedKeys.has(key)))
+  if (!Object.keys(safePatch).length) throw new Error('Make at least one lead workflow change.')
+
+  const { data, error } = await supabase.rpc('arch9_admin_update_demo_enquiry_v1', {
+    p_enquiry_id: enquiryId,
+    p_patch: safePatch,
+  })
+  if (error) throw new Error(error.message || 'Unable to update the lead workflow.')
+  return data
+}
+
+export async function setCeoRevenueTarget({ monthStart, notes = '', targetAmount } = {}) {
+  if (!supabase) throw new Error('Supabase is not configured.')
+  const amount = Number(targetAmount)
+  if (!monthStart) throw new Error('Choose a target month.')
+  if (!Number.isFinite(amount) || amount < 0) throw new Error('Enter a valid revenue target.')
+
+  const { data, error } = await supabase.rpc('arch9_admin_set_revenue_target_v1', {
+    p_currency: 'ZAR',
+    p_month_start: monthStart,
+    p_notes: normalizeText(notes) || null,
+    p_target_amount_cents: Math.round(amount * 100),
+  })
+  if (error) throw new Error(error.message || 'Unable to update the revenue target.')
+  return data
+}
+
+export async function loadCeoDashboardSnapshot(rangeKey = '30d') {
+  const range = getRange(rangeKey)
+  const result = await tryRpc('CEO dashboard', 'arch9_admin_ceo_dashboard_v1', {
+    p_end: range.end.toISOString(),
+    p_start: range.start.toISOString(),
+  })
+  return normalizeCeoDashboard(result, range)
+}
+
+function csvCell(value) {
+  const text = value == null ? '' : String(value)
+  return `"${text.replace(/"/g, '""')}"`
+}
+
+export function buildCeoDashboardCsv(dashboard = {}) {
+  const rows = [['Section', 'Metric', 'Value', 'Detail']]
+  const metrics = dashboard.metrics || {}
+  rows.push(
+    ['Overview', 'Active agents', metrics.activeAgents?.value ?? '', ''],
+    ['Overview', 'Active listings', metrics.activeListings?.value ?? '', ''],
+    ['Overview', 'Active transactions', metrics.activeTransactions?.value ?? '', `${metrics.activeTransactions?.attentionCount || 0} require attention`],
+    ['Overview', 'Revenue this month (ZAR)', metrics.revenueMtd?.valueCents == null ? 'Unavailable' : Number(metrics.revenueMtd.valueCents) / 100, metrics.revenueMtd?.targetCents == null ? 'No target configured' : `Target ${Number(metrics.revenueMtd.targetCents) / 100}`],
+  )
+
+  for (const [key, label] of Object.entries({
+    leadConversion: 'Lead conversion',
+    onboardingCompletion: 'Onboarding completion',
+    transactionCompletion: 'Transaction completion',
+    revenueTarget: 'Revenue target progress',
+  })) {
+    rows.push(['Business pulse', label, dashboard.businessPulse?.[key] == null ? 'Unavailable' : `${dashboard.businessPulse[key]}%`, ''])
+  }
+
+  for (const item of asArray(dashboard.attention)) {
+    rows.push(['Attention', item.label, item.value, item.severity])
+  }
+  for (const lead of asArray(dashboard.newBusinessIntake)) {
+    rows.push(['New business', lead.organisationName || lead.contactName || 'New enquiry', lead.stage || 'new', compact([lead.organisationType, lead.priority, lead.email]).join(' · ')])
+  }
+  for (const organisation of asArray(dashboard.topOrganisations)) {
+    rows.push(['Top organisations', organisation.name, Number(organisation.revenueCents || 0) / 100, `${organisation.activeTransactions || 0} active transactions`])
+  }
+
+  rows.push(['Report', 'Generated at', dashboard.generatedAt || new Date().toISOString(), 'Arch9 CEO dashboard'])
+  return rows.map((row) => row.map(csvCell).join(',')).join('\n')
+}
+
 export async function loadDashboardSnapshot(rangeKey = '30d') {
   const range = getRange(rangeKey)
   const [
+    ceoDashboard,
     organisations,
     profiles,
     transactions,
@@ -2071,6 +2238,10 @@ export async function loadDashboardSnapshot(rangeKey = '30d') {
     leads,
     enquiries,
   ] = await Promise.all([
+    tryRpc('CEO dashboard', 'arch9_admin_ceo_dashboard_v1', {
+      p_end: range.end.toISOString(),
+      p_start: range.start.toISOString(),
+    }),
     tryTable('organisations', 'organisations', { required: true }),
     tryTable('profiles', 'profiles', { required: true }),
     tryTable('transactions', 'transactions', { required: true }),
@@ -2102,6 +2273,7 @@ export async function loadDashboardSnapshot(rangeKey = '30d') {
       activities,
       bondApplications,
       bondCancellations,
+      ceoDashboard,
       commissions,
       enquiries,
       attorneyFirmInvitations,

@@ -2,6 +2,10 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 import Docxtemplater from "docxtemplater";
 import PizZip from "pizzip";
+import {
+  OTP_CANONICAL_RUNTIME_BINDING_VERSION,
+  buildCanonicalOtpRuntimeBinding,
+} from "../_shared/otpCanonicalRuntimeBinding.mjs";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -29,6 +33,8 @@ type GenerateOtpRequest = {
   generated_by_role?: string;
   clientVisible?: boolean;
   client_visible?: boolean;
+  templateContractVersion?: string;
+  template_contract_version?: string;
 };
 
 const corsHeaders = {
@@ -451,6 +457,14 @@ Deno.serve(async (req: Request) => {
     const generatedByRole = normalizeText(payload.generatedByRole || payload.generated_by_role) || "developer";
     const generatedByUserId = normalizeText(payload.generatedByUserId || payload.generated_by_user_id) || null;
     const clientVisible = Boolean(payload.clientVisible ?? payload.client_visible ?? false);
+    const templateContractVersion = normalizeText(payload.templateContractVersion || payload.template_contract_version);
+    if (templateContractVersion && templateContractVersion !== OTP_CANONICAL_RUNTIME_BINDING_VERSION) {
+      return jsonResponse(400, {
+        success: false,
+        error: `Unsupported canonical OTP runtime contract '${templateContractVersion}'.`,
+        errorCode: "UNSUPPORTED_CANONICAL_OTP_RUNTIME_CONTRACT",
+      });
+    }
 
     const bucketCandidates = parseBucketCandidates(
       Deno.env.get("SUPABASE_DOCUMENTS_BUCKET"),
@@ -552,8 +566,7 @@ Deno.serve(async (req: Request) => {
         : (onboardingQuery.data.form_data as Record<string, unknown>);
     const propertyDisclosureAnnexure = resolvePropertyDisclosureAnnexure(sourceContext, placeholderOverrides);
 
-    const placeholders = {
-      ...buildPlaceholderMap({
+    const legacyPlaceholders = buildPlaceholderMap({
         transaction,
         buyer,
         unit,
@@ -561,7 +574,35 @@ Deno.serve(async (req: Request) => {
         onboardingFormData,
         propertyDisclosureAnnexure,
         specialConditions,
-      }),
+      });
+    const canonicalBinding = buildCanonicalOtpRuntimeBinding({
+      transaction,
+      buyer,
+      unit,
+      development,
+      onboardingFormData,
+      sourceContext,
+      legacyPlaceholders,
+      placeholderOverrides,
+      specialConditions,
+    });
+    if (templateContractVersion && !canonicalBinding.ready) {
+      return jsonResponse(422, {
+        success: false,
+        error: "The canonical OTP is missing required transaction data or approved wording.",
+        errorCode: "CANONICAL_OTP_BINDING_BLOCKED",
+        canonicalBinding: {
+          schemaVersion: canonicalBinding.schemaVersion,
+          missingRequiredTokens: canonicalBinding.missingRequiredTokens,
+          attorneyReviewRequiredTokens: canonicalBinding.attorneyReviewRequiredTokens,
+          blockers: canonicalBinding.blockers,
+        },
+      });
+    }
+
+    const placeholders = {
+      ...legacyPlaceholders,
+      ...canonicalBinding.placeholders,
       ...Object.fromEntries(
         Object.entries(placeholderOverrides)
           .filter(([key, value]) => normalizeText(key) && value !== null && value !== undefined)
@@ -652,6 +693,16 @@ Deno.serve(async (req: Request) => {
       },
       annexures: propertyDisclosureAnnexure ? [propertyDisclosureAnnexure] : [],
       placeholdersUsed: placeholders,
+      canonicalBinding: {
+        schemaVersion: canonicalBinding.schemaVersion,
+        templateAssetVersion: canonicalBinding.templateAssetVersion,
+        enforced: Boolean(templateContractVersion),
+        ready: canonicalBinding.ready,
+        resolvedTokenCount: canonicalBinding.resolvedTokenCount,
+        unresolvedTokens: canonicalBinding.unresolvedTokens,
+        missingRequiredTokens: canonicalBinding.missingRequiredTokens,
+        attorneyReviewRequiredTokens: canonicalBinding.attorneyReviewRequiredTokens,
+      },
     });
   } catch (error) {
     console.error("generate-otp failed", error);

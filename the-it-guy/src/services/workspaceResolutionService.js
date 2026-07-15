@@ -9,6 +9,7 @@ import { getUnsafeFallbackEnvironmentDiagnostics } from '../lib/envValidation'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { isCommercialBrokerMember } from '../lib/commercialAccess'
 import { resolveSystemRole, resolveWorkspaceRole } from './roleResolutionService'
+import { projectCanonicalOrganisationOntoAttorneyFirm } from '../core/organisations/attorneyOrganisationFirmProjection'
 
 export const WORKSPACE_RESOLUTION_STATUSES = Object.freeze({
   resolved: 'resolved',
@@ -117,8 +118,17 @@ function normalizeAttorneyFirmRow(row = null) {
     type: WORKSPACE_TYPES.attorneyFirm,
     name: normalizeText(row.name) || 'Attorney Firm',
     legalName: normalizeText(row.name),
+    registrationNumber: normalizeText(row.registration_number || row.registrationNumber),
+    vatNumber: normalizeText(row.vat_number || row.vatNumber),
     email: normalizeEmail(row.email),
     phone: normalizeText(row.phone),
+    website: normalizeText(row.website),
+    addressLine1: normalizeText(row.address_line_1 || row.addressLine1),
+    addressLine2: normalizeText(row.address_line_2 || row.addressLine2),
+    city: normalizeText(row.city),
+    province: normalizeText(row.province),
+    postalCode: normalizeText(row.postal_code || row.postalCode),
+    country: normalizeText(row.country) || 'South Africa',
     logoUrl,
     logo_url: logoUrl || null,
     logoIconUrl,
@@ -810,14 +820,43 @@ async function fetchAttorneyFirmRows(client, firmIds = []) {
 
   const query = await client
     .from('attorney_firms')
-    .select('id, organisation_id, name, email, phone, logo_url, primary_colour, secondary_colour, created_by, is_active')
+    .select('id, organisation_id, name, registration_number, vat_number, website, email, phone, address_line_1, address_line_2, city, province, postal_code, country, logo_url, primary_colour, secondary_colour, created_by, is_active')
     .in('id', ids)
 
   if (query.error) {
     if (isMissingTableError(query.error, 'attorney_firms')) return []
     throw query.error
   }
-  return query.data || []
+
+  const firmRows = query.data || []
+  const organisationIds = [...new Set(
+    firmRows.map((firm) => normalizeText(firm.organisation_id || firm.id)).filter(Boolean),
+  )]
+  if (!organisationIds.length) return firmRows
+
+  let organisationQuery = await client
+    .from('organisations')
+    .select('id, name, display_name, legal_name, registration_number, vat_number, company_email, company_phone, website, address_line_1, address_line_2, city, province, postal_code, country, logo_url, logo_bucket, logo_path, logo_dark_url, logo_dark_bucket, logo_dark_path, primary_colour, secondary_colour')
+    .in('id', organisationIds)
+
+  if (organisationQuery.error && isMissingColumnError(organisationQuery.error)) {
+    organisationQuery = await client
+      .from('organisations')
+      .select('id, name, display_name, legal_name, registration_number, company_email, company_phone, website, address_line_1, address_line_2, city, province, postal_code, country, logo_url, primary_colour, secondary_colour')
+      .in('id', organisationIds)
+  }
+
+  if (organisationQuery.error) {
+    const permissionDenied = String(organisationQuery.error.code || '').toLowerCase() === '42501'
+    if (isMissingTableError(organisationQuery.error, 'organisations') || permissionDenied) return firmRows
+    throw organisationQuery.error
+  }
+
+  const organisationById = new Map((organisationQuery.data || []).map((organisation) => [organisation.id, organisation]))
+  return firmRows.map((firmRow) => projectCanonicalOrganisationOntoAttorneyFirm(
+    normalizeAttorneyFirmRow(firmRow),
+    organisationById.get(normalizeText(firmRow.organisation_id || firmRow.id)) || null,
+  ))
 }
 
 export async function resolveCurrentWorkspace(userId, options = {}) {

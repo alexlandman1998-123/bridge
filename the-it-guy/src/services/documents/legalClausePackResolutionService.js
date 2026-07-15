@@ -2,7 +2,8 @@ import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient.js'
 import { buildLegalClausePackEscalationPlan } from './legalClausePackEscalationService.js'
 import { getLegalClausePackOperationalDiagnosticsSnapshot } from './legalClausePackOperationalDiagnosticsService.js'
 
-export const LEGAL_CLAUSE_PACK_RESOLUTION_VERSION = 'sa_legal_clause_pack_resolution_v1'
+export const LEGAL_CLAUSE_PACK_RESOLUTION_LEGACY_VERSION = 'sa_legal_clause_pack_resolution_v1'
+export const LEGAL_CLAUSE_PACK_RESOLUTION_VERSION = 'sa_legal_clause_pack_resolution_v2'
 
 const ESCALATION_SOURCE = 'legal_clause_pack_phase9_escalation'
 const ESCALATION_DEDUPE_PREFIX = 'legal-otp-escalation:'
@@ -138,6 +139,9 @@ export function buildLegalClausePackResolutionReport({
         packetId: normalizeText(eventData.packetId || eventData.packet_id) || null,
         versionId: normalizeText(eventData.versionId || eventData.version_id) || null,
         operationalState: normalizeText(eventData.operationalState || eventData.operational_state) || null,
+        canonicalTemplateVersionId: normalizeText(eventData.canonicalTemplateVersionId || eventData.canonical_template_version_id) || null,
+        canonicalEvidenceKey: normalizeText(eventData.canonicalEvidenceKey || eventData.canonical_evidence_key) || null,
+        canonicalEvidenceIssues: asArray(eventData.canonicalEvidenceIssues || eventData.canonical_evidence_issues),
         resolutionState: 'resolved_after_notification',
         severity: 'healthy',
         notificationCount: actionNotifications.length,
@@ -150,6 +154,8 @@ export function buildLegalClausePackResolutionReport({
   const dataComplete = warnings.length === 0
   const critical = current.filter((item) => item.severity === 'critical')
   const warning = current.filter((item) => item.severity === 'warning')
+  const canonicalCurrent = current.filter((item) => item.canonicalTemplateVersionId)
+  const canonicalResolved = resolved.filter((item) => item.canonicalTemplateVersionId)
   const gate = !dataComplete
     ? { status: 'incomplete', reason: 'Follow-up resolution cannot be concluded because one or more audit queries were incomplete.' }
     : critical.length
@@ -174,6 +180,8 @@ export function buildLegalClausePackResolutionReport({
       overdue: current.filter((item) => item.resolutionState === 'overdue_unread').length,
       unroutable: current.filter((item) => item.resolutionState === 'unroutable').length,
       resolvedAfterNotification: resolved.length,
+      canonicalActiveFindings: canonicalCurrent.length,
+      canonicalResolvedAfterNotification: canonicalResolved.length,
     },
     current,
     resolved,

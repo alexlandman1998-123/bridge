@@ -22,6 +22,7 @@ import {
 const DEPARTMENT_LABELS = {
   transfer: 'Transfer Department',
   bond: 'Bond Department',
+  cancellation: 'Bond Cancellation Department',
   admin: 'Admin Department',
   management: 'Management',
 }
@@ -30,6 +31,7 @@ const ROLE_LABELS = {
   director_partner: 'Director / Partner',
   transfer_attorney: 'Transfer Attorney',
   bond_attorney: 'Bond Attorney',
+  cancellation_attorney: 'Cancellation Attorney',
   conveyancing_secretary: 'Conveyancing Secretary',
   admin_staff: 'Admin Staff',
   reception_scheduling: 'Reception / Scheduling',
@@ -57,7 +59,7 @@ function SummaryCard({ title, icon: Icon, children }) {
     <article className="attorney-review-card">
       <div className="attorney-review-card-head">
         <span>
-          <Icon size={16} aria-hidden="true" />
+          {Icon ? <Icon size={16} aria-hidden="true" /> : null}
         </span>
         <h4>{title}</h4>
       </div>

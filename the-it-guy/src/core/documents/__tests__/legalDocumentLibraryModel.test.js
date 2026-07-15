@@ -100,3 +100,28 @@ test('summarises live, draft and coverage state across the catalogue', () => {
   assert.equal(model.summary.draftCount, 1)
   assert.equal(model.summary.allCovered, false)
 })
+
+test('uses canonical version pointers instead of legacy routing coverage', () => {
+  const canonicalTemplate = {
+    id: 'otp-canonical',
+    packet_type: 'otp',
+    organisation_id: 'org-1',
+    is_default: true,
+    is_active: true,
+    status: 'published',
+    document_model: 'single_master_document',
+    live_version_id: 'template-version-2',
+    previous_live_version_id: 'template-version-1',
+    metadata_json: {
+      document_kind: 'standard',
+      otp_rollout: { status: 'activated', activatedVersionId: 'template-version-2' },
+    },
+  }
+  const model = buildLegalDocumentLibraryModel({ templatesByType: { otp: [canonicalTemplate] } })
+  const otp = model.documentsByKey.otp
+
+  assert.equal(otp.coverageReady, true)
+  assert.equal(otp.rolloutOperations.canonical, true)
+  assert.equal(otp.rolloutOperations.status, 'healthy')
+  assert.equal(otp.rolloutOperations.canRollback, true)
+})

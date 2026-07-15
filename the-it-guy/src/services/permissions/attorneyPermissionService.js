@@ -23,7 +23,6 @@ import {
 
 const PROFESSIONAL_APP_ROLES = new Set(['agent', 'developer', 'bond_originator'])
 const ATTORNEY_FIRM_MANAGER_ROLES = new Set(['firm_admin', 'director_partner', 'attorney_admin', 'attorney_manager'])
-const PHASE_ONE_SHARED_WORKFLOW_EDITING = true
 
 function normalizeAppRole(value) {
   const normalized = String(value || '').trim().toLowerCase()
@@ -230,17 +229,11 @@ export async function getAttorneyLegalPermissionContext({ userId = null, transac
     isAttorneyAppUser &&
       (await canViewInternalAttorneyNotes(transactionId, attorneyAccess?.firmId || membership?.firmId || null, actor.userId).catch(() => false)),
   )
-  const canEditAllWorkflowLanesInPhaseOne = Boolean(
-    PHASE_ONE_SHARED_WORKFLOW_EDITING &&
-      isAttorneyAppUser &&
-      canViewAsAttorney &&
-      (canActOnLane || canManageMatter || assignedRoles.length || membership),
-  )
   const canPublishClientVisible = Boolean(
     isAttorneyAppUser &&
       membership &&
       hasAttorneyPermission(membership.role, 'can_publish_client_visible_updates') &&
-      (canActOnLane || canManageMatter || canEditAllWorkflowLanesInPhaseOne),
+      (canActOnLane || canManageMatter),
   )
 
   return {
@@ -257,17 +250,17 @@ export async function getAttorneyLegalPermissionContext({ userId = null, transac
     managementOverrideEnabled: Boolean(attorneyAccess?.managementOverrideEnabled),
     canViewLegalWorkspace,
     canViewLane: canViewLegalWorkspace,
-    canUpdateLane: Boolean(canActOnLane || canEditAllWorkflowLanesInPhaseOne),
-    canRequestDocuments: Boolean(canActOnLane || canEditAllWorkflowLanesInPhaseOne),
-    canUploadDocuments: Boolean(canActOnLane || canEditAllWorkflowLanesInPhaseOne),
-    canReviewDocuments: Boolean(canActOnLane || canEditAllWorkflowLanesInPhaseOne),
-    canManageSigning: Boolean(canActOnLane || canEditAllWorkflowLanesInPhaseOne),
-    canAddInternalNote: Boolean(canActOnLane || canManageMatter || canEditAllWorkflowLanesInPhaseOne),
-    canAddSharedUpdate: Boolean(canActOnLane || canManageMatter || canEditAllWorkflowLanesInPhaseOne),
+    canUpdateLane: canActOnLane,
+    canRequestDocuments: canActOnLane,
+    canUploadDocuments: canActOnLane,
+    canReviewDocuments: canActOnLane,
+    canManageSigning: canActOnLane,
+    canAddInternalNote: Boolean(canActOnLane || canManageMatter),
+    canAddSharedUpdate: Boolean(canActOnLane || canManageMatter),
     canPublishClientVisibleUpdate: canPublishClientVisible,
     canAssignAttorney: canAssignLane,
     canReassignAttorney: canAssignLane,
-    canViewInternalNotes: Boolean(canViewInternal || canManageMatter || canEditAllWorkflowLanesInPhaseOne),
+    canViewInternalNotes: Boolean(canViewInternal || canManageMatter),
     canViewProfessionalUpdates: canViewLegalWorkspace,
     viewReason: canViewAsAttorney ? attorneyAccess?.reason || 'attorney_access' : canViewAsProfessional ? 'professional_participant' : 'no_access',
   }

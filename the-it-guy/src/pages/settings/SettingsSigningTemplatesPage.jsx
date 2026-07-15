@@ -56,6 +56,7 @@ import {
 } from '../../core/documents/mandateTemplateLaunchReadiness'
 import {
   archiveDocumentPacket,
+  activateCanonicalOtpCandidate,
   createDocumentPacket,
   createDocumentPacketTemplate,
   fetchDocumentPacket,
@@ -64,6 +65,7 @@ import {
   listDocumentPacketTemplates,
   listDocumentPlaceholderDefinitions,
   rollbackGovernedOtpTemplate,
+  rollbackCanonicalOtpVersion,
   updateDocumentPacketTemplate,
   uploadDocumentPacketTemplateAsset,
   upsertDocumentPlaceholderDefinition,
@@ -147,6 +149,13 @@ import {
   getSouthAfricanOtpReferenceScenario,
   runLegalClausePackScenarioMatrix,
 } from '../../core/documents/legalClausePackScenarioMatrix'
+import {
+  OTP_CANONICAL_DOCX_SHA256,
+  OTP_CANONICAL_MANIFEST_SHA256,
+  isCanonicalOtpTemplate,
+  runCanonicalOtpReferenceMatrix,
+} from '../../core/documents/otpCanonicalReferenceMatrix'
+import { buildCanonicalOtpRecoveryReadiness } from '../../core/documents/otpCanonicalRecovery'
 
 const SUPPORTED_PACKET_TYPES = [
   {
@@ -3788,8 +3797,8 @@ function buildTemplateMetadata(form = {}, existingMetadata = {}, uploadMeta = nu
   }
   if (packetType === 'otp' && form.clausePackScenarioMatrix && typeof form.clausePackScenarioMatrix === 'object') {
     const scenarioMatrix = form.clausePackScenarioMatrix
-    nextMetadata.legal_clause_pack_scenario_matrix_version = scenarioMatrix.schemaVersion || null
-    nextMetadata.last_clause_pack_scenario_matrix = {
+    const canonicalMatrix = scenarioMatrix.assetEvidence && typeof scenarioMatrix.assetEvidence === 'object'
+    const matrixRecord = {
       schemaVersion: scenarioMatrix.schemaVersion || null,
       scenarioCount: Number(scenarioMatrix.scenarioCount || 0),
       passedCount: Number(scenarioMatrix.passedCount || 0),
@@ -3801,6 +3810,24 @@ function buildTemplateMetadata(form = {}, existingMetadata = {}, uploadMeta = nu
       certificationKey: scenarioMatrix.certificationKey || null,
       canPublish: Boolean(scenarioMatrix.canPublish),
       validatedAt: new Date().toISOString(),
+    }
+    if (canonicalMatrix) {
+      nextMetadata.document_model = 'single_master_document'
+      nextMetadata.canonical_contract_version = scenarioMatrix.assetEvidence.contractVersion
+      nextMetadata.canonical_runtime_binding_version = scenarioMatrix.assetEvidence.runtimeVersion
+      nextMetadata.canonical_template_asset_version = scenarioMatrix.assetEvidence.assetVersion
+      nextMetadata.docx_sha256 = scenarioMatrix.assetEvidence.docxSha256 || OTP_CANONICAL_DOCX_SHA256
+      nextMetadata.manifest_sha256 = scenarioMatrix.assetEvidence.manifestSha256 || OTP_CANONICAL_MANIFEST_SHA256
+      nextMetadata.canonical_otp_reference_matrix_version = scenarioMatrix.schemaVersion || null
+      nextMetadata.last_canonical_otp_reference_matrix = {
+        ...matrixRecord,
+        exercisedCapabilities: scenarioMatrix.exercisedCapabilities || [],
+        missingCapabilities: scenarioMatrix.missingCapabilities || [],
+        assetEvidence: scenarioMatrix.assetEvidence,
+      }
+    } else {
+      nextMetadata.legal_clause_pack_scenario_matrix_version = scenarioMatrix.schemaVersion || null
+      nextMetadata.last_clause_pack_scenario_matrix = matrixRecord
     }
   }
   if (
@@ -6446,6 +6473,11 @@ export default function SettingsSigningTemplatesPage({
   const otpClausePackCoverage = useMemo(() => {
     if (packetType !== 'otp') return null
     const metadataJson = form.metadataJson && typeof form.metadataJson === 'object' ? form.metadataJson : {}
+    if (isCanonicalOtpTemplate({
+      ...(selectedTemplate || {}),
+      document_model: selectedTemplate?.document_model || metadataJson.document_model,
+      metadata_json: metadataJson,
+    })) return null
     return buildLegalClausePackCoverage({
       template: {
         ...(selectedTemplate || {}),
@@ -6466,17 +6498,24 @@ export default function SettingsSigningTemplatesPage({
   }, [form.isActive, form.metadataJson, form.sections, form.templateStatus, packetType, selectedTemplate])
   const otpClausePackScenarioMatrix = useMemo(() => {
     if (packetType !== 'otp') return null
+    const template = {
+      ...(selectedTemplate || {}),
+      document_model: selectedTemplate?.document_model || form.metadataJson?.document_model,
+      metadata_json: form.metadataJson || selectedTemplate?.metadata_json || {},
+      template_storage_path: form.templateStoragePath || selectedTemplate?.template_storage_path,
+      governance_version: Math.max(1, Number(selectedTemplate?.governance_version || form.metadataJson?.governance_version || 0)),
+      sections: form.sections || [],
+    }
+    if (isCanonicalOtpTemplate(template)) {
+      return runCanonicalOtpReferenceMatrix({ template })
+    }
     return runLegalClausePackScenarioMatrix({
-      template: {
-        ...(selectedTemplate || {}),
-        governance_version: Math.max(1, Number(selectedTemplate?.governance_version || form.metadataJson?.governance_version || 0)),
-        sections: form.sections || [],
-      },
+      template,
       sections: form.sections || [],
       allowLegacy: false,
       requireApproval: true,
     })
-  }, [form.metadataJson?.governance_version, form.sections, packetType, selectedTemplate])
+  }, [form.metadataJson, form.sections, form.templateStoragePath, packetType, selectedTemplate])
   const selectedOtpPreviewScenario = useMemo(
     () => getSouthAfricanOtpReferenceScenario(selectedOtpPreviewScenarioKey),
     [selectedOtpPreviewScenarioKey],
@@ -6660,9 +6699,13 @@ export default function SettingsSigningTemplatesPage({
     [migrationReport.defaultTemplate, selectedList],
   )
   const otpRolloutOperations = useMemo(
-    () => packetType === 'otp'
-      ? buildOtpRolloutOperations({ liveTemplate, templates: selectedList })
-      : null,
+    () => {
+      if (packetType !== 'otp') return null
+      if (isCanonicalOtpTemplate(liveTemplate || {})) {
+        return buildCanonicalOtpRecoveryReadiness({ template: liveTemplate })
+      }
+      return buildOtpRolloutOperations({ liveTemplate, templates: selectedList })
+    },
     [liveTemplate, packetType, selectedList],
   )
   const canPublishTemplate = hasPublishingAuthority({
@@ -7934,6 +7977,24 @@ export default function SettingsSigningTemplatesPage({
       setError('')
       setMessage('')
 
+      const canonicalTemplate = {
+        ...(selectedTemplate || {}),
+        document_model: selectedTemplate?.document_model || form.metadataJson?.document_model,
+        metadata_json: form.metadataJson || selectedTemplate?.metadata_json || {},
+      }
+      if (packetType === 'otp' && isCanonicalOtpTemplate(canonicalTemplate)) {
+        await activateCanonicalOtpCandidate({
+          templateId: selectedTemplateId,
+          candidateVersionId: selectedTemplate?.candidate_version_id || selectedTemplate?.candidateVersionId,
+          certificationKey: otpClausePackScenarioMatrix?.certificationKey,
+          templateFingerprint: otpClausePackScenarioMatrix?.templateFingerprint,
+        })
+        await refreshAll()
+        setHasUnsavedChanges(false)
+        setMessage('Canonical OTP candidate activated. The previous live version is retained for rollback.')
+        return
+      }
+
       const metadataJson = buildTemplateMetadata({
         ...form,
         templateStatus: 'published',
@@ -8019,6 +8080,19 @@ export default function SettingsSigningTemplatesPage({
       setSaving(true)
       setError('')
       setMessage('')
+
+      if (otpRolloutOperations.canonical) {
+        await rollbackCanonicalOtpVersion({
+          templateId: currentLiveTemplate.id,
+          reason,
+        })
+        rollbackCompleted = true
+        setShowOtpRollbackConfirm(false)
+        setOtpRollbackReason('')
+        await refreshAll({ targetPacketType: 'otp', preferredTemplateId: currentLiveTemplate.id })
+        setMessage('The previous canonical OTP version is live again. Existing generated documents were not changed.')
+        return
+      }
 
       await rollbackGovernedOtpTemplate({
         currentTemplateId: currentLiveTemplate.id,
@@ -11711,10 +11785,12 @@ export default function SettingsSigningTemplatesPage({
                           {otpClausePackScenarioMatrix.passedCount}/{otpClausePackScenarioMatrix.scenarioCount} everyday transaction types pass
                         </p>
                         <p className="mt-1 text-xs leading-5 text-[#607387]">
-                          The matrix exercises {otpClausePackScenarioMatrix.exercisedPackCount}/{otpClausePackScenarioMatrix.publishablePackCount} supported clause packs.
+                          {otpClausePackScenarioMatrix.assetEvidence
+                            ? `The matrix exercises ${otpClausePackScenarioMatrix.exercisedCapabilities.length}/${otpClausePackScenarioMatrix.publishablePackCount} real-world data conditions in the same standard OTP.`
+                            : `The matrix exercises ${otpClausePackScenarioMatrix.exercisedPackCount}/${otpClausePackScenarioMatrix.publishablePackCount} supported clause packs.`}
                         </p>
                         <p className="mt-1 text-[11px] leading-5 text-[#6f8093]">
-                          Certification {otpClausePackScenarioMatrix.templateFingerprint}. Any wording, condition, order or approval change invalidates the saved result.
+                          Certification {otpClausePackScenarioMatrix.templateFingerprint}. Any document, mapping or approval change invalidates the saved result.
                         </p>
                       </div>
                       <span className={[
@@ -11732,8 +11808,10 @@ export default function SettingsSigningTemplatesPage({
                         <button
                           key={`otp-reference-scenario-${scenarioResult.key}`}
                           type="button"
-                          className="flex items-start justify-between gap-3 rounded-[12px] border border-white/80 bg-white px-3 py-2.5 text-left transition hover:border-[#96d7ad]"
+                          disabled={Boolean(otpClausePackScenarioMatrix.assetEvidence)}
+                          className="flex items-start justify-between gap-3 rounded-[12px] border border-white/80 bg-white px-3 py-2.5 text-left transition enabled:hover:border-[#96d7ad]"
                           onClick={() => {
+                            if (otpClausePackScenarioMatrix.assetEvidence) return
                             setSelectedOtpPreviewScenarioKey(scenarioResult.key)
                             setActiveTab('preview')
                           }}
@@ -11742,7 +11820,7 @@ export default function SettingsSigningTemplatesPage({
                             <span className="block text-xs font-semibold text-[#102033]">{scenarioResult.label}</span>
                             {!scenarioResult.passed ? (
                               <span className="mt-1 block text-[11px] leading-4 text-[#8e1f15]">
-                                {scenarioResult.issues[0]?.message || scenarioResult.reviewItems[0]?.message || 'Needs review'}
+                                {scenarioResult.issues?.[0]?.message || scenarioResult.reviewItems?.[0]?.message || 'Needs review'}
                               </span>
                             ) : null}
                           </span>

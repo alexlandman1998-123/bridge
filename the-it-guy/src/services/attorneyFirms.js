@@ -31,11 +31,16 @@ import {
 } from './attorneyFirmServiceShared'
 import { inviteAttorneyFirmMember } from './attorneyFirmInvitations'
 import { completeOnboarding } from './onboarding/onboardingEngine'
+import { projectCanonicalOrganisationOntoAttorneyFirm } from '../core/organisations/attorneyOrganisationFirmProjection'
 
 const ATTORNEY_FIRM_SELECT_COLUMNS =
   'id, organisation_id, name, registration_number, vat_number, website, email, phone, address_line_1, address_line_2, city, province, postal_code, country, logo_url, primary_colour, secondary_colour, created_by, created_at, updated_at, is_active'
 const ATTORNEY_FIRM_BRANDING_SELECT_COLUMNS =
   'firm_id, logo_url, logo_bucket, logo_path, logo_dark_url, logo_dark_bucket, logo_dark_path, primary_colour, secondary_colour'
+const ATTORNEY_ORGANISATION_SELECT_COLUMNS =
+  'id, name, display_name, legal_name, registration_number, vat_number, company_email, company_phone, website, address_line_1, address_line_2, city, province, postal_code, country, logo_url, logo_bucket, logo_path, logo_dark_url, logo_dark_bucket, logo_dark_path, primary_colour, secondary_colour'
+const ATTORNEY_ORGANISATION_COMPATIBILITY_SELECT_COLUMNS =
+  'id, name, display_name, legal_name, registration_number, company_email, company_phone, website, address_line_1, address_line_2, city, province, postal_code, country, logo_url, primary_colour, secondary_colour'
 const ATTORNEY_FIRM_RECOVERY_CACHE_KEY_PREFIX = 'itg:attorney-firm-recovery'
 const ATTORNEY_FIRM_LOGO_MAX_BYTES = 5 * 1024 * 1024
 const ATTORNEY_BRANDING_BUCKET_CANDIDATES = Array.from(
@@ -208,21 +213,6 @@ function mapBrandingRow(row) {
   }
 }
 
-function mergeFirmRowWithBranding(firmRow, brandingRow = null) {
-  if (!firmRow || !brandingRow) return firmRow
-  return {
-    ...firmRow,
-    logo_url: brandingRow.logo_url || firmRow.logo_url,
-    logo_bucket: brandingRow.logo_bucket || firmRow.logo_bucket,
-    logo_path: brandingRow.logo_path || firmRow.logo_path,
-    logo_dark_url: brandingRow.logo_dark_url || firmRow.logo_dark_url,
-    logo_dark_bucket: brandingRow.logo_dark_bucket || firmRow.logo_dark_bucket,
-    logo_dark_path: brandingRow.logo_dark_path || firmRow.logo_dark_path,
-    primary_colour: brandingRow.primary_colour || firmRow.primary_colour,
-    secondary_colour: brandingRow.secondary_colour || firmRow.secondary_colour,
-  }
-}
-
 function mergeFirmWithBranding(firm, branding = null) {
   if (!firm || !branding) return firm
   return {
@@ -260,6 +250,54 @@ async function getAttorneyFirmBrandingRow(client, firmId) {
   }
 
   return query.data || null
+}
+
+function canUseLegacyOrganisationReadFallback(error) {
+  return (
+    isMissingColumnError(error) ||
+    isMissingTableError(error, 'organisations') ||
+    isPermissionDeniedError(error)
+  )
+}
+
+async function getCanonicalAttorneyOrganisationRows(client, firmRows = []) {
+  const organisationIds = [...new Set(
+    firmRows
+      .map((firm) => normalizeText(firm?.organisation_id || firm?.id))
+      .filter(Boolean),
+  )]
+  if (!organisationIds.length) return new Map()
+
+  let query = await client
+    .from('organisations')
+    .select(ATTORNEY_ORGANISATION_SELECT_COLUMNS)
+    .in('id', organisationIds)
+
+  if (query.error && canUseLegacyOrganisationReadFallback(query.error)) {
+    query = await client
+      .from('organisations')
+      .select(ATTORNEY_ORGANISATION_COMPATIBILITY_SELECT_COLUMNS)
+      .in('id', organisationIds)
+  }
+
+  if (query.error) {
+    if (canUseLegacyOrganisationReadFallback(query.error)) {
+      console.warn('[Attorney Firm] canonical organisation read unavailable; using the legacy compatibility projection.', query.error)
+      return new Map()
+    }
+    throw query.error
+  }
+
+  return new Map((query.data || []).map((organisation) => [organisation.id, organisation]))
+}
+
+async function hydrateAttorneyFirmRowsFromCanonicalOrganisations(client, firmRows = [], brandingRows = []) {
+  const organisationById = await getCanonicalAttorneyOrganisationRows(client, firmRows)
+  return firmRows.map((firmRow, index) => {
+    const firm = mergeFirmWithBranding(mapFirmRow(firmRow), mapBrandingRow(brandingRows[index]))
+    const organisationId = normalizeText(firmRow?.organisation_id || firmRow?.id)
+    return projectCanonicalOrganisationOntoAttorneyFirm(firm, organisationById.get(organisationId) || null)
+  })
 }
 
 function buildBrandingPayload(firmId, branding = {}, userId = null, { includeMetadata = true } = {}) {
@@ -510,25 +548,132 @@ function buildFirmPayload(payload = {}, userId = null, { requireName = true } = 
     throw new Error('Firm website must be a valid domain, such as yourfirm.com.')
   }
 
+  const include = (key) => requireName || Object.prototype.hasOwnProperty.call(payload, key)
+
   return {
     ...(firmName ? { name: firmName } : {}),
-    registration_number: normalizeNullableText(payload.registrationNumber),
-    vat_number: normalizeNullableText(payload.vatNumber),
-    website: normalizeNullableText(normalizedWebsite),
-    email: normalizeNullableText(payload.email ? normalizeEmail(payload.email) : payload.email),
-    phone: normalizeNullableText(payload.phone),
-    address_line_1: normalizeNullableText(payload.addressLine1),
-    address_line_2: normalizeNullableText(payload.addressLine2),
-    city: normalizeNullableText(payload.city),
-    province: normalizeNullableText(payload.province),
-    postal_code: normalizeNullableText(payload.postalCode),
-    country: normalizeNullableText(payload.country) || 'South Africa',
-    logo_url: normalizeNullableText(payload.logoUrl),
-    primary_colour: normalizeNullableText(payload.primaryColour),
-    secondary_colour: normalizeNullableText(payload.secondaryColour),
-    created_by: userId,
-    is_active: payload.isActive === undefined ? true : Boolean(payload.isActive),
+    ...(include('registrationNumber') ? { registration_number: normalizeNullableText(payload.registrationNumber) } : {}),
+    ...(include('vatNumber') ? { vat_number: normalizeNullableText(payload.vatNumber) } : {}),
+    ...(include('website') ? { website: normalizeNullableText(normalizedWebsite) } : {}),
+    ...(include('email') ? { email: normalizeNullableText(payload.email ? normalizeEmail(payload.email) : payload.email) } : {}),
+    ...(include('phone') ? { phone: normalizeNullableText(payload.phone) } : {}),
+    ...(include('addressLine1') ? { address_line_1: normalizeNullableText(payload.addressLine1) } : {}),
+    ...(include('addressLine2') ? { address_line_2: normalizeNullableText(payload.addressLine2) } : {}),
+    ...(include('city') ? { city: normalizeNullableText(payload.city) } : {}),
+    ...(include('province') ? { province: normalizeNullableText(payload.province) } : {}),
+    ...(include('postalCode') ? { postal_code: normalizeNullableText(payload.postalCode) } : {}),
+    ...(include('country') ? { country: normalizeNullableText(payload.country) || 'South Africa' } : {}),
+    ...(include('logoUrl') ? { logo_url: normalizeNullableText(payload.logoUrl) } : {}),
+    ...(include('primaryColour') ? { primary_colour: normalizeNullableText(payload.primaryColour) } : {}),
+    ...(include('secondaryColour') ? { secondary_colour: normalizeNullableText(payload.secondaryColour) } : {}),
+    ...(userId ? { created_by: userId } : {}),
+    ...(include('isActive') ? { is_active: payload.isActive === undefined ? true : Boolean(payload.isActive) } : {}),
   }
+}
+
+function buildCanonicalAttorneyOrganisationPayload(payload = {}, firmPayload = {}) {
+  const organisationPayload = {}
+  const sharedColumns = {
+    registration_number: 'registration_number',
+    vat_number: 'vat_number',
+    website: 'website',
+    email: 'company_email',
+    phone: 'company_phone',
+    address_line_1: 'address_line_1',
+    address_line_2: 'address_line_2',
+    city: 'city',
+    province: 'province',
+    postal_code: 'postal_code',
+    country: 'country',
+    logo_url: 'logo_url',
+    primary_colour: 'primary_colour',
+    secondary_colour: 'secondary_colour',
+  }
+  for (const [firmColumn, organisationColumn] of Object.entries(sharedColumns)) {
+    if (Object.prototype.hasOwnProperty.call(firmPayload, firmColumn)) {
+      organisationPayload[organisationColumn] = firmPayload[firmColumn]
+    }
+  }
+
+  if (firmPayload.name) {
+    organisationPayload.name = firmPayload.name
+    organisationPayload.display_name = firmPayload.name
+    organisationPayload.legal_name = firmPayload.name
+  }
+
+  const optionalBrandingFields = {
+    logoBucket: 'logo_bucket',
+    logoPath: 'logo_path',
+    logoDarkUrl: 'logo_dark_url',
+    logoDarkBucket: 'logo_dark_bucket',
+    logoDarkPath: 'logo_dark_path',
+  }
+  for (const [inputKey, column] of Object.entries(optionalBrandingFields)) {
+    if (Object.prototype.hasOwnProperty.call(payload, inputKey)) {
+      organisationPayload[column] = normalizeNullableText(payload[inputKey])
+    }
+  }
+
+  return organisationPayload
+}
+
+function canUseLegacyOrganisationWriteFallback(error) {
+  return (
+    isMissingColumnError(error) ||
+    isMissingTableError(error, 'organisations') ||
+    normalizeText(error?.code).toLowerCase() === 'pgrst116'
+  )
+}
+
+async function updateCanonicalAttorneyOrganisation(client, firmId, payload, firmPayload) {
+  const firmLookup = await client
+    .from('attorney_firms')
+    .select('id, organisation_id')
+    .eq('id', firmId)
+    .maybeSingle()
+
+  if (firmLookup.error) throw firmLookup.error
+  const ensuredOrganisationId = await ensureAttorneyFirmBackingOrganisation(client, firmId)
+  const organisationId = normalizeText(ensuredOrganisationId || firmLookup.data?.organisation_id || firmId)
+  if (!organisationId) return null
+
+  const query = await client
+    .from('organisations')
+    .update(buildCanonicalAttorneyOrganisationPayload(payload, firmPayload))
+    .eq('id', organisationId)
+    .select(ATTORNEY_ORGANISATION_SELECT_COLUMNS)
+    .single()
+
+  if (query.error) {
+    if (canUseLegacyOrganisationWriteFallback(query.error)) {
+      console.warn('[Attorney Firm] canonical organisation columns are not deployed; preserving the legacy settings write path.', query.error)
+      return null
+    }
+    throw query.error
+  }
+
+  return query.data
+}
+
+async function updateCanonicalAttorneyOrganisationWithRpc(client, firmId, payload, firmPayload) {
+  const rpcName = 'bridge_update_attorney_organisation_identity_v3'
+  const result = await client.rpc(rpcName, {
+    target_firm_id: firmId,
+    identity_patch: buildCanonicalAttorneyOrganisationPayload(payload, firmPayload),
+  })
+
+  if (result.error) {
+    if (isMissingRpcError(result.error, rpcName)) {
+      return { available: false, organisation: null }
+    }
+    throw result.error
+  }
+
+  if (!result.data?.success || !result.data?.organisation?.id) {
+    throw new Error('Canonical attorney organisation update did not return an organisation.')
+  }
+
+  return { available: true, organisation: result.data.organisation }
 }
 
 export async function createDefaultAttorneyDepartments(firmId) {
@@ -614,7 +759,7 @@ export async function setAttorneyFirmDepartmentActivation(firmId, activeDepartme
   const normalizedRequestedTypes = [...new Set((activeDepartmentTypes || []).map((value) => assertDepartmentType(value)))]
   const enforcedTypes = new Set([...normalizedRequestedTypes, 'management'])
 
-  const rpcResult = await client.rpc('set_attorney_firm_department_activation', {
+  const rpcResult = await client.rpc('set_attorney_firm_department_activation_v2', {
     target_firm_id: normalizedFirmId,
     active_department_types: [...enforcedTypes],
   })
@@ -830,7 +975,12 @@ export async function getAttorneyFirmById(firmId) {
   }
 
   const brandingRow = await getAttorneyFirmBrandingRow(client, normalizedFirmId)
-  return mapFirmRow(mergeFirmRowWithBranding(query.data, brandingRow))
+  const [firm] = await hydrateAttorneyFirmRowsFromCanonicalOrganisations(
+    client,
+    query.data ? [query.data] : [],
+    [brandingRow],
+  )
+  return firm || null
 }
 
 async function getCurrentUserOwnedAttorneyFirm(client, userId) {
@@ -857,7 +1007,12 @@ async function getCurrentUserOwnedAttorneyFirm(client, userId) {
   }
 
   const brandingRow = await getAttorneyFirmBrandingRow(client, query.data?.id)
-  return mapFirmRow(mergeFirmRowWithBranding(query.data, brandingRow))
+  const [firm] = await hydrateAttorneyFirmRowsFromCanonicalOrganisations(
+    client,
+    query.data ? [query.data] : [],
+    [brandingRow],
+  )
+  return firm || null
 }
 
 export async function getCurrentUserAttorneyFirms() {
@@ -995,13 +1150,16 @@ export async function getCurrentUserAttorneyFirms() {
   const brandingRows = await Promise.all((firmsQuery.data || []).map((firmRow) =>
     getAttorneyFirmBrandingRow(client, firmRow.id).catch(() => null),
   ))
+  const hydratedFirms = await hydrateAttorneyFirmRowsFromCanonicalOrganisations(
+    client,
+    firmsQuery.data || [],
+    brandingRows,
+  )
 
-  return (firmsQuery.data || []).map((firmRow, index) => {
-    const firm = mapFirmRow(firmRow)
-    const firmWithBranding = mergeFirmWithBranding(firm, mapBrandingRow(brandingRows[index]))
+  return hydratedFirms.map((firm) => {
     const membership = roleByFirmId[firm.id] || {}
     return {
-      ...firmWithBranding,
+      ...firm,
       membershipRole: membership.role || null,
       membershipStatus: membership.status || null,
       membershipJoinedAt: membership.joinedAt || null,
@@ -1080,14 +1238,41 @@ export async function updateAttorneyFirm(firmId, payload = {}) {
   const firmPayload = buildFirmPayload(payload, null, { requireName: false })
   delete firmPayload.created_by
 
-  const query = await client
-    .from('attorney_firms')
-    .update(firmPayload)
-    .eq('id', normalizedFirmId)
-    .select(
-      ATTORNEY_FIRM_SELECT_COLUMNS,
-    )
-    .single()
+  const canonicalRpc = await updateCanonicalAttorneyOrganisationWithRpc(
+    client,
+    normalizedFirmId,
+    payload,
+    firmPayload,
+  )
+
+  let query
+  if (canonicalRpc.available) {
+    // Phase 7: shared identity and branding are projected by the database.
+    // Only the operational activation flag may still be written to the firm.
+    if (Object.prototype.hasOwnProperty.call(firmPayload, 'is_active')) {
+      query = await client
+        .from('attorney_firms')
+        .update({ is_active: firmPayload.is_active })
+        .eq('id', normalizedFirmId)
+        .select(ATTORNEY_FIRM_SELECT_COLUMNS)
+        .single()
+    } else {
+      query = await client
+        .from('attorney_firms')
+        .select(ATTORNEY_FIRM_SELECT_COLUMNS)
+        .eq('id', normalizedFirmId)
+        .single()
+    }
+  } else {
+    // Mixed-version fallback retained until the Phase 7 RPC is deployed.
+    await updateCanonicalAttorneyOrganisation(client, normalizedFirmId, payload, firmPayload)
+    query = await client
+      .from('attorney_firms')
+      .update(firmPayload)
+      .eq('id', normalizedFirmId)
+      .select(ATTORNEY_FIRM_SELECT_COLUMNS)
+      .single()
+  }
 
   if (query.error) {
     if (isMissingTableError(query.error, 'attorney_firms')) {
@@ -1096,10 +1281,75 @@ export async function updateAttorneyFirm(firmId, payload = {}) {
     throw query.error
   }
 
-  const branding = hasAttorneyBrandingPayload(payload)
+  const branding = !canonicalRpc.available && hasAttorneyBrandingPayload(payload)
     ? await saveAttorneyFirmBranding(client, normalizedFirmId, payload)
     : mapBrandingRow(await getAttorneyFirmBrandingRow(client, normalizedFirmId))
-  return mergeFirmWithBranding(mapFirmRow(query.data), branding)
+  const [firm] = await hydrateAttorneyFirmRowsFromCanonicalOrganisations(
+    client,
+    [query.data],
+    [branding ? {
+      logo_url: branding.logoUrl,
+      logo_bucket: branding.logoBucket,
+      logo_path: branding.logoPath,
+      logo_dark_url: branding.logoDarkUrl,
+      logo_dark_bucket: branding.logoDarkBucket,
+      logo_dark_path: branding.logoDarkPath,
+      primary_colour: branding.primaryColour,
+      secondary_colour: branding.secondaryColour,
+    } : null],
+  )
+  return firm
+}
+
+async function completeAttorneyFirmOnboardingAtomically({
+  firmInformation = {},
+  branding = {},
+  activeDepartmentTypes = [],
+} = {}) {
+  const client = requireClient()
+  const user = await getAuthenticatedUser(client)
+  const rpcName = 'bridge_complete_attorney_firm_onboarding_v3'
+  const result = await client.rpc(rpcName, {
+    payload: {
+      firmInformation,
+      branding,
+      activeDepartmentTypes,
+    },
+  })
+
+  if (result.error) throw result.error
+  if (!result.data?.success || !result.data?.firm?.id) {
+    throw new Error('Attorney firm onboarding did not return a completed workspace.')
+  }
+
+  const brandingRecord = mapBrandingRow(result.data.branding)
+  const firm = mergeFirmWithBranding(mapFirmRow({
+    ...result.data.firm,
+    organisation_id: result.data.organisation?.id || result.data.workspace_id || result.data.firm.organisation_id,
+  }), brandingRecord)
+  const departments = (result.data.departments || []).map(mapDepartmentRow).filter(Boolean)
+  rememberAttorneyFirmRecovery(user.id, firm)
+
+  return { firm, departments }
+}
+
+async function completeAttorneyFirmOnboardingLegacy({
+  firmInformation = {},
+  branding = {},
+  activeDepartmentTypes = [],
+} = {}) {
+  const combinedFirmPayload = {
+    ...firmInformation,
+    ...branding,
+  }
+  let firm = await createAttorneyFirm(combinedFirmPayload)
+  const authUser = await getAuthenticatedUser(requireClient()).catch(() => null)
+  const brandingRecord = await saveAttorneyFirmBranding(requireClient(), firm.id, branding, authUser?.id || null)
+  firm = mergeFirmWithBranding(firm, brandingRecord)
+  rememberAttorneyFirmRecovery(authUser?.id || '', firm)
+  const departments = await setAttorneyFirmDepartmentActivation(firm.id, activeDepartmentTypes)
+
+  return { firm, departments }
 }
 
 export async function completeAttorneyFirmOnboarding({
@@ -1108,18 +1358,26 @@ export async function completeAttorneyFirmOnboarding({
   activeDepartmentTypes = [],
   invites = [],
 } = {}) {
-  const combinedFirmPayload = {
-    ...firmInformation,
-    ...branding,
-  }
-
   try {
-    let createdFirm = await createAttorneyFirm(combinedFirmPayload)
-    const authUser = await getAuthenticatedUser(requireClient()).catch(() => null)
-    const brandingRecord = await saveAttorneyFirmBranding(requireClient(), createdFirm.id, branding, authUser?.id || null)
-    createdFirm = mergeFirmWithBranding(createdFirm, brandingRecord)
-    rememberAttorneyFirmRecovery(authUser?.id || '', createdFirm)
-    const updatedDepartments = await setAttorneyFirmDepartmentActivation(createdFirm.id, activeDepartmentTypes)
+    let completion
+    try {
+      completion = await completeAttorneyFirmOnboardingAtomically({
+        firmInformation,
+        branding,
+        activeDepartmentTypes,
+      })
+    } catch (error) {
+      if (!isMissingRpcError(error, 'bridge_complete_attorney_firm_onboarding_v2')) throw error
+      console.warn('[Attorney Onboarding] atomic onboarding RPC is unavailable; using the legacy compatibility path.', error)
+      completion = await completeAttorneyFirmOnboardingLegacy({
+        firmInformation,
+        branding,
+        activeDepartmentTypes,
+      })
+    }
+
+    const createdFirm = completion.firm
+    const updatedDepartments = completion.departments
     const activeDepartments = updatedDepartments.filter((department) => department.isActive)
     const departmentIdByType = activeDepartments.reduce((accumulator, department) => {
       accumulator[department.departmentType] = department.id

@@ -72,7 +72,7 @@ function normalizeLaneFromProcessType(processType) {
 
 function ownerRoleToParticipantRole(ownerRole) {
   const normalized = toLower(ownerRole)
-  if (normalized === 'transfer_attorney' || normalized === 'bond_attorney') return 'attorney'
+  if (normalized === 'transfer_attorney' || normalized === 'bond_attorney' || normalized === 'cancellation_attorney') return 'attorney'
   return normalized
 }
 

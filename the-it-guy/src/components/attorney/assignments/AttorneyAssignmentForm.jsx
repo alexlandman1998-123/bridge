@@ -52,6 +52,7 @@ function AttorneyAssignmentForm({
   const [loadingMembers, setLoadingMembers] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const isBankAppointedFirmLocked = ['bond', 'cancellation'].includes(assignmentType) && Boolean(initialAssignment?.firmId)
 
   useEffect(() => {
     let active = true
@@ -83,7 +84,7 @@ function AttorneyAssignmentForm({
             return ['bond', 'management'].includes(departmentType)
           }
           if (assignmentType === 'cancellation') {
-            return ['transfer', 'admin', 'management'].includes(departmentType)
+            return ['cancellation', 'management'].includes(departmentType)
           }
           return true
         })
@@ -124,7 +125,7 @@ function AttorneyAssignmentForm({
         primaryAttorneyId: form.primaryAttorneyId || null,
         secretaryId: form.secretaryId || null,
         adminHandlerId: form.adminHandlerId || null,
-        status: form.status,
+        status: isBankAppointedFirmLocked && form.status === 'pending' && form.primaryAttorneyId ? 'active' : form.status,
         isPrimary: form.isPrimary,
       }
 
@@ -156,8 +157,14 @@ function AttorneyAssignmentForm({
               adminHandlerId: '',
             }))
           }
-          disabled={saving}
+          disabled={saving || isBankAppointedFirmLocked}
         />
+
+        {isBankAppointedFirmLocked ? (
+          <p className="self-end text-xs text-textMuted md:col-span-2">
+            This firm was appointed by the bank. A firm manager can assign its internal matter team, but cannot replace the appointed firm.
+          </p>
+        ) : null}
 
         <label className="flex flex-col gap-1.5">
           <span className="text-label font-semibold uppercase text-textMuted">Department</span>

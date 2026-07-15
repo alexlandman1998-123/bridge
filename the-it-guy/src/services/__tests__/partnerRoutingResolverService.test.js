@@ -203,6 +203,17 @@ try {
   assert.equal(selections.length, 2)
   assert.equal(selections[0].roleType, 'bond_originator')
 
+  assert.deepEqual(
+    service.inferPartnerRoutingRoleTypesForTransaction({ financeType: 'cash', hasExistingBondToCancel: true }),
+    ['transfer_attorney'],
+    'deal creation must not route a cancellation attorney before the existing lender appoints one',
+  )
+  assert.deepEqual(
+    service.inferPartnerRoutingRoleTypesForTransaction({ financeType: 'bond', hasExistingBondToCancel: true }),
+    ['transfer_attorney', 'bond_originator'],
+    'deal creation must not route bond or cancellation attorneys before bank appointments',
+  )
+
   console.log('partnerRoutingResolverService tests passed')
 } finally {
   await server.close()

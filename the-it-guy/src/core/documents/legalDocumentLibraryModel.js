@@ -6,6 +6,8 @@ import { SOUTH_AFRICAN_LEGAL_CLAUSE_PACK_DEFINITIONS } from './southAfricanLegal
 import { buildOtpAttorneyReadiness } from './otpAttorneyReadiness.js'
 import { buildOtpLaunchReadiness } from './otpLaunchReadiness.js'
 import { buildOtpRolloutOperations } from './otpRolloutOperations.js'
+import { buildCanonicalOtpRecoveryReadiness } from './otpCanonicalRecovery.js'
+import { isCanonicalOtpTemplate } from './otpCanonicalReferenceMatrix.js'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -170,7 +172,9 @@ function buildDocumentModel(definition = {}, templates = []) {
     ? buildOtpLaunchReadiness({ candidateTemplate: rolloutCandidateTemplate, liveTemplate })
     : null
   const rolloutOperations = definition.key === 'otp'
-    ? buildOtpRolloutOperations({ liveTemplate, templates: matchingTemplates })
+    ? isCanonicalOtpTemplate(liveTemplate || {})
+      ? buildCanonicalOtpRecoveryReadiness({ template: liveTemplate })
+      : buildOtpRolloutOperations({ liveTemplate, templates: matchingTemplates })
     : null
   const routingAudit = definition.key === 'otp'
     ? buildLegalDocumentTemplateCoverageAudit(matchingTemplates.filter((template) => isLiveTemplate(template)), { packetType: 'otp' })
@@ -178,7 +182,9 @@ function buildDocumentModel(definition = {}, templates = []) {
   const coverageReady = definition.kind === 'addendum'
     ? Boolean(liveTemplate)
     : definition.key === 'otp'
-      ? Boolean(routingAudit?.hasGenericFallback) && routingAudit.conflictCount === 0
+      ? isCanonicalOtpTemplate(liveTemplate || {})
+        ? Boolean(liveTemplate?.live_version_id || liveTemplate?.liveVersionId)
+        : Boolean(routingAudit?.hasGenericFallback) && routingAudit.conflictCount === 0
       : Boolean(liveTemplate)
 
   return {

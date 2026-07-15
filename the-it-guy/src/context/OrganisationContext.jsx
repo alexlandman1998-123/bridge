@@ -3,7 +3,11 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { useAuthSession } from './AuthSessionContext'
 import { fetchAgencyOnboardingSettings } from '../lib/organisationBootstrapApi'
 import { resolveWorkspaceRole } from '../services/roleResolutionService'
-import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
+import {
+  buildAttorneyWorkspaceOrganisationFallback,
+  hydrateAttorneyOrganisationSnapshot,
+  isAttorneyWorkspace,
+} from '../core/organisations/attorneyOrganisationHydration'
 
 const EMPTY_ORGANISATION_BRANDING = Object.freeze({
   logoUrl: '',
@@ -103,50 +107,14 @@ function buildAuthOrganisationSnapshot(authState) {
   })
 }
 
-function buildWorkspaceOrganisationSnapshot(authState) {
-  const workspace = authState.currentWorkspace || {}
-  const membership = authState.currentMembership || {}
-  const logoUrl = normalizeText(workspace.logoUrl || workspace.logo_url || workspace.raw?.logo_url)
-  const backingOrganisationId = normalizeText(workspace.organisationId || workspace.organisation_id || workspace.raw?.organisation_id)
-  const organisation = normalizeOrganisation({
-    id: workspace.id || membership.workspaceId || '',
-    workspaceId: workspace.id || membership.workspaceId || '',
-    organisationId: backingOrganisationId || workspace.id || membership.workspaceId || '',
-    partnerOrganisationId: backingOrganisationId || workspace.id || membership.workspaceId || '',
-    name: workspace.name || 'Arch9 Workspace',
-    displayName: workspace.name || 'Arch9 Workspace',
-    type: workspace.type || authState.workspaceType || '',
-    logoUrl,
-  })
-
-  return normalizeOrganisationSnapshot({
-    organisation,
-    organisationSettings: {},
-    onboarding: {
-      agencyInformation: {
-        agencyName: organisation.name,
-        tradingName: organisation.displayName,
-      },
-      branding: {
-        logoLight: logoUrl,
-      },
-    },
-    membershipRole: resolveWorkspaceRole(membership, {
-      appRole: authState.appRole,
-      workspaceType: workspace.type || authState.workspaceType,
-    }),
-    membershipStatus: membership.status || 'active',
-    onboardingMode: 'workspace_auth_snapshot',
-    persisted: Boolean(workspace.id || membership.workspaceId),
-  })
-}
-
 function isDevAuthOrganisation(authState) {
   return authState.currentMembership?.source === 'dev_auth_bypass'
 }
 
-function shouldUseWorkspaceBranding(authState) {
-  return authState.workspaceType === WORKSPACE_TYPES.attorneyFirm || authState.currentWorkspace?.type === WORKSPACE_TYPES.attorneyFirm
+function resolveHydratedOrganisationSnapshot(snapshot, authState) {
+  return isAttorneyWorkspace(authState)
+    ? hydrateAttorneyOrganisationSnapshot(snapshot, authState)
+    : snapshot
 }
 
 function logOrganisationHydration(snapshot) {
@@ -184,20 +152,19 @@ export function OrganisationProvider({ children }) {
         return applyOrganisationState(nextState)
       }
 
-      if (shouldUseWorkspaceBranding(authState)) {
-        const nextState = buildWorkspaceOrganisationSnapshot(authState)
-        setLoading(false)
-        setError('')
-        return applyOrganisationState(nextState)
-      }
-
     setLoading(true)
     setError('')
 
     try {
-      const nextState = await fetchAgencyOnboardingSettings({ forceRefresh })
+      const response = await fetchAgencyOnboardingSettings({ forceRefresh })
+      const nextState = resolveHydratedOrganisationSnapshot(response, authState)
       return applyOrganisationState(nextState)
     } catch (refreshError) {
+      if (isAttorneyWorkspace(authState)) {
+        const fallback = buildAttorneyWorkspaceOrganisationFallback(authState)
+        setError(refreshError?.message || 'Unable to load the backing organisation. Showing attorney firm details.')
+        return applyOrganisationState(fallback)
+      }
       setError(refreshError?.message || 'Unable to load organisation settings.')
       throw refreshError
     } finally {
@@ -227,28 +194,25 @@ export function OrganisationProvider({ children }) {
         return
       }
 
-      if (shouldUseWorkspaceBranding(authState)) {
-        if (active) {
-          applyOrganisationState(buildWorkspaceOrganisationSnapshot(authState))
-          setLoading(false)
-          setError('')
-        }
-        return
-      }
-
       if (active) {
         setLoading(true)
         setError('')
       }
 
       try {
-        const nextState = await fetchAgencyOnboardingSettings({ forceRefresh: true })
+        const response = await fetchAgencyOnboardingSettings({ forceRefresh: true })
+        const nextState = resolveHydratedOrganisationSnapshot(response, authState)
         if (active) {
           applyOrganisationState(nextState)
         }
       } catch (hydrateError) {
         if (active) {
-          setError(hydrateError?.message || 'Unable to load organisation settings.')
+          if (isAttorneyWorkspace(authState)) {
+            applyOrganisationState(buildAttorneyWorkspaceOrganisationFallback(authState))
+            setError(hydrateError?.message || 'Unable to load the backing organisation. Showing attorney firm details.')
+          } else {
+            setError(hydrateError?.message || 'Unable to load organisation settings.')
+          }
         }
       } finally {
         if (active) {

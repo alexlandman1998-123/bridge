@@ -246,6 +246,14 @@ function buildDefaultOrganisation(profile = null) {
     workspace_kind: 'agency',
     logoUrl: '',
     logoIconUrl: '',
+    logoBucket: '',
+    logoPath: '',
+    logoDarkUrl: '',
+    logoDarkBucket: '',
+    logoDarkPath: '',
+    primaryColour: '',
+    secondaryColour: '',
+    vatNumber: '',
     companyEmail: profile?.email || '',
     companyPhone: profile?.phoneNumber || '',
     website: '',
@@ -276,11 +284,21 @@ function normalizeOrganisationRow(row, profile = null) {
     id: row?.id || fallback.id,
     name: normalizeText(row?.name) || fallback.name,
     displayName: normalizeText(row?.display_name) || fallback.displayName,
+    legalName: normalizeText(row?.legal_name || row?.name) || fallback.name,
+    registrationNumber: normalizeText(row?.registration_number),
+    vatNumber: normalizeText(row?.vat_number),
     type: normalizeText(row?.type) || fallback.type,
     workspaceKind: normalizeText(row?.workspace_kind || row?.workspaceKind) || fallback.workspaceKind,
     workspace_kind: normalizeText(row?.workspace_kind || row?.workspaceKind) || fallback.workspace_kind,
     logoUrl: normalizeText(row?.logo_url),
     logoIconUrl: normalizeText(row?.logo_icon_url || row?.logoIconUrl),
+    logoBucket: normalizeText(row?.logo_bucket),
+    logoPath: normalizeText(row?.logo_path),
+    logoDarkUrl: normalizeText(row?.logo_dark_url),
+    logoDarkBucket: normalizeText(row?.logo_dark_bucket),
+    logoDarkPath: normalizeText(row?.logo_dark_path),
+    primaryColour: normalizeText(row?.primary_colour),
+    secondaryColour: normalizeText(row?.secondary_colour),
     companyEmail: normalizeText(row?.company_email) || fallback.companyEmail,
     companyPhone: normalizeText(row?.company_phone) || fallback.companyPhone,
     website: normalizeText(row?.website),
@@ -539,11 +557,32 @@ async function ensureOrganisationContext(client) {
         persistPreference: false,
       })
       const isOrganisationMembershipSource = (entry) => ['organisation_users', 'organization_members'].includes(normalizeText(entry?.source))
-      const resolvedMembership = isOrganisationMembershipSource(workspaceResolution.currentMembership)
+      const backingOrganisationId = normalizeText(
+        workspaceResolution.currentWorkspace?.organisationId ||
+          workspaceResolution.currentWorkspace?.organisation_id ||
+          workspaceResolution.currentWorkspace?.raw?.organisation_id,
+      )
+      const isBackingOrganisationMembership = (entry) => (
+        isOrganisationMembershipSource(entry) &&
+        Boolean(backingOrganisationId) &&
+        normalizeText(entry?.workspaceId || entry?.workspace_id || entry?.raw?.organisation_id) === backingOrganisationId
+      )
+      const currentOrganisationMembership = isOrganisationMembershipSource(workspaceResolution.currentMembership)
         ? workspaceResolution.currentMembership
-        : (workspaceResolution.activeMemberships || []).find(isOrganisationMembershipSource) || null
+        : null
+      const resolvedMembership = (
+        (backingOrganisationId && isBackingOrganisationMembership(currentOrganisationMembership)
+          ? currentOrganisationMembership
+          : null) ||
+        (workspaceResolution.activeMemberships || []).find(isBackingOrganisationMembership) ||
+        currentOrganisationMembership ||
+        (workspaceResolution.activeMemberships || []).find(isOrganisationMembershipSource) ||
+        null
+      )
       const pendingResolvedMembership = !resolvedMembership
-        ? (workspaceResolution.pendingMemberships || []).find(isOrganisationMembershipSource) || null
+        ? (workspaceResolution.pendingMemberships || []).find(isBackingOrganisationMembership) ||
+          (workspaceResolution.pendingMemberships || []).find(isOrganisationMembershipSource) ||
+          null
         : null
       const rawResolvedMembership = resolvedMembership?.raw && typeof resolvedMembership.raw === 'object'
         ? resolvedMembership.raw
@@ -630,31 +669,95 @@ async function ensureOrganisationContext(client) {
     let organisation = null
 
     if (membership?.organisation_id) {
-      const orgQuery = await client
+      let orgQuery = await client
         .from('organisations')
         .select(`
           id,
           name,
           display_name,
+          legal_name,
+          registration_number,
+          vat_number,
           type,
           workspace_kind,
           logo_url,
+          logo_bucket,
+          logo_path,
+          logo_dark_url,
+          logo_dark_bucket,
+          logo_dark_path,
+          primary_colour,
+          secondary_colour,
           settings_json,
           company_email,
           company_phone,
           website,
           address_line_1,
           address_line_2,
+          formatted_address,
+          suburb,
           city,
           province,
           postal_code,
           country,
+          latitude,
+          longitude,
+          google_place_id,
           support_email,
           support_phone,
           primary_contact_person
         `)
         .eq('id', membership.organisation_id)
         .maybeSingle()
+
+      if (
+        orgQuery.error &&
+        [
+          'vat_number',
+          'logo_bucket',
+          'logo_path',
+          'logo_dark_url',
+          'logo_dark_bucket',
+          'logo_dark_path',
+          'primary_colour',
+          'secondary_colour',
+        ].some((column) =>
+          isMissingColumnError(orgQuery.error, column),
+        )
+      ) {
+        orgQuery = await client
+          .from('organisations')
+          .select(`
+            id,
+            name,
+            display_name,
+            legal_name,
+            registration_number,
+            type,
+            workspace_kind,
+            logo_url,
+            settings_json,
+            company_email,
+            company_phone,
+            website,
+            address_line_1,
+            address_line_2,
+            formatted_address,
+            suburb,
+            city,
+            province,
+            postal_code,
+            country,
+            latitude,
+            longitude,
+            google_place_id,
+            support_email,
+            support_phone,
+            primary_contact_person
+          `)
+          .eq('id', membership.organisation_id)
+          .maybeSingle()
+      }
 
       if (!orgQuery.error) {
         organisation = normalizeOrganisationRow(orgQuery.data, profile)
