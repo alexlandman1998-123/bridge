@@ -71,6 +71,7 @@ test('keeps unlinked packet exceptions visible but non-executable', () => {
   assert.equal(plan.summary.executableActions, 0)
   assert.equal(plan.actions[0].executable, false)
   assert.match(plan.actions[0].skipReason, /not linked to a transaction/)
+  assert.equal(plan.actionKeys.length, 1)
 })
 
 test('requires an exact reviewed dry-run plan before applying notifications', async () => {
@@ -90,3 +91,31 @@ test('requires an exact reviewed dry-run plan before applying notifications', as
   )
 })
 
+test('includes non-executable findings in the reviewed plan fingerprint', () => {
+  const linked = record('9', 'awaiting_operational_approval')
+  const unlinked = record('10', 'stale_approval', { transactionId: null })
+  const linkedOnly = buildLegalClausePackEscalationPlan({ diagnostics: { records: [linked] } })
+  const withUnlinked = buildLegalClausePackEscalationPlan({ diagnostics: { records: [linked, unlinked] } })
+
+  assert.notEqual(linkedOnly.planFingerprint, withUnlinked.planFingerprint)
+  assert.equal(withUnlinked.actionKeys.length, 2)
+})
+
+test('refuses to apply a reviewed plan from incomplete diagnostics', async () => {
+  const diagnostics = {
+    records: [record('11', 'awaiting_operational_approval')],
+    queryWarnings: [{ source: 'document_packet_versions', message: 'query incomplete' }],
+  }
+  const dryRun = await executeLegalClausePackEscalationPlan({ diagnostics, dryRun: true })
+  assert.equal(dryRun.diagnosticsComplete, false)
+  assert.equal(dryRun.canApply, false)
+  await assert.rejects(
+    executeLegalClausePackEscalationPlan({
+      diagnostics,
+      dryRun: false,
+      approvedPlanFingerprint: dryRun.planFingerprint,
+      approvedActionKeys: dryRun.actionKeys,
+    }),
+    (error) => error?.code === 'LEGAL_ESCALATION_DIAGNOSTICS_INCOMPLETE',
+  )
+})

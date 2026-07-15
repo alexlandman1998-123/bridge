@@ -63,17 +63,25 @@ test('derives real OTP status, section groups, signing rules and routing coverag
 
   assert.equal(otp.liveTemplateId, 'otp-live')
   assert.equal(otp.versionLabel, 'v4')
-  assert.equal(otp.standardSectionCount, 3)
+  assert.equal(otp.standardSectionCount, 2)
   assert.equal(otp.situationClauseCount, 1)
   assert.deepEqual(otp.standardSections.map((section) => section.title), [
     'Parties',
     'Property Details',
-    'Signature Pages',
   ])
-  assert.equal(otp.situationSections[0].ruleLabel, 'Buyer company authority pack')
+  assert.equal(otp.situationSections[0].ruleLabel, 'Company buyer authority')
   assert.equal(otp.signerRuleCount, 2)
   assert.equal(otp.coverageReady, true)
   assert.equal(otp.draftCount, 1)
+  assert.equal(otp.attorneyReadiness.summary.coreCount, 0)
+  assert.equal(otp.attorneyReadiness.summary.requiredClauseCount, 23)
+  assert.equal(otp.attorneyReadiness.summary.clauseWordingCount, 0)
+  assert.equal(otp.attorneyReadiness.canSubmitForAttorneyReview, false)
+  assert.equal(otp.attorneyReadiness.canPublish, false)
+  assert.equal(otp.rolloutCandidateTemplateId, 'otp-specialised-draft')
+  assert.equal(otp.launchReadiness.status, 'preparing_candidate')
+  assert.equal(otp.rolloutOperations.status, 'not_governed')
+  assert.equal(otp.rolloutOperations.canRollback, false)
 })
 
 test('keeps addenda separate from the primary OTP document', () => {

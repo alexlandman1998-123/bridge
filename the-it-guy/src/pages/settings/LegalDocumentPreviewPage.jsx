@@ -14,6 +14,7 @@ import {
 import { useRef, useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { getLegalDocumentDefinition } from '../../core/documents/legalDocumentCatalog'
+import { buildOtpCompositionPlan } from '../../core/documents/otpCompositionModel'
 import {
   listLegalDocumentPreviewScenarios,
   resolveLegalDocumentPreviewScenario,
@@ -35,6 +36,8 @@ const EMPTY_PREVIEW = Object.freeze({
   dataRequirements: [],
   sectionManifest: [],
   profile: null,
+  composition: null,
+  runtimeAssembly: null,
   error: '',
 })
 
@@ -97,6 +100,18 @@ export default function LegalDocumentPreviewPage() {
         template: document.primaryTemplate,
         validationAction: 'template_preview',
       })
+      const composition = definition.packetType === 'otp'
+        ? buildOtpCompositionPlan({
+            sections: document.primaryTemplate.sections || [],
+            input: {
+              sourceContext: scenario.context,
+              seller: scenario.context.seller,
+              buyer: scenario.context.buyer,
+              property: scenario.context.property,
+              transaction: scenario.context.transaction,
+            },
+          })
+        : null
       if (requestId !== previewRequestIdRef.current) return
       setPreview({
         html: result?.previewHtml || '',
@@ -105,6 +120,8 @@ export default function LegalDocumentPreviewPage() {
         dataRequirements: Array.isArray(result?.dataRequirements) ? result.dataRequirements : [],
         sectionManifest: Array.isArray(result?.sectionManifest) ? result.sectionManifest : [],
         profile: result?.legalDocumentScenarioProfile || scenario.profile,
+        composition,
+        runtimeAssembly: result?.otpRuntimeAssembly || null,
         error: '',
       })
     } catch (previewError) {
@@ -208,6 +225,68 @@ export default function LegalDocumentPreviewPage() {
                   </li>
                 ))}
               </ul>
+            </section>
+          ) : null}
+
+          {preview.composition ? (
+            <section className="rounded-[18px] border border-[#dfe7ef] bg-white p-5" aria-labelledby="composition-decision-heading">
+              <div className="flex items-center justify-between gap-3">
+                <h2 id="composition-decision-heading" className="text-sm font-semibold text-[#24364b]">How Bridge decided</h2>
+                <span className="rounded-full bg-[#eef8f2] px-2.5 py-1 text-xs font-semibold text-[#1c7446]">{preview.composition.summary.includedCount} included</span>
+              </div>
+
+              {preview.runtimeAssembly ? (
+                <div className={`mt-3 rounded-[11px] border px-3 py-2.5 text-xs leading-5 ${preview.runtimeAssembly.canAssemble ? 'border-[#cfe7d8] bg-[#f4fbf6] text-[#35694b]' : 'border-[#eed5ad] bg-[#fff9ee] text-[#89611d]'}`}>
+                  <strong className="block">
+                    {preview.runtimeAssembly.canAssemble ? 'Runtime selection matches' : 'Runtime selection needs attention'}
+                  </strong>
+                  <span className="mt-1 block">
+                    {preview.runtimeAssembly.expectedPackKeys.length} clause pack{preview.runtimeAssembly.expectedPackKeys.length === 1 ? '' : 's'} required; {preview.runtimeAssembly.selectedPackKeys.length} rendered.
+                    {preview.runtimeAssembly.runtimeEnforced ? ' Phase 4 enforcement is active.' : ' Legacy warning mode is active.'}
+                  </span>
+                  {preview.runtimeAssembly.blockers.length ? (
+                    <ul className="mt-2 space-y-1">
+                      {preview.runtimeAssembly.blockers.slice(0, 3).map((item) => <li key={`${item.code}-${item.packKey || 'assembly'}`}>• {item.message}</li>)}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div className="mt-3 rounded-[11px] border border-[#dce8e1] bg-[#f5fbf7] px-3 py-2.5 text-xs leading-5 text-[#456a55]">
+                <strong className="block text-[#236a43]">Always included</strong>
+                {preview.composition.summary.coreCount} core wording section{preview.composition.summary.coreCount === 1 ? '' : 's'} and {preview.composition.summary.transactionDataCount} transaction-data section{preview.composition.summary.transactionDataCount === 1 ? '' : 's'}.
+              </div>
+
+              <h3 className="mt-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#8293a5]">Answers used</h3>
+              <dl className="mt-2 space-y-2">
+                {preview.composition.facts.filter((fact) => fact.required).map((fact) => (
+                  <div key={fact.key} className="flex items-start justify-between gap-3 text-xs leading-5">
+                    <dt className="text-[#687b90]">{fact.label}</dt>
+                    <dd className={`text-right font-semibold ${fact.answered ? 'text-[#2d465f]' : 'text-[#a26417]'}`}>{fact.answered ? formatPackLabel(fact.value) : 'Answer needed'}</dd>
+                  </div>
+                ))}
+              </dl>
+
+              <h3 className="mt-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#8293a5]">Conditional clauses</h3>
+              {preview.composition.groups.conditional.length ? (
+                <ul className="mt-2 space-y-2">
+                  {preview.composition.groups.conditional.map((decision) => (
+                    <li key={decision.key} className={`rounded-[10px] border px-3 py-2.5 ${decision.included ? 'border-[#cfe7d8] bg-[#f4fbf6]' : 'border-[#e1e7ed] bg-[#f8fafb]'}`}>
+                      <div className="flex items-start gap-2">
+                        {decision.included
+                          ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#29945a]" aria-hidden="true" />
+                          : <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-[#8a98a7]" aria-hidden="true" />}
+                        <div>
+                          <strong className={`block text-xs ${decision.included ? 'text-[#286a45]' : 'text-[#5f7082]'}`}>{decision.label}</strong>
+                          <span className="mt-1 block text-[11px] leading-4 text-[#718295]">{decision.reason}</span>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 rounded-[10px] border border-[#eed5ad] bg-[#fff9ee] px-3 py-2 text-xs leading-5 text-[#89611d]">No conditional clauses are configured in this template yet.</p>
+              )}
             </section>
           ) : null}
         </aside>

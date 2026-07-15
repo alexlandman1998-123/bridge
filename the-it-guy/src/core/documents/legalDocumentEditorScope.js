@@ -66,7 +66,7 @@ export function classifyLegalDocumentEditorSection(section = {}, { packetType = 
     key,
     isSituation,
     isSigning: hasSigningConfiguration(section),
-    isStandard: !isSituation,
+    isStandard: !isSituation && !hasSigningConfiguration(section),
   }
 }
 

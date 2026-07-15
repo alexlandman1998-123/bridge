@@ -55,6 +55,8 @@ function escalationDefinition(record = {}) {
 }
 
 export function buildLegalClausePackEscalationPlan({ diagnostics = null, generatedAt = new Date().toISOString() } = {}) {
+  const diagnosticsWarnings = asArray(diagnostics?.queryWarnings)
+  const diagnosticsComplete = diagnosticsWarnings.length === 0
   const actions = asArray(diagnostics?.records).flatMap((record) => {
     const definition = escalationDefinition(record)
     if (!definition) return []
@@ -80,7 +82,7 @@ export function buildLegalClausePackEscalationPlan({ diagnostics = null, generat
     }]
   })
   const executableActions = actions.filter((action) => action.executable)
-  const actionKeys = executableActions.map((action) => action.actionKey).sort()
+  const actionKeys = actions.map((action) => action.actionKey).sort()
   const planFingerprint = stableHash(actionKeys.join('|'))
   return {
     schemaVersion: LEGAL_CLAUSE_PACK_ESCALATION_VERSION,
@@ -88,6 +90,9 @@ export function buildLegalClausePackEscalationPlan({ diagnostics = null, generat
     diagnosticsGeneratedAt: diagnostics?.generatedAt || null,
     generatedAt,
     planFingerprint,
+    diagnosticsComplete,
+    diagnosticsWarnings,
+    canApply: diagnosticsComplete && executableActions.length > 0,
     summary: {
       totalActions: actions.length,
       executableActions: executableActions.length,
@@ -110,6 +115,13 @@ export async function executeLegalClausePackEscalationPlan({
 } = {}) {
   const plan = buildLegalClausePackEscalationPlan({ diagnostics })
   if (dryRun) return { ...plan, dryRun: true, applied: [], failed: [] }
+
+  if (!plan.diagnosticsComplete) {
+    const error = new Error('The OTP diagnostics are incomplete. Repair the audit data path and run a new review plan before applying notifications.')
+    error.code = 'LEGAL_ESCALATION_DIAGNOSTICS_INCOMPLETE'
+    error.currentPlan = plan
+    throw error
+  }
 
   const expectedKeys = [...asArray(approvedActionKeys)].map(normalizeText).filter(Boolean).sort()
   const planLocked = normalizeText(approvedPlanFingerprint) === plan.planFingerprint &&
@@ -172,4 +184,3 @@ export async function executeLegalClausePackEscalationPlan({
     },
   }
 }
-

@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  ArrowLeft,
   Bold,
   Check,
   CheckCircle2,
@@ -62,6 +63,7 @@ import {
   listDocumentPackets,
   listDocumentPacketTemplates,
   listDocumentPlaceholderDefinitions,
+  rollbackGovernedOtpTemplate,
   updateDocumentPacketTemplate,
   uploadDocumentPacketTemplateAsset,
   upsertDocumentPlaceholderDefinition,
@@ -114,7 +116,20 @@ import {
 import { buildLegalDocumentTemplateCoverageAudit } from '../../core/documents/legalDocumentTemplateRouting'
 import { normalizeLegalDocumentEditorScope } from '../../core/documents/legalDocumentCatalog'
 import { listScopedLegalDocumentSectionEntries } from '../../core/documents/legalDocumentEditorScope'
-import { getLegalDocumentEditorSituation } from '../../core/documents/legalDocumentEditorSituations'
+import { classifyOtpBaselineSection } from '../../core/documents/otpLegalBaseline'
+import { buildOtpPhase3CandidateSections } from '../../core/documents/otpPhase3Template'
+import { OTP_ROLLOUT_VERSION } from '../../core/documents/otpLaunchReadiness'
+import {
+  OTP_ROLLBACK_AUDIT_ACTION,
+  buildOtpRollbackAuditEvent,
+  buildOtpRolloutOperations,
+} from '../../core/documents/otpRolloutOperations'
+import { OTP_RUNTIME_ASSEMBLY_VERSION } from '../../core/documents/otpRuntimeAssembly'
+import { recordAuditEvent } from '../../lib/activityAudit'
+import {
+  getLegalDocumentEditorSituation,
+  sectionMatchesLegalDocumentEditorSituation,
+} from '../../core/documents/legalDocumentEditorSituations'
 import {
   LEGAL_INSTRUMENT_FAMILIES,
   LEGAL_INSTRUMENT_FAMILY_DEFINITIONS,
@@ -3756,6 +3771,7 @@ function buildTemplateMetadata(form = {}, existingMetadata = {}, uploadMeta = nu
     const clausePackCoverage = form.clausePackCoverage
     nextMetadata.governance_version = Math.max(1, Number(nextMetadata.governance_version || 0))
     nextMetadata.legal_clause_pack_coverage_version = clausePackCoverage.schemaVersion || null
+    nextMetadata.otp_runtime_assembly_version = OTP_RUNTIME_ASSEMBLY_VERSION
     nextMetadata.supported_clause_pack_keys = Array.isArray(clausePackCoverage.requiredPackKeys)
       ? clausePackCoverage.requiredPackKeys
       : []
@@ -3781,9 +3797,27 @@ function buildTemplateMetadata(form = {}, existingMetadata = {}, uploadMeta = nu
       exercisedPackCount: Number(scenarioMatrix.exercisedPackCount || 0),
       failedScenarioKeys: (scenarioMatrix.failedScenarios || []).map((item) => item.key),
       unexercisedPackKeys: scenarioMatrix.unexercisedPackKeys || [],
+      templateFingerprint: scenarioMatrix.templateFingerprint || null,
+      certificationKey: scenarioMatrix.certificationKey || null,
       canPublish: Boolean(scenarioMatrix.canPublish),
       validatedAt: new Date().toISOString(),
     }
+  }
+  if (
+    packetType === 'otp' &&
+    form.clausePackCoverage?.canPublish === true &&
+    form.clausePackScenarioMatrix?.canPublish === true
+  ) {
+    const approvedAt = new Date().toISOString()
+    nextMetadata.approved_at = nextMetadata.approved_at || approvedAt
+    nextMetadata.approved_by = nextMetadata.approved_by || 'section_level_legal_governance'
+    nextMetadata.approved_by_role = nextMetadata.approved_by_role || 'legal_governance_aggregate'
+    nextMetadata.approval_source = 'approved_and_locked_sections_plus_reference_matrix'
+  } else if (packetType === 'otp' && nextMetadata.approval_source === 'approved_and_locked_sections_plus_reference_matrix') {
+    delete nextMetadata.approved_at
+    delete nextMetadata.approved_by
+    delete nextMetadata.approved_by_role
+    delete nextMetadata.approval_source
   }
   if (packetType === 'mandate') {
     const mandateTemplateVariant = normalizeMandateTemplateRoute(form.mandateTemplateVariant)
@@ -5864,6 +5898,8 @@ export default function SettingsSigningTemplatesPage({
   const [showSourceEditor, setShowSourceEditor] = useState(false)
   const [showPublishConfirm, setShowPublishConfirm] = useState(false)
   const [publishReviewAccepted, setPublishReviewAccepted] = useState(false)
+  const [showOtpRollbackConfirm, setShowOtpRollbackConfirm] = useState(false)
+  const [otpRollbackReason, setOtpRollbackReason] = useState('')
   const [pendingSectionTitleFocus, setPendingSectionTitleFocus] = useState(false)
   const clauseTextareaRef = useRef(null)
   const sectionTitleInputRef = useRef(null)
@@ -6155,6 +6191,8 @@ export default function SettingsSigningTemplatesPage({
     setSelectedCanvasBlockIndex(0)
     setShowPublishConfirm(false)
     setPublishReviewAccepted(false)
+    setShowOtpRollbackConfirm(false)
+    setOtpRollbackReason('')
   }, [selectedTemplateId])
 
   useEffect(() => {
@@ -6474,6 +6512,13 @@ export default function SettingsSigningTemplatesPage({
     }),
     [editorSituation?.key, form.sections, normalizedEditorScope, packetType],
   )
+  const otpStandardCoreSectionCount = useMemo(
+    () => packetType === 'otp'
+      ? (form.sections || []).filter((section) => classifyOtpBaselineSection(section) === 'core_wording').length
+      : 0,
+    [form.sections, packetType],
+  )
+  const needsOtpPhase3Draft = packetType === 'otp' && otpStandardCoreSectionCount === 0
   const selectedSection = useMemo(
     () => {
       const candidate = Array.isArray(form.sections) ? form.sections[selectedSectionIndex] || null : null
@@ -6613,6 +6658,12 @@ export default function SettingsSigningTemplatesPage({
   const liveTemplate = useMemo(
     () => migrationReport.defaultTemplate?.template || selectedList.find((row) => row?.is_default) || null,
     [migrationReport.defaultTemplate, selectedList],
+  )
+  const otpRolloutOperations = useMemo(
+    () => packetType === 'otp'
+      ? buildOtpRolloutOperations({ liveTemplate, templates: selectedList })
+      : null,
+    [liveTemplate, packetType, selectedList],
   )
   const canPublishTemplate = hasPublishingAuthority({
     appRole: role,
@@ -6996,6 +7047,15 @@ export default function SettingsSigningTemplatesPage({
       }
     })
   }, [tokenLabelByKey])
+  const focusedClauseLibraryItems = useMemo(() => {
+    if (!editorSituation) return clauseLibraryItems
+    return clauseLibraryItems.filter((item) => sectionMatchesLegalDocumentEditorSituation({
+      sectionKey: item.packKey || item.key,
+      sectionLabel: item.title,
+      conditionJson: item.defaultCondition,
+      metadataJson: { category: item.category },
+    }, editorSituation.key))
+  }, [clauseLibraryItems, editorSituation])
   const templateTypeConfig = visiblePacketTypes.find((item) => item.key === packetType) || visiblePacketTypes[0] || SUPPORTED_PACKET_TYPES[0]
 
   useEffect(() => {
@@ -7252,6 +7312,63 @@ export default function SettingsSigningTemplatesPage({
       return created
     } catch (createError) {
       setError(createError?.message || 'Unable to create template.')
+      return null
+    } finally {
+      setCreatingTemplate(false)
+    }
+  }
+
+  async function handleCreateOtpPhase3Draft() {
+    if (packetType !== 'otp' || !canEdit || creatingTemplate) return null
+    try {
+      setCreatingTemplate(true)
+      setError('')
+      setMessage('')
+      const timestamp = Date.now()
+      const starterSections = buildOtpPhase3CandidateSections(createStarterSections('otp'))
+      const sourceTemplateId = normalizeText(selectedTemplate?.id)
+      const created = await createDocumentPacketTemplate({
+        packetType: 'otp',
+        moduleType: normalizedModuleType,
+        templateKey: `otp_governed_review_phase3_${timestamp}`,
+        templateLabel: 'Offer to Purchase · Attorney Review Draft',
+        description: 'Phase 3 draft: one standard OTP core, transaction schedules, the complete conditional clause catalogue and signing kept as separate governed building blocks.',
+        versionTag: 'phase3-draft',
+        templateStatus: 'draft',
+        templateFormat: 'html',
+        isDefault: false,
+        isActive: false,
+        metadataJson: {
+          lifecycle_status: 'draft',
+          legal_review_status: 'pending',
+          render_mode: TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED,
+          native_renderer_version: NATIVE_RENDERER_VERSION,
+          starter_template: 'otp_governed_review_phase3',
+          phase2_standard_core_candidate: true,
+          phase3_complete_clause_catalogue: true,
+          otp_runtime_assembly_version: OTP_RUNTIME_ASSEMBLY_VERSION,
+          source_template_id: sourceTemplateId || null,
+          source_template_label: normalizeText(selectedTemplate?.template_label || selectedTemplate?.templateLabel) || null,
+          governance_version: 1,
+        },
+        sections: starterSections.map((section, index) => mapSectionForSave({
+          ...section,
+          metadataJson: {
+            ...(section.metadataJson || {}),
+            phase3_classification: classifyOtpBaselineSection(section),
+            legal_review_status: 'pending',
+          },
+        }, index, 'otp')),
+      })
+      await refreshAll({ targetPacketType: 'otp', preferredTemplateId: created?.id || '' })
+      setSelectedTemplateId(created?.id || '')
+      setActiveDocumentTypeKey('otp')
+      setActiveStudioArea('templates')
+      setActiveTab('template')
+      setMessage('Complete OTP review draft created. The live template was not changed; an attorney must approve and lock the core and every conditional clause before publishing.')
+      return created
+    } catch (createError) {
+      setError(createError?.message || 'Unable to create the complete OTP attorney-review draft.')
       return null
     } finally {
       setCreatingTemplate(false)
@@ -7826,6 +7943,20 @@ export default function SettingsSigningTemplatesPage({
         clausePackCoverage: otpClausePackCoverage,
         clausePackScenarioMatrix: otpClausePackScenarioMatrix,
       }, form.metadataJson || {}, null)
+      if (packetType === 'otp') {
+        const previousLiveTemplate = liveTemplate?.id && liveTemplate.id !== selectedTemplateId ? liveTemplate : null
+        metadataJson.otp_rollout = {
+          schemaVersion: OTP_ROLLOUT_VERSION,
+          status: 'activated',
+          activatedAt: new Date().toISOString(),
+          activatedTemplateId: selectedTemplateId,
+          activatedTemplateLabel: form.templateLabel || selectedTemplate?.template_label || null,
+          previousTemplateId: previousLiveTemplate?.id || null,
+          previousTemplateLabel: previousLiveTemplate?.template_label || previousLiveTemplate?.templateLabel || null,
+          certificationKey: otpClausePackScenarioMatrix?.certificationKey || null,
+          templateFingerprint: otpClausePackScenarioMatrix?.templateFingerprint || null,
+        }
+      }
       await updateDocumentPacketTemplate(selectedTemplateId, {
         templateLabel: form.templateLabel,
         description: form.description,
@@ -7858,6 +7989,63 @@ export default function SettingsSigningTemplatesPage({
       setMessage('Default template updated for this document type.')
     } catch (defaultError) {
       setError(defaultError?.message || 'Unable to set template as default.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function openOtpRollbackDialog() {
+    if (!canEdit || saving || !otpRolloutOperations?.canRollback) return
+    setOtpRollbackReason('')
+    setShowOtpRollbackConfirm(true)
+  }
+
+  async function confirmOtpRollback() {
+    const reason = normalizeText(otpRollbackReason)
+    const currentLiveTemplate = liveTemplate
+    const rollbackTarget = otpRolloutOperations?.rollbackTarget
+    if (!canEdit || !otpRolloutOperations?.canRollback || !currentLiveTemplate?.id || !rollbackTarget?.id) {
+      setShowOtpRollbackConfirm(false)
+      setError('The rollback target is no longer safe. Refresh the page and review the operational checks.')
+      return
+    }
+    if (reason.length < 12) {
+      setError('Add a short operational reason (at least 12 characters) before rolling back.')
+      return
+    }
+
+    let rollbackCompleted = false
+    try {
+      setSaving(true)
+      setError('')
+      setMessage('')
+
+      await rollbackGovernedOtpTemplate({
+        currentTemplateId: currentLiveTemplate.id,
+        rollbackTemplateId: rollbackTarget.id,
+        reason,
+      })
+      rollbackCompleted = true
+
+      const auditEvent = buildOtpRollbackAuditEvent({
+        liveTemplate: currentLiveTemplate,
+        rollbackTemplate: rollbackTarget,
+        organisationId: resolvedOrganisationId,
+        reason,
+      })
+      recordAuditEvent(OTP_ROLLBACK_AUDIT_ACTION, auditEvent)
+
+      setShowOtpRollbackConfirm(false)
+      setOtpRollbackReason('')
+      setSelectedTemplateId(rollbackTarget.id)
+      await refreshAll({ targetPacketType: 'otp', preferredTemplateId: rollbackTarget.id })
+      setMessage(`${rollbackTarget.template_label || rollbackTarget.templateLabel || 'The previous OTP'} is live again. The governed version remains preserved in the library.`)
+    } catch (rollbackError) {
+      setError(
+        rollbackCompleted
+          ? `The previous OTP is live, but the screen could not refresh: ${rollbackError?.message || 'refresh failed'}. Refresh before taking another action.`
+          : rollbackError?.message || 'Unable to roll back the OTP. The current live template was preserved.',
+      )
     } finally {
       setSaving(false)
     }
@@ -8613,20 +8801,72 @@ export default function SettingsSigningTemplatesPage({
   }
 
   function handleInsertClauseFromLibrary(clause = {}) {
-    if (!selectedSection || !canEdit) {
-      setActiveStudioArea('templates')
-      setActiveTab('template')
-      setError('Choose an editable template section before inserting a clause.')
-      return
-    }
+    if (!canEdit) return
     setError('')
     setActiveStudioArea('templates')
     setActiveTab('template')
-    const currentValue = String(selectedSection.legalText || '')
     const snippet = String(clause.snippet || '')
+    const normalizedCondition = normalizeConditionRule(clause.defaultCondition || {})
+    const nextConditionJson = buildVisibilityConditionJson({
+      ...normalizedCondition,
+      label: normalizedCondition.label || describeConditionRule(normalizedCondition, tokenLabelByKey),
+    })
+    const packKey = normalizeText(clause.packKey)
+
+    if (!selectedSection) {
+      const nextIndex = (form.sections || []).length
+      const sectionKey = packKey || normalizeText(clause.key) || `conditional_clause_${nextIndex + 1}`
+      const snippetTokens = detectTemplateTokenIssues(snippet).tokens
+      const placeholderKeys = Array.from(new Set([
+        ...snippetTokens.map((item) => normalizeTemplateTokenKey(item)).filter(Boolean),
+        normalizedCondition.enabled ? normalizedCondition.field : '',
+      ].filter(Boolean)))
+      setHasUnsavedChanges(true)
+      setForm((previous) => ({
+        ...previous,
+        sections: [
+          ...(previous.sections || []),
+          {
+            id: null,
+            sectionKey,
+            sectionLabel: normalizeText(clause.title) || humanizeKey(sectionKey),
+            sectionType: 'legal_text',
+            legalText: snippet,
+            placeholderKeysText: placeholderKeys.join(', '),
+            placeholderKeys,
+            isRequired: false,
+            conditionJson: nextConditionJson || {},
+            requiresInitial: false,
+            initialPlaceholderKey: '',
+            signingFields: [],
+            sortOrder: nextIndex,
+            metadataJson: {
+              source_clause_key: normalizeText(clause.key) || null,
+              clause_pack_keys: packKey ? [packKey] : [],
+              governance: {
+                locked: false,
+                locked_at: null,
+                locked_by_role: null,
+                lockReason: packKey ? 'New clause pack wording requires approval' : 'Inserted wording requires approval',
+                approval_status: 'attorney_review',
+                approved_at: null,
+                approved_by: null,
+                approved_by_role: null,
+                source_clause_status: normalizeText(clause.approvalStatus || clause.status) || 'attorney_review',
+                clause_pack_keys: packKey ? [packKey] : [],
+              },
+            },
+          },
+        ],
+      }))
+      setSelectedSectionIndex(nextIndex)
+      setMessage(`Added ${clause.title} as a conditional section. Review and approve the wording before publishing.`)
+      return
+    }
+
+    const currentValue = String(selectedSection.legalText || '')
     const nextValue = `${currentValue}${currentValue && !/\n\s*$/.test(currentValue) ? '\n\n' : ''}${snippet}`
     const tokenScan = detectTemplateTokenIssues(nextValue)
-    const normalizedCondition = normalizeConditionRule(clause.defaultCondition || {})
     const nextPlaceholderKeys = Array.from(new Set([
       ...(selectedSection.placeholderKeys || []),
       ...String(selectedSection.placeholderKeysText || '')
@@ -8636,11 +8876,6 @@ export default function SettingsSigningTemplatesPage({
       ...tokenScan.tokens.map((item) => normalizeTemplateTokenKey(item)).filter(Boolean),
       normalizedCondition.enabled ? normalizedCondition.field : '',
     ].filter(Boolean)))
-    const nextConditionJson = buildVisibilityConditionJson({
-      ...normalizedCondition,
-      label: normalizedCondition.label || describeConditionRule(normalizedCondition, tokenLabelByKey),
-    })
-    const packKey = normalizeText(clause.packKey)
     const existingMetadata = selectedSection.metadataJson && typeof selectedSection.metadataJson === 'object'
       ? selectedSection.metadataJson
       : {}
@@ -8812,6 +9047,24 @@ export default function SettingsSigningTemplatesPage({
 
         {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
         {message ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}
+
+        {isFocusedLegalDocumentEditor && normalizedEditorScope === 'standard' && needsOtpPhase3Draft ? (
+          <section className="flex flex-col gap-4 rounded-[16px] border border-[#f0d29d] bg-[#fff9ed] px-4 py-4 text-[#805811] sm:flex-row sm:items-center sm:justify-between" aria-labelledby="otp-standard-core-missing-heading">
+            <div>
+              <h2 id="otp-standard-core-missing-heading" className="text-sm font-semibold">This template has no identifiable standard OTP core</h2>
+              <p className="mt-1 max-w-3xl text-sm leading-6">Its current blocks are transaction fields and signing only. Create a separate review draft with the standard core, all 23 conditional clause packs and signing clearly separated. Your live template will remain unchanged.</p>
+            </div>
+            <button
+              type="button"
+              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-[11px] border border-[#d49a35] bg-white px-4 text-sm font-semibold text-[#805811] transition hover:bg-[#fffdf8] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={!canEdit || creatingTemplate}
+              onClick={() => void handleCreateOtpPhase3Draft()}
+            >
+              <CopyPlus size={15} />
+              {creatingTemplate ? 'Preparing draft…' : 'Create complete review draft'}
+            </button>
+          </section>
+        ) : null}
 
         <div className="grid gap-3">
           <div className={isFocusedLegalDocumentEditor ? 'hidden' : 'overflow-x-auto rounded-[16px] border border-[#dbe7f3] bg-[#f8fbff] p-1'}>
@@ -9009,7 +9262,7 @@ export default function SettingsSigningTemplatesPage({
                   ].join(' ')}
                 >
                   <FileText size={15} />
-                  <span>Edit Template</span>
+                  <span>{normalizedEditorScope === 'situations' ? 'Edit conditional clauses' : normalizedEditorScope === 'standard' ? 'Edit standard template' : 'Edit template'}</span>
                 </button>
                 <button
                   type="button"
@@ -9024,7 +9277,7 @@ export default function SettingsSigningTemplatesPage({
                   ].join(' ')}
                 >
                   <Eye size={15} />
-                  <span>Preview</span>
+                  <span>Preview assembled document</span>
                 </button>
               </div>
 
@@ -9050,6 +9303,17 @@ export default function SettingsSigningTemplatesPage({
                   <ShieldCheck size={14} />
                   <span>{form.isDefault ? 'Live' : 'Publish'}</span>
                 </button>
+                {packetType === 'otp' && otpRolloutOperations?.canRollback ? (
+                  <button
+                    type="button"
+                    className={studioDangerButtonClass}
+                    onClick={openOtpRollbackDialog}
+                    disabled={!canEdit || saving || cloning}
+                  >
+                    <ArrowLeft size={14} />
+                    <span>Restore previous OTP</span>
+                  </button>
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -9166,7 +9430,7 @@ export default function SettingsSigningTemplatesPage({
                     disabled={!canEdit}
                   >
                     <Layers3 size={15} />
-                    <span className={outlineCollapsed ? 'sr-only' : ''}>Add {editorSituation.label} wording</span>
+                    <span className={outlineCollapsed ? 'sr-only' : ''}>Add {editorSituation.label} clause</span>
                   </button>
                 ) : null}
               </aside>
@@ -11449,6 +11713,9 @@ export default function SettingsSigningTemplatesPage({
                         <p className="mt-1 text-xs leading-5 text-[#607387]">
                           The matrix exercises {otpClausePackScenarioMatrix.exercisedPackCount}/{otpClausePackScenarioMatrix.publishablePackCount} supported clause packs.
                         </p>
+                        <p className="mt-1 text-[11px] leading-5 text-[#6f8093]">
+                          Certification {otpClausePackScenarioMatrix.templateFingerprint}. Any wording, condition, order or approval change invalidates the saved result.
+                        </p>
                       </div>
                       <span className={[
                         'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold',
@@ -11929,17 +12196,19 @@ export default function SettingsSigningTemplatesPage({
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
           <TemplateStudioPanel
             eyebrow="Clause Library"
-            title="Clause Pack Library"
-            description="Reusable South African transaction wording. New and edited wording must be approved and locked before the OTP template can be published."
+            title={editorSituation ? `${editorSituation.label} clause library` : 'Clause Pack Library'}
+            description={editorSituation
+              ? `Choose matching wording to attach to the ${editorSituation.label.toLowerCase()} onboarding trigger. It becomes a conditional section in this template and must be approved before publishing.`
+              : 'Reusable South African transaction wording. New and edited wording must be approved and locked before the OTP template can be published.'}
             actions={
               <button type="button" className={studioPrimaryButtonClass} onClick={() => setActiveStudioArea('templates')}>
-                <Plus size={14} />
-                <span>Open Builder</span>
+                <ArrowLeft size={14} />
+                <span>{editorSituation ? `Back to ${editorSituation.label} clauses` : 'Back to template'}</span>
               </button>
             }
           >
             <div className="grid gap-4 lg:grid-cols-2">
-              {clauseLibraryItems.map((item) => (
+              {focusedClauseLibraryItems.map((item) => (
                 <article key={item.key} className="rounded-[20px] border border-[#dbe7f3] bg-[#fbfdff] p-4">
                   <div className="flex items-start justify-between gap-3">
                     <span className="grid h-10 w-10 place-items-center rounded-[12px] bg-white text-[#128642]">
@@ -11981,13 +12250,19 @@ export default function SettingsSigningTemplatesPage({
                     type="button"
                     className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[14px] bg-[#128642] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_14px_24px_rgba(18,134,66,0.18)] transition hover:bg-[#0f7438] disabled:cursor-not-allowed disabled:opacity-60"
                     onClick={() => handleInsertClauseFromLibrary(item)}
-                    disabled={!selectedSection || !canEdit}
+                    disabled={!canEdit}
                   >
                     <Plus size={14} />
-                    <span>Insert into selected section</span>
+                    <span>{selectedSection ? 'Add to selected section' : `Add to ${editorSituation?.label || 'template'} clauses`}</span>
                   </button>
                 </article>
               ))}
+              {!focusedClauseLibraryItems.length ? (
+                <div className="rounded-[18px] border border-dashed border-[#cbd9e6] bg-[#f8fbfd] px-5 py-8 text-center lg:col-span-2">
+                  <p className="text-sm font-semibold text-[#34495f]">No matching clauses yet</p>
+                  <p className="mt-2 text-sm leading-6 text-[#6b7d91]">Add or approve a clause with the correct onboarding trigger before publishing this template.</p>
+                </div>
+              ) : null}
             </div>
           </TemplateStudioPanel>
 
@@ -12960,6 +13235,64 @@ export default function SettingsSigningTemplatesPage({
               >
                 <ShieldCheck size={14} />
                 <span>{saving ? 'Publishing...' : 'Publish'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showOtpRollbackConfirm && otpRolloutOperations?.rollbackTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[rgba(16,32,51,0.28)] px-4 py-8">
+          <div
+            className="w-full max-w-2xl rounded-[30px] border border-[#efd2cf] bg-white p-6 shadow-[0_28px_60px_rgba(15,23,42,0.24)]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="otp-rollback-title"
+          >
+            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#a14b42]">Emergency recovery</p>
+            <h2 id="otp-rollback-title" className="mt-3 text-[1.35rem] font-semibold text-[#102033]">Restore the previous live OTP?</h2>
+            <p className="mt-3 text-sm leading-7 text-[#6b7c93]">
+              New OTPs will use <strong className="text-[#33485f]">{otpRolloutOperations.rollbackTemplateLabel || 'the previous version'}</strong>.
+              {' '}Existing transactions and generated documents will not change. The current governed version stays preserved in the library.
+            </p>
+
+            <dl className="mt-5 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-[16px] border border-[#efd9d6] bg-[#fff8f7] px-4 py-3">
+                <dt className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#9a6b66]">Stop using for new OTPs</dt>
+                <dd className="mt-2 text-sm font-semibold text-[#473d3c]">{otpRolloutOperations.liveTemplateLabel || otpRolloutOperations.liveTemplateId}</dd>
+              </div>
+              <div className="rounded-[16px] border border-[#cdebd8] bg-[#f3fbf6] px-4 py-3">
+                <dt className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#5c8069]">Make live again</dt>
+                <dd className="mt-2 text-sm font-semibold text-[#28523a]">{otpRolloutOperations.rollbackTemplateLabel || otpRolloutOperations.rollbackTemplateId}</dd>
+              </div>
+            </dl>
+
+            <label className="mt-5 block text-sm font-semibold text-[#33485f]" htmlFor="otp-rollback-reason">
+              Why is this rollback required?
+            </label>
+            <textarea
+              id="otp-rollback-reason"
+              className={`${settingsFieldClass} mt-2 min-h-28 resize-y`}
+              value={otpRollbackReason}
+              onChange={(event) => setOtpRollbackReason(event.target.value)}
+              placeholder="Example: The post-activation generation check produced an incorrect finance clause."
+              maxLength={500}
+              autoFocus
+            />
+            <p className="mt-2 text-xs leading-5 text-[#78899b]">This reason is included in the separate operational audit event. Minimum 12 characters.</p>
+
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button type="button" className={studioSecondaryButtonClass} onClick={() => setShowOtpRollbackConfirm(false)} disabled={saving}>
+                Keep current OTP live
+              </button>
+              <button
+                type="button"
+                className={studioDangerButtonClass}
+                onClick={() => void confirmOtpRollback()}
+                disabled={saving || normalizeText(otpRollbackReason).length < 12}
+              >
+                <ArrowLeft size={14} />
+                <span>{saving ? 'Restoring previous OTP...' : 'Confirm rollback'}</span>
               </button>
             </div>
           </div>

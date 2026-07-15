@@ -7,12 +7,17 @@ import {
   resolveSouthAfricanLegalClausePacks,
 } from './southAfricanLegalClausePacks.js'
 import {
+  buildLegalClausePackCoverage,
   listPublishableLegalClausePackKeys,
   resolveSectionClauseApproval,
   resolveSectionClausePackKeys,
 } from './legalClausePackCoverage.js'
+import { buildOtpRuntimeAssembly } from './otpRuntimeAssembly.js'
 import { evaluateVisibilityRules } from './sectionVisibilityRules.js'
-import { LEGAL_CLAUSE_PACK_SCENARIO_MATRIX_VERSION } from './legalClausePackScenarioMatrixGovernance.js'
+import {
+  LEGAL_CLAUSE_PACK_SCENARIO_MATRIX_VERSION,
+  buildLegalClausePackTemplateFingerprint,
+} from './legalClausePackScenarioMatrixGovernance.js'
 
 export { LEGAL_CLAUSE_PACK_SCENARIO_MATRIX_VERSION } from './legalClausePackScenarioMatrixGovernance.js'
 
@@ -215,6 +220,20 @@ export function runLegalClausePackScenarioMatrix({
     const activePackSet = new Set(activePackKeys)
     const rows = getScenarioRows(templateSections, placeholders, legacyCompatible)
     const issues = []
+    const coverage = buildLegalClausePackCoverage({
+      template: { ...template, sections: templateSections },
+      sections: templateSections,
+      requiredPackKeys: activePackKeys,
+      allowLegacy,
+      requireApproval,
+    })
+    const runtimeAssembly = buildOtpRuntimeAssembly({
+      template,
+      sections: templateSections,
+      placeholders,
+      resolution,
+      coverage,
+    })
 
     for (const packKey of activePackKeys) {
       const linkedRows = rows.filter((row) => row.packKeys.includes(packKey) && row.wordingPresent)
@@ -252,6 +271,15 @@ export function runLegalClausePackScenarioMatrix({
       })
     }
 
+    for (const runtimeBlocker of runtimeAssembly.blockers || []) {
+      if (issues.some((item) => item.code === runtimeBlocker.code && item.packKey === runtimeBlocker.packKey)) continue
+      issues.push(packIssue(
+        runtimeBlocker.code,
+        runtimeBlocker.packKey,
+        runtimeBlocker.message,
+      ))
+    }
+
     return {
       key: selectedScenario.key,
       label: selectedScenario.label,
@@ -261,7 +289,8 @@ export function runLegalClausePackScenarioMatrix({
       visibleSectionIndexes: rows.filter((row) => row.visible).map((row) => row.index),
       issues,
       reviewItems: resolution.reviewItems || [],
-      passed: resolution.signingReady && issues.length === 0,
+      runtimeAssembly,
+      passed: resolution.signingReady && runtimeAssembly.canAssemble && issues.length === 0,
     }
   })
 
@@ -277,9 +306,17 @@ export function runLegalClausePackScenarioMatrix({
       ? [`Reference scenarios do not exercise: ${unexercisedPackKeys.join(', ')}.`]
       : []),
   ]
+  const templateFingerprint = buildLegalClausePackTemplateFingerprint(template, templateSections)
+  const certificationKey = [
+    LEGAL_CLAUSE_PACK_SCENARIO_MATRIX_VERSION,
+    templateFingerprint,
+    `${scenarioResults.length}_${scenarioResults.map((item) => item.factsKey).join('_')}`,
+  ].join('__')
 
   return {
     schemaVersion: LEGAL_CLAUSE_PACK_SCENARIO_MATRIX_VERSION,
+    templateFingerprint,
+    certificationKey,
     scenarioCount: scenarioResults.length,
     passedCount: scenarioResults.filter((item) => item.passed).length,
     failedCount: failedScenarios.length,

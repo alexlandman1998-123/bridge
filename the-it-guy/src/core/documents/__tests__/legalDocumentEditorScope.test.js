@@ -17,6 +17,7 @@ test('classifies standard, situation and signing sections from the shared contra
   assert.equal(classifyLegalDocumentEditorSection(sections[1], { packetType: 'otp' }).isSituation, true)
   assert.equal(classifyLegalDocumentEditorSection(sections[2], { packetType: 'otp' }).isSituation, true)
   assert.equal(classifyLegalDocumentEditorSection(sections[3], { packetType: 'otp' }).isSigning, true)
+  assert.equal(classifyLegalDocumentEditorSection(sections[3], { packetType: 'otp' }).isStandard, false)
 })
 
 test('keeps original section indexes when creating focused editor lists', () => {

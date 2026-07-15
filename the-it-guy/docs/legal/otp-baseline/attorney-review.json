@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "otp_attorney_review_v1",
+  "baselineHash": "b83db27d273749a839baea0cbfeb7e5a733d087412f023c81dc378e276f1191e",
+  "templateId": "5eb54da8-6e9a-4364-9dc9-083f72cd0791",
+  "status": "pending",
+  "reviewer": {
+    "name": null,
+    "role": null,
+    "organisation": null
+  },
+  "reviewedAt": null,
+  "notes": "",
+  "sections": [
+    {
+      "sectionKey": "buyer_details",
+      "classification": "transaction_data",
+      "activationFact": null,
+      "decision": "pending",
+      "notes": ""
+    },
+    {
+      "sectionKey": "seller_details",
+      "classification": "transaction_data",
+      "activationFact": null,
+      "decision": "pending",
+      "notes": ""
+    },
+    {
+      "sectionKey": "property_details",
+      "classification": "transaction_data",
+      "activationFact": null,
+      "decision": "pending",
+      "notes": ""
+    },
+    {
+      "sectionKey": "purchase_terms",
+      "classification": "transaction_data",
+      "activationFact": null,
+      "decision": "pending",
+      "notes": ""
+    },
+    {
+      "sectionKey": "commission_terms",
+      "classification": "transaction_data",
+      "activationFact": null,
+      "decision": "pending",
+      "notes": ""
+    },
+    {
+      "sectionKey": "special_conditions",
+      "classification": "transaction_data",
+      "activationFact": null,
+      "decision": "pending",
+      "notes": ""
+    },
+    {
+      "sectionKey": "signature_pages",
+      "classification": "signing",
+      "activationFact": null,
+      "decision": "pending",
+      "notes": ""
+    }
+  ]
+}

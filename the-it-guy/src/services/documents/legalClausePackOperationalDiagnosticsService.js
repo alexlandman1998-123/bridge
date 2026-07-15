@@ -169,7 +169,7 @@ export async function getLegalClausePackOperationalDiagnosticsSnapshot({
   const queryWarnings = []
   const packetResult = await client
     .from('document_packets')
-    .select('id, organisation_id, packet_type, title, status, transaction_id, current_version_number, source_context_json, created_at, updated_at')
+    .select('id, organisation_id, packet_type, title, status, transaction_id, current_version_number, source_context_json, created_at, updated_at', { count: 'exact' })
     .eq('organisation_id', resolvedOrganisationId)
     .eq('packet_type', 'otp')
     .order('updated_at', { ascending: false })
@@ -182,6 +182,12 @@ export async function getLegalClausePackOperationalDiagnosticsSnapshot({
     throw packetResult.error
   }
   const packets = packetResult.data || []
+  if (Number(packetResult.count || 0) > packets.length) {
+    queryWarnings.push({
+      source: 'document_packets',
+      message: `The audit inspected the newest ${packets.length} of ${packetResult.count} OTP packets. Increase the limit or use the platform diagnostics export for a complete result.`,
+    })
+  }
   const packetIds = packets.map((packet) => packet.id).filter(Boolean)
   let versions = []
   if (packetIds.length) {

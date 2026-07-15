@@ -1,0 +1,767 @@
+{
+  "schemaVersion": "otp_legal_baseline_v1",
+  "source": {
+    "environment": "production",
+    "exportedAt": "2026-07-15T07:25:19.404Z",
+    "exportMethod": "database"
+  },
+  "template": {
+    "id": "5eb54da8-6e9a-4364-9dc9-083f72cd0791",
+    "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+    "packetType": "otp",
+    "key": "otp_default_v1_agency_1783866612297",
+    "label": "Offer to Purchase (OTP) · Default",
+    "versionTag": "v1",
+    "status": "published",
+    "active": false,
+    "default": false,
+    "updatedAt": "2026-07-14T21:14:07.285241+00:00",
+    "metadata": {
+      "render_mode": "legacy_docx",
+      "templatePath": null,
+      "preview_layout": "three_panel_packet",
+      "templateBucket": null,
+      "template_scope": "global_default",
+      "document_family": "otp",
+      "template_bucket": null,
+      "template_status": "draft",
+      "base_template_id": "3cec3c33-fd76-43de-9e5c-d4dff3f510a1",
+      "lifecycle_status": "draft",
+      "templateFilename": null,
+      "template_filename": null,
+      "source_template_id": "3cec3c33-fd76-43de-9e5c-d4dff3f510a1",
+      "template_file_name": null,
+      "source_template_label": "Offer to Purchase (OTP) · Default",
+      "template_storage_path": null,
+      "last_render_validation": {
+        "warnings": [
+          "DOCX storage path is not configured yet. Generation will fail until a template file path is saved.",
+          "Required merge fields are missing from template sections: {{buyer_entity_type}}.",
+          "Deprecated merge fields detected: {{unit_number}} should become {{property_unit_number}}. These still resolve through aliases for now."
+        ],
+        "renderable": true,
+        "tokenCount": 41,
+        "validatedAt": "2026-07-12T14:30:12.268Z",
+        "sectionCount": 7,
+        "blockingIssues": [],
+        "missingRequired": [
+          "buyer_entity_type"
+        ],
+        "deprecatedTokens": [
+          {
+            "token": "unit_number",
+            "canonicalKey": "property_unit_number"
+          }
+        ],
+        "resolvedPlaceholderKeys": [
+          "buyer_full_name",
+          "buyer_id_number",
+          "buyer_email",
+          "buyer_phone",
+          "buyer_domicilium_address",
+          "seller_full_name",
+          "seller_id_number",
+          "seller_email",
+          "seller_phone",
+          "seller_domicilium_address",
+          "property_address",
+          "erf_number",
+          "property_type",
+          "property_unit_number",
+          "property_suburb",
+          "purchase_price",
+          "deposit_amount",
+          "bond_amount",
+          "cash_amount",
+          "finance_type",
+          "gross_commission_percentage",
+          "gross_commission_amount",
+          "agent_commission_amount",
+          "agency_commission_amount",
+          "special_conditions",
+          "buyer_signature",
+          "buyer_initials",
+          "signed_date",
+          "witness_signature",
+          "seller_signature",
+          "seller_initials",
+          "organisation_name",
+          "agent_full_name",
+          "agent_ffc_number",
+          "agent_phone",
+          "agent_email",
+          "document_reference",
+          "transaction_reference",
+          "generated_date",
+          "template_version",
+          "annexures_list"
+        ]
+      },
+      "template_output_bucket": null,
+      "native_renderer_version": null,
+      "template_storage_bucket": null,
+      "agency_version_created_via": "auto",
+      "agency_version_created_from": "shared_base"
+    }
+  },
+  "summary": {
+    "sectionCount": 7,
+    "variableCount": 41,
+    "classifications": {
+      "core_wording": 0,
+      "conditional_clause": 0,
+      "transaction_data": 6,
+      "signing": 1
+    },
+    "blockingFindingCount": 4,
+    "warningFindingCount": 2
+  },
+  "findings": [
+    {
+      "code": "NO_CORE_WORDING",
+      "severity": "blocking",
+      "message": "No section is identified as standard core OTP wording."
+    },
+    {
+      "code": "NO_CONDITIONAL_CLAUSES",
+      "severity": "warning",
+      "message": "No section has an activation condition, so onboarding answers cannot select approved clause packs from this template."
+    },
+    {
+      "code": "LIFECYCLE_STATUS_CONFLICT",
+      "severity": "blocking",
+      "message": "Template row status is published, while metadata lifecycle status is draft."
+    },
+    {
+      "code": "LEGACY_DOCX_PATH_MISSING",
+      "severity": "blocking",
+      "message": "Template uses the legacy DOCX renderer but has no DOCX storage path."
+    },
+    {
+      "code": "REQUIRED_VARIABLES_MISSING",
+      "severity": "blocking",
+      "message": "Required variables are missing: buyer_entity_type."
+    },
+    {
+      "code": "DEPRECATED_VARIABLES",
+      "severity": "warning",
+      "message": "Deprecated variables remain in use: unit_number -> property_unit_number."
+    }
+  ],
+  "sections": [
+    {
+      "id": "d8b1d93d-a1f9-4b10-98d3-1cb16bc58efa",
+      "key": "buyer_details",
+      "label": "Buyer Details",
+      "classification": "transaction_data",
+      "sectionType": "dynamic_fields",
+      "sortOrder": 1,
+      "required": true,
+      "repeatable": false,
+      "activationFact": null,
+      "condition": {},
+      "variables": [
+        "buyer_domicilium_address",
+        "buyer_email",
+        "buyer_full_name",
+        "buyer_id_number",
+        "buyer_phone"
+      ],
+      "legalText": "PURCHASER DETAILS\n\nPurchaser\n{{buyer_full_name}}\n\nIdentity / Registration Number\n{{buyer_id_number}}\n\nEmail\n{{buyer_email}}\n\nPhone\n{{buyer_phone}}\n\nDomicilium Address\n{{buyer_domicilium_address}}",
+      "metadata": {
+        "signing": {
+          "signing_role": "client",
+          "planned_fields": [],
+          "signing_fields": [],
+          "requires_initial": false,
+          "requires_signature": false,
+          "signing_requirement": "none",
+          "initial_placeholder_key": "",
+          "signature_placeholder_key": ""
+        },
+        "editable_by": [
+          "principal",
+          "super_admin",
+          "admin",
+          "agent"
+        ],
+        "signing_role": "client",
+        "section_order": 1,
+        "section_title": "Buyer Details",
+        "requires_initial": false,
+        "requires_signature": false,
+        "signing_requirement": "none",
+        "required_placeholders": [
+          "buyer_full_name"
+        ],
+        "planned_signing_fields": [],
+        "initial_placeholder_key": "",
+        "signature_placeholder_key": ""
+      }
+    },
+    {
+      "id": "81dcbfb3-5c31-4c9e-9453-f4952df444bb",
+      "key": "seller_details",
+      "label": "Seller Details",
+      "classification": "transaction_data",
+      "sectionType": "dynamic_fields",
+      "sortOrder": 2,
+      "required": true,
+      "repeatable": false,
+      "activationFact": null,
+      "condition": {},
+      "variables": [
+        "seller_domicilium_address",
+        "seller_email",
+        "seller_full_name",
+        "seller_id_number",
+        "seller_phone"
+      ],
+      "legalText": "SELLER DETAILS\n\nSeller\n{{seller_full_name}}\n\nIdentity / Registration Number\n{{seller_id_number}}\n\nEmail\n{{seller_email}}\n\nPhone\n{{seller_phone}}\n\nDomicilium Address\n{{seller_domicilium_address}}",
+      "metadata": {
+        "signing": {
+          "signing_role": "client",
+          "planned_fields": [],
+          "signing_fields": [],
+          "requires_initial": false,
+          "requires_signature": false,
+          "signing_requirement": "none",
+          "initial_placeholder_key": "",
+          "signature_placeholder_key": ""
+        },
+        "editable_by": [
+          "principal",
+          "super_admin",
+          "admin",
+          "agent"
+        ],
+        "signing_role": "client",
+        "section_order": 2,
+        "section_title": "Seller Details",
+        "requires_initial": false,
+        "requires_signature": false,
+        "signing_requirement": "none",
+        "required_placeholders": [
+          "seller_full_name"
+        ],
+        "planned_signing_fields": [],
+        "initial_placeholder_key": "",
+        "signature_placeholder_key": ""
+      }
+    },
+    {
+      "id": "ffaac36e-37ba-472c-b2e4-c4a02d28036d",
+      "key": "property_details",
+      "label": "Property",
+      "classification": "transaction_data",
+      "sectionType": "dynamic_fields",
+      "sortOrder": 3,
+      "required": true,
+      "repeatable": false,
+      "activationFact": null,
+      "condition": {},
+      "variables": [
+        "erf_number",
+        "property_address",
+        "property_suburb",
+        "property_type",
+        "unit_number"
+      ],
+      "legalText": "PROPERTY DETAILS\n\nProperty Address\n{{property_address}}\n\nErf Number\n{{erf_number}}\n\nProperty Type\n{{property_type}}",
+      "metadata": {
+        "signing": {
+          "signing_role": "client",
+          "planned_fields": [],
+          "signing_fields": [],
+          "requires_initial": false,
+          "requires_signature": false,
+          "signing_requirement": "none",
+          "initial_placeholder_key": "",
+          "signature_placeholder_key": ""
+        },
+        "editable_by": [
+          "principal",
+          "super_admin",
+          "admin",
+          "agent"
+        ],
+        "signing_role": "client",
+        "section_order": 3,
+        "section_title": "Property",
+        "requires_initial": false,
+        "requires_signature": false,
+        "signing_requirement": "none",
+        "required_placeholders": [
+          "property_address"
+        ],
+        "planned_signing_fields": [],
+        "initial_placeholder_key": "",
+        "signature_placeholder_key": ""
+      }
+    },
+    {
+      "id": "01a81323-4082-4421-927a-b39cfcb1aa0f",
+      "key": "purchase_terms",
+      "label": "Purchase Terms",
+      "classification": "transaction_data",
+      "sectionType": "dynamic_fields",
+      "sortOrder": 4,
+      "required": true,
+      "repeatable": false,
+      "activationFact": null,
+      "condition": {},
+      "variables": [
+        "bond_amount",
+        "cash_amount",
+        "deposit_amount",
+        "finance_type",
+        "purchase_price"
+      ],
+      "legalText": "PURCHASE PRICE AND FINANCE\n\nPurchase Price\n{{purchase_price}}\n\nDeposit\n{{deposit_amount}}\n\nBond Amount\n{{bond_amount}}\n\nCash Contribution\n{{cash_amount}}",
+      "metadata": {
+        "signing": {
+          "signing_role": "client",
+          "planned_fields": [],
+          "signing_fields": [],
+          "requires_initial": false,
+          "requires_signature": false,
+          "signing_requirement": "none",
+          "initial_placeholder_key": "",
+          "signature_placeholder_key": ""
+        },
+        "editable_by": [
+          "principal",
+          "super_admin",
+          "admin",
+          "agent"
+        ],
+        "signing_role": "client",
+        "section_order": 4,
+        "section_title": "Purchase Terms",
+        "requires_initial": false,
+        "requires_signature": false,
+        "signing_requirement": "none",
+        "required_placeholders": [
+          "purchase_price"
+        ],
+        "planned_signing_fields": [],
+        "initial_placeholder_key": "",
+        "signature_placeholder_key": ""
+      }
+    },
+    {
+      "id": "187b1576-fc57-4f33-9227-529552c91e1e",
+      "key": "commission_terms",
+      "label": "Commission Terms",
+      "classification": "transaction_data",
+      "sectionType": "dynamic_fields",
+      "sortOrder": 5,
+      "required": true,
+      "repeatable": false,
+      "activationFact": null,
+      "condition": {},
+      "variables": [
+        "agency_commission_amount",
+        "agent_commission_amount",
+        "gross_commission_amount",
+        "gross_commission_percentage"
+      ],
+      "legalText": "COMMISSION\n\nGross Commission Percentage\n{{gross_commission_percentage}}\n\nGross Commission Amount\n{{gross_commission_amount}}",
+      "metadata": {
+        "signing": {
+          "signing_role": "client",
+          "planned_fields": [],
+          "signing_fields": [],
+          "requires_initial": false,
+          "requires_signature": false,
+          "signing_requirement": "none",
+          "initial_placeholder_key": "",
+          "signature_placeholder_key": ""
+        },
+        "editable_by": [
+          "principal",
+          "super_admin",
+          "admin",
+          "agent"
+        ],
+        "signing_role": "client",
+        "section_order": 5,
+        "section_title": "Commission Terms",
+        "requires_initial": false,
+        "requires_signature": false,
+        "signing_requirement": "none",
+        "required_placeholders": [],
+        "planned_signing_fields": [],
+        "initial_placeholder_key": "",
+        "signature_placeholder_key": ""
+      }
+    },
+    {
+      "id": "d5744ccd-bfb6-4d3f-b850-aa5d82c2305a",
+      "key": "special_conditions",
+      "label": "Special Conditions",
+      "classification": "transaction_data",
+      "sectionType": "dynamic_fields",
+      "sortOrder": 6,
+      "required": false,
+      "repeatable": false,
+      "activationFact": null,
+      "condition": {},
+      "variables": [
+        "special_conditions"
+      ],
+      "legalText": "SPECIAL CONDITIONS\n\n23. Special Conditions\n\nSpecial Conditions must be recorded below or in Schedule 1. Unless expressly stated to be suspensive or resolutive, they are not suspensive or resolutive.\n\nNo other conditions are binding unless reduced to writing and signed by the parties.\n\nIf Special Conditions conflict with standard provisions, the Special Conditions prevail to the extent of the conflict.\n\n{{special_conditions}}",
+      "metadata": {
+        "signing": {
+          "signing_role": "client",
+          "planned_fields": [],
+          "signing_fields": [],
+          "requires_initial": false,
+          "requires_signature": false,
+          "signing_requirement": "none",
+          "initial_placeholder_key": "",
+          "signature_placeholder_key": ""
+        },
+        "editable_by": [
+          "principal",
+          "super_admin",
+          "admin",
+          "agent"
+        ],
+        "signing_role": "client",
+        "section_order": 6,
+        "section_title": "Special Conditions",
+        "requires_initial": false,
+        "requires_signature": false,
+        "signing_requirement": "none",
+        "required_placeholders": [],
+        "planned_signing_fields": [],
+        "initial_placeholder_key": "",
+        "signature_placeholder_key": ""
+      }
+    },
+    {
+      "id": "a75a3e5c-7123-4eec-b225-2d8778a6d5e2",
+      "key": "signature_pages",
+      "label": "Signature Pages",
+      "classification": "signing",
+      "sectionType": "signature_zone",
+      "sortOrder": 7,
+      "required": true,
+      "repeatable": false,
+      "activationFact": null,
+      "condition": {},
+      "variables": [
+        "agent_email",
+        "agent_ffc_number",
+        "agent_full_name",
+        "agent_phone",
+        "annexures_list",
+        "buyer_email",
+        "buyer_full_name",
+        "buyer_initials",
+        "buyer_phone",
+        "buyer_signature",
+        "document_reference",
+        "generated_date",
+        "organisation_name",
+        "seller_email",
+        "seller_full_name",
+        "seller_initials",
+        "seller_phone",
+        "seller_signature",
+        "signed_date",
+        "template_version",
+        "transaction_reference",
+        "witness_signature"
+      ],
+      "legalText": "SIGNATORIES\n\nSIGNED AND DATED BY THE PURCHASER at the place and on the date below, in the presence of the witness, the signatory being duly authorised.\n\nPurchaser\n{{buyer_full_name}}\n\nSignature\n{{buyer_signature}}\n\nInitials\n{{buyer_initials}}\n\nDate\n{{signed_date}}\n\nWitness\n{{witness_signature}}\n\nSIGNED AND DATED BY THE SELLER at the place and on the date below, in the presence of the witness, the signatory being duly authorised.\n\nSeller\n{{seller_full_name}}\n\nSignature\n{{seller_signature}}\n\nInitials\n{{seller_initials}}\n\nDate\n{{signed_date}}\n\nWitness\n{{witness_signature}}\n\nSIGNED AND DATED BY THE AGENT, who accepts the benefits of this Agreement on the terms contained herein.\n\nAgency\n{{organisation_name}}\n\nAgent\n{{agent_full_name}}\n\nFFC Number\n{{agent_ffc_number}}\n\nCONTACT FORM\n\n| Party | Telephone | Email |\n| --- | --- | --- |\n| Purchaser | {{buyer_phone}} | {{buyer_email}} |\n| Seller | {{seller_phone}} | {{seller_email}} |\n| Agent | {{agent_phone}} | {{agent_email}} |\n\nDOCUMENT METADATA\n\nDocument Reference\n{{document_reference}}\n\nTransaction Reference\n{{transaction_reference}}\n\nGenerated\n{{generated_date}}\n\nTemplate Version\n{{template_version}}\n\nAnnexures\n{{annexures_list}}",
+      "metadata": {
+        "signing": {
+          "signing_role": "client",
+          "planned_fields": [],
+          "signing_fields": [],
+          "requires_initial": false,
+          "requires_signature": false,
+          "signing_requirement": "none",
+          "initial_placeholder_key": "",
+          "signature_placeholder_key": ""
+        },
+        "editable_by": [
+          "principal",
+          "super_admin",
+          "admin",
+          "agent"
+        ],
+        "signing_role": "client",
+        "section_order": 7,
+        "section_title": "Signature Pages",
+        "requires_initial": false,
+        "requires_signature": false,
+        "signing_requirement": "none",
+        "required_placeholders": [
+          "buyer_full_name",
+          "seller_full_name"
+        ],
+        "planned_signing_fields": [],
+        "initial_placeholder_key": "",
+        "signature_placeholder_key": ""
+      }
+    }
+  ],
+  "variables": [
+    {
+      "key": "agency_commission_amount",
+      "usedBySections": [
+        "commission_terms"
+      ]
+    },
+    {
+      "key": "agent_commission_amount",
+      "usedBySections": [
+        "commission_terms"
+      ]
+    },
+    {
+      "key": "agent_email",
+      "usedBySections": [
+        "signature_pages"
+      ]
+    },
+    {
+      "key": "agent_ffc_number",
+      "usedBySections": [
+        "signature_pages"
+      ]
+    },
+    {
+      "key": "agent_full_name",
+      "usedBySections": [
+        "signature_pages"
+      ]
+    },
+    {
+      "key": "agent_phone",
+      "usedBySections": [
+        "signature_pages"
+      ]
+    },
+    {
+      "key": "annexures_list",
+      "usedBySections": [
+        "signature_pages"
+      ]
+    },
+    {
+      "key": "bond_amount",
+      "usedBySections": [
+        "purchase_terms"
+      ]
+    },
+    {
+      "key": "buyer_domicilium_address",
+      "usedBySections": [
+        "buyer_details"
+      ]
+    },
+    {
+      "key": "buyer_email",
+      "usedBySections": [
+        "buyer_details",
+        "signature_pages"
+      ]
+    },
+    {
+      "key": "buyer_full_name",
+      "usedBySections": [
+        "buyer_details",
+        "signature_pages"
+      ]
+    },
+    {
+      "key": "buyer_id_number",
+      "usedBySections": [
+        "buyer_details"
+      ]
+    },
+    {
+      "key": "buyer_initials",
+      "usedBySections": [
+        "signature_pages"
+      ]
+    },
+    {
+      "key": "buyer_phone",
+      "usedBySections": [
+        "buyer_details",
+        "signature_pages"
+      ]
+    },
+    {
+      "key": "buyer_signature",
+      "usedBySections": [
+        "signature_pages"
+      ]
+    },
+    {
+      "key": "cash_amount",
+      "usedBySections": [
+        "purchase_terms"
+      ]
+    },
+    {
+      "key": "deposit_amount",
+      "usedBySections": [
+        "purchase_terms"
+      ]
+    },
+    {
+      "key": "document_reference",
+      "usedBySections": [
+        "signature_pages"
+      ]
+    },
+    {
+      "key": "erf_number",
+      "usedBySections": [
+        "property_details"
+      ]
+    },
+    {
+      "key": "finance_type",
+      "usedBySections": [
+        "purchase_terms"
+      ]
+    },
+    {
+      "key": "generated_date",
+      "usedBySections": [
+        "signature_pages"
+      ]
+    },
+    {
+      "key": "gross_commission_amount",
+      "usedBySections": [
+        "commission_terms"
+      ]
+    },
+    {
+      "key": "gross_commission_percentage",
+      "usedBySections": [
+        "commission_terms"
+      ]
+    },
+    {
+      "key": "organisation_name",
+      "usedBySections": [
+        "signature_pages"
+      ]
+    },
+    {
+      "key": "property_address",
+      "usedBySections": [
+        "property_details"
+      ]
+    },
+    {
+      "key": "property_suburb",
+      "usedBySections": [
+        "property_details"
+      ]
+    },
+    {
+      "key": "property_type",
+      "usedBySections": [
+        "property_details"
+      ]
+    },
+    {
+      "key": "purchase_price",
+      "usedBySections": [
+        "purchase_terms"
+      ]
+    },
+    {
+      "key": "seller_domicilium_address",
+      "usedBySections": [
+        "seller_details"
+      ]
+    },
+    {
+      "key": "seller_email",
+      "usedBySections": [
+        "seller_details",
+        "signature_pages"
+      ]
+    },
+    {
+      "key": "seller_full_name",
+      "usedBySections": [
+        "seller_details",
+        "signature_pages"
+      ]
+    },
+    {
+      "key": "seller_id_number",
+      "usedBySections": [
+        "seller_details"
+      ]
+    },
+    {
+      "key": "seller_initials",
+      "usedBySections": [
+        "signature_pages"
+      ]
+    },
+    {
+      "key": "seller_phone",
+      "usedBySections": [
+        "seller_details",
+        "signature_pages"
+      ]
+    },
+    {
+      "key": "seller_signature",
+      "usedBySections": [
+        "signature_pages"
+      ]
+    },
+    {
+      "key": "signed_date",
+      "usedBySections": [
+        "signature_pages"
+      ]
+    },
+    {
+      "key": "special_conditions",
+      "usedBySections": [
+        "special_conditions"
+      ]
+    },
+    {
+      "key": "template_version",
+      "usedBySections": [
+        "signature_pages"
+      ]
+    },
+    {
+      "key": "transaction_reference",
+      "usedBySections": [
+        "signature_pages"
+      ]
+    },
+    {
+      "key": "unit_number",
+      "usedBySections": [
+        "property_details"
+      ]
+    },
+    {
+      "key": "witness_signature",
+      "usedBySections": [
+        "signature_pages"
+      ]
+    }
+  ],
+  "baselineHash": "b83db27d273749a839baea0cbfeb7e5a733d087412f023c81dc378e276f1191e"
+}

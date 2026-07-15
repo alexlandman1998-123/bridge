@@ -3,6 +3,9 @@ import { listLegalDocumentDefinitions } from './legalDocumentCatalog.js'
 import { classifyLegalDocumentEditorSection } from './legalDocumentEditorScope.js'
 import { buildLegalDocumentTemplateCoverageAudit } from './legalDocumentTemplateRouting.js'
 import { SOUTH_AFRICAN_LEGAL_CLAUSE_PACK_DEFINITIONS } from './southAfricanLegalClausePacks.js'
+import { buildOtpAttorneyReadiness } from './otpAttorneyReadiness.js'
+import { buildOtpLaunchReadiness } from './otpLaunchReadiness.js'
+import { buildOtpRolloutOperations } from './otpRolloutOperations.js'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -99,6 +102,8 @@ function buildSectionSummary(section = {}, conditionalRule = null) {
       section.title ||
         section.section_title ||
         section.sectionTitle ||
+        section.section_label ||
+        section.sectionLabel ||
         section.label ||
         metadata.title ||
         conditionalRule?.label,
@@ -139,6 +144,8 @@ function buildDocumentModel(definition = {}, templates = []) {
   const primaryTemplate = matchingTemplates[0] || null
   const liveTemplate = matchingTemplates.find(isLiveTemplate) || null
   const draftTemplates = matchingTemplates.filter((template) => !isLiveTemplate(template) && getTemplateStatus(template) !== 'archived')
+  const rolloutCandidateTemplate = draftTemplates[0] || primaryTemplate
+  const rolloutCandidateSections = getSections(rolloutCandidateTemplate)
   const sections = getSections(primaryTemplate)
   const conditionalRules = [
     ...listConditionalPackDataRules({ packetType: definition.packetType }),
@@ -156,6 +163,15 @@ function buildDocumentModel(definition = {}, templates = []) {
     .filter((section) => classifyLegalDocumentEditorSection(section, { packetType: definition.packetType }).isStandard)
     .map((section) => buildSectionSummary(section))
   const signingRoles = getPlannedSigningRoles(sections)
+  const attorneyReadiness = definition.key === 'otp' && rolloutCandidateTemplate
+    ? buildOtpAttorneyReadiness({ template: rolloutCandidateTemplate, sections: rolloutCandidateSections })
+    : null
+  const launchReadiness = definition.key === 'otp'
+    ? buildOtpLaunchReadiness({ candidateTemplate: rolloutCandidateTemplate, liveTemplate })
+    : null
+  const rolloutOperations = definition.key === 'otp'
+    ? buildOtpRolloutOperations({ liveTemplate, templates: matchingTemplates })
+    : null
   const routingAudit = definition.key === 'otp'
     ? buildLegalDocumentTemplateCoverageAudit(matchingTemplates.filter((template) => isLiveTemplate(template)), { packetType: 'otp' })
     : null
@@ -175,6 +191,9 @@ function buildDocumentModel(definition = {}, templates = []) {
     liveTemplateId: liveTemplate?.id || null,
     draftTemplates,
     draftCount: draftTemplates.length,
+    rolloutCandidateTemplate,
+    rolloutCandidateTemplateId: rolloutCandidateTemplate?.id || null,
+    attorneyReadinessTemplateId: rolloutCandidateTemplate?.id || null,
     hasLiveTemplate: Boolean(liveTemplate),
     status: liveTemplate ? 'live' : primaryTemplate ? 'draft' : 'missing',
     versionLabel: normalizeText(liveTemplate?.version_tag || primaryTemplate?.version_tag) || null,
@@ -187,6 +206,9 @@ function buildDocumentModel(definition = {}, templates = []) {
     signingRoles,
     coverageReady,
     routingAudit,
+    attorneyReadiness,
+    launchReadiness,
+    rolloutOperations,
   }
 }
 

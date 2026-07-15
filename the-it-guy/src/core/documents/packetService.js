@@ -106,6 +106,10 @@ import {
   buildLegalClausePackCoverage,
   buildLegalClausePackCoverageIssues,
 } from './legalClausePackCoverage'
+import {
+  buildOtpRuntimeAssembly,
+  buildOtpRuntimeAssemblyIssues,
+} from './otpRuntimeAssembly'
 import { resolveLegalClausePackScenarioMatrixGovernance } from './legalClausePackScenarioMatrixGovernance'
 import { resolveLegalClausePackTransactionReadiness } from './legalClausePackTransactionReadiness'
 import { resolveLegalClausePackSignatureRelease } from './legalClausePackSignatureRelease'
@@ -351,6 +355,7 @@ function buildGenerationPayload({
     mandateData?.legalClausePackCoverage ||
     context?.sourceContext?.legalClausePackCoverage ||
     null
+  const otpRuntimeAssembly = validation?.otpRuntimeAssembly || null
   const legalClausePackScenarioMatrix = validation?.legalClausePackScenarioMatrix || null
   const legalClausePackTransactionReadiness = validation?.legalClausePackTransactionReadiness || null
   const mandateTemplateVariant =
@@ -382,6 +387,11 @@ function buildGenerationPayload({
     legalClausePackCoveragePercent: Number(legalClausePackCoverage?.coveragePercent || 0),
     legalClausePackCoverageReady: Boolean(
       legalClausePackCoverage && (!legalClausePackCoverage.runtimeEnforced || legalClausePackCoverage.canAssemble),
+    ),
+    otpRuntimeAssembly,
+    otpRuntimeAssemblyVersion: otpRuntimeAssembly?.schemaVersion || null,
+    otpRuntimeAssemblyReady: Boolean(
+      otpRuntimeAssembly && (!otpRuntimeAssembly.runtimeEnforced || otpRuntimeAssembly.canAssemble),
     ),
     legalClausePackScenarioMatrix,
     legalClausePackScenarioMatrixVersion: legalClausePackScenarioMatrix?.contractVersion || null,
@@ -477,6 +487,7 @@ function buildRenderProvenance({
   const legalDealFacts = generationPayload?.legalDealFacts || validation?.legalDealFacts || null
   const legalClausePackResolution = generationPayload?.legalClausePackResolution || validation?.legalClausePackResolution || null
   const legalClausePackCoverage = generationPayload?.legalClausePackCoverage || validation?.legalClausePackCoverage || null
+  const otpRuntimeAssembly = generationPayload?.otpRuntimeAssembly || validation?.otpRuntimeAssembly || null
   const legalClausePackScenarioMatrix = generationPayload?.legalClausePackScenarioMatrix || validation?.legalClausePackScenarioMatrix || null
   const legalClausePackTransactionReadiness = generationPayload?.legalClausePackTransactionReadiness || validation?.legalClausePackTransactionReadiness || null
   const contentFingerprint = buildContentFingerprint({
@@ -522,6 +533,14 @@ function buildRenderProvenance({
     ),
     legalClausePackMissingWording: (legalClausePackCoverage?.missingWording || []).map((item) => item.key),
     legalClausePackApprovalRequired: (legalClausePackCoverage?.approvalRequired || []).map((item) => item.key),
+    otpRuntimeAssemblyVersion: normalizeText(otpRuntimeAssembly?.schemaVersion) || null,
+    otpRuntimeAssemblyContractVersion: normalizeText(otpRuntimeAssembly?.contractVersion) || null,
+    otpRuntimeAssemblyReady: Boolean(
+      otpRuntimeAssembly && (!otpRuntimeAssembly.runtimeEnforced || otpRuntimeAssembly.canAssemble),
+    ),
+    otpRuntimeExpectedPacks: otpRuntimeAssembly?.expectedPackKeys || [],
+    otpRuntimeRenderedPacks: otpRuntimeAssembly?.selectedPackKeys || [],
+    otpRuntimeAssemblyBlockerCodes: (otpRuntimeAssembly?.blockers || []).map((item) => item.code),
     legalClausePackScenarioMatrixVersion: normalizeText(legalClausePackScenarioMatrix?.contractVersion) || null,
     legalClausePackScenarioMatrixPassed: Boolean(
       !legalClausePackScenarioMatrix?.runtimeEnforced || legalClausePackScenarioMatrix?.passed,
@@ -1911,6 +1930,13 @@ function buildValidationSummary(validation = {}) {
         !validation.legalClausePackCoverage.runtimeEnforced || validation.legalClausePackCoverage.canAssemble
       ),
     ),
+    otpRuntimeAssembly: validation?.otpRuntimeAssembly || null,
+    otpRuntimeAssemblyVersion: validation?.otpRuntimeAssembly?.schemaVersion || null,
+    otpRuntimeAssemblyReady: Boolean(
+      validation?.otpRuntimeAssembly && (
+        !validation.otpRuntimeAssembly.runtimeEnforced || validation.otpRuntimeAssembly.canAssemble
+      ),
+    ),
     legalClausePackScenarioMatrix: validation?.legalClausePackScenarioMatrix || null,
     legalClausePackScenarioMatrixVersion: validation?.legalClausePackScenarioMatrix?.contractVersion || null,
     legalClausePackScenarioMatrixPassed: Boolean(
@@ -2448,6 +2474,29 @@ export async function validatePacket({
     : null
   const legalClausePackCoverage = applyLegalClausePackCoverageRuntimePolicy(template || {}, resolvedLegalClausePackCoverage)
   const legalClausePackCoverageRuntimeEnforced = Boolean(legalClausePackCoverage?.runtimeEnforced)
+  const otpRuntimeAssembly = normalizedPacketType === 'otp' && template?.id && legalClausePackResolution
+    ? buildOtpRuntimeAssembly({
+        template,
+        sections: Array.isArray(template.sections) ? template.sections : null,
+        placeholders,
+        resolution: legalClausePackResolution,
+        coverage: legalClausePackCoverage,
+      })
+    : null
+  const otpRuntimeAssemblyIssues = otpRuntimeAssembly
+    ? buildOtpRuntimeAssemblyIssues(otpRuntimeAssembly, { runtime: true })
+    : []
+  const governedOtpRuntimeAssemblyIssues = otpRuntimeAssembly?.runtimeEnforced
+    ? otpRuntimeAssemblyIssues
+    : []
+  const legacyOtpRuntimeAssemblyWarnings = otpRuntimeAssembly && !otpRuntimeAssembly.runtimeEnforced
+    ? otpRuntimeAssemblyIssues.map((issue) => ({
+        ...issue,
+        source: 'otp_runtime_assembly_legacy',
+        message: `${issue.message} This legacy template remains previewable until it adopts the Phase 4 runtime contract.`,
+        required: false,
+      }))
+    : []
   const legalClausePackScenarioMatrix = normalizedPacketType === 'otp' && template?.id
     ? resolveLegalClausePackScenarioMatrixGovernance(template)
     : null
@@ -2458,9 +2507,14 @@ export async function validatePacket({
         sectionLabel: 'Reference transaction testing',
         placeholderKey: 'legal_clause_pack_scenario_matrix',
         placeholderLabel: 'Passing reference transactions',
-        message: 'This template has not retained a complete passing Phase 5 reference transaction matrix.',
+        message: legalClausePackScenarioMatrix.blockingReasons.includes('matrix_result_stale')
+          ? 'The Phase 5 reference transaction certification belongs to older template wording. Run and save the matrix again.'
+          : legalClausePackScenarioMatrix.blockingReasons.includes('matrix_contract_unsupported')
+            ? 'This template uses an unsupported Phase 5 reference transaction contract.'
+            : 'This template has not retained a complete passing Phase 5 reference transaction matrix.',
         required: true,
         failedScenarioKeys: legalClausePackScenarioMatrix.failedScenarioKeys,
+        matrixBlockingReasons: legalClausePackScenarioMatrix.blockingReasons,
       }
     : null
   const legalClausePackTransactionReadinessRuntimeEnforced = Boolean(
@@ -2562,6 +2616,7 @@ export async function validatePacket({
         ...legalScenarioRequirementIssues,
         ...legalClausePackConflictIssues,
         ...governedLegalClausePackCoverageIssues,
+        ...governedOtpRuntimeAssemblyIssues,
         ...legalClausePackTransactionReadinessIssues,
         ...(legalClausePackScenarioMatrixIssue ? [legalClausePackScenarioMatrixIssue] : []),
         ...(legalInstrumentFamilyIssue ? [legalInstrumentFamilyIssue] : []),
@@ -2578,6 +2633,7 @@ export async function validatePacket({
           ...legalScenarioRequirementIssues,
           ...legalClausePackConflictIssues,
           ...governedLegalClausePackCoverageIssues,
+          ...governedOtpRuntimeAssemblyIssues,
           ...legalClausePackTransactionReadinessIssues,
           ...(legalClausePackScenarioMatrixIssue ? [legalClausePackScenarioMatrixIssue] : []),
           ...(legalInstrumentFamilyIssue ? [legalInstrumentFamilyIssue] : []),
@@ -2592,6 +2648,7 @@ export async function validatePacket({
           ...legalScenarioRequirementIssues,
           ...legalClausePackConflictIssues,
           ...governedLegalClausePackCoverageIssues,
+          ...governedOtpRuntimeAssemblyIssues,
           ...legalClausePackTransactionReadinessIssues,
           ...(legalClausePackScenarioMatrixIssue ? [legalClausePackScenarioMatrixIssue] : []),
           ...(legalInstrumentFamilyIssue ? [legalInstrumentFamilyIssue] : []),
@@ -2632,11 +2689,13 @@ export async function validatePacket({
   warningIssues.push(...legalDealFactReviewWarnings)
   warningIssues.push(...transactionAttorneyReviewWarnings)
   warningIssues.push(...legacyLegalClausePackCoverageWarnings)
+  warningIssues.push(...legacyOtpRuntimeAssemblyWarnings)
   const missingPlaceholders = dedupeValidationIssues([
     ...conditionalPackMissingPlaceholders,
     ...legalScenarioIssues,
     ...legalScenarioRequirementIssues,
     ...governedLegalClausePackCoverageIssues,
+    ...governedOtpRuntimeAssemblyIssues,
     ...legalClausePackTransactionReadinessIssues,
     ...(legalClausePackScenarioMatrixIssue ? [legalClausePackScenarioMatrixIssue] : []),
     ...(legalInstrumentFamilyIssue ? [legalInstrumentFamilyIssue] : []),
@@ -2661,6 +2720,7 @@ export async function validatePacket({
     legalDealFactsValidation,
     legalClausePackResolution,
     legalClausePackCoverage,
+    otpRuntimeAssembly,
     legalClausePackScenarioMatrix,
     legalClausePackTransactionReadiness: legalClausePackTransactionReadiness
       ? {
@@ -2693,6 +2753,7 @@ export async function validatePacket({
           legalScenarioRequirementsCanProceed &&
           (!legalClausePackResolution || legalClausePackResolution.draftAssemblyAllowed) &&
           (!legalClausePackCoverage || !legalClausePackCoverage.runtimeEnforced || legalClausePackCoverage.canAssemble) &&
+          (!otpRuntimeAssembly || !otpRuntimeAssembly.runtimeEnforced || otpRuntimeAssembly.canAssemble) &&
           (!legalClausePackScenarioMatrix || !legalClausePackScenarioMatrix.runtimeEnforced || legalClausePackScenarioMatrix.passed) &&
           (!legalClausePackTransactionReadinessRuntimeEnforced || legalClausePackTransactionReadiness?.canGenerate) &&
           (!legalInstrumentFamilyProfile || legalInstrumentFamilyProfile.generationAllowed) &&
@@ -2931,6 +2992,7 @@ export async function generatePacketVersion({
   const hasLegalTemplateGovernanceBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'legal_template_governance')
   const hasLegalClausePackConflictBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'legal_clause_pack_conflict')
   const hasLegalClausePackCoverageBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'legal_clause_pack_coverage')
+  const hasOtpRuntimeAssemblyBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'otp_runtime_assembly')
   const hasLegalClausePackScenarioMatrixBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'legal_clause_pack_scenario_matrix')
   const hasLegalClausePackTransactionReadinessBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'legal_clause_pack_transaction_readiness')
   const hasMandateTemplateContentGateBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'mandate_template_content_gate')
@@ -2940,6 +3002,7 @@ export async function generatePacketVersion({
     hasLegalTemplateGovernanceBlockingIssues ||
     hasLegalClausePackConflictBlockingIssues ||
     hasLegalClausePackCoverageBlockingIssues ||
+    hasOtpRuntimeAssemblyBlockingIssues ||
     hasLegalClausePackScenarioMatrixBlockingIssues ||
     hasLegalClausePackTransactionReadinessBlockingIssues
   const allowGenerationBypass = (
@@ -2964,6 +3027,8 @@ export async function generatePacketVersion({
             ? 'LEGAL_TEMPLATE_GOVERNANCE_BLOCKED'
           : hasLegalClausePackCoverageBlockingIssues
             ? 'LEGAL_CLAUSE_PACK_COVERAGE_BLOCKED'
+          : hasOtpRuntimeAssemblyBlockingIssues
+            ? 'OTP_RUNTIME_ASSEMBLY_BLOCKED'
           : hasLegalClausePackScenarioMatrixBlockingIssues
             ? 'LEGAL_CLAUSE_PACK_SCENARIO_MATRIX_BLOCKED'
           : hasLegalClausePackTransactionReadinessBlockingIssues
@@ -2979,6 +3044,8 @@ export async function generatePacketVersion({
             ? 'Only a currently effective, attorney-approved published template can be generated for signing.'
           : hasLegalClausePackCoverageBlockingIssues
             ? 'The selected OTP clause pack has no approved, locked wording in this template.'
+          : hasOtpRuntimeAssemblyBlockingIssues
+            ? 'The OTP clauses selected by onboarding do not match the clauses rendered by the template.'
           : hasLegalClausePackScenarioMatrixBlockingIssues
             ? 'This OTP template has not passed its governed reference transaction matrix.'
           : hasLegalClausePackTransactionReadinessBlockingIssues

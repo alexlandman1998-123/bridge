@@ -1428,6 +1428,38 @@ export async function updateDocumentPacketTemplate(templateId, updates = {}) {
   return fetchDocumentPacketTemplate(templateId, { includeSections: true })
 }
 
+export async function rollbackGovernedOtpTemplate({ currentTemplateId, rollbackTemplateId, reason } = {}) {
+  const client = requireClient()
+  const normalizedCurrentId = normalizeText(currentTemplateId)
+  const normalizedRollbackId = normalizeText(rollbackTemplateId)
+  const normalizedReason = normalizeText(reason)
+  if (!normalizedCurrentId || !normalizedRollbackId || normalizedCurrentId === normalizedRollbackId) {
+    throw new Error('Two distinct OTP template IDs are required.')
+  }
+  if (normalizedReason.length < 12) {
+    throw new Error('A rollback reason of at least 12 characters is required.')
+  }
+
+  const context = await resolvePacketContext(client)
+  if (!context.isOrgAdmin) {
+    throw new Error('Only Principal/Super Admin/Admin can roll back the live OTP.')
+  }
+
+  const { data, error } = await client.rpc('rollback_governed_otp_template', {
+    p_current_template_id: normalizedCurrentId,
+    p_rollback_template_id: normalizedRollbackId,
+    p_reason: normalizedReason,
+  })
+  if (error) {
+    const message = normalizeText(error.message)
+    if (error.code === 'PGRST202' || error.code === '42883' || message.toLowerCase().includes('rollback_governed_otp_template')) {
+      throw new Error('The atomic OTP rollback migration is not installed. No template was changed.')
+    }
+    throw error
+  }
+  return data || { rolledBack: true, fromTemplateId: normalizedCurrentId, toTemplateId: normalizedRollbackId }
+}
+
 export async function deleteDocumentPacketTemplate(templateId, { organisationId = null, replacementTemplateId = null } = {}) {
   const client = requireClient()
   if (!templateId) throw new Error('templateId is required.')
