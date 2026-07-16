@@ -11,10 +11,16 @@ import {
   normalizeNullableText,
   normalizeText,
 } from './attorneyFirmServiceShared'
+import {
+  CONVEYANCER_ORCHESTRATION_EVENT_TYPES,
+  runConveyancerMatterEvent,
+} from '../core/productisation/conveyancerOrchestration.js'
 
 const ASSIGNMENT_SELECT_COLUMNS = [
   'id',
   'transaction_id',
+  'firm_id',
+  'attorney_firm_id',
   'assignment_type',
   'matter_type',
   'attorney_role',
@@ -336,6 +342,36 @@ export async function recordAttorneyIncomingInstructionDecisionEvent(client, pay
   return insertTransactionEventWithFallback(client, eventPayload)
 }
 
+async function runAcceptedInstructionOrchestration(client, { assignment = {}, transactionId = '', actorUserId = '', occurredAt = '', auditEvent = null } = {}) {
+  const firmId = normalizeText(assignment.attorney_firm_id || assignment.firm_id)
+  if (!firmId || !transactionId) return { ok: true, skipped: true, reason: 'attorney_firm_binding_unavailable' }
+  try {
+    const [firms, transactions] = await Promise.all([
+      selectRowsWithMissingTableFallback(client, 'attorney_firms', [['id', firmId]]),
+      selectRowsWithMissingTableFallback(client, 'transactions', [['id', transactionId]]),
+    ])
+    const organisationId = normalizeText(firms[0]?.organisation_id)
+    const transaction = transactions[0] || null
+    if (!organisationId || !transaction) return { ok: true, skipped: true, reason: 'orchestration_tenant_context_unavailable' }
+    const sourceId = normalizeText(auditEvent?.id) || `${assignment.id}:${occurredAt}`
+    return await runConveyancerMatterEvent(client, {
+      event: {
+        eventId: `instruction-accepted:${sourceId}`,
+        type: CONVEYANCER_ORCHESTRATION_EVENT_TYPES.instructionAccepted,
+        organisationId,
+        attorneyFirmId: firmId,
+        transactionId,
+        sourceReference: auditEvent?.id ? `transaction_event:${auditEvent.id}` : `attorney_assignment:${assignment.id}`,
+        occurredAt,
+        payload: { transaction },
+      },
+      actor: { role: 'transfer_attorney', userId: actorUserId },
+    })
+  } catch (error) {
+    return { ok: true, skipped: true, reason: 'orchestration_unavailable', errorCode: normalizeText(error?.code) || null }
+  }
+}
+
 export function buildAcceptAttorneyIncomingInstructionPayload({
   actorUserId = '',
   acceptedAt = null,
@@ -546,6 +582,13 @@ export async function acceptAttorneyIncomingInstruction(client, {
         source,
       })
     : null
+  const orchestration = await runAcceptedInstructionOrchestration(client, {
+    assignment,
+    transactionId: resolvedTransactionId,
+    actorUserId: resolvedActorUserId,
+    occurredAt,
+    auditEvent,
+  })
 
   return {
     assignment: updatedAssignments?.[0] || {
@@ -558,6 +601,7 @@ export async function acceptAttorneyIncomingInstruction(client, {
     acceptedAt: occurredAt,
     lifecycleSync,
     auditEvent,
+    orchestration,
     actionHref: resolvedTransactionId ? `/transactions/${resolvedTransactionId}` : '',
   }
 }

@@ -229,7 +229,15 @@ export const APP_NAV_BY_ROLE = {
   ],
   platform_admin: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
-    { key: 'platform_demo_enquiries', label: 'Demo Enquiries', to: '/platform/demo-enquiries' },
+    {
+      key: 'platform_operations',
+      label: 'Operations',
+      to: '/platform/leads',
+      activeMatch: ['/platform/leads', '/platform/demo-enquiries'],
+      children: [
+        { key: 'platform_leads', label: 'Leads', to: '/platform/leads', activeMatch: ['/platform/demo-enquiries'] },
+      ],
+    },
     { key: 'platform_diagnostics', label: 'Diagnostics', to: '/platform/diagnostics' },
     { key: 'platform_transaction_routing', label: 'Routing Rollout', to: '/platform/transaction-routing-rollout' },
     { key: 'audit_logs', label: 'Audit Logs', to: '/attorney/audit-logs' },

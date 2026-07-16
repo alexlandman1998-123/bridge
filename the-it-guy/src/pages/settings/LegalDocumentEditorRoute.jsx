@@ -3,10 +3,13 @@ import LegalDocumentEditorScopeNav from '../../components/legal-documents/LegalD
 import LegalDocumentEditorContextPanel from '../../components/legal-documents/LegalDocumentEditorContextPanel'
 import {
   getLegalDocumentDefinition,
-  normalizeLegalDocumentEditorScope,
 } from '../../core/documents/legalDocumentCatalog'
 import { getLegalDocumentEditorSituation } from '../../core/documents/legalDocumentEditorSituations'
-import { buildLegalDocumentsLandingPath } from '../../core/documents/legalDocumentRoutes'
+import {
+  buildLegacyLegalDocumentRedirectPath,
+  buildLegalDocumentsLandingPath,
+  getLegalDocumentEditorScopeFromWorkspaceArea,
+} from '../../core/documents/legalDocumentRoutes'
 import SettingsSigningTemplatesPage from './SettingsSigningTemplatesPage'
 
 export default function LegalDocumentEditorRoute() {
@@ -16,10 +19,22 @@ export default function LegalDocumentEditorRoute() {
 
   if (!definition) return <Navigate to={buildLegalDocumentsLandingPath()} replace />
 
-  const templateId = new URLSearchParams(location.search).get('template') || ''
-  const selectedSituation = getLegalDocumentEditorSituation(new URLSearchParams(location.search).get('situation') || '')
+  const searchParams = new URLSearchParams(location.search)
+  const isLegacyEditorRoute = location.pathname.includes(`/${definition.key}/edit`)
+  if (isLegacyEditorRoute) {
+    return (
+      <Navigate
+        to={buildLegacyLegalDocumentRedirectPath(definition.key, editorScope, location.search)}
+        replace
+      />
+    )
+  }
+
+  const templateId = searchParams.get('template') || ''
+  const selectedSituation = getLegalDocumentEditorSituation(searchParams.get('situation') || '')
   const situationKey = selectedSituation?.key || ''
-  const normalizedScope = normalizeLegalDocumentEditorScope(editorScope)
+  const advancedMode = searchParams.get('mode') === 'advanced'
+  const normalizedScope = getLegalDocumentEditorScopeFromWorkspaceArea(searchParams.get('area') || '')
   const scopeDescription = normalizedScope === 'standard'
     ? 'Edit the core wording that is included in every generated document.'
     : normalizedScope === 'situations'
@@ -37,6 +52,7 @@ export default function LegalDocumentEditorRoute() {
         scope={normalizedScope}
         templateId={templateId}
         situationKey={situationKey}
+        advancedMode={advancedMode}
       />
       <LegalDocumentEditorContextPanel
         documentKey={definition.key}
@@ -44,6 +60,7 @@ export default function LegalDocumentEditorRoute() {
         scope={normalizedScope}
         templateId={templateId}
         situationKey={situationKey}
+        advancedMode={advancedMode}
       />
       <SettingsSigningTemplatesPage
         title={normalizedScope === 'all' ? definition.label : `${definition.label} · ${normalizedScope === 'standard' ? 'Standard template' : normalizedScope === 'situations' ? selectedSituation ? `${selectedSituation.label} clauses` : 'Conditional clauses' : 'Signing fields'}`}

@@ -177,6 +177,8 @@ const ICON_BY_KEY = {
   agent_intelligence_performance: BriefcaseBusiness,
   agent_intelligence_network: Users,
   platform_demo_enquiries: ClipboardList,
+  platform_operations: BriefcaseBusiness,
+  platform_leads: ClipboardList,
   platform_diagnostics: ShieldUser,
   platform_transaction_routing: Workflow,
   mission_control: LayoutDashboard,

@@ -28,6 +28,7 @@ import { AnimatePresence, motion as Motion, useReducedMotion } from 'motion/reac
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import BridgeCommandPalette from '../components/bridge/BridgeCommandPalette'
+import { NewBusinessIntakeForm } from '../components/bridge/NewBusinessIntakeForm'
 import { MotionCard, MotionSection, useBridgeMotion } from '../components/bridge/bridge-motion'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../components/ui/accordion'
 import { Badge } from '../components/ui/badge'
@@ -1772,33 +1773,12 @@ function ContactPageBody() {
             </Card>
             <Card className="bg-marketing-panelElevated">
               <CardHeader>
-                <CardTitle>Demo request form</CardTitle>
-                <CardDescription>Structured framework for the conversion flow. Hook it into your booking system when ready.</CardDescription>
+                <Badge variant="accent">New business enquiry</Badge>
+                <CardTitle>Tell us about your organisation.</CardTitle>
+                <CardDescription>Share enough context for the Arch9 team to route your enquiry and make the first conversation useful.</CardDescription>
               </CardHeader>
-              <CardContent className="grid gap-4 md:grid-cols-2">
-                {['Name', 'Company', 'Email', 'Role'].map((field) => (
-                  <label key={field} className="grid gap-2 text-sm text-marketing-muted">
-                    <span>{field}</span>
-                    <Input placeholder={field} />
-                  </label>
-                ))}
-                <label className="grid gap-2 text-sm text-marketing-muted md:col-span-2">
-                  <span>What do you want to solve?</span>
-                  <textarea
-                    rows="5"
-                    className="w-full rounded-[20px] border border-marketing-borderStrong bg-white/86 px-4 py-3 text-sm text-marketing-ink outline-none transition placeholder:text-[#a0968a] focus:border-marketing-accent/45 focus:ring-4 focus:ring-marketing-accent/10"
-                    placeholder="Tell us where your transaction process needs more structure."
-                  />
-                </label>
-                <div className="md:col-span-2 flex flex-col gap-3 sm:flex-row">
-                  <Button>
-                    Request Demo
-                    <ArrowRight className="h-4 w-4" />
-                  </Button>
-                  <Button asChild variant="secondary">
-                    <Link to="/bridge/solutions">Explore Solutions</Link>
-                  </Button>
-                </div>
+              <CardContent>
+                <NewBusinessIntakeForm />
               </CardContent>
             </Card>
           </div>

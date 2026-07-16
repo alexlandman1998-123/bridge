@@ -12,7 +12,7 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { Link, Navigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { getLegalDocumentDefinition } from '../../core/documents/legalDocumentCatalog'
 import { buildOtpCompositionPlan } from '../../core/documents/otpCompositionModel'
 import {
@@ -55,13 +55,17 @@ function getIssueText(issue) {
 
 export default function LegalDocumentPreviewPage() {
   const { documentKey = '' } = useParams()
+  const [searchParams] = useSearchParams()
   const definition = getLegalDocumentDefinition(documentKey)
   const { currentMembership, currentWorkspace } = useWorkspace()
   const organisationId = resolveLegalDocumentOrganisationId(currentWorkspace, currentMembership)
   const { documentsByKey, loading, error, refresh } = useLegalDocumentLibrary({ organisationId: organisationId || null })
   const document = definition ? documentsByKey[definition.key] : null
   const scenarios = listLegalDocumentPreviewScenarios()
-  const [scenarioKey, setScenarioKey] = useState(scenarios[0].key)
+  const [scenarioKey, setScenarioKey] = useState(() => {
+    const requested = searchParams.get('scenario') || ''
+    return scenarios.some((scenario) => scenario.key === requested) ? requested : scenarios[0].key
+  })
   const [preview, setPreview] = useState(EMPTY_PREVIEW)
   const [previewing, setPreviewing] = useState(false)
   const previewRequestIdRef = useRef(0)

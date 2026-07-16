@@ -80,10 +80,6 @@ const RESOLUTION_STATUS_PRESENTATION = Object.freeze({
   incomplete: { label: 'Resolution check incomplete', classes: 'border-[#ecc7c2] bg-[#fff4f3] text-[#9b3127]' },
 })
 
-function withTemplate(path, templateId) {
-  return templateId ? `${path}?template=${encodeURIComponent(templateId)}` : path
-}
-
 function formatDate(value) {
   if (!value) return 'Not published yet'
   const date = new Date(value)
@@ -126,11 +122,11 @@ export default function LegalDocumentOverviewPage() {
 
   const primaryTemplateId = document?.primaryTemplateId || ''
   const previewPath = buildLegalDocumentPreviewPath(definition.key)
-  const standardEditorPath = withTemplate(buildLegalDocumentEditorPath(definition.key, 'standard'), primaryTemplateId)
-  const situationsEditorPath = withTemplate(buildLegalDocumentEditorPath(definition.key, 'situations'), primaryTemplateId)
-  const signingEditorPath = withTemplate(buildLegalDocumentEditorPath(definition.key, 'signing'), primaryTemplateId)
-  const rolloutEditorPath = withTemplate(buildLegalDocumentEditorPath(definition.key, 'standard'), document?.rolloutCandidateTemplateId || primaryTemplateId)
-  const operationsEditorPath = withTemplate(buildLegalDocumentEditorPath(definition.key, 'standard'), document?.liveTemplateId || primaryTemplateId)
+  const standardEditorPath = buildLegalDocumentEditorPath(definition.key, 'standard', { templateId: primaryTemplateId })
+  const situationsEditorPath = buildLegalDocumentEditorPath(definition.key, 'situations', { templateId: primaryTemplateId })
+  const signingEditorPath = buildLegalDocumentEditorPath(definition.key, 'signing', { templateId: primaryTemplateId })
+  const rolloutEditorPath = buildLegalDocumentEditorPath(definition.key, 'standard', { templateId: document?.rolloutCandidateTemplateId || primaryTemplateId })
+  const operationsEditorPath = buildLegalDocumentEditorPath(definition.key, 'standard', { templateId: document?.liveTemplateId || primaryTemplateId })
   const status = STATUS_PRESENTATION[document?.status] || STATUS_PRESENTATION.missing
   const StatusIcon = status.Icon
   const standardItems = (document?.standardSections || []).map((section) => ({ key: section.key, label: section.title }))

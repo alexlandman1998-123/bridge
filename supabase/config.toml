@@ -126,6 +126,42 @@ verify_jwt = true
 import_map = "./functions/document-conversion-health/deno.json"
 entrypoint = "./functions/document-conversion-health/index.ts"
 
+[functions.dispatch-conveyancer-notifications]
+enabled = true
+verify_jwt = true
+import_map = "./functions/dispatch-conveyancer-notifications/deno.json"
+entrypoint = "./functions/dispatch-conveyancer-notifications/index.ts"
+
+[functions.conveyancer-signing-webhook]
+enabled = true
+verify_jwt = false
+import_map = "./functions/conveyancer-signing-webhook/deno.json"
+entrypoint = "./functions/conveyancer-signing-webhook/index.ts"
+
+[functions.conveyancer-provider-runtime]
+enabled = true
+verify_jwt = true
+import_map = "./functions/conveyancer-provider-runtime/deno.json"
+entrypoint = "./functions/conveyancer-provider-runtime/index.ts"
+
+[functions.dispatch-conveyancer-provider-commands]
+enabled = true
+verify_jwt = true
+import_map = "./functions/dispatch-conveyancer-provider-commands/deno.json"
+entrypoint = "./functions/dispatch-conveyancer-provider-commands/index.ts"
+
+[functions.conveyancer-provider-webhook]
+enabled = true
+verify_jwt = false
+import_map = "./functions/conveyancer-provider-webhook/deno.json"
+entrypoint = "./functions/conveyancer-provider-webhook/index.ts"
+
+[functions.conveyancer-operations-monitor]
+enabled = true
+verify_jwt = true
+import_map = "./functions/conveyancer-operations-monitor/deno.json"
+entrypoint = "./functions/conveyancer-operations-monitor/index.ts"
+
 [functions.generate-final-signed-document]
 enabled = true
 verify_jwt = true

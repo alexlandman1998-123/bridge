@@ -252,7 +252,7 @@ const PartnerPortalPage = lazy(() => import('./pages/PartnerPortalPage'))
 const PartnerInvitationAcceptPage = lazy(() => import('./pages/PartnerInvitationAcceptPage'))
 const PartnersPage = lazy(() => import('./pages/PartnersPage'))
 const OrganizationWorkspacePage = lazy(() => import('./pages/OrganizationWorkspacePage'))
-const PlatformDemoEnquiriesPage = lazy(() => import('./pages/PlatformDemoEnquiriesPage'))
+const PlatformLeadsPage = lazy(() => import('./pages/PlatformLeadsPage'))
 const PlatformDiagnosticsPage = lazy(() => import('./pages/PlatformDiagnosticsPage'))
 const TransactionRoutingRolloutPage = lazy(() => import('./pages/TransactionRoutingRolloutPage'))
 const WorkflowMigrationValidationPage = lazy(() => import('./pages/WorkflowMigrationValidationPage'))
@@ -276,8 +276,8 @@ const SettingsPartnerProspectsPage = lazy(() => import('./pages/settings/Setting
 const SettingsPartnerRoutingRulesPage = lazy(() => import('./pages/settings/SettingsPartnerRoutingRulesPage'))
 const SettingsSigningTemplatesPage = lazy(() => import('./pages/settings/SettingsSigningTemplatesPage'))
 const LegalDocumentEditorRoute = lazy(() => import('./pages/settings/LegalDocumentEditorRoute'))
+const LegalDocumentWorkspaceRoute = lazy(() => import('./pages/settings/LegalDocumentWorkspaceRoute').then((module) => ({ default: module.LegalDocumentWorkspaceRoute })))
 const LegalDocumentsLandingPage = lazy(() => import('./pages/settings/LegalDocumentsLandingPage'))
-const LegalDocumentOverviewPage = lazy(() => import('./pages/settings/LegalDocumentOverviewPage'))
 const LegalDocumentPreviewPage = lazy(() => import('./pages/settings/LegalDocumentPreviewPage'))
 const SettingsSupportPage = lazy(() => import('./pages/settings/SettingsSupportPage'))
 const SettingsUsersPage = lazy(() => import('./pages/settings/SettingsUsersPage'))
@@ -1544,11 +1544,21 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/platform/leads"
+                element={
+                  <HQRoute>
+                    <AppErrorBoundary scope="platform-leads" title="New business enquiries failed to render">
+                      <PlatformLeadsPage />
+                    </AppErrorBoundary>
+                  </HQRoute>
+                }
+              />
+              <Route
                 path="/platform/demo-enquiries"
                 element={
                   <HQRoute>
                     <AppErrorBoundary scope="platform-demo-enquiries" title="Demo enquiries failed to render">
-                      <PlatformDemoEnquiriesPage />
+                      <PlatformLeadsPage />
                     </AppErrorBoundary>
                   </HQRoute>
                 }
@@ -2708,7 +2718,7 @@ function AppRoutes() {
                 element={
                   <OrganisationSettingsManageRoute>
                     <RoleRoute allowedRoles={['developer', 'agent']}>
-                      <LegalDocumentOverviewPage />
+                      <LegalDocumentWorkspaceRoute />
                     </RoleRoute>
                   </OrganisationSettingsManageRoute>
                 }

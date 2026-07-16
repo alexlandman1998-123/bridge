@@ -32,15 +32,11 @@ const SITUATION_ICONS = Object.freeze({
   tax_vat: ReceiptText,
 })
 
-function buildEditorLink(documentKey, scope, templateId, situationKey = '') {
-  const query = new URLSearchParams()
-  if (templateId) query.set('template', templateId)
-  if (situationKey) query.set('situation', situationKey)
-  const suffix = query.toString()
-  return `${buildLegalDocumentEditorPath(documentKey, scope)}${suffix ? `?${suffix}` : ''}`
+function buildEditorLink(documentKey, scope, templateId, situationKey = '', advancedMode = false) {
+  return buildLegalDocumentEditorPath(documentKey, scope, { templateId, situationKey, advanced: advancedMode })
 }
 
-export default function LegalDocumentEditorContextPanel({ documentKey, documentLabel, scope, templateId = '', situationKey = '' }) {
+export default function LegalDocumentEditorContextPanel({ documentKey, documentLabel, scope, templateId = '', situationKey = '', advancedMode = false }) {
   if (scope === 'situations') {
     const situations = listLegalDocumentEditorSituations()
     const selected = situations.find((situation) => situation.key === situationKey) || null
@@ -57,7 +53,7 @@ export default function LegalDocumentEditorContextPanel({ documentKey, documentL
               <p className="mt-1 max-w-3xl text-sm leading-6 text-[#5f786b]">Choose the answer group you want to edit. These clauses are included only when the buyer, property or sale details make them relevant.</p>
             </div>
           </div>
-          <Link to={buildEditorLink(documentKey, 'standard', templateId)} className="inline-flex min-h-11 shrink-0 items-center gap-3 rounded-[12px] border border-[#b8d9c5] bg-white px-4 text-left text-sm text-[#385647] shadow-[0_6px_16px_rgba(15,23,42,0.04)] transition hover:border-[#76b990] hover:bg-[#fbfefc]">
+          <Link to={buildEditorLink(documentKey, 'standard', templateId, '', advancedMode)} className="inline-flex min-h-11 shrink-0 items-center gap-3 rounded-[12px] border border-[#b8d9c5] bg-white px-4 text-left text-sm text-[#385647] shadow-[0_6px_16px_rgba(15,23,42,0.04)] transition hover:border-[#76b990] hover:bg-[#fbfefc]">
             <FileText className="h-5 w-5 text-[#167449]" aria-hidden="true" />
             <span>
               <strong className="block font-semibold text-[#18372a]">Standard template</strong>
@@ -81,7 +77,7 @@ export default function LegalDocumentEditorContextPanel({ documentKey, documentL
                     return (
                       <Link
                         key={situation.key}
-                        to={buildEditorLink(documentKey, 'situations', templateId, situation.key)}
+                        to={buildEditorLink(documentKey, 'situations', templateId, situation.key, advancedMode)}
                         aria-current={active ? 'page' : undefined}
                         className={`flex min-h-[74px] items-start gap-3 rounded-[12px] border px-3 py-3 transition ${active ? 'border-[#63b783] bg-white text-[#146f42] shadow-[0_6px_16px_rgba(15,127,79,0.08)]' : 'border-[#d8e8de] bg-white/70 text-[#334d40] hover:border-[#9dcdb0] hover:bg-white'}`}
                       >
@@ -121,7 +117,7 @@ export default function LegalDocumentEditorContextPanel({ documentKey, documentL
             <p className="mt-1 max-w-3xl text-sm leading-6 text-[#5f786b]">This is the core wording that stays the same. Bridge adds conditional clauses automatically from the onboarding answers.</p>
           </div>
         </div>
-        <Link to={buildEditorLink(documentKey, 'situations', templateId)} className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-[10px] border border-[#a9d5b9] bg-white px-4 text-sm font-semibold text-[#176f43] transition hover:border-[#6db889] hover:bg-[#f1faf5]">
+        <Link to={buildEditorLink(documentKey, 'situations', templateId, '', advancedMode)} className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-[10px] border border-[#a9d5b9] bg-white px-4 text-sm font-semibold text-[#176f43] transition hover:border-[#6db889] hover:bg-[#f1faf5]">
           Manage conditional clauses
         </Link>
       </section>

@@ -36,6 +36,7 @@ import LoadingSkeleton from '../components/LoadingSkeleton'
 import ProgressTimeline from '../components/ProgressTimeline'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import AttorneyAssignmentSection from '../components/attorney/assignments/AttorneyAssignmentSection'
+import ConveyancerCockpit from '../components/attorney/cockpit/ConveyancerCockpit'
 import TransactionFinanceCommandCenter from '../components/transaction/TransactionFinanceCommandCenter'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import FinanceProgressBar from '../components/finance/FinanceProgressBar'
@@ -152,6 +153,7 @@ import {
 } from '../modules/bond/utils/bondApplicationViewModel'
 
 const ATTORNEY_WORKSPACE_TABS = [
+  { id: 'cockpit', label: 'Work' },
   { id: 'overview', label: 'Overview' },
   { id: 'parties', label: 'Parties' },
   { id: 'stakeholders', label: 'Roleplayers' },
@@ -7574,7 +7576,7 @@ function AttorneyTransactionDetail() {
   const [matterAccessChecked, setMatterAccessChecked] = useState(workspaceRole !== 'attorney')
   const [matterAccessAllowed, setMatterAccessAllowed] = useState(workspaceRole !== 'attorney')
   const [saving, setSaving] = useState(false)
-  const [workspaceMenu, setWorkspaceMenu] = useState('overview')
+  const [workspaceMenu, setWorkspaceMenu] = useState(() => workspaceRole === 'attorney' ? 'cockpit' : 'overview')
   const [discussionBody, setDiscussionBody] = useState('')
   const [discussionType, setDiscussionType] = useState('operational')
   const [discussionVisibility, setDiscussionVisibility] = useState('shared')
@@ -7998,6 +8000,20 @@ function AttorneyTransactionDetail() {
     currentMembership?.organisation_id ||
     transaction?.organisation_id ||
     ''
+  const attorneyFirmId =
+    currentMembership?.attorneyFirmId ||
+    currentMembership?.attorney_firm_id ||
+    currentMembership?.firmId ||
+    currentMembership?.firm_id ||
+    profile?.primary_attorney_firm_id ||
+    workspace?.attorneyFirmId ||
+    workspace?.attorney_firm_id ||
+    ''
+  const conveyancerCockpitActor = {
+    role: currentMembership?.attorneyRole || currentMembership?.attorney_role || currentMembership?.role || profile?.attorney_role || 'transfer_attorney',
+    userId: profile?.id || profile?.userId || '',
+    teamIds: [currentMembership?.teamId, currentMembership?.team_id].filter(Boolean),
+  }
   const partnerAccessContext = useMemo(
     () => ({
       organisationId: workspaceOrganisationId,
@@ -8041,7 +8057,9 @@ function AttorneyTransactionDetail() {
     ? BOND_ORIGINATOR_WORKSPACE_TABS
     : isAgentTransactionView
       ? AGENT_WORKSPACE_TABS
-      : ATTORNEY_WORKSPACE_TABS
+      : workspaceRole === 'attorney'
+        ? ATTORNEY_WORKSPACE_TABS
+        : ATTORNEY_WORKSPACE_TABS.filter((tab) => tab.id !== 'cockpit')
   const activeWorkspaceMenu = availableWorkspaceTabs.some((tab) => tab.id === requestedWorkspaceMenu) ? requestedWorkspaceMenu : 'overview'
 
   const loadPartnerInvitations = useCallback(async () => {
@@ -12155,6 +12173,16 @@ function AttorneyTransactionDetail() {
       )}
     >
       <div className="space-y-6">
+        {workspaceRole === 'attorney' && activeWorkspaceMenu === 'cockpit' ? (
+          <ConveyancerCockpit
+            client={supabase}
+            organisationId={workspaceOrganisationId}
+            attorneyFirmId={attorneyFirmId}
+            transactionId={transaction.id}
+            actor={conveyancerCockpitActor}
+            onNavigate={setWorkspaceMenu}
+          />
+        ) : null}
         {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'overview' ? (
           <section className="space-y-7">
             <FinanceProgressBar
