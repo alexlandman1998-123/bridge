@@ -8,6 +8,10 @@ import {
   sanitizeAttorneyLeadCampaignCode,
 } from '../core/leads/attorneyLeadContract.js'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
+import { prepareAgentLegalHandoff } from './agentLegalHandoffService.js'
+import { probeAttorneyPublicIntakeRuntime } from './attorneyPublicIntakeService.js'
+
+export const ATTORNEY_LEAD_HANDOFF_FAILED_CODE = 'ATTORNEY_LEAD_HANDOFF_FAILED'
 
 const LEAD_COLUMNS = [
   'lead_id',
@@ -417,13 +421,27 @@ export async function convertAttorneyLeadToMatter({ organisationId, leadId, valu
   const data = throwIfError(result, 'Unable to convert Attorney Lead to Matter.')
   if (!data?.success) throw new Error(data?.message || 'Attorney Lead conversion was not completed.')
   if (!data?.transaction_id || !data?.assignment_id) throw new Error('Matter conversion lineage was not confirmed.')
-  return {
+  const conversion = {
     success: true,
     existing: data.existing === true,
     leadId: normalizeText(data.lead_id),
     transactionId: normalizeText(data.transaction_id),
     assignmentId: normalizeText(data.assignment_id),
     matterType: normalizeText(data.matter_type),
+  }
+  try {
+    return {
+      ...conversion,
+      legalHandoff: await prepareAgentLegalHandoff(conversion.transactionId, db),
+    }
+  } catch (handoffError) {
+    const error = new Error('The Matter was created, but its legal workflow could not be prepared. Retry the conversion to complete workflow setup.')
+    error.code = ATTORNEY_LEAD_HANDOFF_FAILED_CODE
+    error.transactionId = conversion.transactionId
+    error.assignmentId = conversion.assignmentId
+    error.existing = conversion.existing
+    error.cause = handoffError
+    throw error
   }
 }
 
@@ -503,7 +521,7 @@ export async function getAttorneyPublicIntakeLink({ organisationId, client = sup
   }
 }
 
-export async function getAttorneyLeadsLaunchReadiness({ organisationId, client = supabase } = {}) {
+export async function getAttorneyLeadsLaunchReadiness({ organisationId, client = supabase, runtimeProbe = probeAttorneyPublicIntakeRuntime } = {}) {
   const scopedOrganisationId = normalizeText(organisationId)
   if (!scopedOrganisationId) return null
   const db = requireClient(client)
@@ -513,8 +531,28 @@ export async function getAttorneyLeadsLaunchReadiness({ organisationId, client =
   const row = throwIfError(result, 'Unable to load Attorney Leads launch readiness.') || {}
   const journey = row.journey && typeof row.journey === 'object' ? row.journey : {}
   const operations = row.operations && typeof row.operations === 'object' ? row.operations : {}
+  const blockers = Array.isArray(row.blockers) ? row.blockers.map((value) => normalizeText(value, 500)).filter(Boolean) : []
+  const warnings = Array.isArray(row.warnings) ? row.warnings.map((value) => normalizeText(value, 500)).filter(Boolean) : []
+  let runtime = { checked: false, healthy: false, intakeActive: false, code: 'not_checked', version: '' }
+  if (journey.active === true && normalizeText(journey.slug)) {
+    try {
+      const probe = await runtimeProbe(normalizeText(journey.slug))
+      runtime = {
+        checked: true,
+        healthy: probe?.healthy === true,
+        intakeActive: probe?.intakeActive === true,
+        code: normalizeText(probe?.code, 80) || 'unavailable',
+        version: normalizeText(probe?.version, 120),
+      }
+    } catch {
+      runtime = { checked: true, healthy: false, intakeActive: false, code: 'unreachable', version: '' }
+    }
+    if (!runtime.healthy || !runtime.intakeActive) {
+      blockers.push('Deploy or restore the Attorney public Journey Edge Function before sharing this link.')
+    }
+  }
   return {
-    status: ['ready', 'attention', 'blocked'].includes(row.status) ? row.status : 'blocked',
+    status: blockers.length ? 'blocked' : ['ready', 'attention', 'blocked'].includes(row.status) ? row.status : 'blocked',
     checkedAt: row.checked_at || null,
     journey: {
       created: journey.created === true,
@@ -531,8 +569,9 @@ export async function getAttorneyLeadsLaunchReadiness({ organisationId, client =
       publicSubmissions30d: Number(operations.public_submissions_30d || 0),
       failedConversions: Number(operations.failed_conversions || 0),
     },
-    blockers: Array.isArray(row.blockers) ? row.blockers.map((value) => normalizeText(value, 500)).filter(Boolean) : [],
-    warnings: Array.isArray(row.warnings) ? row.warnings.map((value) => normalizeText(value, 500)).filter(Boolean) : [],
+    runtime,
+    blockers,
+    warnings,
   }
 }
 

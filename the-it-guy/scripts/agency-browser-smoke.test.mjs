@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { createServer } from 'node:net'
 import { chromium } from 'playwright'
 import process from 'node:process'
 
 const APP_ROOT = new URL('../', import.meta.url)
-const DEFAULT_PORT = 5194
-const DEFAULT_BASE_URL = `http://127.0.0.1:${DEFAULT_PORT}`
 const FAKE_SUPABASE_URL = 'https://agency-smoke.supabase.co'
 const FAKE_ANON_KEY = 'agency-smoke-anon-key'
 const DEV_AUTH_STORAGE_KEY = 'itg:dev-auth-role'
@@ -54,6 +53,23 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function findAvailablePort() {
+  return new Promise((resolve, reject) => {
+    const probe = createServer()
+    probe.unref()
+    probe.once('error', reject)
+    probe.listen(0, '127.0.0.1', () => {
+      const address = probe.address()
+      const port = typeof address === 'object' && address ? address.port : 0
+      probe.close((error) => {
+        if (error) reject(error)
+        else if (!port) reject(new Error('Unable to allocate an isolated browser smoke port.'))
+        else resolve(port)
+      })
+    })
+  })
+}
+
 async function waitForServer(baseUrl, outputRef) {
   const deadline = Date.now() + 45_000
   let lastError = null
@@ -78,8 +94,11 @@ async function startViteServer() {
     return { baseUrl: providedUrl, stop: async () => {} }
   }
 
+  const requestedPort = Number.parseInt(String(process.env.AGENCY_BROWSER_SMOKE_PORT || ''), 10)
+  const port = Number.isInteger(requestedPort) && requestedPort > 0 ? requestedPort : await findAvailablePort()
+  const baseUrl = `http://127.0.0.1:${port}`
   const outputRef = { value: '' }
-  const child = spawn('npm', ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(DEFAULT_PORT), '--strictPort'], {
+  const child = spawn('npm', ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], {
     cwd: APP_ROOT,
     env: {
       ...process.env,
@@ -103,14 +122,14 @@ async function startViteServer() {
   })
 
   try {
-    await waitForServer(DEFAULT_BASE_URL, outputRef)
+    await waitForServer(baseUrl, outputRef)
   } catch (error) {
     child.kill('SIGTERM')
     throw error
   }
 
   return {
-    baseUrl: DEFAULT_BASE_URL,
+    baseUrl,
     stop: async () => {
       if (child.exitCode !== null) return
       child.kill('SIGTERM')
@@ -265,15 +284,30 @@ async function runListingSmoke(page, baseUrl) {
   assert.equal(await page.getByText('Follow-Up Oversight').count(), 0, 'Follow-Up Oversight strip should not render on listings.')
   assert.equal(await page.getByRole('button', { name: /Copy Chase List/ }).count(), 0, 'Copy Chase List action should not render on listings.')
   await clickByRole(page, 'button', /^Quick Add Listing$/)
-  await page.getByText('Quick Add is for manual or external listings.').first().waitFor({ state: 'visible', timeout: 10_000 })
+  const quickAddDialog = page.getByTestId('new-listing-dialog')
+  await quickAddDialog.waitFor({ state: 'visible', timeout: 10_000 })
+  assert.equal(await quickAddDialog.getAttribute('role'), 'dialog', 'Quick Add should expose dialog semantics.')
+  assert.equal(await quickAddDialog.getAttribute('aria-modal'), 'true', 'Quick Add should announce itself as modal.')
+  await quickAddDialog.getByText('Quick Add is for manual or external listings.').waitFor({ state: 'visible', timeout: 10_000 })
+  const backgroundToolbarBlocked = await page.evaluate(() => {
+    const dialog = document.querySelector('[data-testid="new-listing-dialog"]')
+    const backgroundButton = Array.from(document.querySelectorAll('button')).find((button) => (
+      !dialog?.contains(button) && button.textContent?.trim() === 'Generate Mandate'
+    ))
+    if (!dialog || !backgroundButton) return false
+    const rect = backgroundButton.getBoundingClientRect()
+    const topElement = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+    return Boolean(topElement && !backgroundButton.contains(topElement))
+  })
+  assert.equal(backgroundToolbarBlocked, true, 'Open Quick Add modal should block background toolbar interaction.')
   await fillFirstByTextLabel(page, 'Seller name', 'Phase Four Seller')
   await fillFirstByTextLabel(page, 'Seller phone', '+27821111111')
   await fillByPlaceholder(page, 'Start typing the property address', '34 Listing Smoke Avenue')
   await fillFirstByTextLabel(page, 'Listing price', '3200000')
-  await clickByRole(page, 'button', /Add mandate details/)
-  await page.getByText('Mandate capture pack').first().waitFor({ state: 'visible', timeout: 10_000 })
-  await clickByRole(page, 'button', /Generate Mandate/)
-  await page.getByText('Mandate generation will be available from the listing workspace after save.').first().waitFor({ state: 'visible', timeout: 10_000 })
+  await quickAddDialog.getByTestId('quick-add-mandate-details-toggle').click()
+  await quickAddDialog.getByText('Mandate capture pack').waitFor({ state: 'visible', timeout: 10_000 })
+  await quickAddDialog.getByTestId('quick-add-generate-mandate').click()
+  await quickAddDialog.getByText('Mandate generation will be available from the listing workspace after save.').waitFor({ state: 'visible', timeout: 10_000 })
   await closeDialog(page)
 }
 

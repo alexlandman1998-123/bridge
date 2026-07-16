@@ -30,17 +30,20 @@ begin
     raise exception 'Transaction not found or access denied.';
   end if;
 
-  v_profile := coalesce(v_transaction.routing_profile_json, '{}'::jsonb);
+  -- Read optional transaction routing fields through the row projection. Some
+  -- deployed schemas predate these columns; to_jsonb keeps this migration
+  -- deployable while still consuming the fields when they are available.
+  v_profile := coalesce(to_jsonb(v_transaction)->'routing_profile_json', '{}'::jsonb);
 
-  if lower(coalesce(v_profile->>'financeType', v_transaction.finance_type, '')) in ('bond', 'hybrid', 'combination')
+  if lower(coalesce(v_profile->>'financeType', to_jsonb(v_transaction)->>'finance_type', '')) in ('bond', 'hybrid', 'combination')
      or coalesce((v_profile->>'requiresBondAttorney')::boolean, false) then
     v_required_lanes := array_append(v_required_lanes, 'bond');
     v_required_roles := array_append(v_required_roles, 'bond_attorney');
   end if;
 
-  if coalesce(v_transaction.cancellation_required, false)
-     or coalesce(v_transaction.seller_has_existing_bond, false)
-     or coalesce(v_transaction.existing_bond, false)
+  if coalesce((to_jsonb(v_transaction)->>'cancellation_required')::boolean, false)
+     or coalesce((to_jsonb(v_transaction)->>'seller_has_existing_bond')::boolean, false)
+     or coalesce((to_jsonb(v_transaction)->>'existing_bond')::boolean, false)
      or coalesce((v_profile->>'requiresCancellationAttorney')::boolean, false)
      or coalesce((v_profile->>'sellerHasExistingBond')::boolean, false) then
     v_required_lanes := array_append(v_required_lanes, 'cancellation');

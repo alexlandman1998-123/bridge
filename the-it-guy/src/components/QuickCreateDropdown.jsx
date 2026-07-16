@@ -327,6 +327,28 @@ const APPOINTMENT_TYPES = [
   'General Meeting',
 ]
 
+const QUICK_CREATE_MENU_MAX_WIDTH = 384
+const QUICK_CREATE_MENU_VIEWPORT_GUTTER = 12
+
+function getQuickCreateMenuOffset(triggerRect, viewportWidth) {
+  if (!triggerRect || !Number.isFinite(viewportWidth) || viewportWidth <= 0) return 0
+
+  const menuWidth = Math.min(
+    QUICK_CREATE_MENU_MAX_WIDTH,
+    Math.max(0, viewportWidth - QUICK_CREATE_MENU_VIEWPORT_GUTTER * 2),
+  )
+  const maximumLeft = Math.max(
+    QUICK_CREATE_MENU_VIEWPORT_GUTTER,
+    viewportWidth - menuWidth - QUICK_CREATE_MENU_VIEWPORT_GUTTER,
+  )
+  const menuLeft = Math.min(
+    Math.max(triggerRect.left, QUICK_CREATE_MENU_VIEWPORT_GUTTER),
+    maximumLeft,
+  )
+
+  return menuLeft - triggerRect.left
+}
+
 const INITIAL_FORMS = {
   lead: {
     name: '',
@@ -836,6 +858,7 @@ function QuickCreateDropdown({ className = '' }) {
   const [listingOptionsLoading, setListingOptionsLoading] = useState(false)
   const [agentOptions, setAgentOptions] = useState([])
   const [agentOptionsLoading, setAgentOptionsLoading] = useState(false)
+  const [menuOffsetLeft, setMenuOffsetLeft] = useState(0)
   const containerRef = useRef(null)
 
   const actor = useMemo(() => {
@@ -868,6 +891,19 @@ function QuickCreateDropdown({ className = '' }) {
     document.addEventListener('mousedown', onClickOutside)
     return () => document.removeEventListener('mousedown', onClickOutside)
   }, [])
+
+  useEffect(() => {
+    if (!open) return undefined
+
+    function positionMenu() {
+      const triggerRect = containerRef.current?.getBoundingClientRect()
+      setMenuOffsetLeft(getQuickCreateMenuOffset(triggerRect, window.innerWidth))
+    }
+
+    positionMenu()
+    window.addEventListener('resize', positionMenu)
+    return () => window.removeEventListener('resize', positionMenu)
+  }, [open])
 
   useEffect(() => {
     function onKeyDown(event) {
@@ -1229,7 +1265,12 @@ function QuickCreateDropdown({ className = '' }) {
         <button
           type="button"
           className="ui-shell-create-button"
-          onClick={() => setOpen((previous) => !previous)}
+          onClick={(event) => {
+            if (!open) {
+              setMenuOffsetLeft(getQuickCreateMenuOffset(event.currentTarget.getBoundingClientRect(), window.innerWidth))
+            }
+            setOpen((previous) => !previous)
+          }}
           aria-haspopup="menu"
           aria-expanded={open}
           data-testid="quick-create-button"
@@ -1241,8 +1282,10 @@ function QuickCreateDropdown({ className = '' }) {
 
         {open ? (
           <div
-            className="ui-surface-floating absolute right-0 top-[calc(100%+12px)] z-[120] w-[min(24rem,calc(100vw-1.5rem))] max-h-[calc(100dvh-96px)] overflow-y-auto border-[#dde6ef] bg-white p-2 shadow-[0_24px_56px_rgba(15,23,42,0.14)]"
+            className="ui-surface-floating absolute top-[calc(100%+12px)] z-[120] w-[min(24rem,calc(100vw-1.5rem))] max-h-[calc(100dvh-96px)] overflow-y-auto border-[#dde6ef] bg-white p-2 shadow-[0_24px_56px_rgba(15,23,42,0.14)]"
+            style={{ left: menuOffsetLeft }}
             role="menu"
+            data-testid="quick-create-menu"
           >
             <div className="px-3 pb-3 pt-2">
               <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Create</p>

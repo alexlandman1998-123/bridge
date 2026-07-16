@@ -67,8 +67,8 @@ assert.match(appSource, /AgentEnquiriesPage/)
 assert.match(appSource, /path="\/pipeline\/enquiries"/)
 
 const rolesSource = await fs.readFile(new URL('../src/lib/roles.js', import.meta.url), 'utf8')
-assert.match(rolesSource, /key: 'enquiries'/)
-assert.match(rolesSource, /\/pipeline\/enquiries/)
+assert.match(rolesSource, /key: 'pipeline_leads'/)
+assert.match(rolesSource, /to: '\/pipeline\/leads'/)
 
 const sidebarSource = await fs.readFile(new URL('../src/components/Sidebar.jsx', import.meta.url), 'utf8')
 assert.match(sidebarSource, /enquiries: ClipboardList/)

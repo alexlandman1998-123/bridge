@@ -23,12 +23,12 @@ function test(name, fn) {
   }
 }
 
-test('Leads is an Attorney-only Pipeline workspace beside Incoming Matters', () => {
+test('Leads is an Attorney-only workspace beside Incoming Matters with a compact page header', () => {
   assert.match(app, /const AttorneyLeadsPage = lazy/)
   assert.match(app, /path="\/attorney\/leads"[\s\S]*?<RoleRoute allowedRoles=\{\['attorney'\]\}>[\s\S]*?<AttorneyFirmRoute>[\s\S]*?<AttorneyLeadsPage \/>/)
   assert.match(roles, /label: 'Pipeline'[\s\S]*label: 'Incoming Matters'[\s\S]*label: 'Leads', to: '\/attorney\/leads'/)
   assert.match(sidebar, /attorney_leads: Users/)
-  assert.match(page, /Formal instructions remain in Incoming Matters/)
+  assert.doesNotMatch(page, />Pipeline<|>Leads<|Potential future work from public enquiries/)
 })
 
 test('workspace provides the Phase 5 KPIs, filters, responsive queue, and detail history', () => {

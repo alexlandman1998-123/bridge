@@ -49,13 +49,18 @@ await test('service normalizes the readiness result and uses the dedicated RPC',
   const calls = []
   const client = { rpc: async (name, args) => {
     calls.push({ name, args })
-    return { data: { status: 'attention', checked_at: '2026-07-16T12:00:00Z', journey: { active: true, services_ready: true }, operations: { qualified_owner_count: 2, due_follow_ups: 1 }, blockers: [], warnings: ['One warning'] }, error: null }
+    return { data: { status: 'attention', checked_at: '2026-07-16T12:00:00Z', journey: { active: true, slug: 'phase5-test', services_ready: true }, operations: { qualified_owner_count: 2, due_follow_ups: 1 }, blockers: [], warnings: ['One warning'] }, error: null }
   } }
-  const result = await getAttorneyLeadsLaunchReadiness({ organisationId: 'org-1', client })
+  const result = await getAttorneyLeadsLaunchReadiness({
+    organisationId: 'org-1',
+    client,
+    runtimeProbe: async () => ({ healthy: true, intakeActive: true, code: 'ready', version: 'phase5-test' }),
+  })
   assert.equal(calls[0].name, 'bridge_attorney_leads_launch_readiness')
   assert.equal(calls[0].args.p_organisation_id, 'org-1')
   assert.equal(result.status, 'attention')
   assert.equal(result.operations.qualifiedOwnerCount, 2)
+  assert.equal(result.runtime.healthy, true)
   assert.deepEqual(result.warnings, ['One warning'])
 })
 

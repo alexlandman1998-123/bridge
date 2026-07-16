@@ -359,16 +359,17 @@ function PublicLinkDrawer({ open, link, readiness, readinessLoading, canManage, 
           </div>
           {readiness ? (
             <>
-              <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="mt-3 grid grid-cols-2 gap-2 text-center text-xs sm:grid-cols-4">
                 <div className="rounded-xl bg-white/60 p-2"><strong className="block text-base">{readiness.operations.qualifiedOwnerCount}</strong>Owners</div>
                 <div className="rounded-xl bg-white/60 p-2"><strong className="block text-base">{readiness.operations.publicSubmissions30d}</strong>30-day enquiries</div>
                 <div className="rounded-xl bg-white/60 p-2"><strong className="block text-base">{readiness.operations.dueFollowUps}</strong>Due</div>
+                <div className="rounded-xl bg-white/60 p-2"><strong className="block text-base">{readiness.runtime?.healthy && readiness.runtime?.intakeActive ? 'Online' : 'Offline'}</strong>Public runtime</div>
               </div>
               {[...readiness.blockers, ...readiness.warnings].length ? (
                 <ul className="mt-3 list-disc space-y-1 pl-4 text-xs leading-5">
                   {[...readiness.blockers, ...readiness.warnings].map((item) => <li key={item}>{item}</li>)}
                 </ul>
-              ) : <p className="mt-3 text-xs leading-5">Journey, services, ownership and operational checks passed.</p>}
+              ) : <p className="mt-3 text-xs leading-5">Journey, public runtime, services, ownership and operational checks passed.</p>}
             </>
           ) : null}
         </section>
@@ -1248,12 +1249,7 @@ export default function AttorneyLeadsPage() {
   return (
     <section className="w-full px-3 py-4 sm:px-5 sm:py-5">
       <div className="mx-auto w-full max-w-[1500px]">
-        <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Pipeline</p>
-            <h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em] text-slate-950">Leads</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Potential future work from public enquiries, calls, walk-ins, emails and referrals. Formal instructions remain in Incoming Matters.</p>
-          </div>
+        <header className="flex flex-wrap justify-end gap-2">
           <div className="flex flex-wrap gap-2">
             <button type="button" className="ui-button ui-button-secondary" onClick={() => { setSlaError(''); setSlaOpen(true) }}><SlidersHorizontal size={16} /> SLA policy</button>
             <button type="button" className="ui-button ui-button-secondary" onClick={() => setLinkOpen(true)}><Link2 size={16} /> Public link</button>

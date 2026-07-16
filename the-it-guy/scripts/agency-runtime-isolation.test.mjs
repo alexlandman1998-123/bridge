@@ -207,10 +207,67 @@ function generatePassword() {
   return `${crypto.randomBytes(18).toString('base64url')}A9!`
 }
 
+async function findAuthUserByEmail(service, email) {
+  let page = 1
+  while (true) {
+    const { data, error } = await service.auth.admin.listUsers({ page, perPage: 200 })
+    if (error) throw error
+    const users = Array.isArray(data?.users) ? data.users : []
+    const found = users.find((user) => normalizeEmail(user?.email) === email)
+    if (found?.id) return found
+    if (users.length < 200) return null
+    page += 1
+  }
+}
+
+async function signInExistingFixture(config) {
+  if (!config.password) return null
+  const client = createClient(config.supabaseUrl, config.anonKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+      detectSessionInUrl: false,
+    },
+  })
+  const { data, error } = await client.auth.signInWithPassword({
+    email: config.email,
+    password: config.password,
+  })
+  await client.auth.signOut().catch(() => {})
+  if (error) return null
+  return data?.user || null
+}
+
 async function ensureFixtureUser(service, config, report) {
+  let lookupError = null
+  let existingUser = null
+  try {
+    existingUser = await findAuthUserByEmail(service, config.email)
+  } catch (error) {
+    lookupError = error
+  }
+  if (!existingUser && !config.generatedEmail) {
+    existingUser = await signInExistingFixture(config)
+  }
+  if (existingUser?.id) {
+    if (!config.password) {
+      throw new Error('AGENCY_RUNTIME_UNRELATED_PASSWORD or AGENCY_RUNTIME_ISOLATION_PASSWORD is required to reuse the configured fixture user.')
+    }
+    report.fixture.userId = existingUser.id
+    report.fixture.exists = true
+    addFinding(
+      report,
+      'Fixture',
+      'PASS',
+      'Existing unrelated auth fixture user reused safely.',
+      lookupError ? 'Resolved through the configured fixture credentials because the Auth Admin listing endpoint was unavailable.' : '',
+    )
+    return { user: existingUser, password: config.password }
+  }
+  if (lookupError && !config.generatedEmail) throw lookupError
+
   const password = config.password || generatePassword()
   report.fixture.passwordGenerated = !config.password
-
   const { data, error } = await service.auth.admin.createUser({
     email: config.email,
     password,

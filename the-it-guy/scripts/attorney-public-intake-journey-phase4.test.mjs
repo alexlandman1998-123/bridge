@@ -41,7 +41,7 @@ test('public Journey route is unauthenticated and isolated from Incoming Matters
   assert.doesNotMatch(page, /Incoming Matters|incomingMatter|transaction_attorney_assignments/)
 })
 
-test('all six contracted Attorney services are presented before the form', () => {
+test('all six contracted Attorney services are represented by personal intake routes', () => {
   for (const key of [
     'transferQuote',
     'propertyTransfer',
@@ -52,11 +52,29 @@ test('all six contracted Attorney services are presented before the form', () =>
   ]) {
     assert.match(page, new RegExp(`ATTORNEY_LEAD_SERVICE_TYPES\\.${key}`))
   }
-  assert.match(page, /availableServices\.map/)
-  assert.match(page, /chooseService\(serviceType\)/)
+  assert.match(page, /const JOURNEYS = Object\.freeze/)
+  assert.match(page, /Buying a home/)
+  assert.match(page, /Selling a property/)
+  assert.match(page, /Registering a bond/)
+  assert.match(page, /Cancelling a bond/)
+  assert.match(page, /availableJourneys\.map/)
+  assert.match(page, /chooseJourney\(key\)/)
 })
 
-test('public form is short, accessible, conditional, and consent-gated', () => {
+test('premium landing groups every property route behind one property gateway', () => {
+  assert.doesNotMatch(page, /Private client desk/)
+  assert.match(page, /h-20 w-20/)
+  assert.match(page, /Property & conveyancing/)
+  assert.match(page, /openPropertyServices/)
+  assert.match(page, /setStep\('property'\)/)
+  assert.match(page, /step === 'property'/)
+  assert.match(page, /transfer_calculator/)
+  assert.match(page, /Transfer cost calculator/)
+  assert.match(page, /Request a transfer quote/)
+  assert.match(page, /Property legal advice/)
+})
+
+test('public form is progressive, accessible, conditional, and consent-gated', () => {
   for (const field of [
     'first_name',
     'last_name',
@@ -68,13 +86,26 @@ test('public form is short, accessible, conditional, and consent-gated', () => {
   ]) {
     assert.match(page, new RegExp(`name="${field}"`))
   }
-  assert.match(page, /showQuoteFields/)
+  assert.match(page, /step === 'matter'/)
+  assert.match(page, /setStep\('contact'\)/)
+  assert.match(page, /calculateTransferDuty/)
+  assert.match(page, /request_transfer_quote/)
   assert.match(page, /name="property_value"/)
-  assert.match(page, /name="party_role"/)
+  assert.match(page, /party_role:/)
   assert.match(page, /role="alert"/)
   assert.match(page, /aria-live="polite"/)
   assert.match(page, /autoComplete="given-name"/)
   assert.match(page, /Please provide at least one contact method/)
+})
+
+test('non-property practices go directly to contact and retain the selected practice', () => {
+  for (const label of ['Litigation', 'Family law', 'Contract law', 'Trusts & estates', 'Notarial']) {
+    assert.match(page, new RegExp(label.replace(/[&]/g, '\\&')))
+  }
+  assert.match(page, /function choosePractice/)
+  assert.match(page, /setStep\('contact'\)/)
+  assert.match(page, /Enquiry route:/)
+  assert.match(page, /OTHER_PRACTICES\[practiceKey\]/)
 })
 
 test('attribution values are sanitized against the Phase 1 contract', () => {
@@ -99,6 +130,20 @@ test('public branding is normalized with safe colour and service fallbacks', () 
   assert.equal(intake.primaryColour, '#173f45')
   assert.equal(intake.secondaryColour, '#aabbcc')
   assert.deepEqual(intake.serviceTypes, ['transfer_quote'])
+})
+
+test('configured contacts remain authoritative with a Young Law public fallback', () => {
+  const fallback = normalizeAttorneyPublicIntake({ slug: 'young-law-inc', firm_name: 'Young Law Inc' })
+  assert.equal(fallback.contactEmail, 'info@younglaw.co.za')
+  assert.equal(fallback.contactPhone, '010 446 7675')
+
+  const configured = normalizeAttorneyPublicIntake({
+    slug: 'young-law-inc',
+    contact_email: 'journey@younglaw.co.za',
+    contact_phone: '+27 10 000 0000',
+  })
+  assert.equal(configured.contactEmail, 'journey@younglaw.co.za')
+  assert.equal(configured.contactPhone, '+27 10 000 0000')
 })
 
 test('idempotency keys survive repeated clicks and refreshes in one session', () => {

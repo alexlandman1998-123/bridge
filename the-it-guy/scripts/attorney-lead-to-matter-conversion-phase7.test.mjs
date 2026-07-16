@@ -98,6 +98,12 @@ await test('conversion is idempotent and repairs pre-existing Lead linkage', () 
   assert.match(migration, /Attorney Lead already has a transaction link that requires manual review/)
 })
 
+await test('new and reused conversions automatically prepare the legal handoff', () => {
+  assert.match(service, /prepareAgentLegalHandoff\(conversion\.transactionId, db\)/)
+  assert.match(service, /ATTORNEY_LEAD_HANDOFF_FAILED_CODE/)
+  assert.match(service, /Matter was created, but its legal workflow could not be prepared/)
+})
+
 await test('conversion attempts record started, completed, and failed activity', () => {
   assert.match(migration, /'Conversion Started'/)
   assert.match(migration, /'Conversion Completed'/)
@@ -118,6 +124,18 @@ await test('service validates payload and uses only the dedicated Attorney conve
   const client = {
     rpc: async (name, args) => {
       calls.push({ name, args })
+      if (name === 'bridge_prepare_agent_legal_handoff') {
+        return {
+          data: {
+            prepared: true,
+            transactionId: 'transaction-1',
+            requiredLaneKeys: ['transfer', 'bond'],
+            missingAttorneyRoles: ['bond_attorney'],
+            seededStepCount: 54,
+          },
+          error: null,
+        }
+      }
       return {
         data: {
           success: true,
@@ -146,9 +164,12 @@ await test('service validates payload and uses only the dedicated Attorney conve
     client,
   })
   assert.equal(calls[0].name, 'bridge_convert_attorney_lead_to_matter')
+  assert.equal(calls[1].name, 'bridge_prepare_agent_legal_handoff')
   assert.equal(calls[0].args.p_payload.matter_type, 'transfer')
   assert.equal(result.transactionId, 'transaction-1')
   assert.equal(result.assignmentId, 'assignment-1')
+  assert.deepEqual(result.legalHandoff.requiredLaneKeys, ['transfer', 'bond'])
+  assert.equal(result.legalHandoff.seededStepCount, 54)
   await assert.rejects(
     convertAttorneyLeadToMatter({ organisationId: 'org-1', leadId: 'lead-1', values: { matterType: 'transfer' }, client }),
     /client role/,

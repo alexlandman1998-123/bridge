@@ -210,28 +210,49 @@ try {
   assert.ok(workspaceSource.includes("appointmentType: 'seller_consultation'"), 'seller appointment form should default to seller consultation as an optional appointment type')
   assert.ok(workspaceSource.includes('appointments stay outside the main seller journey'), 'seller appointment form should explain that appointments are optional to the seller journey')
   assert.ok(workspaceSource.includes('Schedule Appointment'), 'seller workspace should expose a clear schedule appointment action')
-  assert.ok(workspaceSource.includes('aria-label="Seller actions"'), 'seller header actions should expose an accessible trigger button')
-  assert.ok(workspaceSource.includes('role="list" aria-label="Seller lead status shortcuts"'), 'seller status chips should be actionable shortcuts')
-  for (const actionId of ['edit_seller', 'assign_agent', 'open_journey', 'open_readiness', 'open_listing', 'view_mandate']) {
-    assert.ok(workspaceSource.includes(actionId), `seller status chips should link to ${actionId}`)
+  const sellerActionsSource = workspaceSource.slice(
+    workspaceSource.indexOf('function SellerLeadActions('),
+    workspaceSource.indexOf('function SellerLeadHeader('),
+  )
+  assert.ok(sellerActionsSource.includes('aria-label="Seller actions"'), 'seller header should expose an accessible Actions trigger')
+  assert.ok(sellerActionsSource.includes('aria-haspopup="menu"'), 'seller Actions trigger should announce its popup menu')
+  assert.ok(sellerActionsSource.includes('aria-expanded={menuOpen}'), 'seller Actions trigger should expose its open state')
+  assert.ok(sellerActionsSource.includes('role="menu"'), 'seller Actions popup should expose menu semantics')
+  assert.ok(sellerActionsSource.includes('role="menuitem"'), 'seller Actions controls should expose menu-item semantics')
+  for (const actionContract of [
+    ['closeMenuAndRun(onOpenListing)', 'listing creation or opening'],
+    ['closeMenuAndRun(onSendSellerOnboarding)', 'seller onboarding'],
+    ['closeMenuAndRun(onGenerateMandate)', 'mandate generation or opening'],
+    ['closeMenuAndRun(onOpenAppointments)', 'seller appointment scheduling'],
+    ["onStatusAction?.('edit_seller')", 'seller detail editing'],
+    ['closeMenuAndRun(onCopySellerOnboardingLink)', 'seller onboarding link copying'],
+    ['closeMenuAndRun(onCopySellerPortalLink)', 'seller portal link copying'],
+    ['closeMenuAndRun(onCopyListingLink)', 'listing link copying'],
+    ['closeMenuAndRun(onMarkAsLost)', 'lost-lead handling'],
+    ['closeMenuAndRun(onArchiveLead)', 'lead archiving'],
+  ]) {
+    assert.ok(sellerActionsSource.includes(actionContract[0]), `seller Actions menu should retain ${actionContract[1]}`)
   }
+  assert.ok(workspaceSource.includes('function SellerAcquisitionActionRow'), 'seller workspace should expose journey and readiness actions outside the overflow menu')
+  for (const actionId of ['open_journey', 'open_readiness']) {
+    assert.ok(workspaceSource.includes(`key === '${actionId}'`), `seller acquisition actions should handle ${actionId}`)
+  }
+  assert.ok(workspaceSource.includes('aria-label={`Assigned agent: ${ownerName}`}'), 'seller ownership should remain visible with an accessible assigned-agent label')
   assert.ok(workspaceSource.includes("setActiveWorkspaceTab('seller')"), 'edit seller should open the seller tab')
   assert.ok(workspaceSource.includes("focusSellerWorkspaceSection('seller-onboarding-editor')"), 'edit seller should focus the onboarding editor')
   assert.ok(workspaceSource.includes('id="seller-onboarding-editor"'), 'seller tab should expose the onboarding editor anchor')
   assert.ok(workspaceSource.includes('Seller Onboarding'), 'seller tab should render the onboarding editor')
   assert.ok(workspaceSource.includes('Save overrides'), 'seller tab should expose an override save action')
   assert.ok(workspaceSource.includes('Only populated submitted fields are shown by default.'), 'seller tab should explain the submitted-details view')
-  assert.ok(workspaceSource.includes('xl:grid-cols-2 xl:auto-rows-[minmax(320px,auto)]'), 'seller overview should wrap into a two-column grid')
-  assert.ok(workspaceSource.includes('density="compact"'), 'seller overview cards should use the denser spacing variant')
-  assert.ok(workspaceSource.includes('className="h-[320px] overflow-hidden"'), 'recent activity should stay fixed-height and scroll inside its card')
-  assert.ok(workspaceSource.includes('className="h-[320px]"'), 'ownership should match the recent activity card height')
+  assert.ok(workspaceSource.includes('grid items-stretch gap-5 xl:grid-cols-2'), 'seller overview should use the current two-column responsive grid')
+  assert.ok(workspaceSource.includes('<SellerWorkspaceCard title="Lead Summary" density="compact">'), 'seller overview lead summary should use the compact card treatment')
+  assert.ok(workspaceSource.includes('<SellerDocumentsSummaryCard journey={journey} />'), 'seller overview should pair lead summary with document readiness')
   assert.ok(workspaceSource.includes('id="seller-journey"'), 'current stage shortcut should have a seller journey anchor target')
   assert.match(workspaceSource, /grid min-w-0 grid-cols-2[\s\S]*xl:grid-cols-8/, 'seller journey rail should run in a single row on wide screens')
   assert.ok(workspaceSource.includes('w-[calc(100%-3rem)]'), 'seller journey connectors should stay centered between milestones on the single-row layout')
   assert.ok(workspaceSource.includes('min-h-[2.5rem]'), 'seller journey labels should reserve even vertical space across wrapped rows')
-  assert.ok(workspaceSource.includes("focusSellerWorkspaceSection('seller-ownership')"), 'assigned agent shortcut should focus the ownership action card')
-  assert.match(workspaceSource, /SellerTimelineList timeline=\{timeline\} limit=\{12\} compact/, 'recent activity should render enough rows for card scrolling')
-  assert.match(workspaceSource, /overflow-y-auto/, 'recent activity should scroll inside its card')
+  assert.ok(workspaceSource.includes('flex h-[560px] min-h-[380px]'), 'seller activity feed should stay bounded on desktop')
+  assert.ok(workspaceSource.includes('className="min-h-0 flex-1 overflow-y-auto pr-2 [scrollbar-gutter:stable]"'), 'seller activity feed should scroll inside its card')
   assert.match(workspaceSource, /getSellerDocumentDisplayStatus\(document\)/, 'seller document summary should show upload status text')
   assert.ok(workspaceSource.includes('updatePrivateListingOnboardingFormData'), 'seller lead commission save should persist to seller onboarding form data')
   assert.ok(workspaceSource.includes('function SellerCommissionCard'), 'seller mandate tab should expose commission structure capture')
@@ -239,7 +260,7 @@ try {
   assert.ok(workspaceSource.includes('commissionStructure: commissionType'), 'commission save should preserve mandate percentage/fixed merge field')
   assert.ok(workspaceSource.includes('mandateCommissionPercent'), 'commission save should provide mandate commission percent aliases')
   assert.ok(workspaceSource.includes('agencyCommissionStructureId'), 'commission save should keep agency split structure metadata separate')
-  assert.ok(workspaceSource.includes('Mandate saved.'), 'commission save should confirm mandate sync target')
+  assert.ok(workspaceSource.includes("setSellerActionMessage('Commission saved.')"), 'commission save should confirm the mandate-variable sync target')
   assert.ok(workspaceSource.includes("['add_commission', 'review_commission', 'open_commission']"), 'seller workflow actions should be able to open commission capture')
   assert.match(workspaceSource, /function SellerMandateTab\(\{[\s\S]*commissionDraft[\s\S]*onSaveCommission/, 'mandate tab should receive commission capture props')
   assert.ok(!workspaceSource.includes('title="Mandate Status"'), 'mandate tab should not render the old mandate status container')

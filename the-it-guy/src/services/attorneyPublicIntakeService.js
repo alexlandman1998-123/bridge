@@ -11,6 +11,13 @@ export const ATTORNEY_PUBLIC_INTAKE_PRIVACY_VERSION = 'arch9-attorney-intake-v1'
 const IDEMPOTENCY_PREFIX = 'attorney-intake:'
 const IDEMPOTENCY_STORAGE_PREFIX = 'arch9:attorney-intake:idempotency:'
 const UTM_KEYS = Object.freeze(['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'])
+const PUBLIC_CONTACT_FALLBACKS = Object.freeze({
+  'young-law-inc': Object.freeze({
+    email: 'info@younglaw.co.za',
+    phone: '010 446 7675',
+    website: 'https://www.younglaw.co.za/',
+  }),
+})
 
 function normalizeText(value = '', maxLength = 5000) {
   return String(value || '').trim().slice(0, maxLength)
@@ -80,11 +87,13 @@ function sanitizeBrandColour(value, fallback) {
 
 export function normalizeAttorneyPublicIntake(value) {
   const row = value && typeof value === 'object' ? value : {}
+  const slug = normalizeSlug(row.slug)
+  const contactFallback = PUBLIC_CONTACT_FALLBACKS[slug] || {}
   const configuredServices = Array.isArray(row.service_types)
     ? row.service_types.filter((service) => ATTORNEY_LEAD_SERVICE_TYPE_VALUES.includes(service))
     : []
   return {
-    slug: normalizeSlug(row.slug),
+    slug,
     status: normalizeText(row.status, 40),
     heading: normalizeText(row.heading, 160) || 'How can we assist you?',
     introduction: normalizeText(row.introduction, 1000) || 'Choose a service and tell us briefly how we can help.',
@@ -93,9 +102,9 @@ export function normalizeAttorneyPublicIntake(value) {
     logoUrl: normalizeText(row.logo_url, 2000),
     primaryColour: sanitizeBrandColour(row.primary_colour, '#173f45'),
     secondaryColour: sanitizeBrandColour(row.secondary_colour, '#d3a866'),
-    website: normalizeText(row.website, 2000),
-    contactEmail: normalizeText(row.contact_email, 254),
-    contactPhone: normalizeText(row.contact_phone, 50),
+    website: normalizeText(row.website, 2000) || contactFallback.website || '',
+    contactEmail: normalizeText(row.contact_email, 254) || contactFallback.email || '',
+    contactPhone: normalizeText(row.contact_phone, 50) || contactFallback.phone || '',
   }
 }
 
@@ -105,6 +114,19 @@ export async function resolveAttorneyPublicIntake(slug) {
   })
   assertEdgeFunctionSuccess(result, 'We could not load this intake page.')
   return normalizeAttorneyPublicIntake(result.data?.intake)
+}
+
+export async function probeAttorneyPublicIntakeRuntime(slug) {
+  const result = await invokeEdgeFunction(ATTORNEY_PUBLIC_INTAKE_FUNCTION, {
+    body: { action: 'health', slug: normalizeSlug(slug) },
+  })
+  assertEdgeFunctionSuccess(result, 'The public Journey runtime could not be reached.')
+  return {
+    healthy: result.data?.healthy === true,
+    intakeActive: result.data?.intake_active === true,
+    code: normalizeText(result.data?.code, 80),
+    version: normalizeText(result.data?.runtime_version, 120),
+  }
 }
 
 export async function submitAttorneyPublicIntake({ slug, idempotencyKey, payload }) {

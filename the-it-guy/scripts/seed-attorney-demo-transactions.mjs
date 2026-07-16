@@ -45,9 +45,11 @@ function envValue(...names) {
 
 const supabaseUrl = envValue('SUPABASE_URL', 'VITE_SUPABASE_URL')
 const serviceRoleKey = envValue('SUPABASE_SERVICE_ROLE_KEY')
+const anonKey = envValue('VITE_SUPABASE_ANON_KEY', 'VITE_SUPABASE_KEY')
+const actorPassword = envValue('ATTORNEY_DEMO_PASSWORD')
 
-if (!supabaseUrl || !serviceRoleKey) {
-  throw new Error('Missing SUPABASE_URL/VITE_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.')
+if (!supabaseUrl || !serviceRoleKey || !anonKey) {
+  throw new Error('Missing Supabase URL, service-role key, or anon key.')
 }
 
 const supabase = createClient(supabaseUrl, serviceRoleKey, {
@@ -742,7 +744,7 @@ function filterRow(tableColumns, row) {
 async function upsertRows(table, rows, definitions, options = {}) {
   const safeRows = rows.filter(Boolean).map((row) => filterRow(definitions[table], row))
   if (!safeRows.length) return 0
-  const result = await supabase
+  const result = await (options.client || supabase)
     .from(table)
     .upsert(safeRows, {
       onConflict: options.onConflict || 'id',
@@ -752,6 +754,104 @@ async function upsertRows(table, rows, definitions, options = {}) {
     throw new Error(`${table} upsert failed: ${result.error.message}`)
   }
   return safeRows.length
+}
+
+async function createActorClient() {
+  if (!actorPassword) {
+    throw new Error('Missing ATTORNEY_DEMO_PASSWORD for the protected legal-role workflow.')
+  }
+  const client = createClient(supabaseUrl, anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+  const result = await client.auth.signInWithPassword({ email: TARGET_EMAIL, password: actorPassword })
+  if (result.error || result.data?.user?.email?.toLowerCase() !== TARGET_EMAIL) {
+    throw new Error(`Could not authenticate ${TARGET_EMAIL}: ${result.error?.message || 'unexpected user'}`)
+  }
+  return client
+}
+
+async function acceptLegalInvitations(client, rows, { userId, organisationId }) {
+  for (const row of rows) {
+    const result = await client
+      .from('transaction_partner_invitations')
+      .update({
+        status: 'accepted',
+        accepted_user_id: userId,
+        accepted_at: isoDays(-7, 11),
+        organisation_id: organisationId,
+      })
+      .eq('id', row.id)
+    if (result.error) throw new Error(`Legal invitation acceptance failed: ${result.error.message}`)
+  }
+}
+
+async function upsertLegalInvitations(client, rows, definitions) {
+  let count = 0
+  for (const row of rows) {
+    try {
+      count += await upsertRows('transaction_partner_invitations', [row], definitions, { client })
+    } catch (error) {
+      throw new Error(`${row.role_type} invitation failed for ${row.transaction_id}: ${error.message}`)
+    }
+  }
+  return count
+}
+
+async function activateLegalAppointments(client, rows) {
+  for (const row of rows) {
+    const confirmation = await client.rpc('bridge_confirm_bank_legal_instruction', {
+      p_appointment_id: row.id,
+      p_instruction_reference: `${row.appointment_reference}-INSTRUCTION`,
+      p_instruction_source: 'legacy_manual',
+      p_instruction_issued_at: row.captured_at,
+      p_evidence_document_id: null,
+      p_evidence_confirmed: true,
+    })
+    if (confirmation.error) throw new Error(`Bank instruction confirmation failed: ${confirmation.error.message}`)
+    const decision = await client.rpc('bridge_decide_bank_legal_instruction', {
+      p_appointment_id: row.id,
+      p_decision: 'accepted',
+      p_note: 'Accepted for the controlled Younglaw workflow fixture.',
+    })
+    if (decision.error) throw new Error(`Bank instruction acceptance failed: ${decision.error.message}`)
+  }
+}
+
+async function assignAppointedLegalStaff(rows, definitions) {
+  let count = 0
+  for (const row of rows) {
+    const existing = await supabase
+      .from('transaction_attorney_assignments')
+      .select('id, assignment_status, attorney_user_id, primary_attorney_id, updated_at')
+      .eq('transaction_id', row.transaction_id)
+      .eq('attorney_role', row.attorney_role)
+      .neq('assignment_status', 'removed')
+      .order('updated_at', { ascending: false })
+    if (existing.error) throw new Error(`Appointed assignment lookup failed: ${existing.error.message}`)
+    const candidates = existing.data || []
+    const target = candidates.find((candidate) => candidate.attorney_user_id || candidate.primary_attorney_id) || candidates[0]
+    if (!target?.id) throw new Error(`No accepted ${row.attorney_role} assignment exists for ${row.transaction_id}.`)
+
+    const payload = filterRow(definitions.transaction_attorney_assignments, row)
+    delete payload.id
+    delete payload.created_at
+    const update = await supabase
+      .from('transaction_attorney_assignments')
+      .update(payload)
+      .eq('id', target.id)
+    if (update.error) throw new Error(`Appointed staff assignment failed: ${update.error.message}`)
+
+    const redundantIds = candidates.filter((candidate) => candidate.id !== target.id).map((candidate) => candidate.id)
+    if (redundantIds.length) {
+      const cleanup = await supabase
+        .from('transaction_attorney_assignments')
+        .delete()
+        .in('id', redundantIds)
+      if (cleanup.error) throw new Error(`Redundant appointed assignment cleanup failed: ${cleanup.error.message}`)
+    }
+    count += 1
+  }
+  return count
 }
 
 async function fetchTargetContext() {
@@ -826,6 +926,8 @@ function buildRows({ context }) {
   const rows = {
     buyers: [],
     transactions: [],
+    legalRoleAppointments: [],
+    invitations: [],
     assignments: [],
     participants: [],
     rolePlayers: [],
@@ -991,8 +1093,56 @@ function buildRows({ context }) {
       const meta = laneMeta(lane.laneKey)
       const assignmentId = stableUuid(`assignment:${scenario.slug}:${lane.laneKey}`)
       const subprocessId = stableUuid(`subprocess:${scenario.slug}:${lane.laneKey}`)
+      const invitationId = ['bond', 'cancellation'].includes(lane.laneKey)
+        ? stableUuid(`partner-invitation:${scenario.slug}:${lane.laneKey}`)
+        : null
       assignmentIdsByLane.set(lane.laneKey, assignmentId)
       subprocessIdsByLane.set(lane.laneKey, subprocessId)
+
+      if (invitationId) {
+        const appointmentId = stableUuid(`legal-role-appointment:${scenario.slug}:${lane.laneKey}`)
+        const appointingBank = lane.laneKey === 'cancellation'
+          ? scenario.currentBondBank || scenario.bank || 'Appointing bank'
+          : scenario.bank || 'Appointing bank'
+        rows.legalRoleAppointments.push({
+          id: appointmentId,
+          transaction_id: transactionId,
+          role_type: meta.attorneyRole,
+          appointing_bank: appointingBank,
+          appointment_reference: `${scenario.reference}-${lane.laneKey.toUpperCase()}-APPT`,
+          appointed_firm_name: context.firm.name,
+          appointed_contact_name: attorneyName,
+          appointed_email: attorneyEmail,
+          appointment_source: 'legacy_manual',
+          evidence_confirmed: true,
+          coordination_state: 'appointment_captured',
+          captured_by: userId,
+          captured_at: transactionCreatedAt,
+          updated_at: nowIso,
+          staff_assignment_status: 'awaiting_firm_acceptance',
+        })
+        rows.invitations.push({
+          id: invitationId,
+          transaction_id: transactionId,
+          role_type: meta.attorneyRole,
+          company_name: context.firm.name,
+          contact_name: attorneyName,
+          email: attorneyEmail,
+          status: 'pending',
+          invited_by_user_id: userId,
+          expires_at: isoDays(365, 10),
+          organisation_id: organisationId,
+          metadata: {
+            seedKey: SEED_KEY,
+            scenario: scenario.slug,
+            laneKey: lane.laneKey,
+            source: 'attorney_demo_seed',
+            legal_role_appointment_id: appointmentId,
+          },
+          created_at: transactionCreatedAt,
+          updated_at: nowIso,
+        })
+      }
 
       rows.assignments.push({
         id: assignmentId,
@@ -1028,28 +1178,30 @@ function buildRows({ context }) {
         scope_metadata: { seedKey: SEED_KEY, scenario: scenario.slug, laneKey: lane.laneKey },
       })
 
-      rows.participants.push(participantRow({
-        transactionId,
-        userId,
-        name: attorneyName,
-        email: attorneyEmail,
-        roleType: 'attorney',
-        legalRole: meta.attorneyRole,
-        organisationName: context.firm.name,
-        canEdit: true,
-        isInternal: true,
-        laneKey: lane.laneKey,
-      }))
+      if (!invitationId) {
+        rows.participants.push(participantRow({
+          transactionId,
+          userId,
+          name: attorneyName,
+          email: attorneyEmail,
+          roleType: 'attorney',
+          legalRole: meta.attorneyRole,
+          organisationName: context.firm.name,
+          canEdit: true,
+          isInternal: true,
+          laneKey: lane.laneKey,
+        }))
 
-      rows.rolePlayers.push(rolePlayerRow({
-        transactionId,
-        roleType: meta.attorneyRole,
-        name: attorneyName,
-        email: attorneyEmail,
-        userId,
-        organisationId,
-        laneKey: lane.laneKey,
-      }))
+        rows.rolePlayers.push(rolePlayerRow({
+          transactionId,
+          roleType: meta.attorneyRole,
+          name: attorneyName,
+          email: attorneyEmail,
+          userId,
+          organisationId,
+          laneKey: lane.laneKey,
+        }))
+      }
 
       rows.subprocesses.push({
         id: subprocessId,
@@ -1330,6 +1482,8 @@ function buildRows({ context }) {
       blockers: rows.blockers.length,
       appointments: rows.appointments.length,
       packets: rows.packets.length,
+      legalRoleAppointments: rows.legalRoleAppointments.length,
+      acceptedPartnerInvitations: rows.invitations.length,
     },
     reset_notes: 'Rerun scripts/seed-attorney-demo-transactions.mjs to refresh these deterministic demo rows.',
     status: 'seeded',
@@ -1458,13 +1612,27 @@ function descriptionForRequest(request) {
 async function main() {
   const definitions = await fetchDefinitions()
   const context = await fetchTargetContext()
+  const actorClient = await createActorClient()
   const rows = buildRows({ context })
+  const organisationId = context.firm.organisation_id || context.membership.organisation_id || context.firm.id
+  const transferAssignments = rows.assignments.filter((row) => row.attorney_role === 'transfer_attorney')
+  const appointedAssignments = rows.assignments.filter((row) => row.attorney_role !== 'transfer_attorney')
 
   const counts = {}
   counts.buyers = await upsertRows('buyers', rows.buyers, definitions)
   counts.transactions = await upsertRows('transactions', rows.transactions, definitions)
-  counts.assignments = await upsertRows('transaction_attorney_assignments', rows.assignments, definitions)
-  counts.participants = await upsertRows('transaction_participants', rows.participants, definitions)
+  counts.assignments = await upsertRows('transaction_attorney_assignments', transferAssignments, definitions)
+  counts.legalRoleAppointments = await upsertRows(
+    'transaction_legal_role_appointments',
+    rows.legalRoleAppointments,
+    definitions,
+    { client: actorClient },
+  )
+  counts.invitations = await upsertLegalInvitations(actorClient, rows.invitations, definitions)
+  await acceptLegalInvitations(actorClient, rows.invitations, { userId: context.profile.id, organisationId })
+  counts.assignments += await assignAppointedLegalStaff(appointedAssignments, definitions)
+  await activateLegalAppointments(actorClient, rows.legalRoleAppointments)
+  counts.participants = await upsertRows('transaction_participants', rows.participants, definitions, { client: actorClient })
   counts.rolePlayers = await upsertRows('transaction_role_players', rows.rolePlayers, definitions)
   counts.subprocesses = await upsertRows('transaction_subprocesses', rows.subprocesses, definitions)
   counts.steps = await upsertRows('transaction_subprocess_steps', rows.steps, definitions)

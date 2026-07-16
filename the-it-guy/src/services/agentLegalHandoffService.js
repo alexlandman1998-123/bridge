@@ -1,4 +1,4 @@
-import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
 
 const MISSING_RPC_CODES = new Set(['42883', 'PGRST202'])
 
@@ -27,19 +27,20 @@ export function normalizeAgentLegalHandoffResult(value = {}, transactionId = '')
     assignedAttorneyRoles,
     missingAttorneyRoles,
     laneCount: Number(result.laneCount || result.lane_count || requiredLaneKeys.length) || requiredLaneKeys.length,
+    seededStepCount: Number(result.seededStepCount || result.seeded_step_count || 0) || 0,
     readyForAttorneyAssignment: missingAttorneyRoles.length > 0,
     prepared: result.prepared !== false,
   }
 }
 
-export async function prepareAgentLegalHandoff(transactionId) {
+export async function prepareAgentLegalHandoff(transactionId, client = supabase) {
   const normalizedTransactionId = normalizeText(transactionId)
   if (!normalizedTransactionId) throw new Error('Transaction id is required before preparing the legal handoff.')
-  if (!isSupabaseConfigured || !supabase) {
+  if (!client || (client === supabase && !isSupabaseConfigured)) {
     throw new Error('Legal handoff preparation requires the canonical transaction database.')
   }
 
-  const result = await supabase.rpc('bridge_prepare_agent_legal_handoff', {
+  const result = await client.rpc('bridge_prepare_agent_legal_handoff', {
     p_transaction_id: normalizedTransactionId,
   })
   if (result.error) {

@@ -37,6 +37,7 @@ const SHORT_WINDOW_MS = 10 * 60 * 1000;
 const LONG_WINDOW_MS = 60 * 60 * 1000;
 const SHORT_WINDOW_LIMIT = 5;
 const LONG_WINDOW_LIMIT = 15;
+const RUNTIME_VERSION = "attorney-public-intake-phase5-20260716";
 
 function jsonResponse(status: number, body: JsonRecord, extraHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
@@ -139,6 +140,33 @@ function requestMetadata(req: Request) {
   };
 }
 
+const INTAKE_CONTEXT_VALUES = Object.freeze({
+  journey_key: new Set(["transfer_calculator", "transfer_quote", "buying_home", "selling_property", "bond_registration", "bond_cancellation", "property_advice"]),
+  practice_key: new Set(["litigation", "family_law", "contract_law", "trusts_estates", "notarial", "general_enquiry"]),
+  goal: new Set(["calculate_transfer_duty", "request_transfer_quote"]),
+  finance_type: new Set(["bond", "cash", "unsure"]),
+  existing_bond: new Set(["yes", "no", "unsure"]),
+  cancellation_reason: new Set(["selling_property", "bond_paid_off", "refinancing", "other"]),
+  cancellation_notice: new Set(["yes", "no", "unsure"]),
+  preferred_contact: new Set(["phone", "email", "whatsapp"]),
+});
+
+function sanitizeIntakeContext(value: unknown) {
+  const source = asRecord(value);
+  const context: JsonRecord = {};
+  for (const [key, allowed] of Object.entries(INTAKE_CONTEXT_VALUES)) {
+    const normalized = normalizeKey(source[key]);
+    if (allowed.has(normalized)) context[key] = normalized;
+  }
+  for (const key of ["matter_stage", "timing"]) {
+    const normalized = normalizeKey(source[key]);
+    if (normalized && normalized.length <= 80 && /^[a-z0-9][a-z0-9_-]*$/.test(normalized)) context[key] = normalized;
+  }
+  const bankName = normalizeText(source.bank_name, 160);
+  if (bankName) context.bank_name = bankName;
+  return context;
+}
+
 async function parseRequest(req: Request) {
   const contentLength = Number(req.headers.get("content-length") || 0);
   if (contentLength > MAX_REQUEST_BYTES) throw new Error("request_too_large");
@@ -172,13 +200,39 @@ Deno.serve(async (req) => {
 
   const action = normalizeKey(requestBody.action);
   const slug = normalizeKey(requestBody.slug);
-  if (!slug || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+  if (action !== "health" && (!slug || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug))) {
     return jsonResponse(400, { error: "This intake link is invalid.", code: "invalid_link" });
   }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+
+  if (action === "health") {
+    if (slug && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+      return jsonResponse(400, { error: "This intake link is invalid.", code: "invalid_link" });
+    }
+    if (slug) {
+      const { data, error } = await supabase.rpc("resolve_attorney_public_intake", { p_slug: slug });
+      if (error) {
+        console.error("[attorney-public-intake] health resolve failed", { code: error.code, message: error.message });
+        return jsonResponse(503, { healthy: false, code: "database_unavailable", runtime_version: RUNTIME_VERSION });
+      }
+      const intake = Array.isArray(data) ? data[0] : data;
+      return jsonResponse(200, {
+        healthy: Boolean(intake),
+        code: intake ? "ready" : "intake_unavailable",
+        runtime_version: RUNTIME_VERSION,
+        intake_active: Boolean(intake),
+      });
+    }
+    const { error } = await supabase.from("public_intake_links").select("id").limit(1);
+    if (error) {
+      console.error("[attorney-public-intake] health database check failed", { code: error.code, message: error.message });
+      return jsonResponse(503, { healthy: false, code: "database_unavailable", runtime_version: RUNTIME_VERSION });
+    }
+    return jsonResponse(200, { healthy: true, code: "ready", runtime_version: RUNTIME_VERSION });
+  }
 
   if (action === "resolve") {
     const { data, error } = await supabase.rpc("resolve_attorney_public_intake", { p_slug: slug });
@@ -266,14 +320,17 @@ Deno.serve(async (req) => {
     source_channel: sanitizeSource(payload.source_channel),
     campaign_code: sanitizeCampaign(payload.campaign_code),
     utm: sanitizeUtm(payload.utm),
+    intake_context: sanitizeIntakeContext(payload.intake_context),
   };
+
+  const intakeContext = commandPayload.intake_context;
 
   const { data, error } = await supabase.rpc("submit_attorney_public_intake", {
     p_slug: slug,
     p_idempotency_key: idempotencyKey,
     p_payload: commandPayload,
     p_ip_hash: ipHash,
-    p_request_metadata: requestMetadata(req),
+    p_request_metadata: { ...requestMetadata(req), intake_context: intakeContext },
   });
 
   if (error) {

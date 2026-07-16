@@ -65,10 +65,16 @@ assert.doesNotMatch(
   'Listing page should no longer show a chase-list copy confirmation.',
 )
 
-assert.match(
+assert.doesNotMatch(
   source,
   /item\.reminderLabel/,
-  'Listing cards should show due labels beside follow-up items.',
+  'Listing cards should not restore the removed multi-item reminder queue.',
+)
+
+assert.match(
+  source,
+  /card\.quickAddPrimaryAction\.label/,
+  'Listing cards should surface one focused Quick Add handoff action.',
 )
 
 assert.match(

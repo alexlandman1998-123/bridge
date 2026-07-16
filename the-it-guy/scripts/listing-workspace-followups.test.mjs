@@ -58,8 +58,8 @@ assert.match(
 
 assert.match(
   listingsSource,
-  /card\.followUpQueue\.slice\(0, 3\)/,
-  'Listing cards should show a compact queue preview instead of hiding all skipped work.',
+  /card\.quickAddPrimaryAction\.label/,
+  'Listing cards should surface the highest-priority Quick Add handoff action.',
 )
 
 assert.match(

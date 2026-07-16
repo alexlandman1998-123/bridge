@@ -3805,8 +3805,20 @@ function AgentListings({ initialTab = null } = {}) {
       ) : null}
 
       {showNewListingModal ? (
-        <div className="fixed inset-0 z-[70] grid place-items-center bg-[#091322]/40 p-5 backdrop-blur-[1.5px]">
-          <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-[24px] border border-[#dce4ef] bg-white p-6 shadow-[0_22px_56px_rgba(15,23,42,0.24)]">
+        <div className="fixed inset-0 z-[70] grid place-items-center bg-[#091322]/40 p-5 backdrop-blur-[1.5px]" data-testid="new-listing-modal-overlay">
+          <div
+            className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-[24px] border border-[#dce4ef] bg-white p-6 shadow-[0_22px_56px_rgba(15,23,42,0.24)]"
+            role="dialog"
+            aria-modal="true"
+            aria-label={
+              isManualListingFlow
+                ? 'Quick Add Listing'
+                : isPrincipalListingMode
+                  ? 'New Seller Lead (Principal)'
+                  : 'New Seller Lead'
+            }
+            data-testid="new-listing-dialog"
+          >
             <SectionHeader
               title={
                 isManualListingFlow
@@ -3887,6 +3899,7 @@ function AgentListings({ initialTab = null } = {}) {
                   size="sm"
                   variant={quickAddMandatePanelOpen ? 'primary' : 'secondary'}
                   onClick={() => updateForm('quickStep', quickAddMandatePanelOpen ? 'property' : 'mandate')}
+                  data-testid="quick-add-mandate-details-toggle"
                 >
                   {quickAddMandatePanelOpen ? 'Hide mandate details' : 'Add mandate details'}
                 </Button>
@@ -4341,7 +4354,13 @@ function AgentListings({ initialTab = null } = {}) {
                               ? 'Create now and renew the mandate from the listing workspace.'
                               : 'Create now and generate the mandate later from the listing workspace.'}
                         </p>
-                        <Button type="button" variant="secondary" className="mt-3" onClick={() => setWorkflowMessage('Mandate generation will be available from the listing workspace after save.')}>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="mt-3"
+                          onClick={() => setWorkflowMessage('Mandate generation will be available from the listing workspace after save.')}
+                          data-testid="quick-add-generate-mandate"
+                        >
                           Generate Mandate
                         </Button>
                       </div>

@@ -12,7 +12,6 @@ import {
   Mail,
   MoreHorizontal,
   Plus,
-  Save,
   SlidersHorizontal,
   UserRound,
   UsersRound,
@@ -286,76 +285,6 @@ function SelectFilter({ label, value, options = [], onChange }) {
         <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
       </span>
     </label>
-  )
-}
-
-function MatterWorkspaceHeader({ summary, view, onSaveView }) {
-  const activeView = view || {
-    title: 'All Matters',
-    description: '',
-    primaryMetric: 'activeMatters',
-    primaryMetricLabel: 'Active Matters',
-  }
-  const primaryMetricKey = activeView.primaryMetric || 'activeMatters'
-  const primaryMetricValue = summary[primaryMetricKey] ?? summary.activeMatters
-  const legend = activeView.usesIncomingQueue
-    ? [
-        { label: 'Awaiting Buyer', value: summary.awaitingBuyer, dot: 'bg-amber-400' },
-        { label: 'Awaiting Signed OTP', value: summary.awaitingSignedOtp, dot: 'bg-orange-400' },
-        { label: 'Awaiting Documents', value: summary.awaitingDocuments, dot: 'bg-blue-500' },
-        { label: 'Ready For Acceptance', value: summary.readyForAcceptance, dot: 'bg-violet-500' },
-      ]
-    : activeView.lockedMatterType
-    ? [
-        { label: 'Needs Attention', value: summary.attentionMatters, dot: 'bg-orange-400' },
-        { label: 'Delayed', value: summary.delayedMatters, dot: 'bg-red-500' },
-        { label: 'Registered', value: summary.registeredMatters, dot: 'bg-blue-500' },
-      ]
-    : [
-        { label: 'Transfer', value: summary.transferCount, dot: 'bg-emerald-500' },
-        { label: 'Bond', value: summary.bondCount, dot: 'bg-violet-500' },
-        { label: 'Cancellation', value: summary.cancellationCount, dot: 'bg-orange-400' },
-      ]
-
-  if (!activeView.lockedMatterType && summary.developmentCount) {
-    legend.push({ label: 'Development', value: summary.developmentCount, dot: 'bg-blue-500' })
-  }
-
-  return (
-    <section className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-      <div className="min-w-0">
-        <h1 className="text-[clamp(1.7rem,2vw,2.35rem)] font-semibold tracking-tight text-slate-950">{activeView.title}</h1>
-        <p className="mt-2 text-lg font-semibold text-slate-900">{formatNumber(primaryMetricValue)} {activeView.primaryMetricLabel}</p>
-        {activeView.description ? <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">{activeView.description}</p> : null}
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm text-slate-700">
-          {legend.map((item) => (
-            <span key={item.label} className="inline-flex items-center gap-2">
-              <span className={classNames('h-2.5 w-2.5 rounded-full', item.dot)} />
-              {formatNumber(item.value)} {item.label}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={onSaveView}
-          className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
-        >
-          <Save size={16} />
-          Save View
-        </button>
-        <Link
-          to="/new-transaction"
-          className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#00463d] px-4 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(0,70,61,0.18)] transition hover:bg-[#00614f]"
-        >
-          <Plus size={17} />
-          Create Matter
-          <ChevronDown size={15} />
-        </Link>
-      </div>
-    </section>
   )
 }
 
@@ -1137,24 +1066,6 @@ function Pagination({ pagination, itemLabel = 'matters', onPageChange, pageSize,
   )
 }
 
-function SavedViewStrip({ savedViews = [], onApply }) {
-  if (!savedViews.length) return null
-  return (
-    <section className="flex max-w-full gap-2 overflow-x-auto pb-1">
-      {savedViews.slice(0, 7).map((view) => (
-        <button
-          key={view.id}
-          type="button"
-          onClick={() => onApply(view)}
-          className="inline-flex h-8 shrink-0 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-emerald-200 hover:text-[#00614f]"
-        >
-          {view.name}
-        </button>
-      ))}
-    </section>
-  )
-}
-
 function AttorneyMattersPage() {
   const { matterType = 'all' } = useParams()
   const navigate = useNavigate()
@@ -1370,8 +1281,6 @@ function AttorneyMattersPage() {
   return (
     <main className="w-full max-w-none bg-[#f7f9fb] px-0 py-3">
       <div className="w-full max-w-none space-y-4 px-2 md:px-3 xl:px-4">
-        <MatterWorkspaceHeader summary={workspace.summary} view={workspace.view} onSaveView={handleSaveView} />
-        <SavedViewStrip savedViews={savedViews} onApply={handleApplySavedView} />
         <UnifiedFilterBar
           workspace={workspace}
           filters={filters}
