@@ -9,6 +9,7 @@ const settingsLayoutSource = readFileSync(new URL('../src/pages/settings/Setting
 const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
 const headerSource = readFileSync(new URL('../src/components/HeaderBar.jsx', import.meta.url), 'utf8')
 const permissionsSource = readFileSync(new URL('../src/auth/permissions/permissionRegistry.js', import.meta.url), 'utf8')
+const navigationPermissionsSource = readFileSync(new URL('../src/auth/permissions/navigationPermissions.js', import.meta.url), 'utf8')
 const attorneyNavSource = rolesSource.slice(
   rolesSource.indexOf('attorney: ['),
   rolesSource.indexOf('bond_originator: ['),
@@ -71,7 +72,7 @@ assert.match(appSource, /Navigate to="\/attorney\/matters\/all"/, 'Attorney matt
 assert.match(appSource, /AttorneyFirmPage/, 'Attorney users route should render the firm administration workspace')
 assert.match(headerSource, /pathname === '\/users'\) return ''/, 'Users route should not render the old top-left Users title')
 assert.match(permissionsSource, /prefix:\s*'\/attorney\/transactions'/, 'Attorney transactions route should be permission protected')
-assert.match(permissionsSource, /attorney_firm_users:\s*PERMISSIONS\.manageAttorneyTeam/, 'Attorney Firm users nav should be permission protected')
+assert.match(navigationPermissionsSource, /attorney_firm_users:\s*PERMISSIONS\.manageAttorneyTeam/, 'Attorney Firm users nav should be permission protected')
 assert.match(permissionsSource, /prefix:\s*'\/users'/, 'Attorney firm users route should be permission protected')
 
 assert.match(sidebarSource, /label: 'Organizations'/, 'Organizations should remain available from the sidebar')

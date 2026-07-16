@@ -9,10 +9,10 @@ const packageSource = read('../package.json')
 assert.match(page, /buildAttorneyThreeRoleOperationalAssurance/)
 assert.match(page, /operationalAssurance/)
 assert.match(page, /Operational assurance/)
+assert.match(page, /const \[workflowLoading, setWorkflowLoading\] = useState\(false\)/)
 assert.match(assurance, /cross_lane_isolation/)
 assert.match(assurance, /audit_evidence_available/)
 assert.match(assurance, /serializeAttorneyThreeRoleAssuranceEvidence/)
 assert.match(packageSource, /test:attorney-three-role-phase7/)
 
 console.log('Attorney three-role Phase 7 operational assurance wiring checks passed.')
-

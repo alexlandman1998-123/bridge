@@ -7704,7 +7704,7 @@ function AttorneyTransactionDetail() {
   const [detailPanelKey, setDetailPanelKey] = useState('matter')
   const [hydratingDetail, setHydratingDetail] = useState(false)
   const [workflowOperations, setWorkflowOperations] = useState(null)
-  const [, setWorkflowLoading] = useState(false)
+  const [workflowLoading, setWorkflowLoading] = useState(false)
   const [, setWorkflowError] = useState('')
   const [transactionRollup, setTransactionRollup] = useState(null)
   const [, setTransactionRollupError] = useState('')

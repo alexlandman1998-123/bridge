@@ -797,7 +797,6 @@ function HeaderBar({ onLogout, user }) {
     return (
       <header className="no-print ui-shell-header ui-shell-header-attorney-dashboard">
         <div className="flex min-w-0 shrink-0 items-center gap-3">
-          {!hideQuickCreateInHeader ? <QuickCreateDropdown /> : null}
           <label className="relative min-w-[220px] max-w-[280px] flex-1 sm:flex-none">
             <span className="sr-only">Matter view</span>
             <select
@@ -834,6 +833,7 @@ function HeaderBar({ onLogout, user }) {
             />
           </div>
           {notificationsControl}
+          {!hideQuickCreateInHeader ? <QuickCreateDropdown /> : null}
           {avatarControl}
         </div>
       </header>

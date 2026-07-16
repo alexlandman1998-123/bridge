@@ -163,7 +163,6 @@ export const APP_NAV_BY_ROLE = {
         { key: 'attorney_matters_cancellation', label: 'Cancellation Matters', to: '/attorney/matters/cancellation' },
       ],
     },
-    { key: 'attorney_cost_calculator', label: 'Cost Calculator', to: '/attorney/cost-calculator' },
     {
       key: 'attorney_pipeline',
       label: 'Pipeline',

@@ -253,7 +253,7 @@ async function fetchTransactions(client, ids = []) {
   if (!transactionIds.length) return []
 
   const primarySelect =
-    'id, organisation_id, development_id, unit_id, buyer_id, matter_number, transaction_reference, stage, current_main_stage, current_sub_stage_summary, finance_type, risk_status, operational_state, attorney_stage, next_action, next_action_due_at, updated_at, created_at, assigned_attorney_email, attorney, assigned_agent, assigned_agent_email, assigned_agent_id, bond_originator, assigned_bond_originator_email, bank, property_description, property_address_line_1, property_address_line_2, suburb, city, province, erf_number, seller_name, seller_email, seller_phone, seller_has_existing_bond, current_bond_bank, current_bond_account_number, estimated_settlement_amount, purchase_price, sales_price, expected_transfer_date, target_registration_date, registration_date, registered_at, lifecycle_state, last_meaningful_activity_at, is_active'
+    'id, organisation_id, development_id, unit_id, buyer_id, matter_number, transaction_reference, stage, current_main_stage, current_sub_stage_summary, finance_type, risk_status, operational_state, attorney_stage, next_action, next_action_due_at, updated_at, created_at, assigned_attorney_email, attorney, assigned_agent, assigned_agent_email, assigned_agent_id, bond_originator, assigned_bond_originator_email, bank, property_description, property_address_line_1, property_address_line_2, suburb, city, province, seller_name, seller_email, seller_phone, seller_has_existing_bond, current_bond_bank, current_bond_account_number, estimated_settlement_amount, purchase_price, sales_price, expected_transfer_date, target_registration_date, registration_date, registered_at, lifecycle_state, last_meaningful_activity_at, is_active'
 
   let query = await client
     .from('transactions')
@@ -276,7 +276,6 @@ async function fetchTransactions(client, ids = []) {
       isMissingColumnError(query.error, 'property_description') ||
       isMissingColumnError(query.error, 'development_id') ||
       isMissingColumnError(query.error, 'unit_id') ||
-      isMissingColumnError(query.error, 'erf_number') ||
       isMissingColumnError(query.error, 'seller_has_existing_bond') ||
       isMissingColumnError(query.error, 'current_bond_bank') ||
       isMissingColumnError(query.error, 'next_action_due_at') ||
