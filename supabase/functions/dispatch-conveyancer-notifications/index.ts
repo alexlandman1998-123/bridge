@@ -12,8 +12,22 @@ function positiveInteger(value: unknown, fallback: number, maximum: number) {
   return Math.min(Math.floor(parsed), maximum);
 }
 
+function jwtRole(request: Request) {
+  const token = String(request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  const segment = token.split(".")[1] || "";
+  if (!segment) return "";
+  try {
+    const normalized = segment.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(segment.length / 4) * 4, "=");
+    return String(JSON.parse(atob(normalized))?.role || "").trim().toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ ok: false, error: "Method not allowed." }, 405);
+  // The gateway verifies the JWT; the worker additionally requires its service-role claim.
+  if (jwtRole(request) !== "service_role") return json({ ok: false, error: "Dispatcher authority required." }, 403);
   const url = String(Deno.env.get("SUPABASE_URL") || "").trim();
   const serviceRoleKey = String(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
   if (!url || !serviceRoleKey) return json({ ok: false, error: "Dispatcher environment is incomplete." }, 503);

@@ -86,7 +86,7 @@ test('runtime, webhook and dispatcher honour the stop plane and emit operational
 
 test('protected monitor captures snapshots while the cockpit exposes safe stop and alert state', () => {
   assert.match(monitor, /x-p8-monitor-secret/); assert.match(monitor, /CONVEYANCER_OPERATIONS_MONITOR_SECRET/); assert.match(monitor, /bridge_capture_conveyancer_operational_snapshots/)
-  assert.match(cockpit, /loadConveyancerOperationalSummary/); assert.match(guidedExperience, /Stopped safely/); assert.match(cockpit, /openAlerts/)
+  assert.match(cockpit, /loadConveyancerOperational(?:ApplicationH8)?Summary/); assert.match(guidedExperience, /Stopped safely/); assert.match(cockpit, /openAlerts/)
 })
 
 await Promise.all(pending)

@@ -1,11 +1,22 @@
 import { createClient } from '@supabase/supabase-js'
 
 const VERSION = 'conveyancer_provider_runtime_p6_v1'
+const H6_VERSION = 'conveyancer_provider_application_h6_v1'
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
 const reply = (status: number, value: unknown) => new Response(JSON.stringify(value), { status, headers: { ...cors, 'Content-Type': 'application/json' } })
 const privateHost = (host: string) => /^(localhost|127\.|0\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[)/i.test(host)
 const bytesToHex = (value: ArrayBuffer) => [...new Uint8Array(value)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 const safeEqual = (left: string, right: string) => { if (!left || left.length !== right.length) return false; let mismatch = 0; for (let index = 0; index < left.length; index += 1) mismatch |= left.charCodeAt(index) ^ right.charCodeAt(index); return mismatch === 0 }
+const credentialEvidenceFingerprint = async (value: Record<string, unknown>) => `sha256:${bytesToHex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value))))}`
+
+type CredentialCheckClient = { rpc: (name: string, args: { payload: Record<string, unknown> }) => Promise<{ error: unknown }> }
+
+async function recordCredentialCheck(client: unknown, input: Record<string, unknown>) {
+  const evidence = { version: H6_VERSION, ...input, checkedAt: new Date().toISOString(), metadata: { secretMaterialStored: false } }
+  const fingerprint = await credentialEvidenceFingerprint(evidence)
+  const result = await (client as CredentialCheckClient).rpc('bridge_record_conveyancer_provider_credential_check_h6', { payload: { ...evidence, fingerprint } })
+  return !result.error
+}
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: cors })
@@ -40,9 +51,19 @@ Deno.serve(async (request) => {
   try { origin = new URL(config.allowedOrigin) } catch { return reply(422, { ok: false, code: 'provider_endpoint_invalid' }) }
   const operationPath = config.operationPaths?.[body.operationType as string]
   if (origin.protocol !== 'https:' || origin.origin !== config.allowedOrigin || privateHost(origin.hostname) || typeof operationPath !== 'string' || !operationPath.startsWith('/') || operationPath.startsWith('//') || !['bearer', 'api_key_header'].includes(config.authentication?.type || 'bearer') || !/^[A-Za-z0-9-]{1,64}$/.test(config.authentication?.headerName || 'Authorization')) return reply(422, { ok: false, code: 'provider_endpoint_invalid' })
-  if (!String(profile.secret_reference || '').startsWith('env://')) return reply(422, { ok: false, code: 'provider_secret_resolver_unavailable' })
-  const credential = Deno.env.get(String(profile.secret_reference).slice(6))
-  if (!credential) return reply(503, { ok: false, code: 'provider_credential_unavailable' })
+  const credentialReference = String(profile.secret_reference || '')
+  const credentialEvidence = { organisationId: body.organisationId, attorneyFirmId: body.attorneyFirmId, profileId: profile.id, operationId: body.operationId, providerKey: profile.provider_key, environment: config.environment || 'sandbox', referenceKind: credentialReference.startsWith('env://') ? 'env' : credentialReference.startsWith('vault://') ? 'vault' : 'none' }
+  if (!credentialReference.startsWith('env://')) {
+    await recordCredentialCheck(serviceClient, { ...credentialEvidence, status: credentialReference.startsWith('vault://') ? 'resolver_unavailable' : 'invalid' })
+    return reply(202, { ok: true, decision: 'manual_fallback', code: 'provider_secret_resolver_unavailable', retrySafe: false, humanReviewRequired: true })
+  }
+  const credential = Deno.env.get(credentialReference.slice(6))
+  if (!credential) {
+    await recordCredentialCheck(serviceClient, { ...credentialEvidence, status: 'missing' })
+    return reply(202, { ok: true, decision: 'manual_fallback', code: 'provider_credential_unavailable', retrySafe: false, humanReviewRequired: true })
+  }
+  const credentialRecorded = await recordCredentialCheck(serviceClient, { ...credentialEvidence, status: 'verified', expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString() })
+  if (!credentialRecorded) return reply(202, { ok: false, decision: 'reconciliation_required', code: 'provider_credential_evidence_unrecorded', retrySafe: false, humanReviewRequired: true })
   const payloadRef = String(body.payloadReference); const separator = payloadRef.indexOf('/')
   if (separator < 1) return reply(422, { ok: false, code: 'provider_payload_reference_invalid' })
   const payloadDownload = await queryClient.storage.from(payloadRef.slice(0, separator)).download(payloadRef.slice(separator + 1))

@@ -5,6 +5,14 @@ const reply = (status: number, value: unknown) => new Response(JSON.stringify(va
 const text = (value: unknown) => String(value ?? '').trim()
 const hex = (value: ArrayBuffer) => [...new Uint8Array(value)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 const safeEqual = (left: string, right: string) => { if (!left || left.length !== right.length) return false; let mismatch = 0; for (let index = 0; index < left.length; index += 1) mismatch |= left.charCodeAt(index) ^ right.charCodeAt(index); return mismatch === 0 }
+const H6_VERSION = 'conveyancer_provider_application_h6_v1'
+type CredentialCheckClient = { rpc: (name: string, args: { payload: Record<string, unknown> }) => Promise<{ error: unknown }> }
+async function recordCredentialCheck(client: unknown, input: Record<string, unknown>) {
+  const evidence = { version: H6_VERSION, ...input, checkedAt: new Date().toISOString(), metadata: { secretMaterialStored: false, direction: 'inbound' } }
+  const fingerprint = `sha256:${hex(await crypto.subtle.digest('SHA-256', encoder.encode(JSON.stringify(evidence))))}`
+  const result = await (client as CredentialCheckClient).rpc('bridge_record_conveyancer_provider_credential_check_h6', { payload: { ...evidence, fingerprint } })
+  return !result.error
+}
 
 Deno.serve(async (request) => {
   if (request.method !== 'POST') return reply(405, { ok: false, code: 'method_not_allowed' })
@@ -14,6 +22,8 @@ Deno.serve(async (request) => {
   const endpoints = await client.from('conveyancer_provider_webhook_endpoints').select('*').eq('endpoint_key', endpointKey).order('revision', { ascending: false }).limit(1)
   const endpoint = endpoints.data?.[0]
   if (endpoints.error || !endpoint || endpoint.status !== 'active') return reply(404, { ok: false, code: 'webhook_endpoint_not_found' })
+  const profileResult = await client.from('conveyancer_integration_profiles').select('provider_key,payload').eq('id', endpoint.integration_profile_id).eq('organisation_id', endpoint.organisation_id).eq('attorney_firm_id', endpoint.attorney_firm_id).maybeSingle()
+  if (profileResult.error || !profileResult.data) return reply(503, { ok: false, code: 'provider_webhook_profile_unavailable', retrySafe: true })
   const controls = await client.from('conveyancer_provider_transport_controls').select('*').eq('organisation_id', endpoint.organisation_id).eq('attorney_firm_id', endpoint.attorney_firm_id).order('revision', { ascending: false }).limit(1)
   const control = controls.data?.[0]
   const signal = async (signalType: string, severity: 'info' | 'warning' | 'critical', detail: Record<string, unknown> = {}) => { await client.rpc('bridge_record_conveyancer_operational_signal', { payload: { organisationId: endpoint.organisation_id, attorneyFirmId: endpoint.attorney_firm_id, profileId: endpoint.integration_profile_id, signalType, severity, numericValue: 1, detail } }) }
@@ -27,9 +37,17 @@ Deno.serve(async (request) => {
   const rawBody = await request.text()
   if (encoder.encode(rawBody).byteLength > control.max_inbound_bytes) return reply(413, { ok: false, code: 'provider_payload_too_large' })
   const secretReference = text(endpoint.secret_reference)
-  if (!secretReference.startsWith('env://')) return reply(503, { ok: false, code: 'provider_webhook_secret_unavailable' })
+  const credentialEvidence = { organisationId: endpoint.organisation_id, attorneyFirmId: endpoint.attorney_firm_id, profileId: endpoint.integration_profile_id, operationId: `webhook:${endpoint.id}:${timestamp}`, providerKey: profileResult.data.provider_key, environment: profileResult.data.payload?.environment || 'sandbox', referenceKind: secretReference.startsWith('env://') ? 'env' : 'none' }
+  if (!secretReference.startsWith('env://')) {
+    await recordCredentialCheck(client, { ...credentialEvidence, status: 'invalid' })
+    return reply(503, { ok: false, code: 'provider_webhook_secret_unavailable', retrySafe: false })
+  }
   const secret = Deno.env.get(secretReference.slice(6)) || ''; const supplied = text(request.headers.get('x-provider-signature')).replace(/^sha256=/i, '').toLowerCase()
-  if (!secret) return reply(503, { ok: false, code: 'provider_webhook_secret_unavailable' })
+  if (!secret) {
+    await recordCredentialCheck(client, { ...credentialEvidence, status: 'missing' })
+    return reply(503, { ok: false, code: 'provider_webhook_secret_unavailable', retrySafe: false })
+  }
+  if (!await recordCredentialCheck(client, { ...credentialEvidence, status: 'verified', expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString() })) return reply(503, { ok: false, code: 'provider_webhook_credential_evidence_unrecorded', retrySafe: true })
   const hmacKey = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
   const expected = hex(await crypto.subtle.sign('HMAC', hmacKey, encoder.encode(`${timestamp}.${rawBody}`)))
   if (!safeEqual(expected, supplied)) { await signal('provider_webhook_rejected','critical',{code:'signature_invalid'}); return reply(401, { ok: false, code: 'provider_webhook_signature_invalid' }) }

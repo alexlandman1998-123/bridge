@@ -49,6 +49,7 @@ import {
 import { getSystemBanks } from '../services/bondOriginatorBankService'
 import {
   createClientPortalDocumentSignedUrl,
+  recordAttorneyClientFinancialDocumentAccessByToken,
   respondToClientPortalAppointment,
   saveClientPortalOnboardingDraft,
   submitClientPortalComment,
@@ -5322,6 +5323,17 @@ function ClientPortal() {
         throw new Error('Unable to open this document right now.')
       }
       window.open(signedUrl, '_blank', 'noopener,noreferrer')
+      if (document?.publication_status === 'published' && document?.client_recipient_role && document?.id) {
+        void recordAttorneyClientFinancialDocumentAccessByToken(
+          token,
+          document.client_recipient_role,
+          document.id,
+          'viewed',
+          { sellerPortalAccessToken },
+        ).catch((receiptError) => {
+          console.warn('[client-portal-documents] Financial document receipt could not be recorded', receiptError)
+        })
+      }
     } catch (openError) {
       setError(openError.message || 'Unable to open this document right now.')
     } finally {

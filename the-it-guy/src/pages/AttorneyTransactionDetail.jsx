@@ -37,6 +37,7 @@ import ProgressTimeline from '../components/ProgressTimeline'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import AttorneyAssignmentSection from '../components/attorney/assignments/AttorneyAssignmentSection'
 import ConveyancerCockpit from '../components/attorney/cockpit/ConveyancerCockpit'
+import AttorneyClientFinancialDocumentsPanel from '../components/attorney/documents/AttorneyClientFinancialDocumentsPanel'
 import TransactionFinanceCommandCenter from '../components/transaction/TransactionFinanceCommandCenter'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import FinanceProgressBar from '../components/finance/FinanceProgressBar'
@@ -11934,6 +11935,26 @@ function AttorneyTransactionDetail() {
     }
   }
 
+  async function handleUploadAttorneyClientFinancialDocument({ row, file }) {
+    if (!transaction?.id || !row?.key || !file) return
+    await uploadDocument({
+      transactionId: transaction.id,
+      file,
+      category: row.finalStatement ? 'Registration / Close-Out Documents' : 'Internal Working Documents',
+      isClientVisible: false,
+      visibilityScope: 'internal',
+      stageKey: row.stageGate || (row.finalStatement ? 'registration_ready' : 'lodgement_ready'),
+      requiredDocumentKey: row.key,
+      documentType: row.key,
+      canonicalRequirementInstanceId: row.canonicalRequirementInstanceId || null,
+      source: 'attorney_client_financials',
+      financeLane: 'transfer',
+      relatedEntityType: 'transaction',
+      relatedEntityId: transaction.id,
+    })
+    await loadData({ background: true })
+  }
+
   function openReviewAction(action, document, requirement) {
     setReviewActionDraft({
       open: true,
@@ -12670,6 +12691,18 @@ function AttorneyTransactionDetail() {
                 </span>
               </div>
             </header>
+
+            {workspaceRole === 'attorney' ? (
+              <AttorneyClientFinancialDocumentsPanel
+                transaction={transaction}
+                documents={documents}
+                requirements={requiredDocumentChecklist}
+                organisationId={workspaceOrganisationId}
+                attorneyFirmId={attorneyFirmId}
+                canUpload={attorneyPermissionState.hasPermission('can_upload_documents')}
+                onUpload={handleUploadAttorneyClientFinancialDocument}
+              />
+            ) : null}
 
             <section className="rounded-[18px] border border-[#dde4ee] bg-white p-6 shadow-[0_16px_34px_rgba(15,23,42,0.055)]">
               <div className="grid gap-6 xl:grid-cols-[220px_minmax(0,1fr)_minmax(360px,0.9fr)] xl:items-center">

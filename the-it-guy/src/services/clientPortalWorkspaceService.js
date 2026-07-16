@@ -3,6 +3,8 @@ import {
   fetchClientPortalContextsByToken,
   fetchClientPortalCoreByToken,
   fetchClientPortalMandatePacketSummaryByToken,
+  fetchAttorneyClientFinancialNotificationsByToken,
+  fetchPublishedAttorneyClientFinancialDocumentsByToken,
 } from '../lib/api'
 import { getDemoClientPortalSeedData } from '../lib/onboardingDemoLinks'
 import { generateClientPortalNextActions } from '../lib/clientPortalNextActionsEngine'
@@ -1879,6 +1881,30 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
 
   portalData = await hydrateSellerMandatePacketForPortalData(token, portalData, workspaceMode)
 
+  const financialRecipientRole = workspaceMode === 'selling' ? 'seller' : 'buyer'
+  const publishedFinancialDocuments = await fetchPublishedAttorneyClientFinancialDocumentsByToken(
+    token,
+    financialRecipientRole,
+    { sellerPortalAccessToken: options?.sellerPortalAccessToken },
+  ).catch((error) => {
+    console.warn('[client-portal-documents] Published attorney financial documents unavailable', {
+      recipientRole: financialRecipientRole,
+      error,
+    })
+    return []
+  })
+  if (publishedFinancialDocuments.length) {
+    const documentsById = new Map()
+    for (const document of [
+      ...(Array.isArray(portalData?.documents) ? portalData.documents : []),
+      ...publishedFinancialDocuments,
+    ]) {
+      const id = String(document?.id || document?.file_path || '').trim()
+      if (id) documentsById.set(id, document)
+    }
+    portalData = { ...portalData, documents: [...documentsById.values()] }
+  }
+
   const canonicalRequirements = await fetchCanonicalDocumentRequirementsForPortal(portalData, workspaceMode)
   const documentCenter = {
     ...buildDocumentCenter(portalData, workspaceMode),
@@ -2009,6 +2035,31 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
       workspaceMode,
       error: notificationError,
     })
+  }
+  const financialNotificationResponse = await fetchAttorneyClientFinancialNotificationsByToken(
+    token,
+    clientRole,
+    { sellerPortalAccessToken: options?.sellerPortalAccessToken },
+  ).catch((error) => {
+    console.warn('[client-portal-notifications] Financial document notifications unavailable', {
+      clientRole,
+      error,
+    })
+    return { notifications: [], unreadCount: 0 }
+  })
+  if (financialNotificationResponse.notifications.length) {
+    const notificationsById = new Map()
+    for (const item of [
+      ...(Array.isArray(notifications?.items) ? notifications.items : []),
+      ...financialNotificationResponse.notifications,
+    ]) {
+      if (item?.id) notificationsById.set(item.id, item)
+    }
+    const items = [...notificationsById.values()]
+    notifications = {
+      unreadCount: items.filter((item) => item.status === 'unread').length,
+      items,
+    }
   }
   const rolePlayers = {
     attorney: portalData?.attorneyRolePlayers || null,

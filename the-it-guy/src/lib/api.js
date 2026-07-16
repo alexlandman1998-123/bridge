@@ -15809,13 +15809,20 @@ function filterSharedDocumentsByViewer(documents, viewer = 'internal', { viewerR
     })
   }
 
-  return documents.filter(
-    (item) =>
-      !item?.is_archived &&
-      (Boolean(item.is_client_visible) ||
-        normalizeDocumentVisibilityScope(item.visibility_scope, 'internal') === 'shared' ||
-        normalizeDocumentVisibilityScope(item.visibility_scope, 'internal') === 'client'),
-  )
+  const normalizedViewerRole = normalizeDocumentViewerRole(viewerRole)
+  return documents.filter((item) => {
+    if (item?.is_archived) return false
+    const financialRecipient = String(
+      item?.client_recipient_role ||
+      (String(item?.document_type || '').startsWith('buyer_') ? 'buyer' : String(item?.document_type || '').startsWith('seller_') ? 'seller' : ''),
+    ).trim().toLowerCase()
+    if (['buyer', 'seller'].includes(normalizedViewerRole) && financialRecipient && financialRecipient !== normalizedViewerRole) {
+      return false
+    }
+    return Boolean(item.is_client_visible) ||
+      normalizeDocumentVisibilityScope(item.visibility_scope, 'internal') === 'shared' ||
+      normalizeDocumentVisibilityScope(item.visibility_scope, 'internal') === 'client'
+  })
 }
 
 async function fetchSharedDocumentRowsByTransactionIds(client, transactionIds = []) {
@@ -15830,7 +15837,7 @@ async function fetchSharedDocumentRowsByTransactionIds(client, transactionIds = 
   const documentSelectCandidates = [
     {
       select:
-        'id, transaction_id, name, file_path, category, document_type, status, review_status, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, uploaded_by_party, external_access_id, bucket_key, source, source_document_id, file_bucket, finance_lane, related_entity_type, related_entity_id, canonical_requirement_instance_id, created_at, updated_at',
+        'id, transaction_id, name, file_path, category, document_type, status, review_status, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, client_recipient_role, uploaded_by_role, uploaded_by_email, uploaded_by_party, external_access_id, bucket_key, source, source_document_id, file_bucket, finance_lane, related_entity_type, related_entity_id, canonical_requirement_instance_id, created_at, updated_at',
       hasClientVisibilityColumn: true,
     },
     {
@@ -15890,6 +15897,79 @@ async function loadSharedDocuments(client, { transactionIds = [], viewer = 'inte
   const { rows } = await fetchSharedDocumentRowsByTransactionIds(client, transactionIds)
   const visibleRows = filterSharedDocumentsByViewer(rows, viewer, { viewerRole })
   return enrichDocuments(visibleRows)
+}
+
+export async function fetchPublishedAttorneyClientFinancialDocumentsByToken(token, recipientRole, options = {}) {
+  const normalizedToken = String(token || '').trim()
+  const normalizedRecipientRole = String(recipientRole || '').trim().toLowerCase()
+  if (!normalizedToken || !['buyer', 'seller'].includes(normalizedRecipientRole)) return []
+
+  const client = requireClientPortalTokenClient(normalizedToken)
+  const result = await client.rpc('bridge_attorney_client_financial_documents_by_token', {
+    p_token: normalizedToken,
+    p_recipient_role: normalizedRecipientRole,
+    p_seller_access_token: String(options?.sellerPortalAccessToken || '').trim() || null,
+  })
+  if (result.error) {
+    if (isMissingFunctionError(result.error, 'bridge_attorney_client_financial_documents_by_token')) return []
+    throw result.error
+  }
+  const rows = Array.isArray(result.data) ? result.data : []
+  return enrichDocuments(rows.map((row) => normalizeSharedDocumentRow(row, { hasClientVisibilityColumn: true })))
+}
+
+export async function fetchAttorneyClientFinancialNotificationsByToken(token, recipientRole, options = {}) {
+  const normalizedToken = String(token || '').trim()
+  const normalizedRecipientRole = String(recipientRole || '').trim().toLowerCase()
+  if (!normalizedToken || !['buyer', 'seller'].includes(normalizedRecipientRole)) {
+    return { notifications: [], unreadCount: 0 }
+  }
+
+  const client = requireClientPortalTokenClient(normalizedToken)
+  const result = await client.rpc('bridge_attorney_client_financial_notifications_by_token', {
+    p_token: normalizedToken,
+    p_recipient_role: normalizedRecipientRole,
+    p_seller_access_token: String(options?.sellerPortalAccessToken || '').trim() || null,
+  })
+  if (result.error) {
+    if (isMissingFunctionError(result.error, 'bridge_attorney_client_financial_notifications_by_token')) {
+      return { notifications: [], unreadCount: 0 }
+    }
+    throw result.error
+  }
+  const notifications = (Array.isArray(result.data) ? result.data : []).map(normalizeClientPortalNotificationRow)
+  return {
+    notifications,
+    unreadCount: notifications.filter((item) => item.status === 'unread').length,
+  }
+}
+
+export async function recordAttorneyClientFinancialDocumentAccessByToken(
+  token,
+  recipientRole,
+  documentId,
+  eventType = 'viewed',
+  options = {},
+) {
+  const normalizedToken = String(token || '').trim()
+  const normalizedRecipientRole = String(recipientRole || '').trim().toLowerCase()
+  const normalizedDocumentId = String(documentId || '').trim()
+  const normalizedEventType = String(eventType || 'viewed').trim().toLowerCase()
+  if (!normalizedToken || !normalizedDocumentId || !['buyer', 'seller'].includes(normalizedRecipientRole)) return null
+
+  const client = requireClientPortalTokenClient(normalizedToken)
+  const result = await client.rpc('bridge_record_attorney_client_financial_document_access', {
+    p_token: normalizedToken,
+    p_recipient_role: normalizedRecipientRole,
+    p_document_id: normalizedDocumentId,
+    p_event_type: normalizedEventType,
+    p_seller_access_token: String(options?.sellerPortalAccessToken || '').trim() || null,
+  })
+  if (result.error) {
+    if (isMissingFunctionError(result.error, 'bridge_record_attorney_client_financial_document_access')) return null
+    throw result.error
+  }
+  return result.data || null
 }
 
 async function attemptPromotePendingSellerDocumentsIfPossible(client, listingId) {
@@ -34439,6 +34519,7 @@ export async function fetchClientOnboardingByToken(token) {
   const uploadedDocuments = await loadSharedDocuments(client, {
     transactionIds: [transaction.id],
     viewer: 'client',
+    viewerRole: 'buyer',
   })
   const checklistResult = buildRequiredChecklistFromRows(requiredDocuments, uploadedDocuments)
 
@@ -36923,6 +37004,7 @@ export async function fetchClientPortalByToken(token) {
     loadSharedDocuments(client, {
       transactionIds: [transaction.id],
       viewer: 'client',
+      viewerRole: 'buyer',
     }),
     fetchClientVisibleAdditionalDocumentRequests(client, transaction.id),
   ])
@@ -37355,6 +37437,7 @@ export async function fetchClientPortalCoreByToken(token) {
     loadSharedDocuments(client, {
       transactionIds: [transaction.id],
       viewer: 'client',
+      viewerRole: 'buyer',
     }),
     fetchClientVisibleAdditionalDocumentRequests(client, transaction.id),
   ])

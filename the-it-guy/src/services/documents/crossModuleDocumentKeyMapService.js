@@ -1,4 +1,4 @@
-export const CROSS_MODULE_DOCUMENT_KEY_MAP_VERSION = 'cross_module_document_key_map_v1'
+export const CROSS_MODULE_DOCUMENT_KEY_MAP_VERSION = 'cross_module_document_key_map_v2'
 
 export const DOCUMENT_PARTY_ROLES = Object.freeze([
   'buyer',
@@ -964,8 +964,44 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
   }),
 
   documentDefinition({
+    canonicalKey: 'buyer_transfer_cost_invoice',
+    label: 'Buyer Transfer Cost Invoice',
+    ownerRole: 'transfer_attorney',
+    responsibleRoles: ['transfer_attorney'],
+    packKey: 'attorney_client_financials',
+    aliases: [],
+    modules: ['attorney_client_financials', 'transaction_documents'],
+  }),
+  documentDefinition({
+    canonicalKey: 'seller_attorney_invoice',
+    label: 'Seller Attorney Invoice',
+    ownerRole: 'transfer_attorney',
+    responsibleRoles: ['transfer_attorney'],
+    packKey: 'attorney_client_financials',
+    aliases: [],
+    modules: ['attorney_client_financials', 'transaction_documents'],
+  }),
+  documentDefinition({
+    canonicalKey: 'buyer_final_statement',
+    label: 'Buyer Final Statement',
+    ownerRole: 'transfer_attorney',
+    responsibleRoles: ['transfer_attorney'],
+    packKey: 'attorney_client_financials',
+    aliases: [],
+    modules: ['attorney_client_financials', 'transaction_documents', 'attorney_closeout'],
+  }),
+  documentDefinition({
+    canonicalKey: 'seller_final_statement',
+    label: 'Seller Final Statement',
+    ownerRole: 'transfer_attorney',
+    responsibleRoles: ['transfer_attorney'],
+    packKey: 'attorney_client_financials',
+    aliases: [],
+    modules: ['attorney_client_financials', 'transaction_documents', 'attorney_closeout'],
+  }),
+  documentDefinition({
     canonicalKey: 'attorney_invoice',
-    label: 'Attorney Invoice',
+    label: 'Attorney Invoice (Legacy)',
     ownerRole: 'transfer_attorney',
     responsibleRoles: ['transfer_attorney'],
     packKey: 'attorney_closeout',
@@ -974,7 +1010,7 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
   }),
   documentDefinition({
     canonicalKey: 'attorney_statement',
-    label: 'Attorney Statement',
+    label: 'Attorney Statement (Legacy)',
     ownerRole: 'transfer_attorney',
     responsibleRoles: ['transfer_attorney'],
     packKey: 'attorney_closeout',

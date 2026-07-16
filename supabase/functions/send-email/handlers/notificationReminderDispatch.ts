@@ -603,6 +603,16 @@ function isMissingLegalRoleQueueRpc(error: unknown) {
     message.includes("bridge_queue_legal_role_coordination_reminders_phase6");
 }
 
+function isMissingFinancialDocumentQueueRpc(error: unknown) {
+  const record = error && typeof error === "object"
+    ? error as Record<string, unknown>
+    : {};
+  const code = normalizeText(record.code).toUpperCase();
+  const message = normalizeText(record.message).toLowerCase();
+  return code === "42883" ||
+    message.includes("bridge_queue_attorney_client_financial_document_reminders");
+}
+
 async function queueDueNotificationReminderEvents(
   supabase: any,
   {
@@ -659,12 +669,25 @@ async function queueDueNotificationReminderEvents(
   const legalRoleQueueMissing = isMissingLegalRoleQueueRpc(legalRoleQueue.error);
   if (legalRoleQueue.error && !legalRoleQueueMissing) return legalRoleQueue;
 
+  const financialDocumentQueue = await supabase.rpc(
+    "bridge_queue_attorney_client_financial_document_reminders",
+    {
+      p_limit: queueLimit,
+      p_now: now,
+      p_dry_run: dryRun,
+    },
+  );
+  const financialDocumentQueueMissing = isMissingFinancialDocumentQueueRpc(financialDocumentQueue.error);
+  if (financialDocumentQueue.error && !financialDocumentQueueMissing) return financialDocumentQueue;
+
   return {
     ...standardQueue,
     data: {
       ...(asRecord(standardQueue.data)),
       legalRoleQueue: legalRoleQueue.error ? null : legalRoleQueue.data,
       legalRoleQueueAvailable: !legalRoleQueue.error,
+      financialDocumentQueue: financialDocumentQueue.error ? null : financialDocumentQueue.data,
+      financialDocumentQueueAvailable: !financialDocumentQueue.error,
     },
   };
 }
