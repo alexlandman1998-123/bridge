@@ -119,6 +119,18 @@ export function generateSellerOnboardingToken() {
   return `seller-${Math.random().toString(36).slice(2, 14)}${Date.now().toString(36)}`
 }
 
+export function generateSellerPortalToken() {
+  const randomBytes = new Uint8Array(24)
+  const cryptoApi = typeof globalThis !== 'undefined' ? globalThis.crypto : null
+
+  if (cryptoApi?.getRandomValues) {
+    cryptoApi.getRandomValues(randomBytes)
+    return `seller-portal-${Array.from(randomBytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`
+  }
+
+  return `seller-portal-${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
+}
+
 export function buildSellerOnboardingLink(token, baseUrl = '') {
   if (!token) return ''
   const origin =

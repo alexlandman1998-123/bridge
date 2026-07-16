@@ -5,12 +5,26 @@ const migration = await fs.readFile(
   new URL('../../supabase/migrations/202607140005_seller_portal_stable_links_and_invites.sql', import.meta.url),
   'utf8',
 )
+const tokenDefaultMigration = await fs.readFile(
+  new URL('../../supabase/migrations/202607160023_seller_portal_token_insert_default.sql', import.meta.url),
+  'utf8',
+)
+const listingStorage = await fs.readFile(new URL('../src/lib/agentListingStorage.js', import.meta.url), 'utf8')
 const privateListingService = await fs.readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
+const finalSignedDocumentFunction = await fs.readFile(
+  new URL('../../supabase/functions/generate-final-signed-document/index.ts', import.meta.url),
+  'utf8',
+)
 const clientPortalPage = await fs.readFile(new URL('../src/pages/ClientPortal.jsx', import.meta.url), 'utf8')
 const listingDetail = await fs.readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
 const leadsPage = await fs.readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
 
 assert.match(migration, /seller_portal_token text/, 'seller portals need a stable identifier independent of onboarding')
+assert.match(tokenDefaultMigration, /alter column seller_portal_token[\s\S]*set default[\s\S]*gen_random_bytes\(24\)/, 'new seller onboarding rows need a database-generated stable portal token fallback')
+assert.match(listingStorage, /export function generateSellerPortalToken\(\)/, 'the app needs a stable seller portal token generator')
+assert.match(privateListingService, /seller_portal_token:\s*generateSellerPortalToken\(\)/, 'manual onboarding inserts need a stable seller portal token')
+assert.match(privateListingService, /seller_portal_token:\s*sellerPortalToken/, 'sent onboarding upserts need a stable seller portal token')
+assert.match(finalSignedDocumentFunction, /seller_portal_token:\s*sellerPortalToken/, 'signed-document snapshot inserts need a stable seller portal token')
 assert.match(migration, /seller_portal_invite_token_hash text/, 'one-time invite tokens must be stored as hashes')
 assert.match(migration, /seller_portal_invite_expires_at timestamptz/, 'one-time invite tokens need an explicit expiry')
 assert.match(migration, /p_ttl_hours integer default 72/, 'seller portal invitations should default to 72 hours')

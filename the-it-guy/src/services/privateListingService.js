@@ -1,5 +1,10 @@
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
-import { buildSellerClientPortalLink, buildSellerOnboardingLink, generateSellerOnboardingToken } from '../lib/agentListingStorage'
+import {
+  buildSellerClientPortalLink,
+  buildSellerOnboardingLink,
+  generateSellerOnboardingToken,
+  generateSellerPortalToken,
+} from '../lib/agentListingStorage'
 import { resolveOnboardingBranding } from '../lib/onboardingBranding'
 import {
   canTransitionPrivateListing,
@@ -3761,6 +3766,7 @@ export async function updatePrivateListingOnboardingFormData(listingId, formData
       .insert({
         private_listing_id: normalizedId,
         token: generateSellerOnboardingToken(),
+        seller_portal_token: generateSellerPortalToken(),
         form_data: formData && typeof formData === 'object' ? formData : {},
         status: normalizeStatus(options.status || 'completed', SELLER_ONBOARDING_STATUSES, 'completed'),
         submitted_at: new Date().toISOString(),
@@ -4981,6 +4987,7 @@ export async function sendSellerOnboarding(
   }
 
   const token = normalizeText(existingQuery.data?.token) || generateSellerOnboardingToken()
+  const sellerPortalToken = normalizeText(existingQuery.data?.seller_portal_token) || generateSellerPortalToken()
   const expiresAt = new Date(Date.now() + Math.max(1, Number(expiresInDays || 14)) * 24 * 60 * 60 * 1000).toISOString()
   const existingFormData = existingQuery.data?.form_data && typeof existingQuery.data.form_data === 'object'
     ? existingQuery.data.form_data
@@ -4991,6 +4998,7 @@ export async function sendSellerOnboarding(
   const payload = {
     private_listing_id: listing.id,
     token,
+    seller_portal_token: sellerPortalToken,
     token_expires_at: expiresAt,
     seller_type: normalizeNullableText(sellerType || listing.sellerType),
     ownership_structure: normalizeNullableText(ownershipStructure),

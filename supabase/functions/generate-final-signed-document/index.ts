@@ -1229,7 +1229,7 @@ async function ensureSellerOnboardingSnapshotForListing({
 
   const existing = await supabase
     .from("private_listing_seller_onboarding")
-    .select("id, private_listing_id, token, status, seller_type, ownership_structure, marital_regime, form_data, submitted_at")
+    .select("id, private_listing_id, token, seller_portal_token, status, seller_type, ownership_structure, marital_regime, form_data, submitted_at")
     .eq("private_listing_id", listingId)
     .maybeSingle();
 
@@ -1278,11 +1278,14 @@ async function ensureSellerOnboardingSnapshotForListing({
     ? "completed"
     : firstValue(existing.data?.status, snapshot.status) || "not_started";
   const token = firstValue(existing.data?.token, snapshot.token) || `seller-${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`;
+  const sellerPortalToken = firstValue(existing.data?.seller_portal_token) ||
+    `seller-portal-${crypto.randomUUID().replace(/-/g, "")}${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
   const submittedAt = firstValue(existing.data?.submitted_at, snapshot.submittedAt) || (status === "completed" ? new Date().toISOString() : null);
 
   const payload = {
     private_listing_id: listingId,
     token,
+    seller_portal_token: sellerPortalToken,
     status,
     seller_type: firstValue(existing.data?.seller_type, snapshot.sellerType) || null,
     ownership_structure: firstValue(existing.data?.ownership_structure, snapshot.ownershipStructure) || null,
