@@ -2,10 +2,13 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 import Docxtemplater from "docxtemplater";
 import PizZip from "pizzip";
+import { assertLegalTemplateApproved } from "../../../the-it-guy/src/core/documents/legalTemplateApproval.js";
 
 type JsonRecord = Record<string, unknown>;
 
 type GenerateOtpRequest = {
+  templateId?: string;
+  template_id?: string;
   transactionId?: string;
   transaction_id?: string;
   specialConditions?: string;
@@ -50,6 +53,53 @@ function normalizeText(value: unknown) {
 
 function asRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
+}
+
+async function requireCaller(supabase: any, req: Request) {
+  const authorization = normalizeText(req.headers.get("authorization"));
+  const token = authorization.toLowerCase().startsWith("bearer ") ? authorization.slice(7).trim() : "";
+  if (!token) throw Object.assign(new Error("Authentication is required."), { code: "AUTH_REQUIRED", status: 401 });
+  const userResult = await supabase.auth.getUser(token);
+  if (userResult.error || !userResult.data.user) {
+    throw Object.assign(new Error("The authenticated user could not be verified."), { code: "AUTH_INVALID", status: 401 });
+  }
+  return userResult.data.user;
+}
+
+async function requireApprovedOtpTemplate({ supabase, templateId, templatePath, templateBucket, templateBase64 }: {
+  supabase: any;
+  templateId: string;
+  templatePath: string;
+  templateBucket: string;
+  templateBase64: string;
+}) {
+  if (!templateId) throw Object.assign(new Error("An approved OTP template is required."), { code: "LEGAL_TEMPLATE_APPROVAL_REQUIRED", status: 422 });
+  const result = await supabase
+    .from("document_packet_templates")
+    .select("id, packet_type, template_key, status, is_active, template_storage_bucket, template_storage_path, metadata_json")
+    .eq("id", templateId)
+    .maybeSingle();
+  if (result.error) throw result.error;
+  if (!result.data) throw Object.assign(new Error("The selected OTP template was not found."), { code: "LEGAL_TEMPLATE_APPROVAL_REQUIRED", status: 422 });
+  const assessment = assertLegalTemplateApproved(result.data, { expectedPacketType: "otp" });
+  const approvedPath = normalizeText(result.data.template_storage_path);
+  const approvedBucket = normalizeText(result.data.template_storage_bucket);
+  if (templateBase64 || !approvedPath || templatePath !== approvedPath || (approvedBucket && templateBucket !== approvedBucket)) {
+    throw Object.assign(new Error("OTP generation must use the exact approved template source."), {
+      code: "LEGAL_TEMPLATE_SOURCE_MISMATCH",
+      status: 422,
+    });
+  }
+  return assessment;
+}
+
+function requirePilotOrganisation(organisationId: unknown) {
+  const enabled = normalizeText(Deno.env.get("LEGAL_DOCUMENT_PILOT_ENABLED")).toLowerCase() === "true";
+  const cohort = String(Deno.env.get("LEGAL_DOCUMENT_PILOT_ORGANISATION_IDS") || "").split(",").map((value) => value.trim()).filter(Boolean);
+  if (!enabled) throw Object.assign(new Error("Legal document pilot generation is not enabled."), { code: "LEGAL_DOCUMENT_PILOT_DISABLED", status: 503 });
+  if (!normalizeText(organisationId) || !cohort.includes(normalizeText(organisationId))) {
+    throw Object.assign(new Error("This organisation is not in the controlled legal document pilot."), { code: "LEGAL_DOCUMENT_PILOT_ACCESS_REQUIRED", status: 403 });
+  }
 }
 
 function normalizeNumber(value: unknown) {
@@ -423,6 +473,8 @@ Deno.serve(async (req: Request) => {
     return jsonResponse(405, { success: false, error: "Method not allowed." });
   }
 
+  const startedAt = Date.now();
+  const requestId = normalizeText(req.headers.get("x-request-id")) || crypto.randomUUID();
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -435,6 +487,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const payload = (await req.json()) as GenerateOtpRequest;
+    const templateId = normalizeText(payload.templateId || payload.template_id);
     const transactionId = normalizeText(payload.transactionId || payload.transaction_id);
     if (!transactionId) {
       return jsonResponse(400, { success: false, error: "transactionId is required." });
@@ -462,12 +515,15 @@ Deno.serve(async (req: Request) => {
 
     const outputBucketName = outputBucket || bucketCandidates[0] || "documents";
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const supabase: any = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const caller = await requireCaller(supabase, req);
+    const approval = await requireApprovedOtpTemplate({ supabase, templateId, templatePath, templateBucket, templateBase64 });
+    console.log(JSON.stringify({ level: "info", event: "legal_document_generation_started", requestId, packetType: "otp", templateId, userId: caller.id }));
 
     let transactionQuery = await supabase
       .from("transactions")
       .select(
-        "id, transaction_reference, development_id, unit_id, buyer_id, purchase_price, sales_price, cash_amount, bond_amount, deposit_amount, finance_type, purchaser_type, attorney, assigned_attorney_email, assigned_agent, bank, stage, current_main_stage, created_at, expected_transfer_date, seller_name, seller_registration_number",
+        "id, organisation_id, transaction_reference, development_id, unit_id, buyer_id, purchase_price, sales_price, cash_amount, bond_amount, deposit_amount, finance_type, purchaser_type, attorney, assigned_attorney_email, assigned_agent, bank, stage, current_main_stage, created_at, expected_transfer_date, seller_name, seller_registration_number",
       )
       .eq("id", transactionId)
       .maybeSingle();
@@ -483,7 +539,7 @@ Deno.serve(async (req: Request) => {
       transactionQuery = await supabase
         .from("transactions")
         .select(
-          "id, development_id, unit_id, buyer_id, purchase_price, sales_price, cash_amount, bond_amount, deposit_amount, finance_type, purchaser_type, attorney, bank, stage, current_main_stage, created_at, expected_transfer_date",
+          "id, organisation_id, development_id, unit_id, buyer_id, purchase_price, sales_price, cash_amount, bond_amount, deposit_amount, finance_type, purchaser_type, attorney, bank, stage, current_main_stage, created_at, expected_transfer_date",
         )
         .eq("id", transactionId)
         .maybeSingle();
@@ -498,6 +554,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const transaction = transactionQuery.data as Record<string, unknown>;
+    requirePilotOrganisation(transaction.organisation_id);
 
     const buyerPromise = transaction.buyer_id
       ? supabase.from("buyers").select("id, name, email, phone").eq("id", String(transaction.buyer_id)).maybeSingle()
@@ -592,6 +649,7 @@ Deno.serve(async (req: Request) => {
       delimiters: { start: "{", end: "}" },
       paragraphLoop: true,
       linebreaks: true,
+      nullGetter: () => "Not provided",
     });
 
     try {
@@ -637,8 +695,10 @@ Deno.serve(async (req: Request) => {
       .from(outputBucketName)
       .createSignedUrl(filePath, 60 * 60);
 
+    console.log(JSON.stringify({ level: "info", event: "legal_document_generation_completed", requestId, packetType: "otp", templateId, durationMs: Date.now() - startedAt, outputBytes: outputBytes.length }));
     return jsonResponse(200, {
       success: true,
+      legalApproval: { verified: true, reference: approval.approval.reference },
       transactionId,
       output: {
         bucket: outputBucketName,
@@ -654,10 +714,13 @@ Deno.serve(async (req: Request) => {
       placeholdersUsed: placeholders,
     });
   } catch (error) {
-    console.error("generate-otp failed", error);
-    return jsonResponse(500, {
+    const typed = error as { code?: string; status?: number; message?: string; details?: unknown };
+    console.error(JSON.stringify({ level: "error", event: "legal_document_generation_failed", requestId, packetType: "otp", errorCode: typed.code || "OTP_GENERATION_FAILED", durationMs: Date.now() - startedAt, error: typed.message || String(error) }));
+    return jsonResponse(typed.status || (typed.code === "LEGAL_TEMPLATE_APPROVAL_REQUIRED" ? 422 : 500), {
       success: false,
-      error: String(error),
+      error: typed.message || String(error),
+      errorCode: typed.code || "OTP_GENERATION_FAILED",
+      details: typed.details || null,
     });
   }
 });

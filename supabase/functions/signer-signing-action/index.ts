@@ -2214,7 +2214,10 @@ Deno.serve(async (req: Request) => {
             signedAt: nowIso,
           },
         });
-        const finalResponse = await fetch(`${SUPABASE_URL.replace(/\/$/, "")}/functions/v1/generate-final-signed-document`, {
+        const finaliserFunction = normalizeText(packet.packet_type).toLowerCase() === "otp"
+          ? "generate-final-signed-otp"
+          : "generate-final-signed-document";
+        const finalResponse = await fetch(`${SUPABASE_URL.replace(/\/$/, "")}/functions/v1/${finaliserFunction}`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

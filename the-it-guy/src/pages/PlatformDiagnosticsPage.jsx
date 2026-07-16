@@ -32,6 +32,7 @@ import {
   fetchCrossModuleDocumentConsistencySnapshot,
   summarizeCrossModuleDocumentConsistencyAudit,
 } from '../services/documents/crossModuleDocumentConsistencyService'
+import { getWorkspaceBrandingIntegrityDiagnostics } from '../services/workspaceBrandingIntegrityService'
 
 function StatCard({ label, value, tone = 'neutral' }) {
   const toneClass =
@@ -230,6 +231,8 @@ export default function PlatformDiagnosticsPage() {
   const [sellerDocumentReconciliationApplyLoading, setSellerDocumentReconciliationApplyLoading] = useState(false)
   const [documentConsistency, setDocumentConsistency] = useState(null)
   const [documentConsistencyLoading, setDocumentConsistencyLoading] = useState(false)
+  const [workspaceBrandingIntegrity, setWorkspaceBrandingIntegrity] = useState(null)
+  const [workspaceBrandingIntegrityLoading, setWorkspaceBrandingIntegrityLoading] = useState(false)
 
   const summary = useMemo(() => result?.summary || result || {}, [result])
   const issues = result?.issues || []
@@ -281,6 +284,18 @@ export default function PlatformDiagnosticsPage() {
       setError(operationsError?.message || 'Operations health check failed.')
     } finally {
       setOperationsLoading(false)
+    }
+  }
+
+  async function loadWorkspaceBrandingIntegrity() {
+    try {
+      setWorkspaceBrandingIntegrityLoading(true)
+      setError('')
+      setWorkspaceBrandingIntegrity(await getWorkspaceBrandingIntegrityDiagnostics())
+    } catch (integrityError) {
+      setError(integrityError?.message || 'Workspace branding integrity check failed.')
+    } finally {
+      setWorkspaceBrandingIntegrityLoading(false)
     }
   }
 
@@ -738,6 +753,53 @@ export default function PlatformDiagnosticsPage() {
             </div>
           </div>
         ) : null}
+
+        <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-white p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Workspace branding integrity</h2>
+              <p className="mt-2 max-w-3xl text-sm text-[#60758d]">
+                Validate canonical attorney membership sources, mirrored organisation memberships, workspace identities, and logo availability. This check is read-only.
+              </p>
+            </div>
+            <button type="button" className="header-secondary-cta" onClick={loadWorkspaceBrandingIntegrity} disabled={workspaceBrandingIntegrityLoading}>
+              {workspaceBrandingIntegrityLoading ? 'Checking workspaces...' : 'Run workspace integrity'}
+            </button>
+          </div>
+
+          {workspaceBrandingIntegrity ? (
+            <div className="grid gap-4">
+              <div className="grid gap-3 md:grid-cols-6">
+                <StatCard label="Gate" value={workspaceBrandingIntegrity.gate?.status || 'unknown'} tone={getDiagnosticStatusTone(workspaceBrandingIntegrity.gate?.status)} />
+                <StatCard label="Workspaces" value={workspaceBrandingIntegrity.summary?.rowCount || 0} />
+                <StatCard label="Blocked" value={workspaceBrandingIntegrity.summary?.blockingCount || 0} tone={workspaceBrandingIntegrity.summary?.blockingCount ? 'critical' : 'success'} />
+                <StatCard label="Source overlaps" value={workspaceBrandingIntegrity.summary?.overlapCount || 0} tone="success" />
+                <StatCard label="IDs normalized" value={workspaceBrandingIntegrity.summary?.normalizedIdentityCount || 0} />
+                <StatCard label="Unbranded" value={workspaceBrandingIntegrity.summary?.unbrandedCount || 0} tone={workspaceBrandingIntegrity.summary?.unbrandedCount ? 'warning' : 'success'} />
+              </div>
+              <p className={`rounded-[12px] border px-3 py-2 text-sm ${workspaceBrandingIntegrity.gate?.status === 'blocked' ? 'border-[#f2c8c4] bg-[#fff5f4] text-[#9f1c1c]' : workspaceBrandingIntegrity.gate?.status === 'warning' ? 'border-[#f5d3a4] bg-[#fff8ec] text-[#8a4b10]' : 'border-[#cfe8d8] bg-[#effaf3] text-[#236340]'}`}>
+                Phase 7 gate {workspaceBrandingIntegrity.gate?.status}: {workspaceBrandingIntegrity.gate?.reason} No records were changed.
+              </p>
+              {workspaceBrandingIntegrity.actions?.length ? (
+                <div className="rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Repair preview</h3>
+                  <ul className="mt-3 space-y-2 text-sm text-[#60758d]">
+                    {workspaceBrandingIntegrity.actions.map((action) => (
+                      <li key={action.key} className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f6] py-2 last:border-0">
+                        <span>{action.label}</span>
+                        <span className="font-semibold text-[#31485e]">{action.count}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <p className="rounded-[14px] border border-dashed border-[#d7e2ee] bg-[#f9fbfe] px-4 py-6 text-center text-sm text-[#60758d]">
+              Run workspace integrity after deploying the Phase 6 database projection and before expanding the attorney rollout.
+            </p>
+          )}
+        </div>
 
         <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-white p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">

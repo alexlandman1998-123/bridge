@@ -2896,7 +2896,10 @@ export async function generateFinalSignedDocument({
     outputBucket: normalizeNullableText(outputBucket),
   }
 
-  const invocation = await client.functions.invoke('generate-final-signed-document', { body: payload })
+  const finaliserFunction = normalizeText(packet.packet_type).toLowerCase() === 'otp'
+    ? 'generate-final-signed-otp'
+    : 'generate-final-signed-document'
+  const invocation = await client.functions.invoke(finaliserFunction, { body: payload })
   if (invocation.error) {
     const edgeError = new Error(
       normalizeText(invocation.error?.message) || 'Unable to generate final signed document right now.',

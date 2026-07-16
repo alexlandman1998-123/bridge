@@ -78,9 +78,15 @@ create index if not exists referral_commission_rules_org_active_idx
 alter table if exists public.organisation_user_commission_profiles
   add column if not exists commission_level_id uuid references public.commission_levels(id) on delete set null;
 
-create index if not exists organisation_user_commission_profiles_level_idx
-  on public.organisation_user_commission_profiles (organisation_id, commission_level_id)
-  where commission_level_id is not null and is_active = true;
+do $$
+begin
+  if to_regclass('public.organisation_user_commission_profiles') is not null then
+    execute 'create index if not exists organisation_user_commission_profiles_level_idx
+      on public.organisation_user_commission_profiles (organisation_id, commission_level_id)
+      where commission_level_id is not null and is_active = true';
+  end if;
+end;
+$$;
 
 create table if not exists public.commission_settings_audit (
   id uuid primary key default gen_random_uuid(),
@@ -152,15 +158,23 @@ create trigger referral_commission_rules_audit
 after insert or update or delete on public.referral_commission_rules
 for each row execute function public.bridge_log_commission_settings_change();
 
-drop trigger if exists organisation_commission_structures_audit on public.organisation_commission_structures;
-create trigger organisation_commission_structures_audit
-after insert or update or delete on public.organisation_commission_structures
-for each row execute function public.bridge_log_commission_settings_change();
+do $$
+begin
+  if to_regclass('public.organisation_commission_structures') is not null then
+    execute 'drop trigger if exists organisation_commission_structures_audit on public.organisation_commission_structures';
+    execute 'create trigger organisation_commission_structures_audit
+      after insert or update or delete on public.organisation_commission_structures
+      for each row execute function public.bridge_log_commission_settings_change()';
+  end if;
 
-drop trigger if exists organisation_user_commission_profiles_audit on public.organisation_user_commission_profiles;
-create trigger organisation_user_commission_profiles_audit
-after insert or update or delete on public.organisation_user_commission_profiles
-for each row execute function public.bridge_log_commission_settings_change();
+  if to_regclass('public.organisation_user_commission_profiles') is not null then
+    execute 'drop trigger if exists organisation_user_commission_profiles_audit on public.organisation_user_commission_profiles';
+    execute 'create trigger organisation_user_commission_profiles_audit
+      after insert or update or delete on public.organisation_user_commission_profiles
+      for each row execute function public.bridge_log_commission_settings_change()';
+  end if;
+end;
+$$;
 
 alter table public.commission_levels enable row level security;
 alter table public.commission_targets enable row level security;

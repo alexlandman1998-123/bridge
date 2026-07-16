@@ -143,7 +143,6 @@ const ClientOtpSigning = lazy(() => import('./pages/ClientOtpSigning'))
 const ClientPortal = lazy(() => import('./pages/ClientPortal'))
 const ClientProfile = lazy(() => import('./pages/ClientProfile'))
 const Clients = lazy(() => import('./pages/Clients'))
-const ConveyancingCostCalculatorPage = lazy(() => import('./pages/ConveyancingCostCalculatorPage'))
 const ConveyancerDevelopments = lazy(() => import('./pages/ConveyancerDevelopments'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const YoungLawCalculatorsPage = lazy(() => import('./pages/YoungLawCalculatorsPage'))
@@ -1612,13 +1611,7 @@ function AppRoutes() {
               />
               <Route
                 path="/attorney/cost-calculator"
-                element={
-                  <RoleRoute allowedRoles={['attorney']}>
-                    <AttorneyFirmRoute>
-                      <ConveyancingCostCalculatorPage />
-                    </AttorneyFirmRoute>
-                  </RoleRoute>
-                }
+                element={<Navigate to="/attorney/dashboard" replace />}
               />
               <Route
                 path="/attorney/appointments"

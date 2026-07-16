@@ -9,7 +9,7 @@ import { APP_ROLE_LABELS } from '../lib/appRoleMetadata'
 import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
 import { reportError } from '../services/observability/errorTracking'
 import { measureAsyncOperation } from '../services/observability/performanceMetrics'
-import { trackAuthMetric } from '../services/observability/monitoring'
+import { trackAuthMetric, trackWorkspaceBrandingMetric } from '../services/observability/monitoring'
 import { setActiveWorkspacePreference } from '../services/workspaceResolutionService'
 import { clearWorkspaceScopedRuntimeCaches } from '../services/workspaceScopedCache'
 
@@ -29,6 +29,12 @@ const EMPTY_AUTH_STATE = Object.freeze({
   pendingMemberships: [],
   suspendedMemberships: [],
   currentMembership: null,
+  currentMemberships: [],
+  membershipContexts: Object.freeze({
+    effective: null,
+    organisation: null,
+    attorneyFirm: null,
+  }),
   currentWorkspace: null,
   workspaceType: '',
   onboardingComplete: false,
@@ -92,6 +98,12 @@ function createDevOnlyAuthState(devAuthRole) {
     pendingMemberships: [],
     suspendedMemberships: [],
     currentMembership: membership,
+    currentMemberships: [membership],
+    membershipContexts: {
+      effective: membership,
+      organisation: membership.source === 'organisation_users' ? membership : null,
+      attorneyFirm: membership.source === 'attorney_firm_members' ? membership : null,
+    },
     currentWorkspace: workspace,
     workspaceType,
     onboardingComplete: true,
@@ -321,6 +333,15 @@ export function AuthSessionProvider({ children }) {
             activeMemberships: nextState.activeMemberships.length,
             onboardingRequiredReason: nextState.onboardingRequiredReason || null,
           },
+        })
+        void trackWorkspaceBrandingMetric('workspace_branding_resolved', {
+          userId: session.user.id,
+          workspaceId: nextState.currentWorkspace?.id || '',
+          workspaceType: nextState.workspaceType,
+          membershipSource: nextState.currentMembership?.source,
+          membershipSources: nextState.currentMemberships?.map((membership) => membership?.source),
+          brandingSource: nextState.currentWorkspace?.brandingSource,
+          logoPresent: Boolean(nextState.currentWorkspace?.logoUrl || nextState.currentWorkspace?.logo_url),
         })
         console.debug('[AUTH] bridge-boot:success', {
           userId: session.user.id,

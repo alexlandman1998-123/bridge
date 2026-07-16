@@ -141,12 +141,46 @@ function buildWorkspaceOrganisationSnapshot(authState) {
   })
 }
 
+function getOrganisationSnapshotWorkspaceId(snapshot = null) {
+  return normalizeText(
+    snapshot?.organisation?.workspaceId ||
+      snapshot?.organisation?.id ||
+      snapshot?.organisation?.organisationId,
+  )
+}
+
+function getAuthWorkspaceId(authState = {}) {
+  return normalizeText(
+    authState.currentWorkspace?.id ||
+      authState.currentMembership?.workspaceId ||
+      authState.currentMembership?.workspace_id,
+  )
+}
+
 function isDevAuthOrganisation(authState) {
   return authState.currentMembership?.source === 'dev_auth_bypass'
 }
 
 function shouldUseWorkspaceBranding(authState) {
   return authState.workspaceType === WORKSPACE_TYPES.attorneyFirm || authState.currentWorkspace?.type === WORKSPACE_TYPES.attorneyFirm
+}
+
+function buildImmediateOrganisationSnapshot(authState = {}) {
+  if (authState.status !== 'authenticated' || !authState.user?.id) return null
+  if (isDevAuthOrganisation(authState)) return buildAuthOrganisationSnapshot(authState)
+  if (shouldUseWorkspaceBranding(authState)) return buildWorkspaceOrganisationSnapshot(authState)
+  return null
+}
+
+function resolveOrganisationRenderState(authState = {}, hydratedState = null) {
+  const immediateSnapshot = buildImmediateOrganisationSnapshot(authState)
+  if (immediateSnapshot) return immediateSnapshot
+  if (authState.status !== 'authenticated' || !authState.user?.id) return null
+
+  const authWorkspaceId = getAuthWorkspaceId(authState)
+  const hydratedWorkspaceId = getOrganisationSnapshotWorkspaceId(hydratedState)
+  if (authWorkspaceId && hydratedWorkspaceId && authWorkspaceId !== hydratedWorkspaceId) return null
+  return hydratedState
 }
 
 function logOrganisationHydration(snapshot) {
@@ -161,6 +195,15 @@ export function OrganisationProvider({ children }) {
   const [state, setState] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const immediateSnapshot = useMemo(
+    () => buildImmediateOrganisationSnapshot(authState),
+    [authState],
+  )
+  const renderState = useMemo(
+    () => immediateSnapshot || resolveOrganisationRenderState(authState, state),
+    [authState, immediateSnapshot, state],
+  )
+  const hasImmediateSnapshot = Boolean(immediateSnapshot)
 
   const applyOrganisationState = useCallback((nextState) => {
     const normalized = normalizeOrganisationSnapshot(nextState)
@@ -266,19 +309,19 @@ export function OrganisationProvider({ children }) {
 
   const value = useMemo(
     () => ({
-      state,
-      organisation: state?.organisation || null,
-      organisationSettings: state?.organisationSettings || null,
-      onboarding: state?.onboarding || state?.organisationSettings?.agencyOnboarding || null,
-      membershipRole: state?.membershipRole || '',
-      membershipStatus: state?.membershipStatus || '',
-      branding: state?.branding || EMPTY_ORGANISATION_BRANDING,
-      loading,
+      state: renderState,
+      organisation: renderState?.organisation || null,
+      organisationSettings: renderState?.organisationSettings || null,
+      onboarding: renderState?.onboarding || renderState?.organisationSettings?.agencyOnboarding || null,
+      membershipRole: renderState?.membershipRole || '',
+      membershipStatus: renderState?.membershipStatus || '',
+      branding: renderState?.branding || EMPTY_ORGANISATION_BRANDING,
+      loading: loading && !hasImmediateSnapshot,
       error,
       refreshOrganisation,
       applyOrganisationState,
     }),
-    [applyOrganisationState, error, loading, refreshOrganisation, state],
+    [applyOrganisationState, error, hasImmediateSnapshot, loading, refreshOrganisation, renderState],
   )
 
   return <OrganisationContext.Provider value={value}>{children}</OrganisationContext.Provider>
@@ -295,3 +338,11 @@ export function useOrganisation() {
 export function useOptionalOrganisation() {
   return useContext(OrganisationContext)
 }
+
+export const __organisationContextTestUtils = Object.freeze({
+  buildImmediateOrganisationSnapshot,
+  buildWorkspaceOrganisationSnapshot,
+  getAuthWorkspaceId,
+  getOrganisationSnapshotWorkspaceId,
+  resolveOrganisationRenderState,
+})

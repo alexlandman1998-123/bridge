@@ -182,6 +182,31 @@ create trigger trg_enforce_attorney_lead_update_scope
 before update on public.leads
 for each row execute function public.bridge_enforce_attorney_lead_update_scope();
 
+-- Compatibility boundary for older Agency Lead and Contact policies. Some
+-- production histories never installed the original assignment helper, so
+-- define its least-privilege behaviour before rebuilding those policies.
+create or replace function public.bridge_can_access_assignment(
+  target_org uuid,
+  assigned_user uuid,
+  target_branch uuid default null
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    public.bridge_is_org_admin(target_org)
+    or (
+      public.bridge_is_active_member(target_org)
+      and (assigned_user is null or assigned_user = auth.uid())
+    );
+$$;
+
+revoke all on function public.bridge_can_access_assignment(uuid, uuid, uuid) from public, anon;
+grant execute on function public.bridge_can_access_assignment(uuid, uuid, uuid) to authenticated;
+
 -- Preserve Agency behaviour, but prevent those policies from authorising an
 -- Attorney Lead. PostgreSQL combines permissive policies with OR.
 drop policy if exists leads_agency_select on public.leads;

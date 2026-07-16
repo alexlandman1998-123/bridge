@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { sendAttorneyQuoteEmail } from '../src/services/attorneyQuoteEmailService.js'
 
 const root = new URL('../', import.meta.url)
-const migration = await readFile(new URL('../../supabase/migrations/202607160012_attorney_quote_email_delivery_phase13.sql', import.meta.url), 'utf8')
+const migration = await readFile(new URL('../../supabase/migrations/202607160018_attorney_quote_email_delivery_phase13.sql', import.meta.url), 'utf8')
 const handler = await readFile(new URL('../../supabase/functions/send-email/handlers/attorneyQuote.ts', import.meta.url), 'utf8')
 const emailIndex = await readFile(new URL('../../supabase/functions/send-email/index.ts', import.meta.url), 'utf8')
 const emailTypes = await readFile(new URL('../../supabase/functions/send-email/types.ts', import.meta.url), 'utf8')

@@ -45,7 +45,6 @@ export const navPermissionByKey = Object.freeze({
   attorney_matters_cancellation: PERMISSIONS.viewMatters,
   attorney_matters_registered: PERMISSIONS.viewMatters,
   attorney_matters_archived: PERMISSIONS.viewMatters,
-  attorney_cost_calculator: PERMISSIONS.viewMatters,
   attorney_workflow_board: PERMISSIONS.manageTransferWorkflow,
   scheduling: PERMISSIONS.manageSigningAppointments,
   attorney_firm: PERMISSIONS.manageAttorneyTeam,

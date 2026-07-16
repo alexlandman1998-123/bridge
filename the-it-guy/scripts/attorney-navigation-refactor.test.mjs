@@ -9,6 +9,7 @@ const settingsLayoutSource = readFileSync(new URL('../src/pages/settings/Setting
 const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
 const headerSource = readFileSync(new URL('../src/components/HeaderBar.jsx', import.meta.url), 'utf8')
 const permissionsSource = readFileSync(new URL('../src/auth/permissions/permissionRegistry.js', import.meta.url), 'utf8')
+const navigationPermissionsSource = readFileSync(new URL('../src/auth/permissions/navigationPermissions.js', import.meta.url), 'utf8')
 const attorneyFirmSource = readFileSync(new URL('../src/pages/AttorneyFirmPage.jsx', import.meta.url), 'utf8')
 const attorneyNavSource = rolesSource.slice(
   rolesSource.indexOf('attorney: ['),
@@ -36,6 +37,7 @@ assert.match(attorneyNavSource, /label:\s*'Users'/, 'Attorney Firm nav should in
 assert.match(attorneyNavSource, /label:\s*'Finance'/, 'Attorney Firm nav should include Finance')
 assert.doesNotMatch(attorneyNavSource, /key:\s*'documents'/, 'Attorney primary nav should not expose the redundant Documents page')
 assert.doesNotMatch(attorneyNavSource, /key:\s*'team_departments'/, 'Attorney primary nav should not expose the old Team users page')
+assert.doesNotMatch(attorneyNavSource, /Cost Calculator|attorney_cost_calculator|attorney\/cost-calculator/, 'Attorney primary nav should not expose the Cost Calculator')
 assert.doesNotMatch(transactionsNavItemSource, /activeMatch:\s*\[[\s\S]*?['"]\/attorney\/matters['"]/, 'Attorney Matters nav should not broadly match incoming matter routes')
 assert.doesNotMatch(transactionsNavItemSource, /activeMatch:\s*\[[\s\S]*?['"]\/attorney\/transactions['"]/, 'Attorney Matters nav should not broadly match incoming transaction routes')
 assert.match(pipelineNavItemSource, /['"]\/attorney\/matters\/active['"]/, 'Attorney Pipeline should own the Incoming Matters route')
@@ -69,6 +71,8 @@ for (const field of ['matterId', 'reference', 'matterType', 'property', 'buyer',
 assert.match(appSource, /path="\/attorney\/transactions"/, 'Attorney transactions route should exist')
 assert.match(appSource, /path="\/attorney\/transactions\/:matterType"/, 'Attorney transactions tab route should exist')
 assert.match(appSource, /Navigate to="\/attorney\/matters\/all"/, 'Attorney matters base route should open All Matters')
+assert.match(appSource, /path="\/attorney\/cost-calculator"[\s\S]*?Navigate to="\/attorney\/dashboard"/, 'Legacy Attorney Cost Calculator URLs should redirect to the Attorney dashboard')
+assert.doesNotMatch(appSource, /ConveyancingCostCalculatorPage/, 'Attorney application routes should not load the Cost Calculator page')
 assert.match(appSource, /AttorneyFirmPage/, 'Attorney users route should render the firm administration workspace')
 assert.match(appSource, /path="\/users\/branches\/:branchId"/, 'Attorney branch cards should have a dedicated branch workspace route')
 assert.doesNotMatch(attorneyFirmSource, /Manage branches, invite firm members, and keep finance access easy to find\./, 'Firm pages should remove the duplicate firm introduction')
@@ -76,7 +80,9 @@ assert.doesNotMatch(attorneyFirmSource, /const FIRM_TABS/, 'Firm pages should re
 assert.match(attorneyFirmSource, /navigate\(`\/users\/branches\/\$\{encodeURIComponent\(id\)\}`\)/, 'Attorney branch cards should open the selected branch workspace')
 assert.match(headerSource, /pathname === '\/users'\) return ''/, 'Users route should not render the old top-left Users title')
 assert.match(permissionsSource, /prefix:\s*'\/attorney\/transactions'/, 'Attorney transactions route should be permission protected')
-assert.match(permissionsSource, /attorney_firm_users:\s*PERMISSIONS\.manageAttorneyTeam/, 'Attorney Firm users nav should be permission protected')
+assert.doesNotMatch(permissionsSource, /attorney\/cost-calculator|attorney_cost_calculator/, 'Attorney permissions should not register the Cost Calculator')
+assert.doesNotMatch(navigationPermissionsSource, /attorney_cost_calculator/, 'Attorney navigation permissions should not register the Cost Calculator')
+assert.match(navigationPermissionsSource, /attorney_firm_users:\s*PERMISSIONS\.manageAttorneyTeam/, 'Attorney Firm users nav should be permission protected')
 assert.match(permissionsSource, /prefix:\s*'\/users'/, 'Attorney firm users route should be permission protected')
 
 assert.match(sidebarSource, /label: 'Organizations'/, 'Organizations should remain available from the sidebar')

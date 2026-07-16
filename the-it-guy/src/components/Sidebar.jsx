@@ -4,7 +4,6 @@ import {
   BrainCircuit,
   Building2,
   CalendarDays,
-  Calculator,
   ClipboardList,
   FileCheck2,
   FileBarChart2,
@@ -34,6 +33,7 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { getRoleNavItems } from '../lib/roles'
 import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import { inferWorkspaceTypeFromAppRole } from '../constants/workspaceTypes'
+import { trackWorkspaceBrandingMetric } from '../services/observability/monitoring'
 import { filterNavigationItems } from '../auth/permissions/navigationPermissions'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 
@@ -117,7 +117,6 @@ const ICON_BY_KEY = {
   attorney_matters_cancellation: AlertTriangle,
   attorney_matters_registered: FileCheck2,
   attorney_matters_archived: Files,
-  attorney_cost_calculator: Calculator,
   attorney_pipeline: KanbanSquare,
   attorney_incoming_matters: ClipboardList,
   attorney_leads: Users,
@@ -305,7 +304,7 @@ function Sidebar() {
   const [expandedMenus, setExpandedMenus] = useState(() => ({
     intelligence_beta: isIntelligencePath,
   }))
-  const [logoLoadFailure, setLogoLoadFailure] = useState({ url: '', failed: false })
+  const [logoLoadState, setLogoLoadState] = useState({ url: '', status: 'idle' })
   const secondaryItems = useMemo(
     () =>
       filterNavigationItems(
@@ -423,9 +422,24 @@ function Sidebar() {
     setWorkspace(allWorkspace)
   }, [allWorkspace, role, setWorkspace, workspace.id])
 
-  const logoLoadFailed = logoLoadFailure.url === branding.logoUrl && logoLoadFailure.failed
+  const currentLogoLoadStatus = logoLoadState.url === branding.logoUrl ? logoLoadState.status : 'loading'
+  const logoLoadFailed = currentLogoLoadStatus === 'failed'
+  const logoLoaded = currentLogoLoadStatus === 'loaded'
   const showOrganisationBranding = Boolean(branding.logoUrl) && !logoLoadFailed
   const showBrandPlaceholder = organisationLoading || (Boolean(branding.logoUrl) && logoLoadFailed)
+  const handleLogoLoadFailure = () => {
+    setLogoLoadState({ url: branding.logoUrl, status: 'failed' })
+    void trackWorkspaceBrandingMetric('workspace_branding_image_failed', {
+      userId: workspaceContext.profile?.id,
+      workspaceId: workspaceContext.currentWorkspace?.id,
+      workspaceType: workspaceContext.workspaceType,
+      membershipSource: workspaceContext.currentMembership?.source,
+      membershipSources: workspaceContext.currentMemberships?.map((membership) => membership?.source),
+      brandingSource: workspaceContext.currentWorkspace?.brandingSource,
+      logoPresent: Boolean(branding.logoUrl),
+      severity: 'warning',
+    })
+  }
 
   useEffect(() => {
     let active = true
@@ -466,16 +480,17 @@ function Sidebar() {
         <div className="ui-sidebar-brand">
           {showOrganisationBranding ? (
             <div className="ui-sidebar-brand-org">
-              <div className="ui-sidebar-brand-logo-wrap">
+              <div className={`ui-sidebar-brand-logo-wrap ${logoLoaded ? 'ui-sidebar-brand-logo-wrap-loaded' : 'ui-sidebar-brand-logo-wrap-loading'}`.trim()}>
+                {!logoLoaded ? <span className="ui-sidebar-brand-logo-placeholder" aria-hidden="true" /> : null}
                 <img
                   key={branding.logoUrl}
                   src={branding.logoUrl}
                   alt={`${branding.organisationLabel || 'Organisation'} logo`}
-                  className="ui-sidebar-brand-logo"
+                  className={`ui-sidebar-brand-logo ${logoLoaded ? 'ui-sidebar-brand-logo-loaded' : 'ui-sidebar-brand-logo-pending'}`.trim()}
                   loading="eager"
                   decoding="async"
-                  onLoad={() => setLogoLoadFailure({ url: branding.logoUrl, failed: false })}
-                  onError={() => setLogoLoadFailure({ url: branding.logoUrl, failed: true })}
+                  onLoad={() => setLogoLoadState({ url: branding.logoUrl, status: 'loaded' })}
+                  onError={handleLogoLoadFailure}
                 />
               </div>
             </div>

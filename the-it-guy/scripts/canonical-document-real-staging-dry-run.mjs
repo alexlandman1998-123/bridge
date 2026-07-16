@@ -1,4 +1,5 @@
 import { createServer } from 'vite'
+import { assertCanonicalVerificationDataSource } from './canonical-document-verification-data-guard.mjs'
 
 const TABLES = Object.freeze([
   'document_definitions',
@@ -14,7 +15,6 @@ const TABLES = Object.freeze([
   'document_requirement_reminders',
 ])
 
-const PAGE_SIZE = 1000
 const MAX_ROWS_PER_TABLE = Number(process.env.CANONICAL_DRY_RUN_MAX_ROWS || 5000)
 const SNAPSHOT_RPC = 'canonical_document_verification_snapshot'
 const SNAPSHOT_TRANSACTION_ID = normalizeText(process.env.CANONICAL_DRY_RUN_TRANSACTION_ID)
@@ -26,18 +26,6 @@ function normalizeText(value) {
 
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
-}
-
-function isMissingTableError(error = {}) {
-  const code = normalizeText(error.code)
-  const message = normalizeText(error.message || error.details || error.hint).toLowerCase()
-  return code === '42P01' || message.includes('does not exist') || message.includes('could not find the table')
-}
-
-function isMissingColumnError(error = {}) {
-  const code = normalizeText(error.code)
-  const message = normalizeText(error.message || error.details || error.hint).toLowerCase()
-  return code === '42703' || code === 'PGRST204' || message.includes('column') || message.includes('schema cache')
 }
 
 function rowContextId(row = {}) {
@@ -66,55 +54,6 @@ function groupCounts(rows = [], keyFn) {
 
 function safeJson(value) {
   return JSON.stringify(value, null, 2)
-}
-
-async function countTable(client, table) {
-  const result = await client.from(table).select('*', { count: 'exact', head: true })
-  if (result.error) {
-    if (isMissingTableError(result.error)) return { available: false, count: 0, error: result.error.message }
-    return { available: true, count: null, error: result.error.message }
-  }
-  return { available: true, count: result.count || 0, error: null }
-}
-
-async function fetchTable(client, table) {
-  const count = await countTable(client, table)
-  if (!count.available) return { table, available: false, totalRows: 0, fetchedRows: 0, rows: [], error: count.error }
-
-  const rows = []
-  let from = 0
-  while (from < MAX_ROWS_PER_TABLE) {
-    const to = Math.min(from + PAGE_SIZE - 1, MAX_ROWS_PER_TABLE - 1)
-    const result = await client
-      .from(table)
-      .select('*')
-      .range(from, to)
-    if (result.error) {
-      if (isMissingTableError(result.error)) return { table, available: false, totalRows: 0, fetchedRows: 0, rows: [], error: result.error.message }
-      return { table, available: true, totalRows: count.count, fetchedRows: rows.length, rows, error: result.error.message }
-    }
-    rows.push(...(result.data || []))
-    if (!result.data?.length || result.data.length < PAGE_SIZE) break
-    from += PAGE_SIZE
-  }
-
-  return {
-    table,
-    available: true,
-    totalRows: count.count,
-    fetchedRows: rows.length,
-    truncated: count.count !== null && rows.length < count.count,
-    rows,
-    error: count.error,
-  }
-}
-
-async function fetchAllTables(client) {
-  const output = {}
-  for (const table of TABLES) {
-    output[table] = await fetchTable(client, table)
-  }
-  return output
 }
 
 async function fetchVerificationSnapshot(client) {
@@ -147,11 +86,13 @@ async function fetchVerificationSnapshot(client) {
 
 async function fetchVerificationTables(client) {
   const snapshot = await fetchVerificationSnapshot(client)
-  if (snapshot.available) return snapshot.tables
-
-  const directTables = await fetchAllTables(client)
-  directTables.__snapshot_error = snapshot.error
-  return directTables
+  assertCanonicalVerificationDataSource({
+    snapshotAvailable: snapshot.available,
+    snapshotError: snapshot.error,
+    tables: snapshot.tables,
+    scoped: Boolean(SNAPSHOT_TRANSACTION_ID || SNAPSHOT_FIXTURE),
+  })
+  return snapshot.tables
 }
 
 function mergePacketVersionRows(packetVersions = [], packets = []) {
@@ -337,8 +278,8 @@ async function main() {
       externalRemindersEnabled: false,
       hardWorkflowBlocksEnabled: false,
       maxRowsPerTable: MAX_ROWS_PER_TABLE,
-      dataSource: tables.__snapshot_error ? 'direct_table_reads' : SNAPSHOT_RPC,
-      snapshotRpcError: tables.__snapshot_error || null,
+      dataSource: SNAPSHOT_RPC,
+      snapshotRpcError: null,
       tablesInspected: TABLES,
       rowCounts: tableSummary,
       paritySummary: parity.summary,

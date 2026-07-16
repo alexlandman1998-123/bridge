@@ -1,4 +1,5 @@
 import { generateMandateDocumentFromTemplate, generateOtpDocumentFromTemplate } from '../../lib/api'
+import { assertLegalTemplateApproved } from './legalTemplateApproval'
 import {
   addPacketEvent,
   archiveDocumentPacket,
@@ -2563,6 +2564,23 @@ export async function generatePacketVersion({
 
   const { packet, validation } = prepared
   const effectiveTemplate = prepared.template || template || null
+  try {
+    assertLegalTemplateApproved(effectiveTemplate, { expectedPacketType: validation.packetType })
+  } catch (approvalError) {
+    await addPacketEvent({
+      packetId: packet.id,
+      organisationId: packet.organisation_id,
+      eventType: 'legal_template_approval_blocked',
+      eventPayload: {
+        activity_type: 'legal_template_approval_blocked',
+        packetType: validation.packetType,
+        templateId: effectiveTemplate?.id || null,
+        blockerCodes: approvalError?.details?.reasons || [],
+        message: 'Generation blocked because the selected legal template is not approved.',
+      },
+    }).catch(() => null)
+    throw approvalError
+  }
   const isMandatePacket = validation.packetType === 'mandate'
   const hasConditionalPackBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'conditional_pack')
   const hasLegalScenarioBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'legal_scenario')
@@ -2660,9 +2678,15 @@ export async function generatePacketVersion({
 
   try {
     if (validation.packetType === 'otp') {
+      const templateConfig = resolveTemplateConfig(effectiveTemplate)
       const otpResult = await withPacketRetries(() => generateOtpDocumentFromTemplate({
         transactionId: context?.transaction?.id || context?.transactionId,
+        templateId: effectiveTemplate?.id || '',
         specialConditions: context?.specialConditions || '',
+        templatePath: templateConfig.templatePath,
+        templateBucket: templateConfig.templateBucket,
+        templateFilename: templateConfig.templateFilename,
+        outputBucket: templateConfig.outputBucket,
         placeholders: pdfPlaceholders,
         sourceContext: sourceContextSnapshot,
         generatedByRole: context?.generatedByRole || '',

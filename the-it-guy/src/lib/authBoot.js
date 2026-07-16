@@ -189,6 +189,12 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
       pendingMemberships: [],
       suspendedMemberships: [],
       currentMembership: null,
+      currentMemberships: [],
+      membershipContexts: {
+        effective: null,
+        organisation: null,
+        attorneyFirm: null,
+      },
       currentWorkspace: null,
       workspaceType: '',
       onboardingComplete: false,
@@ -247,6 +253,8 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
   let pendingMemberships = workspaceResolution.pendingMemberships
   let suspendedMemberships = workspaceResolution.suspendedMemberships
   let currentMembership = workspaceResolution.currentMembership
+  let currentMemberships = workspaceResolution.currentMemberships
+  let membershipContexts = workspaceResolution.membershipContexts
   let currentWorkspace = workspaceResolution.currentWorkspace
   let workspaceType = workspaceResolution.workspaceType || inferWorkspaceTypeFromAppRole(appRole)
   let onboarding = deriveAuthBootOnboardingState({
@@ -301,6 +309,8 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
       pendingMemberships = workspaceResolution.pendingMemberships
       suspendedMemberships = workspaceResolution.suspendedMemberships
       currentMembership = workspaceResolution.currentMembership
+      currentMemberships = workspaceResolution.currentMemberships
+      membershipContexts = workspaceResolution.membershipContexts
       currentWorkspace = workspaceResolution.currentWorkspace
       workspaceType = workspaceResolution.workspaceType || inferWorkspaceTypeFromAppRole(appRole)
       onboarding = deriveAuthBootOnboardingState({
@@ -392,6 +402,8 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
       pendingMemberships = workspaceResolution.pendingMemberships
       suspendedMemberships = workspaceResolution.suspendedMemberships
       currentMembership = workspaceResolution.currentMembership
+      currentMemberships = workspaceResolution.currentMemberships
+      membershipContexts = workspaceResolution.membershipContexts
       currentWorkspace = workspaceResolution.currentWorkspace
       workspaceType = workspaceResolution.workspaceType || inferWorkspaceTypeFromAppRole(appRole)
       onboarding = deriveAuthBootOnboardingState({
@@ -467,6 +479,8 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     pendingMemberships,
     suspendedMemberships,
     currentMembership,
+    currentMemberships,
+    membershipContexts,
     currentWorkspace,
     workspaceType,
     workspaceRole: workspaceResolution.workspaceRole,

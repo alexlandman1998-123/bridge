@@ -155,6 +155,8 @@ assert.equal(resolveCrossModuleDocumentKey('buyer_fica'), 'buyer_id_document')
 assert.equal(resolveCrossModuleDocumentKey('bond_grant_letter'), 'grant_letter')
 assert.equal(resolveCrossModuleDocumentKey('cancellation_instruction'), 'bond_cancellation_notice')
 assert.equal(resolveCrossModuleDocumentKey('seller_company_resolution'), 'company_resolution_to_sell')
+assert.equal(resolveCrossModuleDocumentKey('income_tax_number'), 'seller_tax_number')
+assert.equal(resolveCrossModuleDocumentKey('alteration_approvals'), 'alteration_approvals')
 
 const definitions = listCrossModuleDocumentDefinitions()
 for (const role of DOCUMENT_PARTY_ROLES) {
@@ -171,6 +173,7 @@ assert.equal(getCrossModuleDocumentDefinition('transfer_documents')?.ownerRole, 
 assert.equal(getCrossModuleDocumentDefinition('bond_documents')?.ownerRole, 'bond_attorney')
 assert.equal(getCrossModuleDocumentDefinition('cancellation_instruction')?.ownerRole, 'cancellation_attorney')
 assert.equal(getCrossModuleDocumentDefinition('bond_instruction')?.ownerRole, 'bond_originator')
+assert.equal(getCrossModuleDocumentDefinition('alteration_approvals')?.packKey, 'property_compliance')
 
 const totalHarvestedKeys = Object.values(groups).reduce((total, values) => total + values.length, 0)
 console.log(`cross-module document key map audit passed (${totalHarvestedKeys} harvested keys across ${Object.keys(groups).length} groups)`)

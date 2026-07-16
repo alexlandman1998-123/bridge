@@ -129,6 +129,131 @@ try {
   assert.equal(attorney.currentWorkspace.organisationId, attorneyFirm.organisation_id)
   assert.equal(attorney.currentWorkspace.logoUrl, attorneyFirm.logo_url)
 
+  function resolveDuplicateAttorneyWorkspace({ organisationMembershipId, attorneyMembershipId }) {
+    const sharedWorkspaceId = '55555555-5555-4555-8555-555555555555'
+    const sharedOrganisation = {
+      id: sharedWorkspaceId,
+      name: 'Young Law Fixture',
+      type: 'attorney_firm',
+    }
+    const sharedAttorneyFirm = {
+      id: sharedWorkspaceId,
+      organisation_id: sharedWorkspaceId,
+      name: 'Young Law Fixture',
+      logo_url: 'https://example.test/young-law-logo.png',
+    }
+
+    return buildWorkspaceResolution({
+      user,
+      profile: {
+        ...attorneyProfile,
+        primary_attorney_firm_id: sharedWorkspaceId,
+      },
+      organisationRows: [sharedOrganisation],
+      attorneyFirmRows: [sharedAttorneyFirm],
+      organisationMembershipRows: [{
+        id: organisationMembershipId,
+        organisation_id: sharedWorkspaceId,
+        user_id: user.id,
+        role: 'owner',
+        workspace_role: 'owner',
+        workspace_type: 'attorney_firm',
+        status: 'active',
+      }],
+      attorneyMembershipRows: [{
+        id: attorneyMembershipId,
+        firm_id: sharedWorkspaceId,
+        user_id: user.id,
+        role: 'firm_admin',
+        status: 'active',
+      }],
+      requestedWorkspaceId: sharedWorkspaceId,
+    })
+  }
+
+  const duplicateOrganisationFirst = resolveDuplicateAttorneyWorkspace({
+    organisationMembershipId: '100-organisation-membership',
+    attorneyMembershipId: '900-attorney-membership',
+  })
+  const duplicateAttorneyFirst = resolveDuplicateAttorneyWorkspace({
+    organisationMembershipId: '900-organisation-membership',
+    attorneyMembershipId: '100-attorney-membership',
+  })
+
+  for (const resolution of [duplicateOrganisationFirst, duplicateAttorneyFirst]) {
+    assert.equal(resolution.ok, true)
+    assert.equal(resolution.currentWorkspace.id, '55555555-5555-4555-8555-555555555555')
+    assert.equal(resolution.currentWorkspace.logoUrl, 'https://example.test/young-law-logo.png')
+    assert.equal(resolution.currentWorkspace.brandingSource, 'attorney_firm_members')
+    assert.equal(resolution.currentMembership.source, 'attorney_firm_members')
+    assert.equal(resolution.currentMemberships.length, 2)
+    assert.equal(resolution.membershipContexts.effective.source, 'attorney_firm_members')
+    assert.equal(resolution.membershipContexts.attorneyFirm.source, 'attorney_firm_members')
+    assert.equal(resolution.membershipContexts.organisation.source, 'organisation_users')
+    assert.equal(resolution.diagnostics.currentMembershipSource, 'attorney_firm_members')
+    assert.equal(resolution.diagnostics.membershipSourceOverlap, true)
+    assert.deepEqual(resolution.diagnostics.membershipSources, ['attorney_firm_members', 'organisation_users'])
+    assert.deepEqual(resolution.diagnostics.branding, {
+      logoPresent: true,
+      source: 'attorney_firm_members',
+    })
+    assert.deepEqual(
+      resolution.currentMemberships.map((membership) => membership.source).sort(),
+      ['attorney_firm_members', 'organisation_users'],
+    )
+  }
+
+  assert.deepEqual(
+    {
+      workspace: duplicateOrganisationFirst.currentWorkspace,
+      effectiveMembershipSource: duplicateOrganisationFirst.currentMembership.source,
+    },
+    {
+      workspace: duplicateAttorneyFirst.currentWorkspace,
+      effectiveMembershipSource: duplicateAttorneyFirst.currentMembership.source,
+    },
+  )
+
+  const splitIdentityFirm = {
+    id: '66666666-6666-4666-8666-666666666666',
+    organisation_id: '77777777-7777-4777-8777-777777777777',
+    name: 'Split Identity Law',
+    logo_url: 'https://example.test/split-identity-logo.png',
+  }
+  const splitIdentityResolution = buildWorkspaceResolution({
+    user,
+    profile: { ...attorneyProfile, primary_attorney_firm_id: splitIdentityFirm.id },
+    organisationRows: [{
+      id: splitIdentityFirm.organisation_id,
+      name: splitIdentityFirm.name,
+      type: 'attorney_firm',
+    }],
+    attorneyFirmRows: [splitIdentityFirm],
+    organisationMembershipRows: [{
+      id: 'split-organisation-membership',
+      organisation_id: splitIdentityFirm.organisation_id,
+      user_id: user.id,
+      role: 'owner',
+      workspace_type: 'attorney_firm',
+      status: 'active',
+    }],
+    attorneyMembershipRows: [{
+      id: 'split-attorney-membership',
+      firm_id: splitIdentityFirm.id,
+      user_id: user.id,
+      role: 'firm_admin',
+      status: 'active',
+    }],
+    requestedWorkspaceId: splitIdentityFirm.id,
+  })
+
+  assert.equal(splitIdentityResolution.currentWorkspace.id, splitIdentityFirm.id)
+  assert.equal(splitIdentityResolution.currentWorkspace.logoUrl, splitIdentityFirm.logo_url)
+  assert.equal(splitIdentityResolution.currentMembership.source, 'attorney_firm_members')
+  assert.equal(splitIdentityResolution.currentMemberships.length, 2)
+  assert.equal(splitIdentityResolution.membershipContexts.organisation.workspaceId, splitIdentityFirm.id)
+  assert.equal(splitIdentityResolution.diagnostics.membershipSourceOverlap, true)
+
   assert.throws(
     () => assertResolvedWorkspaceContext({ organisationId: 'default', appRole: 'agent' }),
     /resolved workspace context|required/i,

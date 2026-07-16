@@ -7,6 +7,7 @@ import {
   TEMPLATE_RENDER_MODES,
   renderStructuredTemplate,
 } from "../../../the-it-guy/src/core/documents/structuredTemplateRenderer.js";
+import { assertLegalTemplateApproved } from "../../../the-it-guy/src/core/documents/legalTemplateApproval.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -88,6 +89,64 @@ function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+async function requireCaller(supabase: any, req: Request) {
+  const authorization = normalizeText(req.headers.get("authorization"));
+  const token = authorization.toLowerCase().startsWith("bearer ") ? authorization.slice(7).trim() : "";
+  if (!token) throw Object.assign(new Error("Authentication is required."), { code: "AUTH_REQUIRED", status: 401 });
+  const userResult = await supabase.auth.getUser(token);
+  if (userResult.error || !userResult.data.user) {
+    throw Object.assign(new Error("The authenticated user could not be verified."), { code: "AUTH_INVALID", status: 401 });
+  }
+  return userResult.data.user;
+}
+
+async function requireApprovedMandateTemplate({ supabase, packetId, requestedTemplateId, templatePath, templateBucket, templateBase64, renderMode }: {
+  supabase: any;
+  packetId: string;
+  requestedTemplateId: string;
+  templatePath: string;
+  templateBucket: string;
+  templateBase64: string;
+  renderMode: string;
+}) {
+  const packetResult = await supabase
+    .from("document_packets")
+    .select("id, template_id, packet_type, organisation_id")
+    .eq("id", packetId)
+    .maybeSingle();
+  if (packetResult.error) throw packetResult.error;
+  const packetTemplateId = normalizeText(packetResult.data?.template_id);
+  if (!packetResult.data || !packetTemplateId || (requestedTemplateId && requestedTemplateId !== packetTemplateId)) {
+    throw Object.assign(new Error("The packet is not linked to the selected approved mandate template."), { code: "LEGAL_TEMPLATE_SOURCE_MISMATCH", status: 422 });
+  }
+  const templateResult = await supabase
+    .from("document_packet_templates")
+    .select("id, packet_type, template_key, status, is_active, template_storage_bucket, template_storage_path, metadata_json")
+    .eq("id", packetTemplateId)
+    .maybeSingle();
+  if (templateResult.error) throw templateResult.error;
+  if (!templateResult.data) throw Object.assign(new Error("The selected mandate template was not found."), { code: "LEGAL_TEMPLATE_APPROVAL_REQUIRED", status: 422 });
+  const assessment = assertLegalTemplateApproved(templateResult.data, { expectedPacketType: "mandate" });
+  requirePilotOrganisation(packetResult.data.organisation_id);
+  if (renderMode !== TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED) {
+    const approvedPath = normalizeText(templateResult.data.template_storage_path);
+    const approvedBucket = normalizeText(templateResult.data.template_storage_bucket);
+    if (templateBase64 || !approvedPath || templatePath !== approvedPath || (approvedBucket && templateBucket !== approvedBucket)) {
+      throw Object.assign(new Error("Mandate generation must use the exact approved template source."), { code: "LEGAL_TEMPLATE_SOURCE_MISMATCH", status: 422 });
+    }
+  }
+  return assessment;
+}
+
+function requirePilotOrganisation(organisationId: unknown) {
+  const enabled = normalizeText(Deno.env.get("LEGAL_DOCUMENT_PILOT_ENABLED")).toLowerCase() === "true";
+  const cohort = String(Deno.env.get("LEGAL_DOCUMENT_PILOT_ORGANISATION_IDS") || "").split(",").map((value) => value.trim()).filter(Boolean);
+  if (!enabled) throw Object.assign(new Error("Legal document pilot generation is not enabled."), { code: "LEGAL_DOCUMENT_PILOT_DISABLED", status: 503 });
+  if (!normalizeText(organisationId) || !cohort.includes(normalizeText(organisationId))) {
+    throw Object.assign(new Error("This organisation is not in the controlled legal document pilot."), { code: "LEGAL_DOCUMENT_PILOT_ACCESS_REQUIRED", status: 403 });
+  }
+}
+
 function decodeBase64ToBytes(base64Value: string) {
   const normalized = base64Value.includes(",") ? base64Value.split(",").pop() || "" : base64Value;
   const binary = atob(normalized);
@@ -134,7 +193,7 @@ function inferOutputFileName({ leadId, packetId, renderMode }: { leadId: string 
   return `${base}-mandate-${Date.now()}.${extension}`;
 }
 
-function safePlaceholderValue(value: unknown) {
+function safePlaceholderValue(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
@@ -308,6 +367,8 @@ Deno.serve(async (req: Request) => {
     return jsonResponse(405, { success: false, error: "Method not allowed." });
   }
 
+  const startedAt = Date.now();
+  const requestId = normalizeText(req.headers.get("x-request-id")) || crypto.randomUUID();
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -373,20 +434,25 @@ Deno.serve(async (req: Request) => {
     const outputBucketName = outputBucket || bucketCandidates[0] || "documents";
     const appBaseUrl = normalizeText(Deno.env.get("PUBLIC_APP_URL") || Deno.env.get("VITE_PUBLIC_APP_URL") || Deno.env.get("VITE_SITE_URL"));
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const supabase: any = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const requestedTemplateId = normalizeText((generationPayload as Record<string, unknown>)?.template && ((generationPayload as Record<string, unknown>).template as Record<string, unknown>)?.id);
+    const caller = await requireCaller(supabase, req);
+    const approval = await requireApprovedMandateTemplate({ supabase, packetId, requestedTemplateId, templatePath, templateBucket, templateBase64, renderMode });
+    console.log(JSON.stringify({ level: "info", event: "legal_document_generation_started", requestId, packetType: "mandate", templateId: approval.templateId, packetId, userId: caller.id }));
     let outputBytes: Uint8Array;
     let generatedFileName = inferOutputFileName({ leadId, packetId, renderMode });
     let filePath = `packet-${packetId}/mandate-documents/${generatedFileName}`;
     let contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-    let nativeRender = null as null | ReturnType<typeof renderStructuredTemplate>;
+    let nativeRender: any = null;
 
     if (renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED) {
-      nativeRender = renderStructuredTemplate({
+      const generationTemplate = ((generationPayload as Record<string, unknown>).template || {}) as Record<string, unknown>;
+      nativeRender = (renderStructuredTemplate as any)({
         packetType: "mandate",
         template: {
           packet_type: "mandate",
           render_mode: TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED,
-          template_label: normalizeText((generationPayload as Record<string, unknown>)?.template?.label || "Mandate Agreement"),
+          template_label: normalizeText(generationTemplate.label || "Mandate Agreement"),
           metadata_json: {
             render_mode: TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED,
           },
@@ -520,8 +586,10 @@ Deno.serve(async (req: Request) => {
       .from(outputBucketName)
       .createSignedUrl(filePath, 60 * 60);
 
+    console.log(JSON.stringify({ level: "info", event: "legal_document_generation_completed", requestId, packetType: "mandate", templateId: approval.templateId, packetId, durationMs: Date.now() - startedAt, outputBytes: outputBytes.length }));
     return jsonResponse(200, {
       success: true,
+      legalApproval: { verified: true, reference: approval.approval.reference },
       packetId,
       transactionId,
       leadId,
@@ -554,12 +622,14 @@ Deno.serve(async (req: Request) => {
       },
     });
   } catch (error) {
-    console.error("generate-mandate failed", error);
-    const details = String(error);
-    return jsonResponse(500, {
+    const typed = error as { code?: string; status?: number; message?: string; details?: unknown };
+    console.error(JSON.stringify({ level: "error", event: "legal_document_generation_failed", requestId, packetType: "mandate", errorCode: typed.code || "MANDATE_GENERATION_FAILED", durationMs: Date.now() - startedAt, error: typed.message || String(error) }));
+    const details = typed.message || String(error);
+    return jsonResponse(typed.status || (typed.code === "LEGAL_TEMPLATE_APPROVAL_REQUIRED" ? 422 : 500), {
       success: false,
       error: details,
-      errorCode: mapFailureCodeFromMessage(details),
+      errorCode: typed.code || mapFailureCodeFromMessage(details),
+      details: typed.details || null,
     });
   }
 });

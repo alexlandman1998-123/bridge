@@ -42,7 +42,7 @@ The browser never supplies the recipient email, recipient name, firm identity, q
 
 ## Deployment gate
 
-1. Apply migrations through `202607160012`.
+1. Apply migrations through `202607160018`.
 2. Deploy the updated `send-email` function with `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, and `PUBLIC_APP_URL` or `CLIENT_APP_URL` configured.
 3. Run `npm run verify:attorney-leads-phase13`.
 4. Send a staging quote to a controlled inbox and verify HTML, plain-text fallback, branding, fee values, reply-to, and URL host.

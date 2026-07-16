@@ -66,15 +66,15 @@ async function main() {
   try {
     await page.goto(`${appUrl}/auth`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
     await page.getByLabel(/email/i).fill(email)
-    await page.getByLabel(/password/i).fill(password)
-    await page.getByRole('button', { name: /sign in securely|launch workspace/i }).click()
+    await page.getByLabel(/^password$/i).fill(password)
+    await page.getByRole('button', { name: /^(sign in|sign in securely|launch workspace)$/i }).click()
     await page.waitForURL((url) => !url.pathname.startsWith('/auth'), { timeout: 60_000 })
     await page.context().storageState({ path: AUTH_STATE_PATH })
     console.log(safeJson({
       ok: true,
       appUrl,
       authStatePath: AUTH_STATE_PATH,
-      email,
+      actorEmailPrinted: false,
       passwordPrinted: false,
       finalUrl: page.url(),
       consoleErrorCount: consoleErrors.length,

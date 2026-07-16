@@ -1,6 +1,7 @@
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 import { createTransactionFromLeadOverride, findExistingTransactionForAcceptedOffer } from './transactionLifecycleService'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService.js'
+import { prepareAgentLegalHandoff } from '../services/agentLegalHandoffService.js'
 import { getListingReadinessSummary } from './privateListingRequirementEngine.js'
 import { updatePrivateListing } from '../services/privateListingService.js'
 
@@ -200,6 +201,27 @@ function jsonObject(value) {
 function normalizeDate(value) {
   const normalized = normalizeText(value)
   return normalized || null
+}
+
+async function attachLegalHandoff(result = {}, transactionId = '') {
+  const normalizedTransactionId = normalizeText(transactionId || result?.transactionId || result?.transactionRow?.transaction?.id)
+  if (!normalizedTransactionId) return result
+  try {
+    return {
+      ...result,
+      legalHandoff: await prepareAgentLegalHandoff(normalizedTransactionId),
+    }
+  } catch (handoffError) {
+    return {
+      ...result,
+      legalHandoff: {
+        prepared: false,
+        transactionId: normalizedTransactionId,
+        error: handoffError?.message || 'Legal handoff preparation failed.',
+      },
+      warning: result?.warning || 'legal_handoff_needs_retry',
+    }
+  }
 }
 
 export function isOfferPastExpiry(offer = {}) {
@@ -2331,7 +2353,7 @@ export async function createTransactionFromAcceptedCanonicalOffer({
       activityNote: 'Existing transaction reused for this accepted buyer offer.',
     })
 
-    return {
+    return attachLegalHandoff({
       transactionId: linkedTransactionId,
       existing: true,
       alreadyConverted: true,
@@ -2344,7 +2366,7 @@ export async function createTransactionFromAcceptedCanonicalOffer({
         },
       },
       warning: 'existing_offer_transaction_reused',
-    }
+    }, linkedTransactionId)
   }
 
   const existingAcceptedOfferTransaction = await findExistingTransactionForAcceptedOffer({
@@ -2365,7 +2387,7 @@ export async function createTransactionFromAcceptedCanonicalOffer({
       activityNote: 'Existing transaction reused from the accepted-offer conversion record.',
     })
 
-    return {
+    return attachLegalHandoff({
       transactionId: reusedTransactionId,
       existing: true,
       alreadyConverted: canonicalOfferStatus === 'converted_to_transaction',
@@ -2374,11 +2396,27 @@ export async function createTransactionFromAcceptedCanonicalOffer({
         transaction: existingAcceptedOfferTransaction,
       },
       warning: 'existing_offer_transaction_reused',
-    }
+    }, reusedTransactionId)
   }
 
   if (canonicalOfferStatus !== 'accepted') {
     throw new Error('Only an accepted offer can be converted to a transaction.')
+  }
+
+  let canonicalListing = listing
+  const canonicalListingId = toNullableUuid(canonicalOffer.listingId || payload?.listingId || listing?.id)
+  if (canonicalListingId) {
+    const listingQuery = await supabase
+      .from('private_listings')
+      .select('*')
+      .eq('id', canonicalListingId)
+      .eq('organisation_id', scopedOrganisationId)
+      .maybeSingle()
+    if (!listingQuery.error && listingQuery.data) {
+      canonicalListing = { ...listingQuery.data, ...(listing || {}) }
+    } else if (listingQuery.error && !isMissingTableError(listingQuery.error, 'private_listings')) {
+      throw listingQuery.error
+    }
   }
 
   const buyerLead = lead || {
@@ -2406,11 +2444,11 @@ export async function createTransactionFromAcceptedCanonicalOffer({
     financeType: canonicalOffer.financeType || payload?.financeType,
     purchaserType: canonicalOffer.conditions?.buyerType || canonicalOffer.conditions?.purchaserType || payload?.purchaserType || 'individual',
     buyerEntityType: canonicalOffer.conditions?.buyerType || canonicalOffer.conditions?.purchaserType || payload?.buyerEntityType || payload?.purchaserType || 'individual',
-    sellerEntityType: listing?.sellerType || listing?.seller_type || listing?.seller?.sellerType || listing?.seller?.type || payload?.sellerEntityType || payload?.sellerType,
-    sellerHasExistingBond: listing?.sellerHasExistingBond ?? listing?.seller_has_existing_bond ?? listing?.seller?.hasExistingBond ?? payload?.sellerHasExistingBond,
-    cancellationRequired: listing?.cancellationRequired ?? listing?.cancellation_required ?? payload?.cancellationRequired,
-    propertyTenure: listing?.propertyTenure || listing?.property_tenure || listing?.propertyStructureType || listing?.property_structure_type || payload?.propertyTenure,
-    vatTreatment: listing?.vatTreatment || listing?.vat_treatment || listing?.sellerOnboarding?.formData?.vatTreatment || payload?.vatTreatment,
+    sellerEntityType: canonicalListing?.sellerType || canonicalListing?.seller_type || canonicalListing?.seller?.sellerType || canonicalListing?.seller?.type || payload?.sellerEntityType || payload?.sellerType,
+    sellerHasExistingBond: canonicalListing?.sellerHasExistingBond ?? canonicalListing?.seller_has_existing_bond ?? canonicalListing?.existing_bond ?? canonicalListing?.seller?.hasExistingBond ?? payload?.sellerHasExistingBond,
+    cancellationRequired: canonicalListing?.cancellationRequired ?? canonicalListing?.cancellation_required ?? payload?.cancellationRequired,
+    propertyTenure: canonicalListing?.propertyTenure || canonicalListing?.property_tenure || canonicalListing?.propertyStructureType || canonicalListing?.property_structure_type || payload?.propertyTenure,
+    vatTreatment: canonicalListing?.vatTreatment || canonicalListing?.vat_treatment || canonicalListing?.sellerOnboarding?.formData?.vatTreatment || payload?.vatTreatment,
     assignedAgentId: canonicalOffer.agentId || payload?.assignedAgentId || actor?.id,
     assignedAgentName: payload?.assignedAgentName || actor?.name,
     assignedAgentEmail: payload?.assignedAgentEmail || actor?.email,
@@ -2423,15 +2461,15 @@ export async function createTransactionFromAcceptedCanonicalOffer({
   }
   conversionPayload.routingProfile = resolveTransactionRoutingProfile({
     transaction: conversionPayload,
-    listing,
+    listing: canonicalListing,
     offer: canonicalOffer,
     buyerLead,
-    sellerOnboarding: listing?.sellerOnboarding,
+    sellerOnboarding: canonicalListing?.sellerOnboarding,
   })
 
   const created = await createTransactionFromLeadOverride({
     lead: buyerLead,
-    listing,
+    listing: canonicalListing,
     actor,
     payload: conversionPayload,
   })
@@ -2449,7 +2487,7 @@ export async function createTransactionFromAcceptedCanonicalOffer({
     })
   }
 
-  return created
+  return attachLegalHandoff(created, transactionId)
 }
 
 export async function upsertAcceptedOfferOnboardingPrefill({ transactionId = '', offer = null, payload = {} } = {}) {

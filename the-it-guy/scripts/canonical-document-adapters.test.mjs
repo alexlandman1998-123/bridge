@@ -49,6 +49,8 @@ try {
   assert.equal(legacyRequirementKeyToCanonicalKey('mandate_signature'), 'signed_mandate')
   assert.equal(legacyRequirementKeyToCanonicalKey('otp'), 'signed_otp')
   assert.equal(legacyRequirementKeyToCanonicalKey('proof_of_address'), 'seller_proof_of_address')
+  assert.equal(legacyRequirementKeyToCanonicalKey('income_tax_number'), 'seller_tax_number')
+  assert.equal(legacyRequirementKeyToCanonicalKey('alteration_approvals'), 'alteration_approvals')
   assert.equal(legacyRequirementKeyToCanonicalKey('unknown_key'), 'unknown_key')
 
   const originalParityUnmappedKeys = [
@@ -85,6 +87,7 @@ try {
     assert.equal(legacyRequirementKeyToCanonicalKey(key), key)
   }
   const realStagingUnmappedKeys = [
+    'alteration_approvals',
     'bank_approval_to_lodge',
     'bank_requirements',
     'bank_statements',
@@ -106,6 +109,7 @@ try {
     'guarantee_letter',
     'guarantees',
     'income_verification',
+    'income_tax_number',
     'information_sheet',
     'levy_clearance',
     'otp',
@@ -145,6 +149,7 @@ try {
     final_account: 'transfer_documents',
     guarantee_letter: 'guarantees',
     income_verification: 'proof_of_income',
+    income_tax_number: 'seller_tax_number',
     levy_clearance: 'levy_clearance_certificate',
     proof_of_funds_cash_component: 'proof_of_funds',
     rates_clearance: 'rates_clearance_certificate',
@@ -172,6 +177,8 @@ try {
   assert.equal(legacyRequirementKeyToCanonicalKey('generated_offer_to_purchase'), 'generated_otp')
   assert.equal(legacyRequirementKeyToCanonicalKey('company_registration'), 'seller_company_registration')
   assert.equal(legacyRequirementKeyToCanonicalKey('executor_authority'), 'seller_executor_authority')
+  assert.equal(canonicalDefinitionKeyToLegacyKey('seller_tax_number'), 'income_tax_number')
+  assert.equal(canonicalDefinitionKeyToLegacyKey('alteration_approvals'), 'alteration_approvals')
   assert.deepEqual(
     getUnmappedLegacyRequirementKeys(originalParityUnmappedKeys.map((requirement_key) => ({ requirement_key }))),
     [],

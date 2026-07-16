@@ -51,10 +51,51 @@ function normalizePermissionKey(permission = '') {
   return normalizePermission(LEGACY_CAPABILITY_MAP[raw] || raw)
 }
 
-function activeMembershipFromContext(context = {}) {
-  const current = context.currentMembership || null
+function activeMembershipFromContext(context = {}, { appRole = '', workspaceType = '' } = {}) {
+  const membershipContexts = context.membershipContexts || {}
+  const current = membershipContexts.effective || context.currentMembership || null
+  const currentMemberships = Array.isArray(context.currentMemberships) ? context.currentMemberships : []
+  const prefersAttorneyMembership =
+    appRole === APP_ROLES.attorney || workspaceType === WORKSPACE_TYPES.attorneyFirm
+  const attorneyMembership =
+    membershipContexts.attorneyFirm ||
+    currentMemberships.find((membership) => membership?.source === 'attorney_firm_members') ||
+    null
+
+  if (
+    prefersAttorneyMembership &&
+    attorneyMembership?.id &&
+    isActiveMembershipStatus(attorneyMembership.status)
+  ) {
+    return attorneyMembership
+  }
   if (current?.id && isActiveMembershipStatus(current.status)) return current
+
+  const organisationMembership =
+    membershipContexts.organisation ||
+    currentMemberships.find((membership) =>
+      ['organisation_users', 'organization_members'].includes(membership?.source),
+    ) ||
+    null
+  if (organisationMembership?.id && isActiveMembershipStatus(organisationMembership.status)) {
+    return organisationMembership
+  }
+
   return (context.activeMemberships || []).find((membership) => membership?.id && isActiveMembershipStatus(membership.status)) || null
+}
+
+export function getActiveMembershipBySource(context = {}, source = 'effective') {
+  const normalizedSource = normalizeText(source)
+  const membershipContexts = context.membershipContexts || context.authState?.membershipContexts || {}
+  const currentMemberships = context.currentMemberships || context.authState?.currentMemberships || []
+  const membership =
+    normalizedSource === 'attorneyFirm'
+      ? membershipContexts.attorneyFirm || currentMemberships.find((item) => item?.source === 'attorney_firm_members')
+      : normalizedSource === 'organisation'
+        ? membershipContexts.organisation || currentMemberships.find((item) => ['organisation_users', 'organization_members'].includes(item?.source))
+        : membershipContexts.effective || context.currentMembership || context.authState?.currentMembership
+
+  return membership?.id && isActiveMembershipStatus(membership.status) ? membership : null
 }
 
 function normalizeBondScopeLevel(membership = {}, workspaceType = '', workspaceRole = '', appRole = '') {
@@ -93,7 +134,7 @@ export function resolvePermissionContext(context = {}) {
       context.currentMembership?.workspace?.type,
     inferWorkspaceTypeFromAppRole(appRole),
   )
-  const currentMembership = activeMembershipFromContext(context.authState || context)
+  const currentMembership = activeMembershipFromContext(context.authState || context, { appRole, workspaceType })
   const branchScope = normalizeBranchScope(
     context.branchScope || context.branch_scope || currentMembership?.branchScope || currentMembership?.branch_scope,
     getDefaultBranchScope(currentMembership?.workspaceRole || currentMembership?.workspace_role || context.organisationRole || context.membershipRole, {
@@ -140,6 +181,7 @@ export function resolvePermissionContext(context = {}) {
     workspaceRole: resolvedWorkspaceRole,
     membershipStatus,
     membership: currentMembership,
+    membershipContexts: context.membershipContexts || context.authState?.membershipContexts || null,
     workspace: context.currentWorkspace || context.authState?.currentWorkspace || currentMembership?.workspace || null,
     workspaceId,
     branchId,

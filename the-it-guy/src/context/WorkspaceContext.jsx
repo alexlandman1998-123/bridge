@@ -99,11 +99,13 @@ export function WorkspaceProvider({ children }) {
       profile,
       appRole: baseRole,
       currentMembership: authState.currentMembership,
+      currentMemberships: authState.currentMemberships,
+      membershipContexts: authState.membershipContexts,
       currentWorkspace: authState.currentWorkspace,
       workspaceType: authState.workspaceType,
       activeMemberships: authState.activeMemberships,
     }),
-    [authState.activeMemberships, authState.currentMembership, authState.currentWorkspace, authState.workspaceType, baseRole, profile],
+    [authState.activeMemberships, authState.currentMembership, authState.currentMemberships, authState.currentWorkspace, authState.membershipContexts, authState.workspaceType, baseRole, profile],
   )
   const permissionResolver = useMemo(() => createPermissionResolver(permissionContext), [permissionContext])
   const isAgentBaseRole = baseRole === 'agent'
@@ -233,6 +235,8 @@ export function WorkspaceProvider({ children }) {
       pendingMemberships: authState.pendingMemberships,
       suspendedMemberships: authState.suspendedMemberships,
       currentMembership: authState.currentMembership,
+      currentMemberships: authState.currentMemberships,
+      membershipContexts: authState.membershipContexts,
       currentWorkspace: authState.currentWorkspace,
       workspaceType: authState.workspaceType,
       workspaceRole: authState.workspaceRole,
@@ -254,6 +258,8 @@ export function WorkspaceProvider({ children }) {
       agencyWorkflowMode,
       authState.activeMemberships,
       authState.currentMembership,
+      authState.currentMemberships,
+      authState.membershipContexts,
       authState.currentWorkspace,
       authState.memberships,
       authState.pendingMemberships,

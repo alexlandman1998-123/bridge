@@ -35823,6 +35823,7 @@ export async function updateOtpDocumentWorkflowState({
 
 export async function generateOtpDocumentFromTemplate({
   transactionId,
+  templateId = '',
   specialConditions = '',
   templatePath = '',
   templateBucket = '',
@@ -35842,6 +35843,7 @@ export async function generateOtpDocumentFromTemplate({
 
   const payload = {
     transactionId: normalizedTransactionId,
+    templateId: String(templateId || '').trim() || undefined,
     specialConditions: String(specialConditions || '').trim(),
     templatePath: String(templatePath || '').trim() || undefined,
     templateBucket: String(templateBucket || '').trim() || undefined,

@@ -231,6 +231,167 @@ function membershipMatchesWorkspaceId(membership = null, workspaceId = '') {
   return Boolean(requestedWorkspaceId && (resolvedWorkspaceId === requestedWorkspaceId || membership?.id === requestedWorkspaceId))
 }
 
+function getMembershipSourcePriority(membership = null, { appRole = '', workspaceType = '' } = {}) {
+  const source = normalizeText(membership?.source)
+  const resolvedWorkspaceType = normalizeWorkspaceType(
+    workspaceType || membership?.workspaceType || membership?.workspace?.type,
+    inferWorkspaceTypeFromAppRole(appRole),
+  )
+  const prefersAttorneyMembership =
+    appRole === APP_ROLES.attorney || resolvedWorkspaceType === WORKSPACE_TYPES.attorneyFirm
+
+  if (prefersAttorneyMembership) {
+    if (source === 'attorney_firm_members') return 0
+    if (source === 'organisation_users' || source === 'organization_members') return 10
+    return 20
+  }
+
+  if (source === 'organisation_users' || source === 'organization_members') return 0
+  if (source === 'attorney_firm_members') return 10
+  return 20
+}
+
+function compareMembershipSources(left, right, context = {}) {
+  const priorityDifference =
+    getMembershipSourcePriority(left, context) - getMembershipSourcePriority(right, context)
+  if (priorityDifference !== 0) return priorityDifference
+
+  const leftKey = `${left?.source || ''}:${left?.id || ''}`
+  const rightKey = `${right?.source || ''}:${right?.id || ''}`
+  return leftKey.localeCompare(rightKey)
+}
+
+function groupMembershipsByWorkspaceId(memberships = []) {
+  const groupsByWorkspaceId = new Map()
+
+  for (const membership of memberships) {
+    const workspaceId = getMembershipWorkspaceId(membership)
+    if (!workspaceId) continue
+    const existing = groupsByWorkspaceId.get(workspaceId) || []
+    existing.push(membership)
+    groupsByWorkspaceId.set(workspaceId, existing)
+  }
+
+  return groupsByWorkspaceId
+}
+
+function isMissingCanonicalWorkspaceValue(value) {
+  return value === undefined || value === null || (typeof value === 'string' && !value.trim())
+}
+
+function getWorkspaceLogoUrl(workspace = null) {
+  return normalizeText(workspace?.logoUrl || workspace?.logo_url || workspace?.raw?.logo_url)
+}
+
+function buildCanonicalWorkspace(memberships = [], { appRole = '' } = {}) {
+  const candidates = memberships
+    .filter((membership) => membership?.workspace)
+    .sort((left, right) => compareMembershipSources(left, right, { appRole }))
+
+  const preferred = candidates[0]
+  if (!preferred?.workspace) return null
+
+  const canonicalWorkspace = { ...preferred.workspace }
+  for (const membership of candidates.slice(1)) {
+    for (const [key, value] of Object.entries(membership.workspace || {})) {
+      if (isMissingCanonicalWorkspaceValue(canonicalWorkspace[key]) && !isMissingCanonicalWorkspaceValue(value)) {
+        canonicalWorkspace[key] = value
+      }
+    }
+  }
+
+  const workspaceId = getMembershipWorkspaceId(preferred)
+  const sourceWorkspaceId = normalizeText(canonicalWorkspace.id)
+  canonicalWorkspace.id = workspaceId || sourceWorkspaceId
+  if (sourceWorkspaceId && sourceWorkspaceId !== canonicalWorkspace.id) {
+    canonicalWorkspace.sourceWorkspaceId = sourceWorkspaceId
+  }
+  const brandingMembership = candidates.find((membership) => getWorkspaceLogoUrl(membership?.workspace))
+  canonicalWorkspace.brandingSource = normalizeText(brandingMembership?.source)
+  return canonicalWorkspace
+}
+
+function buildCanonicalWorkspaceGroups(activeMemberships = [], { appRole = '' } = {}) {
+  return Array.from(groupMembershipsByWorkspaceId(activeMemberships).entries())
+    .map(([workspaceId, groupedMemberships]) => {
+      const workspace = buildCanonicalWorkspace(groupedMemberships, { appRole })
+      const workspaceType = workspace?.type || groupedMemberships.find((membership) => membership?.workspaceType)?.workspaceType || ''
+      const memberships = [...groupedMemberships].sort((left, right) =>
+        compareMembershipSources(left, right, { appRole, workspaceType }),
+      )
+      return {
+        workspaceId,
+        workspace,
+        memberships,
+      }
+    })
+    .filter((group) => group.workspace)
+}
+
+function groupMatchesWorkspaceId(group = null, workspaceId = '') {
+  const requestedWorkspaceId = normalizeText(workspaceId)
+  if (!group || !requestedWorkspaceId) return false
+  return (
+    group.workspaceId === requestedWorkspaceId ||
+    group.memberships.some((membership) => membership?.id === requestedWorkspaceId)
+  )
+}
+
+function selectWorkspaceGroup(activeMemberships = [], { appRole = '', requestedWorkspaceId = '', storedWorkspaceId = '' } = {}) {
+  const groups = buildCanonicalWorkspaceGroups(activeMemberships, { appRole })
+  const requested = normalizeText(requestedWorkspaceId)
+  if (requested) {
+    const selected = groups.find((group) => groupMatchesWorkspaceId(group, requested))
+    if (selected) return selected
+  }
+
+  const stored = normalizeText(storedWorkspaceId)
+  if (stored) {
+    const selected = groups.find((group) => groupMatchesWorkspaceId(group, stored))
+    if (selected) return selected
+  }
+
+  const commercialBrokerGroup = groups.find((group) =>
+    group.memberships.some((membership) => isCommercialBrokerMember(membership)),
+  )
+  if (commercialBrokerGroup) return commercialBrokerGroup
+
+  return [...groups].sort((left, right) => {
+    const leftKey = `${left.workspace?.type || ''}:${left.workspace?.name || ''}:${left.workspaceId}`
+    const rightKey = `${right.workspace?.type || ''}:${right.workspace?.name || ''}:${right.workspaceId}`
+    return leftKey.localeCompare(rightKey)
+  })[0] || null
+}
+
+function selectEffectiveMembership(group = null, { appRole = '' } = {}) {
+  if (!group?.memberships?.length || !group.workspace) return null
+  const workspaceType = group.workspace.type || group.memberships[0]?.workspaceType || ''
+  const selected = [...group.memberships].sort((left, right) =>
+    compareMembershipSources(left, right, { appRole, workspaceType }),
+  )[0]
+  if (!selected) return null
+  return {
+    ...selected,
+    workspace: group.workspace,
+    workspaceId: group.workspaceId,
+    workspace_id: group.workspaceId,
+    workspaceType: workspaceType || selected.workspaceType,
+  }
+}
+
+function buildMembershipContexts(currentMembership = null, currentMemberships = []) {
+  const memberships = Array.isArray(currentMemberships) ? currentMemberships : []
+  return {
+    effective: currentMembership || null,
+    organisation:
+      memberships.find((membership) =>
+        ['organisation_users', 'organization_members'].includes(normalizeText(membership?.source)),
+      ) || null,
+    attorneyFirm:
+      memberships.find((membership) => normalizeText(membership?.source) === 'attorney_firm_members') || null,
+  }
+}
+
 function getWorkspacePreferenceReason({
   requestedWorkspaceId = '',
   storedWorkspaceId = '',
@@ -250,25 +411,6 @@ function getWorkspacePreferenceReason({
   return selectedMembership ? 'first_active_membership' : 'none'
 }
 
-function selectMembership(activeMemberships = [], { requestedWorkspaceId = '', storedWorkspaceId = '' } = {}) {
-  const requested = normalizeText(requestedWorkspaceId)
-  if (requested) {
-    const selected = activeMemberships.find((membership) => membership.workspace && membershipMatchesWorkspaceId(membership, requested))
-    if (selected) return selected
-  }
-
-  const stored = normalizeText(storedWorkspaceId)
-  if (stored) {
-    const selected = activeMemberships.find((membership) => membership.workspace && membershipMatchesWorkspaceId(membership, stored))
-    if (selected) return selected
-  }
-
-  const commercialBrokerMembership = activeMemberships.find((membership) => membership.workspace && isCommercialBrokerMember(membership))
-  if (commercialBrokerMembership) return commercialBrokerMembership
-
-  return [...activeMemberships].sort(sortMemberships)[0] || null
-}
-
 function getPermissionMapForMembership(membership = null, appRole = '') {
   if (!membership?.id || !isActiveMembershipStatus(membership.status)) return Object.freeze({})
   if (appRole === APP_ROLES.platformAdmin) return Object.freeze({})
@@ -283,12 +425,17 @@ function buildDiagnostics({
   pendingMemberships = [],
   suspendedMemberships = [],
   currentMembership = null,
+  currentMemberships = [],
+  currentWorkspace = null,
   requestedWorkspaceId = '',
   storedWorkspaceId = '',
   reason = '',
   status = '',
   warnings = [],
 } = {}) {
+  const membershipSources = Array.from(
+    new Set((currentMemberships || []).map((membership) => normalizeText(membership?.source)).filter(Boolean)),
+  ).sort()
   return {
     userId,
     status,
@@ -299,6 +446,14 @@ function buildDiagnostics({
     storedWorkspaceId: normalizeText(storedWorkspaceId) || null,
     currentWorkspaceId: getMembershipWorkspaceId(currentMembership) || null,
     currentMembershipId: currentMembership?.id || null,
+    currentMembershipSource: normalizeText(currentMembership?.source) || null,
+    workspaceType: normalizeText(currentWorkspace?.type || currentMembership?.workspaceType) || null,
+    membershipSources,
+    membershipSourceOverlap: membershipSources.length > 1,
+    branding: {
+      logoPresent: Boolean(getWorkspaceLogoUrl(currentWorkspace)),
+      source: normalizeText(currentWorkspace?.brandingSource) || null,
+    },
     membershipCounts: {
       total: memberships.length,
       active: activeMemberships.length,
@@ -320,14 +475,17 @@ function createResolutionResult({
   pendingMemberships = [],
   suspendedMemberships = [],
   currentMembership = null,
+  currentMemberships = [],
+  currentWorkspace: currentWorkspaceInput = null,
   requestedWorkspaceId = '',
   storedWorkspaceId = '',
   warnings = [],
 } = {}) {
-  const currentWorkspace = currentMembership?.workspace || null
+  const currentWorkspace = currentWorkspaceInput || currentMembership?.workspace || null
   const workspaceType = currentWorkspace?.type || currentMembership?.workspaceType || inferWorkspaceTypeFromAppRole(profile?.role)
   const workspaceRole = currentMembership ? resolveWorkspaceRole(currentMembership, { appRole: profile?.role, workspaceType }) : ''
   const permissions = getPermissionMapForMembership(currentMembership, profile?.role)
+  const membershipContexts = buildMembershipContexts(currentMembership, currentMemberships)
   const diagnostics = buildDiagnostics({
     userId: user?.id || profile?.id || currentMembership?.userId || '',
     profile,
@@ -336,6 +494,8 @@ function createResolutionResult({
     pendingMemberships,
     suspendedMemberships,
     currentMembership,
+    currentMemberships,
+    currentWorkspace,
     requestedWorkspaceId,
     storedWorkspaceId,
     reason,
@@ -358,6 +518,8 @@ function createResolutionResult({
     pendingMemberships,
     suspendedMemberships,
     currentMembership,
+    currentMemberships,
+    membershipContexts,
     currentWorkspace,
     workspaceType,
     workspaceRole,
@@ -383,14 +545,22 @@ export function buildWorkspaceResolution({
   const appRole = normalizeCanonicalAppRole(profile?.role, '')
   const organisationById = new Map((organisationRows || []).map((row) => [row.id, normalizeOrganisationRow(row, { appRole })]))
   const firmById = new Map((attorneyFirmRows || []).map((row) => [row.id, normalizeAttorneyFirmRow(row)]))
+  const firmByOrganisationId = new Map(
+    Array.from(firmById.values())
+      .filter((firm) => firm?.organisationId)
+      .map((firm) => [firm.organisationId, firm]),
+  )
 
   const organisationMemberships = (organisationMembershipRows || []).filter(Boolean).map((row) => {
     const workspace = organisationById.get(row.organisation_id) || normalizeOrganisationRow(row.organisations, { appRole })
+    const linkedAttorneyFirm = workspace?.type === WORKSPACE_TYPES.attorneyFirm
+      ? firmByOrganisationId.get(workspace.id) || firmById.get(workspace.id) || null
+      : null
     return createMembershipRecord({
       id: row.id,
       source: row.source_table || 'organisation_users',
       userId: row.user_id || null,
-      workspaceId: row.organisation_id || null,
+      workspaceId: linkedAttorneyFirm?.id || row.organisation_id || null,
       workspace,
       workspaceType: row.workspace_type || workspace?.type || inferWorkspaceTypeFromAppRole(appRole),
       appRole: row.app_role || appRole,
@@ -495,7 +665,12 @@ export function buildWorkspaceResolution({
     })
   }
 
-  const selectedMembership = selectMembership(activeMemberships, { requestedWorkspaceId, storedWorkspaceId })
+  const selectedWorkspaceGroup = selectWorkspaceGroup(activeMemberships, {
+    appRole,
+    requestedWorkspaceId,
+    storedWorkspaceId,
+  })
+  const selectedMembership = selectEffectiveMembership(selectedWorkspaceGroup, { appRole })
   const preferenceReason = getWorkspacePreferenceReason({
     requestedWorkspaceId,
     storedWorkspaceId,
@@ -548,6 +723,8 @@ export function buildWorkspaceResolution({
     pendingMemberships,
     suspendedMemberships,
     currentMembership: selectedMembership,
+    currentMemberships: selectedWorkspaceGroup?.memberships || [],
+    currentWorkspace: selectedWorkspaceGroup?.workspace || null,
     requestedWorkspaceId,
     storedWorkspaceId,
     warnings: preferenceReason.endsWith('_invalid') ? [preferenceReason] : [],
@@ -1067,7 +1244,12 @@ export function assertResolvedWorkspaceContext(context = {}, options = {}) {
 
 export const __workspaceResolutionTestUtils = Object.freeze({
   buildWorkspaceResolution,
-  selectMembership,
+  groupMembershipsByWorkspaceId,
+  buildCanonicalWorkspace,
+  buildCanonicalWorkspaceGroups,
+  selectWorkspaceGroup,
+  selectEffectiveMembership,
+  buildMembershipContexts,
   sortMemberships,
   getPermissionMapForMembership,
 })

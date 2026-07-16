@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "enabled": false,
+  "minimumHealthySnapshots": 7,
+  "minimumObservationHours": 144,
+  "minimumCompletedPackets": 10,
+  "requiredFinalArtifactIntegrityPercent": 100,
+  "maximumOrganisationCohort": 25
+}

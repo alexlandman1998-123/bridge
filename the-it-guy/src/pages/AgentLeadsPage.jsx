@@ -13079,6 +13079,9 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
             `Seller accepted offer ${latestOfferId} manually.`,
             transactionId ? `Transaction: ${transactionId}.` : '',
             onboarding.sent ? 'Buyer onboarding email sent.' : onboarding.attempted ? 'Buyer onboarding email needs attention.' : '',
+            result?.legalHandoff?.prepared
+              ? `Legal lanes ready: ${(result.legalHandoff.requiredLaneKeys || []).join(', ')}.`
+              : 'Legal handoff needs attention.',
           ].filter(Boolean).join(' '),
           outcome: transactionId ? 'Won' : 'Seller Accepted',
           activityDate: new Date().toISOString(),
@@ -13574,6 +13577,7 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
   const [converting, setConverting] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [legalHandoff, setLegalHandoff] = useState(null)
   const [createdTransactionId, setCreatedTransactionId] = useState(existingTransactionId)
   const [otpStartOpen, setOtpStartOpen] = useState(false)
   const contact = getLeadContactSnapshot(lead)
@@ -13669,6 +13673,7 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
       })
       const transactionId = normalizeText(result?.transactionId || result?.transactionRow?.transaction?.id)
       const reused = Boolean(result?.alreadyConverted || result?.existing)
+      setLegalHandoff(result?.legalHandoff || null)
       const onboarding = await sendBuyerOnboarding(transactionId)
 
       await createAgencyCrmLeadActivity(
@@ -13680,6 +13685,9 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
             `${reused ? 'Existing transaction reused' : 'Transaction created'} from accepted offer ${acceptedOfferId}.`,
             transactionId ? `Transaction: ${transactionId}.` : '',
             onboarding.sent ? 'Buyer onboarding email sent.' : onboarding.attempted ? 'Buyer onboarding email needs attention.' : '',
+            result?.legalHandoff?.prepared
+              ? `Legal lanes ready: ${(result.legalHandoff.requiredLaneKeys || []).join(', ')}.`
+              : 'Legal handoff needs attention.',
           ].filter(Boolean).join(' '),
           outcome: transactionId ? 'Transaction Created' : 'Conversion Requested',
           activityDate: new Date().toISOString(),
@@ -13823,6 +13831,20 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
       )}
       {error ? <p className="mt-3 text-sm font-semibold text-red-600">{error}</p> : null}
       {message ? <p className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
+      {legalHandoff?.prepared ? (
+        <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-3 text-sm text-blue-800">
+          <p className="font-semibold">Legal handoff ready on transaction {legalHandoff.transactionId}</p>
+          <p className="mt-1">
+            {(legalHandoff.requiredLaneKeys || []).map((lane) => `${lane.charAt(0).toUpperCase()}${lane.slice(1)}`).join(' • ')}
+            {legalHandoff.missingAttorneyRoles?.length ? ` • ${legalHandoff.missingAttorneyRoles.length} attorney assignment${legalHandoff.missingAttorneyRoles.length === 1 ? '' : 's'} still required` : ' • Attorneys assigned'}
+          </p>
+        </div>
+      ) : null}
+      {legalHandoff?.prepared === false ? (
+        <p className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Transaction created, but the legal handoff needs a retry: {legalHandoff.error}
+        </p>
+      ) : null}
     </section>
     </>
   )

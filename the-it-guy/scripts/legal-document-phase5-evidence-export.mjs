@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import { createRequire } from 'node:module'
+import path from 'node:path'
+function envFile(file) { if (!fs.existsSync(file)) return {}; return Object.fromEntries(fs.readFileSync(file, 'utf8').split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith('#') && line.includes('=')).map((line) => { const index = line.indexOf('='); return [line.slice(0, index), line.slice(index + 1).replace(/^["']|["']$/g, '')] })) }
+function arg(name) { return process.argv.find((value) => value.startsWith(`--${name}=`))?.slice(name.length + 3) || '' }
+const env = { ...envFile('.env'), ...envFile('.env.staging.local'), ...process.env }; const url = env.VITE_SUPABASE_URL || env.SUPABASE_URL || ''; assert.ok(url && env.SUPABASE_SERVICE_ROLE_KEY, 'Supabase configuration is required.')
+const require = createRequire(path.resolve('package.json')); const { createClient } = require('@supabase/supabase-js'); const client = createClient(url, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(); const outputDir = path.resolve(arg('output-dir') || 'tmp/legal-document-phase5')
+const [snapshots, packets, templates] = await Promise.all([
+  client.from('system_health_snapshots').select('id, status, summary, created_at').gte('created_at', since).contains('summary', { kind: 'legal_document_watchdog_v1' }).order('created_at', { ascending: false }),
+  client.from('document_packets').select('id, packet_type, status, updated_at').in('packet_type', ['otp', 'mandate']).gte('updated_at', since),
+  client.from('document_packet_templates').select('id, packet_type, template_key, status, is_active, metadata_json').in('packet_type', ['otp', 'mandate']).eq('status', 'published').neq('is_active', false),
+]); assert.ifError(snapshots.error); assert.ifError(packets.error); assert.ifError(templates.error)
+const statusCounts = (packets.data || []).reduce((acc, row) => { const key = `${row.packet_type}:${row.status}`; acc[key] = (acc[key] || 0) + 1; return acc }, {})
+const report = { version: 'legal_document_phase5_evidence_v1', projectRef: new URL(url).hostname.split('.')[0], windowStart: since, generatedAt: new Date().toISOString(), watchdogSnapshots: snapshots.data || [], packetStatusCounts: statusCounts, templates: (templates.data || []).map((row) => ({ id: row.id, packetType: row.packet_type, key: row.template_key, legalReviewStatus: row.metadata_json?.legal_review_status || null, legalApprovedAt: row.metadata_json?.legal_approved_at || null, legalApprovalReference: row.metadata_json?.legal_approval_reference || null })), mutatedData: false }
+fs.mkdirSync(outputDir, { recursive: true }); const jsonPath = path.join(outputDir, 'legal-document-phase5-evidence.json'); const mdPath = path.join(outputDir, 'legal-document-phase5-summary.md'); fs.writeFileSync(jsonPath, `${JSON.stringify(report, null, 2)}\n`); fs.writeFileSync(mdPath, `# Legal Document Phase 5 Evidence\n\n- Generated: ${report.generatedAt}\n- Project: ${report.projectRef}\n- Watchdog snapshots: ${report.watchdogSnapshots.length}\n- Healthy snapshots: ${report.watchdogSnapshots.filter((row) => row.status === 'healthy').length}\n- Critical snapshots: ${report.watchdogSnapshots.filter((row) => row.status === 'critical').length}\n- Published templates: ${report.templates.length}\n`)
+console.log(JSON.stringify({ phase: 5, status: 'exported', artifacts: { jsonPath, markdownPath: mdPath }, snapshotCount: report.watchdogSnapshots.length, mutatedRemoteData: false }, null, 2))

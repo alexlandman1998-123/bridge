@@ -1201,6 +1201,7 @@
   }
 
   .ui-sidebar-brand-logo-wrap {
+    position: relative;
     display: flex;
     width: 100%;
     min-height: 96px;
@@ -1212,6 +1213,10 @@
   }
 
   .ui-sidebar-brand-logo-placeholder {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
     display: block;
     width: min(176px, 76%);
     height: 64px;
@@ -1228,6 +1233,15 @@
     object-fit: contain;
     object-position: left center;
     image-rendering: auto;
+    transition: opacity 140ms ease;
+  }
+
+  .ui-sidebar-brand-logo-pending {
+    opacity: 0;
+  }
+
+  .ui-sidebar-brand-logo-loaded {
+    opacity: 1;
   }
 
   .ui-sidebar-brand-org-title {

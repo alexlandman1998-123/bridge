@@ -346,6 +346,116 @@ async function buildOverlayPdf({
   return PDFDocument.load(sourcePdfBytes);
 }
 
+async function buildOtpStructuredFinalPdfBytes({
+  packet,
+  version,
+}: {
+  packet: Record<string, unknown>;
+  version: Record<string, unknown>;
+}) {
+  const pdf = await PDFDocument.create();
+  const regular = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const placeholders = version.placeholders_resolved_json && typeof version.placeholders_resolved_json === "object"
+    ? version.placeholders_resolved_json as Record<string, unknown>
+    : {};
+  const navy = rgb(0.06, 0.13, 0.22);
+  const accent = rgb(0.11, 0.35, 0.47);
+  const muted = rgb(0.36, 0.41, 0.47);
+
+  const groups = [
+    {
+      title: "Offer to Purchase",
+      fields: [
+        ["Property", "property_address"], ["Agency", "organisation_name"], ["Agent", "agent_full_name"],
+        ["Purchaser", "buyer_full_name"], ["Purchaser identity / registration", "buyer_id_number"], ["Purchaser email", "buyer_email"],
+        ["Seller", "seller_full_name"], ["Seller identity / registration", "seller_id_number"], ["Seller email", "seller_email"],
+      ],
+      terms: ["This Offer to Purchase becomes a deed of sale when accepted by the Seller in writing. The schedules, standard terms, special conditions and annexures form one agreement."],
+    },
+    {
+      title: "Property and Purchase Price",
+      fields: [
+        ["Property address", "property_address"], ["Suburb", "property_suburb"], ["City", "property_city"],
+        ["Property type", "property_type"], ["Unit / section", "property_unit_number"], ["Scheme / complex", "property_complex_name"],
+        ["Purchase price", "purchase_price"], ["Deposit", "deposit_amount"],
+      ],
+      terms: ["The Purchase Price is payable in accordance with the accepted offer, guarantees, bond approval, cash undertakings and conveyancer requirements."],
+    },
+    {
+      title: "Finance, Occupation and Transfer",
+      fields: [
+        ["Finance type", "finance_type"], ["Bond amount", "bond_amount"], ["Cash contribution", "cash_amount"],
+        ["Occupation date", "occupation_date"], ["Expected transfer date", "transfer_date"],
+      ],
+      terms: [
+        firstPdfText(placeholders.suspensive_conditions, "The finance terms and any suspensive conditions recorded in the accepted offer apply."),
+        "Risk, benefits and obligations transfer according to the final agreement terms and applicable conveyancing requirements.",
+      ],
+    },
+    {
+      title: "Authority and Commission",
+      fields: [
+        ["Seller representative", "seller_representative_name"], ["Representative capacity", "seller_representative_capacity"],
+        ["Resolution date", "seller_resolution_date"], ["Authority basis", "seller_authority_basis"],
+        ["Gross commission percentage", "gross_commission_percentage"], ["Gross commission amount", "gross_commission_amount"],
+        ["Agency commission amount", "agency_commission_amount"], ["Agent commission amount", "agent_commission_amount"],
+      ],
+      terms: ["Each party warrants that they have the necessary capacity and authority to sign this agreement. Commission is earned and payable according to the accepted offer, mandate and applicable agency agreement."],
+    },
+    {
+      title: "Special and General Terms",
+      fields: [["Special conditions", "special_conditions"], ["Annexures", "annexures_list"]],
+      terms: [
+        "The Property is sold together with fixtures and fittings of a permanent nature unless expressly excluded in Special Conditions or an annexure.",
+        "The parties choose their recorded addresses for notices. No amendment or cancellation is valid unless reduced to writing and signed or accepted by the parties as required.",
+        "The parties consent to processing of personal information required for conveyancing, finance, verification, communication and transaction administration.",
+      ],
+    },
+    {
+      title: "Signatures",
+      fields: [["Purchaser", "buyer_full_name"], ["Seller", "seller_full_name"], ["Agency", "organisation_name"], ["Agent", "agent_full_name"]],
+      terms: ["The parties confirm that they have read, understood and accepted this agreement and its annexures."],
+    },
+  ];
+
+  for (const [pageIndex, group] of groups.entries()) {
+    const page = pdf.addPage([612, 792]);
+    const pageWidth = page.getWidth();
+    page.drawText("OFFER TO PURCHASE | FINAL SIGNED COPY", { x: 306, y: 754, size: 8, font: bold, color: muted });
+    page.drawText(group.title.toUpperCase(), { x: 54, y: 700, size: pageIndex === 0 ? 24 : 18, font: bold, color: pageIndex === 0 ? navy : accent });
+    let y = pageIndex === 0 ? 650 : 660;
+    for (const [label, key] of group.fields) {
+      const value = pdfSafeText(getPlaceholderValue(placeholders, key)) || "Not provided";
+      page.drawText(`${label}:`, { x: 54, y, size: 10, font: bold, color: navy });
+      const lines = wrapPdfText(value, pageWidth - 220, regular, 10);
+      for (const [lineIndex, line] of lines.slice(0, 3).entries()) {
+        page.drawText(line, { x: 190, y: y - lineIndex * 13, size: 10, font: regular, color: navy });
+      }
+      y -= Math.max(24, lines.slice(0, 3).length * 13 + 8);
+    }
+    for (const term of group.terms) {
+      y -= 8;
+      const lines = wrapPdfText(term, pageWidth - 108, regular, 9.5);
+      for (const line of lines) {
+        if (y < 90) break;
+        page.drawText(line, { x: 54, y, size: 9.5, font: regular, color: navy });
+        y -= 13;
+      }
+      y -= 6;
+    }
+    page.drawText(`Document ${pdfSafeText(placeholders.document_reference) || normalizeText(packet.id)} | Page ${pageIndex + 1} of ${groups.length}`, {
+      x: 54,
+      y: 32,
+      size: 8,
+      font: regular,
+      color: muted,
+    });
+  }
+
+  return pdf.save();
+}
+
 function getPlaceholderValue(placeholders: Record<string, unknown>, key: unknown) {
   const normalizedKey = normalizeText(key);
   if (!normalizedKey) return "";
@@ -2159,18 +2269,45 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!fallbackSourceUsed && !sourceIsPdf) {
-      const conversion = await convertDocxToPdfBytes({
-        docxBytes: sourcePdfBytes,
-        sourcePath: renderedFilePath,
-      });
+      const useImmediateStructuredFallback = lower(packet.packet_type) === "otp";
+      const conversion = useImmediateStructuredFallback
+        ? {
+          success: false as const,
+          errorCode: "OTP_STRUCTURED_FINALISATION",
+          error: "OTP finalisation uses the structured packet snapshot to stay within the edge worker budget.",
+        }
+        : await convertDocxToPdfBytes({
+          docxBytes: sourcePdfBytes,
+          sourcePath: renderedFilePath,
+        });
       if (!conversion.success) {
-        return jsonResponse(400, {
-          success: false,
-          error: conversion.error,
-          errorCode: conversion.errorCode,
+        fallbackSourceUsed = true;
+        structuredFallbackSourceUsed = true;
+        sourceFormat = "structured_fallback_pdf";
+        sourcePdfBytes = lower(packet.packet_type) === "otp"
+          ? await buildOtpStructuredFinalPdfBytes({ packet, version })
+          : await buildFallbackMandatePdfBytes({
+            packet,
+            version,
+            fields,
+            branding: fallbackBranding,
+          });
+        await appendPacketEvent({
+          supabase,
+          packetId,
+          organisationId: normalizeText(packet.organisation_id),
+          versionId: normalizeText(version.id),
+          eventType: "final_signed_source_fallback_used",
+          payload: {
+            sourceFormat: "docx",
+            fallbackFormat: sourceFormat,
+            conversionErrorCode: conversion.errorCode,
+            conversionError: conversion.error,
+            generatedAt: new Date().toISOString(),
+          },
         });
       }
-      sourcePdfBytes = conversion.bytes;
+      if (conversion.success) sourcePdfBytes = conversion.bytes;
     }
 
     const pdf = await buildOverlayPdf({
@@ -2396,7 +2533,7 @@ Deno.serve(async (req: Request) => {
       listingConversion,
       sourceFormat,
       note: fallbackSourceUsed
-        ? "Source packet had no rendered artifact, so a structured mandate PDF was generated from stored packet data before overlaying signatures."
+        ? "A structured legal PDF was generated from stored packet data before overlaying signatures because a PDF source was unavailable."
         : sourceIsPdf
         ? null
         : "Source packet was DOCX and converted through the configured DOCX→PDF converter before overlaying signatures.",

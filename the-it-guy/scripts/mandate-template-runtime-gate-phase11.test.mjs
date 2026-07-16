@@ -31,10 +31,18 @@ for (const token of [
   '...contentGateBlockers',
   'isValidForGeneration: (contentGateBlockers.length || launchReadinessBlockers.length) ? false',
   'const hasMandateTemplateContentGateBlockingIssues = (validation.critical || []).some((issue) => issue?.source === \'mandate_template_content_gate\')',
-  'const allowGenerationBypass = (isMandatePacket && !hasConditionalPackBlockingIssues && !hasMandateTemplateContentGateBlockingIssues && !hasMandateTemplateLaunchReadinessBlockingIssues) || forceGenerate',
+  'const hasLegalScenarioBlockingIssues = (validation.critical || []).some((issue) => issue?.source === \'legal_scenario\')',
+  'const hasLegalScenarioRequirementBlockingIssues = (validation.critical || []).some((issue) => issue?.source === \'legal_scenario_requirement\')',
+  'const allowGenerationBypass = (',
 ]) {
   assert.ok(packetServiceSource.includes(token), `Runtime generation guard should include ${token}.`)
 }
+
+assert.match(
+  packetServiceSource,
+  /const allowGenerationBypass = \([\s\S]*?isMandatePacket[\s\S]*?!hasConditionalPackBlockingIssues[\s\S]*?!hasLegalScenarioBlockingIssues[\s\S]*?!hasLegalScenarioRequirementBlockingIssues[\s\S]*?!hasMandateTemplateContentGateBlockingIssues[\s\S]*?!hasMandateTemplateLaunchReadinessBlockingIssues[\s\S]*?\) \|\| forceGenerate/,
+  'Mandate generation bypass must preserve every conditional, legal-scenario, content-gate, and launch-readiness guard.',
+)
 
 const contentGateIndex = packetServiceSource.indexOf('const contentGate = buildMandateTemplateRuntimeContentGate(validation, templateResolution)')
 const criticalIndex = packetServiceSource.indexOf('critical: dedupeValidationIssues([', contentGateIndex)

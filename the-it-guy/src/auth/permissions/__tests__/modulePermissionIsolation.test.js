@@ -37,7 +37,13 @@ try {
   const { getRoleNavItems } = await server.ssrLoadModule('/src/lib/roles.js')
   const { PERMISSIONS } = await server.ssrLoadModule('/src/auth/permissions/permissionRegistry.js')
   const { navPermissionByKey, filterNavigationItems } = await server.ssrLoadModule('/src/auth/permissions/navigationPermissions.js')
-  const { can, evaluateAccessRequirement, getRouteAccessRequirement } = await server.ssrLoadModule('/src/auth/permissions/permissionResolver.js')
+  const {
+    can,
+    evaluateAccessRequirement,
+    getActiveMembershipBySource,
+    getRouteAccessRequirement,
+    resolvePermissionContext,
+  } = await server.ssrLoadModule('/src/auth/permissions/permissionResolver.js')
   const { isCommercialProfessionalMember } = await server.ssrLoadModule('/src/modules/commercial/utils/resolveCommercialRole.js')
 
   assert.equal(navPermissionByKey.agency_pipeline, PERMISSIONS.viewLeads)
@@ -54,6 +60,59 @@ try {
   assert.equal(agencyKeys.includes('developer_pipeline'), false)
   assert.equal(can(PERMISSIONS.viewLeads, agencyContext), true)
   assert.equal(can(PERMISSIONS.viewSalesPipeline, agencyContext), false)
+
+  const attorneyWorkspace = { id: 'attorney-workspace', type: 'attorney_firm' }
+  const attorneyOrganisationMembership = {
+    id: 'attorney-organisation-owner',
+    source: 'organisation_users',
+    workspaceId: attorneyWorkspace.id,
+    workspaceType: attorneyWorkspace.type,
+    workspaceRole: 'owner',
+    role: 'owner',
+    status: 'active',
+    workspace: attorneyWorkspace,
+  }
+  const candidateAttorneyMembership = {
+    id: 'candidate-attorney-membership',
+    source: 'attorney_firm_members',
+    workspaceId: attorneyWorkspace.id,
+    workspaceType: attorneyWorkspace.type,
+    workspaceRole: 'attorney',
+    role: 'candidate_attorney',
+    status: 'active',
+    workspace: attorneyWorkspace,
+  }
+  const sourceSpecificAttorneyContext = {
+    appRole: 'attorney',
+    role: 'attorney',
+    workspaceType: attorneyWorkspace.type,
+    currentWorkspace: attorneyWorkspace,
+    currentMembership: attorneyOrganisationMembership,
+    currentMemberships: [attorneyOrganisationMembership, candidateAttorneyMembership],
+    membershipContexts: {
+      effective: attorneyOrganisationMembership,
+      organisation: attorneyOrganisationMembership,
+      attorneyFirm: candidateAttorneyMembership,
+    },
+  }
+  const resolvedAttorneyPermissionContext = resolvePermissionContext(sourceSpecificAttorneyContext)
+  assert.equal(resolvedAttorneyPermissionContext.membership.source, 'attorney_firm_members')
+  assert.equal(resolvedAttorneyPermissionContext.workspaceRole, 'attorney')
+  assert.equal(can(PERMISSIONS.manageWorkspaceSettings, sourceSpecificAttorneyContext), false)
+  assert.equal(getActiveMembershipBySource(sourceSpecificAttorneyContext, 'organisation').source, 'organisation_users')
+  assert.equal(getActiveMembershipBySource(sourceSpecificAttorneyContext, 'attorneyFirm').source, 'attorney_firm_members')
+
+  const organisationFallbackContext = {
+    ...sourceSpecificAttorneyContext,
+    currentMemberships: [attorneyOrganisationMembership],
+    membershipContexts: {
+      effective: attorneyOrganisationMembership,
+      organisation: attorneyOrganisationMembership,
+      attorneyFirm: null,
+    },
+  }
+  assert.equal(resolvePermissionContext(organisationFallbackContext).membership.source, 'organisation_users')
+  assert.equal(can(PERMISSIONS.manageWorkspaceSettings, organisationFallbackContext), true)
 
   for (const workspaceRole of ['agent', 'agency_agent', 'estate agent', 'property_practitioner', 'broker', 'consultant', 'senior_agent']) {
     const agentContext = context({ appRole: 'agent', workspaceType: 'agency', workspaceRole })

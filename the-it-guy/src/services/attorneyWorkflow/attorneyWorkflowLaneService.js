@@ -1280,116 +1280,27 @@ export async function updateAttorneyWorkflowStepStatus({
   }
   if (!stepResult.data) throw new Error('Workflow step not found.')
 
-  const nowIso = new Date().toISOString()
-  const completedAt = normalizedStatus === 'completed' ? nowIso : null
-  const updatePayload = {
-    status: normalizedStatus,
-    comment: normalizedNote || null,
-    completed_at: completedAt,
-    visibility_scope: normalizedVisibility,
-    updated_at: nowIso,
-  }
-
-  let updateStep = await client
-    .from('transaction_subprocess_steps')
-    .update(updatePayload)
-    .eq('id', stepResult.data.id)
-    .select('id, subprocess_id, step_key, step_label, status, completed_at, comment, owner_type, sort_order, updated_at, created_at')
-    .single()
-
-  if (updateStep.error && (isMissingColumnError(updateStep.error, 'visibility_scope') || isConstraintLikeError(updateStep.error))) {
-    const fallbackPayload = { ...updatePayload }
-    delete fallbackPayload.visibility_scope
-    if (isConstraintLikeError(updateStep.error) && normalizedStatus === 'waiting') {
-      fallbackPayload.status = 'in_progress'
-      fallbackPayload.comment = normalizedNote ? `Waiting: ${normalizedNote}` : 'Waiting'
-    }
-    updateStep = await client
-      .from('transaction_subprocess_steps')
-      .update(fallbackPayload)
-      .eq('id', stepResult.data.id)
-      .select('id, subprocess_id, step_key, step_label, status, completed_at, comment, owner_type, sort_order, updated_at, created_at')
-      .single()
-  }
-  if (updateStep.error) throw updateStep.error
-
-  const allStepsQuery = await client
-    .from('transaction_subprocess_steps')
-    .select('id, status')
-    .eq('subprocess_id', lane.id)
-  if (allStepsQuery.error && !isMissingSchemaError(allStepsQuery.error)) {
-    throw allStepsQuery.error
-  }
-  const allSteps = allStepsQuery.data || []
-  const allCompleted = allSteps.length > 0 && allSteps.every((step) => step.status === 'completed')
-  const hasBlocked = allSteps.some((step) => step.status === 'blocked')
-  const hasWaiting = allSteps.some((step) => step.status === 'waiting')
-  const hasStarted = allSteps.some((step) => ['in_progress', 'waiting', 'completed'].includes(step.status))
-  const nextLaneStatus = allCompleted ? 'completed' : hasBlocked ? 'blocked' : hasWaiting ? 'waiting' : hasStarted ? 'in_progress' : 'not_started'
-
-  let laneUpdate = await client
-    .from('transaction_subprocesses')
-    .update({
-      current_stage: updateStep.data.step_key,
-      lane_status: nextLaneStatus,
-      status: nextLaneStatus,
-      completed_at: nextLaneStatus === 'completed' ? nowIso : null,
-      updated_by: actor.id,
-      updated_at: nowIso,
-    })
-    .eq('id', lane.id)
-
-  if (laneUpdate.error && (isMissingColumnError(laneUpdate.error, 'current_stage') || isMissingColumnError(laneUpdate.error, 'lane_status') || isConstraintLikeError(laneUpdate.error))) {
-    const fallbackLaneStatus = nextLaneStatus === 'waiting' ? 'in_progress' : nextLaneStatus
-    laneUpdate = await client
-      .from('transaction_subprocesses')
-      .update({
-        status: fallbackLaneStatus,
-        updated_at: nowIso,
-      })
-      .eq('id', lane.id)
-  }
-  if (laneUpdate.error) throw laneUpdate.error
-
-  await client.from('transaction_attorney_lane_history').insert({
-    transaction_id: normalizedTransactionId,
-    subprocess_id: lane.id,
-    lane_key: normalizedLaneKey,
-    attorney_role: LANE_META[normalizedLaneKey].attorneyRole,
-    previous_stage: lane.current_stage || null,
-    new_stage: updateStep.data.step_key,
-    previous_status: stepResult.data.status || null,
-    new_status: normalizedStatus,
-    changed_by: actor.id,
-    note: normalizedNote || null,
-    visibility: normalizedVisibility,
-    source: 'attorney_workspace_step_drawer',
-    metadata: { stepId: updateStep.data.id, stepLabel: updateStep.data.step_label || null, ...workPacketMetadata },
-  }).catch(() => null)
-
-  await insertTransactionEvent(client, {
-    transactionId: normalizedTransactionId,
-    eventType:
-      normalizedStatus === 'blocked'
-        ? 'AttorneyWorkflowStepBlocked'
-        : normalizedStatus === 'waiting'
-          ? 'AttorneyWorkflowStepWaiting'
-          : normalizedStatus === 'completed'
-            ? 'AttorneyWorkflowStepCompleted'
-            : 'AttorneyWorkflowStepUpdated',
-    actorId: actor.id,
-    visibility: normalizedVisibility,
-    eventData: {
-      laneKey: normalizedLaneKey,
-      attorneyRole: LANE_META[normalizedLaneKey].attorneyRole,
-      stepId: updateStep.data.id,
-      stepKey: updateStep.data.step_key,
-      stepLabel: updateStep.data.step_label,
-      status: normalizedStatus,
-      note: normalizedNote || null,
-      ...workPacketMetadata,
-    },
+  const atomicUpdate = await client.rpc('bridge_update_attorney_workflow_step', {
+    p_transaction_id: normalizedTransactionId,
+    p_lane_key: normalizedLaneKey,
+    p_step_id: stepResult.data.id,
+    p_status: normalizedStatus,
+    p_note: normalizedNote,
+    p_visibility: normalizedVisibility,
+    p_work_packet: workPacketMetadata.workPacket || null,
   })
+
+  if (atomicUpdate.error) {
+    const message = `${atomicUpdate.error?.message || ''} ${atomicUpdate.error?.details || ''}`.toLowerCase()
+    const missingAtomicFoundation =
+      atomicUpdate.error?.code === 'PGRST202' ||
+      atomicUpdate.error?.code === '42883' ||
+      (message.includes('bridge_update_attorney_workflow_step') && message.includes('not found'))
+    if (missingAtomicFoundation) {
+      throw new Error('Attorney workflow completion is temporarily unavailable until the Phase 1 database foundation is deployed.')
+    }
+    throw atomicUpdate.error
+  }
 
   return getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })
 }

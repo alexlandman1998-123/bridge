@@ -122,7 +122,7 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
     ownerRole: 'seller',
     responsibleRoles: ['seller'],
     packKey: 'seller_identity_fica',
-    aliases: ['seller_tax_certificate', 'seller_income_tax_number'],
+    aliases: ['seller_tax_certificate', 'seller_income_tax_number', 'income_tax_number'],
     modules: ['seller_portal', 'listing_documents', 'attorney_transfer'],
   }),
   documentDefinition({
@@ -405,6 +405,15 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
     packKey: 'property_compliance',
     aliases: ['building_plans'],
     modules: ['listing_documents', 'attorney_transfer', 'developer'],
+  }),
+  documentDefinition({
+    canonicalKey: 'alteration_approvals',
+    label: 'Alteration Approvals / Consents',
+    ownerRole: 'seller',
+    responsibleRoles: ['seller', 'agent', 'transfer_attorney'],
+    packKey: 'property_compliance',
+    aliases: [],
+    modules: ['seller_portal', 'listing_documents', 'attorney_transfer'],
   }),
   documentDefinition({
     canonicalKey: 'property_condition_disclosure',

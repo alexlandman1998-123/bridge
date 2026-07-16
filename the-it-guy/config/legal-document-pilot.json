@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "enabled": false,
+  "environment": "production",
+  "organisationIds": [],
+  "limits": {
+    "maxOrganisations": 5,
+    "maxGenerationFailures24h": 0,
+    "maxStaleSigningPackets": 0,
+    "staleSigningHours": 2
+  },
+  "rollback": {
+    "strategy": "revoke_template_approval",
+    "requiresExplicitTemplateIds": true
+  }
+}
