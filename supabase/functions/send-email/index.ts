@@ -29,8 +29,10 @@ import {
 } from "./handlers/transactionRoleplayerIntro.ts";
 import { handleTransactionPartnerInvitationEmail } from "./handlers/transactionPartnerInvitation.ts";
 import { handleNotificationReminderDispatchEmail } from "./handlers/notificationReminderDispatch.ts";
+import { handleAttorneyQuoteEmail } from "./handlers/attorneyQuote.ts";
 import type {
   SendAppointmentEmailPayload,
+  SendAttorneyQuotePayload,
   SendArch9LaunchConfirmationPayload,
   SendArch9LaunchInternalNotificationPayload,
   SendBondIntakeNotificationPayload,
@@ -124,6 +126,19 @@ Deno.serve(async (req: Request) => {
       transactionId: transactionId || null,
       payloadKeys,
     });
+
+    if (
+      ["attorney_quote", "attorney_quote_email"].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "attorney_quote",
+        transactionId: null,
+      });
+      return await handleAttorneyQuoteEmail(
+        req,
+        payload as SendAttorneyQuotePayload,
+      );
+    }
 
     if (
       ["client_onboarding", "onboarding", "onboarding_email"].includes(type)
@@ -592,6 +607,7 @@ Deno.serve(async (req: Request) => {
         error:
           "Missing email type. The send-email function requires an explicit template type.",
         supportedTypes: [
+          "attorney_quote",
           "client_onboarding",
           "client_portal_link",
           "client_portal",
@@ -640,6 +656,7 @@ Deno.serve(async (req: Request) => {
         "Unknown email request type. Legacy test fallback is disabled for untyped/unknown requests.",
       receivedType: type,
       supportedTypes: [
+        "attorney_quote",
         "client_onboarding",
         "client_portal_link",
         "client_portal",

@@ -143,3 +143,15 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/signer-signing-action/deno.json"
 entrypoint = "./functions/signer-signing-action/index.ts"
+
+[functions.attorney-public-intake]
+enabled = true
+verify_jwt = false
+import_map = "./functions/attorney-public-intake/deno.json"
+entrypoint = "./functions/attorney-public-intake/index.ts"
+
+[functions.attorney-quote-decision]
+enabled = true
+verify_jwt = false
+import_map = "./functions/attorney-quote-decision/deno.json"
+entrypoint = "./functions/attorney-quote-decision/index.ts"

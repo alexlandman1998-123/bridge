@@ -23,6 +23,14 @@ export type DeliveryContextPayload = {
   delivery_metadata?: JsonRecord;
 };
 
+export type SendAttorneyQuotePayload = {
+  type: "attorney_quote" | "attorney_quote_email";
+  organisationId?: string;
+  organisation_id?: string;
+  quoteId?: string;
+  quote_id?: string;
+};
+
 export type SendClientOnboardingPayload = {
   type: "client_onboarding";
   transactionId: string;

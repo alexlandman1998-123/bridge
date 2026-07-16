@@ -143,7 +143,7 @@ function ConnectorLabel({ children }) {
 }
 
 function RelationshipDiagram({ fromOrganisationName = '', invitedWorkspaceName = '' }) {
-  const sourceName = fromOrganisationName || 'Kingston Real Estate'
+  const sourceName = fromOrganisationName || 'Invitation details pending'
   const destinationName = invitedWorkspaceName || 'Your Business'
   const checklist = ['Future referrals', 'Shared transactions', 'Secure messaging', 'Document sharing']
 

@@ -9,6 +9,7 @@ const settingsLayoutSource = readFileSync(new URL('../src/pages/settings/Setting
 const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
 const headerSource = readFileSync(new URL('../src/components/HeaderBar.jsx', import.meta.url), 'utf8')
 const permissionsSource = readFileSync(new URL('../src/auth/permissions/permissionRegistry.js', import.meta.url), 'utf8')
+const attorneyFirmSource = readFileSync(new URL('../src/pages/AttorneyFirmPage.jsx', import.meta.url), 'utf8')
 const attorneyNavSource = rolesSource.slice(
   rolesSource.indexOf('attorney: ['),
   rolesSource.indexOf('bond_originator: ['),
@@ -69,6 +70,10 @@ assert.match(appSource, /path="\/attorney\/transactions"/, 'Attorney transaction
 assert.match(appSource, /path="\/attorney\/transactions\/:matterType"/, 'Attorney transactions tab route should exist')
 assert.match(appSource, /Navigate to="\/attorney\/matters\/all"/, 'Attorney matters base route should open All Matters')
 assert.match(appSource, /AttorneyFirmPage/, 'Attorney users route should render the firm administration workspace')
+assert.match(appSource, /path="\/users\/branches\/:branchId"/, 'Attorney branch cards should have a dedicated branch workspace route')
+assert.doesNotMatch(attorneyFirmSource, /Manage branches, invite firm members, and keep finance access easy to find\./, 'Firm pages should remove the duplicate firm introduction')
+assert.doesNotMatch(attorneyFirmSource, /const FIRM_TABS/, 'Firm pages should rely on sidebar navigation instead of duplicate tab pills')
+assert.match(attorneyFirmSource, /navigate\(`\/users\/branches\/\$\{encodeURIComponent\(id\)\}`\)/, 'Attorney branch cards should open the selected branch workspace')
 assert.match(headerSource, /pathname === '\/users'\) return ''/, 'Users route should not render the old top-left Users title')
 assert.match(permissionsSource, /prefix:\s*'\/attorney\/transactions'/, 'Attorney transactions route should be permission protected')
 assert.match(permissionsSource, /attorney_firm_users:\s*PERMISSIONS\.manageAttorneyTeam/, 'Attorney Firm users nav should be permission protected')

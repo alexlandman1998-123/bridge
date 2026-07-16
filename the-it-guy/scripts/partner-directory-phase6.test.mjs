@@ -43,9 +43,14 @@ for (const token of [
   'ThirdPartyDirectoryModal',
   'getThirdPartyInviteWorkspaceType',
   'thirdPartyForm.sendInvite !== false',
+  'const EMAIL_PATTERN =',
+  'noValidate className="mt-5 grid gap-3"',
+  "throw new Error('Enter a valid email address.')",
+  'setThirdPartyFormError(\'\')',
+  'role="alert"',
   'source: \'third_party_directory\'',
   'Third party added and invite sent.',
-  'Send invite',
+  'Save third party',
   'handleResendInvitation',
   'handleRevokeInvitation',
   'handleDeleteInvitation',
@@ -61,7 +66,7 @@ for (const token of [
   'thirdPartyDirectoryLoading && thirdPartyDirectoryRows.length === 0',
   '{shouldShowPartnersBlockingLoader ? (',
   'setThirdPartyDirectoryRows((rows) => rows.filter((row) => String(row.id) !== String(partner.id)))',
-  'invitations: (previous.invitations || []).filter((item) => String(item.id) !== String(invitation.id))',
+  'invitations: (previous.invitations || []).filter((item) => normalizeText(item.id) !== invitationId)',
 ]) {
   assert(files.partnersPage.includes(token), `PartnersPage should consume quick-create route state without bypassing the simplified modal: ${token}`)
 }

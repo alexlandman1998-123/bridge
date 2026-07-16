@@ -168,9 +168,10 @@ export const APP_NAV_BY_ROLE = {
       key: 'attorney_pipeline',
       label: 'Pipeline',
       to: '/attorney/matters/active',
-      activeMatch: ['/attorney/pipeline', '/attorney/matters/active', '/attorney/transactions/active'],
+      activeMatch: ['/attorney/pipeline', '/attorney/matters/active', '/attorney/transactions/active', '/attorney/leads'],
       children: [
         { key: 'attorney_incoming_matters', label: 'Incoming Matters', to: '/attorney/matters/active' },
+        { key: 'attorney_leads', label: 'Leads', to: '/attorney/leads' },
       ],
     },
     { key: 'scheduling', label: 'Calendar', to: '/attorney/scheduling' },

@@ -66,6 +66,11 @@ assertIncludes(
   'void handleAccept({ redirectOnSuccess: true })',
   'auto-accept should redirect only after the accept call succeeds',
 )
+assert.doesNotMatch(
+  acceptPage,
+  /Kingston Real Estate/,
+  'unknown or invalid invitations must not display a hard-coded organisation identity',
+)
 assert.match(
   acceptPage,
   /if \(redirectOnSuccess\) \{[\s\S]*?navigate\(autoAcceptRedirectPath, \{ replace: true \}\)/,

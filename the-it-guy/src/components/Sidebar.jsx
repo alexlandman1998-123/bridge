@@ -120,6 +120,7 @@ const ICON_BY_KEY = {
   attorney_cost_calculator: Calculator,
   attorney_pipeline: KanbanSquare,
   attorney_incoming_matters: ClipboardList,
+  attorney_leads: Users,
   attorney_firm: Building2,
   attorney_firm_branches: Building2,
   attorney_firm_users: Users,

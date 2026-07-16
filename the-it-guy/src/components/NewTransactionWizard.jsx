@@ -20,7 +20,12 @@ import {
   fetchUnitsForTransactionSetup,
 } from '../lib/api'
 import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partnersRepository'
-import { listUserPreferredPartnerRoutingRules } from '../lib/settingsApi'
+import {
+  getPreferredDirectoryPartnerOptions,
+  mergePartnerConnectionOptions,
+  partnerOptionToRolePlayerSelection,
+} from '../lib/newTransactionPartnerOptions'
+import { listOrganisationPreferredPartners, listUserPreferredPartnerRoutingRules } from '../lib/settingsApi'
 import { resolveTransactionOnboardingLink } from '../lib/onboardingLinks'
 import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -232,24 +237,6 @@ function createInitialPartnerConnectionOptions() {
   }
 }
 
-function mergePartnerConnectionOptions(connectionOptions = [], legacyOptions = []) {
-  const byKey = new Map()
-  const options = [...connectionOptions, ...legacyOptions]
-  options.forEach((option) => {
-    const key = option.organisationId || option.partnerOrganisationId || option.partnerOrganizationId || option.companyName || option.id
-    if (!key) return
-    const existing = byKey.get(key)
-    if (
-      !existing ||
-      (!existing.preferredRoutingRuleId && (option.preferredRoutingRuleId || option.preferred || option.userId)) ||
-      (!existing.userId && option.userId)
-    ) {
-      byKey.set(key, option)
-    }
-  })
-  return [...byKey.values()]
-}
-
 function normalizeSearchKey(value) {
   return String(value || '')
     .trim()
@@ -412,37 +399,6 @@ function getDevelopmentTeamDefaultOption({ development, roleType, partnerOptions
       }
 }
 
-function partnerOptionToRolePlayerSelection(roleType, partner, selectionSource = '') {
-  if (!partner) return null
-  const resolvedSelectionSource =
-    selectionSource ||
-    (partner.source === 'development_default'
-      ? 'development_default'
-      : partner.preferredRoutingRuleId || partner.relationshipType === 'preferred'
-        ? 'preferred_partner'
-        : 'connected_partner')
-
-  return {
-    roleType,
-    source: resolvedSelectionSource,
-    selectionSource: resolvedSelectionSource,
-    preferredPartnerId: partner.preferredPartnerId || partner.preferred_partner_id || null,
-    partnerRelationshipId: partner.relationshipId || null,
-    partnerConnectionId: partner.connectionId || null,
-    partnerOrganisationId:
-      partner.organisationId || partner.partnerOrganisationId || partner.partnerOrganizationId || null,
-    userId: partner.userId || null,
-    partner: {
-      companyName: partner.companyName,
-      contactPerson: partner.contactPerson || partner.contactName || partner.companyName,
-      email: partner.email,
-      phone: partner.phone || '',
-      userId: partner.userId || null,
-      partnerConnectionId: partner.connectionId || null,
-    },
-  }
-}
-
 function getActivePartnerInvitationDrafts(modes, drafts) {
   return ['transfer_attorney', 'bond_originator']
     .filter((roleType) => modes?.[roleType] === 'invite')
@@ -577,6 +533,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
   const [units, setUnits] = useState([])
   const [partnerSnapshot, setPartnerSnapshot] = useState(null)
   const [preferredRoutingRules, setPreferredRoutingRules] = useState([])
+  const [preferredDirectoryPartners, setPreferredDirectoryPartners] = useState([])
   const [loadingPartners, setLoadingPartners] = useState(false)
   const [partnerConnectionOptions, setPartnerConnectionOptions] = useState(createInitialPartnerConnectionOptions)
   const [loadingPartnerConnections, setLoadingPartnerConnections] = useState(false)
@@ -611,6 +568,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     setPartnerInvitationModes(createInitialPartnerInvitationModes())
     setPartnerInvitationDrafts(createInitialPartnerInvitationDrafts())
     setPartnerConnectionOptions(createInitialPartnerConnectionOptions())
+    setPreferredDirectoryPartners([])
     setPartnerProspects([])
     setPartnerProspectQueries(createInitialPartnerProspectQueries())
     setSelectedPartnerProspects(createInitialPartnerProspectState())
@@ -645,7 +603,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     async function loadPartners() {
       try {
         setLoadingPartners(true)
-        const [snapshot, routingRules] = await Promise.all([
+        const [snapshot, routingRules, directoryPartners] = await Promise.all([
           fetchPartnersSnapshot({
             organisationId: organisation?.id || workspace?.id || '',
             workspaceType: organisation?.type || workspaceType || role,
@@ -657,10 +615,15 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
             },
           }),
           listUserPreferredPartnerRoutingRules().catch(() => []),
+          listOrganisationPreferredPartners().catch((error) => {
+            console.warn('[NewTransactionWizard] preferred partner directory unavailable', error)
+            return []
+          }),
         ])
         if (!active) return
         setPartnerSnapshot(snapshot)
         setPreferredRoutingRules(Array.isArray(routingRules) ? routingRules : [])
+        setPreferredDirectoryPartners(Array.isArray(directoryPartners) ? directoryPartners : [])
       } catch (error) {
         if (active) {
           console.warn('[NewTransactionWizard] partner defaults unavailable', error)
@@ -842,12 +805,20 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     [currentMembership, organisation?.id, partnerSnapshot, preferredRoutingRules, profile, role, workspace?.id],
   )
   const attorneyPartnerOptions = useMemo(
-    () => mergePartnerConnectionOptions(partnerConnectionOptions.transfer_attorney, legacyAttorneyPartnerOptions),
-    [legacyAttorneyPartnerOptions, partnerConnectionOptions.transfer_attorney],
+    () =>
+      mergePartnerConnectionOptions(partnerConnectionOptions.transfer_attorney, [
+        ...getPreferredDirectoryPartnerOptions(preferredDirectoryPartners, 'transfer_attorney'),
+        ...legacyAttorneyPartnerOptions,
+      ]),
+    [legacyAttorneyPartnerOptions, partnerConnectionOptions.transfer_attorney, preferredDirectoryPartners],
   )
   const bondOriginatorPartnerOptions = useMemo(
-    () => mergePartnerConnectionOptions(partnerConnectionOptions.bond_originator, legacyBondOriginatorPartnerOptions),
-    [legacyBondOriginatorPartnerOptions, partnerConnectionOptions.bond_originator],
+    () =>
+      mergePartnerConnectionOptions(partnerConnectionOptions.bond_originator, [
+        ...getPreferredDirectoryPartnerOptions(preferredDirectoryPartners, 'bond_originator'),
+        ...legacyBondOriginatorPartnerOptions,
+      ]),
+    [legacyBondOriginatorPartnerOptions, partnerConnectionOptions.bond_originator, preferredDirectoryPartners],
   )
   const developmentRolePlayerDefaults = useMemo(
     () => getDevelopmentRolePlayerDefaults(selectedDevelopment || {}),

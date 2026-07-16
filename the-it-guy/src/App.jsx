@@ -109,9 +109,12 @@ const AttorneyIntelligenceMarketPositionPage = lazy(() => import('./pages/attorn
 const AttorneyIntelligenceOpportunityEnginePage = lazy(() => import('./pages/attorney-intelligence/OpportunityEnginePage'))
 const AttorneyIntelligencePartnerPage = lazy(() => import('./pages/attorney-intelligence/PartnerIntelligencePage'))
 const AttorneyIntelligenceRevenueForecastPage = lazy(() => import('./pages/attorney-intelligence/RevenueForecastPage'))
+const AttorneyLeadsPage = lazy(() => import('./pages/AttorneyLeadsPage'))
 const AttorneyMattersPage = lazy(() => import('./pages/AttorneyMattersPage'))
 const AttorneyOnboardingPage = lazy(() => import('./pages/AttorneyOnboardingPage'))
 const AttorneyOperationsPage = lazy(() => import('./pages/AttorneyOperationsPage'))
+const AttorneyPublicIntakePage = lazy(() => import('./pages/AttorneyPublicIntakePage'))
+const AttorneyQuoteDecisionPage = lazy(() => import('./pages/AttorneyQuoteDecisionPage'))
 const AttorneySchedulingPage = lazy(() => import('./pages/AttorneySchedulingPage'))
 const AttorneyTransactionDetail = lazy(() => import('./pages/AttorneyTransactionDetail'))
 const Auth = lazy(() => import('./pages/Auth'))
@@ -1632,6 +1635,16 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/attorney/leads"
+                element={
+                  <RoleRoute allowedRoles={['attorney']}>
+                    <AttorneyFirmRoute>
+                      <AttorneyLeadsPage />
+                    </AttorneyFirmRoute>
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/attorney/matters"
                 element={
                   <RoleRoute allowedRoles={['attorney']}>
@@ -2666,6 +2679,14 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/users/branches/:branchId"
+                element={
+                  <RoleRoute allowedRoles={['attorney']}>
+                    <AttorneyFirmPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/users"
                 element={
                   <RoleRoute allowedRoles={['attorney']}>
@@ -2897,6 +2918,8 @@ function AppRoutes() {
           <Route path="/commercial/landlord-onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="commercial-landlord-onboarding-route" title="Landlord onboarding failed to load"><CommercialLandlordOnboardingPage /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/sign/:token" element={<SignerPortal />} />
           <Route path="/appointment-rsvp/:token" element={<AppointmentRsvpPage />} />
+          <Route path="/journey/:slug" element={<AppErrorBoundary scope="attorney-public-intake" title="Attorney enquiry page failed to load"><AttorneyPublicIntakePage /></AppErrorBoundary>} />
+          <Route path="/quote/:token" element={<AppErrorBoundary scope="attorney-quote-decision" title="Attorney quote failed to load"><AttorneyQuoteDecisionPage /></AppErrorBoundary>} />
           <Route path="/demo/onboarding-links" element={<AppErrorBoundary scope="demo-onboarding-links" title="Demo onboarding links failed to load"><OnboardingLinksDemoPage /></AppErrorBoundary>} />
           <Route path="/client/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/buying" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />

@@ -163,6 +163,7 @@ const DEFAULT_INVITATION_FILTERS = {
 }
 
 const SENT_INVITATION_DELETABLE_STATUSES = new Set(['declined', 'revoked', 'expired', 'cancelled'])
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function formatNumber(value) {
   return new Intl.NumberFormat('en-ZA', { maximumFractionDigits: 0 }).format(Number(value || 0))
@@ -1852,6 +1853,7 @@ function ThirdPartyDirectoryModal({
   onChange,
   saving = false,
   editing = false,
+  error = '',
 }) {
   if (!isOpen) return null
 
@@ -1874,7 +1876,7 @@ function ThirdPartyDirectoryModal({
           </button>
         </div>
 
-        <form onSubmit={onSubmit} className="mt-5 grid gap-3" aria-busy={saving}>
+        <form onSubmit={onSubmit} noValidate className="mt-5 grid gap-3" aria-busy={saving}>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1.5">
               <span className="text-sm font-semibold text-[#35546c]">Type</span>
@@ -1897,6 +1899,7 @@ function ThirdPartyDirectoryModal({
                 value={form.companyName}
                 onChange={(event) => onChange('companyName', event.target.value)}
                 disabled={saving}
+                aria-invalid={Boolean(error && !normalizeText(form.companyName))}
                 className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:text-[#8ba0b8]"
                 placeholder="Firm, originator, or agency"
               />
@@ -1918,6 +1921,7 @@ function ThirdPartyDirectoryModal({
                 value={form.email}
                 onChange={(event) => onChange('email', event.target.value)}
                 disabled={saving}
+                aria-invalid={Boolean(error && normalizeText(form.email) && !EMAIL_PATTERN.test(normalizeText(form.email)))}
                 className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:text-[#8ba0b8]"
                 placeholder="Optional"
               />
@@ -2017,6 +2021,12 @@ function ThirdPartyDirectoryModal({
               </label>
             ) : null}
           </div>
+
+          {error ? (
+            <p role="alert" className="rounded-[8px] border border-[#f0d4d4] bg-[#fff5f5] px-3 py-2 text-sm font-semibold text-[#9b2c2c]">
+              {error}
+            </p>
+          ) : null}
 
           <div className="flex items-center justify-end gap-2 pt-2">
             <button
@@ -2290,6 +2300,7 @@ export default function PartnersPage() {
   const [thirdPartySaving, setThirdPartySaving] = useState(false)
   const [editingThirdPartyId, setEditingThirdPartyId] = useState('')
   const [thirdPartyForm, setThirdPartyForm] = useState(() => createThirdPartyDraft())
+  const [thirdPartyFormError, setThirdPartyFormError] = useState('')
   const [discoverDirectory, setDiscoverDirectory] = useState([])
   const [discoverDirectoryLoading, setDiscoverDirectoryLoading] = useState(false)
   const [connectingPartnerIds, setConnectingPartnerIds] = useState(() => new Set())
@@ -2818,6 +2829,7 @@ export default function PartnersPage() {
     setThirdPartyForm(createThirdPartyDraft(partnerType))
     setError('')
     setMessage('')
+    setThirdPartyFormError('')
     setIsThirdPartyModalOpen(true)
   }, [])
 
@@ -2831,10 +2843,12 @@ export default function PartnersPage() {
     setIsThirdPartyModalOpen(false)
     setEditingThirdPartyId('')
     setThirdPartyForm(createThirdPartyDraft())
+    setThirdPartyFormError('')
   }
 
   function updateThirdPartyFormField(key, value) {
     setThirdPartyForm((previous) => ({ ...previous, [key]: value }))
+    setThirdPartyFormError('')
   }
 
   function startEditThirdParty(partner) {
@@ -2855,12 +2869,17 @@ export default function PartnersPage() {
     })
     setError('')
     setMessage('')
+    setThirdPartyFormError('')
     setIsThirdPartyModalOpen(true)
   }
 
   function validateThirdPartyForm() {
     if (!normalizeText(thirdPartyForm.companyName)) {
       throw new Error('Company name is required.')
+    }
+    const email = normalizeText(thirdPartyForm.email)
+    if (email && !EMAIL_PATTERN.test(email)) {
+      throw new Error('Enter a valid email address.')
     }
   }
 
@@ -2871,6 +2890,7 @@ export default function PartnersPage() {
     try {
       validateThirdPartyForm()
       setThirdPartySaving(true)
+      setThirdPartyFormError('')
       setError('')
       setMessage('')
       const isCreating = !editingThirdPartyId
@@ -2929,7 +2949,7 @@ export default function PartnersPage() {
       }
       closeThirdPartyModal()
     } catch (saveError) {
-      setError(saveError?.message || 'Unable to save third party.')
+      setThirdPartyFormError(saveError?.message || 'Unable to save third party.')
     } finally {
       setThirdPartySaving(false)
     }
@@ -3616,6 +3636,7 @@ export default function PartnersPage() {
         onChange={updateThirdPartyFormField}
         saving={thirdPartySaving}
         editing={Boolean(editingThirdPartyId)}
+        error={thirdPartyFormError}
       />
       <PartnerInvitationActionDialog
         action={invitationConfirmation.type}
