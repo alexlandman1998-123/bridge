@@ -17,6 +17,13 @@
     "supabase:phase6:local": "node scripts/supabase-phase6-split-ledger-investigation.mjs --write",
     "supabase:phase7": "node scripts/supabase-phase7-canonical-ledger-repair.mjs --apply --write",
     "supabase:phase7:plan": "node scripts/supabase-phase7-canonical-ledger-repair.mjs --write",
+    "test:outstanding-migrations-phase2": "node scripts/outstanding-migrations-phase2.test.mjs",
+    "test:outstanding-migrations-phase3": "node scripts/outstanding-migrations-phase3.test.mjs",
+    "test:outstanding-migrations-phase4": "node scripts/outstanding-migrations-phase4.test.mjs",
+    "test:outstanding-migrations-phase5": "node scripts/outstanding-migrations-phase5.test.mjs",
+    "test:outstanding-migrations-phase6": "node scripts/outstanding-migrations-phase6.test.mjs",
+    "test:outstanding-migrations-phase7": "node scripts/outstanding-migrations-phase7.test.mjs",
+    "test:outstanding-migrations-phase8": "node scripts/outstanding-migrations-phase8.test.mjs",
     "supabase:guard": "node scripts/supabase-phase0-guard.mjs",
     "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked"
   },

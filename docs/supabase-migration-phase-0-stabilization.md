@@ -2,6 +2,8 @@
 
 Date started: 2026-07-12
 
+> Current status, 2026-07-17: Phases 1–8 completed the historical reconciliation. There are no genuine local-only or remote-only rows. The guard remains active solely because 17 verified timestamp-prefix collisions are still displayed as split rows by the Supabase CLI. See `docs/outstanding-migrations-phase-8-closure.md`.
+
 ## Purpose
 
 The linked Supabase project has migration ledger drift. Until the ledger is reconciled, broad migration commands can misreport state, skip required objects, or attempt the wrong pending set. Phase 0 keeps production stable while the reconciliation work is prepared.
