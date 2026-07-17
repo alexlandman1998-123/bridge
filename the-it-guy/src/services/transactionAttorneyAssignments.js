@@ -10,13 +10,14 @@ import { getAttorneyFirmMembers } from './attorneyFirmMembers'
 import { getAttorneyFirmById, getAttorneyFirmDepartments } from './attorneyFirms'
 import { prepareBondAssignmentPayload } from './bondAssignmentService'
 import { recordUniversalAssignmentEvent, UNIVERSAL_ASSIGNMENT_METHODS } from './universalAssignmentService'
+import { buildAttorneyFirmFirstAllocationContract } from '../core/transactions/attorneyFirmFirstAllocation.js'
 
 export const ATTORNEY_ASSIGNMENT_TYPES = ['transfer', 'bond', 'transfer_and_bond', 'cancellation']
 export const TRANSACTION_ATTORNEY_ROLES = ['transfer_attorney', 'bond_attorney', 'cancellation_attorney']
 export const ATTORNEY_ASSIGNMENT_STATUSES = ['pending', 'active', 'paused', 'completed', 'removed']
 const ATTORNEY_ASSIGNMENTS_MIGRATION_HINT = 'Attorney assignment table is not set up yet. Run the attorney assignment migrations and refresh.'
 const ASSIGNMENT_SELECT =
-  'id, transaction_id, firm_id, attorney_firm_id, assignment_type, attorney_role, department_id, attorney_department_id, primary_attorney_id, attorney_user_id, secretary_id, admin_handler_id, status, assignment_status, is_primary, visibility_scope, can_edit, can_manage_documents, can_manage_signing, can_add_internal_notes, can_add_shared_updates, can_update_workflow_lane, assigned_by, assigned_at, created_at, updated_at'
+  'id, transaction_id, firm_id, attorney_firm_id, assignment_type, attorney_role, department_id, attorney_department_id, primary_attorney_id, attorney_user_id, preferred_attorney_user_id, preferred_contact_name, preferred_contact_email, preferred_contact_phone, appointment_source, firm_acceptance_status, firm_accepted_by, firm_accepted_at, staff_assignment_status, allocation_state, allocation_state_changed_at, declined_by, declined_at, decline_reason, replacement_required_by, replacement_required_at, replacement_reason, superseded_by_assignment_id, secretary_id, admin_handler_id, status, assignment_status, instruction_status, is_primary, visibility_scope, can_edit, can_manage_documents, can_manage_signing, can_add_internal_notes, can_add_shared_updates, can_update_workflow_lane, assigned_by, assigned_at, created_at, updated_at'
 
 const TRANSFER_PRIMARY_ROLES = new Set(['transfer_attorney', 'director_partner', 'firm_admin'])
 const BOND_PRIMARY_ROLES = new Set(['bond_attorney', 'director_partner', 'firm_admin'])
@@ -70,6 +71,7 @@ function mapAssignmentRow(row) {
   const attorneyRole = normalizeAttorneyRole(row.attorney_role, assignmentType)
   const isPrimary = row.is_primary !== false
   const attorneyUserId = row.attorney_user_id || row.primary_attorney_id || null
+  const firmFirstContract = buildAttorneyFirmFirstAllocationContract(row)
   return {
     id: row.id,
     transactionId: row.transaction_id,
@@ -82,10 +84,30 @@ function mapAssignmentRow(row) {
     attorneyDepartmentId: row.attorney_department_id || row.department_id || null,
     attorneyUserId,
     primaryAttorneyId: isPrimary ? attorneyUserId : row.primary_attorney_id || null,
+    preferredAttorneyUserId: row.preferred_attorney_user_id || null,
+    preferredContactName: row.preferred_contact_name || null,
+    preferredContactEmail: row.preferred_contact_email || null,
+    preferredContactPhone: row.preferred_contact_phone || null,
+    appointmentSource: row.appointment_source || 'legacy_assignment',
+    firmAcceptanceStatus: firmFirstContract.firmAcceptanceStatus,
+    firmAcceptedBy: row.firm_accepted_by || null,
+    firmAcceptedAt: row.firm_accepted_at || null,
+    staffAssignmentStatus: firmFirstContract.staffAssignmentStatus,
+    allocationState: firmFirstContract.state,
+    allocationStateLabel: firmFirstContract.stateLabel,
+    allocationStateChangedAt: row.allocation_state_changed_at || null,
+    declinedBy: row.declined_by || null,
+    declinedAt: row.declined_at || null,
+    declineReason: row.decline_reason || null,
+    replacementRequiredBy: row.replacement_required_by || null,
+    replacementRequiredAt: row.replacement_required_at || null,
+    replacementReason: row.replacement_reason || null,
+    supersededByAssignmentId: row.superseded_by_assignment_id || null,
     secretaryId: row.secretary_id || null,
     adminHandlerId: row.admin_handler_id || null,
     status: row.assignment_status || row.status,
     assignmentStatus: row.assignment_status || row.status,
+    instructionStatus: row.instruction_status || 'new_instruction',
     isPrimary,
     visibilityScope: row.visibility_scope || 'assigned_matter',
     canEdit: row.can_edit !== false,
@@ -298,7 +320,7 @@ async function enrichAssignments(client, assignments = []) {
   const userIds = [
     ...new Set(
       assignments
-        .flatMap((item) => [item.attorneyUserId, item.primaryAttorneyId, item.secretaryId, item.adminHandlerId])
+        .flatMap((item) => [item.attorneyUserId, item.primaryAttorneyId, item.preferredAttorneyUserId, item.secretaryId, item.adminHandlerId])
         .filter(Boolean),
     ),
   ]
@@ -363,6 +385,7 @@ async function enrichAssignments(client, assignments = []) {
     transaction: transactionsById[assignment.transactionId] || null,
     attorneyUser: assignment.attorneyUserId ? profilesById[assignment.attorneyUserId] || null : null,
     primaryAttorney: assignment.primaryAttorneyId ? profilesById[assignment.primaryAttorneyId] || null : null,
+    preferredAttorney: assignment.preferredAttorneyUserId ? profilesById[assignment.preferredAttorneyUserId] || null : null,
     secretary: assignment.secretaryId ? profilesById[assignment.secretaryId] || null : null,
     adminHandler: assignment.adminHandlerId ? profilesById[assignment.adminHandlerId] || null : null,
   }))
