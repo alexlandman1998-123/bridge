@@ -1992,6 +1992,16 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/transactions/:transactionId/work/:workflowDetailKey"
+                element={
+                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                    <AppErrorBoundary scope="transaction-workflow-detail" title="Transaction workflow detail failed to load">
+                      <AttorneyTransactionDetail />
+                    </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/transactions/:transactionId/transfer/:workflowDetailKey"
                 element={
                   <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
@@ -2006,6 +2016,16 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['bond_originator']}>
                     <AppErrorBoundary scope="bond-file-workspace" title="Bond file workspace failed to load">
+                      <AttorneyTransactionDetail />
+                    </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/bond/files/:transactionId/work/:workflowDetailKey"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <AppErrorBoundary scope="bond-file-workflow-detail" title="Bond workflow detail failed to load">
                       <AttorneyTransactionDetail />
                     </AppErrorBoundary>
                   </RoleRoute>

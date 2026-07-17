@@ -1,4 +1,5 @@
 import {
+  ArrowUpRight,
   CalendarClock,
   Check,
   ChevronRight,
@@ -146,6 +147,23 @@ function isFirstContactOverdue(lead, slaHours = 24, now = Date.now()) {
   if (!lead || lead.status !== 'open' || lead.stage !== 'new' || lead.lastContactedAt) return false
   const createdAt = new Date(lead.createdAt || '').getTime()
   return Number.isFinite(createdAt) && createdAt <= now - (slaHours * 60 * 60 * 1000)
+}
+
+function getLeadNextAction(lead) {
+  if (lead?.convertedTransactionId) return 'Open the active Matter and continue the legal workflow.'
+  if (lead?.stage === 'new') return 'Make first contact and record the outcome.'
+  if (lead?.stage === 'contacted') return 'Qualify the enquiry and confirm the client brief.'
+  if (lead?.stage === 'qualified') return 'Prepare and send the first fee quote.'
+  if (lead?.stage === 'quote_sent') return 'Follow up on the outstanding quote decision.'
+  if (lead?.stage === 'follow_up') return 'Complete the scheduled follow-up and record the response.'
+  if (lead?.stage === 'won') return 'Convert this won Lead into an active Matter.'
+  if (lead?.stage === 'lost') return 'Review the loss reason before closing the opportunity.'
+  return 'Review the Lead and choose the next action.'
+}
+
+function scrollLeadWorkspaceTo(sectionId) {
+  if (typeof document === 'undefined') return
+  document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 function defaultMatterTypeForLead(lead) {
@@ -686,6 +704,10 @@ function LeadDetailDrawer({
   const detail = lead.detail || {}
   const conversionReady = ['qualified', 'quote_sent', 'follow_up', 'won'].includes(lead.stage)
   const conversionAssignees = assignees.filter((assignee) => canOwnConvertedMatter(assignee, matterType))
+  const currentStageIndex = STAGE_OPTIONS.findIndex(([value]) => value === lead.stage)
+  const assignedTeamMember = assignees.find((assignee) => assignee.userId === lead.assignedUserId)
+  const leadOwnerLabel = assignedTeamMember?.name || (lead.assignedUserId ? 'Assigned team member' : 'Unassigned queue')
+  const latestActivity = activities[0]
 
   return (
     <Drawer
@@ -693,7 +715,8 @@ function LeadDetailDrawer({
       onClose={onClose}
       title={leadName(lead)}
       subtitle={`${optionLabel(SERVICE_OPTIONS, detail.serviceType, 'General Enquiry')} · ${formatDate(lead.createdAt)}`}
-      widthClassName="max-w-[680px]"
+      widthClassName="max-w-[1180px]"
+      className="[&_.ui-drawer-body]:bg-[#f6f9fc]"
       footer={(
         <div className="flex w-full justify-end">
           <button type="button" className="ui-button ui-button-primary" onClick={() => onStageSave(stage, lostReason)} disabled={!canEdit || Boolean(lead.convertedTransactionId) || saving || (stage === lead.stage && lostReason === lead.lostReason)}>
@@ -702,8 +725,81 @@ function LeadDetailDrawer({
         </div>
       )}
     >
-      <div className="grid gap-6">
-        <section className="rounded-2xl border border-slate-200 p-4">
+      <div className="grid gap-5">
+        <section className="overflow-hidden rounded-[24px] border border-[#dce7f2] bg-white shadow-[0_10px_30px_rgba(31,54,78,0.05)]" aria-label="Lead workspace summary">
+          <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)] lg:p-6">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <StagePill stage={lead.stage} />
+                <span className="rounded-full bg-[#eef5fb] px-2.5 py-1 text-xs font-semibold text-[#315b7a]">
+                  {optionLabel(SOURCE_OPTIONS, lead.sourceChannel, 'Other')}
+                </span>
+                {lead.nextFollowUpAt ? (
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${isFollowUpDue(lead.nextFollowUpAt) ? 'bg-orange-50 text-orange-700' : 'bg-slate-100 text-slate-600'}`}>
+                    Follow-up {formatDate(lead.nextFollowUpAt, true)}
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-5 text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Next best action</p>
+              <h4 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#102033]">{getLeadNextAction(lead)}</h4>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-[#60758b]">
+                Keep every call, email, quote and follow-up on this Lead so the firm has one continuous history from enquiry to Matter.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-2">
+                {contact.phone ? <a className="ui-button ui-button-primary" href={`tel:${contact.phone}`}><Phone size={16} /> Call Lead</a> : null}
+                {contact.email ? <a className="ui-button ui-button-secondary" href={`mailto:${contact.email}`}><Mail size={16} /> Email Lead</a> : null}
+                {canEdit ? <button type="button" className="ui-button ui-button-secondary" onClick={() => scrollLeadWorkspaceTo('attorney-lead-record-activity')}><Plus size={16} /> Log activity</button> : null}
+                {canEdit ? <button type="button" className="ui-button ui-button-secondary" onClick={() => scrollLeadWorkspaceTo('attorney-lead-follow-up')}><CalendarClock size={16} /> Set follow-up</button> : null}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                ['Owner', leadOwnerLabel],
+                ['Service', optionLabel(SERVICE_OPTIONS, detail.serviceType, 'General Enquiry')],
+                ['Activities', activitiesLoading ? 'Loading…' : String(activities.length)],
+                ['Latest update', latestActivity ? formatDate(latestActivity.date, true) : 'No activity yet'],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">{label}</p>
+                  <p className="mt-2 line-clamp-2 text-sm font-semibold leading-5 text-[#20364c]" title={value}>{value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="border-t border-[#e4edf6] bg-[#fbfdff] px-5 py-4 lg:px-6">
+            <div className="flex min-w-max items-center gap-2 overflow-x-auto pb-1" aria-label="Lead lifecycle">
+              {STAGE_OPTIONS.map(([value, label], index) => {
+                const isCurrent = value === lead.stage
+                const isComplete = currentStageIndex >= 0 && index < currentStageIndex && value !== 'lost' && !(lead.stage === 'lost' && value === 'won')
+                return (
+                  <div key={value} className="flex items-center gap-2">
+                    <span className={`grid h-8 w-8 place-items-center rounded-full border text-xs font-bold ${isCurrent ? 'border-[#2f7b9e] bg-[#2f7b9e] text-white shadow-[0_0_0_4px_rgba(47,123,158,0.12)]' : isComplete ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-[#d5e0eb] bg-white text-[#8aa0b7]'}`}>
+                      {isComplete ? <Check size={14} /> : index + 1}
+                    </span>
+                    <span className={`text-xs font-semibold ${isCurrent ? 'text-[#183b56]' : 'text-[#71869c]'}`}>{label}</span>
+                    {index < STAGE_OPTIONS.length - 1 ? <span className="mx-1 h-px w-5 bg-[#dbe5ef]" /> : null}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </section>
+
+        <nav className="flex gap-2 overflow-x-auto rounded-[18px] border border-[#dce7f2] bg-white p-2 shadow-sm" aria-label="Lead workspace sections">
+          {[
+            ['attorney-lead-status', 'Overview'],
+            canEdit ? ['attorney-lead-follow-up', 'Follow-up'] : null,
+            ['attorney-lead-quotes', `Quotes (${quotes.length})`],
+            ['attorney-lead-activity', `Activity (${activities.length})`],
+            lead.convertedTransactionId || canAssign ? ['attorney-lead-conversion', lead.convertedTransactionId ? 'Matter' : 'Convert'] : null,
+          ].filter(Boolean).map(([sectionId, label]) => (
+            <button key={sectionId} type="button" className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-semibold text-[#4d647b] transition hover:bg-[#eef5fb] hover:text-[#183b56]" onClick={() => scrollLeadWorkspaceTo(sectionId)}>
+              {label}<ArrowUpRight size={14} />
+            </button>
+          ))}
+        </nav>
+
+        <section id="attorney-lead-status" className="scroll-mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <h4 className="font-semibold text-slate-900">Lead status</h4>
             <StagePill stage={lead.stage} />
@@ -723,7 +819,7 @@ function LeadDetailDrawer({
         </section>
 
         {canAssign && !lead.convertedTransactionId ? (
-          <section className="rounded-2xl border border-slate-200 p-4">
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h4 className="font-semibold text-slate-900">Lead assignment</h4>
             <div className="mt-4 grid gap-3">
               <Field label="Assigned team member">
@@ -743,7 +839,7 @@ function LeadDetailDrawer({
         ) : null}
 
         {canEdit ? (
-          <section className="rounded-2xl border border-slate-200 p-4">
+          <section id="attorney-lead-follow-up" className="scroll-mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h4 className="font-semibold text-slate-900">Next follow-up</h4>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <Field label="Date and time">
@@ -760,16 +856,19 @@ function LeadDetailDrawer({
           </section>
         ) : null}
 
-        <LeadQuotesSection leadId={lead.id} quotes={quotes} quoteLinks={quoteLinks} loading={quotesLoading} canEdit={canEdit} locked={Boolean(lead.convertedTransactionId) || lead.status !== 'open'} saving={quoteSaving} onCreate={onQuoteCreate} onTransition={onQuoteTransition} onShare={onQuoteShare} onRevokeLink={onQuoteLinkRevoke} onEmail={onQuoteEmail} />
+        <div id="attorney-lead-quotes" className="scroll-mt-4">
+          <LeadQuotesSection leadId={lead.id} quotes={quotes} quoteLinks={quoteLinks} loading={quotesLoading} canEdit={canEdit} locked={Boolean(lead.convertedTransactionId) || lead.status !== 'open'} saving={quoteSaving} onCreate={onQuoteCreate} onTransition={onQuoteTransition} onShare={onQuoteShare} onRevokeLink={onQuoteLinkRevoke} onEmail={onQuoteEmail} />
+        </div>
 
+        <div id="attorney-lead-conversion" className="scroll-mt-4">
         {lead.convertedTransactionId ? (
-          <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
             <h4 className="font-semibold text-emerald-900">Matter created</h4>
             <p className="mt-1 text-sm text-emerald-800">This Lead has been converted and its Matter lineage is locked.</p>
             <a className="ui-button ui-button-secondary mt-3" href={`/transactions/${encodeURIComponent(lead.convertedTransactionId)}`}><ExternalLink size={16} /> Open Matter</a>
           </section>
         ) : canAssign ? (
-          <section className="rounded-2xl border border-emerald-200 p-4">
+          <section className="rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
             <h4 className="font-semibold text-slate-900">Convert to Matter</h4>
             <p className="mt-1 text-xs leading-5 text-slate-500">Creates a firm-originated active Matter directly. It will not enter Incoming Matters.</p>
             {!conversionReady ? <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">Qualify this Lead before conversion.</p> : null}
@@ -812,9 +911,10 @@ function LeadDetailDrawer({
             </button>
           </section>
         ) : null}
+        </div>
 
         {canEdit ? (
-          <section className="rounded-2xl border border-slate-200 p-4">
+          <section id="attorney-lead-record-activity" className="scroll-mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h4 className="font-semibold text-slate-900">Record activity</h4>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <Field label="Activity type">
@@ -831,7 +931,7 @@ function LeadDetailDrawer({
           </section>
         ) : null}
 
-        <section>
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h4 className="font-semibold text-slate-900">Contact details</h4>
           <div className="mt-3 grid gap-2 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600 sm:grid-cols-2">
             <p className="flex items-center gap-2"><Mail size={15} /> {contact.email || 'No email provided'}</p>
@@ -841,7 +941,7 @@ function LeadDetailDrawer({
           </div>
         </section>
 
-        <section>
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h4 className="font-semibold text-slate-900">Enquiry</h4>
           <dl className="mt-3 grid gap-3 text-sm">
             <div className="rounded-xl border border-slate-200 p-3"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">Property</dt><dd className="mt-1 text-slate-700">{detail.propertyAddress || 'Not provided'}</dd></div>
@@ -851,7 +951,7 @@ function LeadDetailDrawer({
           </dl>
         </section>
 
-        <section>
+        <section id="attorney-lead-activity" className="scroll-mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h4 className="font-semibold text-slate-900">Activity history</h4>
           {activitiesLoading ? (
             <p className="mt-3 text-sm text-slate-500">Loading activity…</p>
@@ -1308,7 +1408,7 @@ export default function AttorneyLeadsPage() {
                           <td>{optionLabel(SERVICE_OPTIONS, lead.detail.serviceType, 'General Enquiry')}</td>
                           <td>{optionLabel(SOURCE_OPTIONS, lead.sourceChannel, 'Other')}</td>
                           <td><StagePill stage={lead.stage} /></td>
-                          <td>{lead.assignedUserId ? 'Assigned' : 'Unassigned'}</td>
+                          <td>{assignees.find((assignee) => assignee.userId === lead.assignedUserId)?.name || (lead.assignedUserId ? 'Assigned team member' : 'Unassigned')}</td>
                           <td>{formatDate(lead.lastContactedAt)}</td>
                           <td className={isFollowUpDue(lead.nextFollowUpAt, followUpGraceMinutes) ? 'font-semibold text-orange-700' : ''}>{formatDate(lead.nextFollowUpAt)}</td>
                           <td><ChevronRight size={17} className="text-slate-400" /></td>

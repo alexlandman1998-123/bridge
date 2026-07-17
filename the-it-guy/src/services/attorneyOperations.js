@@ -20,6 +20,7 @@ import {
   proposeAppointmentReschedule,
   resolveAppointmentRescheduleRequest,
 } from './appointmentRescheduleService'
+import { canManageAttorneySigning } from './permissions/attorneyPermissionService'
 
 const MANAGEMENT_ROLES = new Set(['firm_admin', 'director_partner'])
 
@@ -1419,6 +1420,19 @@ export async function createAttorneyAppointmentInvite(input = {}) {
   }
 
   const user = await getAuthenticatedUser(client).catch(() => null)
+  const linkedWorkflow = normalizeText(templated.linkedWorkflow || input.linkedWorkflow)
+  const signingLaneKey = normalizeText(input.laneKey || input.lane_key || linkedWorkflow).toLowerCase()
+  const signingRole = signingLaneKey.includes('cancel')
+    ? 'cancellation_attorney'
+    : signingLaneKey.includes('bond')
+      ? 'bond_attorney'
+      : 'transfer_attorney'
+  if (
+    appointmentType === 'transfer_signing' &&
+    !(await canManageAttorneySigning(user?.id, transactionId, signingRole))
+  ) {
+    throw new Error('Only the assigned attorney can schedule signing for this workflow.')
+  }
   const appointmentId = createUuid()
   const nowIso = new Date().toISOString()
   const visibility = normalizeText(templated.visibility || input.visibility || 'client_visible') || 'client_visible'
@@ -1435,7 +1449,7 @@ export async function createAttorneyAppointmentInvite(input = {}) {
     location_type: normalizeText(input.locationType || input.location_type) || null,
     location: normalizeText(input.location) || null,
     meeting_url: normalizeText(input.meetingUrl || input.meeting_url) || null,
-    linked_workflow: normalizeText(templated.linkedWorkflow || input.linkedWorkflow) || null,
+    linked_workflow: linkedWorkflow || null,
     linked_workflow_stage: normalizeText(templated.linkedWorkflowStage || input.linkedWorkflowStage) || null,
     linked_transaction_stage: normalizeText(input.linkedTransactionStage || input.linked_transaction_stage) || null,
     visibility_scope: visibility,
@@ -1528,6 +1542,29 @@ export async function createAttorneyAppointmentInvite(input = {}) {
   }).catch((notificationError) => [{ error: notificationError?.message || 'Notification delivery failed.' }])
 
   await scheduleAppointmentReminders(appointmentId).catch(() => null)
+
+  try {
+    await client.from('transaction_events').insert({
+      transaction_id: transactionId,
+      event_type: 'AttorneySigningAppointmentScheduled',
+      event_data: {
+        appointmentId,
+        laneKey: signingLaneKey || 'transfer',
+        stageKey: normalizeText(templated.linkedWorkflowStage || input.linkedWorkflowStage) || null,
+        title: insertPayload.title,
+        date: appointmentDate,
+        time: startTime,
+        location: insertPayload.location,
+        signerName: recipientName,
+        signerEmail: recipientEmail,
+      },
+      created_by: isUuidLike(user?.id) ? user.id : null,
+      created_by_role: 'attorney',
+      visibility_scope: visibility,
+    })
+  } catch {
+    // Appointments remain authoritative when optional activity logging is unavailable.
+  }
 
   return {
     appointmentId,

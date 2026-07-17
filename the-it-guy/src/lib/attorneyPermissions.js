@@ -404,7 +404,7 @@ async function getAttorneyTransactionAssignmentsForPermission(client, transactio
 
   let query = client
     .from('transaction_attorney_assignments')
-    .select('id, transaction_id, firm_id, attorney_firm_id, assignment_type, attorney_role, department_id, attorney_department_id, primary_attorney_id, attorney_user_id, secretary_id, admin_handler_id, status, assignment_status, is_primary, can_update_workflow_lane')
+    .select('id, transaction_id, firm_id, attorney_firm_id, assignment_type, attorney_role, department_id, attorney_department_id, primary_attorney_id, attorney_user_id, secretary_id, admin_handler_id, status, assignment_status, is_primary, can_edit, can_manage_documents, can_manage_signing, can_add_internal_notes, can_add_shared_updates, can_update_workflow_lane')
     .eq('transaction_id', resolvedTransactionId)
 
   const resolvedFirmId = normalizeText(firmId)
@@ -536,10 +536,43 @@ export async function getAttorneyLaneAccessContext({ userId = null, transactionI
   )
   const overrideFirmId = activeLaneAssignment?.attorney_firm_id || activeLaneAssignment?.firm_id || activeMembership?.firmId || normalizeText(firmId)
   const managementOverrideEnabled = isManagementUser ? await getAttorneyFirmOverrideSetting(client, overrideFirmId) : false
-  const canActAsAttorney = Boolean(
-    (isAssignedAttorney && activeLaneAssignment?.can_update_workflow_lane !== false) ||
-      (isManagementUser && managementOverrideEnabled && canViewMatter && overrideFirmId),
+  const canUseManagementOverride = Boolean(isManagementUser && managementOverrideEnabled && canViewMatter && overrideFirmId)
+  const assignedLaneEditingEnabled = Boolean(
+    isAssignedAttorney &&
+      activeLaneAssignment?.can_edit !== false &&
+      activeLaneAssignment?.can_update_workflow_lane !== false,
   )
+  const canActAsAttorney = Boolean(
+    assignedLaneEditingEnabled || canUseManagementOverride,
+  )
+  const assignmentScopedCapabilities = {
+    canEdit: canActAsAttorney,
+    canUpdateLane: canActAsAttorney,
+    canRequestDocuments: Boolean(
+      canUseManagementOverride ||
+        (isAssignedAttorney && activeLaneAssignment?.can_edit !== false && activeLaneAssignment?.can_manage_documents !== false),
+    ),
+    canUploadDocuments: Boolean(
+      canUseManagementOverride ||
+        (isAssignedAttorney && activeLaneAssignment?.can_edit !== false && activeLaneAssignment?.can_manage_documents !== false),
+    ),
+    canReviewDocuments: Boolean(
+      canUseManagementOverride ||
+        (isAssignedAttorney && activeLaneAssignment?.can_edit !== false && activeLaneAssignment?.can_manage_documents !== false),
+    ),
+    canManageSigning: Boolean(
+      canUseManagementOverride ||
+        (isAssignedAttorney && activeLaneAssignment?.can_edit !== false && activeLaneAssignment?.can_manage_signing !== false),
+    ),
+    canAddInternalNote: Boolean(
+      canUseManagementOverride ||
+        (isAssignedAttorney && activeLaneAssignment?.can_edit !== false && activeLaneAssignment?.can_add_internal_notes !== false),
+    ),
+    canAddSharedUpdate: Boolean(
+      canUseManagementOverride ||
+        (isAssignedAttorney && activeLaneAssignment?.can_edit !== false && activeLaneAssignment?.can_add_shared_updates !== false),
+    ),
+  }
 
   return {
     canViewMatter,
@@ -550,6 +583,7 @@ export async function getAttorneyLaneAccessContext({ userId = null, transactionI
     isAssignedAttorney,
     isManagementUser,
     managementOverrideEnabled,
+    assignmentScopedCapabilities,
     laneRole,
     firmId: overrideFirmId || null,
     firmRole: activeMembership?.role || null,

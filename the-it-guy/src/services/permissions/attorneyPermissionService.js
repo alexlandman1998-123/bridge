@@ -5,6 +5,10 @@ import {
   normalizeAttorneyVisibility,
 } from '../../constants/attorneyPermissions'
 import {
+  ATTORNEY_MATTER_LANES,
+  buildAttorneyMatterCapabilityProfile,
+} from '../../core/transactions/attorneyMatterCapabilityProfile.js'
+import {
   canAccessAttorneyMatter,
   canAssignAttorneyToLane,
   canViewInternalAttorneyNotes,
@@ -23,7 +27,6 @@ import {
 
 const PROFESSIONAL_APP_ROLES = new Set(['agent', 'developer', 'bond_originator'])
 const ATTORNEY_FIRM_MANAGER_ROLES = new Set(['firm_admin', 'director_partner', 'attorney_admin', 'attorney_manager'])
-const PHASE_ONE_SHARED_WORKFLOW_EDITING = true
 
 function normalizeAppRole(value) {
   const normalized = String(value || '').trim().toLowerCase()
@@ -223,25 +226,37 @@ export async function getAttorneyLegalPermissionContext({ userId = null, transac
   const canViewAsAttorney = Boolean(attorneyAccess?.canViewMatter || (isAttorneyAppUser && await canAccessAttorneyMatter(transactionId, null, actor.userId).catch(() => false)))
   const canViewAsProfessional = Boolean(hasProfessionalParticipantAccess || hasLegacyProfessionalAccess)
   const canViewLegalWorkspace = Boolean(canViewAsAttorney || canViewAsProfessional)
-  const canActOnLane = Boolean(isAttorneyAppUser && attorneyAccess?.canActAsAttorney)
   const canManageMatter = Boolean(isAttorneyAppUser && attorneyAccess?.canManageMatter)
   const canAssignLane = Boolean(isAttorneyAppUser && attorneyAccess?.canAssignLane)
   const canViewInternal = Boolean(
     isAttorneyAppUser &&
       (await canViewInternalAttorneyNotes(transactionId, attorneyAccess?.firmId || membership?.firmId || null, actor.userId).catch(() => false)),
   )
-  const canEditAllWorkflowLanesInPhaseOne = Boolean(
-    PHASE_ONE_SHARED_WORKFLOW_EDITING &&
-      isAttorneyAppUser &&
-      canViewAsAttorney &&
-      (canActOnLane || canManageMatter || assignedRoles.length || membership),
-  )
+  // Lane mutations are deliberately assignment-scoped. Firm management only
+  // receives edit capabilities when the firm's explicit management override is
+  // enabled by getAttorneyLaneAccessContext.
+  const strictLaneCapabilities = attorneyAccess?.assignmentScopedCapabilities || {}
   const canPublishClientVisible = Boolean(
     isAttorneyAppUser &&
       membership &&
       hasAttorneyPermission(membership.role, 'can_publish_client_visible_updates') &&
-      (canActOnLane || canManageMatter || canEditAllWorkflowLanesInPhaseOne),
+      strictLaneCapabilities.canAddSharedUpdate,
   )
+  const assignmentScopedCapabilities = {
+    canEdit: Boolean(attorneyAccess?.assignmentScopedCapabilities?.canEdit),
+    canUpdateLane: Boolean(attorneyAccess?.assignmentScopedCapabilities?.canUpdateLane),
+    canRequestDocuments: Boolean(attorneyAccess?.assignmentScopedCapabilities?.canRequestDocuments),
+    canUploadDocuments: Boolean(attorneyAccess?.assignmentScopedCapabilities?.canUploadDocuments),
+    canReviewDocuments: Boolean(attorneyAccess?.assignmentScopedCapabilities?.canReviewDocuments),
+    canManageSigning: Boolean(attorneyAccess?.assignmentScopedCapabilities?.canManageSigning),
+    canAddInternalNote: Boolean(attorneyAccess?.assignmentScopedCapabilities?.canAddInternalNote),
+    canAddSharedUpdate: Boolean(attorneyAccess?.assignmentScopedCapabilities?.canAddSharedUpdate),
+    canPublishClientVisibleUpdate: Boolean(
+      attorneyAccess?.assignmentScopedCapabilities?.canAddSharedUpdate &&
+        membership &&
+        hasAttorneyPermission(membership.role, 'can_publish_client_visible_updates'),
+    ),
+  }
 
   return {
     userId: actor.userId,
@@ -255,22 +270,46 @@ export async function getAttorneyLegalPermissionContext({ userId = null, transac
     isFirmManagement,
     isAssignedAttorney: Boolean(attorneyAccess?.isAssignedAttorney),
     managementOverrideEnabled: Boolean(attorneyAccess?.managementOverrideEnabled),
+    assignment: attorneyAccess?.assignment || null,
+    assignmentScopedCapabilities,
     canViewLegalWorkspace,
     canViewLane: canViewLegalWorkspace,
-    canUpdateLane: Boolean(canActOnLane || canEditAllWorkflowLanesInPhaseOne),
-    canRequestDocuments: Boolean(canActOnLane || canEditAllWorkflowLanesInPhaseOne),
-    canUploadDocuments: Boolean(canActOnLane || canEditAllWorkflowLanesInPhaseOne),
-    canReviewDocuments: Boolean(canActOnLane || canEditAllWorkflowLanesInPhaseOne),
-    canManageSigning: Boolean(canActOnLane || canEditAllWorkflowLanesInPhaseOne),
-    canAddInternalNote: Boolean(canActOnLane || canManageMatter || canEditAllWorkflowLanesInPhaseOne),
-    canAddSharedUpdate: Boolean(canActOnLane || canManageMatter || canEditAllWorkflowLanesInPhaseOne),
+    canUpdateLane: Boolean(strictLaneCapabilities.canUpdateLane),
+    canRequestDocuments: Boolean(strictLaneCapabilities.canRequestDocuments),
+    canUploadDocuments: Boolean(strictLaneCapabilities.canUploadDocuments),
+    canReviewDocuments: Boolean(strictLaneCapabilities.canReviewDocuments),
+    canManageSigning: Boolean(strictLaneCapabilities.canManageSigning),
+    canAddInternalNote: Boolean(strictLaneCapabilities.canAddInternalNote),
+    canAddSharedUpdate: Boolean(strictLaneCapabilities.canAddSharedUpdate),
     canPublishClientVisibleUpdate: canPublishClientVisible,
     canAssignAttorney: canAssignLane,
     canReassignAttorney: canAssignLane,
-    canViewInternalNotes: Boolean(canViewInternal || canManageMatter || canEditAllWorkflowLanesInPhaseOne),
+    canViewInternalNotes: Boolean(canViewInternal || canManageMatter),
     canViewProfessionalUpdates: canViewLegalWorkspace,
     viewReason: canViewAsAttorney ? attorneyAccess?.reason || 'attorney_access' : canViewAsProfessional ? 'professional_participant' : 'no_access',
   }
+}
+
+export async function getAttorneyMatterCapabilityProfile({ userId = null, transactionId, requiredLaneKeys = [] } = {}) {
+  const laneEntries = await Promise.all(
+    ATTORNEY_MATTER_LANES.map(async (lane) => {
+      const context = await getAttorneyLegalPermissionContext({
+        userId,
+        transactionId,
+        attorneyRole: lane.attorneyRole,
+      })
+      return [lane.laneKey, context]
+    }),
+  )
+  const lanePermissionContexts = Object.fromEntries(laneEntries)
+  const firstContext = laneEntries[0]?.[1] || null
+
+  return buildAttorneyMatterCapabilityProfile({
+    userId: firstContext?.userId || userId,
+    appRole: firstContext?.appRole || null,
+    requiredLaneKeys,
+    lanePermissionContexts,
+  })
 }
 
 export async function canViewTransactionLegalWorkspace(userId, transactionId) {

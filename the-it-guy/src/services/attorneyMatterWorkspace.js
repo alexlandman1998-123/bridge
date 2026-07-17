@@ -1,5 +1,9 @@
 import { getAttorneyOperationalWorkspaceData } from './attorneyOperations'
 import { getAttorneyIncomingMatterQueue } from './attorneyIncomingMatterQueue'
+import {
+  buildAttorneyWorkflowPath,
+  getAttorneyMatterListWorkflowDetailKey,
+} from '../core/transactions/attorneyMatterWorkflowNavigation.js'
 
 export const ATTORNEY_MATTER_PAGE_SIZES = [20, 50, 100]
 
@@ -146,6 +150,13 @@ const ATTORNEY_MATTER_VIEW_CONFIGS = {
     primaryMetricLabel: 'Delayed Matters',
     itemLabel: 'delayed matters',
   },
+}
+
+export function getAttorneyMatterActionHref(row = {}, viewKey = 'all') {
+  const detailKey = getAttorneyMatterListWorkflowDetailKey(viewKey)
+  const transactionId = row.matterId || row.transactionId
+  if (!detailKey || !transactionId) return row.actionHref || ''
+  return buildAttorneyWorkflowPath(`/transactions/${encodeURIComponent(transactionId)}`, detailKey)
 }
 
 function normalize(value = '') {
@@ -908,7 +919,7 @@ export function buildAttorneyMatterWorkspace(operational = {}, options = {}) {
   const viewConfig = getAttorneyMatterViewConfig(options.view || 'all')
   const documentStatusByMatter = buildDocumentStatusMap(operational.documentQueue || [])
   const incomingMatterQueue = operational.incomingMatterQueue || operational.incomingMatterSource?.filteredRows || []
-  const baseRows = viewConfig.usesIncomingQueue && (operational.incomingMatterSource || incomingMatterQueue.length)
+  const normalizedRows = viewConfig.usesIncomingQueue && (operational.incomingMatterSource || incomingMatterQueue.length)
     ? incomingMatterQueue.map((matter) =>
         normalizeIncomingMatterRow(matter, {
           currentUser: operational.currentUser || {},
@@ -920,6 +931,10 @@ export function buildAttorneyMatterWorkspace(operational = {}, options = {}) {
           currentUser: operational.currentUser || {},
         }),
       )
+  const baseRows = normalizedRows.map((row) => ({
+    ...row,
+    actionHref: getAttorneyMatterActionHref(row, viewConfig.key),
+  }))
 
   const viewRows = applyBaseView(baseRows, viewConfig.key)
   const filteredRows = sortWorkspaceRows(applyWorkspaceFilters(viewRows, { ...options, view: viewConfig.key }))

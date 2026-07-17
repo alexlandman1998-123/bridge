@@ -440,14 +440,14 @@ export function buildAttorneyWorkflowActionCommand(action = {}, context = {}) {
       stageKey,
       commandType: 'schedule_signing',
       label: 'Schedule Signing',
-      description: 'Prepare a signing follow-up note for the workflow.',
+      description: 'Create a signing appointment and invite the relevant signer.',
       workPacket,
-      draft: buildNoteDraft({
+      draft: {
         laneKey,
-        visibility: workPacket.visibility,
-        message: sentence(actionLabel, actionDescription || 'Confirm date, signer, and documents for signing.'),
+        signerType: action.target || 'client',
+        stageKey,
         workPacket,
-      }),
+      },
     })
   }
 
@@ -487,7 +487,7 @@ export function buildAttorneyWorkflowActionCommand(action = {}, context = {}) {
       laneKey,
       stageKey,
       subject,
-      commandType: 'add_note',
+      commandType: 'resolve_blocker',
       requestedFrom: action.target || 'attorney',
       priority: commandPriorityForAction(action),
       visibility: 'internal',
@@ -498,16 +498,17 @@ export function buildAttorneyWorkflowActionCommand(action = {}, context = {}) {
       action,
       laneKey,
       stageKey,
-      commandType: 'add_note',
-      label: 'Add Resolution Note',
-      description: 'Record what changed or what is still blocking the stage.',
+      commandType: 'resolve_blocker',
+      label: 'Resolve Blocker',
+      description: 'Capture the resolution and move the blocked step back into progress.',
       workPacket,
-      draft: buildNoteDraft({
+      draft: {
         laneKey,
-        visibility: workPacket.visibility,
-        message: sentence(`Blocker update for ${subject || 'current stage'}.`, actionDescription),
+        status: 'in_progress',
+        note: '',
+        blockerOwner: '',
         workPacket,
-      }),
+      },
     })
   }
 
@@ -517,7 +518,7 @@ export function buildAttorneyWorkflowActionCommand(action = {}, context = {}) {
       laneKey,
       stageKey,
       subject,
-      commandType: 'add_note',
+      commandType: 'capture_matter_data',
       requestedFrom: action.target || 'attorney',
       priority: commandPriorityForAction(action),
       visibility: 'internal',
@@ -528,16 +529,40 @@ export function buildAttorneyWorkflowActionCommand(action = {}, context = {}) {
       action,
       laneKey,
       stageKey,
-      commandType: 'add_note',
-      label: 'Add Data Note',
-      description: 'Record the missing data so the team can capture it on the matter.',
+      commandType: 'capture_matter_data',
+      label: 'Capture Information',
+      description: 'Open the missing matter field and save it directly.',
       workPacket,
-      draft: buildNoteDraft({
+      draft: {
         laneKey,
-        visibility: workPacket.visibility,
-        message: sentence(`Matter data needed: ${subject || 'required field'}.`, actionDescription),
+        requirementId: action.relatedId || '',
         workPacket,
-      }),
+      },
+    })
+  }
+
+  if (actionType === 'review_workflow') {
+    const workPacket = buildWorkPacket({
+      action,
+      laneKey,
+      stageKey,
+      subject: actionLabel,
+      commandType: 'focus_workflow',
+      requestedFrom: 'attorney',
+      priority: commandPriorityForAction(action),
+      visibility: 'internal',
+      checklist: ['Review the focused workflow step.', 'Confirm the current evidence and outstanding requirements.'],
+      now,
+    })
+    return buildCommand({
+      action,
+      laneKey,
+      stageKey,
+      commandType: 'focus_workflow',
+      label: 'Review Workflow',
+      description: 'Open and focus the relevant workflow step.',
+      workPacket,
+      draft: { laneKey, stageKey, workPacket },
     })
   }
 

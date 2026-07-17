@@ -14,7 +14,13 @@ const server = await createServer({
 try {
   const {
     buildAttorneyMatterWorkspace,
+    getAttorneyMatterActionHref,
   } = await server.ssrLoadModule('/src/services/attorneyMatterWorkspace.js')
+
+  assert.equal(getAttorneyMatterActionHref({ matterId: 'tx-transfer' }, 'transfer'), '/transactions/tx-transfer/work/transfer')
+  assert.equal(getAttorneyMatterActionHref({ matterId: 'tx-bond' }, 'bond'), '/transactions/tx-bond/work/bond-registration')
+  assert.equal(getAttorneyMatterActionHref({ matterId: 'tx-cancellation' }, 'cancellation'), '/transactions/tx-cancellation/work/bond-cancellation')
+  assert.equal(getAttorneyMatterActionHref({ matterId: 'tx-overview', actionHref: '/transactions/tx-overview' }, 'all'), '/transactions/tx-overview')
 
   const source = {
     firm: { id: 'firm-1', name: 'Arch9 Attorneys' },

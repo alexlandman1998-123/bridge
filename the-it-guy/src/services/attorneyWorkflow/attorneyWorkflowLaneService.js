@@ -32,6 +32,10 @@ import {
   normalizeAttorneyWorkflowWorkPacket,
 } from '../../constants/attorneyWorkflowUsability.js'
 import { canAdvanceWorkflowStage } from '../documents/canonicalWorkflowGateService'
+import {
+  ATTORNEY_MATTER_LANES,
+  buildAttorneyMatterCapabilityProfile,
+} from '../../core/transactions/attorneyMatterCapabilityProfile.js'
 
 const LANE_META = {
   transfer: {
@@ -786,14 +790,25 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
   }
 
   const laneContexts = {}
-  for (const laneKey of requiredLaneKeys) {
-    const meta = LANE_META[laneKey]
-    laneContexts[laneKey] = await getAttorneyLegalPermissionContext({
+  for (const laneDefinition of ATTORNEY_MATTER_LANES) {
+    laneContexts[laneDefinition.laneKey] = await getAttorneyLegalPermissionContext({
       userId: actor?.id || null,
       transactionId: normalizedTransactionId,
-      attorneyRole: meta.attorneyRole,
-    }).catch(() => baselineContext)
+      attorneyRole: laneDefinition.attorneyRole,
+    }).catch(() => ({
+      ...baselineContext,
+      attorneyRole: laneDefinition.attorneyRole,
+      isAssignedAttorney: false,
+      assignment: null,
+      assignmentScopedCapabilities: null,
+    }))
   }
+  const matterCapabilityProfile = buildAttorneyMatterCapabilityProfile({
+    userId: actor?.id || null,
+    appRole: baselineContext?.appRole || null,
+    requiredLaneKeys,
+    lanePermissionContexts: laneContexts,
+  })
   const legalTimeline = buildTimelineFromSources({
     updates,
     history,
@@ -863,6 +878,7 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
           canReviewDocuments: Boolean(permissionContext?.canReviewDocuments),
           canManageSigning: Boolean(permissionContext?.canManageSigning),
           canAssignAttorney: Boolean(permissionContext?.canAssignAttorney),
+          assignmentScoped: permissionContext?.assignmentScopedCapabilities || null,
           readOnlyReason: permissionContext?.viewReason || 'view_only',
         },
         updates: visibleUpdates,
@@ -907,6 +923,7 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
     lanes,
     missingRequiredRoles: workflow.missingRequiredRoles,
     assignments,
+    matterCapabilityProfile,
     permissions: {
       canViewLegalWorkspace: true,
       canViewInternalNotes: Boolean(baselineContext?.canViewInternalNotes),
@@ -1433,6 +1450,7 @@ export async function addAttorneyWorkflowLaneUpdate(options = {}) {
 export async function requestAttorneyWorkflowLaneDocument({
   transactionId,
   laneKey,
+  requirement = null,
   title,
   description = '',
   requestedFrom = 'client',
@@ -1456,6 +1474,7 @@ export async function requestAttorneyWorkflowLaneDocument({
     transactionId: normalizedTransactionId,
     actorId: actor.id,
     laneKey: normalizedLaneKey,
+    requirement,
     title: normalizedTitle,
     description,
     requestedFrom,

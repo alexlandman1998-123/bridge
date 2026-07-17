@@ -145,6 +145,7 @@ import { normalizePropertyCategory, PROPERTY_CATEGORIES } from './propertyTaxono
 import { getSuggestedRescheduleSlots } from './appointmentAvailabilityEngine'
 import { resolveTransactionParticipantShape } from '../services/roleResolutionService'
 import { assertWorkspaceEntitlementLimit } from '../services/workspaceEntitlementsService'
+import { canUpdateAttorneyLanePermission } from '../services/permissions/attorneyPermissionService'
 import {
   BOND_NOTIFICATION_EVENTS,
   checkAndNotifyBondApplicationReadyForReview,
@@ -30904,6 +30905,12 @@ export async function saveTransactionRoutingProfile({
   if (!['attorney', 'developer', 'internal_admin', 'admin', 'agent', 'bond_originator'].includes(normalizedActorRole)) {
     throw new Error('Your role does not have permission to update routing facts.')
   }
+  if (
+    normalizedActorRole === 'attorney' &&
+    !(await canUpdateAttorneyLanePermission(actorProfile.userId, transactionId, 'transfer_attorney'))
+  ) {
+    throw new Error('Only the assigned transfer attorney can update routing facts for this matter.')
+  }
 
   let transactionQuery = await client
     .from('transactions')
@@ -31024,6 +31031,75 @@ export async function saveTransactionRoutingProfile({
       requiredWorkflowKeys: routingProfile.requiredWorkflowKeys,
       missingFields: routingProfile.missingFields,
     },
+  })
+
+  return fetchTransactionById(transactionId)
+}
+
+const ATTORNEY_MATTER_FACT_FIELDS = Object.freeze({
+  matter_number: { column: 'matter_number', type: 'text' },
+  purchase_price: { column: 'purchase_price', type: 'number' },
+  property_description: { column: 'property_description', type: 'text' },
+  title_deed_or_property_identifier: { column: 'title_deed_number', type: 'text' },
+})
+
+export async function saveTransactionAttorneyMatterFact({
+  transactionId,
+  requirementId,
+  value,
+  actorRole = null,
+} = {}) {
+  if (!transactionId) throw new Error('Transaction is required.')
+  const field = ATTORNEY_MATTER_FACT_FIELDS[String(requirementId || '').trim().toLowerCase()]
+  if (!field) throw new Error('This matter field is not editable from the transfer workspace.')
+
+  const client = requireClient()
+  const actorProfile = await resolveActiveProfileContext(client)
+  const normalizedActorRole = normalizeRoleType(actorRole || actorProfile.role || 'attorney')
+  if (!['attorney', 'internal_admin', 'admin', 'agent'].includes(normalizedActorRole)) {
+    throw new Error('Your role does not have permission to update this matter field.')
+  }
+  if (
+    normalizedActorRole === 'attorney' &&
+    !(await canUpdateAttorneyLanePermission(actorProfile.userId, transactionId, 'transfer_attorney'))
+  ) {
+    throw new Error('Only the assigned transfer attorney can update this matter field.')
+  }
+
+  const normalizedValue = field.type === 'number'
+    ? Number(String(value ?? '').replace(/[^0-9.-]/g, ''))
+    : normalizeNullableText(value)
+  if (field.type === 'number' && (!Number.isFinite(normalizedValue) || normalizedValue < 0)) {
+    throw new Error('Enter a valid amount.')
+  }
+  if (field.type === 'text' && !normalizedValue) throw new Error('A value is required.')
+
+  const updateResult = await client
+    .from('transactions')
+    .update({ [field.column]: normalizedValue, updated_at: new Date().toISOString() })
+    .eq('id', transactionId)
+  if (updateResult.error) throw updateResult.error
+
+  try {
+    await logTransactionEventIfPossible(client, {
+      transactionId,
+      eventType: 'AttorneyMatterFactUpdated',
+      eventData: { requirementId, field: field.column },
+      createdBy: actorProfile.userId || null,
+      createdByRole: normalizedActorRole,
+    })
+  } catch (eventError) {
+    console.warn('[attorney-workflow] unable to record matter fact update', eventError)
+  }
+
+  await publishWorkflowChangedIfPossible(client, {
+    transactionId,
+    triggerType: 'matter_data',
+    triggerId: transactionId,
+    reasonCode: 'attorney_matter_fact_updated',
+    userId: actorProfile.userId || null,
+    source: 'attorney_transfer_workspace',
+    payload: { requirementId, field: field.column },
   })
 
   return fetchTransactionById(transactionId)
