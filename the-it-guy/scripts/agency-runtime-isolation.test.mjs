@@ -233,7 +233,7 @@ async function signInExistingFixture(config) {
     email: config.email,
     password: config.password,
   })
-  await client.auth.signOut().catch(() => {})
+  await client.auth.signOut({ scope: 'local' }).catch(() => {})
   if (error) return null
   return data?.user || null
 }

@@ -55,6 +55,8 @@ import {
 import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import StartDocumentModal from '../components/documents/StartDocumentModal'
 import LoadingSkeleton from '../components/LoadingSkeleton'
+import SellerAttorneyRecommendationModal from '../components/seller/SellerAttorneyRecommendationModal'
+import SellerAttorneyDecisionSummary from '../components/seller/SellerAttorneyDecisionSummary'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import AreaMultiSelect from '../components/location/AreaMultiSelect'
 import LeadImportModal from '../components/leads/LeadImportModal'
@@ -85,6 +87,7 @@ import {
   normalizeDocumentStatus,
 } from '../lib/clientPortalDocumentStatus'
 import { normalizeLeadCategory as normalizeCanonicalLeadCategory } from '../lib/leadCategory'
+import { buildSellerTransferAttorneyOnboardingPatch } from '../lib/sellerTransferAttorneyDecision'
 import { listOrganisationUsers } from '../lib/settingsApi'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
@@ -17712,6 +17715,7 @@ function SellerProfileTab({
   onAgentCompleteSellerOnboarding,
   onResendSellerPortalLink,
   onCopySellerPortalLink,
+  onGenerateMandate,
 }) {
   const sourceFormData = useMemo(() => clonePlainObject(readSellerOnboardingFormData(listing, row)), [listing, row])
   const sourceKey = useMemo(() => JSON.stringify(sourceFormData), [sourceFormData])
@@ -18395,6 +18399,13 @@ function SellerProfileTab({
           )}
         </SellerWorkspaceCard>
       </div>
+
+      <SellerAttorneyDecisionSummary
+        decision={sourceFormData.transferAttorneyDecision || sourceFormData.transfer_attorney_decision || {}}
+        sellerEmail={sellerEmail}
+        sellerPhone={sellerPhone}
+        onContinueToMandate={onGenerateMandate}
+      />
 
       <SellerWorkspaceCard
         id="seller-onboarding-editor"
@@ -20330,6 +20341,7 @@ function SellerTabContent({
         onAgentCompleteSellerOnboarding={onAgentCompleteSellerOnboarding}
         onResendSellerPortalLink={onResendSellerPortalLink}
         onCopySellerPortalLink={onCopySellerPortalLink}
+        onGenerateMandate={onGenerateMandate}
       />
     )
   }
@@ -20834,6 +20846,7 @@ function AgentLeadWorkspace() {
   const [sellerActionError, setSellerActionError] = useState('')
   const [sellerActionMessage, setSellerActionMessage] = useState('')
   const [sendingSellerOnboarding, setSendingSellerOnboarding] = useState(false)
+  const [sellerAttorneyRecommendationOpen, setSellerAttorneyRecommendationOpen] = useState(false)
   const [sendingSellerPortalLink, setSendingSellerPortalLink] = useState(false)
   const [savingSellerCommission, setSavingSellerCommission] = useState(false)
   const [mandateStartOpen, setMandateStartOpen] = useState(false)
@@ -20964,6 +20977,13 @@ function AgentLeadWorkspace() {
     })
   }, [isSellerLeadWorkspace, linkedSellerListing, row, sellerJourney, sellerMandatePacket, sellerMandatePacketStatus])
   const sellerOnboardingStatus = row ? getSellerOnboardingStatus(row, linkedSellerListing, sellerJourney) : ''
+  const sellerAttorneyDecision = useMemo(() => (
+    linkedSellerListing?.sellerOnboarding?.formData?.transferAttorneyDecision ||
+    linkedSellerListing?.seller_onboarding?.form_data?.transferAttorneyDecision ||
+    row?.sellerOnboarding?.formData?.transferAttorneyDecision ||
+    row?.seller_onboarding?.form_data?.transferAttorneyDecision ||
+    null
+  ), [linkedSellerListing, row])
   useEffect(() => {
     sellerOnboardingFallbackLinkRef.current = getSellerOnboardingLink(row, linkedSellerListing) || ''
   }, [linkedSellerListing, row])
@@ -21037,7 +21057,7 @@ function AgentLeadWorkspace() {
     }
   }, [activeTab, availableTabs, isSellerLeadWorkspace, row])
 
-  const sendSellerOnboardingForLead = useCallback(async () => {
+  const performSellerOnboardingSend = useCallback(async (attorneyDecision) => {
     if (!row || !isSellerLeadWorkspace || sendingSellerOnboarding || sellerOnboardingInFlightRef.current) return
     if (!organisationId) {
       setSellerActionError('Select an agency workspace before sending seller onboarding.')
@@ -21104,6 +21124,10 @@ function AgentLeadWorkspace() {
         deferStatusTransition: true,
         performedBy: normalizeText(actor.userId || actor.id),
       })
+      const attorneyRecommendationPatch = buildSellerTransferAttorneyOnboardingPatch(attorneyDecision)
+      await updatePrivateListingOnboardingFormData(listingId, attorneyRecommendationPatch, {
+        syncRequirements: false,
+      })
       console.info('[Seller onboarding] link ready', {
         ...debugContext,
         listingId,
@@ -21141,6 +21165,16 @@ function AgentLeadWorkspace() {
         sellerOnboardingLink: onboarding?.link,
         sellerOnboardingStatus: 'sent',
         listingId,
+        sellerOnboarding: {
+          ...(row?.sellerOnboarding || {}),
+          token: onboarding?.token,
+          link: onboarding?.link,
+          status: 'sent',
+          formData: {
+            ...((row?.sellerOnboarding?.formData && typeof row.sellerOnboarding.formData === 'object') ? row.sellerOnboarding.formData : {}),
+            ...attorneyRecommendationPatch,
+          },
+        },
       }
       let statusSyncWarning = ''
       sendPhase = 'mark_sent'
@@ -21205,6 +21239,7 @@ function AgentLeadWorkspace() {
           console.warn('[AgentLeadsPage] Seller onboarding post-send sync failed.', postSendError)
         }
       })()
+      return true
     } catch (actionError) {
       console.warn('[Seller onboarding] send failed', {
         ...debugContext,
@@ -21213,11 +21248,23 @@ function AgentLeadWorkspace() {
       })
       setSellerActionMessage('')
       setSellerActionError(actionError?.message || 'Unable to send seller onboarding right now.')
+      return false
     } finally {
       sellerOnboardingInFlightRef.current = false
       setSendingSellerOnboarding(false)
     }
   }, [actor, isSellerLeadWorkspace, linkedSellerListing, loadWorkspace, organisationId, row, sendingSellerOnboarding, workspaceName])
+
+  const sendSellerOnboardingForLead = useCallback(() => {
+    if (!row || !isSellerLeadWorkspace || sendingSellerOnboarding) return
+    setSellerActionError('')
+    setSellerAttorneyRecommendationOpen(true)
+  }, [isSellerLeadWorkspace, row, sendingSellerOnboarding])
+
+  const confirmSellerAttorneyRecommendation = useCallback(async (attorneyDecision) => {
+    const sent = await performSellerOnboardingSend(attorneyDecision)
+    if (sent) setSellerAttorneyRecommendationOpen(false)
+  }, [performSellerOnboardingSend])
 
   const completeSellerOnboardingAsAgent = useCallback(async (formData = {}, meta = {}) => {
     if (!row || !isSellerLeadWorkspace) return
@@ -21993,20 +22040,32 @@ function AgentLeadWorkspace() {
         </>
       ) : null}
       {row && isSellerLeadWorkspace ? (
-        <StartDocumentModal
-          open={mandateStartOpen}
-          onClose={() => setMandateStartOpen(false)}
-          entryPoint={DOCUMENT_START_ENTRY_POINTS.sellerLeadMandate}
-          packetType={DOCUMENT_START_PACKET_TYPES.mandate}
-          documentKind={DOCUMENT_START_DOCUMENT_KINDS.standard}
-          hasExistingContext={Boolean(row)}
-          hasClientContact={Boolean(normalizeText(row.email || row.contact?.email || row.phone || row.contact?.phone))}
-          hasParentDocument
-          contextSummary={sellerMandateStartSummary}
-          initialLegalScenario={sellerMandateLegalScenario}
-          busy={sendingSellerOnboarding}
-          onContinue={handleStartMandateDocument}
-        />
+        <>
+          <SellerAttorneyRecommendationModal
+            open={sellerAttorneyRecommendationOpen}
+            sellerName={normalizeText(row.name || row.contact?.name)}
+            propertyLabel={getSellerPropertySummary(row, linkedSellerListing).address}
+            actor={actor}
+            initialDecision={sellerAttorneyDecision}
+            busy={sendingSellerOnboarding}
+            onClose={() => setSellerAttorneyRecommendationOpen(false)}
+            onConfirm={confirmSellerAttorneyRecommendation}
+          />
+          <StartDocumentModal
+            open={mandateStartOpen}
+            onClose={() => setMandateStartOpen(false)}
+            entryPoint={DOCUMENT_START_ENTRY_POINTS.sellerLeadMandate}
+            packetType={DOCUMENT_START_PACKET_TYPES.mandate}
+            documentKind={DOCUMENT_START_DOCUMENT_KINDS.standard}
+            hasExistingContext={Boolean(row)}
+            hasClientContact={Boolean(normalizeText(row.email || row.contact?.email || row.phone || row.contact?.phone))}
+            hasParentDocument
+            contextSummary={sellerMandateStartSummary}
+            initialLegalScenario={sellerMandateLegalScenario}
+            busy={sendingSellerOnboarding}
+            onContinue={handleStartMandateDocument}
+          />
+        </>
       ) : null}
       {row && !isSellerLeadWorkspace ? (
         <>

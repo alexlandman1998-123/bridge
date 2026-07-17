@@ -165,7 +165,7 @@ async function ensureAuthUserForEmail(service, { email, password }) {
   if (String(error.message || '').toLowerCase().includes('already been registered')) {
     const login = await service.auth.signInWithPassword({ email, password })
     if (!login.error && login.data?.user?.id) {
-      await service.auth.signOut().catch(() => {})
+      await service.auth.signOut({ scope: 'local' }).catch(() => {})
       await ensureProfileForUser(service, { userId: login.data.user.id, email })
       return login.data.user.id
     }

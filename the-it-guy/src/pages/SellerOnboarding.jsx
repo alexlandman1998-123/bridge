@@ -11,6 +11,7 @@ import {
   Home,
   Landmark,
   Plus,
+  Scale,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -54,6 +55,12 @@ import {
 } from '../services/documents/sellerOnboardingFactTransformer'
 import { getDemoSellerOnboardingListing, isSellerOnboardingDemoToken } from '../lib/onboardingDemoLinks'
 import { resolveSellerOnboardingFlow } from '../lib/sellerOnboardingFlow'
+import {
+  SELLER_TRANSFER_ATTORNEY_DECISIONS,
+  SELLER_TRANSFER_ATTORNEY_RECOMMENDATION_STATUSES,
+  normalizeSellerTransferAttorneyDecision,
+  validateSellerTransferAttorneyDecision,
+} from '../lib/sellerTransferAttorneyDecision'
 import {
   getPropertyCategoryLabel,
   getPropertyTypeLabel,
@@ -479,6 +486,20 @@ function getSpecialMandateConditionLabels(conditions = {}) {
   return SPECIAL_MANDATE_CONDITION_OPTIONS
     .filter((option) => Boolean(record[option.key]))
     .map((option) => option.label)
+}
+
+function getTransferAttorneyDecisionLabel(decision = {}) {
+  const normalized = normalizeSellerTransferAttorneyDecision(decision)
+  if (normalized.decision === SELLER_TRANSFER_ATTORNEY_DECISIONS.acceptRecommendation) {
+    return 'Recommended attorney accepted'
+  }
+  if (normalized.decision === SELLER_TRANSFER_ATTORNEY_DECISIONS.nominateOwn) {
+    return 'Another attorney nominated'
+  }
+  if (normalized.decision === SELLER_TRANSFER_ATTORNEY_DECISIONS.defer) {
+    return 'Discuss with agent first'
+  }
+  return 'Not selected'
 }
 
 function resolveAgencyBrand(listing = {}) {
@@ -1399,6 +1420,9 @@ function normalizeFormData(listing) {
     mandateEndDate: existing.mandateEndDate || existing.mandate_end_date || existing.mandateExpiryDate || existing.mandate_expiry_date || canonicalFacts?.transaction?.mandate_end_date || canonicalFacts?.transaction?.mandate_expiry_date || listing?.mandateEndDate || listing?.mandate_end_date || listing?.mandateExpiryDate || listing?.mandate_expiry_date || '',
     specialMandateConditions: existing.specialMandateConditions || existing.special_mandate_conditions || canonicalFacts?.transaction?.special_mandate_conditions || {},
     additionalConditions: existing.additionalConditions || existing.additional_conditions || existing.additionalMandateConditions || existing.additional_mandate_conditions || canonicalFacts?.transaction?.additional_conditions || '',
+    transferAttorneyDecision: normalizeSellerTransferAttorneyDecision(
+      existing.transferAttorneyDecision || existing.transfer_attorney_decision || {},
+    ),
     sellingTimeline: existing.sellingTimeline || '1_3_months',
     sellingReason: existing.sellingReason || '',
 
@@ -2773,6 +2797,55 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     })
   }
 
+  function handleTransferAttorneyDecision(decision) {
+    setForm((previous) => {
+      const current = normalizeSellerTransferAttorneyDecision(previous?.transferAttorneyDecision || {})
+      return {
+        ...(previous || {}),
+        transferAttorneyDecision: normalizeSellerTransferAttorneyDecision({
+          ...current,
+          decision,
+          selectionSource: null,
+          selectedAttorney: decision === SELLER_TRANSFER_ATTORNEY_DECISIONS.nominateOwn
+            ? current.selectedAttorney
+            : null,
+          decidedBy: {
+            name: [previous?.sellerFirstName, previous?.sellerSurname].filter(Boolean).join(' '),
+            email: previous?.email || '',
+          },
+          decidedAt: new Date().toISOString(),
+          consentCaptured: decision !== SELLER_TRANSFER_ATTORNEY_DECISIONS.defer,
+          agentAssisted: false,
+        }),
+      }
+    })
+  }
+
+  function handleNominatedTransferAttorneyUpdate(key, value) {
+    setForm((previous) => {
+      const current = normalizeSellerTransferAttorneyDecision(previous?.transferAttorneyDecision || {})
+      return {
+        ...(previous || {}),
+        transferAttorneyDecision: normalizeSellerTransferAttorneyDecision({
+          ...current,
+          decision: SELLER_TRANSFER_ATTORNEY_DECISIONS.nominateOwn,
+          selectionSource: null,
+          selectedAttorney: {
+            ...(current.selectedAttorney || {}),
+            [key]: value,
+          },
+          decidedBy: {
+            name: [previous?.sellerFirstName, previous?.sellerSurname].filter(Boolean).join(' '),
+            email: previous?.email || '',
+          },
+          decidedAt: current.decidedAt || new Date().toISOString(),
+          consentCaptured: true,
+          agentAssisted: false,
+        }),
+      }
+    })
+  }
+
   function handlePropertyAddressUpdate(partial = {}) {
     setForm((previous) => {
       const current = getPropertyAddressDetails(listing || {}, previous || {})
@@ -3417,6 +3490,25 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       if (Number.isNaN(mandateStart.getTime()) || Number.isNaN(mandateEnd.getTime()) || mandateEnd <= mandateStart) {
         return 'Mandate end date must be after the start date.'
       }
+      const transferAttorneyValidation = validateSellerTransferAttorneyDecision(form.transferAttorneyDecision, {
+        requireDecision: true,
+      })
+      if (!transferAttorneyValidation.valid) {
+        return transferAttorneyValidation.errors[0]
+      }
+      if (
+        transferAttorneyValidation.value.decision === SELLER_TRANSFER_ATTORNEY_DECISIONS.nominateOwn &&
+        !transferAttorneyValidation.value.selectedAttorney.companyName
+      ) {
+        return 'Please provide the name of your nominated transferring attorney firm.'
+      }
+      if (
+        transferAttorneyValidation.value.decision === SELLER_TRANSFER_ATTORNEY_DECISIONS.nominateOwn &&
+        !transferAttorneyValidation.value.selectedAttorney.email &&
+        !transferAttorneyValidation.value.selectedAttorney.phone
+      ) {
+        return 'Please provide an email address or phone number for your nominated transferring attorney.'
+      }
     }
 
     if (currentStep === 1) {
@@ -3524,6 +3616,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     const finalRequiredMissing = [
       ...sellerMissing.map((item) => `Seller: ${item}`),
       ...propertyMissing.map((item) => `Property: ${item}`),
+      ...transferAttorneyMissing.map((item) => `Transferring attorney: ${item}`),
       ...getPropertyDisclosureMissingItems(form.propertyDisclosure || {}).map((item) => `Disclosure: ${item}`),
     ]
     if (finalRequiredMissing.length) {
@@ -3544,6 +3637,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       })
       const finalForm = {
         ...(form || {}),
+        transferAttorneyDecision: normalizeSellerTransferAttorneyDecision(form.transferAttorneyDecision || {}),
         propertyDisclosure: {
           ...(form.propertyDisclosure || {}),
           generatedDocument: disclosureDocument,
@@ -3703,7 +3797,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     ownership: 0,
     identity: 1,
     mandatePreferences: 2,
-    sellingContext: 3,
+    transferringAttorney: 3,
+    sellingContext: 4,
   }
   const propertyPaneIndexes = (() => {
     let paneIndex = 0
@@ -3791,6 +3886,25 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       mandateEndDateValue &&
       (!Number.isFinite(mandateStartDateValue.getTime()) || !Number.isFinite(mandateEndDateValue.getTime()) || mandateEndDateValue <= mandateStartDateValue),
   )
+  const transferAttorneyDecision = normalizeSellerTransferAttorneyDecision(form.transferAttorneyDecision || {})
+  const hasRecommendedTransferAttorney =
+    transferAttorneyDecision.recommendationStatus === SELLER_TRANSFER_ATTORNEY_RECOMMENDATION_STATUSES.recommended
+  const transferAttorneyValidation = validateSellerTransferAttorneyDecision(transferAttorneyDecision, {
+    requireDecision: true,
+  })
+  const transferAttorneyMissing = [
+    ...transferAttorneyValidation.errors,
+    transferAttorneyDecision.decision === SELLER_TRANSFER_ATTORNEY_DECISIONS.nominateOwn &&
+      !transferAttorneyDecision.selectedAttorney.companyName &&
+      'Nominated attorney firm name',
+    transferAttorneyDecision.decision === SELLER_TRANSFER_ATTORNEY_DECISIONS.nominateOwn &&
+      !transferAttorneyDecision.selectedAttorney.email &&
+      !transferAttorneyDecision.selectedAttorney.phone &&
+      'Nominated attorney contact details',
+  ].filter(Boolean)
+  const transferAttorneyDisplay = transferAttorneyDecision.selectedAttorney.companyName ||
+    transferAttorneyDecision.recommendedAttorney.companyName ||
+    'Not selected'
   const sellerMissing = [
     !form.sellerFirstName && 'Seller name',
     !form.sellerSurname && 'Seller surname',
@@ -3833,6 +3947,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const reviewIssueGroups = [
     { label: 'Seller details', missing: sellerMissing, onEdit: () => setCurrentStep(0) },
     { label: 'Mandate preferences', missing: mandateMissing, onEdit: () => setCurrentStep(0) },
+    { label: 'Transferring attorney', missing: transferAttorneyMissing, onEdit: () => setCurrentStep(0) },
     { label: 'Property details', missing: propertyMissing, onEdit: () => setCurrentStep(1) },
     { label: 'Property disclosure', missing: disclosureMissing, onEdit: () => setCurrentStep(2) },
     ...(bondComplianceSummary ? [{ label: 'Bond follow-up', missing: bondComplianceSummary.missing, onEdit: () => setCurrentStep(1) }] : []),
@@ -4471,6 +4586,131 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       placeholder="Access rules, timing, exclusions, or anything your agent should include in the mandate."
                     />
                   </label>
+                </div>
+              </FormSection>
+
+              <FormSection
+                icon={Scale}
+                title="Transferring attorney"
+                description="Choose the attorney who should handle the property transfer."
+                mobilePaneIndex={sellerPaneIndexes.transferringAttorney}
+              >
+                <div className="grid gap-5">
+                  <div className="rounded-[16px] border border-[#cfe3d7] bg-[#f2fbf5] px-4 py-3.5 text-sm leading-6 text-[#35546c]">
+                    <p className="font-semibold text-[#172334]">The choice belongs to you</p>
+                    <p className="mt-1">
+                      As the seller, you appoint the transferring attorney. Your agency may recommend a trusted firm, but you may nominate another attorney or ask your agent to discuss the options with you first.
+                    </p>
+                  </div>
+
+                  {hasRecommendedTransferAttorney ? (
+                    <article className="rounded-[18px] border border-[#d5e2ef] bg-white p-4 shadow-[0_10px_28px_rgba(38,62,87,0.06)]">
+                      <div className="flex items-start gap-3">
+                        <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-[#eaf8ef] text-[#138a3d]">
+                          <Scale size={21} strokeWidth={2.2} />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold uppercase tracking-[0.13em] text-[#138a3d]">Your agency recommends</p>
+                          <h3 className="mt-1 text-base font-semibold text-[#172334]">
+                            {transferAttorneyDecision.recommendedAttorney.companyName}
+                          </h3>
+                          {transferAttorneyDecision.recommendedAttorney.contactPerson ? (
+                            <p className="mt-1 text-sm text-[#60748b]">{transferAttorneyDecision.recommendedAttorney.contactPerson}</p>
+                          ) : null}
+                          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[#4f6378]">
+                            {transferAttorneyDecision.recommendedAttorney.email ? <span>{transferAttorneyDecision.recommendedAttorney.email}</span> : null}
+                            {transferAttorneyDecision.recommendedAttorney.phone ? <span>{transferAttorneyDecision.recommendedAttorney.phone}</span> : null}
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  ) : (
+                    <div className="rounded-[16px] border border-[#e0e7f0] bg-[#f8fafc] px-4 py-3 text-sm leading-6 text-[#60748b]">
+                      Your agency has not recommended a firm for this sale. You can nominate an attorney now or ask your agent to contact you.
+                    </div>
+                  )}
+
+                  <div>
+                    <p className="text-sm font-medium text-[#2a4057]">What would you like to do?</p>
+                    <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-3">
+                      {hasRecommendedTransferAttorney ? (
+                        <ChoiceCard
+                          active={transferAttorneyDecision.decision === SELLER_TRANSFER_ATTORNEY_DECISIONS.acceptRecommendation}
+                          icon={BadgeCheck}
+                          title="Use the recommended attorney"
+                          description="I am happy to appoint the firm shown above."
+                          onClick={() => handleTransferAttorneyDecision(SELLER_TRANSFER_ATTORNEY_DECISIONS.acceptRecommendation)}
+                        />
+                      ) : null}
+                      <ChoiceCard
+                        active={transferAttorneyDecision.decision === SELLER_TRANSFER_ATTORNEY_DECISIONS.nominateOwn}
+                        icon={Building2}
+                        title="Nominate another attorney"
+                        description="I already have a firm I would prefer to use."
+                        onClick={() => handleTransferAttorneyDecision(SELLER_TRANSFER_ATTORNEY_DECISIONS.nominateOwn)}
+                      />
+                      <ChoiceCard
+                        active={transferAttorneyDecision.decision === SELLER_TRANSFER_ATTORNEY_DECISIONS.defer}
+                        icon={ClipboardCheck}
+                        title="Discuss this first"
+                        description="Please ask my agent to contact me before an attorney is appointed."
+                        onClick={() => handleTransferAttorneyDecision(SELLER_TRANSFER_ATTORNEY_DECISIONS.defer)}
+                      />
+                    </div>
+                  </div>
+
+                  {transferAttorneyDecision.decision === SELLER_TRANSFER_ATTORNEY_DECISIONS.nominateOwn ? (
+                    <div className="rounded-[18px] border border-[#dbe6f2] bg-[#f8fbff] p-4">
+                      <p className="font-semibold text-[#172334]">Your nominated attorney</p>
+                      <p className="mt-1 text-sm leading-5 text-[#60748b]">Provide enough detail for your agent to contact the firm and confirm the appointment.</p>
+                      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Firm name
+                          <input
+                            className={DETAIL_INPUT_CLASS}
+                            value={transferAttorneyDecision.selectedAttorney.companyName || ''}
+                            onChange={(event) => handleNominatedTransferAttorneyUpdate('companyName', event.target.value)}
+                            placeholder="Attorney firm name"
+                          />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Contact person (optional)
+                          <input
+                            className={DETAIL_INPUT_CLASS}
+                            value={transferAttorneyDecision.selectedAttorney.contactPerson || ''}
+                            onChange={(event) => handleNominatedTransferAttorneyUpdate('contactPerson', event.target.value)}
+                            placeholder="Name and surname"
+                          />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Email address
+                          <input
+                            className={DETAIL_INPUT_CLASS}
+                            type="email"
+                            value={transferAttorneyDecision.selectedAttorney.email || ''}
+                            onChange={(event) => handleNominatedTransferAttorneyUpdate('email', event.target.value)}
+                            placeholder="attorney@example.co.za"
+                          />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Phone number
+                          <input
+                            className={DETAIL_INPUT_CLASS}
+                            type="tel"
+                            value={transferAttorneyDecision.selectedAttorney.phone || ''}
+                            onChange={(event) => handleNominatedTransferAttorneyUpdate('phone', event.target.value)}
+                            placeholder="Contact number"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {transferAttorneyDecision.decision === SELLER_TRANSFER_ATTORNEY_DECISIONS.defer ? (
+                    <OnboardingSummaryCard title="Your agent will follow up" icon="calendar" tone="neutral">
+                      No attorney will be treated as selected from this onboarding. Your agent will contact you to discuss the appointment.
+                    </OnboardingSummaryCard>
+                  ) : null}
                 </div>
               </FormSection>
 
@@ -5164,6 +5404,19 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     { label: 'End Date', value: formatDateValue(form.mandateEndDate) },
                     { label: 'Special Conditions', value: selectedSpecialMandateConditionLabels.length ? selectedSpecialMandateConditionLabels.join(', ') : 'None selected' },
                     { label: 'Additional Conditions', value: form.additionalConditions || 'Not provided' },
+                  ]}
+                />
+                <ReviewCard
+                  title="Transferring Attorney"
+                  missing={transferAttorneyMissing}
+                  onEdit={() => setCurrentStep(0)}
+                  collapsible
+                  defaultOpen
+                  items={[
+                    { label: 'Decision', value: getTransferAttorneyDecisionLabel(transferAttorneyDecision) },
+                    { label: 'Attorney', value: transferAttorneyDisplay },
+                    { label: 'Contact', value: transferAttorneyDecision.selectedAttorney.contactPerson || transferAttorneyDecision.recommendedAttorney.contactPerson || 'Not provided' },
+                    { label: 'Email', value: transferAttorneyDecision.selectedAttorney.email || transferAttorneyDecision.recommendedAttorney.email || 'Not provided' },
                   ]}
                 />
                 <ReviewCard

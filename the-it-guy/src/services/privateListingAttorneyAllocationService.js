@@ -1,4 +1,11 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
+import { SELLER_TRANSFER_ATTORNEY_SELECTION_SOURCES } from '../lib/sellerTransferAttorneyDecision.js'
+
+const PRIVATE_LISTING_ATTORNEY_SELECTION_SOURCES = new Set([
+  'seller_selected',
+  'seller_mandate',
+  ...Object.values(SELLER_TRANSFER_ATTORNEY_SELECTION_SOURCES),
+])
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -32,7 +39,7 @@ export function buildPrivateListingAttorneyAllocationInput({
     p_email_address: normalizeText(attorney.email || attorney.emailAddress || attorney.email_address).toLowerCase() || null,
     p_phone_number: normalizeText(attorney.phone || attorney.phoneNumber || attorney.phone_number) || null,
     p_partner_organisation_id: normalizeNullableUuid(attorney.partnerOrganisationId || attorney.partner_organisation_id),
-    p_selection_source: ['seller_selected', 'agency_recommended', 'seller_mandate'].includes(normalizeText(source))
+    p_selection_source: PRIVATE_LISTING_ATTORNEY_SELECTION_SOURCES.has(normalizeText(source))
       ? normalizeText(source)
       : 'seller_mandate',
     p_mandate_packet_id: normalizeNullableUuid(mandatePacketId),

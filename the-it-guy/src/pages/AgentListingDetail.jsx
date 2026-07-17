@@ -34,6 +34,8 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import StartDocumentModal from '../components/documents/StartDocumentModal'
+import SellerAttorneyRecommendationModal from '../components/seller/SellerAttorneyRecommendationModal'
+import SellerAttorneyDecisionSummary from '../components/seller/SellerAttorneyDecisionSummary'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
@@ -46,6 +48,7 @@ import {
   DOCUMENT_START_SOURCE_MODES,
 } from '../core/documents/documentStartRules'
 import { appendDocumentStartLegalScenarioParams } from '../core/documents/documentStartLegalScenario'
+import { buildSellerTransferAttorneyOnboardingPatch } from '../lib/sellerTransferAttorneyDecision'
 import {
   getListingReadinessSummary,
   getRequiredSellerDocuments,
@@ -1824,6 +1827,7 @@ function AgentListingDetail() {
   const [sellerPortalSecurityDiagnostics, setSellerPortalSecurityDiagnostics] = useState(null)
   const [sellerPortalSecurityDiagnosticsLoading, setSellerPortalSecurityDiagnosticsLoading] = useState(false)
   const [followUpActionId, setFollowUpActionId] = useState('')
+  const [sellerAttorneyRecommendationOpen, setSellerAttorneyRecommendationOpen] = useState(false)
   const [mandateStartOpen, setMandateStartOpen] = useState(false)
   const [acceptedOfferOtpStartOffer, setAcceptedOfferOtpStartOffer] = useState(null)
   const [showFullGallery, setShowFullGallery] = useState(false)
@@ -3030,7 +3034,7 @@ function AgentListingDetail() {
     }
   }
 
-  async function handleSendSellerOnboardingFollowUp() {
+  async function performSellerOnboardingFollowUp(attorneyDecision) {
     if (!listingRecord?.id) return
     setDetailError('')
     setDetailMessage('')
@@ -3067,6 +3071,12 @@ function AgentListingDetail() {
         : { token, link: localLink, expiresAt: '' }
       const onboardingToken = response?.token || token
       const onboardingLink = response?.link || localLink
+      const attorneyRecommendationPatch = buildSellerTransferAttorneyOnboardingPatch(attorneyDecision)
+      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
+        await updatePrivateListingOnboardingFormData(listingRecord.id, attorneyRecommendationPatch, {
+          syncRequirements: false,
+        })
+      }
       const sentAt = new Date().toISOString()
       const currentStatus = normalizeKey(listingRecord?.listingStatus || listingRecord?.status || '')
       const nextListingStatus = currentStatus === 'seller_lead' ? 'onboarding_sent' : listingRecord?.listingStatus || listingRecord?.status
@@ -3088,6 +3098,7 @@ function AgentListingDetail() {
             ...((row?.sellerOnboarding?.formData && typeof row.sellerOnboarding.formData === 'object') ? row.sellerOnboarding.formData : {}),
             sellerEmail: sellerEmail || row?.sellerOnboarding?.formData?.sellerEmail || '',
             sellerPhone: sellerPhone || row?.sellerOnboarding?.formData?.sellerPhone || '',
+            ...attorneyRecommendationPatch,
           },
         },
         updatedAt: sentAt,
@@ -3154,11 +3165,24 @@ function AgentListingDetail() {
           ? `Seller onboarding link ready and copied.${deliveryWarning || ''}`
           : `Seller onboarding was marked as sent.${deliveryWarning || ''}`,
       )
+      return true
     } catch (error) {
       setDetailError(error?.message || 'Unable to create the seller onboarding link.')
+      return false
     } finally {
       setFollowUpActionId('')
     }
+  }
+
+  function handleSendSellerOnboardingFollowUp() {
+    if (!listingRecord?.id || followUpActionId === 'send_onboarding') return
+    setDetailError('')
+    setSellerAttorneyRecommendationOpen(true)
+  }
+
+  async function confirmSellerAttorneyRecommendation(attorneyDecision) {
+    const sent = await performSellerOnboardingFollowUp(attorneyDecision)
+    if (sent) setSellerAttorneyRecommendationOpen(false)
   }
 
   async function handleGenerateMandateFollowUp({ silent = false } = {}) {
@@ -4246,6 +4270,11 @@ function AgentListingDetail() {
     ? Math.round((listingReadinessCompleted / listingReadinessItems.length) * 100)
     : 0
   const sellerFormData = useMemo(() => getListingSellerFormData(listingRecord), [listingRecord])
+  const sellerAttorneyDecision = useMemo(() => (
+    listingRecord?.sellerOnboarding?.formData?.transferAttorneyDecision ||
+    listingRecord?.seller_onboarding?.form_data?.transferAttorneyDecision ||
+    null
+  ), [listingRecord])
 
   const sellerProfile = useMemo(() => {
     const raw = (...values) => firstDraftValue(...values)
@@ -8312,6 +8341,13 @@ function AgentListingDetail() {
                 </div>
               </div>
 
+              <SellerAttorneyDecisionSummary
+                decision={sellerAttorneyDecision || {}}
+                sellerEmail={resolveSellerEmailFromListing(listingRecord)}
+                sellerPhone={resolveSellerPhoneFromListing(listingRecord)}
+                onContinueToMandate={() => setMandateStartOpen(true)}
+              />
+
               <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
                 <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
                   <div className="flex min-w-0 items-start gap-4">
@@ -9149,6 +9185,17 @@ function AgentListingDetail() {
           </section>
         </section>
       ) : null}
+
+      <SellerAttorneyRecommendationModal
+        open={sellerAttorneyRecommendationOpen}
+        sellerName={resolveSellerNameFromListing(listingRecord)}
+        propertyLabel={listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || listingRecord?.title || ''}
+        actor={getCanonicalOfferActor()}
+        initialDecision={sellerAttorneyDecision}
+        busy={followUpActionId === 'send_onboarding'}
+        onClose={() => setSellerAttorneyRecommendationOpen(false)}
+        onConfirm={confirmSellerAttorneyRecommendation}
+      />
 
       <ShowDayLeadCaptureModal
         open={showDayCaptureOpen}
