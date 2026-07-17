@@ -137,6 +137,17 @@ export const APP_NAV_BY_ROLE = {
   ],
   attorney: [
     { key: 'dashboard', label: 'Dashboard', to: '/attorney/dashboard' },
+    { key: 'scheduling', label: 'Calendar', to: '/attorney/scheduling' },
+    {
+      key: 'attorney_pipeline',
+      label: 'Pipeline',
+      to: '/attorney/matters/active',
+      activeMatch: ['/attorney/pipeline', '/attorney/matters/active', '/attorney/transactions/active', '/attorney/leads'],
+      children: [
+        { key: 'attorney_incoming_matters', label: 'Incoming Matters', to: '/attorney/matters/active' },
+        { key: 'attorney_leads', label: 'Leads', to: '/attorney/leads' },
+      ],
+    },
     {
       key: 'attorney_matters',
       label: 'Matters',
@@ -158,22 +169,11 @@ export const APP_NAV_BY_ROLE = {
       ],
       children: [
         { key: 'attorney_matters_all', label: 'All Matters', to: '/attorney/matters/all' },
-        { key: 'attorney_matters_transfer', label: 'Transfer Matters', to: '/attorney/matters/transfer' },
-        { key: 'attorney_matters_bond', label: 'Bond Matters', to: '/attorney/matters/bond' },
-        { key: 'attorney_matters_cancellation', label: 'Cancellation Matters', to: '/attorney/matters/cancellation' },
+        { key: 'attorney_matters_transfer', label: 'Transfer Matters', to: '/attorney/matters/transfer', moduleKey: 'transfer' },
+        { key: 'attorney_matters_bond', label: 'Bond Matters', to: '/attorney/matters/bond', moduleKey: 'bond' },
+        { key: 'attorney_matters_cancellation', label: 'Cancellation Matters', to: '/attorney/matters/cancellation', moduleKey: 'cancellation' },
       ],
     },
-    {
-      key: 'attorney_pipeline',
-      label: 'Pipeline',
-      to: '/attorney/matters/active',
-      activeMatch: ['/attorney/pipeline', '/attorney/matters/active', '/attorney/transactions/active', '/attorney/leads'],
-      children: [
-        { key: 'attorney_incoming_matters', label: 'Incoming Matters', to: '/attorney/matters/active' },
-        { key: 'attorney_leads', label: 'Leads', to: '/attorney/leads' },
-      ],
-    },
-    { key: 'scheduling', label: 'Calendar', to: '/attorney/scheduling' },
     { key: 'clients', label: 'Clients & Parties', to: '/clients' },
     { key: 'partners', label: 'Partners', to: '/partners' },
     {

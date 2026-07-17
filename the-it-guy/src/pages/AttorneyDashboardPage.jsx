@@ -22,8 +22,12 @@ import {
 import { createElement, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { useOptionalAttorneyModules } from '../context/AttorneyModulesContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import { getAttorneyManagementDashboardData } from '../services/attorneyDashboard'
+import { ATTORNEY_FIRM_MODULE_KEYS } from '../constants/attorneyFirmModules'
+import { FEATURE_FLAGS } from '../lib/featureFlags'
+import { canAccessAttorneyMatterView } from '../services/attorneyModuleNavigation'
 
 const ROLE_VIEW_OPTIONS = [
   { value: 'active', label: 'Incoming Matters' },
@@ -476,34 +480,35 @@ function MatterTableCard({ title, count, rows = [], href, emptyLabel, icon }) {
   )
 }
 
-function ActiveMattersByType({ lanes = {} }) {
+function ActiveMattersByType({ lanes = {}, moduleKeys = ATTORNEY_FIRM_MODULE_KEYS }) {
+  const visibleModules = new Set(moduleKeys)
   return (
     <section className="grid gap-3">
       <div className="grid grid-cols-1 gap-4 2xl:grid-cols-3">
-        <MatterTableCard
+        {visibleModules.has('transfer') ? <MatterTableCard
           title="Transfer Matters"
           count={(lanes.transfer || []).length}
           rows={lanes.transfer || []}
           href="/attorney/matters/transfer"
           emptyLabel="No active transfer matters yet."
           icon={FileCheck2}
-        />
-        <MatterTableCard
+        /> : null}
+        {visibleModules.has('bond') ? <MatterTableCard
           title="Bond Matters"
           count={(lanes.bond || []).length}
           rows={lanes.bond || []}
           href="/attorney/matters/bond"
           emptyLabel="No active bond matters yet."
           icon={Landmark}
-        />
-        <MatterTableCard
+        /> : null}
+        {visibleModules.has('cancellation') ? <MatterTableCard
           title="Cancellation Matters"
           count={(lanes.cancellation || []).length}
           rows={lanes.cancellation || []}
           href="/attorney/matters/cancellation"
           emptyLabel="No active cancellation matters yet."
           icon={ShieldAlert}
-        />
+        /> : null}
       </div>
     </section>
   )
@@ -826,26 +831,49 @@ function AttorneyAnalyticsSection({ partnerAnalytics, matterHealth, conveyancing
 
 function AttorneyDashboardPage() {
   const { role, profile } = useWorkspace()
+  const attorneyModules = useOptionalAttorneyModules()
+  const canViewAttorneyModule = attorneyModules?.canViewModule
+  const attorneyModulesLoading = Boolean(attorneyModules?.loading)
   const permissionsState = useAttorneyPermissions()
   const location = useLocation()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [dashboard, setDashboard] = useState(EMPTY_DASHBOARD)
 
-  const roleView = useMemo(() => {
+  const requestedRoleView = useMemo(() => {
     const value = new URLSearchParams(location.search).get('roleView') || 'all'
     return ROLE_VIEW_OPTIONS.some((option) => option.value === value) ? value : 'all'
   }, [location.search])
+  const moduleKeys = useMemo(() => (
+    FEATURE_FLAGS.enableAttorneyModuleDataScope
+      ? ATTORNEY_FIRM_MODULE_KEYS.filter((moduleKey) => canViewAttorneyModule?.(moduleKey))
+      : ATTORNEY_FIRM_MODULE_KEYS
+  ), [canViewAttorneyModule])
+  const moduleScopeKey = moduleKeys.join(',')
+  const roleView = useMemo(() => (
+    FEATURE_FLAGS.enableAttorneyModuleDataScope && !canAccessAttorneyMatterView(requestedRoleView, canViewAttorneyModule)
+      ? 'all'
+      : requestedRoleView
+  ), [canViewAttorneyModule, requestedRoleView])
   const shellClass = 'grid w-full max-w-none gap-4 bg-[#f7f9fb] px-0 py-3'
 
   useEffect(() => {
     let active = true
 
+    if (FEATURE_FLAGS.enableAttorneyModuleDataScope && attorneyModulesLoading) {
+      return () => {
+        active = false
+      }
+    }
+
     async function loadDashboard() {
       setLoading(true)
       setError('')
       try {
-        const nextData = await getAttorneyManagementDashboardData(null, { roleView })
+        const nextData = await getAttorneyManagementDashboardData(null, {
+          roleView,
+          moduleKeys: FEATURE_FLAGS.enableAttorneyModuleDataScope ? moduleKeys : null,
+        })
         if (!active) return
         setDashboard(nextData || EMPTY_DASHBOARD)
       } catch (loadError) {
@@ -862,7 +890,7 @@ function AttorneyDashboardPage() {
     return () => {
       active = false
     }
-  }, [roleView])
+  }, [attorneyModulesLoading, moduleKeys, moduleScopeKey, roleView])
 
   if (role !== 'attorney') return <Navigate to="/dashboard" replace />
   if (permissionsState.loading) return <StatePanel>Loading attorney permissions...</StatePanel>
@@ -875,6 +903,9 @@ function AttorneyDashboardPage() {
           : 'You are not an active member of this attorney firm.'}
       </StatePanel>
     )
+  }
+  if (FEATURE_FLAGS.enableAttorneyModuleDataScope && attorneyModulesLoading) {
+    return <StatePanel>Loading attorney services...</StatePanel>
   }
   if (loading) return <StatePanel>Loading attorney dashboard...</StatePanel>
 
@@ -914,7 +945,7 @@ function AttorneyDashboardPage() {
       <KpiCards stats={stats} performance={performance} />
       <ActiveMatterStrip lanes={lanes} />
       <NeedsAttentionSection metrics={dashboard.attentionMetrics || []} />
-      <ActiveMattersByType lanes={lanes} />
+      <ActiveMattersByType lanes={lanes} moduleKeys={moduleKeys} />
       <AttorneyAnalyticsSection
         partnerAnalytics={dashboard.partnerAnalytics || EMPTY_DASHBOARD.partnerAnalytics}
         matterHealth={dashboard.matterHealth || EMPTY_DASHBOARD.matterHealth}

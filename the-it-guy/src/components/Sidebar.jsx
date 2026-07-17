@@ -29,12 +29,15 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useOrganisation } from '../context/OrganisationContext'
+import { useOptionalAttorneyModules } from '../context/AttorneyModulesContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { getRoleNavItems } from '../lib/roles'
 import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import { inferWorkspaceTypeFromAppRole } from '../constants/workspaceTypes'
 import { trackWorkspaceBrandingMetric } from '../services/observability/monitoring'
 import { filterNavigationItems } from '../auth/permissions/navigationPermissions'
+import { FEATURE_FLAGS } from '../lib/featureFlags'
+import { filterAttorneyModuleItems } from '../services/attorneyModuleNavigation'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 
 const ICON_BY_KEY = {
@@ -251,6 +254,7 @@ function isParentNavActive(item, location) {
 
 function Sidebar() {
   const workspaceContext = useWorkspace()
+  const attorneyModules = useOptionalAttorneyModules()
   const { workspace, setWorkspace, allWorkspace, role, baseRole, profile } = workspaceContext
   const { branding, loading: organisationLoading, membershipRole: organisationMembershipRole } = useOrganisation()
   const location = useLocation()
@@ -293,10 +297,14 @@ function Sidebar() {
       : { id: workspace.id || '', name: workspace.name || 'Workspace', type: navWorkspaceType },
     currentMembership: navCurrentMembership,
   }), [navCurrentMembership, navWorkspaceType, role, workspace.id, workspace.name, workspaceContext])
-  const roleNavItems = useMemo(
-    () => filterNavigationItems(getRoleNavItems(role, { baseRole, profile, membershipRole, currentMembership: navCurrentMembership }), navPermissionContext),
-    [baseRole, membershipRole, navCurrentMembership, navPermissionContext, profile, role],
-  )
+  const roleNavItems = useMemo(() => {
+    const permittedItems = filterNavigationItems(
+      getRoleNavItems(role, { baseRole, profile, membershipRole, currentMembership: navCurrentMembership }),
+      navPermissionContext,
+    )
+    if (role !== 'attorney' || !FEATURE_FLAGS.enableAttorneyModuleNavigation) return permittedItems
+    return filterAttorneyModuleItems(permittedItems, attorneyModules?.canViewModule)
+  }, [attorneyModules?.canViewModule, baseRole, membershipRole, navCurrentMembership, navPermissionContext, profile, role])
   const isIntelligencePath =
     location.pathname.startsWith('/attorney/intelligence') ||
     location.pathname.startsWith('/developer/intelligence') ||

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
   CalendarDays,
@@ -998,16 +998,16 @@ function CreateInviteDrawer({
   }
 
   return (
-    <aside className="invite-drawer" aria-label="Create attorney invite">
+    <aside className="invite-drawer" aria-label="Create attorney appointment">
       <form className="invite-drawer-card" onSubmit={onSubmit}>
         <div className="appointment-drawer-header">
-          <span>Create Invite</span>
-          <button type="button" onClick={onClose} aria-label="Close create invite"><X size={17} /></button>
+          <span>New Appointment</span>
+          <button type="button" onClick={onClose} aria-label="Close new appointment"><X size={17} /></button>
         </div>
 
         <div>
-          <h2>Attorney invite</h2>
-          <p>Send a signing, consultation, or firm coordination invite from the conveyancing calendar.</p>
+          <h2>Schedule appointment</h2>
+          <p>Choose the matter, appointment type, attendee, time and location.</p>
         </div>
 
         <div className="invite-type-list" role="radiogroup" aria-label="Invite type">
@@ -1120,7 +1120,7 @@ function CreateInviteDrawer({
           <button type="button" onClick={onClose}>Cancel</button>
           <button type="submit" disabled={Boolean(busyId)}>
             <Send size={15} />
-            Create Invite
+            Schedule Appointment
           </button>
         </div>
       </form>
@@ -2188,6 +2188,8 @@ function AttorneySchedulingWorkspace({
   currentUser = null,
   onWorkspaceChanged = null,
 }) {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [busyId, setBusyId] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -2196,6 +2198,8 @@ function AttorneySchedulingWorkspace({
   const [selectedAppointment, setSelectedAppointment] = useState(null)
   const [inviteOpen, setInviteOpen] = useState(false)
   const [inviteDraft, setInviteDraft] = useState(DEFAULT_INVITE_DRAFT)
+  const inviteRequestedFromCreateMenu = Boolean(location.state?.openCreateAppointment)
+  const inviteDrawerOpen = inviteOpen || inviteRequestedFromCreateMenu
   const [filters, setFilters] = useState({
     query: '',
     attorney: 'all',
@@ -2238,6 +2242,21 @@ function AttorneySchedulingWorkspace({
   }, [activeRows, rescheduleRows.length])
 
   const upcomingRows = useMemo(() => sortByDateAscending(visibleRows).slice(0, 14), [visibleRows])
+
+  function clearCreateAppointmentRouteState() {
+    if (!location.state?.openCreateAppointment) return
+    const nextState = { ...(location.state || {}) }
+    delete nextState.openCreateAppointment
+    navigate(
+      { pathname: location.pathname, search: location.search, hash: location.hash },
+      { replace: true, state: Object.keys(nextState).length ? nextState : null },
+    )
+  }
+
+  function closeInviteDrawer() {
+    setInviteOpen(false)
+    clearCreateAppointmentRouteState()
+  }
 
   async function withBusy(id, callback, successMessage = 'Scheduling workspace updated.') {
     setBusyId(id)
@@ -2322,7 +2341,7 @@ function AttorneySchedulingWorkspace({
         attorneyName: currentUser?.name || currentUser?.email || '',
         attorneyEmail: currentUser?.email || '',
       })
-      setInviteOpen(false)
+      closeInviteDrawer()
       setInviteDraft(DEFAULT_INVITE_DRAFT)
     }, 'Attorney invite created and sent.')
   }
@@ -2373,13 +2392,13 @@ function AttorneySchedulingWorkspace({
         onResendCommunication={handleResendCommunication}
       />
       <CreateInviteDrawer
-        open={inviteOpen}
+        open={inviteDrawerOpen}
         draft={inviteDraft}
         setDraft={setInviteDraft}
         matterOptions={matterOptions}
         resources={resources}
         busyId={busyId}
-        onClose={() => setInviteOpen(false)}
+        onClose={closeInviteDrawer}
         onSubmit={handleCreateInvite}
       />
     </section>

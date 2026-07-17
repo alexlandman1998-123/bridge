@@ -4,6 +4,8 @@ import {
   buildAttorneyWorkflowPath,
   getAttorneyMatterListWorkflowDetailKey,
 } from '../core/transactions/attorneyMatterWorkflowNavigation.js'
+import { buildAttorneyMatterReferenceSearchText } from './attorneyMatterNumberingService.js'
+import { filterAttorneyRecordsByModules } from './attorneyModuleDataScope.js'
 
 export const ATTORNEY_MATTER_PAGE_SIZES = [20, 50, 100]
 
@@ -241,8 +243,8 @@ function getMatterTypeKeys(matter = {}) {
   const label = normalize(matter.matterType)
   const keys = new Set()
   if (!label || label.includes('transfer')) keys.add('transfer')
-  if (label.includes('bond')) keys.add('bond')
   if (label.includes('cancellation')) keys.add('cancellation')
+  if (label.includes('bond') && (!label.includes('cancellation') || label.includes('+'))) keys.add('bond')
   if (
     matter.developmentId ||
     matter.unitId ||
@@ -314,7 +316,7 @@ function normalizeIncomingMatterRow(row = {}, { currentUser = {} } = {}) {
     reference: row.reference || row.matterReference,
     matterReference: row.reference || row.matterReference,
     matterType: row.matterType || 'Transfer',
-    matterTypeKeys: ['transfer'],
+    matterTypeKeys: getMatterTypeKeys(row),
     property: row.property || 'Property pending',
     buyer: row.buyerName || 'Buyer pending',
     seller: row.sellerName || 'Seller pending',
@@ -496,7 +498,7 @@ function buildDocumentStatusMap(documentQueue = []) {
   }, {})
 }
 
-function normalizeMatterRow(matter = {}, { documentStatus = {}, currentUser = {} } = {}) {
+function normalizeMatterRow(matter = {}, { documentStatus = {}, currentUser = {}, referenceLane = '' } = {}) {
   const stage = resolveStage(matter)
   const health = calculateMatterHealth(matter, { documentStatus })
   const expectedDue = resolveExpectedDue(matter, stage)
@@ -515,12 +517,22 @@ function normalizeMatterRow(matter = {}, { documentStatus = {}, currentUser = {}
           : health.key === 'attention'
             ? 'Attention'
             : 'Active'
+  const laneReference = referenceLane ? matter.matterReferencesByLane?.[referenceLane] : null
+  const matterReference = laneReference?.effectiveReference || matter.matterReference
+  const platformReference = laneReference?.platformReference || matter.platformReference || ''
+  const referenceAliases = laneReference?.referenceAliases || matter.matterReferenceAliases || []
 
   const row = {
     matterId: matter.matterId,
     assignmentId: matter.assignmentId,
-    reference: matter.matterReference,
-    matterReference: matter.matterReference,
+    reference: matterReference,
+    matterReference,
+    platformReference,
+    provisionalReference: laneReference?.provisionalReference || matter.provisionalReference || '',
+    filingReference: laneReference?.filingReference || matter.filingReference || '',
+    referenceStatus: laneReference?.referenceStatus || matter.matterReferenceStatus || 'provisional',
+    referenceAliases,
+    referenceLane: referenceLane || matter.matterReferenceLane || 'transfer',
     matterType: getMatterTypeLabel(matter),
     matterTypeKeys,
     property: matter.propertyLabel || 'Property pending',
@@ -578,7 +590,13 @@ function normalizeMatterRow(matter = {}, { documentStatus = {}, currentUser = {}
   }
 
   row.searchText = [
-    row.reference,
+    buildAttorneyMatterReferenceSearchText({
+      effectiveReference: row.reference,
+      filingReference: row.filingReference,
+      provisionalReference: row.provisionalReference,
+      platformReference: row.platformReference,
+      referenceAliases: row.referenceAliases,
+    }),
     row.buyer,
     row.seller,
     row.property,
@@ -919,8 +937,8 @@ export function buildAttorneyMatterWorkspace(operational = {}, options = {}) {
   const viewConfig = getAttorneyMatterViewConfig(options.view || 'all')
   const documentStatusByMatter = buildDocumentStatusMap(operational.documentQueue || [])
   const incomingMatterQueue = operational.incomingMatterQueue || operational.incomingMatterSource?.filteredRows || []
-  const normalizedRows = viewConfig.usesIncomingQueue && (operational.incomingMatterSource || incomingMatterQueue.length)
-    ? incomingMatterQueue.map((matter) =>
+  const normalizedRowsUnscoped = viewConfig.usesIncomingQueue && (operational.incomingMatterSource || incomingMatterQueue.length)
+      ? incomingMatterQueue.map((matter) =>
         normalizeIncomingMatterRow(matter, {
           currentUser: operational.currentUser || {},
         }),
@@ -929,8 +947,14 @@ export function buildAttorneyMatterWorkspace(operational = {}, options = {}) {
         normalizeMatterRow(matter, {
           documentStatus: documentStatusByMatter[matter.matterId] || {},
           currentUser: operational.currentUser || {},
+          referenceLane: ['transfer', 'bond', 'cancellation'].includes(viewConfig.lockedMatterType)
+            ? viewConfig.lockedMatterType
+            : '',
         }),
       )
+  const normalizedRows = Array.isArray(options.moduleKeys)
+    ? filterAttorneyRecordsByModules(normalizedRowsUnscoped, options.moduleKeys)
+    : normalizedRowsUnscoped
   const baseRows = normalizedRows.map((row) => ({
     ...row,
     actionHref: getAttorneyMatterActionHref(row, viewConfig.key),
@@ -972,11 +996,14 @@ export function buildAttorneyMatterWorkspace(operational = {}, options = {}) {
 export async function getAttorneyMatterWorkspace(options = {}) {
   const viewConfig = getAttorneyMatterViewConfig(options.view || 'all')
   const [operational, incomingMatterSource] = await Promise.all([
-    getAttorneyOperationalWorkspaceData(options.firmId || null, options.userId || null),
+    getAttorneyOperationalWorkspaceData(options.firmId || null, options.userId || null, {
+      moduleKeys: Array.isArray(options.moduleKeys) ? options.moduleKeys : null,
+    }),
     viewConfig.usesIncomingQueue
       ? getAttorneyIncomingMatterQueue({
           firmId: options.firmId || null,
           userId: options.userId || null,
+          moduleKeys: Array.isArray(options.moduleKeys) ? options.moduleKeys : null,
         })
       : Promise.resolve(null),
   ])

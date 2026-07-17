@@ -29,11 +29,189 @@ import { buildSellerReadinessSummary } from './sellerReadinessService.js'
 import { getSellerRequiredDocuments } from './sellerDocumentRequirementsService.js'
 import { buildSellerMandateContinuityModel } from './sellerMandateContinuityService.js'
 
+export const CLIENT_PORTAL_ACCESS_KINDS = Object.freeze({
+  CLIENT_TOKEN: 'client_token',
+  ATTORNEY_PREVIEW: 'attorney_preview',
+})
+
+export const CLIENT_PORTAL_PERSONAS = Object.freeze({
+  BUYER: 'buyer',
+  SELLER: 'seller',
+})
+
 function normalizeWorkspace(value = 'shared') {
   const normalized = String(value || 'shared').trim().toLowerCase()
   if (normalized === 'selling' || normalized === 'seller') return 'selling'
   if (normalized === 'buying' || normalized === 'buyer') return 'buying'
   return 'shared'
+}
+
+function normalizePortalPersona(value = 'buyer') {
+  const normalized = String(value || 'buyer').trim().toLowerCase()
+  if (normalized === 'selling' || normalized === 'seller') return CLIENT_PORTAL_PERSONAS.SELLER
+  return CLIENT_PORTAL_PERSONAS.BUYER
+}
+
+export function normalizeClientPortalAccessContext(accessContext = {}) {
+  const source = typeof accessContext === 'string'
+    ? { kind: CLIENT_PORTAL_ACCESS_KINDS.CLIENT_TOKEN, token: accessContext }
+    : (accessContext || {})
+  const rawKind = String(source.kind || source.accessKind || CLIENT_PORTAL_ACCESS_KINDS.CLIENT_TOKEN).trim().toLowerCase()
+  const kind = rawKind === CLIENT_PORTAL_ACCESS_KINDS.ATTORNEY_PREVIEW
+    ? CLIENT_PORTAL_ACCESS_KINDS.ATTORNEY_PREVIEW
+    : CLIENT_PORTAL_ACCESS_KINDS.CLIENT_TOKEN
+  const persona = normalizePortalPersona(source.persona || source.workspace)
+  const token = String(source.token || source.clientToken || '').trim()
+  const previewSessionToken = String(source.previewSessionToken || source.previewToken || '').trim()
+  const transactionId = String(source.transactionId || '').trim()
+
+  if (kind === CLIENT_PORTAL_ACCESS_KINDS.CLIENT_TOKEN && !token) {
+    throw new Error('Client portal token is required.')
+  }
+  if (kind === CLIENT_PORTAL_ACCESS_KINDS.ATTORNEY_PREVIEW && !previewSessionToken) {
+    throw new Error('Attorney portal preview session is required.')
+  }
+
+  return Object.freeze({ kind, persona, token, previewSessionToken, transactionId })
+}
+
+function normalizeContextType(context = {}) {
+  return String(context.contextType || context.context_type || '').trim().toLowerCase()
+}
+
+function normalizeContextStatus(context = {}) {
+  return String(context.status || '').trim().toLowerCase()
+}
+
+export function getClientPortalPersonaAvailability(workspaceData = {}) {
+  const portalContext = workspaceData.portalContext || {}
+  const contexts = Array.isArray(portalContext.contexts) ? portalContext.contexts : []
+  const hasBuyingContext = portalContext.hasBuyingContext !== false
+  const dbBackedSellingContext = contexts.find((context) =>
+    normalizeContextType(context) === 'selling' &&
+    ['active', 'pending'].includes(normalizeContextStatus(context)) &&
+    Boolean(context.transactionId || context.transaction_id),
+  ) || null
+  const hasSellingContext = Boolean(portalContext.hasSellingContext && dbBackedSellingContext)
+
+  return {
+    buyer: {
+      available: hasBuyingContext,
+      reason: hasBuyingContext ? '' : 'This matter has no active buyer portal context.',
+      source: hasBuyingContext ? 'client_portal_links' : null,
+    },
+    seller: {
+      available: hasSellingContext,
+      reason: hasSellingContext ? '' : 'This matter has no active DB-backed seller portal context.',
+      source: hasSellingContext ? 'client_portal_contexts' : null,
+    },
+  }
+}
+
+function isSecretPortalKey(key = '') {
+  const normalized = String(key).replace(/[^a-z0-9]/gi, '').toLowerCase()
+  return normalized === 'token' || normalized.endsWith('token') || normalized.endsWith('tokenhash')
+}
+
+export function redactClientPortalPreviewSecrets(value, secretValues = []) {
+  const secrets = new Set((secretValues || []).map((secret) => String(secret || '')).filter(Boolean))
+  function redact(nested) {
+    if (typeof nested === 'string' && secrets.has(nested)) return null
+    if (Array.isArray(nested)) return nested.map(redact)
+    if (!nested || typeof nested !== 'object') return nested
+    return Object.fromEntries(Object.entries(nested)
+      .filter(([key]) => !isSecretPortalKey(key))
+      .map(([key, nestedValue]) => [key, redact(nestedValue)]))
+  }
+  return redact(value)
+}
+
+export function buildClientPortalParityProjection(workspaceData = {}) {
+  const projection = {
+    client: workspaceData.client || null,
+    transaction: workspaceData.transaction || null,
+    listing: workspaceData.listing || null,
+    property: workspaceData.property || null,
+    appointments: workspaceData.appointments || [],
+    rolePlayers: workspaceData.rolePlayers || null,
+    lifecycle: workspaceData.lifecycle || null,
+    timeline: workspaceData.timeline || [],
+    nextActions: workspaceData.nextActions || [],
+    documentCenter: workspaceData.documentCenter || null,
+    onboarding: workspaceData.onboarding || null,
+    mandate: workspaceData.mandate || null,
+    finance: workspaceData.finance || null,
+    workflowSummary: workspaceData.workflowSummary || null,
+    activityFeed: workspaceData.activityFeed || [],
+    groupedActivityFeed: workspaceData.groupedActivityFeed || {},
+    activityFeedSummary: workspaceData.activityFeedSummary || null,
+    notifications: workspaceData.notifications || null,
+    sellerJourney: workspaceData.sellerJourney || null,
+    sellerPortalJourney: workspaceData.sellerPortalJourney || null,
+    educationalContent: workspaceData.educationalContent || null,
+  }
+  return redactClientPortalPreviewSecrets(projection)
+}
+
+export function buildClientPortalWorkspaceAccessContract(workspaceData = {}, accessContext = {}, requestedWorkspace = 'shared') {
+  const access = normalizeClientPortalAccessContext(accessContext)
+  const preview = access.kind === CLIENT_PORTAL_ACCESS_KINDS.ATTORNEY_PREVIEW
+  const resolvedWorkspace = normalizeWorkspace(workspaceData?.portalContext?.workspace || requestedWorkspace)
+  const persona = preview
+    ? access.persona
+    : resolvedWorkspace === 'shared'
+      ? 'shared'
+      : normalizePortalPersona(resolvedWorkspace)
+  const availability = getClientPortalPersonaAvailability(workspaceData)
+  if (preview && !availability[persona]?.available) {
+    throw new Error(availability[persona]?.reason || `The ${persona} portal is unavailable for this matter.`)
+  }
+  if (preview && access.transactionId && String(workspaceData?.transaction?.id || '') !== access.transactionId) {
+    throw new Error('Attorney portal preview transaction does not match the requested matter.')
+  }
+
+  const source = preview
+    ? redactClientPortalPreviewSecrets(workspaceData, [access.previewSessionToken])
+    : workspaceData
+  return {
+    ...source,
+    portalContext: {
+      ...(source.portalContext || {}),
+      accessKind: access.kind,
+      persona,
+      readOnly: preview,
+      personaAvailability: availability,
+    },
+    visibility: {
+      ...(source.visibility || {}),
+      ...(preview ? {
+        workspace: persona === CLIENT_PORTAL_PERSONAS.SELLER ? 'selling' : 'buying',
+        buyerVisible: persona === CLIENT_PORTAL_PERSONAS.BUYER,
+        sellerVisible: persona === CLIENT_PORTAL_PERSONAS.SELLER,
+      } : {}),
+      clientOnly: true,
+    },
+    permissions: preview
+      ? {
+          canUploadDocuments: false,
+          canComment: false,
+          canViewActivityFeed: true,
+          canRespondToAppointments: false,
+          canSignDocuments: false,
+          canManageSettings: false,
+          canSubmitDecisions: false,
+          readOnly: true,
+        }
+      : {
+          ...(source.permissions || {}),
+          readOnly: false,
+        },
+    access: {
+      kind: access.kind,
+      persona,
+      readOnly: preview,
+    },
+  }
 }
 
 function normalizeValue(value = '') {
@@ -1843,7 +2021,7 @@ function buildDemoClientPortalWorkspaceData(token, workspace = 'shared') {
   }
 }
 
-export async function getClientPortalWorkspaceData(token, workspace = 'shared', options = {}) {
+async function loadClientPortalWorkspaceDataByToken(token, workspace = 'shared', options = {}) {
   const demoWorkspaceData = buildDemoClientPortalWorkspaceData(token, workspace)
   if (demoWorkspaceData) return demoWorkspaceData
 
@@ -2097,4 +2275,32 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     },
     legacyPortalData,
   }
+}
+
+export async function getClientPortalWorkspaceDataForAccess(accessContext, workspace = 'shared', options = {}) {
+  const access = normalizeClientPortalAccessContext(accessContext)
+  if (access.kind === CLIENT_PORTAL_ACCESS_KINDS.CLIENT_TOKEN) {
+    const workspaceData = await loadClientPortalWorkspaceDataByToken(access.token, workspace, options)
+    return buildClientPortalWorkspaceAccessContract(workspaceData, access, workspace)
+  }
+
+  if (typeof options.previewWorkspaceLoader !== 'function') {
+    throw new Error('Attorney portal preview loading is not available until the secure preview service is configured.')
+  }
+  const workspaceData = await options.previewWorkspaceLoader({
+    previewSessionToken: access.previewSessionToken,
+    transactionId: access.transactionId,
+    persona: access.persona,
+    workspace: access.persona === CLIENT_PORTAL_PERSONAS.SELLER ? 'selling' : 'buying',
+    mode: options.mode || 'full',
+  })
+  return buildClientPortalWorkspaceAccessContract(workspaceData, access, workspace)
+}
+
+export async function getClientPortalWorkspaceData(token, workspace = 'shared', options = {}) {
+  return getClientPortalWorkspaceDataForAccess({
+    kind: CLIENT_PORTAL_ACCESS_KINDS.CLIENT_TOKEN,
+    token,
+    persona: normalizePortalPersona(workspace),
+  }, workspace, options)
 }

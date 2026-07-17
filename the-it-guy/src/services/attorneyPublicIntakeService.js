@@ -97,7 +97,7 @@ export function normalizeAttorneyPublicIntake(value) {
     status: normalizeText(row.status, 40),
     heading: normalizeText(row.heading, 160) || 'How can we assist you?',
     introduction: normalizeText(row.introduction, 1000) || 'Choose a service and tell us briefly how we can help.',
-    serviceTypes: configuredServices.length ? configuredServices : [...ATTORNEY_LEAD_SERVICE_TYPE_VALUES],
+    serviceTypes: Array.isArray(row.service_types) ? configuredServices : [...ATTORNEY_LEAD_SERVICE_TYPE_VALUES],
     firmName: normalizeText(row.firm_name, 180) || 'Your conveyancing team',
     logoUrl: normalizeText(row.logo_url, 2000),
     primaryColour: sanitizeBrandColour(row.primary_colour, '#173f45'),

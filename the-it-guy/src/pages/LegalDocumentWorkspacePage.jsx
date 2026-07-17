@@ -6,6 +6,7 @@ import MandateDraftIntakePanel from '../components/documents/MandateDraftIntakeP
 import OtpDraftIntakePanel from '../components/documents/OtpDraftIntakePanel'
 import Button from '../components/ui/Button'
 import { useWorkspace } from '../context/WorkspaceContext'
+import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import { archivePacket, generatePacketVersion, listPacketTemplates, resolveActiveTemplate } from '../core/documents/packetService'
 import {
   DOCUMENT_START_ENTRY_POINTS,
@@ -55,6 +56,10 @@ import {
 import { getMandateSignerRoleLabel, resolveMandateSecondarySignerConfig } from '../lib/mandateSignatureRules'
 import { allocatePrivateListingTransferAttorney } from '../services/privateListingAttorneyAllocationService'
 import { buildSellerTransferAttorneyMandatePatch } from '../lib/sellerTransferAttorneyDecision'
+import {
+  buildAttorneyMatterDocumentReferenceContext,
+  resolveAttorneyMatterReference,
+} from '../services/attorneyMatterNumberingService.js'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -2420,6 +2425,7 @@ export default function LegalDocumentWorkspacePage() {
   const params = useParams()
   const [searchParams] = useSearchParams()
   const { profile, role } = useWorkspace()
+  const attorneyPermissionState = useAttorneyPermissions()
   const [loadingContext, setLoadingContext] = useState(true)
   const [pageError, setPageError] = useState('')
   const [transactionDetail, setTransactionDetail] = useState(null)
@@ -2436,6 +2442,7 @@ export default function LegalDocumentWorkspacePage() {
   const [preferredTransferAttorneys, setPreferredTransferAttorneys] = useState([])
   const [preferredTransferAttorneysLoading, setPreferredTransferAttorneysLoading] = useState(false)
   const [preferredTransferAttorneysError, setPreferredTransferAttorneysError] = useState('')
+  const [attorneyDocumentReference, setAttorneyDocumentReference] = useState(null)
   const [selectedTransferAttorneyId, setSelectedTransferAttorneyId] = useState('')
   const [transferAttorneySelectionDeferred, setTransferAttorneySelectionDeferred] = useState(false)
   const initialStatusRef = useRef(null)
@@ -2451,6 +2458,9 @@ export default function LegalDocumentWorkspacePage() {
   const routeListingId = normalizeText(params.listingId || searchParams.get('listingId'))
   const routeOfferId = normalizeText(params.offerId || searchParams.get('offerId'))
   const routeTransactionId = normalizeText(params.transactionId || searchParams.get('transactionId'))
+  const routeMatterLane = ['transfer', 'bond', 'cancellation'].includes(normalizeKey(searchParams.get('matterLane')))
+    ? normalizeKey(searchParams.get('matterLane'))
+    : 'transfer'
   const mode = resolveModeFromQuery(searchParams.get('mode'))
   const returnTo = resolveSafeReturnPath(searchParams.get('returnTo'))
   const requestedPacketType = normalizeKey(params.packetType || searchParams.get('packetType'))
@@ -3057,13 +3067,30 @@ export default function LegalDocumentWorkspacePage() {
 
   const transaction = transactionDetail?.transaction || null
   const transactionId = normalizeText(transaction?.id || routeTransactionId || leadContext.linkedTransaction?.transactionId || leadContext.linkedTransaction?.dealId)
-  const transactionReference = resolveTransactionReference(
+  const transactionReference = attorneyDocumentReference?.effectiveReference || resolveTransactionReference(
     transactionDetail,
     [
       normalizeText(leadContext.lead?.sellerPropertyAddress || leadContext.lead?.propertyInterest),
       normalizeText(leadContext.lead?.leadCategory),
     ].filter(Boolean).join(' · '),
   )
+
+  useEffect(() => {
+    let active = true
+    if (normalizeKey(role) !== 'attorney' || attorneyPermissionState.loading || !attorneyPermissionState.firmId || !transactionId) {
+      return () => { active = false }
+    }
+    void resolveAttorneyMatterReference({
+      transactionId,
+      firmId: attorneyPermissionState.firmId,
+      lane: routeMatterLane,
+    }).then((reference) => {
+      if (active) setAttorneyDocumentReference(reference)
+    }).catch(() => {
+      if (active) setAttorneyDocumentReference(null)
+    })
+    return () => { active = false }
+  }, [attorneyPermissionState.firmId, attorneyPermissionState.loading, role, routeMatterLane, transactionId])
 
   const syncLeadMandateState = useCallback(async (patch = {}, { reason = 'update mandate state' } = {}) => {
     const scopedLeadId = normalizeText(leadContext?.lead?.leadId)
@@ -3216,6 +3243,9 @@ export default function LegalDocumentWorkspacePage() {
           route: 'legal_document_workspace_page',
           sourceMode: documentStartSourceMode || null,
           documentStart: documentStartEntryPoint || null,
+          ...(attorneyDocumentReference
+            ? buildAttorneyMatterDocumentReferenceContext(attorneyDocumentReference)
+            : {}),
           ...(packetType === 'mandate' ? { mandateDraft: effectiveMandateDraft } : {}),
           ...(packetType === 'otp' ? { otpDraft: effectiveOtpDraft } : {}),
         },
@@ -3232,7 +3262,7 @@ export default function LegalDocumentWorkspacePage() {
     setValidatedRoutePacketId(normalizeText(packet?.id))
 
     return packet
-  }, [actor.id, documentStartEntryPoint, documentStartSourceMode, effectiveMandateDraft, effectiveOtpDraft, initialStatus, leadContext.lead, leadContext.listing, leadContext.privateListing, organisationId, packetType, resolveCurrentStatus, routeLeadId, routeListingId, routeOfferId, syncLeadMandateState, transactionId, transactionReference, validatedRoutePacketId])
+  }, [actor.id, attorneyDocumentReference, documentStartEntryPoint, documentStartSourceMode, effectiveMandateDraft, effectiveOtpDraft, initialStatus, leadContext.lead, leadContext.listing, leadContext.privateListing, organisationId, packetType, resolveCurrentStatus, routeLeadId, routeListingId, routeOfferId, syncLeadMandateState, transactionId, transactionReference, validatedRoutePacketId])
 
   const createListingFromGeneratedMandate = useCallback(async ({
     packet = null,
@@ -3663,6 +3693,19 @@ export default function LegalDocumentWorkspacePage() {
       }
     }
 
+    if (attorneyDocumentReference) {
+      const referenceContext = buildAttorneyMatterDocumentReferenceContext(attorneyDocumentReference)
+      generationContext.transaction = {
+        ...(generationContext.transaction || transaction || {}),
+        matter_number: referenceContext.matter_reference,
+        platform_reference: referenceContext.platform_reference,
+      }
+      generationContext.sourceContext = {
+        ...(generationContext.sourceContext || {}),
+        ...referenceContext,
+      }
+    }
+
     const templateResolution = await withLegalWorkspaceTimeout(
       resolveActiveTemplate({
         packetType,
@@ -3796,6 +3839,7 @@ export default function LegalDocumentWorkspacePage() {
     }
   }, [
     actor,
+    attorneyDocumentReference,
     createListingFromGeneratedMandate,
     documentStartEntryPoint,
     documentStartSourceMode,

@@ -8,6 +8,10 @@ import {
 import { getAttorneyFirmInvitations } from './attorneyFirmInvitations'
 import { getAttorneyFirmMembers } from './attorneyFirmMembers'
 import {
+  filterAttorneyRecordsByModules,
+  scopeAttorneyMatterRoleSummaries,
+} from './attorneyModuleDataScope.js'
+import {
   getAuthenticatedUser,
   isMissingColumnError,
   isMissingTableError,
@@ -82,6 +86,7 @@ function resolveMatterTypeFromAssignment(assignment = {}, transaction = {}) {
   const assignmentType = toLower(assignment.assignmentType || assignment.assignment_type)
   if (assignmentType === 'bond') return 'bond'
   if (assignmentType === 'transfer') return 'transfer'
+  if (assignmentType === 'cancellation') return 'cancellation'
   if (assignmentType === 'transfer_and_bond') {
     const txType = resolveMatterTypeFromTransaction(transaction)
     return txType === 'bond' ? 'bond' : 'transfer'
@@ -1000,7 +1005,7 @@ async function readDashboardDependency(label, promise, fallback) {
   }
 }
 
-export async function getAttorneyManagementDashboardData(firmId = null, { roleView = 'all' } = {}) {
+export async function getAttorneyManagementDashboardData(firmId = null, { roleView = 'all', moduleKeys = null } = {}) {
   const client = requireClient()
   const authUser = await getAuthenticatedUser(client)
 
@@ -1148,7 +1153,14 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
     })
   }
 
-  const allMatterRoleSummaries = buildMatterRoleSummaries(matterUnits)
+  if (Array.isArray(moduleKeys)) {
+    matterUnits = filterAttorneyRecordsByModules(matterUnits, moduleKeys)
+  }
+
+  const unscopedMatterRoleSummaries = buildMatterRoleSummaries(matterUnits)
+  const allMatterRoleSummaries = Array.isArray(moduleKeys)
+    ? scopeAttorneyMatterRoleSummaries(unscopedMatterRoleSummaries, moduleKeys)
+    : unscopedMatterRoleSummaries
   const scopedMatterRoleSummaries = allMatterRoleSummaries.filter((summary) => matterMatchesRoleView(summary, roleView))
   const scopedTransactionIds = new Set(scopedMatterRoleSummaries.map((summary) => summary.transactionId))
   if (toLower(roleView || 'all') !== 'all') {
@@ -1170,8 +1182,8 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
   const currentUserRole = currentMemberRecord?.role || null
   const canViewFirmDashboard = attorneyRoleHasPermission(currentUserRole, 'can_view_firm_dashboard')
 
-  const transferAssignments = matterUnits.filter((item) => item.assignmentType === 'transfer' || item.assignmentType === 'transfer_and_bond')
-  const bondAssignments = matterUnits.filter((item) => item.assignmentType === 'bond' || item.assignmentType === 'transfer_and_bond')
+  const transferAssignments = scopedMatterRoleSummaries.filter((summary) => summary.roles.has('transfer'))
+  const bondAssignments = scopedMatterRoleSummaries.filter((summary) => summary.roles.has('bond'))
 
   const kpis = {
     activeMatters: uniqueMatters.length,
@@ -1415,6 +1427,7 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
     kpis,
     filterContext: {
       roleView,
+      moduleKeys: Array.isArray(moduleKeys) ? moduleKeys : null,
       totalMatters: allMatterRoleSummaries.length,
       scopedMatters: scopedMatterRoleSummaries.length,
     },

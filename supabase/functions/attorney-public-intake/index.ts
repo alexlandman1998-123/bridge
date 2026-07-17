@@ -37,7 +37,7 @@ const SHORT_WINDOW_MS = 10 * 60 * 1000;
 const LONG_WINDOW_MS = 60 * 60 * 1000;
 const SHORT_WINDOW_LIMIT = 5;
 const LONG_WINDOW_LIMIT = 15;
-const RUNTIME_VERSION = "attorney-public-intake-phase5-20260716";
+const RUNTIME_VERSION = "attorney-public-intake-module-guards-phase6-20260717";
 
 function jsonResponse(status: number, body: JsonRecord, extraHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
@@ -254,6 +254,27 @@ Deno.serve(async (req) => {
   const serviceType = normalizeKey(payload.service_type);
   if (!SERVICE_TYPES.has(serviceType)) {
     return jsonResponse(400, { error: "Please choose an available service.", code: "invalid_service" });
+  }
+
+  const resolvedIntakeResult = await supabase.rpc("resolve_attorney_public_intake", { p_slug: slug });
+  if (resolvedIntakeResult.error) {
+    console.error("[attorney-public-intake] service availability lookup failed", {
+      code: resolvedIntakeResult.error.code,
+      message: resolvedIntakeResult.error.message,
+    });
+    return jsonResponse(500, { error: "We could not confirm this service right now.", code: "submission_failed" });
+  }
+  const resolvedIntake = Array.isArray(resolvedIntakeResult.data)
+    ? resolvedIntakeResult.data[0]
+    : resolvedIntakeResult.data;
+  const availableServices = new Set(
+    Array.isArray(resolvedIntake?.service_types) ? resolvedIntake.service_types.map(normalizeKey) : [],
+  );
+  if (!resolvedIntake || !availableServices.has(serviceType)) {
+    return jsonResponse(409, {
+      error: "This firm is not currently accepting enquiries for that service.",
+      code: "service_not_accepting_new_work",
+    });
   }
 
   // Honeypot submissions receive a generic success without writing personal data.

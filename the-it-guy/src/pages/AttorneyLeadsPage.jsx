@@ -23,11 +23,20 @@ import {
   UsersRound,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import Drawer from '../components/ui/Drawer'
 import DataTable, { DataTableInner } from '../components/ui/DataTable'
 import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { useOptionalAttorneyModules } from '../context/AttorneyModulesContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
+import { FEATURE_FLAGS } from '../lib/featureFlags'
+import {
+  assertAttorneyModuleAcceptsNewWork,
+  filterAttorneyLeadServiceOptions,
+  getAttorneyModuleKeyForLeadService,
+  getCreatableAttorneyMatterTypes,
+} from '../services/attorneyModuleWriteGuard'
 import { getAttorneyLeadRoleAccess } from '../core/leads/attorneyLeadContract'
 import { sendAttorneyQuoteEmail } from '../services/attorneyQuoteEmailService'
 import {
@@ -72,6 +81,20 @@ const SERVICE_OPTIONS = Object.freeze([
   ['property_legal_advice', 'Property Legal Advice'],
   ['general_enquiry', 'General Enquiry'],
 ])
+
+const MATTER_INSTRUCTION_SERVICE_OPTIONS = Object.freeze([
+  ['property_transfer', 'Property Transfer'],
+  ['bond_registration', 'Bond Registration'],
+  ['bond_cancellation', 'Bond Cancellation'],
+])
+
+const MATTER_TYPE_OPTIONS = Object.freeze([
+  ['transfer', 'Transfer'],
+  ['bond', 'Bond Registration'],
+  ['cancellation', 'Bond Cancellation'],
+])
+
+const ALLOW_ATTORNEY_MODULE_WRITE = () => true
 
 const SOURCE_OPTIONS = Object.freeze([
   ['manual', 'Manual'],
@@ -223,13 +246,24 @@ function KpiCard({ icon, label, value, helper, tone }) {
   )
 }
 
-function ManualLeadDrawer({ open, saving, error, onClose, onSave }) {
+function ManualLeadDrawer({ open, intent = 'lead', leadServiceOptions, matterServiceOptions, saving, error, onClose, onSave }) {
   const [form, setForm] = useState(EMPTY_MANUAL_FORM)
+  const startsMatter = intent === 'matter'
+  const serviceOptions = startsMatter ? matterServiceOptions : leadServiceOptions
+  const canSubmit = Boolean(
+    form.serviceType &&
+    form.firstName.trim() &&
+    (form.email.trim() || form.phone.trim()) &&
+    (!startsMatter || form.propertyAddress.trim()),
+  )
 
   useEffect(() => {
     if (!open) return
-    Promise.resolve().then(() => setForm(EMPTY_MANUAL_FORM))
-  }, [open])
+    Promise.resolve().then(() => setForm({
+      ...EMPTY_MANUAL_FORM,
+      serviceType: serviceOptions[0]?.[0] || '',
+    }))
+  }, [open, serviceOptions, startsMatter])
 
   function update(field, value) {
     setForm((previous) => ({ ...previous, [field]: value }))
@@ -239,15 +273,17 @@ function ManualLeadDrawer({ open, saving, error, onClose, onSave }) {
     <Drawer
       open={open}
       onClose={saving ? undefined : onClose}
-      title="Capture a Lead"
-      subtitle="For calls, walk-ins, emails and referrals."
+      title={startsMatter ? 'Start a Matter' : 'Capture a Lead'}
+      subtitle={startsMatter
+        ? 'Capture the client instruction first. Qualify it, then convert it into an active Matter.'
+        : 'For calls, walk-ins, emails and referrals.'}
       widthClassName="max-w-[620px]"
       footer={(
         <div className="flex w-full justify-end gap-2">
           <button type="button" className="ui-button ui-button-secondary" onClick={onClose} disabled={saving}>Cancel</button>
-          <button type="button" className="ui-button ui-button-primary" onClick={() => onSave(form)} disabled={saving}>
+          <button type="button" className="ui-button ui-button-primary" onClick={() => onSave(form)} disabled={saving || !canSubmit}>
             {saving ? <LoaderCircle className="animate-spin" size={16} /> : <Plus size={16} />}
-            {saving ? 'Creating…' : 'Create Lead'}
+            {saving ? 'Creating…' : startsMatter ? 'Capture Instruction' : 'Create Lead'}
           </button>
         </div>
       )}
@@ -269,46 +305,39 @@ function ManualLeadDrawer({ open, saving, error, onClose, onSave }) {
         </div>
         <p className="-mt-2 text-xs text-slate-500">Provide at least an email address or mobile number.</p>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Service required" required>
-            <select className={inputClass} value={form.serviceType} onChange={(event) => update('serviceType', event.target.value)}>
-              {SERVICE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          <Field label={startsMatter ? 'Matter type' : 'Service required'} required>
+            <select className={inputClass} value={form.serviceType} onChange={(event) => update('serviceType', event.target.value)} disabled={!serviceOptions.length}>
+              {serviceOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </Field>
-          <Field label="Source">
+          <Field label={startsMatter ? 'Instruction source' : 'Lead / referral source'}>
             <select className={inputClass} value={form.sourceChannel} onChange={(event) => update('sourceChannel', event.target.value)}>
               {SOURCE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </Field>
-          <Field label="Priority">
-            <select className={inputClass} value={form.priority} onChange={(event) => update('priority', event.target.value)}>
-              {['Low', 'Medium', 'High', 'Urgent'].map((value) => <option key={value}>{value}</option>)}
-            </select>
-          </Field>
-          <Field label="Campaign code">
-            <input className={inputClass} value={form.campaignCode} onChange={(event) => update('campaignCode', event.target.value)} placeholder="Optional" />
-          </Field>
         </div>
-        <Field label="Property address">
-          <input className={inputClass} value={form.propertyAddress} onChange={(event) => update('propertyAddress', event.target.value)} placeholder="Optional" />
+        {!serviceOptions.length ? <p className="-mt-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">This firm is not currently accepting new instructions.</p> : null}
+        <Field label={startsMatter ? 'Property / matter reference' : 'Property address'} required={startsMatter}>
+          <input
+            className={inputClass}
+            value={form.propertyAddress}
+            onChange={(event) => update('propertyAddress', event.target.value)}
+            placeholder={startsMatter ? 'Property address or matter reference' : 'Optional'}
+          />
         </Field>
-        {form.serviceType === 'transfer_quote' ? (
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Property value">
-              <input className={inputClass} type="number" min="0" value={form.propertyValue} onChange={(event) => update('propertyValue', event.target.value)} placeholder="Optional" />
-            </Field>
-            <Field label="Buyer or seller">
-              <select className={inputClass} value={form.partyRole} onChange={(event) => update('partyRole', event.target.value)}>
-                <option value="unknown">Not specified</option>
-                <option value="buyer">Buyer</option>
-                <option value="seller">Seller</option>
-                <option value="other">Other</option>
-              </select>
-            </Field>
-          </div>
+        <Field label={startsMatter ? 'Instruction notes' : 'Lead notes'}>
+          <textarea
+            className={`${inputClass} min-h-28 py-3`}
+            value={form.message}
+            onChange={(event) => update('message', event.target.value)}
+            placeholder={startsMatter ? 'Capture the instruction and any useful context.' : 'Capture the enquiry and next step.'}
+          />
+        </Field>
+        {startsMatter ? (
+          <p className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">
+            Matter ownership is assigned after the instruction is qualified, before conversion to an active Matter.
+          </p>
         ) : null}
-        <Field label="Enquiry notes">
-          <textarea className={`${inputClass} min-h-28 py-3`} value={form.message} onChange={(event) => update('message', event.target.value)} placeholder="Capture the enquiry and any useful context." />
-        </Field>
         {error ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</div> : null}
       </div>
     </Drawer>
@@ -640,6 +669,7 @@ function LeadDetailDrawer({
   activitySaving,
   followUpSaving,
   conversionSaving,
+  matterTypeOptions,
   quotes,
   quoteLinks,
   quotesLoading,
@@ -688,21 +718,25 @@ function LeadDetailDrawer({
       setFollowUpAt(formatDateTimeLocal(lead.nextFollowUpAt))
       setFollowUpNote('')
       const nextMatterType = defaultMatterTypeForLead(lead)
-      setMatterType(nextMatterType)
-      setClientRole(defaultClientRoleForMatter(lead, nextMatterType))
+      const availableMatterType = matterTypeOptions.some(([value]) => value === nextMatterType)
+        ? nextMatterType
+        : matterTypeOptions[0]?.[0] || ''
+      setMatterType(availableMatterType)
+      setClientRole(defaultClientRoleForMatter(lead, availableMatterType))
       setConversionAssigneeId(lead.assignedUserId || '')
       setConversionPropertyAddress(lead.detail?.propertyAddress || '')
       setConversionPropertyValue(lead.detail?.propertyValue || '')
-      setConversionFinanceType(nextMatterType === 'bond' ? 'bond' : 'cash')
+      setConversionFinanceType(availableMatterType === 'bond' ? 'bond' : 'cash')
       setConversionNote('')
       setConversionConfirmed(false)
     })
-  }, [lead])
+  }, [lead, matterTypeOptions])
 
   if (!lead) return null
   const contact = lead.contact || {}
   const detail = lead.detail || {}
   const conversionReady = ['qualified', 'quote_sent', 'follow_up', 'won'].includes(lead.stage)
+  const selectedMatterTypeAvailable = matterTypeOptions.some(([value]) => value === matterType)
   const conversionAssignees = assignees.filter((assignee) => canOwnConvertedMatter(assignee, matterType))
   const currentStageIndex = STAGE_OPTIONS.findIndex(([value]) => value === lead.stage)
   const assignedTeamMember = assignees.find((assignee) => assignee.userId === lead.assignedUserId)
@@ -872,10 +906,11 @@ function LeadDetailDrawer({
             <h4 className="font-semibold text-slate-900">Convert to Matter</h4>
             <p className="mt-1 text-xs leading-5 text-slate-500">Creates a firm-originated active Matter directly. It will not enter Incoming Matters.</p>
             {!conversionReady ? <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">Qualify this Lead before conversion.</p> : null}
+            {!matterTypeOptions.length ? <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">This firm is not currently accepting new Matters.</p> : null}
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <Field label="Matter type" required>
-                <select className={inputClass} value={matterType} onChange={(event) => { const nextType = event.target.value; setMatterType(nextType); setClientRole(defaultClientRoleForMatter(lead, nextType)); setConversionFinanceType(nextType === 'bond' ? 'bond' : 'cash'); setConversionAssigneeId((current) => canOwnConvertedMatter(assignees.find((assignee) => assignee.userId === current), nextType) ? current : '') }} disabled={!conversionReady}>
-                  <option value="transfer">Transfer</option><option value="bond">Bond Registration</option><option value="cancellation">Bond Cancellation</option>
+                <select className={inputClass} value={matterType} onChange={(event) => { const nextType = event.target.value; setMatterType(nextType); setClientRole(defaultClientRoleForMatter(lead, nextType)); setConversionFinanceType(nextType === 'bond' ? 'bond' : 'cash'); setConversionAssigneeId((current) => canOwnConvertedMatter(assignees.find((assignee) => assignee.userId === current), nextType) ? current : '') }} disabled={!conversionReady || !matterTypeOptions.length}>
+                  {matterTypeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                 </select>
               </Field>
               <Field label="Client role" required>
@@ -906,7 +941,7 @@ function LeadDetailDrawer({
               <input type="checkbox" className="mt-0.5" checked={conversionConfirmed} onChange={(event) => setConversionConfirmed(event.target.checked)} disabled={!conversionReady} />
               <span>I confirm that this qualified Lead should become an active firm Matter.</span>
             </label>
-            <button type="button" className="ui-button ui-button-primary mt-3" disabled={!conversionReady || !conversionConfirmed || !conversionAssigneeId || !conversionPropertyAddress.trim() || conversionSaving} onClick={() => onConvert({ matterType, clientRole, assignedUserId: conversionAssigneeId, propertyAddress: conversionPropertyAddress, propertyValue: conversionPropertyValue, financeType: conversionFinanceType, conversionNote })}>
+            <button type="button" className="ui-button ui-button-primary mt-3" disabled={!conversionReady || !selectedMatterTypeAvailable || !conversionConfirmed || !conversionAssigneeId || !conversionPropertyAddress.trim() || conversionSaving} onClick={() => onConvert({ matterType, clientRole, assignedUserId: conversionAssigneeId, propertyAddress: conversionPropertyAddress, propertyValue: conversionPropertyValue, financeType: conversionFinanceType, conversionNote })}>
               {conversionSaving ? <LoaderCircle className="animate-spin" size={16} /> : <Check size={16} />} {conversionSaving ? 'Creating Matter…' : 'Convert to Matter'}
             </button>
           </section>
@@ -975,9 +1010,27 @@ function LeadDetailDrawer({
 }
 
 export default function AttorneyLeadsPage() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const workspaceContext = useWorkspace()
+  const attorneyModules = useOptionalAttorneyModules()
   const { organisation } = useOrganisation()
   const permissions = useAttorneyPermissions()
+  const canCreateAttorneyMatter = FEATURE_FLAGS.enableAttorneyModuleWriteGuards
+    ? attorneyModules?.canCreateMatter
+    : ALLOW_ATTORNEY_MODULE_WRITE
+  const leadServiceOptions = useMemo(
+    () => filterAttorneyLeadServiceOptions(SERVICE_OPTIONS, canCreateAttorneyMatter),
+    [canCreateAttorneyMatter],
+  )
+  const matterServiceOptions = useMemo(
+    () => filterAttorneyLeadServiceOptions(MATTER_INSTRUCTION_SERVICE_OPTIONS, canCreateAttorneyMatter),
+    [canCreateAttorneyMatter],
+  )
+  const matterTypeOptions = useMemo(() => {
+    const availableTypes = new Set(getCreatableAttorneyMatterTypes(canCreateAttorneyMatter))
+    return MATTER_TYPE_OPTIONS.filter(([value]) => availableTypes.has(value))
+  }, [canCreateAttorneyMatter])
   const organisationId = organisation?.organisationId || organisation?.partnerOrganisationId || organisation?.id || workspaceContext.workspace?.id || ''
   const [leads, setLeads] = useState([])
   const [publicLink, setPublicLink] = useState(null)
@@ -1018,6 +1071,27 @@ export default function AttorneyLeadsPage() {
   const leadRoleAccess = getAttorneyLeadRoleAccess(permissions.role)
   const canEditLeads = Boolean(leadRoleAccess?.edit)
   const canAssignLeads = Boolean(leadRoleAccess?.assign)
+  const routeCreateIntent = location.state?.openCreateLead
+    ? location.state?.creationIntent === 'matter' ? 'matter' : 'lead'
+    : ''
+  const manualDrawerOpen = manualOpen || Boolean(routeCreateIntent)
+
+  function clearCreateLeadRouteState() {
+    if (!location.state?.openCreateLead && !location.state?.creationIntent) return
+    const nextState = { ...(location.state || {}) }
+    delete nextState.openCreateLead
+    delete nextState.creationIntent
+    navigate(
+      { pathname: location.pathname, search: location.search, hash: location.hash },
+      { replace: true, state: Object.keys(nextState).length ? nextState : null },
+    )
+  }
+
+  function closeManualDrawer() {
+    setManualOpen(false)
+    setManualError('')
+    clearCreateLeadRouteState()
+  }
 
   const loadWorkspace = useCallback(async () => {
     if (!organisationId) return
@@ -1126,8 +1200,12 @@ export default function AttorneyLeadsPage() {
     setManualSaving(true)
     setManualError('')
     try {
+      const moduleKey = getAttorneyModuleKeyForLeadService(values?.serviceType)
+      if (FEATURE_FLAGS.enableAttorneyModuleWriteGuards && moduleKey) {
+        assertAttorneyModuleAcceptsNewWork(moduleKey, canCreateAttorneyMatter, 'capture this instruction')
+      }
       await createAttorneyLead({ organisationId, values })
-      setManualOpen(false)
+      closeManualDrawer()
       await loadWorkspace()
     } catch (createError) {
       setManualError(createError?.message || 'Unable to create Attorney Lead.')
@@ -1199,6 +1277,9 @@ export default function AttorneyLeadsPage() {
     setConversionSaving(true)
     setDetailError('')
     try {
+      if (FEATURE_FLAGS.enableAttorneyModuleWriteGuards) {
+        assertAttorneyModuleAcceptsNewWork(values?.matterType, canCreateAttorneyMatter, 'convert this Lead')
+      }
       await convertAttorneyLeadToMatter({ organisationId, leadId: selectedLead.id, values })
       await refreshLeadDetail(selectedLead.id)
     } catch (saveError) {
@@ -1441,7 +1522,16 @@ export default function AttorneyLeadsPage() {
         <button type="button" onClick={loadWorkspace} className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-slate-500 hover:text-slate-800"><RefreshCw size={14} /> Refresh Leads</button>
       </div>
 
-      <ManualLeadDrawer open={manualOpen} saving={manualSaving} error={manualError} onClose={() => setManualOpen(false)} onSave={handleManualCreate} />
+      <ManualLeadDrawer
+        open={manualDrawerOpen}
+        intent={routeCreateIntent || 'lead'}
+        leadServiceOptions={leadServiceOptions}
+        matterServiceOptions={matterServiceOptions}
+        saving={manualSaving}
+        error={manualError}
+        onClose={closeManualDrawer}
+        onSave={handleManualCreate}
+      />
       <PublicLinkDrawer open={linkOpen} link={publicLink} readiness={launchReadiness} readinessLoading={readinessLoading} canManage={permissions.canManageFirmSettings} busy={linkBusy} copied={linkCopied} error={linkError} onClose={() => setLinkOpen(false)} onCreate={handleCreateLink} onCopy={handleCopyLink} onToggle={handleToggleLink} onRefreshReadiness={refreshLaunchReadiness} />
       <LeadSlaSettingsDrawer open={slaOpen} settings={leadSlaSettings} canManage={permissions.canManageFirmSettings} saving={slaSaving} error={slaError} onClose={() => setSlaOpen(false)} onSave={handleSlaSave} />
       <LeadDetailDrawer
@@ -1456,6 +1546,7 @@ export default function AttorneyLeadsPage() {
         activitySaving={activitySaving}
         followUpSaving={followUpSaving}
         conversionSaving={conversionSaving}
+        matterTypeOptions={matterTypeOptions}
         quotes={quotes}
         quoteLinks={quoteLinks}
         quotesLoading={quotesLoading}

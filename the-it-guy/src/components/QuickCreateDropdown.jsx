@@ -24,12 +24,18 @@ import {
   getSelectedAgentOption,
 } from './agentAssignmentSelectModel'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { useOptionalAttorneyModules } from '../context/AttorneyModulesContext'
+import { ATTORNEY_FIRM_MODULE_KEYS } from '../constants/attorneyFirmModules'
+import { FEATURE_FLAGS } from '../lib/featureFlags'
 import { createAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
 import { inferLeadCategoryFromRecord, normalizeLeadCategory } from '../lib/leadCategory'
 import { readAgentPrivateListings } from '../lib/agentListingStorage'
 import { createAppointmentAsync } from '../lib/agencyPipelineService'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../lib/settingsApi'
 import { getOrganisationPrivateListings } from '../services/privateListingService'
+import { trackTelemetryEvent } from '../services/observability/telemetry'
+import { can } from '../auth/permissions/permissionResolver'
+import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
 import Modal from './ui/Modal'
 
 const RESIDENTIAL_QUICK_CREATE_GROUPS = [
@@ -215,6 +221,65 @@ const COMMERCIAL_QUICK_CREATE_GROUPS = [
     ],
   },
 ]
+
+const ATTORNEY_QUICK_CREATE_GROUPS = [
+  {
+    label: 'Attorney workflow',
+    items: [
+      {
+        type: 'attorney-matter',
+        label: 'New Matter',
+        helper: 'Open a transfer, bond or cancellation matter',
+        icon: FileCheck2,
+        permission: PERMISSIONS.createMatters,
+        action: 'route',
+        to: '/attorney/leads',
+        state: { openCreateLead: true, creationIntent: 'matter' },
+      },
+      {
+        type: 'attorney-lead',
+        label: 'New Lead / Referral',
+        helper: 'Capture a potential instruction',
+        icon: UserPlus,
+        permission: PERMISSIONS.createMatters,
+        action: 'route',
+        to: '/attorney/leads',
+        state: { openCreateLead: true, creationIntent: 'lead' },
+      },
+      {
+        type: 'attorney-appointment',
+        label: 'New Appointment',
+        helper: 'Schedule a consultation or signing',
+        icon: CalendarPlus,
+        permission: PERMISSIONS.manageSigningAppointments,
+        action: 'route',
+        to: '/attorney/scheduling',
+        state: { openCreateAppointment: true },
+      },
+    ],
+  },
+]
+
+const ATTORNEY_QUICK_CREATE_DEFAULT_ORDER = Object.freeze([
+  'attorney-matter',
+  'attorney-lead',
+  'attorney-appointment',
+])
+
+function getAttorneyQuickCreateOrder(pathname = '') {
+  const path = String(pathname || '').trim().toLowerCase()
+  if (path.startsWith('/attorney/scheduling') || path.startsWith('/attorney/calendar')) {
+    return ['attorney-appointment', 'attorney-matter', 'attorney-lead']
+  }
+  if (
+    path.startsWith('/attorney/leads') ||
+    path.startsWith('/attorney/pipeline') ||
+    path.startsWith('/attorney/matters/active')
+  ) {
+    return ['attorney-lead', 'attorney-matter', 'attorney-appointment']
+  }
+  return ATTORNEY_QUICK_CREATE_DEFAULT_ORDER
+}
 
 const BOND_ORIGINATOR_QUICK_CREATE_GROUPS = [
   {
@@ -846,7 +911,10 @@ function QuickCreateModal({
 function QuickCreateDropdown({ className = '' }) {
   const location = useLocation()
   const navigate = useNavigate()
-  const { agencyWorkflowMode, profile, role } = useWorkspace()
+  const workspaceContext = useWorkspace()
+  const attorneyModules = useOptionalAttorneyModules()
+  const canCreateAttorneyMatter = attorneyModules?.canCreateMatter
+  const { agencyWorkflowMode, profile, role } = workspaceContext
   const [open, setOpen] = useState(false)
   const [pendingCreateKind, setPendingCreateKind] = useState('')
   const [pendingCreateInitialForm, setPendingCreateInitialForm] = useState({})
@@ -860,6 +928,8 @@ function QuickCreateDropdown({ className = '' }) {
   const [agentOptionsLoading, setAgentOptionsLoading] = useState(false)
   const [menuOffsetLeft, setMenuOffsetLeft] = useState(0)
   const containerRef = useRef(null)
+  const triggerRef = useRef(null)
+  const menuRef = useRef(null)
 
   const actor = useMemo(() => {
     const fullName = normalizeText(profile?.fullName || [profile?.firstName, profile?.lastName].filter(Boolean).join(' '))
@@ -875,10 +945,25 @@ function QuickCreateDropdown({ className = '' }) {
 
   const quickCreateGroups = useMemo(
     () => {
+      if (role === 'attorney') {
+        const contextualOrder = getAttorneyQuickCreateOrder(location.pathname)
+        const canCreateAnyMatter = !FEATURE_FLAGS.enableAttorneyModuleWriteGuards || ATTORNEY_FIRM_MODULE_KEYS.some(
+          (moduleKey) => canCreateAttorneyMatter?.(moduleKey),
+        )
+        return ATTORNEY_QUICK_CREATE_GROUPS
+          .map((group) => ({
+            ...group,
+            items: group.items
+              .filter((item) => !item.permission || can(item.permission, workspaceContext))
+              .filter((item) => item.type !== 'attorney-matter' || canCreateAnyMatter)
+              .sort((left, right) => contextualOrder.indexOf(left.type) - contextualOrder.indexOf(right.type)),
+          }))
+          .filter((group) => group.items.length)
+      }
       if (role === 'bond_originator') return BOND_ORIGINATOR_QUICK_CREATE_GROUPS
       return location.pathname.startsWith('/commercial') ? COMMERCIAL_QUICK_CREATE_GROUPS : RESIDENTIAL_QUICK_CREATE_GROUPS
     },
-    [location.pathname, role],
+    [canCreateAttorneyMatter, location.pathname, role, workspaceContext],
   )
 
   useEffect(() => {
@@ -906,6 +991,14 @@ function QuickCreateDropdown({ className = '' }) {
   }, [open])
 
   useEffect(() => {
+    if (!open || role !== 'attorney') return undefined
+    const focusFrame = window.requestAnimationFrame(() => {
+      menuRef.current?.querySelector('[role="menuitem"]')?.focus()
+    })
+    return () => window.cancelAnimationFrame(focusFrame)
+  }, [open, role])
+
+  useEffect(() => {
     function onKeyDown(event) {
       if (event.key !== 'Escape') {
         return
@@ -930,6 +1023,7 @@ function QuickCreateDropdown({ className = '' }) {
 
       if (open) {
         setOpen(false)
+        triggerRef.current?.focus()
       }
     }
 
@@ -1034,6 +1128,17 @@ function QuickCreateDropdown({ className = '' }) {
   }
 
   function handleItemSelect(item) {
+    if (role === 'attorney') {
+      void trackTelemetryEvent({
+        category: 'attorney_quick_create',
+        eventName: 'attorney_quick_create_action_selected',
+        userId: actor.userId || actor.id,
+        workspaceId: workspaceContext.currentWorkspace?.id || workspaceContext.currentMembership?.workspaceId || '',
+        route: location.pathname,
+        metadata: { actionType: item.type },
+      })
+    }
+
     if (item.action === 'route' && item.to) {
       setOpen(false)
       setPendingCreateKind('')
@@ -1068,6 +1173,41 @@ function QuickCreateDropdown({ className = '' }) {
   function closeAudienceModal() {
     setPendingCreateKind('')
     setPendingCreateInitialForm({})
+  }
+
+  function handleMenuKeyDown(event) {
+    if (role !== 'attorney') return
+    const menuItems = Array.from(menuRef.current?.querySelectorAll('[role="menuitem"]') || [])
+    if (!menuItems.length) return
+
+    const currentIndex = menuItems.indexOf(document.activeElement)
+    let nextIndex = currentIndex
+    if (event.key === 'ArrowDown') nextIndex = currentIndex < menuItems.length - 1 ? currentIndex + 1 : 0
+    else if (event.key === 'ArrowUp') nextIndex = currentIndex > 0 ? currentIndex - 1 : menuItems.length - 1
+    else if (event.key === 'Home') nextIndex = 0
+    else if (event.key === 'End') nextIndex = menuItems.length - 1
+    else return
+
+    event.preventDefault()
+    menuItems[nextIndex]?.focus()
+  }
+
+  function toggleCreateMenu(event) {
+    const nextOpen = !open
+    if (nextOpen) {
+      setMenuOffsetLeft(getQuickCreateMenuOffset(event.currentTarget.getBoundingClientRect(), window.innerWidth))
+      if (role === 'attorney') {
+        void trackTelemetryEvent({
+          category: 'attorney_quick_create',
+          eventName: 'attorney_quick_create_opened',
+          userId: actor.userId || actor.id,
+          workspaceId: workspaceContext.currentWorkspace?.id || workspaceContext.currentMembership?.workspaceId || '',
+          route: location.pathname,
+          metadata: { availableActionCount: quickCreateGroups.flatMap((group) => group.items).length },
+        })
+      }
+    }
+    setOpen(nextOpen)
   }
 
   function chooseAudience(choiceKey) {
@@ -1259,20 +1399,25 @@ function QuickCreateDropdown({ className = '' }) {
     }
   }
 
+  if (role === 'attorney' && !quickCreateGroups.length) return null
+
   return (
     <>
       <div className={`relative shrink-0 ${className}`.trim()} ref={containerRef}>
         <button
+          ref={triggerRef}
           type="button"
           className="ui-shell-create-button"
-          onClick={(event) => {
-            if (!open) {
-              setMenuOffsetLeft(getQuickCreateMenuOffset(event.currentTarget.getBoundingClientRect(), window.innerWidth))
+          onClick={toggleCreateMenu}
+          onKeyDown={(event) => {
+            if (role === 'attorney' && event.key === 'ArrowDown' && !open) {
+              event.preventDefault()
+              toggleCreateMenu(event)
             }
-            setOpen((previous) => !previous)
           }}
           aria-haspopup="menu"
           aria-expanded={open}
+          aria-controls={open ? 'quick-create-menu' : undefined}
           data-testid="quick-create-button"
         >
           <Plus size={16} />
@@ -1282,9 +1427,13 @@ function QuickCreateDropdown({ className = '' }) {
 
         {open ? (
           <div
+            id="quick-create-menu"
+            ref={menuRef}
             className="ui-surface-floating absolute top-[calc(100%+12px)] z-[120] w-[min(24rem,calc(100vw-1.5rem))] max-h-[calc(100dvh-96px)] overflow-y-auto border-[#dde6ef] bg-white p-2 shadow-[0_24px_56px_rgba(15,23,42,0.14)]"
             style={{ left: menuOffsetLeft }}
             role="menu"
+            aria-label={role === 'attorney' ? 'Create attorney record' : 'Create record'}
+            onKeyDown={handleMenuKeyDown}
             data-testid="quick-create-menu"
           >
             <div className="px-3 pb-3 pt-2">
@@ -1294,8 +1443,9 @@ function QuickCreateDropdown({ className = '' }) {
             {quickCreateGroups.map((group, groupIndex) => (
               <div key={group.label} className={`border-t border-[#edf2f7] py-2 first:border-t-0 first:pt-0 ${groupIndex === 0 ? 'pt-0' : 'pt-3'}`.trim()}>
                 <p className="px-3 pb-2 text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#8ba0b8]">{group.label}</p>
-                {group.items.map((item) => {
+                {group.items.map((item, itemIndex) => {
                   const Icon = item.icon
+                  const isRecommendedAttorneyAction = role === 'attorney' && groupIndex === 0 && itemIndex === 0
                   const iconTileClass =
                     item.type === 'lead' || item.type === 'listing' || item.type === 'appointment'
                       ? 'bg-[#eef4fb] text-[#24465d]'
@@ -1316,7 +1466,14 @@ function QuickCreateDropdown({ className = '' }) {
                         <Icon size={16} />
                       </span>
                       <span className="min-w-0">
-                        <span className="block text-[0.95rem] font-semibold text-[#162334]">{item.label}</span>
+                        <span className="flex flex-wrap items-center gap-2 text-[0.95rem] font-semibold text-[#162334]">
+                          <span>{item.label}</span>
+                          {isRecommendedAttorneyAction ? (
+                            <span className="rounded-full bg-[#eaf2f8] px-2 py-0.5 text-[0.62rem] font-bold uppercase tracking-[0.08em] text-[#315a78]">
+                              Recommended here
+                            </span>
+                          ) : null}
+                        </span>
                         <span className="mt-0.5 block text-xs font-medium leading-5 text-[#6b7d93]">{item.helper}</span>
                       </span>
                     </button>

@@ -78,6 +78,7 @@ export const ATTORNEY_ROLE_PERMISSION_MAP = {
   firm_admin: FULL_ACCESS,
   director_partner: buildPermissionRecord([
     'can_view_firm_dashboard',
+    'can_manage_firm_settings',
     'can_view_all_firm_matters',
     'can_view_transfer_matters',
     'can_view_bond_matters',

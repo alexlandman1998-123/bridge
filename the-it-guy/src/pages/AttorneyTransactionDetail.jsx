@@ -37,6 +37,7 @@ import LoadingSkeleton from '../components/LoadingSkeleton'
 import ProgressTimeline from '../components/ProgressTimeline'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import AttorneyAssignmentSection from '../components/attorney/assignments/AttorneyAssignmentSection'
+import AttorneyMatterReferenceCard from '../components/attorney/AttorneyMatterReferenceCard'
 import TransactionFinanceCommandCenter from '../components/transaction/TransactionFinanceCommandCenter'
 import FinanceProgressBar from '../components/finance/FinanceProgressBar'
 import FinanceReadinessDashboard from '../components/finance/FinanceReadinessDashboard'
@@ -8252,6 +8253,7 @@ function AttorneyTransactionDetail() {
   const [error, setError] = useState('')
   const [matterAccessChecked, setMatterAccessChecked] = useState(workspaceRole !== 'attorney')
   const [matterAccessAllowed, setMatterAccessAllowed] = useState(workspaceRole !== 'attorney')
+  const [attorneyMatterReference, setAttorneyMatterReference] = useState(null)
   const [saving, setSaving] = useState(false)
   const [workspaceMenu, setWorkspaceMenu] = useState('overview')
   const [discussionBody, setDiscussionBody] = useState('')
@@ -8723,6 +8725,32 @@ function AttorneyTransactionDetail() {
     () => getAttorneyWorkflowNavigation(matterCapabilityProfile, { fallbackToTransfer: workspaceRole !== 'attorney' }),
     [matterCapabilityProfile, workspaceRole],
   )
+  const attorneyMatterReferenceLane = activeLegalWorkflowDetailKey || matterCapabilityProfile?.defaultLaneKey || 'transfer'
+  const attorneyMatterReferenceCapability = getMatterLaneCapability(attorneyMatterReferenceLane)
+  const isAssignedMatterReferenceStaff = (workflowOperations?.assignments || []).some((assignment) => {
+    const assignmentType = String(assignment?.assignmentType || assignment?.attorneyRole || '').trim().toLowerCase()
+    const assignmentCoversLane = attorneyMatterReferenceLane === 'bond'
+      ? ['bond', 'transfer_and_bond', 'bond_attorney'].includes(assignmentType)
+      : attorneyMatterReferenceLane === 'cancellation'
+        ? ['cancellation', 'cancellation_attorney'].includes(assignmentType)
+        : ['transfer', 'transfer_and_bond', 'transfer_attorney'].includes(assignmentType)
+    const assignedUserIds = [
+      assignment?.attorneyUserId,
+      assignment?.primaryAttorneyId,
+      assignment?.secretaryId,
+      assignment?.adminHandlerId,
+    ].filter(Boolean).map(String)
+    return assignmentCoversLane &&
+      String(assignment?.assignmentStatus || assignment?.status || '').toLowerCase() === 'active' &&
+      assignment?.canEdit !== false &&
+      assignedUserIds.includes(String(profile?.id || ''))
+  })
+  const canManageAttorneyMatterReference = workspaceRole === 'attorney' && Boolean(
+    attorneyPermissionState.canManageFirmSettings ||
+    attorneyMatterReferenceCapability?.canEdit ||
+    attorneyMatterReferenceCapability?.isAssigned ||
+    isAssignedMatterReferenceStaff,
+  )
   const attorneyWorkspaceTabs = useMemo(
     () => ATTORNEY_WORKSPACE_TABS.map((tab) => (
       tab.id === 'transfer' ? { ...tab, label: attorneyWorkflowNavigation.label } : tab
@@ -9071,7 +9099,9 @@ function AttorneyTransactionDetail() {
   const matterHeadline = !isPrivateMatter
     ? `${development?.name || 'Development'}${unit?.unit_number ? ` • Unit ${unit.unit_number}` : ''}`
     : transaction?.property_description || transaction?.property_address_line_1 || 'Private Property Transaction'
-  const workspaceReference = formatRoleFriendlyReference(transaction, workspaceRole)
+  const workspaceReference = workspaceRole === 'attorney'
+    ? attorneyMatterReference?.effectiveReference || formatRoleFriendlyReference(transaction, workspaceRole)
+    : formatRoleFriendlyReference(transaction, workspaceRole)
   const workspaceBackPath = workspaceRole === 'bond_originator' ? '/bond/applications' : '/transactions'
   const workspaceBackLabel = workspaceRole === 'bond_originator' ? 'Back to Applications' : 'Back to Transactions'
   const transactionWorkspaceBasePath = location.pathname.startsWith('/bond/files/')
@@ -10962,9 +10992,10 @@ function AttorneyTransactionDetail() {
 
     const params = new URLSearchParams()
     params.set('mode', 'generate')
+    if (workspaceRole === 'attorney') params.set('matterLane', attorneyMatterReferenceLane)
     params.set('returnTo', `${location.pathname}${location.search || ''}`)
     navigate(`/transactions/${transaction.id}/legal/otp?${params.toString()}`)
-  }, [location.pathname, location.search, navigate, transaction?.id])
+  }, [attorneyMatterReferenceLane, location.pathname, location.search, navigate, transaction?.id, workspaceRole])
 
   const openWorkspaceMenu = useCallback((nextMenu) => {
     if (nextMenu === 'transfer' && attorneyWorkflowNavigation.mode === 'direct' && attorneyWorkflowNavigation.detailKey) {
@@ -12985,7 +13016,7 @@ function AttorneyTransactionDetail() {
     <>
       <SharedTransactionShell
       printTitle="Attorney Matter Report"
-      printSubtitle={matterHeadline}
+      printSubtitle={workspaceRole === 'attorney' ? `${workspaceReference} • ${matterHeadline}` : matterHeadline}
       printGeneratedAt={formatDate(new Date().toISOString())}
       errorMessage={error}
       headline={(
@@ -13033,6 +13064,17 @@ function AttorneyTransactionDetail() {
                 isAgentView={isAgentTransactionView}
               />
             )}
+          {workspaceRole === 'attorney' ? (
+            <AttorneyMatterReferenceCard
+              transactionId={transaction.id}
+              firmId={attorneyPermissionState.firmId}
+              lane={attorneyMatterReferenceLane}
+              canManage={canManageAttorneyMatterReference}
+              hasGeneratedDocuments={documents.length > 0}
+              fallbackReference={formatRoleFriendlyReference(transaction, workspaceRole)}
+              onReferenceChange={setAttorneyMatterReference}
+            />
+          ) : null}
           <MatterWorkspaceTabs
             tabs={workspaceMenuTabs}
             activeTab={activeWorkspaceMenu}

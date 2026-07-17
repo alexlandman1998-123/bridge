@@ -21,6 +21,8 @@ import {
   resolveAppointmentRescheduleRequest,
 } from './appointmentRescheduleService'
 import { canManageAttorneySigning } from './permissions/attorneyPermissionService'
+import { getAttorneyMatterReferenceIndex } from './attorneyMatterNumberingService.js'
+import { filterAttorneyRecordsByModules, getAttorneyRecordModuleKeys } from './attorneyModuleDataScope.js'
 
 const MANAGEMENT_ROLES = new Set(['firm_admin', 'director_partner'])
 
@@ -71,6 +73,20 @@ function getMatterReference(transaction = {}, fallbackId = '') {
     normalizeText(transaction.transaction_reference) ||
     `MAT-${String(fallbackId || transaction.id || '').slice(0, 8).toUpperCase()}`
   )
+}
+
+function normalizeMatterReferenceLane(assignmentType = '') {
+  const normalized = toLower(assignmentType)
+  if (['bond', 'bond_attorney'].includes(normalized)) return 'bond'
+  if (['cancellation', 'cancellation_attorney'].includes(normalized)) return 'cancellation'
+  return 'transfer'
+}
+
+function isMissingMatterReferenceIndexError(error) {
+  const code = String(error?.code || '').toUpperCase()
+  const message = String(error?.message || '').toLowerCase()
+  return ['42883', 'PGRST202'].includes(code) ||
+    (message.includes('get_attorney_matter_reference_index') && (message.includes('schema cache') || message.includes('does not exist')))
 }
 
 function normalizeRoleLabel(value) {
@@ -254,7 +270,7 @@ async function fetchTransactions(client, ids = []) {
   if (!transactionIds.length) return []
 
   const primarySelect =
-    'id, organisation_id, development_id, unit_id, buyer_id, matter_number, transaction_reference, stage, current_main_stage, current_sub_stage_summary, finance_type, risk_status, operational_state, attorney_stage, next_action, next_action_due_at, updated_at, created_at, assigned_attorney_email, attorney, assigned_agent, assigned_agent_email, assigned_agent_id, bond_originator, assigned_bond_originator_email, bank, property_description, property_address_line_1, property_address_line_2, suburb, city, province, erf_number, seller_name, seller_email, seller_phone, seller_has_existing_bond, current_bond_bank, current_bond_account_number, estimated_settlement_amount, purchase_price, sales_price, expected_transfer_date, target_registration_date, registration_date, registered_at, lifecycle_state, last_meaningful_activity_at, is_active'
+    'id, organisation_id, development_id, unit_id, buyer_id, platform_reference, matter_number, transaction_reference, stage, current_main_stage, current_sub_stage_summary, finance_type, risk_status, operational_state, attorney_stage, next_action, next_action_due_at, updated_at, created_at, assigned_attorney_email, attorney, assigned_agent, assigned_agent_email, assigned_agent_id, bond_originator, assigned_bond_originator_email, bank, property_description, property_address_line_1, property_address_line_2, suburb, city, province, erf_number, seller_name, seller_email, seller_phone, seller_has_existing_bond, current_bond_bank, current_bond_account_number, estimated_settlement_amount, purchase_price, sales_price, expected_transfer_date, target_registration_date, registration_date, registered_at, lifecycle_state, last_meaningful_activity_at, is_active'
 
   let query = await client
     .from('transactions')
@@ -263,7 +279,8 @@ async function fetchTransactions(client, ids = []) {
 
   if (
     query.error &&
-    (isMissingColumnError(query.error, 'current_main_stage') ||
+    (isMissingColumnError(query.error, 'platform_reference') ||
+      isMissingColumnError(query.error, 'current_main_stage') ||
       isMissingColumnError(query.error, 'matter_number') ||
       isMissingColumnError(query.error, 'assigned_attorney_email') ||
       isMissingColumnError(query.error, 'assigned_agent') ||
@@ -709,7 +726,7 @@ function buildDateTimeFromAppointment(appointment = {}) {
   return appointment.created_at || appointment.updated_at || null
 }
 
-export async function getAttorneyOperationalWorkspaceData(firmId = null, userId = null) {
+export async function getAttorneyOperationalWorkspaceData(firmId = null, userId = null, { moduleKeys = null } = {}) {
   const client = requireClient()
   const authUser = await getAuthenticatedUser(client)
 
@@ -790,12 +807,26 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
       ? await getUserAttorneyAssignments(resolvedFirm.id, currentUserId)
       : []
 
-  const relevantAssignments = assignments.filter((assignment) => ['pending', 'active', 'paused'].includes(toLower(assignment.status)))
+  const operationalAssignments = assignments.filter((assignment) => ['pending', 'active', 'paused'].includes(toLower(assignment.status)))
+  const relevantAssignments = Array.isArray(moduleKeys)
+    ? filterAttorneyRecordsByModules(operationalAssignments, moduleKeys)
+    : operationalAssignments
 
   const transactionIds = [...new Set(relevantAssignments.map((assignment) => assignment.transactionId).filter(Boolean))]
-  const transactions = await fetchTransactions(client, transactionIds)
+  const [transactions, matterReferenceIndex] = await Promise.all([
+    fetchTransactions(client, transactionIds),
+    getAttorneyMatterReferenceIndex(resolvedFirm.id, transactionIds).catch((error) => {
+      if (isMissingMatterReferenceIndexError(error)) return []
+      throw error
+    }),
+  ])
   const transactionsById = transactions.reduce((accumulator, row) => {
     accumulator[row.id] = row
+    return accumulator
+  }, {})
+  const matterReferencesByTransaction = matterReferenceIndex.reduce((accumulator, reference) => {
+    if (!accumulator[reference.transactionId]) accumulator[reference.transactionId] = {}
+    accumulator[reference.transactionId][reference.lane] = reference
     return accumulator
   }, {})
 
@@ -858,6 +889,10 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
             : assignment.adminHandlerId === currentUserId
               ? 'Admin Handler'
               : normalizeRoleLabel(currentRole)
+      const matterReferenceLane = normalizeMatterReferenceLane(assignment.assignmentType)
+      const referencesByLane = matterReferencesByTransaction[transaction.id] || {}
+      const referenceContext = referencesByLane[matterReferenceLane] || referencesByLane.transfer || Object.values(referencesByLane)[0] || null
+      const fallbackReference = getMatterReference(transaction, transaction.id)
 
       return {
         assignmentId: assignment.id,
@@ -865,7 +900,14 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
         organisationId: transaction.organisation_id || null,
         developmentId: transaction.development_id || unit?.development_id || null,
         unitId: transaction.unit_id || null,
-        matterReference: getMatterReference(transaction, transaction.id),
+        matterReference: referenceContext?.effectiveReference || fallbackReference,
+        platformReference: referenceContext?.platformReference || transaction.platform_reference || null,
+        provisionalReference: referenceContext?.provisionalReference || null,
+        filingReference: referenceContext?.filingReference || null,
+        matterReferenceStatus: referenceContext?.referenceStatus || 'provisional',
+        matterReferenceAliases: referenceContext?.referenceAliases || [fallbackReference],
+        matterReferenceLane,
+        matterReferencesByLane: referencesByLane,
         clientName,
         buyerName: clientName,
         sellerName: transaction.seller_name || transaction.seller_email || 'Seller pending',
@@ -1159,8 +1201,8 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
     userContext: currentProfile,
   })
 
-  const transferMatterCount = matterQueue.filter((matter) => ['Transfer', 'Transfer + Bond'].includes(matter.matterType)).length
-  const bondMatterCount = matterQueue.filter((matter) => ['Bond', 'Transfer + Bond'].includes(matter.matterType)).length
+  const transferMatterCount = matterQueue.filter((matter) => getAttorneyRecordModuleKeys(matter).includes('transfer')).length
+  const bondMatterCount = matterQueue.filter((matter) => getAttorneyRecordModuleKeys(matter).includes('bond')).length
 
   return {
     firm: {
@@ -1208,7 +1250,7 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
         label: profilesById[member.userId]?.name || 'Team Member',
         role: member.role,
       })),
-      matterTypes: ['Transfer', 'Bond', 'Transfer + Bond', 'Admin'],
+      matterTypes: [...new Set(matterQueue.map((matter) => matter.matterType).filter(Boolean))],
       statuses: [...new Set(matterQueue.map((matter) => matter.status).filter(Boolean))],
     },
   }

@@ -15,13 +15,23 @@ const attorneyNavSource = rolesSource.slice(
   rolesSource.indexOf('attorney: ['),
   rolesSource.indexOf('bond_originator: ['),
 )
-const transactionsNavItemSource = attorneyNavSource.slice(
+const primaryNavPositions = [
+  attorneyNavSource.indexOf("key: 'dashboard'"),
+  attorneyNavSource.indexOf("key: 'scheduling'"),
+  attorneyNavSource.indexOf("key: 'attorney_pipeline'"),
   attorneyNavSource.indexOf("key: 'attorney_matters'"),
-  attorneyNavSource.indexOf("key: 'attorney_pipeline'"),
+]
+const pipelineNavItemSource = attorneyNavSource.slice(primaryNavPositions[2], primaryNavPositions[3])
+const transactionsNavItemSource = attorneyNavSource.slice(
+  primaryNavPositions[3],
+  attorneyNavSource.indexOf("key: 'clients'", primaryNavPositions[3]),
 )
-const pipelineNavItemSource = attorneyNavSource.slice(
-  attorneyNavSource.indexOf("key: 'attorney_pipeline'"),
-  attorneyNavSource.indexOf("key: 'attorney_workflow_board'"),
+
+assert.ok(primaryNavPositions.every((position) => position >= 0), 'Attorney primary nav items should all exist')
+assert.deepEqual(
+  [...primaryNavPositions].sort((left, right) => left - right),
+  primaryNavPositions,
+  'Attorney primary nav should begin Dashboard, Calendar, Pipeline, Matters',
 )
 
 assert.match(attorneyNavSource, /label:\s*'Matters'/, 'Attorney primary nav should expose Matters')
@@ -48,10 +58,10 @@ assert.match(sidebarSource, /attorney_firm:\s*Building2/, 'Attorney Firm nav sho
 assert.doesNotMatch(sidebarSource, /Firm Administration/, 'Attorney sidebar should not keep the old Firm Administration section label')
 assert.match(sidebarSource, /role === 'attorney'\s*\?\s*\[\{ key: 'settings', label: 'Settings', to: '\/settings' \}\]/, 'Attorney sidebar secondary items should collapse to Settings only')
 
-for (const copy of ['All Matters', 'Active Matters', 'Quick Filters', 'Matter Reference', 'Next Action', 'Assigned To']) {
+for (const copy of ['Quick Filters', 'Matter Reference', 'Next Action', 'Assigned To']) {
   assert.match(mattersSource, new RegExp(copy), `Matter workspace should include ${copy}`)
 }
-for (const copy of ['Transfer Matters', 'Bond Matters', 'Cancellation Matters', 'lockedMatterType']) {
+for (const copy of ['All Matters', 'Active Matters', 'Transfer Matters', 'Bond Matters', 'Cancellation Matters', 'lockedMatterType']) {
   assert.match(matterWorkspaceServiceSource, new RegExp(copy), `Matter workspace service should define ${copy}`)
 }
 assert.match(mattersSource, /view=\{workspace\.view\}/, 'Matter workspace header should receive route-specific view metadata')

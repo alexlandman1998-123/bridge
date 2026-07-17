@@ -341,7 +341,6 @@ function buildTransactionRow({
   })
 
   const nowIso = new Date().toISOString()
-  const matterNumber = `MAT-${new Date(nowIso).getFullYear()}-${String(Date.now()).slice(-6)}`
   const stage = normalize(payload?.stage || '') || 'Reserved'
   const mainStage = resolveInitialMainStage(stage)
   const organisationId = getOrganisationId({ organisationId: payload?.organisationId, listing, offerRecord })
@@ -397,7 +396,7 @@ function buildTransactionRow({
       : null,
     transaction: {
       id: transactionId,
-      matter_number: matterNumber,
+      matter_number: normalize(payload?.matterNumber || payload?.matter_number) || null,
       transaction_reference: `AG-${String(transactionId).slice(-6).toUpperCase()}`,
       transaction_type: routingProfile.transactionType && routingProfile.transactionType !== 'unknown'
         ? routingProfile.transactionType

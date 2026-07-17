@@ -799,6 +799,13 @@ export async function getAttorneyIncomingMatterQueue(options = {}) {
   const permissions = getAttorneyRolePermissions(role)
   const canViewAll = Boolean(permissions.can_view_all_firm_matters || MANAGEMENT_ROLES.has(role))
 
+  if (Array.isArray(options.moduleKeys) && !options.moduleKeys.includes('transfer')) {
+    return buildAttorneyIncomingMatterQueueFromSources({
+      firm,
+      currentUser: mapCurrentUser(authUser, membership, permissions),
+    }, options)
+  }
+
   const preInstructionAllocations = await fetchPreInstructionAllocations(client, firm.id)
 
   const assignments = await fetchAssignments(client, {

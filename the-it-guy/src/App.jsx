@@ -6,6 +6,7 @@ import MobileRouteGuard from './components/mobile-shell/MobileRouteGuard'
 import PermissionGate from './components/PermissionGate'
 import TokenRouteGate from './components/routing/TokenRouteGate'
 import { AuthSessionProvider, useAuthSession } from './context/AuthSessionContext'
+import { AttorneyModulesProvider, useAttorneyModules } from './context/AttorneyModulesContext'
 import { OrganisationProvider, useOrganisation } from './context/OrganisationContext'
 import { WorkspaceProvider } from './context/WorkspaceContext'
 import { useWorkspace } from './context/WorkspaceContext'
@@ -27,6 +28,7 @@ import { PERMISSIONS } from './auth/permissions/permissionRegistry'
 import { createRoutePerformanceMarker } from './services/observability/performanceMetrics'
 import { reportError } from './services/observability/errorTracking'
 import { trackPermissionMetric } from './services/observability/monitoring'
+import { canAccessAttorneyMatterView } from './services/attorneyModuleNavigation'
 import {
   hasCommercialAccessMarker,
   isCommercialBrokerMember,
@@ -1047,6 +1049,30 @@ function AttorneyFirmRoute({ children, requireFirm = true }) {
   return children
 }
 
+function AttorneyMatterTypeRoute({ children }) {
+  const { matterType = 'all' } = useParams()
+  const attorneyModules = useAttorneyModules()
+
+  if (!FEATURE_FLAGS.enableAttorneyModuleNavigation) return children
+
+  if (attorneyModules.loading) {
+    return (
+      <section className="auth-loading-screen">
+        <div className="auth-loading-card">
+          <h2>Preparing your matters…</h2>
+          <p>Checking which services are available in this firm.</p>
+        </div>
+      </section>
+    )
+  }
+
+  if (!canAccessAttorneyMatterView(matterType, attorneyModules.canViewModule)) {
+    return <Navigate to="/attorney/matters/all" replace />
+  }
+
+  return children
+}
+
 function AgentManagementRoute({ children, allowBranchOperations = false }) {
   const workspaceContext = useWorkspace()
   const { workspaceReady, profileLoading } = workspaceContext
@@ -1336,10 +1362,11 @@ function AppRoutes() {
 
   return (
     <WorkspaceProvider user={session?.user || null} authBypassRole={devAuthRole}>
-      <OrganisationProvider>
-        <EnvironmentValidationBanner />
-        <RouteObservability />
-        <Suspense fallback={<PageSkeleton label="Loading Arch9" />}>
+      <AttorneyModulesProvider>
+        <OrganisationProvider>
+          <EnvironmentValidationBanner />
+          <RouteObservability />
+          <Suspense fallback={<PageSkeleton label="Loading Arch9" />}>
           <Routes>
           <Route path="/" element={<PublicAwareRootRoute />} />
           <Route path="/buy" element={<BridgeBuyPage />} />
@@ -1662,7 +1689,9 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['attorney']}>
                     <AttorneyFirmRoute>
-                      <AttorneyMattersPage />
+                      <AttorneyMatterTypeRoute>
+                        <AttorneyMattersPage />
+                      </AttorneyMatterTypeRoute>
                     </AttorneyFirmRoute>
                   </RoleRoute>
                 }
@@ -1672,7 +1701,9 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['attorney']}>
                     <AttorneyFirmRoute>
-                      <AttorneyMattersPage />
+                      <AttorneyMatterTypeRoute>
+                        <AttorneyMattersPage />
+                      </AttorneyMatterTypeRoute>
                     </AttorneyFirmRoute>
                   </RoleRoute>
                 }
@@ -2989,9 +3020,10 @@ function AppRoutes() {
           <Route path="/status/:token" element={<TokenRouteGate><AppErrorBoundary scope="status-share-route" title="Status page failed to load"><TransactionStatusShare /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </Suspense>
-      </OrganisationProvider>
-      </WorkspaceProvider>
+          </Suspense>
+        </OrganisationProvider>
+      </AttorneyModulesProvider>
+    </WorkspaceProvider>
   )
 }
 

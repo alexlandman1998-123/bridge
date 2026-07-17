@@ -93,6 +93,12 @@ export function getFeatureFlags() {
     enableMobileShell: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_SHELL, false),
     enableMobileLoginRedirect: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_LOGIN_REDIRECT, false),
     allowDesktopFallbackOnMobile: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_DESKTOP_FALLBACK, true),
+    enableAttorneyModuleSettings: asBoolean(import.meta.env.VITE_FEATURE_ATTORNEY_MODULE_SETTINGS, false),
+    enableAttorneyModuleNavigation: asBoolean(import.meta.env.VITE_FEATURE_ATTORNEY_MODULE_NAVIGATION, false),
+    enableAttorneyModuleDataScope: asBoolean(import.meta.env.VITE_FEATURE_ATTORNEY_MODULE_DATA_SCOPE, false),
+    enableAttorneyModuleWriteGuards: asBoolean(import.meta.env.VITE_FEATURE_ATTORNEY_MODULE_WRITE_GUARDS, false),
+    enableAttorneyModuleLifecycleAssurance: asBoolean(import.meta.env.VITE_FEATURE_ATTORNEY_MODULE_LIFECYCLE_ASSURANCE, false),
+    enableAttorneyModuleLaunchTelemetry: asBoolean(import.meta.env.VITE_FEATURE_ATTORNEY_MODULE_LAUNCH_TELEMETRY, false),
     disableRoleRestrictions: unsafeFlags.disableRoleRestrictions,
   }
 }

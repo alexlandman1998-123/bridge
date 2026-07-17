@@ -3,6 +3,9 @@ import { Navigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import { getCurrentUserPrimaryAttorneyFirm, updateAttorneyFirm } from '../services/attorneyFirms'
+import AttorneyMatterNumberingSettings from '../components/attorney/AttorneyMatterNumberingSettings'
+import AttorneyFirmModulesSettings from '../components/attorney/AttorneyFirmModulesSettings'
+import { FEATURE_FLAGS } from '../lib/featureFlags'
 
 function AttorneyFirmSettingsPage() {
   const { role } = useWorkspace()
@@ -149,10 +152,10 @@ function AttorneyFirmSettingsPage() {
   }
 
   return (
-    <section className="page" style={{ maxWidth: '920px' }}>
+    <section className="page" style={{ maxWidth: '1120px', display: 'grid', gap: '1rem' }}>
       <div className="panel card-tier-standard" style={{ display: 'grid', gap: '0.85rem' }}>
         <h2 style={{ margin: 0 }}>Attorney Firm Settings</h2>
-        <p className="status-message" style={{ margin: 0 }}>Update your firm profile and branding baseline.</p>
+        <p className="status-message" style={{ margin: 0 }}>Update your firm profile, branding baseline, and filing-system preferences.</p>
         {!canEditBranding ? (
           <p className="status-message" style={{ margin: 0 }}>
             You can view firm branding details, but only users with branding permissions can edit this section.
@@ -227,6 +230,13 @@ function AttorneyFirmSettingsPage() {
           ) : null}
         </form>
       </div>
+      {FEATURE_FLAGS.enableAttorneyModuleSettings ? (
+        <AttorneyFirmModulesSettings firmId={firm.id} />
+      ) : null}
+      <AttorneyMatterNumberingSettings
+        firmId={firm.id}
+        canManage={permissionsState.canManageFirmSettings}
+      />
     </section>
   )
 }

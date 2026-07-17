@@ -1,8 +1,11 @@
 import { AlertTriangle, Bell, CalendarDays, CheckCircle2, ChevronDown, FileText, LayoutGrid, Plus, RefreshCw, Search, UserRoundCheck, Users, XCircle } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { useOptionalAttorneyModules } from '../context/AttorneyModulesContext'
 import { canAccessHQ } from '../auth/hqAccess'
+import { FEATURE_FLAGS } from '../lib/featureFlags'
+import { filterAttorneyModuleItems } from '../services/attorneyModuleNavigation'
 import { fetchMyNotifications, markAllNotificationsRead, markNotificationRead } from '../lib/api'
 import QuickCreateDropdown from './QuickCreateDropdown'
 
@@ -400,19 +403,25 @@ const ATTORNEY_DASHBOARD_ROLE_VIEWS = [
   { value: 'all', label: 'All Matters' },
   { value: 'registered', label: 'Registered Matters' },
   { value: 'archived', label: 'Archived Matters' },
-  { value: 'transfer', label: 'Transfer Matters' },
-  { value: 'bond', label: 'Bond Matters' },
-  { value: 'cancellation', label: 'Cancellation Matters' },
+  { value: 'transfer', label: 'Transfer Matters', moduleKey: 'transfer' },
+  { value: 'bond', label: 'Bond Matters', moduleKey: 'bond' },
+  { value: 'cancellation', label: 'Cancellation Matters', moduleKey: 'cancellation' },
   { value: 'shared', label: 'Shared Matters' },
   { value: 'delayed', label: 'Delayed Matters' },
-  { value: 'full-service', label: 'Full-Service Matters' },
+  { value: 'full-service', label: 'Full-Service Matters', moduleKeys: ['transfer', 'bond', 'cancellation'] },
 ]
 
 function HeaderBar({ onLogout, user }) {
   const navigate = useNavigate()
   const location = useLocation()
   const workspaceContext = useWorkspace()
+  const attorneyModules = useOptionalAttorneyModules()
   const { role, agencyWorkflowMode } = workspaceContext
+  const attorneyMatterViews = useMemo(() => (
+    role === 'attorney' && FEATURE_FLAGS.enableAttorneyModuleNavigation
+      ? filterAttorneyModuleItems(ATTORNEY_DASHBOARD_ROLE_VIEWS, attorneyModules?.canViewModule)
+      : ATTORNEY_DASHBOARD_ROLE_VIEWS
+  ), [attorneyModules?.canViewModule, role])
   const [open, setOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [notificationState, setNotificationState] = useState({
@@ -813,7 +822,7 @@ function HeaderBar({ onLogout, user }) {
               <option value="" disabled>
                 Matters
               </option>
-              {ATTORNEY_DASHBOARD_ROLE_VIEWS.map((option) => (
+              {attorneyMatterViews.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>

@@ -20,6 +20,11 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
+import { useOptionalAttorneyModules } from '../context/AttorneyModulesContext'
+import { FEATURE_FLAGS } from '../lib/featureFlags'
+import { filterAttorneyModuleItems } from '../services/attorneyModuleNavigation'
+import { ATTORNEY_FIRM_MODULE_KEYS } from '../constants/attorneyFirmModules'
+import { assertAttorneyModuleAcceptsNewWork } from '../services/attorneyModuleWriteGuard'
 import {
   ATTORNEY_MATTER_PAGE_SIZES,
   buildAttorneyMatterWorkspace,
@@ -288,10 +293,10 @@ function SelectFilter({ label, value, options = [], onChange }) {
   )
 }
 
-function UnifiedFilterBar({ workspace, filters, onFilterChange, onOpenMoreFilters }) {
+function UnifiedFilterBar({ workspace, matterTypeOptions, filters, onFilterChange, onOpenMoreFilters }) {
   const lockedMatterType = workspace.view?.lockedMatterType || (workspace.view?.usesIncomingQueue ? 'transfer' : '')
   const lockedMatterTypeOption = lockedMatterType
-    ? workspace.filters.matterTypes.find((option) => (option.key || option.value) === lockedMatterType)
+    ? matterTypeOptions.find((option) => (option.key || option.value) === lockedMatterType)
     : null
 
   return (
@@ -313,7 +318,7 @@ function UnifiedFilterBar({ workspace, filters, onFilterChange, onOpenMoreFilter
       ) : (
         <FilterGroup
           label="Matter Type"
-          options={workspace.filters.matterTypes}
+          options={matterTypeOptions}
           value={filters.matterType}
           onChange={(value) => onFilterChange('matterType', value)}
         />
@@ -467,6 +472,18 @@ function StatusPill({ status }) {
   )
 }
 
+function MatterReferenceMeta({ row }) {
+  if (!row?.platformReference && !row?.referenceStatus) return null
+  return (
+    <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[0.68rem] font-medium text-slate-500">
+      <span>{row.referenceStatus === 'confirmed' ? 'Confirmed' : 'Provisional'}</span>
+      {row.platformReference && row.platformReference !== row.reference ? (
+        <><span aria-hidden>·</span><span className="font-mono">{row.platformReference}</span></>
+      ) : null}
+    </span>
+  )
+}
+
 function Assignee({ person }) {
   return (
     <div className="flex min-w-[150px] items-center gap-2">
@@ -482,6 +499,9 @@ function getMatterPreview(row = {}) {
   return {
     matterId: row.matterId,
     matterReference: row.matterReference || row.reference,
+    platformReference: row.platformReference || '',
+    referenceStatus: row.referenceStatus || 'provisional',
+    referenceLane: row.referenceLane || 'transfer',
     financeType: row.financeType || '',
     purchasePrice: row.purchasePrice || row.matterValue || 0,
     sellerName: row.sellerName || row.seller || '',
@@ -528,10 +548,10 @@ function canDeclineIncomingMatter(row = {}) {
   return !['accepted', 'declined', 'removed', 'completed'].includes(normalize(row.statusKey || row.status))
 }
 
-function IncomingRowActions({ row, onAcceptMatter, onDeclineMatter, accepting = false, declining = false }) {
+function IncomingRowActions({ row, onAcceptMatter, onDeclineMatter, canAcceptNewInstructions = true, accepting = false, declining = false }) {
   const href = row.actionHref || '#'
   const preview = getMatterPreview(row)
-  const readyForAcceptance = canAcceptIncomingMatter(row)
+  const readyForAcceptance = canAcceptNewInstructions && canAcceptIncomingMatter(row)
   const canDecline = canDeclineIncomingMatter(row)
 
   return (
@@ -635,6 +655,7 @@ function IncomingMattersTable({
   onOpenMatter,
   onAcceptMatter,
   onDeclineMatter,
+  canAcceptNewInstructions = true,
   acceptingMatterId = '',
   decliningMatterId = '',
 }) {
@@ -664,7 +685,7 @@ function IncomingMattersTable({
               const selected = selectedRows.includes(row.matterId)
               const href = row.actionHref || '#'
               const preview = getMatterPreview(row)
-              const readyForAcceptance = canAcceptIncomingMatter(row)
+              const readyForAcceptance = canAcceptNewInstructions && canAcceptIncomingMatter(row)
               const accepting = acceptingMatterId === row.assignmentId
               const declining = decliningMatterId === row.assignmentId
               return (
@@ -784,6 +805,7 @@ function IncomingMattersTable({
                         row={row}
                         onAcceptMatter={onAcceptMatter}
                         onDeclineMatter={onDeclineMatter}
+                        canAcceptNewInstructions={canAcceptNewInstructions}
                         accepting={accepting}
                         declining={declining}
                       />
@@ -897,8 +919,13 @@ function MattersTable({ rows = [], selectedRows = [], onToggleRow, onToggleAll, 
                       onClick={(event) => event.stopPropagation()}
                       className="inline-flex items-center gap-1 text-slate-950 hover:text-[#00614f]"
                     >
-                      {row.reference}
-                      <ArrowRight size={13} className="opacity-0 transition group-hover:opacity-100" />
+                      <span>
+                        <span className="flex items-center gap-1">
+                          {row.reference}
+                          <ArrowRight size={13} className="opacity-0 transition group-hover:opacity-100" />
+                        </span>
+                        <MatterReferenceMeta row={row} />
+                      </span>
                     </Link>
                   </td>
                   <td className="max-w-[250px] px-4 py-3">
@@ -1069,6 +1096,9 @@ function Pagination({ pagination, itemLabel = 'matters', onPageChange, pageSize,
 function AttorneyMattersPage() {
   const { matterType = 'all' } = useParams()
   const navigate = useNavigate()
+  const attorneyModules = useOptionalAttorneyModules()
+  const canViewAttorneyModule = attorneyModules?.canViewModule
+  const attorneyModulesLoading = Boolean(attorneyModules?.loading)
   const permissionsState = useAttorneyPermissions()
   const [source, setSource] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -1085,15 +1115,30 @@ function AttorneyMattersPage() {
   const [declineDialog, setDeclineDialog] = useState({ row: null, reason: '' })
 
   const viewKey = normalize(matterType || 'all')
+  const moduleKeys = useMemo(() => (
+    FEATURE_FLAGS.enableAttorneyModuleDataScope
+      ? ATTORNEY_FIRM_MODULE_KEYS.filter((moduleKey) => canViewAttorneyModule?.(moduleKey))
+      : null
+  ), [canViewAttorneyModule])
+  const moduleScopeKey = Array.isArray(moduleKeys) ? moduleKeys.join(',') : ''
+  const canReceiveTransferInstruction = !FEATURE_FLAGS.enableAttorneyModuleWriteGuards || Boolean(
+    attorneyModules?.canReceiveInstruction?.('transfer'),
+  )
 
   useEffect(() => {
     let active = true
+
+    if (FEATURE_FLAGS.enableAttorneyModuleDataScope && attorneyModulesLoading) {
+      return () => {
+        active = false
+      }
+    }
 
     async function load() {
       setLoading(true)
       setError('')
       try {
-        const workspace = await getAttorneyMatterWorkspace({ view: viewKey })
+        const workspace = await getAttorneyMatterWorkspace({ view: viewKey, moduleKeys })
         if (!active) return
         setSource(workspace.source)
       } catch (loadError) {
@@ -1108,7 +1153,7 @@ function AttorneyMattersPage() {
     return () => {
       active = false
     }
-  }, [viewKey])
+  }, [attorneyModulesLoading, moduleKeys, moduleScopeKey, viewKey])
 
   useEffect(() => {
     function handleHeaderSearch(event) {
@@ -1145,6 +1190,12 @@ function AttorneyMattersPage() {
       pageSize,
     })
   }, [filters, page, pageSize, quickFilter, searchTerm, source, viewKey])
+  const matterTypeOptions = useMemo(() => {
+    const options = workspace?.filters?.matterTypes || []
+    return FEATURE_FLAGS.enableAttorneyModuleNavigation
+      ? filterAttorneyModuleItems(options, canViewAttorneyModule)
+      : options
+  }, [canViewAttorneyModule, workspace?.filters?.matterTypes])
 
   const savedViews = useMemo(() => [...(workspace?.savedViews || []), ...localSavedViews], [localSavedViews, workspace?.savedViews])
   const usesIncomingQueue = Boolean(workspace?.view?.usesIncomingQueue)
@@ -1159,7 +1210,7 @@ function AttorneyMattersPage() {
       : workspace?.view?.lockedMatterType
         ? workspace.view.title
       : filters.matterType !== 'all'
-        ? workspace?.filters?.matterTypes?.find((filter) => filter.key === filters.matterType)?.label
+        ? matterTypeOptions.find((filter) => filter.key === filters.matterType)?.label
         : 'Custom View'
     const nextView = {
       id: `local-${Date.now()}`,
@@ -1195,7 +1246,7 @@ function AttorneyMattersPage() {
   }
 
   async function refreshIncomingWorkspaceAfterDecision(row = {}) {
-    const refreshedWorkspace = await getAttorneyMatterWorkspace({ view: viewKey })
+    const refreshedWorkspace = await getAttorneyMatterWorkspace({ view: viewKey, moduleKeys })
     setSource(refreshedWorkspace.source)
     setSelectedRows((previous) => previous.filter((id) => id !== row.matterId))
   }
@@ -1207,6 +1258,13 @@ function AttorneyMattersPage() {
 
     setIncomingAction({ pendingId: assignmentId || transactionId, kind: 'accept', error: '' })
     try {
+      if (FEATURE_FLAGS.enableAttorneyModuleWriteGuards) {
+        assertAttorneyModuleAcceptsNewWork(
+          'transfer',
+          () => canReceiveTransferInstruction,
+          'accept this incoming instruction',
+        )
+      }
       const result = await acceptAttorneyIncomingMatterInstruction({
         assignmentId,
         transactionId,
@@ -1283,6 +1341,7 @@ function AttorneyMattersPage() {
       <div className="w-full max-w-none space-y-4 px-2 md:px-3 xl:px-4">
         <UnifiedFilterBar
           workspace={workspace}
+          matterTypeOptions={matterTypeOptions}
           filters={filters}
           onFilterChange={handleFilterChange}
           onOpenMoreFilters={() => setDrawerOpen(true)}
@@ -1318,6 +1377,7 @@ function AttorneyMattersPage() {
               onOpenMatter={handleOpenMatter}
               onAcceptMatter={handleAcceptIncomingMatter}
               onDeclineMatter={handleRequestDeclineIncomingMatter}
+              canAcceptNewInstructions={canReceiveTransferInstruction}
               acceptingMatterId={incomingAction.kind === 'accept' ? incomingAction.pendingId : ''}
               decliningMatterId={incomingAction.kind === 'decline' ? incomingAction.pendingId : ''}
             />
