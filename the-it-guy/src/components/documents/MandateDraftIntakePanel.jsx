@@ -1,6 +1,7 @@
 import { CheckCircle2, CircleAlert, Pencil } from 'lucide-react'
 import { resolveLegalDocumentScenarioProfile } from '../../core/documents/legalDocumentScenarioProfile'
 import { resolveLegalDocumentScenarioRequirements } from '../../core/documents/legalDocumentScenarioRequirements'
+import { SELLER_TRANSFER_ATTORNEY_DECISIONS } from '../../lib/sellerTransferAttorneyDecision'
 import Button from '../ui/Button'
 
 function normalizeText(value) {
@@ -67,9 +68,10 @@ function buildReadinessChecks(draft = {}) {
       label: 'Transfer attorney',
       complete: Boolean(
         getFieldValue(draft, 'transferAttorneyPreferredPartnerId') ||
-        draft.transferAttorneySelectionDeferred,
+        getFieldValue(draft, 'transferAttorneyCompanyName') ||
+        (!draft.sellerTransferAttorneyDecisionPresent && draft.transferAttorneySelectionDeferred),
       ),
-      missing: 'Select or defer',
+      missing: draft.sellerTransferAttorneyDecisionPresent ? 'Resolve seller decision' : 'Select or defer',
     },
   ]
 }
@@ -140,6 +142,9 @@ export default function MandateDraftIntakePanel({
   preferredAttorneysError = '',
   selectedAttorneyId = '',
   attorneySelectionDeferred = false,
+  sellerAttorneyDecision = null,
+  sellerAttorneyDecisionPresent = false,
+  sellerAttorneyDecisionResolved = false,
   onAttorneyChange = null,
   onAttorneySelectionDeferredChange = null,
   onConfirm = null,
@@ -167,8 +172,26 @@ export default function MandateDraftIntakePanel({
   })
   const selectedAttorney = attorneySelectionDeferred
     ? null
-    : preferredAttorneys.find((attorney) => String(attorney.id) === String(selectedAttorneyId)) || null
-  const attorneyReady = Boolean(selectedAttorneyId || attorneySelectionDeferred)
+    : preferredAttorneys.find((attorney) => String(attorney.id) === String(selectedAttorneyId)) || (
+      normalizeText(draft.transferAttorneyCompanyName)
+        ? {
+          companyName: draft.transferAttorneyCompanyName,
+          contactPerson: draft.transferAttorneyContactPerson,
+          email: draft.transferAttorneyEmail,
+          phone: draft.transferAttorneyPhone,
+        }
+        : null
+    )
+  const attorneyReady = sellerAttorneyDecisionPresent
+    ? sellerAttorneyDecisionResolved
+    : Boolean(selectedAttorneyId || selectedAttorney || attorneySelectionDeferred)
+  const sellerDecisionLabel = sellerAttorneyDecision?.decision === SELLER_TRANSFER_ATTORNEY_DECISIONS.acceptRecommendation
+    ? 'Seller accepted the agency recommendation'
+    : sellerAttorneyDecision?.decision === SELLER_TRANSFER_ATTORNEY_DECISIONS.nominateOwn
+      ? 'Seller nominated this attorney'
+      : sellerAttorneyDecision?.decision === SELLER_TRANSFER_ATTORNEY_DECISIONS.defer
+        ? 'Seller requested a discussion before appointment'
+        : 'Waiting for the seller to choose an attorney'
 
   return (
     <section className="mb-5 rounded-[24px] border border-[#dbe7f4] bg-white p-4 shadow-[0_14px_34px_rgba(16,32,51,0.05)] sm:p-5">
@@ -249,7 +272,34 @@ export default function MandateDraftIntakePanel({
       </div>
 
       <div className="mt-4 rounded-[18px] border border-[#dbe7f4] bg-[#fbfdff] p-4">
-        <div className="grid gap-4 lg:grid-cols-[1fr_0.8fr] lg:items-end">
+        {sellerAttorneyDecisionPresent ? (
+          <div className={`rounded-[16px] border px-4 py-4 ${sellerAttorneyDecisionResolved ? 'border-[#cdebd8] bg-[#f3fbf6]' : 'border-[#f5d9b8] bg-[#fffaf3]'}`}>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#6b7d93]">Seller’s recorded decision</p>
+                <p className="mt-1 text-sm font-semibold text-[#142132]">{sellerDecisionLabel}</p>
+                <p className="mt-1 text-sm leading-6 text-[#607387]">
+                  {sellerAttorneyDecisionResolved
+                    ? 'This selection is locked to the seller onboarding record and will be written into the mandate.'
+                    : 'Return to Seller and resolve the appointment before the mandate can be generated.'}
+                </p>
+              </div>
+              <span className={`inline-flex w-fit shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold ${sellerAttorneyDecisionResolved ? 'border-[#cdebd8] bg-white text-[#20895a]' : 'border-[#f5d9b8] bg-white text-[#9a5b1d]'}`}>
+                {sellerAttorneyDecisionResolved ? 'Ready for mandate' : 'Mandate blocked'}
+              </span>
+            </div>
+            {sellerAttorneyDecisionResolved && selectedAttorney ? (
+              <div className="mt-4 grid gap-2 rounded-[14px] border border-white/80 bg-white px-4 py-3 text-sm text-[#607387] sm:grid-cols-2">
+                <p><span className="font-semibold text-[#243b53]">Firm:</span> {selectedAttorney.companyName}</p>
+                <p><span className="font-semibold text-[#243b53]">Contact:</span> {selectedAttorney.contactPerson || 'Not provided'}</p>
+                <p><span className="font-semibold text-[#243b53]">Email:</span> {selectedAttorney.email || 'Not provided'}</p>
+                <p><span className="font-semibold text-[#243b53]">Phone:</span> {selectedAttorney.phone || 'Not provided'}</p>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <>
+          <div className="grid gap-4 lg:grid-cols-[1fr_0.8fr] lg:items-end">
           <label className="block">
             <span className="text-sm font-semibold text-[#243b53]">Seller's transferring attorney</span>
             <span className="mt-1 block text-xs leading-5 text-[#6b7d93]">
@@ -284,8 +334,8 @@ export default function MandateDraftIntakePanel({
               <p>No preferred transfer attorneys are configured. Add one under Organisation → Partners, or defer the selection.</p>
             )}
           </div>
-        </div>
-        <label className="mt-3 flex items-start gap-3 rounded-[14px] border border-[#e6edf7] bg-white px-4 py-3 text-sm text-[#455d75]">
+          </div>
+          <label className="mt-3 flex items-start gap-3 rounded-[14px] border border-[#e6edf7] bg-white px-4 py-3 text-sm text-[#455d75]">
           <input
             type="checkbox"
             className="mt-0.5"
@@ -296,7 +346,9 @@ export default function MandateDraftIntakePanel({
             <strong className="block text-[#243b53]">Seller will nominate the transferring attorney later</strong>
             Use this exception only when the mandate does not yet authorise an allocation. The listing will require attorney selection before instruction.
           </span>
-        </label>
+          </label>
+          </>
+        )}
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">

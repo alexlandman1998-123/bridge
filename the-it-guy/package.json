@@ -371,6 +371,8 @@
     "test:seller-transfer-attorney-recommendation-phase2": "node scripts/seller-transfer-attorney-recommendation-phase2.test.mjs",
     "test:seller-transfer-attorney-consent-phase3": "node scripts/seller-transfer-attorney-consent-phase3.test.mjs",
     "test:seller-transfer-attorney-agent-review-phase4": "node scripts/seller-transfer-attorney-agent-review-phase4.test.mjs",
+    "test:seller-transfer-attorney-mandate-propagation-phase5": "node scripts/seller-transfer-attorney-mandate-propagation-phase5.test.mjs",
+    "test:seller-transfer-attorney-operational-hardening-phase6": "node scripts/seller-transfer-attorney-operational-hardening-phase6.test.mjs",
     "test:buyer-onboarding-originator-handoff-phase3": "node scripts/buyer-onboarding-originator-handoff-phase3.test.mjs",
     "test:signed-otp-transfer-instruction-phase4": "node scripts/signed-otp-transfer-instruction-phase4.test.mjs",
     "test:attorney-instruction-response-phase5": "node scripts/attorney-instruction-response-phase5.test.mjs",

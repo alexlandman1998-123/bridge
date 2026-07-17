@@ -21,6 +21,13 @@ export const SELLER_TRANSFER_ATTORNEY_SELECTION_SOURCES = Object.freeze({
   agentAssistedSellerSelection: 'agent_assisted_seller_selection',
 })
 
+export const SELLER_TRANSFER_ATTORNEY_OPERATIONAL_ACTIONS = Object.freeze({
+  readyForMandate: 'ready_for_mandate',
+  verifyNomination: 'verify_nomination',
+  contactSeller: 'contact_seller',
+  resolveSelection: 'resolve_selection',
+})
+
 export const SELLER_TRANSFER_ATTORNEY_DECISION_OPTIONS = Object.freeze([
   Object.freeze({
     value: SELLER_TRANSFER_ATTORNEY_DECISIONS.acceptRecommendation,
@@ -215,8 +222,165 @@ export function isSellerTransferAttorneyDecisionResolved(input = {}) {
   ].includes(value.decision)
 }
 
+export function hasSellerTransferAttorneyDecisionRecord(input = {}) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return false
+  return Boolean(
+    input.version ||
+    input.decision ||
+    input.sellerDecision ||
+    input.seller_decision ||
+    input.recommendationStatus ||
+    input.recommendation_status ||
+    input.recommendedAttorney ||
+    input.recommended_attorney,
+  )
+}
+
+export function buildSellerTransferAttorneyMandatePatch(input = {}) {
+  const present = hasSellerTransferAttorneyDecisionRecord(input)
+  const validation = validateSellerTransferAttorneyDecision(input, { requireDecision: present })
+  const decision = validation.value
+  const resolved = validation.valid && [
+    SELLER_TRANSFER_ATTORNEY_DECISIONS.acceptRecommendation,
+    SELLER_TRANSFER_ATTORNEY_DECISIONS.nominateOwn,
+  ].includes(decision.decision)
+  const attorney = resolved ? decision.selectedAttorney : normalizeSellerTransferAttorneyIdentity()
+
+  return {
+    sellerTransferAttorneyDecisionPresent: present,
+    sellerTransferAttorneyDecisionResolved: resolved,
+    sellerTransferAttorneyDecisionErrors: validation.errors,
+    sellerTransferAttorneyDecision: decision,
+    transferAttorneyPreferredPartnerId: attorney.preferredPartnerId || '',
+    transferAttorneyPartnerOrganisationId: attorney.partnerOrganisationId || '',
+    transferAttorneyCompanyName: attorney.companyName || '',
+    transferAttorneyContactPerson: attorney.contactPerson || '',
+    transferAttorneyEmail: attorney.email || '',
+    transferAttorneyPhone: attorney.phone || '',
+    transferAttorneySelectionSource: resolved ? decision.selectionSource : '',
+    transferAttorneySelectionDeferred: decision.decision === SELLER_TRANSFER_ATTORNEY_DECISIONS.defer,
+  }
+}
+
 export function buildSellerTransferAttorneyOnboardingPatch(input = {}) {
   return {
     transferAttorneyDecision: normalizeSellerTransferAttorneyDecision(input),
+  }
+}
+
+function sellerTransferAttorneyDecisionFingerprint(input = {}) {
+  const decision = normalizeSellerTransferAttorneyDecision(input)
+  const attorney = decision.selectedAttorney
+  return [
+    decision.decision,
+    decision.selectionSource,
+    attorney.preferredPartnerId,
+    attorney.partnerOrganisationId,
+    attorney.companyName.toLowerCase(),
+    attorney.email,
+  ].join('|')
+}
+
+export function buildSellerTransferAttorneyOperationalOutcome(
+  input = {},
+  { previousDecision = null } = {},
+) {
+  const validation = validateSellerTransferAttorneyDecision(input)
+  const decision = validation.value
+  const previous = previousDecision
+    ? normalizeSellerTransferAttorneyDecision(previousDecision)
+    : null
+  const decisionChanged = Boolean(
+    previous &&
+    sellerTransferAttorneyDecisionFingerprint(previous) !== sellerTransferAttorneyDecisionFingerprint(decision),
+  )
+  const attorneyName = decision.selectedAttorney.companyName || 'the nominated firm'
+  const baseMetadata = {
+    workflow: 'seller_transfer_attorney',
+    decision: decision.decision,
+    selectionSource: decision.selectionSource,
+    decidedAt: decision.decidedAt,
+    attorney: decision.selectedAttorney,
+    decisionChanged,
+  }
+
+  if (decision.decision === SELLER_TRANSFER_ATTORNEY_DECISIONS.acceptRecommendation) {
+    return {
+      decision,
+      validation,
+      decisionChanged,
+      action: SELLER_TRANSFER_ATTORNEY_OPERATIONAL_ACTIONS.readyForMandate,
+      task: null,
+      activity: {
+        type: 'transfer_attorney_recommendation_accepted',
+        title: 'Seller accepted the recommended transferring attorney',
+        description: `${attorneyName} can be carried into the mandate workflow.`,
+        metadata: baseMetadata,
+      },
+    }
+  }
+
+  if (decision.decision === SELLER_TRANSFER_ATTORNEY_DECISIONS.nominateOwn) {
+    return {
+      decision,
+      validation,
+      decisionChanged,
+      action: SELLER_TRANSFER_ATTORNEY_OPERATIONAL_ACTIONS.verifyNomination,
+      task: {
+        title: 'Verify seller-nominated transferring attorney',
+        description: `Confirm the contact details and instruction readiness for ${attorneyName} before preparing the mandate.`,
+        priority: 'High',
+        dueInDays: 1,
+        metadata: { ...baseMetadata, action: SELLER_TRANSFER_ATTORNEY_OPERATIONAL_ACTIONS.verifyNomination },
+      },
+      activity: {
+        type: 'transfer_attorney_nomination_submitted',
+        title: 'Seller nominated a transferring attorney',
+        description: `${attorneyName} must be verified before mandate preparation.`,
+        metadata: baseMetadata,
+      },
+    }
+  }
+
+  if (decision.decision === SELLER_TRANSFER_ATTORNEY_DECISIONS.defer) {
+    return {
+      decision,
+      validation,
+      decisionChanged,
+      action: SELLER_TRANSFER_ATTORNEY_OPERATIONAL_ACTIONS.contactSeller,
+      task: {
+        title: 'Contact seller about transferring attorney',
+        description: 'The seller asked to discuss the transferring attorney before mandate preparation.',
+        priority: 'High',
+        dueInDays: 1,
+        metadata: { ...baseMetadata, action: SELLER_TRANSFER_ATTORNEY_OPERATIONAL_ACTIONS.contactSeller },
+      },
+      activity: {
+        type: 'transfer_attorney_decision_deferred',
+        title: 'Seller deferred the transferring attorney decision',
+        description: 'The assigned agent must contact the seller before mandate preparation.',
+        metadata: baseMetadata,
+      },
+    }
+  }
+
+  return {
+    decision,
+    validation,
+    decisionChanged,
+    action: SELLER_TRANSFER_ATTORNEY_OPERATIONAL_ACTIONS.resolveSelection,
+    task: {
+      title: 'Resolve seller transferring attorney selection',
+      description: 'Seller onboarding completed without a valid transferring attorney decision.',
+      priority: 'High',
+      dueInDays: 1,
+      metadata: { ...baseMetadata, action: SELLER_TRANSFER_ATTORNEY_OPERATIONAL_ACTIONS.resolveSelection },
+    },
+    activity: {
+      type: 'transfer_attorney_decision_missing',
+      title: 'Transferring attorney decision requires attention',
+      description: 'Resolve the seller decision before mandate preparation.',
+      metadata: baseMetadata,
+    },
   }
 }
